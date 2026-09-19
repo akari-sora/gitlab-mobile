@@ -29,9 +29,11 @@ ios/Flutter/ephemeral/
 .fvm/versions/
 .toolchains/
 .publication-state.json
-# pubspec.lock MUST be committed after the first successful dependency resolve.
 __pycache__/
 *.py[cod]
 .pytest_cache/
 .ci-cache/
+.android-sdk/
+.gradle-user/
 ci-output/
+artifacts/

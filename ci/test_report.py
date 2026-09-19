@@ -1,22 +1,27 @@
 #!/usr/bin/env python3
-"""Convert Flutter's JSON test protocol to GitLab JUnit; never invent passes."""
+"""Convert Flutter JSON events to JUnit, preserving failures and incomplete runs."""
 import json
 from pathlib import Path
 import sys
 import xml.etree.ElementTree as ET
 
 
-def convert(source: Path, destination: Path) -> None:
-    tests = {}
-    suites = {}
-    errors = {}
-    completed = False
+def events(source: Path):
     for line in source.read_text(encoding='utf-8').splitlines():
         try:
-            event = json.loads(line)
+            value = json.loads(line)
         except json.JSONDecodeError:
             continue
-        kind = event.get('type')
+        for event in value if isinstance(value, list) else [value]:
+            if isinstance(event, dict) and isinstance(event.get('type'), str):
+                yield event
+
+
+def convert(source: Path, destination: Path) -> None:
+    tests, suites, errors = {}, {}, {}
+    done = None
+    for event in events(source):
+        kind = event['type']
         if kind == 'suite':
             suites[event['suite']['id']] = event['suite'].get('path', 'flutter')
         elif kind == 'testStart':
@@ -29,7 +34,7 @@ def convert(source: Path, destination: Path) -> None:
             if item is not None:
                 item.update(result=event.get('result'), skipped=event.get('skipped', False), hidden=event.get('hidden', False), ended=event.get('time', 0))
         elif kind == 'done':
-            completed = True
+            done = event
     root = ET.Element('testsuites')
     suite = ET.SubElement(root, 'testsuite', name='Flutter tests')
     failures = skipped = count = 0
@@ -45,12 +50,15 @@ def convert(source: Path, destination: Path) -> None:
             ET.SubElement(case, 'skipped')
         elif item.get('result') != 'success':
             failures += 1
-            ET.SubElement(case, 'failure', message=str(item.get('result', 'incomplete'))).text = '\n'.join(errors.get(ident, ['Test did not complete successfully.']))
-    if not completed or count == 0:
+            message = '\n'.join(errors.get(ident, ['Test did not complete successfully.']))
+            ET.SubElement(case, 'failure', message=str(item.get('result', 'incomplete'))).text = message
+            print('FAILED:', item.get('name', str(ident)))
+            print(message)
+    if done is None or count == 0 or (done.get('success') is False and failures == 0):
         count += 1
         failures += 1
         case = ET.SubElement(suite, 'testcase', name='test protocol completion', classname='ci')
-        ET.SubElement(case, 'failure', message='Missing completion event or no tests')
+        ET.SubElement(case, 'failure', message='Incomplete or unsuccessful test run')
     suite.set('tests', str(count))
     suite.set('failures', str(failures))
     suite.set('skipped', str(skipped))
