@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert Flutter JSON events to JUnit, preserving failures and incomplete runs."""
+"""Convert actual Flutter JSON events to JUnit; incomplete runs fail closed."""
 import json
 from pathlib import Path
 import sys
@@ -17,7 +17,7 @@ def events(source: Path):
                 yield event
 
 
-def convert(source: Path, destination: Path) -> None:
+def convert(source: Path, destination: Path) -> int:
     tests, suites, errors = {}, {}, {}
     done = None
     for event in events(source):
@@ -39,22 +39,22 @@ def convert(source: Path, destination: Path) -> None:
     suite = ET.SubElement(root, 'testsuite', name='Flutter tests')
     failures = skipped = count = 0
     for ident, item in tests.items():
-        if item.get('hidden', False) and item.get('result') == 'success':
+        if item.get('hidden', False) and item.get('result') == 'success' and not errors.get(ident):
             continue
         count += 1
         case = ET.SubElement(suite, 'testcase', name=item.get('name', str(ident)),
             classname=suites.get(item.get('suiteID'), 'flutter'),
             time=str(max(0, item.get('ended', item['started']) - item['started']) / 1000))
-        if item.get('skipped'):
+        if item.get('skipped') and not errors.get(ident):
             skipped += 1
             ET.SubElement(case, 'skipped')
-        elif item.get('result') != 'success':
+        elif item.get('result') != 'success' or errors.get(ident):
             failures += 1
             message = '\n'.join(errors.get(ident, ['Test did not complete successfully.']))
             ET.SubElement(case, 'failure', message=str(item.get('result', 'incomplete'))).text = message
             print('FAILED:', item.get('name', str(ident)))
             print(message)
-    if done is None or count == 0 or (done.get('success') is False and failures == 0):
+    if done is None or count == 0 or (done.get('success') is not True and failures == 0):
         count += 1
         failures += 1
         case = ET.SubElement(suite, 'testcase', name='test protocol completion', classname='ci')
@@ -66,7 +66,8 @@ def convert(source: Path, destination: Path) -> None:
     ET.indent(root)
     ET.ElementTree(root).write(destination, encoding='utf-8', xml_declaration=True)
     print(f'JUnit: {count} tests, {failures} failures, {skipped} skipped')
+    return failures
 
 
 if __name__ == '__main__':
-    convert(Path(sys.argv[1]), Path(sys.argv[2]))
+    raise SystemExit(1 if convert(Path(sys.argv[1]), Path(sys.argv[2])) else 0)
