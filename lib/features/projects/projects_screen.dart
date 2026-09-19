@@ -59,7 +59,7 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
               onOpenBrowser: browser == null ? null : () {
                 unawaited(openExternal(sheetContext, browser));
               },
-            )))),
+            ))),
           );
           if (!mounted || session.generation != generation) return;
           if (action == _OpenFailureAction.switchAccount) { session.endSession(); return; }
@@ -67,8 +67,10 @@ class _ProjectsScreenState extends State<ProjectsScreen> {
         }
       }
     } on FormatException {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('連結格式不正確：請使用同實例、無憑證且無相對路徑的專案 URL，或完整路徑／ID。')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('連結格式不正確：請使用同實例、無憑證且無相對路徑的專案 URL，或完整路徑／ID。')));
+      }
     } finally { if (mounted) setState(() => opening = false); }
   }
 

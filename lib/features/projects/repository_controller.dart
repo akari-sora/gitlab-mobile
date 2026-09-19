@@ -1,4 +1,3 @@
-import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
@@ -22,7 +21,7 @@ final class RepositoryController extends ChangeNotifier {
   bool loadingMore = false;
   int _epoch = 0;
   bool _disposed = false;
-  final _directories = LinkedHashMap<String, _DirectorySnapshot>();
+  final _directories = <String, _DirectorySnapshot>{};
   static const maxCachedDirectories = 8;
   static const maxCachedEntries = 1000;
 
@@ -98,7 +97,9 @@ final class RepositoryController extends ChangeNotifier {
     final currentProject = project;
     final commit = sha;
     if (_disposed || loading || loadingMore || cursor == null ||
-        currentProject == null || commit == null) return;
+        currentProject == null || commit == null) {
+      return;
+    }
     final epoch = _epoch;
     final folder = path;
     loadingMore = true; pageError = null; _emit();
