@@ -8,12 +8,17 @@ workflow:
 
 stages: [verify]
 
-runner_preflight:
+sdk_preflight:
   image: python:3.13-slim
   tags: [saas-linux-small-amd64]
   stage: verify
-  timeout: 5m
+  timeout: 15m
   interruptible: true
+  cache:
+    key: flutter-linux-3.47.2
+    paths: [.ci-cache/]
+    policy: pull-push
+  before_script:
+    - apt-get update -qq && apt-get install -y --no-install-recommends git curl xz-utils unzip libglu1-mesa ca-certificates
   script:
-    - python --version
-    - python -c 'import urllib.request; r = urllib.request.urlopen("https://storage.googleapis.com/flutter_infra_release/flutter/releases/releases_linux.json", timeout=30); print("Flutter release manifest HTTP", r.status)'
+    - bash ci/install_flutter.sh
