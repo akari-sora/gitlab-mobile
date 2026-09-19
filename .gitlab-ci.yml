@@ -8,6 +8,10 @@ workflow:
 
 stages: [verify, build, deliver]
 
+variables:
+  DEBIAN_FRONTEND: noninteractive
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
 default:
   image: python:3.13-slim
   tags: [saas-linux-small-amd64]
@@ -28,10 +32,19 @@ default:
     - apt-get update -qq && apt-get install -y --no-install-recommends git curl xz-utils unzip libglu1-mesa ca-certificates
     - source ci/install_flutter.sh
 
+python_checks:
+  stage: verify
+  timeout: 5m
+  script:
+    - python3 -m unittest discover -s ci/tests -p '*_test.py' -v
+    - python3 -m unittest discover -s tool/tests -p test_bootstrap.py -v
+    - python3 -m compileall -q ci tool
+    - for script in ci/*.sh; do bash -n "$script"; done
+
 flutter_checks:
   extends: .flutter
   stage: verify
-  timeout: 20m
+  timeout: 15m
   coverage: '/Coverage: (\d+(?:\.\d+)?)%/'
   script:
     - bash ci/check.sh
@@ -60,6 +73,8 @@ android_debug:
   stage: build
   timeout: 40m
   needs:
+    - job: python_checks
+      artifacts: false
     - job: flutter_checks
       artifacts: true
     - job: native_templates

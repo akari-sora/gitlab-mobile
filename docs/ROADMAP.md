@@ -1,0 +1,43 @@
+# Product roadmap and acceptance boundaries
+
+This repository imports the G0 R1 application slice, its Flutter regression tests and the native bootstrap from the September 19, 2026 handoff. CI-specific fixes and tests are subsequent commits. The full earlier 105-operation research/specification ZIP is a separate handoff artifact; it has not all been imported into this repository. Do not interpret these implementation notes as a replacement for that catalogue or a claim that all 105 APIs work.
+
+## G0 — Identity and private repository reader (implemented slice, acceptance incomplete)
+
+Native mobile UX: sign in, explicitly verify `/user`, separate member/starred/accessible project scopes, resolve private project URLs, browse one fixed commit SHA and read bounded raw text. Distinguish authentication failure, authorization failure, ambiguous 404, rate limits, network failures, unsupported content and oversized files. Preserve page-one content after page-two failure; prevent stale requests changing a new account or folder.
+
+Implemented REST operations:
+
+| Operation | Endpoint | Main evidence |
+|---|---|---|
+| Identity | `GET /user` | `test/gitlab_api_test.dart`, `test/session_test.dart` |
+| Project lists/search | `GET /projects` | `test/gitlab_api_test.dart` |
+| Project resolution | `GET /projects/:id` | `test/identity_test.dart`, `test/gitlab_api_test.dart` |
+| Default branch SHA | `GET /projects/:id/repository/branches/:branch` | `test/gitlab_api_test.dart` |
+| Tree | `GET /projects/:id/repository/tree` | `test/repository_controller_test.dart` |
+| File metadata | `HEAD /projects/:id/repository/files/:path` | `test/gitlab_api_test.dart` |
+| Raw content | `GET /projects/:id/repository/files/:path/raw` | `test/gitlab_api_test.dart` |
+
+Real GitLab private-resource integration and Android/iOS device acceptance are still required. Synthetic fixtures are not integration evidence. CI-generated debug APKs are not proof of successful device operation.
+
+## G1 — Complete read-only workflows
+
+Branches, tags, commits, releases, MR/Issue reading, CI/log viewing, search and adaptive navigation. Add real empty/loading/error/partial/offline states; bounded large content; account-separated local persistence only after encryption/migration validation. Preserve navigation and scrolling between roots and on foldable resize.
+
+## G2 — Comments and issues
+
+Resource-scoped local drafts, create/edit/reply, attachment handling and conflict recovery. Keep drafts after failures and process termination. Never blindly retry a write after an ambiguous network timeout.
+
+## G3 — MR review
+
+Mobile unified diff, correctly mapped old/new line anchors, discussion threads, SHA-bound approvals/merges and stale-version checks. Do not manufacture omitted server diff content or interpret accepted auto-merge as completed merge.
+
+## G4 — CI operations
+
+Run/retry/cancel/manual play, correct job-attempt identity, foreground log updates with a bounded budget, artifacts without token-bearing third-party redirects. These refer to the App's GitLab controls, not this repository's own CI setup.
+
+## G5 — Release quality
+
+Actual Android/iOS device matrix, TalkBack/VoiceOver, large text and narrow-screen layout, network and account-switch races, secure-storage backup/restore, performance measurements, stable signing and distribution. OAuth PKCE, push and platform links require explicit capability checks; do not present a nonfunctional switch as supported.
+
+For each gate record commit SHA, pipeline/job URLs, fixtures/environment, executed cases, failures and NOT_RUN items. No global PASS based solely on unit tests or template generation.
