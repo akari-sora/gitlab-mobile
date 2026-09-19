@@ -19,7 +19,7 @@ void main() {
     expect(find.byKey(const Key('instanceField')), findsOneWidget);
     expect(tester.takeException(), isNull);
     expect(adapter.requests, isEmpty);
-  });
+  }, timeout: const Timeout(Duration(minutes: 1)));
 
   testWidgets('authenticated shell reaches projects and opens locator', (tester) async {
     final adapter = FakeAdapter((request) => request.uri.path.endsWith('/user')
@@ -31,7 +31,13 @@ void main() {
       child: const GitLabMobileApp(),
     ));
     await tester.pumpAndSettle();
-    await session.connect('https://example.com', 'synthetic-test-token');
+    // Dio's asynchronous stream processing must use real async scheduling,
+    // rather than wait for work trapped in the widget test's fake clock.
+    await tester.runAsync(() => session.connect('https://example.com', 'synthetic-test-token'));
+    await tester.runAsync(() async {
+      await tester.pump();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    });
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('我的專案'), findsOneWidget);
@@ -41,5 +47,5 @@ void main() {
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-  });
+  }, timeout: const Timeout(Duration(minutes: 1)));
 }
