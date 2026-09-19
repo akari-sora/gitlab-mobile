@@ -6,19 +6,50 @@ workflow:
     - if: '$CI_COMMIT_TAG'
     - if: '$CI_COMMIT_BRANCH'
 
-stages: [verify]
+stages: [verify, build, deliver]
 
-sdk_preflight:
+default:
   image: python:3.13-slim
   tags: [saas-linux-small-amd64]
-  stage: verify
-  timeout: 15m
   interruptible: true
+  retry:
+    max: 1
+    when: [runner_system_failure, stuck_or_timeout_failure]
+
+.flutter:
   cache:
-    key: flutter-linux-3.47.2
-    paths: [.ci-cache/]
-    policy: pull-push
+    - key: flutter-linux-3.47.2
+      paths: [.ci-cache/]
+      policy: pull-push
+    - key: pub-linux-3.47.2
+      paths: [.pub-cache/]
+      policy: pull-push
   before_script:
     - apt-get update -qq && apt-get install -y --no-install-recommends git curl xz-utils unzip libglu1-mesa ca-certificates
+    - source ci/install_flutter.sh
+
+flutter_checks:
+  extends: .flutter
+  stage: verify
+  timeout: 20m
   script:
-    - bash ci/install_flutter.sh
+    - bash ci/check.sh
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths: [ci-output/, coverage/]
+    reports:
+      junit: ci-output/junit.xml
+
+native_templates:
+  extends: .flutter
+  stage: verify
+  timeout: 15m
+  script:
+    - python3 tool/bootstrap.py
+    - mkdir -p ci-output
+    - tar --exclude=local.properties --exclude=Generated.xcconfig --exclude=flutter_export_environment.sh -czf ci-output/native-templates.tar.gz android ios .metadata
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths: [ci-output/]
