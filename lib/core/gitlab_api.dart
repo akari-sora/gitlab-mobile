@@ -7,10 +7,11 @@ import 'instance.dart';
 import 'models.dart';
 import 'pagination.dart';
 
+part 'workspace_api.dart';
+
 enum ProjectScope { member, starred, accessibleSearch }
 
-/// A client is owned by ONE immutable account session. No global credential
-/// interceptor. No credential-bearing redirect. No network writes in G0.
+/// One immutable account owns this client. Writes are never automatically retried.
 final class GitLabApi {
   GitLabApi({required this.instance, required String token, Dio? dio})
       : _token = token, _dio = dio ?? Dio() {
@@ -31,7 +32,7 @@ final class GitLabApi {
   static const maxTextLines = 20000;
 
   Future<({Uint8List bytes, Headers headers})> _read(Uri uri,
-      {String method = 'GET', int maxBytes = 4 * 1024 * 1024}) async {
+      {String method = 'GET', Object? data, int maxBytes = 4 * 1024 * 1024}) async {
     if (_closed) throw const ApiFailure(FailureKind.cancelled);
     if (!instance.allowsApi(uri)) throw const ApiFailure(FailureKind.unsupported);
     final until = _retryAt;
@@ -41,9 +42,10 @@ final class GitLabApi {
     final cancel = CancelToken();
     _requests.add(cancel);
     try {
-      final response = await _dio.requestUri<ResponseBody>(uri,
+      final response = await _dio.requestUri<ResponseBody>(uri, data: data,
         cancelToken: cancel,
         options: Options(method: method, responseType: ResponseType.stream,
+          contentType: data == null ? null : Headers.jsonContentType,
           followRedirects: false, maxRedirects: 0,
           validateStatus: (s) => s != null,
           headers: {'PRIVATE-TOKEN': _token, 'Accept': 'application/json',
@@ -88,16 +90,20 @@ final class GitLabApi {
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
       return (bytes: bytes.takeBytes(), headers: response.headers);
     } on DioException catch (error) {
-      throw ApiFailure(error.type == DioExceptionType.cancel
-          ? FailureKind.cancelled : FailureKind.network);
+      if (error.type == DioExceptionType.cancel || _closed) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      throw ApiFailure(method == 'GET' || method == 'HEAD'
+        ? FailureKind.network : FailureKind.writeUncertain);
     } finally {
       _requests.remove(cancel);
     }
   }
 
-  Future<Map<String, dynamic>> _object(Uri uri) async {
+  Future<Map<String, dynamic>> _object(Uri uri,
+      {String method = 'GET', Object? data}) async {
     try {
-      final result = await _read(uri);
+      final result = await _read(uri, method: method, data: data);
       return objectJson(jsonDecode(utf8.decode(result.bytes)));
     } on FormatException { throw const ApiFailure(FailureKind.invalidResponse); }
   }
@@ -156,13 +162,11 @@ final class GitLabApi {
         throw const ApiFailure(FailureKind.invalidResponse);
       }
     }
-    const allowedCursor = {'page', 'id_after', 'page_token', 'pagination', 'cursor'};
-    if (next.queryParameters.keys.any((k) => !first.queryParameters.containsKey(k) && !allowedCursor.contains(k))) {
+    if (next.queryParameters.keys.any((k) => !first.queryParameters.containsKey(k) && !paginationKeys.contains(k))) {
       throw const ApiFailure(FailureKind.unsupported);
     }
   }
 
-  /// HEAD is metadata only; the single content request is raw, never JSON+raw.
   Future<String> textFile(int projectId, String sha, String filePath) async {
     final segments = ['projects', '$projectId', 'repository', 'files', filePath];
     final meta = await _read(instance.api(segments, {'ref': sha}), method: 'HEAD');

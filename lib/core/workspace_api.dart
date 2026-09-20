@@ -1,0 +1,103 @@
+part of 'gitlab_api.dart';
+
+typedef Json = Map<String, dynamic>;
+
+extension WorkspaceApi on GitLabApi {
+  Future<Json> record(List<String> path, {Map<String, String>? query}) => _object(instance.api(path, query));
+  Future<ApiPage<Json>> records(List<String> path, {Map<String, String> query = const {}, Uri? next}) {
+    final first = instance.api(path, {'per_page': '30', ...query});
+    _validateContinuation(first, next);
+    return _page(next ?? first, (value) {
+      if (path.length == 1 && path.first == 'projects') { Project.fromJson(value); }
+      return Map<String, dynamic>.unmodifiable(value);
+    });
+  }
+  Future<Json> writeRecord(String method, List<String> path, Json data) {
+    if (!const ['POST', 'PUT', 'PATCH'].contains(method)) { throw const ApiFailure(FailureKind.unsupported); }
+    final body = <String, dynamic>{...data};
+    if (method == 'PUT' && path.length == 4 && path[0] == 'projects' && path[2] == 'labels' && body.containsKey('name')) {
+      body['new_name'] = body.remove('name');
+    }
+    return _object(instance.api(path), method: method, data: body);
+  }
+  Future<void> removeRecord(List<String> path, {Json? data}) async { await _read(instance.api(path), method: 'DELETE', data: data); }
+  Future<Project> createProject({required String name, String? path, String description = '',
+      String visibility = 'private', bool initialize = true}) async =>
+    Project.fromJson(await writeRecord('POST', ['projects'], {
+      'name': name, 'path': ?path, 'description': description, 'visibility': visibility, 'initialize_with_readme': initialize,
+    }));
+  Future<Project> editProject(int id, {required String name, required String description}) async =>
+    Project.fromJson(await writeRecord('PUT', ['projects', '$id'], {'name': name, 'description': description}));
+  Future<void> deleteProject(int id) => removeRecord(['projects', '$id']);
+  Future<Json> setStar(int id, bool starred) => writeRecord('POST', ['projects', '$id', starred ? 'star' : 'unstar'], {});
+  Future<Json> createIssue(int project, Json fields) => writeRecord('POST', ['projects', '$project', 'issues'], fields);
+  Future<Json> updateIssue(int project, int iid, Json fields) => writeRecord('PUT', ['projects', '$project', 'issues', '$iid'], fields);
+  Future<void> deleteIssue(int project, int iid) => removeRecord(['projects', '$project', 'issues', '$iid']);
+  Future<Json> createMergeRequest(int project, Json fields) => writeRecord('POST', ['projects', '$project', 'merge_requests'], fields);
+  Future<Json> updateMergeRequest(int project, int iid, Json fields) => writeRecord('PUT', ['projects', '$project', 'merge_requests', '$iid'], fields);
+  Future<void> deleteMergeRequest(int project, int iid) => removeRecord(['projects', '$project', 'merge_requests', '$iid']);
+  Future<Json> approveMergeRequest(int project, int iid, String sha) =>
+    writeRecord('POST', ['projects', '$project', 'merge_requests', '$iid', 'approve'], {'sha': sha});
+  Future<Json> mergeRequest(int project, int iid, String sha, {bool squash = false}) =>
+    writeRecord('PUT', ['projects', '$project', 'merge_requests', '$iid', 'merge'],
+      {'sha': sha, 'squash': squash, 'should_remove_source_branch': false});
+  Future<Json> createNote(int project, String resource, int iid, String body) =>
+    writeRecord('POST', ['projects', '$project', resource, '$iid', 'notes'], {'body': body});
+  Future<Json> updateNote(int project, String resource, int iid, int note, String body) =>
+    writeRecord('PUT', ['projects', '$project', resource, '$iid', 'notes', '$note'], {'body': body});
+  Future<void> deleteNote(int project, String resource, int iid, int note) =>
+    removeRecord(['projects', '$project', resource, '$iid', 'notes', '$note']);
+  Future<Json> createBranch(int project, String branch, String ref) =>
+    writeRecord('POST', ['projects', '$project', 'repository', 'branches'], {'branch': branch, 'ref': ref});
+  Future<void> deleteBranch(int project, String branch) => removeRecord(['projects', '$project', 'repository', 'branches', branch]);
+  Future<Json> createTag(int project, String name, String ref, {String message = ''}) =>
+    writeRecord('POST', ['projects', '$project', 'repository', 'tags'],
+      {'tag_name': name, 'ref': ref, if (message.isNotEmpty) 'message': message});
+  Future<void> deleteTag(int project, String name) => removeRecord(['projects', '$project', 'repository', 'tags', name]);
+  Future<Json> saveFile(int project, String path, {required String branch, required String content,
+      required String message, String? lastCommit}) =>
+    writeRecord(lastCommit == null ? 'POST' : 'PUT', ['projects', '$project', 'repository', 'files', path], {
+      'branch': branch, 'content': content, 'commit_message': message, 'last_commit_id': ?lastCommit,
+    });
+  Future<void> deleteFile(int project, String path, {required String branch, required String message, required String lastCommit}) =>
+    removeRecord(['projects', '$project', 'repository', 'files', path], data: {
+      'branch': branch, 'commit_message': message, 'last_commit_id': lastCommit,
+    });
+  Future<Json> fileMetadata(int project, String path, String ref) async {
+    final value = await _read(instance.api(['projects', '$project', 'repository', 'files', path], {'ref': ref}), method: 'HEAD');
+    final size = int.tryParse(value.headers.value('x-gitlab-size') ?? '');
+    if (size != null && size > GitLabApi.maxTextBytes) { throw const ApiFailure(FailureKind.tooLarge); }
+    final commit = value.headers.value('x-gitlab-last-commit-id');
+    if (commit == null || commit.isEmpty) { throw const ApiFailure(FailureKind.invalidResponse); }
+    return {'last_commit_id': commit, 'size': size};
+  }
+  Future<Json> createPipeline(int project, String ref) => writeRecord('POST', ['projects', '$project', 'pipeline'], {'ref': ref});
+  Future<Json> pipelineAction(int project, int pipeline, String action) {
+    if (!const ['retry', 'cancel'].contains(action)) { throw const ApiFailure(FailureKind.unsupported); }
+    return writeRecord('POST', ['projects', '$project', 'pipelines', '$pipeline', action], {});
+  }
+  Future<void> deletePipeline(int project, int pipeline) => removeRecord(['projects', '$project', 'pipelines', '$pipeline']);
+  Future<Json> jobAction(int project, int job, String action) {
+    if (!const ['retry', 'cancel', 'play'].contains(action)) { throw const ApiFailure(FailureKind.unsupported); }
+    return writeRecord('POST', ['projects', '$project', 'jobs', '$job', action], {});
+  }
+  Future<String> jobTrace(int project, int job) async {
+    try {
+      final result = await _read(instance.api(['projects', '$project', 'jobs', '$job', 'trace']), maxBytes: GitLabApi.maxTextBytes);
+      return utf8.decode(result.bytes, allowMalformed: true);
+    } on ApiFailure catch (failure) {
+      if (failure.status != 404) { rethrow; }
+      // A visible, not-yet-started job can legitimately have no trace. A missing
+      // job or an expired finished-job trace must remain a real error.
+      final current = await record(['projects', '$project', 'jobs', '$job']);
+      if (const ['created', 'pending', 'manual', 'scheduled', 'preparing', 'waiting_for_resource'].contains(current['status'])) {
+        return '';
+      }
+      rethrow;
+    }
+  }
+  Future<Json> createRelease(int project, Json fields) => writeRecord('POST', ['projects', '$project', 'releases'], fields);
+  Future<Json> updateRelease(int project, String tag, Json fields) => writeRecord('PUT', ['projects', '$project', 'releases', tag], fields);
+  Future<void> deleteRelease(int project, String tag) => removeRecord(['projects', '$project', 'releases', tag]);
+  Future<Json> markTodoDone(int id) => writeRecord('POST', ['todos', '$id', 'mark_as_done'], {});
+}
