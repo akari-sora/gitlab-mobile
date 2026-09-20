@@ -1,57 +1,60 @@
 enum FailureKind {
   unauthenticated, forbidden, invisible, rateLimited, network,
   server, tooLarge, unsupported, redirectBlocked, invalidResponse, cancelled,
+  validation, conflict, writeUncertain,
 }
 
-/// Only allowlisted information reaches the UI. Never stringify DioException,
-/// requestOptions, response bodies, credentials, or tokens in diagnostics.
+/// Diagnostics contain only allowlisted status information, never request data.
 final class ApiFailure implements Exception {
   const ApiFailure(this.kind, {this.status, this.retryAt});
   final FailureKind kind;
   final int? status;
   final DateTime? retryAt;
-
   static ApiFailure fromStatus(int status, {DateTime? retryAt}) => switch (status) {
+    400 || 422 => ApiFailure(FailureKind.validation, status: status),
     401 => const ApiFailure(FailureKind.unauthenticated, status: 401),
     403 => const ApiFailure(FailureKind.forbidden, status: 403),
     404 => const ApiFailure(FailureKind.invisible, status: 404),
+    409 || 412 => ApiFailure(FailureKind.conflict, status: status),
     429 => ApiFailure(FailureKind.rateLimited, status: 429, retryAt: retryAt),
     >= 500 => ApiFailure(FailureKind.server, status: status),
     >= 300 && < 400 => ApiFailure(FailureKind.redirectBlocked, status: status),
     _ => ApiFailure(FailureKind.invalidResponse, status: status),
   };
-
   String get title => switch (kind) {
-    FailureKind.unauthenticated => '無法驗證此憑證，請檢查登入',
-    FailureKind.forbidden => '此操作未獲授權',
+    FailureKind.unauthenticated => '登入已失效',
+    FailureKind.forbidden => '沒有操作權限',
     FailureKind.invisible => '無法開啟此資源',
-    FailureKind.rateLimited => '請求太頻繁，請稍後重試',
-    FailureKind.network => '目前無法連接 GitLab',
+    FailureKind.rateLimited => '稍後再試',
+    FailureKind.network => '無法連線',
     FailureKind.server => 'GitLab 暫時無法回應',
     FailureKind.tooLarge => '內容超出預覽上限',
-    FailureKind.unsupported => '此內容或請求目前不支援',
-    FailureKind.redirectBlocked => '已停止 API 重新導向',
-    FailureKind.invalidResponse => '無法讀取 GitLab 回應',
+    FailureKind.unsupported => '目前無法預覽此內容',
+    FailureKind.redirectBlocked => '資源網址已變更',
+    FailureKind.invalidResponse => '無法讀取回應',
     FailureKind.cancelled => '請求已取消',
+    FailureKind.validation => '請檢查輸入內容',
+    FailureKind.conflict => '內容已經變更',
+    FailureKind.writeUncertain => '尚未確認操作結果',
   };
-
   String get detail => switch (kind) {
-    FailureKind.invisible => '此帳號無法存取這個資源，或連結／資源已變更。',
-    FailureKind.forbidden => '可能受角色、Token scope 或實例政策限制；不會自動更換帳號。',
-    FailureKind.unauthenticated => 'App 憑證與瀏覽器登入狀態分開；請確認目前帳號。',
-    FailureKind.network => '請檢查連線、實例網址與 TLS 憑證。已顯示的資料不會被清空。',
-    FailureKind.tooLarge => '此版本最多預覽 2 MiB／20,000 行；不會自動下載整份大型內容。',
-    FailureKind.rateLimited => '已停止自動請求。伺服器指定等待時間時，重試需等到期限後。',
-    FailureKind.server => '保留已載入內容；稍後再試。',
-    FailureKind.unsupported => '可能是非文字內容或不支援的資源請求；不會把缺少的內容當成空白檔案。',
-    FailureKind.redirectBlocked => '為避免憑證外洩，不自動跟隨 API 重新導向。',
-    FailureKind.invalidResponse => '回應格式與預期不符；沒有把缺少的資料當成空列表。',
-    FailureKind.cancelled => '切換帳號或離開頁面後，舊請求不再影響目前畫面。',
+    FailureKind.invisible => '目前帳號無法存取，或資源已移動／刪除。',
+    FailureKind.forbidden => '請確認帳號角色、Token 的 api 權限與專案政策。',
+    FailureKind.unauthenticated => '請重新連接這個帳號。',
+    FailureKind.network => '請檢查網路與實例網址，再重新整理。',
+    FailureKind.tooLarge => '文字預覽上限為 2 MiB／20,000 行。',
+    FailureKind.rateLimited => 'GitLab 正在限制請求。請等待指定時間後重試。',
+    FailureKind.server => '內容已保留。寫入操作請先重新讀取確認結果。',
+    FailureKind.unsupported => '可能是二進位檔案，或實例不支援這個功能。',
+    FailureKind.redirectBlocked => '請重新搜尋專案或使用瀏覽器開啟。',
+    FailureKind.invalidResponse => '伺服器資料無法解析。請重新整理或查看診斷。',
+    FailureKind.cancelled => '此請求已停止，不影響新的帳號或頁面。',
+    FailureKind.validation => '名稱可能重複、分支受保護，或欄位不符合專案規則。草稿已保留。',
+    FailureKind.conflict => '請重新讀取最新版本，再檢查並送出。草稿已保留。',
+    FailureKind.writeUncertain => '連線在寫入時中斷。請先回到列表確認，避免重複新增；草稿已保留。',
   };
-
   @override
   String toString() => 'ApiFailure(${kind.name}, status: $status)';
 }
-
 ApiFailure safeFailure(Object error) => error is ApiFailure
     ? error : const ApiFailure(FailureKind.invalidResponse);

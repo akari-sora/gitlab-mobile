@@ -1,42 +1,53 @@
 # GitLab Mobile
 
-[![pipeline status](https://gitlab.com/aa22396584/gitlab-mobile/badges/main/pipeline.svg)](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines)
-[![coverage](https://gitlab.com/aa22396584/gitlab-mobile/badges/main/coverage.svg)](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines)
+A mobile-first Flutter client for Android and iOS. Independent third-party software, not an official GitLab application. The interface is Traditional Chinese and supports light/dark appearance and large text.
 
-Mobile-first Flutter GitLab client for **Android and iOS**. Independent and unofficial; not a WebView wrapper and not a desktop UI squeezed onto a phone.
+## v0.2 — collaboration preview
 
-## Current implementation
+This revision replaces the initial G0 interface and adds working API-backed collaboration screens. It is a **development preview**, not a claim that every GitLab feature, server edition, permission configuration, or device has passed end-to-end testing.
 
-G0 development preview: PAT sign-in verified with `/user`, account-scoped sessions, member/starred/accessible project discovery, private-project URL/path/ID resolution, distinct 401/403/404/429 states, fixed-commit repository browsing and bounded text-file preview. Switching accounts cancels old requests. Repository content is memory-only in this milestone.
+- PAT sign-in, account identity verification, multiple account isolation, GitLab.com and HTTPS self-managed instances.
+- Project membership/starred/accessibility search, private project lookup by numeric ID or full namespace, project create/edit/delete, star/unstar.
+- Branch-aware fixed-SHA repository browsing, Markdown/raw text, file create/read/edit/delete with `last_commit_id`, branch/tag create/read/delete and commit history.
+- Issue and merge-request create/read/edit/delete, close/reopen, self-assignment, labels and personal todos.
+- Notes and threaded discussions, replies, own-note edit/delete, discussion resolve/reopen, bounded pinned-version diffs and validated single-line review positions.
+- SHA-bound approval/merge requests; GitLab remains authoritative for permissions, review policy, protected branches and mergeability.
+- Project pipelines, run/retry/cancel/delete, job status/logs/retry/manual play, bounded foreground log polling. Artifact downloads currently open GitLab in the system browser.
+- Release, project-label and milestone CRUD. Commits are immutable; branches and tags are not presented as having a fictitious update API.
+- Account-scoped encrypted drafts, retained write errors, no automatic retry of uncertain writes, typed confirmation for destructive resource operations.
 
-The Inbox and CI app tabs explicitly show pending implementation. OAuth PKCE, MR/Issue collaboration, pipeline controls, push notifications and offline drafts are **not implemented**. A green software pipeline does not mean G0 private-instance/device acceptance is complete.
+**Not yet implemented:** OAuth sign-in, native artifact downloading, attachment uploads, push delivery, local Git clone/rebase/terminal, complete enterprise policy management. iOS binaries, store signing, Android/iOS device validation and the supplied-PAT full live CRUD suite are **NOT_RUN** unless a newer evidence record explicitly states otherwise.
 
-## Build and run
+## Verification
 
-Use **Flutter 3.47.2** (recorded in `.fvmrc`), Python 3 and the required Android/iOS platform tooling.
+See [v0.2 verification](docs/V0_2_VERIFICATION.md) and [mobile UX changes](docs/UI_REDESIGN.md). CI executes the actual Dart/Flutter code; synthetic transport tests are kept distinct from live server checks and physical-device tests.
+
+A real GitLab `Link` header expanded omitted `false` defaults and caused the original project-list failure. The parser now validates immutable scope, preserves the caller's query, and extracts only a safe pagination cursor. Valid first-page data is no longer rejected because GitLab expanded defaults.
+
+## Build and CI
+
+Pinned Flutter **3.47.2** / Dart **3.13.2**; committed `pubspec.lock`. Normal pipelines enforce the lock, run analysis and unit/widget tests, capture actual Flutter-rendered synthetic-data screenshots, generate/check Android/iOS templates, then build an Android debug APK. Only successful `main` pipelines publish commit-addressed preview packages using `CI_JOB_TOKEN`.
 
 ```sh
-python3 tool/bootstrap.py
 flutter pub get --enforce-lockfile
 flutter analyze --no-pub
-flutter test --no-pub --coverage
-flutter run
+flutter test --no-pub
+python3 tool/bootstrap.py
+flutter build apk --debug
 ```
 
-The bootstrap generates Android/iOS runners without overwriting `lib/` or tests, sets the Android backup/cleartext restrictions and iOS keychain entitlements, and refuses to overwrite existing native work. Platform runners are generated, not checked into this initial repository. Native template changes must be reviewed when upgrading Flutter. iOS execution/building still requires Xcode on macOS; distribution signing is not configured.
+Screenshots: `flutter_checks` job artifacts → `ci-output/screenshots/`. They are real Flutter host-rendered screens with synthetic data, not an Android/iOS device run or a generated design mock-up. Android APKs: `android_debug` artifacts; main previews: project Package Registry. Debug signing may differ across clean builds; these are not store-signed releases.
 
-Use a dedicated, least-privileged PAT on the login screen. Never place a token in source code or public issues. The App verifies its own account independently of any browser login.
+## Live CRUD smoke
 
-## CI/CD
+`tool/live_smoke.dart` uses the production Dart API client and a unique, isolated **private** project. It validates the expected account, performs read-after-write checks and cleans up only its exact synthetic project. Credentials are read from a runtime file; never commit a PAT or use a Dart compile-time define for one.
 
-Pushes and merge requests run Python helper tests, Flutter analysis/tests with JUnit and coverage, and native-template verification. Only successful checks can produce an Android debug APK. Main-branch APKs are then uploaded automatically to this project's Generic Package Registry using the short-lived `CI_JOB_TOKEN`.
+The `live_crud_smoke` job runs only in an explicit API-triggered pipeline with `LIVE_SMOKE=1`. The credential must be supplied through a secure mechanism approved for the execution environment. The previous attempted credential injection was blocked before pipeline creation; do not bypass that boundary. Until actually executed, its status remains **NOT_RUN**. The normal APK does not include a test PAT.
 
-- [Pipelines and test results](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines)
-- [Development APK package registry](https://gitlab.com/aa22396584/gitlab-mobile/-/packages)
-- [CI implementation and limitations](docs/CI.md)
-- [Roadmap and acceptance boundaries](docs/ROADMAP.md)
-- [Security notes](SECURITY.md)
+## Historical specifications
 
-APK job artifacts expire after 14 days. Registry previews are versioned by their full commit SHA and include `SHA256SUMS` and `build-metadata.json`. These are **debug development builds, not production-signed releases**. Ephemeral debug keys can differ between runs; installing a different preview may require removing the previous preview and its local data.
+`docs/plan/` preserves the original 105-operation design and acceptance plan. It is a **target specification**, not proof that every operation has been implemented or verified. Earlier G0/R1 documents and package manifests are historical handoffs; the current Git history, CI results and v0.2 verification matrix supersede their status statements.
 
-CI uses the hosted `saas-linux-small-amd64` runner. No unrelated project runner is reconfigured. No personal token is required for CI, no automatic repository-write privilege is enabled for jobs, and nothing is published to Google Play or TestFlight.
+## License
+
+MIT. See [LICENSE](LICENSE).

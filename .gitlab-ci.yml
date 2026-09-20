@@ -5,13 +5,10 @@ workflow:
       when: never
     - if: '$CI_COMMIT_TAG'
     - if: '$CI_COMMIT_BRANCH'
-
 stages: [verify, build, deliver]
-
 variables:
   DEBIAN_FRONTEND: noninteractive
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
-
 default:
   image: python:3.13-slim
   tags: [saas-linux-small-amd64]
@@ -19,7 +16,11 @@ default:
   retry:
     max: 1
     when: [runner_system_failure, stuck_or_timeout_failure]
-
+.regular:
+  rules:
+    - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $PUBLIC_SMOKE == "1"'
+      when: never
+    - when: on_success
 .flutter:
   cache:
     - key: flutter-linux-3.47.2
@@ -31,8 +32,22 @@ default:
   before_script:
     - apt-get update -qq && apt-get install -y --no-install-recommends git curl xz-utils unzip libglu1-mesa ca-certificates
     - source ci/install_flutter.sh
-
+resolve_lock:
+  extends: .flutter
+  stage: verify
+  timeout: 15m
+  rules:
+    - if: '$RESOLVE_LOCK == "1" && $CI_PIPELINE_SOURCE == "api"'
+  script:
+    - flutter pub get
+    - echo BEGIN_DEPENDENCY_LOCK
+    - cat pubspec.lock
+    - echo END_DEPENDENCY_LOCK
+  artifacts:
+    expire_in: 1 day
+    paths: [pubspec.lock]
 python_checks:
+  extends: .regular
   stage: verify
   timeout: 5m
   script:
@@ -40,9 +55,8 @@ python_checks:
     - python3 -m unittest discover -s tool/tests -p test_bootstrap.py -v
     - python3 -m compileall -q ci tool
     - for script in ci/*.sh; do bash -n "$script"; done
-
 flutter_checks:
-  extends: .flutter
+  extends: [.flutter, .regular]
   stage: verify
   timeout: 15m
   coverage: '/Coverage: (\d+(?:\.\d+)?)%/'
@@ -54,9 +68,8 @@ flutter_checks:
     paths: [ci-output/, coverage/]
     reports:
       junit: ci-output/junit.xml
-
 native_templates:
-  extends: .flutter
+  extends: [.flutter, .regular]
   stage: verify
   timeout: 15m
   script:
@@ -67,9 +80,8 @@ native_templates:
     when: always
     expire_in: 14 days
     paths: [ci-output/native-templates.tar.gz]
-
 android_debug:
-  extends: .flutter
+  extends: [.flutter, .regular]
   stage: build
   timeout: 40m
   needs:
@@ -79,6 +91,8 @@ android_debug:
       artifacts: true
     - job: native_templates
       artifacts: true
+    - job: public_api_smoke
+      artifacts: false
   cache:
     - key: flutter-linux-3.47.2
       paths: [.ci-cache/]
@@ -97,7 +111,6 @@ android_debug:
     expire_in: 14 days
     paths: [artifacts/]
     expose_as: Android development APK
-
 publish_preview:
   stage: deliver
   needs:
@@ -107,8 +120,45 @@ publish_preview:
   interruptible: false
   resource_group: preview-delivery
   rules:
+    - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $PUBLIC_SMOKE == "1"'
+      when: never
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   before_script:
     - apt-get update -qq && apt-get install -y --no-install-recommends curl ca-certificates
   script:
     - bash ci/deliver_preview.sh
+live_crud_smoke:
+  extends: .flutter
+  stage: verify
+  timeout: 20m
+  interruptible: false
+  retry: 0
+  resource_group: isolated-live-smoke
+  rules:
+    - if: '$LIVE_SMOKE == "1" && $RESOLVE_LOCK != "1" && $PUBLIC_SMOKE != "1" && $CI_PIPELINE_SOURCE == "api"'
+  cache: []
+  script:
+    - flutter pub get --enforce-lockfile
+    - dart run tool/live_smoke.dart
+  artifacts:
+    when: always
+    expire_in: 1 day
+    paths: [smoke-output/report.json]
+public_api_smoke:
+  extends: .flutter
+  stage: verify
+  timeout: 10m
+  retry: 0
+  rules:
+    - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1"'
+      when: never
+    - if: '$PUBLIC_SMOKE == "1" && $CI_PIPELINE_SOURCE != "api"'
+      when: never
+    - when: on_success
+  script:
+    - flutter pub get --enforce-lockfile
+    - dart run tool/public_smoke.dart
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths: [public-smoke-output/report.json]

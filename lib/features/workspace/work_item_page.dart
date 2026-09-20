@@ -1,0 +1,282 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import '../../core/failure.dart';
+import '../../core/gitlab_api.dart';
+import '../../core/models.dart';
+import '../../shared/external_link.dart';
+import '../../shared/markdown_view.dart';
+import '../../shared/workspace_ui.dart';
+import 'diff_page.dart';
+import 'editor.dart';
+import 'records_feed.dart';
+import 'discussions_tab.dart';
+export 'discussions_tab.dart';
+
+class WorkItemsTab extends StatefulWidget {
+  const WorkItemsTab({super.key, required this.account, required this.api, required this.project, required this.resource});
+  final Account account;
+  final GitLabApi api;
+  final Project project;
+  final String resource;
+  @override
+  State<WorkItemsTab> createState() => _WorkItemsTabState();
+}
+class _WorkItemsTabState extends State<WorkItemsTab> {
+  final _feed = GlobalKey<RecordsFeedState>();
+  final _search = TextEditingController();
+  String _state = 'opened', _query = '';
+  bool get mr => widget.resource == 'merge_requests';
+  @override
+  void dispose() { _search.dispose(); super.dispose(); }
+  Future<void> _open(int iid) async {
+    await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => WorkItemPage(
+      account: widget.account, api: widget.api, project: widget.project, resource: widget.resource, iid: iid)));
+    if (mounted) { await _feed.currentState?.refresh(); }
+  }
+  Future<void> _create() async {
+    var iid = 0;
+    final saved = await openEditor(context, account: widget.account, title: mr ? '新增合併請求' : '新增議題',
+      resource: '${widget.project.id}/${widget.resource}/new', subtitle: widget.project.path, fields: [
+        const EditField('title', '標題', required: true),
+        if (mr) ...[const EditField('source_branch', '來源分支', required: true),
+          EditField('target_branch', '目標分支', required: true, value: widget.project.defaultBranch ?? 'main')],
+        const EditField('description', '說明', lines: 7, hint: '支援 Markdown'),
+        const EditField('labels', '標籤', hint: '以逗號分隔；不存在的名稱會建立專案標籤'),
+      ], save: (values) async {
+        final fields = <String, dynamic>{...values, 'title': values['title']!.trim()};
+        final created = mr ? await widget.api.createMergeRequest(widget.project.id, fields)
+          : await widget.api.createIssue(widget.project.id, fields);
+        iid = requiredInt(created, 'iid');
+      });
+    if (saved && mounted) { await _open(iid); }
+  }
+  @override
+  Widget build(BuildContext context) => Column(children: [
+    Padding(padding: const EdgeInsets.fromLTRB(16, 12, 12, 4), child: Row(children: [
+      Expanded(child: TextField(controller: _search, textInputAction: TextInputAction.search,
+        decoration: InputDecoration(hintText: mr ? '搜尋合併請求' : '搜尋議題', prefixIcon: const Icon(Icons.search)),
+        onSubmitted: (value) => setState(() => _query = value.trim()))),
+      const SizedBox(width: 8), IconButton(tooltip: mr ? '新增合併請求' : '新增議題',
+        onPressed: widget.project.archived == true ? null : _create, icon: const Icon(Icons.add_circle_outline)),
+    ])),
+    Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), child: Align(
+      alignment: Alignment.centerLeft, child: Wrap(spacing: 8, runSpacing: 4, children: [
+        for (final e in const {'opened': '開啟中', 'closed': '已關閉', 'all': '全部'}.entries)
+          ChoiceChip(label: Text(e.value), selected: _state == e.key, showCheckmark: false,
+            onSelected: (_) => setState(() => _state = e.key)),
+      ]))),
+    Expanded(child: RecordsFeed(key: _feed, identity: '${widget.resource}/$_state/$_query',
+      empty: mr ? '沒有符合的合併請求' : '沒有符合的議題',
+      load: (next) => widget.api.records(['projects', '${widget.project.id}', widget.resource],
+        query: {'state': _state, 'scope': 'all', 'order_by': 'updated_at', 'sort': 'desc', if (_query.isNotEmpty) 'search': _query}, next: next),
+      itemBuilder: (context, value) => Card(child: InkWell(borderRadius: BorderRadius.circular(16),
+        onTap: () => _open(requiredInt(value, 'iid')), child: Padding(padding: const EdgeInsets.all(16), child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(mr ? Icons.merge : Icons.adjust, size: 20),
+              const SizedBox(width: 10), Expanded(child: Text(valueText(value, 'title'), maxLines: 3,
+                overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleMedium))]),
+            const SizedBox(height: 12), Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
+              children: [StatusBadge(valueText(value, 'state')),
+                Text('${mr ? '!' : '#'}${valueInt(value, 'iid')}', style: Theme.of(context).textTheme.bodySmall),
+                Text(relativeDate(valueText(value, 'updated_at')), style: Theme.of(context).textTheme.bodySmall)]),
+          ])))),
+    )),
+  ]);
+}
+
+class WorkItemPage extends StatefulWidget {
+  const WorkItemPage({super.key, required this.account, required this.api, required this.project, required this.resource, required this.iid});
+  final Account account;
+  final GitLabApi api;
+  final Project project;
+  final String resource;
+  final int iid;
+  @override
+  State<WorkItemPage> createState() => _WorkItemPageState();
+}
+class _WorkItemPageState extends State<WorkItemPage> {
+  Json? _data;
+  ApiFailure? _error;
+  bool _loading = true, _busy = false;
+  int _epoch = 0;
+  bool get mr => widget.resource == 'merge_requests';
+  List<String> get path => ['projects', '${widget.project.id}', widget.resource, '${widget.iid}'];
+  String get label => '${mr ? '!' : '#'}${widget.iid}';
+  Uri get web => widget.account.instance.projectWeb('${widget.project.path}/-/${widget.resource}/${widget.iid}');
+  @override
+  void initState() { super.initState(); unawaited(_load()); }
+  Future<void> _load() async {
+    final epoch = ++_epoch;
+    if (mounted) { setState(() { _loading = true; _error = null; }); }
+    try {
+      final data = await widget.api.record(path);
+      if (mounted && epoch == _epoch) { setState(() => _data = data); }
+    } catch (e) { if (mounted && epoch == _epoch) { setState(() => _error = safeFailure(e)); } }
+    finally { if (mounted && epoch == _epoch) { setState(() => _loading = false); } }
+  }
+  Future<void> _edit() async {
+    final data = _data;
+    if (data == null || _busy) { return; }
+    final labels = data['labels'] is List<dynamic> ? (data['labels'] as List<dynamic>).whereType<String>().join(', ') : '';
+    final saved = await openEditor(context, account: widget.account, title: '編輯 $label',
+      resource: '${widget.project.id}/${widget.resource}/${widget.iid}/edit', subtitle: widget.project.path, fields: [
+        EditField('title', '標題', required: true, value: valueText(data, 'title')),
+        EditField('description', '說明', lines: 8, value: valueText(data, 'description')),
+        EditField('labels', '標籤', value: labels, hint: '以逗號分隔；留白會移除所有標籤'),
+      ], save: (values) async {
+        final current = await widget.api.record(path);
+        if (current['updated_at'] != data['updated_at']) { throw const ApiFailure(FailureKind.conflict); }
+        await widget.api.writeRecord('PUT', path, values);
+      });
+    if (saved && mounted) { await _load(); }
+  }
+  Future<void> _action(String action) async {
+    if (_busy || _data == null) { return; }
+    final data = _data!;
+    if (action == 'edit') { await _edit(); return; }
+    if (action == 'web') { await openExternal(context, web); return; }
+    final confirmation = switch (action) {
+      'delete' => ('刪除 $label？', '將刪除此項目與相關討論，無法復原。', label),
+      'merge' => ('合併 $label？', '${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}\n'
+        '版本 ${shortSha(valueText(data, 'sha'))}\n若版本變動會停止，不會自動改用新版本。', null),
+      'approve' => ('批准目前版本？', '$label · ${shortSha(valueText(data, 'sha'))}\n仍受專案批准與重新認證政策限制。', null),
+      _ => null,
+    };
+    if (confirmation != null && !await confirmAction(context, confirmation.$1, confirmation.$2, requiredText: confirmation.$3)) {
+      return;
+    }
+    if (!mounted) { return; }
+    setState(() => _busy = true);
+    try {
+      switch (action) {
+        case 'delete':
+          await widget.api.removeRecord(path);
+          if (mounted) { Navigator.pop(context); }
+          return;
+        case 'close':
+        case 'reopen':
+          await widget.api.writeRecord('PUT', path, {'state_event': action});
+        case 'assign':
+          final ids = valueObjects(data, 'assignees').map((v) => valueInt(v, 'id')).where((id) => id > 0).toSet();
+          ids.contains(widget.account.user.id) ? ids.remove(widget.account.user.id) : ids.add(widget.account.user.id);
+          await widget.api.writeRecord('PUT', path, {'assignee_ids': ids.toList()});
+        case 'todo': await widget.api.writeRecord('POST', [...path, 'todo'], {});
+        case 'approve': await widget.api.approveMergeRequest(widget.project.id, widget.iid, requiredString(data, 'sha'));
+        case 'unapprove': await widget.api.writeRecord('POST', [...path, 'unapprove'], {});
+        case 'merge': await widget.api.mergeRequest(widget.project.id, widget.iid, requiredString(data, 'sha'));
+      }
+      await _load();
+      if (mounted && action == 'merge') {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
+          _data?['state'] == 'merged' ? '已合併' : 'GitLab 已接受操作，請查看最新合併狀態。')));
+      }
+    } catch (e) { if (mounted) { showFailure(context, e); } }
+    finally { if (mounted) { setState(() => _busy = false); } }
+  }
+  @override
+  Widget build(BuildContext context) {
+    final data = _data;
+    return DefaultTabController(length: mr ? 4 : 2, child: Scaffold(
+      appBar: AppBar(title: Text(label), actions: [
+        IconButton(tooltip: '重新整理', onPressed: _loading || _busy ? null : _load, icon: const Icon(Icons.refresh)),
+        PopupMenuButton<String>(tooltip: '更多操作', enabled: !_busy && data != null, onSelected: _action, itemBuilder: (_) => [
+          const PopupMenuItem(value: 'edit', child: Text('編輯')),
+          if (data?['state'] == 'opened') const PopupMenuItem(value: 'close', child: Text('關閉')),
+          if (data?['state'] == 'closed') const PopupMenuItem(value: 'reopen', child: Text('重新開啟')),
+          PopupMenuItem(value: 'assign', child: Text(valueObjects(data ?? {}, 'assignees')
+            .any((v) => v['id'] == widget.account.user.id) ? '取消指派給我' : '指派給我')),
+          const PopupMenuItem(value: 'todo', child: Text('加入我的待辦')),
+          const PopupMenuItem(value: 'web', child: Text('在 GitLab 開啟')),
+          const PopupMenuItem(value: 'delete', child: Text('刪除')),
+        ]),
+      ]),
+      body: data == null ? (_error != null ? SingleChildScrollView(child: FailureNotice(_error!, onRetry: _load,
+        contextLabel: '${widget.project.path} · @${widget.account.user.username}')) : const ListSkeleton()) : Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
+          Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(widget.project.path, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 8), Text(valueText(data, 'title'), maxLines: 3, overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 10), Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
+              children: [StatusBadge(valueText(data, 'state')), if (data['draft'] == true) const Text('草稿'),
+                Text('@${valueText(valueObject(data, 'author'), 'username')}', style: Theme.of(context).textTheme.bodySmall)]),
+          ])),
+          TabBar(isScrollable: true, tabAlignment: TabAlignment.start,
+            tabs: [const Tab(text: '摘要'), if (mr) const Tab(text: '變更'), const Tab(text: '討論'), if (mr) const Tab(text: '檢查')]),
+          Expanded(child: TabBarView(children: [
+            ListView(padding: const EdgeInsets.all(20), children: [
+              if (_error != null) FailureNotice(_error!, onRetry: _load),
+              if (mr) Padding(padding: const EdgeInsets.only(bottom: 16), child: Card(child: Padding(padding: const EdgeInsets.all(14),
+                child: Text('${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}',
+                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13))))),
+              MarkdownView(valueText(data, 'description').isEmpty ? '尚未填寫說明。' : valueText(data, 'description'), base: web),
+              const SizedBox(height: 24), const Divider(), const SizedBox(height: 16),
+              Text('指派', style: Theme.of(context).textTheme.titleSmall), const SizedBox(height: 8),
+              Text(valueObjects(data, 'assignees').isEmpty ? '尚未指派'
+                : valueObjects(data, 'assignees').map((v) => '@${valueText(v, 'username')}').join('、')),
+              if (data['labels'] is List<dynamic>) ...[const SizedBox(height: 16), Wrap(spacing: 6, runSpacing: 6,
+                children: (data['labels'] as List<dynamic>).whereType<String>().map((label) => Chip(label: Text(label))).toList())],
+              const SizedBox(height: 16), Text('更新於 ${relativeDate(valueText(data, 'updated_at'))}', style: Theme.of(context).textTheme.bodySmall),
+            ]),
+            if (mr) ReviewDiffPage(key: ValueKey(valueText(data, 'sha')), account: widget.account, api: widget.api,
+              project: widget.project, iid: widget.iid, expectedSha: valueText(data, 'sha')),
+            DiscussionsTab(account: widget.account, api: widget.api, project: widget.project, resource: widget.resource, iid: widget.iid),
+            if (mr) _MergeChecks(api: widget.api, path: path, data: data, busy: _busy, act: _action),
+          ])),
+        ],
+      ),
+    ));
+  }
+}
+class _MergeChecks extends StatefulWidget {
+  const _MergeChecks({required this.api, required this.path, required this.data, required this.busy, required this.act});
+  final GitLabApi api;
+  final List<String> path;
+  final Json data;
+  final bool busy;
+  final Future<void> Function(String) act;
+  @override
+  State<_MergeChecks> createState() => _MergeChecksState();
+}
+class _MergeChecksState extends State<_MergeChecks> {
+  late Future<Json> _approvals;
+  @override
+  void initState() { super.initState(); _approvals = widget.api.record([...widget.path, 'approvals']); }
+  @override
+  void didUpdateWidget(covariant _MergeChecks oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.data != widget.data) { _approvals = widget.api.record([...widget.path, 'approvals']); }
+  }
+  @override
+  Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(20), children: [
+    Text('合併條件', style: Theme.of(context).textTheme.titleMedium), const SizedBox(height: 10),
+    Text(switch (valueText(widget.data, 'detailed_merge_status')) {
+      'mergeable' => '可以合併', 'checking' || 'unchecked' || 'rechecking' => 'GitLab 正在檢查',
+      'ci_must_pass' => '等待 CI 通過', 'conflict' => '有合併衝突', 'not_approved' => '等待批准',
+      'discussions_not_resolved' => '討論尚未解決', 'draft_status' => '仍為草稿',
+      _ => valueText(widget.data, 'detailed_merge_status', '等待 GitLab 檢查'),
+    }),
+    const SizedBox(height: 12), Text('版本 ${shortSha(valueText(widget.data, 'sha'))}', style: const TextStyle(fontFamily: 'monospace')),
+    if (widget.data['head_pipeline'] is Json) Padding(padding: const EdgeInsets.symmetric(vertical: 16),
+      child: StatusBadge(valueText(valueObject(widget.data, 'head_pipeline'), 'status'))),
+    const Divider(height: 32), Text('審查', style: Theme.of(context).textTheme.titleMedium),
+    FutureBuilder<Json>(future: _approvals, builder: (context, snap) {
+      if (snap.hasError) { return FailureNotice(safeFailure(snap.error!), onRetry: () => setState(() {
+        _approvals = widget.api.record([...widget.path, 'approvals']);
+      })); }
+      if (!snap.hasData) { return const ListSkeleton(); }
+      final approved = valueObjects(snap.data!, 'approved_by');
+      return Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(approved.isEmpty ? '尚無批准者'
+        : approved.map((v) => '@${valueText(valueObject(v, 'user'), 'username')}').join('、')));
+    }),
+    if (widget.data['state'] == 'opened') ...[
+      OutlinedButton.icon(onPressed: widget.busy ? null : () => widget.act('approve'),
+        icon: const Icon(Icons.verified_outlined), label: const Text('批准目前版本')),
+      TextButton(onPressed: widget.busy ? null : () => widget.act('unapprove'), child: const Text('撤回我的批准')),
+      const SizedBox(height: 16), FilledButton.icon(onPressed: widget.busy ? null : () => widget.act('merge'),
+        icon: const Icon(Icons.merge), label: const Text('合併…')),
+      const SizedBox(height: 12), const Text('GitLab 會再次檢查 SHA、權限、保護分支及所有合併條件。', style: TextStyle(fontSize: 12)),
+    ],
+  ]);
+}
