@@ -496,6 +496,8 @@ void main() {
     expect(appearance.useDynamicColor, !enabled);
     expect(appearanceStore.value, encodeAppearance(ThemeMode.system, !enabled));
     expect(primary(), !enabled ? dynamicLight.primary : seeded);
+  });
+
   testWidgets('removing an account deletes its downloaded artifacts', (tester) async {
     final fixture = WorkspaceFixture();
     final store = MemoryAccountStore();
@@ -521,7 +523,7 @@ void main() {
       await File('${directory.path}/job.zip').writeAsBytes([9]);
     });
 
-    await tester.pumpWidget(AuthenticatedApp(session: session, appearance: appearance));
+    await tester.pumpWidget(AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts));
     await settleNetworkWidgets(tester);
     await tester.tap(find.text('我的'));
     await settleNetworkWidgets(tester);
@@ -561,7 +563,7 @@ void main() {
       artifactStorageRoot = () async => throw const FileSystemException('unreadable');
     });
 
-    await tester.pumpWidget(AuthenticatedApp(session: session, appearance: appearance));
+    await tester.pumpWidget(AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts));
     await settleNetworkWidgets(tester);
     await tester.tap(find.text('我的'));
     await settleNetworkWidgets(tester);
