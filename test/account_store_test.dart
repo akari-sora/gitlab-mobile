@@ -136,6 +136,13 @@ void main() {
     await store.saveLastActive(null);
     expect(await storage.read(key: 'gitlab_mobile_last_account_v1'), isNull);
     expect(await store.loadLastActive(), isNull);
+    expect(await store.loadSignOutPending(), isFalse);
+    await store.saveSignOutPending(true);
+    expect(await storage.read(key: 'gitlab_mobile_sign_out_pending_v1'), '1');
+    expect(await store.loadSignOutPending(), isTrue);
+    await store.saveSignOutPending(false);
+    expect(await storage.read(key: 'gitlab_mobile_sign_out_pending_v1'), isNull);
+    expect(await store.loadSignOutPending(), isFalse);
   });
 
   test(

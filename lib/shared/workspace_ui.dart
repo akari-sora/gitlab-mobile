@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/failure.dart';
@@ -9,10 +10,11 @@ import 'theme.dart';
 /// Ends the active session so the user can pick another account. Does not rotate accounts.
 VoidCallback endSessionFrom(BuildContext context) => () {
   try {
-    ProviderScope.containerOf(
+    final session = ProviderScope.containerOf(
       context,
       listen: false,
-    ).read(sessionProvider).endSession();
+    ).read(sessionProvider);
+    unawaited(session.endSession());
   } catch (_) {}
 };
 
@@ -408,7 +410,9 @@ class FailureNotice extends StatelessWidget {
           listen: false,
         ).read(sessionProvider);
         effectiveAccount ??= session.active;
-        effectiveSwitch ??= session.endSession;
+        effectiveSwitch ??= () {
+          unawaited(session.endSession());
+        };
       } catch (_) {}
     }
     return Padding(

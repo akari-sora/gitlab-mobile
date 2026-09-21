@@ -100,10 +100,13 @@ class _ResumeScreen extends StatelessWidget {
             child: Icon(Icons.account_tree_outlined, size: 32, color: theme.colorScheme.onPrimaryContainer),
           ),
           const SizedBox(height: 24),
-          Text('正在恢復 @$username', style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
+          Semantics(
+            liveRegion: true,
+            child: Text('正在恢復 @$username', style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
+          ),
           const SizedBox(height: 16),
           const CircularProgressIndicator(),
-          TextButton(onPressed: session.endSession, child: const Text('改用其他帳號')),
+          TextButton(onPressed: () { unawaited(session.endSession()); }, child: const Text('改用其他帳號')),
         ]),
       ))),
     );

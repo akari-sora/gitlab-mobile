@@ -17,6 +17,8 @@ const _discussionPageBoundNote = '討論已達 20 頁上限，後續討論未載
 class DiffTarget {
   const DiffTarget({
     required this.path,
+    this.oldPath = '',
+    this.newPath = '',
     this.newLine,
     this.oldLine,
     this.baseSha = '',
@@ -24,6 +26,8 @@ class DiffTarget {
     this.headSha = '',
   });
   final String path;
+  final String oldPath;
+  final String newPath;
   final int? newLine;
   final int? oldLine;
   final String baseSha;
@@ -32,22 +36,35 @@ class DiffTarget {
 }
 
 final class _DiscussionLoad {
-  const _DiscussionLoad(this.items, {this.truncated = false, this.error});
+  const _DiscussionLoad(
+    this.items, {
+    this.truncated = false,
+    this.error,
+    this.next,
+  });
   final List<Json> items;
   final bool truncated;
   final ApiFailure? error;
+
+  /// Cursor that failed, so a retry can fetch the rest without dropping [items].
+  final Uri? next;
 }
 
 Future<_DiscussionLoad> _loadDiscussions(
   GitLabApi api,
-  List<String> path,
-) async {
+  List<String> path, {
+  required int epoch,
+  required bool Function(int epoch) current,
+  Uri? resume,
+}) async {
+  final items = <Json>[];
+  var next = resume;
+  var pages = 0;
   try {
-    final items = <Json>[];
-    Uri? next;
-    var pages = 0;
     while (true) {
+      if (!current(epoch)) return _DiscussionLoad(items, next: next);
       final page = await api.records([...path, 'discussions'], next: next);
+      if (!current(epoch)) return _DiscussionLoad(items, next: next);
       items.addAll(page.items);
       pages++;
       final cursor = page.next;
@@ -58,7 +75,7 @@ Future<_DiscussionLoad> _loadDiscussions(
       next = cursor;
     }
   } catch (e) {
-    return _DiscussionLoad(const <Json>[], error: safeFailure(e));
+    return _DiscussionLoad(items, error: safeFailure(e), next: next);
   }
 }
 
@@ -78,8 +95,10 @@ bool _shasMatch(Json position, Json version) {
       base.isNotEmpty &&
       base == version['base_commit_sha'] &&
       start is String &&
+      start.isNotEmpty &&
       start == version['start_commit_sha'] &&
       head is String &&
+      head.isNotEmpty &&
       head == version['head_commit_sha'];
 }
 
@@ -90,24 +109,57 @@ bool _mapsToLine(Json position, Json file, DiffLine line) {
   final oldPath = position['old_path'];
   final fileNew = valueText(file, 'new_path');
   final fileOld = valueText(file, 'old_path');
-  final newHit =
-      newLine is int &&
-      newPath is String &&
-      newPath == fileNew &&
-      line.newLine == newLine;
-  final oldHit =
-      oldLine is int &&
-      oldPath is String &&
-      oldPath == fileOld &&
-      line.oldLine == oldLine;
-  return newHit || oldHit;
+  if (newPath is String && newPath.isNotEmpty && newPath != fileNew) {
+    return false;
+  }
+  if (oldPath is String && oldPath.isNotEmpty && oldPath != fileOld) {
+    return false;
+  }
+  final hasNew = newLine is int;
+  final hasOld = oldLine is int;
+  if (!hasNew && !hasOld) return false;
+  if (hasNew && line.newLine != newLine) return false;
+  if (hasOld && line.oldLine != oldLine) return false;
+  return true;
 }
 
-bool _positionOnPath(Json position, String path) {
-  if (path.isEmpty) return false;
+/// new_path is compared only with the file's new_path, old_path only with old_path.
+bool _positionClaimsFile(Json position, Json file) {
+  final fileNew = valueText(file, 'new_path');
+  final fileOld = valueText(file, 'old_path');
   final newPath = position['new_path'];
   final oldPath = position['old_path'];
-  return newPath == path || oldPath == path;
+  final newSupplied = newPath is String && newPath.isNotEmpty;
+  final oldSupplied = oldPath is String && oldPath.isNotEmpty;
+  if (!newSupplied && !oldSupplied) return false;
+  if (newSupplied && newPath != fileNew) return false;
+  if (oldSupplied && oldPath != fileOld) return false;
+  return true;
+}
+
+String _unplacedReason(Json position, Json version) => _shasMatch(position, version)
+    ? '目前差異未提供此行（可能已折疊或超出大小上限）'
+    : '以較舊版本為準，無法對應目前差異';
+
+Json _targetPosition(DiffTarget target) {
+  final position = <String, dynamic>{};
+  if (target.newPath.isNotEmpty) {
+    position['new_path'] = target.newPath;
+  } else if (target.oldPath.isEmpty &&
+      target.newLine != null &&
+      target.path.isNotEmpty) {
+    position['new_path'] = target.path;
+  }
+  if (target.oldPath.isNotEmpty) {
+    position['old_path'] = target.oldPath;
+  } else if (target.newPath.isEmpty &&
+      target.oldLine != null &&
+      target.path.isNotEmpty) {
+    position['old_path'] = target.path;
+  }
+  if (target.newLine != null) position['new_line'] = target.newLine;
+  if (target.oldLine != null) position['old_line'] = target.oldLine;
+  return position;
 }
 
 String _positionPath(Json position) {
@@ -162,6 +214,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
   bool _openedTarget = false;
   int _epoch = 0;
   List<Json> _discussions = const [];
+  Uri? _discussionNext;
   final _orphanKey = GlobalKey();
   List<String> get path => [
     'projects',
@@ -194,44 +247,95 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
     return version;
   }
 
+  bool _walkCurrent(int epoch) => mounted && epoch == _epoch;
+
   Future<void> _load() async {
     final epoch = ++_epoch;
     setState(() {
       _loading = true;
       _error = null;
+      _discussionsError = null;
     });
+    final discussionsFuture = _loadDiscussions(
+      widget.api,
+      path,
+      epoch: epoch,
+      current: _walkCurrent,
+    );
     try {
       final version = await _fetchVersion();
-      if (!mounted || epoch != _epoch) return;
-      final loaded = await _loadDiscussions(widget.api, path);
-      if (!mounted || epoch != _epoch) return;
+      if (!mounted || epoch != _epoch) {
+        await discussionsFuture;
+        return;
+      }
       setState(() {
         _version = version;
-        _discussions = loaded.items;
-        _discussionsTruncated = loaded.truncated;
-        _discussionsError = loaded.error;
         _loading = false;
       });
-      _scheduleInitialTarget();
     } catch (e) {
-      if (!mounted || epoch != _epoch) return;
+      if (!mounted || epoch != _epoch) {
+        await discussionsFuture;
+        return;
+      }
       setState(() {
         _error = safeFailure(e);
         _loading = false;
       });
     }
+    final loaded = await discussionsFuture;
+    if (!mounted || epoch != _epoch) return;
+    setState(() {
+      if (loaded.items.isNotEmpty || loaded.error == null) {
+        _discussions = loaded.items;
+        _discussionsTruncated = loaded.truncated;
+      }
+      _discussionsError = loaded.error;
+      _discussionNext = loaded.next;
+    });
+    if (_error == null) _scheduleInitialTarget();
+  }
+
+  Future<void> _refreshDiscussions() async {
+    final epoch = ++_epoch;
+    final loaded = await _loadDiscussions(
+      widget.api,
+      path,
+      epoch: epoch,
+      current: _walkCurrent,
+    );
+    if (!mounted || epoch != _epoch) return;
+    setState(() {
+      if (loaded.items.isNotEmpty || loaded.error == null) {
+        _discussions = loaded.items;
+        _discussionsTruncated = loaded.truncated;
+      }
+      _discussionsError = loaded.error;
+      _discussionNext = loaded.next;
+    });
   }
 
   Json? _fileFor(DiffTarget target) {
     final version = _version;
-    if (version == null || target.path.isEmpty) return null;
+    if (version == null) return null;
     for (final file in valueObjects(version, 'diffs')) {
-      if (valueText(file, 'new_path') == target.path ||
-          valueText(file, 'old_path') == target.path) {
-        return file;
-      }
+      if (_targetNamesFile(target, file)) return file;
     }
     return null;
+  }
+
+  bool _targetNamesFile(DiffTarget target, Json file) {
+    final fileNew = valueText(file, 'new_path');
+    final fileOld = valueText(file, 'old_path');
+    if (target.newPath.isNotEmpty || target.oldPath.isNotEmpty) {
+      final newOk = target.newPath.isEmpty || target.newPath == fileNew;
+      final oldOk = target.oldPath.isEmpty || target.oldPath == fileOld;
+      final mentioned =
+          (target.newPath.isNotEmpty && target.newPath == fileNew) ||
+          (target.oldPath.isNotEmpty && target.oldPath == fileOld);
+      return mentioned && newOk && oldOk;
+    }
+    if (target.path.isEmpty) return false;
+    return target.path == fileNew || target.path == fileOld;
   }
 
   void _scheduleInitialTarget() {
@@ -253,16 +357,32 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
     });
   }
 
-  List<Json> _orphanDiscussions(DiffTarget target) {
-    final result = <Json>[];
-    for (final discussion in _discussions) {
-      final position = _textPosition(discussion);
-      if (position == null || !_positionOnPath(position, target.path)) {
-        continue;
+  List<Json> _unmatchedDiscussions() {
+    final files = valueObjects(_version ?? const <String, dynamic>{}, 'diffs');
+    final claimed = <Json>{};
+    for (final file in files) {
+      for (final discussion in _discussions) {
+        final position = _textPosition(discussion);
+        if (position != null && _positionClaimsFile(position, file)) {
+          claimed.add(discussion);
+        }
       }
-      result.add(discussion);
     }
-    return result;
+    return [
+      for (final discussion in _discussions)
+        if (!claimed.contains(discussion) && _textPosition(discussion) != null)
+          discussion,
+    ];
+  }
+
+  String _targetReason(DiffTarget target) {
+    final version = _version;
+    if (version == null) return '以較舊版本為準，無法對應目前差異';
+    return _unplacedReason({
+      'base_sha': target.baseSha,
+      'start_sha': target.startSha,
+      'head_sha': target.headSha,
+    }, version);
   }
 
   Future<void> _open(Json file, {DiffTarget? target}) async {
@@ -281,10 +401,13 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
           discussions: _discussions,
           discussionsTruncated: _discussionsTruncated,
           discussionsError: _discussionsError,
+          discussionsNext: _discussionNext,
           initialTarget: target,
         ),
       ),
     );
+    if (!mounted) return;
+    await _refreshDiscussions();
   }
 
   @override
@@ -308,6 +431,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
     final files = valueObjects(_version ?? {}, 'diffs');
     final target = widget.initialTarget;
     final missingTarget = target != null && _fileFor(target) == null;
+    final unmatched = _unmatchedDiscussions();
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -361,13 +485,17 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                 ),
               ),
             ),
-          if (missingTarget)
+          if (unmatched.isNotEmpty || missingTarget)
             _OtherVersionSection(
               key: _orphanKey,
-              discussions: _orphanDiscussions(target),
-              fallbackPath: target.path,
-              fallbackNewLine: target.newLine,
-              fallbackOldLine: target.oldLine,
+              version: _version ?? const <String, dynamic>{},
+              discussions: unmatched,
+              fallbackPath: missingTarget ? target.path : '',
+              fallbackNewLine: missingTarget ? target.newLine : null,
+              fallbackOldLine: missingTarget ? target.oldLine : null,
+              fallbackReason: missingTarget
+                  ? _targetReason(target)
+                  : '以較舊版本為準，無法對應目前差異',
             ),
         ],
       ),
@@ -386,6 +514,7 @@ class _DiffFileScreen extends StatefulWidget {
     required this.discussions,
     required this.discussionsTruncated,
     required this.discussionsError,
+    this.discussionsNext,
     this.initialTarget,
   });
   final Account account;
@@ -397,6 +526,7 @@ class _DiffFileScreen extends StatefulWidget {
   final List<Json> discussions;
   final bool discussionsTruncated;
   final ApiFailure? discussionsError;
+  final Uri? discussionsNext;
   final DiffTarget? initialTarget;
   @override
   State<_DiffFileScreen> createState() => _DiffFileScreenState();
@@ -412,7 +542,9 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
   bool _busy = false;
   bool _disposed = false;
   int _epoch = 0;
-  var _revealAttempts = 0;
+  var _revealTicks = 0;
+  var _revealScheduled = false;
+  Uri? _discussionNext;
   final _expanded = <String>{};
   final _scroll = ScrollController();
   final _targetKey = GlobalKey();
@@ -429,6 +561,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     _discussions = List<Json>.of(widget.discussions);
     _truncated = widget.discussionsTruncated;
     _discussionsError = widget.discussionsError;
+    _discussionNext = widget.discussionsNext;
     final diff = valueText(widget.file, 'diff');
     if (widget.file['too_large'] == true ||
         widget.file['collapsed'] == true ||
@@ -472,19 +605,14 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
   }
 
   List<Json> _others(Set<Json> anchored) {
-    final fileNew = valueText(widget.file, 'new_path');
-    final fileOld = valueText(widget.file, 'old_path');
     final result = <Json>[];
     for (final discussion in _discussions) {
       if (anchored.contains(discussion)) continue;
       final position = _textPosition(discussion);
-      if (position == null) continue;
-      final newPath = position['new_path'];
-      final oldPath = position['old_path'];
-      final matches =
-          (newPath is String && (newPath == fileNew || newPath == fileOld)) ||
-          (oldPath is String && (oldPath == fileNew || oldPath == fileOld));
-      if (matches) result.add(discussion);
+      if (position == null || !_positionClaimsFile(position, widget.file)) {
+        continue;
+      }
+      result.add(discussion);
     }
     return result;
   }
@@ -493,6 +621,16 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     final target = widget.initialTarget;
     if (target == null || !_targetShasMatch()) return false;
     return _targetLineIndex(lines) != null;
+  }
+
+  String get _fallbackReason {
+    final target = widget.initialTarget;
+    if (target == null) return '以較舊版本為準，無法對應目前差異';
+    return _unplacedReason({
+      'base_sha': target.baseSha,
+      'start_sha': target.startSha,
+      'head_sha': target.headSha,
+    }, widget.version);
   }
 
   bool _targetShasMatch() {
@@ -510,56 +648,104 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
 
   int? _targetLineIndex(List<DiffLine> lines) {
     final target = widget.initialTarget;
-    if (target == null) return null;
-    final fileNew = valueText(widget.file, 'new_path');
-    final fileOld = valueText(widget.file, 'old_path');
+    if (target == null || !_targetShasMatch()) return null;
+    final position = _targetPosition(target);
     for (var i = 0; i < lines.length; i++) {
-      final line = lines[i];
-      final newHit =
-          target.newLine != null &&
-          target.path == fileNew &&
-          line.newLine == target.newLine;
-      final oldHit =
-          target.oldLine != null &&
-          target.path == fileOld &&
-          line.oldLine == target.oldLine;
-      if (newHit || oldHit) return i;
+      if (_mapsToLine(position, widget.file, lines[i])) return i;
     }
     return null;
   }
 
+  bool _showOther(List<DiffLine> lines) {
+    final anchored = _anchored(lines);
+    final anchoredSet = <Json>{
+      for (final group in anchored.values) ...group,
+    };
+    return _others(anchoredSet).isNotEmpty ||
+        (widget.initialTarget != null && _targetLineIndex(lines) == null);
+  }
+
+  bool _walkCurrent(int epoch) => mounted && !_disposed && epoch == _epoch;
+
+  void _scheduleReveal() {
+    if (_revealScheduled || _disposed) return;
+    _revealScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _revealScheduled = false;
+      if (mounted && !_disposed) _revealTarget();
+    });
+  }
+
   void _revealTarget() {
-    if (!mounted || widget.initialTarget == null) return;
+    if (!mounted || _disposed || widget.initialTarget == null) return;
     final target = _targetKey.currentContext;
     if (target != null) {
       unawaited(Scrollable.ensureVisible(target, alignment: 0.05));
       return;
     }
-    if (_revealAttempts++ > 12 || !_scroll.hasClients) return;
+    if (_revealTicks > 40) return;
+    if (!_scroll.hasClients) {
+      _scheduleReveal();
+      return;
+    }
     final position = _scroll.position;
-    final next = (position.pixels + position.viewportDimension * 0.8).clamp(
-      0.0,
-      position.maxScrollExtent,
-    );
-    if (next <= position.pixels + 1) return;
-    _scroll.jumpTo(next);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _revealTarget());
+    if (!position.hasContentDimensions) {
+      _scheduleReveal();
+      return;
+    }
+    final lines = _lines;
+    final index = lines == null
+        ? 0
+        : (_targetLineIndex(lines) ?? lines.length);
+    final itemCount = lines == null
+        ? 1
+        : lines.length + (_showOther(lines) ? 1 : 0);
+    final span = position.maxScrollExtent;
+    if (span <= 0) {
+      _revealTicks++;
+      _scheduleReveal();
+      return;
+    }
+    final safeCount = itemCount < 1 ? 1 : itemCount;
+    final average = (span + position.viewportDimension) / safeCount;
+    var estimated = (index * average).clamp(0.0, span);
+    final atEnd = position.pixels >= span - 1;
+    if (estimated <= position.pixels + 1) {
+      if (atEnd) return;
+      estimated = span;
+    }
+    if (estimated <= position.pixels + 1) return;
+    _revealTicks++;
+    _scroll.jumpTo(estimated);
+    _scheduleReveal();
   }
 
   Future<void> _reloadDiscussions() async {
     final epoch = ++_epoch;
+    final resume = _discussionNext;
+    final prior = List<Json>.of(_discussions);
     setState(() {
       _reloading = true;
       _discussionsError = null;
     });
-    final loaded = await _loadDiscussions(widget.api, _mrPath);
+    final loaded = await _loadDiscussions(
+      widget.api,
+      _mrPath,
+      epoch: epoch,
+      current: _walkCurrent,
+      resume: resume,
+    );
     if (!mounted || _disposed || epoch != _epoch) return;
     setState(() {
-      if (loaded.error == null) {
-        _discussions = loaded.items;
+      final merged = resume == null
+          ? loaded.items
+          : <Json>[...prior, ...loaded.items];
+      if (merged.isNotEmpty || loaded.error == null) {
+        _discussions = merged;
         _truncated = loaded.truncated;
       }
       _discussionsError = loaded.error;
+      _discussionNext = loaded.error == null ? null : (loaded.next ?? resume);
       _reloading = false;
     });
   }
@@ -706,7 +892,11 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                 if (showOther)
                   KeyedSubtree(
                     key: widget.initialTarget != null ? _targetKey : null,
-                    child: _OtherVersionSection(discussions: others),
+                    child: _OtherVersionSection(
+                      discussions: others,
+                      version: widget.version,
+                      fallbackReason: _fallbackReason,
+                    ),
                   ),
               ],
             )
@@ -749,7 +939,11 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                             key: !onLine && widget.initialTarget != null
                                 ? _targetKey
                                 : null,
-                            child: _OtherVersionSection(discussions: others),
+                            child: _OtherVersionSection(
+                              discussions: others,
+                              version: widget.version,
+                              fallbackReason: _fallbackReason,
+                            ),
                           );
                         }
                         final line = lines[index];
@@ -982,11 +1176,11 @@ class _DiffThreadCard extends StatelessWidget {
                   base: base,
                 ),
               ],
-              if (notes.length > 1)
+              if (notes.length - visible.length > 0)
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
-                    '另 ${notes.length - 1} 則',
+                    '另 ${notes.length - visible.length} 則',
                     style: theme.textTheme.bodySmall,
                   ),
                 ),
@@ -1005,7 +1199,7 @@ class _DiffThreadCard extends StatelessWidget {
                   if (onResolve != null)
                     TextButton(
                       onPressed: busy ? null : onResolve,
-                      child: Text(resolved ? '重新開啟' : '解決'),
+                      child: Text(resolved ? '重新開啟討論' : '解決討論'),
                     ),
                 ],
               ),
@@ -1021,14 +1215,18 @@ class _OtherVersionSection extends StatelessWidget {
   const _OtherVersionSection({
     super.key,
     required this.discussions,
+    required this.version,
     this.fallbackPath = '',
     this.fallbackNewLine,
     this.fallbackOldLine,
+    this.fallbackReason = '以較舊版本為準，無法對應目前差異',
   });
   final List<Json> discussions;
+  final Json version;
   final String fallbackPath;
   final int? fallbackNewLine;
   final int? fallbackOldLine;
+  final String fallbackReason;
 
   @override
   Widget build(BuildContext context) {
@@ -1042,6 +1240,7 @@ class _OtherVersionSection extends StatelessWidget {
                 if (fallbackOldLine != null) '舊行 $fallbackOldLine',
               ].join(' · '),
               excerpt: '',
+              reason: fallbackReason,
             ),
           ]
         : [
@@ -1073,6 +1272,7 @@ class _OtherVersionSection extends StatelessWidget {
       path: _positionPath(position),
       lines: _positionLines(position),
       excerpt: notes.isEmpty ? '' : _excerpt(valueText(notes.first, 'body')),
+      reason: _unplacedReason(position, version),
     );
   }
 }
@@ -1083,10 +1283,12 @@ class _OtherVersionCard extends StatelessWidget {
     required this.path,
     required this.lines,
     required this.excerpt,
+    required this.reason,
   });
   final String path;
   final String lines;
   final String excerpt;
+  final String reason;
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -1108,9 +1310,9 @@ class _OtherVersionCard extends StatelessWidget {
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(excerpt),
               ),
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text('以較舊版本為準，無法對應目前差異'),
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(reason),
             ),
           ],
         ),

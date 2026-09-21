@@ -501,7 +501,9 @@ class _MobileShellState extends State<_MobileShell> {
                               ),
                             ),
                           TextButton.icon(
-                            onPressed: session.endSession,
+                            onPressed: () {
+                              unawaited(session.endSession());
+                            },
                             icon: const Icon(Icons.person_add_outlined),
                             label: const Text('新增或重新連接帳號'),
                           ),

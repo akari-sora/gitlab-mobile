@@ -151,36 +151,34 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
     final oldPath = valueText(position, 'old_path');
     final filePath = newPath.isNotEmpty ? newPath : oldPath;
     if (filePath.isEmpty) return;
-    var sha = widget.headSha ?? '';
-    if (sha.isEmpty) {
-      setState(() => _busy = true);
-      try {
-        sha = valueText(await widget.api.record(path), 'sha');
-      } catch (e) {
-        if (mounted) showFailure(context, e);
-        return;
-      } finally {
-        if (mounted) setState(() => _busy = false);
-      }
-    }
-    if (!mounted || sha.isEmpty) return;
-    final expected = sha;
-    final newLine = position['new_line'];
-    final oldLine = position['old_line'];
-    await Navigator.of(context).push<void>(MaterialPageRoute<void>(builder: (_) => Scaffold(
-      appBar: AppBar(title: const Text('差異')),
-      body: ReviewDiffPage(
-        account: widget.account, api: widget.api, project: widget.project, iid: widget.iid, expectedSha: expected,
-        initialTarget: DiffTarget(
-          path: filePath,
-          newLine: newLine is int ? newLine : null,
-          oldLine: oldLine is int ? oldLine : null,
-          baseSha: valueText(position, 'base_sha'),
-          startSha: valueText(position, 'start_sha'),
-          headSha: valueText(position, 'head_sha'),
+    setState(() => _busy = true);
+    try {
+      var sha = widget.headSha ?? '';
+      if (sha.isEmpty) sha = valueText(await widget.api.record(path), 'sha');
+      if (!mounted || sha.isEmpty) return;
+      final newLine = position['new_line'];
+      final oldLine = position['old_line'];
+      await Navigator.of(context).push<void>(MaterialPageRoute<void>(builder: (_) => Scaffold(
+        appBar: AppBar(title: const Text('差異')),
+        body: ReviewDiffPage(
+          account: widget.account, api: widget.api, project: widget.project, iid: widget.iid, expectedSha: sha,
+          initialTarget: DiffTarget(
+            path: filePath,
+            newPath: newPath,
+            oldPath: oldPath,
+            newLine: newLine is int ? newLine : null,
+            oldLine: oldLine is int ? oldLine : null,
+            baseSha: valueText(position, 'base_sha'),
+            startSha: valueText(position, 'start_sha'),
+            headSha: valueText(position, 'head_sha'),
+          ),
         ),
-      ),
-    )));
+      )));
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
   @override
   Widget build(BuildContext context) => Column(children: [

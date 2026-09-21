@@ -101,7 +101,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
           Text(widget.forCi ? '選擇專案，查看流程與工作紀錄' : account.instance.base.host,
             maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
         ])),
-        IconButton(tooltip: '切換帳號', onPressed: widget.session.endSession, icon: const Icon(Icons.swap_horiz, size: 20)),
+        IconButton(tooltip: '切換帳號', onPressed: () { unawaited(widget.session.endSession()); }, icon: const Icon(Icons.swap_horiz, size: 20)),
       ])),
       Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: TextField(
         key: const Key('projectSearch'), focusNode: _searchFocus, controller: _search, onChanged: _searchChanged,
@@ -120,7 +120,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
             icon: Icons.search, detail: '輸入名稱查找公開與私有專案，不限目前的成員專案。'))
         : RecordsFeed(key: _feed, identity: 'projects/$_scope/$_query',
           account: account, resourceLabel: '專案列表', underShell: true,
-          onSwitchAccount: widget.session.endSession,
+          onSwitchAccount: () { unawaited(widget.session.endSession()); },
           empty: _query.isEmpty ? '目前沒有專案' : '找不到符合的專案',
           emptyDetail: '可使用右上角連結，以完整路徑或 ID 開啟。',
           load: (next) => api.records(['projects'], query: {

@@ -56,6 +56,8 @@ void main() {
   }, timeout: const Timeout(Duration(minutes: 1)));
 
   testWidgets('resume scaffold shows the username and can switch accounts', (tester) async {
+    final semantics = tester.ensureSemantics();
+    try {
     final saved = Account(
       instance: GitLabInstance.parse('https://example.com'),
       user: const GitLabUser(id: 7, username: 'tester', name: 'Tester'),
@@ -82,6 +84,10 @@ void main() {
       await tester.pump();
     }
     expect(find.text('正在恢復 @tester'), findsOneWidget);
+    expect(
+      tester.getSemantics(find.text('正在恢復 @tester')).flagsCollection.isLiveRegion,
+      isTrue,
+    );
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
     expect(find.text('改用其他帳號'), findsOneWidget);
     expect(find.byIcon(Icons.account_tree_outlined), findsOneWidget);
@@ -98,5 +104,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(session.active, isNull);
     expect(find.byKey(const Key('instanceField')), findsOneWidget);
+    } finally {
+      semantics.dispose();
+    }
   }, timeout: const Timeout(Duration(minutes: 1)));
 }
