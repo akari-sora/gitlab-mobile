@@ -7,6 +7,7 @@ import '../../shared/external_link.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 import 'records_feed.dart';
+import '../../shared/theme.dart';
 
 class PipelinesTab extends StatefulWidget {
   const PipelinesTab({super.key, required this.account, required this.api, required this.project});
@@ -61,7 +62,7 @@ class _PipelinesTabState extends State<PipelinesTab> {
             const SizedBox(height: 10), Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
               children: [StatusBadge(valueText(value, 'status')),
                 Text(valueText(value, 'ref'), style: const TextStyle(fontSize: 12)),
-                Text(shortSha(valueText(value, 'sha')), style: const TextStyle(fontSize: 12, fontFamily: 'monospace'))]),
+                Text(shortSha(valueText(value, 'sha')), style: const TextStyle(fontSize: 12, fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace']))]),
             const SizedBox(height: 10), Text(relativeDate(valueText(value, 'updated_at')), style: Theme.of(context).textTheme.bodySmall),
           ])))),
     )),
@@ -139,7 +140,7 @@ class _PipelinePageState extends State<PipelinePage> {
         Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 12),
         Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
           StatusBadge(valueText(_data!, 'status')), Text(valueText(_data!, 'ref')),
-          Text(shortSha(valueText(_data!, 'sha')), style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+          Text(shortSha(valueText(_data!, 'sha')), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12)),
           if (_data!['duration'] is num) Text('${(_data!['duration'] as num).round()} 秒', style: const TextStyle(fontSize: 12)),
         ]),
       ])),
@@ -305,7 +306,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               itemCount: matches.length, itemBuilder: (context, index) => Padding(
                 padding: const EdgeInsets.only(bottom: 3), child: Text(_lines[matches[index]].isEmpty ? ' ' : _lines[matches[index]],
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.5))),
+                  style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12, height: 1.5))),
             ))),
       ])));
   }

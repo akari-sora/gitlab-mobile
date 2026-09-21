@@ -6,6 +6,7 @@ import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 import 'records_feed.dart';
+import '../../shared/theme.dart';
 
 enum MetadataKind { branches, tags, commits, releases, labels, milestones }
 String metadataTitle(MetadataKind kind) => switch (kind) {
@@ -100,6 +101,55 @@ class _MetadataPageState extends State<MetadataPage> {
     if (const [MetadataKind.branches, MetadataKind.tags, MetadataKind.commits].contains(widget.kind)) 'repository', widget.kind.name];
   String _name(Json value) => valueText(value, widget.kind == MetadataKind.commits ? 'title'
     : widget.kind == MetadataKind.milestones ? 'title' : 'name', valueText(value, 'tag_name'));
+  String _detail(Json value) => widget.kind == MetadataKind.commits
+    ? valueText(value, 'author_name')
+    : valueText(value, 'description', valueText(valueObject(value, 'commit'), 'title'));
+  /// Leading mark per kind: label colour swatch, branch/tag/commit glyphs.
+  Widget _leading(BuildContext context, Json value) {
+    final scheme = Theme.of(context).colorScheme;
+    if (widget.kind == MetadataKind.labels) {
+      final hex = valueText(value, 'color').replaceFirst('#', '');
+      final parsed = int.tryParse(hex.length == 6 ? 'FF$hex' : hex, radix: 16);
+      return Container(width: 40, height: 40, alignment: Alignment.center,
+        decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
+        child: Container(width: 16, height: 16,
+          decoration: BoxDecoration(color: parsed == null ? scheme.outline : Color(parsed), shape: BoxShape.circle)));
+    }
+    final icon = switch (widget.kind) {
+      MetadataKind.branches => Icons.alt_route, MetadataKind.tags => Icons.sell_outlined,
+      MetadataKind.commits => Icons.commit, MetadataKind.releases => Icons.inventory_2_outlined,
+      MetadataKind.milestones => Icons.flag_outlined, MetadataKind.labels => Icons.label_outline,
+    };
+    return Container(width: 40, height: 40, alignment: Alignment.center,
+      decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)),
+      child: Icon(icon, size: 20, color: scheme.onSurfaceVariant));
+  }
+  List<Widget> _meta(Json value) => switch (widget.kind) {
+    MetadataKind.commits => [
+      MetaChip(shortSha(valueText(value, 'id')), mono: true),
+      MetaChip(relativeDate(valueText(value, 'committed_date', valueText(value, 'created_at'))), icon: Icons.schedule_outlined),
+    ],
+    MetadataKind.branches => [
+      if (value['default'] == true) const MetaChip('預設', icon: Icons.star_outline),
+      if (value['protected'] == true) const MetaChip('受保護', icon: Icons.lock_outline),
+      MetaChip(shortSha(valueText(valueObject(value, 'commit'), 'id')), mono: true),
+    ],
+    MetadataKind.tags => [
+      MetaChip(shortSha(valueText(valueObject(value, 'commit'), 'id')), mono: true),
+      if (valueText(value, 'message').isNotEmpty) const MetaChip('附註標籤', icon: Icons.notes_outlined),
+    ],
+    MetadataKind.releases => [
+      MetaChip(valueText(value, 'tag_name'), icon: Icons.sell_outlined, mono: true),
+      MetaChip(relativeDate(valueText(value, 'released_at', valueText(value, 'created_at'))), icon: Icons.schedule_outlined),
+    ],
+    MetadataKind.milestones => [
+      StatusBadge(valueText(value, 'state') == 'active' ? 'opened' : 'closed'),
+      if (valueText(value, 'due_date').isNotEmpty) MetaChip('到期 ${valueText(value, 'due_date')}', icon: Icons.event_outlined),
+    ],
+    MetadataKind.labels => [
+      if (valueInt(value, 'open_issues_count') > 0) MetaChip('${valueInt(value, 'open_issues_count')} 則開啟議題', icon: Icons.adjust),
+    ],
+  };
   String _id(Json value) => switch (widget.kind) {
     MetadataKind.branches || MetadataKind.tags => requiredString(value, 'name'),
     MetadataKind.releases => requiredString(value, 'tag_name'),
@@ -182,13 +232,13 @@ class _MetadataPageState extends State<MetadataPage> {
         Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 16),
         if (value['state'] is String) Align(alignment: Alignment.centerLeft, child: StatusBadge(valueText(value, 'state'))),
         if (widget.kind == MetadataKind.commits) ...[
-          SelectableText(_id(value), style: const TextStyle(fontFamily: 'monospace', fontSize: 12)),
+          SelectableText(_id(value), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12)),
           const SizedBox(height: 16), SelectableText(valueText(value, 'message')),
           const SizedBox(height: 16), Text(valueText(value, 'author_name')),
         ] else MarkdownView(valueText(value, 'description', valueText(value, 'message', '尚未填寫說明。')),
           base: widget.account.instance.projectWeb(widget.project.path)),
         if (value['commit'] is Json) ...[const SizedBox(height: 20), Text(valueText(valueObject(value, 'commit'), 'title')),
-          SelectableText(valueText(valueObject(value, 'commit'), 'id'), style: const TextStyle(fontFamily: 'monospace', fontSize: 12))],
+          SelectableText(valueText(valueObject(value, 'commit'), 'id'), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12))],
         if (widget.kind == MetadataKind.milestones) ...[const SizedBox(height: 16),
           Text('開始：${valueText(value, 'start_date', '未設定')}\n到期：${valueText(value, 'due_date', '未設定')}')],
       ])),
@@ -203,12 +253,14 @@ class _MetadataPageState extends State<MetadataPage> {
     onSwitchAccount: endSessionFrom(context),
     empty: '尚無${metadataTitle(widget.kind)}', load: (next) => widget.api.records(path,
       query: {if (widget.kind == MetadataKind.labels) 'include_ancestor_groups': 'false'}, next: next),
-    itemBuilder: (context, value) => Card(child: ListTile(title: Text(_name(value)),
-      subtitle: Padding(padding: const EdgeInsets.only(top: 6), child: Text(
-        valueText(value, 'description', valueText(valueObject(value, 'commit'), 'title', valueText(value, 'tag_name'))),
-        maxLines: 2, overflow: TextOverflow.ellipsis)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), onTap: () => _view(value),
-      trailing: widget.kind == MetadataKind.commits || widget.project.archived == true ? const Icon(Icons.chevron_right, size: 18)
+    itemBuilder: (context, value) => EntityCard(
+      onTap: () => _view(value),
+      leading: _leading(context, value),
+      title: Text(_name(value)),
+      body: _detail(value).isEmpty ? null : Text(_detail(value), maxLines: 2, overflow: TextOverflow.ellipsis,
+        style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+      meta: _meta(value),
+      trailing: widget.kind == MetadataKind.commits || widget.project.archived == true ? null
         : PopupMenuButton<String>(tooltip: '項目操作', enabled: !_busy, onSelected: (action) {
           if (action == 'edit') { _edit(value); }
           if (action == 'delete') { _delete(value); }
@@ -218,6 +270,6 @@ class _MetadataPageState extends State<MetadataPage> {
           if (widget.kind == MetadataKind.milestones) PopupMenuItem(value: 'state', child: Text(value['state'] == 'closed' ? '重新啟用' : '關閉里程碑')),
           if (_canDelete(value)) const PopupMenuItem(value: 'delete', child: Text('刪除')),
         ]),
-    )),
+    ),
   )));
 }

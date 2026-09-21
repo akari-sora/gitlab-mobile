@@ -8,6 +8,7 @@ import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 import 'records_feed.dart';
+import '../../shared/theme.dart';
 
 class RepositoryTab extends StatefulWidget {
   const RepositoryTab({
@@ -663,7 +664,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                                                   ? ' '
                                                   : lines[number],
                                               style: const TextStyle(
-                                                fontFamily: 'monospace',
+                                                fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'],
                                                 fontSize: 13,
                                                 height: 1.55,
                                               ),

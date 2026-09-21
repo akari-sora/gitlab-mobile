@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'external_link.dart';
+import 'theme.dart';
 
 class MarkdownView extends StatelessWidget {
   const MarkdownView(this.text, {super.key, this.base});
@@ -16,7 +17,7 @@ class MarkdownView extends StatelessWidget {
         h1: Theme.of(context).textTheme.headlineSmall,
         h2: Theme.of(context).textTheme.titleLarge,
         h3: Theme.of(context).textTheme.titleMedium,
-        code: TextStyle(fontFamily: 'monospace', fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
+        code: TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: const ['Menlo', 'monospace'], fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
         codeblockDecoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12)),
         blockquoteDecoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,

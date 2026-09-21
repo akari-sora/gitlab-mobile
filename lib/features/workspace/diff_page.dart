@@ -7,6 +7,7 @@ import '../../core/unified_diff.dart';
 import '../../shared/external_link.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
+import '../../shared/theme.dart';
 
 class ReviewDiffPage extends StatefulWidget {
   const ReviewDiffPage({
@@ -361,7 +362,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                                       child: Text(
                                         line.text,
                                         style: const TextStyle(
-                                          fontFamily: 'monospace',
+                                          fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'],
                                           fontSize: 13,
                                           height: 1.5,
                                         ),
