@@ -104,12 +104,14 @@ ResponseBody _statusBody(int status, Map<String, List<String>> headers) => Respo
 );
 
 /// The production cleanup may still be removing a cache directory when a
-/// test's tearDown runs; a directory that is already gone is not a failure.
+/// test's tearDown runs; only a directory that is verifiably gone is ignored.
+/// Any other filesystem failure (permissions, a file still open) is a real
+/// leak and fails the test instead of being swallowed.
 Future<void> removeQuietly(Directory directory) async {
   try {
     if (directory.existsSync()) await directory.delete(recursive: true);
   } on FileSystemException {
-    // Already removed by the code under test.
+    if (directory.existsSync()) rethrow;
   }
 }
 
@@ -637,6 +639,9 @@ void main() {
     expect(find.text('已下載 artifacts.zip · 4 B'), findsOneWidget);
     expect(created, hasLength(2));
     expect(created.first.path, isNot(created.last.path));
+    // The failed attempt is removed by the download itself, not by tearDown.
+    expect(created.first.existsSync(), isFalse);
+    expect(created.last.existsSync(), isTrue);
   });
 
   testWidgets('cancel during flush does not promote the artifact', (tester) async {
