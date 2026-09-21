@@ -25,20 +25,17 @@ class InboxPage extends StatelessWidget {
         itemBuilder: (context, data) => _item(context, data, 'merge_requests')),
     ])),
   ));
-  Widget _item(BuildContext context, Json data, String resource) => Card(child: ListTile(
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    leading: Icon(resource == 'issues' ? Icons.adjust : Icons.merge),
-    title: Text(valueText(data, 'title'), maxLines: 3, overflow: TextOverflow.ellipsis),
-    subtitle: Text('${resource == 'issues' ? '#' : '!'}${valueInt(data, 'iid')} · ${relativeDate(valueText(data, 'updated_at'))}'),
-    trailing: const Icon(Icons.chevron_right, size: 18), onTap: () async {
+  Widget _item(BuildContext context, Json data, String resource) => workItemCard(context, data,
+    mr: resource == 'merge_requests',
+    project: valueText(valueObject(data, 'references'), 'full').split(RegExp('[#!]')).first,
+    onTap: () async {
       try {
         final project = await api.project('${requiredInt(data, 'project_id')}');
         if (!context.mounted) { return; }
         await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => WorkItemPage(
           account: account, api: api, project: project, resource: resource, iid: requiredInt(data, 'iid'))));
       } catch (e) { if (context.mounted) { showFailure(context, e); } }
-    },
-  ));
+    });
 }
 class _TodoFeed extends StatefulWidget {
   const _TodoFeed({required this.account, required this.api});
@@ -60,9 +57,24 @@ class _TodoFeedState extends State<_TodoFeed> {
       final id = valueInt(data, 'id');
       final resource = data['target_type'] == 'MergeRequest' ? 'merge_requests' : 'issues';
       final supported = const ['Issue', 'MergeRequest'].contains(data['target_type']);
-      return Card(child: ListTile(contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        title: Text(valueText(target, 'title', valueText(data, 'body', 'GitLab 待辦')), maxLines: 3, overflow: TextOverflow.ellipsis),
-        subtitle: Text(valueText(project, 'path_with_namespace'), maxLines: 1, overflow: TextOverflow.ellipsis),
+      final action = valueText(data, 'action_name');
+      final actionLabel = switch (action) {
+        'assigned' => '指派給你', 'mentioned' || 'directly_addressed' => '提及你', 'review_requested' => '請你審查',
+        'build_failed' => 'Pipeline 失敗', 'marked' => '你標記的', 'approval_required' => '需要你批准',
+        'unmergeable' => '無法合併', 'merge_train_removed' => '已移出合併列車', _ => '',
+      };
+      return EntityCard(
+        titleMaxLines: 3,
+        leading: Container(width: 40, height: 40, alignment: Alignment.center,
+          decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(12)),
+          child: Icon(resource == 'merge_requests' ? Icons.merge : Icons.adjust, size: 20,
+            color: Theme.of(context).colorScheme.onPrimaryContainer)),
+        title: Text(valueText(target, 'title', valueText(data, 'body', 'GitLab 待辦'))),
+        subtitle: Text(valueText(project, 'path_with_namespace')),
+        meta: [
+          if (actionLabel.isNotEmpty) MetaChip(actionLabel, icon: Icons.notifications_none),
+          MetaChip(relativeDate(valueText(data, 'updated_at', valueText(data, 'created_at'))), icon: Icons.schedule_outlined),
+        ],
         trailing: IconButton(tooltip: '完成此待辦', icon: const Icon(Icons.check_circle_outline),
           onPressed: _busy.contains(id) ? null : () async {
             setState(() => _busy.add(id));
@@ -80,7 +92,7 @@ class _TodoFeedState extends State<_TodoFeed> {
               account: widget.account, api: widget.api, project: found, resource: resource, iid: requiredInt(target, 'iid'))));
           } catch (e) { if (context.mounted) { showFailure(context, e); } }
         },
-      ));
+      );
     },
   );
 }

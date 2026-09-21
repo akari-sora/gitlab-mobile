@@ -11,6 +11,7 @@ import 'editor.dart';
 import 'picker_sheet.dart';
 import 'records_feed.dart';
 import 'discussions_tab.dart';
+import '../../shared/theme.dart';
 export 'discussions_tab.dart';
 
 class WorkItemsTab extends StatefulWidget {
@@ -62,14 +63,14 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
   }
   @override
   Widget build(BuildContext context) => Column(children: [
-    Padding(padding: const EdgeInsets.fromLTRB(16, 12, 12, 4), child: Row(children: [
+    Padding(padding: EdgeInsets.fromLTRB(feedGutter(context), 12, feedGutter(context) - 4, 4), child: Row(children: [
       Expanded(child: TextField(controller: _search, textInputAction: TextInputAction.search,
         decoration: InputDecoration(hintText: mr ? '搜尋合併請求' : '搜尋議題', prefixIcon: const Icon(Icons.search)),
         onSubmitted: (value) => setState(() => _query = value.trim()))),
       const SizedBox(width: 8), IconButton(tooltip: mr ? '新增合併請求' : '新增議題',
         onPressed: widget.project.archived == true ? null : _create, icon: const Icon(Icons.add_circle_outline)),
     ])),
-    Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), child: Align(
+    Padding(padding: EdgeInsets.symmetric(horizontal: feedGutter(context), vertical: 4), child: Align(
       alignment: Alignment.centerLeft, child: Wrap(spacing: 8, runSpacing: 4, children: [
         for (final e in const {'opened': '開啟中', 'closed': '已關閉', 'all': '全部'}.entries)
           ChoiceChip(label: Text(e.value), selected: _state == e.key, showCheckmark: false,
@@ -81,19 +82,43 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
       empty: mr ? '沒有符合的合併請求' : '沒有符合的議題',
       load: (next) => widget.api.records(['projects', '${widget.project.id}', widget.resource],
         query: {'state': _state, 'scope': 'all', 'order_by': 'updated_at', 'sort': 'desc', if (_query.isNotEmpty) 'search': _query}, next: next),
-      itemBuilder: (context, value) => Card(child: InkWell(borderRadius: BorderRadius.circular(16),
-        onTap: () => _open(requiredInt(value, 'iid')), child: Padding(padding: const EdgeInsets.all(16), child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [Icon(mr ? Icons.merge : Icons.adjust, size: 20),
-              const SizedBox(width: 10), Expanded(child: Text(valueText(value, 'title'), maxLines: 3,
-                overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleMedium))]),
-            const SizedBox(height: 12), Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
-              children: [StatusBadge(valueText(value, 'state')),
-                Text('${mr ? '!' : '#'}${valueInt(value, 'iid')}', style: Theme.of(context).textTheme.bodySmall),
-                Text(relativeDate(valueText(value, 'updated_at')), style: Theme.of(context).textTheme.bodySmall)]),
-          ])))),
+      itemBuilder: (context, value) => workItemCard(context, value, mr: mr, onTap: () => _open(requiredInt(value, 'iid'))),
     )),
   ]);
+}
+
+/// Shared issue / merge-request row: state-tinted mark, title, then a meta row
+/// with the status badge, the mono `#iid`, branches for MRs and the update time.
+Widget workItemCard(BuildContext context, Json value, {required bool mr, required VoidCallback onTap, String? project}) {
+  final scheme = Theme.of(context).colorScheme;
+  final workshop = WorkshopColors.of(context);
+  final state = valueText(value, 'state');
+  final (markBackground, markForeground) = switch (state) {
+    'opened' => (scheme.primaryContainer, scheme.onPrimaryContainer),
+    'merged' => (workshop.successContainer, workshop.onSuccessContainer),
+    _ => (workshop.neutralContainer, workshop.onNeutralContainer),
+  };
+  final source = valueText(value, 'source_branch'), target = valueText(value, 'target_branch');
+  final pipeline = valueText(valueObject(value, 'head_pipeline'), 'status');
+  final iid = '${mr ? '!' : '#'}${valueInt(value, 'iid')}';
+  return EntityCard(
+    onTap: onTap,
+    titleMaxLines: 3,
+    leading: Container(width: 40, height: 40, alignment: Alignment.center,
+      decoration: BoxDecoration(color: markBackground, borderRadius: BorderRadius.circular(12)),
+      child: Icon(mr ? Icons.merge : Icons.adjust, size: 20, color: markForeground)),
+    title: Text(valueText(value, 'title')),
+    subtitle: project == null || project.isEmpty ? null : Text(project),
+    body: mr && source.isNotEmpty && target.isNotEmpty
+        ? MetaChip('$source → $target', icon: Icons.call_split, mono: true)
+        : null,
+    meta: [
+      StatusBadge(state),
+      if (mr && pipeline.isNotEmpty) StatusBadge(pipeline),
+      MetaChip(iid, mono: true),
+      MetaChip(relativeDate(valueText(value, 'updated_at')), icon: Icons.schedule_outlined),
+    ],
+  );
 }
 
 class WorkItemPage extends StatefulWidget {
@@ -286,7 +311,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
               if (mr) _reviewCard(data),
               if (mr) Padding(padding: const EdgeInsets.only(bottom: 16), child: Card(child: Padding(padding: const EdgeInsets.all(14),
                 child: Text('${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}',
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 13))))),
+                  style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 13))))),
               MarkdownView(valueText(data, 'description').isEmpty ? '尚未填寫說明。' : valueText(data, 'description'), base: web),
               const SizedBox(height: 24), const Divider(), const SizedBox(height: 16),
               Text('指派', style: Theme.of(context).textTheme.titleSmall), const SizedBox(height: 8),
@@ -330,7 +355,7 @@ class _MergeChecksState extends State<_MergeChecks> {
   Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(20), children: [
     Text('合併條件', style: Theme.of(context).textTheme.titleMedium), const SizedBox(height: 10),
     Text(mergeStatusLabel(widget.data)),
-    const SizedBox(height: 12), Text('版本 ${shortSha(valueText(widget.data, 'sha'))}', style: const TextStyle(fontFamily: 'monospace')),
+    const SizedBox(height: 12), Text('版本 ${shortSha(valueText(widget.data, 'sha'))}', style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'])),
     if (widget.data['head_pipeline'] is Json) Padding(padding: const EdgeInsets.symmetric(vertical: 16),
       child: StatusBadge(valueText(valueObject(widget.data, 'head_pipeline'), 'status'))),
     const Divider(height: 32), Text('審查', style: Theme.of(context).textTheme.titleMedium),

@@ -450,23 +450,7 @@ class _MobileShellState extends State<_MobileShell> {
                             style: Theme.of(context).textTheme.titleSmall,
                           ),
                           const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              for (final entry in const {
-                                ThemeMode.system: '跟隨系統',
-                                ThemeMode.light: '淺色',
-                                ThemeMode.dark: '深色',
-                              }.entries)
-                                ChoiceChip(
-                                  label: Text(entry.value),
-                                  selected: widget.theme == entry.key,
-                                  onSelected: (_) =>
-                                      widget.changeTheme(entry.key),
-                                ),
-                            ],
-                          ),
+                          AppearancePicker(mode: widget.theme, onChanged: widget.changeTheme),
                           SwitchListTile(
                             contentPadding: EdgeInsets.zero,
                             title: const Text('使用系統配色（Material You）'),

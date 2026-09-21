@@ -12,6 +12,7 @@ import 'shared/theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  registerBundledLicenses();
   SystemChrome.setSystemUIOverlayStyle(
     systemUiOverlayStyle(WidgetsBinding.instance.platformDispatcher.platformBrightness),
   );
