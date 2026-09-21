@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/auth/account_store.dart';
 import '../features/auth/session_controller.dart';
 import '../features/auth/system_browser.dart';
+import '../features/shell/appearance.dart';
 
 final sessionProvider = Provider<SessionController>((ref) {
   final session = SessionController(
@@ -10,4 +11,10 @@ final sessionProvider = Provider<SessionController>((ref) {
   );
   ref.onDispose(session.dispose);
   return session;
+});
+
+final appearanceProvider = Provider<AppearanceController>((ref) {
+  final appearance = AppearanceController(SecureAppearanceStore());
+  ref.onDispose(appearance.dispose);
+  return appearance;
 });

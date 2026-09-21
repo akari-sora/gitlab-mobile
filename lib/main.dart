@@ -22,17 +22,22 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
   void initState() {
     super.initState();
     unawaited(ref.read(sessionProvider).initialize());
+    // The stored appearance is read alongside the accounts and never gates the
+    // first frame: the app renders with ThemeMode.system until it arrives.
+    unawaited(ref.read(appearanceProvider).load());
   }
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
-    return ListenableBuilder(listenable: session, builder: (context, _) {
+    final appearance = ref.watch(appearanceProvider);
+    return ListenableBuilder(listenable: Listenable.merge([session, appearance]), builder: (context, _) {
       if (session.active != null && session.api != null) {
-        return AuthenticatedApp(key: ValueKey(session.generation), session: session);
+        return AuthenticatedApp(key: ValueKey(session.generation), session: session, appearance: appearance);
       }
       return MaterialApp(
         title: 'GitLab Mobile', debugShowCheckedModeBanner: false,
         theme: appTheme(Brightness.light), darkTheme: appTheme(Brightness.dark),
+        themeMode: appearance.mode,
         locale: const Locale('zh', 'TW'),
         localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
         supportedLocales: const [Locale('zh', 'TW'), Locale('en')],
