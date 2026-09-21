@@ -222,7 +222,9 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       resource:
           '${widget.project.id}/mr/${widget.iid}/$sha/$oldPath/$newPath/${line.oldLine}/${line.newLine}',
       subtitle: '$newPath · ${line.newLine ?? line.oldLine} · ${shortSha(sha)}',
-      fields: const [EditField('body', '留言', lines: 8, required: true)],
+      fields: const [EditField('body', '留言', lines: 8, required: true, markdown: true)],
+      api: widget.api,
+      projectId: widget.project.id,
       save: (values) async {
         final path = [
           'projects',

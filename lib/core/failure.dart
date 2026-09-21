@@ -1,6 +1,6 @@
 enum FailureKind {
   unauthenticated, forbidden, invisible, rateLimited, network,
-  server, tooLarge, unsupported, redirectBlocked, invalidResponse, cancelled,
+  server, tooLarge, attachmentTooLarge, unsupported, redirectBlocked, invalidResponse, cancelled,
   validation, conflict, writeUncertain,
 }
 
@@ -29,6 +29,7 @@ final class ApiFailure implements Exception {
     FailureKind.network => '無法連線',
     FailureKind.server => 'GitLab 暫時無法回應',
     FailureKind.tooLarge => '內容超出預覽上限',
+    FailureKind.attachmentTooLarge => '附件超過 25 MiB 上限',
     FailureKind.unsupported => '目前無法預覽此內容',
     FailureKind.redirectBlocked => '資源網址已變更',
     FailureKind.invalidResponse => '無法讀取回應',
@@ -43,6 +44,7 @@ final class ApiFailure implements Exception {
     FailureKind.unauthenticated => '請重新連接這個帳號。',
     FailureKind.network => '請檢查網路與實例網址，再重新整理。',
     FailureKind.tooLarge => '文字預覽上限為 2 MiB／20,000 行。',
+    FailureKind.attachmentTooLarge => '請選擇 25 MiB 以內的檔案再上傳。',
     FailureKind.rateLimited => 'GitLab 正在限制請求。請等待指定時間後重試。',
     FailureKind.server => '內容已保留。寫入操作請先重新讀取確認結果。',
     FailureKind.unsupported => '可能是二進位檔案，或實例不支援這個功能。',

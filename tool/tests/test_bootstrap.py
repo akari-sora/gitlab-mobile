@@ -95,6 +95,33 @@ class BootstrapTests(unittest.TestCase):
             bootstrap.configure_ios(self.root)
         self.assertEqual(path.read_bytes(), original)
 
+    def test_ios_photo_library_usage_is_idempotent_and_omits_camera(self):
+        (self.root / 'Runner').mkdir()
+        path = self.root / 'Runner/Info.plist'
+        path.write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<plist version="1.0"><dict>'
+            '<key>CFBundleIdentifier</key><string>io.gitlabmobile.gitlabMobile</string>'
+            '</dict></plist>\n'
+        )
+        bootstrap.register_photo_library_ios(self.root)
+        bootstrap.register_photo_library_ios(self.root)
+        text = path.read_text()
+        self.assertEqual(text.count('NSPhotoLibraryUsageDescription'), 1)
+        self.assertIn('從相簿選擇圖片', text)
+        self.assertNotIn('NSCameraUsageDescription', text)
+        self.assertNotIn('NSMicrophoneUsageDescription', text)
+
+    def test_configure_ios_records_photo_library_usage(self):
+        self.prepare_ios(3)
+        path = self.root / 'Runner/Info.plist'
+        path.write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<plist version="1.0"><dict></dict></plist>\n'
+        )
+        bootstrap.configure_ios(self.root)
+        self.assertIn('NSPhotoLibraryUsageDescription', path.read_text())
+
     def test_ios_does_not_overwrite_preexisting_entitlements_setting(self):
         path = self.prepare_ios(3)
         path.write_text(path.read_text().replace('buildSettings = {', 'buildSettings = {\nCODE_SIGN_ENTITLEMENTS = Other.plist;', 1))

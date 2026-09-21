@@ -18,7 +18,10 @@ import 'workspace_widget_test.dart' show workspaceHost, settleWorkspace;
 /// These tests do not claim a live GitLab or physical-device run.
 class CrudFixture extends WorkspaceFixture {
   late final collections = <String, Map<String, Json>>{
-    'repository/branches': {'main': {'name': 'main', 'default': true, 'protected': true, 'commit': {'id': head}}},
+    'repository/branches': {
+      'main': {'name': 'main', 'default': true, 'protected': true, 'commit': {'id': head}},
+      'feature/navigation': {'name': 'feature/navigation', 'default': false, 'protected': false, 'commit': {'id': head}},
+    },
     'repository/tags': {}, 'labels': {}, 'milestones': {}, 'releases': {},
   };
   final files = <String, String>{'README.md': '# Initial\n'};
@@ -294,7 +297,18 @@ void main() {
     final f = CrudFixture();
     await host(tester, f, Scaffold(body: WorkItemsTab(account: f.account, api: f.api, project: f.project, resource: 'merge_requests')));
     await tester.tap(find.byTooltip('新增合併請求')); await settleWorkspace(tester);
-    await input(tester, 'title', 'UI MR'); await input(tester, 'source_branch', 'smoke/review'); await save(tester);
+    await input(tester, 'title', 'UI MR');
+    await tester.tap(find.byKey(const ValueKey('editor-source_branch')));
+    await settleWorkspace(tester);
+    await tester.ensureVisible(find.byKey(const ValueKey('picker-row-feature/navigation')));
+    await tester.tap(find.byKey(const ValueKey('picker-row-feature/navigation')));
+    await tester.pump();
+    await tester.tap(find.text('完成'));
+    await settleWorkspace(tester);
+    await save(tester);
+    final created = f.writes('merge_requests').single;
+    expect((created.data as Json)['source_branch'], 'feature/navigation');
+    expect((created.data as Json)['target_branch'], 'main');
     final iid = f.mrs.keys.single;
     expect(find.text('UI MR'), findsOneWidget);
     await menu(tester, '更多操作', '編輯'); await input(tester, 'title', 'Updated MR'); await save(tester);

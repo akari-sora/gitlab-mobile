@@ -100,4 +100,37 @@ extension WorkspaceApi on GitLabApi {
   Future<Json> updateRelease(int project, String tag, Json fields) => writeRecord('PUT', ['projects', '$project', 'releases', tag], fields);
   Future<void> deleteRelease(int project, String tag) => removeRecord(['projects', '$project', 'releases', tag]);
   Future<Json> markTodoDone(int id) => writeRecord('POST', ['todos', '$id', 'mark_as_done'], {});
+
+  Future<Json> uploadProjectFile(
+    int project, {
+    required String filename,
+    required List<int> bytes,
+    String? contentType,
+  }) async {
+    if (bytes.length > GitLabApi.maxUploadBytes) {
+      throw const ApiFailure(FailureKind.attachmentTooLarge);
+    }
+    DioMediaType? type;
+    final declared = contentType?.trim() ?? '';
+    if (declared.isNotEmpty) {
+      try {
+        type = DioMediaType.parse(declared);
+      } on FormatException {
+        throw const ApiFailure(FailureKind.unsupported);
+      }
+    }
+    final form = FormData.fromMap({
+      'file': MultipartFile.fromBytes(bytes, filename: filename, contentType: type),
+    });
+    try {
+      final result = await _send(
+        instance.api(['projects', '$project', 'uploads']),
+        method: 'POST',
+        data: form,
+      );
+      return objectJson(jsonDecode(utf8.decode(result.bytes)));
+    } on FormatException {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+  }
 }
