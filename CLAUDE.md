@@ -51,7 +51,7 @@ Analyzer settings are strict (`strict-casts`, `strict-inference`, `strict-raw-ty
 ### Layering
 
 - `lib/core/` is plain Dart (only `providers.dart` imports Flutter/Riverpod): instance parsing, HTTP client, failures, pagination, models, OAuth PKCE, unified-diff parsing.
-- `lib/features/auth/` owns the session lifecycle and the only two secure-storage users.
+- `lib/features/auth/` owns the session lifecycle and the account secure-storage user.
 - `lib/features/projects/` holds typed list controllers; `lib/features/workspace/` holds the screens; `lib/features/shell/` is the bottom-nav shell; `lib/shared/` is theme, Markdown and reusable widgets/helpers.
 - `lib/core/workspace_api.dart` is `part of 'gitlab_api.dart'`: it adds generic `record` / `records` / `writeRecord` / `removeRecord` over untyped `Json` maps plus typed wrappers (issues, MRs, notes, files, branches, tags, pipelines, jobs, releases, todos). Most workspace screens consume these `Json` maps directly through the `valueText` / `valueInt` / `valueObject` helpers in `lib/shared/workspace_ui.dart`.
 
@@ -85,7 +85,7 @@ Riverpod is used only for `sessionProvider`. Screens receive `api` and `account`
 
 ### Persistence
 
-Only two things are written to disk, both through `flutter_secure_storage`: the account list (`SecureAccountStore`, key `gitlab_mobile_accounts_v2`, v1 read for migration) and editor drafts keyed `draft.v2.<base64url(account.key)>.<base64url(resource)>`. `clearSecureDrafts(account)` must run before an account is removed. No repository content, logs or search history is persisted.
+Only three things are written to disk, all through `flutter_secure_storage`: the account list (`SecureAccountStore`, key `gitlab_mobile_accounts_v2`, v1 read for migration), editor drafts keyed `draft.v2.<base64url(account.key)>.<base64url(resource)>`, and the appearance choice (`SecureAppearanceStore`, key `gitlab_mobile_appearance_v1`, a bare `ThemeMode` name that is device-scoped, not account-scoped). `clearSecureDrafts(account)` must run before an account is removed. No repository content, logs or search history is persisted.
 
 ### Shell and UI conventions
 

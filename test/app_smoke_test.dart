@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/providers.dart';
 import 'package:gitlab_mobile/main.dart';
@@ -7,6 +8,7 @@ import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'support/fake_adapter.dart';
 
 void main() {
+  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
   testWidgets('full application boots to the login screen', (tester) async {
     final adapter = FakeAdapter((_) => jsonResponse([]));
     final session = controllerFor(MemoryAccountStore(), adapter);

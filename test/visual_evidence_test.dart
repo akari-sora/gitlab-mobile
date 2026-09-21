@@ -8,11 +8,13 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/features/auth/login_screen.dart';
+import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
 import 'package:gitlab_mobile/features/workspace/project_page.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
+import 'support/memory_appearance_store.dart';
 import 'support/workspace_fixture.dart';
 import 'workspace_widget_test.dart' show settleWorkspace;
 
@@ -86,7 +88,8 @@ void main() {
         final Widget screen = switch (name) {
           'login' => evidenceHost(LoginScreen(session: session), brightness),
           // Capture actual production navigation, not just the project body.
-          'projects' => AuthenticatedApp(session: session),
+          'projects' => AuthenticatedApp(session: session,
+            appearance: AppearanceController(MemoryAppearanceStore())),
           'repository' => evidenceHost(ProjectPage(account: fixture.account, api: fixture.api, project: fixture.project), brightness),
           _ => evidenceHost(WorkItemPage(account: fixture.account, api: fixture.api, project: fixture.project,
             resource: 'merge_requests', iid: 12), brightness),

@@ -3,15 +3,24 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
+import 'support/memory_appearance_store.dart';
 import 'support/workspace_fixture.dart';
 import 'support/widget_settle.dart';
 
 void main() {
+  late MemoryAppearanceStore appearanceStore;
+  late AppearanceController appearance;
+
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
+    appearanceStore = MemoryAppearanceStore();
+    appearance = AppearanceController(appearanceStore);
   });
+
+  tearDown(() => appearance.dispose());
 
   testWidgets('AuthenticatedApp navigates between shell destinations', (
     tester,
@@ -30,7 +39,9 @@ void main() {
       );
     });
 
-    await tester.pumpWidget(AuthenticatedApp(session: session));
+    await tester.pumpWidget(
+      AuthenticatedApp(session: session, appearance: appearance),
+    );
     await settleNetworkWidgets(tester);
 
     // Default destination is Projects (index 1)
@@ -55,7 +66,9 @@ void main() {
     expect(find.text('帳號'), findsOneWidget);
   });
 
-  testWidgets('AuthenticatedApp changes theme mode in My tab', (tester) async {
+  testWidgets('AuthenticatedApp persists the theme mode chosen in My tab', (
+    tester,
+  ) async {
     final fixture = WorkspaceFixture();
     final store = MemoryAccountStore();
     final session = controllerFor(store, fixture.adapter);
@@ -70,7 +83,9 @@ void main() {
       );
     });
 
-    await tester.pumpWidget(AuthenticatedApp(session: session));
+    await tester.pumpWidget(
+      AuthenticatedApp(session: session, appearance: appearance),
+    );
     await settleNetworkWidgets(tester);
 
     // Navigate to My tab
@@ -83,6 +98,7 @@ void main() {
 
     final MaterialApp app = tester.widget(find.byType(MaterialApp));
     expect(app.themeMode, ThemeMode.dark);
+    expect(appearanceStore.value, 'dark');
 
     // Select light theme
     await tester.tap(find.text('淺色'));
@@ -90,6 +106,78 @@ void main() {
 
     final MaterialApp appLight = tester.widget(find.byType(MaterialApp));
     expect(appLight.themeMode, ThemeMode.light);
+    expect(appearanceStore.value, 'light');
+    expect(appearanceStore.writes, ['dark', 'light']);
+  });
+
+  testWidgets('AuthenticatedApp starts from the stored appearance', (
+    tester,
+  ) async {
+    final fixture = WorkspaceFixture();
+    final store = MemoryAccountStore();
+    final session = controllerFor(store, fixture.adapter);
+    addTearDown(session.dispose);
+    addTearDown(fixture.api.close);
+    appearanceStore.value = 'dark';
+
+    await tester.runAsync(() async {
+      await session.initialize();
+      await session.connect(
+        'https://example.com/gitlab',
+        'synthetic-test-token',
+      );
+      await appearance.load();
+    });
+
+    await tester.pumpWidget(
+      AuthenticatedApp(session: session, appearance: appearance),
+    );
+    await settleNetworkWidgets(tester);
+
+    final MaterialApp app = tester.widget(find.byType(MaterialApp));
+    expect(app.themeMode, ThemeMode.dark);
+    expect(appearanceStore.writes, isEmpty);
+  });
+
+  testWidgets('AuthenticatedApp keeps the appearance across an account switch', (
+    tester,
+  ) async {
+    final fixture = WorkspaceFixture();
+    final store = MemoryAccountStore();
+    final session = controllerFor(store, fixture.adapter);
+    addTearDown(session.dispose);
+    addTearDown(fixture.api.close);
+
+    await tester.runAsync(() async {
+      await session.initialize();
+      await session.connect(
+        'https://example.com/gitlab',
+        'synthetic-test-token',
+      );
+    });
+
+    await tester.pumpWidget(
+      AuthenticatedApp(session: session, appearance: appearance),
+    );
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.text('我的'));
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.text('深色'));
+    await tester.pumpAndSettle();
+
+    // main.dart re-keys AuthenticatedApp on session.generation, so an account
+    // switch throws the whole authenticated tree away and builds a new one.
+    await tester.pumpWidget(
+      AuthenticatedApp(
+        key: const ValueKey(1),
+        session: session,
+        appearance: appearance,
+      ),
+    );
+    await settleNetworkWidgets(tester);
+
+    final MaterialApp app = tester.widget(find.byType(MaterialApp));
+    expect(app.themeMode, ThemeMode.dark);
   });
 
   testWidgets('AuthenticatedApp removes secondary account from My tab', (
@@ -121,7 +209,9 @@ void main() {
       await session.initialize();
     });
 
-    await tester.pumpWidget(AuthenticatedApp(session: session));
+    await tester.pumpWidget(
+      AuthenticatedApp(session: session, appearance: appearance),
+    );
     await settleNetworkWidgets(tester);
 
     // Navigate to My tab
@@ -163,7 +253,9 @@ void main() {
       );
     });
 
-    await tester.pumpWidget(AuthenticatedApp(session: session));
+    await tester.pumpWidget(
+      AuthenticatedApp(session: session, appearance: appearance),
+    );
     await settleNetworkWidgets(tester);
 
     // Navigate to My tab
@@ -198,7 +290,9 @@ void main() {
       );
     });
 
-    await tester.pumpWidget(AuthenticatedApp(session: session));
+    await tester.pumpWidget(
+      AuthenticatedApp(session: session, appearance: appearance),
+    );
     await settleNetworkWidgets(tester);
 
     // Navigate to My tab

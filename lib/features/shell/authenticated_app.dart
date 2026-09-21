@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import '../../core/models.dart';
@@ -7,30 +8,41 @@ import '../auth/session_controller.dart';
 import '../workspace/projects_page.dart';
 import '../workspace/inbox_page.dart';
 import '../workspace/editor.dart';
+import 'appearance.dart';
 
 class AuthenticatedApp extends StatefulWidget {
-  const AuthenticatedApp({super.key, required this.session});
+  const AuthenticatedApp({
+    super.key,
+    required this.session,
+    required this.appearance,
+  });
   final SessionController session;
+  final AppearanceController appearance;
   @override
   State<AuthenticatedApp> createState() => _AuthenticatedAppState();
 }
 
 class _AuthenticatedAppState extends State<AuthenticatedApp> {
-  ThemeMode _theme = ThemeMode.system;
+  // The appearance lives outside this widget on purpose: the whole
+  // authenticated tree is rebuilt on every account switch, and the choice is a
+  // device preference that must survive both that and a restart.
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    debugShowCheckedModeBanner: false,
-    title: 'GitLab Mobile',
-    theme: appTheme(Brightness.light),
-    darkTheme: appTheme(Brightness.dark),
-    themeMode: _theme,
-    locale: const Locale('zh', 'TW'),
-    supportedLocales: const [Locale('zh', 'TW'), Locale('en')],
-    localizationsDelegates: GlobalMaterialLocalizations.delegates,
-    home: _MobileShell(
-      session: widget.session,
-      theme: _theme,
-      changeTheme: (mode) => setState(() => _theme = mode),
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: widget.appearance,
+    builder: (context, _) => MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'GitLab Mobile',
+      theme: appTheme(Brightness.light),
+      darkTheme: appTheme(Brightness.dark),
+      themeMode: widget.appearance.mode,
+      locale: const Locale('zh', 'TW'),
+      supportedLocales: const [Locale('zh', 'TW'), Locale('en')],
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      home: _MobileShell(
+        session: widget.session,
+        theme: widget.appearance.mode,
+        changeTheme: (mode) => unawaited(widget.appearance.select(mode)),
+      ),
     ),
   );
 }

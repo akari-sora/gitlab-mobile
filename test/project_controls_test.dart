@@ -60,6 +60,14 @@ void main() {
       expect(appTheme(brightness).appBarTheme.titleTextStyle!.fontFamily, 'Roboto');
     }
   });
+  testWidgets('filter chips keep a 48dp hit target', (tester) async {
+    for (final brightness in Brightness.values) {
+      await tester.pumpWidget(MaterialApp(theme: appTheme(brightness), home: Scaffold(body: Center(child: FilterChip(
+        label: const Text('只看未解決'), onSelected: (_) {})))));
+      await tester.pump();
+      expect(tester.getSize(find.byType(FilterChip)).height, greaterThanOrEqualTo(48));
+    }
+  });
   testWidgets('projects visible create/edit/star/unstar/delete retains failed draft and returns to refreshed list', (tester) async {
     final fixture = ProjectCrudFixture();
     final session = controllerFor(MemoryAccountStore(), fixture.adapter);

@@ -1,0 +1,134 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/providers.dart';
+import 'package:gitlab_mobile/features/shell/appearance.dart';
+import 'package:gitlab_mobile/main.dart';
+import 'session_test.dart' show MemoryAccountStore, controllerFor;
+import 'support/fake_adapter.dart';
+import 'support/memory_appearance_store.dart';
+
+class _GatedAppearanceStore implements AppearanceStore {
+  final pending = Completer<String?>();
+  @override
+  Future<String?> read() => pending.future;
+  @override
+  Future<void> write(String? value) async {}
+}
+
+void main() {
+  test('an unset store keeps the system appearance without writing', () async {
+    final store = MemoryAppearanceStore();
+    final controller = AppearanceController(store);
+    addTearDown(controller.dispose);
+    expect(controller.mode, ThemeMode.system);
+    expect(controller.loaded, isFalse);
+    await controller.load();
+    expect(controller.mode, ThemeMode.system);
+    expect(controller.loaded, isTrue);
+    expect(store.writes, isEmpty);
+  });
+
+  for (final value in ['light', 'dark']) {
+    test('stored $value appearance is restored', () async {
+      final controller = AppearanceController(MemoryAppearanceStore(value));
+      addTearDown(controller.dispose);
+      await controller.load();
+      expect(controller.mode, themeModeFrom(value));
+      expect(controller.mode, isNot(ThemeMode.system));
+    });
+  }
+
+  for (final value in ['', ' ', 'Dark', 'DARK', 'system', 'blue', '{"a":1}']) {
+    test('invalid stored appearance "$value" falls back to system', () async {
+      final controller = AppearanceController(MemoryAppearanceStore(value));
+      addTearDown(controller.dispose);
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+      await controller.load();
+      expect(controller.mode, ThemeMode.system);
+      expect(controller.loaded, isTrue);
+      expect(notifications, 0, reason: 'The default needs no rebuild');
+    });
+  }
+
+  test('an unreadable store loads silently as system', () async {
+    final store = MemoryAppearanceStore('dark')..rejectRead = true;
+    final controller = AppearanceController(store);
+    addTearDown(controller.dispose);
+    await controller.load();
+    expect(controller.mode, ThemeMode.system);
+    expect(controller.loaded, isTrue);
+  });
+
+  test('selecting writes the mode name and notifies once', () async {
+    final store = MemoryAppearanceStore();
+    final controller = AppearanceController(store);
+    addTearDown(controller.dispose);
+    var notifications = 0;
+    controller.addListener(() => notifications++);
+    await controller.select(ThemeMode.dark);
+    expect(store.value, 'dark');
+    expect(controller.mode, ThemeMode.dark);
+    expect(notifications, 1);
+    await controller.select(ThemeMode.dark);
+    expect(notifications, 1, reason: 'Re-selecting the same mode is not a change');
+  });
+
+  test('a delayed load does not revert a newer select', () async {
+    final store = _GatedAppearanceStore();
+    final controller = AppearanceController(store);
+    addTearDown(controller.dispose);
+    final loading = controller.load();
+    await controller.select(ThemeMode.dark);
+    expect(controller.mode, ThemeMode.dark);
+    store.pending.complete('light');
+    await loading;
+    expect(controller.mode, ThemeMode.dark);
+    expect(controller.loaded, isFalse);
+  });
+
+  test('a rejected write keeps the chosen mode for this run', () async {
+    final store = MemoryAppearanceStore()..rejectWrite = true;
+    final controller = AppearanceController(store);
+    addTearDown(controller.dispose);
+    await controller.select(ThemeMode.light);
+    expect(controller.mode, ThemeMode.light);
+    expect(store.value, isNull);
+    expect(store.writes, ['light']);
+  });
+
+  testWidgets('a fresh app with a stored dark appearance boots dark', (tester) async {
+    FlutterSecureStorage.setMockInitialValues({SecureAppearanceStore.key: 'dark'});
+    final adapter = FakeAdapter((_) => jsonResponse([]));
+    final session = controllerFor(MemoryAccountStore(), adapter);
+    addTearDown(session.dispose);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [sessionProvider.overrideWithValue(session)],
+      child: const GitLabMobileApp(),
+    ));
+    // The stored value is read asynchronously, so the first frame is still the
+    // system default: reading the key store must never gate app start.
+    expect(tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode, ThemeMode.system);
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('instanceField')), findsOneWidget);
+    expect(tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode, ThemeMode.dark);
+    expect(tester.takeException(), isNull);
+  }, timeout: const Timeout(Duration(minutes: 1)));
+
+  testWidgets('a fresh app without a stored appearance boots on system', (tester) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final adapter = FakeAdapter((_) => jsonResponse([]));
+    final session = controllerFor(MemoryAccountStore(), adapter);
+    addTearDown(session.dispose);
+    await tester.pumpWidget(ProviderScope(
+      overrides: [sessionProvider.overrideWithValue(session)],
+      child: const GitLabMobileApp(),
+    ));
+    await tester.pumpAndSettle();
+    expect(tester.widget<MaterialApp>(find.byType(MaterialApp)).themeMode, ThemeMode.system);
+    expect(tester.takeException(), isNull);
+  }, timeout: const Timeout(Duration(minutes: 1)));
+}
