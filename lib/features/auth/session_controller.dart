@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
@@ -38,6 +39,8 @@ final class SessionController extends ChangeNotifier {
   GitLabApi? _pending;
   bool busy = false;
   bool initializing = true;
+  bool resuming = false;
+  Account? resumingAccount;
   String? message;
   int generation = 0;
   int _operation = 0;
@@ -49,20 +52,87 @@ final class SessionController extends ChangeNotifier {
   }
 
   Future<void> initialize() async {
+    final ticket = ++_operation;
     try {
-      final loaded = await store.load();
-      if (!_disposed) _accounts = loaded;
-    } catch (_) {
-      if (!_disposed) message = '無法讀取安全儲存；不會退回明文保存。請重新加入帳號。';
-    } finally {
-      initializing = false;
+      try {
+        final loaded = await store.load();
+        if (!_current(ticket)) return;
+        _accounts = loaded;
+      } catch (_) {
+        if (_current(ticket)) {
+          message = '無法讀取安全儲存；不會退回明文保存。請重新加入帳號。';
+        }
+        return;
+      }
+      String? lastKey;
+      try {
+        lastKey = await store.loadLastActive();
+      } catch (_) {
+        lastKey = null;
+      }
+      if (!_current(ticket)) return;
+      final match = _accountForKey(lastKey);
+      if (match == null) return;
+      resuming = true;
+      resumingAccount = match;
+      message = null;
       _emit();
+      GitLabApi? candidate;
+      try {
+        candidate = _client(match.instance, match.credential);
+        _pending = candidate;
+        final user = await candidate.currentUser();
+        if (!_current(ticket)) return;
+        if (user.id != match.user.id) {
+          throw const ApiFailure(FailureKind.unauthenticated);
+        }
+        _activate(
+          Account(
+            instance: match.instance,
+            user: user,
+            credential: match.credential,
+          ),
+          candidate,
+        );
+        candidate = null;
+      } on ApiFailure catch (error) {
+        if (_current(ticket)) {
+          message = '${error.title}。${error.detail}';
+          _rememberLastActive(null);
+        }
+      } catch (_) {
+        if (_current(ticket)) {
+          message = '帳號重新驗證失敗；未切換至此帳號。';
+          _rememberLastActive(null);
+        }
+      } finally {
+        if (candidate != null) {
+          candidate.close();
+          if (identical(_pending, candidate)) _pending = null;
+        } else if (_current(ticket)) {
+          _pending = null;
+        }
+      }
+    } finally {
+      if (_current(ticket)) {
+        initializing = false;
+        resuming = false;
+        resumingAccount = null;
+      }
+      if (!_disposed) _emit();
     }
-    // A saved account is explicitly selected and /user is revalidated.
+  }
+
+  Account? _accountForKey(String? key) {
+    if (key == null || key.isEmpty) return null;
+    for (final account in _accounts) {
+      if (account.key == key) return account;
+    }
+    return null;
   }
 
   Future<void> connect(String instanceText, String rawToken) async {
-    if (busy || initializing || _disposed) return;
+    if (busy || initializing || resuming || _disposed) return;
     final ticket = ++_operation;
     busy = true;
     message = null;
@@ -113,7 +183,7 @@ final class SessionController extends ChangeNotifier {
   }
 
   Future<void> select(Account saved) async {
-    if (busy || initializing || _disposed) return;
+    if (busy || initializing || resuming || _disposed) return;
     endSession();
     final ticket = ++_operation;
     busy = true;
@@ -150,7 +220,7 @@ final class SessionController extends ChangeNotifier {
   }
 
   Future<void> connectOAuth(String instanceText) async {
-    if (busy || initializing || _disposed) return;
+    if (busy || initializing || resuming || _disposed) return;
     final ticket = ++_operation;
     busy = true;
     message = null;
@@ -273,21 +343,37 @@ final class SessionController extends ChangeNotifier {
     active = account;
     api = client;
     generation++;
+    _rememberLastActive(account.key);
+  }
+
+  void _rememberLastActive(String? key) {
+    unawaited(_writeLastActive(key));
+  }
+
+  Future<void> _writeLastActive(String? key) async {
+    try {
+      await store.saveLastActive(key);
+    } catch (_) {}
   }
 
   /// Local only: does NOT revoke a PAT on GitLab. Cancels pending sign-in too.
   void endSession() {
     _operation++;
     _pending?.close();
+    _pending = null;
     api?.close();
     api = null;
     active = null;
+    resuming = false;
+    resumingAccount = null;
+    initializing = false;
     generation++;
+    _rememberLastActive(null);
     _emit();
   }
 
   Future<void> remove(Account account) async {
-    if (busy || initializing || _disposed) return;
+    if (busy || initializing || resuming || _disposed) return;
     busy = true;
     message = null;
     _emit();

@@ -5,9 +5,133 @@ import '../../core/models.dart';
 import '../../core/failure.dart';
 import '../../core/unified_diff.dart';
 import '../../shared/external_link.dart';
+import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 import '../../shared/theme.dart';
+
+const _maxDiscussionPages = 20;
+const _discussionPageBoundNote = '討論已達 20 頁上限，後續討論未載入。';
+
+/// A file and line taken from a real discussion position. Never invented.
+class DiffTarget {
+  const DiffTarget({
+    required this.path,
+    this.newLine,
+    this.oldLine,
+    this.baseSha = '',
+    this.startSha = '',
+    this.headSha = '',
+  });
+  final String path;
+  final int? newLine;
+  final int? oldLine;
+  final String baseSha;
+  final String startSha;
+  final String headSha;
+}
+
+final class _DiscussionLoad {
+  const _DiscussionLoad(this.items, {this.truncated = false, this.error});
+  final List<Json> items;
+  final bool truncated;
+  final ApiFailure? error;
+}
+
+Future<_DiscussionLoad> _loadDiscussions(
+  GitLabApi api,
+  List<String> path,
+) async {
+  try {
+    final items = <Json>[];
+    Uri? next;
+    var pages = 0;
+    while (true) {
+      final page = await api.records([...path, 'discussions'], next: next);
+      items.addAll(page.items);
+      pages++;
+      final cursor = page.next;
+      if (cursor == null) return _DiscussionLoad(items);
+      if (pages >= _maxDiscussionPages) {
+        return _DiscussionLoad(items, truncated: true);
+      }
+      next = cursor;
+    }
+  } catch (e) {
+    return _DiscussionLoad(const <Json>[], error: safeFailure(e));
+  }
+}
+
+Json? _textPosition(Json discussion) {
+  final notes = valueObjects(discussion, 'notes');
+  if (notes.isEmpty) return null;
+  final position = notes.first['position'];
+  if (position is! Json || position['position_type'] != 'text') return null;
+  return position;
+}
+
+bool _shasMatch(Json position, Json version) {
+  final base = position['base_sha'];
+  final start = position['start_sha'];
+  final head = position['head_sha'];
+  return base is String &&
+      base.isNotEmpty &&
+      base == version['base_commit_sha'] &&
+      start is String &&
+      start == version['start_commit_sha'] &&
+      head is String &&
+      head == version['head_commit_sha'];
+}
+
+bool _mapsToLine(Json position, Json file, DiffLine line) {
+  final newLine = position['new_line'];
+  final oldLine = position['old_line'];
+  final newPath = position['new_path'];
+  final oldPath = position['old_path'];
+  final fileNew = valueText(file, 'new_path');
+  final fileOld = valueText(file, 'old_path');
+  final newHit =
+      newLine is int &&
+      newPath is String &&
+      newPath == fileNew &&
+      line.newLine == newLine;
+  final oldHit =
+      oldLine is int &&
+      oldPath is String &&
+      oldPath == fileOld &&
+      line.oldLine == oldLine;
+  return newHit || oldHit;
+}
+
+bool _positionOnPath(Json position, String path) {
+  if (path.isEmpty) return false;
+  final newPath = position['new_path'];
+  final oldPath = position['old_path'];
+  return newPath == path || oldPath == path;
+}
+
+String _positionPath(Json position) {
+  final newPath = position['new_path'];
+  if (newPath is String && newPath.isNotEmpty) return newPath;
+  final oldPath = position['old_path'];
+  if (oldPath is String) return oldPath;
+  return '';
+}
+
+String _positionLines(Json position) {
+  final parts = <String>[];
+  final newLine = position['new_line'];
+  final oldLine = position['old_line'];
+  if (newLine is int) parts.add('新行 $newLine');
+  if (oldLine is int) parts.add('舊行 $oldLine');
+  return parts.join(' · ');
+}
+
+String _excerpt(String body) {
+  final flat = body.replaceAll(RegExp(r'\s+'), ' ').trim();
+  if (flat.length <= 180) return flat;
+  return '${flat.substring(0, 180)}…';
+}
 
 class ReviewDiffPage extends StatefulWidget {
   const ReviewDiffPage({
@@ -17,12 +141,14 @@ class ReviewDiffPage extends StatefulWidget {
     required this.project,
     required this.iid,
     required this.expectedSha,
+    this.initialTarget,
   });
   final Account account;
   final GitLabApi api;
   final Project project;
   final int iid;
   final String expectedSha;
+  final DiffTarget? initialTarget;
   @override
   State<ReviewDiffPage> createState() => _ReviewDiffPageState();
 }
@@ -30,7 +156,13 @@ class ReviewDiffPage extends StatefulWidget {
 class _ReviewDiffPageState extends State<ReviewDiffPage> {
   Json? _version;
   ApiFailure? _error;
+  ApiFailure? _discussionsError;
   bool _loading = true;
+  bool _discussionsTruncated = false;
+  bool _openedTarget = false;
+  int _epoch = 0;
+  List<Json> _discussions = const [];
+  final _orphanKey = GlobalKey();
   List<String> get path => [
     'projects',
     '${widget.project.id}',
@@ -43,43 +175,99 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
     unawaited(_load());
   }
 
+  Future<Json> _fetchVersion() async {
+    final versions = await widget.api.records([...path, 'versions']);
+    final matches = versions.items.where(
+      (value) => value['head_commit_sha'] == widget.expectedSha,
+    );
+    if (matches.isEmpty) {
+      throw const ApiFailure(FailureKind.conflict);
+    }
+    final version = await widget.api.record([
+      ...path,
+      'versions',
+      '${requiredInt(matches.first, 'id')}',
+    ]);
+    if (version['head_commit_sha'] != widget.expectedSha) {
+      throw const ApiFailure(FailureKind.conflict);
+    }
+    return version;
+  }
+
   Future<void> _load() async {
+    final epoch = ++_epoch;
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final versions = await widget.api.records([...path, 'versions']);
-      final matches = versions.items.where(
-        (value) => value['head_commit_sha'] == widget.expectedSha,
-      );
-      if (matches.isEmpty) {
-        throw const ApiFailure(FailureKind.conflict);
-      }
-      final version = await widget.api.record([
-        ...path,
-        'versions',
-        '${requiredInt(matches.first, 'id')}',
-      ]);
-      if (version['head_commit_sha'] != widget.expectedSha) {
-        throw const ApiFailure(FailureKind.conflict);
-      }
-      if (mounted) {
-        setState(() => _version = version);
-      }
+      final version = await _fetchVersion();
+      if (!mounted || epoch != _epoch) return;
+      final loaded = await _loadDiscussions(widget.api, path);
+      if (!mounted || epoch != _epoch) return;
+      setState(() {
+        _version = version;
+        _discussions = loaded.items;
+        _discussionsTruncated = loaded.truncated;
+        _discussionsError = loaded.error;
+        _loading = false;
+      });
+      _scheduleInitialTarget();
     } catch (e) {
-      if (mounted) {
-        setState(() => _error = safeFailure(e));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+      if (!mounted || epoch != _epoch) return;
+      setState(() {
+        _error = safeFailure(e);
+        _loading = false;
+      });
     }
   }
 
-  Future<void> _open(Json file) async {
-    final version = _version!;
+  Json? _fileFor(DiffTarget target) {
+    final version = _version;
+    if (version == null || target.path.isEmpty) return null;
+    for (final file in valueObjects(version, 'diffs')) {
+      if (valueText(file, 'new_path') == target.path ||
+          valueText(file, 'old_path') == target.path) {
+        return file;
+      }
+    }
+    return null;
+  }
+
+  void _scheduleInitialTarget() {
+    final target = widget.initialTarget;
+    if (target == null || _openedTarget || _version == null) return;
+    final file = _fileFor(target);
+    if (file == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final orphan = _orphanKey.currentContext;
+        if (orphan != null) {
+          unawaited(Scrollable.ensureVisible(orphan, alignment: 0.05));
+        }
+      });
+      return;
+    }
+    _openedTarget = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_open(file, target: target));
+    });
+  }
+
+  List<Json> _orphanDiscussions(DiffTarget target) {
+    final result = <Json>[];
+    for (final discussion in _discussions) {
+      final position = _textPosition(discussion);
+      if (position == null || !_positionOnPath(position, target.path)) {
+        continue;
+      }
+      result.add(discussion);
+    }
+    return result;
+  }
+
+  Future<void> _open(Json file, {DiffTarget? target}) async {
+    final version = _version;
+    if (version == null) return;
     await Navigator.push(
       context,
       MaterialPageRoute<void>(
@@ -90,6 +278,10 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
           iid: widget.iid,
           file: file,
           version: version,
+          discussions: _discussions,
+          discussionsTruncated: _discussionsTruncated,
+          discussionsError: _discussionsError,
+          initialTarget: target,
         ),
       ),
     );
@@ -114,6 +306,8 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
       );
     }
     final files = valueObjects(_version ?? {}, 'diffs');
+    final target = widget.initialTarget;
+    final missingTarget = target != null && _fileFor(target) == null;
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -128,6 +322,19 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Text('GitLab 限制了部分差異。下列檔案不代表完整變更。'),
+            ),
+          if (_discussionsTruncated)
+            const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: Text(_discussionPageBoundNote),
+            ),
+          if (_discussionsError != null)
+            FailureNotice(
+              _discussionsError!,
+              onRetry: _load,
+              account: widget.account,
+              resourceLabel: '${widget.project.path} · !${widget.iid} 討論',
+              onSwitchAccount: endSessionFrom(context),
             ),
           if (files.isEmpty)
             const EmptyState('沒有可顯示的文字差異', detail: '可能沒有變更，或差異未由伺服器提供。'),
@@ -154,6 +361,14 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                 ),
               ),
             ),
+          if (missingTarget)
+            _OtherVersionSection(
+              key: _orphanKey,
+              discussions: _orphanDiscussions(target),
+              fallbackPath: target.path,
+              fallbackNewLine: target.newLine,
+              fallbackOldLine: target.oldLine,
+            ),
         ],
       ),
     );
@@ -168,6 +383,10 @@ class _DiffFileScreen extends StatefulWidget {
     required this.iid,
     required this.file,
     required this.version,
+    required this.discussions,
+    required this.discussionsTruncated,
+    required this.discussionsError,
+    this.initialTarget,
   });
   final Account account;
   final GitLabApi api;
@@ -175,6 +394,10 @@ class _DiffFileScreen extends StatefulWidget {
   final int iid;
   final Json file;
   final Json version;
+  final List<Json> discussions;
+  final bool discussionsTruncated;
+  final ApiFailure? discussionsError;
+  final DiffTarget? initialTarget;
   @override
   State<_DiffFileScreen> createState() => _DiffFileScreenState();
 }
@@ -182,9 +405,30 @@ class _DiffFileScreen extends StatefulWidget {
 class _DiffFileScreenState extends State<_DiffFileScreen> {
   List<DiffLine>? _lines;
   String? _unavailable;
+  late List<Json> _discussions;
+  late bool _truncated;
+  ApiFailure? _discussionsError;
+  bool _reloading = false;
+  bool _busy = false;
+  bool _disposed = false;
+  int _epoch = 0;
+  var _revealAttempts = 0;
+  final _expanded = <String>{};
+  final _scroll = ScrollController();
+  final _targetKey = GlobalKey();
+  List<String> get _mrPath => [
+    'projects',
+    '${widget.project.id}',
+    'merge_requests',
+    '${widget.iid}',
+  ];
+
   @override
   void initState() {
     super.initState();
+    _discussions = List<Json>.of(widget.discussions);
+    _truncated = widget.discussionsTruncated;
+    _discussionsError = widget.discussionsError;
     final diff = valueText(widget.file, 'diff');
     if (widget.file['too_large'] == true ||
         widget.file['collapsed'] == true ||
@@ -197,6 +441,127 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
         _unavailable = '這份差異不完整或超過排版上限，已停用行內留言，避免貼錯位置。';
       }
     }
+    if (widget.initialTarget != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _revealTarget());
+    }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  Map<int, List<Json>> _anchored(List<DiffLine> lines) {
+    final grouped = <int, List<Json>>{};
+    for (final discussion in _discussions) {
+      final position = _textPosition(discussion);
+      if (position == null || !_shasMatch(position, widget.version)) continue;
+      int? index;
+      for (var i = 0; i < lines.length; i++) {
+        if (_mapsToLine(position, widget.file, lines[i])) {
+          index = i;
+          break;
+        }
+      }
+      if (index == null) continue;
+      grouped.putIfAbsent(index, () => <Json>[]).add(discussion);
+    }
+    return grouped;
+  }
+
+  List<Json> _others(Set<Json> anchored) {
+    final fileNew = valueText(widget.file, 'new_path');
+    final fileOld = valueText(widget.file, 'old_path');
+    final result = <Json>[];
+    for (final discussion in _discussions) {
+      if (anchored.contains(discussion)) continue;
+      final position = _textPosition(discussion);
+      if (position == null) continue;
+      final newPath = position['new_path'];
+      final oldPath = position['old_path'];
+      final matches =
+          (newPath is String && (newPath == fileNew || newPath == fileOld)) ||
+          (oldPath is String && (oldPath == fileNew || oldPath == fileOld));
+      if (matches) result.add(discussion);
+    }
+    return result;
+  }
+
+  bool _targetOnLine(List<DiffLine> lines) {
+    final target = widget.initialTarget;
+    if (target == null || !_targetShasMatch()) return false;
+    return _targetLineIndex(lines) != null;
+  }
+
+  bool _targetShasMatch() {
+    final target = widget.initialTarget;
+    if (target == null) return false;
+    if (target.baseSha.isEmpty ||
+        target.startSha.isEmpty ||
+        target.headSha.isEmpty) {
+      return false;
+    }
+    return target.baseSha == widget.version['base_commit_sha'] &&
+        target.startSha == widget.version['start_commit_sha'] &&
+        target.headSha == widget.version['head_commit_sha'];
+  }
+
+  int? _targetLineIndex(List<DiffLine> lines) {
+    final target = widget.initialTarget;
+    if (target == null) return null;
+    final fileNew = valueText(widget.file, 'new_path');
+    final fileOld = valueText(widget.file, 'old_path');
+    for (var i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      final newHit =
+          target.newLine != null &&
+          target.path == fileNew &&
+          line.newLine == target.newLine;
+      final oldHit =
+          target.oldLine != null &&
+          target.path == fileOld &&
+          line.oldLine == target.oldLine;
+      if (newHit || oldHit) return i;
+    }
+    return null;
+  }
+
+  void _revealTarget() {
+    if (!mounted || widget.initialTarget == null) return;
+    final target = _targetKey.currentContext;
+    if (target != null) {
+      unawaited(Scrollable.ensureVisible(target, alignment: 0.05));
+      return;
+    }
+    if (_revealAttempts++ > 12 || !_scroll.hasClients) return;
+    final position = _scroll.position;
+    final next = (position.pixels + position.viewportDimension * 0.8).clamp(
+      0.0,
+      position.maxScrollExtent,
+    );
+    if (next <= position.pixels + 1) return;
+    _scroll.jumpTo(next);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _revealTarget());
+  }
+
+  Future<void> _reloadDiscussions() async {
+    final epoch = ++_epoch;
+    setState(() {
+      _reloading = true;
+      _discussionsError = null;
+    });
+    final loaded = await _loadDiscussions(widget.api, _mrPath);
+    if (!mounted || _disposed || epoch != _epoch) return;
+    setState(() {
+      if (loaded.error == null) {
+        _discussions = loaded.items;
+        _truncated = loaded.truncated;
+      }
+      _discussionsError = loaded.error;
+      _reloading = false;
+    });
   }
 
   Future<void> _comment(DiffLine line) async {
@@ -227,29 +592,74 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       api: widget.api,
       projectId: widget.project.id,
       save: (values) async {
-        final path = [
-          'projects',
-          '${widget.project.id}',
-          'merge_requests',
-          '${widget.iid}',
-        ];
-        final current = await widget.api.record(path);
+        final current = await widget.api.record(_mrPath);
         if (current['sha'] != sha) {
           throw const ApiFailure(FailureKind.conflict);
         }
         await widget.api.writeRecord(
           'POST',
-          [...path, 'discussions'],
+          [..._mrPath, 'discussions'],
           {'body': values['body'], 'position': position},
         );
       },
     );
   }
 
+  Future<void> _reply(Json discussion) async {
+    final id = discussion['id'];
+    if (id is! String || id.isEmpty || _busy) return;
+    final saved = await openEditor(
+      context,
+      account: widget.account,
+      title: '回覆討論',
+      resource: '${widget.project.id}/mr/${widget.iid}/discussion/$id/reply',
+      subtitle: valueText(widget.file, 'new_path'),
+      fields: const [EditField('body', '留言內容', required: true, lines: 8)],
+      save: (values) async {
+        await widget.api.writeRecord('POST', [
+          ..._mrPath,
+          'discussions',
+          id,
+          'notes',
+        ], {'body': values['body']});
+      },
+    );
+    if (saved && mounted) await _reloadDiscussions();
+  }
+
+  Future<void> _resolve(Json discussion, bool resolved) async {
+    final id = discussion['id'];
+    if (id is! String || id.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    try {
+      await widget.api.writeRecord('PUT', [
+        ..._mrPath,
+        'discussions',
+        id,
+      ], {'resolved': resolved});
+      if (mounted) await _reloadDiscussions();
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final lines = _lines;
     final scheme = Theme.of(context).colorScheme;
+    final anchored = lines == null
+        ? <int, List<Json>>{}
+        : _anchored(lines);
+    final anchoredSet = <Json>{
+      for (final group in anchored.values) ...group,
+    };
+    final others = _others(anchoredSet);
+    final onLine = lines != null && _targetOnLine(lines);
+    final showOther =
+        others.isNotEmpty || (widget.initialTarget != null && !onLine);
+    final targetIndex = lines == null ? null : _targetLineIndex(lines);
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -271,7 +681,35 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
         ],
       ),
       body: gestureSafe(lines == null
-          ? EmptyState('無法顯示差異', detail: _unavailable, icon: Icons.code_off)
+          ? ListView(
+              controller: _scroll,
+              children: [
+                EmptyState(
+                  '無法顯示差異',
+                  detail: _unavailable,
+                  icon: Icons.code_off,
+                ),
+                if (_truncated)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Text(_discussionPageBoundNote),
+                  ),
+                if (_discussionsError != null)
+                  FailureNotice(
+                    _discussionsError!,
+                    onRetry: _reloadDiscussions,
+                    account: widget.account,
+                    resourceLabel:
+                        '${widget.project.path} · !${widget.iid} 討論',
+                    onSwitchAccount: endSessionFrom(context),
+                  ),
+                if (showOther)
+                  KeyedSubtree(
+                    key: widget.initialTarget != null ? _targetKey : null,
+                    child: _OtherVersionSection(discussions: others),
+                  ),
+              ],
+            )
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -285,11 +723,35 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
+                if (_truncated)
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Text(_discussionPageBoundNote),
+                  ),
+                if (_reloading) const LinearProgressIndicator(minHeight: 2),
+                if (_discussionsError != null)
+                  FailureNotice(
+                    _discussionsError!,
+                    onRetry: _reloadDiscussions,
+                    account: widget.account,
+                    resourceLabel:
+                        '${widget.project.path} · !${widget.iid} 討論',
+                    onSwitchAccount: endSessionFrom(context),
+                  ),
                 Expanded(
                   child: SelectionArea(
                     child: ListView.builder(
-                      itemCount: lines.length,
+                      controller: _scroll,
+                      itemCount: lines.length + (showOther ? 1 : 0),
                       itemBuilder: (context, index) {
+                        if (index == lines.length) {
+                          return KeyedSubtree(
+                            key: !onLine && widget.initialTarget != null
+                                ? _targetKey
+                                : null,
+                            child: _OtherVersionSection(discussions: others),
+                          );
+                        }
                         final line = lines[index];
                         final marker = line.kind == 'add'
                             ? '+'
@@ -303,83 +765,356 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                             : line.kind == 'hunk'
                             ? scheme.surfaceContainerHighest
                             : null;
-                        return Material(
-                          color: background ?? scheme.surface,
-                          child: InkWell(
-                            key: ValueKey('diff-line-$index'),
-                            onTap: line.commentable
-                                ? () => _comment(line)
-                                : null,
-                            child: ConstrainedBox(
-                              constraints: const BoxConstraints(minHeight: 48),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 14,
-                                ),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    SizedBox(
-                                      width: 30,
-                                      child: Text(
-                                        '${line.oldLine ?? ''}',
-                                        textAlign: TextAlign.right,
-                                        textScaler: MediaQuery.textScalerOf(
-                                          context,
-                                        ).clamp(maxScaleFactor: 1.3),
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: scheme.onSurfaceVariant,
+                        final threads = anchored[index] ?? const <Json>[];
+                        final row = Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Material(
+                              color: background ?? scheme.surface,
+                              child: InkWell(
+                                key: ValueKey('diff-line-$index'),
+                                onTap: line.commentable
+                                    ? () => _comment(line)
+                                    : null,
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    minHeight: 48,
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 14,
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        SizedBox(
+                                          width: 30,
+                                          child: Text(
+                                            '${line.oldLine ?? ''}',
+                                            textAlign: TextAlign.right,
+                                            textScaler:
+                                                MediaQuery.textScalerOf(
+                                                  context,
+                                                ).clamp(maxScaleFactor: 1.3),
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: scheme.onSurfaceVariant,
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      width: 30,
-                                      child: Text(
-                                        '${line.newLine ?? ''}',
-                                        textAlign: TextAlign.right,
-                                        textScaler: MediaQuery.textScalerOf(
-                                          context,
-                                        ).clamp(maxScaleFactor: 1.3),
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          color: scheme.onSurfaceVariant,
+                                        SizedBox(
+                                          width: 30,
+                                          child: Text(
+                                            '${line.newLine ?? ''}',
+                                            textAlign: TextAlign.right,
+                                            textScaler:
+                                                MediaQuery.textScalerOf(
+                                                  context,
+                                                ).clamp(maxScaleFactor: 1.3),
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: scheme.onSurfaceVariant,
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      width: 20,
-                                      child: Text(
-                                        marker,
-                                        textAlign: TextAlign.center,
-                                        textScaler: MediaQuery.textScalerOf(
-                                          context,
-                                        ).clamp(maxScaleFactor: 1.3),
-                                      ),
-                                    ),
-                                    Expanded(
-                                      child: Text(
-                                        line.text,
-                                        style: const TextStyle(
-                                          fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'],
-                                          fontSize: 13,
-                                          height: 1.5,
+                                        SizedBox(
+                                          width: 20,
+                                          child: Text(
+                                            marker,
+                                            textAlign: TextAlign.center,
+                                            textScaler:
+                                                MediaQuery.textScalerOf(
+                                                  context,
+                                                ).clamp(maxScaleFactor: 1.3),
+                                          ),
                                         ),
-                                      ),
+                                        Expanded(
+                                          child: Text(
+                                            line.text,
+                                            style: const TextStyle(
+                                              fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'],
+                                              fontSize: 13,
+                                              height: 1.5,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 ),
                               ),
                             ),
-                          ),
+                            for (final discussion in threads)
+                              _DiffThreadCard(
+                                key: ValueKey(
+                                  'diff-thread-${discussion['id']}',
+                                ),
+                                discussion: discussion,
+                                expanded: _expanded.contains(
+                                  '${discussion['id']}',
+                                ),
+                                busy: _busy,
+                                base: widget.account.instance.projectWeb(
+                                  widget.project.path,
+                                ),
+                                onExpand: () => setState(
+                                  () => _expanded.add('${discussion['id']}'),
+                                ),
+                                onReply: () => _reply(discussion),
+                                onResolve: _resolvable(discussion)
+                                    ? () => _resolve(
+                                        discussion,
+                                        !_resolved(discussion),
+                                      )
+                                    : null,
+                              ),
+                          ],
                         );
+                        if (onLine && index == targetIndex) {
+                          return KeyedSubtree(key: _targetKey, child: row);
+                        }
+                        return row;
                       },
                     ),
                   ),
                 ),
               ],
             )),
+    );
+  }
+}
+
+bool _resolvable(Json discussion) => valueObjects(
+  discussion,
+  'notes',
+).any((note) => note['resolvable'] == true);
+
+bool _resolved(Json discussion) {
+  final notes = valueObjects(
+    discussion,
+    'notes',
+  ).where((note) => note['resolvable'] == true);
+  if (notes.isEmpty) return discussion['resolved'] == true;
+  return notes.every((note) => note['resolved'] == true);
+}
+
+class _DiffThreadCard extends StatelessWidget {
+  const _DiffThreadCard({
+    super.key,
+    required this.discussion,
+    required this.expanded,
+    required this.busy,
+    required this.base,
+    required this.onExpand,
+    required this.onReply,
+    required this.onResolve,
+  });
+  final Json discussion;
+  final bool expanded;
+  final bool busy;
+  final Uri base;
+  final VoidCallback onExpand;
+  final VoidCallback onReply;
+  final VoidCallback? onResolve;
+
+  @override
+  Widget build(BuildContext context) {
+    final notes = valueObjects(discussion, 'notes');
+    if (notes.isEmpty) return const SizedBox.shrink();
+    final visible = expanded || notes.length <= 2
+        ? notes
+        : notes.take(2).toList();
+    final theme = Theme.of(context);
+    final resolved = _resolved(discussion);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 12, 8),
+      child: Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var index = 0; index < visible.length; index++) ...[
+                if (index > 0) const Divider(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '@${valueText(valueObject(visible[index], 'author'), 'username')}',
+                        style: theme.textTheme.titleSmall,
+                      ),
+                    ),
+                    if (index == 0 && resolved)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.check_circle_outline,
+                              size: 14,
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(width: 4),
+                            Text('已解決', style: theme.textTheme.labelMedium),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+                Text(
+                  relativeDate(valueText(visible[index], 'created_at')),
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 6),
+                MarkdownView(
+                  valueText(visible[index], 'body'),
+                  base: base,
+                ),
+              ],
+              if (notes.length > 1)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Text(
+                    '另 ${notes.length - 1} 則',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+              if (!expanded && notes.length > 2)
+                TextButton(
+                  onPressed: onExpand,
+                  child: Text('顯示全部 ${notes.length} 則'),
+                ),
+              Wrap(
+                spacing: 8,
+                children: [
+                  TextButton(
+                    onPressed: busy ? null : onReply,
+                    child: const Text('回覆'),
+                  ),
+                  if (onResolve != null)
+                    TextButton(
+                      onPressed: busy ? null : onResolve,
+                      child: Text(resolved ? '重新開啟' : '解決'),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OtherVersionSection extends StatelessWidget {
+  const _OtherVersionSection({
+    super.key,
+    required this.discussions,
+    this.fallbackPath = '',
+    this.fallbackNewLine,
+    this.fallbackOldLine,
+  });
+  final List<Json> discussions;
+  final String fallbackPath;
+  final int? fallbackNewLine;
+  final int? fallbackOldLine;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cards = discussions.isEmpty
+        ? [
+            _OtherVersionCard(
+              path: fallbackPath,
+              lines: [
+                if (fallbackNewLine != null) '新行 $fallbackNewLine',
+                if (fallbackOldLine != null) '舊行 $fallbackOldLine',
+              ].join(' · '),
+              excerpt: '',
+            ),
+          ]
+        : [
+            for (final discussion in discussions)
+              _cardFor(discussion),
+          ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(0, 16, 0, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '其他版本的討論',
+            key: const ValueKey('diff-other-section'),
+            style: theme.textTheme.titleMedium,
+          ),
+          const SizedBox(height: 8),
+          ...cards,
+        ],
+      ),
+    );
+  }
+
+  Widget _cardFor(Json discussion) {
+    final notes = valueObjects(discussion, 'notes');
+    final position = _textPosition(discussion) ?? const <String, dynamic>{};
+    return _OtherVersionCard(
+      key: ValueKey('diff-other-${discussion['id']}'),
+      path: _positionPath(position),
+      lines: _positionLines(position),
+      excerpt: notes.isEmpty ? '' : _excerpt(valueText(notes.first, 'body')),
+    );
+  }
+}
+
+class _OtherVersionCard extends StatelessWidget {
+  const _OtherVersionCard({
+    super.key,
+    required this.path,
+    required this.lines,
+    required this.excerpt,
+  });
+  final String path;
+  final String lines;
+  final String excerpt;
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (path.isNotEmpty)
+              Text(path, style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'])),
+            if (lines.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(lines, style: theme.textTheme.bodySmall),
+              ),
+            if (excerpt.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(excerpt),
+              ),
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text('以較舊版本為準，無法對應目前差異'),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

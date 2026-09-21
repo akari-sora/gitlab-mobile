@@ -11,6 +11,7 @@ import 'support/fake_adapter.dart';
 
 class MemoryAccountStore implements AccountStore {
   List<Account> accounts = [];
+  String? lastActive;
   bool rejectWrite = false;
   @override
   Future<List<Account>> load() async => accounts;
@@ -18,6 +19,14 @@ class MemoryAccountStore implements AccountStore {
   Future<void> save(List<Account> value) async {
     if (rejectWrite) throw StateError('synthetic key-store failure');
     accounts = List.of(value);
+  }
+
+  @override
+  Future<String?> loadLastActive() async => lastActive;
+  @override
+  Future<void> saveLastActive(String? key) async {
+    if (rejectWrite) throw StateError('synthetic key-store failure');
+    lastActive = key;
   }
 }
 
@@ -163,4 +172,124 @@ void main() {
       expect(store.accounts, isEmpty);
     },
   );
+
+  Account savedAccount() => Account(
+    instance: GitLabInstance.parse('https://example.com'),
+    user: const GitLabUser(id: 7, username: 'tester', name: 'Test'),
+    token: 'synthetic-test-token',
+  );
+
+  test('resume stored account when /user matches', () async {
+    final store = MemoryAccountStore();
+    final saved = savedAccount();
+    store.accounts = [saved];
+    store.lastActive = saved.key;
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({'id': 7, 'username': 'tester', 'name': 'Test'}),
+    );
+    final controller = controllerFor(store, adapter);
+    addTearDown(controller.dispose);
+    await controller.initialize();
+    expect(controller.active?.user.id, 7);
+    expect(controller.active?.user.username, 'tester');
+    expect(controller.api, isNotNull);
+    expect(controller.resuming, isFalse);
+    expect(controller.resumingAccount, isNull);
+    expect(store.lastActive, saved.key);
+  });
+
+  test(
+    'resume 401 leaves the existing message and does not activate',
+    () async {
+      final store = MemoryAccountStore();
+      final saved = savedAccount();
+      store.accounts = [saved];
+      store.lastActive = saved.key;
+      final adapter = FakeAdapter(
+        (_) => jsonResponse({'message': 'unauthorized'}, status: 401),
+      );
+      final controller = controllerFor(store, adapter);
+      addTearDown(controller.dispose);
+      await controller.initialize();
+      expect(controller.active, isNull);
+      expect(controller.resuming, isFalse);
+      expect(controller.message, contains('登入已失效'));
+      expect(store.accounts, hasLength(1));
+      expect(store.lastActive, isNull);
+    },
+  );
+
+  test('resume does not activate when /user id differs', () async {
+    final store = MemoryAccountStore();
+    final saved = savedAccount();
+    store.accounts = [saved];
+    store.lastActive = saved.key;
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({'id': 8, 'username': 'other'}),
+    );
+    final controller = controllerFor(store, adapter);
+    addTearDown(controller.dispose);
+    await controller.initialize();
+    expect(controller.active, isNull);
+    expect(controller.message, contains('登入已失效'));
+    expect(store.lastActive, isNull);
+    expect(store.accounts, hasLength(1));
+  });
+
+  test('resume ignores a stored key for an account that is not saved', () async {
+    final store = MemoryAccountStore();
+    store.accounts = [savedAccount()];
+    store.lastActive = 'https://example.com#999';
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({'id': 7, 'username': 'tester'}),
+    );
+    final controller = controllerFor(store, adapter);
+    addTearDown(controller.dispose);
+    await controller.initialize();
+    expect(controller.active, isNull);
+    expect(controller.message, isNull);
+    expect(controller.resuming, isFalse);
+    expect(adapter.requests, isEmpty);
+    expect(store.lastActive, 'https://example.com#999');
+  });
+
+  test('endSession clears the stored last-active key', () async {
+    final store = MemoryAccountStore();
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({'id': 7, 'username': 'tester'}),
+    );
+    final controller = controllerFor(store, adapter);
+    addTearDown(controller.dispose);
+    await controller.initialize();
+    await controller.connect('https://example.com', 'synthetic-test-token');
+    expect(controller.active, isNotNull);
+    expect(store.lastActive, controller.active?.key);
+    controller.endSession();
+    expect(controller.active, isNull);
+    expect(store.lastActive, isNull);
+  });
+
+  test('endSession during resume does not activate the account', () async {
+    final deferred = Completer<ResponseBody>();
+    final store = MemoryAccountStore();
+    final saved = savedAccount();
+    store.accounts = [saved];
+    store.lastActive = saved.key;
+    final adapter = FakeAdapter((_) => deferred.future);
+    final controller = controllerFor(store, adapter);
+    addTearDown(controller.dispose);
+    final pending = controller.initialize();
+    for (var i = 0; i < 8 && !controller.resuming; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(controller.resuming, isTrue);
+    expect(controller.resumingAccount?.user.username, 'tester');
+    controller.endSession();
+    expect(controller.resuming, isFalse);
+    expect(store.lastActive, isNull);
+    deferred.complete(jsonResponse({'id': 7, 'username': 'tester'}));
+    await pending;
+    expect(controller.active, isNull);
+    expect(store.lastActive, isNull);
+  });
 }

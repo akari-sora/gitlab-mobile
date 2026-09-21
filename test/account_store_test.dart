@@ -120,6 +120,24 @@ void main() {
     },
   );
 
+  test('last active account key is stored separately from the account list', () async {
+    const storage = FlutterSecureStorage();
+    final store = SecureAccountStore(storage);
+    expect(await store.loadLastActive(), isNull);
+
+    await store.saveLastActive(patAccount.key);
+    expect(
+      await storage.read(key: 'gitlab_mobile_last_account_v1'),
+      patAccount.key,
+    );
+    expect(await store.loadLastActive(), patAccount.key);
+    expect(await store.load(), isEmpty);
+
+    await store.saveLastActive(null);
+    expect(await storage.read(key: 'gitlab_mobile_last_account_v1'), isNull);
+    expect(await store.loadLastActive(), isNull);
+  });
+
   test(
     'default constructor creates store successfully with hardware Keystore and Keychain',
     () {

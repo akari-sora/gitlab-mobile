@@ -18,6 +18,7 @@ class WorkspaceFixture {
     'default_branch': 'main', 'archived': false, 'last_activity_at': '2026-09-19T08:30:00Z',
   };
   static const sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  static const olderSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
   final issues = <int, Json>{};
   final notes = <int, Json>{};
   final createdMergeRequests = <int, Json>{};
@@ -42,7 +43,14 @@ class WorkspaceFixture {
     'updated_at': 'revision-$counter', 'created_at': '2026-09-19T08:00:00Z',
   };
   final mergeFields = <String, dynamic>{};
-  final mrDiscussions = <Json>[];
+  final List<Json> _discussions = <Json>[];
+  var _discussionsOverridden = false;
+  // Reading this marks the list as caller-owned so the default seed is not inserted.
+  List<Json> get mrDiscussions {
+    _discussionsOverridden = true;
+    return _discussions;
+  }
+  List<Json> get mergeRequestDiscussions => _activeDiscussions();
   List<List<Json>>? discussionPages;
   bool failDiscussions = false;
   Json get mergeRequest => {
@@ -52,6 +60,77 @@ class WorkspaceFixture {
     'head_pipeline': {'id': 99, 'status': 'success'},
     ...mergeFields,
   };
+  Json _textThread({
+    required String id, required String body, required String username, required int noteId,
+    required String base, required String start, required String head, required String path,
+    int? newLine, int? oldLine, bool resolvable = false, bool resolved = false,
+  }) => {
+    'id': id, 'individual_note': false,
+    'notes': [
+      {
+        'id': noteId, 'body': body, 'author': {'id': noteId, 'username': username},
+        'created_at': '2026-09-19T08:00:00Z', 'system': false,
+        'resolvable': resolvable, 'resolved': resolved,
+        'position': {
+          'position_type': 'text', 'base_sha': base, 'start_sha': start, 'head_sha': head,
+          'old_path': path, 'new_path': path,
+          'old_line': ?oldLine,
+          'new_line': ?newLine,
+        },
+      },
+    ],
+  };
+  List<Json> _seedDiscussions() => [
+    {
+      ..._textThread(
+        id: 'anchored-1', body: 'ANCHORED-THREAD-BODY', username: 'developer', noteId: 1,
+        base: sha, start: sha, head: sha, path: 'lib/session.dart', newLine: 1, resolvable: true,
+      ),
+      'notes': [
+        {
+          'id': 1, 'body': 'ANCHORED-THREAD-BODY', 'author': {'id': 7, 'username': 'developer'},
+          'created_at': '2026-09-19T08:00:00Z', 'system': false, 'resolvable': true, 'resolved': false,
+          'position': {
+            'position_type': 'text', 'base_sha': sha, 'start_sha': sha, 'head_sha': sha,
+            'old_path': 'lib/session.dart', 'new_path': 'lib/session.dart', 'new_line': 1,
+          },
+        },
+        {
+          'id': 11, 'body': 'SECOND-NOTE-VISIBLE', 'author': {'id': 8, 'username': 'reviewer'},
+          'created_at': '2026-09-19T09:00:00Z', 'system': false, 'resolvable': true, 'resolved': false,
+        },
+        {
+          'id': 12, 'body': 'THIRD-NOTE-HIDDEN', 'author': {'id': 7, 'username': 'developer'},
+          'created_at': '2026-09-19T10:00:00Z', 'system': false, 'resolvable': true, 'resolved': false,
+        },
+      ],
+    },
+    _textThread(
+      id: 'older-1', body: 'OLDER-VERSION-THREAD', username: 'reviewer', noteId: 2,
+      base: olderSha, start: olderSha, head: olderSha, path: 'lib/session.dart', newLine: 1, resolvable: true,
+    ),
+    {
+      'id': 'general-1', 'individual_note': true,
+      'notes': [
+        {
+          'id': 3, 'body': 'GENERAL-NOTE-SHOULD-NOT-APPEAR',
+          'author': {'id': 7, 'username': 'developer'}, 'created_at': '2026-09-19T11:00:00Z', 'system': false,
+        },
+      ],
+    },
+  ];
+  List<Json> _activeDiscussions() {
+    if (!_discussionsOverridden && _discussions.isEmpty) {
+      _discussions.addAll(_seedDiscussions());
+    }
+    return _discussions;
+  }
+  Json? _thread(String id) {
+    for (final item in _activeDiscussions()) {
+      if (item['id'] == id) return item;
+    }
+    return null;
+  }
   Json get pipeline => {'id': 99, 'ref': 'main', 'sha': sha, 'status': 'success', 'duration': 83};
   Json job(int id, {String status = 'success'}) => {
     'id': id, 'name': id == 502 ? 'Manual deploy' : 'Flutter tests', 'stage': 'verify', 'status': status,
@@ -157,19 +236,55 @@ class WorkspaceFixture {
       if (created != null) return jsonResponse(created);
     }
     if (joined == 'projects/42/merge_requests/12') { return jsonResponse(mergeRequest); }
-    if (joined == 'projects/42/merge_requests/12/discussions' && method == 'GET') {
-      if (failDiscussions) { return jsonResponse({'message': 'synthetic'}, status: 500); }
-      final pages = discussionPages;
-      if (pages != null) {
-        final page = int.tryParse(request.uri.queryParameters['page'] ?? '') ?? 1;
-        final index = page - 1;
-        final items = index >= 0 && index < pages.length ? pages[index] : const <Json>[];
-        if (page < pages.length) {
-          return jsonResponse(items, headers: {'x-next-page': ['${page + 1}']});
+    if (path.length >= 5 && path[0] == 'projects' && path[1] == '42' && path[2] == 'merge_requests' && path[3] == '12' && path[4] == 'discussions') {
+      if (path.length == 5 && method == 'GET') {
+        if (failDiscussions) { return jsonResponse({'message': 'synthetic'}, status: 500); }
+        final pages = discussionPages;
+        if (pages != null) {
+          final page = int.tryParse(request.uri.queryParameters['page'] ?? '') ?? 1;
+          final index = page - 1;
+          final items = index >= 0 && index < pages.length ? pages[index] : const <Json>[];
+          if (page < pages.length) {
+            return jsonResponse(items, headers: {'x-next-page': ['${page + 1}']});
+          }
+          return jsonResponse(items);
         }
-        return jsonResponse(items);
+        return jsonResponse(_activeDiscussions());
       }
-      return jsonResponse(mrDiscussions);
+      if (path.length == 5 && method == 'POST') {
+        final created = <String, dynamic>{
+          'id': 'created-${++counter}', 'individual_note': false, 'notes': [
+            {'id': counter, 'body': body['body'], 'author': {'id': 7, 'username': 'developer'}, 'created_at': '2026-09-19T12:00:00Z', 'system': false},
+          ],
+        };
+        _activeDiscussions().add(created);
+        return jsonResponse(created, status: 201);
+      }
+      if (path.length == 6 && method == 'PUT') {
+        final thread = _thread(path[5]);
+        if (thread == null) { return jsonResponse({'error': 'missing'}, status: 404); }
+        final resolved = body['resolved'] == true;
+        thread['resolved'] = resolved;
+        final notes = thread['notes'];
+        if (notes is List<dynamic>) {
+          for (final note in notes) {
+            if (note is Json && note['resolvable'] == true) { note['resolved'] = resolved; }
+          }
+        }
+        return jsonResponse(thread);
+      }
+      if (path.length == 7 && path[6] == 'notes' && method == 'POST') {
+        final thread = _thread(path[5]);
+        if (thread == null) { return jsonResponse({'error': 'missing'}, status: 404); }
+        final note = <String, dynamic>{
+          'id': ++counter, 'body': body['body'], 'author': {'id': 7, 'username': 'developer'},
+          'created_at': '2026-09-19T12:00:00Z', 'system': false, 'resolvable': false, 'resolved': false,
+        };
+        final notes = thread['notes'];
+        final existing = notes is List<dynamic> ? notes : const <dynamic>[];
+        thread['notes'] = <dynamic>[...existing, note];
+        return jsonResponse(note, status: 201);
+      }
     }
     if (joined == 'projects/42/merge_requests/12/merge' && method == 'PUT') {
       return jsonResponse({...mergeRequest, 'state': 'merged'});
