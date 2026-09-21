@@ -11,7 +11,7 @@ variables:
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
 default:
   image: python:3.13-slim
-  tags: [saas-linux-small-amd64]
+  tags: [grok-box, ondemand, gitlab-mobile]
   interruptible: true
   retry:
     max: 1

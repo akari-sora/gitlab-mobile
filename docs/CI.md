@@ -2,7 +2,9 @@
 
 ## Workflow
 
-The repository uses GitLab-hosted `saas-linux-small-amd64` runners. Pushes, merge-request events, tags and manually started branch pipelines run checks. A branch push with an open MR is suppressed to avoid duplicate branch/MR pipelines. All required jobs use `allow_failure: false` by default.
+The repository uses project-locked private runners on the two-host CI fleet, with tags `grok-box`, `ondemand`, and `gitlab-mobile`. Each host executes at most one CI job at a time; its dispatcher rotates between projects with eligible pending jobs after each job finishes. Jobs can therefore wait for a fleet turn, but do not consume GitLab-hosted runner compute quota. Pushes, merge-request events, tags and manually started branch pipelines run checks. A branch push with an open MR is suppressed to avoid duplicate branch/MR pipelines. All required jobs use `allow_failure: false` by default.
+
+New projects require explicit runner registration and dispatcher onboarding on each host; adding tags alone does not grant access. For this project, both registrations are locked to `gitlab-mobile` and reject untagged jobs. The existing `python:3.13-slim` job image, toolchain pins, checks and artifact delivery remain in use. A pipeline created before the routing change retains its old job tags; verify a new pipeline for the updated commit rather than retrying the old quota-failed jobs.
 
 1. `python_checks`: 10 report-converter regressions, 6 native-bootstrap regressions, Python compilation, shell syntax.
 2. `flutter_checks`: dependency-lock enforcement, Flutter analysis, 68 Flutter unit/widget/smoke tests in the initial CI baseline, JUnit and LCOV. The current test count is read from the job report, not inferred from this document.
