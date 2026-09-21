@@ -17,8 +17,9 @@ Map<String, dynamic> _textDiscussion({
   String base = WorkspaceFixture.sha,
   String start = WorkspaceFixture.sha,
   String head = WorkspaceFixture.sha,
-  int? oldLine,
-  int? newLine,
+  Object? oldLine,
+  Object? newLine,
+  bool includePaths = true,
 }) => {
   'id': id,
   'individual_note': false,
@@ -36,8 +37,8 @@ Map<String, dynamic> _textDiscussion({
         'base_sha': base,
         'start_sha': start,
         'head_sha': head,
-        'old_path': oldPath,
-        'new_path': newPath,
+        if (includePaths) 'old_path': oldPath,
+        if (includePaths) 'new_path': newPath,
         'old_line': ?oldLine,
         'new_line': ?newLine,
       },
@@ -50,6 +51,7 @@ Future<void> _pumpDiff(
   WorkspaceFixture fixture, {
   DiffTarget? initialTarget,
   Size size = const Size(412, 1400),
+  String? expectedSha,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -62,7 +64,7 @@ Future<void> _pumpDiff(
         api: fixture.api,
         project: fixture.project,
         iid: 12,
-        expectedSha: WorkspaceFixture.sha,
+        expectedSha: expectedSha ?? WorkspaceFixture.sha,
         initialTarget: initialTarget,
       ),
     ),
@@ -334,6 +336,15 @@ void main() {
             newLine: 20,
             start: '',
           ),
+          _textDiscussion(
+            id: 'empty-head',
+            body: 'EMPTY-HEAD',
+            oldPath: 'lib/session.dart',
+            newPath: 'lib/session.dart',
+            oldLine: 10,
+            newLine: 20,
+            head: '',
+          ),
         ]);
       addTearDown(fixture.api.close);
       await _pumpDiff(tester, fixture);
@@ -349,6 +360,8 @@ void main() {
       expect(find.byKey(const ValueKey('diff-other-dual-bad')), findsOneWidget);
       expect(find.byKey(const ValueKey('diff-other-sha-bad')), findsOneWidget);
       expect(find.byKey(const ValueKey('diff-other-empty-start')), findsOneWidget);
+      expect(find.byKey(const ValueKey('diff-other-empty-head')), findsOneWidget);
+      expect(find.byKey(const ValueKey('diff-thread-empty-head')), findsNothing);
       expect(find.text('以較舊版本為準，無法對應目前差異'), findsWidgets);
       expect(find.text('目前差異未提供此行（可能已折疊或超出大小上限）'), findsWidgets);
       final lineY = tester.getTopLeft(find.text('context')).dy;
@@ -579,11 +592,422 @@ void main() {
     expect(find.text('lib/session.dart'), findsOneWidget);
     expect(find.text('討論已達 20 頁上限，後續討論未載入。'), findsNothing);
     await tester.pumpWidget(const SizedBox());
-    gate.complete(jsonResponse([
-      {'id': 'late', 'individual_note': true, 'notes': <Map<String, dynamic>>[]},
-    ]));
+    gate.complete(jsonResponse(
+      [
+        {'id': 'late', 'individual_note': true, 'notes': <Map<String, dynamic>>[]},
+      ],
+      headers: {'x-next-page': ['3']},
+    ));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
+    expect(
+      fixture.adapter.requests.where(
+        (request) =>
+            request.uri.path.endsWith('/discussions') &&
+            request.uri.queryParameters['page'] == '3',
+      ),
+      isEmpty,
+    );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'missing paths, malformed coordinates and a mismatched second path stay unanchored',
+    (tester) async {
+      final fixture = WorkspaceFixture()
+        ..omitSeedDiscussions = true
+        ..extraDiscussions.addAll([
+          _textDiscussion(
+            id: 'kept',
+            body: 'KEPT-ON-LINE',
+            oldPath: 'lib/session.dart',
+            newPath: 'lib/session.dart',
+            newLine: 1,
+          ),
+          _textDiscussion(
+            id: 'missing-paths',
+            body: 'MISSING-PATHS',
+            oldPath: 'lib/session.dart',
+            newPath: 'lib/session.dart',
+            newLine: 1,
+            includePaths: false,
+          ),
+          _textDiscussion(
+            id: 'empty-paths',
+            body: 'EMPTY-PATHS',
+            oldPath: '',
+            newPath: '',
+            newLine: 1,
+          ),
+          _textDiscussion(
+            id: 'bad-coordinate',
+            body: 'MALFORMED-COORDINATE',
+            oldPath: 'lib/session.dart',
+            newPath: 'lib/session.dart',
+            newLine: '1',
+          ),
+          _textDiscussion(
+            id: 'zero-coordinate',
+            body: 'ZERO-COORDINATE',
+            oldPath: 'lib/session.dart',
+            newPath: 'lib/session.dart',
+            newLine: 0,
+          ),
+          _textDiscussion(
+            id: 'second-path',
+            body: 'MISMATCHED-SECOND-PATH',
+            oldPath: 'lib/elsewhere.dart',
+            newPath: 'lib/session.dart',
+            newLine: 1,
+          ),
+        ]);
+      addTearDown(fixture.api.close);
+      await _pumpDiff(tester, fixture);
+      expect(find.textContaining('MISSING-PATHS'), findsOneWidget);
+      expect(find.textContaining('EMPTY-PATHS'), findsOneWidget);
+      expect(find.textContaining('MISMATCHED-SECOND-PATH'), findsOneWidget);
+      await tester.tap(find.widgetWithText(ListTile, 'lib/session.dart'));
+      await settleWorkspace(tester);
+      expect(find.byKey(const ValueKey('diff-thread-kept')), findsOneWidget);
+      expect(find.byKey(const ValueKey('diff-thread-missing-paths')), findsNothing);
+      expect(find.byKey(const ValueKey('diff-thread-empty-paths')), findsNothing);
+      expect(find.byKey(const ValueKey('diff-thread-bad-coordinate')), findsNothing);
+      expect(find.byKey(const ValueKey('diff-other-bad-coordinate')), findsOneWidget);
+      expect(find.byKey(const ValueKey('diff-thread-zero-coordinate')), findsNothing);
+      expect(find.byKey(const ValueKey('diff-other-zero-coordinate')), findsOneWidget);
+      expect(find.byKey(const ValueKey('diff-thread-second-path')), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('a diff target without a file path is not anchored', (tester) async {
+    final fixture = WorkspaceFixture()..omitSeedDiscussions = true;
+    addTearDown(fixture.api.close);
+    await _pumpDiff(
+      tester,
+      fixture,
+      initialTarget: const DiffTarget(
+        path: '',
+        newLine: 1,
+        baseSha: WorkspaceFixture.sha,
+        startSha: WorkspaceFixture.sha,
+        headSha: WorkspaceFixture.sha,
+      ),
+    );
+    expect(find.textContaining('點選程式碼行新增留言'), findsNothing);
+    expect(find.text('其他版本的討論'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'empty head_sha does not anchor even when the version sha is empty',
+    (tester) async {
+      final fixture = WorkspaceFixture()
+        ..omitSeedDiscussions = true
+        ..versionHeadSha = ''
+        ..extraDiscussions.add(
+          _textDiscussion(
+            id: 'blank-head',
+            body: 'BLANK-HEAD',
+            oldPath: 'lib/session.dart',
+            newPath: 'lib/session.dart',
+            newLine: 1,
+            head: '',
+          ),
+        );
+      addTearDown(fixture.api.close);
+      await _pumpDiff(tester, fixture, expectedSha: '');
+      await tester.tap(find.text('lib/session.dart'));
+      await settleWorkspace(tester);
+      expect(find.byKey(const ValueKey('diff-thread-blank-head')), findsNothing);
+      expect(find.byKey(const ValueKey('diff-other-blank-head')), findsOneWidget);
+      expect(find.text('以較舊版本為準，無法對應目前差異'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('a second 查看程式碼 tap does not push another diff', (tester) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 1400);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      workspaceHost(
+        WorkItemPage(
+          account: fixture.account,
+          api: fixture.api,
+          project: fixture.project,
+          resource: 'merge_requests',
+          iid: 12,
+        ),
+      ),
+    );
+    await settleWorkspace(tester);
+    await tester.tap(find.text('討論'));
+    await settleWorkspace(tester);
+    final codeButton = find.text('查看程式碼');
+    expect(codeButton, findsWidgets);
+    await tester.ensureVisible(codeButton.first);
+    final press = tester.widget<TextButton>(
+      find.widgetWithText(TextButton, '查看程式碼').first,
+    ).onPressed;
+    expect(press, isNotNull);
+    press!();
+    press();
+    for (var i = 0; i < 20 && find.text('差異').evaluate().isEmpty; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(find.text('差異'), findsOneWidget);
+    expect(find.byType(ReviewDiffPage, skipOffstage: false), findsOneWidget);
+    press();
+    await tester.pump();
+    expect(find.byType(ReviewDiffPage, skipOffstage: false), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'navigation corrects a variable-height overshoot and reaches the target line',
+    (tester) async {
+      const rows = 24;
+      final diff = StringBuffer('@@ -1,$rows +1,$rows @@\n');
+      for (var i = 0; i < rows; i++) {
+        diff.writeln(i == 6 ? ' pin-line' : ' line$i');
+      }
+      final fixture = WorkspaceFixture()
+        ..omitSeedDiscussions = true
+        ..versionDiffs = [
+          {
+            'old_path': 'lib/session.dart',
+            'new_path': 'lib/session.dart',
+            'diff': diff.toString(),
+          },
+        ]
+        ..extraDiscussions.add(
+          _textDiscussion(
+            id: 'tall',
+            body: List.filled(100, 'tall paragraph of review text').join('\n\n'),
+            oldPath: 'lib/session.dart',
+            newPath: 'lib/session.dart',
+            newLine: 1,
+          ),
+        );
+      addTearDown(fixture.api.close);
+      await _pumpDiff(
+        tester,
+        fixture,
+        size: const Size(412, 520),
+        initialTarget: const DiffTarget(
+          path: 'lib/session.dart',
+          newPath: 'lib/session.dart',
+          newLine: 7,
+          baseSha: WorkspaceFixture.sha,
+          startSha: WorkspaceFixture.sha,
+          headSha: WorkspaceFixture.sha,
+        ),
+      );
+      final line = find.text('pin-line');
+      expect(line, findsOneWidget);
+      final lineY = tester.getTopLeft(line).dy;
+      expect(lineY, greaterThanOrEqualTo(0));
+      expect(lineY, lessThan(520));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'a file opened before discussions finish shows the threads when they arrive',
+    (tester) async {
+      final gate = Completer<ResponseBody>();
+      final fixture = WorkspaceFixture()
+        ..omitSeedDiscussions = true
+        ..discussionPageCount = 2
+        ..deferDiscussionOnPage = 2
+        ..deferDiscussionPage = gate;
+      addTearDown(fixture.api.close);
+      addTearDown(() {
+        if (!gate.isCompleted) {
+          gate.complete(jsonResponse([
+            {'id': 'page-2', 'individual_note': true, 'notes': <Object>[]},
+          ]));
+        }
+      });
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 1400);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        workspaceHost(
+          ReviewDiffPage(
+            account: fixture.account,
+            api: fixture.api,
+            project: fixture.project,
+            iid: 12,
+            expectedSha: WorkspaceFixture.sha,
+          ),
+        ),
+      );
+      for (var i = 0; i < 30 && find.text('lib/session.dart').evaluate().isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(find.text('lib/session.dart'), findsOneWidget);
+      expect(find.text('正在載入討論'), findsOneWidget);
+      await tester.tap(find.text('lib/session.dart'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.textContaining('PAGE-1-THREAD', findRichText: true), findsNothing);
+      expect(find.text('正在載入討論'), findsWidgets);
+      gate.complete(jsonResponse([
+        {'id': 'page-2', 'individual_note': true, 'notes': <Object>[]},
+      ]));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.textContaining('PAGE-1-THREAD', findRichText: true), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'reply after a failed discussion page refetches the first page',
+    (tester) async {
+      final fixture = WorkspaceFixture()
+        ..discussionPageCount = 2
+        ..failDiscussionPage = 2
+        ..copyDiscussionPages = true;
+      addTearDown(fixture.api.close);
+      await _pumpDiff(tester, fixture);
+      await tester.tap(find.text('lib/session.dart'));
+      await settleWorkspace(tester);
+      expect(find.textContaining('PAGE-1-THREAD', findRichText: true), findsOneWidget);
+      final discussionGets = fixture.adapter.requests
+          .where(
+            (request) =>
+                request.method == 'GET' &&
+                request.uri.path.endsWith('/discussions'),
+          )
+          .length;
+      await tester.tap(find.text('回覆'));
+      await settleWorkspace(tester);
+      await tester.enterText(find.byKey(const ValueKey('editor-body')), 'FRESH-PAGE-ONE');
+      await tester.tap(find.byKey(const Key('editorSave')));
+      await settleWorkspace(tester);
+      final added = fixture.adapter.requests.where(
+        (request) =>
+            request.method == 'GET' && request.uri.path.endsWith('/discussions'),
+      );
+      expect(added.length, greaterThan(discussionGets));
+      expect(
+        added.skip(discussionGets).any(
+          (request) => (request.uri.queryParameters['page'] ?? '1') == '1',
+        ),
+        isTrue,
+      );
+      expect(find.textContaining('FRESH-PAGE-ONE', findRichText: true), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'an epoch switch during the discussion walk drops the stale page and its cursor',
+    (tester) async {
+      final gate = Completer<ResponseBody>();
+      final fixture = WorkspaceFixture()
+        ..omitSeedDiscussions = true
+        ..discussionPageCount = 2
+        ..deferDiscussionOnPage = 2
+        ..deferDiscussionOnce = true
+        ..deferDiscussionPage = gate;
+      addTearDown(fixture.api.close);
+      addTearDown(() {
+        if (!gate.isCompleted) {
+          gate.complete(jsonResponse(const <Object>[]));
+        }
+      });
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 1400);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        workspaceHost(
+          ReviewDiffPage(
+            account: fixture.account,
+            api: fixture.api,
+            project: fixture.project,
+            iid: 12,
+            expectedSha: WorkspaceFixture.sha,
+          ),
+        ),
+      );
+      for (var i = 0; i < 30 && find.text('lib/session.dart').evaluate().isEmpty; i++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(find.text('lib/session.dart'), findsOneWidget);
+      for (
+        var i = 0;
+        i < 40 &&
+            fixture.adapter.requests.every(
+              (request) => request.uri.queryParameters['page'] != '2',
+            );
+        i++
+      ) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(
+        fixture.adapter.requests.where(
+          (request) => request.uri.queryParameters['page'] == '2',
+        ),
+        isNotEmpty,
+      );
+      final refresh = tester.widget<RefreshIndicator>(find.byType(RefreshIndicator));
+      final refreshed = refresh.onRefresh();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      gate.complete(
+        jsonResponse(
+          [
+            {
+              'id': 'stale-walk',
+              'individual_note': false,
+              'notes': [
+                {
+                  'id': 'stale-note',
+                  'body': 'STALE-WALK-BODY',
+                  'author': {'id': 7, 'username': 'developer'},
+                  'created_at': '2026-09-19T08:00:00Z',
+                  'system': false,
+                  'resolvable': false,
+                  'resolved': false,
+                  'position': {
+                    'position_type': 'text',
+                    'base_sha': WorkspaceFixture.sha,
+                    'start_sha': WorkspaceFixture.sha,
+                    'head_sha': WorkspaceFixture.sha,
+                    'old_path': 'lib/session.dart',
+                    'new_path': 'lib/session.dart',
+                    'new_line': 1,
+                  },
+                },
+              ],
+            },
+          ],
+          headers: {'x-next-page': ['3']},
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      await refreshed;
+      expect(
+        fixture.adapter.requests.where(
+          (request) => request.uri.queryParameters['page'] == '3',
+        ),
+        isEmpty,
+      );
+      await tester.tap(find.text('lib/session.dart'));
+      await settleWorkspace(tester);
+      expect(find.textContaining('PAGE-2-THREAD', findRichText: true), findsOneWidget);
+      expect(find.textContaining('STALE-WALK-BODY', findRichText: true), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }

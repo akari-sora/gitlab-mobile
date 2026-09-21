@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
@@ -44,6 +45,13 @@ class WorkspaceFixture {
   int? failDiscussionPage;
   int? deferDiscussionOnPage;
   Completer<ResponseBody>? deferDiscussionPage;
+  bool deferDiscussionOnce = false;
+  bool copyDiscussionPages = false;
+  String versionBaseSha = sha;
+  String versionStartSha = sha;
+  String versionHeadSha = sha;
+  bool _discussionDeferred = false;
+  List<Json>? _pagedDiscussions;
   List<Json>? _storedDiscussions;
   var _discussionsOverridden = false;
   List<List<Json>>? discussionPages;
@@ -134,7 +142,19 @@ class WorkspaceFixture {
     for (final item in storedDiscussions) {
       if (item['id'] == id) return item;
     }
+    final paged = _pagedDiscussions;
+    if (paged != null) {
+      for (final item in paged) {
+        if (item['id'] == id) return item;
+      }
+    }
     return null;
+  }
+
+  Json _cloneDiscussion(Json value) {
+    final decoded = jsonDecode(jsonEncode(value));
+    if (decoded is! Json) throw StateError('discussion copy');
+    return decoded;
   }
 
   Json _pageThread(int page) => {
@@ -151,6 +171,10 @@ class WorkspaceFixture {
     ],
   };
 
+  List<Json> _storedPages() => _pagedDiscussions ??= [
+    for (var page = 1; page <= discussionPageCount; page++) _pageThread(page),
+  ];
+
   FutureOr<ResponseBody> _discussionPage(RequestOptions request) {
     final page = int.tryParse(request.uri.queryParameters['page'] ?? '1') ?? 1;
     if (discussionPageCount > 0) {
@@ -158,11 +182,18 @@ class WorkspaceFixture {
         return jsonResponse({'message': 'unavailable'}, status: 500);
       }
       final deferred = deferDiscussionPage;
-      if (deferDiscussionOnPage == page && deferred != null) return deferred.future;
+      if (deferDiscussionOnPage == page && deferred != null &&
+          (!deferDiscussionOnce || !_discussionDeferred)) {
+        _discussionDeferred = true;
+        return deferred.future;
+      }
       final headers = page < discussionPageCount
           ? {'x-next-page': ['${page + 1}']}
           : <String, List<String>>{};
-      return jsonResponse([_pageThread(page)], headers: headers);
+      final thread = copyDiscussionPages ? _storedPages()[page - 1] : _pageThread(page);
+      return jsonResponse([
+        copyDiscussionPages ? _cloneDiscussion(thread) : thread,
+      ], headers: headers);
     }
     return jsonResponse([
       if (!omitSeedDiscussions) ...storedDiscussions,
@@ -331,9 +362,9 @@ class WorkspaceFixture {
       return jsonResponse({...mergeRequest, 'state': 'merged'});
     }
     if (joined == 'projects/42/merge_requests/12/approvals') { return jsonResponse({'approved_by': <Json>[]}); }
-    if (joined == 'projects/42/merge_requests/12/versions') { return jsonResponse([{'id': 1, 'head_commit_sha': sha}]); }
+    if (joined == 'projects/42/merge_requests/12/versions') { return jsonResponse([{'id': 1, 'head_commit_sha': versionHeadSha}]); }
     if (joined == 'projects/42/merge_requests/12/versions/1') {
-      return jsonResponse({'id': 1, 'head_commit_sha': sha, 'base_commit_sha': sha, 'start_commit_sha': sha, 'diffs': versionDiffs ?? [
+      return jsonResponse({'id': 1, 'head_commit_sha': versionHeadSha, 'base_commit_sha': versionBaseSha, 'start_commit_sha': versionStartSha, 'diffs': versionDiffs ?? [
         {'old_path': 'lib/session.dart', 'new_path': 'lib/session.dart', 'diff': '@@ -1 +1 @@\n-old\n+new\n'},
       ]});
     }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
@@ -48,6 +49,21 @@ final class _DiscussionLoad {
 
   /// Cursor that failed, so a retry can fetch the rest without dropping [items].
   final Uri? next;
+}
+
+final class _DiscussionFeed {
+  const _DiscussionFeed({
+    this.items = const [],
+    this.truncated = false,
+    this.error,
+    this.next,
+    this.loading = false,
+  });
+  final List<Json> items;
+  final bool truncated;
+  final ApiFailure? error;
+  final Uri? next;
+  final bool loading;
 }
 
 Future<_DiscussionLoad> _loadDiscussions(
@@ -102,6 +118,11 @@ bool _shasMatch(Json position, Json version) {
       head == version['head_commit_sha'];
 }
 
+bool _positiveLine(Object? value) => value is int && value > 0;
+
+/// A line anchor needs a real file identity and only positive integer
+/// coordinates. A missing path, or a supplied coordinate that is not a
+/// positive int, must not attach the thread to whatever row shares a number.
 bool _mapsToLine(Json position, Json file, DiffLine line) {
   final newLine = position['new_line'];
   final oldLine = position['old_line'];
@@ -109,14 +130,15 @@ bool _mapsToLine(Json position, Json file, DiffLine line) {
   final oldPath = position['old_path'];
   final fileNew = valueText(file, 'new_path');
   final fileOld = valueText(file, 'old_path');
-  if (newPath is String && newPath.isNotEmpty && newPath != fileNew) {
-    return false;
-  }
-  if (oldPath is String && oldPath.isNotEmpty && oldPath != fileOld) {
-    return false;
-  }
-  final hasNew = newLine is int;
-  final hasOld = oldLine is int;
+  final newSupplied = newPath is String && newPath.isNotEmpty;
+  final oldSupplied = oldPath is String && oldPath.isNotEmpty;
+  if (!newSupplied && !oldSupplied) return false;
+  if (newSupplied && newPath != fileNew) return false;
+  if (oldSupplied && oldPath != fileOld) return false;
+  if (newLine != null && !_positiveLine(newLine)) return false;
+  if (oldLine != null && !_positiveLine(oldLine)) return false;
+  final hasNew = _positiveLine(newLine);
+  final hasOld = _positiveLine(oldLine);
   if (!hasNew && !hasOld) return false;
   if (hasNew && line.newLine != newLine) return false;
   if (hasOld && line.oldLine != oldLine) return false;
@@ -215,6 +237,10 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
   int _epoch = 0;
   List<Json> _discussions = const [];
   Uri? _discussionNext;
+  bool _discussionsLoading = true;
+  final _feed = ValueNotifier<_DiscussionFeed>(
+    const _DiscussionFeed(loading: true),
+  );
   final _orphanKey = GlobalKey();
   List<String> get path => [
     'projects',
@@ -249,13 +275,41 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
 
   bool _walkCurrent(int epoch) => mounted && epoch == _epoch;
 
+  @override
+  void dispose() {
+    _feed.dispose();
+    super.dispose();
+  }
+
+  void _publishFeed({required bool loading}) {
+    _discussionsLoading = loading;
+    _feed.value = _DiscussionFeed(
+      items: _discussions,
+      truncated: _discussionsTruncated,
+      error: _discussionsError,
+      next: _discussionNext,
+      loading: loading,
+    );
+  }
+
+  void _takeDiscussions(_DiscussionLoad loaded) {
+    if (loaded.items.isNotEmpty || loaded.error == null) {
+      _discussions = loaded.items;
+      _discussionsTruncated = loaded.truncated;
+    }
+    _discussionsError = loaded.error;
+    _discussionNext = loaded.next;
+  }
+
   Future<void> _load() async {
     final epoch = ++_epoch;
     setState(() {
       _loading = true;
       _error = null;
       _discussionsError = null;
+      _discussionsLoading = true;
     });
+    _publishFeed(loading: true);
     final discussionsFuture = _loadDiscussions(
       widget.api,
       path,
@@ -284,14 +338,9 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
     }
     final loaded = await discussionsFuture;
     if (!mounted || epoch != _epoch) return;
-    setState(() {
-      if (loaded.items.isNotEmpty || loaded.error == null) {
-        _discussions = loaded.items;
-        _discussionsTruncated = loaded.truncated;
-      }
-      _discussionsError = loaded.error;
-      _discussionNext = loaded.next;
-    });
+    _takeDiscussions(loaded);
+    setState(() {});
+    _publishFeed(loading: false);
     if (_error == null) _scheduleInitialTarget();
   }
 
@@ -304,14 +353,9 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
       current: _walkCurrent,
     );
     if (!mounted || epoch != _epoch) return;
-    setState(() {
-      if (loaded.items.isNotEmpty || loaded.error == null) {
-        _discussions = loaded.items;
-        _discussionsTruncated = loaded.truncated;
-      }
-      _discussionsError = loaded.error;
-      _discussionNext = loaded.next;
-    });
+    _takeDiscussions(loaded);
+    setState(() {});
+    _publishFeed(loading: false);
   }
 
   Json? _fileFor(DiffTarget target) {
@@ -398,10 +442,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
           iid: widget.iid,
           file: file,
           version: version,
-          discussions: _discussions,
-          discussionsTruncated: _discussionsTruncated,
-          discussionsError: _discussionsError,
-          discussionsNext: _discussionNext,
+          feed: _feed,
           initialTarget: target,
         ),
       ),
@@ -446,6 +487,11 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 12),
               child: Text('GitLab 限制了部分差異。下列檔案不代表完整變更。'),
+            ),
+          if (_discussionsLoading)
+            const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: Text('正在載入討論'),
             ),
           if (_discussionsTruncated)
             const Padding(
@@ -511,10 +557,7 @@ class _DiffFileScreen extends StatefulWidget {
     required this.iid,
     required this.file,
     required this.version,
-    required this.discussions,
-    required this.discussionsTruncated,
-    required this.discussionsError,
-    this.discussionsNext,
+    required this.feed,
     this.initialTarget,
   });
   final Account account;
@@ -523,10 +566,7 @@ class _DiffFileScreen extends StatefulWidget {
   final int iid;
   final Json file;
   final Json version;
-  final List<Json> discussions;
-  final bool discussionsTruncated;
-  final ApiFailure? discussionsError;
-  final Uri? discussionsNext;
+  final ValueNotifier<_DiscussionFeed> feed;
   final DiffTarget? initialTarget;
   @override
   State<_DiffFileScreen> createState() => _DiffFileScreenState();
@@ -541,10 +581,14 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
   bool _reloading = false;
   bool _busy = false;
   bool _disposed = false;
+  bool _discussionsLoading = false;
+  bool _ignoreParentFeed = false;
   int _epoch = 0;
-  var _revealTicks = 0;
   var _revealScheduled = false;
-  Uri? _discussionNext;
+  var _seekLow = 0.0;
+  var _seekHigh = -1.0;
+  var _seekStall = 0;
+  final _builtLines = <int>{};
   final _expanded = <String>{};
   final _scroll = ScrollController();
   final _targetKey = GlobalKey();
@@ -558,10 +602,8 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
   @override
   void initState() {
     super.initState();
-    _discussions = List<Json>.of(widget.discussions);
-    _truncated = widget.discussionsTruncated;
-    _discussionsError = widget.discussionsError;
-    _discussionNext = widget.discussionsNext;
+    _applyFeed(widget.feed.value);
+    widget.feed.addListener(_onFeed);
     final diff = valueText(widget.file, 'diff');
     if (widget.file['too_large'] == true ||
         widget.file['collapsed'] == true ||
@@ -579,12 +621,46 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     }
   }
 
+  void _applyFeed(_DiscussionFeed feed) {
+    _discussions = List<Json>.of(feed.items);
+    _truncated = feed.truncated;
+    _discussionsError = feed.error;
+    _discussionsLoading = feed.loading;
+  }
+
+  void _onFeed() {
+    if (_ignoreParentFeed || !mounted || _disposed) return;
+    setState(() => _applyFeed(widget.feed.value));
+    if (widget.initialTarget != null) {
+      _seekLow = 0;
+      _seekHigh = -1;
+      _seekStall = 0;
+      _scheduleReveal();
+    }
+  }
+
   @override
   void dispose() {
     _disposed = true;
+    widget.feed.removeListener(_onFeed);
     _scroll.dispose();
     super.dispose();
   }
+
+  void _trackBuilt(int index, bool built) {
+    if (built) {
+      _builtLines.add(index);
+    } else {
+      _builtLines.remove(index);
+    }
+  }
+
+  Widget _builtRow(int index, Widget child) => _BuiltLine(
+    key: ValueKey('built-line-$index'),
+    index: index,
+    onBuilt: _trackBuilt,
+    child: child,
+  );
 
   Map<int, List<Json>> _anchored(List<DiffLine> lines) {
     final grouped = <int, List<Json>>{};
@@ -683,7 +759,6 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       unawaited(Scrollable.ensureVisible(target, alignment: 0.05));
       return;
     }
-    if (_revealTicks > 40) return;
     if (!_scroll.hasClients) {
       _scheduleReveal();
       return;
@@ -694,58 +769,92 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       return;
     }
     final lines = _lines;
-    final index = lines == null
-        ? 0
-        : (_targetLineIndex(lines) ?? lines.length);
-    final itemCount = lines == null
-        ? 1
-        : lines.length + (_showOther(lines) ? 1 : 0);
+    final index = lines == null ? 0 : (_targetLineIndex(lines) ?? lines.length);
     final span = position.maxScrollExtent;
     if (span <= 0) {
-      _revealTicks++;
+      _seekStall++;
+      if (_seekStall > 8) return;
       _scheduleReveal();
       return;
     }
-    final safeCount = itemCount < 1 ? 1 : itemCount;
-    final average = (span + position.viewportDimension) / safeCount;
-    var estimated = (index * average).clamp(0.0, span);
-    final atEnd = position.pixels >= span - 1;
-    if (estimated <= position.pixels + 1) {
-      if (atEnd) return;
-      estimated = span;
+    if (_seekHigh < 0 || _seekHigh > span) _seekHigh = span;
+    if (_seekLow > _seekHigh) {
+      _seekLow = 0;
+      _seekHigh = span;
     }
-    if (estimated <= position.pixels + 1) return;
-    _revealTicks++;
-    _scroll.jumpTo(estimated);
+    final built = _builtRange();
+    var next = position.pixels;
+    if (built == null) {
+      final itemCount = lines == null
+          ? 1
+          : lines.length + (_showOther(lines) ? 1 : 0);
+      final safeCount = itemCount < 1 ? 1 : itemCount;
+      final average = (span + position.viewportDimension) / safeCount;
+      next = (index * average).clamp(0.0, span);
+    } else if (index < built.$1) {
+      _seekHigh = math.min(_seekHigh, position.pixels);
+      next = (_seekLow + _seekHigh) / 2;
+    } else if (index > built.$2) {
+      _seekLow = math.max(_seekLow, position.pixels);
+      _seekHigh = math.max(_seekHigh, span);
+      next = (_seekLow + _seekHigh) / 2;
+    } else {
+      _seekStall++;
+      if (_seekStall > 4) return;
+      _scheduleReveal();
+      return;
+    }
+    next = next.clamp(0.0, span);
+    if ((next - position.pixels).abs() < 1) {
+      if (built != null && index > built.$2 && position.pixels < span - 1) {
+        next = math.min(span, position.pixels + position.viewportDimension);
+      } else if (built != null && index < built.$1 && position.pixels > 1) {
+        next = math.max(0.0, position.pixels - position.viewportDimension);
+      }
+    }
+    if ((next - position.pixels).abs() < 1) {
+      _seekStall++;
+      if (_seekStall > 4) return;
+      _scheduleReveal();
+      return;
+    }
+    _seekStall = 0;
+    _scroll.jumpTo(next);
     _scheduleReveal();
+  }
+
+  (int, int)? _builtRange() {
+    if (_builtLines.isEmpty) return null;
+    var minBuilt = _builtLines.first;
+    var maxBuilt = _builtLines.first;
+    for (final built in _builtLines) {
+      if (built < minBuilt) minBuilt = built;
+      if (built > maxBuilt) maxBuilt = built;
+    }
+    return (minBuilt, maxBuilt);
   }
 
   Future<void> _reloadDiscussions() async {
     final epoch = ++_epoch;
-    final resume = _discussionNext;
-    final prior = List<Json>.of(_discussions);
+    _ignoreParentFeed = true;
     setState(() {
       _reloading = true;
       _discussionsError = null;
+      _discussionsLoading = false;
     });
     final loaded = await _loadDiscussions(
       widget.api,
       _mrPath,
       epoch: epoch,
       current: _walkCurrent,
-      resume: resume,
     );
     if (!mounted || _disposed || epoch != _epoch) return;
     setState(() {
-      final merged = resume == null
-          ? loaded.items
-          : <Json>[...prior, ...loaded.items];
-      if (merged.isNotEmpty || loaded.error == null) {
-        _discussions = merged;
+      if (loaded.items.isNotEmpty || loaded.error == null) {
+        _discussions = loaded.items;
         _truncated = loaded.truncated;
       }
       _discussionsError = loaded.error;
-      _discussionNext = loaded.error == null ? null : (loaded.next ?? resume);
       _reloading = false;
     });
   }
@@ -875,6 +984,11 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                   detail: _unavailable,
                   icon: Icons.code_off,
                 ),
+                if (_discussionsLoading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Text('正在載入討論'),
+                  ),
                 if (_truncated)
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
@@ -913,6 +1027,11 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
+                if (_discussionsLoading)
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Text('正在載入討論'),
+                  ),
                 if (_truncated)
                   const Padding(
                     padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -935,14 +1054,17 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                       itemCount: lines.length + (showOther ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index == lines.length) {
-                          return KeyedSubtree(
-                            key: !onLine && widget.initialTarget != null
-                                ? _targetKey
-                                : null,
-                            child: _OtherVersionSection(
-                              discussions: others,
-                              version: widget.version,
-                              fallbackReason: _fallbackReason,
+                          return _builtRow(
+                            index,
+                            KeyedSubtree(
+                              key: !onLine && widget.initialTarget != null
+                                  ? _targetKey
+                                  : null,
+                              child: _OtherVersionSection(
+                                discussions: others,
+                                version: widget.version,
+                                fallbackReason: _fallbackReason,
+                              ),
                             ),
                           );
                         }
@@ -1067,9 +1189,12 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                           ],
                         );
                         if (onLine && index == targetIndex) {
-                          return KeyedSubtree(key: _targetKey, child: row);
+                          return _builtRow(
+                            index,
+                            KeyedSubtree(key: _targetKey, child: row),
+                          );
                         }
-                        return row;
+                        return _builtRow(index, row);
                       },
                     ),
                   ),
@@ -1092,6 +1217,45 @@ bool _resolved(Json discussion) {
   ).where((note) => note['resolvable'] == true);
   if (notes.isEmpty) return discussion['resolved'] == true;
   return notes.every((note) => note['resolved'] == true);
+}
+
+class _BuiltLine extends StatefulWidget {
+  const _BuiltLine({
+    super.key,
+    required this.index,
+    required this.onBuilt,
+    required this.child,
+  });
+  final int index;
+  final void Function(int index, bool built) onBuilt;
+  final Widget child;
+  @override
+  State<_BuiltLine> createState() => _BuiltLineState();
+}
+
+class _BuiltLineState extends State<_BuiltLine> {
+  @override
+  void initState() {
+    super.initState();
+    widget.onBuilt(widget.index, true);
+  }
+
+  @override
+  void didUpdateWidget(_BuiltLine oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.index == widget.index) return;
+    oldWidget.onBuilt(oldWidget.index, false);
+    widget.onBuilt(widget.index, true);
+  }
+
+  @override
+  void dispose() {
+    widget.onBuilt(widget.index, false);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _DiffThreadCard extends StatelessWidget {

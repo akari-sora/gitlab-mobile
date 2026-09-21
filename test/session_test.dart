@@ -15,12 +15,19 @@ class MemoryAccountStore implements AccountStore {
   bool signOutPending = false;
   bool rejectWrite = false;
   bool failLastActiveDelete = false;
+  bool failSignOutMarker = false;
   Completer<void>? holdLastActiveWrite;
+  Completer<void>? holdAccountSave;
   int lastActiveWrites = 0;
+  int accountSaves = 0;
   @override
   Future<List<Account>> load() async => accounts;
   @override
   Future<void> save(List<Account> value) async {
+    accountSaves++;
+    final hold = holdAccountSave;
+    holdAccountSave = null;
+    if (hold != null) await hold.future;
     if (rejectWrite) throw StateError('synthetic key-store failure');
     accounts = List.of(value);
   }
@@ -44,7 +51,9 @@ class MemoryAccountStore implements AccountStore {
   Future<bool> loadSignOutPending() async => signOutPending;
   @override
   Future<void> saveSignOutPending(bool pending) async {
-    if (rejectWrite) throw StateError('synthetic key-store failure');
+    if (rejectWrite || failSignOutMarker) {
+      throw StateError('synthetic key-store failure');
+    }
     signOutPending = pending;
   }
 }
@@ -456,5 +465,175 @@ void main() {
     final active = controller.active!.credential as OAuthCredential;
     expect(active.accessToken, 'rotated-access');
     expect(active.refreshToken, 'rotated-refresh');
+  });
+
+  String header(RequestOptions request, String name) {
+    for (final entry in request.headers.entries) {
+      if (entry.key.toLowerCase() == name) return '${entry.value}';
+    }
+    return '';
+  }
+
+  Account accountFor(int id, String token) => Account(
+    instance: GitLabInstance.parse('https://example.com'),
+    user: GitLabUser(id: id, username: 'user$id', name: 'User $id'),
+    token: token,
+  );
+
+  test('select does not activate a superseded account after delayed cleanup', () async {
+    final hold = Completer<void>();
+    final store = MemoryAccountStore()..holdLastActiveWrite = hold;
+    final accountA = accountFor(7, 'token-a');
+    final accountB = accountFor(8, 'token-b');
+    store.accounts = [accountA, accountB];
+    final adapter = FakeAdapter((request) {
+      final token = header(request, 'private-token');
+      final id = token == 'token-b' ? 8 : 7;
+      return jsonResponse({
+        'id': id,
+        'username': 'user$id',
+        'name': 'User $id',
+      });
+    });
+    final controller = controllerFor(store, adapter);
+    addTearDown(controller.dispose);
+    await controller.initialize();
+    final pendingA = controller.select(accountA);
+    for (var i = 0; i < 20 && store.lastActiveWrites == 0; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(store.lastActiveWrites, 1);
+    final pendingB = controller.select(accountB);
+    hold.complete();
+    await pendingA;
+    await pendingB;
+    expect(controller.active?.user.id, 8);
+    expect(store.lastActive, accountB.key);
+    final users = adapter.requests.where(
+      (request) => request.uri.path.endsWith('/user'),
+    );
+    expect(users, hasLength(1));
+    expect(header(users.single, 'private-token'), 'token-b');
+  });
+
+  test('endSession during select cleanup does not re-arm the first account', () async {
+    final hold = Completer<void>();
+    final store = MemoryAccountStore()..holdLastActiveWrite = hold;
+    final accountA = accountFor(7, 'token-a');
+    store.accounts = [accountA];
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({'id': 7, 'username': 'user7', 'name': 'User 7'}),
+    );
+    final controller = controllerFor(store, adapter);
+    addTearDown(controller.dispose);
+    await controller.initialize();
+    final pendingA = controller.select(accountA);
+    for (var i = 0; i < 20 && store.lastActiveWrites == 0; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(store.lastActiveWrites, 1);
+    final ending = controller.endSession();
+    hold.complete();
+    await pendingA;
+    await ending;
+    expect(controller.active, isNull);
+    expect(store.lastActive, isNull);
+    expect(store.signOutPending, isFalse);
+    expect(
+      adapter.requests.where((request) => request.uri.path.endsWith('/user')),
+      isEmpty,
+    );
+  });
+
+  test('sign-out still deletes the remembered key when the marker write fails', () async {
+    final store = MemoryAccountStore();
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({'id': 7, 'username': 'tester', 'name': 'Test'}),
+    );
+    final controller = controllerFor(store, adapter);
+    addTearDown(controller.dispose);
+    await controller.initialize();
+    await controller.connect('https://example.com', 'synthetic-test-token');
+    expect(store.lastActive, isNotNull);
+    store.failSignOutMarker = true;
+    await controller.endSession();
+    expect(controller.active, isNull);
+    expect(controller.pendingSignOutCleanup, isTrue);
+    expect(controller.message, '無法清除自動登入記錄；請重試登出。');
+    expect(store.lastActive, isNull);
+    store.failSignOutMarker = false;
+    final next = controllerFor(store, adapter);
+    addTearDown(next.dispose);
+    await next.initialize();
+    expect(next.active, isNull);
+    expect(next.resuming, isFalse);
+    expect(
+      adapter.requests.where((request) => request.uri.path.endsWith('/user')),
+      hasLength(1),
+    );
+  });
+
+  test('a stale pre-activation rotation cannot overwrite a newer account list', () async {
+    final holdSave = Completer<void>();
+    final store = MemoryAccountStore()..holdAccountSave = holdSave;
+    final saved = Account(
+      instance: GitLabInstance.parse('https://example.com'),
+      user: const GitLabUser(id: 7, username: 'tester', name: 'Test'),
+      credential: const OAuthCredential(
+        accessToken: 'old-access',
+        refreshToken: 'old-refresh',
+        clientId: 'synthetic-app-id',
+      ),
+    );
+    store.accounts = [saved];
+    store.lastActive = saved.key;
+    final adapter = FakeAdapter((request) {
+      if (request.uri.path.endsWith('/oauth/token')) {
+        return jsonResponse({
+          'access_token': 'rotated-access',
+          'refresh_token': 'rotated-refresh',
+          'token_type': 'bearer',
+          'expires_in': 7200,
+        });
+      }
+      if (header(request, 'private-token') == 'synthetic-pat') {
+        return jsonResponse({'id': 9, 'username': 'newer', 'name': 'Newer'});
+      }
+      if (header(request, 'authorization').contains('rotated-access')) {
+        return jsonResponse({'id': 7, 'username': 'tester', 'name': 'Test'});
+      }
+      return jsonResponse({'message': 'expired'}, status: 401);
+    });
+    final controller = controllerFor(
+      store,
+      adapter,
+      createOAuth: (instance, clientId) => OAuthTokenClient(
+        instance: instance,
+        clientId: clientId,
+        dio: Dio()..httpClientAdapter = adapter,
+      ),
+    );
+    addTearDown(controller.dispose);
+    final pending = controller.initialize();
+    for (var i = 0; i < 40 && store.accountSaves == 0; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(store.accountSaves, 1);
+    final ending = controller.endSession();
+    final connecting = controller.connect(
+      'https://example.com',
+      'synthetic-pat',
+    );
+    for (var i = 0; i < 40 && controller.accounts.every((a) => a.user.id != 9); i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(controller.accounts.map((account) => account.user.id), contains(9));
+    holdSave.complete();
+    await pending;
+    await ending;
+    await connecting;
+    expect(store.accounts.map((account) => account.user.id), contains(9));
+    expect(controller.accounts.map((account) => account.user.id), contains(9));
+    expect(controller.active?.user.id, 9);
   });
 }

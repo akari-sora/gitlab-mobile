@@ -53,10 +53,15 @@ final class SessionController extends ChangeNotifier {
 
   /// Mirrors the stored sign-out marker. A fresh controller learns the same
   /// fact from [AccountStore.loadSignOutPending] and will not auto-resume.
+  /// A failed key deletion keeps this true even when the marker write itself
+  /// did not land, so a later [initialize] on this controller will not resume.
   bool pendingSignOutCleanup = false;
   int _lastActiveSerial = 0;
   bool _lastActiveIdle = true;
   Future<void> _lastActiveTail = Future<void>.value();
+  int _accountsSerial = 0;
+  bool _accountsIdle = true;
+  Future<void> _accountsTail = Future<void>.value();
 
   bool _current(int operation) => !_disposed && operation == _operation;
   void _emit() {
@@ -76,11 +81,12 @@ final class SessionController extends ChangeNotifier {
         }
         return;
       }
-      var signOutPending = false;
+      // In-memory cleanup survives a marker write that never landed. A stored
+      // marker, or an unreadable one, also blocks auto-resume.
+      var signOutPending = pendingSignOutCleanup;
       try {
-        signOutPending = await store.loadSignOutPending();
+        if (await store.loadSignOutPending()) signOutPending = true;
       } catch (_) {
-        // Unreadable marker: do not guess that auto-resume is safe.
         signOutPending = true;
       }
       String? lastKey;
@@ -99,6 +105,7 @@ final class SessionController extends ChangeNotifier {
       resumingAccount = match;
       message = null;
       _emit();
+      if (!_current(ticket)) return;
       GitLabApi? candidate;
       try {
         candidate = _client(match.instance, match.credential, account: match);
@@ -174,14 +181,19 @@ final class SessionController extends ChangeNotifier {
         user: user,
         credential: candidate.credential,
       );
-      final updated = [
-        ..._accounts.where((a) => a.key != account.key),
-        account,
-      ];
-      await store.save(updated);
+      final previous = List<Account>.of(_accounts);
+      _remember(account);
+      final staged = _accounts;
+      try {
+        await _enqueueAccountSave();
+      } catch (_) {
+        if (_current(ticket) && identical(_accounts, staged)) {
+          _accounts = previous;
+        }
+        rethrow;
+      }
       // A secure-store write already in flight cannot be cancelled. It may
       // retain the new saved account, but MUST NOT activate a stale session.
-      if (!_disposed) _accounts = updated;
       if (!_current(ticket)) return;
       _activate(account, candidate);
       candidate = null;
@@ -203,23 +215,25 @@ final class SessionController extends ChangeNotifier {
     } catch (_) {
       if (_current(ticket)) message = '無法安全保存帳號；未啟用此連線。';
     } finally {
-      candidate?.close();
-      _pending = null;
-      busy = false;
-      _emit();
+      _releaseCandidate(candidate, ticket);
     }
   }
 
   Future<void> select(Account saved) async {
-    if (busy || initializing || resuming || _disposed) return;
-    await endSession();
-    if (_disposed || busy) return;
+    if (initializing || resuming || _disposed) return;
     final ticket = ++_operation;
     busy = true;
     message = null;
     _emit();
     GitLabApi? candidate;
     try {
+      final cleared = await _commitSignOut();
+      if (!_current(ticket)) return;
+      if (!cleared) {
+        message = '無法清除自動登入記錄；請重試登出。';
+        _emit();
+        return;
+      }
       candidate = _client(saved.instance, saved.credential, account: saved);
       _pending = candidate;
       final user = await candidate.currentUser();
@@ -238,10 +252,7 @@ final class SessionController extends ChangeNotifier {
     } catch (_) {
       if (_current(ticket)) message = '帳號重新驗證失敗；未切換至此帳號。';
     } finally {
-      candidate?.close();
-      _pending = null;
-      busy = false;
-      _emit();
+      _releaseCandidate(candidate, ticket);
     }
   }
 
@@ -290,12 +301,17 @@ final class SessionController extends ChangeNotifier {
         user: user,
         credential: candidate.credential,
       );
-      final updated = [
-        ..._accounts.where((a) => a.key != account.key),
-        account,
-      ];
-      await store.save(updated);
-      if (!_disposed) _accounts = updated;
+      final previous = List<Account>.of(_accounts);
+      _remember(account);
+      final staged = _accounts;
+      try {
+        await _enqueueAccountSave();
+      } catch (_) {
+        if (_current(ticket) && identical(_accounts, staged)) {
+          _accounts = previous;
+        }
+        rethrow;
+      }
       if (!_current(ticket)) return;
       _activate(account, candidate);
       candidate = null;
@@ -317,10 +333,7 @@ final class SessionController extends ChangeNotifier {
     } catch (_) {
       if (_current(ticket)) message = '無法完成授權或安全保存帳號；未啟用此連線。';
     } finally {
-      candidate?.close();
-      _pending = null;
-      busy = false;
-      _emit();
+      _releaseCandidate(candidate, ticket);
     }
   }
 
@@ -372,16 +385,65 @@ final class SessionController extends ChangeNotifier {
       user: source.user,
       credential: rotated,
     );
-    if (current != null && current.key == updated.key) active = updated;
-    final accounts = [
-      ..._accounts.where((item) => item.key != updated.key),
-      updated,
-    ];
-    await store.save(accounts);
-    if (!_disposed) {
-      _accounts = accounts;
-      _emit();
+    final previous = List<Account>.of(_accounts);
+    final previousActive = active;
+    _remember(updated);
+    final staged = _accounts;
+    try {
+      await _enqueueAccountSave();
+    } catch (_) {
+      if (identical(_accounts, staged)) {
+        _accounts = previous;
+        active = previousActive;
+      }
+      rethrow;
     }
+    if (!_disposed) _emit();
+  }
+
+  void _remember(Account account) {
+    _accounts = [
+      ..._accounts.where((item) => item.key != account.key),
+      account,
+    ];
+    if (active?.key == account.key) active = account;
+  }
+
+  /// Account-list writes run one at a time. Each write snapshots [_accounts]
+  /// when it actually starts, so a stale pre-activation rotation cannot
+  /// overwrite a newer list that landed while an older save was in flight.
+  /// A later call skips an earlier write that has not started.
+  Future<void> _enqueueAccountSave() {
+    final serial = ++_accountsSerial;
+    final result = _accountsIdle
+        ? _writeAccounts(serial)
+        : _accountsTail.then((_) => _writeAccounts(serial));
+    _accountsIdle = false;
+    final tail = result.catchError((Object _) => Future<void>.value());
+    _accountsTail = tail;
+    unawaited(
+      tail.whenComplete(() {
+        if (identical(_accountsTail, tail)) _accountsIdle = true;
+      }),
+    );
+    return result;
+  }
+
+  Future<void> _writeAccounts(int serial) async {
+    if (serial != _accountsSerial) return;
+    final snapshot = List<Account>.of(_accounts);
+    await store.save(snapshot);
+  }
+
+  void _releaseCandidate(GitLabApi? candidate, int ticket) {
+    if (candidate != null) {
+      candidate.close();
+      if (identical(_pending, candidate)) _pending = null;
+    } else if (_current(ticket)) {
+      _pending = null;
+    }
+    if (_current(ticket)) busy = false;
+    _emit();
   }
 
   void _activate(Account account, GitLabApi client) {
@@ -430,43 +492,70 @@ final class SessionController extends ChangeNotifier {
     required bool signOut,
   }) async {
     if (serial != _lastActiveSerial) return;
+    if (!signOut) {
+      try {
+        await store.saveLastActive(key);
+        if (serial != _lastActiveSerial) return;
+        if (key != null) {
+          await store.saveSignOutPending(false);
+          if (!_disposed) pendingSignOutCleanup = false;
+        }
+      } catch (error, stack) {
+        if (serial != _lastActiveSerial) return;
+        Error.throwWithStackTrace(error, stack);
+      }
+      return;
+    }
+    // Marker, then key deletion, then clear the marker. A marker-write
+    // failure still deletes the key and is surfaced to the caller.
+    Object? markerError;
+    StackTrace? markerStack;
     try {
-      if (signOut) {
-        await store.saveSignOutPending(true);
-        if (!_disposed) pendingSignOutCleanup = true;
-      }
-      await store.saveLastActive(key);
-      if (serial != _lastActiveSerial) return;
-      if (key != null || signOut) {
-        await store.saveSignOutPending(false);
-        if (!_disposed) pendingSignOutCleanup = false;
-      }
+      await store.saveSignOutPending(true);
+      if (!_disposed) pendingSignOutCleanup = true;
     } catch (error, stack) {
-      if (serial != _lastActiveSerial) return;
-      if (signOut) {
-        try {
-          await store.saveSignOutPending(true);
-        } catch (_) {}
-        if (!_disposed) pendingSignOutCleanup = true;
+      markerError = error;
+      markerStack = stack;
+      if (!_disposed) pendingSignOutCleanup = true;
+    }
+    if (serial != _lastActiveSerial) {
+      if (markerError != null) {
+        Error.throwWithStackTrace(
+          markerError,
+          markerStack ?? StackTrace.current,
+        );
       }
+      return;
+    }
+    try {
+      await store.saveLastActive(null);
+    } catch (error, stack) {
+      try {
+        await store.saveSignOutPending(true);
+      } catch (_) {}
+      if (!_disposed) pendingSignOutCleanup = true;
+      if (serial != _lastActiveSerial) return;
+      Error.throwWithStackTrace(error, stack);
+    }
+    if (serial != _lastActiveSerial) return;
+    if (markerError != null) {
+      Error.throwWithStackTrace(markerError, markerStack ?? StackTrace.current);
+    }
+    try {
+      await store.saveSignOutPending(false);
+      if (serial != _lastActiveSerial) return;
+      if (!_disposed) pendingSignOutCleanup = false;
+    } catch (error, stack) {
+      if (!_disposed) pendingSignOutCleanup = true;
+      if (serial != _lastActiveSerial) return;
       Error.throwWithStackTrace(error, stack);
     }
   }
 
-  /// Local sign-out. Does not revoke the token on GitLab.
-  ///
-  /// The in-memory session is cancelled before any storage I/O, so the UI
-  /// leaves the account immediately. Remembered-account writes are serialised
-  /// by [_enqueueLastActive]: a later write wins, and a stale result is ignored.
-  ///
-  /// Auto-resume in [initialize] runs only when [AccountStore.loadLastActive]
-  /// returns a key and [AccountStore.loadSignOutPending] is false. This method
-  /// stores that marker before deleting the key, and clears the marker only
-  /// after the deletion succeeds. If deletion fails, the UI stays signed out,
-  /// [message] asks for a retry, and the marker blocks the next launch from
-  /// restoring the account the user signed out of.
-  Future<void> endSession() async {
-    _operation++;
+  /// Drops the in-memory session and waits for the sign-out storage sequence.
+  /// Does not take a new operation ticket; callers that must stay current
+  /// reserve one before awaiting this.
+  Future<bool> _commitSignOut() async {
     _pending?.close();
     _pending = null;
     api?.close();
@@ -480,28 +569,59 @@ final class SessionController extends ChangeNotifier {
     _emit();
     try {
       await _enqueueLastActive(null, signOut: true);
+      return true;
     } catch (_) {
       pendingSignOutCleanup = true;
-      message = '無法清除自動登入記錄；請重試登出。';
-      if (!_disposed) _emit();
+      return false;
     }
+  }
+
+  /// Local sign-out. Does not revoke the token on GitLab.
+  ///
+  /// The in-memory session is cancelled before any storage I/O, so the UI
+  /// leaves the account immediately. Remembered-account writes are serialised
+  /// by [_enqueueLastActive]: a later write wins, and a stale result is ignored.
+  ///
+  /// Auto-resume in [initialize] runs only when [AccountStore.loadLastActive]
+  /// returns a key and sign-out cleanup is not pending. Cleanup writes the
+  /// marker, deletes the key even if that marker write fails, and clears the
+  /// marker only after the deletion succeeds. A failed marker write or a
+  /// failed deletion keeps auto-login disarmed.
+  Future<void> endSession() async {
+    if (_disposed) return;
+    final ticket = ++_operation;
+    busy = false;
+    final cleared = await _commitSignOut();
+    if (!_current(ticket) || cleared) return;
+    message = '無法清除自動登入記錄；請重試登出。';
+    _emit();
   }
 
   Future<void> remove(Account account) async {
     if (busy || initializing || resuming || _disposed) return;
+    final ticket = ++_operation;
     busy = true;
     message = null;
     _emit();
+    final previous = List<Account>.of(_accounts);
+    final staged = _accounts.where((item) => item.key != account.key).toList();
+    _accounts = staged;
     try {
-      final updated = _accounts.where((a) => a.key != account.key).toList();
-      await store.save(updated);
-      if (_disposed) return;
-      _accounts = updated;
-      if (active?.key == account.key) await endSession();
+      await _enqueueAccountSave();
+      if (!_current(ticket)) return;
+      if (active?.key == account.key) {
+        final cleared = await _commitSignOut();
+        if (_current(ticket) && !cleared) {
+          message = '無法清除自動登入記錄；請重試登出。';
+        }
+      }
     } catch (_) {
-      if (!_disposed) message = '移除安全儲存失敗；請重試。';
+      if (_current(ticket) && identical(_accounts, staged)) {
+        _accounts = previous;
+      }
+      if (_current(ticket)) message = '移除安全儲存失敗；請重試。';
     } finally {
-      busy = false;
+      if (_current(ticket)) busy = false;
       _emit();
     }
   }
