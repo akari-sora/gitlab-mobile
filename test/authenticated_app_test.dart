@@ -521,7 +521,7 @@ void main() {
       await File('${directory.path}/job.zip').writeAsBytes([9]);
     });
 
-    await tester.pumpWidget(AuthenticatedApp(session: session));
+    await tester.pumpWidget(AuthenticatedApp(session: session, appearance: appearance));
     await settleNetworkWidgets(tester);
     await tester.tap(find.text('我的'));
     await settleNetworkWidgets(tester);
@@ -561,7 +561,7 @@ void main() {
       artifactStorageRoot = () async => throw const FileSystemException('unreadable');
     });
 
-    await tester.pumpWidget(AuthenticatedApp(session: session));
+    await tester.pumpWidget(AuthenticatedApp(session: session, appearance: appearance));
     await settleNetworkWidgets(tester);
     await tester.tap(find.text('我的'));
     await settleNetworkWidgets(tester);
