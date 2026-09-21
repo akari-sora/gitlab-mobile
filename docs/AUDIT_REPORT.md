@@ -17,6 +17,43 @@
   2. 核心工作流與 G0-G5 落差勘測報告 (`teamwork_preview_explorer_workflow_1`)
   3. 代碼品質、靜態分析與自動化測試盲點報告 (`teamwork_preview_explorer_quality_1`)
 
+## 狀態更新 2026-09-22
+
+本段註記下方 2026-09-21 正文，不改寫正文。正文仍描述審查當時的代碼。證據邊界見 `docs/V0_3_VERIFICATION.md`。寫著「開放中」的合併請求當時尚未併入 `main`。測試總數從 CI job 報告讀取，此處不另寫死。
+
+### 已修
+
+| 項目 | 現況 | 合併請求 |
+|---|---|---|
+| ISSUE-H01 | 404 畫面補上帳號、實例、資源、重試與切換帳號。實機尚未走過模糊 404 畫面 | !2（已合併，`9ae6780`） |
+| ISSUE-H02 | Diff 行觸控熱區放大 | !2（已合併，`f2d84b2`） |
+| ISSUE-H04 | OAuth PKCE 已接上。`oauthApplicationIdFor` 仍是空對照表，尚未用真實 Application ID 登入，故不計為閉合 | !2（已合併，`62b81fd`） |
+| ISSUE-H05 | App 內下載 Job 工件。模擬器走過下載表；實機 `db12b41` 仍是瀏覽器選單 | !5（開放中） |
+| ISSUE-H06 | 附件上傳。實機與 live 上傳 NOT_RUN | !7（開放中） |
+| ISSUE-H08 | Diff 內顯示既有討論。實機 NOT_RUN | !4（開放中） |
+| ISSUE-H09 | 已加入 Inbox 與 Diff 測試（`test/inbox_page_test.dart`、`test/diff_page_test.dart`）。覆蓋率從 CI 報告讀取。收件匣分頁實機 NOT_RUN | !2（已合併，`af23c5f`） |
+| ISSUE-M02 | 檔案檢視共用水平捲動 | !2（已合併，`9dd99e9`） |
+| ISSUE-M04 | 登入頁可移除已存帳號 | !2（已合併，`0b6ae18`） |
+| ISSUE-M05 | MR 總覽審查卡片。實機看過卡片；未從卡片完成核准或合併 | !3（開放中，auto-merge 已武裝，`339320a`） |
+| ISSUE-M06 | 合併對話框的 Squash 與刪除來源分支。實機打開後取消，沒有合併 | !3（開放中，`339320a`） |
+| ISSUE-M07 | 已解決討論折疊、篩選與摘要。實機看過 | !3（開放中，`dd686f2`，覆核修正 `646dce9`） |
+| ISSUE-M08 | 標籤、指派、審查者、分支選擇器。實機 NOT_RUN | !7（開放中） |
+| ISSUE-M10 | 移除 `go_router` 與未使用的 G0 畫面 | !2（已合併，`ed4f3d3`） |
+| ISSUE-M13 | `SecureAccountStore` 與外部連結測試已加入。通過與否從 CI 報告讀取 | !2（已合併，`af23c5f`） |
+| ISSUE-M14 | Markdown 工具列。實機 NOT_RUN（`db12b41` 的議題是用三星鍵盤輸入） | !7（開放中） |
+
+### 仍開放
+
+- **ISSUE-H03**：840 dp 雙欄尚未做。
+- **ISSUE-H07**：Push 尚未做。
+- **ISSUE-H10**：工作區仍以未型別 `Json` 為主。
+- **ISSUE-H12**：裝置矩陣只覆蓋一隻實機（Samsung SM-S9280，Android 16）與一台 Pixel 9 模擬器（Android 16，arm64）。矩陣仍開放。私有專案 live smoke 與該實機走查見 v0.3 帳本，不把 G0 標成 ACCEPTED。
+- **ISSUE-M01、ISSUE-M03、ISSUE-M09、ISSUE-M11、ISSUE-M12**：仍開放。!5 的日誌區段折疊不是 M03（ANSI 著色）或 M09（增量串流）的修復。
+
+### ISSUE-H11 原發現撤回
+
+`pubspec.yaml` 的 `flutter_secure_storage` 是 11.2.0。該版預設 RSA-OAEP + AES-GCM，舊的 `encryptedSharedPreferences` 旗標已棄用，因此「未設定該旗標就會回退弱加密」的原結論撤回。目前初始化使用 `AndroidOptions()`，沒有再傳該旗標。尚未執行的是裝置備份、還原與遷移測試。
+
 ---
 
 ## 目錄 (Table of Contents)

@@ -20,21 +20,31 @@ Implemented REST operations:
 
 Real GitLab private-resource integration and Android/iOS device acceptance are still required. Synthetic fixtures are not integration evidence. CI-generated debug APKs are not proof of successful device operation.
 
+Status (2026-09-22): private-project evidence is in [v0.3 verification](V0_3_VERIFICATION.md) — one live smoke of the production client, plus one physical phone. Device evidence is that phone and one Pixel 9 emulator; the matrix is still open.
+
 ## G1 — Complete read-only workflows
 
 Branches, tags, commits, releases, MR/Issue reading, CI/log viewing, search and adaptive navigation. Add real empty/loading/error/partial/offline states; bounded large content; account-separated local persistence only after encryption/migration validation. Preserve navigation and scrolling between roots and on foldable resize.
+
+Status (2026-09-22): the [v0.3 ledger](V0_3_VERIFICATION.md) records a phone walk of search, a private project's files and Markdown, and a public project's issue, MR and CI lists. Inbox and the project More tab were not walked.
 
 ## G2 — Comments and issues
 
 Resource-scoped local drafts, create/edit/reply, attachment handling and conflict recovery. Keep drafts after failures and process termination. Never blindly retry a write after an ambiguous network timeout.
 
+Status (2026-09-22): the [v0.3 ledger](V0_3_VERIFICATION.md) records phone evidence for issue create, a comment, secure-draft restore after force-kill, and a typed delete. Pickers and attachment upload are implemented on !7; device evidence for those is NOT_RUN.
+
 ## G3 — MR review
 
 Mobile unified diff, correctly mapped old/new line anchors, discussion threads, SHA-bound approvals/merges and stale-version checks. Do not manufacture omitted server diff content or interpret accepted auto-merge as completed merge.
 
+Status (2026-09-22): the [v0.3 ledger](V0_3_VERIFICATION.md) records phone evidence on !3 for the overview review card, merge-option switches (dialog cancelled), and collapsed resolved discussions. Inline diff discussions are implemented on !4; device evidence is NOT_RUN.
+
 ## G4 — CI operations
 
 Run/retry/cancel/manual play, correct job-attempt identity, foreground log updates with a bounded budget, artifacts without token-bearing third-party redirects. These refer to the App's GitLab controls, not this repository's own CI setup.
+
+Status (2026-09-22): the [v0.3 ledger](V0_3_VERIFICATION.md) records a phone walk of pipeline, jobs and a 10-second log refresh on the `db12b41` build, and an emulator walk of in-app artifact download on !5. The live smoke's job trace / retry / manual-play check failed because shared-runner quota was exceeded; full-suite live CI job control is NOT_RUN.
 
 ## G5 — Release quality
 

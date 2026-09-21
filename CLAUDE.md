@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-`AGENTS.md` is the binding development contract (identity model, ambiguous 404 handling, credential and validation rules, evidence reporting). It is loaded alongside this file; nothing from it is repeated here. Read `README.md`, `docs/CI.md` and `docs/ROADMAP.md` before working. `docs/V0_2_VERIFICATION.md` is the evidence ledger, `docs/UI_REDESIGN.md` the UX rules, and `docs/AUDIT_REPORT.md` the defect inventory (`ISSUE-H*` / `ISSUE-M*`). The audit was written before the September 21, 2026 fix commits (diff tap target, OAuth PKCE, expired-account removal, `go_router` removal), so cross-check an issue against `git log` before treating it as open.
+`AGENTS.md` is the binding development contract (identity model, ambiguous 404 handling, credential and validation rules, evidence reporting). It is loaded alongside this file; nothing from it is repeated here. Read `README.md`, `docs/CI.md` and `docs/ROADMAP.md` before working. `docs/V0_2_VERIFICATION.md` and `docs/V0_3_VERIFICATION.md` are the evidence ledgers, `docs/UI_REDESIGN.md` the UX rules, and `docs/AUDIT_REPORT.md` the defect inventory (`ISSUE-H*` / `ISSUE-M*`). The audit body is the 2026-09-21 text; the 2026-09-22 status block at the top of that file lists what has since landed. Cross-check an issue against that block and `git log` before treating it as open.
 
 ## Toolchain and commands
 
@@ -51,7 +51,7 @@ Analyzer settings are strict (`strict-casts`, `strict-inference`, `strict-raw-ty
 ### Layering
 
 - `lib/core/` is plain Dart (only `providers.dart` imports Flutter/Riverpod): instance parsing, HTTP client, failures, pagination, models, OAuth PKCE, unified-diff parsing.
-- `lib/features/auth/` owns the session lifecycle and the account secure-storage user.
+- `lib/features/auth/` owns the session lifecycle. Disk writes are only the secure-storage keys and the artifact temp directory listed under Persistence.
 - `lib/features/projects/` holds typed list controllers; `lib/features/workspace/` holds the screens; `lib/features/shell/` is the bottom-nav shell; `lib/shared/` is theme, Markdown and reusable widgets/helpers.
 - `lib/core/workspace_api.dart` is `part of 'gitlab_api.dart'`: it adds generic `record` / `records` / `writeRecord` / `removeRecord` over untyped `Json` maps plus typed wrappers (issues, MRs, notes, files, branches, tags, pipelines, jobs, releases, todos). Most workspace screens consume these `Json` maps directly through the `valueText` / `valueInt` / `valueObject` helpers in `lib/shared/workspace_ui.dart`.
 
@@ -61,7 +61,7 @@ Analyzer settings are strict (`strict-casts`, `strict-inference`, `strict-raw-ty
 
 `GitLabApi` invariants (keep them when adding endpoints):
 
-- One immutable account per client. `instance.allowsApi(uri)` gates every request: same origin, `/api/v4` prefix, no `.`/`..` segments, no token-like query keys. Redirects are never followed (`redirectBlocked`).
+- One immutable account per client. `instance.allowsApi(uri)` gates every request: same origin, `/api/v4` prefix, no `.`/`..` segments, no token-like query keys. Redirects are never followed (`redirectBlocked`). The !5 artifact download is the exception: exactly one https `Location`, with no credential headers on that hop.
 - Responses are streamed against a byte budget (4 MiB default, `maxTextBytes` 2 MiB / `maxTextLines` 20000 for text); overruns become `tooLarge`, binary bytes become `unsupported`.
 - A 429 `Retry-After` is remembered in `_retryAt` and later calls fail fast with `rateLimited` until it passes.
 - Writes are never retried automatically. A transport error on a non-GET/HEAD request is `writeUncertain`, and an OAuth 401 refresh only replays GET/HEAD.
@@ -85,7 +85,17 @@ Riverpod is used only for `sessionProvider`. Screens receive `api` and `account`
 
 ### Persistence
 
-Only three things are written to disk, all through `flutter_secure_storage`: the account list (`SecureAccountStore`, key `gitlab_mobile_accounts_v2`, v1 read for migration), editor drafts keyed `draft.v2.<base64url(account.key)>.<base64url(resource)>`, and the appearance choice (`SecureAppearanceStore`, key `gitlab_mobile_appearance_v1`, a bare `ThemeMode` name that is device-scoped, not account-scoped). `clearSecureDrafts(account)` must run before an account is removed. No repository content, logs or search history is persisted.
+These are the only disk writes. No repository checkout, job log or search history is stored. `clearSecureDrafts(account)` must run before an account is removed. Keys introduced by an open MR are absent on `db12b41` until that MR merges.
+
+Through `flutter_secure_storage`:
+
+- Account list (`SecureAccountStore`, key `gitlab_mobile_accounts_v2`; v1 is read for migration, then deleted).
+- Editor drafts keyed `draft.v2.<base64url(account.key)>.<base64url(resource)>`.
+- Appearance, key `gitlab_mobile_appearance_v1` (!3). !6 stores the theme mode and the dynamic-colour flag in that same key. It is a device preference, shared by every account.
+- Last-active account, key `gitlab_mobile_last_account_v1`, and the sign-out marker `gitlab_mobile_sign_out_pending_v1` (!4). Auto-resume must not run while the marker is set.
+- Recent project, one record per account, key `recent_project.v1.<base64url(account.key)>` (!6): numeric project id and the name shown on the launcher shortcut. Clear that record when the account is removed.
+
+Outside secure storage, !5 only: the artifact cache directory `getTemporaryDirectory()/artifacts/<projectId>-<jobId>/`. The operating system may delete it.
 
 ### Shell and UI conventions
 
