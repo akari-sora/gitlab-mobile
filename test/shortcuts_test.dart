@@ -161,6 +161,32 @@ void main() {
     expect(host.published.last.last.subtitle, 'Late');
   });
 
+  test('a queued rememberOpened does not adopt a session that started after it', () async {
+    final host = FakeAppShortcutHost();
+    final store = MemoryRecentProjectStore();
+    final shortcuts = LauncherShortcuts(host, store);
+    addTearDown(shortcuts.dispose);
+    shortcuts.bind('account-a');
+    await shortcuts.publish('account-a');
+    final writeGate = Completer<void>();
+    store.writeDelay = writeGate.future;
+    // First write blocks the queue; the second request waits behind it.
+    final first = shortcuts.rememberOpened(accountKey: 'account-a', id: 5, name: 'First');
+    final queued = shortcuts.rememberOpened(accountKey: 'account-a', id: 6, name: 'Queued');
+    await Future<void>.delayed(Duration.zero);
+    shortcuts.bind(null);
+    shortcuts.bind('account-a');
+    writeGate.complete();
+    store.writeDelay = null;
+    await first;
+    await queued;
+    // Neither request belongs to the new session: nothing republished, and the
+    // queued project was never written for it.
+    expect(host.published, hasLength(1));
+    expect(host.published.single.last.subtitle, isNull);
+    expect(await store.read('account-a'), const RecentProject(id: 5, name: 'First'));
+  });
+
   test('a delayed rememberOpened does not republish after an account switch', () async {
     final host = FakeAppShortcutHost();
     final store = MemoryRecentProjectStore();

@@ -176,10 +176,13 @@ class LauncherShortcuts extends ChangeNotifier {
     required int id,
     required String name,
   }) {
+    // Captured at call time, not when the queued work starts: a request that
+    // waits behind an in-flight write must not adopt a session that began
+    // after it (sign-out, or the same account returning with a new epoch).
+    final epoch = _epoch;
+    if (!_current(epoch, accountKey)) return Future<void>.value();
     return _enqueue(() async {
-      // Captured before the write so sign-out and a later sign-in of the same
-      // account (same key, new epoch) cannot republish this session's items.
-      final epoch = _epoch;
+      if (!_current(epoch, accountKey)) return;
       try {
         await _recent.write(accountKey, RecentProject(id: id, name: name));
       } catch (_) {
