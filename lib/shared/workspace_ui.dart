@@ -116,7 +116,8 @@ class StatusBadge extends StatelessWidget {
 
 /// Horizontal inset for feeds and their header rows: 16 dp on phones, a
 /// centred 640 dp column on wider windows so lists and their search rows
-/// share one edge.
+/// share one edge. The width is the viewport (`MediaQuery.sizeOf`), not the
+/// parent constraints, so a nested header and the list agree.
 double feedGutter(BuildContext context) {
   final width = MediaQuery.sizeOf(context).width;
   return width > 672 ? (width - 640) / 2 : 16.0;
@@ -182,46 +183,60 @@ class EntityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final content = Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (leading != null) ...[leading!, const SizedBox(width: 14)],
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          DefaultTextStyle.merge(
-            style: Theme.of(context).textTheme.titleMedium!.copyWith(
-              color: muted ? scheme.onSurfaceVariant : scheme.onSurface),
-            maxLines: titleMaxLines, overflow: TextOverflow.ellipsis, child: title),
-          if (subtitle != null) ...[
-            const SizedBox(height: 2),
-            DefaultTextStyle.merge(
-              style: Theme.of(context).textTheme.bodySmall!.copyWith(color: scheme.onSurfaceVariant),
-              maxLines: 1, overflow: TextOverflow.ellipsis, child: subtitle!),
-          ],
-          if (body != null) ...[const SizedBox(height: 8), body!],
-          if (meta.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Wrap(spacing: 10, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: meta),
-          ],
-        ])),
-        if (trailing != null) ...[const SizedBox(width: 8), trailing!]
-        else if (chevron && onTap != null) ...[
-          const SizedBox(width: 4),
-          Padding(padding: const EdgeInsets.only(top: 2),
-            child: Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant)),
-        ],
-      ]),
-    );
+    final details = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      DefaultTextStyle.merge(
+        style: Theme.of(context).textTheme.titleMedium!.copyWith(
+          color: muted ? scheme.onSurfaceVariant : scheme.onSurface),
+        maxLines: titleMaxLines, overflow: TextOverflow.ellipsis, child: title),
+      if (subtitle != null) ...[
+        const SizedBox(height: 2),
+        DefaultTextStyle.merge(
+          style: Theme.of(context).textTheme.bodySmall!.copyWith(color: scheme.onSurfaceVariant),
+          maxLines: 1, overflow: TextOverflow.ellipsis, child: subtitle!),
+      ],
+      if (body != null) ...[const SizedBox(height: 8), body!],
+      if (meta.isNotEmpty) ...[
+        const SizedBox(height: 10),
+        Wrap(spacing: 10, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: meta),
+      ],
+    ]);
+    // A trailing control (todo completion, metadata menu) stays outside the
+    // merged content so it keeps its own action. The card tap stays on the
+    // InkWell. Without a trailing widget the whole card is one node.
+    final Widget row = trailing == null
+        ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (leading != null) ...[leading!, const SizedBox(width: 14)],
+            Expanded(child: details),
+            if (chevron && onTap != null) ...[
+              const SizedBox(width: 4),
+              Padding(padding: const EdgeInsets.only(top: 2),
+                child: Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant)),
+            ],
+          ])
+        : Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: MergeSemantics(child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              if (leading != null) ...[leading!, const SizedBox(width: 14)],
+              Expanded(child: details),
+            ]))),
+            const SizedBox(width: 8),
+            trailing!,
+          ]);
+    final content = Padding(padding: const EdgeInsets.fromLTRB(16, 14, 12, 14), child: row);
     final card = Card(
       clipBehavior: Clip.antiAlias,
       child: onTap == null
           ? content
           : InkWell(
-              onTap: onTap, overlayColor: WidgetStatePropertyAll(scheme.onSurface.withValues(alpha: .06)),
+              onTap: onTap,
+              excludeFromSemantics: trailing != null,
+              overlayColor: WidgetStatePropertyAll(scheme.onSurface.withValues(alpha: .06)),
               child: content),
     );
-    // One merged node per card: title, subtitle, status and meta are read
-    // together with the tap action instead of as separate stops.
-    return MergeSemantics(child: Semantics(button: onTap != null, child: card));
+    if (trailing == null) {
+      return MergeSemantics(child: Semantics(button: onTap != null, child: card));
+    }
+    return Semantics(
+      container: true, explicitChildNodes: true, button: onTap != null, onTap: onTap, child: card);
   }
 }
 

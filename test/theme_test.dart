@@ -1,6 +1,13 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
+
+double _contrast(Color a, Color b) {
+  final la = a.computeLuminance(), lb = b.computeLuminance();
+  final light = la > lb ? la : lb, darkL = la > lb ? lb : la;
+  return (light + 0.05) / (darkL + 0.05);
+}
 
 void main() {
   test('appTheme without a dynamic scheme keeps the seeded cobalt theme', () {
@@ -25,13 +32,22 @@ void main() {
       expect(theme.colorScheme.surface, seeded.surface);
       expect(ignored.colorScheme.primary, theme.colorScheme.primary);
       expect(ignored.cardTheme.color, theme.cardTheme.color);
-      expect(theme.cardTheme.color, dark ? const Color(0xFF1D212B) : Colors.white);
+      expect(theme.cardTheme.color, dark ? const Color(0xFF1F2430) : Colors.white);
       expect(
         theme.inputDecorationTheme.fillColor,
         dark ? const Color(0xFF222733) : const Color(0xFFEEF0F6),
       );
+      final hairline = dark ? const Color(0xFF3A4050) : const Color(0xFFE5E8F0);
+      final control = dark ? const Color(0xFF5E6576) : const Color(0xFFE5E8F0);
       final side = (theme.cardTheme.shape! as RoundedRectangleBorder).side;
-      expect(side.color, dark ? const Color(0xFF303540) : const Color(0xFFE5E8F0));
+      expect(side.color, hairline);
+      expect(theme.chipTheme.side!.color, control);
+      expect(theme.outlinedButtonTheme.style!.side!.resolve({})!.color, control);
+      expect(theme.segmentedButtonTheme.style!.side!.resolve({})!.color, control);
+      if (dark) {
+        expect(theme.colorScheme.surface, const Color(0xFF15181F));
+        expect(_contrast(control, theme.colorScheme.surface), greaterThanOrEqualTo(3));
+      }
       expect(theme.filledButtonTheme.style!.minimumSize!.resolve({}), const Size(48, 48));
       expect(theme.textTheme.titleLarge!.fontSize, 19);
       final overlay = theme.appBarTheme.systemOverlayStyle!;
@@ -73,5 +89,15 @@ void main() {
     expect(darkTheme.inputDecorationTheme.fillColor, dynamicDark.surfaceContainerHigh);
     expect((darkTheme.cardTheme.shape! as RoundedRectangleBorder).side.color, dynamicDark.outlineVariant);
     expect(darkTheme.scaffoldBackgroundColor, dynamicDark.surface);
+  });
+
+  test('registerBundledLicenses yields the JetBrains Mono OFL', () async {
+    TestWidgetsFlutterBinding.ensureInitialized();
+    registerBundledLicenses();
+    final entries = await LicenseRegistry.licenses.toList();
+    final mono = entries.where((entry) => entry.packages.contains('JetBrains Mono'));
+    expect(mono, isNotEmpty);
+    final text = mono.first.paragraphs.map((paragraph) => paragraph.text).join('\n');
+    expect(text, contains('SIL Open Font License'));
   });
 }

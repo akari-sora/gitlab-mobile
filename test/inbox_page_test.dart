@@ -3,6 +3,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/inbox_page.dart';
+import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart';
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
 
@@ -127,6 +129,22 @@ void main() {
 
     expect(find.text('Assigned feature issue'), findsOneWidget);
     expect(find.textContaining('#15'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(EntityCard),
+        matching: find.byWidgetPredicate((widget) => widget is Text && widget.data == ''),
+      ),
+      findsNothing,
+    );
+    final height = tester.getSize(find.byType(EntityCard)).height;
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ListView(children: [
+        Builder(builder: (context) => workItemCard(
+          context, Map<String, dynamic>.from(issues.single), mr: false, onTap: () {})),
+      ])),
+    ));
+    await tester.pump();
+    expect(tester.getSize(find.byType(EntityCard)).height, height);
   });
 
   testWidgets(

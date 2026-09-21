@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart' as mui;
@@ -173,6 +174,15 @@ bool _listEquals(List<Color> a, List<Color> b) {
 /// aligned.
 const codeFontFamily = 'JetBrainsMono';
 
+/// Surfaces the bundled JetBrains Mono OFL in the license dialog. Declaring
+/// the file as an asset does not put it in the SDK's generated notices.
+void registerBundledLicenses() {
+  LicenseRegistry.addLicense(() async* {
+    final text = await rootBundle.loadString('assets/fonts/JetBrainsMono-OFL.txt');
+    yield LicenseEntryWithLineBreaks(const ['JetBrains Mono'], text);
+  });
+}
+
 TextStyle codeTextStyle(BuildContext context, {double fontSize = 13, Color? color}) => TextStyle(
   fontFamily: codeFontFamily, fontFamilyFallback: const ['Menlo', 'monospace'],
   fontSize: fontSize, height: 1.45, color: color ?? Theme.of(context).colorScheme.onSurface,
@@ -183,13 +193,15 @@ ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useD
   final dark = brightness == Brightness.dark;
   // A dynamic scheme replaces the cobalt seed. Card, outline and field fill
   // come from its surface-container and outline roles; type, shape and the
-  // 48 dp controls stay the app's. Cards keep a hairline in both modes so a
-  // tappable card stays separable from the scaffold.
+  // 48 dp controls stay the app's. Seeded dark cards are tonal content
+  // containers: the fill and the press ripple identify them, so their hairline
+  // stays softer than the control outline on chips, segments and outlined buttons.
   final ColorScheme scheme;
-  final Color outline, card, inputFill;
+  final Color hairline, controlOutline, card, inputFill;
   if (dynamicScheme != null && useDynamicColor) {
     scheme = dynamicScheme;
-    outline = scheme.outlineVariant;
+    hairline = scheme.outlineVariant;
+    controlOutline = scheme.outlineVariant;
     card = dark ? scheme.surfaceContainerHigh : scheme.surfaceContainerLowest;
     inputFill = scheme.surfaceContainerHigh;
   } else {
@@ -202,8 +214,11 @@ ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useD
       surfaceContainerHigh: dark ? const Color(0xFF232833) : const Color(0xFFE6EAF2),
       surfaceContainerHighest: dark ? const Color(0xFF2A303C) : const Color(0xFFDFE3EC),
     );
-    outline = dark ? const Color(0xFF303540) : const Color(0xFFE5E8F0);
-    card = dark ? const Color(0xFF1D212B) : Colors.white;
+    hairline = dark ? const Color(0xFF3A4050) : const Color(0xFFE5E8F0);
+    // #5C6374 is 2.95:1 on #15181F. #5E6576 is the same slate, the first step
+    // that clears the 3:1 non-text floor against that surface.
+    controlOutline = dark ? const Color(0xFF5E6576) : const Color(0xFFE5E8F0);
+    card = dark ? const Color(0xFF1F2430) : Colors.white;
     inputFill = dark ? const Color(0xFF222733) : const Color(0xFFEEF0F6);
   }
   final workshop = dark ? WorkshopColors.dark : WorkshopColors.light;
@@ -240,9 +255,9 @@ ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useD
       elevation: 0, color: card,
       margin: EdgeInsets.zero, surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: outline)),
+        side: BorderSide(color: hairline)),
     ),
-    dividerTheme: DividerThemeData(color: outline, thickness: 1, space: 1),
+    dividerTheme: DividerThemeData(color: hairline, thickness: 1, space: 1),
     listTileTheme: ListTileThemeData(
       minTileHeight: 48, iconColor: scheme.onSurfaceVariant,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -259,7 +274,7 @@ ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useD
       labelStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: scheme.onSurface),
       secondaryLabelStyle: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: scheme.onPrimaryContainer),
       backgroundColor: card, selectedColor: scheme.primaryContainer,
-      side: BorderSide(color: outline), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      side: BorderSide(color: controlOutline), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       showCheckmark: true, checkmarkColor: scheme.onPrimaryContainer,
     ),
     filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(
@@ -267,13 +282,13 @@ ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useD
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
     )),
     outlinedButtonTheme: OutlinedButtonThemeData(style: OutlinedButton.styleFrom(
-      minimumSize: const Size(48, 48), side: BorderSide(color: outline),
+      minimumSize: const Size(48, 48), side: BorderSide(color: controlOutline),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
     )),
     textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(minimumSize: const Size(48, 48))),
     iconButtonTheme: IconButtonThemeData(style: IconButton.styleFrom(minimumSize: const Size(48, 48))),
     segmentedButtonTheme: SegmentedButtonThemeData(style: SegmentedButton.styleFrom(
-      minimumSize: const Size(48, 48), side: BorderSide(color: outline),
+      minimumSize: const Size(48, 48), side: BorderSide(color: controlOutline),
       selectedBackgroundColor: scheme.primaryContainer, selectedForegroundColor: scheme.onPrimaryContainer,
     )),
     navigationBarTheme: NavigationBarThemeData(
@@ -283,7 +298,7 @@ ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useD
         fontSize: 12, fontWeight: states.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500)),
     ),
     tabBarTheme: TabBarThemeData(
-      dividerColor: outline, labelColor: scheme.primary,
+      dividerColor: hairline, labelColor: scheme.primary,
       unselectedLabelColor: scheme.onSurfaceVariant, indicatorSize: TabBarIndicatorSize.label,
       labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
     ),
