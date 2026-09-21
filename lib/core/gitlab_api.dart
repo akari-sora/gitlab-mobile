@@ -1,5 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show HttpDate;
+import 'dart:io' show HttpDate, IOSink;
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'failure.dart';
@@ -9,6 +10,73 @@ import 'oauth.dart';
 import 'pagination.dart';
 
 part 'workspace_api.dart';
+
+final _artifactCancelled = Object();
+const _artifactRedirects = {301, 302, 303, 307, 308};
+
+/// Bytes saved from `GET /projects/:id/jobs/:job_id/artifacts`.
+final class ArtifactDownload {
+  const ArtifactDownload({
+    required this.fileName,
+    required this.bytesWritten,
+    required this.contentType,
+  });
+  final String fileName;
+  final int bytesWritten;
+  final String? contentType;
+}
+
+String _artifactFileName(String? header, int job) {
+  final parsed = header == null ? null : _contentDispositionName(header);
+  final safe = _singlePathSegment(parsed);
+  return safe ?? 'artifacts-$job.zip';
+}
+
+String? _singlePathSegment(String? name) {
+  if (name == null) return null;
+  final base = name.trim().split(RegExp(r'[\\/]')).last.trim();
+  if (base.isEmpty || base == '.' || base == '..' || base.contains('\u0000')) {
+    return null;
+  }
+  return base;
+}
+
+String? _contentDispositionName(String header) {
+  final star = RegExp(
+    "filename\\*\\s*=\\s*[^']*'[^']*'([^;]+)",
+    caseSensitive: false,
+  ).firstMatch(header);
+  if (star != null) {
+    final encoded = star.group(1)!.trim();
+    try {
+      return Uri.decodeComponent(encoded);
+    } on FormatException {
+      return encoded;
+    } on ArgumentError {
+      return encoded;
+    }
+  }
+  final quoted = RegExp(
+    'filename\\s*=\\s*"([^"]*)"',
+    caseSensitive: false,
+  ).firstMatch(header);
+  if (quoted != null) return quoted.group(1);
+  final plain = RegExp(
+    'filename\\s*=\\s*([^";\\s]+)',
+    caseSensitive: false,
+  ).firstMatch(header);
+  return plain?.group(1)?.trim();
+}
+
+/// Absolute https URL with no userinfo. Relative, http, and credentialed
+/// locations are refused so a redirect cannot receive the account credential.
+Uri? _secureArtifactLocation(String? value) {
+  if (value == null) return null;
+  final uri = Uri.tryParse(value.trim());
+  if (uri == null || !uri.isAbsolute || uri.scheme != 'https') return null;
+  if (uri.userInfo.isNotEmpty || uri.host.isEmpty) return null;
+  return uri;
+}
 
 enum ProjectScope { member, starred, accessibleSearch }
 
@@ -52,6 +120,7 @@ final class GitLabApi {
   static const maxTextBytes = 2 * 1024 * 1024;
   static const maxTextLines = 20000;
   static const maxUploadBytes = 25 * 1024 * 1024;
+  static const maxArtifactBytes = 256 * 1024 * 1024;
 
   Map<String, String> get _authHeaders => switch (_credential) {
     PatCredential(:final token) => {
@@ -354,6 +423,252 @@ final class GitLabApi {
       return false;
     } finally {
       if (identical(_refreshing, gate)) _refreshing = null;
+    }
+  }
+
+  /// Downloads the job archive. The first hop is authenticated and never follows
+  /// redirects. A single https `Location` is fetched once without
+  /// `Authorization`, `PRIVATE-TOKEN`, or `Cookie`. [sink] is closed when the
+  /// streamed body exceeds [maxBytes]; the caller closes it after success.
+  Future<ArtifactDownload> downloadJobArtifacts(
+    int project,
+    int job, {
+    required IOSink sink,
+    void Function(int received, int? total)? onProgress,
+    Future<void>? cancel,
+    int maxBytes = maxArtifactBytes,
+  }) async {
+    if (_closed) throw const ApiFailure(FailureKind.cancelled);
+    final until = _retryAt;
+    if (until != null && DateTime.now().isBefore(until)) {
+      throw ApiFailure(FailureKind.rateLimited, status: 429, retryAt: until);
+    }
+    final uri = instance.api([
+      'projects',
+      '$project',
+      'jobs',
+      '$job',
+      'artifacts',
+    ]);
+    if (!instance.allowsApi(uri)) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    final token = CancelToken();
+    _requests.add(token);
+    if (cancel != null) {
+      unawaited(
+        cancel.then((_) {
+          if (!token.isCancelled) token.cancel('artifact download aborted');
+        }),
+      );
+    }
+    try {
+      final first = await _artifactResponse(uri, token, authenticated: true);
+      return await _consumeArtifact(
+        response: first,
+        requestUri: uri,
+        allowRedirect: true,
+        allowRefresh: true,
+        token: token,
+        job: job,
+        sink: sink,
+        maxBytes: maxBytes,
+        onProgress: onProgress,
+      );
+    } on DioException catch (error) {
+      if (error.type == DioExceptionType.cancel || _closed) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      throw const ApiFailure(FailureKind.network);
+    } finally {
+      _requests.remove(token);
+    }
+  }
+
+  Future<Response<ResponseBody>> _artifactResponse(
+    Uri uri,
+    CancelToken token, {
+    required bool authenticated,
+  }) {
+    if (_closed || token.isCancelled) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    return _dio.requestUri<ResponseBody>(
+      uri,
+      cancelToken: token,
+      options: Options(
+        method: 'GET',
+        responseType: ResponseType.stream,
+        followRedirects: false,
+        maxRedirects: 0,
+        validateStatus: (status) => status != null,
+        headers: authenticated
+            ? _authHeaders
+            : const <String, dynamic>{'Accept': 'application/octet-stream'},
+      ),
+    );
+  }
+
+  Future<ArtifactDownload> _consumeArtifact({
+    required Response<ResponseBody> response,
+    required Uri requestUri,
+    required bool allowRedirect,
+    required bool allowRefresh,
+    required CancelToken token,
+    required int job,
+    required IOSink sink,
+    required int maxBytes,
+    required void Function(int received, int? total)? onProgress,
+  }) async {
+    if (_closed || token.isCancelled) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    final status = response.statusCode ?? 0;
+    if (status == 200) {
+      return _writeArtifact(
+        response: response,
+        sink: sink,
+        job: job,
+        token: token,
+        maxBytes: maxBytes,
+        onProgress: onProgress,
+      );
+    }
+    await _discardBody(response.data);
+    if (_closed || token.isCancelled) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    if (status == 401 && allowRefresh && await _refreshOAuth()) {
+      final retried = await _artifactResponse(
+        requestUri,
+        token,
+        authenticated: true,
+      );
+      return _consumeArtifact(
+        response: retried,
+        requestUri: requestUri,
+        allowRedirect: true,
+        allowRefresh: false,
+        token: token,
+        job: job,
+        sink: sink,
+        maxBytes: maxBytes,
+        onProgress: onProgress,
+      );
+    }
+    if (allowRedirect && _artifactRedirects.contains(status)) {
+      final location = _secureArtifactLocation(
+        response.headers.value('location'),
+      );
+      if (location == null) {
+        throw ApiFailure(FailureKind.redirectBlocked, status: status);
+      }
+      final followed = await _artifactResponse(
+        location,
+        token,
+        authenticated: false,
+      );
+      return _consumeArtifact(
+        response: followed,
+        requestUri: location,
+        allowRedirect: false,
+        allowRefresh: false,
+        token: token,
+        job: job,
+        sink: sink,
+        maxBytes: maxBytes,
+        onProgress: onProgress,
+      );
+    }
+    if (!allowRedirect) {
+      throw ApiFailure(FailureKind.redirectBlocked, status: status);
+    }
+    if (status == 429) _rememberRetryAfter(response.headers.value('retry-after'));
+    throw ApiFailure.fromStatus(status, retryAt: _retryAt);
+  }
+
+  Future<ArtifactDownload> _writeArtifact({
+    required Response<ResponseBody> response,
+    required IOSink sink,
+    required int job,
+    required CancelToken token,
+    required int maxBytes,
+    required void Function(int received, int? total)? onProgress,
+  }) async {
+    final headers = response.headers;
+    final total = int.tryParse(headers.value(Headers.contentLengthHeader) ?? '');
+    if (total != null && total > maxBytes) {
+      throw const ApiFailure(FailureKind.tooLarge);
+    }
+    final body = response.data;
+    if (body == null) throw const ApiFailure(FailureKind.invalidResponse);
+    final iterator = StreamIterator<Uint8List>(body.stream);
+    final cancelled = token.whenCancel.then<Object?>((_) => _artifactCancelled);
+    var received = 0;
+    try {
+      while (true) {
+        if (_closed || token.isCancelled) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        final step = await Future.any<Object?>(<Future<Object?>>[
+          iterator.moveNext().then<Object?>((more) => more),
+          cancelled,
+        ]);
+        if (identical(step, _artifactCancelled) || _closed || token.isCancelled) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        if (step != true) break;
+        final chunk = iterator.current;
+        if (received + chunk.length > maxBytes) {
+          await sink.close();
+          throw const ApiFailure(FailureKind.tooLarge);
+        }
+        try {
+          sink.add(chunk);
+        } on StateError {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        received += chunk.length;
+        onProgress?.call(received, total);
+      }
+    } finally {
+      await iterator.cancel();
+    }
+    if (_closed || token.isCancelled) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    if (received == 0) onProgress?.call(0, total);
+    return ArtifactDownload(
+      fileName: _artifactFileName(headers.value('content-disposition'), job),
+      bytesWritten: received,
+      contentType: headers.value(Headers.contentTypeHeader),
+    );
+  }
+
+  Future<void> _discardBody(ResponseBody? body) async {
+    final stream = body?.stream;
+    if (stream == null) return;
+    try {
+      await stream.listen((_) {}, onError: (Object _) {}).cancel();
+    } on ApiFailure {
+      rethrow;
+    } on Object {
+      // Dropping an error page must not replace the status already chosen.
+      return;
+    }
+  }
+
+  void _rememberRetryAfter(String? text) {
+    final seconds = int.tryParse(text ?? '');
+    if (seconds != null && seconds >= 0) {
+      _retryAt = DateTime.now().add(Duration(seconds: seconds));
+      return;
+    }
+    if (text == null) return;
+    try {
+      _retryAt = HttpDate.parse(text);
+    } on FormatException {
+      // A malformed Retry-After still fails this call; retry stays manual.
     }
   }
 

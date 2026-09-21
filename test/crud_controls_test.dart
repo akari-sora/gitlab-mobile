@@ -378,7 +378,7 @@ void main() {
       await host(tester, f, JobLogPage(account: f.account, api: f.api, project: f.project, id: 501));
       expect(find.text('Unit tests'), findsOneWidget); expect(find.text('失敗'), findsOneWidget);
       await tester.tap(find.byTooltip('工作操作')); await tester.pumpAndSettle();
-      expect(find.text('重試工作'), findsOneWidget); expect(find.text('在 GitLab 下載產物'), findsOneWidget);
+      expect(find.text('重試工作'), findsOneWidget); expect(find.text('下載產物'), findsOneWidget);
       await finish(tester, f);
     });
   }
