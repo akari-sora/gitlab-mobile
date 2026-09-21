@@ -28,6 +28,38 @@ class BootstrapTests(unittest.TestCase):
         backup = ET.parse(source / 'res/xml/data_extraction_rules.xml').getroot()
         self.assertEqual(len(backup.find('device-transfer').findall('exclude')), 5)
 
+    def test_android_registers_oauth_callback_on_launcher_activity(self):
+        source = self.root / 'app/src/main'
+        source.mkdir(parents=True)
+        (source / 'AndroidManifest.xml').write_text(
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+            '<application><activity>'
+            '<intent-filter><action android:name="android.intent.action.MAIN" /></intent-filter>'
+            '</activity></application></manifest>'
+        )
+        bootstrap.harden_android(self.root)
+        bootstrap.harden_android(self.root)
+        xml = (source / 'AndroidManifest.xml').read_text()
+        self.assertEqual(xml.count('io.gitlabmobile.app'), 1)
+        self.assertIn('android.intent.action.VIEW', xml)
+        self.assertIn('android.intent.category.BROWSABLE', xml)
+        self.assertIn('/callback', xml)
+
+    def test_ios_registers_oauth_url_type(self):
+        (self.root / 'Runner').mkdir()
+        path = self.root / 'Runner/Info.plist'
+        path.write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<plist version="1.0"><dict>'
+            '<key>CFBundleIdentifier</key><string>io.gitlabmobile.gitlabMobile</string>'
+            '</dict></plist>\n'
+        )
+        bootstrap.register_oauth_ios(self.root)
+        bootstrap.register_oauth_ios(self.root)
+        text = path.read_text()
+        self.assertEqual(text.count('<string>io.gitlabmobile.app</string>'), 1)
+        self.assertIn('CFBundleURLTypes', text)
+
     def test_android_patch_is_idempotent(self):
         source = self.root / 'app/src/main'
         source.mkdir(parents=True)

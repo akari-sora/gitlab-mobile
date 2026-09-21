@@ -1,5 +1,8 @@
 # GitLab Mobile
 
+> **Development home:** https://gitlab.com/aa22396584/gitlab-mobile  
+> Please open issues and merge requests there.
+
 A mobile-first Flutter client for Android and iOS. Independent third-party software, not an official GitLab application. The interface is Traditional Chinese and supports light/dark appearance and large text.
 
 ## v0.2 — collaboration preview

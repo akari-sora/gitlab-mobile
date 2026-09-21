@@ -2,9 +2,11 @@
 
 ## Workflow
 
-The repository uses GitLab-hosted `saas-linux-small-amd64` runners. Pushes, merge-request events, tags and manually started branch pipelines run checks. A branch push with an open MR is suppressed to avoid duplicate branch/MR pipelines. All required jobs use `allow_failure: false` by default.
+The repository uses project-locked private runners on the two-host CI fleet, with tags `grok-box`, `ondemand`, and `gitlab-mobile`. Each host executes at most one CI job at a time; its dispatcher rotates between projects with eligible pending jobs after each job finishes. Jobs can therefore wait for a fleet turn, but do not consume GitLab-hosted runner compute quota. Pushes, merge-request events, tags and manually started branch pipelines run checks. A branch push with an open MR is suppressed to avoid duplicate branch/MR pipelines. All required jobs use `allow_failure: false` by default.
 
-1. `python_checks`: 10 report-converter regressions, 6 native-bootstrap regressions, Python compilation, shell syntax.
+New projects require explicit runner registration and dispatcher onboarding on each host; adding tags alone does not grant access. For this project, both registrations are locked to `gitlab-mobile` and reject untagged jobs. The existing `python:3.13-slim` job image, toolchain pins, checks and artifact delivery remain in use. A pipeline created before the routing change retains its old job tags; verify a new pipeline for the updated commit rather than retrying the old quota-failed jobs.
+
+1. `python_checks`: report-converter, local-smoke runner, package-installer and native-bootstrap regressions, Python compilation, shell syntax.
 2. `flutter_checks`: dependency-lock enforcement, Flutter analysis, 68 Flutter unit/widget/smoke tests in the initial CI baseline, JUnit and LCOV. The current test count is read from the job report, not inferred from this document.
 3. `native_templates`: generate/review Android and iOS runner configuration from the pinned SDK. Linux generation is not an iOS build or device test.
 4. `android_debug`: needs all three checks, reuses their dependency lock and native templates, and builds an Android debug APK.
@@ -21,6 +23,10 @@ No tests or analyzer failures are ignored. A missing/unsuccessful Flutter comple
 - JDK 21, Python 3.13 and a Debian-based container. The container/OS patch packages and downloaded Android platform revisions are not fully byte-for-byte hermetic. Build metadata identifies the actual Flutter/Dart revision and source commit; do not claim bit-reproducible APKs.
 
 Caches accelerate Flutter, Pub and Android/Gradle downloads. Only infrastructure failures are retried automatically. No unrelated VPS or project runner is enabled or reconfigured.
+
+Package setup uses Debian HTTPS sources, three download retries and 30-second connection timeouts. An incomplete package-index update or failed installation stops the job immediately; signature and TLS checks remain enabled. This avoids the HTTP mirror 502 failure observed during private-runner onboarding, which previously left `git` unavailable for SDK installation.
+
+Flutter jobs append `--no-same-owner` to `TAR_OPTIONS`, keeping extracted SDK files owned by the container's current user. Flutter's Gradle wrapper archive contains ownership IDs outside the rootless user mapping; restoring those archive IDs would fail. Jobs continue to run through the unprivileged container executor.
 
 ## Artifacts and credentials
 

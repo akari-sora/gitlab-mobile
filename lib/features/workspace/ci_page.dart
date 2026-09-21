@@ -48,6 +48,8 @@ class _PipelinesTabState extends State<PipelinesTab> {
         Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(label: Text(e.value),
           selected: _state == e.key, showCheckmark: false, onSelected: (_) => setState(() => _state = e.key)))])),
     Expanded(child: RecordsFeed(key: _feed, identity: 'pipelines/$_state/$_ref', empty: '沒有符合的 Pipeline',
+      account: widget.account, resourceLabel: '${widget.project.path} · Pipeline',
+      onSwitchAccount: endSessionFrom(context),
       load: (next) => widget.api.records(['projects', '${widget.project.id}', 'pipelines'],
         query: {'order_by': 'id', 'sort': 'desc', if (_state.isNotEmpty) 'status': _state, if (_ref.isNotEmpty) 'ref': _ref}, next: next),
       itemBuilder: (context, value) => Card(child: InkWell(borderRadius: BorderRadius.circular(16),
@@ -130,7 +132,8 @@ class _PipelinePageState extends State<PipelinePage> {
     ]),
   ]), body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
-    if (_error != null) FailureNotice(_error!, onRetry: _load),
+    if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
+      resourceLabel: '${widget.project.path} · Pipeline #${widget.id}', onSwitchAccount: endSessionFrom(context)),
     if (_data != null) Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 16), child: Column(
       crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 12),
@@ -141,6 +144,8 @@ class _PipelinePageState extends State<PipelinePage> {
         ]),
       ])),
     Expanded(child: RecordsFeed(key: _feed, identity: 'pipeline/${widget.id}/jobs', empty: '尚無工作',
+      account: widget.account, resourceLabel: '${widget.project.path} · Pipeline #${widget.id} 工作',
+      onSwitchAccount: endSessionFrom(context),
       load: (next) => widget.api.records(['projects', '${widget.project.id}', 'pipelines', '${widget.id}', 'jobs'],
         query: {'include_retried': 'false'}, next: next), itemBuilder: (context, value) => Card(child: ListTile(
           title: Text(valueText(value, 'name')), subtitle: Padding(padding: const EdgeInsets.only(top: 6),
@@ -289,7 +294,9 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           decoration: const InputDecoration(hintText: '搜尋已載入的 Log', prefixIcon: Icon(Icons.search)),
           onChanged: (value) => setState(() => _query = value))),
         if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
-        if (_error != null) FailureNotice(_error!, onRetry: _busy || _confirming ? null : _load),
+        if (_error != null) FailureNotice(_error!, onRetry: _busy || _confirming ? null : _load,
+          account: widget.account, resourceLabel: '${widget.project.path} · Job #$_jobId',
+          onSwitchAccount: endSessionFrom(context)),
         Expanded(child: _lines.isEmpty && !_loading && _error == null
           ? SingleChildScrollView(child: EmptyState('尚無 Log',
               detail: _job?['status'] == 'manual' ? '工作尚未啟動，可從右上角操作選單啟動。' : '工作開始執行後，紀錄會顯示在這裡。',

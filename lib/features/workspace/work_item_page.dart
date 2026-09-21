@@ -66,6 +66,8 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
             onSelected: (_) => setState(() => _state = e.key)),
       ]))),
     Expanded(child: RecordsFeed(key: _feed, identity: '${widget.resource}/$_state/$_query',
+      account: widget.account, resourceLabel: '${widget.project.path} · ${mr ? '合併請求' : '議題'}',
+      onSwitchAccount: endSessionFrom(context),
       empty: mr ? '沒有符合的合併請求' : '沒有符合的議題',
       load: (next) => widget.api.records(['projects', '${widget.project.id}', widget.resource],
         query: {'state': _state, 'scope': 'all', 'order_by': 'updated_at', 'sort': 'desc', if (_query.isNotEmpty) 'search': _query}, next: next),
@@ -191,7 +193,8 @@ class _WorkItemPageState extends State<WorkItemPage> {
         ]),
       ]),
       body: data == null ? (_error != null ? SingleChildScrollView(child: FailureNotice(_error!, onRetry: _load,
-        contextLabel: '${widget.project.path} · @${widget.account.user.username}')) : const ListSkeleton()) : Column(
+        account: widget.account, resourceLabel: '${widget.project.path} · $label',
+        onSwitchAccount: endSessionFrom(context))) : const ListSkeleton()) : Column(
         crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
           Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -206,7 +209,8 @@ class _WorkItemPageState extends State<WorkItemPage> {
             tabs: [const Tab(text: '摘要'), if (mr) const Tab(text: '變更'), const Tab(text: '討論'), if (mr) const Tab(text: '檢查')]),
           Expanded(child: TabBarView(children: [
             ListView(padding: const EdgeInsets.all(20), children: [
-              if (_error != null) FailureNotice(_error!, onRetry: _load),
+              if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
+                resourceLabel: '${widget.project.path} · $label', onSwitchAccount: endSessionFrom(context)),
               if (mr) Padding(padding: const EdgeInsets.only(bottom: 16), child: Card(child: Padding(padding: const EdgeInsets.all(14),
                 child: Text('${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}',
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 13))))),
@@ -222,7 +226,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
             if (mr) ReviewDiffPage(key: ValueKey(valueText(data, 'sha')), account: widget.account, api: widget.api,
               project: widget.project, iid: widget.iid, expectedSha: valueText(data, 'sha')),
             DiscussionsTab(account: widget.account, api: widget.api, project: widget.project, resource: widget.resource, iid: widget.iid),
-            if (mr) _MergeChecks(api: widget.api, path: path, data: data, busy: _busy, act: _action),
+            if (mr) _MergeChecks(account: widget.account, api: widget.api, path: path, data: data, busy: _busy, act: _action),
           ])),
         ],
       ),
@@ -230,7 +234,8 @@ class _WorkItemPageState extends State<WorkItemPage> {
   }
 }
 class _MergeChecks extends StatefulWidget {
-  const _MergeChecks({required this.api, required this.path, required this.data, required this.busy, required this.act});
+  const _MergeChecks({required this.account, required this.api, required this.path, required this.data, required this.busy, required this.act});
+  final Account account;
   final GitLabApi api;
   final List<String> path;
   final Json data;
@@ -262,7 +267,9 @@ class _MergeChecksState extends State<_MergeChecks> {
       child: StatusBadge(valueText(valueObject(widget.data, 'head_pipeline'), 'status'))),
     const Divider(height: 32), Text('審查', style: Theme.of(context).textTheme.titleMedium),
     FutureBuilder<Json>(future: _approvals, builder: (context, snap) {
-      if (snap.hasError) { return FailureNotice(safeFailure(snap.error!), onRetry: () => setState(() {
+      if (snap.hasError) { return FailureNotice(safeFailure(snap.error!), account: widget.account,
+        resourceLabel: '合併檢查', onSwitchAccount: endSessionFrom(context),
+        onRetry: () => setState(() {
         _approvals = widget.api.record([...widget.path, 'approvals']);
       })); }
       if (!snap.hasData) { return const ListSkeleton(); }
