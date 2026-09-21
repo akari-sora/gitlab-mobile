@@ -49,10 +49,12 @@ class AppearanceController extends ChangeNotifier {
   ThemeMode _mode = ThemeMode.system;
   bool _loaded = false;
   bool _disposed = false;
+  int _epoch = 0;
   ThemeMode get mode => _mode;
   bool get loaded => _loaded;
 
   Future<void> load() async {
+    final epoch = _epoch;
     String? stored;
     try {
       stored = await _store.read();
@@ -61,11 +63,17 @@ class AppearanceController extends ChangeNotifier {
       // user simply keeps the system appearance until they choose again.
       stored = null;
     }
+    // select() and dispose() bump [_epoch]. A read that started earlier must
+    // not paint over the choice the user already made.
+    if (_disposed || epoch != _epoch) {
+      return;
+    }
     _loaded = true;
     _apply(themeModeFrom(stored));
   }
 
   Future<void> select(ThemeMode mode) async {
+    _epoch++;
     _apply(mode);
     try {
       await _store.write(mode.name);
@@ -85,6 +93,7 @@ class AppearanceController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _epoch++;
     _disposed = true;
     super.dispose();
   }

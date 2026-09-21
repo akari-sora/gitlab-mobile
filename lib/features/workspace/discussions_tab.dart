@@ -11,10 +11,10 @@ bool _discussionResolved(Json discussion) {
   return resolvable.isNotEmpty && resolvable.every((note) => note['resolved'] == true);
 }
 
-String _discussionSummary(List<Json> items) {
-  final line = '${items.length} 則討論';
+String _discussionSummary(List<Json> items, {required bool partial}) {
+  final line = '${partial ? '已載入 ' : ''}${items.length} 則討論';
   final resolvable = items.any((item) => valueObjects(item, 'notes').any((note) => note['resolvable'] == true));
-  if (!resolvable) { return line; }
+  if (!partial && !resolvable) { return line; }
   return '$line · ${items.where(_discussionResolved).length} 已解決';
 }
 
@@ -79,24 +79,33 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
   Widget _header(Json discussion, List<Json> notes) {
     final first = notes.first;
     final id = valueText(discussion, 'id');
-    return InkWell(
+    final isOpen = _open.contains(id);
+    final author = '@${valueText(valueObject(first, 'author'), 'username')}';
+    return Semantics(
       key: ValueKey('discussion-header-$id'),
-      onTap: () => _toggle(id),
-      child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 48), child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Row(children: [
-          Expanded(child: Text('@${valueText(valueObject(first, 'author'), 'username')}', maxLines: 1,
-            overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleSmall)),
-          const SizedBox(width: 8),
-          Text(relativeDate(valueText(first, 'created_at')), style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(width: 8),
-          DecoratedBox(decoration: BoxDecoration(color: Theme.of(context).colorScheme.secondaryContainer,
-            borderRadius: BorderRadius.circular(8)), child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2), child: Text('已解決'))),
-          const SizedBox(width: 8),
-          Text('${notes.length} 則', style: Theme.of(context).textTheme.bodySmall),
-        ]),
-      )),
+      button: true, expanded: isOpen, hint: isOpen ? '收合討論' : '展開討論',
+      child: InkWell(
+        onTap: () => _toggle(id),
+        child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 48), child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Expanded(child: Text(author, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.titleSmall)),
+              const SizedBox(width: 8),
+              Text(relativeDate(valueText(first, 'created_at')), maxLines: 1,
+                style: Theme.of(context).textTheme.bodySmall),
+            ]),
+            const SizedBox(height: 4),
+            Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              DecoratedBox(decoration: BoxDecoration(color: Theme.of(context).colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(8)), child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2), child: Text('已解決'))),
+              Text('${notes.length} 則', style: Theme.of(context).textTheme.bodySmall),
+            ]),
+          ]),
+        )),
+      ),
     );
   }
   Widget _thread(Json discussion) {
@@ -137,10 +146,10 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
       load: (next) => widget.api.records([...path, 'discussions'], next: next),
       visible: (item) => !_unresolvedOnly || !_discussionResolved(item),
       header: (_, controller) {
-        if (controller.loading && controller.items.isEmpty) { return const SizedBox.shrink(); }
+        if (controller.items.isEmpty && (controller.loading || controller.error != null)) { return const SizedBox.shrink(); }
         return Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Column(
           mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(_discussionSummary(controller.items), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Text(_discussionSummary(controller.items, partial: controller.next != null), maxLines: 1, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 8),
             FilterChip(label: const Text('只看未解決'), selected: _unresolvedOnly, showCheckmark: false,
               onSelected: (value) => setState(() => _unresolvedOnly = value)),

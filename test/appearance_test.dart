@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -8,6 +9,14 @@ import 'package:gitlab_mobile/main.dart';
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'support/fake_adapter.dart';
 import 'support/memory_appearance_store.dart';
+
+class _GatedAppearanceStore implements AppearanceStore {
+  final pending = Completer<String?>();
+  @override
+  Future<String?> read() => pending.future;
+  @override
+  Future<void> write(String? value) async {}
+}
 
 void main() {
   test('an unset store keeps the system appearance without writing', () async {
@@ -66,6 +75,19 @@ void main() {
     expect(notifications, 1);
     await controller.select(ThemeMode.dark);
     expect(notifications, 1, reason: 'Re-selecting the same mode is not a change');
+  });
+
+  test('a delayed load does not revert a newer select', () async {
+    final store = _GatedAppearanceStore();
+    final controller = AppearanceController(store);
+    addTearDown(controller.dispose);
+    final loading = controller.load();
+    await controller.select(ThemeMode.dark);
+    expect(controller.mode, ThemeMode.dark);
+    store.pending.complete('light');
+    await loading;
+    expect(controller.mode, ThemeMode.dark);
+    expect(controller.loaded, isFalse);
   });
 
   test('a rejected write keeps the chosen mode for this run', () async {

@@ -45,7 +45,7 @@ class RecordsFeedState extends State<RecordsFeed> {
       key: PageStorageKey(widget.identity), physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + (widget.underShell ? 80 : 12) + MediaQuery.paddingOf(context).bottom), children: [
         if (controller.loading && controller.items.isEmpty) const ListSkeleton(),
-        if (!controller.loading && shown.isEmpty && controller.error == null) EmptyState(
+        if (!controller.loading && shown.isEmpty && controller.error == null && controller.next == null) EmptyState(
           controller.items.isEmpty ? widget.empty : (widget.filteredEmpty ?? widget.empty),
           detail: controller.items.isEmpty ? widget.emptyDetail : null),
         if (controller.loading && controller.items.isNotEmpty)

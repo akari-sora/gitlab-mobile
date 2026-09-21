@@ -30,6 +30,8 @@ class WorkspaceFixture {
   };
   final mergeFields = <String, dynamic>{};
   final mrDiscussions = <Json>[];
+  List<List<Json>>? discussionPages;
+  bool failDiscussions = false;
   Json get mergeRequest => {
     ...issue(12, 'Improve private-project navigation'),
     'source_branch': 'feature/navigation', 'target_branch': 'main', 'sha': sha,
@@ -112,7 +114,20 @@ class WorkspaceFixture {
     }
     if (joined == 'projects/42/merge_requests') { return jsonResponse([mergeRequest]); }
     if (joined == 'projects/42/merge_requests/12') { return jsonResponse(mergeRequest); }
-    if (joined == 'projects/42/merge_requests/12/discussions' && method == 'GET') { return jsonResponse(mrDiscussions); }
+    if (joined == 'projects/42/merge_requests/12/discussions' && method == 'GET') {
+      if (failDiscussions) { return jsonResponse({'message': 'synthetic'}, status: 500); }
+      final pages = discussionPages;
+      if (pages != null) {
+        final page = int.tryParse(request.uri.queryParameters['page'] ?? '') ?? 1;
+        final index = page - 1;
+        final items = index >= 0 && index < pages.length ? pages[index] : const <Json>[];
+        if (page < pages.length) {
+          return jsonResponse(items, headers: {'x-next-page': ['${page + 1}']});
+        }
+        return jsonResponse(items);
+      }
+      return jsonResponse(mrDiscussions);
+    }
     if (joined == 'projects/42/merge_requests/12/merge' && method == 'PUT') {
       return jsonResponse({...mergeRequest, 'state': 'merged'});
     }

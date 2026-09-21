@@ -24,10 +24,43 @@ void main() {
     expect(mergeSquashDefault({}), isFalse);
     expect(mergeSquashDefault({'squash': false}), isFalse);
     expect(mergeSquashDefault({'squash': true}), isTrue);
+    expect(mergeSquashDefault({'squash': false, 'squash_on_merge': true}), isTrue);
+    expect(mergeSquashDefault({'squash': true, 'squash_on_merge': false}), isFalse);
+    expect(mergeSquashDefault({'squash': false, 'squash_option': 'always'}), isTrue);
+    expect(mergeSquashDefault({'squash': true, 'squash_option': 'never'}), isFalse);
+    expect(mergeSquashEnforced({'squash_option': 'always'}), isTrue);
+    expect(mergeSquashEnforced({'squash_option': 'never'}), isTrue);
+    expect(mergeSquashEnforced({'squash_on_merge': true}), isFalse);
     expect(mergeRemoveSourceBranchDefault({}), isFalse);
     expect(mergeRemoveSourceBranchDefault({'force_remove_source_branch': false, 'should_remove_source_branch': false}), isFalse);
     expect(mergeRemoveSourceBranchDefault({'force_remove_source_branch': true}), isTrue);
     expect(mergeRemoveSourceBranchDefault({'should_remove_source_branch': true}), isTrue);
+  });
+  test('merge status labels map documented tokens and prefix unknown ones', () {
+    String label(String token) => mergeStatusLabel({'detailed_merge_status': token});
+    expect(label('mergeable'), '可以合併');
+    expect(label('checking'), '正在檢查');
+    expect(label('unchecked'), '正在檢查');
+    expect(label('preparing'), '正在檢查');
+    expect(label('approvals_syncing'), '正在檢查');
+    expect(label('commits_status'), '正在檢查');
+    expect(label('ci_must_pass'), '等待 CI 通過');
+    expect(label('ci_still_running'), 'CI 執行中');
+    expect(label('conflict'), '有合併衝突');
+    expect(label('need_rebase'), '需要 rebase');
+    expect(label('not_approved'), '等待批准');
+    expect(label('discussions_not_resolved'), '尚有未解決討論');
+    expect(label('draft_status'), '草稿狀態');
+    expect(label('blocked_status'), '被其他 MR 阻擋');
+    expect(label('broken_status'), '來源分支異常');
+    expect(label('external_status_checks'), '等待外部檢查');
+    expect(label('policies_denied'), '政策不允許');
+    expect(label('jira_association_missing'), '缺少 Jira 關聯');
+    expect(label('requested_changes'), '有變更請求');
+    expect(label('not_open'), '已關閉');
+    expect(label('sideways_merge'), '狀態：sideways_merge');
+    expect(label('sideways_merge').startsWith('狀態：'), isTrue);
+    expect(mergeStatusLabel({}), '等待 GitLab 檢查');
   });
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
   for (final width in [320.0, 412.0, 840.0]) {
@@ -120,6 +153,8 @@ void main() {
     await tester.pumpWidget(const SizedBox()); await tester.pump(const Duration(seconds: 1));
   });
   testWidgets('merge confirmation sends the chosen squash and source-branch options with the reviewed SHA', (tester) async {
+    final semantics = tester.ensureSemantics();
+    try {
     final fixture = WorkspaceFixture();
     addTearDown(fixture.api.close);
     fixture.mergeFields['force_remove_source_branch'] = true;
@@ -135,14 +170,25 @@ void main() {
     expect(tester.getSize(find.widgetWithText(FilledButton, '合併')).height, greaterThanOrEqualTo(48));
     await tester.tap(find.widgetWithText(FilledButton, '合併'));
     await settleWorkspace(tester);
-    expect(tester.widget<Switch>(find.byKey(const ValueKey('merge-squash'))).value, isFalse);
-    expect(tester.widget<Switch>(find.byKey(const ValueKey('merge-remove-branch'))).value, isTrue);
+    SwitchListTile tile(ValueKey<String> key) => tester.widget<SwitchListTile>(find.byKey(key));
+    expect(tile(const ValueKey('merge-squash')).value, isFalse);
+    expect(tile(const ValueKey('merge-remove-branch')).value, isTrue);
+    expect(tester.getSize(find.byKey(const ValueKey('merge-squash'))).height, greaterThanOrEqualTo(48));
+    expect(tester.getSize(find.byKey(const ValueKey('merge-remove-branch'))).height, greaterThanOrEqualTo(48));
+    expect(tester.getSemantics(find.byKey(const ValueKey('merge-squash'))),
+      isSemantics(label: 'Squash 提交', hasToggledState: true, isToggled: false));
+    expect(tester.getSemantics(find.byKey(const ValueKey('merge-remove-branch'))),
+      isSemantics(label: '合併後刪除來源分支', hasToggledState: true, isToggled: true));
     await tester.tap(find.byKey(const ValueKey('merge-squash')));
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('merge-remove-branch')));
     await tester.pump();
-    expect(tester.widget<Switch>(find.byKey(const ValueKey('merge-squash'))).value, isTrue);
-    expect(tester.widget<Switch>(find.byKey(const ValueKey('merge-remove-branch'))).value, isFalse);
+    expect(tile(const ValueKey('merge-squash')).value, isTrue);
+    expect(tile(const ValueKey('merge-remove-branch')).value, isFalse);
+    expect(tester.getSemantics(find.byKey(const ValueKey('merge-squash'))),
+      isSemantics(label: 'Squash 提交', hasToggledState: true, isToggled: true));
+    expect(tester.getSemantics(find.byKey(const ValueKey('merge-remove-branch'))),
+      isSemantics(label: '合併後刪除來源分支', hasToggledState: true, isToggled: false));
     await tester.tap(find.widgetWithText(FilledButton, '確認'));
     await settleWorkspace(tester);
     final merge = fixture.adapter.requests.lastWhere((request) => request.method == 'PUT' && request.uri.path.endsWith('/merge'));
@@ -150,6 +196,97 @@ void main() {
     expect(body['sha'], WorkspaceFixture.sha);
     expect(body['squash'], isTrue);
     expect(body['should_remove_source_branch'], isFalse);
+    expect(tester.takeException(), isNull);
+    expect(fixture.unhandled, isEmpty);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 1));
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  Future<WorkspaceFixture> openMr(WidgetTester tester, Map<String, dynamic> fields) async {
+    final fixture = WorkspaceFixture()..mergeFields.addAll(fields);
+    addTearDown(fixture.api.close);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(workspaceHost(WorkItemPage(
+      account: fixture.account, api: fixture.api, project: fixture.project, resource: 'merge_requests', iid: 12)));
+    await settleWorkspace(tester);
+    return fixture;
+  }
+
+  testWidgets('squash switch follows squash_on_merge', (tester) async {
+    final fixture = await openMr(tester, {'squash': false, 'squash_on_merge': true});
+    await tester.tap(find.widgetWithText(FilledButton, '合併'));
+    await settleWorkspace(tester);
+    final squash = tester.widget<SwitchListTile>(find.byKey(const ValueKey('merge-squash')));
+    expect(squash.value, isTrue);
+    expect(squash.onChanged, isNotNull);
+    expect(find.text('專案設定強制此選項'), findsNothing);
+    await tester.tap(find.widgetWithText(FilledButton, '確認'));
+    await settleWorkspace(tester);
+    final body = fixture.adapter.requests.lastWhere((request) => request.method == 'PUT' && request.uri.path.endsWith('/merge')).data as Map<String, dynamic>;
+    expect(body['squash'], isTrue);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  for (final entry in const [
+    ('always', true),
+    ('never', false),
+  ]) {
+    testWidgets('squash_option ${entry.$1} locks the switch and sends the effective value', (tester) async {
+      final fixture = await openMr(tester, {'squash': !entry.$2, 'squash_option': entry.$1});
+      await tester.tap(find.widgetWithText(FilledButton, '合併'));
+      await settleWorkspace(tester);
+      final squash = tester.widget<SwitchListTile>(find.byKey(const ValueKey('merge-squash')));
+      expect(squash.value, entry.$2);
+      expect(squash.onChanged, isNull);
+      expect(find.text('專案設定強制此選項'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, '確認'));
+      await settleWorkspace(tester);
+      final body = fixture.adapter.requests.lastWhere((request) => request.method == 'PUT' && request.uri.path.endsWith('/merge')).data as Map<String, dynamic>;
+      expect(body['squash'], entry.$2);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+  }
+
+  testWidgets('a merged merge request shows a compact status and no merge actions', (tester) async {
+    final fixture = await openMr(tester, {
+      'state': 'merged', 'merged_at': '2026-09-01T00:00:00Z', 'detailed_merge_status': 'not_open',
+    });
+    expect(find.textContaining('已合併'), findsWidgets);
+    expect(find.text('not_open'), findsNothing);
+    expect(find.textContaining('狀態：'), findsNothing);
+    expect(find.widgetWithText(FilledButton, '合併'), findsNothing);
+    expect(find.widgetWithText(FilledButton, '合併…'), findsNothing);
+    expect(find.widgetWithText(OutlinedButton, '批准'), findsNothing);
+    expect(tester.takeException(), isNull);
+    expect(fixture.unhandled, isEmpty);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('an open merge request shows CI still running in Chinese', (tester) async {
+    final fixture = await openMr(tester, {'detailed_merge_status': 'ci_still_running'});
+    expect(find.text('CI 執行中'), findsWidgets);
+    expect(find.text('ci_still_running'), findsNothing);
+    expect(tester.takeException(), isNull);
+    expect(fixture.unhandled, isEmpty);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('an unknown merge status is prefixed instead of shown bare', (tester) async {
+    final fixture = await openMr(tester, {'detailed_merge_status': 'sideways_merge'});
+    expect(find.text('狀態：sideways_merge'), findsWidgets);
+    expect(find.text('sideways_merge'), findsNothing);
     expect(tester.takeException(), isNull);
     expect(fixture.unhandled, isEmpty);
     await tester.pumpWidget(const SizedBox());

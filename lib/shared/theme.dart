@@ -11,6 +11,7 @@ ThemeData appTheme(Brightness brightness) {
     useMaterial3: true, brightness: brightness, colorScheme: scheme,
     scaffoldBackgroundColor: scheme.surface,
     visualDensity: VisualDensity.standard,
+    materialTapTargetSize: MaterialTapTargetSize.padded,
     appBarTheme: AppBarTheme(
       backgroundColor: scheme.surface, surfaceTintColor: Colors.transparent,
       elevation: 0, scrolledUnderElevation: 0, centerTitle: false,
@@ -67,5 +68,6 @@ ThemeData appTheme(Brightness brightness) {
     ),
     snackBarTheme: SnackBarThemeData(behavior: SnackBarBehavior.floating,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+    chipTheme: const ChipThemeData(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8)),
   );
 }
