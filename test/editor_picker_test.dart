@@ -446,13 +446,17 @@ void main() {
     await tester.ensureVisible(find.byKey(const ValueKey('editor-labels')));
     await tester.tap(find.byKey(const ValueKey('editor-labels')));
     await settleNetworkWidgets(tester);
-    await tester.enterText(find.byKey(const ValueKey('picker-search')), 'spike');
-    await settleNetworkWidgets(tester);
-    expect(find.text('建立標籤「spike」'), findsOneWidget);
-    expect(_createBox(tester).value, isTrue);
-    await tester.tap(find.byKey(const ValueKey('picker-create-label')));
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('picker-search'))).controller!.text, isEmpty);
+    expect(find.byKey(const ValueKey('picker-create-label')), findsNothing);
+    expect(find.text('已選擇'), findsOneWidget);
+    final pinned = find.byKey(const ValueKey('picker-row-spike'));
+    expect(pinned, findsOneWidget);
+    expect(tester.getTopLeft(pinned).dy, lessThan(tester.getTopLeft(find.byKey(const ValueKey('picker-row-a'))).dy));
+    expect(tester.widget<Checkbox>(find.descendant(of: pinned, matching: find.byType(Checkbox))).value, isTrue);
+    await tester.tap(pinned);
     await tester.pump();
-    expect(_createBox(tester).value, isFalse);
+    expect(find.byKey(const ValueKey('picker-row-spike')), findsNothing);
+    expect(find.text('已選擇'), findsNothing);
     await tester.tap(find.text('完成'));
     await settleNetworkWidgets(tester);
     await tester.tap(find.byKey(const Key('editorSave')));
@@ -512,6 +516,42 @@ void main() {
     final body = post.data as Map<String, dynamic>;
     expect(body['source_branch'], 'release,a');
     expect(body['target_branch'], 'main');
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('bare choice list draft restores chips and submits every field type', (tester) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    _surface(tester);
+    const resource = '42/merge_requests/new';
+    FlutterSecureStorage.setMockInitialValues({
+      _draftKey(fixture.account.key, resource): jsonEncode({
+        'title': 'Kept',
+        'source_branch': '[{"id":"feature/navigation","name":"feature/navigation"}]',
+        'labels': '[{"id":"a","name":"a","color":"#d9534f"}]',
+        'reviewer_ids': '[{"id":"8","name":"Reviewer","username":"reviewer"}]',
+      }),
+    });
+    await tester.pumpWidget(_host(Scaffold(body: WorkItemsTab(
+      account: fixture.account, api: fixture.api, project: fixture.project, resource: 'merge_requests'))));
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.byTooltip('新增合併請求'));
+    await settleNetworkWidgets(tester);
+    expect(find.text('feature/navigation'), findsWidgets);
+    expect(find.text('a'), findsWidgets);
+    expect(find.byKey(const ValueKey('label-dot-a')), findsOneWidget);
+    expect(find.text('@reviewer'), findsWidgets);
+    expect(find.textContaining('[{"id"'), findsNothing);
+    await tester.tap(find.byKey(const Key('editorSave')));
+    await settleNetworkWidgets(tester);
+    final post = fixture.adapter.requests.lastWhere(
+      (request) => request.method == 'POST' && request.uri.path.endsWith('/merge_requests'));
+    final body = post.data as Map<String, dynamic>;
+    expect(body['source_branch'], 'feature/navigation');
+    expect(body['target_branch'], 'main');
+    expect(body['labels'], 'a');
+    expect(body['reviewer_ids'], [8]);
     expect(tester.takeException(), isNull);
     await _finish(tester);
   });
@@ -606,8 +646,8 @@ void main() {
     final fixture = WorkspaceFixture();
     addTearDown(fixture.api.close);
     _surface(tester);
-    tester.view.padding = const FakeViewPadding(top: 47);
-    tester.view.viewPadding = const FakeViewPadding(top: 47);
+    tester.view.padding = const FakeViewPadding(top: 47, bottom: 34);
+    tester.view.viewPadding = const FakeViewPadding(top: 47, bottom: 34);
     tester.view.viewInsets = const FakeViewPadding(bottom: 280);
     addTearDown(tester.view.resetPadding);
     addTearDown(tester.view.resetViewPadding);
@@ -630,6 +670,11 @@ void main() {
     expect(tester.getTopLeft(title).dy, greaterThanOrEqualTo(47));
     expect(tester.getRect(sheet).top, greaterThanOrEqualTo(47));
     expect(tester.getRect(sheet).bottom, lessThanOrEqualTo(900 - 280 + 1));
+    tester.view.viewInsets = const FakeViewPadding();
+    await tester.pump();
+    final done = find.byKey(const Key('picker-done'));
+    expect(tester.getRect(done).bottom, lessThanOrEqualTo(900 - 34));
+    expect(tester.getRect(sheet).bottom, lessThanOrEqualTo(900 - 34));
     tester.view.viewInsets = const FakeViewPadding(bottom: 5000);
     await tester.pump();
     expect(tester.takeException(), isNull);

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
@@ -37,13 +38,14 @@ String encodeChoices(List<PickerChoice> choices) => jsonEncode({
   'choices': [for (final choice in choices) choice.toJson()],
 });
 
-/// A picker payload is only `{"picker": 1, "choices": [...]}`.
-/// Any other string is legacy text. Branches stay whole, because a name may
-/// contain commas; labels and members split on commas.
+/// Structured drafts are the envelope `{"picker": 1, "choices": [...]}` and the
+/// bare list earlier builds saved (`[{"id":..,"name":..}, ...]`). Anything else
+/// is legacy text. Branches stay whole, because a name may contain commas;
+/// labels and members split on commas.
 List<PickerChoice> decodeChoices(String raw, {PickerSource? source}) {
   if (raw.trim().isEmpty) return const [];
-  final envelope = _pickerEnvelope(raw.trim());
-  if (envelope != null) return envelope;
+  final structured = _structuredChoices(raw.trim());
+  if (structured != null) return structured;
   if (source == PickerSource.branches) {
     return [PickerChoice(id: raw, name: raw)];
   }
@@ -53,9 +55,10 @@ List<PickerChoice> decodeChoices(String raw, {PickerSource? source}) {
   ];
 }
 
-List<PickerChoice>? _pickerEnvelope(String raw) {
+List<PickerChoice>? _structuredChoices(String raw) {
   try {
     final value = jsonDecode(raw);
+    if (value is List<dynamic>) return _bareChoices(value);
     if (value is! Map<String, dynamic> || value['picker'] != 1) return null;
     final choices = value['choices'];
     if (choices is! List<dynamic>) return const <PickerChoice>[];
@@ -63,6 +66,23 @@ List<PickerChoice>? _pickerEnvelope(String raw) {
   } on FormatException {
     return null;
   }
+}
+
+/// A bare list is a picker payload only when every element is an object with
+/// `id` and a non-empty `name`. An empty list is an empty selection.
+List<PickerChoice>? _bareChoices(List<dynamic> items) {
+  final choices = <PickerChoice>[];
+  for (final item in items) {
+    if (item is! Map) return null;
+    final id = item['id'];
+    final name = item['name'];
+    if (id is! String && id is! num) return null;
+    if (name is! String || name.isEmpty) return null;
+    final choice = _choiceOrNull(item);
+    if (choice == null) return null;
+    choices.add(choice);
+  }
+  return choices;
 }
 
 PickerChoice? _choiceOrNull(Object? item) {
@@ -147,7 +167,10 @@ Future<List<PickerChoice>?> showChoicePicker(
     isScrollControlled: true,
     useSafeArea: true,
     builder: (context) {
-      final bottom = MediaQuery.of(context).viewInsets.bottom;
+      final media = MediaQuery.of(context);
+      // useSafeArea leaves the bottom edge open. Keep the larger of the
+      // keyboard inset and the home-indicator inset so 完成 stays clear of both.
+      final bottom = max(media.viewInsets.bottom, media.viewPadding.bottom);
       return Padding(
         padding: EdgeInsets.only(bottom: bottom),
         child: LayoutBuilder(builder: (context, constraints) {
@@ -287,8 +310,14 @@ class _ChoicePickerSheetState extends State<ChoicePickerSheet> {
       ),
       Expanded(child: ListenableBuilder(listenable: _records, builder: (context, _) {
         final items = _records.items.map(_fromRecord).where((item) => item.name.isNotEmpty).toList();
+        final loadedIds = <String>{for (final item in items) item.id};
+        final pinned = [
+          for (final choice in _selected)
+            if (!loadedIds.contains(choice.id)) choice,
+        ];
         // Loaded rows only. A synthetic label is not on the server, so the
-        // create row stays available and can clear that selection.
+        // create row stays available and can clear that selection. Choices
+        // missing from this page stay visible under 已選擇.
         final exact = query.isNotEmpty && items.any((item) => item.name == query);
         final showCreate = widget.source == PickerSource.labels && query.isNotEmpty && !exact;
         final empty = !_records.loading && items.isEmpty && _records.error == null && !showCreate;
@@ -296,6 +325,13 @@ class _ChoicePickerSheetState extends State<ChoicePickerSheet> {
           physics: const AlwaysScrollableScrollPhysics(),
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
           children: [
+            if (pinned.isNotEmpty) ...[
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
+                child: Text('已選擇'),
+              ),
+              for (final choice in pinned) _row(choice),
+            ],
             if (_records.loading && _records.items.isEmpty) const ListSkeleton(),
             if (showCreate) _row(PickerChoice(id: query, name: query), create: true),
             if (empty) const EmptyState('沒有符合的項目'),
