@@ -145,7 +145,7 @@ void main() {
       title: const Text('Todo'), onTap: () => taps++,
       trailing: IconButton(tooltip: 'X', onPressed: () => trailingTaps++, icon: const Icon(Icons.check)))));
     final card = tester.getSemantics(find.byType(EntityCard));
-    final nodes = _semanticsUnder(card);
+    final nodes = [card, ..._semanticsUnder(card)];
     final content = nodes.where((node) => node.getSemanticsData().label.contains('Todo'));
     final action = nodes.where((node) {
       final data = node.getSemanticsData();
@@ -154,9 +154,13 @@ void main() {
     expect(content, hasLength(1));
     expect(action, hasLength(1));
     expect(content.single.id, isNot(action.single.id));
+    // The tappable content is itself the named button node.
+    final contentData = content.single.getSemanticsData();
+    expect(contentData.flagsCollection.isButton, isTrue);
+    expect(contentData.hasAction(SemanticsAction.tap), isTrue);
     // ignore: deprecated_member_use
     final owner = tester.binding.pipelineOwner.semanticsOwner!;
-    owner.performAction(card.id, SemanticsAction.tap);
+    owner.performAction(content.single.id, SemanticsAction.tap);
     expect(taps, 1);
     expect(trailingTaps, 0);
     owner.performAction(action.single.id, SemanticsAction.tap);

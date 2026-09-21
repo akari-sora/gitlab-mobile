@@ -200,43 +200,36 @@ class EntityCard extends StatelessWidget {
         Wrap(spacing: 10, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: meta),
       ],
     ]);
-    // A trailing control (todo completion, metadata menu) stays outside the
-    // merged content so it keeps its own action. The card tap stays on the
-    // InkWell. Without a trailing widget the whole card is one node.
-    final Widget row = trailing == null
-        ? Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if (leading != null) ...[leading!, const SizedBox(width: 14)],
-            Expanded(child: details),
-            if (chevron && onTap != null) ...[
-              const SizedBox(width: 4),
-              Padding(padding: const EdgeInsets.only(top: 2),
-                child: Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant)),
-            ],
-          ])
-        : Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(child: MergeSemantics(child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              if (leading != null) ...[leading!, const SizedBox(width: 14)],
-              Expanded(child: details),
-            ]))),
-            const SizedBox(width: 8),
-            trailing!,
-          ]);
-    final content = Padding(padding: const EdgeInsets.fromLTRB(16, 14, 12, 14), child: row);
-    final card = Card(
-      clipBehavior: Clip.antiAlias,
-      child: onTap == null
-          ? content
-          : InkWell(
-              onTap: onTap,
-              excludeFromSemantics: trailing != null,
-              overlayColor: WidgetStatePropertyAll(scheme.onSurface.withValues(alpha: .06)),
-              child: content),
-    );
+    final overlay = WidgetStatePropertyAll(scheme.onSurface.withValues(alpha: .06));
     if (trailing == null) {
+      // Whole card is one merged node: title, status and meta are read together
+      // with the tap action instead of as separate stops.
+      final row = Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (leading != null) ...[leading!, const SizedBox(width: 14)],
+        Expanded(child: details),
+        if (chevron && onTap != null) ...[
+          const SizedBox(width: 4),
+          Padding(padding: const EdgeInsets.only(top: 2),
+            child: Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant)),
+        ],
+      ]);
+      final content = Padding(padding: const EdgeInsets.fromLTRB(16, 14, 12, 14), child: row);
+      final card = Card(clipBehavior: Clip.antiAlias,
+        child: onTap == null ? content : InkWell(onTap: onTap, overlayColor: overlay, child: content));
       return MergeSemantics(child: Semantics(button: onTap != null, child: card));
     }
-    return Semantics(
-      container: true, explicitChildNodes: true, button: onTap != null, onTap: onTap, child: card);
+    // A trailing control (todo completion, metadata menu) keeps its own node and
+    // action; the tappable content is one merged, named button beside it.
+    final content = Padding(padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (leading != null) ...[leading!, const SizedBox(width: 14)],
+        Expanded(child: details),
+      ]));
+    final tappable = onTap == null ? content : InkWell(onTap: onTap, overlayColor: overlay, child: content);
+    return Card(clipBehavior: Clip.antiAlias, child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Expanded(child: MergeSemantics(child: Semantics(button: onTap != null, child: tappable))),
+      Padding(padding: const EdgeInsets.only(top: 6, right: 8), child: trailing!),
+    ]));
   }
 }
 
