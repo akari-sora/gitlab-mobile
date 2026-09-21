@@ -143,6 +143,8 @@ void main() {
     var taps = 0, trailingTaps = 0;
     await tester.pumpWidget(_host(EntityCard(
       title: const Text('Todo'), onTap: () => taps++,
+      subtitle: const Text('studio/mobile-workspace'),
+      meta: const [StatusBadge('opened'), MetaChip('#7', mono: true)],
       trailing: IconButton(tooltip: 'X', onPressed: () => trailingTaps++, icon: const Icon(Icons.check)))));
     final card = tester.getSemantics(find.byType(EntityCard));
     final nodes = [card, ..._semanticsUnder(card)];
@@ -156,6 +158,9 @@ void main() {
     expect(content.single.id, isNot(action.single.id));
     // The tappable content is itself the named button node.
     final contentData = content.single.getSemanticsData();
+    expect(contentData.label, contains('開啟中'));
+    expect(contentData.label, contains('#7'));
+    expect(contentData.label, contains('studio/mobile-workspace'));
     expect(contentData.flagsCollection.isButton, isTrue);
     expect(contentData.hasAction(SemanticsAction.tap), isTrue);
     // ignore: deprecated_member_use
@@ -257,7 +262,8 @@ void main() {
         subtitle: const Text('aa22396584/gitlab-mobile'),
         body: const MetaChip('feature/navigation → main', icon: Icons.call_split, mono: true),
         meta: const [StatusBadge('opened'), StatusBadge('running'), MetaChip('!12', mono: true),
-          MetaChip('2026/09/01', icon: Icons.schedule_outlined)], onTap: () {})])))));
+          MetaChip('2026/09/01', icon: Icons.schedule_outlined)], onTap: () {},
+        trailing: IconButton(tooltip: '完成', onPressed: () {}, icon: const Icon(Icons.check_circle_outline)))])))));
     await tester.pump();
     expect(tester.takeException(), isNull);
   });
