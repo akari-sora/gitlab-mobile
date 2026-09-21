@@ -36,7 +36,7 @@ Delivery uses `CI_JOB_TOKEN`, not a personal token. No credentials are committed
 
 ## Android preview versus production
 
-The output is a **debug development preview**. Ephemeral debug signing keys may differ between jobs; updating between such previews may require uninstalling the old one and losing its local data. Production/updatable distribution requires a separately managed stable signing key and release configuration. Neither Play publication nor a production release is configured by this pipeline.
+The output is a **debug development preview**. Ephemeral debug signing keys differ between runners and from a developer machine; updating between such previews then fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (silently under `adb install -r`) and requires uninstalling the old one, losing its local accounts and drafts. To make previews update in place, set the masked, protected CI variable `ANDROID_DEBUG_KEYSTORE_B64` to the base64 of one debug keystore (alias `androiddebugkey`, passwords `android`); `ci/build_android.sh` restores it to `~/.android/debug.keystore` before the build and records the choice in `build-metadata.json` (`signing`). That is still a debug signature. Production/updatable distribution requires a separately managed stable signing key and release configuration. Neither Play publication nor a production release is configured by this pipeline.
 
 ## iOS and product acceptance
 
