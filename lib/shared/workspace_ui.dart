@@ -85,9 +85,13 @@ String statusLabel(String status) => statusStyle(status).$1;
 
 String projectCardLabel(Project project, String lastActivity) {
   final when = relativeDate(lastActivity);
+  final description = project.description?.trim() ?? '';
   return [
     project.name,
+    project.path,
+    if (description.isNotEmpty) description,
     statusLabel(project.visibility ?? ''),
+    if (project.archived == true) '已封存',
     if (when.isNotEmpty) when,
     if (project.markedForDeletionOn != null) '待刪除',
   ].join(' · ');
@@ -95,10 +99,14 @@ String projectCardLabel(Project project, String lastActivity) {
 
 String pipelineCardLabel(Json value) {
   final ref = valueText(value, 'ref');
+  final sha = shortSha(valueText(value, 'sha'));
+  final when = relativeDate(valueText(value, 'updated_at'));
   return [
-    'Pipeline #${valueInt(value, 'id')}',
+    valueText(value, 'name', 'Pipeline #${valueInt(value, 'id')}'),
     statusLabel(valueText(value, 'status')),
     if (ref.isNotEmpty) ref,
+    if (sha.isNotEmpty) sha,
+    if (when.isNotEmpty) when,
   ].join(' · ');
 }
 

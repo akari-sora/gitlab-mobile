@@ -6,10 +6,28 @@ enum FailureKind {
 
 /// Diagnostics contain only allowlisted status information, never request data.
 final class ApiFailure implements Exception {
-  const ApiFailure(this.kind, {this.status, this.retryAt});
+  const ApiFailure(this.kind, {this.status, this.retryAt, String? title, String? detail})
+      : _title = title,
+        _detail = detail;
   final FailureKind kind;
   final int? status;
   final DateTime? retryAt;
+  final String? _title;
+  final String? _detail;
+
+  /// Archive downloads are not text previews. The 2 MiB / 20,000-line copy does
+  /// not describe the 256 MiB archive cap.
+  static const artifactTooLarge = ApiFailure(
+    FailureKind.tooLarge,
+    title: '產物超過下載上限',
+    detail: '單次下載上限為 256 MiB。',
+  );
+
+  static const artifactStorage = ApiFailure(
+    FailureKind.network,
+    title: '無法儲存產物',
+    detail: '無法寫入下載檔案。請釋放空間後重試。',
+  );
   static ApiFailure fromStatus(int status, {DateTime? retryAt}) => switch (status) {
     400 || 422 => ApiFailure(FailureKind.validation, status: status),
     401 => const ApiFailure(FailureKind.unauthenticated, status: 401),
@@ -21,7 +39,7 @@ final class ApiFailure implements Exception {
     >= 300 && < 400 => ApiFailure(FailureKind.redirectBlocked, status: status),
     _ => ApiFailure(FailureKind.invalidResponse, status: status),
   };
-  String get title => switch (kind) {
+  String get title => _title ?? switch (kind) {
     FailureKind.unauthenticated => '登入已失效',
     FailureKind.forbidden => '沒有操作權限',
     FailureKind.invisible => '無法開啟此資源',
@@ -38,7 +56,7 @@ final class ApiFailure implements Exception {
     FailureKind.conflict => '內容已經變更',
     FailureKind.writeUncertain => '尚未確認操作結果',
   };
-  String get detail => switch (kind) {
+  String get detail => _detail ?? switch (kind) {
     FailureKind.invisible => '目前帳號無法存取，或資源已移動／刪除。',
     FailureKind.forbidden => '請確認帳號角色、Token 的 api 權限與專案政策。',
     FailureKind.unauthenticated => '請重新連接這個帳號。',

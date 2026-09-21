@@ -1,5 +1,14 @@
+import 'failure.dart';
+import 'gitlab_api.dart';
+
 /// GitLab CI traces, with `section_start` / `section_end` markers removed.
 final class JobTrace {
+  /// Nested `section_start` markers past this depth stay plain text.
+  static const maxDepth = 32;
+
+  /// Further markers are ignored so a marker-dense trace cannot explode.
+  static const maxSections = 1024;
+
   const JobTrace({
     required this.ansiStripped,
     required this.lines,
@@ -22,14 +31,27 @@ final class JobTrace {
     r'section_(start|end):(\d+):([A-Za-z0-9_.-]+)(?:\[collapsed=(true|false)\])?\r?',
   );
 
-  factory JobTrace.parse(String raw) {
+  factory JobTrace.parse(String raw, {int maxLines = GitLabApi.maxTextLines}) {
     final plain = raw.replaceAll(_ansi, '');
     if (plain.isEmpty) return JobTrace.empty;
+    // Count before allocating a line object per newline. A 2 MiB newline-only
+    // body is under the byte cap and would otherwise build millions of lines.
+    var newlines = 0;
+    for (var i = 0; i < plain.length; i++) {
+      if (plain.codeUnitAt(i) != 0x0A) continue;
+      newlines++;
+      if (newlines >= maxLines) throw const ApiFailure(FailureKind.tooLarge);
+    }
     final lines = <JobTraceLine>[];
     final sections = <JobTraceSection>[];
     final stack = <_OpenSection>[];
-    for (final line in plain.split('\n')) {
+    var start = 0;
+    for (var i = 0; i <= plain.length; i++) {
+      if (i != plain.length && plain.codeUnitAt(i) != 0x0A) continue;
+      var line = plain.substring(start, i);
+      if (line.endsWith('\r')) line = line.substring(0, line.length - 1);
       _takeLine(line, lines, sections, stack);
+      start = i + 1;
     }
     while (stack.isNotEmpty) {
       _close(stack.removeLast(), null, lines.length, sections);
@@ -128,6 +150,10 @@ void _applyMarker(
   final timestamp = int.parse(match.group(2)!);
   final name = match.group(3)!;
   if (kind == 'start') {
+    if (stack.length >= JobTrace.maxDepth ||
+        sections.length + stack.length >= JobTrace.maxSections) {
+      return;
+    }
     stack.add(
       _OpenSection(
         name: name,

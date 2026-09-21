@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/instance.dart';
 import '../../shared/workspace_ui.dart';
+import '../workspace/ci_page.dart';
 import '../workspace/editor.dart';
 import 'recent_project.dart';
 import 'session_controller.dart';
@@ -153,6 +154,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                               return;
                                             }
                                             await clearSecureDrafts(account);
+                                            await clearAccountArtifacts(account);
                                             await clearRecentProject(account);
                                             await session.remove(account);
                                           },

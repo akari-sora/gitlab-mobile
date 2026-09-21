@@ -11,11 +11,13 @@ class FakeAdapter implements HttpClientAdapter {
   FakeAdapter(this.respond);
   final Responder respond;
   final List<RequestOptions> requests = [];
+  final List<Future<void>?> cancelFutures = [];
   bool closed = false;
   @override
   Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream,
       Future<void>? cancelFuture) async {
     requests.add(options);
+    cancelFutures.add(cancelFuture);
     return await respond(options);
   }
   @override

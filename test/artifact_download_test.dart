@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/instance.dart';
+import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'support/fake_adapter.dart';
 import 'support/workspace_fixture.dart';
@@ -56,6 +58,46 @@ class _CollectingSink implements IOSink {
   void writeln([Object? object = '']) => write('$object\n');
 }
 
+class _FullSink extends _CollectingSink {
+  @override
+  void add(List<int> data) {
+    throw const FileSystemException('no space');
+  }
+}
+
+class _HoldFlushSink extends _CollectingSink {
+  _HoldFlushSink(this.gate);
+  final Completer<void> gate;
+  final _done = Completer<void>();
+  @override
+  Future<dynamic> get done => _done.future;
+  @override
+  Future<void> flush() => gate.future;
+  @override
+  Future<void> close() async {
+    closed = true;
+    if (!_done.isCompleted) _done.complete();
+  }
+}
+
+class _AsyncFailSink extends _CollectingSink {
+  final _done = Completer<void>();
+  @override
+  Future<dynamic> get done => _done.future;
+  @override
+  void add(List<int> data) {
+    super.add(data);
+    scheduleMicrotask(() {
+      if (!_done.isCompleted) _done.completeError(const FileSystemException('no space'));
+    });
+  }
+  @override
+  Future<void> close() async {
+    closed = true;
+    if (!_done.isCompleted) _done.complete();
+  }
+}
+
 ResponseBody _statusBody(int status, Map<String, List<String>> headers) => ResponseBody(
   Stream<Uint8List>.value(Uint8List(0)), status, headers: headers,
 );
@@ -91,6 +133,8 @@ void main() {
     expect(adapter.requests.first.followRedirects, isFalse);
     expect(adapter.requests.last.uri.toString(), location);
     expect(adapter.requests.last.followRedirects, isFalse);
+    expect(adapter.requests.last.data, isNull);
+    expect(adapter.requests.first.data, isNull);
     expectNoCredential(adapter.requests.last);
     expect(sink.bytes, payload);
     expect(result.bytesWritten, payload.length);
@@ -136,9 +180,137 @@ void main() {
     expectNoCredential(adapter.requests.last);
   });
 
-  test('content-length above the artifact cap fails before the body is read', () async {
+  test('credential defaults and interceptors stay off the CDN hop', () async {
+    const location = 'https://cdn.artifacts.gitlab-static.net/signed/file.zip';
+    final adapter = FakeAdapter((request) {
+      if (request.uri.host == 'cdn.artifacts.gitlab-static.net') {
+        return ResponseBody(Stream<Uint8List>.value(Uint8List.fromList([1])), 200);
+      }
+      return _statusBody(302, {'location': [location]});
+    });
+    final dio = Dio()..httpClientAdapter = adapter;
+    dio.options.headers['Authorization'] = 'Bearer leaked';
+    dio.options.headers['PRIVATE-TOKEN'] = 'leaked-token';
+    dio.options.headers['Cookie'] = 'sid=leaked';
+    dio.options.queryParameters['private_token'] = 'leaked';
+    dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
+      options.headers['Authorization'] = 'Bearer from-interceptor';
+      options.headers['Cookie'] = 'intercepted=1';
+      options.headers['X-Leak'] = '1';
+      handler.next(options);
+    }));
+    final api = GitLabApi(
+      instance: GitLabInstance.parse('https://example.com/gitlab'),
+      token: 'synthetic-test-token',
+      dio: dio,
+    );
+    addTearDown(api.close);
+    await api.downloadJobArtifacts(8, 3, sink: _CollectingSink());
+    expect(adapter.requests, hasLength(2));
+    final hop = adapter.requests.last;
+    expect(hop.uri.toString(), location);
+    expect(hop.data, isNull);
+    expect(hop.followRedirects, isFalse);
+    expect(hop.maxRedirects, 0);
+    expectNoCredential(hop);
+    expect(hop.headers.keys.map((key) => key.toLowerCase()), isNot(contains('x-leak')));
+    expect(hop.uri.queryParameters.containsKey('private_token'), isFalse);
+    expect(hop.queryParameters.containsKey('private_token'), isFalse);
+  });
+
+  for (final status in [401, 403, 404, 429, 500]) {
+    test('CDN status $status keeps its own failure and is not replayed', () async {
+      final adapter = FakeAdapter((request) {
+        if (request.uri.host == 'cdn.artifacts.gitlab-static.net') {
+          return _statusBody(status, {if (status == 429) 'retry-after': ['60']});
+        }
+        return _statusBody(302, {'location': ['https://cdn.artifacts.gitlab-static.net/signed/file.zip']});
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final expected = ApiFailure.fromStatus(status, retryAt: status == 429 ? DateTime.now() : null);
+      await expectLater(
+        api.downloadJobArtifacts(8, 3, sink: _CollectingSink()),
+        throwsA(isA<ApiFailure>()
+            .having((error) => error.kind, 'kind', expected.kind)
+            .having((error) => error.status, 'status', status)
+            .having((error) => error.title, 'title', isNot('資源網址已變更'))),
+      );
+      expect(adapter.requests, hasLength(2));
+      expectNoCredential(adapter.requests.last);
+      expect(adapter.requests.last.data, isNull);
+      if (status == 429) {
+        await expectLater(
+          api.downloadJobArtifacts(8, 3, sink: _CollectingSink()),
+          throwsA(failure(FailureKind.rateLimited)),
+        );
+        expect(adapter.requests, hasLength(2));
+      }
+    });
+  }
+
+  test('a filesystem error while writing an artifact is not an invalid response', () async {
+    final api = testApi(FakeAdapter((_) => ResponseBody(
+      Stream<Uint8List>.value(Uint8List.fromList([1, 2, 3])),
+      200,
+    )));
+    addTearDown(api.close);
+    await expectLater(
+      api.downloadJobArtifacts(8, 3, sink: _FullSink()),
+      throwsA(isA<ApiFailure>()
+          .having((error) => error.kind, 'kind', FailureKind.network)
+          .having((error) => error.title, 'title', '無法儲存產物')
+          .having((error) => error.detail, 'detail', contains('寫入'))),
+    );
+  });
+
+  test('1000 small chunks notify progress far less often than once each', () {
+    var ticks = 0;
+    final progress = ArtifactProgress(clock: () => DateTime.fromMillisecondsSinceEpoch(ticks));
+    var callbacks = 0;
+    progress.value.addListener(() => callbacks++);
+    for (var i = 1; i <= 1000; i++) {
+      ticks += 1;
+      progress.report(i, 1000);
+    }
+    progress.report(1000, 1000, completed: true);
+    expect(callbacks, lessThan(50));
+    expect(callbacks, greaterThan(5));
+    expect(progress.value.value, (1000, 1000));
+    progress.dispose();
+  });
+
+  test('a raw stream error after close is cancelled', () async {
+    final started = Completer<void>();
+    final release = Completer<void>();
+    addTearDown(() { if (!release.isCompleted) release.complete(); });
+    final adapter = FakeAdapter((_) => ResponseBody(
+      () async* {
+        yield Uint8List.fromList([1]);
+        if (!started.isCompleted) started.complete();
+        await release.future;
+        throw StateError('socket reset');
+      }(),
+      200,
+    ));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final pending = api.downloadJobArtifacts(8, 3, sink: _CollectingSink());
+    await started.future;
+    api.close();
+    await expectLater(pending, throwsA(failure(FailureKind.cancelled)));
+  });
+
+  test('content-length above the artifact cap cancels without reading the body', () async {
     var reads = 0;
-    final body = StreamController<Uint8List>();
+    var listened = false;
+    var released = false;
+    final body = StreamController<Uint8List>(
+      onListen: () => listened = true,
+      onCancel: () {
+        released = true;
+      },
+    );
     addTearDown(body.close);
     final adapter = FakeAdapter((_) => ResponseBody(
       body.stream.map((chunk) {
@@ -151,11 +323,20 @@ void main() {
     final api = testApi(adapter);
     addTearDown(api.close);
     final sink = _CollectingSink();
-    await expectLater(api.downloadJobArtifacts(8, 3, sink: sink), throwsA(failure(FailureKind.tooLarge)));
+    await expectLater(
+      api.downloadJobArtifacts(8, 3, sink: sink),
+      throwsA(isA<ApiFailure>()
+          .having((error) => error.kind, 'kind', FailureKind.tooLarge)
+          .having((error) => error.detail, 'detail', contains('256 MiB'))
+          .having((error) => error.title, 'title', '產物超過下載上限')),
+    );
+    expect(listened, isTrue);
+    expect(released, isTrue);
     expect(reads, 0);
     expect(sink.bytes, isEmpty);
     expect(sink.closed, isFalse);
     expect(adapter.requests, hasLength(1));
+    await adapter.cancelFutures.single;
   });
 
   test('streamed artifact bytes above the cap close the sink', () async {
@@ -178,6 +359,7 @@ void main() {
     expect(sink.closed, isTrue);
     expect(sink.bytes, [1, 2, 3]);
     expect(progress, [3]);
+    await adapter.cancelFutures.single;
   });
 
   test('close() during artifact streaming is cancelled', () async {
@@ -241,7 +423,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(workspaceHost(JobLogPage(
       account: fixture.account, api: fixture.api, project: fixture.project, id: 501, sharer: sharer,
-      artifactDirectory: (projectId, jobId) async {
+      artifactDirectory: (account, projectId, jobId) async {
         final created = await Directory.systemTemp.createTemp('gitlab-mobile-artifacts-$projectId-$jobId-');
         directory = created;
         return created;
@@ -284,7 +466,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(workspaceHost(JobLogPage(
       account: fixture.account, api: fixture.api, project: fixture.project, id: 501,
-      artifactDirectory: (projectId, jobId) async {
+      artifactDirectory: (account, projectId, jobId) async {
         final created = await Directory.systemTemp.createTemp('gitlab-mobile-artifacts-cancel-');
         directory = created;
         return created;
@@ -299,11 +481,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('下載產物'));
     await settleWorkspace(tester);
-    expect(directory!.listSync().map((entity) => entity.path), contains(endsWith('.partial')));
+    expect(directory!.listSync().map((entity) => entity.path), contains(endsWith('.download.partial')));
     await tester.tap(find.text('取消'));
     await settleWorkspace(tester);
     expect(find.text('取消'), findsNothing);
-    expect(directory!.listSync(), isEmpty);
+    expect(find.text('已下載 artifacts.zip · 4 B'), findsNothing);
+    expect(directory!.existsSync(), isFalse);
   });
 
   testWidgets('artifact download failure shows the failure notice and keeps no partial', (tester) async {
@@ -316,7 +499,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(workspaceHost(JobLogPage(
       account: fixture.account, api: fixture.api, project: fixture.project, id: 501,
-      artifactDirectory: (projectId, jobId) async {
+      artifactDirectory: (account, projectId, jobId) async {
         final created = await Directory.systemTemp.createTemp('gitlab-mobile-artifacts-fail-');
         directory = created;
         return created;
@@ -333,7 +516,199 @@ void main() {
     await settleWorkspace(tester);
     expect(find.text('無法開啟此資源'), findsOneWidget);
     expect(find.text('診斷資訊'), findsOneWidget);
-    expect(directory!.listSync(), isEmpty);
+    expect(find.text('重新整理'), findsOneWidget);
+    expect(directory!.existsSync(), isFalse);
+  });
+
+  testWidgets('oversized artifact sheet states the 256 MiB cap', (tester) async {
+    final fixture = _DownloadFixture()..artifactLength = GitLabApi.maxArtifactBytes + 1;
+    addTearDown(fixture.api.close);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(workspaceHost(JobLogPage(
+      account: fixture.account, api: fixture.api, project: fixture.project, id: 501,
+      artifactDirectory: (account, projectId, jobId) async =>
+          Directory.systemTemp.createTemp('gitlab-mobile-artifacts-cap-'),
+    )));
+    await settleWorkspace(tester);
+    await tester.tap(find.byTooltip('工作操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下載產物'));
+    await settleWorkspace(tester);
+    expect(find.text('產物超過下載上限'), findsOneWidget);
+    expect(find.textContaining('256 MiB'), findsOneWidget);
+    expect(find.textContaining('2 MiB'), findsNothing);
+  });
+
+  testWidgets('artifact failure retry starts a fresh download', (tester) async {
+    final fixture = _DownloadFixture()..artifactStatus = 404;
+    addTearDown(fixture.api.close);
+    final created = <Directory>[];
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(workspaceHost(JobLogPage(
+      account: fixture.account, api: fixture.api, project: fixture.project, id: 501,
+      artifactDirectory: (account, projectId, jobId) async {
+        final directory = await Directory.systemTemp.createTemp('gitlab-mobile-artifacts-retry-');
+        created.add(directory);
+        return directory;
+      },
+    )));
+    addTearDown(() async {
+      for (final directory in created) {
+        if (directory.existsSync()) await directory.delete(recursive: true);
+      }
+    });
+    await settleWorkspace(tester);
+    await tester.tap(find.byTooltip('工作操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下載產物'));
+    await settleWorkspace(tester);
+    expect(find.text('無法開啟此資源'), findsOneWidget);
+    fixture.artifactStatus = 200;
+    await tester.tap(find.text('重新整理'));
+    await settleWorkspace(tester);
+    expect(find.text('已下載 artifacts.zip · 4 B'), findsOneWidget);
+    expect(created, hasLength(2));
+    expect(created.first.path, isNot(created.last.path));
+  });
+
+  testWidgets('cancel during flush does not promote the artifact', (tester) async {
+    final fixture = _DownloadFixture();
+    addTearDown(fixture.api.close);
+    final gate = Completer<void>();
+    addTearDown(() { if (!gate.isCompleted) gate.complete(); });
+    Directory? directory;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(workspaceHost(JobLogPage(
+      account: fixture.account, api: fixture.api, project: fixture.project, id: 501,
+      openSink: (_) => _HoldFlushSink(gate),
+      artifactDirectory: (account, projectId, jobId) async {
+        final created = await Directory.systemTemp.createTemp('gitlab-mobile-artifacts-flush-');
+        directory = created;
+        return created;
+      },
+    )));
+    addTearDown(() async {
+      final created = directory;
+      if (created != null && created.existsSync()) await created.delete(recursive: true);
+    });
+    await settleWorkspace(tester);
+    await tester.tap(find.byTooltip('工作操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下載產物'));
+    await settleWorkspace(tester);
+    expect(find.text('取消'), findsOneWidget);
+    expect(find.text('4 B / 4 B'), findsOneWidget);
+    expect(find.textContaining('已下載'), findsNothing);
+    await tester.tap(find.text('取消'));
+    gate.complete();
+    await settleWorkspace(tester);
+    expect(find.textContaining('已下載'), findsNothing);
+    expect(find.text('取消'), findsNothing);
+    expect(directory!.existsSync(), isFalse);
+  });
+
+  testWidgets('an asynchronous sink failure cancels the transfer', (tester) async {
+    final release = Completer<void>();
+    addTearDown(() { if (!release.isCompleted) release.complete(); });
+    final fixture = _DownloadFixture()..release = release;
+    addTearDown(fixture.api.close);
+    Directory? directory;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(workspaceHost(JobLogPage(
+      account: fixture.account, api: fixture.api, project: fixture.project, id: 501,
+      openSink: (_) => _AsyncFailSink(),
+      artifactDirectory: (account, projectId, jobId) async {
+        final created = await Directory.systemTemp.createTemp('gitlab-mobile-artifacts-sink-');
+        directory = created;
+        return created;
+      },
+    )));
+    addTearDown(() async {
+      final created = directory;
+      if (created != null && created.existsSync()) await created.delete(recursive: true);
+    });
+    await settleWorkspace(tester);
+    await tester.tap(find.byTooltip('工作操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下載產物'));
+    await settleWorkspace(tester);
+    expect(find.text('無法儲存產物'), findsOneWidget);
+    expect(find.textContaining('已下載'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a disposition named .partial is not saved as the temp file', (tester) async {
+    final fixture = _DownloadFixture()..disposition = 'attachment; filename=".partial"';
+    addTearDown(fixture.api.close);
+    Directory? directory;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(workspaceHost(JobLogPage(
+      account: fixture.account, api: fixture.api, project: fixture.project, id: 501,
+      artifactDirectory: (account, projectId, jobId) async {
+        final created = await Directory.systemTemp.createTemp('gitlab-mobile-artifacts-name-');
+        directory = created;
+        return created;
+      },
+    )));
+    addTearDown(() async {
+      final created = directory;
+      if (created != null && created.existsSync()) await created.delete(recursive: true);
+    });
+    await settleWorkspace(tester);
+    await tester.tap(find.byTooltip('工作操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下載產物'));
+    await settleWorkspace(tester);
+    expect(find.textContaining('已下載 artifacts-501.zip'), findsOneWidget);
+    expect(find.text('無法讀取回應'), findsNothing);
+    expect(File('${directory!.path}/artifacts-501.zip').readAsBytesSync(), [1, 2, 3, 4]);
+    expect(File('${directory!.path}/.download.partial').existsSync(), isFalse);
+    expect(File('${directory!.path}/.partial').existsSync(), isFalse);
+  });
+
+  test('artifact directories are unique per attempt and removed with the account', () async {
+    final root = await Directory.systemTemp.createTemp('gitlab-mobile-artifact-root-');
+    final previous = artifactStorageRoot;
+    artifactStorageRoot = () async => root;
+    addTearDown(() async {
+      artifactStorageRoot = previous;
+      if (root.existsSync()) await root.delete(recursive: true);
+    });
+    Account accountFor(String host, int id) => Account(
+      instance: GitLabInstance.parse(host),
+      user: GitLabUser(id: id, username: 'user$id', name: 'User $id'),
+      token: 'synthetic-test-token',
+    );
+    final firstAccount = accountFor('https://one.example', 7);
+    final secondAccount = accountFor('https://two.example', 7);
+    final first = await jobArtifactDirectory(firstAccount, 4, 9);
+    final second = await jobArtifactDirectory(firstAccount, 4, 9);
+    final other = await jobArtifactDirectory(secondAccount, 4, 9);
+    expect(first.path, isNot(second.path));
+    expect(first.path, contains(artifactAccountSegment(firstAccount)));
+    expect(other.path, contains(artifactAccountSegment(secondAccount)));
+    expect(first.path.contains(artifactAccountSegment(secondAccount)), isFalse);
+    await File('${first.path}/secret.bin').writeAsBytes([1, 2, 3]);
+    await clearAccountArtifacts(firstAccount);
+    expect(first.existsSync(), isFalse);
+    expect(second.existsSync(), isFalse);
+    expect(other.existsSync(), isTrue);
+    expect(File('${other.path}/secret.bin').existsSync(), isFalse);
   });
 }
 
@@ -345,7 +720,10 @@ class _StubSharer implements ArtifactSharer {
 
 class _DownloadFixture extends WorkspaceFixture {
   Completer<void>? pause;
+  Completer<void>? release;
   int artifactStatus = 200;
+  int? artifactLength;
+  String disposition = 'attachment; filename="artifacts.zip"';
   @override
   Json job(int id, {String status = 'success'}) {
     final value = super.job(id, status: status);
@@ -361,11 +739,19 @@ class _DownloadFixture extends WorkspaceFixture {
     final path = segments.skip(segments.indexOf('v4') + 1).join('/');
     if (path == 'projects/42/jobs/501/artifacts') {
       if (artifactStatus != 200) return jsonResponse({'error': 'missing'}, status: artifactStatus);
-      final body = Stream<Uint8List>.fromFuture((pause?.future ?? Future<void>.value()).then((_) => Uint8List.fromList([1, 2, 3, 4])));
+      final length = artifactLength;
+      final body = length != null
+          ? Stream<Uint8List>.value(Uint8List(0))
+          : () async* {
+              await (pause?.future ?? Future<void>.value());
+              yield Uint8List.fromList([1, 2, 3, 4]);
+              final hold = release;
+              if (hold != null) await hold.future;
+            }();
       return ResponseBody(body, 200, headers: {
         Headers.contentTypeHeader: ['application/zip'],
-        Headers.contentLengthHeader: ['4'],
-        'content-disposition': ['attachment; filename="artifacts.zip"'],
+        Headers.contentLengthHeader: ['${length ?? 4}'],
+        'content-disposition': [disposition],
       });
     }
     return super.respond(request);

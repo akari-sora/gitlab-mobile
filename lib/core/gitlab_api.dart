@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show HttpDate, IOSink;
+import 'dart:io' show FileSystemException, HttpDate, IOSink;
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'failure.dart';
 import 'instance.dart';
 import 'models.dart';
@@ -35,7 +36,12 @@ String _artifactFileName(String? header, int job) {
 String? _singlePathSegment(String? name) {
   if (name == null) return null;
   final base = name.trim().split(RegExp(r'[\\/]')).last.trim();
-  if (base.isEmpty || base == '.' || base == '..' || base.contains('\u0000')) {
+  if (base.isEmpty ||
+      base == '.' ||
+      base == '..' ||
+      base == '.partial' ||
+      base == '.download.partial' ||
+      base.contains('\u0000')) {
     return null;
   }
   return base;
@@ -115,6 +121,7 @@ final class GitLabApi {
   final Future<void> Function(OAuthCredential rotated)? _onOAuthRotated;
   Future<void>? _refreshing;
   final Set<CancelToken> _requests = {};
+  final Set<Dio> _bareClients = {};
   bool _closed = false;
   DateTime? _retryAt;
   static const maxTextBytes = 2 * 1024 * 1024;
@@ -437,6 +444,49 @@ final class GitLabApi {
     void Function(int received, int? total)? onProgress,
     Future<void>? cancel,
     int maxBytes = maxArtifactBytes,
+  }) {
+    final result = Completer<ArtifactDownload>();
+    // Dio can add a stream error after the subscription is cancelled. That
+    // error is uncaught unless this zone owns both the request and the escape.
+    runZonedGuarded(() {
+      _downloadJobArtifacts(
+        project,
+        job,
+        sink: sink,
+        onProgress: onProgress,
+        cancel: cancel,
+        maxBytes: maxBytes,
+      ).then((value) {
+        if (!result.isCompleted) result.complete(value);
+      }, onError: (Object error, StackTrace stack) {
+        if (!result.isCompleted) {
+          result.completeError(_artifactEscape(error), stack);
+        }
+      });
+    }, (Object error, StackTrace stack) {
+      if (!result.isCompleted) {
+        result.completeError(_artifactEscape(error), stack);
+      }
+    });
+    return result.future;
+  }
+
+  Object _artifactEscape(Object error) {
+    if (error is ApiFailure) return error;
+    if (_closed) return const ApiFailure(FailureKind.cancelled);
+    if (error is DioException && error.type == DioExceptionType.cancel) {
+      return const ApiFailure(FailureKind.cancelled);
+    }
+    return error;
+  }
+
+  Future<ArtifactDownload> _downloadJobArtifacts(
+    int project,
+    int job, {
+    required IOSink sink,
+    void Function(int received, int? total)? onProgress,
+    Future<void>? cancel,
+    int maxBytes = maxArtifactBytes,
   }) async {
     if (_closed) throw const ApiFailure(FailureKind.cancelled);
     final until = _retryAt;
@@ -476,25 +526,62 @@ final class GitLabApi {
         onProgress: onProgress,
       );
     } on DioException catch (error) {
-      if (error.type == DioExceptionType.cancel || _closed) {
+      if (error.type == DioExceptionType.cancel || _closed || token.isCancelled) {
         throw const ApiFailure(FailureKind.cancelled);
       }
       throw const ApiFailure(FailureKind.network);
+    } on ApiFailure {
+      rethrow;
+    } catch (_) {
+      // close() can surface a raw stream error after the Dio wrapper is gone.
+      if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
+      rethrow;
     } finally {
       _requests.remove(token);
     }
+  }
+
+  /// CDN hop. A fresh client so [_dio] defaults, interceptors, and its cookie
+  /// jar cannot ride along. Test adapters are forwarded without being closed.
+  Dio _openBareArtifactDio() {
+    final dio = Dio(
+      BaseOptions(
+        connectTimeout: _dio.options.connectTimeout,
+        receiveTimeout: _dio.options.receiveTimeout,
+        sendTimeout: _dio.options.sendTimeout,
+        followRedirects: false,
+        maxRedirects: 0,
+        responseType: ResponseType.stream,
+        headers: const <String, dynamic>{},
+        contentType: null,
+      ),
+    );
+    dio.interceptors.clear(keepImplyContentTypeInterceptor: false);
+    final adapter = _dio.httpClientAdapter;
+    if (adapter is! IOHttpClientAdapter) {
+      dio.httpClientAdapter = _ForwardingAdapter(adapter);
+    }
+    _bareClients.add(dio);
+    return dio;
+  }
+
+  void _closeBare(Dio? dio) {
+    if (dio == null || !_bareClients.remove(dio)) return;
+    dio.close(force: true);
   }
 
   Future<Response<ResponseBody>> _artifactResponse(
     Uri uri,
     CancelToken token, {
     required bool authenticated,
+    Dio? client,
   }) {
     if (_closed || token.isCancelled) {
       throw const ApiFailure(FailureKind.cancelled);
     }
-    return _dio.requestUri<ResponseBody>(
+    return (client ?? _dio).requestUri<ResponseBody>(
       uri,
+      data: null,
       cancelToken: token,
       options: Options(
         method: 'GET',
@@ -563,24 +650,33 @@ final class GitLabApi {
       if (location == null) {
         throw ApiFailure(FailureKind.redirectBlocked, status: status);
       }
-      final followed = await _artifactResponse(
-        location,
-        token,
-        authenticated: false,
-      );
-      return _consumeArtifact(
-        response: followed,
-        requestUri: location,
-        allowRedirect: false,
-        allowRefresh: false,
-        token: token,
-        job: job,
-        sink: sink,
-        maxBytes: maxBytes,
-        onProgress: onProgress,
-      );
+      final bare = _openBareArtifactDio();
+      try {
+        final followed = await _artifactResponse(
+          location,
+          token,
+          authenticated: false,
+          client: bare,
+        );
+        return await _consumeArtifact(
+          response: followed,
+          requestUri: location,
+          allowRedirect: false,
+          allowRefresh: false,
+          token: token,
+          job: job,
+          sink: sink,
+          maxBytes: maxBytes,
+          onProgress: onProgress,
+        );
+      } finally {
+        _closeBare(bare);
+      }
     }
-    if (!allowRedirect) {
+    // A further redirect is blocked. Every other CDN status keeps its own
+    // recovery copy, and 429 still arms the client's retry clock. The hop is
+    // never replayed with the account credential.
+    if (status >= 300 && status < 400) {
       throw ApiFailure(FailureKind.redirectBlocked, status: status);
     }
     if (status == 429) _rememberRetryAfter(response.headers.value('retry-after'));
@@ -598,20 +694,31 @@ final class GitLabApi {
     final headers = response.headers;
     final total = int.tryParse(headers.value(Headers.contentLengthHeader) ?? '');
     if (total != null && total > maxBytes) {
-      throw const ApiFailure(FailureKind.tooLarge);
+      _cancelTransport(token);
+      await _releaseBody(response.data);
+      throw ApiFailure.artifactTooLarge;
     }
     final body = response.data;
     if (body == null) throw const ApiFailure(FailureKind.invalidResponse);
     final iterator = StreamIterator<Uint8List>(body.stream);
     final cancelled = token.whenCancel.then<Object?>((_) => _artifactCancelled);
     var received = 0;
+    Future<Object?>? pendingMove;
     try {
       while (true) {
         if (_closed || token.isCancelled) {
           throw const ApiFailure(FailureKind.cancelled);
         }
+        final move = iterator.moveNext().then<Object?>(
+          (more) => more,
+          onError: (Object error, StackTrace stack) {
+            if (_closed || token.isCancelled) return _artifactCancelled;
+            Error.throwWithStackTrace(error, stack);
+          },
+        );
+        pendingMove = move;
         final step = await Future.any<Object?>(<Future<Object?>>[
-          iterator.moveNext().then<Object?>((more) => more),
+          move,
           cancelled,
         ]);
         if (identical(step, _artifactCancelled) || _closed || token.isCancelled) {
@@ -620,19 +727,35 @@ final class GitLabApi {
         if (step != true) break;
         final chunk = iterator.current;
         if (received + chunk.length > maxBytes) {
-          await sink.close();
-          throw const ApiFailure(FailureKind.tooLarge);
+          _cancelTransport(token);
+          try {
+            await sink.close();
+          } on Object {
+            // A failed sink must not replace the size-limit failure.
+          }
+          throw ApiFailure.artifactTooLarge;
         }
         try {
           sink.add(chunk);
         } on StateError {
           throw const ApiFailure(FailureKind.cancelled);
+        } on FileSystemException {
+          throw ApiFailure.artifactStorage;
         }
         received += chunk.length;
         onProgress?.call(received, total);
       }
     } finally {
-      await iterator.cancel();
+      // Cancelling the iterator completes a still-pending moveNext with an
+      // error. Attach a listener before that cancel so it is not uncaught.
+      if (pendingMove != null) {
+        unawaited(pendingMove.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
+      }
+      try {
+        await iterator.cancel();
+      } on Object {
+        // Subscription cancellation is not the caller's failure.
+      }
     }
     if (_closed || token.isCancelled) {
       throw const ApiFailure(FailureKind.cancelled);
@@ -643,6 +766,26 @@ final class GitLabApi {
       bytesWritten: received,
       contentType: headers.value(Headers.contentTypeHeader),
     );
+  }
+
+  void _cancelTransport(CancelToken token) {
+    if (!token.isCancelled) token.cancel('artifact exceeds size limit');
+  }
+
+  /// Subscribe only long enough to detach the socket. Do not read the body.
+  Future<void> _releaseBody(ResponseBody? body) async {
+    final stream = body?.stream;
+    if (stream == null) return;
+    try {
+      final subscription = stream.listen(
+        null,
+        onError: (Object _, StackTrace _) {},
+        cancelOnError: false,
+      );
+      await subscription.cancel();
+    } on Object {
+      return;
+    }
   }
 
   Future<void> _discardBody(ResponseBody? body) async {
@@ -678,6 +821,26 @@ final class GitLabApi {
       token.cancel('session ended');
     }
     _requests.clear();
+    for (final dio in _bareClients.toList()) {
+      _bareClients.remove(dio);
+      dio.close(force: true);
+    }
     _dio.close(force: true);
+  }
+}
+
+/// Forwards a test double without closing it when the CDN client is discarded.
+final class _ForwardingAdapter implements HttpClientAdapter {
+  _ForwardingAdapter(this._inner);
+  final HttpClientAdapter _inner;
+  @override
+  void close({bool force = false}) {}
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) {
+    return _inner.fetch(options, requestStream, cancelFuture);
   }
 }
