@@ -59,31 +59,94 @@ String relativeDate(String value) {
   return '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}';
 }
 
+(String, IconData) statusStyle(String status) => switch (status) {
+  'opened' => ('開啟中', Icons.adjust),
+  'active' => ('進行中', Icons.flag_outlined),
+  'closed' => ('已關閉', Icons.check_circle_outline),
+  'merged' => ('已合併', Icons.merge),
+  'success' || 'passed' => ('成功', Icons.check_circle_outline),
+  'failed' => ('失敗', Icons.error_outline),
+  'running' => ('執行中', Icons.motion_photos_on_outlined),
+  'pending' ||
+  'created' ||
+  'waiting_for_resource' ||
+  'preparing' => ('等待中', Icons.schedule),
+  'canceled' => ('已取消', Icons.cancel_outlined),
+  'skipped' => ('已略過', Icons.skip_next_outlined),
+  'manual' => ('等待手動啟動', Icons.play_circle_outline),
+  'private' => ('私有', Icons.lock_outline),
+  'internal' => ('內部', Icons.business_outlined),
+  'public' => ('公開', Icons.public),
+  'marked_for_deletion' => ('待刪除', Icons.delete_outline),
+  _ => (status.isEmpty ? '狀態未知' : status, Icons.info_outline),
+};
+
+String statusLabel(String status) => statusStyle(status).$1;
+
+String projectCardLabel(Project project, String lastActivity) {
+  final when = relativeDate(lastActivity);
+  final description = project.description?.trim() ?? '';
+  return [
+    project.name,
+    project.path,
+    if (description.isNotEmpty) description,
+    statusLabel(project.visibility ?? ''),
+    if (project.archived == true) '已封存',
+    if (when.isNotEmpty) when,
+    if (project.markedForDeletionOn != null) '待刪除',
+  ].join(' · ');
+}
+
+String pipelineCardLabel(Json value) {
+  final ref = valueText(value, 'ref');
+  final sha = shortSha(valueText(value, 'sha'));
+  final when = relativeDate(valueText(value, 'updated_at'));
+  return [
+    valueText(value, 'name', 'Pipeline #${valueInt(value, 'id')}'),
+    statusLabel(valueText(value, 'status')),
+    if (ref.isNotEmpty) ref,
+    if (sha.isNotEmpty) sha,
+    if (when.isNotEmpty) when,
+  ].join(' · ');
+}
+
+String jobCardLabel(Json value) {
+  final stage = valueText(value, 'stage');
+  return [
+    valueText(value, 'name'),
+    statusLabel(valueText(value, 'status')),
+    if (stage.isNotEmpty) stage,
+  ].join(' · ');
+}
+
+/// One semantics button. Descendants stay visible but are not separate nodes.
+class SemanticButton extends StatelessWidget {
+  const SemanticButton({
+    super.key,
+    required this.label,
+    required this.onTap,
+    required this.child,
+  });
+  final String label;
+  final VoidCallback onTap;
+  final Widget child;
+  @override
+  Widget build(BuildContext context) => Semantics(
+    container: true,
+    button: true,
+    label: label,
+    onTap: onTap,
+    excludeSemantics: true,
+    child: child,
+  );
+}
+
 class StatusBadge extends StatelessWidget {
   const StatusBadge(this.status, {super.key});
   final String status;
   @override
   Widget build(BuildContext context) {
-    final (label, icon) = switch (status) {
-      'opened' => ('開啟中', Icons.adjust),
-      'active' => ('進行中', Icons.flag_outlined),
-      'closed' => ('已關閉', Icons.check_circle_outline),
-      'merged' => ('已合併', Icons.merge),
-      'success' || 'passed' => ('成功', Icons.check_circle_outline),
-      'failed' => ('失敗', Icons.error_outline),
-      'running' => ('執行中', Icons.motion_photos_on_outlined),
-      'pending' ||
-      'created' ||
-      'waiting_for_resource' ||
-      'preparing' => ('等待中', Icons.schedule),
-      'canceled' => ('已取消', Icons.cancel_outlined),
-      'skipped' => ('已略過', Icons.skip_next_outlined),
-      'manual' => ('等待手動啟動', Icons.play_circle_outline),
-      'private' => ('私有', Icons.lock_outline),
-      'internal' => ('內部', Icons.business_outlined),
-      'public' => ('公開', Icons.public),
-      _ => (status.isEmpty ? '狀態未知' : status, Icons.info_outline),
-    };
+    final (label, icon) = statusStyle(status);
     final scheme = Theme.of(context).colorScheme;
     final workshop = WorkshopColors.of(context);
     // Tint reinforces the icon + label pair; it is never the only signal.

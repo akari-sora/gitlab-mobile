@@ -30,14 +30,20 @@ class _ProjectPageState extends State<ProjectPage> with SingleTickerProviderStat
   @override
   void dispose() { _tabs.removeListener(_tabChanged); _tabs.dispose(); super.dispose(); }
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(_project.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+  Widget build(BuildContext context) {
+    final marked = _project.markedForDeletionOn != null;
+    return Scaffold(
+    appBar: AppBar(title: Text(_project.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+      style: marked ? Theme.of(context).appBarTheme.titleTextStyle?.copyWith(
+        color: Theme.of(context).colorScheme.onSurfaceVariant) : null),
       actions: [IconButton(tooltip: '在 GitLab 開啟', icon: const Icon(Icons.open_in_new, size: 20),
         onPressed: () => openExternal(context, widget.account.instance.projectWeb(_project.path)))]),
     body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 12), child: Wrap(spacing: 8, runSpacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center, children: [
-          StatusBadge(_project.visibility ?? ''), Text(_project.path, style: Theme.of(context).textTheme.bodySmall),
+          StatusBadge(_project.visibility ?? ''),
+          if (marked) const StatusBadge('marked_for_deletion'),
+          Text(_project.path, style: Theme.of(context).textTheme.bodySmall),
           if (_project.archived == true) const Text('已封存 · 唯讀'),
         ])),
       TabBar(controller: _tabs, isScrollable: true, tabAlignment: TabAlignment.start,
@@ -52,4 +58,5 @@ class _ProjectPageState extends State<ProjectPage> with SingleTickerProviderStat
       ])),
     ])),
   );
+  }
 }

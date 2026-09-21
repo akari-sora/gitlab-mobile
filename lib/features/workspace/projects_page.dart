@@ -130,28 +130,35 @@ class _ProjectsPageState extends State<ProjectsPage> {
           }, next: next),
           itemBuilder: (context, data) {
             final project = Project.fromJson(data);
-            return Card(child: InkWell(borderRadius: BorderRadius.circular(16), onTap: () => _open(project),
+            final marked = project.markedForDeletionOn != null;
+            final muted = marked ? Theme.of(context).colorScheme.onSurfaceVariant : null;
+            return SemanticButton(
+              label: projectCardLabel(project, valueText(data, 'last_activity_at')),
+              onTap: () => _open(project),
+              child: Card(child: InkWell(borderRadius: BorderRadius.circular(16), onTap: () => _open(project),
               child: Padding(padding: const EdgeInsets.all(16), child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Monogram(project.name), const SizedBox(width: 12), Expanded(child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(project.name, maxLines: 2, overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleMedium),
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(color: muted)),
                         const SizedBox(height: 2), Text(project.path.split('/').take(project.path.split('/').length - 1).join('/'),
                           maxLines: 1, overflow: TextOverflow.ellipsis,
                           style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                       ])), const SizedBox(width: 6), const Icon(Icons.chevron_right, size: 18),
                   ]),
                   if (project.description?.isNotEmpty ?? false) Padding(padding: const EdgeInsets.only(top: 10),
-                    child: Text(project.description!, maxLines: 2, overflow: TextOverflow.ellipsis)),
+                    child: Text(project.description!, maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: muted == null ? null : TextStyle(color: muted))),
                   const SizedBox(height: 12), Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
                     children: [StatusBadge(project.visibility ?? ''),
+                      if (marked) const StatusBadge('marked_for_deletion'),
                       if (project.archived == true) const Text('已封存', style: TextStyle(fontSize: 12)),
                       Text(relativeDate(valueText(data, 'last_activity_at')), style: Theme.of(context).textTheme.bodySmall)]),
                 ],
               )),
-            ));
+            )));
           },
         )),
     ])),

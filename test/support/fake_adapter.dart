@@ -11,11 +11,13 @@ class FakeAdapter implements HttpClientAdapter {
   FakeAdapter(this.respond);
   final Responder respond;
   final List<RequestOptions> requests = [];
+  final List<Future<void>?> cancelFutures = [];
   bool closed = false;
   @override
   Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream,
       Future<void>? cancelFuture) async {
     requests.add(options);
+    cancelFutures.add(cancelFuture);
     return await respond(options);
   }
   @override
@@ -26,9 +28,14 @@ ResponseBody jsonResponse(Object? value, {int status = 200, Map<String, List<Str
     ResponseBody.fromString(jsonEncode(value), status,
       headers: {'content-type': ['application/json'], ...headers});
 
-GitLabApi testApi(FakeAdapter adapter, {String host = 'https://example.com/gitlab'}) {
+GitLabApi testApi(FakeAdapter adapter, {String host = 'https://example.com/gitlab', HttpClientAdapter? cdnAdapter}) {
   final dio = Dio()..httpClientAdapter = adapter;
-  return GitLabApi(instance: GitLabInstance.parse(host), token: 'synthetic-test-token', dio: dio);
+  return GitLabApi(
+    instance: GitLabInstance.parse(host),
+    token: 'synthetic-test-token',
+    dio: dio,
+    cdnAdapter: cdnAdapter ?? adapter,
+  );
 }
 
 Map<String, Object?> projectJson(int id, {String? branch = 'main'}) => {

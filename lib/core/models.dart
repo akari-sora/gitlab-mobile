@@ -173,6 +173,12 @@ final class Account {
   String toString() => 'Account(${instance.key}, userId: ${user.id})';
 }
 
+String? _markedForDeletionOn(Map<String, dynamic> json) {
+  final value = optionalString(json, 'marked_for_deletion_on');
+  if (value == null || value.isEmpty) return null;
+  return value;
+}
+
 final class Project {
   const Project({
     required this.id,
@@ -182,6 +188,7 @@ final class Project {
     this.visibility,
     this.defaultBranch,
     this.archived,
+    this.markedForDeletionOn,
   });
   factory Project.fromJson(Map<String, dynamic> j) => Project(
     id: requiredInt(j, 'id'),
@@ -191,6 +198,7 @@ final class Project {
     visibility: optionalString(j, 'visibility'),
     defaultBranch: optionalString(j, 'default_branch'),
     archived: j['archived'] as bool?,
+    markedForDeletionOn: _markedForDeletionOn(j),
   );
   final int id;
   final String name;
@@ -199,6 +207,7 @@ final class Project {
   final String? visibility;
   final String? defaultBranch;
   final bool? archived;
+  final String? markedForDeletionOn;
   String get visibilityLabel => switch (visibility) {
     'private' => '私有',
     'internal' => '內部',

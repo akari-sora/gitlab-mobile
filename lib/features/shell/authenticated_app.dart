@@ -12,6 +12,7 @@ import '../auth/session_controller.dart';
 import '../workspace/project_page.dart';
 import '../workspace/projects_page.dart';
 import '../workspace/inbox_page.dart';
+import '../workspace/ci_page.dart';
 import '../workspace/editor.dart';
 import 'app_shortcuts.dart';
 import 'appearance.dart';
@@ -334,6 +335,7 @@ class _MobileShellState extends State<_MobileShell> {
     setState(() => _removing = true);
     try {
       await clearSecureDrafts(account);
+      await clearAccountArtifacts(account);
       await clearRecentProject(account);
       await widget.session.remove(account);
     } catch (e) {
