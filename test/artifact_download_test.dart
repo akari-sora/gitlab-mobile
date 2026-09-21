@@ -924,12 +924,14 @@ void main() {
   test('a failed artifact directory deletion keeps the archive', () async {
     final root = await Directory.systemTemp.createTemp('gitlab-mobile-artifact-locked-');
     final previous = artifactStorageRoot;
+    final previousRemove = removeArtifactDirectory;
     artifactStorageRoot = () async => root;
-    Directory? directory;
+    // A read-only directory is still deletable by root (the CI runner), so
+    // the failure is injected through the seam instead of permissions.
+    removeArtifactDirectory = (_) => throw const FileSystemException('permission denied');
     addTearDown(() async {
       artifactStorageRoot = previous;
-      final created = directory;
-      if (created != null && created.existsSync()) Process.runSync('chmod', ['u+w', created.path]);
+      removeArtifactDirectory = previousRemove;
       if (root.existsSync()) await root.delete(recursive: true);
     });
     final account = Account(
@@ -938,11 +940,8 @@ void main() {
       token: 'synthetic-test-token',
     );
     final created = await jobArtifactDirectory(account, 4, 9);
-    directory = created;
     final archive = File('${created.path}/secret.bin');
     await archive.writeAsBytes([1, 2, 3]);
-    final chmod = Process.runSync('chmod', ['a-w', created.path]);
-    expect(chmod.exitCode, 0, reason: '${chmod.stderr}');
     await expectLater(
       clearAccountArtifacts(account),
       throwsA(isA<ApiFailure>()

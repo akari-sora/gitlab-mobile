@@ -220,11 +220,18 @@ Future<void> clearAccountArtifacts(Account account) async {
   final directory = Directory('${root.path}/artifacts/${artifactAccountSegment(account)}');
   if (!directory.existsSync()) return;
   try {
-    directory.deleteSync(recursive: true);
+    removeArtifactDirectory(directory);
   } on FileSystemException {
     throw ApiFailure.artifactCleanup;
   }
 }
+
+/// Deletes one account's artifact directory. Tests replace it to inject a
+/// failure: a read-only directory does not stop deletion for root (the CI
+/// runner), so permissions cannot simulate that path portably.
+@visibleForTesting
+void Function(Directory directory) removeArtifactDirectory =
+    (directory) => directory.deleteSync(recursive: true);
 
 Future<File> promoteArtifactFile(File partial, File target) async {
   if (target.existsSync()) await target.delete();
