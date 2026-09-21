@@ -139,12 +139,17 @@ class _WorkItemPageState extends State<WorkItemPage> {
     if (action == 'web') { await openExternal(context, web); return; }
     final confirmation = switch (action) {
       'delete' => ('刪除 $label？', '將刪除此項目與相關討論，無法復原。', label),
-      'merge' => ('合併 $label？', '${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}\n'
-        '版本 ${shortSha(valueText(data, 'sha'))}\n若版本變動會停止，不會自動改用新版本。', null),
       'approve' => ('批准目前版本？', '$label · ${shortSha(valueText(data, 'sha'))}\n仍受專案批准與重新認證政策限制。', null),
       _ => null,
     };
-    if (confirmation != null && !await confirmAction(context, confirmation.$1, confirmation.$2, requiredText: confirmation.$3)) {
+    var squash = false;
+    var removeSourceBranch = false;
+    if (action == 'merge') {
+      final options = await _askMerge(data);
+      if (options == null) { return; }
+      squash = options.squash;
+      removeSourceBranch = options.removeSourceBranch;
+    } else if (confirmation != null && !await confirmAction(context, confirmation.$1, confirmation.$2, requiredText: confirmation.$3)) {
       return;
     }
     if (!mounted) { return; }
@@ -165,7 +170,8 @@ class _WorkItemPageState extends State<WorkItemPage> {
         case 'todo': await widget.api.writeRecord('POST', [...path, 'todo'], {});
         case 'approve': await widget.api.approveMergeRequest(widget.project.id, widget.iid, requiredString(data, 'sha'));
         case 'unapprove': await widget.api.writeRecord('POST', [...path, 'unapprove'], {});
-        case 'merge': await widget.api.mergeRequest(widget.project.id, widget.iid, requiredString(data, 'sha'));
+        case 'merge': await widget.api.mergeRequest(widget.project.id, widget.iid, requiredString(data, 'sha'),
+          squash: squash, removeSourceBranch: removeSourceBranch);
       }
       await _load();
       if (mounted && action == 'merge') {
@@ -175,6 +181,41 @@ class _WorkItemPageState extends State<WorkItemPage> {
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _busy = false); } }
   }
+  Future<({bool squash, bool removeSourceBranch})?> _askMerge(Json data) {
+    var squash = mergeSquashDefault(data);
+    var removeSourceBranch = mergeRemoveSourceBranchDefault(data);
+    return showDialog<({bool squash, bool removeSourceBranch})>(context: context, builder: (context) => StatefulBuilder(
+      builder: (context, setDialog) => AlertDialog(
+        title: Text('合併 $label？'),
+        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}\n'
+            '版本 ${shortSha(valueText(data, 'sha'))}\n若版本變動會停止，不會自動改用新版本。'),
+          const SizedBox(height: 8),
+          _MergeSwitch(label: 'Squash 提交', value: squash, switchKey: const ValueKey('merge-squash'),
+            onChanged: (value) => setDialog(() => squash = value)),
+          _MergeSwitch(label: '合併後刪除來源分支', value: removeSourceBranch, switchKey: const ValueKey('merge-remove-branch'),
+            onChanged: (value) => setDialog(() => removeSourceBranch = value)),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(context, (squash: squash, removeSourceBranch: removeSourceBranch)),
+            child: const Text('確認')),
+        ],
+      ),
+    ));
+  }
+  Widget _reviewCard(Json data) => Padding(padding: const EdgeInsets.only(bottom: 16), child: Card(child: Padding(
+    padding: const EdgeInsets.all(14), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(mergeStatusLabel(data), style: Theme.of(context).textTheme.titleSmall),
+      if (data['state'] == 'opened') ...[
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          OutlinedButton(onPressed: _busy ? null : () => _action('approve'), child: const Text('批准')),
+          FilledButton(onPressed: _busy ? null : () => _action('merge'), child: const Text('合併')),
+        ]),
+      ],
+    ]),
+  )));
   @override
   Widget build(BuildContext context) {
     final data = _data;
@@ -211,6 +252,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
             ListView(padding: const EdgeInsets.all(20), children: [
               if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
                 resourceLabel: '${widget.project.path} · $label', onSwitchAccount: endSessionFrom(context)),
+              if (mr) _reviewCard(data),
               if (mr) Padding(padding: const EdgeInsets.only(bottom: 16), child: Card(child: Padding(padding: const EdgeInsets.all(14),
                 child: Text('${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}',
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 13))))),
@@ -256,12 +298,7 @@ class _MergeChecksState extends State<_MergeChecks> {
   @override
   Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(20), children: [
     Text('合併條件', style: Theme.of(context).textTheme.titleMedium), const SizedBox(height: 10),
-    Text(switch (valueText(widget.data, 'detailed_merge_status')) {
-      'mergeable' => '可以合併', 'checking' || 'unchecked' || 'rechecking' => 'GitLab 正在檢查',
-      'ci_must_pass' => '等待 CI 通過', 'conflict' => '有合併衝突', 'not_approved' => '等待批准',
-      'discussions_not_resolved' => '討論尚未解決', 'draft_status' => '仍為草稿',
-      _ => valueText(widget.data, 'detailed_merge_status', '等待 GitLab 檢查'),
-    }),
+    Text(mergeStatusLabel(widget.data)),
     const SizedBox(height: 12), Text('版本 ${shortSha(valueText(widget.data, 'sha'))}', style: const TextStyle(fontFamily: 'monospace')),
     if (widget.data['head_pipeline'] is Json) Padding(padding: const EdgeInsets.symmetric(vertical: 16),
       child: StatusBadge(valueText(valueObject(widget.data, 'head_pipeline'), 'status'))),
@@ -285,5 +322,29 @@ class _MergeChecksState extends State<_MergeChecks> {
         icon: const Icon(Icons.merge), label: const Text('合併…')),
       const SizedBox(height: 12), const Text('GitLab 會再次檢查 SHA、權限、保護分支及所有合併條件。', style: TextStyle(fontSize: 12)),
     ],
+  ]);
+}
+
+bool mergeSquashDefault(Json data) => data['squash'] == true;
+bool mergeRemoveSourceBranchDefault(Json data) =>
+  data['force_remove_source_branch'] == true || data['should_remove_source_branch'] == true;
+
+String mergeStatusLabel(Json data) => switch (valueText(data, 'detailed_merge_status')) {
+  'mergeable' => '可以合併', 'checking' || 'unchecked' || 'rechecking' => 'GitLab 正在檢查',
+  'ci_must_pass' => '等待 CI 通過', 'conflict' => '有合併衝突', 'not_approved' => '等待批准',
+  'discussions_not_resolved' => '討論尚未解決', 'draft_status' => '仍為草稿',
+  _ => valueText(data, 'detailed_merge_status', '等待 GitLab 檢查'),
+};
+
+class _MergeSwitch extends StatelessWidget {
+  const _MergeSwitch({required this.label, required this.value, required this.switchKey, required this.onChanged});
+  final String label;
+  final bool value;
+  final Key switchKey;
+  final ValueChanged<bool> onChanged;
+  @override
+  Widget build(BuildContext context) => Row(children: [
+    Expanded(child: Text(label)),
+    Switch(key: switchKey, value: value, onChanged: onChanged),
   ]);
 }

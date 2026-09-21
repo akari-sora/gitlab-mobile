@@ -28,11 +28,14 @@ class WorkspaceFixture {
     'state': 'opened', 'author': {'id': 7, 'username': 'developer'}, 'assignees': <Json>[], 'labels': <String>[],
     'updated_at': 'revision-$counter', 'created_at': '2026-09-19T08:00:00Z',
   };
+  final mergeFields = <String, dynamic>{};
+  final mrDiscussions = <Json>[];
   Json get mergeRequest => {
     ...issue(12, 'Improve private-project navigation'),
     'source_branch': 'feature/navigation', 'target_branch': 'main', 'sha': sha,
     'detailed_merge_status': 'mergeable', 'draft': false,
     'head_pipeline': {'id': 99, 'status': 'success'},
+    ...mergeFields,
   };
   Json get pipeline => {'id': 99, 'ref': 'main', 'sha': sha, 'status': 'success', 'duration': 83};
   Json job(int id, {String status = 'success'}) => {
@@ -109,7 +112,10 @@ class WorkspaceFixture {
     }
     if (joined == 'projects/42/merge_requests') { return jsonResponse([mergeRequest]); }
     if (joined == 'projects/42/merge_requests/12') { return jsonResponse(mergeRequest); }
-    if (joined == 'projects/42/merge_requests/12/discussions') { return jsonResponse([]); }
+    if (joined == 'projects/42/merge_requests/12/discussions' && method == 'GET') { return jsonResponse(mrDiscussions); }
+    if (joined == 'projects/42/merge_requests/12/merge' && method == 'PUT') {
+      return jsonResponse({...mergeRequest, 'state': 'merged'});
+    }
     if (joined == 'projects/42/merge_requests/12/approvals') { return jsonResponse({'approved_by': <Json>[]}); }
     if (joined == 'projects/42/merge_requests/12/versions') { return jsonResponse([{'id': 1, 'head_commit_sha': sha}]); }
     if (joined == 'projects/42/merge_requests/12/versions/1') {

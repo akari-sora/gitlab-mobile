@@ -20,6 +20,15 @@ Widget workspaceHost(Widget child, {Brightness brightness = Brightness.light, do
 );
 
 void main() {
+  test('merge switches default from squash and either source-branch flag', () {
+    expect(mergeSquashDefault({}), isFalse);
+    expect(mergeSquashDefault({'squash': false}), isFalse);
+    expect(mergeSquashDefault({'squash': true}), isTrue);
+    expect(mergeRemoveSourceBranchDefault({}), isFalse);
+    expect(mergeRemoveSourceBranchDefault({'force_remove_source_branch': false, 'should_remove_source_branch': false}), isFalse);
+    expect(mergeRemoveSourceBranchDefault({'force_remove_source_branch': true}), isTrue);
+    expect(mergeRemoveSourceBranchDefault({'should_remove_source_branch': true}), isTrue);
+  });
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
   for (final width in [320.0, 412.0, 840.0]) {
     for (final scale in [1.0, 2.0]) {
@@ -109,5 +118,41 @@ void main() {
     await tester.tap(find.text('開啟編輯器')); await settleWorkspace(tester);
     expect(tester.widget<TextFormField>(find.byKey(const ValueKey('editor-body'))).controller!.text, 'Keep this draft');
     await tester.pumpWidget(const SizedBox()); await tester.pump(const Duration(seconds: 1));
+  });
+  testWidgets('merge confirmation sends the chosen squash and source-branch options with the reviewed SHA', (tester) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    fixture.mergeFields['force_remove_source_branch'] = true;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(workspaceHost(WorkItemPage(
+      account: fixture.account, api: fixture.api, project: fixture.project, resource: 'merge_requests', iid: 12)));
+    await settleWorkspace(tester);
+    expect(find.text('可以合併'), findsOneWidget);
+    expect(tester.getSize(find.widgetWithText(OutlinedButton, '批准')).height, greaterThanOrEqualTo(48));
+    expect(tester.getSize(find.widgetWithText(FilledButton, '合併')).height, greaterThanOrEqualTo(48));
+    await tester.tap(find.widgetWithText(FilledButton, '合併'));
+    await settleWorkspace(tester);
+    expect(tester.widget<Switch>(find.byKey(const ValueKey('merge-squash'))).value, isFalse);
+    expect(tester.widget<Switch>(find.byKey(const ValueKey('merge-remove-branch'))).value, isTrue);
+    await tester.tap(find.byKey(const ValueKey('merge-squash')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('merge-remove-branch')));
+    await tester.pump();
+    expect(tester.widget<Switch>(find.byKey(const ValueKey('merge-squash'))).value, isTrue);
+    expect(tester.widget<Switch>(find.byKey(const ValueKey('merge-remove-branch'))).value, isFalse);
+    await tester.tap(find.widgetWithText(FilledButton, '確認'));
+    await settleWorkspace(tester);
+    final merge = fixture.adapter.requests.lastWhere((request) => request.method == 'PUT' && request.uri.path.endsWith('/merge'));
+    final body = merge.data as Map<String, dynamic>;
+    expect(body['sha'], WorkspaceFixture.sha);
+    expect(body['squash'], isTrue);
+    expect(body['should_remove_source_branch'], isFalse);
+    expect(tester.takeException(), isNull);
+    expect(fixture.unhandled, isEmpty);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 1));
   });
 }
