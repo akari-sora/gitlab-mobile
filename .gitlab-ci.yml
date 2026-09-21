@@ -30,7 +30,9 @@ default:
       paths: [.pub-cache/]
       policy: pull-push
   before_script:
-    - apt-get update -qq && apt-get install -y --no-install-recommends git curl xz-utils unzip libglu1-mesa ca-certificates
+    # SDK archives contain UIDs outside the rootless container's mapping.
+    - export TAR_OPTIONS="${TAR_OPTIONS:+$TAR_OPTIONS }--no-same-owner"
+    - python3 ci/install_packages.py git curl xz-utils unzip libglu1-mesa ca-certificates
     - source ci/install_flutter.sh
 resolve_lock:
   extends: .flutter
@@ -104,7 +106,7 @@ android_debug:
       paths: [.android-sdk/, .gradle-user/]
       policy: pull-push
   script:
-    - apt-get update -qq && apt-get install -y --no-install-recommends openjdk-21-jdk-headless
+    - python3 ci/install_packages.py openjdk-21-jdk-headless
     - source ci/install_android.sh
     - bash ci/build_android.sh
   artifacts:
@@ -124,7 +126,7 @@ publish_preview:
       when: never
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   before_script:
-    - apt-get update -qq && apt-get install -y --no-install-recommends curl ca-certificates
+    - python3 ci/install_packages.py curl ca-certificates
   script:
     - bash ci/deliver_preview.sh
 live_crud_smoke:

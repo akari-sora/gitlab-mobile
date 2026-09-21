@@ -2,8 +2,7 @@
 set -euo pipefail
 mkdir -p ci-output
 if [ "${CI:-false}" = true ]; then
-  apt-get update -qq
-  apt-get install -y --no-install-recommends fonts-noto-cjk
+  python3 ci/install_packages.py fonts-noto-cjk
 fi
 flutter pub get --enforce-lockfile
 cp pubspec.lock ci-output/pubspec.lock
