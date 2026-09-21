@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
@@ -105,6 +106,41 @@ void main() {
   test('job retry exposes the new attempt id', () async {
     final api = testApi(FakeAdapter((_) => jsonResponse({'id': 456, 'status': 'pending'}))); addTearDown(api.close);
     expect((await api.jobAction(42, 123, 'retry'))['id'], 456);
+  });
+  test('upload sends a multipart file part named for the file and the private token', () async {
+    final adapter = FakeAdapter((_) => jsonResponse({
+      'markdown': '![photo.png](/uploads/photo.png)',
+      'url': '/uploads/photo.png',
+      'full_path': '/group/project/uploads/photo.png',
+    }, status: 201));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final value = await api.uploadProjectFile(42, filename: 'photo.png', bytes: [1, 2, 3], contentType: 'image/png');
+    expect(value['markdown'], '![photo.png](/uploads/photo.png)');
+    final request = adapter.requests.single;
+    expect(request.method, 'POST');
+    expect(request.uri.pathSegments, ['gitlab', 'api', 'v4', 'projects', '42', 'uploads']);
+    expect(request.headers['PRIVATE-TOKEN'], 'synthetic-test-token');
+    expect(request.followRedirects, isFalse);
+    final header = '${request.contentType ?? request.headers['content-type'] ?? ''}';
+    expect(header, contains('multipart/form-data'));
+    final form = request.data;
+    expect(form, isA<FormData>());
+    final files = (form as FormData).files;
+    expect(files, hasLength(1));
+    expect(files.single.key, 'file');
+    expect(files.single.value.filename, 'photo.png');
+  });
+  test('upload over 25 MiB is tooLarge and sends no request', () async {
+    expect(GitLabApi.maxUploadBytes, 25 * 1024 * 1024);
+    final adapter = FakeAdapter((_) => jsonResponse({}));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    await expectLater(
+      api.uploadProjectFile(42, filename: 'big.bin', bytes: Uint8List(GitLabApi.maxUploadBytes + 1)),
+      throwsA(isA<ApiFailure>().having((error) => error.kind, 'kind', FailureKind.tooLarge)),
+    );
+    expect(adapter.requests, isEmpty);
   });
   test('arbitrary actions and off-origin continuations are refused without transport', () async {
     final adapter = FakeAdapter((_) => jsonResponse([])); final api = testApi(adapter); addTearDown(api.close);

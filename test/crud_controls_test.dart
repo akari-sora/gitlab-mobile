@@ -294,7 +294,14 @@ void main() {
     final f = CrudFixture();
     await host(tester, f, Scaffold(body: WorkItemsTab(account: f.account, api: f.api, project: f.project, resource: 'merge_requests')));
     await tester.tap(find.byTooltip('新增合併請求')); await settleWorkspace(tester);
-    await input(tester, 'title', 'UI MR'); await input(tester, 'source_branch', 'smoke/review'); await save(tester);
+    await input(tester, 'title', 'UI MR');
+    await tester.tap(find.byKey(const ValueKey('editor-source_branch')));
+    await settleWorkspace(tester);
+    await tester.tap(find.byKey(const ValueKey('picker-row-main')));
+    await tester.pump();
+    await tester.tap(find.text('完成'));
+    await settleWorkspace(tester);
+    await save(tester);
     final iid = f.mrs.keys.single;
     expect(find.text('UI MR'), findsOneWidget);
     await menu(tester, '更多操作', '編輯'); await input(tester, 'title', 'Updated MR'); await save(tester);

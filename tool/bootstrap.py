@@ -126,6 +126,7 @@ def configure_ios(folder: Path) -> None:
 <plist version="1.0"><dict><key>keychain-access-groups</key><array/></dict></plist>
 ''', encoding='utf-8')
     register_oauth_ios(folder)
+    register_photo_library_ios(folder)
 
 
 def register_oauth_ios(folder: Path) -> None:
@@ -162,6 +163,28 @@ def _append_oauth_url_type(url_types: ET.Element) -> None:
     item.append(_plist_key('CFBundleURLSchemes'))
     schemes = ET.SubElement(item, 'array')
     ET.SubElement(schemes, 'string').text = OAUTH_SCHEME
+
+
+def register_photo_library_ios(folder: Path) -> None:
+    """Gallery-only image_picker still needs this key for App Store review.
+
+    Runtime photo permission is not requested (`requestFullMetadata: false`).
+    Camera and microphone keys are intentionally absent.
+    """
+    path = folder / 'Runner/Info.plist'
+    if not path.is_file():
+        return
+    tree = ET.parse(path)
+    plist = tree.getroot().find('dict')
+    if plist is None:
+        raise RuntimeError('Unknown iOS template: Info.plist dict missing.')
+    for node in list(plist):
+        if node.tag == 'key' and node.text == 'NSPhotoLibraryUsageDescription':
+            return
+    plist.append(_plist_key('NSPhotoLibraryUsageDescription'))
+    ET.SubElement(plist, 'string').text = '從相簿選擇圖片，附加到議題、合併請求或留言。'
+    ET.indent(tree, space='\t')
+    tree.write(path, encoding='utf-8', xml_declaration=True)
 
 
 def _plist_key(name: str) -> ET.Element:

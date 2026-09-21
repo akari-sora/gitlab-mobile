@@ -20,6 +20,19 @@ class WorkspaceFixture {
   static const sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   final issues = <int, Json>{};
   final notes = <int, Json>{};
+  final createdMergeRequests = <int, Json>{};
+  final labels = <Json>[
+    {'id': 1, 'name': 'a', 'color': '#d9534f', 'description': ''},
+    {'id': 2, 'name': 'b', 'color': '#428bca', 'description': ''},
+  ];
+  final members = <Json>[
+    {'id': 7, 'username': 'developer', 'name': 'Developer', 'access_level': 30},
+    {'id': 8, 'username': 'reviewer', 'name': 'Reviewer', 'access_level': 30},
+  ];
+  List<Json> get branches => [
+    {'name': 'main', 'default': true, 'protected': true, 'commit': {'id': sha}},
+    {'name': 'feature/navigation', 'default': false, 'protected': false, 'commit': {'id': sha}},
+  ];
   int counter = 100;
   bool failWrites = false;
   final unhandled = <String>[];
@@ -58,7 +71,25 @@ class WorkspaceFixture {
     if (joined == 'merge_requests') { return jsonResponse([mergeRequest]); }
     if (joined == 'projects/42') { return jsonResponse(projectRecord); }
     if (joined == 'projects/42/repository/branches') {
-      return jsonResponse([{'name': 'main', 'default': true, 'protected': true, 'commit': {'id': sha}}]);
+      return jsonResponse(_matching(branches, request.uri.queryParameters['search'], const ['name']));
+    }
+    if (joined == 'projects/42/labels') {
+      return jsonResponse(_matching(labels, request.uri.queryParameters['search'], const ['name']));
+    }
+    if (joined == 'projects/42/members/all') {
+      return jsonResponse(_matching(members, request.uri.queryParameters['query'], const ['username', 'name']));
+    }
+    if (joined == 'projects/42/uploads' && method == 'POST') {
+      var name = 'file';
+      final data = request.data;
+      if (data is FormData && data.files.isNotEmpty) {
+        name = data.files.first.value.filename ?? name;
+      }
+      return jsonResponse({
+        'markdown': '![$name](/uploads/test/$name)',
+        'url': '/uploads/test/$name',
+        'full_path': '/studio/mobile-workspace/uploads/test/$name',
+      }, status: 201);
     }
     if (joined == 'projects/42/repository/branches/main') { return jsonResponse({'name': 'main', 'commit': {'id': sha}}); }
     if (joined == 'projects/42/repository/tree') {
@@ -112,7 +143,19 @@ class WorkspaceFixture {
         }
       }
     }
+    if (joined == 'projects/42/merge_requests' && method == 'POST') {
+      final iid = ++counter;
+      createdMergeRequests[iid] = {
+        ...mergeRequest, ...body, 'iid': iid, 'title': body['title'] ?? mergeRequest['title'], 'updated_at': 'revision-$counter',
+      };
+      return jsonResponse(createdMergeRequests[iid], status: 201);
+    }
     if (joined == 'projects/42/merge_requests') { return jsonResponse([mergeRequest]); }
+    if (path.length == 4 && path[0] == 'projects' && path[1] == '42' && path[2] == 'merge_requests') {
+      final iid = int.tryParse(path[3]);
+      final created = iid == null ? null : createdMergeRequests[iid];
+      if (created != null) return jsonResponse(created);
+    }
     if (joined == 'projects/42/merge_requests/12') { return jsonResponse(mergeRequest); }
     if (joined == 'projects/42/merge_requests/12/discussions' && method == 'GET') {
       if (failDiscussions) { return jsonResponse({'message': 'synthetic'}, status: 500); }
@@ -145,9 +188,29 @@ class WorkspaceFixture {
     if (joined == 'projects/42/jobs/502') { return jsonResponse(job(502, status: 'manual')); }
     if (joined == 'projects/42/jobs/501/trace') { return ResponseBody.fromString('flutter analyze\nNo issues found.\nAll tests passed.\n', 200); }
     if (joined == 'projects/42/jobs/502/trace') { return jsonResponse({}, status: 404); }
-    if (const ['projects/42/labels', 'projects/42/milestones', 'projects/42/releases',
+    if (path.length > 4 && path[0] == 'projects' && path[1] == '42' && path[2] == 'merge_requests') {
+      final tail = path.sublist(4).join('/');
+      if (tail == 'approvals') return jsonResponse({'approved_by': <Json>[]});
+      if (tail == 'discussions' && method == 'GET') return jsonResponse([]);
+      if (tail == 'versions') return jsonResponse([{'id': 1, 'head_commit_sha': sha}]);
+      if (tail == 'versions/1') {
+        return jsonResponse({
+          'id': 1, 'head_commit_sha': sha, 'base_commit_sha': sha, 'start_commit_sha': sha, 'diffs': <Json>[],
+        });
+      }
+    }
+    if (const ['projects/42/milestones', 'projects/42/releases',
       'projects/42/repository/tags', 'projects/42/repository/commits'].contains(joined)) { return jsonResponse([]); }
     unhandled.add('$method $joined');
     return jsonResponse({'error': 'unhandled-synthetic-endpoint'}, status: 404);
+  }
+
+  List<Json> _matching(List<Json> items, String? query, List<String> keys) {
+    final needle = query ?? '';
+    if (needle.isEmpty) return items;
+    return [
+      for (final item in items)
+        if (keys.any((key) => '${item[key] ?? ''}'.contains(needle))) item,
+    ];
   }
 }

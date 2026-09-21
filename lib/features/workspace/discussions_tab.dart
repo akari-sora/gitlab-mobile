@@ -40,9 +40,10 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
       title: note != null ? '編輯留言' : discussion != null ? '回覆討論' : thread ? '新增討論串' : '新增留言',
       resource: '${path.join('/')}/${discussion ?? 'root'}/${note?['id'] ?? (thread ? 'thread-new' : 'new')}',
       subtitle: '${widget.project.path} · ${widget.resource == 'issues' ? '#' : '!'}${widget.iid}', fields: [
-        EditField('body', '留言內容', required: true, lines: 9, value: note == null ? '' : valueText(note, 'body'),
+        EditField('body', '留言內容', required: true, lines: 9, markdown: true,
+          value: note == null ? '' : valueText(note, 'body'),
           hint: '支援 Markdown；以 / 開頭的行可能執行 GitLab quick actions'),
-      ], save: (values) async {
+      ], api: widget.api, projectId: widget.project.id, save: (values) async {
         if (note != null) {
           final endpoint = discussion == null ? [...path, 'notes', '${note['id']}']
             : [...path, 'discussions', discussion, 'notes', '${note['id']}'];

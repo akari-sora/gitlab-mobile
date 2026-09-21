@@ -51,6 +51,7 @@ final class GitLabApi {
   DateTime? _retryAt;
   static const maxTextBytes = 2 * 1024 * 1024;
   static const maxTextLines = 20000;
+  static const maxUploadBytes = 25 * 1024 * 1024;
 
   Map<String, String> get _authHeaders => switch (_credential) {
     PatCredential(:final token) => {
@@ -66,6 +67,22 @@ final class GitLabApi {
   };
 
   Future<({Uint8List bytes, Headers headers})> _read(
+    Uri uri, {
+    String method = 'GET',
+    Object? data,
+    int maxBytes = 4 * 1024 * 1024,
+    bool retried = false,
+  }) => _send(
+    uri,
+    method: method,
+    data: data,
+    maxBytes: maxBytes,
+    retried: retried,
+  );
+
+  /// Shared request path for JSON calls and multipart uploads.
+  /// JSON content-type is applied only when [data] is present and is not [FormData].
+  Future<({Uint8List bytes, Headers headers})> _send(
     Uri uri, {
     String method = 'GET',
     Object? data,
@@ -90,7 +107,9 @@ final class GitLabApi {
         options: Options(
           method: method,
           responseType: ResponseType.stream,
-          contentType: data == null ? null : Headers.jsonContentType,
+          contentType: data == null || data is FormData
+              ? null
+              : Headers.jsonContentType,
           followRedirects: false,
           maxRedirects: 0,
           validateStatus: (s) => s != null,

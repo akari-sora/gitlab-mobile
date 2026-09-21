@@ -8,6 +8,7 @@ import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
 import 'diff_page.dart';
 import 'editor.dart';
+import 'picker_sheet.dart';
 import 'records_feed.dart';
 import 'discussions_tab.dart';
 export 'discussions_tab.dart';
@@ -35,17 +36,26 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
   }
   Future<void> _create() async {
     var iid = 0;
-    final saved = await openEditor(context, account: widget.account, title: mr ? '新增合併請求' : '新增議題',
-      resource: '${widget.project.id}/${widget.resource}/new', subtitle: widget.project.path, fields: [
-        const EditField('title', '標題', required: true),
-        if (mr) ...[const EditField('source_branch', '來源分支', required: true),
-          EditField('target_branch', '目標分支', required: true, value: widget.project.defaultBranch ?? 'main')],
-        const EditField('description', '說明', lines: 7, hint: '支援 Markdown'),
-        const EditField('labels', '標籤', hint: '以逗號分隔；不存在的名稱會建立專案標籤'),
-      ], save: (values) async {
-        final fields = <String, dynamic>{...values, 'title': values['title']!.trim()};
-        final created = mr ? await widget.api.createMergeRequest(widget.project.id, fields)
-          : await widget.api.createIssue(widget.project.id, fields);
+    final branch = widget.project.defaultBranch ?? 'main';
+    final fields = <EditField>[
+      const EditField('title', '標題', required: true),
+      if (mr) ...[
+        const EditField.picker('source_branch', '來源分支', source: PickerSource.branches, required: true),
+        EditField.picker('target_branch', '目標分支', source: PickerSource.branches, required: true, value: _branchValue(branch)),
+      ],
+      const EditField('description', '說明', lines: 7, hint: '支援 Markdown', markdown: true),
+      if (!mr) const EditField.picker('labels', '標籤', source: PickerSource.labels, multi: true, hint: '不存在的名稱會在儲存時建立'),
+      const EditField.picker('assignee_ids', '指派', source: PickerSource.members, multi: true),
+      if (mr) const EditField.picker('reviewer_ids', '審查者', source: PickerSource.members, multi: true),
+    ];
+    final saved = await openEditor(context, account: widget.account, api: widget.api, projectId: widget.project.id,
+      title: mr ? '新增合併請求' : '新增議題', resource: '${widget.project.id}/${widget.resource}/new',
+      subtitle: widget.project.path, fields: fields, save: (values) async {
+        final body = editorSubmission(fields, values);
+        final title = body['title'];
+        if (title is String) body['title'] = title.trim();
+        final created = mr ? await widget.api.createMergeRequest(widget.project.id, body)
+          : await widget.api.createIssue(widget.project.id, body);
         iid = requiredInt(created, 'iid');
       });
     if (saved && mounted) { await _open(iid); }
@@ -119,16 +129,23 @@ class _WorkItemPageState extends State<WorkItemPage> {
   Future<void> _edit() async {
     final data = _data;
     if (data == null || _busy) { return; }
-    final labels = data['labels'] is List<dynamic> ? (data['labels'] as List<dynamic>).whereType<String>().join(', ') : '';
-    final saved = await openEditor(context, account: widget.account, title: '編輯 $label',
-      resource: '${widget.project.id}/${widget.resource}/${widget.iid}/edit', subtitle: widget.project.path, fields: [
-        EditField('title', '標題', required: true, value: valueText(data, 'title')),
-        EditField('description', '說明', lines: 8, value: valueText(data, 'description')),
-        EditField('labels', '標籤', value: labels, hint: '以逗號分隔；留白會移除所有標籤'),
-      ], save: (values) async {
+    final fields = <EditField>[
+      EditField('title', '標題', required: true, value: valueText(data, 'title')),
+      EditField('description', '說明', lines: 8, markdown: true, value: valueText(data, 'description')),
+      EditField.picker('labels', '標籤', source: PickerSource.labels, multi: true, value: _labelsValue(data), hint: '留白會移除所有標籤'),
+      EditField.picker('assignee_ids', '指派', source: PickerSource.members, multi: true, value: _peopleValue(valueObjects(data, 'assignees'))),
+      if (mr) EditField.picker('reviewer_ids', '審查者', source: PickerSource.members, multi: true,
+        value: _peopleValue(valueObjects(data, 'reviewers'))),
+    ];
+    final saved = await openEditor(context, account: widget.account, api: widget.api, projectId: widget.project.id,
+      title: '編輯 $label', resource: '${widget.project.id}/${widget.resource}/${widget.iid}/edit',
+      subtitle: widget.project.path, fields: fields, save: (values) async {
         final current = await widget.api.record(path);
         if (current['updated_at'] != data['updated_at']) { throw const ApiFailure(FailureKind.conflict); }
-        await widget.api.writeRecord('PUT', path, values);
+        final body = editorSubmission(fields, values);
+        final title = body['title'];
+        if (title is String) body['title'] = title.trim();
+        await widget.api.writeRecord('PUT', path, body);
       });
     if (saved && mounted) { await _load(); }
   }
@@ -338,6 +355,31 @@ class _MergeChecksState extends State<_MergeChecks> {
     ],
   ]);
 }
+
+String _branchValue(String name) => encodeChoices([PickerChoice(id: name, name: name)]);
+
+String _labelsValue(Json data) {
+  final raw = data['labels'];
+  final names = <String>[];
+  if (raw is List) {
+    for (final item in raw) {
+      if (item is String && item.trim().isNotEmpty) names.add(item.trim());
+    }
+  } else if (raw is String) {
+    names.addAll(raw.split(',').map((part) => part.trim()).where((part) => part.isNotEmpty));
+  }
+  return encodeChoices([for (final name in names) PickerChoice(id: name, name: name)]);
+}
+
+String _peopleValue(List<Json> users) => encodeChoices([
+  for (final user in users)
+    if (valueInt(user, 'id') > 0)
+      PickerChoice(
+        id: '${valueInt(user, 'id')}',
+        name: valueText(user, 'name').isEmpty ? valueText(user, 'username') : valueText(user, 'name'),
+        username: valueText(user, 'username').isEmpty ? null : valueText(user, 'username'),
+      ),
+]);
 
 bool mergeSquashEnforced(Json data) {
   final option = data['squash_option'];

@@ -17,6 +17,8 @@ dependencies:
   flutter_markdown_plus: 1.0.12
   crypto: 3.0.7
   app_links: 6.4.1
+  image_picker: 1.2.3
+  file_picker: 13.1.0
 dev_dependencies:
   flutter_test:
     sdk: flutter
