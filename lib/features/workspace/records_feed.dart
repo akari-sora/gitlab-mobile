@@ -41,10 +41,7 @@ class RecordsFeedState extends State<RecordsFeed> {
       for (final item in controller.items)
         if (visible == null || visible(item)) item,
     ];
-    // Wide screens (foldables, tablets) keep a readable 640 dp column instead
-    // of stretching cards edge to edge; phones keep the 16 dp gutter.
-    final width = MediaQuery.sizeOf(context).width;
-    final gutter = width > 672 ? (width - 640) / 2 : 16.0;
+    final gutter = feedGutter(context);
     final list = RefreshIndicator(onRefresh: controller.refresh, child: ListView(
       key: PageStorageKey(widget.identity), physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 16 + (widget.underShell ? 80 : 12) + MediaQuery.paddingOf(context).bottom), children: [

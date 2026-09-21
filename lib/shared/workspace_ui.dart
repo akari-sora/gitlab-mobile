@@ -66,6 +66,7 @@ class StatusBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final (label, icon) = switch (status) {
       'opened' => ('開啟中', Icons.adjust),
+      'active' => ('進行中', Icons.flag_outlined),
       'closed' => ('已關閉', Icons.check_circle_outline),
       'merged' => ('已合併', Icons.merge),
       'success' || 'passed' => ('成功', Icons.check_circle_outline),
@@ -92,7 +93,7 @@ class StatusBadge extends StatelessWidget {
       'pending' || 'created' || 'waiting_for_resource' || 'preparing' || 'manual' || 'scheduled' =>
         (workshop.pendingContainer, workshop.onPendingContainer),
       'failed' => (scheme.errorContainer, scheme.onErrorContainer),
-      'opened' || 'merged' => (scheme.primaryContainer, scheme.onPrimaryContainer),
+      'opened' || 'merged' || 'active' => (scheme.primaryContainer, scheme.onPrimaryContainer),
       _ => (workshop.neutralContainer, workshop.onNeutralContainer),
     };
     return MergeSemantics(child: Container(
@@ -111,6 +112,38 @@ class StatusBadge extends StatelessWidget {
       ),
     ));
   }
+}
+
+/// Horizontal inset for feeds and their header rows: 16 dp on phones, a
+/// centred 640 dp column on wider windows so lists and their search rows
+/// share one edge.
+double feedGutter(BuildContext context) {
+  final width = MediaQuery.sizeOf(context).width;
+  return width > 672 ? (width - 640) / 2 : 16.0;
+}
+
+/// Appearance picker: a segmented control when there is room, wrapping chips
+/// on narrow widths or large text so labels never ellipsize.
+class AppearancePicker extends StatelessWidget {
+  const AppearancePicker({super.key, required this.mode, required this.onChanged});
+  final ThemeMode mode;
+  final ValueChanged<ThemeMode> onChanged;
+  static const _labels = {ThemeMode.system: '跟隨系統', ThemeMode.light: '淺色', ThemeMode.dark: '深色'};
+  static const _icons = {ThemeMode.system: Icons.brightness_auto_outlined, ThemeMode.light: Icons.light_mode_outlined, ThemeMode.dark: Icons.dark_mode_outlined};
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(builder: (context, constraints) {
+    final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+    if (constraints.maxWidth >= 400 * scale) {
+      return SizedBox(width: double.infinity, child: SegmentedButton<ThemeMode>(
+        showSelectedIcon: false,
+        segments: [for (final entry in _labels.entries)
+          ButtonSegment(value: entry.key, icon: Icon(_icons[entry.key]), label: Text(entry.value))],
+        selected: {mode}, onSelectionChanged: (values) => onChanged(values.first)));
+    }
+    return Wrap(spacing: 8, runSpacing: 8, children: [for (final entry in _labels.entries)
+      ChoiceChip(avatar: Icon(_icons[entry.key], size: 18), label: Text(entry.value), showCheckmark: false,
+        selected: mode == entry.key, onSelected: (_) => onChanged(entry.key))]);
+  });
 }
 
 /// Small icon + text pair for card meta rows (time, ref, SHA, counts).
@@ -138,12 +171,13 @@ class EntityCard extends StatelessWidget {
   const EntityCard({
     super.key, required this.title, this.leading, this.subtitle, this.body,
     this.meta = const [], this.trailing, this.chevron = true, this.onTap,
-    this.muted = false,
+    this.muted = false, this.titleMaxLines = 2,
   });
   final Widget title;
   final Widget? leading, subtitle, body, trailing;
   final List<Widget> meta;
   final bool chevron, muted;
+  final int titleMaxLines;
   final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) {
@@ -156,7 +190,7 @@ class EntityCard extends StatelessWidget {
           DefaultTextStyle.merge(
             style: Theme.of(context).textTheme.titleMedium!.copyWith(
               color: muted ? scheme.onSurfaceVariant : scheme.onSurface),
-            maxLines: 2, overflow: TextOverflow.ellipsis, child: title),
+            maxLines: titleMaxLines, overflow: TextOverflow.ellipsis, child: title),
           if (subtitle != null) ...[
             const SizedBox(height: 2),
             DefaultTextStyle.merge(

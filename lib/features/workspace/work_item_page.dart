@@ -63,14 +63,14 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
   }
   @override
   Widget build(BuildContext context) => Column(children: [
-    Padding(padding: const EdgeInsets.fromLTRB(16, 12, 12, 4), child: Row(children: [
+    Padding(padding: EdgeInsets.fromLTRB(feedGutter(context), 12, feedGutter(context) - 4, 4), child: Row(children: [
       Expanded(child: TextField(controller: _search, textInputAction: TextInputAction.search,
         decoration: InputDecoration(hintText: mr ? '搜尋合併請求' : '搜尋議題', prefixIcon: const Icon(Icons.search)),
         onSubmitted: (value) => setState(() => _query = value.trim()))),
       const SizedBox(width: 8), IconButton(tooltip: mr ? '新增合併請求' : '新增議題',
         onPressed: widget.project.archived == true ? null : _create, icon: const Icon(Icons.add_circle_outline)),
     ])),
-    Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), child: Align(
+    Padding(padding: EdgeInsets.symmetric(horizontal: feedGutter(context), vertical: 4), child: Align(
       alignment: Alignment.centerLeft, child: Wrap(spacing: 8, runSpacing: 4, children: [
         for (final e in const {'opened': '開啟中', 'closed': '已關閉', 'all': '全部'}.entries)
           ChoiceChip(label: Text(e.value), selected: _state == e.key, showCheckmark: false,
@@ -103,11 +103,12 @@ Widget workItemCard(BuildContext context, Json value, {required bool mr, require
   final iid = '${mr ? '!' : '#'}${valueInt(value, 'iid')}';
   return EntityCard(
     onTap: onTap,
+    titleMaxLines: 3,
     leading: Container(width: 40, height: 40, alignment: Alignment.center,
       decoration: BoxDecoration(color: markBackground, borderRadius: BorderRadius.circular(12)),
       child: Icon(mr ? Icons.merge : Icons.adjust, size: 20, color: markForeground)),
     title: Text(valueText(value, 'title')),
-    subtitle: project == null ? null : Text(project),
+    subtitle: project == null || project.isEmpty ? null : Text(project),
     body: mr && source.isNotEmpty && target.isNotEmpty
         ? MetaChip('$source → $target', icon: Icons.call_split, mono: true)
         : null,

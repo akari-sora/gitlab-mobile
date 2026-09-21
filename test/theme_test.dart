@@ -30,13 +30,8 @@ void main() {
         theme.inputDecorationTheme.fillColor,
         dark ? const Color(0xFF222733) : const Color(0xFFEEF0F6),
       );
-      // Dark cards rely on tonal difference alone; light cards keep a hairline.
       final side = (theme.cardTheme.shape! as RoundedRectangleBorder).side;
-      if (dark) {
-        expect(side.style, BorderStyle.none);
-      } else {
-        expect(side.color, const Color(0xFFE5E8F0));
-      }
+      expect(side.color, dark ? const Color(0xFF303540) : const Color(0xFFE5E8F0));
       expect(theme.filledButtonTheme.style!.minimumSize!.resolve({}), const Size(48, 48));
       expect(theme.textTheme.titleLarge!.fontSize, 19);
       final overlay = theme.appBarTheme.systemOverlayStyle!;
@@ -76,7 +71,7 @@ void main() {
     expect(darkTheme.colorScheme.primary, dynamicDark.primary);
     expect(darkTheme.cardTheme.color, dynamicDark.surfaceContainerHigh);
     expect(darkTheme.inputDecorationTheme.fillColor, dynamicDark.surfaceContainerHigh);
-    expect((darkTheme.cardTheme.shape! as RoundedRectangleBorder).side.style, BorderStyle.none);
+    expect((darkTheme.cardTheme.shape! as RoundedRectangleBorder).side.color, dynamicDark.outlineVariant);
     expect(darkTheme.scaffoldBackgroundColor, dynamicDark.surface);
   });
 }

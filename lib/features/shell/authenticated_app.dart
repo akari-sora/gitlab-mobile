@@ -450,23 +450,7 @@ class _MobileShellState extends State<_MobileShell> {
                             style: Theme.of(context).textTheme.titleSmall,
                           ),
                           const SizedBox(height: 12),
-                          SizedBox(
-                            width: double.infinity,
-                            child: SegmentedButton<ThemeMode>(
-                              showSelectedIcon: false,
-                              segments: const [
-                                ButtonSegment(value: ThemeMode.system,
-                                  icon: Icon(Icons.brightness_auto_outlined), label: Text('跟隨系統')),
-                                ButtonSegment(value: ThemeMode.light,
-                                  icon: Icon(Icons.light_mode_outlined), label: Text('淺色')),
-                                ButtonSegment(value: ThemeMode.dark,
-                                  icon: Icon(Icons.dark_mode_outlined), label: Text('深色')),
-                              ],
-                              selected: {widget.theme},
-                              onSelectionChanged: (values) =>
-                                  widget.changeTheme(values.first),
-                            ),
-                          ),
+                          AppearancePicker(mode: widget.theme, onChanged: widget.changeTheme),
                           SwitchListTile(
                             contentPadding: EdgeInsets.zero,
                             title: const Text('使用系統配色（Material You）'),

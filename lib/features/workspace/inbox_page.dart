@@ -64,6 +64,7 @@ class _TodoFeedState extends State<_TodoFeed> {
         'unmergeable' => '無法合併', 'merge_train_removed' => '已移出合併列車', _ => '',
       };
       return EntityCard(
+        titleMaxLines: 3,
         leading: Container(width: 40, height: 40, alignment: Alignment.center,
           decoration: BoxDecoration(color: Theme.of(context).colorScheme.primaryContainer, borderRadius: BorderRadius.circular(12)),
           child: Icon(resource == 'merge_requests' ? Icons.merge : Icons.adjust, size: 20,

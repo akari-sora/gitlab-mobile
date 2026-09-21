@@ -297,9 +297,9 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                             ? '−'
                             : ' ';
                         final background = line.kind == 'add'
-                            ? scheme.primaryContainer.withValues(alpha: .45)
+                            ? WorkshopColors.of(context).diffAdded.withValues(alpha: .16)
                             : line.kind == 'remove'
-                            ? scheme.errorContainer.withValues(alpha: .45)
+                            ? WorkshopColors.of(context).diffRemoved.withValues(alpha: .16)
                             : line.kind == 'hunk'
                             ? scheme.surfaceContainerHighest
                             : null;

@@ -76,7 +76,7 @@ ColorScheme? flutterScheme(mui.ColorScheme? scheme) {
 }
 
 /// Semantic colour roles the Material scheme does not provide: CI/issue
-/// status tints, diff line tints and the code surface. Status is always shown
+/// status tints and diff line tints. Status is always shown
 /// as icon + label; these tints only reinforce it.
 @immutable
 class WorkshopColors extends ThemeExtension<WorkshopColors> {
@@ -85,28 +85,28 @@ class WorkshopColors extends ThemeExtension<WorkshopColors> {
     required this.running, required this.runningContainer, required this.onRunningContainer,
     required this.pending, required this.pendingContainer, required this.onPendingContainer,
     required this.neutralContainer, required this.onNeutralContainer,
-    required this.diffAdded, required this.diffRemoved, required this.codeSurface,
+    required this.diffAdded, required this.diffRemoved,
   });
 
   final Color success, successContainer, onSuccessContainer;
   final Color running, runningContainer, onRunningContainer;
   final Color pending, pendingContainer, onPendingContainer;
   final Color neutralContainer, onNeutralContainer;
-  final Color diffAdded, diffRemoved, codeSurface;
+  final Color diffAdded, diffRemoved;
 
   static const light = WorkshopColors(
     success: Color(0xFF1B7F3B), successContainer: Color(0xFFE3F5E8), onSuccessContainer: Color(0xFF0F4A22),
     running: Color(0xFF2457D6), runningContainer: Color(0xFFE1E8FB), onRunningContainer: Color(0xFF16337A),
     pending: Color(0xFF9A5B00), pendingContainer: Color(0xFFFFF0D6), onPendingContainer: Color(0xFF5C3600),
     neutralContainer: Color(0xFFEEF0F6), onNeutralContainer: Color(0xFF3D4452),
-    diffAdded: Color(0xFF1B7F3B), diffRemoved: Color(0xFFC62828), codeSurface: Color(0xFFF2F4F8),
+    diffAdded: Color(0xFF1B7F3B), diffRemoved: Color(0xFFC62828),
   );
   static const dark = WorkshopColors(
     success: Color(0xFF7DDB9A), successContainer: Color(0xFF123A22), onSuccessContainer: Color(0xFFB9F0C8),
     running: Color(0xFFA6BFFF), runningContainer: Color(0xFF1B2A55), onRunningContainer: Color(0xFFD5E0FF),
     pending: Color(0xFFFFC77A), pendingContainer: Color(0xFF3E2A08), onPendingContainer: Color(0xFFFFE2B5),
     neutralContainer: Color(0xFF262B36), onNeutralContainer: Color(0xFFC3C8D4),
-    diffAdded: Color(0xFF7DDB9A), diffRemoved: Color(0xFFFF8A80), codeSurface: Color(0xFF12151B),
+    diffAdded: Color(0xFF7DDB9A), diffRemoved: Color(0xFFFF8A80),
   );
 
   static WorkshopColors of(BuildContext context) {
@@ -121,7 +121,7 @@ class WorkshopColors extends ThemeExtension<WorkshopColors> {
     Color? running, Color? runningContainer, Color? onRunningContainer,
     Color? pending, Color? pendingContainer, Color? onPendingContainer,
     Color? neutralContainer, Color? onNeutralContainer,
-    Color? diffAdded, Color? diffRemoved, Color? codeSurface,
+    Color? diffAdded, Color? diffRemoved,
   }) => WorkshopColors(
     success: success ?? this.success, successContainer: successContainer ?? this.successContainer,
     onSuccessContainer: onSuccessContainer ?? this.onSuccessContainer,
@@ -132,7 +132,6 @@ class WorkshopColors extends ThemeExtension<WorkshopColors> {
     neutralContainer: neutralContainer ?? this.neutralContainer,
     onNeutralContainer: onNeutralContainer ?? this.onNeutralContainer,
     diffAdded: diffAdded ?? this.diffAdded, diffRemoved: diffRemoved ?? this.diffRemoved,
-    codeSurface: codeSurface ?? this.codeSurface,
   );
 
   @override
@@ -149,9 +148,24 @@ class WorkshopColors extends ThemeExtension<WorkshopColors> {
       neutralContainer: mix(neutralContainer, other.neutralContainer),
       onNeutralContainer: mix(onNeutralContainer, other.onNeutralContainer),
       diffAdded: mix(diffAdded, other.diffAdded), diffRemoved: mix(diffRemoved, other.diffRemoved),
-      codeSurface: mix(codeSurface, other.codeSurface),
     );
   }
+  List<Color> get _fields => [success, successContainer, onSuccessContainer, running, runningContainer,
+    onRunningContainer, pending, pendingContainer, onPendingContainer, neutralContainer, onNeutralContainer,
+    diffAdded, diffRemoved];
+
+  @override
+  bool operator ==(Object other) => other is WorkshopColors && _listEquals(_fields, other._fields);
+  @override
+  int get hashCode => Object.hashAll(_fields);
+}
+
+bool _listEquals(List<Color> a, List<Color> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
 }
 
 /// Bundled developer monospace (JetBrains Mono, OFL) for SHAs, file contents,
@@ -169,8 +183,8 @@ ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useD
   final dark = brightness == Brightness.dark;
   // A dynamic scheme replaces the cobalt seed. Card, outline and field fill
   // come from its surface-container and outline roles; type, shape and the
-  // 48 dp controls stay the app's. Dark cards rely on tonal difference alone;
-  // light cards keep a hairline so they read against the off-white surface.
+  // 48 dp controls stay the app's. Cards keep a hairline in both modes so a
+  // tappable card stays separable from the scaffold.
   final ColorScheme scheme;
   final Color outline, card, inputFill;
   if (dynamicScheme != null && useDynamicColor) {
@@ -226,7 +240,7 @@ ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useD
       elevation: 0, color: card,
       margin: EdgeInsets.zero, surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16),
-        side: dark ? BorderSide.none : BorderSide(color: outline)),
+        side: BorderSide(color: outline)),
     ),
     dividerTheme: DividerThemeData(color: outline, thickness: 1, space: 1),
     listTileTheme: ListTileThemeData(

@@ -14,6 +14,33 @@ Widget _host(Widget child, {Brightness brightness = Brightness.light}) => Materi
   theme: appTheme(brightness), home: Scaffold(body: Center(child: child)));
 
 void main() {
+  test('workshop colours compare by value', () {
+    expect(WorkshopColors.light.copyWith(), WorkshopColors.light);
+    expect(WorkshopColors.light.lerp(WorkshopColors.dark, 0), WorkshopColors.light);
+    expect(WorkshopColors.light, isNot(WorkshopColors.dark));
+  });
+
+  testWidgets('appearance picker falls back to wrapping chips at 320 dp with double text', (tester) async {
+    tester.view.physicalSize = const Size(320, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    ThemeMode? chosen;
+    await tester.pumpWidget(MaterialApp(theme: appTheme(Brightness.light), home: MediaQuery(
+      data: const MediaQueryData(size: Size(320, 900), textScaler: TextScaler.linear(2)),
+      child: Scaffold(body: Padding(padding: const EdgeInsets.all(20),
+        child: AppearancePicker(mode: ThemeMode.system, onChanged: (m) => chosen = m))))));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(SegmentedButton<ThemeMode>), findsNothing);
+    expect(find.text('跟隨系統'), findsOneWidget);
+    await tester.tap(find.text('深色'));
+    expect(chosen, ThemeMode.dark);
+  });
+
+  testWidgets('appearance picker is a segmented control when there is room', (tester) async {
+    await tester.pumpWidget(_host(AppearancePicker(mode: ThemeMode.light, onChanged: (_) {})));
+    expect(find.byType(SegmentedButton<ThemeMode>), findsOneWidget);
+  });
   test('monogram initials keep at least 4.5:1 contrast for every hue in both modes', () {
     for (final brightness in Brightness.values) {
       for (var i = 0; i < 64; i++) {

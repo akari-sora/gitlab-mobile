@@ -143,7 +143,7 @@ class _MetadataPageState extends State<MetadataPage> {
       MetaChip(relativeDate(valueText(value, 'released_at', valueText(value, 'created_at'))), icon: Icons.schedule_outlined),
     ],
     MetadataKind.milestones => [
-      StatusBadge(valueText(value, 'state') == 'active' ? 'opened' : 'closed'),
+      if (valueText(value, 'state').isNotEmpty) StatusBadge(valueText(value, 'state')),
       if (valueText(value, 'due_date').isNotEmpty) MetaChip('到期 ${valueText(value, 'due_date')}', icon: Icons.event_outlined),
     ],
     MetadataKind.labels => [
