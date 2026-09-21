@@ -29,6 +29,45 @@ def check_sdk(flutter: str) -> None:
         raise RuntimeError(f'Expected Flutter {SDK}; found {version}. Do not silently change the SDK baseline.')
 
 
+OAUTH_SCHEME = 'io.gitlabmobile.app'
+OAUTH_HOST = 'oauth'
+OAUTH_PATH = '/callback'
+
+
+def _android_attr(name: str) -> str:
+    return f'{{{ANDROID}}}{name}'
+
+
+def register_oauth_android(root: ET.Element) -> None:
+    application = root.find('application')
+    if application is None:
+        raise RuntimeError('Unknown Android template: application missing.')
+    activity = None
+    for candidate in application.findall('activity'):
+        for intent in candidate.findall('intent-filter'):
+            actions = [node.get(_android_attr('name')) for node in intent.findall('action')]
+            if 'android.intent.action.MAIN' in actions:
+                activity = candidate
+                break
+        if activity is not None:
+            break
+    if activity is None:
+        return
+    for intent in activity.findall('intent-filter'):
+        for data in intent.findall('data'):
+            if data.get(_android_attr('scheme')) == OAUTH_SCHEME:
+                return
+    callback = ET.SubElement(activity, 'intent-filter')
+    ET.SubElement(callback, 'action', {_android_attr('name'): 'android.intent.action.VIEW'})
+    ET.SubElement(callback, 'category', {_android_attr('name'): 'android.intent.category.DEFAULT'})
+    ET.SubElement(callback, 'category', {_android_attr('name'): 'android.intent.category.BROWSABLE'})
+    ET.SubElement(callback, 'data', {
+        _android_attr('scheme'): OAUTH_SCHEME,
+        _android_attr('host'): OAUTH_HOST,
+        _android_attr('pathPrefix'): OAUTH_PATH,
+    })
+
+
 def harden_android(folder: Path) -> None:
     manifest = folder / 'app/src/main/AndroidManifest.xml'
     tree = ET.parse(manifest)
@@ -43,6 +82,7 @@ def harden_android(folder: Path) -> None:
                        'fullBackupContent': '@xml/backup_rules',
                        'dataExtractionRules': '@xml/data_extraction_rules'}.items():
         application.set(f'{{{ANDROID}}}{key}', value)
+    register_oauth_android(root)
     ET.indent(tree, space='    ')
     tree.write(manifest, encoding='utf-8', xml_declaration=True)
     resource = folder / 'app/src/main/res/xml'
@@ -85,6 +125,49 @@ def configure_ios(folder: Path) -> None:
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict><key>keychain-access-groups</key><array/></dict></plist>
 ''', encoding='utf-8')
+    register_oauth_ios(folder)
+
+
+def register_oauth_ios(folder: Path) -> None:
+    path = folder / 'Runner/Info.plist'
+    if not path.is_file():
+        return
+    tree = ET.parse(path)
+    plist = tree.getroot().find('dict')
+    if plist is None:
+        raise RuntimeError('Unknown iOS template: Info.plist dict missing.')
+    children = list(plist)
+    existing = None
+    for index, node in enumerate(children):
+        if node.tag == 'key' and node.text == 'CFBundleURLTypes' and index + 1 < len(children):
+            existing = children[index + 1]
+            break
+    if existing is not None:
+        if OAUTH_SCHEME in ET.tostring(existing, encoding='unicode'):
+            return
+        _append_oauth_url_type(existing)
+    else:
+        plist.append(_plist_key('CFBundleURLTypes'))
+        _append_oauth_url_type(ET.SubElement(plist, 'array'))
+    ET.indent(tree, space='\t')
+    tree.write(path, encoding='utf-8', xml_declaration=True)
+
+
+def _append_oauth_url_type(url_types: ET.Element) -> None:
+    item = ET.SubElement(url_types, 'dict')
+    item.append(_plist_key('CFBundleTypeRole'))
+    ET.SubElement(item, 'string').text = 'Editor'
+    item.append(_plist_key('CFBundleURLName'))
+    ET.SubElement(item, 'string').text = f'{OAUTH_SCHEME}.oauth'
+    item.append(_plist_key('CFBundleURLSchemes'))
+    schemes = ET.SubElement(item, 'array')
+    ET.SubElement(schemes, 'string').text = OAUTH_SCHEME
+
+
+def _plist_key(name: str) -> ET.Element:
+    key = ET.Element('key')
+    key.text = name
+    return key
 
 
 def main() -> int:
