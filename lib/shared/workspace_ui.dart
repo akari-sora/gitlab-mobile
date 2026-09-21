@@ -4,6 +4,7 @@ import '../core/failure.dart';
 import '../core/gitlab_api.dart';
 import '../core/models.dart';
 import '../core/providers.dart';
+import 'theme.dart';
 
 /// Ends the active session so the user can pick another account. Does not rotate accounts.
 VoidCallback endSessionFrom(BuildContext context) => () {
@@ -83,35 +84,113 @@ class StatusBadge extends StatelessWidget {
       _ => (status.isEmpty ? '狀態未知' : status, Icons.info_outline),
     };
     final scheme = Theme.of(context).colorScheme;
-    final error = status == 'failed';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: error ? scheme.errorContainer : scheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(
-            icon,
-            size: 14,
-            color: error ? scheme.onErrorContainer : scheme.onSurfaceVariant,
-          ),
-          const SizedBox(width: 4),
-          Flexible(
-            child: Text(
-              label,
-              style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                color: error
-                    ? scheme.onErrorContainer
-                    : scheme.onSurfaceVariant,
-              ),
+    final workshop = WorkshopColors.of(context);
+    // Tint reinforces the icon + label pair; it is never the only signal.
+    final (background, foreground) = switch (status) {
+      'success' || 'passed' => (workshop.successContainer, workshop.onSuccessContainer),
+      'running' => (workshop.runningContainer, workshop.onRunningContainer),
+      'pending' || 'created' || 'waiting_for_resource' || 'preparing' || 'manual' || 'scheduled' =>
+        (workshop.pendingContainer, workshop.onPendingContainer),
+      'failed' => (scheme.errorContainer, scheme.onErrorContainer),
+      'opened' || 'merged' => (scheme.primaryContainer, scheme.onPrimaryContainer),
+      _ => (workshop.neutralContainer, workshop.onNeutralContainer),
+    };
+    return Semantics(
+      label: label,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(8)),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: foreground),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(color: foreground)),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
+  }
+}
+
+/// Small icon + text pair for card meta rows (time, ref, SHA, counts).
+class MetaChip extends StatelessWidget {
+  const MetaChip(this.text, {super.key, this.icon, this.mono = false});
+  final String text;
+  final IconData? icon;
+  final bool mono;
+  @override
+  Widget build(BuildContext context) {
+    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    final style = mono
+        ? codeTextStyle(context, fontSize: 12, color: color)
+        : Theme.of(context).textTheme.bodySmall?.copyWith(color: color);
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      if (icon != null) ...[Icon(icon, size: 14, color: color), const SizedBox(width: 4)],
+      Flexible(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: style)),
+    ]);
+  }
+}
+
+/// One card grammar for projects, issues, merge requests, pipelines and jobs:
+/// leading mark, title, optional subtitle, meta row, optional chevron.
+class EntityCard extends StatelessWidget {
+  const EntityCard({
+    super.key, required this.title, this.leading, this.subtitle, this.body,
+    this.meta = const [], this.trailing, this.chevron = true, this.onTap,
+    this.semanticsLabel, this.muted = false,
+  });
+  final Widget title;
+  final Widget? leading, subtitle, body, trailing;
+  final List<Widget> meta;
+  final bool chevron, muted;
+  final VoidCallback? onTap;
+  final String? semanticsLabel;
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final content = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 12, 14),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (leading != null) ...[leading!, const SizedBox(width: 14)],
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          DefaultTextStyle.merge(
+            style: Theme.of(context).textTheme.titleMedium!.copyWith(
+              color: muted ? scheme.onSurfaceVariant : scheme.onSurface),
+            maxLines: 2, overflow: TextOverflow.ellipsis, child: title),
+          if (subtitle != null) ...[
+            const SizedBox(height: 2),
+            DefaultTextStyle.merge(
+              style: Theme.of(context).textTheme.bodySmall!.copyWith(color: scheme.onSurfaceVariant),
+              maxLines: 1, overflow: TextOverflow.ellipsis, child: subtitle!),
+          ],
+          if (body != null) ...[const SizedBox(height: 8), body!],
+          if (meta.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(spacing: 10, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: meta),
+          ],
+        ])),
+        if (trailing != null) ...[const SizedBox(width: 8), trailing!]
+        else if (chevron && onTap != null) ...[
+          const SizedBox(width: 4),
+          Padding(padding: const EdgeInsets.only(top: 2),
+            child: Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant)),
+        ],
+      ]),
+    );
+    final card = Card(
+      clipBehavior: Clip.antiAlias,
+      child: onTap == null
+          ? content
+          : InkWell(
+              onTap: onTap, overlayColor: WidgetStatePropertyAll(scheme.onSurface.withValues(alpha: .06)),
+              child: content),
+    );
+    if (semanticsLabel == null) return card;
+    return Semantics(button: onTap != null, label: semanticsLabel, child: ExcludeSemantics(child: card));
   }
 }
 
@@ -119,24 +198,41 @@ class Monogram extends StatelessWidget {
   const Monogram(this.name, {super.key, this.size = 42});
   final String name;
   final double size;
+  /// Eight tonal hues keyed by the name so lists stop looking uniform while
+  /// the same name always gets the same colour.
+  static const _hues = [222.0, 258.0, 300.0, 340.0, 20.0, 158.0, 190.0, 62.0];
+  static (Color, Color) colorsFor(String name, Brightness brightness) {
+    var hash = 0;
+    for (final unit in name.codeUnits) {
+      hash = (hash * 31 + unit) & 0x7fffffff;
+    }
+    final hue = _hues[hash % _hues.length];
+    final dark = brightness == Brightness.dark;
+    final container = HSLColor.fromAHSL(1, hue, dark ? .38 : .52, dark ? .24 : .90).toColor();
+    final foreground = HSLColor.fromAHSL(1, hue, dark ? .55 : .55, dark ? .82 : .30).toColor();
+    return (container, foreground);
+  }
   @override
-  Widget build(BuildContext context) => Container(
-    width: size,
-    height: size,
-    alignment: Alignment.center,
-    decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.primaryContainer,
-      borderRadius: BorderRadius.circular(size * .28),
-    ),
-    child: Text(
-      name.isEmpty ? 'G' : name.characters.first.toUpperCase(),
-      style: TextStyle(
-        fontSize: size * .4,
-        fontWeight: FontWeight.w700,
-        color: Theme.of(context).colorScheme.onPrimaryContainer,
+  Widget build(BuildContext context) {
+    final (container, foreground) = colorsFor(name, Theme.of(context).brightness);
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: container,
+        borderRadius: BorderRadius.circular(size * .28),
       ),
-    ),
-  );
+      child: Text(
+        name.isEmpty ? 'G' : name.characters.first.toUpperCase(),
+        style: TextStyle(
+          fontSize: size * .4,
+          fontWeight: FontWeight.w700,
+          color: foreground,
+        ),
+      ),
+    );
+  }
 }
 
 class EmptyState extends StatelessWidget {
@@ -157,12 +253,13 @@ class EmptyState extends StatelessWidget {
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(
-          icon,
-          size: 36,
-          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        Container(
+          width: 64, height: 64, alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest, shape: BoxShape.circle),
+          child: Icon(icon, size: 30, color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 16),
         Text(
           title,
           textAlign: TextAlign.center,
