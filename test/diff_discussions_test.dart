@@ -826,7 +826,7 @@ void main() {
     expect(page.initialTarget?.path, 'lib/session.dart');
     expect(page.initialTarget?.newLine, isNull);
     expect(page.initialTarget?.oldLine, isNull);
-    expect(find.byKey(const ValueKey('diff-thread-anchored-half-malformed')), findsNothing);
+    expect(find.byKey(const ValueKey('diff-thread-half-malformed')), findsNothing);
     expect(find.byKey(const ValueKey('diff-other-half-malformed')), findsOneWidget);
     expect(find.text('其他版本的討論'), findsOneWidget);
     expect(tester.takeException(), isNull);

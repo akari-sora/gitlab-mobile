@@ -668,6 +668,34 @@ void main() {
     expect(held.controller.generation, greaterThan(0));
   });
 
+  test('a failed rotation save does not split active from a list replaced by connect', () async {
+    final held = await heldActiveRotation();
+    final activeApi = held.controller.api;
+    // connect stages a newer list (account 8 re-added with a new token) and
+    // queues its own save behind the held rotation write.
+    final connecting = held.controller.connect('https://example.com', 'synthetic-pat-c');
+    bool staged() => held.controller.accounts.any(
+      (a) => a.user.id == 8 && a.credential is PatCredential && (a.credential as PatCredential).token == 'synthetic-pat-c',
+    );
+    for (var i = 0; i < 40 && !staged(); i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(staged(), isTrue);
+    expect(held.store.accountSaves, 1);
+    held.store.rejectWrite = true;
+    held.hold.complete();
+    await held.refreshing;
+    await connecting;
+    await settleWrites();
+    expect(held.controller.active?.user.id, 7);
+    expect(identical(held.controller.api, activeApi), isTrue);
+    final active = held.controller.active!.credential as OAuthCredential;
+    expect(active.accessToken, 'rotated-access');
+    final listed = held.controller.accounts.firstWhere((a) => a.user.id == 7).credential as OAuthCredential;
+    expect(listed.accessToken, 'rotated-access');
+    expect(held.controller.message, isNotNull);
+  });
+
   test('a delayed initialize releases an operation still in flight', () async {
     final store = MemoryAccountStore();
     final saved = accountFor(7, 'synthetic-pat');
@@ -751,7 +779,8 @@ Future<HeldRotation> heldActiveRotation() async {
       }
       return '';
     }
-    if (header('private-token') == 'synthetic-pat-b') {
+    // 'synthetic-pat-c' is the same user connecting again with a new token.
+    if (header('private-token') == 'synthetic-pat-b' || header('private-token') == 'synthetic-pat-c') {
       return jsonResponse({'id': 8, 'username': 'user8', 'name': 'User 8'});
     }
     final authorization = header('authorization');

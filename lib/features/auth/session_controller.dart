@@ -404,11 +404,17 @@ final class SessionController extends ChangeNotifier {
     try {
       await _enqueueAccountSave();
     } catch (_) {
-      if (identical(_accounts, staged)) _accounts = previous;
-      // Only the session this rotation belonged to is rolled back. A select
-      // or sign-out that replaced `active` while the save was in flight owns
-      // it now; restoring the old account would detach it from `api`.
-      if (identical(active, updated)) active = previousActive;
+      // Roll back only what this rotation staged. A connect or remove that
+      // replaced the list in the meantime queued its own save behind this
+      // one and owns the list; reverting `active` alone would leave it on
+      // the old token while the list and the live client hold the rotated
+      // one. Within an untouched list, a select or sign-out that replaced
+      // `active` owns the session, so it is restored only while it is still
+      // the rotated instance installed above.
+      if (identical(_accounts, staged)) {
+        _accounts = previous;
+        if (identical(active, updated)) active = previousActive;
+      }
       rethrow;
     }
     if (!_disposed) _emit();
