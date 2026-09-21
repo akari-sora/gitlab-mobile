@@ -19,7 +19,9 @@
 
 ## 狀態更新 2026-09-22
 
-本段註記下方 2026-09-21 正文，不改寫正文。正文仍描述審查當時的代碼。證據邊界見 `docs/V0_3_VERIFICATION.md`。寫著「開放中」的合併請求當時尚未併入 `main`。測試總數從 CI job 報告讀取，此處不另寫死。
+本段註記下方 2026-09-21 正文，不改寫正文，也不改編號。正文仍描述審查當時的代碼。證據邊界見 `docs/V0_3_VERIFICATION.md`。!3、!7、!6、!5、!4、!8 已併入 `main`（`9183f19`）。pipeline `2869335026` 的 JUnit 報告讀到 `509` 項測試；這是該次觀察值。!3 之後的 v0.3 功能沒有實機走查（手機已改派）。
+
+條文對過之後：H02 是 Diff 熱區、M02 是檔案橫向同步捲動、M04 是登入頁移除失效帳號、M10 是 `go_router` 與舊畫面，都落在已合併的 !2，不是 !3–!8。H04 的條文是 OAuth 登入；PKCE 在 !2，登入仍 NOT_RUN，不計閉合。
 
 ### 已修
 
@@ -27,32 +29,35 @@
 |---|---|---|
 | ISSUE-H01 | 404 畫面補上帳號、實例、資源、重試與切換帳號。實機尚未走過模糊 404 畫面 | !2（已合併，`9ae6780`） |
 | ISSUE-H02 | Diff 行觸控熱區放大 | !2（已合併，`f2d84b2`） |
-| ISSUE-H04 | OAuth PKCE 已接上。`oauthApplicationIdFor` 仍是空對照表，尚未用真實 Application ID 登入，故不計為閉合 | !2（已合併，`62b81fd`） |
-| ISSUE-H05 | App 內下載 Job 工件。模擬器走過下載表；實機 `db12b41` 仍是瀏覽器選單 | !5（開放中） |
-| ISSUE-H06 | 附件上傳。實機與 live 上傳 NOT_RUN | !7（開放中） |
-| ISSUE-H08 | Diff 內顯示既有討論。實機 NOT_RUN | !4（開放中） |
+| ISSUE-H04 | OAuth PKCE 已接上。`oauthApplicationIdFor` 仍是空對照表，登入 NOT_RUN，不計閉合 | !2（已合併，`62b81fd`） |
+| ISSUE-H05 | App 內下載 Job 工件（已驗證第一跳、恰一次 https `Location`、無憑證第二跳、256 MiB、節流進度、開啟／分享）。模擬器 `9789033`／`e9e1965` 下完 83.4 MB。實機 `db12b41` 仍是瀏覽器選單 | !5（已合併，`fd14809`） |
+| ISSUE-H06 | 附件上傳（`POST /projects/:id/uploads`，multipart，25 MiB）。live 上傳 NOT_RUN | !7（已合併，`3891577`） |
+| ISSUE-H08 | Diff 內既有討論，僅在 SHA、路徑與正整數座標都吻合時錨定。模擬器 `fa529a2` 在 `lib/core/workspace_api.dart` 第 41 行下看到討論。實機 NOT_RUN | !4（已合併，`9183f19`，head `92f8c9f`） |
 | ISSUE-H09 | 已加入 Inbox 與 Diff 測試（`test/inbox_page_test.dart`、`test/diff_page_test.dart`）。覆蓋率從 CI 報告讀取。收件匣分頁實機 NOT_RUN | !2（已合併，`af23c5f`） |
 | ISSUE-M02 | 檔案檢視共用水平捲動 | !2（已合併，`9dd99e9`） |
 | ISSUE-M04 | 登入頁可移除已存帳號 | !2（已合併，`0b6ae18`） |
-| ISSUE-M05 | MR 總覽審查卡片。實機看過卡片；未從卡片完成核准或合併 | !3（開放中，auto-merge 已武裝，`339320a`） |
-| ISSUE-M06 | 合併對話框的 Squash 與刪除來源分支。實機打開後取消，沒有合併 | !3（開放中，`339320a`） |
-| ISSUE-M07 | 已解決討論折疊、篩選與摘要。實機看過 | !3（開放中，`dd686f2`，覆核修正 `646dce9`） |
-| ISSUE-M08 | 標籤、指派、審查者、分支選擇器。實機 NOT_RUN | !7（開放中） |
+| ISSUE-M05 | MR 總覽審查卡片。實機看過卡片；未從卡片完成核准或合併 | !3（已合併，覆核 head `646dce9`，`339320a`） |
+| ISSUE-M06 | 合併對話框的 Squash 與刪除來源分支。實機打開後取消，沒有合併 | !3（已合併，`339320a`） |
+| ISSUE-M07 | 已解決討論折疊、篩選與摘要。實機看過 | !3（已合併，`dd686f2`，覆核 `646dce9`） |
+| ISSUE-M08 | 標籤、指派、審查者、分支選擇器。!7 有模擬器截圖；`c90ca15` 走過標籤選擇器（搜尋與空狀態）。live 指派與實機 NOT_RUN | !7（已合併，`3891577`） |
 | ISSUE-M10 | 移除 `go_router` 與未使用的 G0 畫面 | !2（已合併，`ed4f3d3`） |
 | ISSUE-M13 | `SecureAccountStore` 與外部連結測試已加入。通過與否從 CI 報告讀取 | !2（已合併，`af23c5f`） |
-| ISSUE-M14 | Markdown 工具列。實機 NOT_RUN（`db12b41` 的議題是用三星鍵盤輸入） | !7（開放中） |
+| ISSUE-M14 | Markdown 工具列與編輯／預覽。!7 有工具列截圖；`c90ca15` 走過 8 個動作與編輯／預覽。實機 NOT_RUN（`db12b41` 的議題是用三星鍵盤輸入） | !7（已合併，`3891577`） |
+
+!6（已合併，`cbe589a`，head `b3e05e9`）與 !8（已合併，`0c2522b`，head `c90ca15`）沒有對上既有編號。!8 寬螢幕的 feed gutter 不是 ISSUE-H03 的雙欄。
 
 ### 仍開放
 
 - **ISSUE-H03**：840 dp 雙欄尚未做。
 - **ISSUE-H07**：Push 尚未做。
 - **ISSUE-H10**：工作區仍以未型別 `Json` 為主。
-- **ISSUE-H12**：裝置矩陣只覆蓋一隻實機（Samsung SM-S9280，Android 16）與一台 Pixel 9 模擬器（Android 16，arm64）。矩陣仍開放。私有專案 live smoke 與該實機走查見 v0.3 帳本，不把 G0 標成 ACCEPTED。
+- **ISSUE-H12**：裝置矩陣仍是一隻實機（Samsung SM-S9280，Android 16；`db12b41` 與 !3 建置）加一台 Pixel 9 模擬器（`emulator-5554`，Android 16）。!4–!8 沒有實機走查。live smoke 合併後沒有重跑。不把 G0 標成 ACCEPTED。
 - **ISSUE-M01、ISSUE-M03、ISSUE-M09、ISSUE-M11、ISSUE-M12**：仍開放。!5 的日誌區段折疊不是 M03（ANSI 著色）或 M09（增量串流）的修復。
+- OAuth 登入、iOS、商店簽章、TalkBack、跨專案 CI 總覽、帳號切換後的失敗目標重試：NOT_RUN。見 v0.3 帳本。
 
-### ISSUE-H11 原發現撤回
+### ISSUE-H11 `encryptedSharedPreferences`
 
-`pubspec.yaml` 的 `flutter_secure_storage` 是 11.2.0。該版預設 RSA-OAEP + AES-GCM，舊的 `encryptedSharedPreferences` 旗標已棄用，因此「未設定該旗標就會回退弱加密」的原結論撤回。目前初始化使用 `AndroidOptions()`，沒有再傳該旗標。尚未執行的是裝置備份、還原與遷移測試。
+本分支已處理。`pubspec.yaml` 的 `flutter_secure_storage` 是 11.2.0，預設 RSA-OAEP + AES-GCM。`encryptedSharedPreferences` 旗標已棄用。`account_store.dart`、`editor.dart`、`appearance.dart` 的初始化是 `AndroidOptions()`，沒有再傳該旗標。正文「未設定該旗標就會回退弱加密」不適用於這個版本。裝置備份、還原與遷移測試仍是 NOT_RUN。
 
 ---
 

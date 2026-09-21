@@ -61,7 +61,7 @@ Analyzer settings are strict (`strict-casts`, `strict-inference`, `strict-raw-ty
 
 `GitLabApi` invariants (keep them when adding endpoints):
 
-- One immutable account per client. `instance.allowsApi(uri)` gates every request: same origin, `/api/v4` prefix, no `.`/`..` segments, no token-like query keys. Redirects are never followed (`redirectBlocked`). The !5 artifact download is the exception: exactly one https `Location`, with no credential headers on that hop.
+- One immutable account per client. `instance.allowsApi(uri)` gates every request: same origin, `/api/v4` prefix, no `.`/`..` segments, no token-like query keys. Redirects are never followed (`redirectBlocked`). The !5 artifact download is the exception: authenticated first hop with `followRedirects: false`, exactly one https `Location`, fetched by an isolated bare Dio with no credential headers, 256 MiB budget, throttled progress.
 - Responses are streamed against a byte budget (4 MiB default, `maxTextBytes` 2 MiB / `maxTextLines` 20000 for text); overruns become `tooLarge`, binary bytes become `unsupported`.
 - A 429 `Retry-After` is remembered in `_retryAt` and later calls fail fast with `rateLimited` until it passes.
 - Writes are never retried automatically. A transport error on a non-GET/HEAD request is `writeUncertain`, and an OAuth 401 refresh only replays GET/HEAD.
@@ -85,17 +85,17 @@ Riverpod is used only for `sessionProvider`. Screens receive `api` and `account`
 
 ### Persistence
 
-These are the only disk writes. No repository checkout, job log or search history is stored. `clearSecureDrafts(account)` must run before an account is removed. Keys introduced by an open MR are absent on `db12b41` until that MR merges.
+These are the only disk writes. No repository content, logs or search history is persisted. `clearSecureDrafts(account)` runs before an account is removed. The `db12b41` phone build predates the appearance, last-account, sign-out, recent-project and artifact-cache entries.
 
 Through `flutter_secure_storage`:
 
 - Account list (`SecureAccountStore`, key `gitlab_mobile_accounts_v2`; v1 is read for migration, then deleted).
 - Editor drafts keyed `draft.v2.<base64url(account.key)>.<base64url(resource)>`.
-- Appearance, key `gitlab_mobile_appearance_v1` (!3). !6 stores the theme mode and the dynamic-colour flag in that same key. It is a device preference, shared by every account.
-- Last-active account, key `gitlab_mobile_last_account_v1`, and the sign-out marker `gitlab_mobile_sign_out_pending_v1` (!4). Auto-resume must not run while the marker is set.
-- Recent project, one record per account, key `recent_project.v1.<base64url(account.key)>` (!6): numeric project id and the name shown on the launcher shortcut. Clear that record when the account is removed.
+- Appearance, key `gitlab_mobile_appearance_v1`, value `<ThemeMode.name>|<0|1>` (theme mode and the dynamic-colour flag). A bare mode name from !3 still decodes. Device-scoped, shared by every account.
+- Last active account, key `gitlab_mobile_last_account_v1`. Auto-resume re-validates `/user`. This key is cleared only on a 401. Sign-out marker `gitlab_mobile_sign_out_pending_v1`: auto-resume never runs while the marker is set.
+- Recent project, one record per account, key `recent_project.v1.<base64url(account.key)>`: numeric project id and the name shown on the launcher shortcut. Cleared with the account.
 
-Outside secure storage, !5 only: the artifact cache directory `getTemporaryDirectory()/artifacts/<projectId>-<jobId>/`. The operating system may delete it.
+Outside secure storage: artifact cache `getTemporaryDirectory()/artifacts/<sha256(account.key) first 32 hex>/<projectId>-<jobId>/<stamp>-<attempt>/`. Removed on account removal. A failed removal keeps the account and reports 無法清除產物. The operating system may purge the directory.
 
 ### Shell and UI conventions
 
