@@ -103,7 +103,6 @@ Widget workItemCard(BuildContext context, Json value, {required bool mr, require
   final iid = '${mr ? '!' : '#'}${valueInt(value, 'iid')}';
   return EntityCard(
     onTap: onTap,
-    semanticsLabel: '$iid ${valueText(value, 'title')}',
     leading: Container(width: 40, height: 40, alignment: Alignment.center,
       decoration: BoxDecoration(color: markBackground, borderRadius: BorderRadius.circular(12)),
       child: Icon(mr ? Icons.merge : Icons.adjust, size: 20, color: markForeground)),

@@ -95,24 +95,21 @@ class StatusBadge extends StatelessWidget {
       'opened' || 'merged' => (scheme.primaryContainer, scheme.onPrimaryContainer),
       _ => (workshop.neutralContainer, workshop.onNeutralContainer),
     };
-    return Semantics(
-      label: label,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(8)),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: foreground),
-            const SizedBox(width: 5),
-            Flexible(
-              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(color: foreground)),
-            ),
-          ],
-        ),
+    return MergeSemantics(child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(8)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ExcludeSemantics(child: Icon(icon, size: 14, color: foreground)),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelMedium?.copyWith(color: foreground)),
+          ),
+        ],
       ),
-    );
+    ));
   }
 }
 
@@ -141,14 +138,13 @@ class EntityCard extends StatelessWidget {
   const EntityCard({
     super.key, required this.title, this.leading, this.subtitle, this.body,
     this.meta = const [], this.trailing, this.chevron = true, this.onTap,
-    this.semanticsLabel, this.muted = false,
+    this.muted = false,
   });
   final Widget title;
   final Widget? leading, subtitle, body, trailing;
   final List<Widget> meta;
   final bool chevron, muted;
   final VoidCallback? onTap;
-  final String? semanticsLabel;
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -189,8 +185,9 @@ class EntityCard extends StatelessWidget {
               onTap: onTap, overlayColor: WidgetStatePropertyAll(scheme.onSurface.withValues(alpha: .06)),
               child: content),
     );
-    if (semanticsLabel == null) return card;
-    return Semantics(button: onTap != null, label: semanticsLabel, child: ExcludeSemantics(child: card));
+    // One merged node per card: title, subtitle, status and meta are read
+    // together with the tap action instead of as separate stops.
+    return MergeSemantics(child: Semantics(button: onTap != null, child: card));
   }
 }
 
@@ -209,7 +206,7 @@ class Monogram extends StatelessWidget {
     final hue = _hues[hash % _hues.length];
     final dark = brightness == Brightness.dark;
     final container = HSLColor.fromAHSL(1, hue, dark ? .38 : .52, dark ? .24 : .90).toColor();
-    final foreground = HSLColor.fromAHSL(1, hue, dark ? .55 : .55, dark ? .82 : .30).toColor();
+    final foreground = HSLColor.fromAHSL(1, hue, .55, dark ? .82 : .27).toColor();
     return (container, foreground);
   }
   @override

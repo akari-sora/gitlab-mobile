@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -12,6 +13,11 @@ import 'shared/theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Bundled JetBrains Mono ships under the SIL OFL; surface it in the notices.
+  LicenseRegistry.addLicense(() async* {
+    final text = await rootBundle.loadString('assets/fonts/JetBrainsMono-OFL.txt');
+    yield LicenseEntryWithLineBreaks(const ['JetBrains Mono'], text);
+  });
   SystemChrome.setSystemUIOverlayStyle(
     systemUiOverlayStyle(WidgetsBinding.instance.platformDispatcher.platformBrightness),
   );

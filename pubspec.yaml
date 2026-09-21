@@ -33,6 +33,8 @@ dev_dependencies:
   url_launcher_platform_interface: 2.3.2
 flutter:
   uses-material-design: true
+  assets:
+    - assets/fonts/JetBrainsMono-OFL.txt
   fonts:
     - family: JetBrainsMono
       fonts:
