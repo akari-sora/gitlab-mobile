@@ -1,5 +1,34 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart' as mui;
+
+/// Transparent edge-to-edge bars whose icons contrast with [surface].
+/// Light surfaces get dark icons; dark surfaces get light icons.
+SystemUiOverlayStyle systemUiOverlayStyle(Brightness surface) {
+  final lightSurface = surface == Brightness.light;
+  final icons = lightSurface ? Brightness.dark : Brightness.light;
+  return SystemUiOverlayStyle(
+    statusBarColor: const Color(0x00000000),
+    statusBarBrightness: lightSurface ? Brightness.light : Brightness.dark,
+    statusBarIconBrightness: icons,
+    systemStatusBarContrastEnforced: false,
+    systemNavigationBarColor: const Color(0x00000000),
+    systemNavigationBarDividerColor: const Color(0x00000000),
+    systemNavigationBarIconBrightness: icons,
+    systemNavigationBarContrastEnforced: false,
+  );
+}
+
+/// Keeps the status and navigation icons in sync with the resolved theme,
+/// including screens that have no [AppBar].
+Widget applySystemBars(BuildContext context, Widget? child) {
+  final style = systemUiOverlayStyle(Theme.of(context).brightness);
+  SystemChrome.setSystemUIOverlayStyle(style);
+  return AnnotatedRegion<SystemUiOverlayStyle>(
+    value: style,
+    child: child ?? const SizedBox.shrink(),
+  );
+}
 
 /// `dynamic_color` 2.1 reports schemes from `material_ui`, which is not the
 /// Flutter [ColorScheme] [ThemeData] consumes. Copy the roles we theme with.
@@ -74,6 +103,7 @@ ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useD
     materialTapTargetSize: MaterialTapTargetSize.padded,
     appBarTheme: AppBarTheme(
       backgroundColor: scheme.surface, surfaceTintColor: Colors.transparent,
+      systemOverlayStyle: systemUiOverlayStyle(brightness),
       elevation: 0, scrolledUnderElevation: 0, centerTitle: false,
       titleTextStyle: TextStyle(fontFamily: 'Roboto', fontSize: 21, fontWeight: FontWeight.w700,
         color: scheme.onSurface, letterSpacing: -.4),

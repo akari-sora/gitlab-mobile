@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -72,8 +73,11 @@ void main() {
     expect(find.text('@developer'), findsWidgets);
     expect(find.text('外觀'), findsOneWidget);
     expect(find.text('帳號'), findsOneWidget);
-    expect(find.text('此系統沒有動態配色（需要 Android 12 以上）'), findsOneWidget);
-    expect(tester.widget<SwitchListTile>(find.byType(SwitchListTile)).onChanged, isNull);
+    expect(find.text('此裝置沒有動態配色'), findsOneWidget);
+    final tile = tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+    expect(tile.onChanged, isNull);
+    expect(tile.value, isFalse);
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).maintainBottomViewPadding, isTrue);
   });
 
   testWidgets('AuthenticatedApp persists the theme mode chosen in My tab', (
@@ -149,7 +153,9 @@ void main() {
 
     final MaterialApp app = tester.widget(find.byType(MaterialApp));
     expect(app.themeMode, ThemeMode.dark);
-    expect(appearanceStore.writes, isEmpty);
+    // No dynamic scheme: the Android default of on is stored back as off.
+    expect(appearance.useDynamicColor, isFalse);
+    expect(appearanceStore.writes, [encodeAppearance(ThemeMode.dark, false)]);
   });
 
   testWidgets('AuthenticatedApp keeps the appearance across an account switch', (
@@ -358,6 +364,52 @@ void main() {
     ));
     await settleNetworkWidgets(tester);
     expect(canPop(), isTrue);
+
+    await tester.tap(find.text('收件匣'));
+    await settleNetworkWidgets(tester);
+    expect(canPop(), isFalse);
+    tester.widget<PopScope<Object?>>(find.byType(PopScope<Object?>)).onPopInvokedWithResult?.call(false, null);
+    await tester.pump();
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
+    expect(canPop(), isTrue);
+    expect(find.byKey(const Key('projectSearch')), findsOneWidget);
+  });
+
+  testWidgets('a device without a dynamic scheme stores the flag off', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+    final store = MemoryAppearanceStore();
+    final local = AppearanceController(store);
+    addTearDown(local.dispose);
+    await local.load();
+    expect(local.useDynamicColor, isTrue);
+    final fixture = WorkspaceFixture();
+    final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+    addTearDown(session.dispose);
+    addTearDown(fixture.api.close);
+    await tester.runAsync(() async {
+      await session.initialize();
+      await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+    });
+    final localShortcuts = LauncherShortcuts(FakeAppShortcutHost(), MemoryRecentProjectStore());
+    addTearDown(localShortcuts.dispose);
+    await tester.pumpWidget(AuthenticatedApp(
+      session: session,
+      appearance: local,
+      shortcuts: localShortcuts,
+    ));
+    await settleNetworkWidgets(tester);
+    expect(local.useDynamicColor, isFalse);
+    expect(store.value, encodeAppearance(ThemeMode.system, false));
+    await tester.tap(find.text('我的'));
+    await settleNetworkWidgets(tester);
+    expect(find.text('此裝置沒有動態配色'), findsOneWidget);
+    final tile = tester.widget<SwitchListTile>(find.byType(SwitchListTile));
+    expect(tile.value, isFalse);
+    expect(tile.onChanged, isNull);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('dynamic colour switch writes through the controller', (tester) async {

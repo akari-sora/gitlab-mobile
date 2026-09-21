@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/theme.dart';
@@ -37,6 +38,37 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
   // The appearance lives outside this widget on purpose: the whole
   // authenticated tree is rebuilt on every account switch, and the choice is a
   // device preference that must survive both that and a restart.
+  bool _dynamicProbeSettled = false;
+  bool _probedScheme = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.dynamicLight != null || widget.dynamicDark != null) {
+      _dynamicProbeSettled = true;
+      _probedScheme = true;
+    } else {
+      unawaited(_probeDynamicColor());
+    }
+  }
+
+  Future<void> _probeDynamicColor() async {
+    var hasScheme = false;
+    try {
+      hasScheme = await DynamicColorPlugin.getCorePalette() != null;
+    } catch (_) {}
+    if (!hasScheme) {
+      try {
+        hasScheme = await DynamicColorPlugin.getAccentColor() != null;
+      } catch (_) {}
+    }
+    if (!mounted) return;
+    setState(() {
+      _dynamicProbeSettled = true;
+      _probedScheme = hasScheme;
+    });
+  }
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.appearance,
@@ -44,9 +76,19 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
       builder: (light, dark) {
         final resolvedLight = widget.dynamicLight ?? flutterScheme(light);
         final resolvedDark = widget.dynamicDark ?? flutterScheme(dark);
-        final enabled = widget.appearance.useDynamicColor;
+        final available = resolvedLight != null || resolvedDark != null || _probedScheme;
+        final enabled = available && widget.appearance.useDynamicColor;
+        if (_dynamicProbeSettled &&
+            !available &&
+            widget.appearance.loaded &&
+            widget.appearance.useDynamicColor) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) unawaited(widget.appearance.clearUnsupportedDynamicColor());
+          });
+        }
         return MaterialApp(
           debugShowCheckedModeBanner: false,
+          builder: applySystemBars,
           title: 'GitLab Mobile',
           theme: appTheme(
             Brightness.light,
@@ -65,8 +107,8 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
             shortcuts: widget.shortcuts,
             theme: widget.appearance.mode,
             changeTheme: (mode) => unawaited(widget.appearance.select(mode)),
-            useDynamicColor: enabled,
-            dynamicColorAvailable: resolvedLight != null || resolvedDark != null,
+            useDynamicColor: widget.appearance.useDynamicColor,
+            dynamicColorAvailable: available,
             changeDynamicColor: (value) =>
                 unawaited(widget.appearance.setUseDynamicColor(value)),
           ),
@@ -102,9 +144,14 @@ class _MobileShellState extends State<_MobileShell> {
   int _searchToken = 0;
   bool _removing = false;
   final Set<int> _visited = {1};
+  ApiFailure? _recentFailure;
+  Account? _recentAccount;
+  int? _recentProjectId;
+  int? _recentGeneration;
   @override
   void initState() {
     super.initState();
+    widget.session.addListener(_onSession);
     widget.shortcuts.addListener(_onShortcut);
     final account = widget.session.active;
     if (account != null) {
@@ -118,7 +165,21 @@ class _MobileShellState extends State<_MobileShell> {
   }
 
   @override
+  void didUpdateWidget(covariant _MobileShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session != widget.session) {
+      oldWidget.session.removeListener(_onSession);
+      widget.session.addListener(_onSession);
+    }
+  }
+
+  void _onSession() {
+    if (mounted) setState(() {});
+  }
+
+  @override
   void dispose() {
+    widget.session.removeListener(_onSession);
     widget.shortcuts.removeListener(_onShortcut);
     super.dispose();
   }
@@ -139,6 +200,9 @@ class _MobileShellState extends State<_MobileShell> {
     if (shortcut == null || !mounted) {
       return;
     }
+    if (!await _bringShellForward() || !mounted || widget.session.active?.key != account.key) {
+      return;
+    }
     switch (shortcut.kind) {
       case ShortcutKind.inbox:
         setState(() {
@@ -152,43 +216,96 @@ class _MobileShellState extends State<_MobileShell> {
           _searchToken++;
         });
       case ShortcutKind.recent:
+        final id = shortcut.projectId;
+        if (id == null) return;
         setState(() {
           _selected = 1;
           _visited.add(1);
         });
-        await _openRecent(account, api);
+        await _openRecent(account, api, id);
     }
   }
 
-  Future<void> _openRecent(Account account, GitLabApi api) async {
-    RecentProject? recent;
-    try {
-      recent = await widget.shortcuts.readRecent(account.key);
-    } catch (e) {
-      if (mounted) {
-        showFailure(context, e);
+  /// Pops pushed routes so the shell is the visible page. A route that refuses
+  /// to pop (editor leave, or a repository folder) handles the pop itself; the
+  /// shortcut stops there instead of discarding that guard.
+  Future<bool> _bringShellForward() async {
+    final navigator = Navigator.of(context);
+    while (mounted) {
+      final top = _topRoute(navigator);
+      if (top == null || top.isFirst) return true;
+      if (top is ModalRoute<Object?> && top.popDisposition == RoutePopDisposition.doNotPop) {
+        top.onPopInvokedWithResult(false, null);
+        await Future<void>.delayed(Duration.zero);
+        if (!mounted || top.isActive) return false;
+        continue;
       }
-      return;
+      navigator.pop();
     }
-    if (!mounted || widget.session.active?.key != account.key || recent == null) {
-      return;
-    }
+    return false;
+  }
+
+  Route<dynamic>? _topRoute(NavigatorState navigator) {
+    Route<dynamic>? top;
+    navigator.popUntil((route) {
+      top = route;
+      return true;
+    });
+    return top;
+  }
+
+  bool _sameAccount(Account account, int generation) =>
+      mounted &&
+      widget.session.generation == generation &&
+      widget.session.active?.key == account.key;
+
+  Future<void> _openRecent(Account account, GitLabApi api, int projectId) async {
+    final generation = widget.session.generation;
     try {
-      final project = await api.project('${recent.id}');
-      if (!mounted || widget.session.active?.key != account.key) {
-        return;
-      }
+      final project = await api.project('$projectId');
+      if (!_sameAccount(account, generation) || !mounted) return;
+      setState(() {
+        _recentFailure = null;
+        _recentAccount = null;
+        _recentProjectId = null;
+        _recentGeneration = null;
+      });
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) =>
-              ProjectPage(account: account, api: api, project: project),
+          builder: (_) => ProjectPage(account: account, api: api, project: project),
         ),
       );
     } catch (e) {
-      if (mounted) {
-        showFailure(context, e);
-      }
+      if (!_sameAccount(account, generation)) return;
+      final failure = safeFailure(e);
+      if (failure.kind == FailureKind.cancelled) return;
+      setState(() {
+        _recentFailure = failure;
+        _recentAccount = account;
+        _recentProjectId = projectId;
+        _recentGeneration = generation;
+      });
     }
+  }
+
+  void _retryRecent() {
+    final account = _recentAccount;
+    final api = widget.session.api;
+    final id = _recentProjectId;
+    final generation = _recentGeneration;
+    if (account == null || api == null || id == null || generation == null) return;
+    if (!_sameAccount(account, generation)) return;
+    unawaited(_openRecent(account, api, id));
+  }
+
+  bool get _showRecentFailure {
+    final failure = _recentFailure;
+    final account = _recentAccount;
+    final generation = _recentGeneration;
+    if (failure == null || account == null || generation == null || _recentProjectId == null) {
+      return false;
+    }
+    return widget.session.generation == generation && widget.session.active?.key == account.key;
   }
 
   Future<void> _remove(Account account) async {
@@ -241,7 +358,17 @@ class _MobileShellState extends State<_MobileShell> {
         }
       },
       child: Scaffold(
-        body: IndexedStack(
+        body: Column(
+          children: [
+            if (_showRecentFailure)
+              FailureNotice(
+                _recentFailure!,
+                account: _recentAccount,
+                resourceLabel: '${_recentProjectId ?? ''}',
+                onRetry: _retryRecent,
+                onSwitchAccount: widget.session.endSession,
+              ),
+            Expanded(child: IndexedStack(
           index: _selected,
           children: [
             _pane(
@@ -332,9 +459,9 @@ class _MobileShellState extends State<_MobileShell> {
                             subtitle: Text(
                               widget.dynamicColorAvailable
                                   ? 'Android 12 以上會依桌布色調產生配色'
-                                  : '此系統沒有動態配色（需要 Android 12 以上）',
+                                  : '此裝置沒有動態配色',
                             ),
-                            value: widget.useDynamicColor,
+                            value: widget.dynamicColorAvailable && widget.useDynamicColor,
                             onChanged: widget.dynamicColorAvailable
                                 ? widget.changeDynamicColor
                                 : null,
@@ -400,8 +527,11 @@ class _MobileShellState extends State<_MobileShell> {
                   : const SizedBox(),
             ),
           ],
+        )),
+          ],
         ),
         bottomNavigationBar: NavigationBar(
+          maintainBottomViewPadding: true,
           selectedIndex: _selected,
           onDestinationSelected: (index) => setState(() {
             _selected = index;

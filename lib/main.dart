@@ -12,13 +12,9 @@ import 'shared/theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    systemNavigationBarColor: Colors.transparent,
-    systemNavigationBarDividerColor: Colors.transparent,
-    systemStatusBarContrastEnforced: false,
-    systemNavigationBarContrastEnforced: false,
-  ));
+  SystemChrome.setSystemUIOverlayStyle(
+    systemUiOverlayStyle(WidgetsBinding.instance.platformDispatcher.platformBrightness),
+  );
   unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
   runApp(const ProviderScope(child: GitLabMobileApp()));
 }
@@ -64,6 +60,7 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
         final enabled = appearance.useDynamicColor;
         return MaterialApp(
           title: 'GitLab Mobile', debugShowCheckedModeBanner: false,
+          builder: applySystemBars,
           theme: appTheme(Brightness.light, dynamicScheme: enabled ? flutterScheme(light) : null),
           darkTheme: appTheme(Brightness.dark, dynamicScheme: enabled ? flutterScheme(dark) : null),
           themeMode: appearance.mode,

@@ -34,6 +34,15 @@ void main() {
       expect(side.color, dark ? const Color(0xFF303540) : const Color(0xFFE5E8F0));
       expect(theme.filledButtonTheme.style!.minimumSize!.resolve({}), const Size(48, 48));
       expect(theme.textTheme.titleLarge!.fontSize, 19);
+      final overlay = theme.appBarTheme.systemOverlayStyle!;
+      final icons = dark ? Brightness.light : Brightness.dark;
+      expect(overlay.statusBarIconBrightness, icons);
+      expect(overlay.systemNavigationBarIconBrightness, icons);
+      expect(overlay.statusBarColor, Colors.transparent);
+      expect(overlay.systemNavigationBarColor, Colors.transparent);
+      expect(overlay.systemNavigationBarContrastEnforced, isFalse);
+      expect(overlay.systemStatusBarContrastEnforced, isFalse);
+      expect(overlay, systemUiOverlayStyle(brightness));
     }
   });
 
