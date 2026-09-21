@@ -55,6 +55,12 @@ def harden_android(folder: Path) -> None:
         f'{excludes}</cloud-backup><device-transfer>{excludes}</device-transfer></data-extraction-rules>\n')
 
 
+def apply_launcher_icons(flutter: str) -> None:
+    subprocess.run([flutter, 'pub', 'get', '--enforce-lockfile'], cwd=ROOT, check=True, timeout=180)
+    dart = str(Path(flutter).resolve().parent / 'dart')
+    subprocess.run([dart, 'run', 'flutter_launcher_icons'], cwd=ROOT, check=True, timeout=120)
+
+
 def configure_ios(folder: Path) -> None:
     # Match ONLY Runner configurations (exclude RunnerTests). Fail on template drift.
     project = folder / 'Runner.xcodeproj/project.pbxproj'
@@ -106,6 +112,7 @@ def main() -> int:
             for name in ('android', 'ios'):
                 shutil.copytree(template / name, ROOT / name)
             shutil.copy2(template / '.metadata', ROOT / '.metadata')
+        apply_launcher_icons(flutter)
         print('Native runners generated. Apple team/signing and device checks remain unconfigured.')
         print('Next: flutter pub get; dart format lib test; flutter analyze; flutter test')
         return 0

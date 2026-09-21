@@ -9,6 +9,7 @@ if [ -f ci-output/pubspec.lock ]; then
   cp ci-output/pubspec.lock pubspec.lock
 fi
 flutter pub get --enforce-lockfile
+dart run flutter_launcher_icons
 flutter build apk --debug --no-pub
 mkdir -p artifacts
 short_sha="${CI_COMMIT_SHORT_SHA:-local}"
