@@ -402,7 +402,14 @@ class _ResourceEditorState extends State<ResourceEditor> {
   Widget build(BuildContext context) => PopScope(
     canPop: false,
     onPopInvokedWithResult: (didPop, _) {
-      if (!didPop) unawaited(_leave());
+      if (didPop) return;
+      final route = ModalRoute.of(context);
+      final leaving = _leave();
+      if (route == null) {
+        unawaited(leaving);
+        return;
+      }
+      RouteExit.track(route, leaving);
     },
     child: Scaffold(
       resizeToAvoidBottomInset: true,

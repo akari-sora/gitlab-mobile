@@ -130,7 +130,7 @@ class _PipelinePageState extends State<PipelinePage> {
       PopupMenuItem(value: 'cancel', child: Text('取消流程')),
       PopupMenuItem(value: 'delete', child: Text('刪除 Pipeline')),
     ]),
-  ]), body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+  ]), body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
     if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
       resourceLabel: '${widget.project.path} · Pipeline #${widget.id}', onSwitchAccount: endSessionFrom(context)),
@@ -155,7 +155,7 @@ class _PipelinePageState extends State<PipelinePage> {
           onTap: () => _openJob(requiredInt(value, 'id')),
         )),
     )),
-  ]));
+  ])));
 }
 
 class JobLogPage extends StatefulWidget {
@@ -279,7 +279,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           if (valueObject(_job ?? {}, 'artifacts_file')['filename'] != null)
             const PopupMenuItem(value: 'artifacts', child: Text('在 GitLab 下載產物')),
         ]),
-      ]), body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      ]), body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), child: Wrap(
           spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
             if (_job != null) StatusBadge(valueText(_job!, 'status')),
@@ -307,6 +307,6 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 padding: const EdgeInsets.only(bottom: 3), child: Text(_lines[matches[index]].isEmpty ? ' ' : _lines[matches[index]],
                   style: const TextStyle(fontFamily: 'monospace', fontSize: 12, height: 1.5))),
             ))),
-      ]));
+      ])));
   }
 }

@@ -80,7 +80,8 @@ def harden_android(folder: Path) -> None:
         raise RuntimeError('Unknown Android template: application missing.')
     for key, value in {'allowBackup': 'false', 'usesCleartextTraffic': 'false',
                        'fullBackupContent': '@xml/backup_rules',
-                       'dataExtractionRules': '@xml/data_extraction_rules'}.items():
+                       'dataExtractionRules': '@xml/data_extraction_rules',
+                       'enableOnBackInvokedCallback': 'true'}.items():
         application.set(f'{{{ANDROID}}}{key}', value)
     register_oauth_android(root)
     ET.indent(tree, space='    ')
@@ -93,6 +94,42 @@ def harden_android(folder: Path) -> None:
     (resource / 'data_extraction_rules.xml').write_text(
         '<data-extraction-rules><cloud-backup disableIfNoEncryptionCapabilities="true">'
         f'{excludes}</cloud-backup><device-transfer>{excludes}</device-transfer></data-extraction-rules>\n')
+    _transparent_system_bars(folder)
+
+
+# Edge-to-edge (Android 15) draws behind the system bars. Opaque bar colours in
+# the launch/normal themes would put a solid scrim back, so force them transparent.
+_SYSTEM_BAR_ITEMS = (
+    ('android:statusBarColor', '@android:color/transparent'),
+    ('android:navigationBarColor', '@android:color/transparent'),
+    ('android:windowDrawsSystemBarBackgrounds', 'true'),
+    ('android:enforceStatusBarContrast', 'false'),
+    ('android:enforceNavigationBarContrast', 'false'),
+)
+
+
+def _transparent_system_bars(folder: Path) -> None:
+    res = folder / 'app/src/main/res'
+    if not res.is_dir():
+        return
+    for path in sorted(res.glob('**/styles.xml')):
+        _patch_style_bars(path)
+
+
+def _patch_style_bars(path: Path) -> None:
+    tree = ET.parse(path)
+    root = tree.getroot()
+    for style in root.findall('style'):
+        if style.get('name') not in {'LaunchTheme', 'NormalTheme'}:
+            continue
+        items = {item.get('name'): item for item in style.findall('item')}
+        for name, value in _SYSTEM_BAR_ITEMS:
+            item = items.get(name)
+            if item is None:
+                item = ET.SubElement(style, 'item', {'name': name})
+            item.text = value
+    ET.indent(tree, space='    ')
+    tree.write(path, encoding='utf-8', xml_declaration=True)
 
 
 def apply_launcher_icons(flutter: str) -> None:

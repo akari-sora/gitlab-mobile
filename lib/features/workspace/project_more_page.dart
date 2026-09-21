@@ -178,7 +178,7 @@ class _MetadataPageState extends State<MetadataPage> {
   }
   Future<void> _view(Json value) async {
     await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => Scaffold(
-      appBar: AppBar(title: Text(_name(value))), body: ListView(padding: const EdgeInsets.all(20), children: [
+      appBar: AppBar(title: Text(_name(value))), body: gestureSafe(ListView(padding: const EdgeInsets.all(20), children: [
         Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 16),
         if (value['state'] is String) Align(alignment: Alignment.centerLeft, child: StatusBadge(valueText(value, 'state'))),
         if (widget.kind == MetadataKind.commits) ...[
@@ -191,14 +191,14 @@ class _MetadataPageState extends State<MetadataPage> {
           SelectableText(valueText(valueObject(value, 'commit'), 'id'), style: const TextStyle(fontFamily: 'monospace', fontSize: 12))],
         if (widget.kind == MetadataKind.milestones) ...[const SizedBox(height: 16),
           Text('開始：${valueText(value, 'start_date', '未設定')}\n到期：${valueText(value, 'due_date', '未設定')}')],
-      ]),
+      ])),
     )));
   }
   @override
   Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(metadataTitle(widget.kind)), actions: [
     if (widget.kind != MetadataKind.commits) IconButton(tooltip: '新增${metadataTitle(widget.kind)}',
       onPressed: _busy || widget.project.archived == true ? null : _edit, icon: const Icon(Icons.add)),
-  ]), body: RecordsFeed(key: _feed, identity: '${widget.project.id}/${widget.kind.name}',
+  ]), body: gestureSafe(RecordsFeed(key: _feed, identity: '${widget.project.id}/${widget.kind.name}',
     account: widget.account, resourceLabel: '${widget.project.path} · ${metadataTitle(widget.kind)}',
     onSwitchAccount: endSessionFrom(context),
     empty: '尚無${metadataTitle(widget.kind)}', load: (next) => widget.api.records(path,
@@ -219,5 +219,5 @@ class _MetadataPageState extends State<MetadataPage> {
           if (_canDelete(value)) const PopupMenuItem(value: 'delete', child: Text('刪除')),
         ]),
     )),
-  ));
+  )));
 }

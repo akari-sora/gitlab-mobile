@@ -269,7 +269,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
           ),
         ],
       ),
-      body: lines == null
+      body: gestureSafe(lines == null
           ? EmptyState('無法顯示差異', detail: _unavailable, icon: Icons.code_off)
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -378,7 +378,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                   ),
                 ),
               ],
-            ),
+            )),
     );
   }
 }

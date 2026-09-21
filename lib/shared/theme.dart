@@ -1,12 +1,101 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:material_ui/material_ui.dart' as mui;
 
-ThemeData appTheme(Brightness brightness) {
-  final dark = brightness == Brightness.dark;
-  final scheme = ColorScheme.fromSeed(
-    seedColor: const Color(0xFF4763E4), brightness: brightness,
-    surface: dark ? const Color(0xFF15181F) : const Color(0xFFF7F8FC),
+/// Transparent edge-to-edge bars whose icons contrast with [surface].
+/// Light surfaces get dark icons; dark surfaces get light icons.
+SystemUiOverlayStyle systemUiOverlayStyle(Brightness surface) {
+  final lightSurface = surface == Brightness.light;
+  final icons = lightSurface ? Brightness.dark : Brightness.light;
+  return SystemUiOverlayStyle(
+    statusBarColor: const Color(0x00000000),
+    statusBarBrightness: lightSurface ? Brightness.light : Brightness.dark,
+    statusBarIconBrightness: icons,
+    systemStatusBarContrastEnforced: false,
+    systemNavigationBarColor: const Color(0x00000000),
+    systemNavigationBarDividerColor: const Color(0x00000000),
+    systemNavigationBarIconBrightness: icons,
+    systemNavigationBarContrastEnforced: false,
   );
-  final outline = dark ? const Color(0xFF303540) : const Color(0xFFE5E8F0);
+}
+
+/// Keeps the status and navigation icons in sync with the resolved theme,
+/// including screens that have no [AppBar].
+Widget applySystemBars(BuildContext context, Widget? child) {
+  final style = systemUiOverlayStyle(Theme.of(context).brightness);
+  SystemChrome.setSystemUIOverlayStyle(style);
+  return AnnotatedRegion<SystemUiOverlayStyle>(
+    value: style,
+    child: child ?? const SizedBox.shrink(),
+  );
+}
+
+/// `dynamic_color` 2.1 reports schemes from `material_ui`, which is not the
+/// Flutter [ColorScheme] [ThemeData] consumes. Copy the roles we theme with.
+ColorScheme? flutterScheme(mui.ColorScheme? scheme) {
+  if (scheme == null) {
+    return null;
+  }
+  return ColorScheme(
+    brightness: scheme.brightness,
+    primary: scheme.primary,
+    onPrimary: scheme.onPrimary,
+    primaryContainer: scheme.primaryContainer,
+    onPrimaryContainer: scheme.onPrimaryContainer,
+    secondary: scheme.secondary,
+    onSecondary: scheme.onSecondary,
+    secondaryContainer: scheme.secondaryContainer,
+    onSecondaryContainer: scheme.onSecondaryContainer,
+    tertiary: scheme.tertiary,
+    onTertiary: scheme.onTertiary,
+    tertiaryContainer: scheme.tertiaryContainer,
+    onTertiaryContainer: scheme.onTertiaryContainer,
+    error: scheme.error,
+    onError: scheme.onError,
+    errorContainer: scheme.errorContainer,
+    onErrorContainer: scheme.onErrorContainer,
+    surface: scheme.surface,
+    onSurface: scheme.onSurface,
+    onSurfaceVariant: scheme.onSurfaceVariant,
+    outline: scheme.outline,
+    outlineVariant: scheme.outlineVariant,
+    shadow: scheme.shadow,
+    scrim: scheme.scrim,
+    inverseSurface: scheme.inverseSurface,
+    onInverseSurface: scheme.onInverseSurface,
+    inversePrimary: scheme.inversePrimary,
+    surfaceTint: scheme.surfaceTint,
+    surfaceDim: scheme.surfaceDim,
+    surfaceBright: scheme.surfaceBright,
+    surfaceContainerLowest: scheme.surfaceContainerLowest,
+    surfaceContainerLow: scheme.surfaceContainerLow,
+    surfaceContainer: scheme.surfaceContainer,
+    surfaceContainerHigh: scheme.surfaceContainerHigh,
+    surfaceContainerHighest: scheme.surfaceContainerHighest,
+  );
+}
+
+ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useDynamicColor = true}) {
+  final dark = brightness == Brightness.dark;
+  // A dynamic scheme replaces the cobalt seed. Card, outline and field fill
+  // come from its surface-container and outline roles; type, shape and the
+  // 48 dp controls stay the app's.
+  final ColorScheme scheme;
+  final Color outline, card, inputFill;
+  if (dynamicScheme != null && useDynamicColor) {
+    scheme = dynamicScheme;
+    outline = scheme.outlineVariant;
+    card = dark ? scheme.surfaceContainerHigh : scheme.surfaceContainerLowest;
+    inputFill = scheme.surfaceContainerHigh;
+  } else {
+    scheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF4763E4), brightness: brightness,
+      surface: dark ? const Color(0xFF15181F) : const Color(0xFFF7F8FC),
+    );
+    outline = dark ? const Color(0xFF303540) : const Color(0xFFE5E8F0);
+    card = dark ? const Color(0xFF1D212B) : Colors.white;
+    inputFill = dark ? const Color(0xFF222733) : const Color(0xFFEEF0F6);
+  }
   return ThemeData(
     useMaterial3: true, brightness: brightness, colorScheme: scheme,
     scaffoldBackgroundColor: scheme.surface,
@@ -14,6 +103,7 @@ ThemeData appTheme(Brightness brightness) {
     materialTapTargetSize: MaterialTapTargetSize.padded,
     appBarTheme: AppBarTheme(
       backgroundColor: scheme.surface, surfaceTintColor: Colors.transparent,
+      systemOverlayStyle: systemUiOverlayStyle(brightness),
       elevation: 0, scrolledUnderElevation: 0, centerTitle: false,
       titleTextStyle: TextStyle(fontFamily: 'Roboto', fontSize: 21, fontWeight: FontWeight.w700,
         color: scheme.onSurface, letterSpacing: -.4),
@@ -32,14 +122,14 @@ ThemeData appTheme(Brightness brightness) {
       labelMedium: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
     ),
     cardTheme: CardThemeData(
-      elevation: 0, color: dark ? const Color(0xFF1D212B) : Colors.white,
+      elevation: 0, color: card,
       margin: EdgeInsets.zero, surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16),
         side: BorderSide(color: outline)),
     ),
     dividerTheme: DividerThemeData(color: outline, thickness: 1, space: 1),
     inputDecorationTheme: InputDecorationTheme(
-      filled: true, fillColor: dark ? const Color(0xFF222733) : const Color(0xFFEEF0F6),
+      filled: true, fillColor: inputFill,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),

@@ -5,33 +5,50 @@ import '../../core/models.dart';
 import '../../core/project_locator.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
+import '../shell/app_shortcuts.dart';
 import 'editor.dart';
 import 'project_page.dart';
 import 'records_feed.dart';
 
 class ProjectsPage extends StatefulWidget {
-  const ProjectsPage({super.key, required this.session, this.forCi = false});
+  const ProjectsPage({super.key, required this.session, this.forCi = false, this.shortcuts, this.searchToken = 0});
   final SessionController session;
   final bool forCi;
+  final LauncherShortcuts? shortcuts;
+  final int searchToken;
   @override
   State<ProjectsPage> createState() => _ProjectsPageState();
 }
 class _ProjectsPageState extends State<ProjectsPage> {
   final _search = TextEditingController();
+  final _searchFocus = FocusNode();
   final _feed = GlobalKey<RecordsFeedState>();
   Timer? _debounce;
   int _scope = 0;
+  int _seenSearch = 0;
   String _query = '';
   bool _opening = false;
   Account get account => widget.session.active!;
   GitLabApi get api => widget.session.api!;
   @override
-  void dispose() { _debounce?.cancel(); _search.dispose(); super.dispose(); }
+  void didUpdateWidget(covariant ProjectsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.forCi && widget.searchToken != _seenSearch) {
+      _seenSearch = widget.searchToken;
+      WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _searchFocus.requestFocus(); });
+    }
+  }
+  @override
+  void dispose() { _debounce?.cancel(); _search.dispose(); _searchFocus.dispose(); super.dispose(); }
   void _searchChanged(String value) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 350), () { if (mounted) setState(() => _query = value.trim()); });
   }
   Future<void> _open(Project project) async {
+    final shortcuts = widget.shortcuts;
+    if (shortcuts != null) {
+      unawaited(shortcuts.rememberOpened(accountKey: account.key, id: project.id, name: project.name));
+    }
     await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ProjectPage(
       account: account, api: api, project: project, initialTab: widget.forCi ? 3 : 0)));
     if (mounted) unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
@@ -87,7 +104,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
         IconButton(tooltip: '切換帳號', onPressed: widget.session.endSession, icon: const Icon(Icons.swap_horiz, size: 20)),
       ])),
       Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: TextField(
-        key: const Key('projectSearch'), controller: _search, onChanged: _searchChanged,
+        key: const Key('projectSearch'), focusNode: _searchFocus, controller: _search, onChanged: _searchChanged,
         onSubmitted: (value) { _debounce?.cancel(); setState(() => _query = value.trim()); },
         decoration: InputDecoration(hintText: '搜尋專案', prefixIcon: const Icon(Icons.search),
           suffixIcon: IconButton(tooltip: '清除搜尋', icon: const Icon(Icons.close, size: 18),

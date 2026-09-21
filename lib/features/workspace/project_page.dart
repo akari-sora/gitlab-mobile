@@ -34,7 +34,7 @@ class _ProjectPageState extends State<ProjectPage> with SingleTickerProviderStat
     appBar: AppBar(title: Text(_project.name, maxLines: 1, overflow: TextOverflow.ellipsis),
       actions: [IconButton(tooltip: '在 GitLab 開啟', icon: const Icon(Icons.open_in_new, size: 20),
         onPressed: () => openExternal(context, widget.account.instance.projectWeb(_project.path)))]),
-    body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 12), child: Wrap(spacing: 8, runSpacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center, children: [
           StatusBadge(_project.visibility ?? ''), Text(_project.path, style: Theme.of(context).textTheme.bodySmall),
@@ -50,6 +50,6 @@ class _ProjectPageState extends State<ProjectPage> with SingleTickerProviderStat
         ProjectMoreTab(account: widget.account, api: widget.api, project: _project,
           onChanged: (value) => setState(() => _project = value)),
       ])),
-    ]),
+    ])),
   );
 }
