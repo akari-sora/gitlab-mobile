@@ -87,7 +87,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
       MaterialPageRoute(
         builder: (context) => Scaffold(
           appBar: AppBar(title: const Text('選擇分支')),
-          body: RecordsFeed(
+          body: gestureSafe(RecordsFeed(
             identity: 'branch-picker',
             account: widget.account,
             resourceLabel: '${widget.project.path} · 分支',
@@ -112,6 +112,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
                     Navigator.pop(context, requiredString(data, 'name')),
               ),
             ),
+          ),
           ),
         ),
       ),
@@ -549,7 +550,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
           ),
         ],
       ),
-      body: Column(
+      body: gestureSafe(Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Padding(
@@ -682,7 +683,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                   ),
           ),
         ],
-      ),
+      )),
     );
   }
 }

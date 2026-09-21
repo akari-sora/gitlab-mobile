@@ -13,7 +13,7 @@ class InboxPage extends StatelessWidget {
   Widget build(BuildContext context) => DefaultTabController(length: 3, child: Scaffold(
     appBar: AppBar(title: const Text('收件匣'), bottom: const TabBar(isScrollable: true,
       tabAlignment: TabAlignment.start, tabs: [Tab(text: '待辦'), Tab(text: '指派給我'), Tab(text: '待我審查')])),
-    body: TabBarView(children: [
+    body: gestureSafe(TabBarView(children: [
       _TodoFeed(account: account, api: api),
       RecordsFeed(identity: 'assigned-issues', empty: '沒有指派給你的議題', account: account,
         resourceLabel: '指派給我的議題', underShell: true, onSwitchAccount: endSessionFrom(context),
@@ -23,7 +23,7 @@ class InboxPage extends StatelessWidget {
         resourceLabel: '待我審查的合併請求', underShell: true, onSwitchAccount: endSessionFrom(context),
         load: (next) => api.records(['merge_requests'], query: {'scope': 'all', 'reviewer_id': '${account.user.id}', 'state': 'opened'}, next: next),
         itemBuilder: (context, data) => _item(context, data, 'merge_requests')),
-    ]),
+    ])),
   ));
   Widget _item(BuildContext context, Json data, String resource) => Card(child: ListTile(
     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

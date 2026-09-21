@@ -1,13 +1,18 @@
 import 'dart:async';
+import 'package:dynamic_color/dynamic_color.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
+import '../auth/recent_project.dart';
 import '../auth/session_controller.dart';
+import '../workspace/project_page.dart';
 import '../workspace/projects_page.dart';
 import '../workspace/inbox_page.dart';
 import '../workspace/editor.dart';
+import 'app_shortcuts.dart';
 import 'appearance.dart';
 
 class AuthenticatedApp extends StatefulWidget {
@@ -15,9 +20,15 @@ class AuthenticatedApp extends StatefulWidget {
     super.key,
     required this.session,
     required this.appearance,
+    required this.shortcuts,
+    this.dynamicLight,
+    this.dynamicDark,
   });
   final SessionController session;
   final AppearanceController appearance;
+  final LauncherShortcuts shortcuts;
+  final ColorScheme? dynamicLight;
+  final ColorScheme? dynamicDark;
   @override
   State<AuthenticatedApp> createState() => _AuthenticatedAppState();
 }
@@ -29,20 +40,38 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.appearance,
-    builder: (context, _) => MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'GitLab Mobile',
-      theme: appTheme(Brightness.light),
-      darkTheme: appTheme(Brightness.dark),
-      themeMode: widget.appearance.mode,
-      locale: const Locale('zh', 'TW'),
-      supportedLocales: const [Locale('zh', 'TW'), Locale('en')],
-      localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      home: _MobileShell(
-        session: widget.session,
-        theme: widget.appearance.mode,
-        changeTheme: (mode) => unawaited(widget.appearance.select(mode)),
-      ),
+    builder: (context, _) => DynamicColorBuilder(
+      builder: (light, dark) {
+        final resolvedLight = widget.dynamicLight ?? flutterScheme(light);
+        final resolvedDark = widget.dynamicDark ?? flutterScheme(dark);
+        final enabled = widget.appearance.useDynamicColor;
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          title: 'GitLab Mobile',
+          theme: appTheme(
+            Brightness.light,
+            dynamicScheme: enabled ? resolvedLight : null,
+          ),
+          darkTheme: appTheme(
+            Brightness.dark,
+            dynamicScheme: enabled ? resolvedDark : null,
+          ),
+          themeMode: widget.appearance.mode,
+          locale: const Locale('zh', 'TW'),
+          supportedLocales: const [Locale('zh', 'TW'), Locale('en')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          home: _MobileShell(
+            session: widget.session,
+            shortcuts: widget.shortcuts,
+            theme: widget.appearance.mode,
+            changeTheme: (mode) => unawaited(widget.appearance.select(mode)),
+            useDynamicColor: enabled,
+            dynamicColorAvailable: resolvedLight != null || resolvedDark != null,
+            changeDynamicColor: (value) =>
+                unawaited(widget.appearance.setUseDynamicColor(value)),
+          ),
+        );
+      },
     ),
   );
 }
@@ -50,20 +79,118 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
 class _MobileShell extends StatefulWidget {
   const _MobileShell({
     required this.session,
+    required this.shortcuts,
     required this.theme,
     required this.changeTheme,
+    required this.useDynamicColor,
+    required this.dynamicColorAvailable,
+    required this.changeDynamicColor,
   });
   final SessionController session;
+  final LauncherShortcuts shortcuts;
   final ThemeMode theme;
   final ValueChanged<ThemeMode> changeTheme;
+  final bool useDynamicColor;
+  final bool dynamicColorAvailable;
+  final ValueChanged<bool> changeDynamicColor;
   @override
   State<_MobileShell> createState() => _MobileShellState();
 }
 
 class _MobileShellState extends State<_MobileShell> {
   int _selected = 1;
+  int _searchToken = 0;
   bool _removing = false;
   final Set<int> _visited = {1};
+  @override
+  void initState() {
+    super.initState();
+    widget.shortcuts.addListener(_onShortcut);
+    final account = widget.session.active;
+    if (account != null) {
+      unawaited(widget.shortcuts.publish(account.key));
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        unawaited(_consumeShortcut());
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    widget.shortcuts.removeListener(_onShortcut);
+    super.dispose();
+  }
+
+  void _onShortcut() {
+    if (widget.shortcuts.pending != null) {
+      unawaited(_consumeShortcut());
+    }
+  }
+
+  Future<void> _consumeShortcut() async {
+    final account = widget.session.active;
+    final api = widget.session.api;
+    if (account == null || api == null || !mounted) {
+      return;
+    }
+    final shortcut = widget.shortcuts.takeFor(account.key);
+    if (shortcut == null || !mounted) {
+      return;
+    }
+    switch (shortcut.kind) {
+      case ShortcutKind.inbox:
+        setState(() {
+          _selected = 0;
+          _visited.add(0);
+        });
+      case ShortcutKind.search:
+        setState(() {
+          _selected = 1;
+          _visited.add(1);
+          _searchToken++;
+        });
+      case ShortcutKind.recent:
+        setState(() {
+          _selected = 1;
+          _visited.add(1);
+        });
+        await _openRecent(account, api);
+    }
+  }
+
+  Future<void> _openRecent(Account account, GitLabApi api) async {
+    RecentProject? recent;
+    try {
+      recent = await widget.shortcuts.readRecent(account.key);
+    } catch (e) {
+      if (mounted) {
+        showFailure(context, e);
+      }
+      return;
+    }
+    if (!mounted || widget.session.active?.key != account.key || recent == null) {
+      return;
+    }
+    try {
+      final project = await api.project('${recent.id}');
+      if (!mounted || widget.session.active?.key != account.key) {
+        return;
+      }
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              ProjectPage(account: account, api: api, project: project),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        showFailure(context, e);
+      }
+    }
+  }
+
   Future<void> _remove(Account account) async {
     if (_removing ||
         !await confirmAction(
@@ -79,6 +206,7 @@ class _MobileShellState extends State<_MobileShell> {
     setState(() => _removing = true);
     try {
       await clearSecureDrafts(account);
+      await clearRecentProject(account);
       await widget.session.remove(account);
     } catch (e) {
       if (mounted) {
@@ -105,7 +233,7 @@ class _MobileShellState extends State<_MobileShell> {
     if (account == null || session.api == null) {
       return const Scaffold(body: SizedBox());
     }
-    return PopScope(
+    return PopScope<Object?>(
       canPop: _selected == 1,
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) {
@@ -122,7 +250,14 @@ class _MobileShellState extends State<_MobileShell> {
                   ? InboxPage(account: account, api: session.api!)
                   : const SizedBox(),
             ),
-            _pane(1, ProjectsPage(session: session)),
+            _pane(
+              1,
+              ProjectsPage(
+                session: session,
+                shortcuts: widget.shortcuts,
+                searchToken: _searchToken,
+              ),
+            ),
             _pane(
               2,
               _visited.contains(2)
@@ -134,7 +269,8 @@ class _MobileShellState extends State<_MobileShell> {
               _visited.contains(3)
                   ? Scaffold(
                       appBar: AppBar(title: const Text('我的')),
-                      body: ListView(
+                      body: gestureSafe(
+                        ListView(
                         padding: const EdgeInsets.all(20),
                         children: [
                           Row(
@@ -189,6 +325,19 @@ class _MobileShellState extends State<_MobileShell> {
                                       widget.changeTheme(entry.key),
                                 ),
                             ],
+                          ),
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('使用系統配色（Material You）'),
+                            subtitle: Text(
+                              widget.dynamicColorAvailable
+                                  ? 'Android 12 以上會依桌布色調產生配色'
+                                  : '此系統沒有動態配色（需要 Android 12 以上）',
+                            ),
+                            value: widget.useDynamicColor,
+                            onChanged: widget.dynamicColorAvailable
+                                ? widget.changeDynamicColor
+                                : null,
                           ),
                           const SizedBox(height: 28),
                           Text(
@@ -245,6 +394,7 @@ class _MobileShellState extends State<_MobileShell> {
                             style: TextStyle(fontSize: 12),
                           ),
                         ],
+                      ),
                       ),
                     )
                   : const SizedBox(),

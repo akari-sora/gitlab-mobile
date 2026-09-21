@@ -25,6 +25,12 @@ Json valueObject(Json value, String key) => value[key] is Map<String, dynamic>
 List<Json> valueObjects(Json value, String key) =>
     value[key] is List ? (value[key] as List).whereType<Json>().toList() : [];
 String shortSha(String sha) => sha.length > 8 ? sha.substring(0, 8) : sha;
+/// Keeps a scrolling body above the gesture bar. Only the bottom inset is
+/// applied: the app bar already owns the status bar, and an explicit list
+/// padding would otherwise replace this inset.
+Widget gestureSafe(Widget child) =>
+    SafeArea(top: false, left: false, right: false, child: child);
+
 String relativeDate(String value) {
   final parsed = DateTime.tryParse(value);
   if (parsed == null) return '';

@@ -3,9 +3,12 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
+import 'package:gitlab_mobile/shared/theme.dart';
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
+import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
 import 'support/workspace_fixture.dart';
 import 'support/widget_settle.dart';
@@ -13,14 +16,19 @@ import 'support/widget_settle.dart';
 void main() {
   late MemoryAppearanceStore appearanceStore;
   late AppearanceController appearance;
+  late LauncherShortcuts shortcuts;
 
   setUp(() {
     FlutterSecureStorage.setMockInitialValues({});
     appearanceStore = MemoryAppearanceStore();
     appearance = AppearanceController(appearanceStore);
+    shortcuts = LauncherShortcuts(FakeAppShortcutHost(), MemoryRecentProjectStore());
   });
 
-  tearDown(() => appearance.dispose());
+  tearDown(() {
+    appearance.dispose();
+    shortcuts.dispose();
+  });
 
   testWidgets('AuthenticatedApp navigates between shell destinations', (
     tester,
@@ -40,7 +48,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
     );
     await settleNetworkWidgets(tester);
 
@@ -64,6 +72,8 @@ void main() {
     expect(find.text('@developer'), findsWidgets);
     expect(find.text('外觀'), findsOneWidget);
     expect(find.text('帳號'), findsOneWidget);
+    expect(find.text('此系統沒有動態配色（需要 Android 12 以上）'), findsOneWidget);
+    expect(tester.widget<SwitchListTile>(find.byType(SwitchListTile)).onChanged, isNull);
   });
 
   testWidgets('AuthenticatedApp persists the theme mode chosen in My tab', (
@@ -84,7 +94,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
     );
     await settleNetworkWidgets(tester);
 
@@ -98,7 +108,7 @@ void main() {
 
     final MaterialApp app = tester.widget(find.byType(MaterialApp));
     expect(app.themeMode, ThemeMode.dark);
-    expect(appearanceStore.value, 'dark');
+    expect(appearanceStore.value, encodeAppearance(ThemeMode.dark, dynamicColorDefault()));
 
     // Select light theme
     await tester.tap(find.text('淺色'));
@@ -106,8 +116,11 @@ void main() {
 
     final MaterialApp appLight = tester.widget(find.byType(MaterialApp));
     expect(appLight.themeMode, ThemeMode.light);
-    expect(appearanceStore.value, 'light');
-    expect(appearanceStore.writes, ['dark', 'light']);
+    expect(appearanceStore.value, encodeAppearance(ThemeMode.light, dynamicColorDefault()));
+    expect(appearanceStore.writes, [
+      encodeAppearance(ThemeMode.dark, dynamicColorDefault()),
+      encodeAppearance(ThemeMode.light, dynamicColorDefault()),
+    ]);
   });
 
   testWidgets('AuthenticatedApp starts from the stored appearance', (
@@ -130,7 +143,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
     );
     await settleNetworkWidgets(tester);
 
@@ -157,7 +170,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
     );
     await settleNetworkWidgets(tester);
     await tester.tap(find.text('我的'));
@@ -172,6 +185,7 @@ void main() {
         key: const ValueKey(1),
         session: session,
         appearance: appearance,
+        shortcuts: shortcuts,
       ),
     );
     await settleNetworkWidgets(tester);
@@ -210,7 +224,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
     );
     await settleNetworkWidgets(tester);
 
@@ -254,7 +268,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
     );
     await settleNetworkWidgets(tester);
 
@@ -291,7 +305,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
     );
     await settleNetworkWidgets(tester);
 
@@ -303,5 +317,88 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(session.active, isNull);
+  });
+
+  testWidgets('shell PopScope canPop only on the Projects tab', (tester) async {
+    final fixture = WorkspaceFixture();
+    final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+    addTearDown(session.dispose);
+    addTearDown(fixture.api.close);
+    await tester.runAsync(() async {
+      await session.initialize();
+      await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+    });
+    await tester.pumpWidget(
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
+    );
+    await settleNetworkWidgets(tester);
+
+    bool canPop() {
+      final scopes = tester.widgetList<PopScope<Object?>>(find.byType(PopScope<Object?>));
+      expect(scopes, hasLength(1), reason: 'The shell root is the only PopScope');
+      return scopes.single.canPop;
+    }
+    expect(canPop(), isTrue);
+
+    await tester.tap(find.text('收件匣'));
+    await settleNetworkWidgets(tester);
+    expect(canPop(), isFalse);
+
+    await tester.tap(find.text('CI'));
+    await settleNetworkWidgets(tester);
+    expect(canPop(), isFalse);
+
+    await tester.tap(find.text('我的'));
+    await settleNetworkWidgets(tester);
+    expect(canPop(), isFalse);
+
+    await tester.tap(find.descendant(
+      of: find.byType(NavigationBar),
+      matching: find.text('專案'),
+    ));
+    await settleNetworkWidgets(tester);
+    expect(canPop(), isTrue);
+  });
+
+  testWidgets('dynamic colour switch writes through the controller', (tester) async {
+    final fixture = WorkspaceFixture();
+    final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+    addTearDown(session.dispose);
+    addTearDown(fixture.api.close);
+    await tester.runAsync(() async {
+      await session.initialize();
+      await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+    });
+    final dynamicLight = ColorScheme.fromSeed(seedColor: const Color(0xFF006E1C));
+    final dynamicDark = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF006E1C),
+      brightness: Brightness.dark,
+    );
+    await tester.pumpWidget(AuthenticatedApp(
+      session: session,
+      appearance: appearance,
+      shortcuts: shortcuts,
+      dynamicLight: dynamicLight,
+      dynamicDark: dynamicDark,
+    ));
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.text('我的'));
+    await settleNetworkWidgets(tester);
+
+    expect(find.text('使用系統配色（Material You）'), findsOneWidget);
+    expect(find.text('Android 12 以上會依桌布色調產生配色'), findsOneWidget);
+    final enabled = dynamicColorDefault();
+    expect(tester.widget<SwitchListTile>(find.byType(SwitchListTile)).value, enabled);
+    final seeded = appTheme(Brightness.light).colorScheme.primary;
+    Color primary() => tester.widget<MaterialApp>(find.byType(MaterialApp)).theme!.colorScheme.primary;
+    expect(primary(), enabled ? dynamicLight.primary : seeded);
+
+    await tester.ensureVisible(find.byType(Switch));
+    await tester.tap(find.byType(Switch));
+    await tester.pumpAndSettle();
+
+    expect(appearance.useDynamicColor, !enabled);
+    expect(appearanceStore.value, encodeAppearance(ThemeMode.system, !enabled));
+    expect(primary(), !enabled ? dynamicLight.primary : seeded);
   });
 }

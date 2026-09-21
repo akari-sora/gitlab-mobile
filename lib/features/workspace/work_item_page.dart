@@ -264,7 +264,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
           const PopupMenuItem(value: 'delete', child: Text('刪除')),
         ]),
       ]),
-      body: data == null ? (_error != null ? SingleChildScrollView(child: FailureNotice(_error!, onRetry: _load,
+      body: gestureSafe(data == null ? (_error != null ? SingleChildScrollView(child: FailureNotice(_error!, onRetry: _load,
         account: widget.account, resourceLabel: '${widget.project.path} · $label',
         onSwitchAccount: endSessionFrom(context))) : const ListSkeleton()) : Column(
         crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -302,7 +302,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
             if (mr) _MergeChecks(account: widget.account, api: widget.api, path: path, data: data, busy: _busy, act: _action),
           ])),
         ],
-      ),
+      )),
     ));
   }
 }

@@ -60,6 +60,62 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(text.count('<string>io.gitlabmobile.app</string>'), 1)
         self.assertIn('CFBundleURLTypes', text)
 
+    def test_android_enables_predictive_back(self):
+        source = self.root / 'app/src/main'
+        source.mkdir(parents=True)
+        (source / 'AndroidManifest.xml').write_text('<manifest><application/></manifest>')
+        bootstrap.harden_android(self.root)
+        bootstrap.harden_android(self.root)
+        manifest = ET.parse(source / 'AndroidManifest.xml').getroot()
+        attribute = '{' + bootstrap.ANDROID + '}'
+        app = manifest.find('application')
+        self.assertEqual(app.get(attribute + 'enableOnBackInvokedCallback'), 'true')
+        xml = (source / 'AndroidManifest.xml').read_text()
+        self.assertEqual(xml.count('enableOnBackInvokedCallback'), 1)
+
+    def test_android_launch_themes_do_not_force_opaque_system_bars(self):
+        source = self.root / 'app/src/main'
+        source.mkdir(parents=True)
+        (source / 'AndroidManifest.xml').write_text('<manifest><application/></manifest>')
+        styles = source / 'res/values/styles.xml'
+        styles.parent.mkdir(parents=True)
+        styles.write_text(
+            '<resources>'
+            '<style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">'
+            '<item name="android:windowBackground">@drawable/launch_background</item>'
+            '<item name="android:statusBarColor">#FF000000</item>'
+            '</style>'
+            '<style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">'
+            '<item name="android:windowBackground">?android:colorBackground</item>'
+            '</style>'
+            '<style name="Other"><item name="android:statusBarColor">#FF112233</item></style>'
+            '</resources>'
+        )
+        night = source / 'res/values-night/styles.xml'
+        night.parent.mkdir(parents=True)
+        night.write_text(
+            '<resources><style name="LaunchTheme" parent="@android:style/Theme.Black.NoTitleBar">'
+            '<item name="android:windowBackground">@drawable/launch_background</item>'
+            '</style></resources>'
+        )
+        bootstrap.harden_android(self.root)
+        bootstrap.harden_android(self.root)
+        for path in (styles, night):
+            root = ET.parse(path).getroot()
+            for style in root.findall('style'):
+                if style.get('name') not in {'LaunchTheme', 'NormalTheme'}:
+                    continue
+                items = {item.get('name'): item.text for item in style.findall('item')}
+                self.assertEqual(items.get('android:statusBarColor'), '@android:color/transparent')
+                self.assertEqual(items.get('android:navigationBarColor'), '@android:color/transparent')
+                self.assertEqual(items.get('android:windowDrawsSystemBarBackgrounds'), 'true')
+                self.assertEqual(items.get('android:enforceNavigationBarContrast'), 'false')
+                self.assertEqual(sum(1 for item in style.findall('item')
+                                     if item.get('name') == 'android:statusBarColor'), 1)
+        other = {item.get('name'): item.text
+                 for item in ET.parse(styles).getroot().find('style[@name="Other"]').findall('item')}
+        self.assertEqual(other.get('android:statusBarColor'), '#FF112233')
+
     def test_android_patch_is_idempotent(self):
         source = self.root / 'app/src/main'
         source.mkdir(parents=True)

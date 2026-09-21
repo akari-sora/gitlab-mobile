@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -10,8 +11,8 @@ abstract interface class AppearanceStore {
 
 /// Written through `flutter_secure_storage` like the account list and the
 /// editor drafts, so "the app only writes to secure storage" stays true. The
-/// stored value is a plain [ThemeMode] name: no credential, no account and no
-/// repository content is persisted here.
+/// stored value is a theme mode plus the dynamic-colour flag: no credential,
+/// no account and no repository content is persisted here.
 final class SecureAppearanceStore implements AppearanceStore {
   SecureAppearanceStore([FlutterSecureStorage? storage])
     : _storage =
@@ -40,6 +41,26 @@ ThemeMode themeModeFrom(String? value) => switch (value) {
   _ => ThemeMode.system,
 };
 
+/// Android 12+ can build a scheme from the wallpaper. Other platforms, and a
+/// record that predates the flag, keep this default.
+bool dynamicColorDefault() => defaultTargetPlatform == TargetPlatform.android;
+
+/// Legacy records are a bare [ThemeMode] name. Newer records are `mode|1` or
+/// `mode|0`. Anything else falls back through [themeModeFrom].
+String encodeAppearance(ThemeMode mode, bool useDynamicColor) =>
+    '${mode.name}|${useDynamicColor ? '1' : '0'}';
+
+(ThemeMode, bool?) decodeAppearance(String? value) {
+  if (value == null) {
+    return (ThemeMode.system, null);
+  }
+  final parts = value.split('|');
+  if (parts.length == 2 && (parts[1] == '0' || parts[1] == '1')) {
+    return (themeModeFrom(parts[0]), parts[1] == '1');
+  }
+  return (themeModeFrom(value), null);
+}
+
 /// Holds the appearance choice for the whole app. [load] never blocks the
 /// first frame: the controller starts on [ThemeMode.system] and notifies its
 /// listeners only once a stored value has actually been read.
@@ -47,10 +68,12 @@ class AppearanceController extends ChangeNotifier {
   AppearanceController(this._store);
   final AppearanceStore _store;
   ThemeMode _mode = ThemeMode.system;
+  bool _useDynamicColor = dynamicColorDefault();
   bool _loaded = false;
   bool _disposed = false;
   int _epoch = 0;
   ThemeMode get mode => _mode;
+  bool get useDynamicColor => _useDynamicColor;
   bool get loaded => _loaded;
 
   Future<void> load() async {
@@ -69,25 +92,37 @@ class AppearanceController extends ChangeNotifier {
       return;
     }
     _loaded = true;
-    _apply(themeModeFrom(stored));
+    final (mode, dynamicColor) = decodeAppearance(stored);
+    _apply(mode, dynamicColor ?? dynamicColorDefault());
   }
 
   Future<void> select(ThemeMode mode) async {
     _epoch++;
-    _apply(mode);
+    _apply(mode, _useDynamicColor);
+    await _persist();
+  }
+
+  Future<void> setUseDynamicColor(bool value) async {
+    _epoch++;
+    _apply(_mode, value);
+    await _persist();
+  }
+
+  Future<void> _persist() async {
     try {
-      await _store.write(mode.name);
+      await _store.write(encodeAppearance(_mode, _useDynamicColor));
     } catch (_) {
       // A rejected write only costs persistence: the choice stays in memory
       // for this run instead of crashing or reverting under the user.
     }
   }
 
-  void _apply(ThemeMode mode) {
-    if (_disposed || _mode == mode) {
+  void _apply(ThemeMode mode, bool useDynamicColor) {
+    if (_disposed || (_mode == mode && _useDynamicColor == useDynamicColor)) {
       return;
     }
     _mode = mode;
+    _useDynamicColor = useDynamicColor;
     notifyListeners();
   }
 

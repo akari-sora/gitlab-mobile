@@ -70,7 +70,7 @@ void main() {
     var notifications = 0;
     controller.addListener(() => notifications++);
     await controller.select(ThemeMode.dark);
-    expect(store.value, 'dark');
+    expect(store.value, encodeAppearance(ThemeMode.dark, dynamicColorDefault()));
     expect(controller.mode, ThemeMode.dark);
     expect(notifications, 1);
     await controller.select(ThemeMode.dark);
@@ -97,7 +97,27 @@ void main() {
     await controller.select(ThemeMode.light);
     expect(controller.mode, ThemeMode.light);
     expect(store.value, isNull);
-    expect(store.writes, ['light']);
+    expect(store.writes, [encodeAppearance(ThemeMode.light, dynamicColorDefault())]);
+  });
+
+  test('dynamic colour flag round-trips and legacy values keep the default', () async {
+    final store = MemoryAppearanceStore(encodeAppearance(ThemeMode.light, false));
+    final controller = AppearanceController(store);
+    addTearDown(controller.dispose);
+    await controller.load();
+    expect(controller.mode, ThemeMode.light);
+    expect(controller.useDynamicColor, isFalse);
+    await controller.setUseDynamicColor(true);
+    expect(store.value, encodeAppearance(ThemeMode.light, true));
+    await controller.select(ThemeMode.dark);
+    expect(controller.useDynamicColor, isTrue);
+    expect(store.value, encodeAppearance(ThemeMode.dark, true));
+
+    final legacy = AppearanceController(MemoryAppearanceStore('dark'));
+    addTearDown(legacy.dispose);
+    await legacy.load();
+    expect(legacy.mode, ThemeMode.dark);
+    expect(legacy.useDynamicColor, dynamicColorDefault());
   });
 
   testWidgets('a fresh app with a stored dark appearance boots dark', (tester) async {
