@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
@@ -49,6 +50,8 @@ class _RepositoryTabState extends State<RepositoryTab> {
   Future<void> _branches() async {
     final selected = await Navigator.push<String>(context, MaterialPageRoute(builder: (context) => Scaffold(
       appBar: AppBar(title: const Text('選擇分支')), body: RecordsFeed(identity: 'branch-picker',
+        account: widget.account, resourceLabel: '${widget.project.path} · 分支',
+        onSwitchAccount: endSessionFrom(context),
         load: (next) => widget.api.records(['projects', '${widget.project.id}', 'repository', 'branches'], next: next),
         itemBuilder: (context, data) => Card(child: ListTile(leading: const Icon(Icons.alt_route),
           title: Text(valueText(data, 'name')), subtitle: data['protected'] == true ? const Text('受保護分支') : null,
@@ -108,11 +111,13 @@ class _RepositoryTabState extends State<RepositoryTab> {
         TextButton(onPressed: () => setState(() => _folder = ''), child: const Text('根目錄')),
       ])),
       if (_loading) const LinearProgressIndicator(minHeight: 2),
-      if (_error != null) FailureNotice(_error!, onRetry: _resolve,
-        contextLabel: '${widget.project.path} · $_branch'),
+      if (_error != null) FailureNotice(_error!, onRetry: _resolve, account: widget.account,
+        resourceLabel: '${widget.project.path} · $_branch', onSwitchAccount: endSessionFrom(context)),
       Expanded(child: _sha == null ? (_loading ? const ListSkeleton() : const EmptyState('Repository 尚未初始化',
         detail: '新增第一個檔案後就會顯示內容。', icon: Icons.create_new_folder_outlined)) : RecordsFeed(
         key: _feed, identity: '${widget.project.id}/$_sha/$_folder', empty: '此目錄沒有檔案',
+        account: widget.account, resourceLabel: '${widget.project.path} · $_folder',
+        onSwitchAccount: endSessionFrom(context),
         load: (next) => widget.api.records(['projects', '${widget.project.id}', 'repository', 'tree'],
           query: {'ref': _sha!, 'path': _folder, 'per_page': '50'}, next: next),
         itemBuilder: (context, data) => Card(child: ListTile(
@@ -144,10 +149,16 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
   bool _loading = true, _busy = false, _preview = false, _wrap = true;
   String _query = '';
   late final bool _markdown;
+  final _vertical = ScrollController();
+  final _horizontal = ScrollController();
   @override
   void initState() {
     super.initState(); _markdown = RegExp(r'\.(md|markdown)$', caseSensitive: false).hasMatch(widget.filePath);
     _preview = _markdown; unawaited(_load());
+  }
+  @override
+  void dispose() {
+    _vertical.dispose(); _horizontal.dispose(); super.dispose();
   }
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
@@ -215,7 +226,8 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
       Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 10), child: Text(
         '${widget.filePath}\n${widget.branch} · ${shortSha(widget.sha)}', style: Theme.of(context).textTheme.bodySmall)),
       if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
-      if (_error != null) FailureNotice(_error!, onRetry: _load),
+      if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
+        resourceLabel: '${widget.project.path} · ${widget.filePath}', onSwitchAccount: endSessionFrom(context)),
       if (_lfs) const Padding(padding: EdgeInsets.all(16), child: Text('這是 Git LFS pointer，不是原始檔案。此版本不會自動下載大型物件。')),
       if (text != null && !_preview) Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: TextField(decoration: const InputDecoration(hintText: '搜尋目前檔案', prefixIcon: Icon(Icons.search)),
@@ -223,17 +235,27 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
       Expanded(child: text == null ? const SizedBox() : _preview
         ? SingleChildScrollView(padding: const EdgeInsets.all(20), child: MarkdownView(text,
             base: widget.account.instance.projectWeb('${widget.project.path}/-/blob/${widget.sha}/${widget.filePath}')))
-        : SelectionArea(child: ListView.builder(itemCount: matches.length, itemBuilder: (context, index) {
-            final number = matches[index];
-            final code = Text(lines[number].isEmpty ? ' ' : lines[number],
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 13, height: 1.55));
-            return Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3), child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start, children: [
-                SizedBox(width: 40, child: Text('${number + 1}', style: Theme.of(context).textTheme.bodySmall)),
-                Expanded(child: _wrap ? code : SingleChildScrollView(scrollDirection: Axis.horizontal, child: code)),
-              ],
-            ));
-          }))),
+        : LayoutBuilder(builder: (context, constraints) {
+            final fontSize = MediaQuery.textScalerOf(context).scale(13);
+            final longest = lines.fold<int>(0, (n, line) => math.max(n, line.length));
+            final contentWidth = _wrap ? constraints.maxWidth
+              : math.max(constraints.maxWidth, math.min(24000.0, longest * fontSize * 0.65 + 80));
+            return Directionality(textDirection: TextDirection.ltr, child: Scrollbar(controller: _horizontal,
+              child: SingleChildScrollView(controller: _horizontal, scrollDirection: Axis.horizontal,
+                physics: _wrap ? const NeverScrollableScrollPhysics() : null,
+                child: SizedBox(width: contentWidth, height: constraints.maxHeight,
+                  child: SelectionArea(child: ListView.builder(controller: _vertical, itemCount: matches.length,
+                    padding: const EdgeInsets.symmetric(vertical: 12), itemBuilder: (context, index) {
+                      final number = matches[index];
+                      return Padding(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3), child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          SizedBox(width: 40, child: Text('${number + 1}', style: Theme.of(context).textTheme.bodySmall)),
+                          Expanded(child: Text(lines[number].isEmpty ? ' ' : lines[number],
+                            style: const TextStyle(fontFamily: 'monospace', fontSize: 13, height: 1.55))),
+                        ],
+                      ));
+                    }))))));
+          })),
     ]));
   }
 }

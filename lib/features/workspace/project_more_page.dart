@@ -199,6 +199,8 @@ class _MetadataPageState extends State<MetadataPage> {
     if (widget.kind != MetadataKind.commits) IconButton(tooltip: '新增${metadataTitle(widget.kind)}',
       onPressed: _busy || widget.project.archived == true ? null : _edit, icon: const Icon(Icons.add)),
   ]), body: RecordsFeed(key: _feed, identity: '${widget.project.id}/${widget.kind.name}',
+    account: widget.account, resourceLabel: '${widget.project.path} · ${metadataTitle(widget.kind)}',
+    onSwitchAccount: endSessionFrom(context),
     empty: '尚無${metadataTitle(widget.kind)}', load: (next) => widget.api.records(path,
       query: {if (widget.kind == MetadataKind.labels) 'include_ancestor_groups': 'false'}, next: next),
     itemBuilder: (context, value) => Card(child: ListTile(title: Text(_name(value)),

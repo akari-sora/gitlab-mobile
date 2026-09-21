@@ -49,7 +49,9 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) { return const ListSkeleton(); }
-    if (_error != null) { return ListView(children: [FailureNotice(_error!, onRetry: _load)]); }
+    if (_error != null) { return ListView(children: [FailureNotice(_error!, onRetry: _load,
+      account: widget.account, resourceLabel: '${widget.project.path} · !${widget.iid} 差異',
+      onSwitchAccount: endSessionFrom(context))]); }
     final files = valueObjects(_version ?? {}, 'diffs');
     return RefreshIndicator(onRefresh: _load, child: ListView(
       physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.all(16), children: [

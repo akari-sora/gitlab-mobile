@@ -63,7 +63,11 @@ final class SessionController extends ChangeNotifier {
             ? error.message : '回應格式無法辨識；未啟用此帳號。';
       }
     } on ApiFailure catch (error) {
-      if (_current(ticket)) message = '${error.title}。${error.detail}';
+      if (_current(ticket)) {
+        message = error.kind == FailureKind.unauthenticated
+          ? '無法驗證這個 Token。請確認 Token 未過期，並具備 api 或 read_api 權限。'
+          : '${error.title}。${error.detail}';
+      }
     } catch (_) {
       if (_current(ticket)) message = '無法安全保存帳號；未啟用此連線。';
     } finally {

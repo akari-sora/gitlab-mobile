@@ -1,6 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/failure.dart';
 import '../core/gitlab_api.dart';
+import '../core/models.dart';
+import '../core/providers.dart';
+
+/// Ends the active session so the user can pick another account. Does not rotate accounts.
+VoidCallback endSessionFrom(BuildContext context) =>
+  () => ProviderScope.containerOf(context, listen: false).read(sessionProvider).endSession();
 
 String valueText(Json value, String key, [String fallback = '']) => value[key] is String ? value[key] as String : fallback;
 int valueInt(Json value, String key) => value[key] is int ? value[key] as int : 0;
@@ -91,10 +98,12 @@ class EmptyState extends StatelessWidget {
 }
 
 class FailureNotice extends StatelessWidget {
-  const FailureNotice(this.error, {super.key, this.onRetry, this.contextLabel});
+  const FailureNotice(this.error, {super.key, this.account, this.resourceLabel, this.onRetry, this.onSwitchAccount});
   final ApiFailure error;
+  final Account? account;
+  final String? resourceLabel;
   final VoidCallback? onRetry;
-  final String? contextLabel;
+  final VoidCallback? onSwitchAccount;
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.all(16), child: Card(child: Padding(
@@ -102,12 +111,22 @@ class FailureNotice extends StatelessWidget {
         Row(children: [Icon(Icons.info_outline, size: 20, color: Theme.of(context).colorScheme.error),
           const SizedBox(width: 10), Expanded(child: Text(error.title, style: Theme.of(context).textTheme.titleSmall))]),
         const SizedBox(height: 8), Text(error.detail),
-        if (onRetry != null && error.kind != FailureKind.writeUncertain)
-          TextButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh, size: 18), label: const Text('重新整理')),
+        if (account != null) ...[
+          const SizedBox(height: 12),
+          Text('實例：${account!.instance.key}'),
+          Text('App 帳號：@${account!.user.username}'),
+        ],
+        if (resourceLabel != null && resourceLabel!.isNotEmpty) Text('目標：$resourceLabel'),
+        Wrap(spacing: 8, children: [
+          if (onRetry != null && error.kind != FailureKind.writeUncertain)
+            TextButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh, size: 18), label: const Text('重新整理')),
+          if (onSwitchAccount != null)
+            TextButton(onPressed: onSwitchAccount, child: const Text('切換帳號')),
+        ]),
         ExpansionTile(tilePadding: EdgeInsets.zero, childrenPadding: EdgeInsets.zero,
           title: const Text('診斷資訊', style: TextStyle(fontSize: 12)),
           children: [Align(alignment: Alignment.centerLeft, child: SelectableText(
-            '${contextLabel ?? ''}\n${error.kind.name}${error.status == null ? '' : ' · HTTP ${error.status}'}',
+            '${error.kind.name}${error.status == null ? '' : ' · HTTP ${error.status}'}',
             style: Theme.of(context).textTheme.bodySmall))]),
       ]),
     )));

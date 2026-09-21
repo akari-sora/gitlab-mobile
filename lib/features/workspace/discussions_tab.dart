@@ -65,6 +65,8 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
   @override
   Widget build(BuildContext context) => Column(children: [
     Expanded(child: RecordsFeed(key: _feed, identity: '${path.join('/')}/discussions', empty: '還沒有討論',
+      account: widget.account, resourceLabel: '${widget.project.path} · 討論',
+      onSwitchAccount: endSessionFrom(context),
       load: (next) => widget.api.records([...path, 'discussions'], next: next), itemBuilder: (context, discussion) {
         final notes = valueObjects(discussion, 'notes');
         final isThread = discussion['individual_note'] == false;

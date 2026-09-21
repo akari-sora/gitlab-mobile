@@ -48,6 +48,10 @@ class _MobileShellState extends State<_MobileShell> {
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _removing = false); } }
   }
+  Widget _pane(int index, Widget child) => ExcludeSemantics(
+    excluding: _selected != index,
+    child: TickerMode(enabled: _selected == index,
+      child: IgnorePointer(ignoring: _selected != index, child: child)));
   @override
   Widget build(BuildContext context) {
     final session = widget.session;
@@ -55,10 +59,10 @@ class _MobileShellState extends State<_MobileShell> {
     return PopScope(canPop: _selected == 1,
       onPopInvokedWithResult: (didPop, _) { if (!didPop) { setState(() => _selected = 1); } },
       child: Scaffold(body: IndexedStack(index: _selected, children: [
-        _visited.contains(0) ? InboxPage(account: account, api: session.api!) : const SizedBox(),
-        ProjectsPage(session: session),
-        _visited.contains(2) ? ProjectsPage(session: session, forCi: true) : const SizedBox(),
-        _visited.contains(3) ? Scaffold(appBar: AppBar(title: const Text('我的')),
+        _pane(0, _visited.contains(0) ? InboxPage(account: account, api: session.api!) : const SizedBox()),
+        _pane(1, ProjectsPage(session: session)),
+        _pane(2, _visited.contains(2) ? ProjectsPage(session: session, forCi: true) : const SizedBox()),
+        _pane(3, _visited.contains(3) ? Scaffold(appBar: AppBar(title: const Text('我的')),
           body: ListView(padding: const EdgeInsets.all(20), children: [
             Row(children: [Monogram(account.user.name, size: 56), const SizedBox(width: 16),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -85,7 +89,7 @@ class _MobileShellState extends State<_MobileShell> {
             const SizedBox(height: 4), const Text('獨立第三方客戶端 · 非 GitLab 官方產品', style: TextStyle(fontSize: 12)),
             const SizedBox(height: 12), const Text('新增與修改需要 Token 的 api 權限；read_api 可用於唯讀。專案角色與實例政策仍會限制操作。',
               style: TextStyle(fontSize: 12)),
-          ])) : const SizedBox(),
+          ])) : const SizedBox()),
       ]), bottomNavigationBar: NavigationBar(selectedIndex: _selected,
         onDestinationSelected: (index) => setState(() { _selected = index; _visited.add(index); }), destinations: const [
           NavigationDestination(icon: Icon(Icons.inbox_outlined), selectedIcon: Icon(Icons.inbox), label: '收件匣'),

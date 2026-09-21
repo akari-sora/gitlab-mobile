@@ -102,7 +102,8 @@ class _ProjectsPageState extends State<ProjectsPage> {
         ? const SingleChildScrollView(child: EmptyState('搜尋所有可存取的專案',
             icon: Icons.search, detail: '輸入名稱查找公開與私有專案，不限目前的成員專案。'))
         : RecordsFeed(key: _feed, identity: 'projects/$_scope/$_query',
-          contextLabel: '${account.instance.key} · @${account.user.username}',
+          account: account, resourceLabel: '專案列表', underShell: true,
+          onSwitchAccount: widget.session.endSession,
           empty: _query.isEmpty ? '目前沒有專案' : '找不到符合的專案',
           emptyDetail: '可使用右上角連結，以完整路徑或 ID 開啟。',
           load: (next) => api.records(['projects'], query: {

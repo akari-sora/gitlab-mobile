@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/instance.dart';
+import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/auth/login_screen.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
@@ -28,4 +31,23 @@ void main() {
       });
     }
   }
+
+  testWidgets('saved account can be removed from the login list', (tester) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final store = MemoryAccountStore();
+    final saved = Account(instance: GitLabInstance.parse('https://example.com'),
+      user: const GitLabUser(id: 7, username: 'tester', name: 'Test'), token: 'synthetic-test-token');
+    store.accounts = [saved];
+    final session = SessionController(store);
+    addTearDown(session.dispose);
+    await session.initialize();
+    await tester.pumpWidget(MaterialApp(theme: appTheme(Brightness.light), home: LoginScreen(session: session)));
+    expect(find.text('@tester'), findsOneWidget);
+    await tester.tap(find.byTooltip('從此裝置移除帳號'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('確認'));
+    await tester.pumpAndSettle();
+    expect(store.accounts, isEmpty);
+    expect(find.text('@tester'), findsNothing);
+  });
 }

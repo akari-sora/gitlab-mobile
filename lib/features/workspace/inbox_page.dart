@@ -15,10 +15,12 @@ class InboxPage extends StatelessWidget {
       tabAlignment: TabAlignment.start, tabs: [Tab(text: '待辦'), Tab(text: '指派給我'), Tab(text: '待我審查')])),
     body: TabBarView(children: [
       _TodoFeed(account: account, api: api),
-      RecordsFeed(identity: 'assigned-issues', empty: '沒有指派給你的議題',
+      RecordsFeed(identity: 'assigned-issues', empty: '沒有指派給你的議題', account: account,
+        resourceLabel: '指派給我的議題', underShell: true, onSwitchAccount: endSessionFrom(context),
         load: (next) => api.records(['issues'], query: {'scope': 'assigned_to_me', 'state': 'opened'}, next: next),
         itemBuilder: (context, data) => _item(context, data, 'issues')),
-      RecordsFeed(identity: 'review-requests', empty: '沒有待審查的合併請求',
+      RecordsFeed(identity: 'review-requests', empty: '沒有待審查的合併請求', account: account,
+        resourceLabel: '待我審查的合併請求', underShell: true, onSwitchAccount: endSessionFrom(context),
         load: (next) => api.records(['merge_requests'], query: {'scope': 'all', 'reviewer_id': '${account.user.id}', 'state': 'opened'}, next: next),
         itemBuilder: (context, data) => _item(context, data, 'merge_requests')),
     ]),
@@ -51,6 +53,8 @@ class _TodoFeedState extends State<_TodoFeed> {
   @override
   Widget build(BuildContext context) => RecordsFeed(key: _feed, identity: 'todos',
     empty: '待辦已清空', emptyDetail: 'GitLab 指派、提及與你建立的待辦會出現在這裡。',
+    account: widget.account, resourceLabel: '待辦', underShell: true,
+    onSwitchAccount: endSessionFrom(context),
     load: (next) => widget.api.records(['todos'], query: {'state': 'pending'}, next: next), itemBuilder: (context, data) {
       final target = valueObject(data, 'target'), project = valueObject(data, 'project');
       final id = valueInt(data, 'id');

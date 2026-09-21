@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../shared/workspace_ui.dart';
+import '../workspace/editor.dart';
 import 'session_controller.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -24,8 +25,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
   @override
   Widget build(BuildContext context) {
-    final session = widget.session;
     final theme = Theme.of(context);
+    return ListenableBuilder(listenable: widget.session, builder: (context, _) {
+    final session = widget.session;
     return Scaffold(body: SafeArea(child: Center(child: ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: 500), child: SingleChildScrollView(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32), child: Form(
@@ -41,8 +43,17 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 28), Text('繼續使用', style: theme.textTheme.titleSmall), const SizedBox(height: 12),
               for (final account in session.accounts) Padding(padding: const EdgeInsets.only(bottom: 8), child: Card(child: ListTile(
                 leading: Monogram(account.user.name, size: 36), title: Text('@${account.user.username}', maxLines: 1, overflow: TextOverflow.ellipsis),
-                subtitle: Text(account.instance.base.host), trailing: const Icon(Icons.chevron_right, size: 18),
+                subtitle: Text(account.instance.base.host),
                 onTap: session.busy ? null : () { unawaited(session.select(account)); },
+                trailing: IconButton(key: Key('removeAccount-${account.key}'), tooltip: '從此裝置移除帳號',
+                  icon: const Icon(Icons.logout, size: 20),
+                  onPressed: session.busy ? null : () async {
+                    if (!await confirmAction(context, '移除此帳號？',
+                      '會清除這個帳號在此裝置的登入與草稿，不會撤銷 GitLab 上的 Token。')) { return; }
+                    if (!context.mounted) { return; }
+                    await clearSecureDrafts(account);
+                    await session.remove(account);
+                  }),
               ))),
             ],
             const SizedBox(height: 28), Text('連接帳號', style: theme.textTheme.titleMedium), const SizedBox(height: 16),
@@ -75,5 +86,6 @@ class _LoginScreenState extends State<LoginScreen> {
         ),
       ),
     ))));
+    });
   }
 }
