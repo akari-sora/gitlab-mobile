@@ -5,25 +5,29 @@
 
 A mobile-first Flutter client for Android and iOS. Independent third-party software, not an official GitLab application. The interface is Traditional Chinese and supports light/dark appearance and large text.
 
-## v0.2 — collaboration preview
+## v0.3 — collaboration preview
 
-This revision replaces the initial G0 interface and adds working API-backed collaboration screens. It is a **development preview**, not a claim that every GitLab feature, server edition, permission configuration, or device has passed end-to-end testing.
+This revision continues the v0.2 API-backed collaboration screens. It is a **development preview**, not a claim that every GitLab feature, server edition, permission configuration, or device has passed end-to-end testing. !3, !7, !6, !8, !5 and !4 are merged. `main` is `9183f19`. A behaviour was exercised only on the build named in the [v0.3 ledger](docs/V0_3_VERIFICATION.md).
 
-- PAT sign-in, account identity verification, multiple account isolation, GitLab.com and HTTPS self-managed instances.
-- Project membership/starred/accessibility search, private project lookup by numeric ID or full namespace, project create/edit/delete, star/unstar.
+- PAT sign-in, account identity verification, multiple account isolation, removal of a saved account, GitLab.com and HTTPS self-managed instances. OAuth PKCE is wired and stays inert until a real Application ID is registered for that instance.
+- Device appearance (light, dark, or system) stored on the device and restored after a force-kill (!3). The same key stores the Material You dynamic-colour flag (!6).
+- Project membership/starred/accessibility search, private project lookup by numeric ID or full namespace, project create/edit/delete, star/unstar, and a pending-deletion badge (!5).
 - Branch-aware fixed-SHA repository browsing, Markdown/raw text, file create/read/edit/delete with `last_commit_id`, branch/tag create/read/delete and commit history.
-- Issue and merge-request create/read/edit/delete, close/reopen, self-assignment, labels and personal todos.
-- Notes and threaded discussions, replies, own-note edit/delete, discussion resolve/reopen, bounded pinned-version diffs and validated single-line review positions.
-- SHA-bound approval/merge requests; GitLab remains authoritative for permissions, review policy, protected branches and mergeability.
-- Project pipelines, run/retry/cancel/delete, job status/logs/retry/manual play, bounded foreground log polling. Artifact downloads currently open GitLab in the system browser.
+- Issue and merge-request create/read/edit/delete, close/reopen, self-assignment, labels and personal todos. Label, assignee, reviewer and branch pickers (!7).
+- Notes and threaded discussions, replies, own-note edit/delete, discussion resolve/reopen, collapsed resolved threads with an unresolved filter and summary (!3), bounded pinned-version diffs, validated single-line review positions, and existing discussions shown on the diff (!4).
+- SHA-bound approval/merge requests. The merge dialog offers squash and remove-source-branch, and the MR overview has a review card (!3). GitLab remains authoritative for permissions, review policy, protected branches and mergeability.
+- Last-account auto-resume on launch (!4).
+- Project pipelines, run/retry/cancel/delete, job status/logs/retry/manual play, bounded foreground log polling, and collapsible log sections (!5). The `db12b41` build opens the artifact page in the system browser. On `main`, job archives download in-app: authenticated first hop, exactly one https redirect, no credential headers on that hop.
+- Attachment upload (`POST /projects/:id/uploads`, multipart, 25 MiB) and a Markdown toolbar with 編輯／預覽 (!7).
+- Material You dynamic colour, predictive back, edge-to-edge layout, and launcher shortcuts (`inbox`, `search`, `recent:<projectId>:<digest>`) (!6).
 - Release, project-label and milestone CRUD. Commits are immutable; branches and tags are not presented as having a fictitious update API.
 - Account-scoped encrypted drafts, retained write errors, no automatic retry of uncertain writes, typed confirmation for destructive resource operations.
 
-**Not yet implemented:** OAuth sign-in, native artifact downloading, attachment uploads, push delivery, local Git clone/rebase/terminal, complete enterprise policy management. iOS binaries, store signing, Android/iOS device validation and the supplied-PAT full live CRUD suite are **NOT_RUN** unless a newer evidence record explicitly states otherwise.
+**Not yet implemented:** OAuth login stays inert. `oauthApplicationIdFor` is empty until a maintainer registers an Application ID per instance. Push delivery, iOS (deferred by the maintainer), a cross-project CI overview, and a two-pane wide layout are not in the tree. Local Git clone/rebase/terminal and complete enterprise policy management are not in the tree. App Store / Play signing, an independent human review, a physical-phone run of !4–!8, and a completed live CI job-control suite are **NOT_RUN**. Device evidence is one physical Android phone and one Android emulator. The live smoke was not re-run after the merges. Anything this README does not tie to the v0.3 ledger stays **NOT_RUN**.
 
 ## Verification
 
-See [v0.2 verification](docs/V0_2_VERIFICATION.md) and [mobile UX changes](docs/UI_REDESIGN.md). CI executes the actual Dart/Flutter code; synthetic transport tests are kept distinct from live server checks and physical-device tests.
+See [v0.3 verification](docs/V0_3_VERIFICATION.md), [v0.2 verification](docs/V0_2_VERIFICATION.md) and [mobile UX changes](docs/UI_REDESIGN.md). CI executes the actual Dart/Flutter code. Synthetic transport tests, live server checks, emulator runs and physical-device runs stay distinct. On `9183f19`, pipeline `2869335026` reported `509` tests in its JUnit report. That is the observed count for that pipeline.
 
 A real GitLab `Link` header expanded omitted `false` defaults and caused the original project-list failure. The parser now validates immutable scope, preserves the caller's query, and extracts only a safe pagination cursor. Valid first-page data is no longer rejected because GitLab expanded defaults.
 
@@ -45,11 +49,13 @@ Screenshots: `flutter_checks` job artifacts → `ci-output/screenshots/`. They a
 
 `tool/live_smoke.dart` uses the production Dart API client and a unique, isolated **private** project. It validates the expected account, performs read-after-write checks and cleans up only its exact synthetic project. Credentials are read from a runtime file; never commit a PAT or use a Dart compile-time define for one.
 
-The `live_crud_smoke` job runs only in an explicit API-triggered pipeline with `LIVE_SMOKE=1`. The credential must be supplied through a secure mechanism approved for the execution environment. The previous attempted credential injection was blocked before pipeline creation; do not bypass that boundary. Until actually executed, its status remains **NOT_RUN**. The normal APK does not include a test PAT.
+The `live_crud_smoke` job runs only in an explicit API-triggered pipeline with `LIVE_SMOKE=1`. The credential must be supplied through a secure mechanism approved for the execution environment. Do not bypass that boundary. The normal APK does not include a test PAT.
+
+A production-client run on 2026-09-21/22 is recorded in the [v0.3 ledger](docs/V0_3_VERIFICATION.md): **33 PASS / 1 FAIL** against an isolated private GitLab.com project. The failure is shared-runner quota (`ci_quota_exceeded`), not a client defect, and the check is still FAIL. `smoke-output/report.json` is not committed. Pipeline retry / cancel / delete did not run in that execution. The smoke was not re-run after the merges.
 
 ## Historical specifications
 
-`docs/plan/` preserves the original 105-operation design and acceptance plan. It is a **target specification**, not proof that every operation has been implemented or verified. Earlier G0/R1 documents and package manifests are historical handoffs; the current Git history, CI results and v0.2 verification matrix supersede their status statements.
+`docs/plan/` preserves the original 105-operation design and acceptance plan. It is a **target specification**, not proof that every operation has been implemented or verified. Earlier G0/R1 documents and package manifests are historical handoffs; the current Git history, CI results, and the v0.2 and v0.3 verification ledgers supersede their status statements.
 
 ## License
 
