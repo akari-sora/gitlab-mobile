@@ -64,16 +64,16 @@ Map<String, dynamic> editorSubmission(List<EditField> fields, Map<String, String
       case null:
         body[field.key] = raw;
       case PickerSource.labels:
-        body[field.key] = decodeChoices(raw).map((choice) => choice.name).join(', ');
+        body[field.key] = decodeChoices(raw, source: PickerSource.labels).map((choice) => choice.name).join(', ');
       case PickerSource.members:
         final ids = <int>[];
-        for (final choice in decodeChoices(raw)) {
+        for (final choice in decodeChoices(raw, source: PickerSource.members)) {
           final id = int.tryParse(choice.id);
           if (id != null) ids.add(id);
         }
         body[field.key] = ids;
       case PickerSource.branches:
-        final choices = decodeChoices(raw);
+        final choices = decodeChoices(raw, source: PickerSource.branches);
         body[field.key] = choices.isEmpty ? '' : choices.first.name;
     }
   }
@@ -147,11 +147,12 @@ class _ResourceEditorState extends State<ResourceEditor> {
   late final String _key;
   Timer? _timer;
   Future<void> _writes = Future<void>.value();
-  bool _loading = true, _saving = false, _done = false, _dirty = false, _draftUnavailable = false, _preview = false;
+  bool _loading = true, _saving = false, _done = false, _dirty = false, _draftUnavailable = false, _preview = false, _guarding = false;
+  int _operation = 0;
   String? _uploadingName;
   TextSelection? _markdownSelection;
   ApiFailure? _error;
-  bool get _locked => _saving || _uploadingName != null;
+  bool get _locked => _saving || _guarding;
 
   @override
   void initState() {
@@ -169,7 +170,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
           });
         }
       } else {
-        _picked[field.key] = decodeChoices(field.value);
+        _picked[field.key] = decodeChoices(field.value, source: field.source);
       }
     }
     unawaited(_restore());
@@ -187,7 +188,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
             if (field.source == null) {
               _controllers[field.key]?.text = stored;
             } else {
-              _picked[field.key] = decodeChoices(stored);
+              _picked[field.key] = decodeChoices(stored, source: field.source);
             }
           }
           _dirty = true;
@@ -283,37 +284,38 @@ class _ResourceEditorState extends State<ResourceEditor> {
       showFailure(context, const ApiFailure(FailureKind.unsupported));
       return;
     }
-    final picker = widget.attachments ?? const PluginAttachmentPicker();
+    if (_locked) return;
+    final operation = ++_operation;
     final selection = controller.selection;
     final start = selection.isValid ? selection.start : -1;
     final end = selection.isValid ? selection.end : -1;
-    PickedAttachment? picked;
+    setState(() => _guarding = true);
+    final picker = widget.attachments ?? const PluginAttachmentPicker();
     try {
-      picked = image ? await picker.pickImage() : await picker.pickFile();
-    } catch (error) {
-      if (mounted) showFailure(context, error);
-      return;
-    }
-    if (picked == null || !mounted) return;
-    final file = picked;
-    setState(() => _uploadingName = file.filename);
-    try {
+      final picked = image ? await picker.pickImage() : await picker.pickFile();
+      if (!mounted || operation != _operation) return;
+      if (picked == null) return;
+      setState(() => _uploadingName = picked.filename);
       final result = await api.uploadProjectFile(
         projectId,
-        filename: file.filename,
-        bytes: file.bytes,
-        contentType: file.contentType,
+        filename: picked.filename,
+        bytes: picked.bytes,
+        contentType: picked.contentType,
       );
-      if (!mounted) return;
+      if (!mounted || operation != _operation) return;
       final markdown = result['markdown'];
       if (markdown is! String || markdown.isEmpty) {
         throw const ApiFailure(FailureKind.invalidResponse);
       }
       _apply(key, insertText(controller.text, start, end, markdown, breakBefore: true));
     } catch (error) {
-      if (mounted) showFailure(context, error);
+      if (mounted && operation == _operation) showFailure(context, error);
     } finally {
-      if (mounted) setState(() => _uploadingName = null);
+      if (operation == _operation) {
+        _guarding = false;
+        _uploadingName = null;
+        if (mounted) setState(() {});
+      }
     }
   }
 
@@ -370,7 +372,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
   }
 
   Future<void> _leave() async {
-    if (_saving) return;
+    if (_locked) return;
     _timer?.cancel();
     _persist();
     await _writes;
@@ -384,6 +386,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
 
   @override
   void dispose() {
+    _operation++;
     _timer?.cancel();
     _persist();
     for (final controller in _controllers.values) {
@@ -407,7 +410,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
         leading: IconButton(
           tooltip: '保留草稿並返回',
           icon: const Icon(Icons.close),
-          onPressed: _saving ? null : _leave,
+          onPressed: _locked ? null : _leave,
         ),
         title: Text(widget.title),
         actions: [

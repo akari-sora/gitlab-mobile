@@ -131,14 +131,17 @@ void main() {
     expect(files.single.key, 'file');
     expect(files.single.value.filename, 'photo.png');
   });
-  test('upload over 25 MiB is tooLarge and sends no request', () async {
+  test('upload over 25 MiB is attachmentTooLarge and sends no request', () async {
     expect(GitLabApi.maxUploadBytes, 25 * 1024 * 1024);
     final adapter = FakeAdapter((_) => jsonResponse({}));
     final api = testApi(adapter);
     addTearDown(api.close);
     await expectLater(
       api.uploadProjectFile(42, filename: 'big.bin', bytes: Uint8List(GitLabApi.maxUploadBytes + 1)),
-      throwsA(isA<ApiFailure>().having((error) => error.kind, 'kind', FailureKind.tooLarge)),
+      throwsA(isA<ApiFailure>()
+        .having((error) => error.kind, 'kind', FailureKind.attachmentTooLarge)
+        .having((error) => error.title, 'title', '附件超過 25 MiB 上限')
+        .having((error) => error.detail, 'detail', contains('25 MiB'))),
     );
     expect(adapter.requests, isEmpty);
   });

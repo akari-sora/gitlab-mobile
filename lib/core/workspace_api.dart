@@ -108,7 +108,7 @@ extension WorkspaceApi on GitLabApi {
     String? contentType,
   }) async {
     if (bytes.length > GitLabApi.maxUploadBytes) {
-      throw const ApiFailure(FailureKind.tooLarge);
+      throw const ApiFailure(FailureKind.attachmentTooLarge);
     }
     DioMediaType? type;
     final declared = contentType?.trim() ?? '';

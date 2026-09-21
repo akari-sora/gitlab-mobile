@@ -32,24 +32,36 @@ class PickerChoice {
   }
 }
 
-String encodeChoices(List<PickerChoice> choices) =>
-    jsonEncode([for (final choice in choices) choice.toJson()]);
+String encodeChoices(List<PickerChoice> choices) => jsonEncode({
+  'picker': 1,
+  'choices': [for (final choice in choices) choice.toJson()],
+});
 
-List<PickerChoice> decodeChoices(String raw) {
-  final trimmed = raw.trim();
-  if (trimmed.isEmpty) return const [];
+/// A picker payload is only `{"picker": 1, "choices": [...]}`.
+/// Any other string is legacy text. Branches stay whole, because a name may
+/// contain commas; labels and members split on commas.
+List<PickerChoice> decodeChoices(String raw, {PickerSource? source}) {
+  if (raw.trim().isEmpty) return const [];
+  final envelope = _pickerEnvelope(raw.trim());
+  if (envelope != null) return envelope;
+  if (source == PickerSource.branches) {
+    return [PickerChoice(id: raw, name: raw)];
+  }
+  return [
+    for (final part in raw.split(','))
+      if (part.trim().isNotEmpty) PickerChoice(id: part.trim(), name: part.trim()),
+  ];
+}
+
+List<PickerChoice>? _pickerEnvelope(String raw) {
   try {
-    final value = jsonDecode(trimmed);
-    if (value is! List) return const [];
-    return [
-      for (final item in value)
-        ?_choiceOrNull(item),
-    ];
+    final value = jsonDecode(raw);
+    if (value is! Map<String, dynamic> || value['picker'] != 1) return null;
+    final choices = value['choices'];
+    if (choices is! List<dynamic>) return const <PickerChoice>[];
+    return [for (final item in choices) ?_choiceOrNull(item)];
   } on FormatException {
-    return [
-      for (final part in trimmed.split(','))
-        if (part.trim().isNotEmpty) PickerChoice(id: part.trim(), name: part.trim()),
-    ];
+    return null;
   }
 }
 
@@ -133,16 +145,15 @@ Future<List<PickerChoice>?> showChoicePicker(
   return showModalBottomSheet<List<PickerChoice>>(
     context: context,
     isScrollControlled: true,
+    useSafeArea: true,
     builder: (context) {
-      final media = MediaQuery.of(context);
-      final inset = media.viewInsets.bottom;
-      final safeBottom = inset > 0 ? inset : media.padding.bottom;
-      final height = (media.size.height - media.padding.top - safeBottom) * 0.92;
+      final bottom = MediaQuery.of(context).viewInsets.bottom;
       return Padding(
-        padding: EdgeInsets.only(bottom: safeBottom),
-        child: Align(
-          alignment: Alignment.bottomCenter,
-          child: SizedBox(
+        padding: EdgeInsets.only(bottom: bottom),
+        child: LayoutBuilder(builder: (context, constraints) {
+          final raw = constraints.maxHeight;
+          final height = raw.isFinite ? raw.clamp(0.0, double.infinity) : 0.0;
+          return SizedBox(
             height: height,
             child: ChoicePickerSheet(
               api: api,
@@ -153,8 +164,8 @@ Future<List<PickerChoice>?> showChoicePicker(
               title: title,
               initial: initial,
             ),
-          ),
-        ),
+          );
+        }),
       );
     },
   );
@@ -276,8 +287,9 @@ class _ChoicePickerSheetState extends State<ChoicePickerSheet> {
       ),
       Expanded(child: ListenableBuilder(listenable: _records, builder: (context, _) {
         final items = _records.items.map(_fromRecord).where((item) => item.name.isNotEmpty).toList();
-        final exact = query.isNotEmpty && (
-          items.any((item) => item.name == query) || _selected.any((item) => item.name == query));
+        // Loaded rows only. A synthetic label is not on the server, so the
+        // create row stays available and can clear that selection.
+        final exact = query.isNotEmpty && items.any((item) => item.name == query);
         final showCreate = widget.source == PickerSource.labels && query.isNotEmpty && !exact;
         final empty = !_records.loading && items.isEmpty && _records.error == null && !showCreate;
         return ListView(
@@ -316,26 +328,36 @@ class _ChoicePickerSheetState extends State<ChoicePickerSheet> {
 
   Widget _row(PickerChoice choice, {bool create = false}) {
     final selected = _selected.any((item) => item.id == choice.id);
-    return InkWell(
-      key: ValueKey(create ? 'picker-create-label' : 'picker-row-${choice.id}'),
-      onTap: () => _toggle(choice),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 48),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(children: [
-            if (widget.multi && !create) Padding(
-              padding: const EdgeInsets.only(right: 4),
-              child: IgnorePointer(child: Checkbox(value: selected, onChanged: (_) {})),
-            ),
-            if (!widget.multi && !create) Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Icon(selected ? Icons.check_circle : Icons.circle_outlined, size: 22),
-            ),
-            Expanded(child: create
-              ? Text('建立標籤「${choice.name}」', overflow: TextOverflow.ellipsis)
-              : PickerChoiceLabel(choice, widget.source, expand: true)),
-          ]),
+    return Semantics(
+      button: true,
+      selected: widget.multi ? selected : null,
+      checked: widget.multi ? null : selected,
+      inMutuallyExclusiveGroup: widget.multi ? null : true,
+      child: InkWell(
+        key: ValueKey(create ? 'picker-create-label' : 'picker-row-${choice.id}'),
+        onTap: () => _toggle(choice),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(children: [
+              if (widget.multi) Padding(
+                padding: const EdgeInsets.only(right: 4),
+                child: ExcludeSemantics(
+                  child: IgnorePointer(child: Checkbox(value: selected, onChanged: (_) {})),
+                ),
+              ),
+              if (!widget.multi) Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ExcludeSemantics(
+                  child: Icon(selected ? Icons.check_circle : Icons.circle_outlined, size: 22),
+                ),
+              ),
+              Expanded(child: create
+                ? Text('建立標籤「${choice.name}」', overflow: TextOverflow.ellipsis)
+                : PickerChoiceLabel(choice, widget.source, expand: true)),
+            ]),
+          ),
         ),
       ),
     );

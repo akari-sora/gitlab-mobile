@@ -60,16 +60,14 @@ MarkupEdit prefixLines(String text, int rawStart, int rawEnd, String prefix) {
 MarkupEdit insertCodeBlock(String text, int rawStart, int rawEnd) {
   final range = _range(text, rawStart, rawEnd);
   final selected = text.substring(range.start, range.end);
-  if (selected.isEmpty) {
-    const snippet = '```\n\n```';
-    final next = text.replaceRange(range.start, range.end, snippet);
-    final caret = range.start + 4;
-    return MarkupEdit(next, caret, caret);
-  }
-  final snippet = '```\n$selected\n```';
+  final atLineStart = range.start == 0 || text[range.start - 1] == '\n';
+  final atLineEnd = range.end >= text.length || text[range.end] == '\n';
+  final lead = atLineStart ? '' : '\n';
+  final tail = atLineEnd ? '' : '\n';
+  final snippet = selected.isEmpty ? '$lead```\n\n```$tail' : '$lead```\n$selected\n```$tail';
   final next = text.replaceRange(range.start, range.end, snippet);
-  final base = range.start + 4;
-  return MarkupEdit(next, base, base + selected.length);
+  final base = range.start + lead.length + 4;
+  return MarkupEdit(next, base, selected.isEmpty ? base : base + selected.length);
 }
 
 MarkupEdit insertLink(String text, int rawStart, int rawEnd) {
@@ -106,7 +104,7 @@ MarkupEdit insertText(
 MarkupEdit insertMention(String text, int rawStart, int rawEnd, String username) {
   final range = _range(text, rawStart, rawEnd);
   final needsSpace = range.start > 0 && !RegExp(r'\s').hasMatch(text[range.start - 1]);
-  final snippet = '${needsSpace ? ' ' : ''}@$username';
+  final snippet = '${needsSpace ? ' ' : ''}@$username ';
   final next = text.replaceRange(range.start, range.end, snippet);
   final caret = range.start + snippet.length;
   return MarkupEdit(next, caret, caret);

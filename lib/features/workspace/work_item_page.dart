@@ -44,7 +44,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
         EditField.picker('target_branch', '目標分支', source: PickerSource.branches, required: true, value: _branchValue(branch)),
       ],
       const EditField('description', '說明', lines: 7, hint: '支援 Markdown', markdown: true),
-      if (!mr) const EditField.picker('labels', '標籤', source: PickerSource.labels, multi: true, hint: '不存在的名稱會在儲存時建立'),
+      const EditField.picker('labels', '標籤', source: PickerSource.labels, multi: true, hint: '不存在的名稱會在儲存時建立'),
       const EditField.picker('assignee_ids', '指派', source: PickerSource.members, multi: true),
       if (mr) const EditField.picker('reviewer_ids', '審查者', source: PickerSource.members, multi: true),
     ];
