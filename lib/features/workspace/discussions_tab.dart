@@ -3,6 +3,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
+import 'diff_page.dart';
 import 'editor.dart';
 import 'records_feed.dart';
 
@@ -19,12 +20,13 @@ String _discussionSummary(List<Json> items, {required bool partial}) {
 }
 
 class DiscussionsTab extends StatefulWidget {
-  const DiscussionsTab({super.key, required this.account, required this.api, required this.project, required this.resource, required this.iid});
+  const DiscussionsTab({super.key, required this.account, required this.api, required this.project, required this.resource, required this.iid, this.headSha});
   final Account account;
   final GitLabApi api;
   final Project project;
   final String resource;
   final int iid;
+  final String? headSha;
   @override
   State<DiscussionsTab> createState() => _DiscussionsTabState();
 }
@@ -111,6 +113,8 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
   }
   Widget _thread(Json discussion) {
     final notes = valueObjects(discussion, 'notes');
+    final rawPosition = notes.isEmpty ? null : notes.first['position'];
+    final textPosition = rawPosition is Json && rawPosition['position_type'] == 'text' ? rawPosition : null;
     final isThread = discussion['individual_note'] == false;
     final discussionId = isThread ? requiredString(discussion, 'id') : null;
     final resolvable = widget.resource == 'merge_requests' && notes.any((v) => v['resolvable'] == true);
@@ -132,11 +136,51 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
         const SizedBox(height: 8), Text(relativeDate(valueText(notes[index], 'created_at')), style: Theme.of(context).textTheme.bodySmall),
       ],
       if (isThread) Wrap(spacing: 8, children: [
+        if (textPosition != null && widget.resource == 'merge_requests') TextButton.icon(
+          onPressed: _busy ? null : () => _openDiff(textPosition),
+          icon: const Icon(Icons.code, size: 18), label: const Text('查看程式碼')),
         TextButton.icon(onPressed: _busy ? null : () => _compose(discussion: discussionId), icon: const Icon(Icons.reply, size: 18), label: const Text('回覆')),
         if (resolvable) TextButton.icon(onPressed: _busy ? null : () => _resolve(discussion, !resolved),
           icon: Icon(resolved ? Icons.undo : Icons.check, size: 18), label: Text(resolved ? '重新開啟討論' : '解決討論')),
       ]),
     ]);
+  }
+  Future<void> _openDiff(Json position) async {
+    if (_busy || widget.resource != 'merge_requests') return;
+    final newPath = valueText(position, 'new_path');
+    final oldPath = valueText(position, 'old_path');
+    final filePath = newPath.isNotEmpty ? newPath : oldPath;
+    if (filePath.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      var sha = widget.headSha ?? '';
+      if (sha.isEmpty) sha = valueText(await widget.api.record(path), 'sha');
+      if (!mounted || sha.isEmpty) return;
+      // Same rule as inline anchoring: a supplied coordinate that is not a
+      // positive int drops both lines, so the thread is listed under
+      // 其他版本 instead of anchored on the row that matches its valid half.
+      final lines = diffPositionLines(position);
+      await Navigator.of(context).push<void>(MaterialPageRoute<void>(builder: (_) => Scaffold(
+        appBar: AppBar(title: const Text('差異')),
+        body: ReviewDiffPage(
+          account: widget.account, api: widget.api, project: widget.project, iid: widget.iid, expectedSha: sha,
+          initialTarget: DiffTarget(
+            path: filePath,
+            newPath: newPath,
+            oldPath: oldPath,
+            newLine: lines?.newLine,
+            oldLine: lines?.oldLine,
+            baseSha: valueText(position, 'base_sha'),
+            startSha: valueText(position, 'start_sha'),
+            headSha: valueText(position, 'head_sha'),
+          ),
+        ),
+      )));
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
   @override
   Widget build(BuildContext context) => Column(children: [

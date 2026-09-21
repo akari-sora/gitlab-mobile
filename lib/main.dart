@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/providers.dart';
 import 'features/auth/login_screen.dart';
 import 'features/shell/app_shortcuts.dart';
+import 'features/auth/session_controller.dart';
 import 'features/shell/authenticated_app.dart';
 import 'shared/theme.dart';
 
@@ -68,11 +69,46 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
           locale: const Locale('zh', 'TW'),
           localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
           supportedLocales: const [Locale('zh', 'TW'), Locale('en')],
-          home: session.initializing
+          home: session.resuming
+            ? _ResumeScreen(session: session)
+            : session.initializing
             ? const Scaffold(body: Center(child: CircularProgressIndicator()))
             : LoginScreen(session: session),
         );
       });
     });
+  }
+}
+
+class _ResumeScreen extends StatelessWidget {
+  const _ResumeScreen({required this.session});
+  final SessionController session;
+  @override
+  Widget build(BuildContext context) {
+    final username = session.resumingAccount?.user.username ?? '';
+    final theme = Theme.of(context);
+    return Scaffold(
+      body: SafeArea(child: Center(child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Icon(Icons.account_tree_outlined, size: 32, color: theme.colorScheme.onPrimaryContainer),
+          ),
+          const SizedBox(height: 24),
+          Semantics(
+            liveRegion: true,
+            child: Text('正在恢復 @$username', style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
+          ),
+          const SizedBox(height: 16),
+          const CircularProgressIndicator(),
+          TextButton(onPressed: () { unawaited(session.endSession()); }, child: const Text('改用其他帳號')),
+        ]),
+      ))),
+    );
   }
 }

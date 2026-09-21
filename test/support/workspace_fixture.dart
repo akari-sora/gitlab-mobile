@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
@@ -18,6 +19,7 @@ class WorkspaceFixture {
     'default_branch': 'main', 'archived': false, 'last_activity_at': '2026-09-19T08:30:00Z',
   };
   static const sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  static const olderSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
   final issues = <int, Json>{};
   final notes = <int, Json>{};
   final createdMergeRequests = <int, Json>{};
@@ -36,15 +38,36 @@ class WorkspaceFixture {
   int counter = 100;
   bool failWrites = false;
   final unhandled = <String>[];
+  final extraDiscussions = <Json>[];
+  List<Json>? versionDiffs;
+  bool omitSeedDiscussions = false;
+  int discussionPageCount = 0;
+  int? failDiscussionPage;
+  int? deferDiscussionOnPage;
+  Completer<ResponseBody>? deferDiscussionPage;
+  bool deferDiscussionOnce = false;
+  bool copyDiscussionPages = false;
+  String versionBaseSha = sha;
+  String versionStartSha = sha;
+  String versionHeadSha = sha;
+  bool _discussionDeferred = false;
+  List<Json>? _pagedDiscussions;
+  List<Json>? _storedDiscussions;
+  var _discussionsOverridden = false;
+  List<List<Json>>? discussionPages;
+  bool failDiscussions = false;
+  // Reading this marks the list as caller-owned so the default seed is not inserted.
+  List<Json> get mrDiscussions {
+    _discussionsOverridden = true;
+    return _storedDiscussions ??= <Json>[];
+  }
+  List<Json> get mergeRequestDiscussions => storedDiscussions;
   Json issue(int iid, String title) => {
     'id': iid + 1000, 'iid': iid, 'project_id': 42, 'title': title, 'description': '## Overview\nA synthetic issue for UI verification.',
     'state': 'opened', 'author': {'id': 7, 'username': 'developer'}, 'assignees': <Json>[], 'labels': <String>[],
     'updated_at': 'revision-$counter', 'created_at': '2026-09-19T08:00:00Z',
   };
   final mergeFields = <String, dynamic>{};
-  final mrDiscussions = <Json>[];
-  List<List<Json>>? discussionPages;
-  bool failDiscussions = false;
   Json get mergeRequest => {
     ...issue(12, 'Improve private-project navigation'),
     'source_branch': 'feature/navigation', 'target_branch': 'main', 'sha': sha,
@@ -52,6 +75,132 @@ class WorkspaceFixture {
     'head_pipeline': {'id': 99, 'status': 'success'},
     ...mergeFields,
   };
+  Json _textThread({
+    required String id, required String body, required String username, required int noteId,
+    required String base, required String start, required String head, required String path,
+    int? newLine, int? oldLine, bool resolvable = false, bool resolved = false,
+  }) => {
+    'id': id, 'individual_note': false,
+    'notes': [
+      {
+        'id': noteId, 'body': body, 'author': {'id': noteId, 'username': username},
+        'created_at': '2026-09-19T08:00:00Z', 'system': false,
+        'resolvable': resolvable, 'resolved': resolved,
+        'position': {
+          'position_type': 'text', 'base_sha': base, 'start_sha': start, 'head_sha': head,
+          'old_path': path, 'new_path': path,
+          'old_line': ?oldLine,
+          'new_line': ?newLine,
+        },
+      },
+    ],
+  };
+  List<Json> get storedDiscussions {
+    if (_discussionsOverridden) return _storedDiscussions ??= <Json>[];
+    return _storedDiscussions ??= _seedDiscussions();
+  }
+  List<Json> _seedDiscussions() => [
+    {
+      ..._textThread(
+        id: 'anchored-1', body: 'ANCHORED-THREAD-BODY', username: 'developer', noteId: 1,
+        base: sha, start: sha, head: sha, path: 'lib/session.dart', newLine: 1, resolvable: true,
+      ),
+      'notes': [
+        {
+          'id': 1, 'body': 'ANCHORED-THREAD-BODY', 'author': {'id': 7, 'username': 'developer'},
+          'created_at': '2026-09-19T08:00:00Z', 'system': false, 'resolvable': true, 'resolved': false,
+          'position': {
+            'position_type': 'text', 'base_sha': sha, 'start_sha': sha, 'head_sha': sha,
+            'old_path': 'lib/session.dart', 'new_path': 'lib/session.dart', 'new_line': 1,
+          },
+        },
+        {
+          'id': 11, 'body': 'SECOND-NOTE-VISIBLE', 'author': {'id': 8, 'username': 'reviewer'},
+          'created_at': '2026-09-19T09:00:00Z', 'system': false, 'resolvable': true, 'resolved': false,
+        },
+        {
+          'id': 12, 'body': 'THIRD-NOTE-HIDDEN', 'author': {'id': 7, 'username': 'developer'},
+          'created_at': '2026-09-19T10:00:00Z', 'system': false, 'resolvable': true, 'resolved': false,
+        },
+      ],
+    },
+    _textThread(
+      id: 'older-1', body: 'OLDER-VERSION-THREAD', username: 'reviewer', noteId: 2,
+      base: olderSha, start: olderSha, head: olderSha, path: 'lib/session.dart', newLine: 1, resolvable: true,
+    ),
+    {
+      'id': 'general-1', 'individual_note': true,
+      'notes': [
+        {
+          'id': 3, 'body': 'GENERAL-NOTE-SHOULD-NOT-APPEAR',
+          'author': {'id': 7, 'username': 'developer'}, 'created_at': '2026-09-19T11:00:00Z', 'system': false,
+        },
+      ],
+    },
+  ];
+  Json? _thread(String id) {
+    for (final item in storedDiscussions) {
+      if (item['id'] == id) return item;
+    }
+    final paged = _pagedDiscussions;
+    if (paged != null) {
+      for (final item in paged) {
+        if (item['id'] == id) return item;
+      }
+    }
+    return null;
+  }
+
+  Json _cloneDiscussion(Json value) {
+    final decoded = jsonDecode(jsonEncode(value));
+    if (decoded is! Json) throw StateError('discussion copy');
+    return decoded;
+  }
+
+  Json _pageThread(int page) => {
+    'id': 'page-$page', 'individual_note': false,
+    'notes': [
+      {
+        'id': page, 'body': 'PAGE-$page-THREAD', 'author': {'id': 7, 'username': 'developer'},
+        'created_at': '2026-09-19T08:00:00Z', 'system': false, 'resolvable': false, 'resolved': false,
+        'position': {
+          'position_type': 'text', 'base_sha': sha, 'start_sha': sha, 'head_sha': sha,
+          'old_path': 'lib/session.dart', 'new_path': 'lib/session.dart', 'new_line': 1,
+        },
+      },
+    ],
+  };
+
+  List<Json> _storedPages() => _pagedDiscussions ??= [
+    for (var page = 1; page <= discussionPageCount; page++) _pageThread(page),
+  ];
+
+  FutureOr<ResponseBody> _discussionPage(RequestOptions request) {
+    final page = int.tryParse(request.uri.queryParameters['page'] ?? '1') ?? 1;
+    if (discussionPageCount > 0) {
+      if (failDiscussionPage != null && page >= failDiscussionPage!) {
+        return jsonResponse({'message': 'unavailable'}, status: 500);
+      }
+      final deferred = deferDiscussionPage;
+      if (deferDiscussionOnPage == page && deferred != null &&
+          (!deferDiscussionOnce || !_discussionDeferred)) {
+        _discussionDeferred = true;
+        return deferred.future;
+      }
+      final headers = page < discussionPageCount
+          ? {'x-next-page': ['${page + 1}']}
+          : <String, List<String>>{};
+      final thread = copyDiscussionPages ? _storedPages()[page - 1] : _pageThread(page);
+      return jsonResponse([
+        copyDiscussionPages ? _cloneDiscussion(thread) : thread,
+      ], headers: headers);
+    }
+    return jsonResponse([
+      if (!omitSeedDiscussions) ...storedDiscussions,
+      ...extraDiscussions,
+    ]);
+  }
+
   Json get pipeline => {'id': 99, 'ref': 'main', 'sha': sha, 'status': 'success', 'duration': 83};
   Json job(int id, {String status = 'success'}) => {
     'id': id, 'name': id == 502 ? 'Manual deploy' : 'Flutter tests', 'stage': 'verify', 'status': status,
@@ -157,27 +306,65 @@ class WorkspaceFixture {
       if (created != null) return jsonResponse(created);
     }
     if (joined == 'projects/42/merge_requests/12') { return jsonResponse(mergeRequest); }
-    if (joined == 'projects/42/merge_requests/12/discussions' && method == 'GET') {
-      if (failDiscussions) { return jsonResponse({'message': 'synthetic'}, status: 500); }
-      final pages = discussionPages;
-      if (pages != null) {
-        final page = int.tryParse(request.uri.queryParameters['page'] ?? '') ?? 1;
-        final index = page - 1;
-        final items = index >= 0 && index < pages.length ? pages[index] : const <Json>[];
-        if (page < pages.length) {
-          return jsonResponse(items, headers: {'x-next-page': ['${page + 1}']});
+    if (path.length >= 5 && path[0] == 'projects' && path[1] == '42' && path[2] == 'merge_requests' && path[3] == '12' && path[4] == 'discussions') {
+      if (path.length == 5 && method == 'GET') {
+        if (failDiscussions) { return jsonResponse({'message': 'synthetic'}, status: 500); }
+        final pages = discussionPages;
+        if (pages != null) {
+          final page = int.tryParse(request.uri.queryParameters['page'] ?? '') ?? 1;
+          final index = page - 1;
+          final items = index >= 0 && index < pages.length ? pages[index] : const <Json>[];
+          if (page < pages.length) {
+            return jsonResponse(items, headers: {'x-next-page': ['${page + 1}']});
+          }
+          return jsonResponse(items);
         }
-        return jsonResponse(items);
+        return _discussionPage(request);
       }
-      return jsonResponse(mrDiscussions);
+      if (path.length == 5 && method == 'POST') {
+        final created = <String, dynamic>{
+          'id': 'created-${++counter}', 'individual_note': false, 'notes': [
+            {'id': counter, 'body': body['body'], 'author': {'id': 7, 'username': 'developer'}, 'created_at': '2026-09-19T12:00:00Z', 'system': false},
+          ],
+        };
+        storedDiscussions.add(created);
+        return jsonResponse(created, status: 201);
+      }
+      if (path.length == 6 && method == 'PUT') {
+        final thread = _thread(path[5]);
+        if (thread == null) return jsonResponse({'error': 'missing'}, status: 404);
+        final resolved = body['resolved'] == true;
+        thread['resolved'] = resolved;
+        final notes = thread['notes'];
+        if (notes is List<dynamic>) {
+          for (final note in notes) {
+            if (note is Json && note['resolvable'] == true) {
+              note['resolved'] = resolved;
+            }
+          }
+        }
+        return jsonResponse(thread);
+      }
+      if (path.length == 7 && path[6] == 'notes' && method == 'POST') {
+        final thread = _thread(path[5]);
+        if (thread == null) return jsonResponse({'error': 'missing'}, status: 404);
+        final note = <String, dynamic>{
+          'id': ++counter, 'body': body['body'], 'author': {'id': 7, 'username': 'developer'},
+          'created_at': '2026-09-19T12:00:00Z', 'system': false, 'resolvable': false, 'resolved': false,
+        };
+        final notes = thread['notes'];
+        final existing = notes is List<dynamic> ? notes : const <dynamic>[];
+        thread['notes'] = <dynamic>[...existing, note];
+        return jsonResponse(note, status: 201);
+      }
     }
     if (joined == 'projects/42/merge_requests/12/merge' && method == 'PUT') {
       return jsonResponse({...mergeRequest, 'state': 'merged'});
     }
     if (joined == 'projects/42/merge_requests/12/approvals') { return jsonResponse({'approved_by': <Json>[]}); }
-    if (joined == 'projects/42/merge_requests/12/versions') { return jsonResponse([{'id': 1, 'head_commit_sha': sha}]); }
+    if (joined == 'projects/42/merge_requests/12/versions') { return jsonResponse([{'id': 1, 'head_commit_sha': versionHeadSha}]); }
     if (joined == 'projects/42/merge_requests/12/versions/1') {
-      return jsonResponse({'id': 1, 'head_commit_sha': sha, 'base_commit_sha': sha, 'start_commit_sha': sha, 'diffs': [
+      return jsonResponse({'id': 1, 'head_commit_sha': versionHeadSha, 'base_commit_sha': versionBaseSha, 'start_commit_sha': versionStartSha, 'diffs': versionDiffs ?? [
         {'old_path': 'lib/session.dart', 'new_path': 'lib/session.dart', 'diff': '@@ -1 +1 @@\n-old\n+new\n'},
       ]});
     }

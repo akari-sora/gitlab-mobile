@@ -5,6 +5,13 @@ import '../../core/models.dart';
 abstract interface class AccountStore {
   Future<List<Account>> load();
   Future<void> save(List<Account> accounts);
+  Future<String?> loadLastActive();
+  Future<void> saveLastActive(String? key);
+
+  /// True after a sign-out whose remembered-key deletion did not finish.
+  /// Auto-resume must not run while this marker is stored.
+  Future<bool> loadSignOutPending();
+  Future<void> saveSignOutPending(bool pending);
 }
 
 /// Only credentials and minimum identity metadata persist in this milestone.
@@ -23,6 +30,8 @@ final class SecureAccountStore implements AccountStore {
   FlutterSecureStorage get storage => _storage;
   static const _key = 'gitlab_mobile_accounts_v1';
   static const _keyV2 = 'gitlab_mobile_accounts_v2';
+  static const _lastAccountKey = 'gitlab_mobile_last_account_v1';
+  static const _signOutPendingKey = 'gitlab_mobile_sign_out_pending_v1';
   @override
   Future<List<Account>> load() async {
     final text =
@@ -54,5 +63,34 @@ final class SecureAccountStore implements AccountStore {
       }),
     );
     await _storage.delete(key: _key);
+  }
+
+  @override
+  Future<String?> loadLastActive() async {
+    final value = await _storage.read(key: _lastAccountKey);
+    if (value == null || value.isEmpty) return null;
+    return value;
+  }
+
+  @override
+  Future<void> saveLastActive(String? key) async {
+    if (key == null || key.isEmpty) {
+      await _storage.delete(key: _lastAccountKey);
+      return;
+    }
+    await _storage.write(key: _lastAccountKey, value: key);
+  }
+
+  @override
+  Future<bool> loadSignOutPending() async =>
+      await _storage.read(key: _signOutPendingKey) == '1';
+
+  @override
+  Future<void> saveSignOutPending(bool pending) async {
+    if (!pending) {
+      await _storage.delete(key: _signOutPendingKey);
+      return;
+    }
+    await _storage.write(key: _signOutPendingKey, value: '1');
   }
 }
