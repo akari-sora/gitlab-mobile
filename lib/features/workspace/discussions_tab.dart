@@ -156,8 +156,10 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
       var sha = widget.headSha ?? '';
       if (sha.isEmpty) sha = valueText(await widget.api.record(path), 'sha');
       if (!mounted || sha.isEmpty) return;
-      final newLine = position['new_line'];
-      final oldLine = position['old_line'];
+      // Same rule as inline anchoring: a supplied coordinate that is not a
+      // positive int drops both lines, so the thread is listed under
+      // 其他版本 instead of anchored on the row that matches its valid half.
+      final lines = diffPositionLines(position);
       await Navigator.of(context).push<void>(MaterialPageRoute<void>(builder: (_) => Scaffold(
         appBar: AppBar(title: const Text('差異')),
         body: ReviewDiffPage(
@@ -166,8 +168,8 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
             path: filePath,
             newPath: newPath,
             oldPath: oldPath,
-            newLine: newLine is int ? newLine : null,
-            oldLine: oldLine is int ? oldLine : null,
+            newLine: lines?.newLine,
+            oldLine: lines?.oldLine,
             baseSha: valueText(position, 'base_sha'),
             startSha: valueText(position, 'start_sha'),
             headSha: valueText(position, 'head_sha'),

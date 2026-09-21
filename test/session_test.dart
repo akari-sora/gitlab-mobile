@@ -636,4 +636,152 @@ void main() {
     expect(controller.accounts.map((account) => account.user.id), contains(9));
     expect(controller.active?.user.id, 9);
   });
+
+  test('a failed rotation save does not restore an account replaced by select', () async {
+    final held = await heldActiveRotation();
+    await held.controller.select(held.pat);
+    expect(held.controller.active?.user.id, 8);
+    final activeApi = held.controller.api;
+    await settleWrites();
+    held.store.rejectWrite = true;
+    held.hold.complete();
+    await held.refreshing;
+    await settleWrites();
+    expect(held.controller.active?.user.id, 8);
+    expect(identical(held.controller.api, activeApi), isTrue);
+    expect(held.controller.accounts.map((a) => a.user.id), containsAll([7, 8]));
+    final stored = held.controller.accounts.firstWhere((a) => a.user.id == 7).credential as OAuthCredential;
+    expect(stored.accessToken, 'old-access');
+  });
+
+  test('a failed rotation save does not restore an account after sign-out', () async {
+    final held = await heldActiveRotation();
+    await held.controller.endSession();
+    expect(held.controller.active, isNull);
+    await settleWrites();
+    held.store.rejectWrite = true;
+    held.hold.complete();
+    await held.refreshing;
+    await settleWrites();
+    expect(held.controller.active, isNull);
+    expect(held.controller.api, isNull);
+    expect(held.controller.generation, greaterThan(0));
+  });
+
+  test('a delayed initialize releases an operation still in flight', () async {
+    final store = MemoryAccountStore();
+    final saved = accountFor(7, 'synthetic-pat');
+    store.accounts = [saved];
+    final gate = Completer<ResponseBody>();
+    final adapter = FakeAdapter((request) {
+      if (header(request, 'private-token') == 'synthetic-pat') return gate.future;
+      return jsonResponse({'message': 'nope'}, status: 401);
+    });
+    final controller = controllerFor(store, adapter);
+    addTearDown(controller.dispose);
+    await controller.initialize();
+    expect(controller.initializing, isFalse);
+    final selecting = controller.select(saved);
+    for (var i = 0; i < 40 && adapter.requests.isEmpty; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    expect(adapter.requests, hasLength(1));
+    expect(controller.busy, isTrue);
+    final again = controller.initialize();
+    expect(controller.busy, isFalse);
+    expect(controller.initializing, isTrue);
+    gate.complete(jsonResponse({'id': 7, 'username': 'user7', 'name': 'User 7'}));
+    await selecting;
+    await again;
+    expect(controller.busy, isFalse);
+    expect(controller.initializing, isFalse);
+    expect(controller.active, isNull);
+    expect(controller.api, isNull);
+  });
+}
+
+Future<void> settleWrites() async {
+  for (var i = 0; i < 10; i++) {
+    await Future<void>.delayed(Duration.zero);
+  }
+}
+
+typedef HeldRotation = ({
+  SessionController controller,
+  MemoryAccountStore store,
+  Completer<void> hold,
+  Account pat,
+  Future<void> refreshing,
+});
+
+/// Resumes OAuth account 7, then expires its token so the next request
+/// refreshes it; the resulting account-list save is parked behind [hold].
+Future<HeldRotation> heldActiveRotation() async {
+  final hold = Completer<void>();
+  final store = MemoryAccountStore();
+  final oauth = Account(
+    instance: GitLabInstance.parse('https://example.com'),
+    user: const GitLabUser(id: 7, username: 'tester', name: 'Test'),
+    credential: const OAuthCredential(
+      accessToken: 'old-access',
+      refreshToken: 'old-refresh',
+      clientId: 'synthetic-app-id',
+    ),
+  );
+  final pat = Account(
+    instance: GitLabInstance.parse('https://example.com'),
+    user: const GitLabUser(id: 8, username: 'user8', name: 'User 8'),
+    token: 'synthetic-pat-b',
+  );
+  store.accounts = [oauth, pat];
+  store.lastActive = oauth.key;
+  var oldAccessUsers = 0;
+  final adapter = FakeAdapter((request) {
+    if (request.uri.path.endsWith('/oauth/token')) {
+      return jsonResponse({
+        'access_token': 'rotated-access',
+        'refresh_token': 'rotated-refresh',
+        'token_type': 'bearer',
+        'expires_in': 7200,
+      });
+    }
+    String header(String name) {
+      for (final entry in request.headers.entries) {
+        if (entry.key.toLowerCase() == name) return '${entry.value}';
+      }
+      return '';
+    }
+    if (header('private-token') == 'synthetic-pat-b') {
+      return jsonResponse({'id': 8, 'username': 'user8', 'name': 'User 8'});
+    }
+    final authorization = header('authorization');
+    if (authorization.contains('rotated-access')) {
+      return jsonResponse({'id': 7, 'username': 'tester', 'name': 'Test'});
+    }
+    if (authorization.contains('old-access') && ++oldAccessUsers == 1) {
+      return jsonResponse({'id': 7, 'username': 'tester', 'name': 'Test'});
+    }
+    return jsonResponse({'message': 'expired'}, status: 401);
+  });
+  final controller = controllerFor(
+    store,
+    adapter,
+    createOAuth: (instance, clientId) => OAuthTokenClient(
+      instance: instance,
+      clientId: clientId,
+      dio: Dio()..httpClientAdapter = adapter,
+    ),
+  );
+  addTearDown(controller.dispose);
+  await controller.initialize();
+  expect(controller.active?.user.id, 7);
+  store.holdAccountSave = hold;
+  final refreshing = controller.api!.currentUser().then((_) {}, onError: (Object _) {});
+  for (var i = 0; i < 40 && store.accountSaves == 0; i++) {
+    await Future<void>.delayed(Duration.zero);
+  }
+  expect(store.accountSaves, 1);
+  final rotated = controller.active!.credential as OAuthCredential;
+  expect(rotated.accessToken, 'rotated-access');
+  return (controller: controller, store: store, hold: hold, pat: pat, refreshing: refreshing);
 }

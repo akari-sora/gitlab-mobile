@@ -726,6 +726,123 @@ void main() {
     },
   );
 
+  testWidgets(
+    'empty start_sha does not anchor even when the version sha is empty',
+    (tester) async {
+      final fixture = WorkspaceFixture()
+        ..omitSeedDiscussions = true
+        ..versionStartSha = ''
+        ..extraDiscussions.add(
+          _textDiscussion(
+            id: 'blank-start',
+            body: 'BLANK-START',
+            oldPath: 'lib/session.dart',
+            newPath: 'lib/session.dart',
+            newLine: 1,
+            start: '',
+          ),
+        );
+      addTearDown(fixture.api.close);
+      await _pumpDiff(tester, fixture);
+      await tester.tap(find.text('lib/session.dart'));
+      await settleWorkspace(tester);
+      expect(find.byKey(const ValueKey('diff-thread-blank-start')), findsNothing);
+      expect(find.byKey(const ValueKey('diff-other-blank-start')), findsOneWidget);
+      expect(find.text('以較舊版本為準，無法對應目前差異'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'empty base_sha does not anchor even when the version sha is empty',
+    (tester) async {
+      final fixture = WorkspaceFixture()
+        ..omitSeedDiscussions = true
+        ..versionBaseSha = ''
+        ..extraDiscussions.add(
+          _textDiscussion(
+            id: 'blank-base',
+            body: 'BLANK-BASE',
+            oldPath: 'lib/session.dart',
+            newPath: 'lib/session.dart',
+            newLine: 1,
+            base: '',
+          ),
+        );
+      addTearDown(fixture.api.close);
+      await _pumpDiff(tester, fixture);
+      await tester.tap(find.text('lib/session.dart'));
+      await settleWorkspace(tester);
+      expect(find.byKey(const ValueKey('diff-thread-blank-base')), findsNothing);
+      expect(find.byKey(const ValueKey('diff-other-blank-base')), findsOneWidget);
+      expect(find.text('以較舊版本為準，無法對應目前差異'), findsWidgets);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('查看程式碼 does not anchor a position with a malformed coordinate', (tester) async {
+    final fixture = WorkspaceFixture()
+      ..omitSeedDiscussions = true
+      ..extraDiscussions.add(
+        _textDiscussion(
+          id: 'half-malformed',
+          body: 'HALF-MALFORMED',
+          oldPath: 'lib/session.dart',
+          newPath: 'lib/session.dart',
+          oldLine: 1,
+          newLine: 'x',
+        ),
+      );
+    addTearDown(fixture.api.close);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 1400);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      workspaceHost(
+        WorkItemPage(
+          account: fixture.account,
+          api: fixture.api,
+          project: fixture.project,
+          resource: 'merge_requests',
+          iid: 12,
+        ),
+      ),
+    );
+    await settleWorkspace(tester);
+    await tester.tap(find.text('討論'));
+    await settleWorkspace(tester);
+    final codeButton = find.text('查看程式碼');
+    expect(codeButton, findsOneWidget);
+    await tester.ensureVisible(codeButton);
+    await tester.tap(codeButton);
+    await settleWorkspace(tester);
+    // The valid old_line 1 matches the removed row, but the malformed
+    // new_line poisons the whole position: the pushed target carries no
+    // line at all, and the thread is not anchored inline.
+    expect(find.text('old'), findsOneWidget);
+    // The file screen is pushed on top; the list page below is offstage.
+    final page = tester.widget<ReviewDiffPage>(find.byType(ReviewDiffPage, skipOffstage: false));
+    expect(page.initialTarget?.path, 'lib/session.dart');
+    expect(page.initialTarget?.newLine, isNull);
+    expect(page.initialTarget?.oldLine, isNull);
+    expect(find.byKey(const ValueKey('diff-thread-anchored-half-malformed')), findsNothing);
+    expect(find.byKey(const ValueKey('diff-other-half-malformed')), findsOneWidget);
+    expect(find.text('其他版本的討論'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    expect(fixture.unhandled, isEmpty);
+  });
+
+  test('diffPositionLines rejects a position with any malformed coordinate', () {
+    expect(diffPositionLines({'old_line': 10, 'new_line': 'x'}), isNull);
+    expect(diffPositionLines({'old_line': 0, 'new_line': 20}), isNull);
+    expect(diffPositionLines({'old_line': 10.5}), isNull);
+    expect(diffPositionLines({'new_line': -1}), isNull);
+    expect(diffPositionLines({'old_line': 10}), (newLine: null, oldLine: 10));
+    expect(diffPositionLines({'new_line': 20, 'old_line': null}), (newLine: 20, oldLine: null));
+    expect(diffPositionLines({}), (newLine: null, oldLine: null));
+  });
+
   testWidgets('a second 查看程式碼 tap does not push another diff', (tester) async {
     final fixture = WorkspaceFixture();
     addTearDown(fixture.api.close);

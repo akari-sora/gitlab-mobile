@@ -120,12 +120,26 @@ bool _shasMatch(Json position, Json version) {
 
 bool _positiveLine(Object? value) => value is int && value > 0;
 
+/// The line coordinates of a text position, or null when a supplied
+/// `new_line` / `old_line` is not a positive int. Inline anchoring and
+/// 查看程式碼 navigation share this rule, so a half-malformed position can
+/// never anchor on its valid half.
+({int? newLine, int? oldLine})? diffPositionLines(Json position) {
+  final newLine = position['new_line'];
+  final oldLine = position['old_line'];
+  if (newLine != null && !_positiveLine(newLine)) return null;
+  if (oldLine != null && !_positiveLine(oldLine)) return null;
+  return (newLine: newLine as int?, oldLine: oldLine as int?);
+}
+
 /// A line anchor needs a real file identity and only positive integer
 /// coordinates. A missing path, or a supplied coordinate that is not a
 /// positive int, must not attach the thread to whatever row shares a number.
 bool _mapsToLine(Json position, Json file, DiffLine line) {
-  final newLine = position['new_line'];
-  final oldLine = position['old_line'];
+  final lines = diffPositionLines(position);
+  if (lines == null) return false;
+  final newLine = lines.newLine;
+  final oldLine = lines.oldLine;
   final newPath = position['new_path'];
   final oldPath = position['old_path'];
   final fileNew = valueText(file, 'new_path');
@@ -135,13 +149,9 @@ bool _mapsToLine(Json position, Json file, DiffLine line) {
   if (!newSupplied && !oldSupplied) return false;
   if (newSupplied && newPath != fileNew) return false;
   if (oldSupplied && oldPath != fileOld) return false;
-  if (newLine != null && !_positiveLine(newLine)) return false;
-  if (oldLine != null && !_positiveLine(oldLine)) return false;
-  final hasNew = _positiveLine(newLine);
-  final hasOld = _positiveLine(oldLine);
-  if (!hasNew && !hasOld) return false;
-  if (hasNew && line.newLine != newLine) return false;
-  if (hasOld && line.oldLine != oldLine) return false;
+  if (newLine == null && oldLine == null) return false;
+  if (newLine != null && line.newLine != newLine) return false;
+  if (oldLine != null && line.oldLine != oldLine) return false;
   return true;
 }
 

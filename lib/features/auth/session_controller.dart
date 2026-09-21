@@ -70,6 +70,18 @@ final class SessionController extends ChangeNotifier {
 
   Future<void> initialize() async {
     final ticket = ++_operation;
+    if (!initializing) {
+      // A delayed initialize supersedes whatever is in flight. Its candidate
+      // is released here, because that operation's own release only clears
+      // `busy` while its ticket is current.
+      _pending?.close();
+      _pending = null;
+      busy = false;
+      resuming = false;
+      resumingAccount = null;
+      initializing = true;
+      _emit();
+    }
     try {
       try {
         final loaded = await store.load();
@@ -392,10 +404,11 @@ final class SessionController extends ChangeNotifier {
     try {
       await _enqueueAccountSave();
     } catch (_) {
-      if (identical(_accounts, staged)) {
-        _accounts = previous;
-        active = previousActive;
-      }
+      if (identical(_accounts, staged)) _accounts = previous;
+      // Only the session this rotation belonged to is rolled back. A select
+      // or sign-out that replaced `active` while the save was in flight owns
+      // it now; restoring the old account would detach it from `api`.
+      if (identical(active, updated)) active = previousActive;
       rethrow;
     }
     if (!_disposed) _emit();
