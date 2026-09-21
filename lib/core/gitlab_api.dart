@@ -93,10 +93,12 @@ final class GitLabApi {
     String? token,
     AccountCredential? credential,
     Dio? dio,
+    HttpClientAdapter? cdnAdapter,
     OAuthTokenClient? oauth,
     Future<void> Function(OAuthCredential rotated)? onOAuthRotated,
   }) : _credential = credential ?? PatCredential(token ?? ''),
        _dio = dio ?? Dio(),
+       _cdnAdapter = cdnAdapter,
        _oauth = oauth,
        _onOAuthRotated = onOAuthRotated {
     final access = _credential.accessToken;
@@ -117,6 +119,7 @@ final class GitLabApi {
   AccountCredential _credential;
   AccountCredential get credential => _credential;
   final Dio _dio;
+  final HttpClientAdapter? _cdnAdapter;
   final OAuthTokenClient? _oauth;
   final Future<void> Function(OAuthCredential rotated)? _onOAuthRotated;
   Future<void>? _refreshing;
@@ -542,7 +545,9 @@ final class GitLabApi {
   }
 
   /// CDN hop. A fresh client so [_dio] defaults, interceptors, and its cookie
-  /// jar cannot ride along. Test adapters are forwarded without being closed.
+  /// jar cannot ride along. The account adapter is never reused: production
+  /// gets a new [IOHttpClientAdapter], and tests observe this hop only through
+  /// an explicitly injected adapter, which is not closed with the hop.
   Dio _openBareArtifactDio() {
     final dio = Dio(
       BaseOptions(
@@ -557,10 +562,8 @@ final class GitLabApi {
       ),
     );
     dio.interceptors.clear(keepImplyContentTypeInterceptor: false);
-    final adapter = _dio.httpClientAdapter;
-    if (adapter is! IOHttpClientAdapter) {
-      dio.httpClientAdapter = _ForwardingAdapter(adapter);
-    }
+    final cdn = _cdnAdapter;
+    dio.httpClientAdapter = cdn == null ? IOHttpClientAdapter() : _ForwardingAdapter(cdn);
     _bareClients.add(dio);
     return dio;
   }
@@ -814,6 +817,8 @@ final class GitLabApi {
       // A malformed Retry-After still fails this call; retry stays manual.
     }
   }
+
+  bool get isClosed => _closed;
 
   void close() {
     _closed = true;

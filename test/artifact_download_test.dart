@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -101,6 +102,16 @@ class _AsyncFailSink extends _CollectingSink {
 ResponseBody _statusBody(int status, Map<String, List<String>> headers) => ResponseBody(
   Stream<Uint8List>.value(Uint8List(0)), status, headers: headers,
 );
+
+/// The production cleanup may still be removing a cache directory when a
+/// test's tearDown runs; a directory that is already gone is not a failure.
+Future<void> removeQuietly(Directory directory) async {
+  try {
+    if (directory.existsSync()) await directory.delete(recursive: true);
+  } on FileSystemException {
+    // Already removed by the code under test.
+  }
+}
 
 void main() {
   test('artifact archive is 256 MiB', () {
@@ -203,6 +214,7 @@ void main() {
       instance: GitLabInstance.parse('https://example.com/gitlab'),
       token: 'synthetic-test-token',
       dio: dio,
+      cdnAdapter: adapter,
     );
     addTearDown(api.close);
     await api.downloadJobArtifacts(8, 3, sink: _CollectingSink());
@@ -216,6 +228,56 @@ void main() {
     expect(hop.headers.keys.map((key) => key.toLowerCase()), isNot(contains('x-leak')));
     expect(hop.uri.queryParameters.containsKey('private_token'), isFalse);
     expect(hop.queryParameters.containsKey('private_token'), isFalse);
+  });
+
+  test('CDN hop does not see a cookie-bearing account adapter', () async {
+    const location = 'https://cdn.artifacts.gitlab-static.net/signed/file.zip';
+    final cookies = _CookieAdapter((request) => _statusBody(302, {
+      'location': [location],
+      'set-cookie': ['sid=secret; Path=/; HttpOnly'],
+    }));
+    final cdn = FakeAdapter((request) => ResponseBody(
+      Stream<Uint8List>.value(Uint8List.fromList([1])),
+      200,
+    ));
+    final api = GitLabApi(
+      instance: GitLabInstance.parse('https://example.com/gitlab'),
+      token: 'synthetic-test-token',
+      dio: Dio()..httpClientAdapter = cookies,
+      cdnAdapter: cdn,
+    );
+    addTearDown(api.close);
+    await api.downloadJobArtifacts(8, 3, sink: _CollectingSink());
+    expect(cookies.cookie, 'sid=secret');
+    expect(cookies.requests, hasLength(1));
+    expect(cookies.requests.single.uri.host, 'example.com');
+    expect(cdn.requests, hasLength(1));
+    expect(cdn.requests.single.uri.toString(), location);
+    expectNoCredential(cdn.requests.single);
+    expect(cdn.requests.single.headers.values.join(' '), isNot(contains('sid=secret')));
+  });
+
+  test('CDN hop without an injected adapter ignores the account adapter', () async {
+    final cookies = _CookieAdapter((request) => _statusBody(302, {
+      'location': ['https://127.0.0.1:1/file.zip'],
+      'set-cookie': ['sid=secret; Path=/'],
+    }));
+    final api = GitLabApi(
+      instance: GitLabInstance.parse('https://example.com/gitlab'),
+      token: 'synthetic-test-token',
+      dio: Dio()..httpClientAdapter = cookies,
+    );
+    addTearDown(api.close);
+    // The widget binding answers an unstubbed client with HTTP 400.
+    await expectLater(
+      api.downloadJobArtifacts(8, 3, sink: _CollectingSink()),
+      throwsA(isA<ApiFailure>()
+          .having((error) => error.kind, 'kind', FailureKind.validation)
+          .having((error) => error.status, 'status', 400)),
+    );
+    expect(cookies.cookie, 'sid=secret');
+    expect(cookies.requests, hasLength(1));
+    expect(cookies.requests.single.uri.host, 'example.com');
   });
 
   for (final status in [401, 403, 404, 429, 500]) {
@@ -431,7 +493,7 @@ void main() {
     )));
     addTearDown(() async {
       final created = directory;
-      if (created != null && created.existsSync()) await created.delete(recursive: true);
+      if (created != null) await removeQuietly(created);
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
@@ -474,7 +536,7 @@ void main() {
     )));
     addTearDown(() async {
       final created = directory;
-      if (created != null && created.existsSync()) await created.delete(recursive: true);
+      if (created != null) await removeQuietly(created);
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
@@ -507,7 +569,7 @@ void main() {
     )));
     addTearDown(() async {
       final created = directory;
-      if (created != null && created.existsSync()) await created.delete(recursive: true);
+      if (created != null) await removeQuietly(created);
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
@@ -560,7 +622,7 @@ void main() {
     )));
     addTearDown(() async {
       for (final directory in created) {
-        if (directory.existsSync()) await directory.delete(recursive: true);
+        await removeQuietly(directory);
       }
     });
     await settleWorkspace(tester);
@@ -598,7 +660,7 @@ void main() {
     )));
     addTearDown(() async {
       final created = directory;
-      if (created != null && created.existsSync()) await created.delete(recursive: true);
+      if (created != null) await removeQuietly(created);
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
@@ -614,6 +676,98 @@ void main() {
     expect(find.textContaining('已下載'), findsNothing);
     expect(find.text('取消'), findsNothing);
     expect(directory!.existsSync(), isFalse);
+  });
+
+  testWidgets('closing the client during flush does not promote the artifact', (tester) async {
+    final fixture = _DownloadFixture();
+    addTearDown(fixture.api.close);
+    final gate = Completer<void>();
+    addTearDown(() { if (!gate.isCompleted) gate.complete(); });
+    Directory? directory;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(workspaceHost(JobLogPage(
+      account: fixture.account, api: fixture.api, project: fixture.project, id: 501,
+      openSink: (_) => _HoldFlushSink(gate),
+      artifactDirectory: (account, projectId, jobId) async {
+        final created = await Directory.systemTemp.createTemp('gitlab-mobile-artifacts-close-');
+        directory = created;
+        return created;
+      },
+    )));
+    addTearDown(() async {
+      final created = directory;
+      if (created != null) await removeQuietly(created);
+    });
+    await settleWorkspace(tester);
+    await tester.tap(find.byTooltip('工作操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下載產物'));
+    await settleWorkspace(tester);
+    expect(find.text('4 B / 4 B'), findsOneWidget);
+    expect(find.textContaining('已下載'), findsNothing);
+    fixture.api.close();
+    gate.complete();
+    await settleWorkspace(tester);
+    expect(find.textContaining('已下載'), findsNothing);
+    expect(directory!.existsSync(), isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('an account switch during rename does not promote the artifact', (tester) async {
+    final fixture = _DownloadFixture();
+    addTearDown(fixture.api.close);
+    final entered = Completer<void>();
+    final release = Completer<void>();
+    addTearDown(() { if (!release.isCompleted) release.complete(); });
+    Directory? directory;
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final host = GlobalKey<_SessionHostState>();
+    await tester.pumpWidget(_SessionHost(
+      key: host,
+      initial: fixture.account,
+      builder: (account, generation) => workspaceHost(JobLogPage(
+        account: account, generation: generation, api: fixture.api, project: fixture.project, id: 501,
+        promoteArtifact: (partial, target) async {
+          if (!entered.isCompleted) entered.complete();
+          await release.future;
+          return promoteArtifactFile(partial, target);
+        },
+        artifactDirectory: (account, projectId, jobId) async {
+          final created = await Directory.systemTemp.createTemp('gitlab-mobile-artifacts-switch-');
+          directory = created;
+          return created;
+        },
+      )),
+    ));
+    addTearDown(() async {
+      final created = directory;
+      if (created != null) await removeQuietly(created);
+    });
+    await settleWorkspace(tester);
+    await tester.tap(find.byTooltip('工作操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下載產物'));
+    await settleWorkspace(tester);
+    expect(entered.isCompleted, isTrue);
+    expect(find.textContaining('已下載'), findsNothing);
+    host.currentState!.switchAccount(Account(
+      instance: GitLabInstance.parse('https://other.example'),
+      user: const GitLabUser(id: 9, username: 'other', name: 'Other'),
+      token: 'synthetic-test-token',
+    ));
+    await tester.pump();
+    release.complete();
+    await settleWorkspace(tester);
+    expect(find.textContaining('已下載'), findsNothing);
+    expect(directory!.existsSync(), isFalse);
+    expect(fixture.api.isClosed, isFalse);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('an asynchronous sink failure cancels the transfer', (tester) async {
@@ -637,7 +791,7 @@ void main() {
     )));
     addTearDown(() async {
       final created = directory;
-      if (created != null && created.existsSync()) await created.delete(recursive: true);
+      if (created != null) await removeQuietly(created);
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
@@ -647,6 +801,13 @@ void main() {
     expect(find.text('無法儲存產物'), findsOneWidget);
     expect(find.textContaining('已下載'), findsNothing);
     expect(tester.takeException(), isNull);
+    expect(directory!.existsSync(), isFalse);
+    final index = fixture.adapter.requests.lastIndexWhere((request) => request.uri.path.endsWith('/artifacts'));
+    expect(index, isNonNegative);
+    var cancelled = false;
+    unawaited(fixture.adapter.cancelFutures[index]!.then((_) { cancelled = true; }));
+    await tester.pump();
+    expect(cancelled, isTrue);
   });
 
   testWidgets('a disposition named .partial is not saved as the temp file', (tester) async {
@@ -667,7 +828,7 @@ void main() {
     )));
     addTearDown(() async {
       final created = directory;
-      if (created != null && created.existsSync()) await created.delete(recursive: true);
+      if (created != null) await removeQuietly(created);
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
@@ -710,6 +871,119 @@ void main() {
     expect(other.existsSync(), isTrue);
     expect(File('${other.path}/secret.bin').existsSync(), isFalse);
   });
+
+  test('a 220-byte account key uses a fixed-length cache segment', () async {
+    final root = await Directory.systemTemp.createTemp('gitlab-mobile-artifact-digest-');
+    final previous = artifactStorageRoot;
+    artifactStorageRoot = () async => root;
+    addTearDown(() async {
+      artifactStorageRoot = previous;
+      if (root.existsSync()) await root.delete(recursive: true);
+    });
+    final account = Account(
+      instance: GitLabInstance.parse('https://example.com/${'a' * 198}'),
+      user: const GitLabUser(id: 7, username: 'long', name: 'Long'),
+      token: 'synthetic-test-token',
+    );
+    expect(utf8.encode(account.key), hasLength(220));
+    final segment = artifactAccountSegment(account);
+    expect(segment, sha256.convert(utf8.encode(account.key)).toString().substring(0, 32));
+    expect(segment, matches(RegExp(r'^[0-9a-f]{32}$')));
+    expect(segment.length, lessThan(255));
+    final directory = await jobArtifactDirectory(account, 1, 2);
+    expect(directory.existsSync(), isTrue);
+    expect(directory.parent.parent.path.split(Platform.pathSeparator).last, segment);
+    final other = Account(
+      instance: GitLabInstance.parse('https://example.com/${'b' * 198}'),
+      user: const GitLabUser(id: 7, username: 'long', name: 'Long'),
+      token: 'synthetic-test-token',
+    );
+    expect(artifactAccountSegment(other), isNot(segment));
+  });
+
+  test('artifact cleanup failure is not reported as success', () async {
+    final account = Account(
+      instance: GitLabInstance.parse('https://example.com'),
+      user: const GitLabUser(id: 7, username: 'user', name: 'User'),
+      token: 'synthetic-test-token',
+    );
+    final previous = artifactStorageRoot;
+    artifactStorageRoot = () async => throw const FileSystemException('missing root');
+    addTearDown(() { artifactStorageRoot = previous; });
+    await expectLater(
+      clearAccountArtifacts(account),
+      throwsA(isA<ApiFailure>().having((error) => error.title, 'title', '無法清除產物')),
+    );
+  });
+
+  test('a failed artifact directory deletion keeps the archive', () async {
+    final root = await Directory.systemTemp.createTemp('gitlab-mobile-artifact-locked-');
+    final previous = artifactStorageRoot;
+    artifactStorageRoot = () async => root;
+    Directory? directory;
+    addTearDown(() async {
+      artifactStorageRoot = previous;
+      final created = directory;
+      if (created != null && created.existsSync()) Process.runSync('chmod', ['u+w', created.path]);
+      if (root.existsSync()) await root.delete(recursive: true);
+    });
+    final account = Account(
+      instance: GitLabInstance.parse('https://example.com'),
+      user: const GitLabUser(id: 7, username: 'user', name: 'User'),
+      token: 'synthetic-test-token',
+    );
+    final created = await jobArtifactDirectory(account, 4, 9);
+    directory = created;
+    final archive = File('${created.path}/secret.bin');
+    await archive.writeAsBytes([1, 2, 3]);
+    final chmod = Process.runSync('chmod', ['a-w', created.path]);
+    expect(chmod.exitCode, 0, reason: '${chmod.stderr}');
+    await expectLater(
+      clearAccountArtifacts(account),
+      throwsA(isA<ApiFailure>()
+          .having((error) => error.title, 'title', '無法清除產物')
+          .having((error) => error.detail, 'detail', contains('帳號仍保留'))),
+    );
+    expect(archive.existsSync(), isTrue);
+    expect(archive.readAsBytesSync(), [1, 2, 3]);
+  });
+}
+
+final class _CookieAdapter implements HttpClientAdapter {
+  _CookieAdapter(this._respond);
+  final ResponseBody Function(RequestOptions request) _respond;
+  final requests = <RequestOptions>[];
+  String? cookie;
+  @override
+  Future<ResponseBody> fetch(RequestOptions options, Stream<Uint8List>? requestStream, Future<void>? cancelFuture) async {
+    if (cookie != null) options.headers['Cookie'] = cookie;
+    requests.add(options);
+    final body = _respond(options);
+    final setCookie = body.headers['set-cookie'];
+    if (setCookie != null && setCookie.isNotEmpty) cookie = setCookie.first.split(';').first.trim();
+    return body;
+  }
+  @override
+  void close({bool force = false}) {}
+}
+
+class _SessionHost extends StatefulWidget {
+  const _SessionHost({super.key, required this.initial, required this.builder});
+  final Account initial;
+  final Widget Function(Account account, int generation) builder;
+  @override
+  State<_SessionHost> createState() => _SessionHostState();
+}
+
+class _SessionHostState extends State<_SessionHost> {
+  late Account account = widget.initial;
+  int generation = 0;
+  void switchAccount(Account next) => setState(() {
+    account = next;
+    generation += 1;
+  });
+  @override
+  Widget build(BuildContext context) => widget.builder(account, generation);
 }
 
 class _StubSharer implements ArtifactSharer {

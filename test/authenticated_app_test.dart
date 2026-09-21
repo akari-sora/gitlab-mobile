@@ -533,4 +533,49 @@ void main() {
     expect(session.accounts, isEmpty);
     expect(directory.existsSync(), isFalse);
   });
+
+  testWidgets('artifact cleanup failure keeps the account and its archives', (tester) async {
+    final fixture = WorkspaceFixture();
+    final store = MemoryAccountStore();
+    final session = controllerFor(store, fixture.adapter);
+    addTearDown(session.dispose);
+    addTearDown(fixture.api.close);
+    Directory? root;
+    final previous = artifactStorageRoot;
+    addTearDown(() {
+      artifactStorageRoot = previous;
+      final created = root;
+      if (created != null && created.existsSync()) created.deleteSync(recursive: true);
+    });
+
+    late final File archive;
+    await tester.runAsync(() async {
+      final created = await Directory.systemTemp.createTemp('gitlab-mobile-remove-fail-');
+      root = created;
+      artifactStorageRoot = () async => created;
+      await session.initialize();
+      await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+      final directory = await jobArtifactDirectory(session.active!, 42, 7);
+      archive = File('${directory.path}/job.zip');
+      await archive.writeAsBytes([9]);
+      artifactStorageRoot = () async => throw const FileSystemException('unreadable');
+    });
+
+    await tester.pumpWidget(AuthenticatedApp(session: session));
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.text('我的'));
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.byTooltip('從此裝置移除帳號'));
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.text('確認'));
+    await settleNetworkWidgets(tester);
+
+    expect(session.accounts, isNotEmpty);
+    expect(session.active, isNotNull);
+    expect(store.accounts, isNotEmpty);
+    expect(archive.existsSync(), isTrue);
+    expect(find.textContaining('無法清除產物'), findsOneWidget);
+    expect(find.textContaining('帳號仍保留'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

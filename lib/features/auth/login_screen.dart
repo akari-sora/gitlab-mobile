@@ -153,10 +153,18 @@ class _LoginScreenState extends State<LoginScreen> {
                                             if (!context.mounted) {
                                               return;
                                             }
-                                            await clearSecureDrafts(account);
-                                            await clearAccountArtifacts(account);
-                                            await clearRecentProject(account);
-                                            await session.remove(account);
+                                            try {
+                                              await clearSecureDrafts(account);
+                                              await clearAccountArtifacts(
+                                                account,
+                                              );
+                                              await clearRecentProject(account);
+                                              await session.remove(account);
+                                            } catch (error) {
+                                              if (context.mounted) {
+                                                showFailure(context, error);
+                                              }
+                                            }
                                           },
                                   ),
                                 ),

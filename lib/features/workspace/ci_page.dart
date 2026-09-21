@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -181,10 +182,10 @@ Future<Directory> _defaultArtifactRoot() {
   return getTemporaryDirectory();
 }
 
-/// Path segment for [account]. Distinct across instances even when the numeric
-/// user id matches.
+/// Path segment for [account]. A fixed-length digest so a long installation
+/// path cannot exceed the 255-byte directory-component limit.
 String artifactAccountSegment(Account account) =>
-    base64Url.encode(utf8.encode(account.key)).replaceAll('=', '');
+    sha256.convert(utf8.encode(account.key)).toString().substring(0, 32);
 
 int _artifactAttempt = 0;
 
@@ -207,19 +208,27 @@ Future<Directory> jobArtifactDirectory(Account account, int projectId, int jobId
 /// Deletes archives left behind for [account], including completed downloads.
 /// Filesystem checks stay synchronous so account removal is not left waiting
 /// on a plugin or an I/O future the widget test clock will not complete.
+/// Lookup and deletion failures propagate so the account is not removed while
+/// its archives remain.
 Future<void> clearAccountArtifacts(Account account) async {
   final Directory root;
   try {
     root = await artifactStorageRoot();
   } on Object {
-    return;
+    throw ApiFailure.artifactCleanup;
   }
   final directory = Directory('${root.path}/artifacts/${artifactAccountSegment(account)}');
+  if (!directory.existsSync()) return;
   try {
-    if (directory.existsSync()) directory.deleteSync(recursive: true);
+    directory.deleteSync(recursive: true);
   } on FileSystemException {
-    return;
+    throw ApiFailure.artifactCleanup;
   }
+}
+
+Future<File> promoteArtifactFile(File partial, File target) async {
+  if (target.existsSync()) await target.delete();
+  return partial.rename(target.path);
 }
 
 const _artifactPartialName = '.download.partial';
@@ -273,15 +282,17 @@ String formatByteCount(int bytes) {
 
 class JobLogPage extends StatefulWidget {
   const JobLogPage({super.key, required this.account, required this.api, required this.project, required this.id,
-    this.sharer = const SystemArtifactSharer(), this.artifactDirectory = jobArtifactDirectory,
-    this.openSink = openArtifactSink});
+    this.generation = 0, this.sharer = const SystemArtifactSharer(), this.artifactDirectory = jobArtifactDirectory,
+    this.openSink = openArtifactSink, this.promoteArtifact = promoteArtifactFile});
   final Account account;
   final GitLabApi api;
   final Project project;
+  final int generation;
   final int id;
   final ArtifactSharer sharer;
   final Future<Directory> Function(Account account, int projectId, int jobId) artifactDirectory;
   final IOSink Function(File file) openSink;
+  final Future<File> Function(File partial, File target) promoteArtifact;
   @override
   State<JobLogPage> createState() => _JobLogPageState();
 }
@@ -480,6 +491,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       button: true,
       expanded: !collapsed,
       label: title,
+      excludeSemantics: true,
       onTap: () => _toggleSection(index),
       child: InkWell(
         onTap: () => _toggleSection(index),
@@ -506,14 +518,19 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     if (suggested.isEmpty) return;
     final size = info['size'];
     final jobId = _jobId;
+    final generation = widget.generation;
+    final accountKey = widget.account.key;
+    final api = widget.api;
     setState(() => _downloading = true);
     try {
       if (!mounted) return;
       await showModalBottomSheet<void>(context: context, isScrollControlled: true,
         builder: (context) => _ArtifactDownloadSheet(
-          account: widget.account, api: widget.api, projectId: widget.project.id, projectPath: widget.project.path,
+          account: widget.account, api: api, projectId: widget.project.id, projectPath: widget.project.path,
           jobId: jobId, suggestedName: suggested, suggestedSize: size is int ? size : null,
           sharer: widget.sharer, artifactDirectory: widget.artifactDirectory, openSink: widget.openSink,
+          promoteArtifact: widget.promoteArtifact,
+          sessionCurrent: () => !api.isClosed && widget.generation == generation && widget.account.key == accountKey,
           webUri: widget.account.instance.projectWeb('${widget.project.path}/-/jobs/$jobId/artifacts/browse'),
         ));
     } catch (error) { if (mounted) showFailure(context, error); }
@@ -621,7 +638,8 @@ class _ArtifactDownloadSheet extends StatefulWidget {
   const _ArtifactDownloadSheet({
     required this.account, required this.api, required this.projectId, required this.projectPath,
     required this.jobId, required this.suggestedName, required this.suggestedSize,
-    required this.sharer, required this.artifactDirectory, required this.openSink, required this.webUri,
+    required this.sharer, required this.artifactDirectory, required this.openSink,
+    required this.promoteArtifact, required this.sessionCurrent, required this.webUri,
   });
   final Account account;
   final GitLabApi api;
@@ -633,6 +651,8 @@ class _ArtifactDownloadSheet extends StatefulWidget {
   final ArtifactSharer sharer;
   final Future<Directory> Function(Account account, int projectId, int jobId) artifactDirectory;
   final IOSink Function(File file) openSink;
+  final Future<File> Function(File partial, File target) promoteArtifact;
+  final bool Function() sessionCurrent;
   final Uri webUri;
   @override
   State<_ArtifactDownloadSheet> createState() => _ArtifactDownloadSheetState();
@@ -672,7 +692,9 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
     Directory? ownedDirectory;
     File? ownedPartial;
     Object? sinkFailure;
-    bool current() => !_disposed && mounted && attempt == _attempt && identical(_abort, abort) && !abort.isCompleted;
+    // A closed client or a changed account/generation must not publish the archive.
+    bool current() => !_disposed && mounted && attempt == _attempt && identical(_abort, abort) && !abort.isCompleted
+        && widget.sessionCurrent();
     Future<void> cleanup() async {
       final open = ownedSink;
       ownedSink = null;
@@ -719,14 +741,13 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
       if (!current()) throw const ApiFailure(FailureKind.cancelled);
       final name = _downloadFileName(result.fileName, widget.jobId);
       final target = File('${directory.path}/$name');
-      if (target.existsSync()) await target.delete();
       if (sinkFailure != null) throw sinkFailure!;
       if (!current()) throw const ApiFailure(FailureKind.cancelled);
-      await partial.rename(target.path);
+      final saved = await widget.promoteArtifact(partial, target);
       ownedPartial = null;
       _partial = null;
       if (sinkFailure != null || !current()) {
-        if (target.existsSync()) await target.delete();
+        if (saved.existsSync()) await saved.delete();
         throw sinkFailure ?? const ApiFailure(FailureKind.cancelled);
       }
       _progress.report(result.bytesWritten, _progress.value.value.$2, completed: true);

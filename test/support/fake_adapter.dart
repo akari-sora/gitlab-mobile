@@ -28,9 +28,14 @@ ResponseBody jsonResponse(Object? value, {int status = 200, Map<String, List<Str
     ResponseBody.fromString(jsonEncode(value), status,
       headers: {'content-type': ['application/json'], ...headers});
 
-GitLabApi testApi(FakeAdapter adapter, {String host = 'https://example.com/gitlab'}) {
+GitLabApi testApi(FakeAdapter adapter, {String host = 'https://example.com/gitlab', HttpClientAdapter? cdnAdapter}) {
   final dio = Dio()..httpClientAdapter = adapter;
-  return GitLabApi(instance: GitLabInstance.parse(host), token: 'synthetic-test-token', dio: dio);
+  return GitLabApi(
+    instance: GitLabInstance.parse(host),
+    token: 'synthetic-test-token',
+    dio: dio,
+    cdnAdapter: cdnAdapter ?? adapter,
+  );
 }
 
 Map<String, Object?> projectJson(int id, {String? branch = 'main'}) => {

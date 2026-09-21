@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' show Tristate;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
@@ -97,8 +98,11 @@ void main() {
     final semantics = tester.widget<Semantics>(header);
     expect(semantics.properties.button, isTrue);
     expect(semantics.properties.expanded, isFalse);
-    expect(tester.getSemantics(header).flagsCollection.isButton, isTrue);
-    await tester.tap(header);
+    expect(semantics.excludeSemantics, isTrue);
+    final node = tester.getSemantics(header);
+    expect(node.flagsCollection.isButton, isTrue);
+    expect(node.label, 'prepare executor · 2 秒');
+    tester.semantics.performAction(find.semantics.byLabel(node.label), SemanticsAction.tap);
     await tester.pump();
     expect(find.text('hidden line'), findsOneWidget);
     expect(tester.widget<Semantics>(header).properties.expanded, isTrue);
@@ -125,6 +129,22 @@ void main() {
     expect(JobTrace.parse('a\nb', maxLines: 2).lines.map((line) => line.text), ['a', 'b']);
     expect(
       () => JobTrace.parse('a\nb\nc', maxLines: 2),
+      throwsA(isA<ApiFailure>().having((error) => error.kind, 'kind', FailureKind.tooLarge)),
+    );
+  });
+
+  test('inline section markers count toward the row budget', () {
+    const piece = '!section_start:1:a';
+    expect(piece.length, 18);
+    expect(JobTrace.parse('$piece y', maxLines: 2).lines.map((line) => line.text), ['!', ' y']);
+    expect(
+      () => JobTrace.parse(piece * 3, maxLines: 2),
+      throwsA(isA<ApiFailure>().having((error) => error.kind, 'kind', FailureKind.tooLarge)),
+    );
+    final dense = piece * 100001;
+    expect(dense.length, 1800018);
+    expect(
+      () => JobTrace.parse(dense),
       throwsA(isA<ApiFailure>().having((error) => error.kind, 'kind', FailureKind.tooLarge)),
     );
   });

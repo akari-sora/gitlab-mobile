@@ -61,7 +61,7 @@ void main() {
   });
 
   testWidgets('pipeline card is one button labelled with id, status and ref', (tester) async {
-    final fixture = WorkspaceFixture();
+    final fixture = _NamedPipeline();
     addTearDown(fixture.api.close);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(412, 1000);
@@ -73,7 +73,7 @@ void main() {
     await settleWorkspace(tester);
     final node = tester.getSemantics(find.byType(SemanticButton));
     expect(node.flagsCollection.isButton, isTrue);
-    expect(node.label, 'Pipeline #99 · 成功 · main · aaaaaaaa');
+    expect(node.label, 'Nightly verify · 成功 · main · aaaaaaaa · ${relativeDate('2026-09-19T08:30:00Z')}');
     await tester.tap(find.descendant(of: find.byType(SemanticButton), matching: find.byType(InkWell)).first);
     await settleWorkspace(tester);
     expect(find.text('Flutter tests'), findsOneWidget);
@@ -107,6 +107,18 @@ void main() {
     await settleWorkspace(tester);
     expect(find.byTooltip('重新讀取 Log'), findsOneWidget);
   });
+}
+
+class _NamedPipeline extends WorkspaceFixture {
+  @override
+  Map<String, dynamic> get pipeline => {
+    'id': 99,
+    'name': 'Nightly verify',
+    'ref': 'main',
+    'sha': WorkspaceFixture.sha,
+    'status': 'success',
+    'updated_at': '2026-09-19T08:30:00Z',
+  };
 }
 
 class _SameNameProjects extends WorkspaceFixture {

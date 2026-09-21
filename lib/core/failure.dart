@@ -28,6 +28,13 @@ final class ApiFailure implements Exception {
     title: '無法儲存產物',
     detail: '無法寫入下載檔案。請釋放空間後重試。',
   );
+
+  /// Cache removal failed. The account must stay until a later attempt succeeds.
+  static const artifactCleanup = ApiFailure(
+    FailureKind.network,
+    title: '無法清除產物',
+    detail: '帳號仍保留在此裝置。請重試移除。',
+  );
   static ApiFailure fromStatus(int status, {DateTime? retryAt}) => switch (status) {
     400 || 422 => ApiFailure(FailureKind.validation, status: status),
     401 => const ApiFailure(FailureKind.unauthenticated, status: 401),

@@ -1,9 +1,11 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/auth/login_screen.dart';
+import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 import 'session_test.dart' show MemoryAccountStore;
@@ -70,6 +72,52 @@ void main() {
     await tester.pumpAndSettle();
     expect(store.accounts, isEmpty);
     expect(find.text('@tester'), findsNothing);
+  });
+
+  testWidgets('artifact cleanup failure keeps the saved login account', (tester) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final store = MemoryAccountStore();
+    final saved = Account(
+      instance: GitLabInstance.parse('https://example.com'),
+      user: const GitLabUser(id: 7, username: 'tester', name: 'Test'),
+      token: 'synthetic-test-token',
+    );
+    store.accounts = [saved];
+    final session = SessionController(store);
+    addTearDown(session.dispose);
+    Directory? root;
+    final previous = artifactStorageRoot;
+    addTearDown(() {
+      artifactStorageRoot = previous;
+      final created = root;
+      if (created != null && created.existsSync()) created.deleteSync(recursive: true);
+    });
+    late final File archive;
+    await tester.runAsync(() async {
+      final created = await Directory.systemTemp.createTemp('gitlab-mobile-login-remove-');
+      root = created;
+      artifactStorageRoot = () async => created;
+      await session.initialize();
+      final directory = await jobArtifactDirectory(saved, 4, 9);
+      archive = File('${directory.path}/job.zip');
+      await archive.writeAsBytes([4]);
+      artifactStorageRoot = () async => throw const FileSystemException('unreadable');
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: appTheme(Brightness.light),
+        home: LoginScreen(session: session),
+      ),
+    );
+    await tester.tap(find.byTooltip('從此裝置移除帳號'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('確認'));
+    await tester.pumpAndSettle();
+    expect(store.accounts, isNotEmpty);
+    expect(find.text('@tester'), findsOneWidget);
+    expect(archive.existsSync(), isTrue);
+    expect(find.textContaining('無法清除產物'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('login hides OAuth when the instance has no Application ID', (

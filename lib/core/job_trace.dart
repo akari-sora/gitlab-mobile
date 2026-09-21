@@ -34,8 +34,8 @@ final class JobTrace {
   factory JobTrace.parse(String raw, {int maxLines = GitLabApi.maxTextLines}) {
     final plain = raw.replaceAll(_ansi, '');
     if (plain.isEmpty) return JobTrace.empty;
-    // Count before allocating a line object per newline. A 2 MiB newline-only
-    // body is under the byte cap and would otherwise build millions of lines.
+    // Newlines are a fast lower bound. Inline section markers can still split
+    // one physical line into many rows, so each emitted row is counted too.
     var newlines = 0;
     for (var i = 0; i < plain.length; i++) {
       if (plain.codeUnitAt(i) != 0x0A) continue;
@@ -50,7 +50,7 @@ final class JobTrace {
       if (i != plain.length && plain.codeUnitAt(i) != 0x0A) continue;
       var line = plain.substring(start, i);
       if (line.endsWith('\r')) line = line.substring(0, line.length - 1);
-      _takeLine(line, lines, sections, stack);
+      _takeLine(line, lines, sections, stack, maxLines);
       start = i + 1;
     }
     while (stack.isNotEmpty) {
@@ -122,21 +122,23 @@ void _takeLine(
   List<JobTraceLine> lines,
   List<JobTraceSection> sections,
   List<_OpenSection> stack,
+  int maxLines,
 ) {
   var cursor = 0;
   var sawMarker = false;
   for (final match in JobTrace._marker.allMatches(line)) {
     sawMarker = true;
     final before = line.substring(cursor, match.start);
-    if (before.isNotEmpty) _emit(before, lines, stack);
+    if (before.isNotEmpty) _emit(before, lines, stack, maxLines);
     _applyMarker(match, lines, sections, stack);
     cursor = match.end;
   }
   final rest = line.substring(cursor);
-  if (!sawMarker || rest.isNotEmpty) _emit(rest, lines, stack);
+  if (!sawMarker || rest.isNotEmpty) _emit(rest, lines, stack, maxLines);
 }
 
-void _emit(String text, List<JobTraceLine> lines, List<_OpenSection> stack) {
+void _emit(String text, List<JobTraceLine> lines, List<_OpenSection> stack, int maxLines) {
+  if (lines.length >= maxLines) throw const ApiFailure(FailureKind.tooLarge);
   lines.add(JobTraceLine(text, section: stack.isEmpty ? null : stack.last.name));
 }
 
