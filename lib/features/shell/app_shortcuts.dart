@@ -146,6 +146,9 @@ class LauncherShortcuts extends ChangeNotifier {
   }
 
   Future<void> publish(String accountKey) {
+    // A foreign account must not bump the epoch: that would cancel a valid
+    // publish for the bound account and then reject itself.
+    if (_disposed || accountKey != _accountKey) return Future<void>.value();
     final epoch = ++_epoch;
     return _enqueue(() async {
       if (!_current(epoch, accountKey)) return;
@@ -174,12 +177,15 @@ class LauncherShortcuts extends ChangeNotifier {
     required String name,
   }) {
     return _enqueue(() async {
+      // Captured before the write so sign-out and a later sign-in of the same
+      // account (same key, new epoch) cannot republish this session's items.
+      final epoch = _epoch;
       try {
         await _recent.write(accountKey, RecentProject(id: id, name: name));
       } catch (_) {
         return;
       }
-      if (_disposed || accountKey != _accountKey) return;
+      if (!_current(epoch, accountKey)) return;
       await _host.setItems(_items(accountKey, RecentProject(id: id, name: name)));
     });
   }

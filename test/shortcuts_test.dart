@@ -10,8 +10,10 @@ import 'package:gitlab_mobile/features/auth/session_controller.dart';
 import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
+import 'package:gitlab_mobile/features/workspace/editor.dart';
 import 'package:gitlab_mobile/features/workspace/project_page.dart';
 import 'package:gitlab_mobile/main.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart';
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'support/fake_adapter.dart';
 import 'support/fake_shortcuts.dart';
@@ -112,6 +114,51 @@ void main() {
     expect(host.published, hasLength(1));
     expect(host.published.single.last.subtitle, 'Beta');
     expect(host.published.single.last.type, recentShortcutType('account-b', 2));
+  });
+
+  test('a mismatched publish does not cancel the bound account', () async {
+    final host = FakeAppShortcutHost();
+    final store = MemoryRecentProjectStore();
+    final readGate = Completer<void>();
+    store.readDelay = readGate.future;
+    await store.write('account-b', const RecentProject(id: 2, name: 'Beta'));
+    final shortcuts = LauncherShortcuts(host, store);
+    addTearDown(shortcuts.dispose);
+    shortcuts.bind('account-b');
+    final accepted = shortcuts.publish('account-b');
+    await Future<void>.delayed(Duration.zero);
+    final rejected = shortcuts.publish('account-a');
+    readGate.complete();
+    store.readDelay = null;
+    await accepted;
+    await rejected;
+    expect(host.published, hasLength(1));
+    expect(host.published.single.last.subtitle, 'Beta');
+    expect(host.published.single.last.type, recentShortcutType('account-b', 2));
+  });
+
+  test('a delayed rememberOpened does not republish after the same account returns', () async {
+    final host = FakeAppShortcutHost();
+    final store = MemoryRecentProjectStore();
+    final shortcuts = LauncherShortcuts(host, store);
+    addTearDown(shortcuts.dispose);
+    shortcuts.bind('account-a');
+    await shortcuts.publish('account-a');
+    final writeGate = Completer<void>();
+    store.writeDelay = writeGate.future;
+    final remembered = shortcuts.rememberOpened(accountKey: 'account-a', id: 5, name: 'Late');
+    await Future<void>.delayed(Duration.zero);
+    shortcuts.bind(null);
+    shortcuts.bind('account-a');
+    writeGate.complete();
+    store.writeDelay = null;
+    await remembered;
+    expect(await store.read('account-a'), const RecentProject(id: 5, name: 'Late'));
+    expect(host.published, hasLength(1));
+    expect(host.published.single.last.subtitle, isNull);
+    await shortcuts.publish('account-a');
+    expect(host.published, hasLength(2));
+    expect(host.published.last.last.subtitle, 'Late');
   });
 
   test('a delayed rememberOpened does not republish after an account switch', () async {
@@ -238,6 +285,89 @@ void main() {
     expect(tester.widget<TextField>(find.byKey(const Key('projectSearch'))).focusNode?.hasFocus, isTrue);
   }, timeout: const Timeout(Duration(minutes: 1)));
 
+  testWidgets('an accepted asynchronous route exit still applies the shortcut', (tester) async {
+    final harness = await _signedInShell(tester);
+    addTearDown(harness.dispose);
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    final gate = Completer<void>();
+    unawaited(navigator.push(MaterialPageRoute<void>(builder: (context) => PopScope<void>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        final route = ModalRoute.of(context);
+        if (route == null) return;
+        RouteExit.track(route, () async {
+          await gate.future;
+          if (context.mounted) Navigator.of(context).pop();
+        }());
+      },
+      child: const Scaffold(body: Text('async-editor')),
+    ))));
+    await tester.pumpAndSettle();
+    expect(find.text('async-editor'), findsOneWidget);
+
+    harness.host.emit(ShortcutTypes.search);
+    await tester.pump();
+    expect(find.text('async-editor'), findsOneWidget);
+    final covered = find.byKey(const Key('projectSearch'), skipOffstage: false);
+    expect(tester.widget<TextField>(covered).focusNode?.hasFocus, isFalse);
+
+    gate.complete();
+    await settleNetworkWidgets(tester);
+    expect(find.text('async-editor'), findsNothing);
+    expect(tester.widget<TextField>(find.byKey(const Key('projectSearch'))).focusNode?.hasFocus, isTrue);
+  }, timeout: const Timeout(Duration(minutes: 1)));
+
+  testWidgets('a refused asynchronous route exit does not apply the shortcut', (tester) async {
+    final harness = await _signedInShell(tester);
+    addTearDown(harness.dispose);
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    final gate = Completer<void>();
+    unawaited(navigator.push(MaterialPageRoute<void>(builder: (context) => PopScope<void>(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        final route = ModalRoute.of(context);
+        if (route == null) return;
+        RouteExit.track(route, gate.future);
+      },
+      child: const Scaffold(body: Text('async-editor')),
+    ))));
+    await tester.pumpAndSettle();
+
+    harness.host.emit(ShortcutTypes.search);
+    await tester.pump();
+    gate.complete();
+    await settleNetworkWidgets(tester);
+
+    expect(find.text('async-editor'), findsOneWidget);
+    final search = find.byKey(const Key('projectSearch'), skipOffstage: false);
+    expect(tester.widget<TextField>(search).focusNode?.hasFocus, isFalse);
+  }, timeout: const Timeout(Duration(minutes: 1)));
+
+  testWidgets('editor leave stays pending until the draft flush finishes', (tester) async {
+    final harness = await _signedInShell(tester);
+    addTearDown(harness.dispose);
+    final account = harness.session.active!;
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    unawaited(navigator.push(MaterialPageRoute<void>(builder: (_) => ResourceEditor(
+      account: account,
+      title: '新增議題',
+      resource: 'synthetic/editor',
+      persistent: false,
+      fields: const [EditField('title', '標題', required: true)],
+      save: (_) async {},
+    ))));
+    await tester.pumpAndSettle();
+    final route = ModalRoute.of(tester.element(find.text('新增議題')));
+    expect(route, isNotNull);
+    route!.onPopInvokedWithResult(false, null);
+    expect(RouteExit.pending(route), isNotNull);
+    await tester.pumpAndSettle();
+    expect(find.text('新增議題'), findsNothing);
+    expect(RouteExit.pending(route), isNull);
+  }, timeout: const Timeout(Duration(minutes: 1)));
+
   testWidgets('a guarded route stays up and does not focus covered search', (tester) async {
     final harness = await _signedInShell(tester);
     addTearDown(harness.dispose);
@@ -261,8 +391,13 @@ void main() {
   testWidgets('recent shortcut requests that project and offers 404 recovery', (tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(412, 1000);
+    const insets = FakeViewPadding(left: 40, top: 47, right: 18, bottom: 28);
+    tester.view.padding = insets;
+    tester.view.viewPadding = insets;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
+    addTearDown(tester.view.resetViewPadding);
     final harness = await _signedInShell(tester, recentId: 9, recentName: 'Hidden');
     addTearDown(harness.dispose);
     await settleNetworkWidgets(tester);
@@ -282,6 +417,10 @@ void main() {
     );
     expect(gets, isNotEmpty);
     expect(find.text('目標：9'), findsOneWidget);
+    final notice = tester.getRect(find.byType(FailureNotice));
+    expect(notice.left, greaterThanOrEqualTo(insets.left));
+    expect(notice.top, greaterThanOrEqualTo(insets.top));
+    expect(notice.right, lessThanOrEqualTo(412 - insets.right));
     expect(find.text('實例：https://example.com/gitlab'), findsOneWidget);
     expect(find.text('App 帳號：@developer'), findsOneWidget);
     expect(find.text('重新整理'), findsOneWidget);

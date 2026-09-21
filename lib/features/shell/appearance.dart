@@ -62,8 +62,9 @@ String encodeAppearance(ThemeMode mode, bool useDynamicColor) =>
 }
 
 /// Holds the appearance choice for the whole app. [load] never blocks the
-/// first frame: the controller starts on [ThemeMode.system] and notifies its
-/// listeners only once a stored value has actually been read.
+/// first frame: the controller starts on [ThemeMode.system] and notifies once
+/// the read finishes, including when the stored choice matches the default, so
+/// listeners can observe [loaded].
 class AppearanceController extends ChangeNotifier {
   AppearanceController(this._store);
   final AppearanceStore _store;
@@ -88,10 +89,19 @@ class AppearanceController extends ChangeNotifier {
       stored = null;
     }
     if (_disposed) return;
+    final becameLoaded = !_loaded;
     _loaded = true;
-    if (generation != _generation) return;
+    if (generation != _generation) {
+      if (becameLoaded) notifyListeners();
+      return;
+    }
     final (mode, dynamicColor) = decodeAppearance(stored);
-    _apply(mode, dynamicColor ?? dynamicColorDefault());
+    final useDynamic = dynamicColor ?? dynamicColorDefault();
+    if (becameLoaded && _mode == mode && _useDynamicColor == useDynamic) {
+      notifyListeners();
+      return;
+    }
+    _apply(mode, useDynamic);
   }
 
   Future<void> select(ThemeMode mode) {

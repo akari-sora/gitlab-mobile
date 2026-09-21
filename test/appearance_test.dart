@@ -43,7 +43,7 @@ void main() {
       await controller.load();
       expect(controller.mode, ThemeMode.system);
       expect(controller.loaded, isTrue);
-      expect(notifications, 0, reason: 'The default needs no rebuild');
+      expect(notifications, 1, reason: 'loaded still notifies when the choice matches the default');
     });
   }
 
@@ -101,16 +101,20 @@ void main() {
   });
 
   test('a choice made during load is not overwritten', () async {
-    final store = MemoryAppearanceStore(encodeAppearance(ThemeMode.light, false));
+    final original = encodeAppearance(ThemeMode.light, false);
+    final store = MemoryAppearanceStore(original);
     final gate = Completer<void>();
     store.readDelay = gate.future;
     final controller = AppearanceController(store);
     addTearDown(controller.dispose);
     final loading = controller.load();
     await Future<void>.delayed(Duration.zero);
+    // Overwrite the store before the read resumes. The in-flight read must
+    // still return [original] so the generation check is what keeps dark.
     await controller.select(ThemeMode.dark);
     gate.complete();
     await loading;
+    expect(store.reads, [original]);
     expect(controller.mode, ThemeMode.dark);
     expect(store.value, encodeAppearance(ThemeMode.dark, dynamicColorDefault()));
   });
@@ -126,6 +130,30 @@ void main() {
     expect(controller.mode, ThemeMode.dark);
     expect(controller.useDynamicColor, toggled);
     expect(store.writes, [encodeAppearance(ThemeMode.dark, toggled)]);
+  });
+
+  test('an in-flight appearance write does not land after a newer choice', () async {
+    final store = MemoryAppearanceStore();
+    final gate = Completer<void>();
+    store.writeDelay = gate.future;
+    final controller = AppearanceController(store);
+    addTearDown(controller.dispose);
+    final firstFlag = controller.useDynamicColor;
+    final first = controller.select(ThemeMode.dark);
+    await Future<void>.delayed(Duration.zero);
+    final toggled = !controller.useDynamicColor;
+    store.writeDelay = null;
+    final second = controller.setUseDynamicColor(toggled);
+    gate.complete();
+    await first;
+    await second;
+    expect(controller.mode, ThemeMode.dark);
+    expect(controller.useDynamicColor, toggled);
+    expect(store.writes, [
+      encodeAppearance(ThemeMode.dark, firstFlag),
+      encodeAppearance(ThemeMode.dark, toggled),
+    ]);
+    expect(store.value, encodeAppearance(ThemeMode.dark, toggled));
   });
 
   testWidgets('a fresh app with a stored dark appearance boots dark', (tester) async {

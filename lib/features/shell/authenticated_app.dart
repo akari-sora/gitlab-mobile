@@ -227,8 +227,9 @@ class _MobileShellState extends State<_MobileShell> {
   }
 
   /// Pops pushed routes so the shell is the visible page. A route that refuses
-  /// to pop (editor leave, or a repository folder) handles the pop itself; the
-  /// shortcut stops there instead of discarding that guard.
+  /// to pop handles that attempt itself. An editor may still be flushing a
+  /// draft or confirming the exit; that work is awaited. If the route is still
+  /// up afterwards, the shortcut stops instead of discarding the guard.
   Future<bool> _bringShellForward() async {
     final navigator = Navigator.of(context);
     while (mounted) {
@@ -236,7 +237,17 @@ class _MobileShellState extends State<_MobileShell> {
       if (top == null || top.isFirst) return true;
       if (top is ModalRoute<Object?> && top.popDisposition == RoutePopDisposition.doNotPop) {
         top.onPopInvokedWithResult(false, null);
-        await Future<void>.delayed(Duration.zero);
+        final pending = RouteExit.pending(top);
+        if (pending != null) {
+          try {
+            await pending;
+          } catch (_) {
+            // The route reports its own failure; the shortcut only needs to
+            // know whether the page is still up.
+          }
+        } else {
+          await Future<void>.delayed(Duration.zero);
+        }
         if (!mounted || top.isActive) return false;
         continue;
       }
@@ -361,12 +372,15 @@ class _MobileShellState extends State<_MobileShell> {
         body: Column(
           children: [
             if (_showRecentFailure)
-              FailureNotice(
-                _recentFailure!,
-                account: _recentAccount,
-                resourceLabel: '${_recentProjectId ?? ''}',
-                onRetry: _retryRecent,
-                onSwitchAccount: widget.session.endSession,
+              SafeArea(
+                bottom: false,
+                child: FailureNotice(
+                  _recentFailure!,
+                  account: _recentAccount,
+                  resourceLabel: '${_recentProjectId ?? ''}',
+                  onRetry: _retryRecent,
+                  onSwitchAccount: widget.session.endSession,
+                ),
               ),
             Expanded(child: IndexedStack(
           index: _selected,

@@ -29,6 +29,23 @@ String shortSha(String sha) => sha.length > 8 ? sha.substring(0, 8) : sha;
 /// landscape navigation or a display cutout. The app bar already owns the top.
 Widget gestureSafe(Widget child) => SafeArea(top: false, child: child);
 
+/// A pop that finishes after [PopScope.onPopInvokedWithResult] returns, such as
+/// an editor flushing a draft or waiting for confirmation. Callers that only
+/// see the route await [pending] instead of assuming the veto is final.
+final class RouteExit {
+  static final Map<Route<dynamic>, Future<void>> _pending = {};
+
+  static void track(Route<dynamic> route, Future<void> action) {
+    late final Future<void> result;
+    result = action.whenComplete(() {
+      if (identical(_pending[route], result)) _pending.remove(route);
+    });
+    _pending[route] = result;
+  }
+
+  static Future<void>? pending(Route<dynamic> route) => _pending[route];
+}
+
 String relativeDate(String value) {
   final parsed = DateTime.tryParse(value);
   if (parsed == null) return '';

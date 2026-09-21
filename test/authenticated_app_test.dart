@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -373,6 +375,46 @@ void main() {
     expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
     expect(canPop(), isTrue);
     expect(find.byKey(const Key('projectSearch')), findsOneWidget);
+  });
+
+  testWidgets('a probe that finishes before load still clears an unsupported dynamic colour', (tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      final store = MemoryAppearanceStore();
+      final gate = Completer<void>();
+      store.readDelay = gate.future;
+      final local = AppearanceController(store);
+      addTearDown(local.dispose);
+      final loading = local.load();
+      final fixture = WorkspaceFixture();
+      final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+      addTearDown(session.dispose);
+      addTearDown(fixture.api.close);
+      await tester.runAsync(() async {
+        await session.initialize();
+        await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+      });
+      final localShortcuts = LauncherShortcuts(FakeAppShortcutHost(), MemoryRecentProjectStore());
+      addTearDown(localShortcuts.dispose);
+      await tester.pumpWidget(AuthenticatedApp(
+        session: session,
+        appearance: local,
+        shortcuts: localShortcuts,
+      ));
+      await settleNetworkWidgets(tester);
+      expect(local.loaded, isFalse);
+      expect(local.useDynamicColor, isTrue);
+      expect(store.writes, isEmpty);
+      gate.complete();
+      store.readDelay = null;
+      await tester.runAsync(() => loading);
+      expect(local.loaded, isTrue);
+      await settleNetworkWidgets(tester);
+      expect(local.useDynamicColor, isFalse);
+      expect(store.value, encodeAppearance(ThemeMode.system, false));
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   testWidgets('a device without a dynamic scheme stores the flag off', (tester) async {
