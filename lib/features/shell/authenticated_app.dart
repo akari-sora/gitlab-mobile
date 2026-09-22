@@ -16,6 +16,7 @@ import '../workspace/ci_page.dart';
 import '../workspace/editor.dart';
 import 'app_shortcuts.dart';
 import 'appearance.dart';
+import 'build_info.dart';
 
 class AuthenticatedApp extends StatefulWidget {
   const AuthenticatedApp({
@@ -25,12 +26,14 @@ class AuthenticatedApp extends StatefulWidget {
     required this.shortcuts,
     this.dynamicLight,
     this.dynamicDark,
+    this.buildInfoLoader = loadBuildInfo,
   });
   final SessionController session;
   final AppearanceController appearance;
   final LauncherShortcuts shortcuts;
   final ColorScheme? dynamicLight;
   final ColorScheme? dynamicDark;
+  final BuildInfoLoader buildInfoLoader;
   @override
   State<AuthenticatedApp> createState() => _AuthenticatedAppState();
 }
@@ -112,6 +115,7 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
             dynamicColorAvailable: available,
             changeDynamicColor: (value) =>
                 unawaited(widget.appearance.setUseDynamicColor(value)),
+            buildInfoLoader: widget.buildInfoLoader,
           ),
         );
       },
@@ -128,6 +132,7 @@ class _MobileShell extends StatefulWidget {
     required this.useDynamicColor,
     required this.dynamicColorAvailable,
     required this.changeDynamicColor,
+    required this.buildInfoLoader,
   });
   final SessionController session;
   final LauncherShortcuts shortcuts;
@@ -136,6 +141,7 @@ class _MobileShell extends StatefulWidget {
   final bool useDynamicColor;
   final bool dynamicColorAvailable;
   final ValueChanged<bool> changeDynamicColor;
+  final BuildInfoLoader buildInfoLoader;
   @override
   State<_MobileShell> createState() => _MobileShellState();
 }
@@ -512,6 +518,8 @@ class _MobileShellState extends State<_MobileShell> {
                             'GitLab Mobile',
                             style: TextStyle(fontWeight: FontWeight.w600),
                           ),
+                          const SizedBox(height: 4),
+                          BuildInfoLine(load: widget.buildInfoLoader),
                           const SizedBox(height: 4),
                           const Text(
                             '獨立第三方客戶端 · 非 GitLab 官方產品',

@@ -10,6 +10,7 @@ import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
+import 'package:gitlab_mobile/features/shell/build_info.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
@@ -17,6 +18,12 @@ import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
 import 'support/workspace_fixture.dart';
 import 'support/widget_settle.dart';
+
+Future<BuildInfo> _shellBuildInfo() async => const BuildInfo(
+  version: '0.3.0',
+  buildNumber: '3',
+  commit: 'shell',
+);
 
 void main() {
   late MemoryAppearanceStore appearanceStore;
@@ -53,7 +60,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
     );
     await settleNetworkWidgets(tester);
 
@@ -102,7 +109,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
     );
     await settleNetworkWidgets(tester);
 
@@ -151,7 +158,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
     );
     await settleNetworkWidgets(tester);
 
@@ -180,7 +187,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
     );
     await settleNetworkWidgets(tester);
     await tester.tap(find.text('我的'));
@@ -196,6 +203,7 @@ void main() {
         session: session,
         appearance: appearance,
         shortcuts: shortcuts,
+        buildInfoLoader: _shellBuildInfo,
       ),
     );
     await settleNetworkWidgets(tester);
@@ -234,7 +242,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
     );
     await settleNetworkWidgets(tester);
 
@@ -278,7 +286,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
     );
     await settleNetworkWidgets(tester);
 
@@ -315,7 +323,7 @@ void main() {
     });
 
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
     );
     await settleNetworkWidgets(tester);
 
@@ -339,7 +347,7 @@ void main() {
       await session.connect('https://example.com/gitlab', 'synthetic-test-token');
     });
     await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts),
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
     );
     await settleNetworkWidgets(tester);
 
@@ -402,6 +410,7 @@ void main() {
         session: session,
         appearance: local,
         shortcuts: localShortcuts,
+        buildInfoLoader: _shellBuildInfo,
       ));
       await settleNetworkWidgets(tester);
       expect(local.loaded, isFalse);
@@ -441,6 +450,7 @@ void main() {
       session: session,
       appearance: local,
       shortcuts: localShortcuts,
+      buildInfoLoader: _shellBuildInfo,
     ));
     await settleNetworkWidgets(tester);
     expect(local.useDynamicColor, isFalse);
@@ -476,6 +486,7 @@ void main() {
       shortcuts: shortcuts,
       dynamicLight: dynamicLight,
       dynamicDark: dynamicDark,
+      buildInfoLoader: _shellBuildInfo,
     ));
     await settleNetworkWidgets(tester);
     await tester.tap(find.text('我的'));
@@ -523,7 +534,7 @@ void main() {
       await File('${directory.path}/job.zip').writeAsBytes([9]);
     });
 
-    await tester.pumpWidget(AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts));
+    await tester.pumpWidget(AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo));
     await settleNetworkWidgets(tester);
     await tester.tap(find.text('我的'));
     await settleNetworkWidgets(tester);
@@ -563,7 +574,7 @@ void main() {
       artifactStorageRoot = () async => throw const FileSystemException('unreadable');
     });
 
-    await tester.pumpWidget(AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts));
+    await tester.pumpWidget(AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo));
     await settleNetworkWidgets(tester);
     await tester.tap(find.text('我的'));
     await settleNetworkWidgets(tester);
