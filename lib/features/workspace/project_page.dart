@@ -9,11 +9,23 @@ import 'ci_page.dart';
 import 'project_more_page.dart';
 
 class ProjectPage extends StatefulWidget {
-  const ProjectPage({super.key, required this.account, required this.api, required this.project, this.initialTab = 0});
+  const ProjectPage({
+    super.key,
+    required this.account,
+    required this.api,
+    required this.project,
+    this.initialTab = 0,
+    this.showBackButton = true,
+    this.onBack,
+    this.onDeleted,
+  });
   final Account account;
   final GitLabApi api;
   final Project project;
   final int initialTab;
+  final bool showBackButton;
+  final VoidCallback? onBack;
+  final VoidCallback? onDeleted;
   @override
   State<ProjectPage> createState() => _ProjectPageState();
 }
@@ -33,11 +45,17 @@ class _ProjectPageState extends State<ProjectPage> with SingleTickerProviderStat
   Widget build(BuildContext context) {
     final marked = _project.markedForDeletionOn != null;
     return Scaffold(
-    appBar: AppBar(title: Text(_project.name, maxLines: 1, overflow: TextOverflow.ellipsis,
-      style: marked ? Theme.of(context).appBarTheme.titleTextStyle?.copyWith(
-        color: Theme.of(context).colorScheme.onSurfaceVariant) : null),
-      actions: [IconButton(tooltip: '在 GitLab 開啟', icon: const Icon(Icons.open_in_new, size: 20),
-        onPressed: () => openExternal(context, widget.account.instance.projectWeb(_project.path)))]),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        leading: widget.showBackButton
+            ? BackButton(onPressed: widget.onBack)
+            : null,
+        title: Text(_project.name, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: marked ? Theme.of(context).appBarTheme.titleTextStyle?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant) : null),
+        actions: [IconButton(tooltip: '在 GitLab 開啟', icon: const Icon(Icons.open_in_new, size: 20),
+          onPressed: () => openExternal(context, widget.account.instance.projectWeb(_project.path)))],
+      ),
     body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 12), child: Wrap(spacing: 8, runSpacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center, children: [
@@ -54,7 +72,8 @@ class _ProjectPageState extends State<ProjectPage> with SingleTickerProviderStat
         WorkItemsTab(account: widget.account, api: widget.api, project: _project, resource: 'merge_requests'),
         PipelinesTab(account: widget.account, api: widget.api, project: _project),
         ProjectMoreTab(account: widget.account, api: widget.api, project: _project,
-          onChanged: (value) => setState(() => _project = value)),
+          onChanged: (value) => setState(() => _project = value),
+          onDeleted: widget.onDeleted),
       ])),
     ])),
   );

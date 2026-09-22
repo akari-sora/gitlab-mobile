@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../shared/adaptive_breakpoints.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/recent_project.dart';
@@ -13,6 +14,8 @@ import '../workspace/project_page.dart';
 import '../workspace/projects_page.dart';
 import '../workspace/inbox_page.dart';
 import '../workspace/ci_page.dart';
+import '../workspace/ci_overview_page.dart';
+import '../workspace/work_item_page.dart';
 import '../workspace/editor.dart';
 import 'app_shortcuts.dart';
 import 'appearance.dart';
@@ -155,6 +158,10 @@ class _MobileShellState extends State<_MobileShell> {
   Account? _recentAccount;
   int? _recentProjectId;
   int? _recentGeneration;
+  ResumeTarget? _resumeTarget;
+  ApiFailure? _resumeFailure;
+  Account? _resumeAccount;
+  int? _resumeGeneration;
   @override
   void initState() {
     super.initState();
@@ -166,6 +173,7 @@ class _MobileShellState extends State<_MobileShell> {
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
+        unawaited(_consumeResumeTarget());
         unawaited(_consumeShortcut());
       }
     });
@@ -181,7 +189,12 @@ class _MobileShellState extends State<_MobileShell> {
   }
 
   void _onSession() {
-    if (mounted) setState(() {});
+    if (mounted) {
+      if (widget.session.active != null && widget.session.pendingResumeTarget != null) {
+        unawaited(_consumeResumeTarget());
+      }
+      setState(() {});
+    }
   }
 
   @override
@@ -326,6 +339,142 @@ class _MobileShellState extends State<_MobileShell> {
     return widget.session.generation == generation && widget.session.active?.key == account.key;
   }
 
+  Future<void> _consumeResumeTarget() async {
+    final account = widget.session.active;
+    if (account == null || !mounted) return;
+    final target = widget.session.takeResumeTarget();
+    if (target == null || !mounted) return;
+    await _openResumeTarget(target);
+  }
+
+  Future<void> _openResumeTarget(ResumeTarget target) async {
+    final account = widget.session.active;
+    final api = widget.session.api;
+    if (account == null || api == null || !mounted) return;
+    if (!await _bringShellForward() || !mounted || widget.session.active?.key != account.key) {
+      return;
+    }
+    final generation = widget.session.generation;
+    try {
+      final projectRef = (target.projectPath != null && target.projectPath!.isNotEmpty)
+          ? target.projectPath!
+          : (target.projectId != null ? '${target.projectId}' : '');
+      if (projectRef.isEmpty) return;
+
+      final project = await api.project(projectRef);
+      if (!_sameAccount(account, generation) || !mounted) return;
+
+      setState(() {
+        _resumeFailure = null;
+        _resumeAccount = null;
+        _resumeGeneration = null;
+        _resumeTarget = null;
+      });
+
+      final Widget page;
+      switch (target.resource) {
+        case 'issues' || 'issue':
+          if (target.iid != null) {
+            page = WorkItemPage(
+              account: account,
+              api: api,
+              project: project,
+              resource: 'issues',
+              iid: target.iid!,
+            );
+          } else {
+            page = ProjectPage(
+              account: account,
+              api: api,
+              project: project,
+              initialTab: 1,
+            );
+          }
+        case 'merge_requests' || 'merge_request':
+          if (target.iid != null) {
+            page = WorkItemPage(
+              account: account,
+              api: api,
+              project: project,
+              resource: 'merge_requests',
+              iid: target.iid!,
+            );
+          } else {
+            page = ProjectPage(
+              account: account,
+              api: api,
+              project: project,
+              initialTab: 2,
+            );
+          }
+        case 'pipelines' || 'pipeline':
+          if (target.iid != null) {
+            page = PipelinePage(
+              account: account,
+              api: api,
+              project: project,
+              id: target.iid!,
+            );
+          } else {
+            page = ProjectPage(
+              account: account,
+              api: api,
+              project: project,
+              initialTab: 3,
+            );
+          }
+        case 'repository':
+          page = ProjectPage(
+            account: account,
+            api: api,
+            project: project,
+            initialTab: 0,
+          );
+        case 'project':
+        default:
+          page = ProjectPage(
+            account: account,
+            api: api,
+            project: project,
+            initialTab: 0,
+          );
+      }
+
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(builder: (_) => page),
+      );
+    } catch (e) {
+      if (!_sameAccount(account, generation)) return;
+      final failure = safeFailure(e);
+      if (failure.kind == FailureKind.cancelled) return;
+      setState(() {
+        _resumeFailure = failure;
+        _resumeAccount = account;
+        _resumeGeneration = generation;
+        _resumeTarget = target;
+      });
+    }
+  }
+
+  void _retryResume() {
+    final target = _resumeTarget;
+    final account = _resumeAccount;
+    final generation = _resumeGeneration;
+    if (target == null || account == null || generation == null) return;
+    if (!_sameAccount(account, generation)) return;
+    unawaited(_openResumeTarget(target));
+  }
+
+  bool get _showResumeFailure {
+    final failure = _resumeFailure;
+    final account = _resumeAccount;
+    final generation = _resumeGeneration;
+    if (failure == null || account == null || generation == null || _resumeTarget == null) {
+      return false;
+    }
+    return widget.session.generation == generation && widget.session.active?.key == account.key;
+  }
+
   Future<void> _remove(Account account) async {
     if (_removing ||
         !await confirmAction(
@@ -362,6 +511,121 @@ class _MobileShellState extends State<_MobileShell> {
       child: IgnorePointer(ignoring: _selected != index, child: child),
     ),
   );
+  Widget _buildMyTab(BuildContext context, Account account, SessionController session) => Scaffold(
+    appBar: AppBar(title: const Text('我的')),
+    body: gestureSafe(
+      ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Row(
+            children: [
+              Monogram(account.user.name, size: 56),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      account.user.name,
+                      style: Theme.of(context).textTheme.titleLarge,
+                    ),
+                    Text(
+                      '@${account.user.username}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      account.instance.key,
+                      style: Theme.of(context).textTheme.bodySmall,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
+          Text(
+            '外觀',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 12),
+          AppearancePicker(mode: widget.theme, onChanged: widget.changeTheme),
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('使用系統配色（Material You）'),
+            subtitle: Text(
+              widget.dynamicColorAvailable
+                  ? 'Android 12 以上會依桌布色調產生配色'
+                  : '此裝置沒有動態配色',
+            ),
+            value: widget.dynamicColorAvailable && widget.useDynamicColor,
+            onChanged: widget.dynamicColorAvailable
+                ? widget.changeDynamicColor
+                : null,
+          ),
+          const SizedBox(height: 28),
+          Text(
+            '帳號',
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          const SizedBox(height: 12),
+          for (final saved in session.accounts)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Card(
+                child: ListTile(
+                  leading: Monogram(saved.user.name, size: 32),
+                  title: Text(
+                    '@${saved.user.username}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  subtitle: Text(saved.instance.base.host),
+                  onTap:
+                      session.busy ||
+                              _removing ||
+                              saved.key == account.key
+                          ? null
+                          : () => session.select(saved),
+                  trailing: IconButton(
+                    tooltip: '從此裝置移除帳號',
+                    icon: const Icon(Icons.logout, size: 20),
+                    onPressed: session.busy || _removing
+                        ? null
+                        : () => _remove(saved),
+                  ),
+                ),
+              ),
+            ),
+          TextButton.icon(
+            onPressed: () {
+              unawaited(session.endSession());
+            },
+            icon: const Icon(Icons.person_add_outlined),
+            label: const Text('新增或重新連接帳號'),
+          ),
+          const SizedBox(height: 28),
+          const Text(
+            'GitLab Mobile',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 4),
+          BuildInfoLine(load: widget.buildInfoLoader),
+          const SizedBox(height: 4),
+          const Text(
+            '獨立第三方客戶端 · 非 GitLab 官方產品',
+            style: TextStyle(fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            '新增與修改需要 Token 的 api 權限；read_api 可用於唯讀。專案角色與實例政策仍會限制操作。',
+            style: TextStyle(fontSize: 12),
+          ),
+        ],
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final session = widget.session;
@@ -376,200 +640,180 @@ class _MobileShellState extends State<_MobileShell> {
           setState(() => _selected = 1);
         }
       },
-      child: Scaffold(
-        body: Column(
-          children: [
-            if (_showRecentFailure)
-              SafeArea(
-                bottom: false,
-                child: FailureNotice(
-                  _recentFailure!,
-                  account: _recentAccount,
-                  resourceLabel: '${_recentProjectId ?? ''}',
-                  onRetry: _retryRecent,
-                  onSwitchAccount: widget.session.endSession,
-                ),
-              ),
-            Expanded(child: IndexedStack(
-          index: _selected,
-          children: [
-            _pane(
-              0,
-              _visited.contains(0)
-                  ? InboxPage(account: account, api: session.api!)
-                  : const SizedBox(),
-            ),
-            _pane(
-              1,
-              ProjectsPage(
-                session: session,
-                shortcuts: widget.shortcuts,
-                searchToken: _searchToken,
-              ),
-            ),
-            _pane(
-              2,
-              _visited.contains(2)
-                  ? ProjectsPage(session: session, forCi: true)
-                  : const SizedBox(),
-            ),
-            _pane(
-              3,
-              _visited.contains(3)
-                  ? Scaffold(
-                      appBar: AppBar(title: const Text('我的')),
-                      body: gestureSafe(
-                        ListView(
-                        padding: const EdgeInsets.all(20),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final useRail = AdaptiveBreakpoints.showNavigationRail(constraints.maxWidth);
+          return Scaffold(
+            body: Row(
+              children: [
+                if (useRail) ...[
+                  SafeArea(
+                    left: true,
+                    top: true,
+                    bottom: true,
+                    right: false,
+                    child: NavigationRail(
+                      selectedIndex: _selected,
+                      onDestinationSelected: (index) => setState(() {
+                        _selected = index;
+                        _visited.add(index);
+                      }),
+                      labelType: NavigationRailLabelType.all,
+                      destinations: const [
+                        NavigationRailDestination(
+                          icon: Icon(Icons.inbox_outlined),
+                          selectedIcon: Icon(Icons.inbox),
+                          label: Text('收件匣'),
+                        ),
+                        NavigationRailDestination(
+                          icon: Icon(Icons.folder_outlined),
+                          selectedIcon: Icon(Icons.folder),
+                          label: Text('專案'),
+                        ),
+                        NavigationRailDestination(
+                          icon: Icon(Icons.account_tree_outlined),
+                          selectedIcon: Icon(Icons.account_tree),
+                          label: Text('CI'),
+                        ),
+                        NavigationRailDestination(
+                          icon: Icon(Icons.person_outline),
+                          selectedIcon: Icon(Icons.person),
+                          label: Text('我的'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const VerticalDivider(width: 1, thickness: 1),
+                ],
+                Expanded(
+                  key: const ValueKey('shell-main-content-expanded'),
+                  child: Builder(
+                    builder: (contentContext) {
+                      Widget content = Column(
                         children: [
-                          Row(
-                            children: [
-                              Monogram(account.user.name, size: 56),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      account.user.name,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.titleLarge,
-                                    ),
-                                    Text(
-                                      '@${account.user.username}',
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                    Text(
-                                      account.instance.key,
-                                      style: Theme.of(
-                                        context,
-                                      ).textTheme.bodySmall,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 28),
-                          Text(
-                            '外觀',
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                          const SizedBox(height: 12),
-                          AppearancePicker(mode: widget.theme, onChanged: widget.changeTheme),
-                          SwitchListTile(
-                            contentPadding: EdgeInsets.zero,
-                            title: const Text('使用系統配色（Material You）'),
-                            subtitle: Text(
-                              widget.dynamicColorAvailable
-                                  ? 'Android 12 以上會依桌布色調產生配色'
-                                  : '此裝置沒有動態配色',
-                            ),
-                            value: widget.dynamicColorAvailable && widget.useDynamicColor,
-                            onChanged: widget.dynamicColorAvailable
-                                ? widget.changeDynamicColor
-                                : null,
-                          ),
-                          const SizedBox(height: 28),
-                          Text(
-                            '帳號',
-                            style: Theme.of(context).textTheme.titleSmall,
-                          ),
-                          const SizedBox(height: 12),
-                          for (final saved in session.accounts)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: Card(
-                                child: ListTile(
-                                  leading: Monogram(saved.user.name, size: 32),
-                                  title: Text(
-                                    '@${saved.user.username}',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  subtitle: Text(saved.instance.base.host),
-                                  onTap:
-                                      session.busy ||
-                                          _removing ||
-                                          saved.key == account.key
-                                      ? null
-                                      : () => session.select(saved),
-                                  trailing: IconButton(
-                                    tooltip: '從此裝置移除帳號',
-                                    icon: const Icon(Icons.logout, size: 20),
-                                    onPressed: session.busy || _removing
-                                        ? null
-                                        : () => _remove(saved),
-                                  ),
-                                ),
+                          if (_showRecentFailure)
+                            SafeArea(
+                              bottom: false,
+                              child: FailureNotice(
+                                _recentFailure!,
+                                account: _recentAccount,
+                                resourceLabel: '${_recentProjectId ?? ''}',
+                                onRetry: _retryRecent,
+                                onSwitchAccount: () {
+                                  if (_recentProjectId != null) {
+                                    widget.session.setPendingResumeTarget(
+                                      ResumeTarget(projectId: _recentProjectId, resource: 'project'),
+                                    );
+                                  }
+                                  unawaited(widget.session.endSession(switching: true));
+                                },
                               ),
                             ),
-                          TextButton.icon(
-                            onPressed: () {
-                              unawaited(session.endSession());
-                            },
-                            icon: const Icon(Icons.person_add_outlined),
-                            label: const Text('新增或重新連接帳號'),
-                          ),
-                          const SizedBox(height: 28),
-                          const Text(
-                            'GitLab Mobile',
-                            style: TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                          const SizedBox(height: 4),
-                          BuildInfoLine(load: widget.buildInfoLoader),
-                          const SizedBox(height: 4),
-                          const Text(
-                            '獨立第三方客戶端 · 非 GitLab 官方產品',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          const SizedBox(height: 12),
-                          const Text(
-                            '新增與修改需要 Token 的 api 權限；read_api 可用於唯讀。專案角色與實例政策仍會限制操作。',
-                            style: TextStyle(fontSize: 12),
+                          if (_showResumeFailure)
+                            SafeArea(
+                              bottom: false,
+                              child: FailureNotice(
+                                _resumeFailure!,
+                                account: _resumeAccount,
+                                resourceLabel: _resumeTarget?.projectPath ??
+                                    (_resumeTarget?.projectId != null
+                                        ? '${_resumeTarget!.projectId}'
+                                        : ''),
+                                onRetry: _retryResume,
+                                onSwitchAccount: () {
+                                  final target = _resumeTarget;
+                                  if (target != null) {
+                                    widget.session.setPendingResumeTarget(target);
+                                  }
+                                  unawaited(widget.session.endSession(switching: true));
+                                },
+                              ),
+                            ),
+                          Expanded(
+                            child: IndexedStack(
+                              key: const ValueKey('shell-indexed-stack'),
+                              index: _selected,
+                              children: [
+                                _pane(
+                                  0,
+                                  _visited.contains(0)
+                                      ? InboxPage(account: account, api: session.api!)
+                                      : const SizedBox(),
+                                ),
+                                _pane(
+                                  1,
+                                  ProjectsPage(
+                                    session: session,
+                                    shortcuts: widget.shortcuts,
+                                    searchToken: _searchToken,
+                                  ),
+                                ),
+                                _pane(
+                                  2,
+                                  _visited.contains(2)
+                                      ? CiOverviewPage(session: session)
+                                      : const SizedBox(),
+                                ),
+                                _pane(
+                                  3,
+                                  _visited.contains(3)
+                                      ? _buildMyTab(context, account, session)
+                                      : const SizedBox(),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
+                      );
+                      if (useRail) {
+                        final isLtr = Directionality.of(contentContext) == TextDirection.ltr;
+                        content = MediaQuery.removePadding(
+                          context: contentContext,
+                          removeLeft: isLtr,
+                          removeRight: !isLtr,
+                          child: content,
+                        );
+                      }
+                      return content;
+                    },
+                  ),
+                ),
+              ],
+            ),
+            bottomNavigationBar: useRail
+                ? null
+                : NavigationBar(
+                    maintainBottomViewPadding: true,
+                    selectedIndex: _selected,
+                    onDestinationSelected: (index) => setState(() {
+                      _selected = index;
+                      _visited.add(index);
+                    }),
+                    destinations: const [
+                      NavigationDestination(
+                        icon: Icon(Icons.inbox_outlined),
+                        selectedIcon: Icon(Icons.inbox),
+                        label: '收件匣',
                       ),
+                      NavigationDestination(
+                        icon: Icon(Icons.folder_outlined),
+                        selectedIcon: Icon(Icons.folder),
+                        label: '專案',
                       ),
-                    )
-                  : const SizedBox(),
-            ),
-          ],
-        )),
-          ],
-        ),
-        bottomNavigationBar: NavigationBar(
-          maintainBottomViewPadding: true,
-          selectedIndex: _selected,
-          onDestinationSelected: (index) => setState(() {
-            _selected = index;
-            _visited.add(index);
-          }),
-          destinations: const [
-            NavigationDestination(
-              icon: Icon(Icons.inbox_outlined),
-              selectedIcon: Icon(Icons.inbox),
-              label: '收件匣',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.folder_outlined),
-              selectedIcon: Icon(Icons.folder),
-              label: '專案',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.account_tree_outlined),
-              selectedIcon: Icon(Icons.account_tree),
-              label: 'CI',
-            ),
-            NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person),
-              label: '我的',
-            ),
-          ],
-        ),
+                      NavigationDestination(
+                        icon: Icon(Icons.account_tree_outlined),
+                        selectedIcon: Icon(Icons.account_tree),
+                        label: 'CI',
+                      ),
+                      NavigationDestination(
+                        icon: Icon(Icons.person_outline),
+                        selectedIcon: Icon(Icons.person),
+                        label: '我的',
+                      ),
+                    ],
+                  ),
+          );
+        },
       ),
     );
   }
