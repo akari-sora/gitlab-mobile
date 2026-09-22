@@ -51,7 +51,9 @@ void main() {
     final buttonNode = tester.getSemantics(button);
     expect(lineNode.id, isNot(buttonNode.id));
     expect(lineNode.label, line);
-    expect(buttonNode.label, '複製版本資訊');
+    // The tooltip is the button's single accessible name (no extra label).
+    expect(buttonNode.tooltip, '複製版本資訊');
+    expect(buttonNode.label, isEmpty);
 
     await tester.tap(button);
     await tester.pump();

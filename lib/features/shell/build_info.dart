@@ -114,18 +114,14 @@ class _BuildInfoLineState extends State<BuildInfoLine> {
                 child: Text(_versionLine(info), style: const TextStyle(fontSize: 12)),
               ),
             ),
-            MergeSemantics(
-              child: Semantics(
-                label: '複製版本資訊',
-                button: true,
-                child: IconButton(
-                  tooltip: '複製版本資訊',
-                  onPressed: () {
-                    unawaited(_copy(info));
-                  },
-                  icon: const Icon(Icons.copy_outlined, size: 20),
-                ),
-              ),
+            // The tooltip is the button's one accessible name; a second
+            // Semantics label would be announced twice on some engines.
+            IconButton(
+              tooltip: '複製版本資訊',
+              onPressed: () {
+                unawaited(_copy(info));
+              },
+              icon: const Icon(Icons.copy_outlined, size: 20),
             ),
           ],
         );
