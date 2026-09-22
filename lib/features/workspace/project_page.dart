@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/external_link.dart';
+import '../../shared/list_detail_scaffold.dart';
 import '../../shared/workspace_ui.dart';
 import 'repository_page.dart';
 import 'work_item_page.dart';
@@ -68,8 +69,14 @@ class _ProjectPageState extends State<ProjectPage> with SingleTickerProviderStat
         tabs: const [Tab(text: '檔案'), Tab(text: '議題'), Tab(text: 'MR'), Tab(text: 'CI'), Tab(text: '更多')]),
       Expanded(child: TabBarView(controller: _tabs, children: [
         RepositoryTab(account: widget.account, api: widget.api, project: _project, active: _tabs.index == 0),
-        WorkItemsTab(account: widget.account, api: widget.api, project: _project, resource: 'issues'),
-        WorkItemsTab(account: widget.account, api: widget.api, project: _project, resource: 'merge_requests'),
+        TabActiveScope(
+          isActive: TabActiveScope.of(context) && _tabs.index == 1,
+          child: WorkItemsTab(account: widget.account, api: widget.api, project: _project, resource: 'issues'),
+        ),
+        TabActiveScope(
+          isActive: TabActiveScope.of(context) && _tabs.index == 2,
+          child: WorkItemsTab(account: widget.account, api: widget.api, project: _project, resource: 'merge_requests'),
+        ),
         PipelinesTab(account: widget.account, api: widget.api, project: _project),
         ProjectMoreTab(account: widget.account, api: widget.api, project: _project,
           onChanged: (value) => setState(() => _project = value),

@@ -1,7 +1,10 @@
 import 'dart:async';
+import 'dart:convert';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/gitlab_api.dart' show Json;
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
@@ -673,6 +676,389 @@ void main() {
       final hasRetainedOldProject = find.text('檔案').evaluate().isNotEmpty;
       // We document this observation for forensic audit.
       expect(hasRetainedOldProject, isTrue);
+    });
+  });
+
+  group('Empirical Challenge 4: Deep Integration Stress Tests (Back Stack & Pagination)', () {
+    testWidgets('Stress test: 2-stage back, tab switching across shell tabs, and background tab isolation', (tester) async {
+      final appearanceStore = MemoryAppearanceStore();
+      final appearance = AppearanceController(appearanceStore);
+      addTearDown(appearance.dispose);
+      final shortcuts = LauncherShortcuts(FakeAppShortcutHost(), MemoryRecentProjectStore());
+      addTearDown(shortcuts.dispose);
+
+      final fixture = WorkspaceFixture();
+      fixture.issues[42] = fixture.issue(42, 'Shell Integration Issue 42');
+      final store = MemoryAccountStore();
+      final session = controllerFor(store, fixture.adapter);
+      addTearDown(session.dispose);
+      addTearDown(fixture.api.close);
+
+      await tester.runAsync(() async {
+        await session.initialize();
+        await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+      });
+
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(412, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        AuthenticatedApp(
+          session: session,
+          appearance: appearance,
+          shortcuts: shortcuts,
+          buildInfoLoader: _dummyBuildInfo,
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      // Phase 1: In Projects tab (1), drill down to Project A -> Issues -> Issue 42
+      await tester.tap(find.text('Mobile Workspace'));
+      await settleNetworkWidgets(tester);
+      expect(find.text('檔案'), findsOneWidget);
+
+      await tester.tap(find.text('議題'));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Shell Integration Issue 42'), findsOneWidget);
+
+      await tester.tap(find.text('Shell Integration Issue 42'));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Overview'), findsOneWidget);
+
+      // Phase 2: Switch to CI tab (2) -> Issue 42 must be isolated in background
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('CI')));
+      await settleNetworkWidgets(tester);
+      expect(find.text('選擇專案，查看流程與工作紀錄'), findsOneWidget);
+
+      // System back while on CI tab: switches back to default Projects tab, DOES NOT clear Issue 42!
+      final handledCiBack = await tester.binding.handlePopRoute();
+      expect(handledCiBack, isTrue);
+      await settleNetworkWidgets(tester);
+
+      expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
+      expect(find.text('Overview'), findsOneWidget, reason: 'Issue 42 must NOT have been cleared while tab was inactive');
+
+      // Phase 3: Switch to "我的" tab (3) -> Issue 42 must be isolated in background
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('我的')));
+      await settleNetworkWidgets(tester);
+      expect(find.text('外觀'), findsOneWidget);
+
+      // System back while on "我的" tab: switches back to Projects tab, DOES NOT clear Issue 42!
+      final handledSettingsBack = await tester.binding.handlePopRoute();
+      expect(handledSettingsBack, isTrue);
+      await settleNetworkWidgets(tester);
+
+      expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
+      expect(find.text('Overview'), findsOneWidget, reason: 'Issue 42 must NOT have been cleared when popping from Settings');
+
+      // Phase 4: Switch nested tab within Project A to "MR" (Merge Requests)
+      await tester.tap(find.text('MR'));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Improve private-project navigation'), findsOneWidget);
+
+      // Select MR 12
+      await tester.tap(find.text('Improve private-project navigation'));
+      await settleNetworkWidgets(tester);
+      expect(find.text('!12'), findsOneWidget);
+
+      // System back on MR 12: pops MR 12, stays in Project A on MR tab
+      final handledMrBack = await tester.binding.handlePopRoute();
+      expect(handledMrBack, isTrue);
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('Improve private-project navigation'), findsOneWidget);
+      expect(find.text('檔案'), findsOneWidget);
+
+      // Switch back to "議題" tab: Issue 42 is still active in its tab!
+      await tester.tap(find.text('議題'));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Overview'), findsOneWidget, reason: 'Issue 42 detail must still be preserved in Issues tab');
+
+      // Phase 5: Stage 1 Back - pop Issue 42
+      final handledIssueBack = await tester.binding.handlePopRoute();
+      expect(handledIssueBack, isTrue);
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('Overview'), findsNothing);
+      expect(find.text('Shell Integration Issue 42'), findsOneWidget);
+      expect(find.text('檔案'), findsOneWidget);
+      expect(find.byKey(const Key('projectSearch')), findsNothing);
+
+      // Phase 6: Stage 2 Back - pop Project A
+      final handledProjectBack = await tester.binding.handlePopRoute();
+      expect(handledProjectBack, isTrue);
+      await settleNetworkWidgets(tester);
+
+      expect(find.byKey(const Key('projectSearch')), findsOneWidget);
+      expect(find.text('Mobile Workspace'), findsOneWidget);
+      expect(find.text('檔案'), findsNothing);
+
+      // Phase 7: Back at root Projects list -> cannot handle further back
+      final handledRootBack = await tester.binding.handlePopRoute();
+      expect(handledRootBack, isFalse, reason: 'At root Projects list, shell should not consume system back');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Stress test: multi-page pagination, scroll position tracking, and window resizing 1000 -> 800 -> 1000 dp with zero duplicate API calls', (tester) async {
+      final appearanceStore = MemoryAppearanceStore();
+      final appearance = AppearanceController(appearanceStore);
+      addTearDown(appearance.dispose);
+      final shortcuts = LauncherShortcuts(FakeAppShortcutHost(), MemoryRecentProjectStore());
+      addTearDown(shortcuts.dispose);
+
+      int projectsRequestCount = 0;
+      final fixture = WorkspaceFixture();
+
+      // Generate 6 test projects across 2 pages (3 on page 1, 3 on page 2)
+      // With height 800 dp:
+      // Page 1 (3 items + header ~670 dp) shows "載入更多" well within viewport.
+      // Page 2 (6 items + header ~1170 dp) exceeds 800 dp, giving positive maxScrollExtent (~370 dp).
+      final page1 = List<Json>.generate(3, (i) => {
+        'id': 201 + i,
+        'name': 'Project Alpha ${i + 1}',
+        'path_with_namespace': 'group/alpha-${i + 1}',
+        'visibility': 'private',
+        'default_branch': 'main',
+        'archived': false,
+        'last_activity_at': '2026-09-19T08:30:00Z',
+      });
+      final page2 = List<Json>.generate(3, (i) => {
+        'id': 204 + i,
+        'name': 'Project Beta ${i + 4}',
+        'path_with_namespace': 'group/beta-${i + 4}',
+        'visibility': 'private',
+        'default_branch': 'main',
+        'archived': false,
+        'last_activity_at': '2026-09-19T08:30:00Z',
+      });
+
+      final customAdapter = FakeAdapter((request) {
+        final segments = request.uri.pathSegments;
+        final start = segments.indexOf('v4');
+        final path = segments.skip(start + 1).toList();
+        final joined = path.join('/');
+
+        if (joined == 'projects') {
+          projectsRequestCount++;
+          final page = request.uri.queryParameters['page'];
+          if (page == '2') {
+            return ResponseBody.fromString(
+              jsonEncode(page2),
+              200,
+              headers: {
+                'content-type': ['application/json'],
+              },
+            );
+          }
+          return ResponseBody.fromString(
+            jsonEncode(page1),
+            200,
+            headers: {
+              'content-type': ['application/json'],
+              'x-next-page': ['2'],
+            },
+          );
+        }
+        if (path.length == 2 && path[0] == 'projects') {
+          final id = int.tryParse(path[1]);
+          final found = [...page1, ...page2].firstWhere(
+            (p) => p['id'] == id,
+            orElse: () => fixture.projectRecord,
+          );
+          return jsonResponse(found);
+        }
+        return fixture.respond(request);
+      });
+
+      final store = MemoryAccountStore();
+      final session = controllerFor(store, customAdapter);
+      addTearDown(session.dispose);
+      addTearDown(fixture.api.close);
+
+      await tester.runAsync(() async {
+        await session.initialize();
+        await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+      });
+
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(1000, 800);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        AuthenticatedApp(
+          session: session,
+          appearance: appearance,
+          shortcuts: shortcuts,
+          buildInfoLoader: _dummyBuildInfo,
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      // Initial request count == 1
+      expect(projectsRequestCount, equals(1));
+      expect(find.text('Project Alpha 1'), findsOneWidget);
+      expect(find.text('Project Alpha 3'), findsOneWidget);
+      expect(find.text('Project Beta 4'), findsNothing);
+
+      // Load Page 2 (2nd page of pagination)
+      expect(find.text('載入更多'), findsOneWidget);
+      await tester.tap(find.text('載入更多'));
+      await settleNetworkWidgets(tester);
+      expect(projectsRequestCount, equals(2));
+      expect(find.text('Project Alpha 1'), findsOneWidget);
+      expect(find.text('Project Beta 4'), findsOneWidget);
+      expect(find.text('載入更多'), findsNothing);
+
+      // Master list scrollable
+      final projectsScrollable = find.descendant(
+        of: find.byKey(const PageStorageKey('projects/0/')),
+        matching: find.byType(Scrollable),
+      );
+      expect(projectsScrollable, findsOneWidget);
+
+      // Drag list up to scroll down
+      await tester.drag(find.text('Project Alpha 1'), const Offset(0, -150));
+      await tester.pump();
+      await settleNetworkWidgets(tester);
+
+      // After scrolling down, Project Beta 6 is scrolled into view
+      expect(find.text('Project Beta 6'), findsOneWidget);
+
+      // Read current non-zero scroll offset
+      final scrolledOffset = tester.state<ScrollableState>(projectsScrollable).position.pixels;
+      expect(scrolledOffset, greaterThan(30.0), reason: 'List must have non-zero scroll position');
+
+      // Resize window: 1000 -> 800 dp (Two-Pane -> Single-Column)
+      tester.view.physicalSize = const Size(800, 800);
+      await tester.pump();
+      await settleNetworkWidgets(tester);
+
+      // Verify ZERO duplicate requests
+      expect(projectsRequestCount, equals(2), reason: 'Resize 1000 -> 800 dp must NOT re-fetch projects');
+      // Verify scroll offset is preserved in Single-Column
+      final singleScrollable = find.descendant(
+        of: find.byKey(const PageStorageKey('projects/0/')),
+        matching: find.byType(Scrollable),
+      );
+      expect(tester.state<ScrollableState>(singleScrollable).position.pixels, closeTo(scrolledOffset, 2.0),
+        reason: 'Scroll position must be preserved across resize to 800 dp');
+
+      // Enter detail view in Single-Column mode
+      await tester.tap(find.text('Project Beta 4'));
+      await settleNetworkWidgets(tester);
+      expect(find.text('檔案'), findsOneWidget);
+
+      // Pop back from detail view in Single-Column mode
+      final handled = await tester.binding.handlePopRoute();
+      expect(handled, isTrue);
+      await settleNetworkWidgets(tester);
+
+      // Verify ZERO duplicate requests after back
+      expect(projectsRequestCount, equals(2), reason: 'Navigating to detail and back must NOT re-fetch projects');
+      final afterBackScrollable = find.descendant(
+        of: find.byKey(const PageStorageKey('projects/0/')),
+        matching: find.byType(Scrollable),
+      );
+      expect(tester.state<ScrollableState>(afterBackScrollable).position.pixels, closeTo(scrolledOffset, 2.0),
+        reason: 'Scroll position must be preserved after detail back');
+
+      // Resize window: 800 -> 1000 dp (Single-Column -> Two-Pane)
+      tester.view.physicalSize = const Size(1000, 800);
+      await tester.pump();
+      await settleNetworkWidgets(tester);
+
+      // Verify ZERO duplicate requests after expand
+      expect(projectsRequestCount, equals(2), reason: 'Resize 800 -> 1000 dp must NOT re-fetch projects');
+      final twoPaneScrollableAfter = find.descendant(
+        of: find.byKey(const PageStorageKey('projects/0/')),
+        matching: find.byType(Scrollable),
+      );
+      expect(tester.state<ScrollableState>(twoPaneScrollableAfter).position.pixels, closeTo(scrolledOffset, 2.0),
+        reason: 'Scroll position must be preserved across resize back to 1000 dp');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Stress test: continuous oscillation 1200 <-> 840 <-> 600 <-> 412 dp with active Issue 42 preserves controller and hierarchy', (tester) async {
+      final appearanceStore = MemoryAppearanceStore();
+      final appearance = AppearanceController(appearanceStore);
+      addTearDown(appearance.dispose);
+      final shortcuts = LauncherShortcuts(FakeAppShortcutHost(), MemoryRecentProjectStore());
+      addTearDown(shortcuts.dispose);
+
+      final fixture = WorkspaceFixture();
+      fixture.issues[42] = fixture.issue(42, 'Shell Integration Issue 42');
+      final store = MemoryAccountStore();
+      final session = controllerFor(store, fixture.adapter);
+      addTearDown(session.dispose);
+      addTearDown(fixture.api.close);
+
+      await tester.runAsync(() async {
+        await session.initialize();
+        await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+      });
+
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(412, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        AuthenticatedApp(
+          session: session,
+          appearance: appearance,
+          shortcuts: shortcuts,
+          buildInfoLoader: _dummyBuildInfo,
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      // Navigate to Project A -> Issues -> Issue 42
+      await tester.tap(find.text('Mobile Workspace'));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.text('議題'));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.text('Shell Integration Issue 42'));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Overview'), findsOneWidget);
+
+      // Rapidly oscillate through display widths
+      const sizes = [
+        Size(412, 900),
+        Size(599, 900),
+        Size(600, 900),
+        Size(839, 900),
+        Size(840, 900),
+        Size(1200, 900),
+        Size(840, 900),
+        Size(600, 900),
+        Size(599, 900),
+        Size(412, 900),
+      ];
+
+      for (final size in sizes) {
+        tester.view.physicalSize = size;
+        await tester.pump();
+        await settleNetworkWidgets(tester);
+        expect(find.text('Overview'), findsOneWidget,
+          reason: 'Overview must remain rendered at size ${size.width}x${size.height}');
+      }
+
+      // Finally at 412 dp, verify two-stage back
+      expect(tester.view.physicalSize.width, 412);
+      final handled1 = await tester.binding.handlePopRoute();
+      expect(handled1, isTrue);
+      await settleNetworkWidgets(tester);
+      expect(find.text('Overview'), findsNothing);
+      expect(find.text('Shell Integration Issue 42'), findsOneWidget);
+
+      final handled2 = await tester.binding.handlePopRoute();
+      expect(handled2, isTrue);
+      await settleNetworkWidgets(tester);
+      expect(find.byKey(const Key('projectSearch')), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   });
 }

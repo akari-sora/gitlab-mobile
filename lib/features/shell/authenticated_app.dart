@@ -6,6 +6,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/adaptive_breakpoints.dart';
+import '../../shared/list_detail_scaffold.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/recent_project.dart';
@@ -150,6 +151,7 @@ class _MobileShell extends StatefulWidget {
 }
 
 class _MobileShellState extends State<_MobileShell> {
+  final _backDispatcher = DetailBackDispatcher();
   int _selected = 1;
   int _searchToken = 0;
   bool _removing = false;
@@ -199,6 +201,7 @@ class _MobileShellState extends State<_MobileShell> {
 
   @override
   void dispose() {
+    _backDispatcher.dispose();
     widget.session.removeListener(_onSession);
     widget.shortcuts.removeListener(_onShortcut);
     super.dispose();
@@ -504,11 +507,14 @@ class _MobileShellState extends State<_MobileShell> {
     }
   }
 
-  Widget _pane(int index, Widget child) => ExcludeSemantics(
-    excluding: _selected != index,
-    child: TickerMode(
-      enabled: _selected == index,
-      child: IgnorePointer(ignoring: _selected != index, child: child),
+  Widget _pane(int index, Widget child) => TabActiveScope(
+    isActive: _selected == index,
+    child: ExcludeSemantics(
+      excluding: _selected != index,
+      child: TickerMode(
+        enabled: _selected == index,
+        child: IgnorePointer(ignoring: _selected != index, child: child),
+      ),
     ),
   );
   Widget _buildMyTab(BuildContext context, Account account, SessionController session) => Scaffold(
@@ -633,192 +639,205 @@ class _MobileShellState extends State<_MobileShell> {
     if (account == null || session.api == null) {
       return const Scaffold(body: SizedBox());
     }
-    return PopScope<Object?>(
-      canPop: _selected == 1,
-      onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) {
-          setState(() => _selected = 1);
-        }
-      },
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final useRail = AdaptiveBreakpoints.showNavigationRail(constraints.maxWidth);
-          return Scaffold(
-            body: Row(
-              children: [
-                if (useRail) ...[
-                  SafeArea(
-                    left: true,
-                    top: true,
-                    bottom: true,
-                    right: false,
-                    child: NavigationRail(
-                      minWidth: AdaptiveBreakpoints.navigationRailWidth,
-                      selectedIndex: _selected,
-                      onDestinationSelected: (index) => setState(() {
-                        _selected = index;
-                        _visited.add(index);
-                      }),
-                      labelType: NavigationRailLabelType.all,
-                      destinations: const [
-                        NavigationRailDestination(
-                          icon: Icon(Icons.inbox_outlined),
-                          selectedIcon: Icon(Icons.inbox),
-                          label: Text('收件匣'),
+    return DetailBackScope(
+      dispatcher: _backDispatcher,
+      depth: 0,
+      child: ListenableBuilder(
+        listenable: _backDispatcher,
+        builder: (context, _) {
+          return PopScope<Object?>(
+            canPop: _selected == 1 && !_backDispatcher.canHandleBack,
+            onPopInvokedWithResult: (didPop, _) {
+              if (didPop) return;
+              if (_backDispatcher.handleBack()) {
+                return;
+              }
+              if (_selected != 1) {
+                setState(() => _selected = 1);
+              }
+            },
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final useRail = AdaptiveBreakpoints.showNavigationRail(constraints.maxWidth);
+                return Scaffold(
+                  body: Row(
+                    children: [
+                      if (useRail) ...[
+                        SafeArea(
+                          left: true,
+                          top: true,
+                          bottom: true,
+                          right: false,
+                          child: NavigationRail(
+                            minWidth: AdaptiveBreakpoints.navigationRailWidth,
+                            selectedIndex: _selected,
+                            onDestinationSelected: (index) => setState(() {
+                              _selected = index;
+                              _visited.add(index);
+                            }),
+                            labelType: NavigationRailLabelType.all,
+                            destinations: const [
+                              NavigationRailDestination(
+                                icon: Icon(Icons.inbox_outlined),
+                                selectedIcon: Icon(Icons.inbox),
+                                label: Text('收件匣'),
+                              ),
+                              NavigationRailDestination(
+                                icon: Icon(Icons.folder_outlined),
+                                selectedIcon: Icon(Icons.folder),
+                                label: Text('專案'),
+                              ),
+                              NavigationRailDestination(
+                                icon: Icon(Icons.account_tree_outlined),
+                                selectedIcon: Icon(Icons.account_tree),
+                                label: Text('CI'),
+                              ),
+                              NavigationRailDestination(
+                                icon: Icon(Icons.person_outline),
+                                selectedIcon: Icon(Icons.person),
+                                label: Text('我的'),
+                              ),
+                            ],
+                          ),
                         ),
-                        NavigationRailDestination(
-                          icon: Icon(Icons.folder_outlined),
-                          selectedIcon: Icon(Icons.folder),
-                          label: Text('專案'),
-                        ),
-                        NavigationRailDestination(
-                          icon: Icon(Icons.account_tree_outlined),
-                          selectedIcon: Icon(Icons.account_tree),
-                          label: Text('CI'),
-                        ),
-                        NavigationRailDestination(
-                          icon: Icon(Icons.person_outline),
-                          selectedIcon: Icon(Icons.person),
-                          label: Text('我的'),
+                        const VerticalDivider(
+                          width: AdaptiveBreakpoints.navigationRailDividerWidth,
+                          thickness: 1,
                         ),
                       ],
-                    ),
-                  ),
-                  const VerticalDivider(
-                    width: AdaptiveBreakpoints.navigationRailDividerWidth,
-                    thickness: 1,
-                  ),
-                ],
-                Expanded(
-                  key: const ValueKey('shell-main-content-expanded'),
-                  child: AdaptiveScope(
-                    hasRail: useRail,
-                    child: Builder(
-                      builder: (contentContext) {
-                        Widget content = Column(
-                          children: [
-                            if (_showRecentFailure)
-                              SafeArea(
-                                bottom: false,
-                                child: FailureNotice(
-                                  _recentFailure!,
-                                  account: _recentAccount,
-                                  resourceLabel: '${_recentProjectId ?? ''}',
-                                  onRetry: _retryRecent,
-                                  onSwitchAccount: () {
-                                    if (_recentProjectId != null) {
-                                      widget.session.setPendingResumeTarget(
-                                        ResumeTarget(projectId: _recentProjectId, resource: 'project'),
-                                      );
-                                    }
-                                    unawaited(widget.session.endSession(switching: true));
-                                  },
-                                ),
-                              ),
-                            if (_showResumeFailure)
-                              SafeArea(
-                                bottom: false,
-                                child: FailureNotice(
-                                  _resumeFailure!,
-                                  account: _resumeAccount,
-                                  resourceLabel: _resumeTarget?.projectPath ??
-                                      (_resumeTarget?.projectId != null
-                                          ? '${_resumeTarget!.projectId}'
-                                          : ''),
-                                  onRetry: _retryResume,
-                                  onSwitchAccount: () {
-                                    final target = _resumeTarget;
-                                    if (target != null) {
-                                      widget.session.setPendingResumeTarget(target);
-                                    }
-                                    unawaited(widget.session.endSession(switching: true));
-                                  },
-                                ),
-                              ),
-                            Expanded(
-                              child: IndexedStack(
-                                key: const ValueKey('shell-indexed-stack'),
-                                index: _selected,
+                      Expanded(
+                        key: const ValueKey('shell-main-content-expanded'),
+                        child: AdaptiveScope(
+                          hasRail: useRail,
+                          child: Builder(
+                            builder: (contentContext) {
+                              final isLtr = Directionality.of(contentContext) == TextDirection.ltr;
+                              final content = Column(
+                                key: const ValueKey('shell-main-column'),
                                 children: [
-                                  _pane(
-                                    0,
-                                    _visited.contains(0)
-                                        ? InboxPage(account: account, api: session.api!)
-                                        : const SizedBox(),
-                                  ),
-                                  _pane(
-                                    1,
-                                    ProjectsPage(
-                                      session: session,
-                                      shortcuts: widget.shortcuts,
-                                      searchToken: _searchToken,
+                                  if (_showRecentFailure)
+                                    SafeArea(
+                                      bottom: false,
+                                      child: FailureNotice(
+                                        _recentFailure!,
+                                        account: _recentAccount,
+                                        resourceLabel: '${_recentProjectId ?? ''}',
+                                        onRetry: _retryRecent,
+                                        onSwitchAccount: () {
+                                          if (_recentProjectId != null) {
+                                            widget.session.setPendingResumeTarget(
+                                              ResumeTarget(projectId: _recentProjectId, resource: 'project'),
+                                            );
+                                          }
+                                          unawaited(widget.session.endSession(switching: true));
+                                        },
+                                      ),
+                                    ),
+                                  if (_showResumeFailure)
+                                    SafeArea(
+                                      bottom: false,
+                                      child: FailureNotice(
+                                        _resumeFailure!,
+                                        account: _resumeAccount,
+                                        resourceLabel: _resumeTarget?.projectPath ??
+                                            (_resumeTarget?.projectId != null
+                                                ? '${_resumeTarget!.projectId}'
+                                                : ''),
+                                        onRetry: _retryResume,
+                                        onSwitchAccount: () {
+                                          final target = _resumeTarget;
+                                          if (target != null) {
+                                            widget.session.setPendingResumeTarget(target);
+                                          }
+                                          unawaited(widget.session.endSession(switching: true));
+                                        },
+                                      ),
+                                    ),
+                                  Expanded(
+                                    key: const ValueKey('shell-indexed-stack-expanded'),
+                                    child: IndexedStack(
+                                      key: const ValueKey('shell-indexed-stack'),
+                                      index: _selected,
+                                      children: [
+                                        _pane(
+                                          0,
+                                          _visited.contains(0)
+                                              ? InboxPage(account: account, api: session.api!)
+                                              : const SizedBox(),
+                                        ),
+                                        _pane(
+                                          1,
+                                          ProjectsPage(
+                                            session: session,
+                                            shortcuts: widget.shortcuts,
+                                            searchToken: _searchToken,
+                                          ),
+                                        ),
+                                        _pane(
+                                          2,
+                                          _visited.contains(2)
+                                              ? CiOverviewPage(session: session)
+                                              : const SizedBox(),
+                                        ),
+                                        _pane(
+                                          3,
+                                          _visited.contains(3)
+                                              ? _buildMyTab(context, account, session)
+                                              : const SizedBox(),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                  _pane(
-                                    2,
-                                    _visited.contains(2)
-                                        ? CiOverviewPage(session: session)
-                                        : const SizedBox(),
-                                  ),
-                                  _pane(
-                                    3,
-                                    _visited.contains(3)
-                                        ? _buildMyTab(context, account, session)
-                                        : const SizedBox(),
-                                  ),
                                 ],
-                              ),
-                            ),
-                          ],
-                        );
-                        if (useRail) {
-                          final isLtr = Directionality.of(contentContext) == TextDirection.ltr;
-                          content = MediaQuery.removePadding(
-                            context: contentContext,
-                            removeLeft: isLtr,
-                            removeRight: !isLtr,
-                            child: content,
-                          );
-                        }
-                        return content;
-                      },
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            bottomNavigationBar: useRail
-                ? null
-                : NavigationBar(
-                    maintainBottomViewPadding: true,
-                    selectedIndex: _selected,
-                    onDestinationSelected: (index) => setState(() {
-                      _selected = index;
-                      _visited.add(index);
-                    }),
-                    destinations: const [
-                      NavigationDestination(
-                        icon: Icon(Icons.inbox_outlined),
-                        selectedIcon: Icon(Icons.inbox),
-                        label: '收件匣',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.folder_outlined),
-                        selectedIcon: Icon(Icons.folder),
-                        label: '專案',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.account_tree_outlined),
-                        selectedIcon: Icon(Icons.account_tree),
-                        label: 'CI',
-                      ),
-                      NavigationDestination(
-                        icon: Icon(Icons.person_outline),
-                        selectedIcon: Icon(Icons.person),
-                        label: '我的',
+                              );
+                              return MediaQuery.removePadding(
+                                key: const ValueKey('shell-content-padding'),
+                                context: contentContext,
+                                removeLeft: useRail && isLtr,
+                                removeRight: useRail && !isLtr,
+                                child: content,
+                              );
+                            },
+                          ),
+                        ),
                       ),
                     ],
                   ),
+                  bottomNavigationBar: useRail
+                      ? null
+                      : NavigationBar(
+                          maintainBottomViewPadding: true,
+                          selectedIndex: _selected,
+                          onDestinationSelected: (index) => setState(() {
+                            _selected = index;
+                            _visited.add(index);
+                          }),
+                          destinations: const [
+                            NavigationDestination(
+                              icon: Icon(Icons.inbox_outlined),
+                              selectedIcon: Icon(Icons.inbox),
+                              label: '收件匣',
+                            ),
+                            NavigationDestination(
+                              icon: Icon(Icons.folder_outlined),
+                              selectedIcon: Icon(Icons.folder),
+                              label: '專案',
+                            ),
+                            NavigationDestination(
+                              icon: Icon(Icons.account_tree_outlined),
+                              selectedIcon: Icon(Icons.account_tree),
+                              label: 'CI',
+                            ),
+                            NavigationDestination(
+                              icon: Icon(Icons.person_outline),
+                              selectedIcon: Icon(Icons.person),
+                              label: '我的',
+                            ),
+                          ],
+                        ),
+                );
+              },
+            ),
           );
         },
       ),
