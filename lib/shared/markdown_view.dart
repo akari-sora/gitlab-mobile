@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import '../core/gitlab_api.dart';
+import 'attachment_image.dart';
+import 'attachment_ref.dart';
 import 'external_link.dart';
 import 'theme.dart';
 
 class MarkdownView extends StatelessWidget {
-  const MarkdownView(this.text, {super.key, this.base});
+  const MarkdownView(this.text, {super.key, this.base, this.api, this.projectId, this.projectWeb});
   final String text;
   final Uri? base;
+  final GitLabApi? api;
+  final int? projectId;
+  final Uri? projectWeb;
   @override
   Widget build(BuildContext context) {
     if (text.length > 65536) {
@@ -23,11 +29,18 @@ class MarkdownView extends StatelessWidget {
         blockquoteDecoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12)),
       ),
-      // Untrusted Markdown must not fetch local files or authenticated images.
+      // Only this project's upload API is fetched. Other images stay icon-only.
       // ignore: deprecated_member_use
-      imageBuilder: (uri, title, alt) => Padding(padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.image_outlined, size: 18),
-          const SizedBox(width: 6), Flexible(child: Text(alt?.isNotEmpty == true ? alt! : '附加圖片（在 GitLab 開啟）'))])),
+      imageBuilder: (uri, title, alt) {
+        final ref = parseProjectUpload(uri, base: base, projectId: projectId, projectWeb: projectWeb);
+        final client = api;
+        final id = projectId;
+        if (ref != null && client != null && id != null) {
+          return AttachmentImage(api: client, projectId: id, secret: ref.secret, filename: ref.filename,
+            alt: alt, projectWeb: projectWeb);
+        }
+        return attachmentImageFallback(alt);
+      },
       onTapLink: (_, href, _) async {
         if (href == null) { return; }
         final parsed = Uri.tryParse(href);

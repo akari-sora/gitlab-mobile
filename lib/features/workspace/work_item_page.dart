@@ -49,7 +49,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
       const EditField.picker('assignee_ids', '指派', source: PickerSource.members, multi: true),
       if (mr) const EditField.picker('reviewer_ids', '審查者', source: PickerSource.members, multi: true),
     ];
-    final saved = await openEditor(context, account: widget.account, api: widget.api, projectId: widget.project.id,
+    final saved = await openEditor(context, account: widget.account, api: widget.api, projectId: widget.project.id, projectPath: widget.project.path,
       title: mr ? '新增合併請求' : '新增議題', resource: '${widget.project.id}/${widget.resource}/new',
       subtitle: widget.project.path, fields: fields, save: (values) async {
         final body = editorSubmission(fields, values);
@@ -162,7 +162,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
       if (mr) EditField.picker('reviewer_ids', '審查者', source: PickerSource.members, multi: true,
         value: _peopleValue(valueObjects(data, 'reviewers'))),
     ];
-    final saved = await openEditor(context, account: widget.account, api: widget.api, projectId: widget.project.id,
+    final saved = await openEditor(context, account: widget.account, api: widget.api, projectId: widget.project.id, projectPath: widget.project.path,
       title: '編輯 $label', resource: '${widget.project.id}/${widget.resource}/${widget.iid}/edit',
       subtitle: widget.project.path, baseRevision: valueText(data, 'updated_at'), fields: fields, save: (values) async {
         final current = await widget.api.record(path);
@@ -312,7 +312,9 @@ class _WorkItemPageState extends State<WorkItemPage> {
               if (mr) Padding(padding: const EdgeInsets.only(bottom: 16), child: Card(child: Padding(padding: const EdgeInsets.all(14),
                 child: Text('${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}',
                   style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 13))))),
-              MarkdownView(valueText(data, 'description').isEmpty ? '尚未填寫說明。' : valueText(data, 'description'), base: web),
+              MarkdownView(valueText(data, 'description').isEmpty ? '尚未填寫說明。' : valueText(data, 'description'),
+                base: web, api: widget.api, projectId: widget.project.id,
+                projectWeb: widget.account.instance.projectWeb(widget.project.path)),
               const SizedBox(height: 24), const Divider(), const SizedBox(height: 16),
               Text('指派', style: Theme.of(context).textTheme.titleSmall), const SizedBox(height: 8),
               Text(valueObjects(data, 'assignees').isEmpty ? '尚未指派'

@@ -96,6 +96,7 @@ Future<bool> openEditor(
   bool persistent = true,
   GitLabApi? api,
   int? projectId,
+  String? projectPath,
   AttachmentPicker? attachments,
 }) async =>
     await Navigator.of(context).push<bool>(
@@ -111,6 +112,7 @@ Future<bool> openEditor(
           persistent: persistent,
           api: api,
           projectId: projectId,
+          projectPath: projectPath,
           attachments: attachments,
         ),
       ),
@@ -130,6 +132,7 @@ class ResourceEditor extends StatefulWidget {
     this.persistent = true,
     this.api,
     this.projectId,
+    this.projectPath,
     this.attachments,
   });
   final Account account;
@@ -142,6 +145,7 @@ class ResourceEditor extends StatefulWidget {
   final bool persistent;
   final GitLabApi? api;
   final int? projectId;
+  final String? projectPath;
   final AttachmentPicker? attachments;
   @override
   State<ResourceEditor> createState() => _ResourceEditorState();
@@ -577,7 +581,10 @@ class _ResourceEditorState extends State<ResourceEditor> {
     validator: (value) => field.required && (value == null || value.trim().isEmpty) ? '此欄位必填' : null,
   );
 
-  Widget _markdownBlock(EditField field) => Column(
+  Widget _markdownBlock(EditField field) {
+    final path = widget.projectPath;
+    final web = path == null ? null : widget.account.instance.projectWeb(path);
+    return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       Align(
@@ -597,7 +604,8 @@ class _ResourceEditorState extends State<ResourceEditor> {
       if (_preview)
         InputDecorator(
           decoration: InputDecoration(labelText: field.label, helperText: field.hint),
-          child: MarkdownView(_controllers[field.key]?.text ?? ''),
+          child: MarkdownView(_controllers[field.key]?.text ?? '',
+            base: web, api: widget.api, projectId: widget.projectId, projectWeb: web),
         ),
       Visibility(
         visible: !_preview,
@@ -621,7 +629,8 @@ class _ResourceEditorState extends State<ResourceEditor> {
         ),
       ),
     ],
-  );
+    );
+  }
 
   Widget _toolbar(String key) {
     final tools = <(String, IconData, MarkupEdit Function(String, int, int))>[

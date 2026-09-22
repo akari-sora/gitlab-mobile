@@ -597,6 +597,9 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                       base: widget.account.instance.projectWeb(
                         '${widget.project.path}/-/blob/${widget.sha}/${widget.filePath}',
                       ),
+                      api: widget.api,
+                      projectId: widget.project.id,
+                      projectWeb: widget.account.instance.projectWeb(widget.project.path),
                     ),
                   )
                 : LayoutBuilder(

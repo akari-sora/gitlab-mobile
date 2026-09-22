@@ -896,6 +896,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       fields: const [EditField('body', '留言', lines: 8, required: true, markdown: true)],
       api: widget.api,
       projectId: widget.project.id,
+      projectPath: widget.project.path,
       save: (values) async {
         final current = await widget.api.record(_mrPath);
         if (current['sha'] != sha) {
@@ -1185,6 +1186,8 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                                 base: widget.account.instance.projectWeb(
                                   widget.project.path,
                                 ),
+                                api: widget.api,
+                                projectId: widget.project.id,
                                 onExpand: () => setState(
                                   () => _expanded.add('${discussion['id']}'),
                                 ),
@@ -1275,6 +1278,8 @@ class _DiffThreadCard extends StatelessWidget {
     required this.expanded,
     required this.busy,
     required this.base,
+    required this.api,
+    required this.projectId,
     required this.onExpand,
     required this.onReply,
     required this.onResolve,
@@ -1283,6 +1288,8 @@ class _DiffThreadCard extends StatelessWidget {
   final bool expanded;
   final bool busy;
   final Uri base;
+  final GitLabApi api;
+  final int projectId;
   final VoidCallback onExpand;
   final VoidCallback onReply;
   final VoidCallback? onResolve;
@@ -1348,6 +1355,9 @@ class _DiffThreadCard extends StatelessWidget {
                 MarkdownView(
                   valueText(visible[index], 'body'),
                   base: base,
+                  api: api,
+                  projectId: projectId,
+                  projectWeb: base,
                 ),
               ],
               if (notes.length - visible.length > 0)

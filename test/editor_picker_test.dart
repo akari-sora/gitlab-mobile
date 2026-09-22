@@ -14,6 +14,7 @@ import 'package:gitlab_mobile/features/workspace/editor.dart';
 import 'package:gitlab_mobile/features/workspace/picker_sheet.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
+import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
 
@@ -83,6 +84,29 @@ class _HeldUploads extends WorkspaceFixture {
       await uploadHold.future;
     }
     return Future<ResponseBody>.value(super.respond(request));
+  }
+}
+
+const _shotSecret = '0123456789abcdef0123456789abcdef';
+final _shotPng = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+);
+
+class _ShotUploads extends WorkspaceFixture {
+  @override
+  FutureOr<ResponseBody> respond(RequestOptions request) {
+    final path = request.uri.path;
+    if (request.method == 'POST' && path.endsWith('/uploads')) {
+      return jsonResponse({
+        'markdown': '![shot](/uploads/$_shotSecret/shot.png)',
+        'url': '/uploads/$_shotSecret/shot.png',
+        'full_path': '/-/project/42/uploads/$_shotSecret/shot.png',
+      }, status: 201);
+    }
+    if (request.method == 'GET' && path.endsWith('/uploads/$_shotSecret/shot.png')) {
+      return ResponseBody.fromBytes(_shotPng, 200, headers: {'content-type': ['image/png']});
+    }
+    return super.respond(request);
   }
 }
 
@@ -414,6 +438,36 @@ void main() {
     await tester.pumpAndSettle();
     expect(controller.text, '**hello**');
     expect(controller.selection, cursor);
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('preview renders an uploaded project image', (tester) async {
+    final fixture = _ShotUploads();
+    addTearDown(fixture.api.close);
+    _surface(tester);
+    await tester.pumpWidget(_host(ResourceEditor(
+      account: fixture.account,
+      api: fixture.api,
+      projectId: fixture.project.id,
+      projectPath: fixture.project.path,
+      title: 'Markdown',
+      resource: 'markdown-image-preview',
+      persistent: false,
+      attachments: _FakeAttachments(PickedAttachment(filename: 'shot.png', bytes: _shotPng)),
+      fields: const [EditField('description', '說明', lines: 6, markdown: true)],
+      save: (_) async {},
+    )));
+    await settleNetworkWidgets(tester);
+    await _tapTooltip(tester, '附加圖片');
+    await settleNetworkWidgets(tester);
+    final controller = tester.widget<TextFormField>(find.byKey(const ValueKey('editor-description'))).controller!;
+    expect(controller.text, '![shot](/uploads/$_shotSecret/shot.png)');
+    await tester.tap(find.text('預覽'));
+    await settleNetworkWidgets(tester);
+    expect(find.byType(Image), findsOneWidget);
+    expect(find.byIcon(Icons.image_outlined), findsNothing);
+    expect(find.textContaining('無法載入附件'), findsNothing);
     expect(tester.takeException(), isNull);
     await _finish(tester);
   });

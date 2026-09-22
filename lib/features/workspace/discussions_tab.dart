@@ -45,7 +45,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
         EditField('body', '留言內容', required: true, lines: 9, markdown: true,
           value: note == null ? '' : valueText(note, 'body'),
           hint: '支援 Markdown；以 / 開頭的行可能執行 GitLab quick actions'),
-      ], api: widget.api, projectId: widget.project.id, save: (values) async {
+      ], api: widget.api, projectId: widget.project.id, projectPath: widget.project.path, save: (values) async {
         if (note != null) {
           final endpoint = discussion == null ? [...path, 'notes', '${note['id']}']
             : [...path, 'discussions', discussion, 'notes', '${note['id']}'];
@@ -132,7 +132,9 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
         if (notes[index]['position'] is Json) Text('${valueText(valueObject(notes[index], 'position'), 'new_path')} · '
           '${valueObject(notes[index], 'position')['new_line'] ?? valueObject(notes[index], 'position')['old_line'] ?? ''}',
           style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 8), MarkdownView(valueText(notes[index], 'body'), base: widget.account.instance.projectWeb(widget.project.path)),
+        const SizedBox(height: 8), MarkdownView(valueText(notes[index], 'body'),
+          base: widget.account.instance.projectWeb(widget.project.path), api: widget.api, projectId: widget.project.id,
+          projectWeb: widget.account.instance.projectWeb(widget.project.path)),
         const SizedBox(height: 8), Text(relativeDate(valueText(notes[index], 'created_at')), style: Theme.of(context).textTheme.bodySmall),
       ],
       if (isThread) Wrap(spacing: 8, children: [
