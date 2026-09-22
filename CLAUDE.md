@@ -95,7 +95,7 @@ Through `flutter_secure_storage`:
 - Last active account, key `gitlab_mobile_last_account_v1`. Auto-resume re-validates `/user`. This key is cleared only on a 401. Sign-out marker `gitlab_mobile_sign_out_pending_v1`: auto-resume never runs while the marker is set.
 - Recent project, one record per account, key `recent_project.v1.<base64url(account.key)>`: numeric project id and the name shown on the launcher shortcut. Cleared with the account.
 
-Outside secure storage: artifact cache `getTemporaryDirectory()/artifacts/<sha256(account.key) first 32 hex>/<projectId>-<jobId>/<stamp>-<attempt>/`. Removed on account removal. A failed removal keeps the account and reports 無法清除產物. The operating system may purge the directory.
+Outside secure storage: artifact cache `getTemporaryDirectory()/artifacts/<sha256(account.key) first 32 hex>/<projectId>-<jobId>/<stamp>-<attempt>/`. Removed on account removal. A failed removal keeps the account and reports 無法清除產物. The operating system may purge the directory. Two plugin copies are transient: share_plus copies a shared archive into `<cache>/share_plus/` (deleted at once after a dismissed, unavailable or failed share; after a successful share on the next resume after the app left the foreground; always before the next share and on account removal, best-effort), and image_picker / file_picker copies of a picked attachment are deleted right after their bytes are read (`discardPickedCopy`, cache paths only).
 
 ### Shell and UI conventions
 
