@@ -62,7 +62,9 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
   @override
   Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(16), children: [
     if (widget.project.description?.isNotEmpty ?? false) Padding(padding: const EdgeInsets.only(bottom: 20),
-      child: MarkdownView(widget.project.description!, base: widget.account.instance.projectWeb(widget.project.path))),
+      child: MarkdownView(widget.project.description!, base: widget.account.instance.projectWeb(widget.project.path),
+        api: widget.api, projectId: widget.project.id, projectWeb: widget.account.instance.projectWeb(widget.project.path),
+        projectPath: widget.project.path)),
     for (final kind in MetadataKind.values) Padding(padding: const EdgeInsets.only(bottom: 8), child: Card(child: ListTile(
       leading: Icon(switch (kind) {
         MetadataKind.branches => Icons.alt_route, MetadataKind.tags => Icons.sell_outlined,
@@ -236,7 +238,8 @@ class _MetadataPageState extends State<MetadataPage> {
           const SizedBox(height: 16), SelectableText(valueText(value, 'message')),
           const SizedBox(height: 16), Text(valueText(value, 'author_name')),
         ] else MarkdownView(valueText(value, 'description', valueText(value, 'message', '尚未填寫說明。')),
-          base: widget.account.instance.projectWeb(widget.project.path)),
+          base: widget.account.instance.projectWeb(widget.project.path), api: widget.api, projectId: widget.project.id,
+          projectWeb: widget.account.instance.projectWeb(widget.project.path), projectPath: widget.project.path),
         if (value['commit'] is Json) ...[const SizedBox(height: 20), Text(valueText(valueObject(value, 'commit'), 'title')),
           SelectableText(valueText(valueObject(value, 'commit'), 'id'), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12))],
         if (widget.kind == MetadataKind.milestones) ...[const SizedBox(height: 16),

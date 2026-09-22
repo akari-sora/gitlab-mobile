@@ -133,4 +133,18 @@ extension WorkspaceApi on GitLabApi {
       throw const ApiFailure(FailureKind.invalidResponse);
     }
   }
+
+  /// `GET /projects/:id/uploads/:secret/:filename`. Binary is kept; redirects are not followed.
+  Future<Uint8List> projectUpload(int project, String secret, String filename, {int maxBytes = 8 * 1024 * 1024}) async {
+    if (!projectUploadNamesOk(secret, filename)) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    try {
+      final result = await _read(instance.api(['projects', '$project', 'uploads', secret, filename]), maxBytes: maxBytes);
+      return result.bytes;
+    } on ApiFailure catch (failure) {
+      if (failure.kind != FailureKind.tooLarge) rethrow;
+      throw const ApiFailure(FailureKind.tooLarge, title: '超過大小上限', detail: '這張圖片超過附件預覽上限。');
+    }
+  }
 }
