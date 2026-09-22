@@ -236,9 +236,15 @@ Future<void> clearAccountArtifacts(Account account) async {
 /// leaving the foreground, so the receiving app can finish reading it.
 /// Lookup can throw [MissingPlatformDirectoryException], which is not a
 /// [FileSystemException], so every error here is ignored.
-Future<void> _discardSharePlusCopies() async {
+/// [serial] is the share that owns the folder when the caller decided to
+/// delete it. The cache-root lookup awaits, and a newer share may start (and
+/// plant its own copy) meanwhile, so ownership is re-checked after the await.
+/// A null serial deletes unconditionally.
+Future<void> _discardSharePlusCopies([int? serial]) async {
   try {
-    _deleteSharePlusDirectory(await artifactStorageRoot());
+    final root = await artifactStorageRoot();
+    if (serial != null && serial != _shareSerial) return;
+    _deleteSharePlusDirectory(root);
   } on Object {
     return;
   }
@@ -327,10 +333,10 @@ Future<void> _cleanupAfterShare(int serial, ShareOutcome? outcome) {
   final step = previous.then((_) async {
     if (serial != _shareSerial) return;
     if (outcome == ShareOutcome.success) {
-      _armShareCopyWatch();
+      _armShareCopyWatch(serial);
       return;
     }
-    await _discardSharePlusCopies();
+    await _discardSharePlusCopies(serial);
   });
   _shareCleanup = step.then<void>((_) {}, onError: (Object _, StackTrace _) {});
   return step;
@@ -338,9 +344,13 @@ Future<void> _cleanupAfterShare(int serial, ShareOutcome? outcome) {
 
 /// At most one watcher is registered; it is not owned by any sheet, so a
 /// sheet that closes before the app comes back does not cancel the cleanup.
-void _armShareCopyWatch() {
-  if (_shareCopyWatch != null) return;
-  final watch = _ShareCopyWatch();
+void _armShareCopyWatch(int serial) {
+  final existing = _shareCopyWatch;
+  if (existing != null) {
+    existing.serial = serial;
+    return;
+  }
+  final watch = _ShareCopyWatch(serial);
   final state = WidgetsBinding.instance.lifecycleState;
   watch.departed = _leftForeground(state);
   _shareCopyWatch = watch;
@@ -365,6 +375,8 @@ void resetArtifactShareCleanup() {
 }
 
 final class _ShareCopyWatch extends WidgetsBindingObserver {
+  _ShareCopyWatch(this.serial);
+  int serial;
   var departed = false;
 
   @override
@@ -375,7 +387,7 @@ final class _ShareCopyWatch extends WidgetsBindingObserver {
     }
     if (state != AppLifecycleState.resumed || !departed) return;
     _disarmShareCopyWatch();
-    unawaited(_discardSharePlusCopies());
+    unawaited(_discardSharePlusCopies(serial));
   }
 }
 

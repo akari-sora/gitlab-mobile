@@ -569,6 +569,45 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a delayed cleanup of an older share does not delete a newer copy', (tester) async {
+    final root = Directory.systemTemp.createTempSync('gitlab-mobile-share-delayed-');
+    final previous = artifactStorageRoot;
+    // The cache-root lookup is held so a newer share can start while an older
+    // cleanup is already past its first ownership check.
+    var lookups = 0;
+    final rootGate = Completer<void>();
+    artifactStorageRoot = () async {
+      lookups += 1;
+      if (lookups == 1) await rootGate.future;
+      return root;
+    };
+    addTearDown(() async {
+      artifactStorageRoot = previous;
+      if (!rootGate.isCompleted) rootGate.complete();
+      await removeQuietly(root);
+    });
+    final gates = [Completer<ShareOutcome>(), Completer<ShareOutcome>()];
+    final sharer = _GatedSharer(root, gates);
+    final older = shareDownloadedArtifact(sharer, '${root.path}/older.zip');
+    await tester.pump();
+    gates[0].complete(ShareOutcome.dismissed);
+    await tester.pump();
+    final copy = File('${root.path}/share_plus/copy.zip');
+    expect(copy.readAsBytesSync(), [1], reason: 'the older cleanup is parked on the root lookup');
+    final newer = shareDownloadedArtifact(sharer, '${root.path}/newer.zip');
+    await tester.pump();
+    expect(copy.readAsBytesSync(), [2]);
+    rootGate.complete();
+    await tester.pump();
+    await older;
+    expect(copy.readAsBytesSync(), [2], reason: 'the older cleanup must not delete the newer copy');
+    gates[1].complete(ShareOutcome.dismissed);
+    await tester.pump();
+    await newer;
+    expect(Directory('${root.path}/share_plus').existsSync(), isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('cancelling an artifact download removes the partial file', (tester) async {
     final fixture = _DownloadFixture()..pause = Completer<void>();
     addTearDown(fixture.api.close);
