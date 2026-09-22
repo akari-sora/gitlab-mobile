@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/project_locator.dart';
+import '../../shared/adaptive_breakpoints.dart';
 import '../../shared/list_detail_scaffold.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
@@ -30,12 +31,25 @@ class _ProjectsPageState extends State<ProjectsPage> {
   int _seenSearch = 0;
   String _query = '';
   bool _opening = false;
+  int _projectTabIndex = 0;
   Account get account => widget.session.active!;
   GitLabApi get api => widget.session.api!;
   @override
   void initState() {
     super.initState();
+    _projectTabIndex = widget.forCi ? 3 : 0;
+    _selection.addListener(_onSelectionChanged);
     widget.shortcuts?.addListener(_onShortcutsChanged);
+  }
+
+  void _onSelectionChanged() {
+    if (!_selection.hasSelection && _projectTabIndex != (widget.forCi ? 3 : 0)) {
+      if (mounted) {
+        setState(() {
+          _projectTabIndex = widget.forCi ? 3 : 0;
+        });
+      }
+    }
   }
 
   void _onShortcutsChanged() {
@@ -60,6 +74,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
 
   @override
   void dispose() {
+    _selection.removeListener(_onSelectionChanged);
     widget.shortcuts?.removeListener(_onShortcutsChanged);
     _debounce?.cancel();
     _search.dispose();
@@ -72,6 +87,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
     _debounce = Timer(const Duration(milliseconds: 350), () { if (mounted) setState(() => _query = value.trim()); });
   }
   void _open(Project project) {
+    _projectTabIndex = widget.forCi ? 3 : 0;
     final shortcuts = widget.shortcuts;
     if (shortcuts != null) {
       unawaited(shortcuts.rememberOpened(accountKey: account.key, id: project.id, name: project.name));
@@ -202,19 +218,32 @@ class _ProjectsPageState extends State<ProjectsPage> {
     ])),
   );
 
-  Widget _buildDetail(BuildContext context, Project item, bool isTwoPane, VoidCallback onBack) => ProjectPage(
-    key: ValueKey('project-${item.id}'),
-    account: account,
-    api: api,
-    project: item,
-    initialTab: widget.forCi ? 3 : 0,
-    showBackButton: !isTwoPane,
-    onBack: onBack,
-    onDeleted: () {
-      _selection.clear();
-      unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
-    },
-  );
+  Widget _buildDetail(BuildContext context, Project item, bool isTwoPane, VoidCallback onBack) {
+    final hasRail = AdaptiveScope.hasRailOf(context);
+    final isNestedTab = hasRail && (_projectTabIndex == 1 || _projectTabIndex == 2);
+    return ProjectPage(
+      key: ValueKey('project-${item.id}'),
+      account: account,
+      api: api,
+      project: item,
+      initialTab: widget.forCi ? 3 : 0,
+      showBackButton: !isTwoPane || isNestedTab,
+      onBack: () {
+        _projectTabIndex = widget.forCi ? 3 : 0;
+        onBack();
+      },
+      onTabChanged: (index) {
+        if (_projectTabIndex != index) {
+          setState(() => _projectTabIndex = index);
+        }
+      },
+      onDeleted: () {
+        _projectTabIndex = widget.forCi ? 3 : 0;
+        _selection.clear();
+        unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
+      },
+    );
+  }
 
   Widget _buildEmpty(BuildContext context) => const Center(
     child: EmptyState(
@@ -225,10 +254,17 @@ class _ProjectsPageState extends State<ProjectsPage> {
   );
 
   @override
-  Widget build(BuildContext context) => ListDetailScaffold<Project>(
-    controller: _selection,
-    listBuilder: _buildList,
-    detailBuilder: _buildDetail,
-    emptyBuilder: _buildEmpty,
-  );
+  Widget build(BuildContext context) {
+    final hasRail = AdaptiveScope.hasRailOf(context);
+    return ListDetailScaffold<Project>(
+      controller: _selection,
+      listBuilder: _buildList,
+      detailBuilder: _buildDetail,
+      emptyBuilder: _buildEmpty,
+      collapseMaster: (selected) =>
+          selected != null &&
+          hasRail &&
+          (_projectTabIndex == 1 || _projectTabIndex == 2),
+    );
+  }
 }

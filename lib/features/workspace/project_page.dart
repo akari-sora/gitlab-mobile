@@ -19,6 +19,7 @@ class ProjectPage extends StatefulWidget {
     this.showBackButton = true,
     this.onBack,
     this.onDeleted,
+    this.onTabChanged,
   });
   final Account account;
   final GitLabApi api;
@@ -27,6 +28,7 @@ class ProjectPage extends StatefulWidget {
   final bool showBackButton;
   final VoidCallback? onBack;
   final VoidCallback? onDeleted;
+  final ValueChanged<int>? onTabChanged;
   @override
   State<ProjectPage> createState() => _ProjectPageState();
 }
@@ -38,10 +40,26 @@ class _ProjectPageState extends State<ProjectPage> with SingleTickerProviderStat
     super.initState(); _project = widget.project;
     _tabs = TabController(length: 5, vsync: this, initialIndex: widget.initialTab);
     _tabs.addListener(_tabChanged);
+    if (widget.initialTab != 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) widget.onTabChanged?.call(widget.initialTab);
+      });
+    }
   }
-  void _tabChanged() { if (mounted) { setState(() {}); } }
+  void _tabChanged() {
+    if (mounted) {
+      if (!_tabs.indexIsChanging) {
+        widget.onTabChanged?.call(_tabs.index);
+      }
+      setState(() {});
+    }
+  }
   @override
-  void dispose() { _tabs.removeListener(_tabChanged); _tabs.dispose(); super.dispose(); }
+  void dispose() {
+    _tabs.removeListener(_tabChanged);
+    _tabs.dispose();
+    super.dispose();
+  }
   @override
   Widget build(BuildContext context) {
     final marked = _project.markedForDeletionOn != null;

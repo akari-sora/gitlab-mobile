@@ -46,10 +46,19 @@ void main() {
     // Dio's asynchronous stream processing must use real async scheduling,
     // rather than wait for work trapped in the widget test's fake clock.
     await tester.runAsync(() => session.connect('https://example.com', 'synthetic-test-token'));
-    await tester.runAsync(() async {
-      await tester.pump();
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-    });
+    // Wait until authentication transition completes and initial feed loading finishes.
+    // RecordsFeed mounts ListSkeleton (with an animating CircularProgressIndicator) while loading.
+    // pumpAndSettle() cannot settle while CircularProgressIndicator is animating.
+    // We pump real async and test clock bounded by observable state:
+    // NavigationBar appears AND CircularProgressIndicator is gone (projects feed loaded).
+    for (var i = 0; i < 50; i++) {
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      if (find.byType(NavigationBar).evaluate().isNotEmpty &&
+          find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+        break;
+      }
+    }
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(find.text('我的專案'), findsOneWidget);

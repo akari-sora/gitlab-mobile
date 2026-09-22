@@ -168,6 +168,7 @@ class ListDetailScaffold<T> extends StatefulWidget {
     this.detailKey,
     this.listKey,
     this.active,
+    this.collapseMaster,
   });
 
   final ListDetailController<T> controller;
@@ -181,6 +182,7 @@ class ListDetailScaffold<T> extends StatefulWidget {
   final GlobalKey? detailKey;
   final GlobalKey? listKey;
   final bool? active;
+  final bool Function(T? selected)? collapseMaster;
 
   @override
   State<ListDetailScaffold<T>> createState() => _ListDetailScaffoldState<T>();
@@ -194,9 +196,12 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
   bool _isTwoPane = false;
   bool _isActive = true;
 
+  bool _lastShouldCollapse = false;
+
   @override
   void initState() {
     super.initState();
+    _isActive = widget.active ?? true;
     widget.controller.addListener(_onControllerChanged);
   }
 
@@ -221,6 +226,7 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
       dispatcher.register(_entry!);
     } else {
       _entry?.depth = _depth;
+      _registeredDispatcher?.notifyChanged();
     }
   }
 
@@ -253,7 +259,8 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
 
   bool _canHandleBack() {
     if (!mounted) return false;
-    if (_isTwoPane) return false;
+    final shouldCollapse = widget.collapseMaster?.call(widget.controller.selected) ?? false;
+    if (_isTwoPane && !shouldCollapse) return false;
     if (!widget.controller.hasSelection) return false;
     return widget.active ?? _isActive;
   }
@@ -279,13 +286,22 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        _isTwoPane = constraints.maxWidth >= effectiveBreakpoint;
+        final newIsTwoPane = constraints.maxWidth >= effectiveBreakpoint;
+        if (_isTwoPane != newIsTwoPane) {
+          _isTwoPane = newIsTwoPane;
+          _registeredDispatcher?.notifyChanged();
+        }
         final isLarge = constraints.maxWidth >= effectiveLargeBreakpoint;
 
         return ListenableBuilder(
           listenable: widget.controller,
           builder: (context, _) {
             final selected = widget.controller.selected;
+            final shouldCollapse = _isTwoPane && (widget.collapseMaster?.call(selected) ?? false);
+            if (_lastShouldCollapse != shouldCollapse) {
+              _lastShouldCollapse = shouldCollapse;
+              _registeredDispatcher?.notifyChanged();
+            }
 
             final compactMediaQuery = MediaQuery.of(context).copyWith(
               size: Size(constraints.maxWidth, constraints.maxHeight),
@@ -367,6 +383,69 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
                         ),
                       ),
                     ),
+                ],
+              );
+            } else if (shouldCollapse) {
+              // Expanded 雙欄模式但 Master 摺疊（例如進入 Issues/MR 時，將空間完整交給內層雙欄）：
+              // Detail pane 佔據全部寬度，保留 hasRail 旗標以便內層 scaffold 判斷斷點
+              // Master list 透過 Offstage 保留在 subtree 中，確保 RecordsFeedState 與滾動位置不丟失
+              final Widget rawDetailPane;
+              if (selected != null) {
+                rawDetailPane = KeyedSubtree(
+                  key: const ValueKey('adaptive-detail-pane'),
+                  child: stableDetail!,
+                );
+              } else {
+                rawDetailPane = KeyedSubtree(
+                  key: const ValueKey('adaptive-empty-pane'),
+                  child: Builder(
+                    builder: (paneContext) => widget.emptyBuilder(paneContext),
+                  ),
+                );
+              }
+
+              final detailPane = AdaptiveScope(
+                hasRail: hasRail,
+                child: MediaQuery(
+                  data: compactMediaQuery,
+                  child: rawDetailPane,
+                ),
+              );
+
+              content = Stack(
+                fit: StackFit.expand,
+                children: [
+                  Offstage(
+                    offstage: true,
+                    child: ExcludeFocus(
+                      excluding: true,
+                      child: ExcludeSemantics(
+                        excluding: true,
+                        child: TickerMode(
+                          enabled: false,
+                          child: MediaQuery(
+                            data: listMediaQuery,
+                            child: KeyedSubtree(
+                              key: effectiveListKey,
+                              child: Builder(
+                                builder: (paneContext) => widget.listBuilder(
+                                  paneContext,
+                                  true,
+                                  selected,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: KeyedSubtree(
+                      key: const ValueKey('adaptive-collapsed-master-detail'),
+                      child: detailPane,
+                    ),
+                  ),
                 ],
               );
             } else {

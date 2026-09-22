@@ -92,11 +92,11 @@ void main() {
       expect(find.byType(NavigationRail), findsOneWidget);
       expect(find.byType(NavigationBar), findsNothing);
 
-      // ProjectsPage is in Two-Pane (adaptive-two-pane-row found)
+      // ProjectsPage is in Two-Pane with collapsed master, WorkItemsTab is in Two-Pane
       expect(find.byKey(const ValueKey('adaptive-two-pane-row')), findsWidgets);
 
-      // Right pane shows ProjectPage, with 議題 tab still active
-      expect(find.text('Shell Integration Issue 42'), findsOneWidget);
+      // Both the list card on the left pane and the detail page on the right pane are onstage
+      expect(find.text('Shell Integration Issue 42'), findsNWidgets(2));
       // WorkItemsTab is also in Two-Pane, right pane showing Issue 42 Overview
       expect(find.text('Overview'), findsOneWidget);
 
@@ -389,6 +389,112 @@ void main() {
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(projectsRequestCount, equals(2), reason: 'Entering and exiting detail in single column must NOT re-fetch list data!');
       expect(find.text('Beta Project 6'), findsOneWidget, reason: 'All pages of loaded items must remain in memory');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Scenario 5: P2-UX formal entry point at 840 dp and 1200 dp serves Issues list and Issue detail simultaneously with size assertions and project switching back button', (tester) async {
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(840, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final fixture = WorkspaceFixture();
+      fixture.issues[42] = fixture.issue(42, 'Adaptive Layout Issue 42');
+      final store = MemoryAccountStore();
+      final session = controllerFor(store, fixture.adapter);
+      addTearDown(session.dispose);
+      addTearDown(fixture.api.close);
+
+      await tester.runAsync(() async {
+        await session.initialize();
+        await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+      });
+
+      await tester.pumpWidget(
+        AuthenticatedApp(
+          session: session,
+          appearance: appearance,
+          shortcuts: shortcuts,
+          buildInfoLoader: _shellBuildInfo,
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      // 1. Initial 840 dp: NavigationRail present (81 dp), NavigationBar absent
+      expect(find.byType(NavigationRail), findsOneWidget);
+      expect(find.byType(NavigationBar), findsNothing);
+
+      // Select Project
+      expect(find.text('Mobile Workspace'), findsOneWidget);
+      await tester.tap(find.text('Mobile Workspace'));
+      await settleNetworkWidgets(tester);
+      expect(find.text('檔案'), findsOneWidget);
+
+      // Switch to 議題 tab (WorkItemsTab)
+      await tester.tap(find.text('議題'));
+      await settleNetworkWidgets(tester);
+
+      // 2. At 840 dp in Issues tab:
+      // ProjectsPage master list is collapsed, WorkItemsTab is in Two-Pane!
+      // Verify WorkItemsTab Two-Pane layout exists:
+      expect(find.byKey(const ValueKey('adaptive-two-pane-row')), findsOneWidget);
+      final listPaneFinder = find.byKey(const ValueKey('list-pane'));
+      final detailPaneExpandedFinder = find.byKey(const ValueKey('detail-pane-expanded'));
+      expect(listPaneFinder, findsOneWidget);
+      expect(detailPaneExpandedFinder, findsOneWidget);
+
+      // Size assertions at 840 dp:
+      // Rail width is 81 dp, total width is 840 dp.
+      // Available width for WorkItemsTab is 759 dp.
+      // List pane width must be 380 dp, Detail pane width must be 378 dp (>= 320 dp).
+      final listPaneSize = tester.getSize(listPaneFinder);
+      final detailPaneSize = tester.getSize(detailPaneExpandedFinder);
+      expect(listPaneSize.width, equals(380.0));
+      expect(detailPaneSize.width, greaterThanOrEqualTo(320.0));
+      expect(detailPaneSize.width, equals(378.0));
+
+      // Detail pane initially shows EmptyState ('請選擇議題')
+      expect(find.text('請選擇議題'), findsOneWidget);
+
+      // AppBar must provide clear BackButton for project switching
+      expect(find.byType(BackButton), findsOneWidget);
+
+      // 3. Select Issue 42 -> Both list card and detail overview serve simultaneously
+      await tester.tap(find.text('Adaptive Layout Issue 42'));
+      await settleNetworkWidgets(tester);
+
+      // Assert simultaneous presence:
+      // 1 card in the list pane on the left, 1 title in the detail pane on the right
+      expect(find.text('Adaptive Layout Issue 42'), findsNWidgets(2));
+      expect(find.text('Overview'), findsOneWidget);
+
+      // Assert spatial geometry: list card is strictly to the left of detail pane
+      final listCardBox = tester.getRect(find.descendant(of: find.byType(Card), matching: find.text('Adaptive Layout Issue 42')).first);
+      final detailOverviewBox = tester.getRect(find.text('Overview'));
+      expect(listCardBox.right, lessThan(detailOverviewBox.left));
+
+      // 4. Dynamic resize to 1200 dp (Large tablet / desktop)
+      tester.view.physicalSize = const Size(1200, 900);
+      await tester.pump();
+      await settleNetworkWidgets(tester);
+
+      // Assert Two-Pane preserved at 1200 dp with expanded detail width
+      final listPane1200 = tester.getSize(listPaneFinder);
+      final detailPane1200 = tester.getSize(detailPaneExpandedFinder);
+      expect(listPane1200.width, equals(380.0));
+      // Available width is 1200 - 81 = 1119 dp, detail is 1119 - 380 - 1 = 738 dp >= 320 dp
+      expect(detailPane1200.width, equals(738.0));
+      expect(find.text('Adaptive Layout Issue 42'), findsNWidgets(2));
+      expect(find.text('Overview'), findsOneWidget);
+
+      // 5. Test interaction: tap Back button in AppBar returns to Projects list
+      expect(find.byType(BackButton), findsOneWidget);
+      await tester.tap(find.byType(BackButton));
+      await settleNetworkWidgets(tester);
+
+      // Verify returned to Projects list with project search input visible
+      expect(find.byKey(const Key('projectSearch')), findsOneWidget);
+      expect(find.text('Mobile Workspace'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });
