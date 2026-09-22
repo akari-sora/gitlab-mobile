@@ -947,7 +947,9 @@ void main() {
     await _finish(tester);
   });
 
-  testWidgets('a draft without a base revision is restored on the current server values', (tester) async {
+  testWidgets('a legacy draft without a base revision is held back when editing an existing resource', (tester) async {
+    // A v0.2 draft: same storage key, no `__base`. The server may have moved
+    // since it was written, so it must not be applied over the loaded values.
     await _pumpRevisionEditor(
       tester,
       resource: '42/issues/9/edit',
@@ -955,8 +957,31 @@ void main() {
       serverTitle: 'server title',
       baseRevision: 'new',
     );
+    expect(_editorTitle(tester), 'server title');
+    expect(find.text(_legacyNotice), findsOneWidget);
+    expect(find.text('套用草稿'), findsOneWidget);
+    expect(find.text('捨棄草稿'), findsOneWidget);
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '儲存')).onPressed, isNull);
+    await tester.tap(find.text('套用草稿'));
+    await tester.pump();
+    expect(_editorTitle(tester), 'draft title');
+    expect(find.text(_legacyNotice), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('a creation editor restores a legacy draft that has no base revision', (tester) async {
+    // No `baseRevision` and no `__base`: nothing to compare, so the draft is
+    // applied. Guards against holding every base-less draft, creates included.
+    await _pumpRevisionEditor(
+      tester,
+      resource: '42/issues/new',
+      draft: {'title': 'draft title'},
+      serverTitle: 'server title',
+    );
     expect(_editorTitle(tester), 'draft title');
     expect(find.text(_staleNotice), findsNothing);
+    expect(find.text(_legacyNotice), findsNothing);
     expect(tester.takeException(), isNull);
     await _finish(tester);
   });
@@ -1079,6 +1104,7 @@ void main() {
 }
 
 const _staleNotice = '草稿來自較舊的版本，伺服器內容已在之後變更。';
+const _legacyNotice = '草稿沒有版本資訊（來自舊版 App），無法確認是否比伺服器內容新。';
 
 String _editorTitle(WidgetTester tester) =>
     tester.widget<TextFormField>(find.byKey(const ValueKey('editor-title'))).controller!.text;

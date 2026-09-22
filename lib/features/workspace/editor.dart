@@ -158,6 +158,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
   bool _loading = true, _saving = false, _done = false, _dirty = false, _draftUnavailable = false, _preview = false, _guarding = false;
   int _operation = 0, _pickerEpoch = 0;
   Map<String, dynamic>? _staleDraft;
+  bool _staleDraftUnknown = false;
   String? _uploadingName;
   TextSelection? _markdownSelection;
   ApiFailure? _error;
@@ -193,8 +194,13 @@ class _ResourceEditorState extends State<ResourceEditor> {
         if (value is Map<String, dynamic>) {
           final storedBase = value[_draftBaseKey];
           final current = widget.baseRevision;
-          if (storedBase is String && current != null && storedBase != current) {
+          // Editing an existing resource: a draft is applied only when it was
+          // written against the revision on screen. A draft from an older
+          // app build carries no revision at all; that is "unknown", not
+          // "current", so it is held back the same way.
+          if (current != null && (storedBase is! String || storedBase != current)) {
             _staleDraft = value;
+            _staleDraftUnknown = storedBase is! String;
           } else {
             _applyFieldMap(value);
             _dirty = true;
@@ -541,7 +547,9 @@ class _ResourceEditorState extends State<ResourceEditor> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('草稿來自較舊的版本，伺服器內容已在之後變更。'),
+        Text(_staleDraftUnknown
+            ? '草稿沒有版本資訊（來自舊版 App），無法確認是否比伺服器內容新。'
+            : '草稿來自較舊的版本，伺服器內容已在之後變更。'),
         const SizedBox(height: 4),
         Wrap(spacing: 8, children: [
           TextButton(onPressed: _locked ? null : _applyStaleDraft, child: const Text('套用草稿')),
