@@ -6,10 +6,14 @@ class ListDetailController<T> extends ChangeNotifier {
   ListDetailController({
     T? initial,
     bool Function(T a, T b)? equals,
+    GlobalKey? detailKey,
   })  : _selected = initial,
-        _equals = equals;
+        _equals = equals,
+        detailKey = detailKey ?? GlobalKey(debugLabel: 'ListDetailPane_$T');
 
   final bool Function(T a, T b)? _equals;
+  /// 供 ListDetailScaffold 在跨斷點遷移時保留 Element 樹與內部 State
+  final GlobalKey detailKey;
   T? _selected;
 
   T? get selected => _selected;
@@ -45,9 +49,10 @@ class ListDetailScaffold<T> extends StatelessWidget {
     required this.detailBuilder,
     required this.emptyBuilder,
     this.listWidth = AdaptiveBreakpoints.defaultMasterWidth,
-    this.breakpoint = AdaptiveBreakpoints.expandedMin,
-    this.largeBreakpoint = AdaptiveBreakpoints.largeMin,
+    this.breakpoint,
+    this.largeBreakpoint,
     this.maxDetailWidth = AdaptiveBreakpoints.maxDetailWidth,
+    this.detailKey,
   });
 
   final ListDetailController<T> controller;
@@ -55,21 +60,46 @@ class ListDetailScaffold<T> extends StatelessWidget {
   final Widget Function(BuildContext context, T item, bool isTwoPane, VoidCallback onBack) detailBuilder;
   final Widget Function(BuildContext context) emptyBuilder;
   final double listWidth;
-  final double breakpoint;
-  final double largeBreakpoint;
+  final double? breakpoint;
+  final double? largeBreakpoint;
   final double maxDetailWidth;
+  final GlobalKey? detailKey;
 
   @override
   Widget build(BuildContext context) {
+    final effectiveDetailKey = detailKey ?? controller.detailKey;
+    final hasRail = AdaptiveScope.hasRailOf(context);
+    final effectiveBreakpoint = breakpoint ??
+        (hasRail
+            ? AdaptiveBreakpoints.expandedMinWithRail
+            : AdaptiveBreakpoints.expandedMin);
+    final effectiveLargeBreakpoint = largeBreakpoint ??
+        (hasRail
+            ? AdaptiveBreakpoints.largeMinWithRail
+            : AdaptiveBreakpoints.largeMin);
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isTwoPane = constraints.maxWidth >= breakpoint;
-        final isLarge = constraints.maxWidth >= largeBreakpoint;
+        final isTwoPane = constraints.maxWidth >= effectiveBreakpoint;
+        final isLarge = constraints.maxWidth >= effectiveLargeBreakpoint;
 
         return ListenableBuilder(
           listenable: controller,
           builder: (context, _) {
             final selected = controller.selected;
+
+            // 建立具有穩定 GlobalKey 的 detail 節點，供 Compact 與 Two-Pane 跨斷點平滑遷移
+            final Widget? stableDetail = selected != null
+                ? KeyedSubtree(
+                    key: effectiveDetailKey,
+                    child: detailBuilder(
+                      context,
+                      selected,
+                      isTwoPane,
+                      controller.clear,
+                    ),
+                  )
+                : null;
 
             if (!isTwoPane) {
               // Compact 模式 (< 840 dp)：單欄切換
@@ -83,29 +113,30 @@ class ListDetailScaffold<T> extends StatelessWidget {
                 },
                 child: KeyedSubtree(
                   key: const ValueKey('adaptive-compact-detail'),
-                  child: detailBuilder(
-                    context,
-                    selected,
-                    false,
-                    controller.clear,
-                  ),
+                  child: stableDetail!,
                 ),
               );
             }
 
             // Expanded / Two-Pane 模式 (>= 840 dp)：雙欄呈現
-            final Widget detailPane;
+            final Widget rawDetailPane;
             if (selected != null) {
-              detailPane = KeyedSubtree(
+              rawDetailPane = KeyedSubtree(
                 key: const ValueKey('adaptive-detail-pane'),
-                child: detailBuilder(context, selected, true, controller.clear),
+                child: stableDetail!,
               );
             } else {
-              detailPane = KeyedSubtree(
+              rawDetailPane = KeyedSubtree(
                 key: const ValueKey('adaptive-empty-pane'),
                 child: emptyBuilder(context),
               );
             }
+
+            // 詳情區域重設 AdaptiveScope，確保巢狀 Scaffold 不受外層 Rail 影響
+            final detailPane = AdaptiveScope(
+              hasRail: false,
+              child: rawDetailPane,
+            );
 
             final constrainedDetail = isLarge
                 ? Align(

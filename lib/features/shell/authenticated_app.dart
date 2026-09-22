@@ -653,6 +653,7 @@ class _MobileShellState extends State<_MobileShell> {
                     bottom: true,
                     right: false,
                     child: NavigationRail(
+                      minWidth: AdaptiveBreakpoints.navigationRailWidth,
                       selectedIndex: _selected,
                       onDestinationSelected: (index) => setState(() {
                         _selected = index;
@@ -683,99 +684,105 @@ class _MobileShellState extends State<_MobileShell> {
                       ],
                     ),
                   ),
-                  const VerticalDivider(width: 1, thickness: 1),
+                  const VerticalDivider(
+                    width: AdaptiveBreakpoints.navigationRailDividerWidth,
+                    thickness: 1,
+                  ),
                 ],
                 Expanded(
                   key: const ValueKey('shell-main-content-expanded'),
-                  child: Builder(
-                    builder: (contentContext) {
-                      Widget content = Column(
-                        children: [
-                          if (_showRecentFailure)
-                            SafeArea(
-                              bottom: false,
-                              child: FailureNotice(
-                                _recentFailure!,
-                                account: _recentAccount,
-                                resourceLabel: '${_recentProjectId ?? ''}',
-                                onRetry: _retryRecent,
-                                onSwitchAccount: () {
-                                  if (_recentProjectId != null) {
-                                    widget.session.setPendingResumeTarget(
-                                      ResumeTarget(projectId: _recentProjectId, resource: 'project'),
-                                    );
-                                  }
-                                  unawaited(widget.session.endSession(switching: true));
-                                },
-                              ),
-                            ),
-                          if (_showResumeFailure)
-                            SafeArea(
-                              bottom: false,
-                              child: FailureNotice(
-                                _resumeFailure!,
-                                account: _resumeAccount,
-                                resourceLabel: _resumeTarget?.projectPath ??
-                                    (_resumeTarget?.projectId != null
-                                        ? '${_resumeTarget!.projectId}'
-                                        : ''),
-                                onRetry: _retryResume,
-                                onSwitchAccount: () {
-                                  final target = _resumeTarget;
-                                  if (target != null) {
-                                    widget.session.setPendingResumeTarget(target);
-                                  }
-                                  unawaited(widget.session.endSession(switching: true));
-                                },
-                              ),
-                            ),
-                          Expanded(
-                            child: IndexedStack(
-                              key: const ValueKey('shell-indexed-stack'),
-                              index: _selected,
-                              children: [
-                                _pane(
-                                  0,
-                                  _visited.contains(0)
-                                      ? InboxPage(account: account, api: session.api!)
-                                      : const SizedBox(),
+                  child: AdaptiveScope(
+                    hasRail: useRail,
+                    child: Builder(
+                      builder: (contentContext) {
+                        Widget content = Column(
+                          children: [
+                            if (_showRecentFailure)
+                              SafeArea(
+                                bottom: false,
+                                child: FailureNotice(
+                                  _recentFailure!,
+                                  account: _recentAccount,
+                                  resourceLabel: '${_recentProjectId ?? ''}',
+                                  onRetry: _retryRecent,
+                                  onSwitchAccount: () {
+                                    if (_recentProjectId != null) {
+                                      widget.session.setPendingResumeTarget(
+                                        ResumeTarget(projectId: _recentProjectId, resource: 'project'),
+                                      );
+                                    }
+                                    unawaited(widget.session.endSession(switching: true));
+                                  },
                                 ),
-                                _pane(
-                                  1,
-                                  ProjectsPage(
-                                    session: session,
-                                    shortcuts: widget.shortcuts,
-                                    searchToken: _searchToken,
+                              ),
+                            if (_showResumeFailure)
+                              SafeArea(
+                                bottom: false,
+                                child: FailureNotice(
+                                  _resumeFailure!,
+                                  account: _resumeAccount,
+                                  resourceLabel: _resumeTarget?.projectPath ??
+                                      (_resumeTarget?.projectId != null
+                                          ? '${_resumeTarget!.projectId}'
+                                          : ''),
+                                  onRetry: _retryResume,
+                                  onSwitchAccount: () {
+                                    final target = _resumeTarget;
+                                    if (target != null) {
+                                      widget.session.setPendingResumeTarget(target);
+                                    }
+                                    unawaited(widget.session.endSession(switching: true));
+                                  },
+                                ),
+                              ),
+                            Expanded(
+                              child: IndexedStack(
+                                key: const ValueKey('shell-indexed-stack'),
+                                index: _selected,
+                                children: [
+                                  _pane(
+                                    0,
+                                    _visited.contains(0)
+                                        ? InboxPage(account: account, api: session.api!)
+                                        : const SizedBox(),
                                   ),
-                                ),
-                                _pane(
-                                  2,
-                                  _visited.contains(2)
-                                      ? CiOverviewPage(session: session)
-                                      : const SizedBox(),
-                                ),
-                                _pane(
-                                  3,
-                                  _visited.contains(3)
-                                      ? _buildMyTab(context, account, session)
-                                      : const SizedBox(),
-                                ),
-                              ],
+                                  _pane(
+                                    1,
+                                    ProjectsPage(
+                                      session: session,
+                                      shortcuts: widget.shortcuts,
+                                      searchToken: _searchToken,
+                                    ),
+                                  ),
+                                  _pane(
+                                    2,
+                                    _visited.contains(2)
+                                        ? CiOverviewPage(session: session)
+                                        : const SizedBox(),
+                                  ),
+                                  _pane(
+                                    3,
+                                    _visited.contains(3)
+                                        ? _buildMyTab(context, account, session)
+                                        : const SizedBox(),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ),
-                        ],
-                      );
-                      if (useRail) {
-                        final isLtr = Directionality.of(contentContext) == TextDirection.ltr;
-                        content = MediaQuery.removePadding(
-                          context: contentContext,
-                          removeLeft: isLtr,
-                          removeRight: !isLtr,
-                          child: content,
+                          ],
                         );
-                      }
-                      return content;
-                    },
+                        if (useRail) {
+                          final isLtr = Directionality.of(contentContext) == TextDirection.ltr;
+                          content = MediaQuery.removePadding(
+                            context: contentContext,
+                            removeLeft: isLtr,
+                            removeRight: !isLtr,
+                            child: content,
+                          );
+                        }
+                        return content;
+                      },
+                    ),
                   ),
                 ),
               ],

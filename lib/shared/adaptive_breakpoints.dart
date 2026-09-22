@@ -32,8 +32,15 @@ final class AdaptiveBreakpoints {
   static const double large = 1200.0;
   static const double largeMin = 1200.0;
 
-  // 典型元件尺寸常數
+  // 側邊 NavigationRail 尺寸常數
   static const double navigationRailWidth = 80.0;
+  static const double navigationRailDividerWidth = 1.0;
+  static const double navigationRailTotalWidth = navigationRailWidth + navigationRailDividerWidth; // 81.0
+
+  // 具備 NavigationRail 時主內容區的有效斷點閾值
+  static const double expandedMinWithRail = expandedMin - navigationRailTotalWidth; // 759.0
+  static const double largeMinWithRail = largeMin - navigationRailTotalWidth; // 1119.0
+
   static const double defaultMasterWidth = 380.0;
   static const double minMasterWidth = 320.0;
   static const double maxMasterWidth = 420.0;
@@ -50,9 +57,37 @@ final class AdaptiveBreakpoints {
   /// 外殼導航模式判定：< 600 底部 NavigationBar，>= 600 側邊 NavigationRail
   static bool showNavigationRail(double width) => width >= mediumMin;
 
-  /// 內容雙欄模式判定：>= 840 啟用 List-Detail 雙欄
-  static bool showDualPane(double width) => width >= expandedMin;
-  static bool isTwoPane(double width) => showDualPane(width);
+  /// 內容雙欄模式判定：>= 840 啟用 List-Detail 雙欄（若處於 Rail 環境，以 759 判定）
+  static bool showDualPane(double width, {bool hasRail = false}) =>
+      width >= (hasRail ? expandedMinWithRail : expandedMin);
+  static bool isTwoPane(double width, {bool hasRail = false}) =>
+      showDualPane(width, hasRail: hasRail);
+}
+
+/// 自適應外殼環境傳遞 Scope（InheritedWidget）
+class AdaptiveScope extends InheritedWidget {
+  const AdaptiveScope({
+    super.key,
+    required this.hasRail,
+    this.railWidth = AdaptiveBreakpoints.navigationRailTotalWidth,
+    required super.child,
+  });
+
+  final bool hasRail;
+  final double railWidth;
+
+  static AdaptiveScope? maybeOf(BuildContext context) {
+    return context.dependOnInheritedWidgetOfExactType<AdaptiveScope>();
+  }
+
+  static bool hasRailOf(BuildContext context) {
+    return maybeOf(context)?.hasRail ?? false;
+  }
+
+  @override
+  bool updateShouldNotify(AdaptiveScope oldWidget) {
+    return hasRail != oldWidget.hasRail || railWidth != oldWidget.railWidth;
+  }
 }
 
 /// 基於 LayoutBuilder 的局部容器寬度感知組件
