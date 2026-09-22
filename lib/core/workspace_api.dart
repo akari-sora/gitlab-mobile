@@ -81,20 +81,9 @@ extension WorkspaceApi on GitLabApi {
     if (!const ['retry', 'cancel', 'play'].contains(action)) { throw const ApiFailure(FailureKind.unsupported); }
     return writeRecord('POST', ['projects', '$project', 'jobs', '$job', action], {});
   }
-  Future<String> jobTrace(int project, int job) async {
-    try {
-      final result = await _read(instance.api(['projects', '$project', 'jobs', '$job', 'trace']), maxBytes: GitLabApi.maxTextBytes);
-      return utf8.decode(result.bytes, allowMalformed: true);
-    } on ApiFailure catch (failure) {
-      if (failure.status != 404) { rethrow; }
-      // A visible, not-yet-started job can legitimately have no trace. A missing
-      // job or an expired finished-job trace must remain a real error.
-      final current = await record(['projects', '$project', 'jobs', '$job']);
-      if (const ['created', 'pending', 'manual', 'scheduled', 'preparing', 'waiting_for_resource'].contains(current['status'])) {
-        return '';
-      }
-      rethrow;
-    }
+  Future<String> jobTrace(int project, int job, {int offset = 0}) async {
+    final chunk = await jobTraceChunk(project, job, offset: offset);
+    return utf8.decode(chunk.bytes, allowMalformed: true);
   }
   Future<Json> createRelease(int project, Json fields) => writeRecord('POST', ['projects', '$project', 'releases'], fields);
   Future<Json> updateRelease(int project, String tag, Json fields) => writeRecord('PUT', ['projects', '$project', 'releases', tag], fields);
