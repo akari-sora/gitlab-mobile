@@ -136,9 +136,7 @@ extension WorkspaceApi on GitLabApi {
 
   /// `GET /projects/:id/uploads/:secret/:filename`. Binary is kept; redirects are not followed.
   Future<Uint8List> projectUpload(int project, String secret, String filename, {int maxBytes = 8 * 1024 * 1024}) async {
-    final nameOk = filename.isNotEmpty && filename != '.' &&
-        !filename.contains('/') && !filename.contains('\\') && !filename.contains('..');
-    if (!RegExp(r'^[0-9a-f]{32}$').hasMatch(secret) || !nameOk) {
+    if (!projectUploadNamesOk(secret, filename)) {
       throw const ApiFailure(FailureKind.unsupported);
     }
     try {

@@ -1,23 +1,64 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+
 import '../core/gitlab_api.dart';
+import 'attachment_budget.dart';
 import 'attachment_image.dart';
 import 'attachment_ref.dart';
 import 'external_link.dart';
 import 'theme.dart';
 
-class MarkdownView extends StatelessWidget {
-  const MarkdownView(this.text, {super.key, this.base, this.api, this.projectId, this.projectWeb});
+class MarkdownView extends StatefulWidget {
+  const MarkdownView(
+    this.text, {
+    super.key,
+    this.base,
+    this.api,
+    this.projectId,
+    this.projectWeb,
+    this.projectPath,
+    this.budget,
+  });
   final String text;
   final Uri? base;
   final GitLabApi? api;
   final int? projectId;
   final Uri? projectWeb;
+  final String? projectPath;
+
+  /// When omitted, this view keeps one budget for its lifetime. Pass a parent
+  /// budget to share the cap across several views on the same page.
+  final AttachmentBudget? budget;
+
+  @override
+  State<MarkdownView> createState() => _MarkdownViewState();
+}
+
+class _MarkdownViewState extends State<MarkdownView> {
+  AttachmentBudget? _owned;
+
+  AttachmentBudget get _budget => widget.budget ?? (_owned ??= AttachmentBudget());
+
+  @override
+  void didUpdateWidget(MarkdownView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.budget != null) return;
+    if (oldWidget.text != widget.text || oldWidget.projectId != widget.projectId) {
+      _owned = AttachmentBudget();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final text = widget.text;
     if (text.length > 65536) {
       return const Text('內容超出 Markdown 排版上限（64 Ki 字元）。請改用原始文字或在 GitLab 開啟。');
     }
+    final budget = _budget;
+    final base = widget.base;
+    final api = widget.api;
+    final projectId = widget.projectId;
+    final projectWeb = widget.projectWeb;
     return MarkdownBody(data: text, selectable: true,
       styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
         h1: Theme.of(context).textTheme.headlineSmall,
@@ -30,14 +71,21 @@ class MarkdownView extends StatelessWidget {
           borderRadius: BorderRadius.circular(12)),
       ),
       // Only this project's upload API is fetched. Other images stay icon-only.
-      // ignore: deprecated_member_use
       imageBuilder: (uri, title, alt) {
         final ref = parseProjectUpload(uri, base: base, projectId: projectId, projectWeb: projectWeb);
         final client = api;
         final id = projectId;
         if (ref != null && client != null && id != null) {
-          return AttachmentImage(api: client, projectId: id, secret: ref.secret, filename: ref.filename,
-            alt: alt, projectWeb: projectWeb);
+          return AttachmentImage(
+            api: client,
+            budget: budget,
+            projectId: id,
+            secret: ref.secret,
+            filename: ref.filename,
+            alt: alt,
+            projectWeb: projectWeb,
+            projectPath: widget.projectPath,
+          );
         }
         return attachmentImageFallback(alt);
       },

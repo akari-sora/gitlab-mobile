@@ -314,7 +314,8 @@ class _WorkItemPageState extends State<WorkItemPage> {
                   style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 13))))),
               MarkdownView(valueText(data, 'description').isEmpty ? '尚未填寫說明。' : valueText(data, 'description'),
                 base: web, api: widget.api, projectId: widget.project.id,
-                projectWeb: widget.account.instance.projectWeb(widget.project.path)),
+                projectWeb: widget.account.instance.projectWeb(widget.project.path),
+                projectPath: widget.project.path),
               const SizedBox(height: 24), const Divider(), const SizedBox(height: 16),
               Text('指派', style: Theme.of(context).textTheme.titleSmall), const SizedBox(height: 8),
               Text(valueObjects(data, 'assignees').isEmpty ? '尚未指派'

@@ -5,6 +5,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/failure.dart';
 import '../../core/unified_diff.dart';
+import '../../shared/attachment_budget.dart';
 import '../../shared/external_link.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
@@ -600,6 +601,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
   var _seekStall = 0;
   final _builtLines = <int>{};
   final _expanded = <String>{};
+  final _attachments = AttachmentBudget();
   final _scroll = ScrollController();
   final _targetKey = GlobalKey();
   List<String> get _mrPath => [
@@ -1188,6 +1190,8 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                                 ),
                                 api: widget.api,
                                 projectId: widget.project.id,
+                                projectPath: widget.project.path,
+                                budget: _attachments,
                                 onExpand: () => setState(
                                   () => _expanded.add('${discussion['id']}'),
                                 ),
@@ -1280,6 +1284,8 @@ class _DiffThreadCard extends StatelessWidget {
     required this.base,
     required this.api,
     required this.projectId,
+    required this.projectPath,
+    required this.budget,
     required this.onExpand,
     required this.onReply,
     required this.onResolve,
@@ -1290,6 +1296,8 @@ class _DiffThreadCard extends StatelessWidget {
   final Uri base;
   final GitLabApi api;
   final int projectId;
+  final String projectPath;
+  final AttachmentBudget budget;
   final VoidCallback onExpand;
   final VoidCallback onReply;
   final VoidCallback? onResolve;
@@ -1358,6 +1366,8 @@ class _DiffThreadCard extends StatelessWidget {
                   api: api,
                   projectId: projectId,
                   projectWeb: base,
+                  projectPath: projectPath,
+                  budget: budget,
                 ),
               ],
               if (notes.length - visible.length > 0)

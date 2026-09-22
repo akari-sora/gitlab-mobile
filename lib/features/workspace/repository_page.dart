@@ -600,6 +600,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                       api: widget.api,
                       projectId: widget.project.id,
                       projectWeb: widget.account.instance.projectWeb(widget.project.path),
+                      projectPath: widget.project.path,
                     ),
                   )
                 : LayoutBuilder(

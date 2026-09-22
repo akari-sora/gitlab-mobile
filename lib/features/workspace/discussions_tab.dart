@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../shared/attachment_budget.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
 import 'diff_page.dart';
@@ -32,6 +33,7 @@ class DiscussionsTab extends StatefulWidget {
 }
 class _DiscussionsTabState extends State<DiscussionsTab> {
   final _feed = GlobalKey<RecordsFeedState>();
+  final _attachments = AttachmentBudget();
   final _open = <String>{};
   bool _busy = false, _unresolvedOnly = false;
   List<String> get path => ['projects', '${widget.project.id}', widget.resource, '${widget.iid}'];
@@ -134,7 +136,8 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
           style: Theme.of(context).textTheme.bodySmall),
         const SizedBox(height: 8), MarkdownView(valueText(notes[index], 'body'),
           base: widget.account.instance.projectWeb(widget.project.path), api: widget.api, projectId: widget.project.id,
-          projectWeb: widget.account.instance.projectWeb(widget.project.path)),
+          projectWeb: widget.account.instance.projectWeb(widget.project.path), projectPath: widget.project.path,
+          budget: _attachments),
         const SizedBox(height: 8), Text(relativeDate(valueText(notes[index], 'created_at')), style: Theme.of(context).textTheme.bodySmall),
       ],
       if (isThread) Wrap(spacing: 8, children: [

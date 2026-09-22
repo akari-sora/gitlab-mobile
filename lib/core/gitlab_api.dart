@@ -9,6 +9,7 @@ import 'instance.dart';
 import 'models.dart';
 import 'oauth.dart';
 import 'pagination.dart';
+import 'upload_names.dart';
 
 part 'workspace_api.dart';
 
