@@ -269,6 +269,33 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('a remounted preview keeps its slot and is not fetched again', (tester) async {
+    // A collapsed thread removes its previews from the tree; reopening it must
+    // not consume another slot nor another request for the same upload.
+    final fixture = _PngUploads(bytes: _png);
+    addTearDown(fixture.api.close);
+    _surface(tester);
+    final web = fixture.account.instance.projectWeb(fixture.project.path);
+    final budget = AttachmentBudget(maxImages: 1);
+    Widget view() => _host(MarkdownView(
+      '![a](/uploads/$_secret/a.png)',
+      api: fixture.api, projectId: 42, projectWeb: web, base: web, budget: budget,
+    ));
+    await tester.pumpWidget(view());
+    await settleNetworkWidgets(tester);
+    expect(find.byType(Image), findsOneWidget);
+    for (var i = 0; i < 3; i++) {
+      await tester.pumpWidget(_host(const SizedBox()));
+      await tester.pump();
+      await tester.pumpWidget(view());
+      await settleNetworkWidgets(tester);
+      expect(find.byType(Image), findsOneWidget);
+      expect(find.text('附件超過本頁顯示上限'), findsNothing);
+    }
+    expect(_uploads(fixture), 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('the image that crosses maxTotalBytes shows the size row', (tester) async {
     final fixture = _PngUploads(bytes: _png);
     addTearDown(fixture.api.close);

@@ -98,7 +98,7 @@ class _AttachmentImageState extends State<AttachmentImage> {
   @override
   void initState() {
     super.initState();
-    _allowed = widget.budget.claimImage();
+    _allowed = widget.budget.claimImage(ProjectUploadRef(secret: widget.secret, filename: widget.filename));
     _phase = _allowed ? _Phase.loading : _Phase.capped;
     if (_allowed) unawaited(_fetch());
   }
@@ -113,7 +113,7 @@ class _AttachmentImageState extends State<AttachmentImage> {
         identical(oldWidget.budget, widget.budget)) {
       return;
     }
-    _allowed = widget.budget.claimImage();
+    _allowed = widget.budget.claimImage(ProjectUploadRef(secret: widget.secret, filename: widget.filename));
     _failure = null;
     if (!_allowed) {
       _epoch++;

@@ -25,7 +25,7 @@ final class AttachmentBudget {
   final Map<ProjectUploadRef, Future<Uint8List>> requests = {};
 
   final Map<ProjectUploadRef, Uint8List> _bytes = {};
-  int _shown = 0;
+  final Set<ProjectUploadRef> _slots = {};
   int _usedBytes = 0;
   int _inFlight = 0;
   int _turn = 0;
@@ -33,10 +33,13 @@ final class AttachmentBudget {
   final List<Completer<void>> _waiters = [];
   final Map<int, Completer<void>> _turns = {};
 
-  /// False once this page already has [maxImages] previews.
-  bool claimImage() {
-    if (_shown >= maxImages) return false;
-    _shown++;
+  /// False once this page already previews [maxImages] distinct uploads.
+  /// A reference that already holds a slot keeps it, so a preview that is
+  /// rebuilt or remounted (a collapsed thread reopening) is not counted again.
+  bool claimImage(ProjectUploadRef ref) {
+    if (_slots.contains(ref)) return true;
+    if (_slots.length >= maxImages) return false;
+    _slots.add(ref);
     return true;
   }
 
@@ -84,8 +87,9 @@ final class AttachmentBudget {
         if (data == null) {
           throw StateError('upload produced no bytes');
         }
+        // A payload that does not fit is dropped and not charged, so later
+        // images that still fit are not refused for bytes nobody holds.
         if (_usedBytes + data.length > maxTotalBytes) {
-          _usedBytes += data.length;
           throw const AttachmentBudgetExceeded();
         }
         _usedBytes += data.length;
