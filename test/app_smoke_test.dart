@@ -28,6 +28,12 @@ void main() {
   }, timeout: const Timeout(Duration(minutes: 1)));
 
   testWidgets('authenticated shell reaches projects and opens locator', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
     final adapter = FakeAdapter((request) => request.uri.path.endsWith('/user')
       ? jsonResponse({'id': 7, 'username': 'tester'}) : jsonResponse([]));
     final session = controllerFor(MemoryAccountStore(), adapter);
