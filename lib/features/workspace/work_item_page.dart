@@ -63,7 +63,10 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
           : await widget.api.createIssue(widget.project.id, body);
         iid = requiredInt(created, 'iid');
       });
-    if (saved && mounted) { _open(iid); }
+    if (saved && mounted) {
+      _open(iid);
+      unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
+    }
   }
   Widget _buildList(BuildContext context, bool isTwoPane, int? selected) => Column(children: [
     Padding(padding: EdgeInsets.fromLTRB(feedGutter(context), 12, feedGutter(context) - 4, 4), child: Row(children: [
@@ -111,6 +114,9 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
       _selection.clear();
       unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
     },
+    onMutated: () {
+      unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
+    },
   );
 
   Widget _buildEmpty(BuildContext context) => Center(
@@ -127,6 +133,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
     listBuilder: _buildList,
     detailBuilder: _buildDetail,
     emptyBuilder: _buildEmpty,
+    twoPaneConsumesBack: true,
   );
 }
 
@@ -183,6 +190,7 @@ class WorkItemPage extends StatefulWidget {
     this.showBackButton = true,
     this.onBack,
     this.onDeleted,
+    this.onMutated,
   });
   final Account account;
   final GitLabApi api;
@@ -192,6 +200,7 @@ class WorkItemPage extends StatefulWidget {
   final bool showBackButton;
   final VoidCallback? onBack;
   final VoidCallback? onDeleted;
+  final VoidCallback? onMutated;
   @override
   State<WorkItemPage> createState() => _WorkItemPageState();
 }
@@ -236,7 +245,12 @@ class _WorkItemPageState extends State<WorkItemPage> {
         if (title is String) body['title'] = title.trim();
         await widget.api.writeRecord('PUT', path, body);
       });
-    if (saved && mounted) { await _load(); }
+    if (saved && mounted) {
+      await _load();
+      if (mounted) {
+        widget.onMutated?.call();
+      }
+    }
   }
   Future<void> _action(String action) async {
     if (_busy || _data == null) { return; }
@@ -286,6 +300,9 @@ class _WorkItemPageState extends State<WorkItemPage> {
           squash: squash, removeSourceBranch: removeSourceBranch);
       }
       await _load();
+      if (mounted) {
+        widget.onMutated?.call();
+      }
       if (mounted && action == 'merge') {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
           _data?['state'] == 'merged' ? '已合併' : 'GitLab 已接受操作，請查看最新合併狀態。')));

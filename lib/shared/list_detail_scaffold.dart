@@ -169,6 +169,7 @@ class ListDetailScaffold<T> extends StatefulWidget {
     this.listKey,
     this.active,
     this.collapseMaster,
+    this.twoPaneConsumesBack = false,
   });
 
   final ListDetailController<T> controller;
@@ -183,6 +184,7 @@ class ListDetailScaffold<T> extends StatefulWidget {
   final GlobalKey? listKey;
   final bool? active;
   final bool Function(T? selected)? collapseMaster;
+  final bool twoPaneConsumesBack;
 
   @override
   State<ListDetailScaffold<T>> createState() => _ListDetailScaffoldState<T>();
@@ -260,7 +262,8 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
   bool _canHandleBack() {
     if (!mounted) return false;
     final shouldCollapse = widget.collapseMaster?.call(widget.controller.selected) ?? false;
-    if (_isTwoPane && !shouldCollapse) return false;
+    final consumesBack = shouldCollapse || widget.twoPaneConsumesBack;
+    if (_isTwoPane && !consumesBack) return false;
     if (!widget.controller.hasSelection) return false;
     return widget.active ?? _isActive;
   }
