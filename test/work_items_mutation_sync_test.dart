@@ -308,5 +308,136 @@ void main() {
       expect(issuesListRequestCount, equals(1), reason: 'Readonly back navigation must NOT trigger list re-fetch');
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('Close then reopen issue in two-pane mode synchronizes to resident list feed across state filters', (tester) async {
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(840, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final fixture = WorkspaceFixture();
+      fixture.issues[42] = fixture.issue(42, 'Issue To Reopen');
+      final store = MemoryAccountStore();
+      final session = controllerFor(store, fixture.adapter);
+      addTearDown(session.dispose);
+      addTearDown(fixture.api.close);
+
+      await tester.runAsync(() async {
+        await session.initialize();
+        await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+      });
+
+      await tester.pumpWidget(
+        AuthenticatedApp(
+          session: session,
+          appearance: appearance,
+          shortcuts: shortcuts,
+          buildInfoLoader: _shellBuildInfo,
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      await tester.tap(find.text('Mobile Workspace'));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.text('議題'));
+      await settleNetworkWidgets(tester);
+
+      // Select Issue 42
+      await tester.tap(find.text('Issue To Reopen'));
+      await settleNetworkWidgets(tester);
+
+      // Close it
+      await tester.tap(find.byTooltip('更多操作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('關閉'));
+      await settleNetworkWidgets(tester);
+      expect(find.widgetWithText(StatusBadge, '已關閉'), findsOneWidget);
+
+      // Now switch to '已關閉' filter
+      await tester.tap(find.widgetWithText(ChoiceChip, '已關閉'));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Issue To Reopen'), findsNWidgets(2));
+
+      // Reopen it
+      await tester.tap(find.byTooltip('更多操作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('重新開啟'));
+      await settleNetworkWidgets(tester);
+      expect(find.widgetWithText(StatusBadge, '開啟中'), findsOneWidget);
+
+      // In the '已關閉' list feed, it should now be removed!
+      expect(find.text('Issue To Reopen'), findsNWidgets(1), reason: 'Reopened issue must be removed from closed list feed');
+
+      // Switch filter back to '開啟中'
+      await tester.tap(find.widgetWithText(ChoiceChip, '開啟中'));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Issue To Reopen'), findsNWidgets(2), reason: 'Reopened issue must appear in opened list feed');
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Compact mode (412 dp): Edit issue synchronizes updated title to list when returning via system back', (tester) async {
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(412, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final fixture = WorkspaceFixture();
+      fixture.issues[42] = fixture.issue(42, 'Compact Original Title');
+      final store = MemoryAccountStore();
+      final session = controllerFor(store, fixture.adapter);
+      addTearDown(session.dispose);
+      addTearDown(fixture.api.close);
+
+      await tester.runAsync(() async {
+        await session.initialize();
+        await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+      });
+
+      await tester.pumpWidget(
+        AuthenticatedApp(
+          session: session,
+          appearance: appearance,
+          shortcuts: shortcuts,
+          buildInfoLoader: _shellBuildInfo,
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      await tester.tap(find.text('Mobile Workspace'));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.text('議題'));
+      await settleNetworkWidgets(tester);
+
+      // Select Issue 42 in compact mode
+      await tester.tap(find.text('Compact Original Title'));
+      await settleNetworkWidgets(tester);
+
+      // Verify in detail view
+      expect(find.text('Overview'), findsOneWidget);
+
+      // Edit issue title
+      await tester.tap(find.byTooltip('更多操作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('編輯'));
+      await settleNetworkWidgets(tester);
+
+      await tester.enterText(find.byKey(const ValueKey('editor-title')), 'Compact Updated Title');
+      await tester.pump();
+      await tester.tap(find.byKey(const Key('editorSave')));
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('Compact Updated Title'), findsOneWidget);
+
+      // Press system back to return to list
+      final handled = await tester.binding.handlePopRoute();
+      expect(handled, isTrue);
+      await settleNetworkWidgets(tester);
+
+      // Now back on list pane: must show updated title and not old title!
+      expect(find.text('Overview'), findsNothing);
+      expect(find.text('Compact Original Title'), findsNothing, reason: 'Old title must not remain on list');
+      expect(find.text('Compact Updated Title'), findsOneWidget, reason: 'Updated title must be displayed on list');
+      expect(tester.takeException(), isNull);
+    });
   });
 }

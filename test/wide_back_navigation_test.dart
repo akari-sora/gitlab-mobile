@@ -270,5 +270,112 @@ void main() {
       expect(find.text('Mobile Workspace'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
+
+    testWidgets('1200 dp two-pane: system back pops MR 12 first, then Project A on second back', (tester) async {
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(1200, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final fixture = WorkspaceFixture();
+      final store = MemoryAccountStore();
+      final session = controllerFor(store, fixture.adapter);
+      addTearDown(session.dispose);
+      addTearDown(fixture.api.close);
+
+      await tester.runAsync(() async {
+        await session.initialize();
+        await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+      });
+
+      await tester.pumpWidget(
+        AuthenticatedApp(
+          session: session,
+          appearance: appearance,
+          shortcuts: shortcuts,
+          buildInfoLoader: _shellBuildInfo,
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      // Select Project
+      await tester.tap(find.text('Mobile Workspace'));
+      await settleNetworkWidgets(tester);
+
+      // Switch to MR tab (Tab 2)
+      await tester.tap(find.text('MR'));
+      await settleNetworkWidgets(tester);
+
+      // Select MR 12
+      expect(find.text('Improve private-project navigation'), findsOneWidget);
+      await tester.tap(find.text('Improve private-project navigation'));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Overview'), findsOneWidget);
+
+      // First system back
+      final handledFirst = await tester.binding.handlePopRoute();
+      expect(handledFirst, isTrue, reason: 'First system back must clear MR selection at 1200 dp');
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('Overview'), findsNothing);
+      expect(find.text('請選擇合併請求'), findsOneWidget);
+      expect(find.text('Improve private-project navigation'), findsOneWidget);
+      expect(find.byKey(const Key('projectSearch')), findsNothing);
+
+      // Second system back
+      final handledSecond = await tester.binding.handlePopRoute();
+      expect(handledSecond, isTrue, reason: 'Second system back must exit Project at 1200 dp');
+      await settleNetworkWidgets(tester);
+
+      expect(find.byKey(const Key('projectSearch')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('1200 dp two-pane: Project AppBar BackButton directly leaves project (tested separately from system back)', (tester) async {
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(1200, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final fixture = WorkspaceFixture();
+      fixture.issues[42] = fixture.issue(42, 'AppBar Back 1200dp Test Issue');
+      final store = MemoryAccountStore();
+      final session = controllerFor(store, fixture.adapter);
+      addTearDown(session.dispose);
+      addTearDown(fixture.api.close);
+
+      await tester.runAsync(() async {
+        await session.initialize();
+        await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+      });
+
+      await tester.pumpWidget(
+        AuthenticatedApp(
+          session: session,
+          appearance: appearance,
+          shortcuts: shortcuts,
+          buildInfoLoader: _shellBuildInfo,
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      await tester.tap(find.text('Mobile Workspace'));
+      await settleNetworkWidgets(tester);
+
+      await tester.tap(find.text('議題'));
+      await settleNetworkWidgets(tester);
+
+      await tester.tap(find.text('AppBar Back 1200dp Test Issue'));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Overview'), findsOneWidget);
+
+      expect(find.byType(BackButton), findsOneWidget);
+      await tester.tap(find.byType(BackButton));
+      await settleNetworkWidgets(tester);
+
+      expect(find.byKey(const Key('projectSearch')), findsOneWidget);
+      expect(find.text('Mobile Workspace'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
   });
 }
