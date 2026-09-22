@@ -23,7 +23,7 @@ if [ -n "${ANDROID_DEBUG_KEYSTORE_B64:-}" ]; then
   PREVIEW_SIGNING='Android debug key from ANDROID_DEBUG_KEYSTORE_B64 (stable across previews); not a production release'
 fi
 export PREVIEW_SIGNING
-flutter build apk --debug --no-pub
+flutter build apk --debug --no-pub --dart-define=GITLAB_MOBILE_COMMIT="${CI_COMMIT_SHORT_SHA:-local}"
 mkdir -p artifacts
 short_sha="${CI_COMMIT_SHORT_SHA:-local}"
 cp build/app/outputs/flutter-apk/app-debug.apk "artifacts/gitlab-mobile-${short_sha}-debug.apk"
