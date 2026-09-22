@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
@@ -45,6 +46,39 @@ void main() {
     expect(picked.filename, 'note.txt');
     expect(picked.bytes, [1, 2, 3]);
   });
+
+  test('discardPickedCopy deletes a file whose path contains /cache/', () async {
+    final root = await _pickedRoot();
+    final cached = File('${root.path}/cache/photo.jpg');
+    await cached.parent.create(recursive: true);
+    await cached.writeAsBytes([1, 2, 3]);
+    await discardPickedCopy(cached.path);
+    expect(cached.existsSync(), isFalse);
+  });
+
+  test('discardPickedCopy keeps a file outside /cache/', () async {
+    final root = await _pickedRoot();
+    final kept = File('${root.path}/Documents/photo.jpg');
+    await kept.parent.create(recursive: true);
+    await kept.writeAsBytes([4, 5]);
+    await discardPickedCopy(kept.path);
+    await discardPickedCopy(null);
+    expect(kept.existsSync(), isTrue);
+    expect(kept.readAsBytesSync(), [4, 5]);
+  });
+
+  test('discardPickedCopy does not throw when the cache file is missing', () async {
+    final root = await _pickedRoot();
+    await discardPickedCopy('${root.path}/cache/missing.jpg');
+  });
+}
+
+Future<Directory> _pickedRoot() async {
+  final root = await Directory.systemTemp.createTemp('gitlab-mobile-picked-');
+  addTearDown(() async {
+    if (root.existsSync()) await root.delete(recursive: true);
+  });
+  return root;
 }
 
 Future<void> _expectAbort(int? length) async {

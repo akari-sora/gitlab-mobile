@@ -208,8 +208,9 @@ Future<Directory> jobArtifactDirectory(Account account, int projectId, int jobId
 /// Deletes archives left behind for [account], including completed downloads.
 /// Filesystem checks stay synchronous so account removal is not left waiting
 /// on a plugin or an I/O future the widget test clock will not complete.
-/// Lookup and deletion failures propagate so the account is not removed while
-/// its archives remain.
+/// Lookup and deletion failures of that account directory propagate so the
+/// account is not removed while its archives remain. The `share_plus` cache
+/// is removed best-effort and cannot abort removal.
 Future<void> clearAccountArtifacts(Account account) async {
   final Directory root;
   try {
@@ -218,11 +219,33 @@ Future<void> clearAccountArtifacts(Account account) async {
     throw ApiFailure.artifactCleanup;
   }
   final directory = Directory('${root.path}/artifacts/${artifactAccountSegment(account)}');
-  if (!directory.existsSync()) return;
+  if (directory.existsSync()) {
+    try {
+      removeArtifactDirectory(directory);
+    } on FileSystemException {
+      throw ApiFailure.artifactCleanup;
+    }
+  }
+  // share_plus is not account-scoped. A failure here must not keep the account.
+  _deleteSharePlusDirectory(root);
+}
+
+/// share_plus copies the archive into `<cache>/share_plus/` and never deletes
+/// it, including when the chooser is cancelled. [artifactStorageRoot] is that
+/// cache directory. Filesystem errors are ignored.
+Future<void> _discardSharePlusCopies() async {
   try {
-    removeArtifactDirectory(directory);
+    _deleteSharePlusDirectory(await artifactStorageRoot());
   } on FileSystemException {
-    throw ApiFailure.artifactCleanup;
+    return;
+  }
+}
+
+void _deleteSharePlusDirectory(Directory root) {
+  try {
+    removeArtifactDirectory(Directory('${root.path}/share_plus'));
+  } on FileSystemException {
+    return;
   }
 }
 
@@ -794,6 +817,7 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
     if (path == null) return;
     try { await widget.sharer.share(path); }
     catch (error) { if (mounted) showFailure(context, error); }
+    finally { await _discardSharePlusCopies(); }
   }
   @override
   Widget build(BuildContext context) {

@@ -873,4 +873,142 @@ void main() {
     expect(tester.takeException(), isNull);
     await _finish(tester);
   });
+
+  testWidgets('a draft from an older revision stays unapplied and is not dirty', (tester) async {
+    const resource = '42/issues/7/edit';
+    final fixture = await _pumpRevisionEditor(
+      tester,
+      resource: resource,
+      draft: {'title': 'draft title', '__base': 'old'},
+      serverTitle: 'server title',
+      baseRevision: 'new',
+    );
+    expect(_editorTitle(tester), 'server title');
+    expect(find.text(_staleNotice), findsOneWidget);
+    expect(find.text('套用草稿'), findsOneWidget);
+    expect(find.text('捨棄草稿'), findsOneWidget);
+    await tester.tap(find.byTooltip('保留草稿並返回'));
+    await settleNetworkWidgets(tester);
+    expect(await _readDraft(fixture.account.key, resource), {'title': 'draft title', '__base': 'old'});
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('applying a stale draft fills the fields and drops the notice', (tester) async {
+    const resource = '42/issues/7/edit';
+    final fixture = await _pumpRevisionEditor(
+      tester,
+      resource: resource,
+      draft: {'title': 'draft title', '__base': 'old'},
+      serverTitle: 'server title',
+      baseRevision: 'new',
+    );
+    await tester.tap(find.text('套用草稿'));
+    await settleNetworkWidgets(tester);
+    expect(_editorTitle(tester), 'draft title');
+    expect(find.text(_staleNotice), findsNothing);
+    expect(await _readDraft(fixture.account.key, resource), {'title': 'draft title', '__base': 'new'});
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('discarding a stale draft deletes it and drops the notice', (tester) async {
+    const resource = '42/issues/7/edit';
+    final fixture = await _pumpRevisionEditor(
+      tester,
+      resource: resource,
+      draft: {'title': 'draft title', '__base': 'old'},
+      serverTitle: 'server title',
+      baseRevision: 'new',
+    );
+    await tester.tap(find.text('捨棄草稿'));
+    await settleNetworkWidgets(tester);
+    expect(_editorTitle(tester), 'server title');
+    expect(find.text(_staleNotice), findsNothing);
+    expect(await _readDraft(fixture.account.key, resource), isNull);
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('a draft whose base revision matches is restored', (tester) async {
+    await _pumpRevisionEditor(
+      tester,
+      resource: '42/issues/8/edit',
+      draft: {'title': 'draft title', '__base': 'rev'},
+      serverTitle: 'server title',
+      baseRevision: 'rev',
+    );
+    expect(_editorTitle(tester), 'draft title');
+    expect(find.text(_staleNotice), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('a draft without a base revision is restored on the current server values', (tester) async {
+    await _pumpRevisionEditor(
+      tester,
+      resource: '42/issues/9/edit',
+      draft: {'title': 'draft title'},
+      serverTitle: 'server title',
+      baseRevision: 'new',
+    );
+    expect(_editorTitle(tester), 'draft title');
+    expect(find.text(_staleNotice), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('a creation editor restores a draft when no base revision is set', (tester) async {
+    await _pumpRevisionEditor(
+      tester,
+      resource: '42/issues/new',
+      draft: {'title': 'draft title', '__base': 'old'},
+      serverTitle: 'server title',
+    );
+    expect(_editorTitle(tester), 'draft title');
+    expect(find.text(_staleNotice), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+}
+
+const _staleNotice = '草稿來自較舊的版本，伺服器內容已在之後變更。';
+
+String _editorTitle(WidgetTester tester) =>
+    tester.widget<TextFormField>(find.byKey(const ValueKey('editor-title'))).controller!.text;
+
+Future<Object?> _readDraft(String accountKey, String resource) async {
+  final raw = await const FlutterSecureStorage().read(key: _draftKey(accountKey, resource));
+  if (raw == null) return null;
+  return jsonDecode(raw) as Object;
+}
+
+Future<WorkspaceFixture> _pumpRevisionEditor(
+  WidgetTester tester, {
+  required String resource,
+  required Map<String, Object?> draft,
+  required String serverTitle,
+  String? baseRevision,
+}) async {
+  final fixture = WorkspaceFixture();
+  addTearDown(fixture.api.close);
+  _surface(tester);
+  FlutterSecureStorage.setMockInitialValues({
+    _draftKey(fixture.account.key, resource): jsonEncode(draft),
+  });
+  await tester.pumpWidget(_host(Builder(builder: (context) => Scaffold(body: TextButton(
+    onPressed: () => openEditor(
+      context,
+      account: fixture.account,
+      title: '編輯',
+      resource: resource,
+      baseRevision: baseRevision,
+      fields: [EditField('title', '標題', value: serverTitle)],
+      save: (_) async {},
+    ),
+    child: const Text('開啟編輯器'),
+  )))));
+  await tester.tap(find.text('開啟編輯器'));
+  await settleNetworkWidgets(tester);
+  return fixture;
 }
