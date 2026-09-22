@@ -970,6 +970,22 @@ void main() {
     await _finish(tester);
   });
 
+  testWidgets('a creation editor restores a legacy draft that has no base revision', (tester) async {
+    // No `baseRevision` and no `__base`: nothing to compare, so the draft is
+    // applied. Guards against holding every base-less draft, creates included.
+    await _pumpRevisionEditor(
+      tester,
+      resource: '42/issues/new',
+      draft: {'title': 'draft title'},
+      serverTitle: 'server title',
+    );
+    expect(_editorTitle(tester), 'draft title');
+    expect(find.text(_staleNotice), findsNothing);
+    expect(find.text(_legacyNotice), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
   testWidgets('a creation editor restores a draft when no base revision is set', (tester) async {
     await _pumpRevisionEditor(
       tester,
