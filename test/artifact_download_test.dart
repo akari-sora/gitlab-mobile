@@ -116,6 +116,8 @@ Future<void> removeQuietly(Directory directory) async {
 }
 
 void main() {
+  tearDown(resetArtifactShareCleanup);
+
   test('artifact archive is 256 MiB', () {
     expect(GitLabApi.maxArtifactBytes, 256 * 1024 * 1024);
   });
@@ -517,6 +519,93 @@ void main() {
     await tester.pump();
     expect(sharer.paths.single, endsWith('/artifacts.zip'));
     expect(File(sharer.paths.single).readAsBytesSync(), [1, 2, 3, 4]);
+  });
+
+  testWidgets('a successful share keeps the share_plus copy until the app resumes', (tester) async {
+    await _expectSharePlusCleared(tester, outcome: ShareOutcome.success);
+  });
+
+  testWidgets('a dismissed share removes the share_plus copy immediately', (tester) async {
+    await _expectSharePlusCleared(tester, outcome: ShareOutcome.dismissed);
+  });
+
+  testWidgets('sharing removes the share_plus cache copy when the sharer throws', (tester) async {
+    await _expectSharePlusCleared(tester, fail: true);
+  });
+
+  testWidgets('share cleanup swallows a non-filesystem storage root error', (tester) async {
+    await _expectSharePlusCleared(tester, outcome: ShareOutcome.dismissed, rootThrows: true);
+  });
+
+  testWidgets('an older share does not delete a newer share_plus copy', (tester) async {
+    final root = Directory.systemTemp.createTempSync('gitlab-mobile-share-overlap-');
+    final previous = artifactStorageRoot;
+    artifactStorageRoot = () async => root;
+    addTearDown(() async {
+      artifactStorageRoot = previous;
+      await removeQuietly(root);
+    });
+    final gates = [Completer<ShareOutcome>(), Completer<ShareOutcome>()];
+    final sharer = _GatedSharer(root, gates);
+    final older = shareDownloadedArtifact(sharer, '${root.path}/older.zip');
+    final newer = shareDownloadedArtifact(sharer, '${root.path}/newer.zip');
+    await tester.pump();
+    final copy = File('${root.path}/share_plus/copy.zip');
+    expect(copy.readAsBytesSync(), [2]);
+    gates[1].complete(ShareOutcome.success);
+    await tester.pump();
+    await newer;
+    expect(copy.readAsBytesSync(), [2]);
+    gates[0].complete(ShareOutcome.dismissed);
+    await tester.pump();
+    await older;
+    expect(copy.readAsBytesSync(), [2]);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(copy.existsSync(), isTrue);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(Directory('${root.path}/share_plus').existsSync(), isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a delayed cleanup of an older share does not delete a newer copy', (tester) async {
+    final root = Directory.systemTemp.createTempSync('gitlab-mobile-share-delayed-');
+    final previous = artifactStorageRoot;
+    // The cache-root lookup is held so a newer share can start while an older
+    // cleanup is already past its first ownership check.
+    var lookups = 0;
+    final rootGate = Completer<void>();
+    artifactStorageRoot = () async {
+      lookups += 1;
+      if (lookups == 1) await rootGate.future;
+      return root;
+    };
+    addTearDown(() async {
+      artifactStorageRoot = previous;
+      if (!rootGate.isCompleted) rootGate.complete();
+      await removeQuietly(root);
+    });
+    final gates = [Completer<ShareOutcome>(), Completer<ShareOutcome>()];
+    final sharer = _GatedSharer(root, gates);
+    final older = shareDownloadedArtifact(sharer, '${root.path}/older.zip');
+    await tester.pump();
+    gates[0].complete(ShareOutcome.dismissed);
+    await tester.pump();
+    final copy = File('${root.path}/share_plus/copy.zip');
+    expect(copy.readAsBytesSync(), [1], reason: 'the older cleanup is parked on the root lookup');
+    final newer = shareDownloadedArtifact(sharer, '${root.path}/newer.zip');
+    await tester.pump();
+    expect(copy.readAsBytesSync(), [2]);
+    rootGate.complete();
+    await tester.pump();
+    await older;
+    expect(copy.readAsBytesSync(), [2], reason: 'the older cleanup must not delete the newer copy');
+    gates[1].complete(ShareOutcome.dismissed);
+    await tester.pump();
+    await newer;
+    expect(Directory('${root.path}/share_plus').existsSync(), isFalse);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('cancelling an artifact download removes the partial file', (tester) async {
@@ -951,6 +1040,67 @@ void main() {
     expect(archive.existsSync(), isTrue);
     expect(archive.readAsBytesSync(), [1, 2, 3]);
   });
+
+  test('account cleanup removes a leftover share_plus directory', () async {
+    final root = await Directory.systemTemp.createTemp('gitlab-mobile-share-plus-clean-');
+    final previous = artifactStorageRoot;
+    artifactStorageRoot = () async => root;
+    addTearDown(() async {
+      artifactStorageRoot = previous;
+      await removeQuietly(root);
+    });
+    final account = Account(
+      instance: GitLabInstance.parse('https://example.com'),
+      user: const GitLabUser(id: 7, username: 'user', name: 'User'),
+      token: 'synthetic-test-token',
+    );
+    final digest = await jobArtifactDirectory(account, 4, 9);
+    await File('${digest.path}/secret.bin').writeAsBytes([1, 2, 3]);
+    final share = Directory('${root.path}/share_plus');
+    await share.create();
+    await File('${share.path}/copy.zip').writeAsBytes([9]);
+    await clearAccountArtifacts(account);
+    expect(digest.existsSync(), isFalse);
+    expect(share.existsSync(), isFalse);
+    await share.create();
+    await File('${share.path}/copy.zip').writeAsBytes([9]);
+    await clearAccountArtifacts(account);
+    expect(share.existsSync(), isFalse);
+  });
+
+  test('a share_plus removal failure does not abort account cleanup', () async {
+    final root = await Directory.systemTemp.createTemp('gitlab-mobile-share-plus-file-');
+    final previous = artifactStorageRoot;
+    final previousRemove = removeArtifactDirectory;
+    artifactStorageRoot = () async => root;
+    var shareRemovalFailed = false;
+    removeArtifactDirectory = (directory) {
+      if (directory.path.endsWith('/share_plus')) {
+        shareRemovalFailed = true;
+        throw const FileSystemException('share_plus busy');
+      }
+      directory.deleteSync(recursive: true);
+    };
+    addTearDown(() async {
+      artifactStorageRoot = previous;
+      removeArtifactDirectory = previousRemove;
+      await removeQuietly(root);
+    });
+    final account = Account(
+      instance: GitLabInstance.parse('https://example.com'),
+      user: const GitLabUser(id: 7, username: 'user', name: 'User'),
+      token: 'synthetic-test-token',
+    );
+    final digest = await jobArtifactDirectory(account, 4, 9);
+    await File('${digest.path}/secret.bin').writeAsBytes([1, 2, 3]);
+    final share = Directory('${root.path}/share_plus');
+    await share.create();
+    await File('${share.path}/copy.zip').writeAsBytes([9]);
+    await clearAccountArtifacts(account);
+    expect(shareRemovalFailed, isTrue);
+    expect(digest.existsSync(), isFalse);
+    expect(share.existsSync(), isTrue);
+  });
 }
 
 final class _CookieAdapter implements HttpClientAdapter {
@@ -993,7 +1143,99 @@ class _SessionHostState extends State<_SessionHost> {
 class _StubSharer implements ArtifactSharer {
   final paths = <String>[];
   @override
-  Future<void> share(String path) async { paths.add(path); }
+  Future<ShareOutcome> share(String path) async {
+    paths.add(path);
+    return ShareOutcome.success;
+  }
+}
+
+class _PlantingSharer implements ArtifactSharer {
+  _PlantingSharer(this.root, {required this.fail, this.outcome = ShareOutcome.success});
+  final Directory root;
+  final bool fail;
+  final ShareOutcome outcome;
+  var planted = false;
+  @override
+  Future<ShareOutcome> share(String path) async {
+    final copy = Directory('${root.path}/share_plus');
+    copy.createSync(recursive: true);
+    File('${copy.path}/copy.zip').writeAsBytesSync([9, 9]);
+    planted = true;
+    if (fail) throw StateError('chooser failed');
+    return outcome;
+  }
+}
+
+class _GatedSharer implements ArtifactSharer {
+  _GatedSharer(this.root, this.gates);
+  final Directory root;
+  final List<Completer<ShareOutcome>> gates;
+  var calls = 0;
+  @override
+  Future<ShareOutcome> share(String path) {
+    final call = calls;
+    calls += 1;
+    final copy = Directory('${root.path}/share_plus');
+    copy.createSync(recursive: true);
+    File('${copy.path}/copy.zip').writeAsBytesSync([call + 1]);
+    return gates[call].future;
+  }
+}
+
+Future<void> _expectSharePlusCleared(
+  WidgetTester tester, {
+  bool fail = false,
+  ShareOutcome outcome = ShareOutcome.dismissed,
+  bool rootThrows = false,
+}) async {
+  final root = Directory.systemTemp.createTempSync('gitlab-mobile-share-plus-');
+  final previous = artifactStorageRoot;
+  artifactStorageRoot = rootThrows ? () async => throw StateError('missing cache directory') : () async => root;
+  addTearDown(() async {
+    artifactStorageRoot = previous;
+    await removeQuietly(root);
+  });
+  final fixture = _DownloadFixture();
+  addTearDown(fixture.api.close);
+  final sharer = _PlantingSharer(root, fail: fail, outcome: outcome);
+  tester.view.devicePixelRatio = 1;
+  tester.view.physicalSize = const Size(412, 900);
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+  await tester.pumpWidget(workspaceHost(JobLogPage(
+    account: fixture.account, api: fixture.api, project: fixture.project, id: 501, sharer: sharer,
+    artifactDirectory: (account, projectId, jobId) async {
+      final created = Directory('${root.path}/attempt');
+      created.createSync(recursive: true);
+      return created;
+    },
+  )));
+  await settleWorkspace(tester);
+  await tester.tap(find.byTooltip('工作操作'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('下載產物'));
+  await settleWorkspace(tester);
+  expect(find.text('開啟／分享'), findsOneWidget);
+  await tester.tap(find.text('開啟／分享'));
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 50));
+  expect(sharer.planted, isTrue);
+  final copy = Directory('${root.path}/share_plus');
+  if (rootThrows) {
+    expect(tester.takeException(), isNull);
+    return;
+  }
+  if (!fail && outcome == ShareOutcome.success) {
+    expect(copy.existsSync(), isTrue);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(copy.existsSync(), isTrue);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+  }
+  expect(copy.existsSync(), isFalse);
+  expect(File('${root.path}/attempt/artifacts.zip').existsSync(), isTrue);
+  expect(tester.takeException(), isNull);
 }
 
 class _DownloadFixture extends WorkspaceFixture {

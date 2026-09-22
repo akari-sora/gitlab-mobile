@@ -208,8 +208,9 @@ Future<Directory> jobArtifactDirectory(Account account, int projectId, int jobId
 /// Deletes archives left behind for [account], including completed downloads.
 /// Filesystem checks stay synchronous so account removal is not left waiting
 /// on a plugin or an I/O future the widget test clock will not complete.
-/// Lookup and deletion failures propagate so the account is not removed while
-/// its archives remain.
+/// Lookup and deletion failures of that account directory propagate so the
+/// account is not removed while its archives remain. The `share_plus` cache
+/// is removed best-effort and cannot abort removal.
 Future<void> clearAccountArtifacts(Account account) async {
   final Directory root;
   try {
@@ -218,11 +219,42 @@ Future<void> clearAccountArtifacts(Account account) async {
     throw ApiFailure.artifactCleanup;
   }
   final directory = Directory('${root.path}/artifacts/${artifactAccountSegment(account)}');
-  if (!directory.existsSync()) return;
+  if (directory.existsSync()) {
+    try {
+      removeArtifactDirectory(directory);
+    } on FileSystemException {
+      throw ApiFailure.artifactCleanup;
+    }
+  }
+  // share_plus is not account-scoped. A failure here must not keep the account.
+  _deleteSharePlusDirectory(root);
+}
+
+/// share_plus copies the archive into `<cache>/share_plus/` and does not
+/// delete it. Dismissed, unavailable, and failed shares delete that copy
+/// immediately. A successful share leaves it until the app resumes after
+/// leaving the foreground, so the receiving app can finish reading it.
+/// Lookup can throw [MissingPlatformDirectoryException], which is not a
+/// [FileSystemException], so every error here is ignored.
+/// [serial] is the share that owns the folder when the caller decided to
+/// delete it. The cache-root lookup awaits, and a newer share may start (and
+/// plant its own copy) meanwhile, so ownership is re-checked after the await.
+/// A null serial deletes unconditionally.
+Future<void> _discardSharePlusCopies([int? serial]) async {
   try {
-    removeArtifactDirectory(directory);
-  } on FileSystemException {
-    throw ApiFailure.artifactCleanup;
+    final root = await artifactStorageRoot();
+    if (serial != null && serial != _shareSerial) return;
+    _deleteSharePlusDirectory(root);
+  } on Object {
+    return;
+  }
+}
+
+void _deleteSharePlusDirectory(Directory root) {
+  try {
+    removeArtifactDirectory(Directory('${root.path}/share_plus'));
+  } on Object {
+    return;
   }
 }
 
@@ -265,14 +297,115 @@ final class ArtifactProgress {
   void dispose() => value.dispose();
 }
 
+enum ShareOutcome { success, dismissed, unavailable }
+
+int _shareSerial = 0;
+// Created lazily in the caller's zone: a future made in another zone (a test
+// tearDown) would schedule its continuations there and never run here.
+Future<void>? _shareCleanup;
+_ShareCopyWatch? _shareCopyWatch;
+
+/// Hands [path] to [sharer] and then decides what happens to the plugin copy
+/// in `<cache>/share_plus`. Only the newest share owns that folder: an older
+/// share that completes later must not delete a copy planted by a newer one
+/// (the plugin replaces the folder when a share starts). A dismissed,
+/// unavailable or failed share deletes the copy at once. A successful share
+/// keeps it until the app resumes after leaving the foreground, so the
+/// receiving app can finish reading the `content://` stream; a later share
+/// supersedes that hold.
+@visibleForTesting
+Future<void> shareDownloadedArtifact(ArtifactSharer sharer, String path) async {
+  final serial = ++_shareSerial;
+  _disarmShareCopyWatch();
+  ShareOutcome? outcome;
+  try {
+    outcome = await sharer.share(path);
+  } catch (error, stack) {
+    await _cleanupAfterShare(serial, null);
+    Error.throwWithStackTrace(error, stack);
+  }
+  await _cleanupAfterShare(serial, outcome);
+}
+
+/// Cleanup steps run one at a time, in completion order.
+Future<void> _cleanupAfterShare(int serial, ShareOutcome? outcome) {
+  final previous = _shareCleanup ?? Future<void>.value();
+  final step = previous.then((_) async {
+    if (serial != _shareSerial) return;
+    if (outcome == ShareOutcome.success) {
+      _armShareCopyWatch(serial);
+      return;
+    }
+    await _discardSharePlusCopies(serial);
+  });
+  _shareCleanup = step.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+  return step;
+}
+
+/// At most one watcher is registered; it is not owned by any sheet, so a
+/// sheet that closes before the app comes back does not cancel the cleanup.
+void _armShareCopyWatch(int serial) {
+  final existing = _shareCopyWatch;
+  if (existing != null) {
+    existing.serial = serial;
+    return;
+  }
+  final watch = _ShareCopyWatch(serial);
+  final state = WidgetsBinding.instance.lifecycleState;
+  watch.departed = _leftForeground(state);
+  _shareCopyWatch = watch;
+  WidgetsBinding.instance.addObserver(watch);
+}
+
+void _disarmShareCopyWatch() {
+  final watch = _shareCopyWatch;
+  if (watch == null) return;
+  WidgetsBinding.instance.removeObserver(watch);
+  _shareCopyWatch = null;
+}
+
+bool _leftForeground(AppLifecycleState? state) =>
+    state == AppLifecycleState.inactive || state == AppLifecycleState.paused || state == AppLifecycleState.hidden;
+
+@visibleForTesting
+void resetArtifactShareCleanup() {
+  _disarmShareCopyWatch();
+  _shareSerial = 0;
+  _shareCleanup = null;
+}
+
+final class _ShareCopyWatch extends WidgetsBindingObserver {
+  _ShareCopyWatch(this.serial);
+  int serial;
+  var departed = false;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_leftForeground(state)) {
+      departed = true;
+      return;
+    }
+    if (state != AppLifecycleState.resumed || !departed) return;
+    _disarmShareCopyWatch();
+    unawaited(_discardSharePlusCopies(serial));
+  }
+}
+
 abstract interface class ArtifactSharer {
-  Future<void> share(String path);
+  Future<ShareOutcome> share(String path);
 }
 
 final class SystemArtifactSharer implements ArtifactSharer {
   const SystemArtifactSharer();
   @override
-  Future<void> share(String path) => SharePlus.instance.share(ShareParams(files: [XFile(path)]));
+  Future<ShareOutcome> share(String path) async {
+    final result = await SharePlus.instance.share(ShareParams(files: [XFile(path)]));
+    return switch (result.status) {
+      ShareResultStatus.success => ShareOutcome.success,
+      ShareResultStatus.dismissed => ShareOutcome.dismissed,
+      ShareResultStatus.unavailable => ShareOutcome.unavailable,
+    };
+  }
 }
 
 String formatByteCount(int bytes) {
@@ -669,7 +802,7 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
   Completer<void> _abort = Completer<void>();
   late final ArtifactProgress _progress;
   int _attempt = 0;
-  bool _disposed = false, _done = false, _popWhenCancelled = false;
+  bool _disposed = false, _done = false, _popWhenCancelled = false, _sharing = false;
   Directory? _attemptDirectory;
   File? _partial;
   String? _savedName, _savedPath;
@@ -791,9 +924,15 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
   }
   Future<void> _share() async {
     final path = _savedPath;
-    if (path == null) return;
-    try { await widget.sharer.share(path); }
-    catch (error) { if (mounted) showFailure(context, error); }
+    if (path == null || _sharing) return;
+    setState(() => _sharing = true);
+    try {
+      await shareDownloadedArtifact(widget.sharer, path);
+    } catch (error) {
+      if (mounted) showFailure(context, error);
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
   }
   @override
   Widget build(BuildContext context) {
@@ -808,7 +947,7 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
         if (_done) ...[
           Text('已下載 ${_savedName ?? widget.suggestedName} · ${formatByteCount(_savedBytes)}'),
           const SizedBox(height: 12),
-          FilledButton(onPressed: () => unawaited(_share()), child: const Text('開啟／分享')),
+          FilledButton(onPressed: _sharing ? null : () => unawaited(_share()), child: const Text('開啟／分享')),
           TextButton(onPressed: () => unawaited(openExternal(context, widget.webUri)), child: const Text('在 GitLab 開啟')),
         ],
         if (_error == null && !_done) ...[

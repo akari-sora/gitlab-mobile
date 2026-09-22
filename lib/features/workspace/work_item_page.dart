@@ -164,7 +164,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
     ];
     final saved = await openEditor(context, account: widget.account, api: widget.api, projectId: widget.project.id,
       title: '編輯 $label', resource: '${widget.project.id}/${widget.resource}/${widget.iid}/edit',
-      subtitle: widget.project.path, fields: fields, save: (values) async {
+      subtitle: widget.project.path, baseRevision: valueText(data, 'updated_at'), fields: fields, save: (values) async {
         final current = await widget.api.record(path);
         if (current['updated_at'] != data['updated_at']) { throw const ApiFailure(FailureKind.conflict); }
         final body = editorSubmission(fields, values);

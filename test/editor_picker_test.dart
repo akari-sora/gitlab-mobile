@@ -4,6 +4,9 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:flutter_secure_storage/test/test_flutter_secure_storage_platform.dart';
+// ignore: depend_on_referenced_packages
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/features/workspace/attachment_picker.dart';
@@ -873,4 +876,260 @@ void main() {
     expect(tester.takeException(), isNull);
     await _finish(tester);
   });
+
+  testWidgets('a draft from an older revision stays unapplied and is not dirty', (tester) async {
+    const resource = '42/issues/7/edit';
+    final fixture = await _pumpRevisionEditor(
+      tester,
+      resource: resource,
+      draft: {'title': 'draft title', '__base': 'old'},
+      serverTitle: 'server title',
+      baseRevision: 'new',
+    );
+    expect(_editorTitle(tester), 'server title');
+    expect(find.text(_staleNotice), findsOneWidget);
+    expect(find.text('套用草稿'), findsOneWidget);
+    expect(find.text('捨棄草稿'), findsOneWidget);
+    await tester.tap(find.byTooltip('保留草稿並返回'));
+    await settleNetworkWidgets(tester);
+    expect(await _readDraft(fixture.account.key, resource), {'title': 'draft title', '__base': 'old'});
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('applying a stale draft fills the fields and drops the notice', (tester) async {
+    const resource = '42/issues/7/edit';
+    final fixture = await _pumpRevisionEditor(
+      tester,
+      resource: resource,
+      draft: {'title': 'draft title', '__base': 'old'},
+      serverTitle: 'server title',
+      baseRevision: 'new',
+    );
+    await tester.tap(find.text('套用草稿'));
+    await settleNetworkWidgets(tester);
+    expect(_editorTitle(tester), 'draft title');
+    expect(find.text(_staleNotice), findsNothing);
+    expect(await _readDraft(fixture.account.key, resource), {'title': 'draft title', '__base': 'new'});
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('discarding a stale draft deletes it and drops the notice', (tester) async {
+    const resource = '42/issues/7/edit';
+    final fixture = await _pumpRevisionEditor(
+      tester,
+      resource: resource,
+      draft: {'title': 'draft title', '__base': 'old'},
+      serverTitle: 'server title',
+      baseRevision: 'new',
+    );
+    await tester.tap(find.text('捨棄草稿'));
+    await settleNetworkWidgets(tester);
+    expect(_editorTitle(tester), 'server title');
+    expect(find.text(_staleNotice), findsNothing);
+    expect(await _readDraft(fixture.account.key, resource), isNull);
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('a draft whose base revision matches is restored', (tester) async {
+    await _pumpRevisionEditor(
+      tester,
+      resource: '42/issues/8/edit',
+      draft: {'title': 'draft title', '__base': 'rev'},
+      serverTitle: 'server title',
+      baseRevision: 'rev',
+    );
+    expect(_editorTitle(tester), 'draft title');
+    expect(find.text(_staleNotice), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('a draft without a base revision is restored on the current server values', (tester) async {
+    await _pumpRevisionEditor(
+      tester,
+      resource: '42/issues/9/edit',
+      draft: {'title': 'draft title'},
+      serverTitle: 'server title',
+      baseRevision: 'new',
+    );
+    expect(_editorTitle(tester), 'draft title');
+    expect(find.text(_staleNotice), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('a creation editor restores a draft when no base revision is set', (tester) async {
+    await _pumpRevisionEditor(
+      tester,
+      resource: '42/issues/new',
+      draft: {'title': 'draft title', '__base': 'old'},
+      serverTitle: 'server title',
+    );
+    expect(_editorTitle(tester), 'draft title');
+    expect(find.text(_staleNotice), findsNothing);
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('typing while a stale draft is held leaves the stored draft unchanged', (tester) async {
+    const resource = '42/issues/7/edit';
+    final fixture = await _pumpRevisionEditor(
+      tester,
+      resource: resource,
+      draft: {'title': 'draft title', '__base': 'old'},
+      serverTitle: 'server title',
+      baseRevision: 'new',
+    );
+    await tester.enterText(find.byKey(const ValueKey('editor-title')), 'typed title');
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(_editorTitle(tester), 'typed title');
+    expect(await _readDraft(fixture.account.key, resource), {'title': 'draft title', '__base': 'old'});
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+    expect(await _readDraft(fixture.account.key, resource), {'title': 'draft title', '__base': 'old'});
+  });
+
+  testWidgets('save is disabled while a stale draft is held', (tester) async {
+    const resource = '42/issues/7/edit';
+    var saved = 0;
+    final fixture = await _pumpRevisionEditor(
+      tester,
+      resource: resource,
+      draft: {'title': 'draft title', '__base': 'old'},
+      serverTitle: 'server title',
+      baseRevision: 'new',
+      onSave: (_) async { saved += 1; },
+    );
+    expect(tester.widget<FilledButton>(find.byKey(const Key('editorSave'))).onPressed, isNull);
+    await tester.tap(find.byKey(const Key('editorSave')), warnIfMissed: false);
+    await settleNetworkWidgets(tester);
+    expect(saved, 0);
+    expect(find.text(_staleNotice), findsOneWidget);
+    expect(await _readDraft(fixture.account.key, resource), {'title': 'draft title', '__base': 'old'});
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('discarding a stale draft after typing leaves storage empty on return', (tester) async {
+    const resource = '42/issues/7/edit';
+    final fixture = await _pumpRevisionEditor(
+      tester,
+      resource: resource,
+      draft: {'title': 'draft title', '__base': 'old'},
+      serverTitle: 'server title',
+      baseRevision: 'new',
+    );
+    await tester.enterText(find.byKey(const ValueKey('editor-title')), 'typed title');
+    await tester.tap(find.text('捨棄草稿'));
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.byTooltip('保留草稿並返回'));
+    await settleNetworkWidgets(tester);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(await _readDraft(fixture.account.key, resource), isNull);
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('a failed stale-draft delete keeps the notice until retry succeeds', (tester) async {
+    const resource = '42/issues/7/edit';
+    final fixture = await _pumpRevisionEditor(
+      tester,
+      resource: resource,
+      draft: {'title': 'draft title', '__base': 'old'},
+      serverTitle: 'server title',
+      baseRevision: 'new',
+    );
+    final current = FlutterSecureStoragePlatform.instance as TestFlutterSecureStoragePlatform;
+    final failing = _DeleteFailingStorage(current.data);
+    FlutterSecureStoragePlatform.instance = failing;
+    await tester.tap(find.text('捨棄草稿'));
+    await settleNetworkWidgets(tester);
+    expect(find.text(_staleNotice), findsOneWidget);
+    expect(find.text('安全草稿儲存不可用。送出失敗時內容仍會保留在此畫面。'), findsOneWidget);
+    expect(tester.widget<TextButton>(find.widgetWithText(TextButton, '捨棄草稿')).onPressed, isNotNull);
+    expect(await _readDraft(fixture.account.key, resource), {'title': 'draft title', '__base': 'old'});
+    failing.fail = false;
+    await tester.tap(find.text('捨棄草稿'));
+    await settleNetworkWidgets(tester);
+    expect(find.text(_staleNotice), findsNothing);
+    expect(await _readDraft(fixture.account.key, resource), isNull);
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+
+  testWidgets('applying a stale draft stores the current base revision', (tester) async {
+    const resource = '42/issues/7/edit';
+    final fixture = await _pumpRevisionEditor(
+      tester,
+      resource: resource,
+      draft: {'title': 'draft title', '__base': 'old'},
+      serverTitle: 'server title',
+      baseRevision: 'new',
+    );
+    await tester.tap(find.text('套用草稿'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text(_staleNotice), findsNothing);
+    expect(await _readDraft(fixture.account.key, resource), {'title': 'draft title', '__base': 'new'});
+    expect(tester.takeException(), isNull);
+    await _finish(tester);
+  });
+}
+
+const _staleNotice = '草稿來自較舊的版本，伺服器內容已在之後變更。';
+
+String _editorTitle(WidgetTester tester) =>
+    tester.widget<TextFormField>(find.byKey(const ValueKey('editor-title'))).controller!.text;
+
+Future<Object?> _readDraft(String accountKey, String resource) async {
+  final raw = await const FlutterSecureStorage().read(key: _draftKey(accountKey, resource));
+  if (raw == null) return null;
+  return jsonDecode(raw) as Object;
+}
+
+Future<WorkspaceFixture> _pumpRevisionEditor(
+  WidgetTester tester, {
+  required String resource,
+  required Map<String, Object?> draft,
+  required String serverTitle,
+  String? baseRevision,
+  Future<void> Function(Map<String, String> values)? onSave,
+}) async {
+  final fixture = WorkspaceFixture();
+  addTearDown(fixture.api.close);
+  _surface(tester);
+  FlutterSecureStorage.setMockInitialValues({
+    _draftKey(fixture.account.key, resource): jsonEncode(draft),
+  });
+  await tester.pumpWidget(_host(Builder(builder: (context) => Scaffold(body: TextButton(
+    onPressed: () => openEditor(
+      context,
+      account: fixture.account,
+      title: '編輯',
+      resource: resource,
+      baseRevision: baseRevision,
+      fields: [EditField('title', '標題', value: serverTitle)],
+      save: (values) async {
+        final save = onSave;
+        if (save != null) await save(values);
+      },
+    ),
+    child: const Text('開啟編輯器'),
+  )))));
+  await tester.tap(find.text('開啟編輯器'));
+  await settleNetworkWidgets(tester);
+  return fixture;
+}
+
+class _DeleteFailingStorage extends TestFlutterSecureStoragePlatform {
+  _DeleteFailingStorage(super.data);
+  var fail = true;
+
+  @override
+  Future<void> delete({required String key, required Map<String, String> options}) async {
+    if (fail) throw StateError('draft delete failed');
+    await super.delete(key: key, options: options);
+  }
 }

@@ -80,6 +80,9 @@ Map<String, dynamic> editorSubmission(List<EditField> fields, Map<String, String
   return body;
 }
 
+/// Reserved in persisted drafts. Edit field keys never start with `__`.
+const _draftBaseKey = '__base';
+
 typedef SaveEditor = Future<void> Function(Map<String, String> values);
 Future<bool> openEditor(
   BuildContext context, {
@@ -89,6 +92,7 @@ Future<bool> openEditor(
   required List<EditField> fields,
   required SaveEditor save,
   String? subtitle,
+  String? baseRevision,
   bool persistent = true,
   GitLabApi? api,
   int? projectId,
@@ -103,6 +107,7 @@ Future<bool> openEditor(
           fields: fields,
           save: save,
           subtitle: subtitle,
+          baseRevision: baseRevision,
           persistent: persistent,
           api: api,
           projectId: projectId,
@@ -121,6 +126,7 @@ class ResourceEditor extends StatefulWidget {
     required this.fields,
     required this.save,
     this.subtitle,
+    this.baseRevision,
     this.persistent = true,
     this.api,
     this.projectId,
@@ -131,6 +137,8 @@ class ResourceEditor extends StatefulWidget {
   final List<EditField> fields;
   final SaveEditor save;
   final String? subtitle;
+  /// `updated_at` the fields were built from. Absent for creation editors.
+  final String? baseRevision;
   final bool persistent;
   final GitLabApi? api;
   final int? projectId;
@@ -148,7 +156,8 @@ class _ResourceEditorState extends State<ResourceEditor> {
   Timer? _timer;
   Future<void> _writes = Future<void>.value();
   bool _loading = true, _saving = false, _done = false, _dirty = false, _draftUnavailable = false, _preview = false, _guarding = false;
-  int _operation = 0;
+  int _operation = 0, _pickerEpoch = 0;
+  Map<String, dynamic>? _staleDraft;
   String? _uploadingName;
   TextSelection? _markdownSelection;
   ApiFailure? _error;
@@ -182,22 +191,60 @@ class _ResourceEditorState extends State<ResourceEditor> {
       if (raw != null && mounted) {
         final value = jsonDecode(raw);
         if (value is Map<String, dynamic>) {
-          for (final field in widget.fields) {
-            final stored = value[field.key];
-            if (stored is! String) continue;
-            if (field.source == null) {
-              _controllers[field.key]?.text = stored;
-            } else {
-              _picked[field.key] = decodeChoices(stored, source: field.source);
-            }
+          final storedBase = value[_draftBaseKey];
+          final current = widget.baseRevision;
+          if (storedBase is String && current != null && storedBase != current) {
+            _staleDraft = value;
+          } else {
+            _applyFieldMap(value);
+            _dirty = true;
           }
-          _dirty = true;
         }
       }
     } catch (_) {
       _draftUnavailable = true;
     }
     if (mounted) setState(() => _loading = false);
+  }
+
+  void _applyFieldMap(Map<String, dynamic> value) {
+    for (final field in widget.fields) {
+      final stored = value[field.key];
+      if (stored is! String) continue;
+      if (field.source == null) {
+        _controllers[field.key]?.text = stored;
+      } else {
+        _picked[field.key] = decodeChoices(stored, source: field.source);
+      }
+    }
+  }
+
+  void _applyStaleDraft() {
+    final draft = _staleDraft;
+    if (draft == null || _locked) return;
+    _timer?.cancel();
+    _dirty = false;
+    _staleDraft = null;
+    _applyFieldMap(draft);
+    _dirty = true;
+    _pickerEpoch++;
+    _persist();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _discardStaleDraft() async {
+    if (_locked || _staleDraft == null) return;
+    _timer?.cancel();
+    _dirty = false;
+    try {
+      await _draftStorage.delete(key: _key);
+    } catch (_) {
+      _draftUnavailable = true;
+      if (mounted) setState(() {});
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _staleDraft = null);
   }
 
   Map<String, String> _draftValues() {
@@ -212,9 +259,18 @@ class _ResourceEditorState extends State<ResourceEditor> {
     return map;
   }
 
+  Map<String, String> _storedDraft() {
+    final map = _draftValues();
+    final base = widget.baseRevision;
+    if (base != null) map[_draftBaseKey] = base;
+    return map;
+  }
+
   void _persist() {
-    if (_done || !widget.persistent || !_dirty) return;
-    final data = jsonEncode(_draftValues());
+    // While a stale draft is held, keystrokes, leave, and dispose must not
+    // replace the stored copy. Apply persists only after the hold is cleared.
+    if (_done || !widget.persistent || !_dirty || _staleDraft != null) return;
+    final data = jsonEncode(_storedDraft());
     _writes = _writes.then((_) => _draftStorage.write(key: _key, value: data)).catchError((Object _) {
       _draftUnavailable = true;
       if (mounted) setState(() {});
@@ -344,7 +400,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
   }
 
   Future<void> _save() async {
-    if (_locked || _loading || _form.currentState?.validate() != true) return;
+    if (_locked || _loading || _staleDraft != null || _form.currentState?.validate() != true) return;
     FocusScope.of(context).unfocus();
     _timer?.cancel();
     _persist();
@@ -425,7 +481,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton(
               key: const Key('editorSave'),
-              onPressed: _locked || _loading ? null : _save,
+              onPressed: _locked || _loading || _staleDraft != null ? null : _save,
               child: Text(_saving ? '送出中…' : '儲存'),
             ),
           ),
@@ -436,41 +492,65 @@ class _ResourceEditorState extends State<ResourceEditor> {
             ? const ListSkeleton()
             : SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
-                child: Form(
-                  key: _form,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        widget.subtitle ?? '@${widget.account.user.username} · ${widget.account.instance.base.host}',
-                        style: Theme.of(context).textTheme.bodySmall,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (_staleDraft != null) _staleDraftNotice(),
+                    Form(
+                      key: _form,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            widget.subtitle ?? '@${widget.account.user.username} · ${widget.account.instance.base.host}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                          if (_draftUnavailable)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 12),
+                              child: Text('安全草稿儲存不可用。送出失敗時內容仍會保留在此畫面。'),
+                            ),
+                          if (_error != null)
+                            FailureNotice(
+                              _error!,
+                              account: widget.account,
+                              resourceLabel: widget.resource,
+                              onSwitchAccount: endSessionFrom(context),
+                            ),
+                          for (final field in widget.fields)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 20),
+                              child: field.markdown
+                                  ? _markdownBlock(field)
+                                  : field.source == null
+                                  ? _textField(field)
+                                  : _pickerField(field),
+                            ),
+                        ],
                       ),
-                      if (_draftUnavailable)
-                        const Padding(
-                          padding: EdgeInsets.only(top: 12),
-                          child: Text('安全草稿儲存不可用。送出失敗時內容仍會保留在此畫面。'),
-                        ),
-                      if (_error != null)
-                        FailureNotice(
-                          _error!,
-                          account: widget.account,
-                          resourceLabel: widget.resource,
-                          onSwitchAccount: endSessionFrom(context),
-                        ),
-                      for (final field in widget.fields)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 20),
-                          child: field.markdown
-                              ? _markdownBlock(field)
-                              : field.source == null
-                              ? _textField(field)
-                              : _pickerField(field),
-                        ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
       ),
+    ),
+  );
+
+  Widget _staleDraftNotice() => Padding(
+    padding: const EdgeInsets.only(bottom: 4),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const Text('草稿來自較舊的版本，伺服器內容已在之後變更。'),
+        const SizedBox(height: 4),
+        Wrap(spacing: 8, children: [
+          TextButton(onPressed: _locked ? null : _applyStaleDraft, child: const Text('套用草稿')),
+          TextButton(
+            onPressed: _locked ? null : () => unawaited(_discardStaleDraft()),
+            child: const Text('捨棄草稿'),
+          ),
+        ]),
+      ],
     ),
   );
 
@@ -582,6 +662,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
     final source = field.source;
     if (source == null) return const SizedBox.shrink();
     return FormField<List<PickerChoice>>(
+      key: ValueKey('picked-${field.key}-$_pickerEpoch'),
       initialValue: List<PickerChoice>.of(_picked[field.key] ?? const []),
       validator: (value) => field.required && (value == null || value.isEmpty) ? '此欄位必填' : null,
       builder: (state) {
