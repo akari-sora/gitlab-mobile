@@ -116,6 +116,8 @@ Future<void> removeQuietly(Directory directory) async {
 }
 
 void main() {
+  tearDown(resetArtifactShareCleanup);
+
   test('artifact archive is 256 MiB', () {
     expect(GitLabApi.maxArtifactBytes, 256 * 1024 * 1024);
   });
@@ -519,12 +521,52 @@ void main() {
     expect(File(sharer.paths.single).readAsBytesSync(), [1, 2, 3, 4]);
   });
 
-  testWidgets('sharing removes the share_plus cache copy when the chooser returns', (tester) async {
-    await _expectSharePlusCleared(tester, fail: false);
+  testWidgets('a successful share keeps the share_plus copy until the app resumes', (tester) async {
+    await _expectSharePlusCleared(tester, outcome: ShareOutcome.success);
+  });
+
+  testWidgets('a dismissed share removes the share_plus copy immediately', (tester) async {
+    await _expectSharePlusCleared(tester, outcome: ShareOutcome.dismissed);
   });
 
   testWidgets('sharing removes the share_plus cache copy when the sharer throws', (tester) async {
     await _expectSharePlusCleared(tester, fail: true);
+  });
+
+  testWidgets('share cleanup swallows a non-filesystem storage root error', (tester) async {
+    await _expectSharePlusCleared(tester, outcome: ShareOutcome.dismissed, rootThrows: true);
+  });
+
+  testWidgets('an older share does not delete a newer share_plus copy', (tester) async {
+    final root = Directory.systemTemp.createTempSync('gitlab-mobile-share-overlap-');
+    final previous = artifactStorageRoot;
+    artifactStorageRoot = () async => root;
+    addTearDown(() async {
+      artifactStorageRoot = previous;
+      await removeQuietly(root);
+    });
+    final gates = [Completer<ShareOutcome>(), Completer<ShareOutcome>()];
+    final sharer = _GatedSharer(root, gates);
+    final older = shareDownloadedArtifact(sharer, '${root.path}/older.zip');
+    final newer = shareDownloadedArtifact(sharer, '${root.path}/newer.zip');
+    await tester.pump();
+    final copy = File('${root.path}/share_plus/copy.zip');
+    expect(copy.readAsBytesSync(), [2]);
+    gates[1].complete(ShareOutcome.success);
+    await tester.pump();
+    await newer;
+    expect(copy.readAsBytesSync(), [2]);
+    gates[0].complete(ShareOutcome.dismissed);
+    await tester.pump();
+    await older;
+    expect(copy.readAsBytesSync(), [2]);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(copy.existsSync(), isTrue);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    expect(Directory('${root.path}/share_plus').existsSync(), isFalse);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('cancelling an artifact download removes the partial file', (tester) async {
@@ -1062,35 +1104,61 @@ class _SessionHostState extends State<_SessionHost> {
 class _StubSharer implements ArtifactSharer {
   final paths = <String>[];
   @override
-  Future<void> share(String path) async { paths.add(path); }
+  Future<ShareOutcome> share(String path) async {
+    paths.add(path);
+    return ShareOutcome.success;
+  }
 }
 
 class _PlantingSharer implements ArtifactSharer {
-  _PlantingSharer(this.root, {required this.fail});
+  _PlantingSharer(this.root, {required this.fail, this.outcome = ShareOutcome.success});
   final Directory root;
   final bool fail;
+  final ShareOutcome outcome;
   var planted = false;
   @override
-  Future<void> share(String path) async {
+  Future<ShareOutcome> share(String path) async {
     final copy = Directory('${root.path}/share_plus');
     copy.createSync(recursive: true);
     File('${copy.path}/copy.zip').writeAsBytesSync([9, 9]);
     planted = true;
     if (fail) throw StateError('chooser failed');
+    return outcome;
   }
 }
 
-Future<void> _expectSharePlusCleared(WidgetTester tester, {required bool fail}) async {
+class _GatedSharer implements ArtifactSharer {
+  _GatedSharer(this.root, this.gates);
+  final Directory root;
+  final List<Completer<ShareOutcome>> gates;
+  var calls = 0;
+  @override
+  Future<ShareOutcome> share(String path) {
+    final call = calls;
+    calls += 1;
+    final copy = Directory('${root.path}/share_plus');
+    copy.createSync(recursive: true);
+    File('${copy.path}/copy.zip').writeAsBytesSync([call + 1]);
+    return gates[call].future;
+  }
+}
+
+Future<void> _expectSharePlusCleared(
+  WidgetTester tester, {
+  bool fail = false,
+  ShareOutcome outcome = ShareOutcome.dismissed,
+  bool rootThrows = false,
+}) async {
   final root = Directory.systemTemp.createTempSync('gitlab-mobile-share-plus-');
   final previous = artifactStorageRoot;
-  artifactStorageRoot = () async => root;
+  artifactStorageRoot = rootThrows ? () async => throw StateError('missing cache directory') : () async => root;
   addTearDown(() async {
     artifactStorageRoot = previous;
     await removeQuietly(root);
   });
   final fixture = _DownloadFixture();
   addTearDown(fixture.api.close);
-  final sharer = _PlantingSharer(root, fail: fail);
+  final sharer = _PlantingSharer(root, fail: fail, outcome: outcome);
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = const Size(412, 900);
   addTearDown(tester.view.resetPhysicalSize);
@@ -1113,7 +1181,20 @@ Future<void> _expectSharePlusCleared(WidgetTester tester, {required bool fail}) 
   await tester.pump();
   await tester.pump(const Duration(milliseconds: 50));
   expect(sharer.planted, isTrue);
-  expect(Directory('${root.path}/share_plus').existsSync(), isFalse);
+  final copy = Directory('${root.path}/share_plus');
+  if (rootThrows) {
+    expect(tester.takeException(), isNull);
+    return;
+  }
+  if (!fail && outcome == ShareOutcome.success) {
+    expect(copy.existsSync(), isTrue);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    await tester.pump();
+    expect(copy.existsSync(), isTrue);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+  }
+  expect(copy.existsSync(), isFalse);
   expect(File('${root.path}/attempt/artifacts.zip').existsSync(), isTrue);
   expect(tester.takeException(), isNull);
 }

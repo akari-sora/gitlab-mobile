@@ -5,14 +5,20 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 
-/// Deletes a plugin copy left in the app cache after its bytes are read.
+/// Deletes a plugin copy left after its bytes are read.
 ///
-/// image_picker and file_picker copy the source into the cache directory and
-/// leave it there. Only a path containing `/cache/` (the Android cache copy)
-/// is removed, so a user-selected file outside that directory is never
+/// image_picker and file_picker copy the source into a temporary directory
+/// and leave it there. A path containing `/cache/` is removed; that Android
+/// cache copy is verified. Paths containing `/tmp/` (NSTemporaryDirectory) or
+/// `/Library/Caches/` (the iOS caches directory) use the same rule so iOS is
+/// covered when it is enabled later. Those iOS locations are convention only
+/// and NOT_RUN. A user-selected file outside these directories is never
 /// touched. A missing file does not throw.
+bool _isPluginCopyPath(String path) =>
+    path.contains('/cache/') || path.contains('/tmp/') || path.contains('/Library/Caches/');
+
 Future<void> discardPickedCopy(String? path) async {
-  if (path == null || !path.contains('/cache/')) return;
+  if (path == null || !_isPluginCopyPath(path)) return;
   try {
     await File(path).delete();
   } on FileSystemException {

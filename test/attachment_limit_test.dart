@@ -71,10 +71,32 @@ void main() {
     final root = await _pickedRoot();
     await discardPickedCopy('${root.path}/cache/missing.jpg');
   });
+
+  test('discardPickedCopy deletes a file whose path contains /tmp/', () async {
+    final root = await _pickedRoot();
+    final temporary = File('${root.path}/tmp/photo.jpg');
+    await temporary.parent.create(recursive: true);
+    await temporary.writeAsBytes([7, 8]);
+    await discardPickedCopy(temporary.path);
+    expect(temporary.existsSync(), isFalse);
+  });
+
+  test('discardPickedCopy deletes a file whose path contains /Library/Caches/', () async {
+    final root = await _pickedRoot();
+    final cached = File('${root.path}/Library/Caches/photo.jpg');
+    await cached.parent.create(recursive: true);
+    await cached.writeAsBytes([3]);
+    await discardPickedCopy(cached.path);
+    expect(cached.existsSync(), isFalse);
+  });
 }
 
 Future<Directory> _pickedRoot() async {
-  final root = await Directory.systemTemp.createTemp('gitlab-mobile-picked-');
+  // Not under the process temp directory: on Linux that path contains `/tmp/`,
+  // which discardPickedCopy treats as an iOS plugin copy.
+  final parent = Directory('${Directory.current.path}/build/picked-copy-tests');
+  await parent.create(recursive: true);
+  final root = await parent.createTemp('picked-');
   addTearDown(() async {
     if (root.existsSync()) await root.delete(recursive: true);
   });

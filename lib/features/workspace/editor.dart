@@ -222,24 +222,29 @@ class _ResourceEditorState extends State<ResourceEditor> {
   void _applyStaleDraft() {
     final draft = _staleDraft;
     if (draft == null || _locked) return;
+    _timer?.cancel();
+    _dirty = false;
+    _staleDraft = null;
     _applyFieldMap(draft);
-    setState(() {
-      _staleDraft = null;
-      _dirty = true;
-      _pickerEpoch++;
-    });
+    _dirty = true;
+    _pickerEpoch++;
     _persist();
+    if (mounted) setState(() {});
   }
 
   Future<void> _discardStaleDraft() async {
     if (_locked || _staleDraft == null) return;
-    setState(() => _staleDraft = null);
+    _timer?.cancel();
+    _dirty = false;
     try {
       await _draftStorage.delete(key: _key);
     } catch (_) {
       _draftUnavailable = true;
       if (mounted) setState(() {});
+      return;
     }
+    if (!mounted) return;
+    setState(() => _staleDraft = null);
   }
 
   Map<String, String> _draftValues() {
@@ -262,7 +267,9 @@ class _ResourceEditorState extends State<ResourceEditor> {
   }
 
   void _persist() {
-    if (_done || !widget.persistent || !_dirty) return;
+    // While a stale draft is held, keystrokes, leave, and dispose must not
+    // replace the stored copy. Apply persists only after the hold is cleared.
+    if (_done || !widget.persistent || !_dirty || _staleDraft != null) return;
     final data = jsonEncode(_storedDraft());
     _writes = _writes.then((_) => _draftStorage.write(key: _key, value: data)).catchError((Object _) {
       _draftUnavailable = true;
@@ -393,7 +400,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
   }
 
   Future<void> _save() async {
-    if (_locked || _loading || _form.currentState?.validate() != true) return;
+    if (_locked || _loading || _staleDraft != null || _form.currentState?.validate() != true) return;
     FocusScope.of(context).unfocus();
     _timer?.cancel();
     _persist();
@@ -474,7 +481,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton(
               key: const Key('editorSave'),
-              onPressed: _locked || _loading ? null : _save,
+              onPressed: _locked || _loading || _staleDraft != null ? null : _save,
               child: Text(_saving ? '送出中…' : '儲存'),
             ),
           ),
