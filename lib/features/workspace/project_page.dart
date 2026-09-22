@@ -55,6 +55,13 @@ class _ProjectPageState extends State<ProjectPage> with SingleTickerProviderStat
     }
   }
   @override
+  void didUpdateWidget(covariant ProjectPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.project != widget.project) {
+      _project = widget.project;
+    }
+  }
+  @override
   void dispose() {
     _tabs.removeListener(_tabChanged);
     _tabs.dispose();

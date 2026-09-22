@@ -273,6 +273,15 @@ void main() {
         'archived': false,
         'last_activity_at': '2026-09-19T08:30:00Z',
       });
+      final page3Projects = List<Json>.generate(3, (i) => {
+        'id': 107 + i,
+        'name': 'Gamma Project ${i + 7}',
+        'path_with_namespace': 'group/gamma-project-${i + 7}',
+        'visibility': 'private',
+        'default_branch': 'main',
+        'archived': false,
+        'last_activity_at': '2026-09-19T08:30:00Z',
+      });
 
       final customAdapter = FakeAdapter((request) {
         final segments = request.uri.pathSegments;
@@ -283,12 +292,22 @@ void main() {
         if (joined == 'projects') {
           projectsRequestCount++;
           final page = request.uri.queryParameters['page'];
+          if (page == '3') {
+            return ResponseBody.fromString(
+              jsonEncode(page3Projects),
+              200,
+              headers: {
+                'content-type': ['application/json'],
+              },
+            );
+          }
           if (page == '2') {
             return ResponseBody.fromString(
               jsonEncode(page2Projects),
               200,
               headers: {
                 'content-type': ['application/json'],
+                'x-next-page': ['3'],
               },
             );
           }
@@ -303,7 +322,7 @@ void main() {
         }
         if (path.length == 2 && path[0] == 'projects') {
           final id = int.tryParse(path[1]);
-          final found = [...page1Projects, ...page2Projects].firstWhere(
+          final found = [...page1Projects, ...page2Projects, ...page3Projects].firstWhere(
             (p) => p['id'] == id,
             orElse: () => fixture.projectRecord,
           );
@@ -347,7 +366,8 @@ void main() {
       expect(find.text('Alpha Project 1'), findsOneWidget);
       expect(find.text('Beta Project 4'), findsOneWidget);
       expect(find.text('Beta Project 6'), findsOneWidget);
-      expect(find.text('載入更多'), findsNothing);
+      // Unread page 3 cursor is active and retained
+      expect(find.text('載入更多'), findsOneWidget, reason: 'Unread page 3 cursor must be visible before resize/nav');
 
       // 3. Drag/scroll list
       await tester.drag(find.text('Alpha Project 1'), const Offset(0, -100));
@@ -358,9 +378,10 @@ void main() {
       await tester.pump();
       await settleNetworkWidgets(tester);
 
-      // Assert: request count must stay at 2 (NO reload!), all items preserved
+      // Assert: request count must stay at 2 (NO reload!), all items and page 3 cursor preserved
       expect(projectsRequestCount, equals(2), reason: 'Resize to 800 dp must NOT trigger re-fetch');
       expect(find.text('Beta Project 6'), findsOneWidget);
+      expect(find.text('載入更多'), findsOneWidget, reason: 'Page 3 cursor preserved across resize to 800 dp');
 
       // 5. Dynamic resize: 800 -> 1000 dp (Single-Column -> Two-Pane)
       tester.view.physicalSize = const Size(1000, 1200);
@@ -369,6 +390,7 @@ void main() {
 
       expect(projectsRequestCount, equals(2), reason: 'Resize back to 1000 dp must NOT trigger re-fetch');
       expect(find.text('Beta Project 6'), findsOneWidget);
+      expect(find.text('載入更多'), findsOneWidget, reason: 'Page 3 cursor preserved across resize to 1000 dp');
 
       // 6. Dynamic resize: to 412 dp (phone mode)
       tester.view.physicalSize = const Size(412, 1200);
@@ -389,6 +411,21 @@ void main() {
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(projectsRequestCount, equals(2), reason: 'Entering and exiting detail in single column must NOT re-fetch list data!');
       expect(find.text('Beta Project 6'), findsOneWidget, reason: 'All pages of loaded items must remain in memory');
+
+      // 8. Verify unread page 3 cursor is still retained after returning from detail!
+      expect(find.text('載入更多'), findsOneWidget, reason: 'Retained unread page 3 cursor must still be present after detail back');
+
+      // 9. Continue pagination: Tap "載入更多" and assert page 3 loads correctly
+      await tester.tap(find.text('載入更多'));
+      await settleNetworkWidgets(tester);
+
+      expect(projectsRequestCount, equals(3), reason: 'Tapping load more with retained cursor loads page 3');
+      expect(find.text('Gamma Project 7'), findsOneWidget);
+      await tester.drag(find.text('Beta Project 6'), const Offset(0, -200));
+      await tester.pump();
+      await settleNetworkWidgets(tester);
+      expect(find.text('Gamma Project 9'), findsOneWidget);
+      expect(find.text('載入更多'), findsNothing, reason: 'Page 3 was the terminal page');
       expect(tester.takeException(), isNull);
     });
 

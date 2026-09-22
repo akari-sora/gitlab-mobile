@@ -249,4 +249,165 @@ void main() {
     expect(find.byKey(const Key('projectSearch')), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('review: real Shell project-only reverse resize updates route policy (compact -> expanded)', (
+    tester,
+  ) async {
+    final fixture = WorkspaceFixture();
+    final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+    final appearance = AppearanceController(MemoryAppearanceStore());
+    final shortcuts = LauncherShortcuts(
+      FakeAppShortcutHost(),
+      MemoryRecentProjectStore(),
+    );
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      session.dispose();
+      fixture.api.close();
+      appearance.dispose();
+      shortcuts.dispose();
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.runAsync(() async {
+      await session.initialize();
+      await session.connect(
+        'https://example.com/gitlab',
+        'synthetic-test-token',
+      );
+    });
+
+    _setViewport(tester, 412);
+    await tester.pumpWidget(
+      AuthenticatedApp(
+        session: session,
+        appearance: appearance,
+        shortcuts: shortcuts,
+        buildInfoLoader: () async => const BuildInfo(
+          version: 'review',
+          buildNumber: '0',
+          commit: '8ae63487-reverse-probe',
+        ),
+      ),
+    );
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.text('Mobile Workspace'));
+    await settleNetworkWidgets(tester);
+    expect(find.byType(ProjectPage), findsOneWidget);
+
+    final compactRoute = ModalRoute.of(tester.element(find.byType(ProjectPage)));
+    expect(compactRoute, isNotNull);
+    expect(
+      compactRoute!.popDisposition,
+      RoutePopDisposition.doNotPop,
+      reason: 'In compact mode, project detail must intercept system back.',
+    );
+
+    // Dynamic expand to 1000 dp
+    _setViewport(tester, 1000);
+    await settleNetworkWidgets(tester);
+
+    // On Tab 0 ('檔案') at 1000 dp, ProjectsPage is Two-Pane without collapsed master.
+    // BackDispatcher has no entries needing back veto, so Shell PopScope allows pop (bubbles from root route).
+    expect(
+      compactRoute.popDisposition,
+      RoutePopDisposition.bubble,
+      reason: 'Expanding to two-pane releases the compact detail back veto.',
+    );
+
+    // Switch to Tab 1 ('議題') where collapseMaster is active
+    await tester.tap(find.text('議題'));
+    await settleNetworkWidgets(tester);
+
+    expect(
+      compactRoute.popDisposition,
+      RoutePopDisposition.doNotPop,
+      reason: 'Entering Issues dual-pane activates collapsed master back interception.',
+    );
+
+    // Back button in AppBar returns to projects list
+    expect(find.byType(BackButton), findsOneWidget);
+    await tester.tap(find.byType(BackButton));
+    await settleNetworkWidgets(tester);
+    expect(find.byType(ProjectPage), findsNothing);
+    expect(find.byKey(const Key('projectSearch')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('review: real Shell tab switching updates route policy', (
+    tester,
+  ) async {
+    final fixture = WorkspaceFixture();
+    final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+    final appearance = AppearanceController(MemoryAppearanceStore());
+    final shortcuts = LauncherShortcuts(
+      FakeAppShortcutHost(),
+      MemoryRecentProjectStore(),
+    );
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      session.dispose();
+      fixture.api.close();
+      appearance.dispose();
+      shortcuts.dispose();
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    await tester.runAsync(() async {
+      await session.initialize();
+      await session.connect(
+        'https://example.com/gitlab',
+        'synthetic-test-token',
+      );
+    });
+
+    _setViewport(tester, 412);
+    await tester.pumpWidget(
+      AuthenticatedApp(
+        session: session,
+        appearance: appearance,
+        shortcuts: shortcuts,
+        buildInfoLoader: () async => const BuildInfo(
+          version: 'review',
+          buildNumber: '0',
+          commit: '8ae63487-tab-activity-probe',
+        ),
+      ),
+    );
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.text('Mobile Workspace'));
+    await settleNetworkWidgets(tester);
+
+    final route = ModalRoute.of(tester.element(find.byType(ProjectPage)));
+    expect(route, isNotNull);
+    expect(route!.popDisposition, RoutePopDisposition.doNotPop);
+
+    final dispatcher = DetailBackScope.maybeOf(
+      tester.element(find.byType(ProjectPage)),
+    )!.dispatcher;
+    expect(dispatcher.canHandleBack, isTrue, reason: 'Active projects tab detail has back veto');
+
+    // Switch to Inbox (tab 0)
+    await tester.tap(find.byIcon(Icons.inbox_outlined));
+    await settleNetworkWidgets(tester);
+
+    // When on Inbox tab, ProjectsPage becomes inactive via TabActiveScope:
+    // dispatcher.canHandleBack becomes false!
+    expect(dispatcher.canHandleBack, isFalse, reason: 'Inactive projects tab detail releases back qualification');
+
+    // System back while on Inbox routes back to Projects tab (via Shell onPopInvokedWithResult)
+    expect(await tester.binding.handlePopRoute(), isTrue);
+    await settleNetworkWidgets(tester);
+
+    // Now back on Projects tab, ProjectsPage is active again -> dispatcher.canHandleBack restored!
+    expect(dispatcher.canHandleBack, isTrue, reason: 'Re-activated projects tab detail restores back qualification');
+    expect(route.popDisposition, RoutePopDisposition.doNotPop);
+
+    // Second system back pops ProjectPage back to projects list
+    expect(await tester.binding.handlePopRoute(), isTrue);
+    await settleNetworkWidgets(tester);
+    expect(find.byType(ProjectPage), findsNothing);
+    expect(find.byKey(const Key('projectSearch')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

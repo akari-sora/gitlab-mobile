@@ -46,18 +46,35 @@ void main() {
     // Dio's asynchronous stream processing must use real async scheduling,
     // rather than wait for work trapped in the widget test's fake clock.
     await tester.runAsync(() => session.connect('https://example.com', 'synthetic-test-token'));
+    // Observable bounded sync:
     // Wait until authentication transition completes and initial feed loading finishes.
     // RecordsFeed mounts ListSkeleton (with an animating CircularProgressIndicator) while loading.
     // pumpAndSettle() cannot settle while CircularProgressIndicator is animating.
     // We pump real async and test clock bounded by observable state:
-    // NavigationBar appears AND CircularProgressIndicator is gone (projects feed loaded).
-    for (var i = 0; i < 50; i++) {
+    // - NavigationBar is mounted (AuthenticatedApp mounted)
+    // - CircularProgressIndicator is gone (projects feed finished loading)
+    // - Projects request has been initiated by RecordsFeed
+    var settled = false;
+    for (var cycle = 0; cycle < 100; cycle++) {
       await tester.pump(const Duration(milliseconds: 50));
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
-      if (find.byType(NavigationBar).evaluate().isNotEmpty &&
-          find.byType(CircularProgressIndicator).evaluate().isEmpty) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 15)));
+      final hasNavBar = find.byType(NavigationBar).evaluate().isNotEmpty;
+      final hasSpinner = find.byType(CircularProgressIndicator).evaluate().isNotEmpty;
+      final hasProjectsRequest = adapter.requests.any((r) => r.uri.path.contains('projects'));
+      if (hasNavBar && !hasSpinner && hasProjectsRequest) {
+        settled = true;
         break;
       }
+    }
+    if (!settled) {
+      fail(
+        'Smoke test failed to reach observable settled state within bounded wait:\n'
+        '  session.active: ${session.active?.user.username}\n'
+        '  requests: ${adapter.requests.map((r) => r.uri.toString()).toList()}\n'
+        '  hasNavBar: ${find.byType(NavigationBar).evaluate().isNotEmpty}\n'
+        '  hasSpinner: ${find.byType(CircularProgressIndicator).evaluate().isNotEmpty}\n'
+        '  binding.hasScheduledFrame: ${tester.binding.hasScheduledFrame}',
+      );
     }
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsOneWidget);
