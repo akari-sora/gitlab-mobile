@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show FileSystemException, HttpDate, IOSink;
+import 'dart:io' show FileSystemException, HttpDate, IOException, IOSink;
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
@@ -543,6 +543,246 @@ final class GitLabApi {
     } finally {
       _requests.remove(token);
     }
+  }
+
+  /// Downloads a project upload to [sink].
+  ///
+  /// Official API: `GET /api/v4/projects/:id/uploads/:secret/:filename` (GitLab 17.4+).
+  /// Redirects are NEVER followed (throws [FailureKind.redirectBlocked]).
+  /// Enforces [maxBytes] (default 4 MiB) through Content-Length pre-check
+  /// and stream accumulation.
+  Future<ArtifactDownload> downloadProjectUpload(
+    int project,
+    String secret,
+    String filename, {
+    required IOSink sink,
+    void Function(int received, int? total)? onProgress,
+    Future<void>? cancel,
+    int maxBytes = 4 * 1024 * 1024,
+  }) {
+    final result = Completer<ArtifactDownload>();
+    runZonedGuarded(() {
+      _downloadProjectUpload(
+        project,
+        secret,
+        filename,
+        sink: sink,
+        onProgress: onProgress,
+        cancel: cancel,
+        maxBytes: maxBytes,
+      ).then((value) {
+        if (!result.isCompleted) result.complete(value);
+      }, onError: (Object error, StackTrace stack) {
+        if (!result.isCompleted) {
+          result.completeError(_artifactEscape(error), stack);
+        }
+      });
+    }, (Object error, StackTrace stack) {
+      if (!result.isCompleted) {
+        result.completeError(_artifactEscape(error), stack);
+      }
+    });
+    return result.future;
+  }
+
+  Future<ArtifactDownload> _downloadProjectUpload(
+    int project,
+    String secret,
+    String filename, {
+    required IOSink sink,
+    void Function(int received, int? total)? onProgress,
+    Future<void>? cancel,
+    int maxBytes = 4 * 1024 * 1024,
+  }) async {
+    if (!projectUploadNamesOk(secret, filename)) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    if (_closed) throw const ApiFailure(FailureKind.cancelled);
+    final until = _retryAt;
+    if (until != null && DateTime.now().isBefore(until)) {
+      throw ApiFailure(FailureKind.rateLimited, status: 429, retryAt: until);
+    }
+    final uri = instance.api(['projects', '$project', 'uploads', secret, filename]);
+    if (!instance.allowsApi(uri)) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    final token = CancelToken();
+    _requests.add(token);
+    if (cancel != null) {
+      unawaited(cancel.then((_) {
+        if (!token.isCancelled) token.cancel('upload download aborted');
+      }));
+    }
+    try {
+      return await _fetchAndStreamUpload(
+        uri: uri,
+        secret: secret,
+        filename: filename,
+        sink: sink,
+        token: token,
+        maxBytes: maxBytes,
+        onProgress: onProgress,
+        allowRefresh: true,
+      );
+    } on DioException catch (error) {
+      if (error.type == DioExceptionType.cancel || _closed || token.isCancelled) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      throw const ApiFailure(FailureKind.network);
+    } on ApiFailure {
+      rethrow;
+    } on IOException {
+      throw const ApiFailure(FailureKind.network);
+    } catch (_) {
+      if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
+      rethrow;
+    } finally {
+      _requests.remove(token);
+    }
+  }
+
+  Future<ArtifactDownload> _fetchAndStreamUpload({
+    required Uri uri,
+    required String secret,
+    required String filename,
+    required IOSink sink,
+    required CancelToken token,
+    required int maxBytes,
+    required void Function(int received, int? total)? onProgress,
+    required bool allowRefresh,
+  }) async {
+    if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
+    final response = await _dio.requestUri<ResponseBody>(
+      uri,
+      data: null,
+      cancelToken: token,
+      options: Options(
+        method: 'GET',
+        responseType: ResponseType.stream,
+        followRedirects: false,
+        maxRedirects: 0,
+        validateStatus: (status) => status != null,
+        headers: _authHeaders,
+      ),
+    );
+    final status = response.statusCode ?? 0;
+    if (status == 200) {
+      return _writeUploadStream(
+        response: response,
+        filename: filename,
+        sink: sink,
+        token: token,
+        maxBytes: maxBytes,
+        onProgress: onProgress,
+      );
+    }
+    await _discardBody(response.data);
+    if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
+    if (status == 401 && allowRefresh && await _refreshOAuth()) {
+      return _fetchAndStreamUpload(
+        uri: uri,
+        secret: secret,
+        filename: filename,
+        sink: sink,
+        token: token,
+        maxBytes: maxBytes,
+        onProgress: onProgress,
+        allowRefresh: false,
+      );
+    }
+    if (status >= 300 && status < 400) {
+      throw ApiFailure(FailureKind.redirectBlocked, status: status);
+    }
+    if (status == 429) {
+      _rememberRetryAfter(response.headers.value('retry-after'));
+    }
+    throw ApiFailure.fromStatus(status, retryAt: _retryAt);
+  }
+
+  Future<ArtifactDownload> _writeUploadStream({
+    required Response<ResponseBody> response,
+    required String filename,
+    required IOSink sink,
+    required CancelToken token,
+    required int maxBytes,
+    required void Function(int received, int? total)? onProgress,
+  }) async {
+    final headers = response.headers;
+    final total = int.tryParse(headers.value(Headers.contentLengthHeader) ?? '');
+    if (total != null && total > maxBytes) {
+      _cancelTransport(token);
+      await _releaseBody(response.data);
+      throw const ApiFailure(
+        FailureKind.tooLarge,
+        title: '超過大小上限',
+        detail: '這個附件超過 4 MiB 上限。',
+      );
+    }
+    final body = response.data;
+    if (body == null) throw const ApiFailure(FailureKind.invalidResponse);
+    final iterator = StreamIterator<Uint8List>(body.stream);
+    final cancelled = token.whenCancel.then<Object?>((_) => _artifactCancelled);
+    var received = 0;
+    Future<Object?>? pendingMove;
+    try {
+      while (true) {
+        if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
+        final move = iterator.moveNext().then<Object?>(
+          (more) => more,
+          onError: (Object error, StackTrace stack) {
+            if (_closed || token.isCancelled) return _artifactCancelled;
+            Error.throwWithStackTrace(error, stack);
+          },
+        );
+        pendingMove = move;
+        final step = await Future.any<Object?>([move, cancelled]);
+        if (identical(step, _artifactCancelled) || _closed || token.isCancelled) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        if (step != true) break;
+        final chunk = iterator.current;
+        if (received + chunk.length > maxBytes) {
+          _cancelTransport(token);
+          try {
+            await sink.close();
+          } on Object {
+            /* ignore */
+          }
+          throw const ApiFailure(
+            FailureKind.tooLarge,
+            title: '超過大小上限',
+            detail: '這個附件超過 4 MiB 上限。',
+          );
+        }
+        try {
+          sink.add(chunk);
+        } on StateError {
+          throw const ApiFailure(FailureKind.cancelled);
+        } on FileSystemException {
+          throw ApiFailure.artifactStorage;
+        }
+        received += chunk.length;
+        onProgress?.call(received, total);
+      }
+    } finally {
+      if (pendingMove != null) {
+        unawaited(pendingMove.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
+      }
+      try {
+        await iterator.cancel();
+      } on Object {
+        /* ignore */
+      }
+    }
+    if (_closed || token.isCancelled) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    if (received == 0) onProgress?.call(0, total);
+    return ArtifactDownload(
+      fileName: filename,
+      bytesWritten: received,
+      contentType: headers.value(Headers.contentTypeHeader),
+    );
   }
 
   /// CDN hop. A fresh client so [_dio] defaults, interceptors, and its cookie

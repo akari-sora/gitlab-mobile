@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -9,6 +10,7 @@ import '../core/failure.dart';
 import '../core/gitlab_api.dart';
 import '../core/models.dart';
 import '../core/providers.dart';
+import 'artifact_storage.dart';
 import 'attachment_budget.dart';
 import 'attachment_ref.dart';
 import 'external_link.dart';
@@ -221,7 +223,13 @@ class _AttachmentImageState extends State<AttachmentImage> {
     child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _openFailure(failure),
-      child: ExcludeSemantics(child: child),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: ExcludeSemantics(child: child),
+        ),
+      ),
     ),
   );
 
@@ -231,11 +239,16 @@ class _AttachmentImageState extends State<AttachmentImage> {
     final web = widget.projectWeb;
     final opened = web == null ? null : projectUploadWeb(web, _ref);
     final label = _semanticLabel;
+    Account? account;
+    try {
+      account = ProviderScope.containerOf(context, listen: false).read(sessionProvider).active;
+    } catch (_) {}
     unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (context) => AttachmentViewer(
       bytes: bytes,
       title: label,
       semanticLabel: label,
       webUrl: opened,
+      account: account,
     ))));
   }
 
@@ -291,26 +304,75 @@ class _AttachmentImageState extends State<AttachmentImage> {
   }
 }
 
-class AttachmentViewer extends StatelessWidget {
+class AttachmentViewer extends StatefulWidget {
   const AttachmentViewer({
     super.key,
     required this.bytes,
     required this.title,
     required this.semanticLabel,
     this.webUrl,
+    this.account,
+    this.sharer = const SystemArtifactSharer(),
   });
+
   final Uint8List bytes;
   final String title;
   final String semanticLabel;
   final Uri? webUrl;
+  final Account? account;
+  final ArtifactSharer sharer;
+
+  @override
+  State<AttachmentViewer> createState() => _AttachmentViewerState();
+}
+
+class _AttachmentViewerState extends State<AttachmentViewer> {
+  bool _sharing = false;
+
+  Future<void> _share(BuildContext buttonContext) async {
+    if (_sharing) return;
+    setState(() => _sharing = true);
+    try {
+      final box = buttonContext.findRenderObject() as RenderBox?;
+      final Rect? origin = box != null && box.hasSize
+          ? box.localToGlobal(Offset.zero) & box.size
+          : null;
+      Account? account = widget.account;
+      if (account == null) {
+        try {
+          account = ProviderScope.containerOf(context, listen: false).read(sessionProvider).active;
+        } catch (_) {}
+      }
+      final root = await artifactStorageRoot();
+      final accountSeg = account != null ? artifactAccountSegment(account) : 'shared';
+      final stamp = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
+      final safeName = attachmentDownloadFileName(widget.title, fallback: 'image.png');
+      final dir = Directory('${root.path}/attachments/$accountSeg/share_staging/$stamp');
+      await dir.create(recursive: true);
+      final tempFile = File('${dir.path}/$safeName');
+      await tempFile.writeAsBytes(widget.bytes, flush: true);
+      await shareDownloadedArtifact(widget.sharer, tempFile.path, sharePositionOrigin: origin);
+    } catch (error) {
+      if (mounted) showFailure(context, error);
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final opened = webUrl;
+    final opened = widget.webUrl;
     return Scaffold(
       appBar: AppBar(
-        title: Text(title, overflow: TextOverflow.ellipsis),
+        title: Text(widget.title, overflow: TextOverflow.ellipsis),
         actions: [
+          Builder(
+            builder: (buttonContext) => IconButton(
+              icon: const Icon(Icons.share_outlined),
+              tooltip: '分享',
+              onPressed: _sharing ? null : () => unawaited(_share(buttonContext)),
+            ),
+          ),
           if (opened != null) TextButton(
             onPressed: () => unawaited(openExternal(context, opened)),
             child: const Text('在 GitLab 開啟'),
@@ -319,9 +381,9 @@ class AttachmentViewer extends StatelessWidget {
       ),
       body: Center(child: InteractiveViewer(
         child: Image.memory(
-          bytes,
+          widget.bytes,
           cacheWidth: _cacheWidthLimit,
-          semanticLabel: semanticLabel,
+          semanticLabel: widget.semanticLabel,
           fit: BoxFit.contain,
           errorBuilder: (_, _, _) => attachmentIconRow('無法解碼圖片'),
         ),

@@ -1142,9 +1142,11 @@ class _SessionHostState extends State<_SessionHost> {
 
 class _StubSharer implements ArtifactSharer {
   final paths = <String>[];
+  final origins = <Rect?>[];
   @override
-  Future<ShareOutcome> share(String path) async {
+  Future<ShareOutcome> share(String path, {Rect? sharePositionOrigin}) async {
     paths.add(path);
+    origins.add(sharePositionOrigin);
     return ShareOutcome.success;
   }
 }
@@ -1156,7 +1158,7 @@ class _PlantingSharer implements ArtifactSharer {
   final ShareOutcome outcome;
   var planted = false;
   @override
-  Future<ShareOutcome> share(String path) async {
+  Future<ShareOutcome> share(String path, {Rect? sharePositionOrigin}) async {
     final copy = Directory('${root.path}/share_plus');
     copy.createSync(recursive: true);
     File('${copy.path}/copy.zip').writeAsBytesSync([9, 9]);
@@ -1172,7 +1174,7 @@ class _GatedSharer implements ArtifactSharer {
   final List<Completer<ShareOutcome>> gates;
   var calls = 0;
   @override
-  Future<ShareOutcome> share(String path) {
+  Future<ShareOutcome> share(String path, {Rect? sharePositionOrigin}) {
     final call = calls;
     calls += 1;
     final copy = Directory('${root.path}/share_plus');
