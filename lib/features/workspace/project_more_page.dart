@@ -4,6 +4,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
+import 'commit_page.dart';
 import 'editor.dart';
 import 'records_feed.dart';
 import '../../shared/theme.dart';
@@ -229,15 +230,26 @@ class _MetadataPageState extends State<MetadataPage> {
     finally { if (mounted) { setState(() => _busy = false); } }
   }
   Future<void> _view(Json value) async {
+    if (widget.kind == MetadataKind.commits) {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CommitDetailPage(
+            account: widget.account,
+            api: widget.api,
+            project: widget.project,
+            sha: _id(value),
+            initialCommit: value,
+          ),
+        ),
+      );
+      return;
+    }
     await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => Scaffold(
       appBar: AppBar(title: Text(_name(value))), body: gestureSafe(ListView(padding: const EdgeInsets.all(20), children: [
         Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 16),
         if (value['state'] is String) Align(alignment: Alignment.centerLeft, child: StatusBadge(valueText(value, 'state'))),
-        if (widget.kind == MetadataKind.commits) ...[
-          SelectableText(_id(value), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12)),
-          const SizedBox(height: 16), SelectableText(valueText(value, 'message')),
-          const SizedBox(height: 16), Text(valueText(value, 'author_name')),
-        ] else MarkdownView(valueText(value, 'description', valueText(value, 'message', '尚未填寫說明。')),
+        MarkdownView(valueText(value, 'description', valueText(value, 'message', '尚未填寫說明。')),
           base: widget.account.instance.projectWeb(widget.project.path), api: widget.api, projectId: widget.project.id,
           projectWeb: widget.account.instance.projectWeb(widget.project.path), projectPath: widget.project.path),
         if (value['commit'] is Json) ...[const SizedBox(height: 20), Text(valueText(valueObject(value, 'commit'), 'title')),
