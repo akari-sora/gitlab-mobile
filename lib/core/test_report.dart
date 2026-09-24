@@ -178,10 +178,11 @@ final class TestCase {
       jobId = rawJobId;
     } else if (rawJobId is num && rawJobId > 0) {
       jobId = rawJobId.toInt();
-    } else if (rawJobId is String) {
-      jobId = int.tryParse(rawJobId);
-    } else if (j['job_url'] is String) {
-      final match = RegExp(r'/jobs/(\d+)').firstMatch(j['job_url'] as String);
+    } else if (rawJobId is String && int.tryParse(rawJobId) != null && int.parse(rawJobId) > 0) {
+      jobId = int.parse(rawJobId);
+    }
+    if (jobId == null && j['job_url'] is String) {
+      final match = RegExp(r'/(?:jobs|builds)/(\d+)').firstMatch(j['job_url'] as String);
       if (match != null) jobId = int.tryParse(match.group(1)!);
     }
     jobId ??= defaultJobId;
@@ -202,8 +203,16 @@ final class TestCase {
       trace = rawTrace.toString();
     }
 
+    final rawStatus = optionalString(j, 'status')?.toLowerCase().trim() ?? 'unknown';
+    final normalizedStatus = switch (rawStatus) {
+      'passed' => 'success',
+      'failure' => 'failed',
+      'ignored' => 'skipped',
+      _ => rawStatus,
+    };
+
     return TestCase(
-      status: optionalString(j, 'status')?.toLowerCase() ?? 'unknown',
+      status: normalizedStatus,
       name: optionalString(j, 'name') ?? '未命名測試案例',
       classname: optionalString(j, 'classname'),
       file: optionalString(j, 'file'),
@@ -230,11 +239,14 @@ final class TestCase {
   final int? jobId;
   final String? suiteName;
 
-  bool get isFailed => status == 'failed' || status == 'error';
+  bool get isFailed => status == 'failed';
+  bool get isError => status == 'error';
   bool get isSuccess => status == 'success';
   bool get isSkipped => status == 'skipped';
+  bool get isProblem => isFailed || isError;
 
-  String get identity => '${suiteName ?? ''}:$classname:$name:${jobId ?? ''}';
+  String get identity =>
+      '${suiteName ?? ''}:${classname ?? ''}:${file ?? ''}:$name:${executionTime ?? ''}:${jobId ?? ''}';
 }
 
 /// A suite containing a group of test cases in `GET /projects/:id/pipelines/:id/test_report`.
@@ -255,10 +267,9 @@ final class TestSuite {
     final name = optionalString(j, 'name') ?? '未命名測試套件';
     final rawBuildIds = j['build_ids'];
     int? defaultJobId;
-    if (rawBuildIds is List &&
-        rawBuildIds.length == 1 &&
-        rawBuildIds.first is int) {
-      defaultJobId = rawBuildIds.first as int;
+    if (rawBuildIds is List && rawBuildIds.length == 1) {
+      final val = _asInt(rawBuildIds.first);
+      if (val > 0) defaultJobId = val;
     }
     final rawCases = j['test_cases'];
     final cases = <TestCase>[

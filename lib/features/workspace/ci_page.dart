@@ -255,7 +255,7 @@ class PipelineTestsView extends StatefulWidget {
   State<PipelineTestsView> createState() => PipelineTestsViewState();
 }
 
-class PipelineTestsViewState extends State<PipelineTestsView> {
+class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeepAliveClientMixin {
   static const int maxCasesBudget = 500;
   static const int maxOutputChars = 5000;
 
@@ -271,6 +271,9 @@ class PipelineTestsViewState extends State<PipelineTestsView> {
   Uri? _nextPage;
   String _filter = 'all';
   final Set<String> _expandedCases = {};
+
+  @override
+  bool get wantKeepAlive => true;
 
   bool get _isInProgress => const [
     'running',
@@ -322,8 +325,10 @@ class PipelineTestsViewState extends State<PipelineTestsView> {
       setState(() {
         _summary = summary;
         _loadingSummary = false;
-        if (summary.failedCount > 0 || summary.errorCount > 0 || summary.hasSuiteError) {
+        if (summary.failedCount > 0) {
           _filter = 'failed';
+        } else if (summary.errorCount > 0) {
+          _filter = 'error';
         } else {
           _filter = 'all';
         }
@@ -354,13 +359,8 @@ class PipelineTestsViewState extends State<PipelineTestsView> {
         perPage: 30,
       );
       if (!mounted || summaryGen != _generation || caseGen != _casesGeneration) return;
-      final seen = <String>{};
-      final uniqueCases = <TestCase>[];
-      for (final c in page.testCases) {
-        if (seen.add(c.identity)) uniqueCases.add(c);
-      }
       setState(() {
-        _cases = uniqueCases;
+        _cases = page.testCases;
         _nextPage = page.next;
         _loadingCases = false;
       });
@@ -394,7 +394,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> {
       final seen = _cases.map((c) => c.identity).toSet();
       final newCases = <TestCase>[];
       for (final c in page.testCases) {
-        if (seen.add(c.identity)) newCases.add(c);
+        if (!seen.contains(c.identity)) newCases.add(c);
       }
       setState(() {
         _cases = [..._cases, ...newCases];
@@ -555,133 +555,156 @@ class PipelineTestsViewState extends State<PipelineTestsView> {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final maxTextWidth = constraints.maxWidth;
+            return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                StatusBadge(item.status),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    item.name,
-                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    StatusBadge(item.status),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        item.name,
+                        style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                if (item.classname != null && item.classname!.isNotEmpty)
-                  Text(
-                    item.classname!,
-                    style: const TextStyle(
-                      fontFamily: codeFontFamily,
-                      fontFamilyFallback: ['Menlo', 'monospace'],
-                      fontSize: 12,
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (item.classname != null && item.classname!.isNotEmpty)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxTextWidth),
+                        child: Text(
+                          item.classname!,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: codeFontFamily,
+                            fontFamilyFallback: ['Menlo', 'monospace'],
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    if (item.suiteName != null && item.suiteName!.isNotEmpty)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxTextWidth),
+                        child: Text(
+                          '套件: ${item.suiteName}',
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    if (item.file != null && item.file!.isNotEmpty)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxTextWidth),
+                        child: Text(
+                          item.file!,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    if (item.executionTime != null)
+                      Text('${item.executionTime!.toStringAsFixed(3)} 秒', style: theme.textTheme.bodySmall),
+                  ],
+                ),
+                if (item.jobId != null) ...[
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.terminal, size: 16),
+                      label: Text('工作 #${item.jobId}'),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        minimumSize: const Size(48, 48),
+                      ),
+                      onPressed: () => widget.onOpenJob(item.jobId!),
                     ),
                   ),
-                if (item.suiteName != null && item.suiteName!.isNotEmpty)
-                  Text('套件: ${item.suiteName}', style: theme.textTheme.bodySmall),
-                if (item.file != null && item.file!.isNotEmpty)
-                  Text(item.file!, style: theme.textTheme.bodySmall),
-                if (item.executionTime != null)
-                  Text('${item.executionTime!.toStringAsFixed(3)} 秒', style: theme.textTheme.bodySmall),
-              ],
-            ),
-            if (item.jobId != null) ...[
-              const SizedBox(height: 10),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  icon: const Icon(Icons.terminal, size: 16),
-                  label: Text('工作 #${item.jobId}'),
-                  style: OutlinedButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    minimumSize: const Size(48, 48),
+                ],
+                if (hasTraceOrOutput) ...[
+                  const SizedBox(height: 8),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      setState(() {
+                        if (isExpanded) {
+                          _expandedCases.remove(item.identity);
+                        } else {
+                          _expandedCases.add(item.identity);
+                        }
+                      });
+                    },
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 48),
+                      child: Row(
+                        children: [
+                          Icon(isExpanded ? Icons.expand_less : Icons.expand_more, size: 20),
+                          const SizedBox(width: 6),
+                          Text(
+                            '錯誤追蹤與輸出',
+                            style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  onPressed: () => widget.onOpenJob(item.jobId!),
-                ),
-              ),
-            ],
-            if (hasTraceOrOutput) ...[
-              const SizedBox(height: 8),
-              InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () {
-                  setState(() {
-                    if (isExpanded) {
-                      _expandedCases.remove(item.identity);
-                    } else {
-                      _expandedCases.add(item.identity);
-                    }
-                  });
-                },
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 48),
-                  child: Row(
-                    children: [
-                      Icon(isExpanded ? Icons.expand_less : Icons.expand_more, size: 20),
-                      const SizedBox(width: 6),
-                      Text(
-                        '錯誤追蹤與輸出',
-                        style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
+                  if (isExpanded) ...[
+                    if (item.stackTrace != null && item.stackTrace!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text('錯誤堆疊 (Stacktrace):', style: theme.textTheme.labelSmall),
+                      const SizedBox(height: 4),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: SelectableText(
+                          _truncateOutput(item.stackTrace!),
+                          style: const TextStyle(
+                            fontFamily: codeFontFamily,
+                            fontFamilyFallback: ['Menlo', 'monospace'],
+                            fontSize: 11,
+                          ),
+                        ),
                       ),
                     ],
-                  ),
-                ),
-              ),
-              if (isExpanded) ...[
-                if (item.stackTrace != null && item.stackTrace!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text('錯誤堆疊 (Stacktrace):', style: theme.textTheme.labelSmall),
-                  const SizedBox(height: 4),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: SelectableText(
-                      _truncateOutput(item.stackTrace!),
-                      style: const TextStyle(
-                        fontFamily: codeFontFamily,
-                        fontFamilyFallback: ['Menlo', 'monospace'],
-                        fontSize: 11,
+                    if (item.systemOutput != null && item.systemOutput!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text('系統輸出 (System Output):', style: theme.textTheme.labelSmall),
+                      const SizedBox(height: 4),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: SelectableText(
+                          _truncateOutput(item.systemOutput!),
+                          style: const TextStyle(
+                            fontFamily: codeFontFamily,
+                            fontFamilyFallback: ['Menlo', 'monospace'],
+                            fontSize: 11,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                ],
-                if (item.systemOutput != null && item.systemOutput!.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text('系統輸出 (System Output):', style: theme.textTheme.labelSmall),
-                  const SizedBox(height: 4),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: SelectableText(
-                      _truncateOutput(item.systemOutput!),
-                      style: const TextStyle(
-                        fontFamily: codeFontFamily,
-                        fontFamilyFallback: ['Menlo', 'monospace'],
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
+                    ],
+                  ],
                 ],
               ],
-            ],
-          ],
+            );
+          },
         ),
       ),
     );
@@ -689,16 +712,37 @@ class PipelineTestsViewState extends State<PipelineTestsView> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
+    final gutter = feedGutter(context);
+
     if (_loadingSummary && _summary == null) {
       return const ListSkeleton();
     }
 
     if (_summaryError != null) {
       if (_summaryError!.status == 404 || _summaryError!.kind == FailureKind.invisible) {
-        if (_isInProgress) {
-          return const EmptyState('測試進行中', detail: 'Pipeline 正在執行，尚未產生完整測試報告。', icon: Icons.schedule);
-        }
-        return const EmptyState('無測試報告', detail: '此 Pipeline 尚未上傳 JUnit 測試報告，或報告已過期／無權限存取。', icon: Icons.rule_folder_outlined);
+        return RefreshIndicator(
+          onRefresh: refresh,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(gutter, 24, gutter, 24 + MediaQuery.paddingOf(context).bottom),
+            children: [
+              if (_isInProgress)
+                const EmptyState('測試進行中', detail: 'Pipeline 正在執行，尚未產生完整測試報告。', icon: Icons.schedule)
+              else
+                EmptyState(
+                  '無測試報告',
+                  detail: '此 Pipeline 尚未上傳 JUnit 測試報告，或報告已過期／無權限存取。',
+                  icon: Icons.rule_folder_outlined,
+                  action: TextButton.icon(
+                    onPressed: () => endSessionFrom(context),
+                    icon: const Icon(Icons.switch_account),
+                    label: const Text('切換帳號'),
+                  ),
+                ),
+            ],
+          ),
+        );
       }
       return FailureNotice(
         _summaryError!,
@@ -711,22 +755,30 @@ class PipelineTestsViewState extends State<PipelineTestsView> {
 
     final summary = _summary;
     if (summary == null || summary.isEmpty) {
-      if (_isInProgress) {
-        return const EmptyState('測試進行中', detail: 'Pipeline 正在執行，尚未產生完整測試報告。', icon: Icons.schedule);
-      }
-      return const EmptyState('無測試報告', detail: '此 Pipeline 沒有回報任何測試案例。', icon: Icons.rule_folder_outlined);
+      return RefreshIndicator(
+        onRefresh: refresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(gutter, 24, gutter, 24 + MediaQuery.paddingOf(context).bottom),
+          children: [
+            if (_isInProgress)
+              const EmptyState('測試進行中', detail: 'Pipeline 正在執行，尚未產生完整測試報告。', icon: Icons.schedule)
+            else
+              const EmptyState('無測試報告', detail: '此 Pipeline 沒有回報任何測試案例。', icon: Icons.rule_folder_outlined),
+          ],
+        ),
+      );
     }
 
     final filteredCases = _cases.where((c) => switch (_filter) {
       'failed' => c.isFailed,
-      'error' => c.status == 'error',
+      'error' => c.isError,
       'skipped' => c.isSkipped,
       'success' => c.isSuccess,
       _ => true,
     }).toList();
 
     final isPartial = summary.totalCount > _cases.length || _nextPage != null;
-    final gutter = feedGutter(context);
 
     return RefreshIndicator(
       onRefresh: refresh,
@@ -762,6 +814,8 @@ class PipelineTestsViewState extends State<PipelineTestsView> {
             ),
           if (_loadingCases && _cases.isEmpty)
             const ListSkeleton()
+          else if (_cases.isEmpty && _casesError != null)
+            const SizedBox.shrink()
           else if (filteredCases.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 24),
@@ -781,7 +835,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> {
                 account: widget.account,
                 resourceLabel: '${widget.project.path} · 測試案例分頁',
                 onSwitchAccount: endSessionFrom(context),
-                onRetry: _loadMore,
+                onRetry: _cases.isEmpty ? () => _loadCases(_generation) : _loadMore,
               ),
             ),
           if (_loadingMore)

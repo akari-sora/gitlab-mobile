@@ -212,6 +212,105 @@ void main() {
       expect(c.systemOutput, contains('Failure details'));
       expect(c.stackTrace, contains('frame 1'));
     });
+
+    test('normalizes non-standard statuses and distinguishes failed from error', () {
+      final passedCase = TestCase.fromJson({'status': 'passed', 'name': 't1'});
+      expect(passedCase.status, 'success');
+      expect(passedCase.isSuccess, isTrue);
+      expect(passedCase.isFailed, isFalse);
+      expect(passedCase.isError, isFalse);
+
+      final failureCase = TestCase.fromJson({'status': 'failure', 'name': 't2'});
+      expect(failureCase.status, 'failed');
+      expect(failureCase.isFailed, isTrue);
+      expect(failureCase.isError, isFalse);
+      expect(failureCase.isProblem, isTrue);
+
+      final errorCase = TestCase.fromJson({'status': 'error', 'name': 't3'});
+      expect(errorCase.status, 'error');
+      expect(errorCase.isFailed, isFalse);
+      expect(errorCase.isError, isTrue);
+      expect(errorCase.isProblem, isTrue);
+
+      final ignoredCase = TestCase.fromJson({'status': 'ignored', 'name': 't4'});
+      expect(ignoredCase.status, 'skipped');
+      expect(ignoredCase.isSkipped, isTrue);
+    });
+
+    test('falls back to job_url when job_id is invalid string or absent', () {
+      final c1 = TestCase.fromJson({
+        'status': 'failed',
+        'name': 't_builds',
+        'job_id': '',
+        'job_url': 'https://gitlab.example.com/project/-/builds/777',
+      });
+      expect(c1.jobId, 777);
+
+      final c2 = TestCase.fromJson({
+        'status': 'failed',
+        'name': 't_invalid_id',
+        'job_id': 'not_a_number',
+        'job_url': 'https://gitlab.example.com/project/-/jobs/888',
+      });
+      expect(c2.jobId, 888);
+    });
+
+    test('identity incorporates suiteName, classname, file, name, executionTime, and jobId', () {
+      final c1 = TestCase.fromJson({
+        'status': 'failed',
+        'name': 'testSameName',
+        'classname': 'OrderTest',
+        'file': 'tests/order_test.dart',
+        'execution_time': 0.1,
+        'job_id': 100,
+      }, suiteName: 'unit');
+
+      final c2 = TestCase.fromJson({
+        'status': 'failed',
+        'name': 'testSameName',
+        'classname': 'OrderTest',
+        'file': 'tests/order_test.dart',
+        'execution_time': 0.2,
+        'job_id': 100,
+      }, suiteName: 'unit');
+
+      expect(c1.identity, isNot(equals(c2.identity)), reason: 'Different executionTime produces distinct identity');
+      expect(c1.identity, contains('unit:OrderTest:tests/order_test.dart:testSameName:0.1:100'));
+    });
+  });
+
+  group('TestSuite Model', () {
+    test('parses single element build_ids when element is num or numeric string', () {
+      final s1 = TestSuite.fromJson({
+        'name': 'Suite Num',
+        'total_time': 1.0,
+        'total_count': 1,
+        'success_count': 1,
+        'failed_count': 0,
+        'skipped_count': 0,
+        'error_count': 0,
+        'build_ids': [404.0],
+        'test_cases': [
+          {'status': 'success', 'name': 't1'},
+        ],
+      });
+      expect(s1.testCases.first.jobId, 404);
+
+      final s2 = TestSuite.fromJson({
+        'name': 'Suite Str',
+        'total_time': 1.0,
+        'total_count': 1,
+        'success_count': 1,
+        'failed_count': 0,
+        'skipped_count': 0,
+        'error_count': 0,
+        'build_ids': ['505'],
+        'test_cases': [
+          {'status': 'success', 'name': 't2'},
+        ],
+      });
+      expect(s2.testCases.first.jobId, 505);
+    });
   });
 
   group('PipelineTestReportPage Model', () {

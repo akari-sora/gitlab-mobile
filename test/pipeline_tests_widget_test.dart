@@ -3,6 +3,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart';
 import 'support/fake_adapter.dart';
 import 'support/workspace_fixture.dart';
 import 'workspace_widget_test.dart' show workspaceHost, settleWorkspace;
@@ -534,6 +535,367 @@ void main() {
     // State must NOT be overwritten by generation 1
     expect(find.text('總計 999'), findsOneWidget);
     expect(find.text('總計 10'), findsNothing);
+  });
+
+  testWidgets('Retried job identity isolation: retrying job from test report updates job button ID', (tester) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+
+    var retried = false;
+    fixture.testReportSummaryRecord = {
+      'total': {
+        'time': 10.0, 'count': 1, 'success': 0, 'failed': 1, 'skipped': 0, 'error': 0, 'suite_error': null,
+      },
+      'test_suites': <dynamic>[],
+    };
+
+    final adapter = FakeAdapter((options) {
+      if (options.uri.path.endsWith('/jobs/501/retry') && options.method == 'POST') {
+        retried = true;
+        return jsonResponse(fixture.job(701, status: 'running'));
+      }
+      if (options.uri.path.endsWith('/jobs/701')) {
+        return jsonResponse(fixture.job(701, status: 'running'));
+      }
+      if (options.uri.path.endsWith('/jobs/701/trace')) {
+        return ResponseBody.fromString('Running retried job...\n', 200);
+      }
+      if (options.uri.path.endsWith('/test_report')) {
+        return jsonResponse({
+          'total_time': 10.0,
+          'total_count': 1,
+          'success_count': 0,
+          'failed_count': 1,
+          'skipped_count': 0,
+          'error_count': 0,
+          'test_suites': [
+            {
+              'name': 'unit',
+              'total_time': 10.0,
+              'total_count': 1,
+              'success_count': 0,
+              'failed_count': 1,
+              'skipped_count': 0,
+              'error_count': 0,
+              'test_cases': [
+                {
+                  'status': 'failed',
+                  'name': 'testAuthRetry',
+                  'classname': 'AuthTest',
+                  'job_id': retried ? 701 : 501,
+                },
+              ],
+            },
+          ],
+        });
+      }
+      return fixture.respond(options);
+    });
+
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 1000);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(workspaceHost(PipelinePage(
+      account: fixture.account,
+      api: api,
+      project: fixture.project,
+      id: 99,
+    )));
+    await settleWorkspace(tester);
+
+    await tester.tap(find.text('測試'));
+    await settleWorkspace(tester);
+
+    // Initial test case has Job #501
+    expect(find.text('工作 #501'), findsOneWidget);
+    expect(find.text('工作 #701'), findsNothing);
+
+    // Open Job 501
+    await tester.tap(find.text('工作 #501'));
+    await settleWorkspace(tester);
+    expect(find.text('Flutter tests'), findsOneWidget);
+
+    // Retry job
+    await tester.tap(find.byTooltip('工作操作'));
+    await settleWorkspace(tester);
+    await tester.tap(find.text('重試工作').hitTestable());
+    await settleWorkspace(tester);
+    await tester.tap(find.widgetWithText(FilledButton, '確認').hitTestable());
+    await settleWorkspace(tester);
+
+    // Pop back to PipelinePage
+    await tester.tap(find.byType(BackButton));
+    await settleWorkspace(tester);
+
+    // The test case card MUST now show Job #701, isolating new identity from retried job #501
+    expect(find.text('工作 #701'), findsOneWidget);
+    expect(find.text('工作 #501'), findsNothing);
+  });
+
+  testWidgets('Error filter is selected by default when failedCount == 0 and errorCount > 0', (tester) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+
+    fixture.testReportSummaryRecord = {
+      'total': {
+        'time': 5.0,
+        'count': 1,
+        'success': 0,
+        'failed': 0,
+        'skipped': 0,
+        'error': 1,
+        'suite_error': null,
+      },
+      'test_suites': <dynamic>[],
+    };
+
+    fixture.testReportRecord = {
+      'total_time': 5.0,
+      'total_count': 1,
+      'success_count': 0,
+      'failed_count': 0,
+      'skipped_count': 0,
+      'error_count': 1,
+      'test_suites': [
+        {
+          'name': 'unit',
+          'total_time': 5.0,
+          'total_count': 1,
+          'success_count': 0,
+          'failed_count': 0,
+          'skipped_count': 0,
+          'error_count': 1,
+          'test_cases': [
+            {
+              'status': 'error',
+              'name': 'testConfigParseError',
+              'classname': 'ConfigTest',
+              'job_id': 501,
+            },
+          ],
+        },
+      ],
+    };
+
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 1000);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(workspaceHost(PipelinePage(
+      account: fixture.account,
+      api: fixture.api,
+      project: fixture.project,
+      id: 99,
+    )));
+    await settleWorkspace(tester);
+
+    await tester.tap(find.text('測試'));
+    await settleWorkspace(tester);
+
+    // '錯誤 (1)' chip must be visible and selected
+    final errorChip = tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '錯誤 (1)'));
+    expect(errorChip.selected, isTrue);
+    expect(find.text('testConfigParseError'), findsOneWidget);
+  });
+
+  testWidgets('Narrow screen width 320dp with long classname and file does not overflow', (tester) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+
+    fixture.testReportSummaryRecord = {
+      'total': {
+        'time': 1.0,
+        'count': 1,
+        'success': 0,
+        'failed': 1,
+        'skipped': 0,
+        'error': 0,
+        'suite_error': null,
+      },
+      'test_suites': <dynamic>[],
+    };
+
+    fixture.testReportRecord = {
+      'total_time': 1.0,
+      'total_count': 1,
+      'success_count': 0,
+      'failed_count': 1,
+      'skipped_count': 0,
+      'error_count': 0,
+      'test_suites': [
+        {
+          'name': 'ExtremelyLongSuiteNameWithoutAnyWhitespaceToTestRenderWrapConstraints',
+          'total_time': 1.0,
+          'total_count': 1,
+          'success_count': 0,
+          'failed_count': 1,
+          'skipped_count': 0,
+          'error_count': 0,
+          'test_cases': [
+            {
+              'status': 'failed',
+              'name': 'testLongMetadata',
+              'classname': 'com.enterprise.deeply.nested.module.submodule.LongClassNameWithoutWhitespaceTest',
+              'file': 'tests/deeply/nested/directory/structure/that/has/no/spaces/long_test_filename.dart',
+              'job_id': 501,
+            },
+          ],
+        },
+      ],
+    };
+
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 600);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(workspaceHost(PipelinePage(
+      account: fixture.account,
+      api: fixture.api,
+      project: fixture.project,
+      id: 99,
+    )));
+    await settleWorkspace(tester);
+
+    await tester.tap(find.text('測試'));
+    await settleWorkspace(tester);
+
+    // No overflow exception should be thrown
+    expect(tester.takeException(), isNull);
+    expect(find.text('testLongMetadata'), findsOneWidget);
+  });
+
+  testWidgets('Page 1 test_report load failure shows FailureNotice and retries successfully', (tester) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+
+    var failReport = true;
+    final adapter = FakeAdapter((options) {
+      if (options.uri.path.endsWith('/test_report')) {
+        if (failReport) {
+          return jsonResponse({'message': 'Internal Server Error'}, status: 500);
+        }
+        return jsonResponse(fixture.testReportRecord ?? {
+          'total_time': 1.0,
+          'total_count': 1,
+          'success_count': 1,
+          'failed_count': 0,
+          'skipped_count': 0,
+          'error_count': 0,
+          'test_suites': <dynamic>[],
+        });
+      }
+      return fixture.respond(options);
+    });
+
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 1000);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(workspaceHost(PipelinePage(
+      account: fixture.account,
+      api: api,
+      project: fixture.project,
+      id: 99,
+    )));
+    await settleWorkspace(tester);
+
+    await tester.tap(find.text('測試'));
+    await settleWorkspace(tester);
+
+    // Page 1 failed, so FailureNotice is shown, but EmptyState('沒有符合...') is NOT shown
+    expect(find.byType(FailureNotice), findsOneWidget);
+    expect(find.textContaining('沒有符合'), findsNothing);
+
+    // Now server recovers and user taps retry
+    failReport = false;
+    await tester.tap(find.text('重新整理'));
+    await settleWorkspace(tester);
+
+    // Cases now loaded
+    expect(find.byType(FailureNotice), findsNothing);
+    expect(find.text('總計 2'), findsOneWidget);
+  });
+
+  testWidgets('Multiple test cases with same name and classname are not dropped on page 1', (tester) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+
+    fixture.testReportSummaryRecord = {
+      'total': {
+        'time': 2.0, 'count': 2, 'success': 0, 'failed': 2, 'skipped': 0, 'error': 0, 'suite_error': null,
+      },
+      'test_suites': <dynamic>[],
+    };
+
+    fixture.testReportRecord = {
+      'total_time': 2.0,
+      'total_count': 2,
+      'success_count': 0,
+      'failed_count': 2,
+      'skipped_count': 0,
+      'error_count': 0,
+      'test_suites': [
+        {
+          'name': 'unit',
+          'total_time': 2.0,
+          'total_count': 2,
+          'success_count': 0,
+          'failed_count': 2,
+          'skipped_count': 0,
+          'error_count': 0,
+          'test_cases': [
+            {
+              'status': 'failed',
+              'name': 'testValidation',
+              'classname': 'ValidationTest',
+              'file': 'test/val_test.dart',
+              'execution_time': 0.1,
+              'job_id': 501,
+            },
+            {
+              'status': 'failed',
+              'name': 'testValidation',
+              'classname': 'ValidationTest',
+              'file': 'test/val_test.dart',
+              'execution_time': 0.2,
+              'job_id': 501,
+            },
+          ],
+        },
+      ],
+    };
+
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 1000);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(workspaceHost(PipelinePage(
+      account: fixture.account,
+      api: fixture.api,
+      project: fixture.project,
+      id: 99,
+    )));
+    await settleWorkspace(tester);
+
+    await tester.tap(find.text('測試'));
+    await settleWorkspace(tester);
+
+    // Both test cases must be rendered (findsNWidgets(2))
+    expect(find.text('testValidation'), findsNWidgets(2));
+    // Since 2/2 cases are loaded and next is null, partial banner is not shown
+    expect(find.textContaining('部分載入'), findsNothing);
   });
 }
 
