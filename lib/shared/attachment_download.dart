@@ -45,7 +45,7 @@ final class DefaultAttachmentDownloader implements AttachmentDownloader {
   }) async {
     final directory = await attemptDirectory(account, projectId);
     final partial = File('${directory.path}/.download.partial');
-    final sink = openSink(partial);
+    IOSink? ownedSink;
     Object? sinkFailure;
     final abort = Completer<void>();
     if (cancel != null) {
@@ -53,12 +53,28 @@ final class DefaultAttachmentDownloader implements AttachmentDownloader {
         if (!abort.isCompleted) abort.complete();
       }));
     }
-    unawaited(sink.done.then<void>((_) {}, onError: (Object error, StackTrace _) {
-      sinkFailure ??= error;
-      if (!abort.isCompleted) abort.complete();
-    }));
+
+    Future<void> cleanup() async {
+      final open = ownedSink;
+      ownedSink = null;
+      if (open != null) {
+        try {
+          await open.close();
+        } on Object catch (error) {
+          if (error is! StateError && error is! FileSystemException) rethrow;
+        }
+      }
+      await deleteAttemptFiles(directory, partial);
+    }
 
     try {
+      final sink = openSink(partial);
+      ownedSink = sink;
+      unawaited(sink.done.then<void>((_) {}, onError: (Object error, StackTrace _) {
+        sinkFailure ??= error;
+        if (!abort.isCompleted) abort.complete();
+      }));
+
       final result = await api.downloadProjectUpload(
         projectId,
         secret,
@@ -71,6 +87,7 @@ final class DefaultAttachmentDownloader implements AttachmentDownloader {
       await sink.flush();
       if (sinkFailure != null) throw sinkFailure!;
       await sink.close();
+      ownedSink = null;
       if (sinkFailure != null) throw sinkFailure!;
 
       final safeName = attachmentDownloadFileName(result.fileName, fallback: 'attachment.bin');
@@ -82,7 +99,7 @@ final class DefaultAttachmentDownloader implements AttachmentDownloader {
       }
       return saved;
     } catch (error) {
-      await deleteAttemptFiles(directory, partial);
+      await cleanup();
       final cause = sinkFailure ?? error;
       if (cause is FileSystemException) throw ApiFailure.artifactStorage;
       if (cause is ApiFailure) rethrow;

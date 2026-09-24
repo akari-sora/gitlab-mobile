@@ -85,6 +85,67 @@ class _TestSharer implements ArtifactSharer {
   }
 }
 
+class _FailingAttachmentDownloader implements AttachmentDownloader {
+  _FailingAttachmentDownloader(this.failure);
+
+  final ApiFailure failure;
+  int callCount = 0;
+
+  @override
+  Future<File> downloadUpload({
+    required int projectId,
+    required String secret,
+    required String filename,
+    required Account account,
+    void Function(int received, int? total)? onProgress,
+    Future<void>? cancel,
+  }) async {
+    callCount++;
+    throw failure;
+  }
+}
+
+class _ClosingWatchSink implements IOSink {
+  _ClosingWatchSink(this._delegate, {required this.onClose});
+
+  final IOSink _delegate;
+  final void Function() onClose;
+
+  @override
+  Encoding get encoding => _delegate.encoding;
+  @override
+  set encoding(Encoding encoding) => _delegate.encoding = encoding;
+
+  @override
+  void add(List<int> data) => _delegate.add(data);
+  @override
+  void addError(Object error, [StackTrace? stackTrace]) => _delegate.addError(error, stackTrace);
+  @override
+  Future<void> addStream(Stream<List<int>> stream) => _delegate.addStream(stream);
+
+  @override
+  Future<void> flush() => _delegate.flush();
+
+  @override
+  Future<void> close() async {
+    onClose();
+    await _delegate.close();
+  }
+
+  @override
+  Future<dynamic> get done => _delegate.done;
+
+  @override
+  void write(Object? object) => _delegate.write(object);
+  @override
+  void writeAll(Iterable<Object?> objects, [String separator = '']) =>
+      _delegate.writeAll(objects, separator);
+  @override
+  void writeCharCode(int charCode) => _delegate.writeCharCode(charCode);
+  @override
+  void writeln([Object? object = '']) => _delegate.writeln(object);
+}
+
 void main() {
   tearDown(resetArtifactShareCleanup);
 
@@ -412,6 +473,55 @@ void main() {
       }
     });
 
+    test('server 500 error safely closes sink before deletion and preserves server failure without artifactStorage override', () async {
+      final tempRoot = await Directory.systemTemp.createTemp('gitlab-attachment-500-');
+      final previousRoot = artifactStorageRoot;
+      artifactStorageRoot = () async => tempRoot;
+      addTearDown(() {
+        artifactStorageRoot = previousRoot;
+        if (tempRoot.existsSync()) tempRoot.deleteSync(recursive: true);
+      });
+
+      var sinkClosed = false;
+      final adapter = FakeAdapter((_) => ResponseBody(
+        Stream<Uint8List>.empty(),
+        500,
+      ));
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      final downloader = DefaultAttachmentDownloader(
+        api: api,
+        openSink: (file) {
+          final realSink = openArtifactSink(file);
+          return _ClosingWatchSink(realSink, onClose: () {
+            sinkClosed = true;
+          });
+        },
+      );
+
+      await expectLater(
+        downloader.downloadUpload(
+          projectId: 42,
+          secret: secret,
+          filename: 'server_error.pdf',
+          account: account,
+        ),
+        throwsA(
+          isA<ApiFailure>()
+              .having((e) => e.kind, 'kind', FailureKind.server)
+              .having((e) => e.status, 'status', 500),
+        ),
+      );
+
+      expect(sinkClosed, isTrue);
+
+      final attachmentsDir = Directory('${tempRoot.path}/attachments/${artifactAccountSegment(account)}/42');
+      if (attachmentsDir.existsSync()) {
+        expect(attachmentsDir.listSync(), isEmpty);
+      }
+    });
+
     test('concurrent downloads for same project and upload use separate attempt directories', () async {
       final tempRoot = await Directory.systemTemp.createTemp('gitlab-attachment-concurrent-');
       final previousRoot = artifactStorageRoot;
@@ -518,6 +628,10 @@ void main() {
       final api = testApi(adapter);
       addTearDown(api.close);
 
+      final failingDownloader = _FailingAttachmentDownloader(
+        const ApiFailure(FailureKind.server, status: 500),
+      );
+
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: AttachmentDownloadSheet(
@@ -528,14 +642,22 @@ void main() {
             filename: 'broken.pdf',
             suggestedSize: 1000,
             webUri: Uri.parse('https://example.com/gitlab/uploads/$secret/broken.pdf'),
+            downloader: failingDownloader,
           ),
         ),
       ));
       await settleNetworkWidgets(tester);
 
+      expect(failingDownloader.callCount, 1);
       expect(find.text('GitLab 暫時無法回應'), findsOneWidget);
       expect(find.text('重新整理'), findsOneWidget);
       expect(find.text('在 GitLab 開啟'), findsOneWidget);
+
+      await tester.tap(find.text('重新整理'));
+      await settleNetworkWidgets(tester);
+
+      expect(failingDownloader.callCount, 2);
+      expect(find.text('GitLab 暫時無法回應'), findsOneWidget);
     });
 
     testWidgets('completed download shows 開啟／分享 button and passes iPad sharePositionOrigin to sharer', (tester) async {
