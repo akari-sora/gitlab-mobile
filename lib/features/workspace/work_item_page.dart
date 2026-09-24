@@ -41,6 +41,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
   }
   Future<void> _create() async {
     var iid = 0;
+    Json? createdRecord;
     final branch = widget.project.defaultBranch ?? 'main';
     final fields = <EditField>[
       const EditField('title', '標題', required: true),
@@ -62,10 +63,15 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
         final created = mr ? await widget.api.createMergeRequest(widget.project.id, body)
           : await widget.api.createIssue(widget.project.id, body);
         iid = requiredInt(created, 'iid');
+        createdRecord = created;
       });
     if (saved && mounted) {
       _open(iid);
-      unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
+      if (createdRecord != null && (_state == 'all' || _state == 'opened')) {
+        _feed.currentState?.prependItem(createdRecord!);
+      } else {
+        unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
+      }
     }
   }
   Widget _buildList(BuildContext context, bool isTwoPane, int? selected) => Column(children: [
@@ -112,10 +118,16 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
     onBack: onBack,
     onDeleted: () {
       _selection.clear();
-      unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
+      _feed.currentState?.removeItem('$iid');
     },
-    onMutated: () {
-      unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
+    onMutated: (updated) {
+      final state = valueText(updated, 'state');
+      final matchesFilter = _state == 'all' || _state == state;
+      if (matchesFilter) {
+        _feed.currentState?.patchItem(updated);
+      } else {
+        _feed.currentState?.removeItem('${updated['id'] ?? updated['iid']}');
+      }
     },
   );
 
@@ -200,7 +212,7 @@ class WorkItemPage extends StatefulWidget {
   final bool showBackButton;
   final VoidCallback? onBack;
   final VoidCallback? onDeleted;
-  final VoidCallback? onMutated;
+  final ValueChanged<Json>? onMutated;
   @override
   State<WorkItemPage> createState() => _WorkItemPageState();
 }
@@ -247,8 +259,8 @@ class _WorkItemPageState extends State<WorkItemPage> {
       });
     if (saved && mounted) {
       await _load();
-      if (mounted) {
-        widget.onMutated?.call();
+      if (mounted && _data != null) {
+        widget.onMutated?.call(_data!);
       }
     }
   }
@@ -300,8 +312,8 @@ class _WorkItemPageState extends State<WorkItemPage> {
           squash: squash, removeSourceBranch: removeSourceBranch);
       }
       await _load();
-      if (mounted) {
-        widget.onMutated?.call();
+      if (mounted && _data != null) {
+        widget.onMutated?.call(_data!);
       }
       if (mounted && action == 'merge') {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(

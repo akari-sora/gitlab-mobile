@@ -44,6 +44,37 @@ class RecordController extends ChangeNotifier {
     } catch (e) { if (_current(generation)) { error = safeFailure(e); failedMore = true; } }
     finally { if (_current(generation)) { loadingMore = false; _emit(); } }
   }
+  void patchItem(Json item) {
+    if (_disposed) return;
+    final id = _identity(item);
+    final index = items.indexWhere((element) => _identity(element) == id);
+    if (index != -1) {
+      items = List<Json>.from(items)..[index] = item;
+      _emit();
+    }
+  }
+  void removeItem(String id) {
+    if (_disposed) return;
+    final prevLen = items.length;
+    items = items.where((element) {
+      final iid = element['iid'];
+      return _identity(element) != id && (iid == null || '$iid' != id);
+    }).toList();
+    if (items.length != prevLen) {
+      _emit();
+    }
+  }
+  void prependItem(Json item) {
+    if (_disposed) return;
+    final id = _identity(item);
+    final index = items.indexWhere((element) => _identity(element) == id);
+    if (index != -1) {
+      items = List<Json>.from(items)..[index] = item;
+    } else {
+      items = [item, ...items];
+    }
+    _emit();
+  }
   String _identity(Json value) => '${value['id'] ?? value['tag_name'] ?? value['path'] ?? value['name'] ?? value}';
   @override
   void dispose() { _disposed = true; _generation++; items = []; super.dispose(); }
