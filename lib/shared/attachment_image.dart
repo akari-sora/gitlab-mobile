@@ -348,9 +348,9 @@ class _AttachmentViewerState extends State<AttachmentViewer> {
       final stamp = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
       final safeName = attachmentDownloadFileName(widget.title, fallback: 'image.png');
       final dir = Directory('${root.path}/attachments/$accountSeg/share_staging/$stamp');
-      await dir.create(recursive: true);
+      dir.createSync(recursive: true);
       final tempFile = File('${dir.path}/$safeName');
-      await tempFile.writeAsBytes(widget.bytes, flush: true);
+      tempFile.writeAsBytesSync(widget.bytes, flush: true);
       await shareDownloadedArtifact(widget.sharer, tempFile.path, sharePositionOrigin: origin);
     } catch (error) {
       if (mounted) showFailure(context, error);

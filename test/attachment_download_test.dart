@@ -105,6 +105,28 @@ class _FailingAttachmentDownloader implements AttachmentDownloader {
   }
 }
 
+class _SuccessfulAttachmentDownloader implements AttachmentDownloader {
+  _SuccessfulAttachmentDownloader(this.file);
+
+  final File file;
+  int callCount = 0;
+
+  @override
+  Future<File> downloadUpload({
+    required int projectId,
+    required String secret,
+    required String filename,
+    required Account account,
+    void Function(int received, int? total)? onProgress,
+    Future<void>? cancel,
+  }) async {
+    callCount++;
+    final bytes = file.lengthSync();
+    onProgress?.call(bytes, bytes);
+    return file;
+  }
+}
+
 class _ClosingWatchSink implements IOSink {
   _ClosingWatchSink(this._delegate, {required this.onClose});
 
@@ -147,7 +169,26 @@ class _ClosingWatchSink implements IOSink {
 }
 
 void main() {
-  tearDown(resetArtifactShareCleanup);
+  late Directory testRoot;
+  late Future<Directory> Function() defaultRoot;
+
+  setUpAll(() async {
+    testRoot = await Directory.systemTemp.createTemp('gitlab-attachment-test-');
+    defaultRoot = artifactStorageRoot;
+    artifactStorageRoot = () async => testRoot;
+  });
+
+  tearDownAll(() async {
+    artifactStorageRoot = defaultRoot;
+    if (testRoot.existsSync()) {
+      testRoot.deleteSync(recursive: true);
+    }
+  });
+
+  tearDown(() {
+    resetArtifactShareCleanup();
+    artifactStorageRoot = () async => testRoot;
+  });
 
   const secret = '0123456789abcdef0123456789abcdef';
   final account = Account(
@@ -578,6 +619,7 @@ void main() {
   });
 
   group('AttachmentDownloadSheet UI and interactions', () {
+
     testWidgets('shows progress indicator with Semantics percentage and allows cancellation', (tester) async {
       final controller = StreamController<Uint8List>();
       final adapter = FakeAdapter((_) => ResponseBody(
@@ -661,9 +703,10 @@ void main() {
     });
 
     testWidgets('completed download shows 開啟／分享 button and passes iPad sharePositionOrigin to sharer', (tester) async {
-      final content = Uint8List.fromList([1, 2, 3, 4, 5]);
+      final testFile = File('${testRoot.path}/ready.pdf')..writeAsBytesSync([1, 2, 3, 4, 5]);
+
       final adapter = FakeAdapter((_) => ResponseBody(
-        Stream<Uint8List>.value(content),
+        Stream<Uint8List>.value(Uint8List.fromList([1, 2, 3, 4, 5])),
         200,
         headers: {'content-length': ['5']},
       ));
@@ -671,6 +714,7 @@ void main() {
       addTearDown(api.close);
 
       final sharer = _TestSharer();
+      final downloader = _SuccessfulAttachmentDownloader(testFile);
       await tester.pumpWidget(MaterialApp(
         home: Scaffold(
           body: AttachmentDownloadSheet(
@@ -681,11 +725,13 @@ void main() {
             filename: 'ready.pdf',
             suggestedSize: 5,
             sharer: sharer,
+            downloader: downloader,
           ),
         ),
       ));
       await settleNetworkWidgets(tester);
 
+      expect(downloader.callCount, 1);
       expect(find.textContaining('已下載 ready.pdf · 5 B'), findsOneWidget);
       expect(find.text('開啟／分享'), findsOneWidget);
 
@@ -694,6 +740,7 @@ void main() {
       await settleNetworkWidgets(tester);
 
       expect(sharer.sharedPaths.length, 1);
+      expect(sharer.sharedPaths.first, testFile.path);
       expect(sharer.origins.length, 1);
       final origin = sharer.origins.first;
       expect(origin, isNotNull);
