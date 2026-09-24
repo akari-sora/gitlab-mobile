@@ -364,6 +364,7 @@ final class GitLabApi {
       throw const ApiFailure(FailureKind.unsupported);
     }
     for (final e in first.queryParameters.entries) {
+      if (paginationKeys.contains(e.key)) continue;
       if (next.queryParameters[e.key] != e.value) {
         throw const ApiFailure(FailureKind.invalidResponse);
       }

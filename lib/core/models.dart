@@ -1,5 +1,8 @@
 import 'instance.dart';
 
+export 'test_report.dart';
+
+
 Map<String, dynamic> objectJson(Object? value) {
   if (value is! Map<String, dynamic>) {
     throw const FormatException('Expected object');
@@ -236,3 +239,4 @@ final class ApiPage<T> {
   final List<T> items;
   final Uri? next;
 }
+

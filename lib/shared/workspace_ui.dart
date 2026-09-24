@@ -68,6 +68,7 @@ String relativeDate(String value) {
   'merged' => ('已合併', Icons.merge),
   'success' || 'passed' => ('成功', Icons.check_circle_outline),
   'failed' => ('失敗', Icons.error_outline),
+  'error' => ('錯誤', Icons.error_outline),
   'running' => ('執行中', Icons.motion_photos_on_outlined),
   'pending' ||
   'created' ||
@@ -157,7 +158,7 @@ class StatusBadge extends StatelessWidget {
       'running' => (workshop.runningContainer, workshop.onRunningContainer),
       'pending' || 'created' || 'waiting_for_resource' || 'preparing' || 'manual' || 'scheduled' =>
         (workshop.pendingContainer, workshop.onPendingContainer),
-      'failed' => (scheme.errorContainer, scheme.onErrorContainer),
+      'failed' || 'error' => (scheme.errorContainer, scheme.onErrorContainer),
       'opened' || 'merged' || 'active' => (scheme.primaryContainer, scheme.onPrimaryContainer),
       _ => (workshop.neutralContainer, workshop.onNeutralContainer),
     };

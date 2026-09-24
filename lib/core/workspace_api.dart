@@ -77,6 +77,42 @@ extension WorkspaceApi on GitLabApi {
     return writeRecord('POST', ['projects', '$project', 'pipelines', '$pipeline', action], {});
   }
   Future<void> deletePipeline(int project, int pipeline) => removeRecord(['projects', '$project', 'pipelines', '$pipeline']);
+  Future<TestReportSummary> pipelineTestReportSummary(int project, int pipeline) async {
+    final uri = instance.api(['projects', '$project', 'pipelines', '$pipeline', 'test_report_summary']);
+    final json = await _object(uri);
+    return TestReportSummary.fromJson(json);
+  }
+  Future<PipelineTestReportPage> pipelineTestReport(
+    int project,
+    int pipeline, {
+    int perPage = 30,
+    Uri? next,
+  }) async {
+    final effectivePerPage = next != null && next.queryParameters.containsKey('per_page')
+        ? int.tryParse(next.queryParameters['per_page']!) ?? perPage
+        : perPage;
+    final first = instance.api(
+      ['projects', '$project', 'pipelines', '$pipeline', 'test_report'],
+      {'per_page': '$effectivePerPage'},
+    );
+    _validateContinuation(first, next);
+    try {
+      final target = next ?? first;
+      final result = await _read(target);
+      final decoded = jsonDecode(utf8.decode(result.bytes));
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('Expected object for test report');
+      }
+      final nextUri = nextPageUri(
+        instance: instance,
+        current: target,
+        headers: result.headers.map,
+      );
+      return PipelineTestReportPage.fromJson(decoded, next: nextUri);
+    } on FormatException {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+  }
   Future<Json> jobAction(int project, int job, String action) {
     if (!const ['retry', 'cancel', 'play'].contains(action)) { throw const ApiFailure(FailureKind.unsupported); }
     return writeRecord('POST', ['projects', '$project', 'jobs', '$job', action], {});

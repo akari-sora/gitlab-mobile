@@ -89,6 +89,7 @@ class PipelinePage extends StatefulWidget {
 }
 class _PipelinePageState extends State<PipelinePage> {
   final _feed = GlobalKey<RecordsFeedState>();
+  final _testsKey = GlobalKey<PipelineTestsViewState>();
   Json? _data;
   ApiFailure? _error;
   bool _busy = false, _loading = false;
@@ -109,7 +110,10 @@ class _PipelinePageState extends State<PipelinePage> {
     // The job route stays open across retries and completes only on real back.
     if (!mounted) { return; }
     await _load();
-    if (mounted) { await _feed.currentState?.refresh(); }
+    if (mounted) {
+      await _feed.currentState?.refresh();
+      await _testsKey.currentState?.refresh();
+    }
   }
   Future<void> _action(String action) async {
     if (_busy) { return; }
@@ -126,48 +130,688 @@ class _PipelinePageState extends State<PipelinePage> {
       }
       await widget.api.pipelineAction(widget.project.id, widget.id, action);
       await _load();
-      if (mounted) { await _feed.currentState?.refresh(); }
+      if (mounted) {
+        await _feed.currentState?.refresh();
+        await _testsKey.currentState?.refresh();
+      }
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _busy = false); } }
   }
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text('Pipeline #${widget.id}'), actions: [
-    IconButton(tooltip: '重新整理', onPressed: _loading || _busy ? null : () async {
-      await _load(); if (mounted) { await _feed.currentState?.refresh(); }
-    }, icon: const Icon(Icons.refresh)),
-    PopupMenuButton<String>(enabled: !_busy, tooltip: 'Pipeline 操作', onSelected: _action, itemBuilder: (_) => const [
-      PopupMenuItem(value: 'retry', child: Text('重試失敗工作')),
-      PopupMenuItem(value: 'cancel', child: Text('取消流程')),
-      PopupMenuItem(value: 'delete', child: Text('刪除 Pipeline')),
-    ]),
-  ]), body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
-    if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
-      resourceLabel: '${widget.project.path} · Pipeline #${widget.id}', onSwitchAccount: endSessionFrom(context)),
-    if (_data != null) Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 16), child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          StatusBadge(valueText(_data!, 'status')), Text(valueText(_data!, 'ref')),
-          Text(shortSha(valueText(_data!, 'sha')), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12)),
-          if (_data!['duration'] is num) Text('${(_data!['duration'] as num).round()} 秒', style: const TextStyle(fontSize: 12)),
+  Widget build(BuildContext context) => DefaultTabController(
+    length: 2,
+    child: Scaffold(
+      appBar: AppBar(title: Text('Pipeline #${widget.id}'), actions: [
+        IconButton(tooltip: '重新整理', onPressed: _loading || _busy ? null : () async {
+          await _load();
+          if (mounted) {
+            await _feed.currentState?.refresh();
+            await _testsKey.currentState?.refresh();
+          }
+        }, icon: const Icon(Icons.refresh)),
+        PopupMenuButton<String>(enabled: !_busy, tooltip: 'Pipeline 操作', onSelected: _action, itemBuilder: (_) => const [
+          PopupMenuItem(value: 'retry', child: Text('重試失敗工作')),
+          PopupMenuItem(value: 'cancel', child: Text('取消流程')),
+          PopupMenuItem(value: 'delete', child: Text('刪除 Pipeline')),
         ]),
+      ]),
+      body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
+        if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
+          resourceLabel: '${widget.project.path} · Pipeline #${widget.id}', onSwitchAccount: endSessionFrom(context)),
+        if (_data != null) Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 12), child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              StatusBadge(valueText(_data!, 'status')), Text(valueText(_data!, 'ref')),
+              Text(shortSha(valueText(_data!, 'sha')), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12)),
+              if (_data!['duration'] is num) Text('${(_data!['duration'] as num).round()} 秒', style: const TextStyle(fontSize: 12)),
+            ]),
+          ])),
+        if (_data != null)
+          const TabBar(
+            tabs: [
+              Tab(text: '工作'),
+              Tab(text: '測試'),
+            ],
+          ),
+        if (_data != null)
+          Expanded(
+            child: TabBarView(
+              children: [
+                RecordsFeed(
+                  key: _feed,
+                  identity: 'pipeline/${widget.id}/jobs',
+                  empty: '尚無工作',
+                  account: widget.account,
+                  resourceLabel: '${widget.project.path} · Pipeline #${widget.id} 工作',
+                  onSwitchAccount: endSessionFrom(context),
+                  load: (next) => widget.api.records(
+                    ['projects', '${widget.project.id}', 'pipelines', '${widget.id}', 'jobs'],
+                    query: {'include_retried': 'false'},
+                    next: next,
+                  ),
+                  itemBuilder: (context, value) => SemanticButton(
+                    label: jobCardLabel(value),
+                    onTap: () => _openJob(requiredInt(value, 'id')),
+                    child: Card(
+                      child: ListTile(
+                        title: Text(valueText(value, 'name')),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              StatusBadge(valueText(value, 'status')),
+                              Text(valueText(value, 'stage'), style: const TextStyle(fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        trailing: const Icon(Icons.chevron_right, size: 18),
+                        onTap: () => _openJob(requiredInt(value, 'id')),
+                      ),
+                    ),
+                  ),
+                ),
+                PipelineTestsView(
+                  key: _testsKey,
+                  account: widget.account,
+                  api: widget.api,
+                  project: widget.project,
+                  pipelineId: widget.id,
+                  pipelineStatus: valueText(_data!, 'status'),
+                  onOpenJob: _openJob,
+                ),
+              ],
+            ),
+          ),
       ])),
-    Expanded(child: RecordsFeed(key: _feed, identity: 'pipeline/${widget.id}/jobs', empty: '尚無工作',
-      account: widget.account, resourceLabel: '${widget.project.path} · Pipeline #${widget.id} 工作',
-      onSwitchAccount: endSessionFrom(context),
-      load: (next) => widget.api.records(['projects', '${widget.project.id}', 'pipelines', '${widget.id}', 'jobs'],
-        query: {'include_retried': 'false'}, next: next), itemBuilder: (context, value) => SemanticButton(
-          label: jobCardLabel(value), onTap: () => _openJob(requiredInt(value, 'id')),
-          child: Card(child: ListTile(
-          title: Text(valueText(value, 'name')), subtitle: Padding(padding: const EdgeInsets.only(top: 6),
-            child: Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center,
-              children: [StatusBadge(valueText(value, 'status')), Text(valueText(value, 'stage'), style: const TextStyle(fontSize: 12))])),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), trailing: const Icon(Icons.chevron_right, size: 18),
-          onTap: () => _openJob(requiredInt(value, 'id')),
-        ))),
-    )),
-  ])));
+    ),
+  );
+}
+
+class PipelineTestsView extends StatefulWidget {
+  const PipelineTestsView({
+    super.key,
+    required this.account,
+    required this.api,
+    required this.project,
+    required this.pipelineId,
+    required this.pipelineStatus,
+    required this.onOpenJob,
+  });
+
+  final Account account;
+  final GitLabApi api;
+  final Project project;
+  final int pipelineId;
+  final String pipelineStatus;
+  final Future<void> Function(int jobId) onOpenJob;
+
+  @override
+  State<PipelineTestsView> createState() => PipelineTestsViewState();
+}
+
+class PipelineTestsViewState extends State<PipelineTestsView> {
+  static const int maxCasesBudget = 500;
+  static const int maxOutputChars = 5000;
+
+  int _generation = 0;
+  int _casesGeneration = 0;
+  bool _loadingSummary = false;
+  bool _loadingCases = false;
+  bool _loadingMore = false;
+  TestReportSummary? _summary;
+  ApiFailure? _summaryError;
+  ApiFailure? _casesError;
+  List<TestCase> _cases = [];
+  Uri? _nextPage;
+  String _filter = 'all';
+  final Set<String> _expandedCases = {};
+
+  bool get _isInProgress => const [
+    'running',
+    'pending',
+    'preparing',
+    'waiting_for_resource',
+    'scheduled',
+    'created',
+  ].contains(widget.pipelineStatus.toLowerCase());
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(refresh());
+  }
+
+  @override
+  void didUpdateWidget(covariant PipelineTestsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pipelineId != widget.pipelineId ||
+        oldWidget.pipelineStatus != widget.pipelineStatus) {
+      unawaited(refresh());
+    }
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    _casesGeneration++;
+    super.dispose();
+  }
+
+  Future<void> refresh() async {
+    final gen = ++_generation;
+    setState(() {
+      _loadingSummary = true;
+      _summaryError = null;
+      _casesError = null;
+      _cases = [];
+      _nextPage = null;
+    });
+
+    try {
+      final summary = await widget.api.pipelineTestReportSummary(
+        widget.project.id,
+        widget.pipelineId,
+      );
+      if (!mounted || gen != _generation) return;
+      setState(() {
+        _summary = summary;
+        _loadingSummary = false;
+        if (summary.failedCount > 0 || summary.errorCount > 0 || summary.hasSuiteError) {
+          _filter = 'failed';
+        } else {
+          _filter = 'all';
+        }
+      });
+      if (summary.totalCount > 0) {
+        unawaited(_loadCases(gen));
+      }
+    } catch (e) {
+      if (!mounted || gen != _generation) return;
+      setState(() {
+        _summaryError = safeFailure(e);
+        _loadingSummary = false;
+      });
+    }
+  }
+
+  Future<void> _loadCases(int summaryGen) async {
+    final caseGen = ++_casesGeneration;
+    setState(() {
+      _loadingCases = true;
+      _casesError = null;
+    });
+
+    try {
+      final page = await widget.api.pipelineTestReport(
+        widget.project.id,
+        widget.pipelineId,
+        perPage: 30,
+      );
+      if (!mounted || summaryGen != _generation || caseGen != _casesGeneration) return;
+      final seen = <String>{};
+      final uniqueCases = <TestCase>[];
+      for (final c in page.testCases) {
+        if (seen.add(c.identity)) uniqueCases.add(c);
+      }
+      setState(() {
+        _cases = uniqueCases;
+        _nextPage = page.next;
+        _loadingCases = false;
+      });
+    } catch (e) {
+      if (!mounted || summaryGen != _generation || caseGen != _casesGeneration) return;
+      setState(() {
+        _casesError = safeFailure(e);
+        _loadingCases = false;
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final next = _nextPage;
+    if (next == null || _loadingMore || _loadingCases) return;
+    if (_cases.length >= maxCasesBudget) return;
+    final gen = _generation;
+    final caseGen = _casesGeneration;
+    setState(() {
+      _loadingMore = true;
+      _casesError = null;
+    });
+
+    try {
+      final page = await widget.api.pipelineTestReport(
+        widget.project.id,
+        widget.pipelineId,
+        next: next,
+      );
+      if (!mounted || gen != _generation || caseGen != _casesGeneration) return;
+      final seen = _cases.map((c) => c.identity).toSet();
+      final newCases = <TestCase>[];
+      for (final c in page.testCases) {
+        if (seen.add(c.identity)) newCases.add(c);
+      }
+      setState(() {
+        _cases = [..._cases, ...newCases];
+        _nextPage = page.next;
+        _loadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted || gen != _generation || caseGen != _casesGeneration) return;
+      setState(() {
+        _casesError = safeFailure(e);
+        _loadingMore = false;
+      });
+    }
+  }
+
+  String _filterLabel(String filter) => switch (filter) {
+    'all' => '全部',
+    'failed' => '失敗',
+    'error' => '錯誤',
+    'skipped' => '跳過',
+    'success' => '成功',
+    _ => filter,
+  };
+
+  String _truncateOutput(String text) {
+    if (text.length <= maxOutputChars) return text;
+    return '${text.substring(0, maxOutputChars)}\n\n… [輸出過長，已截斷顯示]';
+  }
+
+  Widget _buildSummaryCard(BuildContext context, TestReportSummary summary) {
+    final theme = Theme.of(context);
+    final workshop = WorkshopColors.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                StatusBadge(switch (summary.status) {
+                  TestReportStatus.failed => 'failed',
+                  TestReportStatus.error => 'error',
+                  TestReportStatus.suiteError => 'error',
+                  TestReportStatus.skipped => 'skipped',
+                  TestReportStatus.success => 'success',
+                  _ => 'status_unknown',
+                }),
+                Text('總計 ${summary.totalCount}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text('成功 ${summary.successCount}', style: TextStyle(color: workshop.onSuccessContainer)),
+                if (summary.failedCount > 0)
+                  Text('失敗 ${summary.failedCount}', style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.bold)),
+                if (summary.errorCount > 0)
+                  Text('錯誤 ${summary.errorCount}', style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.bold)),
+                if (summary.skippedCount > 0)
+                  Text('跳過 ${summary.skippedCount}', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
+                Text('耗時 ${summary.totalTime.toStringAsFixed(2)} 秒', style: theme.textTheme.bodySmall),
+              ],
+            ),
+            if (summary.hasSuiteError) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.warning_amber_rounded, size: 18, color: theme.colorScheme.onErrorContainer),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '測試套件解析錯誤: ${summary.suiteError ?? summary.testSuites.firstWhere((s) => s.hasSuiteError, orElse: () => const TestSuiteSummary(name: '', totalTime: 0, totalCount: 0, successCount: 0, failedCount: 0, skippedCount: 0, errorCount: 0, suiteError: '未知套件錯誤')).suiteError}',
+                        style: TextStyle(color: theme.colorScheme.onErrorContainer, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterChips(BuildContext context, TestReportSummary summary) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text('全部 (${summary.totalCount})'),
+              selected: _filter == 'all',
+              showCheckmark: false,
+              onSelected: (_) => setState(() => _filter = 'all'),
+            ),
+          ),
+          if (summary.failedCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text('失敗 (${summary.failedCount})'),
+                selected: _filter == 'failed',
+                showCheckmark: false,
+                onSelected: (_) => setState(() => _filter = 'failed'),
+              ),
+            ),
+          if (summary.errorCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text('錯誤 (${summary.errorCount})'),
+                selected: _filter == 'error',
+                showCheckmark: false,
+                onSelected: (_) => setState(() => _filter = 'error'),
+              ),
+            ),
+          if (summary.skippedCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text('跳過 (${summary.skippedCount})'),
+                selected: _filter == 'skipped',
+                showCheckmark: false,
+                onSelected: (_) => setState(() => _filter = 'skipped'),
+              ),
+            ),
+          if (summary.successCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text('成功 (${summary.successCount})'),
+                selected: _filter == 'success',
+                showCheckmark: false,
+                onSelected: (_) => setState(() => _filter = 'success'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTestCaseCard(BuildContext context, TestCase item) {
+    final theme = Theme.of(context);
+    final isExpanded = _expandedCases.contains(item.identity);
+    final hasTraceOrOutput = (item.stackTrace != null && item.stackTrace!.isNotEmpty) ||
+        (item.systemOutput != null && item.systemOutput!.isNotEmpty);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                StatusBadge(item.status),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    item.name,
+                    style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (item.classname != null && item.classname!.isNotEmpty)
+                  Text(
+                    item.classname!,
+                    style: const TextStyle(
+                      fontFamily: codeFontFamily,
+                      fontFamilyFallback: ['Menlo', 'monospace'],
+                      fontSize: 12,
+                    ),
+                  ),
+                if (item.suiteName != null && item.suiteName!.isNotEmpty)
+                  Text('套件: ${item.suiteName}', style: theme.textTheme.bodySmall),
+                if (item.file != null && item.file!.isNotEmpty)
+                  Text(item.file!, style: theme.textTheme.bodySmall),
+                if (item.executionTime != null)
+                  Text('${item.executionTime!.toStringAsFixed(3)} 秒', style: theme.textTheme.bodySmall),
+              ],
+            ),
+            if (item.jobId != null) ...[
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  icon: const Icon(Icons.terminal, size: 16),
+                  label: Text('工作 #${item.jobId}'),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    minimumSize: const Size(48, 48),
+                  ),
+                  onPressed: () => widget.onOpenJob(item.jobId!),
+                ),
+              ),
+            ],
+            if (hasTraceOrOutput) ...[
+              const SizedBox(height: 8),
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () {
+                  setState(() {
+                    if (isExpanded) {
+                      _expandedCases.remove(item.identity);
+                    } else {
+                      _expandedCases.add(item.identity);
+                    }
+                  });
+                },
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 48),
+                  child: Row(
+                    children: [
+                      Icon(isExpanded ? Icons.expand_less : Icons.expand_more, size: 20),
+                      const SizedBox(width: 6),
+                      Text(
+                        '錯誤追蹤與輸出',
+                        style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (isExpanded) ...[
+                if (item.stackTrace != null && item.stackTrace!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text('錯誤堆疊 (Stacktrace):', style: theme.textTheme.labelSmall),
+                  const SizedBox(height: 4),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: SelectableText(
+                      _truncateOutput(item.stackTrace!),
+                      style: const TextStyle(
+                        fontFamily: codeFontFamily,
+                        fontFamilyFallback: ['Menlo', 'monospace'],
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+                if (item.systemOutput != null && item.systemOutput!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text('系統輸出 (System Output):', style: theme.textTheme.labelSmall),
+                  const SizedBox(height: 4),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: SelectableText(
+                      _truncateOutput(item.systemOutput!),
+                      style: const TextStyle(
+                        fontFamily: codeFontFamily,
+                        fontFamilyFallback: ['Menlo', 'monospace'],
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loadingSummary && _summary == null) {
+      return const ListSkeleton();
+    }
+
+    if (_summaryError != null) {
+      if (_summaryError!.status == 404 || _summaryError!.kind == FailureKind.invisible) {
+        if (_isInProgress) {
+          return const EmptyState('測試進行中', detail: 'Pipeline 正在執行，尚未產生完整測試報告。', icon: Icons.schedule);
+        }
+        return const EmptyState('無測試報告', detail: '此 Pipeline 尚未上傳 JUnit 測試報告，或報告已過期／無權限存取。', icon: Icons.rule_folder_outlined);
+      }
+      return FailureNotice(
+        _summaryError!,
+        account: widget.account,
+        resourceLabel: '${widget.project.path} · Pipeline #${widget.pipelineId} 測試報告',
+        onSwitchAccount: endSessionFrom(context),
+        onRetry: refresh,
+      );
+    }
+
+    final summary = _summary;
+    if (summary == null || summary.isEmpty) {
+      if (_isInProgress) {
+        return const EmptyState('測試進行中', detail: 'Pipeline 正在執行，尚未產生完整測試報告。', icon: Icons.schedule);
+      }
+      return const EmptyState('無測試報告', detail: '此 Pipeline 沒有回報任何測試案例。', icon: Icons.rule_folder_outlined);
+    }
+
+    final filteredCases = _cases.where((c) => switch (_filter) {
+      'failed' => c.isFailed,
+      'error' => c.status == 'error',
+      'skipped' => c.isSkipped,
+      'success' => c.isSuccess,
+      _ => true,
+    }).toList();
+
+    final isPartial = summary.totalCount > _cases.length || _nextPage != null;
+    final gutter = feedGutter(context);
+
+    return RefreshIndicator(
+      onRefresh: refresh,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 24 + MediaQuery.paddingOf(context).bottom),
+        children: [
+          _buildSummaryCard(context, summary),
+          const SizedBox(height: 12),
+          _buildFilterChips(context, summary),
+          const SizedBox(height: 12),
+          if (isPartial)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Card(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '已載入 ${_cases.length} / ${summary.totalCount} 筆測試案例（部分載入）',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (_loadingCases && _cases.isEmpty)
+            const ListSkeleton()
+          else if (filteredCases.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: EmptyState('沒有符合「${_filterLabel(_filter)}」的已載入測試案例'),
+            )
+          else
+            for (final c in filteredCases)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _buildTestCaseCard(context, c),
+              ),
+          if (_casesError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: FailureNotice(
+                _casesError!,
+                account: widget.account,
+                resourceLabel: '${widget.project.path} · 測試案例分頁',
+                onSwitchAccount: endSessionFrom(context),
+                onRetry: _loadMore,
+              ),
+            ),
+          if (_loadingMore)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_nextPage != null)
+            if (_cases.length >= maxCasesBudget)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  '已達單次預覽上限（$maxCasesBudget 筆）。如需檢視完整測試報告，請至 GitLab 網頁端或各工作 Log 檢視。',
+                  style: Theme.of(context).textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: TextButton.icon(
+                  icon: const Icon(Icons.expand_more),
+                  label: const Text('載入更多測試案例'),
+                  onPressed: _loadMore,
+                ),
+              ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Override in tests. Production uses the app temporary directory, which the
