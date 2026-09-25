@@ -87,11 +87,41 @@ Uri repositoryBlobWebUri({
   required String filePath,
   int? line,
 }) {
-  final cleanProjectPath = projectPath.replaceAll(RegExp(r'^/+|/+$'), '');
-  final cleanFilePath = filePath.replaceAll(RegExp(r'^/+'), '');
+  final cleanProjectPath = projectPath.replaceAll(RegExp(r'^/+|/+$'), '').trim();
+  if (cleanProjectPath.isEmpty) {
+    throw const FormatException('專案路徑不可為空。');
+  }
+  final cleanFilePath = filePath.replaceAll(RegExp(r'^/+|/+$'), '').trim();
+  if (cleanFilePath.isEmpty) {
+    throw const FormatException('檔案路徑不可為空。');
+  }
+
+  // Reject path traversal and tampering
+  if (cleanProjectPath.contains('\\') ||
+      cleanFilePath.contains('\\') ||
+      RegExp(r'%(2f|5c|2e)', caseSensitive: false).hasMatch(cleanProjectPath) ||
+      RegExp(r'%(2f|5c|2e)', caseSensitive: false).hasMatch(cleanFilePath)) {
+    throw const FormatException('路徑不可包含編碼分隔符或反斜線。');
+  }
+
+  final projectSegments =
+      cleanProjectPath.split('/').where((s) => s.isNotEmpty).toList();
+  final fileSegments =
+      cleanFilePath.split('/').where((s) => s.isNotEmpty).toList();
+
+  if (projectSegments.isEmpty ||
+      projectSegments.any((s) => s == '.' || s == '..')) {
+    throw const FormatException('專案路徑不可包含相對路徑或遍歷語法。');
+  }
+  if (fileSegments.isEmpty || fileSegments.any((s) => s == '.' || s == '..')) {
+    throw const FormatException('檔案路徑不可包含相對路徑或遍歷語法。');
+  }
+
   final validSha = RepositoryRef.validateCommitSha(sha);
 
-  final base = instance.projectWeb('$cleanProjectPath/-/blob/$validSha/$cleanFilePath');
+  final base = instance.projectWeb(
+    '${projectSegments.join('/')}/-/blob/$validSha/${fileSegments.join('/')}',
+  );
   if (line != null && line > 0) {
     return base.replace(fragment: 'L$line');
   }

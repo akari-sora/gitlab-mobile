@@ -42,17 +42,40 @@ class _ProjectsPageState extends State<ProjectsPage> {
   bool _opening = false;
   int _projectTabIndex = 0;
   List<RecentProject> _recentProjects = const [];
+  String? _activeAccountKey;
+  int _activeGeneration = 0;
+
   RecentProjectStore get _recentStore =>
       widget.recentStore ?? widget.shortcuts?.recentStore ?? SecureRecentProjectStore();
   Account get account => widget.session.active!;
   GitLabApi get api => widget.session.api!;
+
   @override
   void initState() {
     super.initState();
+    _activeAccountKey = widget.session.active?.key;
+    _activeGeneration = widget.session.generation;
     _projectTabIndex = widget.forCi ? 3 : 0;
     _selection.addListener(_onSelectionChanged);
     widget.shortcuts?.addListener(_onShortcutsChanged);
+    widget.session.addListener(_onSessionChanged);
     unawaited(_loadRecentProjects());
+  }
+
+  void _onSessionChanged() {
+    final currentKey = widget.session.active?.key;
+    final currentGen = widget.session.generation;
+    if (currentKey != _activeAccountKey || currentGen != _activeGeneration) {
+      _activeAccountKey = currentKey;
+      _activeGeneration = currentGen;
+      if (mounted) {
+        setState(() {
+          _recentProjects = const [];
+          _opening = false;
+        });
+        unawaited(_loadRecentProjects());
+      }
+    }
   }
 
   Future<void> _loadRecentProjects() async {
@@ -85,6 +108,19 @@ class _ProjectsPageState extends State<ProjectsPage> {
   @override
   void didUpdateWidget(covariant ProjectsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.session != widget.session) {
+      oldWidget.session.removeListener(_onSessionChanged);
+      widget.session.addListener(_onSessionChanged);
+    }
+    final currentKey = widget.session.active?.key;
+    final currentGen = widget.session.generation;
+    if (currentKey != _activeAccountKey || currentGen != _activeGeneration) {
+      _activeAccountKey = currentKey;
+      _activeGeneration = currentGen;
+      _recentProjects = const [];
+      _opening = false;
+      unawaited(_loadRecentProjects());
+    }
     if (oldWidget.shortcuts != widget.shortcuts) {
       oldWidget.shortcuts?.removeListener(_onShortcutsChanged);
       widget.shortcuts?.addListener(_onShortcutsChanged);
@@ -98,6 +134,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
 
   @override
   void dispose() {
+    widget.session.removeListener(_onSessionChanged);
     _selection.removeListener(_onSelectionChanged);
     widget.shortcuts?.removeListener(_onShortcutsChanged);
     _debounce?.cancel();
@@ -106,24 +143,60 @@ class _ProjectsPageState extends State<ProjectsPage> {
     _selection.dispose();
     super.dispose();
   }
+
   void _searchChanged(String value) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 350), () { if (mounted) setState(() => _query = value.trim()); });
   }
+
   void _open(Project project) {
+    final activeAccount = widget.session.active;
+    if (activeAccount == null) return;
     _projectTabIndex = widget.forCi ? 3 : 0;
     final shortcuts = widget.shortcuts;
     if (shortcuts != null) {
-      unawaited(shortcuts.rememberOpened(accountKey: account.key, id: project.id, name: project.name));
+      unawaited(shortcuts.rememberOpened(accountKey: activeAccount.key, id: project.id, name: project.name));
     }
     unawaited(_recentStore.touch(
-      account.key,
+      activeAccount.key,
       RecentProject(id: project.id, name: project.name, path: project.path),
     ).then((_) {
-      if (mounted) _loadRecentProjects();
+      if (mounted && widget.session.active?.key == activeAccount.key) {
+        _loadRecentProjects();
+      }
     }).catchError((_) {}));
     _selection.select(project);
   }
+
+  Future<void> _openRecentProject(RecentProject rp) async {
+    if (_opening) return;
+    final targetAccount = widget.session.active;
+    if (targetAccount == null) return;
+    final targetAccountKey = targetAccount.key;
+    final targetGeneration = widget.session.generation;
+    setState(() => _opening = true);
+    try {
+      final proj = await api.project('${rp.id}');
+      if (!mounted) return;
+      if (widget.session.active?.key != targetAccountKey ||
+          widget.session.generation != targetGeneration) {
+        return;
+      }
+      _open(proj);
+    } catch (e) {
+      if (!mounted) return;
+      if (widget.session.active?.key != targetAccountKey ||
+          widget.session.generation != targetGeneration) {
+        return;
+      }
+      showFailure(context, e);
+    } finally {
+      if (mounted) {
+        setState(() => _opening = false);
+      }
+    }
+  }
+
   Future<void> _locator() async {
     final input = TextEditingController();
     final locator = await showDialog<String>(context: context, builder: (context) => AlertDialog(
@@ -135,13 +208,30 @@ class _ProjectsPageState extends State<ProjectsPage> {
     ));
     unawaited(Future<void>.delayed(const Duration(milliseconds: 400), input.dispose));
     if (locator == null || !mounted || _opening) return;
+    final targetAccount = widget.session.active;
+    if (targetAccount == null) return;
+    final targetAccountKey = targetAccount.key;
+    final targetGeneration = widget.session.generation;
     setState(() => _opening = true);
     try {
       final parsed = ProjectLocator.parse(locator, account.instance);
       final project = await api.project(parsed.idOrPath);
-      if (mounted) _open(project);
-    } catch (e) { if (mounted) showFailure(context, e); }
-    finally { if (mounted) setState(() => _opening = false); }
+      if (!mounted) return;
+      if (widget.session.active?.key != targetAccountKey ||
+          widget.session.generation != targetGeneration) {
+        return;
+      }
+      _open(project);
+    } catch (e) {
+      if (!mounted) return;
+      if (widget.session.active?.key != targetAccountKey ||
+          widget.session.generation != targetGeneration) {
+        return;
+      }
+      showFailure(context, e);
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
   }
   Future<void> _create() async {
     Project? created;
@@ -208,14 +298,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
                           key: ValueKey('recent-project-${rp.id}'),
                           avatar: const Icon(Icons.history, size: 16),
                           label: Text('最近：${rp.name}'),
-                          onPressed: () async {
-                            try {
-                              final proj = await api.project('${rp.id}');
-                              if (mounted) _open(proj);
-                            } catch (e) {
-                              if (context.mounted) showFailure(context, e);
-                            }
-                          },
+                          onPressed: _opening ? null : () => _openRecentProject(rp),
                         ),
                       ),
                   ],

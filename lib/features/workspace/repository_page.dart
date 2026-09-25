@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -155,6 +156,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
     );
     if (selected != null && mounted && selected != _currentRef) {
       setState(() {
+        _epoch++;
         _currentRef = selected;
         _folder = '';
         _readme = null;
@@ -194,7 +196,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
         sha,
         path,
       );
-      if (text.length > 256 * 1024) {
+      if (utf8.encode(text).length > 256 * 1024) {
         throw const ApiFailure(FailureKind.tooLarge);
       }
       if (mounted && _epoch == epoch && _currentRef?.sha == sha) {
@@ -454,6 +456,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
                       },
                       account: widget.account,
                       project: widget.project,
+                      api: widget.api,
                       onSwitchAccount: endSessionFrom(context),
                     );
                   },
@@ -475,6 +478,7 @@ class RepositoryReadmeCard extends StatelessWidget {
     required this.onRetry,
     required this.account,
     required this.project,
+    this.api,
     this.onSwitchAccount,
   });
 
@@ -486,6 +490,7 @@ class RepositoryReadmeCard extends StatelessWidget {
   final VoidCallback onRetry;
   final Account account;
   final Project project;
+  final GitLabApi? api;
   final VoidCallback? onSwitchAccount;
 
   @override
@@ -569,6 +574,11 @@ class RepositoryReadmeCard extends StatelessWidget {
                   base: account.instance.projectWeb(
                     '${project.path}/-/blob/${readme!.sha}/${readme!.path}',
                   ),
+                  api: api,
+                  projectId: project.id,
+                  projectWeb: account.instance.projectWeb(project.path),
+                  projectPath: project.path,
+                  account: account,
                 ),
               ),
           ],
@@ -844,7 +854,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
       r'\.(md|markdown)$',
       caseSensitive: false,
     ).hasMatch(widget.filePath);
-    _preview = _markdown;
+    _preview = _markdown && widget.targetLine == null;
     unawaited(_load());
   }
 
@@ -898,40 +908,58 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
       );
       if (mounted) {
         _indexLines(text);
+        final target = widget.targetLine;
+        final hasTarget =
+            target != null && target >= 1 && target <= _lines.length;
         setState(() {
           _text = text;
           _lastCommit = meta != null ? requiredString(meta, 'last_commit_id') : null;
+          _loading = false;
+          if (hasTarget) {
+            _selectedLine = target;
+          }
         });
-        if (widget.targetLine != null &&
-            widget.targetLine! >= 1 &&
-            widget.targetLine! <= _lines.length) {
-          _selectedLine = widget.targetLine;
+        if (hasTarget) {
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _scrollToLine(widget.targetLine!);
+            if (mounted) _scrollToLine(target);
           });
         }
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _error = safeFailure(e));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _loading = false);
+        setState(() {
+          _error = safeFailure(e);
+          _loading = false;
+        });
       }
     }
   }
 
   void _scrollToLine(int line) {
     if (!_vertical.hasClients) return;
+    final position = _vertical.position;
+    if (!position.hasContentDimensions) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scrollToLine(line);
+      });
+      return;
+    }
     final index = _visibleIndices.indexOf(line - 1);
     if (index < 0) return;
-    final offset = (index * 48.0).clamp(0.0, _vertical.position.maxScrollExtent);
-    _vertical.animateTo(
-      offset,
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOutCubic,
-    );
+    final span = position.maxScrollExtent;
+    final rowCount = _visibleIndices.isEmpty ? 1 : _visibleIndices.length;
+    final estimatedRowHeight = span > 0
+        ? (span + position.viewportDimension) / rowCount
+        : 50.0;
+    final target = (index * estimatedRowHeight - position.viewportDimension * 0.2)
+        .clamp(0.0, span);
+    if (target.isFinite) {
+      _vertical.animateTo(
+        target,
+        duration: const Duration(milliseconds: 250),
+        curve: Curves.easeOutCubic,
+      );
+    }
   }
 
   Future<void> _copyLinePermalink(int lineNumber) async {
@@ -1058,7 +1086,14 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
           if (_markdown)
             IconButton(
               tooltip: _preview ? '顯示原始文字' : 'Markdown 預覽',
-              onPressed: () => setState(() => _preview = !_preview),
+              onPressed: () {
+                setState(() => _preview = !_preview);
+                if (!_preview && _selectedLine != null) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) _scrollToLine(_selectedLine!);
+                  });
+                }
+              },
               icon: Icon(_preview ? Icons.code : Icons.preview_outlined),
             ),
           PopupMenuButton<String>(

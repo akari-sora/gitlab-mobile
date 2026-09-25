@@ -84,4 +84,55 @@ void main() {
     expect(find.text('group/repo-two'), findsOneWidget);
     expect(find.text('檔案'), findsOneWidget);
   });
+
+  testWidgets('ProjectsPage clears recent projects and resets selection upon account switch', (tester) async {
+    final accountStore = MemoryAccountStore();
+    final session = SessionController(accountStore);
+    session.active = account;
+
+    final account2 = Account(
+      instance: instance,
+      user: const GitLabUser(id: 8, username: 'other', name: 'Other User'),
+      token: 'synthetic-token-2',
+    );
+
+    final store = SecureRecentProjectStore();
+    await store.touch(account.key, const RecentProject(id: 101, name: 'Repo One', path: 'group/repo-one'));
+    await store.touch(account2.key, const RecentProject(id: 202, name: 'Other Repo', path: 'group/other-repo'));
+
+    final adapter = FakeAdapter((request) => jsonResponse([]));
+    final api = testApi(adapter);
+    session.api = api;
+    addTearDown(api.close);
+
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 1000);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      workspaceHost(
+        ProjectsPage(session: session),
+      ),
+    );
+    await settleWorkspace(tester);
+
+    // Initial account shows Repo One
+    expect(find.text('最近：Repo One'), findsOneWidget);
+    expect(find.text('最近：Other Repo'), findsNothing);
+
+    // Switch account
+    session.active = account2;
+    session.generation = 2;
+    await tester.pumpWidget(
+      workspaceHost(
+        ProjectsPage(session: session),
+      ),
+    );
+    await settleWorkspace(tester);
+
+    // Now shows Other Repo, Repo One is gone
+    expect(find.text('最近：Other Repo'), findsOneWidget);
+    expect(find.text('最近：Repo One'), findsNothing);
+  });
 }

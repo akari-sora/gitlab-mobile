@@ -174,5 +174,113 @@ void main() {
       expect(uri.userInfo, isEmpty);
       expect(uri.toString().contains('token'), isFalse);
     });
+
+    test('rejects empty project path or file path with FormatException', () {
+      final instance = GitLabInstance.parse('https://gitlab.com');
+      const sha = '11223344556677889900aabbccddeeff00112233';
+
+      expect(
+        () => repositoryBlobWebUri(
+          instance: instance,
+          projectPath: '',
+          sha: sha,
+          filePath: 'lib/main.dart',
+        ),
+        throwsA(isA<FormatException>()),
+      );
+
+      expect(
+        () => repositoryBlobWebUri(
+          instance: instance,
+          projectPath: '   ///   ',
+          sha: sha,
+          filePath: 'lib/main.dart',
+        ),
+        throwsA(isA<FormatException>()),
+      );
+
+      expect(
+        () => repositoryBlobWebUri(
+          instance: instance,
+          projectPath: 'group/project',
+          sha: sha,
+          filePath: '',
+        ),
+        throwsA(isA<FormatException>()),
+      );
+
+      expect(
+        () => repositoryBlobWebUri(
+          instance: instance,
+          projectPath: 'group/project',
+          sha: sha,
+          filePath: '   ///   ',
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('rejects path traversal attempts in projectPath and filePath', () {
+      final instance = GitLabInstance.parse('https://gitlab.com');
+      const sha = '11223344556677889900aabbccddeeff00112233';
+
+      expect(
+        () => repositoryBlobWebUri(
+          instance: instance,
+          projectPath: 'group/project',
+          sha: sha,
+          filePath: '../../etc/passwd',
+        ),
+        throwsA(isA<FormatException>()),
+      );
+
+      expect(
+        () => repositoryBlobWebUri(
+          instance: instance,
+          projectPath: 'group/../other',
+          sha: sha,
+          filePath: 'lib/main.dart',
+        ),
+        throwsA(isA<FormatException>()),
+      );
+
+      expect(
+        () => repositoryBlobWebUri(
+          instance: instance,
+          projectPath: 'group/project',
+          sha: sha,
+          filePath: r'lib\main.dart',
+        ),
+        throwsA(isA<FormatException>()),
+      );
+
+      expect(
+        () => repositoryBlobWebUri(
+          instance: instance,
+          projectPath: 'group/project',
+          sha: sha,
+          filePath: '%2e%2e/secret.txt',
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
+    test('normalizes leading, trailing, and internal consecutive slashes', () {
+      final instance = GitLabInstance.parse('https://gitlab.com');
+      const sha = '11223344556677889900aabbccddeeff00112233';
+
+      final uri = repositoryBlobWebUri(
+        instance: instance,
+        projectPath: '/group//project/',
+        sha: sha,
+        filePath: '/lib//src///main.dart/',
+        line: 15,
+      );
+
+      expect(
+        uri.toString(),
+        'https://gitlab.com/group/project/-/blob/$sha/lib/src/main.dart#L15',
+      );
+    });
   });
 }

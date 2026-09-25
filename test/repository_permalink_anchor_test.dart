@@ -188,4 +188,105 @@ line 5: class MyApp extends StatelessWidget {}
     expect(find.text('刪除檔案'), findsNothing);
     expect(find.text('關閉自動換行'), findsOneWidget);
   });
+
+  testWidgets('markdown file with targetLine starts in code view and highlights the line', (tester) async {
+    const mdContent = '''# Title
+Line 2
+Line 3
+Line 4 with content
+Line 5
+''';
+    final adapter = FakeAdapter((request) {
+      final path = request.uri.path;
+      if (path.endsWith('/repository/files/README.md') && request.method == 'HEAD') {
+        return ResponseBody.fromString('', 200, headers: {'x-gitlab-size': ['100'], 'x-gitlab-last-commit-id': [sha]});
+      }
+      if (path.endsWith('/repository/files/README.md/raw')) {
+        return ResponseBody.fromString(mdContent, 200);
+      }
+      return jsonResponse([]);
+    });
+
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RepositoryFilePage(
+          account: account,
+          api: api,
+          project: project,
+          ref: const RepositoryRef(
+            kind: RepositoryRefKind.branch,
+            name: 'main',
+            sha: sha,
+            protected: true,
+          ),
+          filePath: 'README.md',
+          targetLine: 4,
+        ),
+      ),
+    );
+
+    await settleNetworkWidgets(tester);
+
+    // Because targetLine was provided, it must NOT start in Markdown preview mode.
+    // Line numbers must be visible.
+    expect(find.text('4'), findsOneWidget);
+    expect(find.text('Line 4 with content'), findsOneWidget);
+
+    // Semantics button for line 4 should be marked selected
+    final semanticsWidget = tester.widget<Semantics>(find.byWidgetPredicate(
+      (w) => w is Semantics && w.properties.label == '第 4 行',
+    ));
+    expect(semanticsWidget.properties.selected, isTrue);
+  });
+
+  testWidgets('long file with targetLine: 50 auto-scrolls to the target line', (tester) async {
+    final longCode = List.generate(80, (i) => 'line ${i + 1}: println($i);').join('\n');
+    final adapter = FakeAdapter((request) {
+      final path = request.uri.path;
+      if (path.endsWith('/repository/files/lib%2Fbig.dart') && request.method == 'HEAD') {
+        return ResponseBody.fromString('', 200, headers: {'x-gitlab-size': ['2000'], 'x-gitlab-last-commit-id': [sha]});
+      }
+      if (path.endsWith('/repository/files/lib%2Fbig.dart/raw')) {
+        return ResponseBody.fromString(longCode, 200);
+      }
+      return jsonResponse([]);
+    });
+
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 600);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RepositoryFilePage(
+          account: account,
+          api: api,
+          project: project,
+          ref: const RepositoryRef(
+            kind: RepositoryRefKind.branch,
+            name: 'main',
+            sha: sha,
+            protected: true,
+          ),
+          filePath: 'lib/big.dart',
+          targetLine: 50,
+        ),
+      ),
+    );
+
+    await settleNetworkWidgets(tester);
+    await tester.pumpAndSettle();
+
+    // Line 50 should be visible
+    expect(find.text('50'), findsOneWidget);
+    // Line 1 should be scrolled off
+    expect(find.text('1'), findsNothing);
+  });
 }

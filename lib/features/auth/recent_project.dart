@@ -36,8 +36,8 @@ final class RecentProject {
     }
     return RecentProject(
       id: id,
-      name: name,
-      path: path is String && path.trim().isNotEmpty ? path : null,
+      name: name.trim(),
+      path: path is String && path.trim().isNotEmpty ? path.trim() : null,
     );
   }
 
@@ -184,10 +184,12 @@ final class SecureRecentProjectStore implements RecentProjectStore {
       final old = RecentProject.decode(rawV1);
       if (old != null) {
         final migrated = [old];
-        await _writeV2Internal(accountKey, migrated);
-        try {
-          await _storage.delete(key: storageKey(accountKey));
-        } catch (_) {}
+        final wrote = await _writeV2Internal(accountKey, migrated);
+        if (wrote) {
+          try {
+            await _storage.delete(key: storageKey(accountKey));
+          } catch (_) {}
+        }
         return List.unmodifiable(migrated);
       }
     } catch (_) {
@@ -197,7 +199,7 @@ final class SecureRecentProjectStore implements RecentProjectStore {
     return const [];
   }
 
-  Future<void> _writeV2Internal(String accountKey, List<RecentProject> items) async {
+  Future<bool> _writeV2Internal(String accountKey, List<RecentProject> items) async {
     try {
       final payload = jsonEncode({
         'version': 2,
@@ -211,7 +213,10 @@ final class SecureRecentProjectStore implements RecentProjectStore {
         ],
       });
       await _storage.write(key: v2StorageKey(accountKey), value: payload);
-    } catch (_) {}
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   @override
@@ -319,19 +324,21 @@ final class RecentProjectsController extends ChangeNotifier {
       path: project.path,
     );
 
-    await store.touch(accountKey, item);
+    try {
+      await store.touch(accountKey, item);
 
-    if (_epoch == epoch &&
-        session.active?.key == accountKey &&
-        session.generation == generation) {
-      final list = await store.readList(accountKey);
       if (_epoch == epoch &&
           session.active?.key == accountKey &&
           session.generation == generation) {
-        _items = list;
-        notifyListeners();
+        final list = await store.readList(accountKey);
+        if (_epoch == epoch &&
+            session.active?.key == accountKey &&
+            session.generation == generation) {
+          _items = list;
+          notifyListeners();
+        }
       }
-    }
+    } catch (_) {}
   }
 
   void clearVisible() {
