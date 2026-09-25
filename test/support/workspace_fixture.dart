@@ -359,7 +359,7 @@ class WorkspaceFixture {
       }
     }
     if (joined == 'projects/42/merge_requests/12/merge' && method == 'PUT') {
-      if (body['auto_merge'] == true || body['merge_when_pipeline_succeeds'] == true) {
+      if (body['auto_merge'] == true || body['merge_when_pipeline_succeeds'] == true || body['auto_merge_strategy'] == 'merge_when_pipeline_succeeds') {
         mergeFields['merge_when_pipeline_succeeds'] = true;
         mergeFields['auto_merge_enabled'] = true;
         mergeFields['merge_user'] = {'id': 7, 'username': 'developer', 'name': 'Developer'};

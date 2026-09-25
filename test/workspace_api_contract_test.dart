@@ -25,7 +25,7 @@ void main() {
       {'sha': 'reviewed-sha', 'squash': false, 'should_remove_source_branch': true},
       (a) => a.mergeRequest(42, 7, 'reviewed-sha', squash: false, removeSourceBranch: true)),
     ('MR merge with auto_merge schedules MWPS', 'PUT', ['projects', '42', 'merge_requests', '7', 'merge'],
-      {'sha': 'reviewed-sha', 'squash': true, 'should_remove_source_branch': false, 'auto_merge': true, 'merge_when_pipeline_succeeds': true},
+      {'sha': 'reviewed-sha', 'squash': true, 'should_remove_source_branch': false, 'auto_merge': true, 'merge_when_pipeline_succeeds': true, 'auto_merge_strategy': 'merge_when_pipeline_succeeds'},
       (a) => a.mergeRequest(42, 7, 'reviewed-sha', squash: true, removeSourceBranch: false, autoMerge: true)),
     ('MR cancel auto-merge', 'POST', ['projects', '42', 'merge_requests', '7', 'cancel_merge_when_pipeline_succeeds'], {},
       (a) => a.cancelAutoMerge(42, 7)),

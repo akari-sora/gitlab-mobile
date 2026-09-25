@@ -50,6 +50,7 @@ extension WorkspaceApi on GitLabApi {
       if (autoMerge) ...{
         'auto_merge': true,
         'merge_when_pipeline_succeeds': true,
+        'auto_merge_strategy': 'merge_when_pipeline_succeeds',
       },
     });
   Future<Json> cancelAutoMerge(int project, int iid) =>

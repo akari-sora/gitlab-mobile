@@ -6,7 +6,7 @@ import 'workspace_widget_test.dart' show settleWorkspace, workspaceHost;
 
 void main() {
   group('MR Auto-Merge pure helpers', () {
-    test('isAutoMergeEnabled returns true for either merge_when_pipeline_succeeds or auto_merge_enabled', () {
+    test('isAutoMergeEnabled returns true for either merge_when_pipeline_succeeds or auto_merge_enabled, but false if merged/closed', () {
       expect(isAutoMergeEnabled({}), isFalse);
       expect(isAutoMergeEnabled({'merge_when_pipeline_succeeds': false}), isFalse);
       expect(isAutoMergeEnabled({'auto_merge_enabled': false}), isFalse);
@@ -14,9 +14,12 @@ void main() {
       expect(isAutoMergeEnabled({'auto_merge_enabled': true}), isTrue);
       expect(isAutoMergeEnabled({'merge_when_pipeline_succeeds': true, 'auto_merge_enabled': false}), isTrue);
       expect(isAutoMergeEnabled({'merge_when_pipeline_succeeds': false, 'auto_merge_enabled': true}), isTrue);
+      expect(isAutoMergeEnabled({'state': 'merged', 'merge_when_pipeline_succeeds': true}), isFalse);
+      expect(isAutoMergeEnabled({'state': 'closed', 'auto_merge_enabled': true}), isFalse);
+      expect(isAutoMergeEnabled({'state': 'opened', 'merge_when_pipeline_succeeds': true}), isTrue);
     });
 
-    test('canAutoMerge identifies candidates waiting on pipelines', () {
+    test('canAutoMerge identifies candidates waiting on pipelines and blocks drafts/conflicts/unmergeable', () {
       expect(canAutoMerge({}), isFalse);
       expect(canAutoMerge({'state': 'closed', 'detailed_merge_status': 'ci_still_running'}), isFalse);
       expect(canAutoMerge({'state': 'merged', 'detailed_merge_status': 'ci_still_running'}), isFalse);
@@ -28,6 +31,18 @@ void main() {
       }
       expect(canAutoMerge({'state': 'opened', 'head_pipeline': {'status': 'success'}, 'detailed_merge_status': 'mergeable'}), isFalse);
       expect(canAutoMerge({'state': 'opened', 'head_pipeline': {'status': 'failed'}}), isFalse);
+
+      // Blocked states: Draft, Conflicts, Cannot be merged, Need rebase, Broken, Mergeable
+      expect(canAutoMerge({'state': 'opened', 'draft': true, 'head_pipeline': {'status': 'running'}}), isFalse);
+      expect(canAutoMerge({'state': 'opened', 'work_in_progress': true, 'head_pipeline': {'status': 'running'}}), isFalse);
+      expect(canAutoMerge({'state': 'opened', 'detailed_merge_status': 'draft_status', 'head_pipeline': {'status': 'running'}}), isFalse);
+      expect(canAutoMerge({'state': 'opened', 'has_conflicts': true, 'head_pipeline': {'status': 'running'}}), isFalse);
+      expect(canAutoMerge({'state': 'opened', 'detailed_merge_status': 'conflict', 'head_pipeline': {'status': 'running'}}), isFalse);
+      expect(canAutoMerge({'state': 'opened', 'detailed_merge_status': 'need_rebase', 'head_pipeline': {'status': 'running'}}), isFalse);
+      expect(canAutoMerge({'state': 'opened', 'detailed_merge_status': 'broken_status', 'head_pipeline': {'status': 'running'}}), isFalse);
+      expect(canAutoMerge({'state': 'opened', 'merge_status': 'cannot_be_merged', 'head_pipeline': {'status': 'running'}}), isFalse);
+      expect(canAutoMerge({'state': 'opened', 'detailed_merge_status': 'cannot_be_merged', 'head_pipeline': {'status': 'running'}}), isFalse);
+      expect(canAutoMerge({'state': 'opened', 'detailed_merge_status': 'mergeable', 'head_pipeline': {'status': 'running'}}), isFalse);
     });
 
     test('mergeStatusLabel reports auto-merge author or default label', () {
@@ -159,6 +174,7 @@ void main() {
         expect(body['sha'], WorkspaceFixture.sha);
         expect(body['auto_merge'], isTrue);
         expect(body['merge_when_pipeline_succeeds'], isTrue);
+        expect(body['auto_merge_strategy'], 'merge_when_pipeline_succeeds');
         expect(body['should_remove_source_branch'], isTrue);
 
         expect(find.text('已排程自動合併，等待流水線完成。'), findsOneWidget);
@@ -196,6 +212,39 @@ void main() {
       final body = mergeReq.data as Map<String, dynamic>;
       expect(body.containsKey('auto_merge'), isFalse);
       expect(body.containsKey('merge_when_pipeline_succeeds'), isFalse);
+      expect(body.containsKey('auto_merge_strategy'), isFalse);
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    testWidgets('does not show auto-merge switch in dialog when MR is already mergeable', (tester) async {
+      final fixture = await pumpMrPage(tester, {
+        'detailed_merge_status': 'mergeable',
+      });
+
+      expect(find.widgetWithText(FilledButton, '合併'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '自動合併…'), findsNothing);
+
+      await tester.tap(find.widgetWithText(FilledButton, '合併'));
+      await settleWorkspace(tester);
+
+      expect(find.text('合併 !12？'), findsOneWidget);
+      expect(find.byKey(const ValueKey('merge-auto')), findsNothing);
+      expect(find.byKey(const ValueKey('merge-squash')), findsOneWidget);
+      expect(find.byKey(const ValueKey('merge-remove-branch')), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilledButton, '確認'));
+      await settleWorkspace(tester);
+
+      final mergeReq = fixture.adapter.requests.lastWhere(
+        (r) => r.method == 'PUT' && r.uri.path.endsWith('/merge'),
+      );
+      final body = mergeReq.data as Map<String, dynamic>;
+      expect(body['sha'], WorkspaceFixture.sha);
+      expect(body.containsKey('auto_merge'), isFalse);
+      expect(body.containsKey('merge_when_pipeline_succeeds'), isFalse);
+      expect(body.containsKey('auto_merge_strategy'), isFalse);
 
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 1));
