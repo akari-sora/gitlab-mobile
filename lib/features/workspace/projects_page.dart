@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/project_locator.dart';
+import '../../shared/adaptive_breakpoints.dart';
+import '../../shared/list_detail_scaffold.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
 import '../shell/app_shortcuts.dart';
@@ -20,6 +22,7 @@ class ProjectsPage extends StatefulWidget {
   State<ProjectsPage> createState() => _ProjectsPageState();
 }
 class _ProjectsPageState extends State<ProjectsPage> {
+  late final _selection = ListDetailController<Project>(equals: (a, b) => a.id == b.id);
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
   final _feed = GlobalKey<RecordsFeedState>();
@@ -28,30 +31,68 @@ class _ProjectsPageState extends State<ProjectsPage> {
   int _seenSearch = 0;
   String _query = '';
   bool _opening = false;
+  int _projectTabIndex = 0;
   Account get account => widget.session.active!;
   GitLabApi get api => widget.session.api!;
   @override
+  void initState() {
+    super.initState();
+    _projectTabIndex = widget.forCi ? 3 : 0;
+    _selection.addListener(_onSelectionChanged);
+    widget.shortcuts?.addListener(_onShortcutsChanged);
+  }
+
+  void _onSelectionChanged() {
+    if (!_selection.hasSelection && _projectTabIndex != (widget.forCi ? 3 : 0)) {
+      if (mounted) {
+        setState(() {
+          _projectTabIndex = widget.forCi ? 3 : 0;
+        });
+      }
+    }
+  }
+
+  void _onShortcutsChanged() {
+    if (mounted) {
+      _selection.clear();
+    }
+  }
+
+  @override
   void didUpdateWidget(covariant ProjectsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.shortcuts != widget.shortcuts) {
+      oldWidget.shortcuts?.removeListener(_onShortcutsChanged);
+      widget.shortcuts?.addListener(_onShortcutsChanged);
+    }
     if (!widget.forCi && widget.searchToken != _seenSearch) {
       _seenSearch = widget.searchToken;
+      _selection.clear();
       WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _searchFocus.requestFocus(); });
     }
   }
+
   @override
-  void dispose() { _debounce?.cancel(); _search.dispose(); _searchFocus.dispose(); super.dispose(); }
+  void dispose() {
+    _selection.removeListener(_onSelectionChanged);
+    widget.shortcuts?.removeListener(_onShortcutsChanged);
+    _debounce?.cancel();
+    _search.dispose();
+    _searchFocus.dispose();
+    _selection.dispose();
+    super.dispose();
+  }
   void _searchChanged(String value) {
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 350), () { if (mounted) setState(() => _query = value.trim()); });
   }
-  Future<void> _open(Project project) async {
+  void _open(Project project) {
+    _projectTabIndex = widget.forCi ? 3 : 0;
     final shortcuts = widget.shortcuts;
     if (shortcuts != null) {
       unawaited(shortcuts.rememberOpened(accountKey: account.key, id: project.id, name: project.name));
     }
-    await Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => ProjectPage(
-      account: account, api: api, project: project, initialTab: widget.forCi ? 3 : 0)));
-    if (mounted) unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
+    _selection.select(project);
   }
   Future<void> _locator() async {
     final input = TextEditingController();
@@ -68,7 +109,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
     try {
       final parsed = ProjectLocator.parse(locator, account.instance);
       final project = await api.project(parsed.idOrPath);
-      if (mounted) await _open(project);
+      if (mounted) _open(project);
     } catch (e) { if (mounted) showFailure(context, e); }
     finally { if (mounted) setState(() => _opening = false); }
   }
@@ -84,10 +125,9 @@ class _ProjectsPageState extends State<ProjectsPage> {
           path: values['path']!.trim().isEmpty ? null : values['path']!.trim(), description: values['description']!);
       });
     if (!mounted) return;
-    if (saved && created != null) await _open(created!);
+    if (saved && created != null) _open(created!);
   }
-  @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget _buildList(BuildContext context, bool isTwoPane, Project? selected) => Scaffold(
     appBar: AppBar(title: Text(widget.forCi ? 'CI / CD' : '專案'), actions: [
       IconButton(tooltip: '以連結或路徑開啟', onPressed: _opening ? null : _locator, icon: const Icon(Icons.link)),
       if (!widget.forCi) IconButton(tooltip: '新增專案', onPressed: _create, icon: const Icon(Icons.add)),
@@ -132,35 +172,99 @@ class _ProjectsPageState extends State<ProjectsPage> {
             final project = Project.fromJson(data);
             final marked = project.markedForDeletionOn != null;
             final muted = marked ? Theme.of(context).colorScheme.onSurfaceVariant : null;
+            final isSelected = isTwoPane && _selection.isSelected(project);
+            final colorScheme = Theme.of(context).colorScheme;
             return SemanticButton(
               label: projectCardLabel(project, valueText(data, 'last_activity_at')),
               onTap: () => _open(project),
-              child: Card(child: InkWell(borderRadius: BorderRadius.circular(16), onTap: () => _open(project),
-              child: Padding(padding: const EdgeInsets.all(16), child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Monogram(project.name), const SizedBox(width: 12), Expanded(child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(project.name, maxLines: 2, overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(color: muted)),
-                        const SizedBox(height: 2), Text(project.path.split('/').take(project.path.split('/').length - 1).join('/'),
-                          maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                      ])), const SizedBox(width: 6), const Icon(Icons.chevron_right, size: 18),
-                  ]),
-                  if (project.description?.isNotEmpty ?? false) Padding(padding: const EdgeInsets.only(top: 10),
-                    child: Text(project.description!, maxLines: 2, overflow: TextOverflow.ellipsis,
-                      style: muted == null ? null : TextStyle(color: muted))),
-                  const SizedBox(height: 12), Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [StatusBadge(project.visibility ?? ''),
-                      if (marked) const StatusBadge('marked_for_deletion'),
-                      if (project.archived == true) const Text('已封存', style: TextStyle(fontSize: 12)),
-                      Text(relativeDate(valueText(data, 'last_activity_at')), style: Theme.of(context).textTheme.bodySmall)]),
-                ],
-              )),
-            )));
+              child: Card(
+                color: isSelected ? colorScheme.secondaryContainer : null,
+                shape: isSelected
+                    ? RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: BorderSide(color: colorScheme.primary, width: 2),
+                      )
+                    : null,
+                child: InkWell(borderRadius: BorderRadius.circular(16), onTap: () => _open(project),
+                child: Padding(padding: const EdgeInsets.all(16), child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Monogram(project.name), const SizedBox(width: 12), Expanded(child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(project.name, maxLines: 2, overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(color: muted)),
+                          const SizedBox(height: 2), Text(project.path.split('/').take(project.path.split('/').length - 1).join('/'),
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                        ])), const SizedBox(width: 6),
+                        if (isSelected)
+                          Icon(Icons.check_circle, size: 18, color: colorScheme.primary)
+                        else
+                          const Icon(Icons.chevron_right, size: 18),
+                    ]),
+                    if (project.description?.isNotEmpty ?? false) Padding(padding: const EdgeInsets.only(top: 10),
+                      child: Text(project.description!, maxLines: 2, overflow: TextOverflow.ellipsis,
+                        style: muted == null ? null : TextStyle(color: muted))),
+                    const SizedBox(height: 12), Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [StatusBadge(project.visibility ?? ''),
+                        if (marked) const StatusBadge('marked_for_deletion'),
+                        if (project.archived == true) const Text('已封存', style: TextStyle(fontSize: 12)),
+                        Text(relativeDate(valueText(data, 'last_activity_at')), style: Theme.of(context).textTheme.bodySmall)]),
+                  ],
+                )),
+              )));
           },
         )),
     ])),
   );
+
+  Widget _buildDetail(BuildContext context, Project item, bool isTwoPane, VoidCallback onBack) {
+    final hasRail = AdaptiveScope.hasRailOf(context);
+    final isNestedTab = hasRail && (_projectTabIndex == 1 || _projectTabIndex == 2);
+    return ProjectPage(
+      key: ValueKey('project-${item.id}'),
+      account: account,
+      api: api,
+      project: item,
+      initialTab: widget.forCi ? 3 : 0,
+      showBackButton: !isTwoPane || isNestedTab,
+      onBack: () {
+        _projectTabIndex = widget.forCi ? 3 : 0;
+        onBack();
+      },
+      onTabChanged: (index) {
+        if (_projectTabIndex != index) {
+          setState(() => _projectTabIndex = index);
+        }
+      },
+      onDeleted: () {
+        _projectTabIndex = widget.forCi ? 3 : 0;
+        _selection.clear();
+        unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
+      },
+    );
+  }
+
+  Widget _buildEmpty(BuildContext context) => const Center(
+    child: EmptyState(
+      '請選擇專案',
+      icon: Icons.folder_open_outlined,
+      detail: '從左側清單選擇專案以查看詳情、檔案與流程。',
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final hasRail = AdaptiveScope.hasRailOf(context);
+    return ListDetailScaffold<Project>(
+      controller: _selection,
+      listBuilder: _buildList,
+      detailBuilder: _buildDetail,
+      emptyBuilder: _buildEmpty,
+      collapseMaster: (selected) =>
+          selected != null &&
+          hasRail &&
+          (_projectTabIndex == 1 || _projectTabIndex == 2),
+    );
+  }
 }

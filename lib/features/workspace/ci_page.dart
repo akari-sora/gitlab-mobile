@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
@@ -141,7 +143,13 @@ class _PipelinePageState extends State<PipelinePage> {
   ]), body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
     if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
     if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
-      resourceLabel: '${widget.project.path} · Pipeline #${widget.id}', onSwitchAccount: endSessionFrom(context)),
+      resourceLabel: '${widget.project.path} · Pipeline #${widget.id}',
+      onSwitchAccount: endSessionFrom(context, ResumeTarget(
+        projectId: widget.project.id,
+        projectPath: widget.project.path,
+        resource: 'pipelines',
+        iid: widget.id,
+      ))),
     if (_data != null) Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 16), child: Column(
       crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 12),
@@ -192,6 +200,8 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   Json? _job;
   JobTrace _trace = JobTrace.empty;
   JobTrace _indexed = JobTrace.empty;
+  BytesBuilder _rawBytes = BytesBuilder(copy: false);
+  int _traceOffset = 0;
   List<int> _sectionOrder = const <int>[];
   List<List<int>> _sectionChildren = const <List<int>>[];
   List<int> _sectionRoots = const <int>[];
@@ -244,10 +254,27 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           _auto = false; _timer?.cancel();
         }
       });
-      final trace = await widget.api.jobTrace(widget.project.id, jobId);
+      final chunk = await widget.api.jobTraceChunk(widget.project.id, jobId, offset: _traceOffset);
       if (!current()) { return; }
-      final parsed = JobTrace.parse(trace);
-      setState(() => _trace = parsed);
+      if (chunk.isEof) {
+        _auto = false;
+        _timer?.cancel();
+      }
+      if (chunk.bytes.isNotEmpty || _rawBytes.isEmpty) {
+        if (chunk.bytes.isNotEmpty) {
+          if (chunk.nextOffset != null && chunk.nextOffset! < _traceOffset) {
+            _rawBytes = BytesBuilder(copy: false);
+            _rawBytes.add(chunk.bytes);
+            _traceOffset = chunk.nextOffset!;
+          } else {
+            _rawBytes.add(chunk.bytes);
+            _traceOffset = chunk.nextOffset ?? _rawBytes.length;
+          }
+        }
+        final text = utf8.decode(_rawBytes.toBytes(), allowMalformed: true);
+        final parsed = JobTrace.parse(text);
+        setState(() => _trace = parsed);
+      }
       if (follow) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (current() && _scroll.hasClients) { _scroll.jumpTo(_scroll.position.maxScrollExtent); }
@@ -280,15 +307,17 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       setState(() {
         _loadEpoch++; _loading = false; _error = null;
         _auto = false; _timer?.cancel(); _job = result;
-        if (newId != _jobId) {
+        if (newId != _jobId || action == 'retry') {
           _jobId = newId; _trace = JobTrace.empty; _query = ''; _follow = true; _sectionOpen.clear();
+          _rawBytes = BytesBuilder(copy: false);
+          _traceOffset = 0;
         }
       });
       await _load();
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() { _busy = false; _confirming = false; }); } }
   }
-  String _sectionKey(JobTraceSection section) => '${section.depth}:${section.name}:${section.start}:${section.startLine}';
+  String _sectionKey(JobTraceSection section) => '${section.name}:${section.start}';
   void _ensureSectionIndex() {
     if (identical(_indexed, _trace)) return;
     final built = _indexSections(_trace);
