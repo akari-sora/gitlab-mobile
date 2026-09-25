@@ -547,7 +547,6 @@ class _WorkItemPageState extends State<WorkItemPage> {
     final approvalsLeft = approvals != null ? valueInt(approvals, 'approvals_left') : 0;
     final myId = widget.account.user.id;
     final hasApproved = approvedBy.any((v) => valueInt(valueObject(v, 'user'), 'id') == myId);
-    final isAuthor = valueInt(valueObject(data, 'author'), 'id') == myId;
     final isThresholdReached = approvalsLeft == 0 && (approvalsRequired > 0 || approvedBy.isNotEmpty);
 
     return Padding(padding: const EdgeInsets.only(bottom: 16), child: Card(child: Padding(
