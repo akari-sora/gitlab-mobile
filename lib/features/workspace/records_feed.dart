@@ -8,7 +8,7 @@ import 'record_controller.dart';
 class RecordsFeed extends StatefulWidget {
   const RecordsFeed({super.key, required this.identity, required this.load, required this.itemBuilder,
     this.empty = '目前沒有項目', this.emptyDetail, this.filteredEmpty, this.account, this.resourceLabel, this.onSwitchAccount,
-    this.underShell = false, this.visible, this.header});
+    this.underShell = false, this.visible, this.header, this.footer});
   final String identity;
   final RecordLoader load;
   final Widget Function(BuildContext, Json) itemBuilder;
@@ -19,6 +19,7 @@ class RecordsFeed extends StatefulWidget {
   final bool underShell;
   final bool Function(Json item)? visible;
   final Widget Function(BuildContext context, RecordController controller)? header;
+  final Widget Function(BuildContext context, RecordController controller)? footer;
   @override
   State<RecordsFeed> createState() => RecordsFeedState();
 }
@@ -60,6 +61,7 @@ class RecordsFeedState extends State<RecordsFeed> {
           onRetry: () { unawaited(controller.retry()); }),
         if (controller.next != null) TextButton.icon(onPressed: controller.loadingMore || controller.loading ? null : () { unawaited(controller.more()); },
           icon: const Icon(Icons.expand_more), label: Text(controller.loadingMore ? '載入中…' : '載入更多')),
+        if (widget.footer != null) widget.footer!(context, controller),
       ],
     ));
     final header = widget.header;
