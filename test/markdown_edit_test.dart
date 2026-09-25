@@ -50,4 +50,46 @@ void main() {
     final typed = edit.text.replaceRange(edit.base, edit.extent, 'next');
     expect(typed, 'hi @reviewer next');
   });
+
+  test('insertQuickAction on empty string inserts command with trailing newline', () {
+    final edit = insertQuickAction('', 0, 0, '/close');
+    expect(edit.text, '/close\n');
+    expect(edit.base, '/close\n'.length);
+    expect(edit.extent, edit.base);
+  });
+
+  test('insertQuickAction mid-text prepends and appends newline', () {
+    final edit = insertQuickAction('hello world', 5, 5, '/spend 1h');
+    expect(edit.text, 'hello\n/spend 1h\n world');
+    expect(edit.base, 'hello\n/spend 1h\n'.length);
+    expect(edit.extent, edit.base);
+  });
+
+  test('insertQuickAction at line start only adds trailing newline', () {
+    final edit = insertQuickAction('first\nsecond', 6, 6, '/ready');
+    expect(edit.text, 'first\n/ready\nsecond');
+    expect(edit.base, 'first\n/ready\n'.length);
+    expect(edit.extent, edit.base);
+  });
+
+  test('extractQuickActions parses commands at line start and ignores inline slashes', () {
+    const text = '''
+/close
+Some comment here
+/spend 2h 30m
+And visit http://gitlab.com/test or type a /slash in the middle
+  /label ~frontend
+''';
+    final actions = extractQuickActions(text);
+    expect(actions, ['/close', '/spend', '/label']);
+  });
+
+  test('defaultQuickActions contains essential issue and merge request commands', () {
+    expect(defaultQuickActions.any((a) => a.command == '/close'), isTrue);
+    expect(defaultQuickActions.any((a) => a.command == '/reopen'), isTrue);
+    expect(defaultQuickActions.any((a) => a.command == '/assign @me'), isTrue);
+    expect(defaultQuickActions.any((a) => a.command == '/approve' && a.isMergeRequestOnly), isTrue);
+    expect(defaultQuickActions.any((a) => a.command == '/ready' && a.isMergeRequestOnly), isTrue);
+  });
 }
+

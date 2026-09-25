@@ -40,13 +40,23 @@ bool _isCommentDiscussion(Json discussion) {
 }
 
 class DiscussionsTab extends StatefulWidget {
-  const DiscussionsTab({super.key, required this.account, required this.api, required this.project, required this.resource, required this.iid, this.headSha});
+  const DiscussionsTab({
+    super.key,
+    required this.account,
+    required this.api,
+    required this.project,
+    required this.resource,
+    required this.iid,
+    this.headSha,
+    this.onChanged,
+  });
   final Account account;
   final GitLabApi api;
   final Project project;
   final String resource;
   final int iid;
   final String? headSha;
+  final VoidCallback? onChanged;
   @override
   State<DiscussionsTab> createState() => _DiscussionsTabState();
 }
@@ -99,7 +109,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
       title: note != null ? '編輯留言' : discussion != null ? '回覆討論' : thread ? '新增討論串' : '新增留言',
       resource: '${path.join('/')}/${discussion ?? 'root'}/${note?['id'] ?? (thread ? 'thread-new' : 'new')}',
       subtitle: '${widget.project.path} · ${widget.resource == 'issues' ? '#' : '!'}${widget.iid}', fields: [
-        EditField('body', '留言內容', required: true, lines: 9, markdown: true,
+        EditField('body', '留言內容', required: true, lines: 9, markdown: true, quickActions: true,
           value: note == null ? '' : valueText(note, 'body'),
           hint: '支援 Markdown；以 / 開頭的行可能執行 GitLab quick actions'),
       ], api: widget.api, projectId: widget.project.id, projectPath: widget.project.path, save: (values) async {
@@ -113,7 +123,10 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
           await widget.api.writeRecord('POST', [...path, thread ? 'discussions' : 'notes'], {'body': values['body']});
         }
       });
-    if (saved && mounted) { await _feed.currentState?.refresh(); }
+    if (saved && mounted) {
+      await _feed.currentState?.refresh();
+      widget.onChanged?.call();
+    }
   }
   Future<void> _delete(Json note, String? discussion) async {
     if (_busy || !await confirmAction(context, '刪除留言？', '此操作無法復原。')) { return; }
@@ -123,7 +136,10 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
       final endpoint = discussion == null ? [...path, 'notes', '${note['id']}']
         : [...path, 'discussions', discussion, 'notes', '${note['id']}'];
       await widget.api.removeRecord(endpoint);
-      if (mounted) { await _feed.currentState?.refresh(); }
+      if (mounted) {
+        await _feed.currentState?.refresh();
+        widget.onChanged?.call();
+      }
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _busy = false); } }
   }
@@ -132,7 +148,10 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
     setState(() => _busy = true);
     try {
       await widget.api.writeRecord('PUT', [...path, 'discussions', requiredString(discussion, 'id')], {'resolved': resolved});
-      if (mounted) { await _feed.currentState?.refresh(); }
+      if (mounted) {
+        await _feed.currentState?.refresh();
+        widget.onChanged?.call();
+      }
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _busy = false); } }
   }

@@ -6,6 +6,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import 'attachment_picker.dart';
 import 'markdown_edit.dart';
@@ -37,6 +38,7 @@ class EditField {
     this.lines = 1,
     this.hint,
     this.markdown = false,
+    this.quickActions = false,
   }) : source = null,
        multi = false,
        toggle = false;
@@ -50,7 +52,8 @@ class EditField {
     this.hint,
   }) : lines = 1,
        markdown = false,
-       toggle = false;
+       toggle = false,
+       quickActions = false;
   const EditField.toggle(
     this.key,
     this.label, {
@@ -61,9 +64,10 @@ class EditField {
        required = false,
        lines = 1,
        markdown = false,
-       toggle = true;
+       toggle = true,
+       quickActions = false;
   final String key, label, value;
-  final bool required, multi, markdown, toggle;
+  final bool required, multi, markdown, toggle, quickActions;
   final int lines;
   final String? hint;
   final PickerSource? source;
@@ -636,8 +640,12 @@ class _ResourceEditorState extends State<ResourceEditor> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _textField(field),
+            if (field.quickActions) ...[
+              _quickActionIndicators(field.key),
+              _quickActionChips(field.key),
+            ],
             const SizedBox(height: 4),
-            _toolbar(field.key),
+            _toolbar(field.key, quickActions: field.quickActions),
             if (_uploadingName != null)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
@@ -654,7 +662,184 @@ class _ResourceEditorState extends State<ResourceEditor> {
     );
   }
 
-  Widget _toolbar(String key) {
+  bool get _isMergeRequest =>
+      widget.resource.contains('merge_requests') ||
+      (widget.subtitle?.contains('!') ?? false);
+
+  Widget _quickActionIndicators(String key) {
+    final controller = _controllers[key];
+    if (controller == null) return const SizedBox.shrink();
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: controller,
+      builder: (context, val, _) {
+        final actions = extractQuickActions(val.text);
+        if (actions.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 6, bottom: 4),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              const Icon(Icons.bolt, size: 16, color: Colors.amber),
+              Text(
+                '包含快捷指令：',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              for (final act in actions)
+                Chip(
+                  visualDensity: VisualDensity.compact,
+                  label: Text(act, style: const TextStyle(fontSize: 11)),
+                  padding: EdgeInsets.zero,
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _quickActionChips(String key) {
+    final isMr = _isMergeRequest;
+    final chips = isMr
+        ? const [
+            (label: '/approve', cmd: '/approve'),
+            (label: '/ready', cmd: '/ready'),
+            (label: '/assign @me', cmd: '/assign @me'),
+            (label: '/close', cmd: '/close'),
+            (label: '/draft', cmd: '/draft'),
+          ]
+        : const [
+            (label: '/close', cmd: '/close'),
+            (label: '/reopen', cmd: '/reopen'),
+            (label: '/assign @me', cmd: '/assign @me'),
+            (label: '/spend 1h', cmd: '/spend 1h'),
+            (label: '/estimate 1d', cmd: '/estimate 1d'),
+          ];
+
+    return TextFieldTapRegion(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final chip in chips)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: ActionChip(
+                    key: ValueKey('quick-action-${chip.cmd.replaceAll(' ', '_')}'),
+                    label: Text(chip.label),
+                    onPressed: _locked
+                        ? null
+                        : () => _markup(
+                              key,
+                              (text, start, end) =>
+                                  insertQuickAction(text, start, end, chip.cmd),
+                            ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showQuickActionsSheet(String key) {
+    final isMr = _isMergeRequest;
+    final actions = defaultQuickActions.where((a) => !a.isMergeRequestOnly || isMr).toList();
+    final categories = <String, List<QuickActionDef>>{};
+    for (final a in actions) {
+      categories.putIfAbsent(a.category, () => []).add(a);
+    }
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        maxChildSize: 0.85,
+        minChildSize: 0.4,
+        builder: (_, scrollController) => Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.bolt, color: Colors.amber),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '快捷指令 (Quick Actions)',
+                      style: Theme.of(context).textTheme.titleMedium,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close),
+                    tooltip: '關閉選單',
+                    onPressed: () => Navigator.of(sheetContext).pop(),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ListView(
+                controller: scrollController,
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                children: [
+                  for (final entry in categories.entries) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      child: Text(
+                        entry.key,
+                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    for (final item in entry.value)
+                      ListTile(
+                        key: ValueKey('sheet-action-${item.command.replaceAll(' ', '_')}'),
+                        leading: Chip(
+                          label: Text(
+                            item.command,
+                            style: const TextStyle(
+                              fontFamily: codeFontFamily,
+                              fontFamilyFallback: ['Menlo', 'monospace'],
+                              fontSize: 12,
+                            ),
+                          ),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        title: Text(item.label),
+                        subtitle: Text(item.description, style: const TextStyle(fontSize: 12)),
+                        onTap: () {
+                          Navigator.of(sheetContext).pop();
+                          _markup(
+                            key,
+                            (text, start, end) =>
+                                insertQuickAction(text, start, end, item.command),
+                          );
+                        },
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _toolbar(String key, {bool quickActions = false}) {
     final tools = <(String, IconData, MarkupEdit Function(String, int, int))>[
       ('粗體', Icons.format_bold, (text, start, end) => wrapSelection(text, start, end, '**', '**')),
       ('斜體', Icons.format_italic, (text, start, end) => wrapSelection(text, start, end, '*', '*')),
@@ -692,6 +877,14 @@ class _ResourceEditorState extends State<ResourceEditor> {
             onPressed: _locked ? null : () { unawaited(_attach(key, image: false)); },
             icon: const Icon(Icons.attach_file),
           ),
+          if (quickActions)
+            IconButton(
+              key: const ValueKey('editor-quick-actions-btn'),
+              tooltip: '快捷指令清單',
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              onPressed: _locked ? null : () => _showQuickActionsSheet(key),
+              icon: const Icon(Icons.bolt_outlined),
+            ),
         ]),
       ),
     );
