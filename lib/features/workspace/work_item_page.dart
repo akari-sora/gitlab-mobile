@@ -4,6 +4,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/external_link.dart';
+import '../../shared/list_detail_scaffold.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
 import 'diff_page.dart';
@@ -24,19 +25,23 @@ class WorkItemsTab extends StatefulWidget {
   State<WorkItemsTab> createState() => _WorkItemsTabState();
 }
 class _WorkItemsTabState extends State<WorkItemsTab> {
+  late final _selection = ListDetailController<int>();
   final _feed = GlobalKey<RecordsFeedState>();
   final _search = TextEditingController();
   String _state = 'opened', _query = '';
   bool get mr => widget.resource == 'merge_requests';
   @override
-  void dispose() { _search.dispose(); super.dispose(); }
-  Future<void> _open(int iid) async {
-    await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => WorkItemPage(
-      account: widget.account, api: widget.api, project: widget.project, resource: widget.resource, iid: iid)));
-    if (mounted) { await _feed.currentState?.refresh(); }
+  void dispose() {
+    _search.dispose();
+    _selection.dispose();
+    super.dispose();
+  }
+  void _open(int iid) {
+    _selection.select(iid);
   }
   Future<void> _create() async {
     var iid = 0;
+    Json? createdRecord;
     final branch = widget.project.defaultBranch ?? 'main';
     final fields = <EditField>[
       const EditField('title', '標題', required: true),
@@ -58,11 +63,18 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
         final created = mr ? await widget.api.createMergeRequest(widget.project.id, body)
           : await widget.api.createIssue(widget.project.id, body);
         iid = requiredInt(created, 'iid');
+        createdRecord = created;
       });
-    if (saved && mounted) { await _open(iid); }
+    if (saved && mounted) {
+      _open(iid);
+      if (createdRecord != null && (_state == 'all' || _state == 'opened')) {
+        _feed.currentState?.prependItem(createdRecord!);
+      } else {
+        unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
+      }
+    }
   }
-  @override
-  Widget build(BuildContext context) => Column(children: [
+  Widget _buildList(BuildContext context, bool isTwoPane, int? selected) => Column(children: [
     Padding(padding: EdgeInsets.fromLTRB(feedGutter(context), 12, feedGutter(context) - 4, 4), child: Row(children: [
       Expanded(child: TextField(controller: _search, textInputAction: TextInputAction.search,
         decoration: InputDecoration(hintText: mr ? '搜尋合併請求' : '搜尋議題', prefixIcon: const Icon(Icons.search)),
@@ -82,14 +94,71 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
       empty: mr ? '沒有符合的合併請求' : '沒有符合的議題',
       load: (next) => widget.api.records(['projects', '${widget.project.id}', widget.resource],
         query: {'state': _state, 'scope': 'all', 'order_by': 'updated_at', 'sort': 'desc', if (_query.isNotEmpty) 'search': _query}, next: next),
-      itemBuilder: (context, value) => workItemCard(context, value, mr: mr, onTap: () => _open(requiredInt(value, 'iid'))),
+      itemBuilder: (context, value) {
+        final iid = requiredInt(value, 'iid');
+        return workItemCard(
+          context,
+          value,
+          mr: mr,
+          selected: isTwoPane && selected == iid,
+          onTap: () => _open(iid),
+        );
+      },
     )),
   ]);
+
+  Widget _buildDetail(BuildContext context, int iid, bool isTwoPane, VoidCallback onBack) => WorkItemPage(
+    key: ValueKey('${widget.resource}-$iid'),
+    account: widget.account,
+    api: widget.api,
+    project: widget.project,
+    resource: widget.resource,
+    iid: iid,
+    showBackButton: !isTwoPane,
+    onBack: onBack,
+    onDeleted: () {
+      _selection.clear();
+      _feed.currentState?.removeItem('$iid');
+    },
+    onMutated: (updated) {
+      final state = valueText(updated, 'state');
+      final matchesFilter = _state == 'all' || _state == state;
+      if (matchesFilter) {
+        _feed.currentState?.patchItem(updated);
+      } else {
+        _feed.currentState?.removeItem('${updated['id'] ?? updated['iid']}');
+      }
+    },
+  );
+
+  Widget _buildEmpty(BuildContext context) => Center(
+    child: EmptyState(
+      mr ? '請選擇合併請求' : '請選擇議題',
+      icon: mr ? Icons.merge : Icons.adjust,
+      detail: mr ? '從左側清單選擇合併請求以查看變更與審查狀態。' : '從左側清單選擇議題以查看內容與討論。',
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => ListDetailScaffold<int>(
+    controller: _selection,
+    listBuilder: _buildList,
+    detailBuilder: _buildDetail,
+    emptyBuilder: _buildEmpty,
+    twoPaneConsumesBack: true,
+  );
 }
 
 /// Shared issue / merge-request row: state-tinted mark, title, then a meta row
 /// with the status badge, the mono `#iid`, branches for MRs and the update time.
-Widget workItemCard(BuildContext context, Json value, {required bool mr, required VoidCallback onTap, String? project}) {
+Widget workItemCard(
+  BuildContext context,
+  Json value, {
+  required bool mr,
+  required VoidCallback onTap,
+  String? project,
+  bool selected = false,
+}) {
   final scheme = Theme.of(context).colorScheme;
   final workshop = WorkshopColors.of(context);
   final state = valueText(value, 'state');
@@ -103,6 +172,7 @@ Widget workItemCard(BuildContext context, Json value, {required bool mr, require
   final iid = '${mr ? '!' : '#'}${valueInt(value, 'iid')}';
   return EntityCard(
     onTap: onTap,
+    selected: selected,
     titleMaxLines: 3,
     leading: Container(width: 40, height: 40, alignment: Alignment.center,
       decoration: BoxDecoration(color: markBackground, borderRadius: BorderRadius.circular(12)),
@@ -115,6 +185,8 @@ Widget workItemCard(BuildContext context, Json value, {required bool mr, require
     meta: [
       StatusBadge(state),
       if (mr && pipeline.isNotEmpty) StatusBadge(pipeline),
+      if (mr && isAutoMergeEnabled(value))
+        const MetaChip('自動合併', icon: Icons.schedule_send),
       MetaChip(iid, mono: true),
       MetaChip(relativeDate(valueText(value, 'updated_at')), icon: Icons.schedule_outlined),
     ],
@@ -122,12 +194,27 @@ Widget workItemCard(BuildContext context, Json value, {required bool mr, require
 }
 
 class WorkItemPage extends StatefulWidget {
-  const WorkItemPage({super.key, required this.account, required this.api, required this.project, required this.resource, required this.iid});
+  const WorkItemPage({
+    super.key,
+    required this.account,
+    required this.api,
+    required this.project,
+    required this.resource,
+    required this.iid,
+    this.showBackButton = true,
+    this.onBack,
+    this.onDeleted,
+    this.onMutated,
+  });
   final Account account;
   final GitLabApi api;
   final Project project;
   final String resource;
   final int iid;
+  final bool showBackButton;
+  final VoidCallback? onBack;
+  final VoidCallback? onDeleted;
+  final ValueChanged<Json>? onMutated;
   @override
   State<WorkItemPage> createState() => _WorkItemPageState();
 }
@@ -172,7 +259,12 @@ class _WorkItemPageState extends State<WorkItemPage> {
         if (title is String) body['title'] = title.trim();
         await widget.api.writeRecord('PUT', path, body);
       });
-    if (saved && mounted) { await _load(); }
+    if (saved && mounted) {
+      await _load();
+      if (mounted && _data != null) {
+        widget.onMutated?.call(_data!);
+      }
+    }
   }
   Future<void> _action(String action) async {
     if (_busy || _data == null) { return; }
@@ -186,11 +278,32 @@ class _WorkItemPageState extends State<WorkItemPage> {
     };
     var squash = false;
     var removeSourceBranch = false;
+    var autoMerge = false;
+    if (action == 'cancel_auto_merge') {
+      if (!await confirmAction(context, '取消自動合併？', '取消後將不再於流水線通過時自動合併此變更。')) {
+        return;
+      }
+      if (!mounted) { return; }
+      setState(() => _busy = true);
+      try {
+        await widget.api.cancelAutoMerge(widget.project.id, widget.iid);
+        await _load();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已取消自動合併')));
+        }
+      } catch (e) {
+        if (mounted) { showFailure(context, e); }
+      } finally {
+        if (mounted) { setState(() => _busy = false); }
+      }
+      return;
+    }
     if (action == 'merge') {
       final options = await _askMerge(data);
       if (options == null) { return; }
       squash = options.squash;
       removeSourceBranch = options.removeSourceBranch;
+      autoMerge = options.autoMerge;
     } else if (confirmation != null && !await confirmAction(context, confirmation.$1, confirmation.$2, requiredText: confirmation.$3)) {
       return;
     }
@@ -200,7 +313,13 @@ class _WorkItemPageState extends State<WorkItemPage> {
       switch (action) {
         case 'delete':
           await widget.api.removeRecord(path);
-          if (mounted) { Navigator.pop(context); }
+          if (mounted) {
+            if (widget.onDeleted != null) {
+              widget.onDeleted!();
+            } else {
+              Navigator.pop(context);
+            }
+          }
           return;
         case 'close':
         case 'reopen':
@@ -213,27 +332,45 @@ class _WorkItemPageState extends State<WorkItemPage> {
         case 'approve': await widget.api.approveMergeRequest(widget.project.id, widget.iid, requiredString(data, 'sha'));
         case 'unapprove': await widget.api.writeRecord('POST', [...path, 'unapprove'], {});
         case 'merge': await widget.api.mergeRequest(widget.project.id, widget.iid, requiredString(data, 'sha'),
-          squash: squash, removeSourceBranch: removeSourceBranch);
+          squash: squash, removeSourceBranch: removeSourceBranch, autoMerge: autoMerge);
       }
       await _load();
+      if (mounted && _data != null) {
+        widget.onMutated?.call(_data!);
+      }
       if (mounted && action == 'merge') {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-          _data?['state'] == 'merged' ? '已合併' : 'GitLab 已接受操作，請查看最新合併狀態。')));
+        final merged = _data?['state'] == 'merged';
+        final autoScheduled = isAutoMergeEnabled(_data ?? {});
+        final message = merged
+            ? '已合併'
+            : (autoScheduled
+                ? '已排程自動合併，等待流水線完成。'
+                : 'GitLab 已接受操作，請查看最新合併狀態。');
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _busy = false); } }
   }
-  Future<({bool squash, bool removeSourceBranch})?> _askMerge(Json data) {
+  Future<({bool squash, bool removeSourceBranch, bool autoMerge})?> _askMerge(Json data) {
     var squash = mergeSquashDefault(data);
     var removeSourceBranch = mergeRemoveSourceBranchDefault(data);
     final squashLocked = mergeSquashEnforced(data);
-    return showDialog<({bool squash, bool removeSourceBranch})>(context: context, builder: (context) => StatefulBuilder(
+    final autoCandidate = canAutoMerge(data);
+    var autoMerge = autoCandidate;
+    return showDialog<({bool squash, bool removeSourceBranch, bool autoMerge})>(context: context, builder: (context) => StatefulBuilder(
       builder: (context, setDialog) => AlertDialog(
-        title: Text('合併 $label？'),
+        title: Text(autoMerge ? '排程自動合併 $label？' : '合併 $label？'),
         content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}\n'
             '版本 ${shortSha(valueText(data, 'sha'))}\n若版本變動會停止，不會自動改用新版本。'),
           const SizedBox(height: 8),
+          if (autoCandidate)
+            SwitchListTile(
+              key: const ValueKey('merge-auto'), contentPadding: EdgeInsets.zero, minTileHeight: 48,
+              title: const Text('流水線成功時自動合併 (MWPS)'),
+              subtitle: const Text('當所有檢查與 CI 通過後自動合併'),
+              value: autoMerge,
+              onChanged: (value) => setDialog(() => autoMerge = value)),
           SwitchListTile(
             key: const ValueKey('merge-squash'), contentPadding: EdgeInsets.zero, minTileHeight: 48,
             title: const Text('Squash 提交'),
@@ -246,8 +383,8 @@ class _WorkItemPageState extends State<WorkItemPage> {
         ])),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-          FilledButton(onPressed: () => Navigator.pop(context, (squash: squash, removeSourceBranch: removeSourceBranch)),
-            child: const Text('確認')),
+          FilledButton(onPressed: () => Navigator.pop(context, (squash: squash, removeSourceBranch: removeSourceBranch, autoMerge: autoMerge)),
+            child: Text(autoMerge ? '排程自動合併' : '確認')),
         ],
       ),
     ));
@@ -261,13 +398,35 @@ class _WorkItemPageState extends State<WorkItemPage> {
       return Padding(padding: const EdgeInsets.only(bottom: 16), child: Text(
         at.isEmpty ? label : '$label · $at', style: Theme.of(context).textTheme.titleSmall));
     }
+    final autoScheduled = isAutoMergeEnabled(data);
+    final autoCandidate = canAutoMerge(data);
     return Padding(padding: const EdgeInsets.only(bottom: 16), child: Card(child: Padding(
       padding: const EdgeInsets.all(14), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(mergeStatusLabel(data), style: Theme.of(context).textTheme.titleSmall),
+        Row(children: [
+          Expanded(child: Text(mergeStatusLabel(data), style: Theme.of(context).textTheme.titleSmall)),
+          if (autoScheduled)
+            const Padding(padding: EdgeInsets.only(left: 8), child: Icon(Icons.schedule_send, size: 20)),
+        ]),
+        if (autoScheduled) ...[
+          const SizedBox(height: 6),
+          const Text('流水線通過後將自動執行合併。', style: TextStyle(fontSize: 12)),
+        ],
         const SizedBox(height: 12),
         Wrap(spacing: 8, runSpacing: 8, children: [
           OutlinedButton(onPressed: _busy ? null : () => _action('approve'), child: const Text('批准')),
-          FilledButton(onPressed: _busy ? null : () => _action('merge'), child: const Text('合併')),
+          if (autoScheduled)
+            OutlinedButton.icon(
+              key: const ValueKey('cancel-auto-merge'),
+              onPressed: _busy ? null : () => _action('cancel_auto_merge'),
+              icon: const Icon(Icons.close, size: 18),
+              label: const Text('取消自動合併'),
+            )
+          else
+            FilledButton.icon(
+              onPressed: _busy ? null : () => _action('merge'),
+              icon: Icon(autoCandidate ? Icons.schedule_send : Icons.merge, size: 18),
+              label: Text(autoCandidate ? '自動合併…' : '合併'),
+            ),
         ]),
       ]),
     )));
@@ -276,7 +435,11 @@ class _WorkItemPageState extends State<WorkItemPage> {
   Widget build(BuildContext context) {
     final data = _data;
     return DefaultTabController(length: mr ? 4 : 2, child: Scaffold(
-      appBar: AppBar(title: Text(label), actions: [
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        leading: widget.showBackButton ? BackButton(onPressed: widget.onBack) : null,
+        title: Text(label),
+        actions: [
         IconButton(tooltip: '重新整理', onPressed: _loading || _busy ? null : _load, icon: const Icon(Icons.refresh)),
         PopupMenuButton<String>(tooltip: '更多操作', enabled: !_busy && data != null, onSelected: _action, itemBuilder: (_) => [
           const PopupMenuItem(value: 'edit', child: Text('編輯')),
@@ -291,7 +454,12 @@ class _WorkItemPageState extends State<WorkItemPage> {
       ]),
       body: gestureSafe(data == null ? (_error != null ? SingleChildScrollView(child: FailureNotice(_error!, onRetry: _load,
         account: widget.account, resourceLabel: '${widget.project.path} · $label',
-        onSwitchAccount: endSessionFrom(context))) : const ListSkeleton()) : Column(
+        onSwitchAccount: endSessionFrom(context, ResumeTarget(
+          projectId: widget.project.id,
+          projectPath: widget.project.path,
+          resource: widget.resource,
+          iid: widget.iid,
+        )))) : const ListSkeleton()) : Column(
         crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
           Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -307,7 +475,13 @@ class _WorkItemPageState extends State<WorkItemPage> {
           Expanded(child: TabBarView(children: [
             ListView(padding: const EdgeInsets.all(20), children: [
               if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
-                resourceLabel: '${widget.project.path} · $label', onSwitchAccount: endSessionFrom(context)),
+                resourceLabel: '${widget.project.path} · $label',
+                onSwitchAccount: endSessionFrom(context, ResumeTarget(
+                  projectId: widget.project.id,
+                  projectPath: widget.project.path,
+                  resource: widget.resource,
+                  iid: widget.iid,
+                ))),
               if (mr) _reviewCard(data),
               if (mr) Padding(padding: const EdgeInsets.only(bottom: 16), child: Card(child: Padding(padding: const EdgeInsets.all(14),
                 child: Text('${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}',
@@ -378,8 +552,20 @@ class _MergeChecksState extends State<_MergeChecks> {
       OutlinedButton.icon(onPressed: widget.busy ? null : () => widget.act('approve'),
         icon: const Icon(Icons.verified_outlined), label: const Text('批准目前版本')),
       TextButton(onPressed: widget.busy ? null : () => widget.act('unapprove'), child: const Text('撤回我的批准')),
-      const SizedBox(height: 16), FilledButton.icon(onPressed: widget.busy ? null : () => widget.act('merge'),
-        icon: const Icon(Icons.merge), label: const Text('合併…')),
+      const SizedBox(height: 16),
+      if (isAutoMergeEnabled(widget.data))
+        OutlinedButton.icon(
+          key: const ValueKey('cancel-auto-merge-checks'),
+          onPressed: widget.busy ? null : () => widget.act('cancel_auto_merge'),
+          icon: const Icon(Icons.close),
+          label: const Text('取消自動合併'),
+        )
+      else
+        FilledButton.icon(
+          onPressed: widget.busy ? null : () => widget.act('merge'),
+          icon: Icon(canAutoMerge(widget.data) ? Icons.schedule_send : Icons.merge),
+          label: Text(canAutoMerge(widget.data) ? '自動合併…' : '合併…'),
+        ),
       const SizedBox(height: 12), const Text('GitLab 會再次檢查 SHA、權限、保護分支及所有合併條件。', style: TextStyle(fontSize: 12)),
     ],
   ]);
@@ -410,6 +596,29 @@ String _peopleValue(List<Json> users) => encodeChoices([
       ),
 ]);
 
+bool isAutoMergeEnabled(Json data) {
+  final state = valueText(data, 'state');
+  if (state == 'merged' || state == 'closed') return false;
+  return data['merge_when_pipeline_succeeds'] == true || data['auto_merge_enabled'] == true;
+}
+
+bool canAutoMerge(Json data) {
+  if (valueText(data, 'state') != 'opened' || isAutoMergeEnabled(data)) return false;
+  if (data['draft'] == true || data['work_in_progress'] == true) return false;
+  if (data['has_conflicts'] == true || data['merge_status'] == 'cannot_be_merged') return false;
+
+  final status = valueText(data, 'detailed_merge_status');
+  if (const ['conflict', 'need_rebase', 'draft_status', 'broken_status', 'not_open', 'cannot_be_merged', 'mergeable'].contains(status)) {
+    return false;
+  }
+  if (status == 'ci_still_running' || status == 'ci_must_pass') return true;
+
+  final pipeline = valueObject(data, 'head_pipeline');
+  final pipeStatus = valueText(pipeline, 'status');
+  return const ['running', 'pending', 'created', 'waiting_for_resource', 'preparing', 'manual']
+      .contains(pipeStatus);
+}
+
 bool mergeSquashEnforced(Json data) {
   final option = data['squash_option'];
   return option == 'always' || option == 'never';
@@ -424,6 +633,10 @@ bool mergeRemoveSourceBranchDefault(Json data) =>
   data['force_remove_source_branch'] == true || data['should_remove_source_branch'] == true;
 
 String mergeStatusLabel(Json data) {
+  if (isAutoMergeEnabled(data)) {
+    final user = valueText(valueObject(data, 'merge_user'), 'username');
+    return user.isNotEmpty ? '已由 @$user 排程自動合併' : '已排程自動合併';
+  }
   final token = valueText(data, 'detailed_merge_status');
   return switch (token) {
     'mergeable' => '可以合併',

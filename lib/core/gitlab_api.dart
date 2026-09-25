@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show FileSystemException, HttpDate, IOSink;
+import 'dart:io' show FileSystemException, HttpDate, IOException, IOSink;
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
@@ -146,28 +146,34 @@ final class GitLabApi {
     },
   };
 
-  Future<({Uint8List bytes, Headers headers})> _read(
+  Future<({Uint8List bytes, Headers headers, int statusCode})> _read(
     Uri uri, {
     String method = 'GET',
     Object? data,
     int maxBytes = 4 * 1024 * 1024,
     bool retried = false,
+    Map<String, String>? headers,
+    bool allowRangeNotSatisfiable = false,
   }) => _send(
     uri,
     method: method,
     data: data,
     maxBytes: maxBytes,
     retried: retried,
+    headers: headers,
+    allowRangeNotSatisfiable: allowRangeNotSatisfiable,
   );
 
   /// Shared request path for JSON calls and multipart uploads.
   /// JSON content-type is applied only when [data] is present and is not [FormData].
-  Future<({Uint8List bytes, Headers headers})> _send(
+  Future<({Uint8List bytes, Headers headers, int statusCode})> _send(
     Uri uri, {
     String method = 'GET',
     Object? data,
     int maxBytes = 4 * 1024 * 1024,
     bool retried = false,
+    Map<String, String>? headers,
+    bool allowRangeNotSatisfiable = false,
   }) async {
     if (_closed) throw const ApiFailure(FailureKind.cancelled);
     if (!instance.allowsApi(uri)) {
@@ -193,12 +199,19 @@ final class GitLabApi {
           followRedirects: false,
           maxRedirects: 0,
           validateStatus: (s) => s != null,
-          headers: _authHeaders,
+          headers: {
+            ..._authHeaders,
+            ...?headers,
+          },
         ),
       );
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
       final status = response.statusCode ?? 0;
       final body = response.data;
+      if (allowRangeNotSatisfiable && status == 416) {
+        if (body != null) await body.stream.listen((_) {}).cancel();
+        return (bytes: Uint8List(0), headers: response.headers, statusCode: 416);
+      }
       if (status < 200 || status >= 300) {
         if (body != null) await body.stream.listen((_) {}).cancel();
         if (status == 401 && !retried && await _refreshOAuth()) {
@@ -209,6 +222,8 @@ final class GitLabApi {
               data: data,
               maxBytes: maxBytes,
               retried: true,
+              headers: headers,
+              allowRangeNotSatisfiable: allowRangeNotSatisfiable,
             );
           }
           throw const ApiFailure(FailureKind.writeUncertain);
@@ -230,7 +245,7 @@ final class GitLabApi {
       }
       if (method == 'HEAD' || status == 204) {
         if (body != null) await body.stream.listen((_) {}).cancel();
-        return (bytes: Uint8List(0), headers: response.headers);
+        return (bytes: Uint8List(0), headers: response.headers, statusCode: status);
       }
       if (body == null) throw const ApiFailure(FailureKind.invalidResponse);
       final length = int.tryParse(
@@ -250,7 +265,7 @@ final class GitLabApi {
         bytes.add(chunk);
       }
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
-      return (bytes: bytes.takeBytes(), headers: response.headers);
+      return (bytes: bytes.takeBytes(), headers: response.headers, statusCode: status);
     } on DioException catch (error) {
       if (error.type == DioExceptionType.cancel || _closed) {
         throw const ApiFailure(FailureKind.cancelled);
@@ -364,6 +379,7 @@ final class GitLabApi {
       throw const ApiFailure(FailureKind.unsupported);
     }
     for (final e in first.queryParameters.entries) {
+      if (paginationKeys.contains(e.key)) continue;
       if (next.queryParameters[e.key] != e.value) {
         throw const ApiFailure(FailureKind.invalidResponse);
       }
@@ -543,6 +559,246 @@ final class GitLabApi {
     } finally {
       _requests.remove(token);
     }
+  }
+
+  /// Downloads a project upload to [sink].
+  ///
+  /// Official API: `GET /api/v4/projects/:id/uploads/:secret/:filename` (GitLab 17.4+).
+  /// Redirects are NEVER followed (throws [FailureKind.redirectBlocked]).
+  /// Enforces [maxBytes] (default 4 MiB) through Content-Length pre-check
+  /// and stream accumulation.
+  Future<ArtifactDownload> downloadProjectUpload(
+    int project,
+    String secret,
+    String filename, {
+    required IOSink sink,
+    void Function(int received, int? total)? onProgress,
+    Future<void>? cancel,
+    int maxBytes = 4 * 1024 * 1024,
+  }) {
+    final result = Completer<ArtifactDownload>();
+    runZonedGuarded(() {
+      _downloadProjectUpload(
+        project,
+        secret,
+        filename,
+        sink: sink,
+        onProgress: onProgress,
+        cancel: cancel,
+        maxBytes: maxBytes,
+      ).then((value) {
+        if (!result.isCompleted) result.complete(value);
+      }, onError: (Object error, StackTrace stack) {
+        if (!result.isCompleted) {
+          result.completeError(_artifactEscape(error), stack);
+        }
+      });
+    }, (Object error, StackTrace stack) {
+      if (!result.isCompleted) {
+        result.completeError(_artifactEscape(error), stack);
+      }
+    });
+    return result.future;
+  }
+
+  Future<ArtifactDownload> _downloadProjectUpload(
+    int project,
+    String secret,
+    String filename, {
+    required IOSink sink,
+    void Function(int received, int? total)? onProgress,
+    Future<void>? cancel,
+    int maxBytes = 4 * 1024 * 1024,
+  }) async {
+    if (!projectUploadNamesOk(secret, filename)) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    if (_closed) throw const ApiFailure(FailureKind.cancelled);
+    final until = _retryAt;
+    if (until != null && DateTime.now().isBefore(until)) {
+      throw ApiFailure(FailureKind.rateLimited, status: 429, retryAt: until);
+    }
+    final uri = instance.api(['projects', '$project', 'uploads', secret, filename]);
+    if (!instance.allowsApi(uri)) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    final token = CancelToken();
+    _requests.add(token);
+    if (cancel != null) {
+      unawaited(cancel.then((_) {
+        if (!token.isCancelled) token.cancel('upload download aborted');
+      }));
+    }
+    try {
+      return await _fetchAndStreamUpload(
+        uri: uri,
+        secret: secret,
+        filename: filename,
+        sink: sink,
+        token: token,
+        maxBytes: maxBytes,
+        onProgress: onProgress,
+        allowRefresh: true,
+      );
+    } on DioException catch (error) {
+      if (error.type == DioExceptionType.cancel || _closed || token.isCancelled) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      throw const ApiFailure(FailureKind.network);
+    } on ApiFailure {
+      rethrow;
+    } on IOException {
+      throw const ApiFailure(FailureKind.network);
+    } catch (_) {
+      if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
+      rethrow;
+    } finally {
+      _requests.remove(token);
+    }
+  }
+
+  Future<ArtifactDownload> _fetchAndStreamUpload({
+    required Uri uri,
+    required String secret,
+    required String filename,
+    required IOSink sink,
+    required CancelToken token,
+    required int maxBytes,
+    required void Function(int received, int? total)? onProgress,
+    required bool allowRefresh,
+  }) async {
+    if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
+    final response = await _dio.requestUri<ResponseBody>(
+      uri,
+      data: null,
+      cancelToken: token,
+      options: Options(
+        method: 'GET',
+        responseType: ResponseType.stream,
+        followRedirects: false,
+        maxRedirects: 0,
+        validateStatus: (status) => status != null,
+        headers: _authHeaders,
+      ),
+    );
+    final status = response.statusCode ?? 0;
+    if (status == 200) {
+      return _writeUploadStream(
+        response: response,
+        filename: filename,
+        sink: sink,
+        token: token,
+        maxBytes: maxBytes,
+        onProgress: onProgress,
+      );
+    }
+    await _discardBody(response.data);
+    if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
+    if (status == 401 && allowRefresh && await _refreshOAuth()) {
+      return _fetchAndStreamUpload(
+        uri: uri,
+        secret: secret,
+        filename: filename,
+        sink: sink,
+        token: token,
+        maxBytes: maxBytes,
+        onProgress: onProgress,
+        allowRefresh: false,
+      );
+    }
+    if (status >= 300 && status < 400) {
+      throw ApiFailure(FailureKind.redirectBlocked, status: status);
+    }
+    if (status == 429) {
+      _rememberRetryAfter(response.headers.value('retry-after'));
+    }
+    throw ApiFailure.fromStatus(status, retryAt: _retryAt);
+  }
+
+  Future<ArtifactDownload> _writeUploadStream({
+    required Response<ResponseBody> response,
+    required String filename,
+    required IOSink sink,
+    required CancelToken token,
+    required int maxBytes,
+    required void Function(int received, int? total)? onProgress,
+  }) async {
+    final headers = response.headers;
+    final total = int.tryParse(headers.value(Headers.contentLengthHeader) ?? '');
+    if (total != null && total > maxBytes) {
+      _cancelTransport(token);
+      await _releaseBody(response.data);
+      throw const ApiFailure(
+        FailureKind.tooLarge,
+        title: '超過大小上限',
+        detail: '這個附件超過 4 MiB 上限。',
+      );
+    }
+    final body = response.data;
+    if (body == null) throw const ApiFailure(FailureKind.invalidResponse);
+    final iterator = StreamIterator<Uint8List>(body.stream);
+    final cancelled = token.whenCancel.then<Object?>((_) => _artifactCancelled);
+    var received = 0;
+    Future<Object?>? pendingMove;
+    try {
+      while (true) {
+        if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
+        final move = iterator.moveNext().then<Object?>(
+          (more) => more,
+          onError: (Object error, StackTrace stack) {
+            if (_closed || token.isCancelled) return _artifactCancelled;
+            Error.throwWithStackTrace(error, stack);
+          },
+        );
+        pendingMove = move;
+        final step = await Future.any<Object?>([move, cancelled]);
+        if (identical(step, _artifactCancelled) || _closed || token.isCancelled) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        if (step != true) break;
+        final chunk = iterator.current;
+        if (received + chunk.length > maxBytes) {
+          _cancelTransport(token);
+          try {
+            await sink.close();
+          } on Object {
+            /* ignore */
+          }
+          throw const ApiFailure(
+            FailureKind.tooLarge,
+            title: '超過大小上限',
+            detail: '這個附件超過 4 MiB 上限。',
+          );
+        }
+        try {
+          sink.add(chunk);
+        } on StateError {
+          throw const ApiFailure(FailureKind.cancelled);
+        } on FileSystemException {
+          throw ApiFailure.artifactStorage;
+        }
+        received += chunk.length;
+        onProgress?.call(received, total);
+      }
+    } finally {
+      if (pendingMove != null) {
+        unawaited(pendingMove.then<void>((_) {}, onError: (Object _, StackTrace _) {}));
+      }
+      try {
+        await iterator.cancel();
+      } on Object {
+        /* ignore */
+      }
+    }
+    if (_closed || token.isCancelled) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    if (received == 0) onProgress?.call(0, total);
+    return ArtifactDownload(
+      fileName: filename,
+      bytesWritten: received,
+      contentType: headers.value(Headers.contentTypeHeader),
+    );
   }
 
   /// CDN hop. A fresh client so [_dio] defaults, interceptors, and its cookie
@@ -816,6 +1072,85 @@ final class GitLabApi {
       _retryAt = HttpDate.parse(text);
     } on FormatException {
       // A malformed Retry-After still fails this call; retry stays manual.
+    }
+  }
+
+  Future<({List<int> bytes, bool isEof, int? nextOffset})> jobTraceChunk(
+    int project,
+    int job, {
+    int offset = 0,
+    int? maxBytes,
+  }) async {
+    final query = <String, String>{
+      if (offset > 0) 'offset': '$offset',
+    };
+    final headers = <String, String>{
+      if (offset > 0) 'Range': 'bytes=$offset-',
+    };
+    final uri = instance.api(
+      ['projects', '$project', 'jobs', '$job', 'trace'],
+      query.isNotEmpty ? query : null,
+    );
+    try {
+      final result = await _read(
+        uri,
+        headers: headers.isNotEmpty ? headers : null,
+        maxBytes: maxBytes ?? maxTextBytes,
+        allowRangeNotSatisfiable: true,
+      );
+      final eofHeader = result.headers.value('x-gitlab-trace-eof');
+      var isEof = eofHeader == 'true' || eofHeader == '1';
+
+      if (result.statusCode == 416) {
+        return (bytes: const <int>[], isEof: isEof, nextOffset: offset);
+      }
+
+      final contentRange = result.headers.value('content-range');
+      if (contentRange != null) {
+        final match = RegExp(r'bytes\s+\d+-(\d+)/(\d+)', caseSensitive: false)
+            .firstMatch(contentRange);
+        if (match != null) {
+          final end = int.tryParse(match.group(1) ?? '');
+          final total = int.tryParse(match.group(2) ?? '');
+          if (end != null && total != null && end + 1 >= total) {
+            isEof = true;
+          }
+        }
+      }
+
+      List<int> chunkBytes;
+      if (result.statusCode == 206) {
+        chunkBytes = result.bytes;
+      } else if (result.statusCode == 200) {
+        if (offset > 0 && result.bytes.length > offset) {
+          chunkBytes = result.bytes.sublist(offset);
+        } else if (offset > 0 && result.bytes.length <= offset) {
+          chunkBytes = const <int>[];
+        } else {
+          chunkBytes = result.bytes;
+        }
+      } else {
+        chunkBytes = result.bytes;
+      }
+
+      final nextOffset = offset + chunkBytes.length;
+      return (bytes: chunkBytes, isEof: isEof, nextOffset: nextOffset);
+    } on ApiFailure catch (failure) {
+      if (failure.status != 404) rethrow;
+      final current = await _object(
+        instance.api(['projects', '$project', 'jobs', '$job']),
+      );
+      if (const [
+        'created',
+        'pending',
+        'manual',
+        'scheduled',
+        'preparing',
+        'waiting_for_resource',
+      ].contains(current['status'])) {
+        return (bytes: const <int>[], isEof: false, nextOffset: offset);
+      }
+      rethrow;
     }
   }
 

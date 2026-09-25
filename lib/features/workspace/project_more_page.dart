@@ -4,6 +4,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
+import 'commit_page.dart';
 import 'editor.dart';
 import 'records_feed.dart';
 import '../../shared/theme.dart';
@@ -15,11 +16,12 @@ String metadataTitle(MetadataKind kind) => switch (kind) {
 };
 
 class ProjectMoreTab extends StatefulWidget {
-  const ProjectMoreTab({super.key, required this.account, required this.api, required this.project, required this.onChanged});
+  const ProjectMoreTab({super.key, required this.account, required this.api, required this.project, required this.onChanged, this.onDeleted});
   final Account account;
   final GitLabApi api;
   final Project project;
   final ValueChanged<Project> onChanged;
+  final VoidCallback? onDeleted;
   @override
   State<ProjectMoreTab> createState() => _ProjectMoreTabState();
 }
@@ -36,7 +38,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     if (saved && mounted && updated != null) { widget.onChanged(updated!); }
   }
   Future<void> _star(bool starred) async {
-    if (_busy) { return; }
+    if (_busy) return;
     setState(() => _busy = true);
     try {
       await widget.api.setStar(widget.project.id, starred);
@@ -54,7 +56,11 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
       await widget.api.deleteProject(widget.project.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('GitLab 已接受專案刪除要求。')));
-        Navigator.pop(context);
+        if (widget.onDeleted != null) {
+          widget.onDeleted!();
+        } else {
+          Navigator.pop(context);
+        }
       }
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _busy = false); } }
@@ -229,15 +235,26 @@ class _MetadataPageState extends State<MetadataPage> {
     finally { if (mounted) { setState(() => _busy = false); } }
   }
   Future<void> _view(Json value) async {
+    if (widget.kind == MetadataKind.commits) {
+      await Navigator.push<void>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CommitDetailPage(
+            account: widget.account,
+            api: widget.api,
+            project: widget.project,
+            sha: _id(value),
+            initialCommit: value,
+          ),
+        ),
+      );
+      return;
+    }
     await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => Scaffold(
       appBar: AppBar(title: Text(_name(value))), body: gestureSafe(ListView(padding: const EdgeInsets.all(20), children: [
         Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 16),
         if (value['state'] is String) Align(alignment: Alignment.centerLeft, child: StatusBadge(valueText(value, 'state'))),
-        if (widget.kind == MetadataKind.commits) ...[
-          SelectableText(_id(value), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12)),
-          const SizedBox(height: 16), SelectableText(valueText(value, 'message')),
-          const SizedBox(height: 16), Text(valueText(value, 'author_name')),
-        ] else MarkdownView(valueText(value, 'description', valueText(value, 'message', '尚未填寫說明。')),
+        MarkdownView(valueText(value, 'description', valueText(value, 'message', '尚未填寫說明。')),
           base: widget.account.instance.projectWeb(widget.project.path), api: widget.api, projectId: widget.project.id,
           projectWeb: widget.account.instance.projectWeb(widget.project.path), projectPath: widget.project.path),
         if (value['commit'] is Json) ...[const SizedBox(height: 20), Text(valueText(valueObject(value, 'commit'), 'title')),

@@ -6,6 +6,7 @@ import '../../core/instance.dart';
 import '../../core/models.dart';
 import '../../core/oauth.dart';
 import 'account_store.dart';
+import '../../shared/resume_target.dart';
 
 typedef ApiFactory =
     GitLabApi Function(
@@ -50,6 +51,18 @@ final class SessionController extends ChangeNotifier {
   int generation = 0;
   int _operation = 0;
   bool _disposed = false;
+  ResumeTarget? _pendingResumeTarget;
+  ResumeTarget? get pendingResumeTarget => _pendingResumeTarget;
+
+  void setPendingResumeTarget(ResumeTarget? target) {
+    _pendingResumeTarget = target;
+  }
+
+  ResumeTarget? takeResumeTarget() {
+    final target = _pendingResumeTarget;
+    _pendingResumeTarget = null;
+    return target;
+  }
 
   /// Mirrors the stored sign-out marker. A fresh controller learns the same
   /// fact from [AccountStore.loadSignOutPending] and will not auto-resume.
@@ -76,6 +89,7 @@ final class SessionController extends ChangeNotifier {
       // `busy` while its ticket is current.
       _pending?.close();
       _pending = null;
+      _pendingResumeTarget = null;
       busy = false;
       resuming = false;
       resumingAccount = null;
@@ -606,7 +620,10 @@ final class SessionController extends ChangeNotifier {
   /// marker, deletes the key even if that marker write fails, and clears the
   /// marker only after the deletion succeeds. A failed marker write or a
   /// failed deletion keeps auto-login disarmed.
-  Future<void> endSession() async {
+  Future<void> endSession({bool switching = false}) async {
+    if (!switching) {
+      _pendingResumeTarget = null;
+    }
     if (_disposed) return;
     final ticket = ++_operation;
     busy = false;
@@ -629,6 +646,7 @@ final class SessionController extends ChangeNotifier {
       await _enqueueAccountSave();
       if (!_current(ticket)) return;
       if (active?.key == account.key) {
+        _pendingResumeTarget = null;
         final cleared = await _commitSignOut();
         if (_current(ticket) && !cleared) {
           message = '無法清除自動登入記錄；請重試登出。';
@@ -651,6 +669,7 @@ final class SessionController extends ChangeNotifier {
     _operation++;
     _pending?.close();
     api?.close();
+    _pendingResumeTarget = null;
     super.dispose();
   }
 }
