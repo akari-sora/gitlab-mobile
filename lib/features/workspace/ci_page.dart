@@ -586,8 +586,8 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     final sections = _trace.sections;
     final needle = _query.toLowerCase();
     void addLine(int line) {
-      final text = lines[line].text;
-      if (needle.isEmpty || text.toLowerCase().contains(needle)) rows.add(_LogRow.line(text));
+      final traceLine = lines[line];
+      if (needle.isEmpty || traceLine.text.toLowerCase().contains(needle)) rows.add(_LogRow.line(traceLine));
     }
     final stack = <_SectionWalk>[_SectionWalk(0, lines.length, _sectionRoots)];
     while (stack.isNotEmpty) {
@@ -717,9 +717,23 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 final row = rows[index];
                 final section = row.section;
                 if (section != null) return _sectionHeader(section);
+                final traceLine = row.line;
                 final text = row.text ?? '';
-                return Padding(padding: const EdgeInsets.only(bottom: 3), child: Text(text.isEmpty ? ' ' : text,
-                  style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12, height: 1.5)));
+                final baseStyle = TextStyle(
+                  fontFamily: codeFontFamily,
+                  fontFamilyFallback: const ['Menlo', 'monospace'],
+                  fontSize: 12,
+                  height: 1.5,
+                  color: Theme.of(context).colorScheme.onSurface,
+                );
+                final span = traceLine?.toInlineSpan(
+                  brightness: Theme.of(context).brightness,
+                  baseStyle: baseStyle,
+                ) ?? TextSpan(text: text.isEmpty ? ' ' : text, style: baseStyle);
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: Text.rich(span),
+                );
               },
             ))),
       ])));
@@ -727,10 +741,11 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
 }
 
 final class _LogRow {
-  const _LogRow.header(this.section) : text = null;
-  const _LogRow.line(this.text) : section = null;
+  const _LogRow.header(this.section) : text = null, line = null;
+  _LogRow.line(this.line) : section = null, text = line?.text;
   final int? section;
   final String? text;
+  final JobTraceLine? line;
 }
 
 final class _SectionWalk {
