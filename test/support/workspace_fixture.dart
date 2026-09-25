@@ -305,6 +305,10 @@ class WorkspaceFixture {
               item.remove('milestone');
             }
           }
+          if (body.containsKey('assignee_ids')) {
+            final ids = (body['assignee_ids'] as List<dynamic>?)?.map((e) => int.tryParse('$e') ?? 0).where((id) => id > 0).toSet() ?? <int>{};
+            item['assignees'] = members.where((m) => ids.contains(m['id'])).toList();
+          }
           item['updated_at'] = 'revision-${++counter}';
         }
         return jsonResponse(item);
@@ -339,7 +343,22 @@ class WorkspaceFixture {
       final created = iid == null ? null : createdMergeRequests[iid];
       if (created != null) return jsonResponse(created);
     }
-    if (joined == 'projects/42/merge_requests/12') { return jsonResponse(mergeRequest); }
+    if (joined == 'projects/42/merge_requests/12') {
+      if (method == 'PUT') {
+        mergeRequest.addAll(body);
+        if (body.containsKey('assignee_ids')) {
+          final ids = (body['assignee_ids'] as List<dynamic>?)?.map((e) => int.tryParse('$e') ?? 0).where((id) => id > 0).toSet() ?? <int>{};
+          mergeRequest['assignees'] = members.where((m) => ids.contains(m['id'])).toList();
+        }
+        if (body.containsKey('reviewer_ids')) {
+          final ids = (body['reviewer_ids'] as List<dynamic>?)?.map((e) => int.tryParse('$e') ?? 0).where((id) => id > 0).toSet() ?? <int>{};
+          mergeRequest['reviewers'] = members.where((m) => ids.contains(m['id'])).toList();
+        }
+        mergeRequest['updated_at'] = 'revision-${++counter}';
+        return jsonResponse(mergeRequest);
+      }
+      return jsonResponse(mergeRequest);
+    }
     if (path.length >= 5 && path[0] == 'projects' && path[1] == '42' && path[2] == 'merge_requests' && path[3] == '12' && path[4] == 'discussions') {
       if (path.length == 5 && method == 'GET') {
         if (failDiscussions) { return jsonResponse({'message': 'synthetic'}, status: 500); }
