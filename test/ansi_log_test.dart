@@ -140,6 +140,65 @@ void main() {
       expect(spans[2].style.foreground, isNull);
       expect(spans[2].style.background, isNull);
     });
+
+    test('strikethrough (9 and 29) toggles independently and combines with underline', () {
+      final sm = AnsiStateMachine();
+      final spans = sm.parseSpans('\x1B[9mDeleted\x1B[29mRestored\x1B[9;4mBoth\x1B[0m');
+      expect(spans[0].style.strikethrough, isTrue);
+      expect(spans[0].style.underline, isFalse);
+      expect(spans[1].style.strikethrough, isFalse);
+      expect(spans[2].style.strikethrough, isTrue);
+      expect(spans[2].style.underline, isTrue);
+
+      final textStyle = spans[2].style.toTextStyle(brightness: Brightness.dark);
+      expect(textStyle.decoration, isNotNull);
+      expect(textStyle.decoration!.contains(TextDecoration.lineThrough), isTrue);
+      expect(textStyle.decoration!.contains(TextDecoration.underline), isTrue);
+    });
+
+    test('dimming with default foreground color produces reduced opacity text', () {
+      final sm = AnsiStateMachine();
+      final spans = sm.parseSpans('\x1B[2mDimmedDefault\x1B[0m');
+      expect(spans.first.style.dim, isTrue);
+      expect(spans.first.style.foreground, isNull);
+
+      final style = spans.first.style.toTextStyle(
+        brightness: Brightness.dark,
+        baseStyle: const TextStyle(color: Color(0xFFFFFFFF)),
+      );
+      expect(style.color, isNotNull);
+      expect((style.color!.a * 255).round(), closeTo(153, 5)); // 0.6 alpha
+    });
+
+    test('ITU T.416 colon-separated truecolor formats (38:2::r:g:b and 38:2:r:g:b)', () {
+      final sm = AnsiStateMachine();
+      final spans6 = sm.parseSpans('\x1B[38:2::255:128:64m\x1B[48:2::10:20:30mTrueColor6\x1B[0m');
+      expect(spans6.first.text, 'TrueColor6');
+      final fg6 = spans6.first.style.foreground!;
+      final bg6 = spans6.first.style.background!;
+      expect(fg6.type, AnsiColorType.rgb);
+      expect(fg6.r, 255);
+      expect(fg6.g, 128);
+      expect(fg6.b, 64);
+      expect(bg6.type, AnsiColorType.rgb);
+      expect(bg6.r, 10);
+      expect(bg6.g, 20);
+      expect(bg6.b, 30);
+
+      final spans5 = sm.parseSpans('\x1B[38:2:255:128:64mTrueColor5\x1B[0m');
+      expect(spans5.first.text, 'TrueColor5');
+      final fg5 = spans5.first.style.foreground!;
+      expect(fg5.type, AnsiColorType.rgb);
+      expect(fg5.r, 255);
+      expect(fg5.g, 128);
+      expect(fg5.b, 64);
+
+      final spans256 = sm.parseSpans('\x1B[38:5:196m\x1B[48:5:46mColon256\x1B[0m');
+      expect(spans256.first.style.foreground!.type, AnsiColorType.color256);
+      expect(spans256.first.style.foreground!.index, 196);
+      expect(spans256.first.style.background!.type, AnsiColorType.color256);
+      expect(spans256.first.style.background!.index, 46);
+    });
   });
 
   group('AnsiStateMachine resilience and bounds', () {
@@ -168,6 +227,33 @@ void main() {
       final spans = sm.parseSpans('\x1B[0K\x1B[2J\x1B]0;terminal-title\x07VisibleText');
       expect(spans.single.text, 'VisibleText');
       expect(spans.single.style.isPlain, isTrue);
+    });
+
+    test('interrupted escape sequence transitions cleanly to new sequence without leaking ESC', () {
+      final sm = AnsiStateMachine();
+      final spans = sm.parseSpans('\x1B[\x1B[31mRed\x1B[0m');
+      expect(spans.length, 1);
+      expect(spans.first.text, 'Red');
+      expect(spans.first.style.foreground!.index, 1);
+    });
+
+    test('in-line carriage return without newline correctly overwrites previous text from column 0', () {
+      final sm = AnsiStateMachine();
+      final progress = sm.parseSpans('Progress 10%\rProgress 50%\rProgress 100%');
+      expect(progress.length, 1);
+      expect(progress.first.text, 'Progress 100%');
+
+      final erase = sm.parseSpans('Loading artifacts\r\x1B[0KDone!');
+      expect(erase.length, 1);
+      expect(erase.first.text, 'Done!');
+    });
+
+    test('CSI 2K clears entire line buffer', () {
+      final sm = AnsiStateMachine();
+      final spans = sm.parseSpans('Stale text\x1B[2K\x1B[32mFresh green\x1B[0m');
+      expect(spans.length, 1);
+      expect(spans.first.text, 'Fresh green');
+      expect(spans.first.style.foreground!.index, 2);
     });
   });
 
@@ -234,6 +320,27 @@ void main() {
       expect(trace.lines[1].text.length, 1904);
       expect(trace.lines[0].spans.single.style.foreground!.index, 2);
       expect(trace.lines[1].spans.single.style.foreground!.index, 2);
+    });
+
+    test('JobTrace handles in-line carriage-return progress bars without leaking literal CR', () {
+      final trace = JobTrace.parse(
+        'Step 1\n'
+        'Progress 10%\rProgress 50%\rProgress 100%\n'
+        'Step 2',
+      );
+      expect(trace.lines.length, 3);
+      expect(trace.lines[1].text, 'Progress 100%');
+      expect(trace.lines.every((line) => !line.text.contains('\r')), isTrue);
+    });
+
+    test('JobTrace handles massive 50,000 character single line without crashing', () {
+      final massive = 'B' * 50000;
+      final trace = JobTrace.parse('\x1B[33m$massive\x1B[0m');
+      final expectedChunks = (50000 / 4096).ceil();
+      expect(trace.lines.length, expectedChunks);
+      final totalChars = trace.lines.fold<int>(0, (sum, line) => sum + line.text.length);
+      expect(totalChars, 50000);
+      expect(trace.lines.every((line) => line.spans.every((s) => s.style.foreground?.index == 3)), isTrue);
     });
   });
 

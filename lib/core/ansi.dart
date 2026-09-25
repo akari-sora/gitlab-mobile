@@ -128,6 +128,7 @@ final class AnsiStyle {
     this.dim = false,
     this.italic = false,
     this.underline = false,
+    this.strikethrough = false,
     this.inverse = false,
   });
 
@@ -137,6 +138,7 @@ final class AnsiStyle {
   final bool dim;
   final bool italic;
   final bool underline;
+  final bool strikethrough;
   final bool inverse;
 
   static const plain = AnsiStyle();
@@ -148,6 +150,7 @@ final class AnsiStyle {
       !dim &&
       !italic &&
       !underline &&
+      !strikethrough &&
       !inverse;
 
   AnsiStyle copyWith({
@@ -157,6 +160,7 @@ final class AnsiStyle {
     bool? dim,
     bool? italic,
     bool? underline,
+    bool? strikethrough,
     bool? inverse,
   }) {
     return AnsiStyle(
@@ -166,6 +170,7 @@ final class AnsiStyle {
       dim: dim ?? this.dim,
       italic: italic ?? this.italic,
       underline: underline ?? this.underline,
+      strikethrough: strikethrough ?? this.strikethrough,
       inverse: inverse ?? this.inverse,
     );
   }
@@ -176,21 +181,23 @@ final class AnsiStyle {
     var fg = foreground?.toColor(brightness);
     var bg = background?.toColor(brightness);
 
+    final defaultFg = brightness == Brightness.dark
+        ? const Color(0xFFCDD6F4)
+        : const Color(0xFF24292E);
+    final defaultBg = brightness == Brightness.dark
+        ? const Color(0xFF15181F)
+        : const Color(0xFFFFFFFF);
+
     if (inverse) {
-      final defaultFg = brightness == Brightness.dark
-          ? const Color(0xFFCDD6F4)
-          : const Color(0xFF24292E);
-      final defaultBg = brightness == Brightness.dark
-          ? const Color(0xFF15181F)
-          : const Color(0xFFFFFFFF);
       final actualFg = fg ?? defaultFg;
       final actualBg = bg ?? defaultBg;
       fg = actualBg;
       bg = actualFg;
     }
 
-    if (dim && fg != null) {
-      fg = fg.withValues(alpha: 0.6);
+    if (dim) {
+      final effectiveFg = fg ?? baseStyle?.color ?? defaultFg;
+      fg = effectiveFg.withValues(alpha: 0.6);
     }
 
     FontWeight? weight;
@@ -200,12 +207,24 @@ final class AnsiStyle {
       weight = FontWeight.w300;
     }
 
+    TextDecoration? decoration;
+    if (underline && strikethrough) {
+      decoration = TextDecoration.combine([
+        TextDecoration.underline,
+        TextDecoration.lineThrough,
+      ]);
+    } else if (underline) {
+      decoration = TextDecoration.underline;
+    } else if (strikethrough) {
+      decoration = TextDecoration.lineThrough;
+    }
+
     return (baseStyle ?? const TextStyle()).copyWith(
       color: fg,
       backgroundColor: bg,
       fontWeight: weight,
       fontStyle: italic ? FontStyle.italic : null,
-      decoration: underline ? TextDecoration.underline : null,
+      decoration: decoration,
     );
   }
 
@@ -219,11 +238,20 @@ final class AnsiStyle {
           dim == other.dim &&
           italic == other.italic &&
           underline == other.underline &&
+          strikethrough == other.strikethrough &&
           inverse == other.inverse;
 
   @override
-  int get hashCode =>
-      Object.hash(foreground, background, bold, dim, italic, underline, inverse);
+  int get hashCode => Object.hash(
+        foreground,
+        background,
+        bold,
+        dim,
+        italic,
+        underline,
+        strikethrough,
+        inverse,
+      );
 }
 
 /// A contiguous segment of text associated with an [AnsiStyle].
@@ -255,6 +283,12 @@ final class AnsiSpan {
 
 enum _AnsiState { normal, escape, csi, osc }
 
+final class _StyledChar {
+  _StyledChar(this.char, this.style);
+  int char;
+  AnsiStyle style;
+}
+
 /// Robust, lightweight, non-crashing state machine for terminal ANSI sequences
 /// and SGR styling. Maintains active style across streaming line boundaries.
 final class AnsiStateMachine {
@@ -279,6 +313,10 @@ final class AnsiStateMachine {
   List<AnsiSpan> parseSpans(String input, {bool flushAtEnd = true}) {
     if (input.isEmpty) return const <AnsiSpan>[];
 
+    final usingCells = input.contains('\r');
+    final cells = usingCells ? <_StyledChar>[] : null;
+    var cursor = 0;
+
     final spans = <AnsiSpan>[];
     final textBuffer = StringBuffer();
     var spanStyle = currentStyle;
@@ -302,10 +340,25 @@ final class AnsiStateMachine {
         case _AnsiState.normal:
           if (code == 0x1B) {
             _state = _AnsiState.escape;
+          } else if (code == 0x0D) {
+            // Carriage return '\r' -> move cursor to column 0.
+            if (usingCells) {
+              cursor = 0;
+            }
           } else if (code == 0x07 || code == 0x00) {
             // Drop bell / null control chars.
           } else {
-            textBuffer.writeCharCode(code);
+            if (usingCells) {
+              if (cursor < cells!.length) {
+                cells[cursor].char = code;
+                cells[cursor].style = currentStyle;
+              } else {
+                cells.add(_StyledChar(code, currentStyle));
+              }
+              cursor++;
+            } else {
+              textBuffer.writeCharCode(code);
+            }
           }
           break;
 
@@ -337,9 +390,50 @@ final class AnsiStateMachine {
               flushText();
               _applySgr(_paramBuffer.toString());
               spanStyle = currentStyle;
+            } else if (code == 0x4B) { // 'K' -> Erase in Line
+              final param = int.tryParse(_paramBuffer.toString()) ?? 0;
+              if (param == 0) {
+                // Erase from cursor to end of line.
+                if (usingCells && cursor < cells!.length) {
+                  cells.removeRange(cursor, cells.length);
+                }
+              } else if (param == 1) {
+                // Erase from start of line to cursor.
+                if (usingCells) {
+                  final limit = cursor < cells!.length ? cursor : cells.length;
+                  for (var j = 0; j < limit; j++) {
+                    cells[j].char = 0x20;
+                    cells[j].style = AnsiStyle.plain;
+                  }
+                }
+              } else if (param == 2) {
+                // Erase entire line.
+                if (usingCells) {
+                  cells!.clear();
+                  cursor = 0;
+                } else {
+                  textBuffer.clear();
+                  spans.clear();
+                }
+              }
+            } else if (code == 0x4A) { // 'J' -> Erase in Display
+              final param = int.tryParse(_paramBuffer.toString()) ?? 0;
+              if (param == 2 || param == 3) {
+                if (usingCells) {
+                  cells!.clear();
+                  cursor = 0;
+                } else {
+                  textBuffer.clear();
+                  spans.clear();
+                }
+              }
             }
-            // All CSI sequences (K, H, J, m, etc.) finish here.
+            // All CSI sequences finish here.
             _state = _AnsiState.normal;
+            _paramBuffer.clear();
+          } else if (code == 0x1B) {
+            // Interrupted / nested escape sequence.
+            _state = _AnsiState.escape;
             _paramBuffer.clear();
           } else {
             // Unexpected byte in CSI: abort sequence safely.
@@ -349,11 +443,41 @@ final class AnsiStateMachine {
           break;
 
         case _AnsiState.osc:
-          if (code == 0x07 || (code == 0x5C && i > 0 && input.codeUnitAt(i - 1) == 0x1B)) {
+          if (code == 0x07 ||
+              (code == 0x5C && i > 0 && input.codeUnitAt(i - 1) == 0x1B) ||
+              code == 0x0A) {
             _state = _AnsiState.normal;
+          } else if (code == 0x1B) {
+            // ESC inside OSC: remain or prepare for '\' terminator.
           }
           break;
       }
+    }
+
+    if (usingCells) {
+      if (cells!.isEmpty) return const <AnsiSpan>[];
+      final result = <AnsiSpan>[];
+      final buffer = StringBuffer();
+      var segStyle = cells.first.style;
+      for (var idx = 0; idx < cells.length; idx++) {
+        final cell = cells[idx];
+        if (cell.style == segStyle) {
+          buffer.writeCharCode(cell.char);
+        } else {
+          result.add(AnsiSpan(buffer.toString(), segStyle));
+          buffer.clear();
+          segStyle = cell.style;
+          buffer.writeCharCode(cell.char);
+        }
+      }
+      if (buffer.isNotEmpty) {
+        result.add(AnsiSpan(buffer.toString(), segStyle));
+      }
+      if (flushAtEnd && _state != _AnsiState.normal) {
+        _state = _AnsiState.normal;
+        _paramBuffer.clear();
+      }
+      return result;
     }
 
     flushText();
@@ -373,172 +497,198 @@ final class AnsiStateMachine {
       return;
     }
 
-    final tokens = rawParams.split(RegExp(r'[;:]'));
-    final params = <int>[];
-    for (final token in tokens) {
-      if (token.isEmpty) {
-        params.add(0);
-      } else {
-        final parsed = int.tryParse(token);
-        if (parsed != null) {
-          params.add(parsed);
+    final args = rawParams.split(';');
+    for (var a = 0; a < args.length; a++) {
+      final arg = args[a];
+      if (arg.contains(':')) {
+        // ITU T.416 colon-separated subparameters:
+        final sub = arg.split(':');
+        final cmd = int.tryParse(sub[0]);
+        if (cmd == 38 || cmd == 48) {
+          final isFg = cmd == 38;
+          final mode = sub.length > 1 ? int.tryParse(sub[1]) : null;
+          if (mode == 5 && sub.length > 2) {
+            final idx = int.tryParse(sub[2]);
+            if (idx != null) {
+              final color = AnsiColor.color256(idx);
+              currentStyle = isFg
+                  ? currentStyle.copyWith(foreground: () => color)
+                  : currentStyle.copyWith(background: () => color);
+            }
+          } else if (mode == 2) {
+            int? r, g, b;
+            if (sub.length >= 6) {
+              // 38:2:cs:r:g:b or 38:2::r:g:b
+              r = int.tryParse(sub[3]);
+              g = int.tryParse(sub[4]);
+              b = int.tryParse(sub[5]);
+            } else if (sub.length == 5) {
+              // 38:2:r:g:b
+              r = int.tryParse(sub[2]);
+              g = int.tryParse(sub[3]);
+              b = int.tryParse(sub[4]);
+            }
+            if (r != null && g != null && b != null) {
+              final color = AnsiColor.rgb(r, g, b);
+              currentStyle = isFg
+                  ? currentStyle.copyWith(foreground: () => color)
+                  : currentStyle.copyWith(background: () => color);
+            }
+          }
+        } else if (cmd != null) {
+          _applySingleCode(cmd);
+        }
+        continue;
+      }
+
+      // Semicolon-delimited parameter:
+      if (arg.isEmpty) {
+        _applySingleCode(0);
+        continue;
+      }
+      final code = int.tryParse(arg);
+      if (code == null) continue;
+
+      if ((code == 38 || code == 48) && a + 1 < args.length) {
+        final isFg = code == 38;
+        final mode = int.tryParse(args[a + 1]);
+        if (mode == 5 && a + 2 < args.length) {
+          final idx = int.tryParse(args[a + 2]);
+          if (idx != null) {
+            final color = AnsiColor.color256(idx);
+            currentStyle = isFg
+                ? currentStyle.copyWith(foreground: () => color)
+                : currentStyle.copyWith(background: () => color);
+          }
+          a += 2;
+          continue;
+        } else if (mode == 2) {
+          if (a + 5 < args.length &&
+              (args[a + 2].isEmpty || (int.tryParse(args[a + 2]) ?? -1) <= 1)) {
+            final r = int.tryParse(args[a + 3]);
+            final g = int.tryParse(args[a + 4]);
+            final b = int.tryParse(args[a + 5]);
+            if (r != null && g != null && b != null) {
+              final color = AnsiColor.rgb(r, g, b);
+              currentStyle = isFg
+                  ? currentStyle.copyWith(foreground: () => color)
+                  : currentStyle.copyWith(background: () => color);
+            }
+            a += 5;
+            continue;
+          } else if (a + 4 < args.length) {
+            final r = int.tryParse(args[a + 2]);
+            final g = int.tryParse(args[a + 3]);
+            final b = int.tryParse(args[a + 4]);
+            if (r != null && g != null && b != null) {
+              final color = AnsiColor.rgb(r, g, b);
+              currentStyle = isFg
+                  ? currentStyle.copyWith(foreground: () => color)
+                  : currentStyle.copyWith(background: () => color);
+            }
+            a += 4;
+            continue;
+          }
         }
       }
-    }
-    if (params.isEmpty) {
-      currentStyle = AnsiStyle.plain;
-      return;
-    }
 
-    var i = 0;
-    while (i < params.length) {
-      final code = params[i];
-      switch (code) {
-        case 0:
-          currentStyle = AnsiStyle.plain;
-          i++;
-          break;
-        case 1:
-          currentStyle = currentStyle.copyWith(bold: true);
-          i++;
-          break;
-        case 2:
-          currentStyle = currentStyle.copyWith(dim: true);
-          i++;
-          break;
-        case 3:
-          currentStyle = currentStyle.copyWith(italic: true);
-          i++;
-          break;
-        case 4:
-          currentStyle = currentStyle.copyWith(underline: true);
-          i++;
-          break;
-        case 7:
-          currentStyle = currentStyle.copyWith(inverse: true);
-          i++;
-          break;
-        case 21:
-        case 22:
-          currentStyle = currentStyle.copyWith(bold: false, dim: false);
-          i++;
-          break;
-        case 23:
-          currentStyle = currentStyle.copyWith(italic: false);
-          i++;
-          break;
-        case 24:
-          currentStyle = currentStyle.copyWith(underline: false);
-          i++;
-          break;
-        case 27:
-          currentStyle = currentStyle.copyWith(inverse: false);
-          i++;
-          break;
-        case 30:
-        case 31:
-        case 32:
-        case 33:
-        case 34:
-        case 35:
-        case 36:
-        case 37:
-          currentStyle = currentStyle.copyWith(
-            foreground: () => AnsiColor.standard(code - 30),
-          );
-          i++;
-          break;
-        case 38:
-          if (i + 1 < params.length) {
-            final mode = params[i + 1];
-            if (mode == 5 && i + 2 < params.length) {
-              currentStyle = currentStyle.copyWith(
-                foreground: () => AnsiColor.color256(params[i + 2]),
-              );
-              i += 3;
-              break;
-            } else if (mode == 2 && i + 4 < params.length) {
-              currentStyle = currentStyle.copyWith(
-                foreground: () =>
-                    AnsiColor.rgb(params[i + 2], params[i + 3], params[i + 4]),
-              );
-              i += 5;
-              break;
-            }
-          }
-          i++;
-          break;
-        case 39:
-          currentStyle = currentStyle.copyWith(foreground: () => null);
-          i++;
-          break;
-        case 40:
-        case 41:
-        case 42:
-        case 43:
-        case 44:
-        case 45:
-        case 46:
-        case 47:
-          currentStyle = currentStyle.copyWith(
-            background: () => AnsiColor.standard(code - 40),
-          );
-          i++;
-          break;
-        case 48:
-          if (i + 1 < params.length) {
-            final mode = params[i + 1];
-            if (mode == 5 && i + 2 < params.length) {
-              currentStyle = currentStyle.copyWith(
-                background: () => AnsiColor.color256(params[i + 2]),
-              );
-              i += 3;
-              break;
-            } else if (mode == 2 && i + 4 < params.length) {
-              currentStyle = currentStyle.copyWith(
-                background: () =>
-                    AnsiColor.rgb(params[i + 2], params[i + 3], params[i + 4]),
-              );
-              i += 5;
-              break;
-            }
-          }
-          i++;
-          break;
-        case 49:
-          currentStyle = currentStyle.copyWith(background: () => null);
-          i++;
-          break;
-        case 90:
-        case 91:
-        case 92:
-        case 93:
-        case 94:
-        case 95:
-        case 96:
-        case 97:
-          currentStyle = currentStyle.copyWith(
-            foreground: () => AnsiColor.standard(code - 90 + 8),
-          );
-          i++;
-          break;
-        case 100:
-        case 101:
-        case 102:
-        case 103:
-        case 104:
-        case 105:
-        case 106:
-        case 107:
-          currentStyle = currentStyle.copyWith(
-            background: () => AnsiColor.standard(code - 100 + 8),
-          );
-          i++;
-          break;
-        default:
-          i++;
-          break;
-      }
+      _applySingleCode(code);
+    }
+  }
+
+  void _applySingleCode(int code) {
+    switch (code) {
+      case 0:
+        currentStyle = AnsiStyle.plain;
+        break;
+      case 1:
+        currentStyle = currentStyle.copyWith(bold: true);
+        break;
+      case 2:
+        currentStyle = currentStyle.copyWith(dim: true);
+        break;
+      case 3:
+        currentStyle = currentStyle.copyWith(italic: true);
+        break;
+      case 4:
+        currentStyle = currentStyle.copyWith(underline: true);
+        break;
+      case 7:
+        currentStyle = currentStyle.copyWith(inverse: true);
+        break;
+      case 9:
+        currentStyle = currentStyle.copyWith(strikethrough: true);
+        break;
+      case 21:
+      case 22:
+        currentStyle = currentStyle.copyWith(bold: false, dim: false);
+        break;
+      case 23:
+        currentStyle = currentStyle.copyWith(italic: false);
+        break;
+      case 24:
+        currentStyle = currentStyle.copyWith(underline: false);
+        break;
+      case 27:
+        currentStyle = currentStyle.copyWith(inverse: false);
+        break;
+      case 29:
+        currentStyle = currentStyle.copyWith(strikethrough: false);
+        break;
+      case 30:
+      case 31:
+      case 32:
+      case 33:
+      case 34:
+      case 35:
+      case 36:
+      case 37:
+        currentStyle = currentStyle.copyWith(
+          foreground: () => AnsiColor.standard(code - 30),
+        );
+        break;
+      case 39:
+        currentStyle = currentStyle.copyWith(foreground: () => null);
+        break;
+      case 40:
+      case 41:
+      case 42:
+      case 43:
+      case 44:
+      case 45:
+      case 46:
+      case 47:
+        currentStyle = currentStyle.copyWith(
+          background: () => AnsiColor.standard(code - 40),
+        );
+        break;
+      case 49:
+        currentStyle = currentStyle.copyWith(background: () => null);
+        break;
+      case 90:
+      case 91:
+      case 92:
+      case 93:
+      case 94:
+      case 95:
+      case 96:
+      case 97:
+        currentStyle = currentStyle.copyWith(
+          foreground: () => AnsiColor.standard(code - 90 + 8),
+        );
+        break;
+      case 100:
+      case 101:
+      case 102:
+      case 103:
+      case 104:
+      case 105:
+      case 106:
+      case 107:
+        currentStyle = currentStyle.copyWith(
+          background: () => AnsiColor.standard(code - 100 + 8),
+        );
+        break;
     }
   }
 }
