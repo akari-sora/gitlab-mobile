@@ -7,6 +7,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/repository_ref.dart';
+import '../../core/syntax_highlighter.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
@@ -1270,19 +1271,23 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                                           Expanded(
                                             child: Padding(
                                               padding: const EdgeInsets.symmetric(vertical: 14),
-                                              child: Text(
+                                              child: Text.rich(
                                                 lineContent.isEmpty
-                                                    ? ' '
-                                                    : lineContent,
-                                                style: const TextStyle(
-                                                  fontFamily: codeFontFamily,
-                                                  fontFamilyFallback: [
-                                                    'Menlo',
-                                                    'monospace',
-                                                  ],
-                                                  fontSize: 13,
-                                                  height: 1.55,
-                                                ),
+                                                    ? const TextSpan(text: ' ')
+                                                    : SyntaxHighlighter.highlightLine(
+                                                        lineContent,
+                                                        extension: widget.filePath,
+                                                        isDark: Theme.of(context).brightness == Brightness.dark,
+                                                        baseStyle: const TextStyle(
+                                                          fontFamily: codeFontFamily,
+                                                          fontFamilyFallback: [
+                                                            'Menlo',
+                                                            'monospace',
+                                                          ],
+                                                          fontSize: 13,
+                                                          height: 1.55,
+                                                        ),
+                                                      ),
                                               ),
                                             ),
                                           ),
