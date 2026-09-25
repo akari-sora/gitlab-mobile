@@ -28,6 +28,8 @@ String valueText(Json value, String key, [String fallback = '']) =>
     value[key] is String ? value[key] as String : fallback;
 int valueInt(Json value, String key) =>
     value[key] is int ? value[key] as int : 0;
+bool valueBool(Json value, String key, [bool fallback = false]) =>
+    value[key] is bool ? value[key] as bool : fallback;
 Json valueObject(Json value, String key) => value[key] is Map<String, dynamic>
     ? value[key] as Json
     : <String, dynamic>{};

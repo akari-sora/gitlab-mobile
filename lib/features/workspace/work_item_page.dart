@@ -28,10 +28,12 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
   late final _selection = ListDetailController<int>();
   final _feed = GlobalKey<RecordsFeedState>();
   final _search = TextEditingController();
+  Timer? _debounce;
   String _state = 'opened', _query = '';
   bool get mr => widget.resource == 'merge_requests';
   @override
   void dispose() {
+    _debounce?.cancel();
     _search.dispose();
     _selection.dispose();
     super.dispose();
@@ -53,6 +55,8 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
       const EditField.picker('labels', '標籤', source: PickerSource.labels, multi: true, hint: '不存在的名稱會在儲存時建立'),
       const EditField.picker('assignee_ids', '指派', source: PickerSource.members, multi: true),
       if (mr) const EditField.picker('reviewer_ids', '審查者', source: PickerSource.members, multi: true),
+      const EditField.picker('milestone_id', '里程碑', source: PickerSource.milestones, multi: false, hint: '可選里程碑'),
+      if (!mr) const EditField.toggle('confidential', '機密議題', hint: '僅專案成員與被指派者可見此議題'),
     ];
     final saved = await openEditor(context, account: widget.account, api: widget.api, projectId: widget.project.id, projectPath: widget.project.path,
       title: mr ? '新增合併請求' : '新增議題', resource: '${widget.project.id}/${widget.resource}/new',
@@ -60,6 +64,9 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
         final body = editorSubmission(fields, values);
         final title = body['title'];
         if (title is String) body['title'] = title.trim();
+        if (body['milestone_id'] == null) {
+          body.remove('milestone_id');
+        }
         final created = mr ? await widget.api.createMergeRequest(widget.project.id, body)
           : await widget.api.createIssue(widget.project.id, body);
         iid = requiredInt(created, 'iid');
@@ -76,9 +83,35 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
   }
   Widget _buildList(BuildContext context, bool isTwoPane, int? selected) => Column(children: [
     Padding(padding: EdgeInsets.fromLTRB(feedGutter(context), 12, feedGutter(context) - 4, 4), child: Row(children: [
-      Expanded(child: TextField(controller: _search, textInputAction: TextInputAction.search,
-        decoration: InputDecoration(hintText: mr ? '搜尋合併請求' : '搜尋議題', prefixIcon: const Icon(Icons.search)),
-        onSubmitted: (value) => setState(() => _query = value.trim()))),
+      Expanded(child: TextField(
+        controller: _search,
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: mr ? '搜尋合併請求' : '搜尋議題',
+          prefixIcon: const Icon(Icons.search),
+          suffixIcon: _query.isNotEmpty
+              ? IconButton(
+                  key: const ValueKey('clear-work-items-search'),
+                  icon: const Icon(Icons.clear, size: 20),
+                  onPressed: () {
+                    _search.clear();
+                    _debounce?.cancel();
+                    setState(() => _query = '');
+                  },
+                )
+              : null,
+        ),
+        onChanged: (value) {
+          _debounce?.cancel();
+          _debounce = Timer(const Duration(milliseconds: 300), () {
+            if (mounted) setState(() => _query = value.trim());
+          });
+        },
+        onSubmitted: (value) {
+          _debounce?.cancel();
+          setState(() => _query = value.trim());
+        },
+      )),
       const SizedBox(width: 8), IconButton(tooltip: mr ? '新增合併請求' : '新增議題',
         onPressed: widget.project.archived == true ? null : _create, icon: const Icon(Icons.add_circle_outline)),
     ])),
@@ -170,13 +203,16 @@ Widget workItemCard(
   final source = valueText(value, 'source_branch'), target = valueText(value, 'target_branch');
   final pipeline = valueText(valueObject(value, 'head_pipeline'), 'status');
   final iid = '${mr ? '!' : '#'}${valueInt(value, 'iid')}';
+  final isConfidential = valueBool(value, 'confidential');
+  final milestone = valueObject(value, 'milestone');
+  final milestoneTitle = valueText(milestone, 'title');
   return EntityCard(
     onTap: onTap,
     selected: selected,
     titleMaxLines: 3,
     leading: Container(width: 40, height: 40, alignment: Alignment.center,
       decoration: BoxDecoration(color: markBackground, borderRadius: BorderRadius.circular(12)),
-      child: Icon(mr ? Icons.merge : Icons.adjust, size: 20, color: markForeground)),
+      child: Icon(mr ? Icons.merge : (isConfidential ? Icons.lock_outline : Icons.adjust), size: 20, color: markForeground)),
     title: Text(valueText(value, 'title')),
     subtitle: project == null || project.isEmpty ? null : Text(project),
     body: mr && source.isNotEmpty && target.isNotEmpty
@@ -184,6 +220,10 @@ Widget workItemCard(
         : null,
     meta: [
       StatusBadge(state),
+      if (isConfidential)
+        const MetaChip('機密', icon: Icons.lock_outline),
+      if (milestoneTitle.isNotEmpty)
+        MetaChip(milestoneTitle, icon: Icons.tour_outlined),
       if (mr && pipeline.isNotEmpty) StatusBadge(pipeline),
       if (mr && isAutoMergeEnabled(value))
         const MetaChip('自動合併', icon: Icons.schedule_send),
@@ -248,6 +288,10 @@ class _WorkItemPageState extends State<WorkItemPage> {
       EditField.picker('assignee_ids', '指派', source: PickerSource.members, multi: true, value: _peopleValue(valueObjects(data, 'assignees'))),
       if (mr) EditField.picker('reviewer_ids', '審查者', source: PickerSource.members, multi: true,
         value: _peopleValue(valueObjects(data, 'reviewers'))),
+      EditField.picker('milestone_id', '里程碑', source: PickerSource.milestones, multi: false,
+        value: _milestoneValue(data), hint: '留白會移除里程碑'),
+      if (!mr) EditField.toggle('confidential', '機密議題', value: valueBool(data, 'confidential') ? 'true' : 'false',
+        hint: '僅專案成員與被指派者可見此議題'),
     ];
     final saved = await openEditor(context, account: widget.account, api: widget.api, projectId: widget.project.id, projectPath: widget.project.path,
       title: '編輯 $label', resource: '${widget.project.id}/${widget.resource}/${widget.iid}/edit',
@@ -257,6 +301,9 @@ class _WorkItemPageState extends State<WorkItemPage> {
         final body = editorSubmission(fields, values);
         final title = body['title'];
         if (title is String) body['title'] = title.trim();
+        if (!body.containsKey('milestone_id') || body['milestone_id'] == null) {
+          body['milestone_id'] = 0;
+        }
         await widget.api.writeRecord('PUT', path, body);
       });
     if (saved && mounted) {
@@ -467,8 +514,23 @@ class _WorkItemPageState extends State<WorkItemPage> {
             const SizedBox(height: 8), Text(valueText(data, 'title'), maxLines: 3, overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 10), Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
-              children: [StatusBadge(valueText(data, 'state')), if (data['draft'] == true) const Text('草稿'),
-                Text('@${valueText(valueObject(data, 'author'), 'username')}', style: Theme.of(context).textTheme.bodySmall)]),
+              children: [
+                StatusBadge(valueText(data, 'state')),
+                if (data['draft'] == true) const Text('草稿'),
+                if (valueBool(data, 'confidential'))
+                  const Chip(
+                    visualDensity: VisualDensity.compact,
+                    avatar: Icon(Icons.lock_outline, size: 16),
+                    label: Text('機密'),
+                  ),
+                if (valueObject(data, 'milestone').isNotEmpty)
+                  Chip(
+                    visualDensity: VisualDensity.compact,
+                    avatar: const Icon(Icons.tour_outlined, size: 16),
+                    label: Text(valueText(valueObject(data, 'milestone'), 'title')),
+                  ),
+                Text('@${valueText(valueObject(data, 'author'), 'username')}', style: Theme.of(context).textTheme.bodySmall),
+              ]),
           ])),
           TabBar(isScrollable: true, tabAlignment: TabAlignment.start,
             tabs: [const Tab(text: '摘要'), if (mr) const Tab(text: '變更'), const Tab(text: '討論'), if (mr) const Tab(text: '檢查')]),
@@ -491,6 +553,20 @@ class _WorkItemPageState extends State<WorkItemPage> {
                 projectWeb: widget.account.instance.projectWeb(widget.project.path),
                 projectPath: widget.project.path),
               const SizedBox(height: 24), const Divider(), const SizedBox(height: 16),
+              if (valueObject(data, 'milestone').isNotEmpty) ...[
+                Text('里程碑', style: Theme.of(context).textTheme.titleSmall), const SizedBox(height: 8),
+                Row(children: [
+                  const Icon(Icons.tour_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Text(valueText(valueObject(data, 'milestone'), 'title')),
+                  if (valueText(valueObject(data, 'milestone'), 'due_date').isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Text('（到期日：${valueText(valueObject(data, 'milestone'), 'due_date')}）',
+                      style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ]),
+                const SizedBox(height: 16),
+              ],
               Text('指派', style: Theme.of(context).textTheme.titleSmall), const SizedBox(height: 8),
               Text(valueObjects(data, 'assignees').isEmpty ? '尚未指派'
                 : valueObjects(data, 'assignees').map((v) => '@${valueText(v, 'username')}').join('、')),
@@ -595,6 +671,18 @@ String _peopleValue(List<Json> users) => encodeChoices([
         username: valueText(user, 'username').isEmpty ? null : valueText(user, 'username'),
       ),
 ]);
+
+String _milestoneValue(Json data) {
+  final milestone = valueObject(data, 'milestone');
+  final id = valueInt(milestone, 'id');
+  if (id <= 0) return '';
+  return encodeChoices([
+    PickerChoice(
+      id: '$id',
+      name: valueText(milestone, 'title'),
+    ),
+  ]);
+}
 
 bool isAutoMergeEnabled(Json data) {
   final state = valueText(data, 'state');

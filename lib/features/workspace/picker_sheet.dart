@@ -7,7 +7,7 @@ import '../../core/models.dart';
 import '../../shared/workspace_ui.dart';
 import 'record_controller.dart';
 
-enum PickerSource { labels, members, branches }
+enum PickerSource { labels, members, branches, milestones }
 
 class PickerChoice {
   const PickerChoice({required this.id, required this.name, this.username, this.color});
@@ -46,7 +46,7 @@ List<PickerChoice> decodeChoices(String raw, {PickerSource? source}) {
   if (raw.trim().isEmpty) return const [];
   final structured = _structuredChoices(raw.trim());
   if (structured != null) return structured;
-  if (source == PickerSource.branches) {
+  if (source == PickerSource.branches || source == PickerSource.milestones) {
     return [PickerChoice(id: raw, name: raw)];
   }
   return [
@@ -130,6 +130,7 @@ class PickerChoiceLabel extends StatelessWidget {
       PickerSource.labels => _dot(),
       PickerSource.members => Monogram(choice.name.isEmpty ? (username ?? 'G') : choice.name, size: compact ? 24 : 28),
       PickerSource.branches => const Icon(Icons.alt_route, size: 18),
+      PickerSource.milestones => const Icon(Icons.tour_outlined, size: 18),
     };
     return Row(
       mainAxisSize: expand ? MainAxisSize.max : MainAxisSize.min,
@@ -236,6 +237,7 @@ class _ChoicePickerSheetState extends State<ChoicePickerSheet> {
       PickerSource.labels => ['projects', '${widget.projectId}', 'labels'],
       PickerSource.members => ['projects', '${widget.projectId}', 'members', 'all'],
       PickerSource.branches => ['projects', '${widget.projectId}', 'repository', 'branches'],
+      PickerSource.milestones => ['projects', '${widget.projectId}', 'milestones'],
     };
     final key = widget.source == PickerSource.members ? 'query' : 'search';
     return (next) => widget.api.records(path, query: {if (query.isNotEmpty) key: query}, next: next);
@@ -263,6 +265,7 @@ class _ChoicePickerSheetState extends State<ChoicePickerSheet> {
       username: valueText(item, 'username'),
     ),
     PickerSource.branches => PickerChoice(id: valueText(item, 'name'), name: valueText(item, 'name')),
+    PickerSource.milestones => PickerChoice(id: '${valueInt(item, 'id')}', name: valueText(item, 'title')),
   };
 
   void _toggle(PickerChoice choice) {

@@ -38,7 +38,8 @@ class EditField {
     this.hint,
     this.markdown = false,
   }) : source = null,
-       multi = false;
+       multi = false,
+       toggle = false;
   const EditField.picker(
     this.key,
     this.label, {
@@ -48,9 +49,21 @@ class EditField {
     this.required = false,
     this.hint,
   }) : lines = 1,
-       markdown = false;
+       markdown = false,
+       toggle = false;
+  const EditField.toggle(
+    this.key,
+    this.label, {
+    this.value = 'false',
+    this.hint,
+  }) : source = null,
+       multi = false,
+       required = false,
+       lines = 1,
+       markdown = false,
+       toggle = true;
   final String key, label, value;
-  final bool required, multi, markdown;
+  final bool required, multi, markdown, toggle;
   final int lines;
   final String? hint;
   final PickerSource? source;
@@ -62,7 +75,11 @@ Map<String, dynamic> editorSubmission(List<EditField> fields, Map<String, String
     final raw = values[field.key] ?? '';
     switch (field.source) {
       case null:
-        body[field.key] = raw;
+        if (field.toggle) {
+          body[field.key] = raw == 'true';
+        } else {
+          body[field.key] = raw;
+        }
       case PickerSource.labels:
         body[field.key] = decodeChoices(raw, source: PickerSource.labels).map((choice) => choice.name).join(', ');
       case PickerSource.members:
@@ -75,6 +92,9 @@ Map<String, dynamic> editorSubmission(List<EditField> fields, Map<String, String
       case PickerSource.branches:
         final choices = decodeChoices(raw, source: PickerSource.branches);
         body[field.key] = choices.isEmpty ? '' : choices.first.name;
+      case PickerSource.milestones:
+        final choices = decodeChoices(raw, source: PickerSource.milestones);
+        body[field.key] = choices.isEmpty ? null : int.tryParse(choices.first.id);
     }
   }
   return body;
@@ -532,6 +552,8 @@ class _ResourceEditorState extends State<ResourceEditor> {
                               padding: const EdgeInsets.only(top: 20),
                               child: field.markdown
                                   ? _markdownBlock(field)
+                                  : field.toggle
+                                  ? _toggleField(field)
                                   : field.source == null
                                   ? _textField(field)
                                   : _pickerField(field),
@@ -739,6 +761,34 @@ class _ResourceEditorState extends State<ResourceEditor> {
               ),
             ),
           ),
+        );
+      },
+    );
+  }
+
+  Widget _toggleField(EditField field) {
+    final controller = _controllers[field.key];
+    final isTrue = controller?.text == 'true';
+    return FormField<bool>(
+      key: ValueKey('toggle-${field.key}'),
+      initialValue: isTrue,
+      builder: (state) {
+        final val = controller?.text == 'true';
+        return SwitchListTile(
+          key: ValueKey('editor-toggle-${field.key}'),
+          contentPadding: EdgeInsets.zero,
+          minTileHeight: 48,
+          title: Text(field.label),
+          subtitle: field.hint != null ? Text(field.hint!) : null,
+          value: val,
+          onChanged: _locked
+              ? null
+              : (enabled) {
+                  controller?.text = enabled ? 'true' : 'false';
+                  state.didChange(enabled);
+                  _changed(enabled ? 'true' : 'false');
+                  setState(() {});
+                },
         );
       },
     );

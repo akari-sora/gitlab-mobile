@@ -253,6 +253,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
     const _DiscussionFeed(loading: true),
   );
   final _orphanKey = GlobalKey();
+  final Set<String> _viewedFiles = <String>{};
   List<String> get path => [
     'projects',
     '${widget.project.id}',
@@ -443,6 +444,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
   Future<void> _open(Json file, {DiffTarget? target}) async {
     final version = _version;
     if (version == null) return;
+    final filePath = valueText(file, 'new_path', valueText(file, 'old_path'));
     await Navigator.push(
       context,
       MaterialPageRoute<void>(
@@ -455,6 +457,16 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
           version: version,
           feed: _feed,
           initialTarget: target,
+          isViewed: _viewedFiles.contains(filePath),
+          onToggleViewed: () {
+            setState(() {
+              if (_viewedFiles.contains(filePath)) {
+                _viewedFiles.remove(filePath);
+              } else {
+                _viewedFiles.add(filePath);
+              }
+            });
+          },
         ),
       ),
     );
@@ -517,31 +529,133 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
               resourceLabel: '${widget.project.path} · !${widget.iid} 討論',
               onSwitchAccount: endSessionFrom(context),
             ),
-          if (files.isEmpty)
-            const EmptyState('沒有可顯示的文字差異', detail: '可能沒有變更，或差異未由伺服器提供。'),
-          for (final file in files)
+          if (files.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 10),
+              padding: const EdgeInsets.only(top: 8, bottom: 4),
               child: Card(
-                child: ListTile(
-                  leading: Icon(
-                    file['new_file'] == true
-                        ? Icons.add_box_outlined
-                        : file['deleted_file'] == true
-                        ? Icons.indeterminate_check_box_outlined
-                        : Icons.code,
+                elevation: 0,
+                color: Theme.of(context).colorScheme.surfaceContainerLow,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            _viewedFiles.length == files.length && files.isNotEmpty
+                                ? Icons.check_circle
+                                : Icons.rule_folder_outlined,
+                            size: 18,
+                            color: _viewedFiles.length == files.length && files.isNotEmpty
+                                ? Colors.green
+                                : Theme.of(context).colorScheme.primary,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '審查進度 (${_viewedFiles.length}/${files.length})',
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                          ),
+                          TextButton(
+                            key: const ValueKey('toggle-all-viewed'),
+                            style: TextButton.styleFrom(
+                              minimumSize: const Size(48, 48),
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                            ),
+                            onPressed: () {
+                              setState(() {
+                                if (_viewedFiles.length == files.length) {
+                                  _viewedFiles.clear();
+                                } else {
+                                  _viewedFiles.addAll(
+                                    files.map((f) => valueText(f, 'new_path', valueText(f, 'old_path'))),
+                                  );
+                                }
+                              });
+                            },
+                            child: Text(_viewedFiles.length == files.length ? '全部取消' : '全部標記已檢視'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(2),
+                        child: LinearProgressIndicator(
+                          value: files.isEmpty ? 0 : _viewedFiles.length / files.length,
+                          minHeight: 4,
+                          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            _viewedFiles.length == files.length ? Colors.green : Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  title: Text(
-                    valueText(file, 'new_path', valueText(file, 'old_path')),
-                  ),
-                  subtitle: file['renamed_file'] == true
-                      ? Text('原路徑：${valueText(file, 'old_path')}')
-                      : null,
-                  trailing: const Icon(Icons.chevron_right, size: 18),
-                  onTap: () => _open(file),
                 ),
               ),
             ),
+          if (files.isEmpty)
+            const EmptyState('沒有可顯示的文字差異', detail: '可能沒有變更，或差異未由伺服器提供。'),
+          for (final file in files) ...[
+            () {
+              final filePath = valueText(file, 'new_path', valueText(file, 'old_path'));
+              final isViewed = _viewedFiles.contains(filePath);
+              return Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Card(
+                  child: ListTile(
+                    leading: Icon(
+                      file['new_file'] == true
+                          ? Icons.add_box_outlined
+                          : file['deleted_file'] == true
+                          ? Icons.indeterminate_check_box_outlined
+                          : Icons.code,
+                      color: isViewed ? Theme.of(context).colorScheme.outline : null,
+                    ),
+                    title: Text(
+                      filePath,
+                      style: isViewed
+                          ? TextStyle(
+                              color: Theme.of(context).colorScheme.outline,
+                            )
+                          : null,
+                    ),
+                    subtitle: file['renamed_file'] == true
+                        ? Text('原路徑：${valueText(file, 'old_path')}')
+                        : (isViewed ? const Text('已檢視', style: TextStyle(color: Colors.green, fontSize: 12)) : null),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          key: ValueKey('viewed-toggle-$filePath'),
+                          icon: Icon(
+                            isViewed ? Icons.check_circle : Icons.circle_outlined,
+                            size: 22,
+                            color: isViewed ? Colors.green : Theme.of(context).colorScheme.outline,
+                          ),
+                          tooltip: isViewed ? '標記為未檢視' : '標記為已檢視',
+                          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                          onPressed: () {
+                            setState(() {
+                              if (isViewed) {
+                                _viewedFiles.remove(filePath);
+                              } else {
+                                _viewedFiles.add(filePath);
+                              }
+                            });
+                          },
+                        ),
+                        const Icon(Icons.chevron_right, size: 18),
+                      ],
+                    ),
+                    onTap: () => _open(file),
+                  ),
+                ),
+              );
+            }(),
+          ],
           if (unmatched.isNotEmpty || missingTarget)
             _OtherVersionSection(
               key: _orphanKey,
@@ -570,6 +684,8 @@ class _DiffFileScreen extends StatefulWidget {
     required this.version,
     required this.feed,
     this.initialTarget,
+    this.isViewed = false,
+    this.onToggleViewed,
   });
   final Account account;
   final GitLabApi api;
@@ -579,6 +695,8 @@ class _DiffFileScreen extends StatefulWidget {
   final Json version;
   final ValueNotifier<_DiscussionFeed> feed;
   final DiffTarget? initialTarget;
+  final bool isViewed;
+  final VoidCallback? onToggleViewed;
   @override
   State<_DiffFileScreen> createState() => _DiffFileScreenState();
 }
@@ -588,6 +706,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
   String? _unavailable;
   late List<Json> _discussions;
   late bool _truncated;
+  late bool _viewed;
   ApiFailure? _discussionsError;
   bool _reloading = false;
   bool _busy = false;
@@ -614,6 +733,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
   @override
   void initState() {
     super.initState();
+    _viewed = widget.isViewed;
     _applyFeed(widget.feed.value);
     widget.feed.addListener(_onFeed);
     final diff = valueText(widget.file, 'diff');
@@ -976,6 +1096,18 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
+          IconButton(
+            key: const ValueKey('diff-file-viewed-toggle'),
+            tooltip: _viewed ? '標記為未檢視' : '標記為已檢視',
+            icon: Icon(
+              _viewed ? Icons.check_circle : Icons.circle_outlined,
+              color: _viewed ? Colors.green : null,
+            ),
+            onPressed: () {
+              setState(() => _viewed = !_viewed);
+              widget.onToggleViewed?.call();
+            },
+          ),
           IconButton(
             tooltip: '在 GitLab 開啟',
             icon: const Icon(Icons.open_in_new),

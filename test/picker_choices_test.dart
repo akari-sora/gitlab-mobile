@@ -50,4 +50,24 @@ void main() {
     expect(editorSubmission(labels, {'labels': '[]'})['labels'], '');
     expect(decodeChoices('[1,2]', source: PickerSource.branches).single.name, '[1,2]');
   });
+
+  test('milestones and toggles decode and submit correct types', () {
+    const milestoneField = [EditField.picker('milestone_id', '里程碑', source: PickerSource.milestones)];
+    const toggleField = [EditField.toggle('confidential', '機密議題')];
+
+    // Milestone bare choice list
+    const bareMilestone = '[{"id":"101","name":"v1.0.0"}]';
+    final milestone = decodeChoices(bareMilestone, source: PickerSource.milestones).single;
+    expect(milestone.id, '101');
+    expect(milestone.name, 'v1.0.0');
+    expect(editorSubmission(milestoneField, {'milestone_id': bareMilestone})['milestone_id'], 101);
+
+    // Milestone empty choice
+    expect(editorSubmission(milestoneField, {'milestone_id': '[]'})['milestone_id'], isNull);
+
+    // Toggle field submissions
+    expect(editorSubmission(toggleField, {'confidential': 'true'})['confidential'], isTrue);
+    expect(editorSubmission(toggleField, {'confidential': 'false'})['confidential'], isFalse);
+    expect(editorSubmission(toggleField, {})['confidential'], isFalse);
+  });
 }
