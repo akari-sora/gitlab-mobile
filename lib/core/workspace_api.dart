@@ -55,6 +55,10 @@ extension WorkspaceApi on GitLabApi {
     });
   Future<Json> cancelAutoMerge(int project, int iid) =>
     writeRecord('POST', ['projects', '$project', 'merge_requests', '$iid', 'cancel_merge_when_pipeline_succeeds'], {});
+  Future<Json> rebaseMergeRequest(int project, int iid, {bool skipCi = false}) =>
+    writeRecord('POST', ['projects', '$project', 'merge_requests', '$iid', 'rebase'], {
+      if (skipCi) 'skip_ci': true,
+    });
   Future<Json> createNote(int project, String resource, int iid, String body) =>
     writeRecord('POST', ['projects', '$project', resource, '$iid', 'notes'], {'body': body});
   Future<Json> updateNote(int project, String resource, int iid, int note, String body) =>

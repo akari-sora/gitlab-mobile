@@ -230,4 +230,56 @@ void main() {
 
     await _finish(tester);
   });
+
+  testWidgets('typed slash is replaced when quick action chip tapped and code blocks do not trigger banner', (tester) async {
+    _surface(tester);
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+
+    await tester.pumpWidget(_host(Builder(
+      builder: (context) => Scaffold(
+        body: Center(
+          child: ElevatedButton(
+            onPressed: () => openEditor(
+              context,
+              account: fixture.account,
+              title: '新增留言',
+              resource: 'projects/1/issues/10/root/new-prefix',
+              fields: [
+                const EditField('body', '留言內容', required: true, lines: 9, markdown: true, quickActions: true),
+              ],
+              save: (values) async {},
+            ),
+            child: const Text('打開輸入編輯器'),
+          ),
+        ),
+      ),
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('打開輸入編輯器'));
+    await settleWorkspace(tester);
+
+    final inputFinder = find.byKey(const ValueKey('editor-body'));
+    // Simulate user typing a leading slash
+    await tester.enterText(inputFinder, '/');
+    await tester.pump();
+
+    // Tap /close chip
+    final closeChip = find.byKey(const ValueKey('quick-action-/close'));
+    await tester.tap(closeChip);
+    await tester.pump();
+
+    final textField = tester.widget<TextFormField>(inputFinder);
+    expect(textField.controller?.text, '/close\n');
+
+    // Simulate code block
+    await tester.enterText(inputFinder, '```\n/close\n```');
+    await tester.pump();
+
+    // The indicator should NOT trigger for code block
+    expect(find.text('包含快捷指令：'), findsNothing);
+
+    await _finish(tester);
+  });
 }

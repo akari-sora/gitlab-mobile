@@ -29,6 +29,8 @@ void main() {
       (a) => a.mergeRequest(42, 7, 'reviewed-sha', squash: true, removeSourceBranch: false, autoMerge: true)),
     ('MR cancel auto-merge', 'POST', ['projects', '42', 'merge_requests', '7', 'cancel_merge_when_pipeline_succeeds'], {},
       (a) => a.cancelAutoMerge(42, 7)),
+    ('MR rebase', 'POST', ['projects', '42', 'merge_requests', '7', 'rebase'], {},
+      (a) => a.rebaseMergeRequest(42, 7)),
     ('note create', 'POST', ['projects', '42', 'issues', '7', 'notes'], {'body': '留言'}, (a) => a.createNote(42, 'issues', 7, '留言')),
     ('note edit', 'PUT', ['projects', '42', 'merge_requests', '7', 'notes', '9'], {'body': 'updated'}, (a) => a.updateNote(42, 'merge_requests', 7, 9, 'updated')),
     ('branch create', 'POST', ['projects', '42', 'repository', 'branches'], {'branch': 'feat/中文', 'ref': 'main'}, (a) => a.createBranch(42, 'feat/中文', 'main')),
