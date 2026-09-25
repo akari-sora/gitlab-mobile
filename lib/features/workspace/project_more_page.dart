@@ -16,11 +16,12 @@ String metadataTitle(MetadataKind kind) => switch (kind) {
 };
 
 class ProjectMoreTab extends StatefulWidget {
-  const ProjectMoreTab({super.key, required this.account, required this.api, required this.project, required this.onChanged});
+  const ProjectMoreTab({super.key, required this.account, required this.api, required this.project, required this.onChanged, this.onDeleted});
   final Account account;
   final GitLabApi api;
   final Project project;
   final ValueChanged<Project> onChanged;
+  final VoidCallback? onDeleted;
   @override
   State<ProjectMoreTab> createState() => _ProjectMoreTabState();
 }
@@ -37,7 +38,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     if (saved && mounted && updated != null) { widget.onChanged(updated!); }
   }
   Future<void> _star(bool starred) async {
-    if (_busy) { return; }
+    if (_busy) return;
     setState(() => _busy = true);
     try {
       await widget.api.setStar(widget.project.id, starred);
@@ -55,7 +56,11 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
       await widget.api.deleteProject(widget.project.id);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('GitLab 已接受專案刪除要求。')));
-        Navigator.pop(context);
+        if (widget.onDeleted != null) {
+          widget.onDeleted!();
+        } else {
+          Navigator.pop(context);
+        }
       }
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _busy = false); } }

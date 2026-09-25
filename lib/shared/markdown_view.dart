@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/gitlab_api.dart';
+import '../core/models.dart';
+import '../core/providers.dart';
+import 'artifact_storage.dart';
 import 'attachment_budget.dart';
+import 'attachment_download.dart';
 import 'attachment_image.dart';
 import 'attachment_ref.dart';
 import 'external_link.dart';
@@ -18,6 +23,9 @@ class MarkdownView extends StatefulWidget {
     this.projectWeb,
     this.projectPath,
     this.budget,
+    this.account,
+    this.sharer = const SystemArtifactSharer(),
+    this.downloader,
   });
   final String text;
   final Uri? base;
@@ -29,6 +37,9 @@ class MarkdownView extends StatefulWidget {
   /// When omitted, this view keeps one budget for its lifetime. Pass a parent
   /// budget to share the cap across several views on the same page.
   final AttachmentBudget? budget;
+  final Account? account;
+  final ArtifactSharer sharer;
+  final AttachmentDownloader? downloader;
 
   @override
   State<MarkdownView> createState() => _MarkdownViewState();
@@ -97,6 +108,30 @@ class _MarkdownViewState extends State<MarkdownView> {
         if (uri == null || uri.scheme != 'https' || uri.userInfo.isNotEmpty ||
             uri.queryParameters.keys.any((key) => const ['private_token', 'access_token', 'token', 'job_token'].contains(key.toLowerCase()))) {
           return;
+        }
+        final uploadRef = parseProjectUpload(uri, base: base, projectId: projectId, projectWeb: projectWeb);
+        if (uploadRef != null && api != null && projectId != null) {
+          Account? activeAccount = widget.account;
+          if (activeAccount == null) {
+            try {
+              activeAccount = ProviderScope.containerOf(context, listen: false).read(sessionProvider).active;
+            } catch (_) {}
+          }
+          if (activeAccount != null) {
+            await showAttachmentDownloadSheet(
+              context,
+              api: api,
+              projectId: projectId,
+              secret: uploadRef.secret,
+              filename: uploadRef.filename,
+              account: activeAccount,
+              projectPath: widget.projectPath,
+              webUri: uri,
+              sharer: widget.sharer,
+              downloader: widget.downloader,
+            );
+            return;
+          }
         }
         await openExternal(context, uri);
       },

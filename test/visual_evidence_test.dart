@@ -121,8 +121,127 @@ void main() {
           }));
         });
         expect(fixture.unhandled, isEmpty);
-        await tester.pumpWidget(const SizedBox()); await tester.pump();
       });
     }
   }
+
+  group('Adaptive Shell visual evidence and pane geometry across breakpoints', () {
+    for (final width in [412.0, 700.0, 840.0, 1200.0]) {
+      testWidgets('render adaptive shell at ${width.toInt()} dp, capture PNG, and assert layout geometry', (tester) async {
+        FlutterSecureStorage.setMockInitialValues({});
+        final fixture = WorkspaceFixture();
+        fixture.issues[42] = fixture.issue(42, 'Adaptive Layout Issue 42');
+        final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+        final appearance = AppearanceController(MemoryAppearanceStore());
+        final shortcuts = LauncherShortcuts(FakeAppShortcutHost(), MemoryRecentProjectStore());
+        addTearDown(session.dispose);
+        addTearDown(fixture.api.close);
+        addTearDown(shortcuts.dispose);
+
+        await tester.runAsync(() async {
+          await session.initialize();
+          await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+        });
+
+        tester.view.devicePixelRatio = 1.0;
+        tester.view.physicalSize = Size(width, 900);
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+
+        final key = GlobalKey();
+        await tester.pumpWidget(
+          RepaintBoundary(
+            key: key,
+            child: AuthenticatedApp(
+              session: session,
+              appearance: appearance,
+              shortcuts: shortcuts,
+            ),
+          ),
+        );
+        await settleWorkspace(tester);
+        expect(tester.takeException(), isNull);
+
+        if (width < 600) {
+          // Compact: bottom NavigationBar
+          expect(find.byType(NavigationBar), findsOneWidget);
+          expect(find.byType(NavigationRail), findsNothing);
+        } else {
+          // Medium / Expanded / Large: side NavigationRail
+          expect(find.byType(NavigationRail), findsOneWidget);
+          expect(find.byType(NavigationBar), findsNothing);
+        }
+
+        if (width >= 840) {
+          // Enter Project and navigate to Issues tab to verify two-pane layout
+          await tester.tap(find.text('Mobile Workspace'));
+          await settleWorkspace(tester);
+          await tester.tap(find.text('議題'));
+          await settleWorkspace(tester);
+          await tester.tap(find.text('Adaptive Layout Issue 42'));
+          await settleWorkspace(tester);
+
+          // Both list-pane and detail-pane-expanded must be present
+          final listPaneFinder = find.byKey(const ValueKey('list-pane'));
+          final detailPaneFinder = find.byKey(const ValueKey('detail-pane-expanded'));
+          expect(listPaneFinder, findsOneWidget);
+          expect(detailPaneFinder, findsOneWidget);
+
+          // Pane width assertions
+          final listPaneSize = tester.getSize(listPaneFinder);
+          final detailPaneSize = tester.getSize(detailPaneFinder);
+          expect(listPaneSize.width, equals(380.0));
+
+          if (width == 840) {
+            // 840 - 81 (rail) - 380 (list) - 1 (divider) = 378.0
+            expect(detailPaneSize.width, equals(378.0));
+          } else if (width == 1200) {
+            // 1200 - 81 (rail) - 380 (list) - 1 (divider) = 738.0
+            expect(detailPaneSize.width, equals(738.0));
+          }
+
+          // Spatial non-overlapping geometry assertion
+          final listCardFinder = find.descendant(
+            of: find.byType(Card),
+            matching: find.text('Adaptive Layout Issue 42'),
+          ).first;
+          final detailOverviewFinder = find.text('Overview');
+
+          expect(listCardFinder, findsOneWidget);
+          expect(detailOverviewFinder, findsOneWidget);
+
+          final listCardBox = tester.getRect(listCardFinder);
+          final detailOverviewBox = tester.getRect(detailOverviewFinder);
+          expect(
+            listCardBox.right,
+            lessThan(detailOverviewBox.left),
+            reason: 'List card must be strictly to the left of detail overview pane',
+          );
+
+          // Both panes are interactive and hit-testable
+          expect(listCardFinder.hitTestable(), findsOneWidget);
+          expect(detailOverviewFinder.hitTestable(), findsOneWidget);
+        }
+
+        // Capture screenshot artifact
+        final boundary = key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+        await tester.runAsync(() async {
+          final directory = Directory('ci-output/screenshots')..createSync(recursive: true);
+          final image = await boundary.toImage(pixelRatio: 1);
+          final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+          if (bytes == null) {
+            throw StateError('Screenshot encoder returned no data');
+          }
+          await File('${directory.path}/adaptive-shell-${width.toInt()}.png')
+              .writeAsBytes(bytes.buffer.asUint8List());
+          image.dispose();
+        });
+
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+      });
+    }
+  });
 }
+

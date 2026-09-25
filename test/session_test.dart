@@ -7,6 +7,7 @@ import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/features/auth/account_store.dart';
 import 'package:gitlab_mobile/core/oauth.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
+import 'package:gitlab_mobile/shared/resume_target.dart';
 import 'support/fake_adapter.dart';
 
 class MemoryAccountStore implements AccountStore {
@@ -80,6 +81,7 @@ SessionController controllerFor(
 );
 
 void main() {
+  _resumeTargetTests();
   test('activates only after /user and secure-store success', () async {
     final store = MemoryAccountStore();
     final adapter = FakeAdapter(
@@ -813,4 +815,71 @@ Future<HeldRotation> heldActiveRotation() async {
   final rotated = controller.active!.credential as OAuthCredential;
   expect(rotated.accessToken, 'rotated-access');
   return (controller: controller, store: store, hold: hold, pat: pat, refreshing: refreshing);
+}
+
+void _resumeTargetTests() {
+  test('SessionController manages pendingResumeTarget lifecycle', () async {
+    final adapter = FakeAdapter((_) => jsonResponse({'id': 7, 'username': 'tester', 'name': 'Test'}));
+    final store = MemoryAccountStore();
+    final controller = controllerFor(store, adapter);
+    addTearDown(controller.dispose);
+
+    expect(controller.pendingResumeTarget, isNull);
+
+    const target = ResumeTarget(
+      projectId: 12,
+      projectPath: 'group/project',
+      resource: 'issues',
+      iid: 34,
+    );
+    controller.setPendingResumeTarget(target);
+    expect(controller.pendingResumeTarget, target);
+
+    final taken = controller.takeResumeTarget();
+    expect(taken, target);
+    expect(controller.pendingResumeTarget, isNull);
+  });
+
+  test('endSession with switching: true preserves pendingResumeTarget', () async {
+    final adapter = FakeAdapter((_) => jsonResponse({'id': 7, 'username': 'tester', 'name': 'Test'}));
+    final store = MemoryAccountStore();
+    final controller = controllerFor(store, adapter);
+    addTearDown(controller.dispose);
+
+    await controller.initialize();
+    await controller.connect('https://example.com/gitlab', 'pat-a');
+    expect(controller.active, isNotNull);
+
+    const target = ResumeTarget(
+      projectPath: 'group/project',
+      resource: 'merge_requests',
+      iid: 5,
+    );
+    controller.setPendingResumeTarget(target);
+
+    await controller.endSession(switching: true);
+    expect(controller.active, isNull);
+    expect(controller.pendingResumeTarget, target);
+  });
+
+  test('endSession without switching clears pendingResumeTarget', () async {
+    final adapter = FakeAdapter((_) => jsonResponse({'id': 7, 'username': 'tester', 'name': 'Test'}));
+    final store = MemoryAccountStore();
+    final controller = controllerFor(store, adapter);
+    addTearDown(controller.dispose);
+
+    await controller.initialize();
+    await controller.connect('https://example.com/gitlab', 'pat-a');
+
+    const target = ResumeTarget(
+      projectPath: 'group/project',
+      resource: 'issues',
+      iid: 1,
+    );
+    controller.setPendingResumeTarget(target);
+
+    await controller.endSession(); // switching defaults to false
+    expect(controller.active, isNull);
+    expect(controller.pendingResumeTarget, isNull);
+  });
 }

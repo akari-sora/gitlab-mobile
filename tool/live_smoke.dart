@@ -265,17 +265,57 @@ retry_probe:
       await waitPipeline(p, pipeline);
       require((await api.records([...root, 'pipelines', '$pipeline', 'jobs'])).items.isNotEmpty);
     });
-    await check('jobs.read_trace_retry_new_attempt_and_manual_play', () async {
+    try {
+      final pipelineRecord = await api.record([...root, 'pipelines', '$pipeline']);
       final jobs = (await api.records([...root, 'pipelines', '$pipeline', 'jobs'])).items;
-      final passed = jobs.firstWhere((x) => x['name'] == 'smoke');
-      require((await api.jobTrace(p, requiredInt(passed, 'id'))).contains('synthetic-smoke-ok'));
-      final failedJob = jobs.firstWhere((x) => x['name'] == 'retry_probe');
-      final retried = await api.jobAction(p, requiredInt(failedJob, 'id'), 'retry');
-      require(retried['id'] != failedJob['id']);
-      final manual = jobs.firstWhere((x) => x['name'] == 'manual_probe');
-      await api.jobAction(p, requiredInt(manual, 'id'), 'play');
-      await waitPipeline(p, pipeline);
-    });
+      final quotaExceeded = pipelineRecord['failure_reason'] == 'ci_quota_exceeded' ||
+          jobs.any((j) => j['failure_reason'] == 'ci_quota_exceeded');
+      if (quotaExceeded) {
+        checks.add({
+          'name': 'jobs.read_trace_retry_new_attempt_and_manual_play',
+          'status': 'NOT_RUN',
+          'reason': 'ci_quota_exceeded',
+        });
+        stdout.writeln('NOT_RUN jobs.read_trace_retry_new_attempt_and_manual_play (ci_quota_exceeded)');
+      } else {
+        await check('jobs.read_trace_retry_new_attempt_and_manual_play', () async {
+          final passed = jobs.firstWhere((x) => x['name'] == 'smoke');
+          require((await api.jobTrace(p, requiredInt(passed, 'id'))).contains('synthetic-smoke-ok'));
+          final failedJob = jobs.firstWhere((x) => x['name'] == 'retry_probe');
+          final retried = await api.jobAction(p, requiredInt(failedJob, 'id'), 'retry');
+          require(retried['id'] != failedJob['id']);
+          final manual = jobs.firstWhere((x) => x['name'] == 'manual_probe');
+          await api.jobAction(p, requiredInt(manual, 'id'), 'play');
+          await waitPipeline(p, pipeline);
+        });
+      }
+    } catch (e) {
+      var quotaExceeded = e.toString().contains('ci_quota_exceeded');
+      if (!quotaExceeded) {
+        try {
+          final pipelineRecord = await api.record([...root, 'pipelines', '$pipeline']);
+          if (pipelineRecord['failure_reason'] == 'ci_quota_exceeded') {
+            quotaExceeded = true;
+          } else {
+            final jobs = (await api.records([...root, 'pipelines', '$pipeline', 'jobs'])).items;
+            if (jobs.any((j) => j['failure_reason'] == 'ci_quota_exceeded')) {
+              quotaExceeded = true;
+            }
+          }
+        } catch (_) {}
+      }
+      if (quotaExceeded) {
+        checks.removeWhere((c) => c['name'] == 'jobs.read_trace_retry_new_attempt_and_manual_play');
+        checks.add({
+          'name': 'jobs.read_trace_retry_new_attempt_and_manual_play',
+          'status': 'NOT_RUN',
+          'reason': 'ci_quota_exceeded',
+        });
+        stdout.writeln('NOT_RUN jobs.read_trace_retry_new_attempt_and_manual_play (ci_quota_exceeded)');
+      } else {
+        rethrow;
+      }
+    }
     await check('pipelines.retry_then_cancel_then_delete', () async {
       await api.pipelineAction(p, pipeline, 'retry');
       await api.pipelineAction(p, pipeline, 'cancel');

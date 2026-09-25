@@ -266,6 +266,12 @@ void main() {
   });
 
   testWidgets('a pending inbox shortcut selects the Inbox tab after sign-in', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
     FlutterSecureStorage.setMockInitialValues({});
     final host = FakeAppShortcutHost();
     final shortcuts = LauncherShortcuts(host, MemoryRecentProjectStore());
@@ -484,6 +490,12 @@ final class _ShellHarness {
 }
 
 Future<_ShellHarness> _signedInShell(WidgetTester tester, {int? recentId, String? recentName}) async {
+  tester.view.devicePixelRatio = 1.0;
+  tester.view.physicalSize = const Size(412, 900);
+  addTearDown(() {
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
   FlutterSecureStorage.setMockInitialValues({});
   final fixture = WorkspaceFixture();
   final session = controllerFor(MemoryAccountStore(), fixture.adapter);
