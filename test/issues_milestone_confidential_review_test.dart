@@ -366,5 +366,44 @@ void main() {
 
     expect(clearBtn, findsNothing);
   });
+
+  testWidgets('ReviewDiffPage handles stale viewed paths gracefully without assertion failures', (tester) async {
+    _surface(tester);
+    final fixture = WorkspaceFixture();
+    fixture.versionDiffs = [
+      {'old_path': 'lib/a.dart', 'new_path': 'lib/a.dart', 'new_file': false, 'deleted_file': false, 'diff': '@@ -1,1 +1,2 @@\n+line\n'},
+    ];
+
+    await tester.pumpWidget(_host(Scaffold(
+      body: ReviewDiffPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        iid: 12,
+        expectedSha: WorkspaceFixture.sha,
+      ),
+    )));
+    await settleNetworkWidgets(tester);
+
+    // Initial state: 0/1 viewed
+    expect(find.text('審查進度 (0/1)'), findsOneWidget);
+    expect(find.text('全部標記已檢視'), findsOneWidget);
+
+    // Tap toggle all viewed -> 1/1 viewed, button becomes "全部取消"
+    final toggleAllBtn = find.byKey(const ValueKey('toggle-all-viewed'));
+    await tester.tap(toggleAllBtn);
+    await tester.pump();
+
+    expect(find.text('審查進度 (1/1)'), findsOneWidget);
+    expect(find.text('全部取消'), findsOneWidget);
+
+    // Tap toggle all again -> 0/1 viewed
+    await tester.tap(toggleAllBtn);
+    await tester.pump();
+
+    expect(find.text('審查進度 (0/1)'), findsOneWidget);
+    expect(find.text('全部標記已檢視'), findsOneWidget);
+  });
 }
+
 

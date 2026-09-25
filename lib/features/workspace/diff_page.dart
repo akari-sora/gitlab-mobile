@@ -344,6 +344,8 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
       }
       setState(() {
         _version = version;
+        final currentPaths = valueObjects(version, 'diffs').map(diffFilePath).toSet();
+        _viewedFiles.retainAll(currentPaths);
         _loading = false;
       });
     } catch (e) {
@@ -504,6 +506,9 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
     final target = widget.initialTarget;
     final missingTarget = target != null && _fileFor(target) == null;
     final unmatched = _unmatchedDiscussions();
+    final filePaths = files.map(diffFilePath).toSet();
+    final viewedCount = files.where((f) => _viewedFiles.contains(diffFilePath(f))).length;
+    final allViewed = files.isNotEmpty && viewedCount == files.length;
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
@@ -551,18 +556,18 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                       Row(
                         children: [
                           Icon(
-                            _viewedFiles.length == files.length && files.isNotEmpty
+                            allViewed
                                 ? Icons.check_circle
                                 : Icons.rule_folder_outlined,
                             size: 18,
-                            color: _viewedFiles.length == files.length && files.isNotEmpty
+                            color: allViewed
                                 ? Colors.green
                                 : Theme.of(context).colorScheme.primary,
                           ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              '審查進度 (${_viewedFiles.length}/${files.length})',
+                              '審查進度 ($viewedCount/${files.length})',
                               style: Theme.of(context).textTheme.titleSmall,
                             ),
                           ),
@@ -574,14 +579,14 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                             ),
                             onPressed: () {
                               setState(() {
-                                if (_viewedFiles.length == files.length) {
-                                  _viewedFiles.clear();
+                                if (allViewed) {
+                                  _viewedFiles.removeAll(filePaths);
                                 } else {
-                                  _viewedFiles.addAll(files.map(diffFilePath));
+                                  _viewedFiles.addAll(filePaths);
                                 }
                               });
                             },
-                            child: Text(_viewedFiles.length == files.length ? '全部取消' : '全部標記已檢視'),
+                            child: Text(allViewed ? '全部取消' : '全部標記已檢視'),
                           ),
                         ],
                       ),
@@ -589,11 +594,11 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                       ClipRRect(
                         borderRadius: BorderRadius.circular(2),
                         child: LinearProgressIndicator(
-                          value: files.isEmpty ? 0 : _viewedFiles.length / files.length,
+                          value: files.isEmpty ? 0 : (viewedCount / files.length).clamp(0.0, 1.0),
                           minHeight: 4,
                           backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
                           valueColor: AlwaysStoppedAnimation<Color>(
-                            _viewedFiles.length == files.length ? Colors.green : Theme.of(context).colorScheme.primary,
+                            allViewed ? Colors.green : Theme.of(context).colorScheme.primary,
                           ),
                         ),
                       ),
@@ -756,6 +761,14 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     }
     if (widget.initialTarget != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _revealTarget());
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _DiffFileScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isViewed != oldWidget.isViewed) {
+      _viewed = widget.isViewed;
     }
   }
 

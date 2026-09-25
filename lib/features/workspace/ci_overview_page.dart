@@ -76,6 +76,8 @@ class CiOverviewPage extends StatefulWidget {
 class _CiOverviewPageState extends State<CiOverviewPage> {
   int _loadEpoch = 0;
   bool _loading = false;
+  bool _loadingMore = false;
+  Uri? _nextPageUri;
   ApiFailure? _error;
   List<ProjectCiItem> _items = const [];
   String _filter = ''; // '', 'running', 'failed'
@@ -126,6 +128,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         },
       );
       if (!current()) return;
+      _nextPageUri = page.next;
 
       final projects = page.items.map(Project.fromJson).toList();
 
@@ -168,6 +171,79 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       if (mounted) {
         setState(() {
           _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loading || _loadingMore || _nextPageUri == null || !mounted) return;
+    final curAccount = _account;
+    final curApi = _api;
+    if (curAccount == null || curApi == null) return;
+    final epoch = _loadEpoch;
+    final startGeneration = widget.session?.generation;
+    final startAccountKey = curAccount.key;
+    bool current() =>
+        mounted &&
+        epoch == _loadEpoch &&
+        (widget.session == null || widget.session!.generation == startGeneration) &&
+        (widget.session == null || widget.session!.active?.key == startAccountKey);
+
+    setState(() {
+      _loadingMore = true;
+    });
+
+    try {
+      final page = await curApi.records(
+        ['projects'],
+        query: {
+          'membership': 'true',
+          'order_by': 'last_activity_at',
+          'sort': 'desc',
+        },
+        next: _nextPageUri,
+      );
+      if (!current()) return;
+      _nextPageUri = page.next;
+
+      final projects = page.items.map(Project.fromJson).toList();
+
+      final newItems = await poolMap(
+        projects,
+        (project) async {
+          if (!current()) {
+            return ProjectCiItem(project: project);
+          }
+          try {
+            final pipelinePage = await curApi.records(
+              ['projects', '${project.id}', 'pipelines'],
+              query: {'per_page': '1'},
+            );
+            return ProjectCiItem(
+              project: project,
+              latestPipeline: pipelinePage.items.isNotEmpty ? pipelinePage.items.first : null,
+            );
+          } catch (e) {
+            return ProjectCiItem(
+              project: project,
+              error: safeFailure(e),
+            );
+          }
+        },
+        maxConcurrent: widget.maxConcurrent,
+      );
+
+      if (!current()) return;
+      setState(() {
+        _items = [..._items, ...newItems];
+      });
+    } catch (_) {
+      // Keep existing items on failure
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loadingMore = false;
         });
       }
     }
@@ -382,11 +458,31 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       );
     }
 
+    final hasMore = _nextPageUri != null || _loadingMore;
     return ListView.builder(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: EdgeInsets.symmetric(horizontal: gutter, vertical: 4),
-      itemCount: displayed.length,
+      itemCount: displayed.length + (hasMore ? 1 : 0),
       itemBuilder: (context, index) {
+        if (index == displayed.length) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Center(
+              child: _loadingMore
+                  ? const SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : OutlinedButton.icon(
+                      key: const ValueKey('ci-overview-load-more'),
+                      icon: const Icon(Icons.expand_more, size: 18),
+                      label: const Text('載入更多成員專案'),
+                      onPressed: _loadMore,
+                    ),
+            ),
+          );
+        }
         final item = displayed[index];
         return _buildProjectCard(item);
       },
@@ -441,17 +537,23 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                   color: scheme.onSurfaceVariant,
                                 ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    if (item.latestPipeline != null)
-                      StatusBadge(valueText(item.latestPipeline!, 'status'))
-                    else if (item.error != null)
-                      Container(
+                  ),
+                  const SizedBox(width: 8),
+                  if (item.latestPipeline != null)
+                    StatusBadge(valueText(item.latestPipeline!, 'status'))
+                  else if (item.error != null)
+                    Tooltip(
+                      message: item.error!.status == 404
+                          ? '目前無法取得 CI 資源，可能不存在或目前帳號無權存取'
+                          : item.error!.status == 403
+                              ? '目前帳號沒有此專案的 CI/CD 檢視權限'
+                              : '無法取得 CI 狀態',
+                      child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: scheme.errorContainer,
@@ -461,13 +563,14 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                           item.error!.status == 403
                               ? '沒有 CI 權限'
                               : item.error!.status == 404
-                                  ? '無 CI 資源'
+                                  ? '無法存取或無 CI 資源'
                                   : '無法取得 CI 狀態',
                           style: Theme.of(context).textTheme.labelMedium?.copyWith(
                                 color: scheme.onErrorContainer,
                               ),
                         ),
-                      )
+                      ),
+                    )
                     else
                       Text(
                         '無 Pipeline',

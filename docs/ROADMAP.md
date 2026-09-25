@@ -90,7 +90,14 @@ The follow-up engineering slices (D1~D5) and long-term backlog bridge the gaps i
   - Robust state-machine recovery across segmented chunks without emitting garbage glyphs.
   - Performance validation ensuring smooth scrolling over 20,000 log lines.
 
-### D5: Code Reading Experience Suite
+### D4.1 / CI-LOG-SEARCH: In-Job Terminal Log Search & Navigation (MR !24)
+- **Specification**: In-job terminal log search with match highlighting, occurrences counter, and next/prev match scrolling.
+- **Dependencies**: `lib/features/workspace/ci_page.dart`.
+- **Acceptance Criteria**:
+  - Incremental search over Virtualized ANSI spans with keyboard and tap navigation.
+  - Correct jump-to-offset and match highlight styling without breaking log stream.
+
+### D5 / REPO-SYNTAX: Code Reading Experience Suite
 - **D5.1 Collapsible README.md Preview**:
   - Render collapsible `MarkdownView` card at the top of the repository file tree.
 - **D5.2 Tag Ref Picker for Repository Tree**:
