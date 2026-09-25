@@ -38,9 +38,23 @@ extension WorkspaceApi on GitLabApi {
   Future<void> deleteMergeRequest(int project, int iid) => removeRecord(['projects', '$project', 'merge_requests', '$iid']);
   Future<Json> approveMergeRequest(int project, int iid, String sha) =>
     writeRecord('POST', ['projects', '$project', 'merge_requests', '$iid', 'approve'], {'sha': sha});
-  Future<Json> mergeRequest(int project, int iid, String sha, {bool squash = false, bool removeSourceBranch = false}) =>
-    writeRecord('PUT', ['projects', '$project', 'merge_requests', '$iid', 'merge'],
-      {'sha': sha, 'squash': squash, 'should_remove_source_branch': removeSourceBranch});
+  Future<Json> mergeRequest(int project, int iid, String sha, {
+    bool squash = false,
+    bool removeSourceBranch = false,
+    bool autoMerge = false,
+  }) =>
+    writeRecord('PUT', ['projects', '$project', 'merge_requests', '$iid', 'merge'], {
+      'sha': sha,
+      'squash': squash,
+      'should_remove_source_branch': removeSourceBranch,
+      if (autoMerge) ...{
+        'auto_merge': true,
+        'merge_when_pipeline_succeeds': true,
+        'auto_merge_strategy': 'merge_when_pipeline_succeeds',
+      },
+    });
+  Future<Json> cancelAutoMerge(int project, int iid) =>
+    writeRecord('POST', ['projects', '$project', 'merge_requests', '$iid', 'cancel_merge_when_pipeline_succeeds'], {});
   Future<Json> createNote(int project, String resource, int iid, String body) =>
     writeRecord('POST', ['projects', '$project', resource, '$iid', 'notes'], {'body': body});
   Future<Json> updateNote(int project, String resource, int iid, int note, String body) =>
