@@ -85,30 +85,59 @@ extension WorkspaceApi on GitLabApi {
     if (commit == null || commit.isEmpty) { throw const ApiFailure(FailureKind.invalidResponse); }
     return {'last_commit_id': commit, 'size': size};
   }
+  Future<Json> commit(int project, String sha) =>
+      record(['projects', '$project', 'repository', 'commits', sha]);
+  Future<ApiPage<Json>> commitDiff(int project, String sha, {Map<String, String> query = const {}, Uri? next}) =>
+      records(['projects', '$project', 'repository', 'commits', sha, 'diff'], query: query, next: next);
   Future<Json> createPipeline(int project, String ref) => writeRecord('POST', ['projects', '$project', 'pipeline'], {'ref': ref});
   Future<Json> pipelineAction(int project, int pipeline, String action) {
     if (!const ['retry', 'cancel'].contains(action)) { throw const ApiFailure(FailureKind.unsupported); }
     return writeRecord('POST', ['projects', '$project', 'pipelines', '$pipeline', action], {});
   }
   Future<void> deletePipeline(int project, int pipeline) => removeRecord(['projects', '$project', 'pipelines', '$pipeline']);
+  Future<TestReportSummary> pipelineTestReportSummary(int project, int pipeline) async {
+    final uri = instance.api(['projects', '$project', 'pipelines', '$pipeline', 'test_report_summary']);
+    final json = await _object(uri);
+    return TestReportSummary.fromJson(json);
+  }
+  Future<PipelineTestReportPage> pipelineTestReport(
+    int project,
+    int pipeline, {
+    int perPage = 30,
+    Uri? next,
+  }) async {
+    final effectivePerPage = next != null && next.queryParameters.containsKey('per_page')
+        ? int.tryParse(next.queryParameters['per_page']!) ?? perPage
+        : perPage;
+    final first = instance.api(
+      ['projects', '$project', 'pipelines', '$pipeline', 'test_report'],
+      {'per_page': '$effectivePerPage'},
+    );
+    _validateContinuation(first, next);
+    try {
+      final target = next ?? first;
+      final result = await _read(target);
+      final decoded = jsonDecode(utf8.decode(result.bytes));
+      if (decoded is! Map<String, dynamic>) {
+        throw const FormatException('Expected object for test report');
+      }
+      final nextUri = nextPageUri(
+        instance: instance,
+        current: target,
+        headers: result.headers.map,
+      );
+      return PipelineTestReportPage.fromJson(decoded, next: nextUri);
+    } on FormatException {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+  }
   Future<Json> jobAction(int project, int job, String action) {
     if (!const ['retry', 'cancel', 'play'].contains(action)) { throw const ApiFailure(FailureKind.unsupported); }
     return writeRecord('POST', ['projects', '$project', 'jobs', '$job', action], {});
   }
-  Future<String> jobTrace(int project, int job) async {
-    try {
-      final result = await _read(instance.api(['projects', '$project', 'jobs', '$job', 'trace']), maxBytes: GitLabApi.maxTextBytes);
-      return utf8.decode(result.bytes, allowMalformed: true);
-    } on ApiFailure catch (failure) {
-      if (failure.status != 404) { rethrow; }
-      // A visible, not-yet-started job can legitimately have no trace. A missing
-      // job or an expired finished-job trace must remain a real error.
-      final current = await record(['projects', '$project', 'jobs', '$job']);
-      if (const ['created', 'pending', 'manual', 'scheduled', 'preparing', 'waiting_for_resource'].contains(current['status'])) {
-        return '';
-      }
-      rethrow;
-    }
+  Future<String> jobTrace(int project, int job, {int offset = 0}) async {
+    final chunk = await jobTraceChunk(project, job, offset: offset);
+    return utf8.decode(chunk.bytes, allowMalformed: true);
   }
   Future<Json> createRelease(int project, Json fields) => writeRecord('POST', ['projects', '$project', 'releases'], fields);
   Future<Json> updateRelease(int project, String tag, Json fields) => writeRecord('PUT', ['projects', '$project', 'releases', tag], fields);

@@ -4,8 +4,11 @@ import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:gitlab_mobile/core/providers.dart';
 import 'package:gitlab_mobile/features/workspace/records_feed.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
+import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
 
@@ -59,5 +62,41 @@ void main() {
       account: _account(), onRetry: () {},
     ))));
     expect(find.text('重新整理'), findsNothing);
+  });
+
+  testWidgets('FailureNotice with resumeTarget sets pendingResumeTarget and switches', (tester) async {
+    final adapter = FakeAdapter((_) => jsonResponse({'id': 7, 'username': 'tester'}));
+    final store = MemoryAccountStore();
+    final session = controllerFor(store, adapter);
+    addTearDown(session.dispose);
+
+    const target = ResumeTarget(
+      projectId: 10,
+      projectPath: 'org/repo',
+      resource: 'issues',
+      iid: 42,
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sessionProvider.overrideWithValue(session)],
+        child: MaterialApp(
+          home: Scaffold(
+            body: FailureNotice(
+              const ApiFailure(FailureKind.invisible, status: 404),
+              account: _account(),
+              resourceLabel: 'org/repo · Issue #42',
+              resumeTarget: target,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('切換帳號'), findsOneWidget);
+    await tester.tap(find.text('切換帳號'));
+    await tester.pump();
+
+    expect(session.pendingResumeTarget, target);
   });
 }

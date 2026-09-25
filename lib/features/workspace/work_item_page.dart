@@ -4,6 +4,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/external_link.dart';
+import '../../shared/list_detail_scaffold.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
 import 'diff_page.dart';
@@ -24,19 +25,23 @@ class WorkItemsTab extends StatefulWidget {
   State<WorkItemsTab> createState() => _WorkItemsTabState();
 }
 class _WorkItemsTabState extends State<WorkItemsTab> {
+  late final _selection = ListDetailController<int>();
   final _feed = GlobalKey<RecordsFeedState>();
   final _search = TextEditingController();
   String _state = 'opened', _query = '';
   bool get mr => widget.resource == 'merge_requests';
   @override
-  void dispose() { _search.dispose(); super.dispose(); }
-  Future<void> _open(int iid) async {
-    await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => WorkItemPage(
-      account: widget.account, api: widget.api, project: widget.project, resource: widget.resource, iid: iid)));
-    if (mounted) { await _feed.currentState?.refresh(); }
+  void dispose() {
+    _search.dispose();
+    _selection.dispose();
+    super.dispose();
+  }
+  void _open(int iid) {
+    _selection.select(iid);
   }
   Future<void> _create() async {
     var iid = 0;
+    Json? createdRecord;
     final branch = widget.project.defaultBranch ?? 'main';
     final fields = <EditField>[
       const EditField('title', '標題', required: true),
@@ -58,11 +63,18 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
         final created = mr ? await widget.api.createMergeRequest(widget.project.id, body)
           : await widget.api.createIssue(widget.project.id, body);
         iid = requiredInt(created, 'iid');
+        createdRecord = created;
       });
-    if (saved && mounted) { await _open(iid); }
+    if (saved && mounted) {
+      _open(iid);
+      if (createdRecord != null && (_state == 'all' || _state == 'opened')) {
+        _feed.currentState?.prependItem(createdRecord!);
+      } else {
+        unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
+      }
+    }
   }
-  @override
-  Widget build(BuildContext context) => Column(children: [
+  Widget _buildList(BuildContext context, bool isTwoPane, int? selected) => Column(children: [
     Padding(padding: EdgeInsets.fromLTRB(feedGutter(context), 12, feedGutter(context) - 4, 4), child: Row(children: [
       Expanded(child: TextField(controller: _search, textInputAction: TextInputAction.search,
         decoration: InputDecoration(hintText: mr ? '搜尋合併請求' : '搜尋議題', prefixIcon: const Icon(Icons.search)),
@@ -82,14 +94,71 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
       empty: mr ? '沒有符合的合併請求' : '沒有符合的議題',
       load: (next) => widget.api.records(['projects', '${widget.project.id}', widget.resource],
         query: {'state': _state, 'scope': 'all', 'order_by': 'updated_at', 'sort': 'desc', if (_query.isNotEmpty) 'search': _query}, next: next),
-      itemBuilder: (context, value) => workItemCard(context, value, mr: mr, onTap: () => _open(requiredInt(value, 'iid'))),
+      itemBuilder: (context, value) {
+        final iid = requiredInt(value, 'iid');
+        return workItemCard(
+          context,
+          value,
+          mr: mr,
+          selected: isTwoPane && selected == iid,
+          onTap: () => _open(iid),
+        );
+      },
     )),
   ]);
+
+  Widget _buildDetail(BuildContext context, int iid, bool isTwoPane, VoidCallback onBack) => WorkItemPage(
+    key: ValueKey('${widget.resource}-$iid'),
+    account: widget.account,
+    api: widget.api,
+    project: widget.project,
+    resource: widget.resource,
+    iid: iid,
+    showBackButton: !isTwoPane,
+    onBack: onBack,
+    onDeleted: () {
+      _selection.clear();
+      _feed.currentState?.removeItem('$iid');
+    },
+    onMutated: (updated) {
+      final state = valueText(updated, 'state');
+      final matchesFilter = _state == 'all' || _state == state;
+      if (matchesFilter) {
+        _feed.currentState?.patchItem(updated);
+      } else {
+        _feed.currentState?.removeItem('${updated['id'] ?? updated['iid']}');
+      }
+    },
+  );
+
+  Widget _buildEmpty(BuildContext context) => Center(
+    child: EmptyState(
+      mr ? '請選擇合併請求' : '請選擇議題',
+      icon: mr ? Icons.merge : Icons.adjust,
+      detail: mr ? '從左側清單選擇合併請求以查看變更與審查狀態。' : '從左側清單選擇議題以查看內容與討論。',
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) => ListDetailScaffold<int>(
+    controller: _selection,
+    listBuilder: _buildList,
+    detailBuilder: _buildDetail,
+    emptyBuilder: _buildEmpty,
+    twoPaneConsumesBack: true,
+  );
 }
 
 /// Shared issue / merge-request row: state-tinted mark, title, then a meta row
 /// with the status badge, the mono `#iid`, branches for MRs and the update time.
-Widget workItemCard(BuildContext context, Json value, {required bool mr, required VoidCallback onTap, String? project}) {
+Widget workItemCard(
+  BuildContext context,
+  Json value, {
+  required bool mr,
+  required VoidCallback onTap,
+  String? project,
+  bool selected = false,
+}) {
   final scheme = Theme.of(context).colorScheme;
   final workshop = WorkshopColors.of(context);
   final state = valueText(value, 'state');
@@ -103,6 +172,7 @@ Widget workItemCard(BuildContext context, Json value, {required bool mr, require
   final iid = '${mr ? '!' : '#'}${valueInt(value, 'iid')}';
   return EntityCard(
     onTap: onTap,
+    selected: selected,
     titleMaxLines: 3,
     leading: Container(width: 40, height: 40, alignment: Alignment.center,
       decoration: BoxDecoration(color: markBackground, borderRadius: BorderRadius.circular(12)),
@@ -124,12 +194,27 @@ Widget workItemCard(BuildContext context, Json value, {required bool mr, require
 }
 
 class WorkItemPage extends StatefulWidget {
-  const WorkItemPage({super.key, required this.account, required this.api, required this.project, required this.resource, required this.iid});
+  const WorkItemPage({
+    super.key,
+    required this.account,
+    required this.api,
+    required this.project,
+    required this.resource,
+    required this.iid,
+    this.showBackButton = true,
+    this.onBack,
+    this.onDeleted,
+    this.onMutated,
+  });
   final Account account;
   final GitLabApi api;
   final Project project;
   final String resource;
   final int iid;
+  final bool showBackButton;
+  final VoidCallback? onBack;
+  final VoidCallback? onDeleted;
+  final ValueChanged<Json>? onMutated;
   @override
   State<WorkItemPage> createState() => _WorkItemPageState();
 }
@@ -174,7 +259,12 @@ class _WorkItemPageState extends State<WorkItemPage> {
         if (title is String) body['title'] = title.trim();
         await widget.api.writeRecord('PUT', path, body);
       });
-    if (saved && mounted) { await _load(); }
+    if (saved && mounted) {
+      await _load();
+      if (mounted && _data != null) {
+        widget.onMutated?.call(_data!);
+      }
+    }
   }
   Future<void> _action(String action) async {
     if (_busy || _data == null) { return; }
@@ -223,7 +313,13 @@ class _WorkItemPageState extends State<WorkItemPage> {
       switch (action) {
         case 'delete':
           await widget.api.removeRecord(path);
-          if (mounted) { Navigator.pop(context); }
+          if (mounted) {
+            if (widget.onDeleted != null) {
+              widget.onDeleted!();
+            } else {
+              Navigator.pop(context);
+            }
+          }
           return;
         case 'close':
         case 'reopen':
@@ -239,6 +335,9 @@ class _WorkItemPageState extends State<WorkItemPage> {
           squash: squash, removeSourceBranch: removeSourceBranch, autoMerge: autoMerge);
       }
       await _load();
+      if (mounted && _data != null) {
+        widget.onMutated?.call(_data!);
+      }
       if (mounted && action == 'merge') {
         final merged = _data?['state'] == 'merged';
         final autoScheduled = isAutoMergeEnabled(_data ?? {});
@@ -336,7 +435,11 @@ class _WorkItemPageState extends State<WorkItemPage> {
   Widget build(BuildContext context) {
     final data = _data;
     return DefaultTabController(length: mr ? 4 : 2, child: Scaffold(
-      appBar: AppBar(title: Text(label), actions: [
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        leading: widget.showBackButton ? BackButton(onPressed: widget.onBack) : null,
+        title: Text(label),
+        actions: [
         IconButton(tooltip: '重新整理', onPressed: _loading || _busy ? null : _load, icon: const Icon(Icons.refresh)),
         PopupMenuButton<String>(tooltip: '更多操作', enabled: !_busy && data != null, onSelected: _action, itemBuilder: (_) => [
           const PopupMenuItem(value: 'edit', child: Text('編輯')),
@@ -351,7 +454,12 @@ class _WorkItemPageState extends State<WorkItemPage> {
       ]),
       body: gestureSafe(data == null ? (_error != null ? SingleChildScrollView(child: FailureNotice(_error!, onRetry: _load,
         account: widget.account, resourceLabel: '${widget.project.path} · $label',
-        onSwitchAccount: endSessionFrom(context))) : const ListSkeleton()) : Column(
+        onSwitchAccount: endSessionFrom(context, ResumeTarget(
+          projectId: widget.project.id,
+          projectPath: widget.project.path,
+          resource: widget.resource,
+          iid: widget.iid,
+        )))) : const ListSkeleton()) : Column(
         crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
           Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -367,7 +475,13 @@ class _WorkItemPageState extends State<WorkItemPage> {
           Expanded(child: TabBarView(children: [
             ListView(padding: const EdgeInsets.all(20), children: [
               if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
-                resourceLabel: '${widget.project.path} · $label', onSwitchAccount: endSessionFrom(context)),
+                resourceLabel: '${widget.project.path} · $label',
+                onSwitchAccount: endSessionFrom(context, ResumeTarget(
+                  projectId: widget.project.id,
+                  projectPath: widget.project.path,
+                  resource: widget.resource,
+                  iid: widget.iid,
+                ))),
               if (mr) _reviewCard(data),
               if (mr) Padding(padding: const EdgeInsets.only(bottom: 16), child: Card(child: Padding(padding: const EdgeInsets.all(14),
                 child: Text('${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}',

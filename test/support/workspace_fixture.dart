@@ -56,6 +56,8 @@ class WorkspaceFixture {
   var _discussionsOverridden = false;
   List<List<Json>>? discussionPages;
   bool failDiscussions = false;
+  Json? testReportSummaryRecord;
+  Json? testReportRecord;
   // Reading this marks the list as caller-owned so the default seed is not inserted.
   List<Json> get mrDiscussions {
     _discussionsOverridden = true;
@@ -383,6 +385,42 @@ class WorkspaceFixture {
     if (joined == 'projects/42/pipelines') { return jsonResponse([pipeline]); }
     if (joined == 'projects/42/pipelines/99') { return jsonResponse(pipeline); }
     if (joined == 'projects/42/pipelines/99/jobs') { return jsonResponse([job(501), job(502, status: 'manual')]); }
+    if (path.length == 5 && path[0] == 'projects' && path[1] == '42' && path[2] == 'pipelines' && path[4] == 'test_report_summary') {
+      return jsonResponse(testReportSummaryRecord ?? {
+        'total': {
+          'time': 42.0, 'count': 2, 'success': 2, 'failed': 0, 'skipped': 0, 'error': 0, 'suite_error': null,
+        },
+        'test_suites': [
+          {
+            'name': 'unit', 'total_time': 42.0, 'total_count': 2, 'success_count': 2,
+            'failed_count': 0, 'skipped_count': 0, 'error_count': 0, 'suite_error': null,
+          }
+        ],
+      });
+    }
+    if (path.length == 5 && path[0] == 'projects' && path[1] == '42' && path[2] == 'pipelines' && path[4] == 'test_report') {
+      return jsonResponse(testReportRecord ?? {
+        'total_time': 42.0, 'total_count': 2, 'success_count': 2, 'failed_count': 0, 'skipped_count': 0, 'error_count': 0,
+        'test_suites': [
+          {
+            'name': 'unit', 'total_time': 42.0, 'total_count': 2, 'success_count': 2,
+            'failed_count': 0, 'skipped_count': 0, 'error_count': 0, 'suite_error': null,
+            'test_cases': [
+              {
+                'status': 'success', 'name': 'test_one', 'classname': 'AppTest',
+                'file': 'test/app_test.dart', 'execution_time': 21.0,
+                'system_output': null, 'stack_trace': null, 'job_id': 501,
+              },
+              {
+                'status': 'success', 'name': 'test_two', 'classname': 'AppTest',
+                'file': 'test/app_test.dart', 'execution_time': 21.0,
+                'system_output': null, 'stack_trace': null, 'job_id': 501,
+              },
+            ],
+          }
+        ],
+      });
+    }
     if (joined == 'projects/42/jobs/501') { return jsonResponse(job(501)); }
     if (joined == 'projects/42/jobs/502') { return jsonResponse(job(502, status: 'manual')); }
     if (joined == 'projects/42/jobs/501/trace') { return ResponseBody.fromString('flutter analyze\nNo issues found.\nAll tests passed.\n', 200); }
