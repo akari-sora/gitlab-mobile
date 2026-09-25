@@ -1,10 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:crypto/crypto.dart';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/job_trace.dart';
@@ -13,7 +11,9 @@ import '../../shared/external_link.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 import 'records_feed.dart';
+import '../../shared/artifact_storage.dart';
 import '../../shared/theme.dart';
+export '../../shared/artifact_storage.dart';
 
 class PipelinesTab extends StatefulWidget {
   const PipelinesTab({super.key, required this.account, required this.api, required this.project});
@@ -89,6 +89,7 @@ class PipelinePage extends StatefulWidget {
 }
 class _PipelinePageState extends State<PipelinePage> {
   final _feed = GlobalKey<RecordsFeedState>();
+  final _testsKey = GlobalKey<PipelineTestsViewState>();
   Json? _data;
   ApiFailure? _error;
   bool _busy = false, _loading = false;
@@ -109,7 +110,10 @@ class _PipelinePageState extends State<PipelinePage> {
     // The job route stays open across retries and completes only on real back.
     if (!mounted) { return; }
     await _load();
-    if (mounted) { await _feed.currentState?.refresh(); }
+    if (mounted) {
+      await _feed.currentState?.refresh();
+      await _testsKey.currentState?.refresh();
+    }
   }
   Future<void> _action(String action) async {
     if (_busy) { return; }
@@ -126,299 +130,751 @@ class _PipelinePageState extends State<PipelinePage> {
       }
       await widget.api.pipelineAction(widget.project.id, widget.id, action);
       await _load();
-      if (mounted) { await _feed.currentState?.refresh(); }
+      if (mounted) {
+        await _feed.currentState?.refresh();
+        await _testsKey.currentState?.refresh();
+      }
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _busy = false); } }
   }
   @override
-  Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text('Pipeline #${widget.id}'), actions: [
-    IconButton(tooltip: '重新整理', onPressed: _loading || _busy ? null : () async {
-      await _load(); if (mounted) { await _feed.currentState?.refresh(); }
-    }, icon: const Icon(Icons.refresh)),
-    PopupMenuButton<String>(enabled: !_busy, tooltip: 'Pipeline 操作', onSelected: _action, itemBuilder: (_) => const [
-      PopupMenuItem(value: 'retry', child: Text('重試失敗工作')),
-      PopupMenuItem(value: 'cancel', child: Text('取消流程')),
-      PopupMenuItem(value: 'delete', child: Text('刪除 Pipeline')),
-    ]),
-  ]), body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
-    if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
-      resourceLabel: '${widget.project.path} · Pipeline #${widget.id}', onSwitchAccount: endSessionFrom(context)),
-    if (_data != null) Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 16), child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          StatusBadge(valueText(_data!, 'status')), Text(valueText(_data!, 'ref')),
-          Text(shortSha(valueText(_data!, 'sha')), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12)),
-          if (_data!['duration'] is num) Text('${(_data!['duration'] as num).round()} 秒', style: const TextStyle(fontSize: 12)),
+  Widget build(BuildContext context) => DefaultTabController(
+    length: 2,
+    child: Scaffold(
+      appBar: AppBar(title: Text('Pipeline #${widget.id}'), actions: [
+        IconButton(tooltip: '重新整理', onPressed: _loading || _busy ? null : () async {
+          await _load();
+          if (mounted) {
+            await _feed.currentState?.refresh();
+            await _testsKey.currentState?.refresh();
+          }
+        }, icon: const Icon(Icons.refresh)),
+        PopupMenuButton<String>(enabled: !_busy, tooltip: 'Pipeline 操作', onSelected: _action, itemBuilder: (_) => const [
+          PopupMenuItem(value: 'retry', child: Text('重試失敗工作')),
+          PopupMenuItem(value: 'cancel', child: Text('取消流程')),
+          PopupMenuItem(value: 'delete', child: Text('刪除 Pipeline')),
         ]),
+      ]),
+      body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
+        if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
+          resourceLabel: '${widget.project.path} · Pipeline #${widget.id}',
+          onSwitchAccount: endSessionFrom(context, ResumeTarget(
+            projectId: widget.project.id,
+            projectPath: widget.project.path,
+            resource: 'pipelines',
+            iid: widget.id,
+          ))),
+        if (_data != null) Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 12), child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              StatusBadge(valueText(_data!, 'status')), Text(valueText(_data!, 'ref')),
+              Text(shortSha(valueText(_data!, 'sha')), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12)),
+              if (_data!['duration'] is num) Text('${(_data!['duration'] as num).round()} 秒', style: const TextStyle(fontSize: 12)),
+            ]),
+          ])),
+        if (_data != null)
+          const TabBar(
+            tabs: [
+              Tab(text: '工作'),
+              Tab(text: '測試'),
+            ],
+          ),
+        if (_data != null)
+          Expanded(
+            child: TabBarView(
+              children: [
+                RecordsFeed(
+                  key: _feed,
+                  identity: 'pipeline/${widget.id}/jobs',
+                  empty: '尚無工作',
+                  account: widget.account,
+                  resourceLabel: '${widget.project.path} · Pipeline #${widget.id} 工作',
+                  onSwitchAccount: endSessionFrom(context),
+                  load: (next) => widget.api.records(
+                    ['projects', '${widget.project.id}', 'pipelines', '${widget.id}', 'jobs'],
+                    query: {'include_retried': 'false'},
+                    next: next,
+                  ),
+                  itemBuilder: (context, value) => SemanticButton(
+                    label: jobCardLabel(value),
+                    onTap: () => _openJob(requiredInt(value, 'id')),
+                    child: Card(
+                      child: ListTile(
+                        title: Text(valueText(value, 'name')),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              StatusBadge(valueText(value, 'status')),
+                              Text(valueText(value, 'stage'), style: const TextStyle(fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        trailing: const Icon(Icons.chevron_right, size: 18),
+                        onTap: () => _openJob(requiredInt(value, 'id')),
+                      ),
+                    ),
+                  ),
+                ),
+                PipelineTestsView(
+                  key: _testsKey,
+                  account: widget.account,
+                  api: widget.api,
+                  project: widget.project,
+                  pipelineId: widget.id,
+                  pipelineStatus: valueText(_data!, 'status'),
+                  onOpenJob: _openJob,
+                ),
+              ],
+            ),
+          ),
       ])),
-    Expanded(child: RecordsFeed(key: _feed, identity: 'pipeline/${widget.id}/jobs', empty: '尚無工作',
-      account: widget.account, resourceLabel: '${widget.project.path} · Pipeline #${widget.id} 工作',
-      onSwitchAccount: endSessionFrom(context),
-      load: (next) => widget.api.records(['projects', '${widget.project.id}', 'pipelines', '${widget.id}', 'jobs'],
-        query: {'include_retried': 'false'}, next: next), itemBuilder: (context, value) => SemanticButton(
-          label: jobCardLabel(value), onTap: () => _openJob(requiredInt(value, 'id')),
-          child: Card(child: ListTile(
-          title: Text(valueText(value, 'name')), subtitle: Padding(padding: const EdgeInsets.only(top: 6),
-            child: Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center,
-              children: [StatusBadge(valueText(value, 'status')), Text(valueText(value, 'stage'), style: const TextStyle(fontSize: 12))])),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), trailing: const Icon(Icons.chevron_right, size: 18),
-          onTap: () => _openJob(requiredInt(value, 'id')),
-        ))),
-    )),
-  ])));
-}
-
-/// Override in tests. Production uses the app temporary directory, which the
-/// OS may purge. Widget tests have no path_provider channel, so they use the
-/// process temp directory instead of waiting on that call.
-Future<Directory> Function() artifactStorageRoot = _defaultArtifactRoot;
-
-Future<Directory> _defaultArtifactRoot() {
-  if (Platform.environment.containsKey('FLUTTER_TEST')) {
-    return Future<Directory>.value(Directory.systemTemp);
-  }
-  return getTemporaryDirectory();
-}
-
-/// Path segment for [account]. A fixed-length digest so a long installation
-/// path cannot exceed the 255-byte directory-component limit.
-String artifactAccountSegment(Account account) =>
-    sha256.convert(utf8.encode(account.key)).toString().substring(0, 32);
-
-int _artifactAttempt = 0;
-
-/// `<temporary>/artifacts/<account>/<project>-<job>/<attempt>/`.
-///
-/// Each call is one attempt. Cleanup of that directory cannot truncate another
-/// attempt, account, or instance that happens to reuse the same numeric ids.
-/// The operating system may purge this cache directory at any time.
-Future<Directory> jobArtifactDirectory(Account account, int projectId, int jobId) async {
-  final root = await artifactStorageRoot();
-  final attempt = ++_artifactAttempt;
-  final stamp = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
-  final directory = Directory(
-    '${root.path}/artifacts/${artifactAccountSegment(account)}/$projectId-$jobId/$stamp-$attempt',
+    ),
   );
-  await directory.create(recursive: true);
-  return directory;
 }
 
-/// Deletes archives left behind for [account], including completed downloads.
-/// Filesystem checks stay synchronous so account removal is not left waiting
-/// on a plugin or an I/O future the widget test clock will not complete.
-/// Lookup and deletion failures of that account directory propagate so the
-/// account is not removed while its archives remain. The `share_plus` cache
-/// is removed best-effort and cannot abort removal.
-Future<void> clearAccountArtifacts(Account account) async {
-  final Directory root;
-  try {
-    root = await artifactStorageRoot();
-  } on Object {
-    throw ApiFailure.artifactCleanup;
-  }
-  final directory = Directory('${root.path}/artifacts/${artifactAccountSegment(account)}');
-  if (directory.existsSync()) {
-    try {
-      removeArtifactDirectory(directory);
-    } on FileSystemException {
-      throw ApiFailure.artifactCleanup;
-    }
-  }
-  // share_plus is not account-scoped. A failure here must not keep the account.
-  _deleteSharePlusDirectory(root);
-}
-
-/// share_plus copies the archive into `<cache>/share_plus/` and does not
-/// delete it. Dismissed, unavailable, and failed shares delete that copy
-/// immediately. A successful share leaves it until the app resumes after
-/// leaving the foreground, so the receiving app can finish reading it.
-/// Lookup can throw [MissingPlatformDirectoryException], which is not a
-/// [FileSystemException], so every error here is ignored.
-/// [serial] is the share that owns the folder when the caller decided to
-/// delete it. The cache-root lookup awaits, and a newer share may start (and
-/// plant its own copy) meanwhile, so ownership is re-checked after the await.
-/// A null serial deletes unconditionally.
-Future<void> _discardSharePlusCopies([int? serial]) async {
-  try {
-    final root = await artifactStorageRoot();
-    if (serial != null && serial != _shareSerial) return;
-    _deleteSharePlusDirectory(root);
-  } on Object {
-    return;
-  }
-}
-
-void _deleteSharePlusDirectory(Directory root) {
-  try {
-    removeArtifactDirectory(Directory('${root.path}/share_plus'));
-  } on Object {
-    return;
-  }
-}
-
-/// Deletes one account's artifact directory. Tests replace it to inject a
-/// failure: a read-only directory does not stop deletion for root (the CI
-/// runner), so permissions cannot simulate that path portably.
-@visibleForTesting
-void Function(Directory directory) removeArtifactDirectory =
-    (directory) => directory.deleteSync(recursive: true);
-
-Future<File> promoteArtifactFile(File partial, File target) async {
-  if (target.existsSync()) await target.delete();
-  return partial.rename(target.path);
-}
-
-const _artifactPartialName = '.download.partial';
-
-IOSink openArtifactSink(File file) => file.openWrite();
-
-/// Throttles archive progress to one notification per 100 ms, plus completion.
-final class ArtifactProgress {
-  ArtifactProgress({DateTime Function()? clock, (int, int?) initial = (0, null)})
-      : _clock = clock ?? DateTime.now,
-        value = ValueNotifier<(int, int?)>(initial);
-  final DateTime Function() _clock;
-  final ValueNotifier<(int, int?)> value;
-  DateTime? _last;
-
-  void report(int received, int? total, {bool completed = false}) {
-    final now = _clock();
-    final last = _last;
-    if (!completed && last != null && now.difference(last) < const Duration(milliseconds: 100)) {
-      return;
-    }
-    _last = now;
-    final current = value.value;
-    value.value = (received, total ?? current.$2);
-  }
-
-  void dispose() => value.dispose();
-}
-
-enum ShareOutcome { success, dismissed, unavailable }
-
-int _shareSerial = 0;
-// Created lazily in the caller's zone: a future made in another zone (a test
-// tearDown) would schedule its continuations there and never run here.
-Future<void>? _shareCleanup;
-_ShareCopyWatch? _shareCopyWatch;
-
-/// Hands [path] to [sharer] and then decides what happens to the plugin copy
-/// in `<cache>/share_plus`. Only the newest share owns that folder: an older
-/// share that completes later must not delete a copy planted by a newer one
-/// (the plugin replaces the folder when a share starts). A dismissed,
-/// unavailable or failed share deletes the copy at once. A successful share
-/// keeps it until the app resumes after leaving the foreground, so the
-/// receiving app can finish reading the `content://` stream; a later share
-/// supersedes that hold.
-@visibleForTesting
-Future<void> shareDownloadedArtifact(ArtifactSharer sharer, String path) async {
-  final serial = ++_shareSerial;
-  _disarmShareCopyWatch();
-  ShareOutcome? outcome;
-  try {
-    outcome = await sharer.share(path);
-  } catch (error, stack) {
-    await _cleanupAfterShare(serial, null);
-    Error.throwWithStackTrace(error, stack);
-  }
-  await _cleanupAfterShare(serial, outcome);
-}
-
-/// Cleanup steps run one at a time, in completion order.
-Future<void> _cleanupAfterShare(int serial, ShareOutcome? outcome) {
-  final previous = _shareCleanup ?? Future<void>.value();
-  final step = previous.then((_) async {
-    if (serial != _shareSerial) return;
-    if (outcome == ShareOutcome.success) {
-      _armShareCopyWatch(serial);
-      return;
-    }
-    await _discardSharePlusCopies(serial);
+class PipelineTestsView extends StatefulWidget {
+  const PipelineTestsView({
+    super.key,
+    required this.account,
+    required this.api,
+    required this.project,
+    required this.pipelineId,
+    required this.pipelineStatus,
+    required this.onOpenJob,
   });
-  _shareCleanup = step.then<void>((_) {}, onError: (Object _, StackTrace _) {});
-  return step;
-}
 
-/// At most one watcher is registered; it is not owned by any sheet, so a
-/// sheet that closes before the app comes back does not cancel the cleanup.
-void _armShareCopyWatch(int serial) {
-  final existing = _shareCopyWatch;
-  if (existing != null) {
-    existing.serial = serial;
-    return;
-  }
-  final watch = _ShareCopyWatch(serial);
-  final state = WidgetsBinding.instance.lifecycleState;
-  watch.departed = _leftForeground(state);
-  _shareCopyWatch = watch;
-  WidgetsBinding.instance.addObserver(watch);
-}
-
-void _disarmShareCopyWatch() {
-  final watch = _shareCopyWatch;
-  if (watch == null) return;
-  WidgetsBinding.instance.removeObserver(watch);
-  _shareCopyWatch = null;
-}
-
-bool _leftForeground(AppLifecycleState? state) =>
-    state == AppLifecycleState.inactive || state == AppLifecycleState.paused || state == AppLifecycleState.hidden;
-
-@visibleForTesting
-void resetArtifactShareCleanup() {
-  _disarmShareCopyWatch();
-  _shareSerial = 0;
-  _shareCleanup = null;
-}
-
-final class _ShareCopyWatch extends WidgetsBindingObserver {
-  _ShareCopyWatch(this.serial);
-  int serial;
-  var departed = false;
+  final Account account;
+  final GitLabApi api;
+  final Project project;
+  final int pipelineId;
+  final String pipelineStatus;
+  final Future<void> Function(int jobId) onOpenJob;
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_leftForeground(state)) {
-      departed = true;
-      return;
+  State<PipelineTestsView> createState() => PipelineTestsViewState();
+}
+
+class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeepAliveClientMixin {
+  static const int maxCasesBudget = 500;
+  static const int maxOutputChars = 5000;
+
+  int _generation = 0;
+  int _casesGeneration = 0;
+  bool _loadingSummary = false;
+  bool _loadingCases = false;
+  bool _loadingMore = false;
+  TestReportSummary? _summary;
+  ApiFailure? _summaryError;
+  ApiFailure? _casesError;
+  List<TestCase> _cases = [];
+  Uri? _nextPage;
+  String _filter = 'all';
+  final Set<String> _expandedCases = {};
+
+  @override
+  bool get wantKeepAlive => true;
+
+  bool get _isInProgress => const [
+    'running',
+    'pending',
+    'preparing',
+    'waiting_for_resource',
+    'scheduled',
+    'created',
+  ].contains(widget.pipelineStatus.toLowerCase());
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(refresh());
+  }
+
+  @override
+  void didUpdateWidget(covariant PipelineTestsView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.pipelineId != widget.pipelineId ||
+        oldWidget.pipelineStatus != widget.pipelineStatus) {
+      unawaited(refresh());
     }
-    if (state != AppLifecycleState.resumed || !departed) return;
-    _disarmShareCopyWatch();
-    unawaited(_discardSharePlusCopies(serial));
   }
-}
 
-abstract interface class ArtifactSharer {
-  Future<ShareOutcome> share(String path);
-}
-
-final class SystemArtifactSharer implements ArtifactSharer {
-  const SystemArtifactSharer();
   @override
-  Future<ShareOutcome> share(String path) async {
-    final result = await SharePlus.instance.share(ShareParams(files: [XFile(path)]));
-    return switch (result.status) {
-      ShareResultStatus.success => ShareOutcome.success,
-      ShareResultStatus.dismissed => ShareOutcome.dismissed,
-      ShareResultStatus.unavailable => ShareOutcome.unavailable,
-    };
+  void dispose() {
+    _generation++;
+    _casesGeneration++;
+    super.dispose();
+  }
+
+  Future<void> refresh() async {
+    final gen = ++_generation;
+    setState(() {
+      _loadingSummary = true;
+      _summaryError = null;
+      _casesError = null;
+      _cases = [];
+      _nextPage = null;
+    });
+
+    try {
+      final summary = await widget.api.pipelineTestReportSummary(
+        widget.project.id,
+        widget.pipelineId,
+      );
+      if (!mounted || gen != _generation) return;
+      setState(() {
+        _summary = summary;
+        _loadingSummary = false;
+        if (summary.failedCount > 0) {
+          _filter = 'failed';
+        } else if (summary.errorCount > 0) {
+          _filter = 'error';
+        } else {
+          _filter = 'all';
+        }
+      });
+      if (summary.totalCount > 0) {
+        unawaited(_loadCases(gen));
+      }
+    } catch (e) {
+      if (!mounted || gen != _generation) return;
+      setState(() {
+        _summaryError = safeFailure(e);
+        _loadingSummary = false;
+      });
+    }
+  }
+
+  Future<void> _loadCases(int summaryGen) async {
+    final caseGen = ++_casesGeneration;
+    setState(() {
+      _loadingCases = true;
+      _casesError = null;
+    });
+
+    try {
+      final page = await widget.api.pipelineTestReport(
+        widget.project.id,
+        widget.pipelineId,
+        perPage: 30,
+      );
+      if (!mounted || summaryGen != _generation || caseGen != _casesGeneration) return;
+      setState(() {
+        _cases = page.testCases;
+        _nextPage = page.next;
+        _loadingCases = false;
+      });
+    } catch (e) {
+      if (!mounted || summaryGen != _generation || caseGen != _casesGeneration) return;
+      setState(() {
+        _casesError = safeFailure(e);
+        _loadingCases = false;
+      });
+    }
+  }
+
+  Future<void> _loadMore() async {
+    final next = _nextPage;
+    if (next == null || _loadingMore || _loadingCases) return;
+    if (_cases.length >= maxCasesBudget) return;
+    final gen = _generation;
+    final caseGen = _casesGeneration;
+    setState(() {
+      _loadingMore = true;
+      _casesError = null;
+    });
+
+    try {
+      final page = await widget.api.pipelineTestReport(
+        widget.project.id,
+        widget.pipelineId,
+        next: next,
+      );
+      if (!mounted || gen != _generation || caseGen != _casesGeneration) return;
+      final seen = _cases.map((c) => c.identity).toSet();
+      final newCases = <TestCase>[];
+      for (final c in page.testCases) {
+        if (!seen.contains(c.identity)) newCases.add(c);
+      }
+      setState(() {
+        _cases = [..._cases, ...newCases];
+        _nextPage = page.next;
+        _loadingMore = false;
+      });
+    } catch (e) {
+      if (!mounted || gen != _generation || caseGen != _casesGeneration) return;
+      setState(() {
+        _casesError = safeFailure(e);
+        _loadingMore = false;
+      });
+    }
+  }
+
+  String _filterLabel(String filter) => switch (filter) {
+    'all' => '全部',
+    'failed' => '失敗',
+    'error' => '錯誤',
+    'skipped' => '跳過',
+    'success' => '成功',
+    _ => filter,
+  };
+
+  String _truncateOutput(String text) {
+    if (text.length <= maxOutputChars) return text;
+    return '${text.substring(0, maxOutputChars)}\n\n… [輸出過長，已截斷顯示]';
+  }
+
+  Widget _buildSummaryCard(BuildContext context, TestReportSummary summary) {
+    final theme = Theme.of(context);
+    final workshop = WorkshopColors.of(context);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                StatusBadge(switch (summary.status) {
+                  TestReportStatus.failed => 'failed',
+                  TestReportStatus.error => 'error',
+                  TestReportStatus.suiteError => 'error',
+                  TestReportStatus.skipped => 'skipped',
+                  TestReportStatus.success => 'success',
+                  _ => 'status_unknown',
+                }),
+                Text('總計 ${summary.totalCount}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text('成功 ${summary.successCount}', style: TextStyle(color: workshop.onSuccessContainer)),
+                if (summary.failedCount > 0)
+                  Text('失敗 ${summary.failedCount}', style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.bold)),
+                if (summary.errorCount > 0)
+                  Text('錯誤 ${summary.errorCount}', style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.bold)),
+                if (summary.skippedCount > 0)
+                  Text('跳過 ${summary.skippedCount}', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
+                Text('耗時 ${summary.totalTime.toStringAsFixed(2)} 秒', style: theme.textTheme.bodySmall),
+              ],
+            ),
+            if (summary.hasSuiteError) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.errorContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.warning_amber_rounded, size: 18, color: theme.colorScheme.onErrorContainer),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '測試套件解析錯誤: ${summary.suiteError ?? summary.testSuites.firstWhere((s) => s.hasSuiteError, orElse: () => const TestSuiteSummary(name: '', totalTime: 0, totalCount: 0, successCount: 0, failedCount: 0, skippedCount: 0, errorCount: 0, suiteError: '未知套件錯誤')).suiteError}',
+                        style: TextStyle(color: theme.colorScheme.onErrorContainer, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterChips(BuildContext context, TestReportSummary summary) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text('全部 (${summary.totalCount})'),
+              selected: _filter == 'all',
+              showCheckmark: false,
+              onSelected: (_) => setState(() => _filter = 'all'),
+            ),
+          ),
+          if (summary.failedCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text('失敗 (${summary.failedCount})'),
+                selected: _filter == 'failed',
+                showCheckmark: false,
+                onSelected: (_) => setState(() => _filter = 'failed'),
+              ),
+            ),
+          if (summary.errorCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text('錯誤 (${summary.errorCount})'),
+                selected: _filter == 'error',
+                showCheckmark: false,
+                onSelected: (_) => setState(() => _filter = 'error'),
+              ),
+            ),
+          if (summary.skippedCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text('跳過 (${summary.skippedCount})'),
+                selected: _filter == 'skipped',
+                showCheckmark: false,
+                onSelected: (_) => setState(() => _filter = 'skipped'),
+              ),
+            ),
+          if (summary.successCount > 0)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                label: Text('成功 (${summary.successCount})'),
+                selected: _filter == 'success',
+                showCheckmark: false,
+                onSelected: (_) => setState(() => _filter = 'success'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTestCaseCard(BuildContext context, TestCase item) {
+    final theme = Theme.of(context);
+    final isExpanded = _expandedCases.contains(item.identity);
+    final hasTraceOrOutput = (item.stackTrace != null && item.stackTrace!.isNotEmpty) ||
+        (item.systemOutput != null && item.systemOutput!.isNotEmpty);
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final maxTextWidth = constraints.maxWidth;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    StatusBadge(item.status),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        item.name,
+                        style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    if (item.classname != null && item.classname!.isNotEmpty)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxTextWidth),
+                        child: Text(
+                          item.classname!,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontFamily: codeFontFamily,
+                            fontFamilyFallback: ['Menlo', 'monospace'],
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    if (item.suiteName != null && item.suiteName!.isNotEmpty)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxTextWidth),
+                        child: Text(
+                          '套件: ${item.suiteName}',
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    if (item.file != null && item.file!.isNotEmpty)
+                      ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxTextWidth),
+                        child: Text(
+                          item.file!,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    if (item.executionTime != null)
+                      Text('${item.executionTime!.toStringAsFixed(3)} 秒', style: theme.textTheme.bodySmall),
+                  ],
+                ),
+                if (item.jobId != null) ...[
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.terminal, size: 16),
+                      label: Text('工作 #${item.jobId}'),
+                      style: OutlinedButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        minimumSize: const Size(48, 48),
+                      ),
+                      onPressed: () => widget.onOpenJob(item.jobId!),
+                    ),
+                  ),
+                ],
+                if (hasTraceOrOutput) ...[
+                  const SizedBox(height: 8),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () {
+                      setState(() {
+                        if (isExpanded) {
+                          _expandedCases.remove(item.identity);
+                        } else {
+                          _expandedCases.add(item.identity);
+                        }
+                      });
+                    },
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 48),
+                      child: Row(
+                        children: [
+                          Icon(isExpanded ? Icons.expand_less : Icons.expand_more, size: 20),
+                          const SizedBox(width: 6),
+                          Text(
+                            '錯誤追蹤與輸出',
+                            style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (isExpanded) ...[
+                    if (item.stackTrace != null && item.stackTrace!.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text('錯誤堆疊 (Stacktrace):', style: theme.textTheme.labelSmall),
+                      const SizedBox(height: 4),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: SelectableText(
+                          _truncateOutput(item.stackTrace!),
+                          style: const TextStyle(
+                            fontFamily: codeFontFamily,
+                            fontFamilyFallback: ['Menlo', 'monospace'],
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (item.systemOutput != null && item.systemOutput!.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text('系統輸出 (System Output):', style: theme.textTheme.labelSmall),
+                      const SizedBox(height: 4),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: SelectableText(
+                          _truncateOutput(item.systemOutput!),
+                          style: const TextStyle(
+                            fontFamily: codeFontFamily,
+                            fontFamilyFallback: ['Menlo', 'monospace'],
+                            fontSize: 11,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ],
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final gutter = feedGutter(context);
+
+    if (_loadingSummary && _summary == null) {
+      return const ListSkeleton();
+    }
+
+    if (_summaryError != null) {
+      if (_summaryError!.status == 404 || _summaryError!.kind == FailureKind.invisible) {
+        return RefreshIndicator(
+          onRefresh: refresh,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: EdgeInsets.fromLTRB(gutter, 24, gutter, 24 + MediaQuery.paddingOf(context).bottom),
+            children: [
+              if (_isInProgress)
+                const EmptyState('測試進行中', detail: 'Pipeline 正在執行，尚未產生完整測試報告。', icon: Icons.schedule)
+              else
+                EmptyState(
+                  '無測試報告',
+                  detail: '此 Pipeline 尚未上傳 JUnit 測試報告，或報告已過期／無權限存取。',
+                  icon: Icons.rule_folder_outlined,
+                  action: TextButton.icon(
+                    onPressed: () => endSessionFrom(context),
+                    icon: const Icon(Icons.switch_account),
+                    label: const Text('切換帳號'),
+                  ),
+                ),
+            ],
+          ),
+        );
+      }
+      return FailureNotice(
+        _summaryError!,
+        account: widget.account,
+        resourceLabel: '${widget.project.path} · Pipeline #${widget.pipelineId} 測試報告',
+        onSwitchAccount: endSessionFrom(context),
+        onRetry: refresh,
+      );
+    }
+
+    final summary = _summary;
+    if (summary == null || summary.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: refresh,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(gutter, 24, gutter, 24 + MediaQuery.paddingOf(context).bottom),
+          children: [
+            if (_isInProgress)
+              const EmptyState('測試進行中', detail: 'Pipeline 正在執行，尚未產生完整測試報告。', icon: Icons.schedule)
+            else
+              const EmptyState('無測試報告', detail: '此 Pipeline 沒有回報任何測試案例。', icon: Icons.rule_folder_outlined),
+          ],
+        ),
+      );
+    }
+
+    final filteredCases = _cases.where((c) => switch (_filter) {
+      'failed' => c.isFailed,
+      'error' => c.isError,
+      'skipped' => c.isSkipped,
+      'success' => c.isSuccess,
+      _ => true,
+    }).toList();
+
+    final isPartial = summary.totalCount > _cases.length || _nextPage != null;
+
+    return RefreshIndicator(
+      onRefresh: refresh,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 24 + MediaQuery.paddingOf(context).bottom),
+        children: [
+          _buildSummaryCard(context, summary),
+          const SizedBox(height: 12),
+          _buildFilterChips(context, summary),
+          const SizedBox(height: 12),
+          if (isPartial)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Card(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          '已載入 ${_cases.length} / ${summary.totalCount} 筆測試案例（部分載入）',
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (_loadingCases && _cases.isEmpty)
+            const ListSkeleton()
+          else if (_cases.isEmpty && _casesError != null)
+            const SizedBox.shrink()
+          else if (filteredCases.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: EmptyState('沒有符合「${_filterLabel(_filter)}」的已載入測試案例'),
+            )
+          else
+            for (final c in filteredCases)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _buildTestCaseCard(context, c),
+              ),
+          if (_casesError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: FailureNotice(
+                _casesError!,
+                account: widget.account,
+                resourceLabel: '${widget.project.path} · 測試案例分頁',
+                onSwitchAccount: endSessionFrom(context),
+                onRetry: _cases.isEmpty ? () => _loadCases(_generation) : _loadMore,
+              ),
+            ),
+          if (_loadingMore)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_nextPage != null)
+            if (_cases.length >= maxCasesBudget)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Text(
+                  '已達單次預覽上限（$maxCasesBudget 筆）。如需檢視完整測試報告，請至 GitLab 網頁端或各工作 Log 檢視。',
+                  style: Theme.of(context).textTheme.bodySmall,
+                  textAlign: TextAlign.center,
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: TextButton.icon(
+                  icon: const Icon(Icons.expand_more),
+                  label: const Text('載入更多測試案例'),
+                  onPressed: _loadMore,
+                ),
+              ),
+        ],
+      ),
+    );
   }
 }
 
-String formatByteCount(int bytes) {
-  const units = ['B', 'KB', 'MB', 'GB'];
-  var value = bytes.toDouble();
-  var unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  final shown = unit == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(1);
-  return '$shown ${units[unit]}';
-}
+// Storage, progress and sharing primitives are exported from artifact_storage.dart.
 
 class JobLogPage extends StatefulWidget {
   const JobLogPage({super.key, required this.account, required this.api, required this.project, required this.id,
@@ -442,6 +898,8 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   Json? _job;
   JobTrace _trace = JobTrace.empty;
   JobTrace _indexed = JobTrace.empty;
+  BytesBuilder _rawBytes = BytesBuilder(copy: false);
+  int _traceOffset = 0;
   List<int> _sectionOrder = const <int>[];
   List<List<int>> _sectionChildren = const <List<int>>[];
   List<int> _sectionRoots = const <int>[];
@@ -498,20 +956,37 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           _auto = false; _timer?.cancel();
         }
       });
-      final trace = await widget.api.jobTrace(widget.project.id, jobId);
+      final chunk = await widget.api.jobTraceChunk(widget.project.id, jobId, offset: _traceOffset);
       if (!current()) { return; }
-      final parsed = JobTrace.parse(trace);
-      setState(() {
-        _trace = parsed;
-        if (_query.isNotEmpty) {
-          _matches = _findMatches(_query);
-          if (_matches.isEmpty) {
-            _currentMatch = 0;
-          } else if (_currentMatch >= _matches.length) {
-            _currentMatch = _matches.length - 1;
+      if (chunk.isEof) {
+        _auto = false;
+        _timer?.cancel();
+      }
+      if (chunk.bytes.isNotEmpty || _rawBytes.isEmpty) {
+        if (chunk.bytes.isNotEmpty) {
+          if (chunk.nextOffset != null && chunk.nextOffset! < _traceOffset) {
+            _rawBytes = BytesBuilder(copy: false);
+            _rawBytes.add(chunk.bytes);
+            _traceOffset = chunk.nextOffset!;
+          } else {
+            _rawBytes.add(chunk.bytes);
+            _traceOffset = chunk.nextOffset ?? _rawBytes.length;
           }
         }
-      });
+        final text = utf8.decode(_rawBytes.toBytes(), allowMalformed: true);
+        final parsed = JobTrace.parse(text);
+        setState(() {
+          _trace = parsed;
+          if (_query.isNotEmpty) {
+            _matches = _findMatches(_query);
+            if (_matches.isEmpty) {
+              _currentMatch = 0;
+            } else if (_currentMatch >= _matches.length) {
+              _currentMatch = _matches.length - 1;
+            }
+          }
+        });
+      }
       if (follow) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (current() && _scroll.hasClients) { _scroll.jumpTo(_scroll.position.maxScrollExtent); }
@@ -544,16 +1019,18 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       setState(() {
         _loadEpoch++; _loading = false; _error = null;
         _auto = false; _timer?.cancel(); _job = result;
-        if (newId != _jobId) {
+        if (newId != _jobId || action == 'retry') {
           _jobId = newId; _trace = JobTrace.empty; _query = ''; _matches = const <_LogMatch>[];
           _currentMatch = 0; _searchController.clear(); _follow = true; _sectionOpen.clear();
+          _rawBytes = BytesBuilder(copy: false);
+          _traceOffset = 0;
         }
       });
       await _load();
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() { _busy = false; _confirming = false; }); } }
   }
-  String _sectionKey(JobTraceSection section) => '${section.depth}:${section.name}:${section.start}:${section.startLine}';
+  String _sectionKey(JobTraceSection section) => '${section.name}:${section.start}';
   void _ensureSectionIndex() {
     if (identical(_indexed, _trace)) return;
     final built = _indexSections(_trace);
@@ -719,9 +1196,9 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     final sections = _trace.sections;
     final needle = _query.toLowerCase();
     void addLine(int line) {
-      final text = lines[line].text;
-      if (needle.isEmpty || text.toLowerCase().contains(needle)) {
-        rows.add(_LogRow.line(text, lineIndex: line));
+      final traceLine = lines[line];
+      if (needle.isEmpty || traceLine.text.toLowerCase().contains(needle)) {
+        rows.add(_LogRow.line(traceLine, lineIndex: line));
       }
     }
     final stack = <_SectionWalk>[_SectionWalk(0, lines.length, _sectionRoots)];
@@ -918,19 +1395,22 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 final row = rows[index];
                 final section = row.section;
                 if (section != null) return _sectionHeader(section);
+                final traceLine = row.line;
                 final text = row.text ?? '';
-                final baseStyle = const TextStyle(
+                final baseStyle = TextStyle(
                   fontFamily: codeFontFamily,
-                  fontFamilyFallback: ['Menlo', 'monospace'],
+                  fontFamilyFallback: const ['Menlo', 'monospace'],
                   fontSize: 12,
                   height: 1.5,
+                  color: Theme.of(context).colorScheme.onSurface,
                 );
                 Widget lineWidget;
                 if (_query.isEmpty || text.isEmpty) {
-                  lineWidget = Text(
-                    text.isEmpty ? ' ' : text,
-                    style: baseStyle,
-                  );
+                  final span = traceLine?.toInlineSpan(
+                    brightness: Theme.of(context).brightness,
+                    baseStyle: baseStyle,
+                  ) ?? TextSpan(text: text.isEmpty ? ' ' : text, style: baseStyle);
+                  lineWidget = Text.rich(span);
                 } else {
                   final spans = _buildHighlightSpans(
                     text: text,
@@ -950,10 +1430,11 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
 }
 
 final class _LogRow {
-  const _LogRow.header(this.section) : text = null, lineIndex = null;
-  const _LogRow.line(this.text, {this.lineIndex}) : section = null;
+  const _LogRow.header(this.section) : text = null, line = null, lineIndex = null;
+  _LogRow.line(this.line, {this.lineIndex}) : section = null, text = line?.text;
   final int? section;
   final String? text;
+  final JobTraceLine? line;
   final int? lineIndex;
 }
 
@@ -1091,7 +1572,7 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
       ownedDirectory = directory;
       _attemptDirectory = directory;
       if (!current()) throw const ApiFailure(FailureKind.cancelled);
-      final partial = File('${directory.path}/$_artifactPartialName');
+      final partial = File('${directory.path}/$artifactPartialName');
       ownedPartial = partial;
       _partial = partial;
       final sink = widget.openSink(partial);
@@ -1157,12 +1638,16 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
     _popWhenCancelled = true;
     if (!_abort.isCompleted) _abort.complete();
   }
-  Future<void> _share() async {
+  Future<void> _share(BuildContext buttonContext) async {
     final path = _savedPath;
     if (path == null || _sharing) return;
     setState(() => _sharing = true);
+    final box = buttonContext.findRenderObject() as RenderBox?;
+    final Rect? origin = box != null && box.hasSize
+        ? box.localToGlobal(Offset.zero) & box.size
+        : null;
     try {
-      await shareDownloadedArtifact(widget.sharer, path);
+      await shareDownloadedArtifact(widget.sharer, path, sharePositionOrigin: origin);
     } catch (error) {
       if (mounted) showFailure(context, error);
     } finally {
@@ -1182,7 +1667,10 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
         if (_done) ...[
           Text('已下載 ${_savedName ?? widget.suggestedName} · ${formatByteCount(_savedBytes)}'),
           const SizedBox(height: 12),
-          FilledButton(onPressed: _sharing ? null : () => unawaited(_share()), child: const Text('開啟／分享')),
+          Builder(builder: (buttonContext) => FilledButton(
+            onPressed: _sharing ? null : () => unawaited(_share(buttonContext)),
+            child: const Text('開啟／分享'),
+          )),
           TextButton(onPressed: () => unawaited(openExternal(context, widget.webUri)), child: const Text('在 GitLab 開啟')),
         ],
         if (_error == null && !_done) ...[
@@ -1194,7 +1682,11 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
               final double? progress = total == null || total <= 0 ? null : (received / total).clamp(0.0, 1.0).toDouble();
               final bytes = total == null ? formatByteCount(received) : '${formatByteCount(received)} / ${formatByteCount(total)}';
               return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                LinearProgressIndicator(key: const Key('artifact-progress'), minHeight: 4, value: progress),
+                Semantics(
+                  label: '產物下載進度',
+                  value: progress != null ? '${(progress * 100).toInt()}%' : '下載中',
+                  child: LinearProgressIndicator(key: const Key('artifact-progress'), minHeight: 4, value: progress),
+                ),
                 const SizedBox(height: 8),
                 Text(bytes, style: Theme.of(context).textTheme.bodySmall),
               ]);
@@ -1207,26 +1699,12 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
   }
 }
 
-Future<void> _deleteAttemptFiles(Directory? directory, File? partial) async {
-  if (partial != null && partial.existsSync()) {
-    try {
-      await partial.delete();
-    } on FileSystemException {
-      // A cancelled attempt may already have removed the temp file.
-    }
-  }
-  if (directory != null && directory.existsSync()) {
-    try {
-      await directory.delete(recursive: true);
-    } on FileSystemException {
-      // The cache directory can disappear while cleanup is in progress.
-    }
-  }
-}
+Future<void> _deleteAttemptFiles(Directory? directory, File? partial) =>
+    deleteAttemptFiles(directory, partial);
 
 String _downloadFileName(String name, int job) {
   final base = name.split(RegExp(r'[\\/]')).last.trim();
-  if (base.isEmpty || base == '.' || base == '..' || base == '.partial' || base == _artifactPartialName ||
+  if (base.isEmpty || base == '.' || base == '..' || base == '.partial' || base == artifactPartialName ||
       base.contains('\u0000')) {
     return 'artifacts-$job.zip';
   }

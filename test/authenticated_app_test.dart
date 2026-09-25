@@ -45,6 +45,11 @@ void main() {
   testWidgets('AuthenticatedApp navigates between shell destinations', (
     tester,
   ) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final fixture = WorkspaceFixture();
     final store = MemoryAccountStore();
     final session = controllerFor(store, fixture.adapter);
@@ -338,6 +343,11 @@ void main() {
   });
 
   testWidgets('shell PopScope canPop only on the Projects tab', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
     final fixture = WorkspaceFixture();
     final session = controllerFor(MemoryAccountStore(), fixture.adapter);
     addTearDown(session.dispose);
@@ -589,6 +599,72 @@ void main() {
     expect(archive.existsSync(), isTrue);
     expect(find.textContaining('無法清除產物'), findsOneWidget);
     expect(find.textContaining('帳號仍保留'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('renders NavigationRail at >= 600 dp width and hides NavigationBar', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(800, 600);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final fixture = WorkspaceFixture();
+    final store = MemoryAccountStore();
+    final session = controllerFor(store, fixture.adapter);
+    addTearDown(session.dispose);
+    addTearDown(fixture.api.close);
+
+    await tester.runAsync(() async {
+      await session.initialize();
+      await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+    });
+
+    await tester.pumpWidget(
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
+    );
+    await settleNetworkWidgets(tester);
+
+    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+  });
+
+  testWidgets('smooth transition between NavigationBar and NavigationRail preserves tab index', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final fixture = WorkspaceFixture();
+    final store = MemoryAccountStore();
+    final session = controllerFor(store, fixture.adapter);
+    addTearDown(session.dispose);
+    addTearDown(fixture.api.close);
+
+    await tester.runAsync(() async {
+      await session.initialize();
+      await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+    });
+
+    await tester.pumpWidget(
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
+    );
+    await settleNetworkWidgets(tester);
+
+    // In 412 dp, NavigationBar is visible. Switch to Inbox (0)
+    expect(find.byType(NavigationBar), findsOneWidget);
+    await tester.tap(find.text('收件匣'));
+    await settleNetworkWidgets(tester);
+    expect(find.text('待辦'), findsOneWidget);
+
+    // Dynamic resize to 840 dp
+    tester.view.physicalSize = const Size(840, 900);
+    await tester.pump();
+    await settleNetworkWidgets(tester);
+
+    // Assert: NavigationRail is visible, NavigationBar is gone, tab 0 (Inbox) is still active!
+    expect(find.byType(NavigationRail), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.text('待辦'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
