@@ -297,6 +297,13 @@ ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useD
       labelTextStyle: WidgetStateProperty.resolveWith((states) => TextStyle(
         fontSize: 12, fontWeight: states.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500)),
     ),
+    navigationRailTheme: NavigationRailThemeData(
+      elevation: 0, backgroundColor: scheme.surface,
+      indicatorColor: scheme.primaryContainer,
+      selectedLabelTextStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+      unselectedLabelTextStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+      labelType: NavigationRailLabelType.all,
+    ),
     tabBarTheme: TabBarThemeData(
       dividerColor: hairline, labelColor: scheme.primary,
       unselectedLabelColor: scheme.onSurfaceVariant, indicatorSize: TabBarIndicatorSize.label,
