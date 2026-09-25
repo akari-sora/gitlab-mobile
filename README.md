@@ -59,4 +59,4 @@ A production-client run on 2026-09-21/22 is recorded in the [v0.3 ledger](docs/V
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+GNU Affero General Public License v3.0 (AGPL-3.0). Copyright (C) 2026 ImL1s. See [LICENSE](LICENSE).
