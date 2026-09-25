@@ -1,10 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'package:crypto/crypto.dart';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/job_trace.dart';
@@ -13,7 +11,9 @@ import '../../shared/external_link.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 import 'records_feed.dart';
+import '../../shared/artifact_storage.dart';
 import '../../shared/theme.dart';
+export '../../shared/artifact_storage.dart';
 
 class PipelinesTab extends StatefulWidget {
   const PipelinesTab({super.key, required this.account, required this.api, required this.project});
@@ -158,7 +158,13 @@ class _PipelinePageState extends State<PipelinePage> {
       body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
         if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
-          resourceLabel: '${widget.project.path} · Pipeline #${widget.id}', onSwitchAccount: endSessionFrom(context)),
+          resourceLabel: '${widget.project.path} · Pipeline #${widget.id}',
+          onSwitchAccount: endSessionFrom(context, ResumeTarget(
+            projectId: widget.project.id,
+            projectPath: widget.project.path,
+            resource: 'pipelines',
+            iid: widget.id,
+          ))),
         if (_data != null) Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 12), child: Column(
           crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 12),
@@ -868,255 +874,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
   }
 }
 
-/// Override in tests. Production uses the app temporary directory, which the
-/// OS may purge. Widget tests have no path_provider channel, so they use the
-/// process temp directory instead of waiting on that call.
-Future<Directory> Function() artifactStorageRoot = _defaultArtifactRoot;
-
-Future<Directory> _defaultArtifactRoot() {
-  if (Platform.environment.containsKey('FLUTTER_TEST')) {
-    return Future<Directory>.value(Directory.systemTemp);
-  }
-  return getTemporaryDirectory();
-}
-
-/// Path segment for [account]. A fixed-length digest so a long installation
-/// path cannot exceed the 255-byte directory-component limit.
-String artifactAccountSegment(Account account) =>
-    sha256.convert(utf8.encode(account.key)).toString().substring(0, 32);
-
-int _artifactAttempt = 0;
-
-/// `<temporary>/artifacts/<account>/<project>-<job>/<attempt>/`.
-///
-/// Each call is one attempt. Cleanup of that directory cannot truncate another
-/// attempt, account, or instance that happens to reuse the same numeric ids.
-/// The operating system may purge this cache directory at any time.
-Future<Directory> jobArtifactDirectory(Account account, int projectId, int jobId) async {
-  final root = await artifactStorageRoot();
-  final attempt = ++_artifactAttempt;
-  final stamp = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
-  final directory = Directory(
-    '${root.path}/artifacts/${artifactAccountSegment(account)}/$projectId-$jobId/$stamp-$attempt',
-  );
-  await directory.create(recursive: true);
-  return directory;
-}
-
-/// Deletes archives left behind for [account], including completed downloads.
-/// Filesystem checks stay synchronous so account removal is not left waiting
-/// on a plugin or an I/O future the widget test clock will not complete.
-/// Lookup and deletion failures of that account directory propagate so the
-/// account is not removed while its archives remain. The `share_plus` cache
-/// is removed best-effort and cannot abort removal.
-Future<void> clearAccountArtifacts(Account account) async {
-  final Directory root;
-  try {
-    root = await artifactStorageRoot();
-  } on Object {
-    throw ApiFailure.artifactCleanup;
-  }
-  final directory = Directory('${root.path}/artifacts/${artifactAccountSegment(account)}');
-  if (directory.existsSync()) {
-    try {
-      removeArtifactDirectory(directory);
-    } on FileSystemException {
-      throw ApiFailure.artifactCleanup;
-    }
-  }
-  // share_plus is not account-scoped. A failure here must not keep the account.
-  _deleteSharePlusDirectory(root);
-}
-
-/// share_plus copies the archive into `<cache>/share_plus/` and does not
-/// delete it. Dismissed, unavailable, and failed shares delete that copy
-/// immediately. A successful share leaves it until the app resumes after
-/// leaving the foreground, so the receiving app can finish reading it.
-/// Lookup can throw [MissingPlatformDirectoryException], which is not a
-/// [FileSystemException], so every error here is ignored.
-/// [serial] is the share that owns the folder when the caller decided to
-/// delete it. The cache-root lookup awaits, and a newer share may start (and
-/// plant its own copy) meanwhile, so ownership is re-checked after the await.
-/// A null serial deletes unconditionally.
-Future<void> _discardSharePlusCopies([int? serial]) async {
-  try {
-    final root = await artifactStorageRoot();
-    if (serial != null && serial != _shareSerial) return;
-    _deleteSharePlusDirectory(root);
-  } on Object {
-    return;
-  }
-}
-
-void _deleteSharePlusDirectory(Directory root) {
-  try {
-    removeArtifactDirectory(Directory('${root.path}/share_plus'));
-  } on Object {
-    return;
-  }
-}
-
-/// Deletes one account's artifact directory. Tests replace it to inject a
-/// failure: a read-only directory does not stop deletion for root (the CI
-/// runner), so permissions cannot simulate that path portably.
-@visibleForTesting
-void Function(Directory directory) removeArtifactDirectory =
-    (directory) => directory.deleteSync(recursive: true);
-
-Future<File> promoteArtifactFile(File partial, File target) async {
-  if (target.existsSync()) await target.delete();
-  return partial.rename(target.path);
-}
-
-const _artifactPartialName = '.download.partial';
-
-IOSink openArtifactSink(File file) => file.openWrite();
-
-/// Throttles archive progress to one notification per 100 ms, plus completion.
-final class ArtifactProgress {
-  ArtifactProgress({DateTime Function()? clock, (int, int?) initial = (0, null)})
-      : _clock = clock ?? DateTime.now,
-        value = ValueNotifier<(int, int?)>(initial);
-  final DateTime Function() _clock;
-  final ValueNotifier<(int, int?)> value;
-  DateTime? _last;
-
-  void report(int received, int? total, {bool completed = false}) {
-    final now = _clock();
-    final last = _last;
-    if (!completed && last != null && now.difference(last) < const Duration(milliseconds: 100)) {
-      return;
-    }
-    _last = now;
-    final current = value.value;
-    value.value = (received, total ?? current.$2);
-  }
-
-  void dispose() => value.dispose();
-}
-
-enum ShareOutcome { success, dismissed, unavailable }
-
-int _shareSerial = 0;
-// Created lazily in the caller's zone: a future made in another zone (a test
-// tearDown) would schedule its continuations there and never run here.
-Future<void>? _shareCleanup;
-_ShareCopyWatch? _shareCopyWatch;
-
-/// Hands [path] to [sharer] and then decides what happens to the plugin copy
-/// in `<cache>/share_plus`. Only the newest share owns that folder: an older
-/// share that completes later must not delete a copy planted by a newer one
-/// (the plugin replaces the folder when a share starts). A dismissed,
-/// unavailable or failed share deletes the copy at once. A successful share
-/// keeps it until the app resumes after leaving the foreground, so the
-/// receiving app can finish reading the `content://` stream; a later share
-/// supersedes that hold.
-@visibleForTesting
-Future<void> shareDownloadedArtifact(ArtifactSharer sharer, String path) async {
-  final serial = ++_shareSerial;
-  _disarmShareCopyWatch();
-  ShareOutcome? outcome;
-  try {
-    outcome = await sharer.share(path);
-  } catch (error, stack) {
-    await _cleanupAfterShare(serial, null);
-    Error.throwWithStackTrace(error, stack);
-  }
-  await _cleanupAfterShare(serial, outcome);
-}
-
-/// Cleanup steps run one at a time, in completion order.
-Future<void> _cleanupAfterShare(int serial, ShareOutcome? outcome) {
-  final previous = _shareCleanup ?? Future<void>.value();
-  final step = previous.then((_) async {
-    if (serial != _shareSerial) return;
-    if (outcome == ShareOutcome.success) {
-      _armShareCopyWatch(serial);
-      return;
-    }
-    await _discardSharePlusCopies(serial);
-  });
-  _shareCleanup = step.then<void>((_) {}, onError: (Object _, StackTrace _) {});
-  return step;
-}
-
-/// At most one watcher is registered; it is not owned by any sheet, so a
-/// sheet that closes before the app comes back does not cancel the cleanup.
-void _armShareCopyWatch(int serial) {
-  final existing = _shareCopyWatch;
-  if (existing != null) {
-    existing.serial = serial;
-    return;
-  }
-  final watch = _ShareCopyWatch(serial);
-  final state = WidgetsBinding.instance.lifecycleState;
-  watch.departed = _leftForeground(state);
-  _shareCopyWatch = watch;
-  WidgetsBinding.instance.addObserver(watch);
-}
-
-void _disarmShareCopyWatch() {
-  final watch = _shareCopyWatch;
-  if (watch == null) return;
-  WidgetsBinding.instance.removeObserver(watch);
-  _shareCopyWatch = null;
-}
-
-bool _leftForeground(AppLifecycleState? state) =>
-    state == AppLifecycleState.inactive || state == AppLifecycleState.paused || state == AppLifecycleState.hidden;
-
-@visibleForTesting
-void resetArtifactShareCleanup() {
-  _disarmShareCopyWatch();
-  _shareSerial = 0;
-  _shareCleanup = null;
-}
-
-final class _ShareCopyWatch extends WidgetsBindingObserver {
-  _ShareCopyWatch(this.serial);
-  int serial;
-  var departed = false;
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_leftForeground(state)) {
-      departed = true;
-      return;
-    }
-    if (state != AppLifecycleState.resumed || !departed) return;
-    _disarmShareCopyWatch();
-    unawaited(_discardSharePlusCopies(serial));
-  }
-}
-
-abstract interface class ArtifactSharer {
-  Future<ShareOutcome> share(String path);
-}
-
-final class SystemArtifactSharer implements ArtifactSharer {
-  const SystemArtifactSharer();
-  @override
-  Future<ShareOutcome> share(String path) async {
-    final result = await SharePlus.instance.share(ShareParams(files: [XFile(path)]));
-    return switch (result.status) {
-      ShareResultStatus.success => ShareOutcome.success,
-      ShareResultStatus.dismissed => ShareOutcome.dismissed,
-      ShareResultStatus.unavailable => ShareOutcome.unavailable,
-    };
-  }
-}
-
-String formatByteCount(int bytes) {
-  const units = ['B', 'KB', 'MB', 'GB'];
-  var value = bytes.toDouble();
-  var unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  final shown = unit == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(1);
-  return '$shown ${units[unit]}';
-}
+// Storage, progress and sharing primitives are exported from artifact_storage.dart.
 
 class JobLogPage extends StatefulWidget {
   const JobLogPage({super.key, required this.account, required this.api, required this.project, required this.id,
@@ -1140,6 +898,8 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   Json? _job;
   JobTrace _trace = JobTrace.empty;
   JobTrace _indexed = JobTrace.empty;
+  BytesBuilder _rawBytes = BytesBuilder(copy: false);
+  int _traceOffset = 0;
   List<int> _sectionOrder = const <int>[];
   List<List<int>> _sectionChildren = const <List<int>>[];
   List<int> _sectionRoots = const <int>[];
@@ -1192,10 +952,27 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           _auto = false; _timer?.cancel();
         }
       });
-      final trace = await widget.api.jobTrace(widget.project.id, jobId);
+      final chunk = await widget.api.jobTraceChunk(widget.project.id, jobId, offset: _traceOffset);
       if (!current()) { return; }
-      final parsed = JobTrace.parse(trace);
-      setState(() => _trace = parsed);
+      if (chunk.isEof) {
+        _auto = false;
+        _timer?.cancel();
+      }
+      if (chunk.bytes.isNotEmpty || _rawBytes.isEmpty) {
+        if (chunk.bytes.isNotEmpty) {
+          if (chunk.nextOffset != null && chunk.nextOffset! < _traceOffset) {
+            _rawBytes = BytesBuilder(copy: false);
+            _rawBytes.add(chunk.bytes);
+            _traceOffset = chunk.nextOffset!;
+          } else {
+            _rawBytes.add(chunk.bytes);
+            _traceOffset = chunk.nextOffset ?? _rawBytes.length;
+          }
+        }
+        final text = utf8.decode(_rawBytes.toBytes(), allowMalformed: true);
+        final parsed = JobTrace.parse(text);
+        setState(() => _trace = parsed);
+      }
       if (follow) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (current() && _scroll.hasClients) { _scroll.jumpTo(_scroll.position.maxScrollExtent); }
@@ -1228,15 +1005,17 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       setState(() {
         _loadEpoch++; _loading = false; _error = null;
         _auto = false; _timer?.cancel(); _job = result;
-        if (newId != _jobId) {
+        if (newId != _jobId || action == 'retry') {
           _jobId = newId; _trace = JobTrace.empty; _query = ''; _follow = true; _sectionOpen.clear();
+          _rawBytes = BytesBuilder(copy: false);
+          _traceOffset = 0;
         }
       });
       await _load();
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() { _busy = false; _confirming = false; }); } }
   }
-  String _sectionKey(JobTraceSection section) => '${section.depth}:${section.name}:${section.start}:${section.startLine}';
+  String _sectionKey(JobTraceSection section) => '${section.name}:${section.start}';
   void _ensureSectionIndex() {
     if (identical(_indexed, _trace)) return;
     final built = _indexSections(_trace);
@@ -1554,7 +1333,7 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
       ownedDirectory = directory;
       _attemptDirectory = directory;
       if (!current()) throw const ApiFailure(FailureKind.cancelled);
-      final partial = File('${directory.path}/$_artifactPartialName');
+      final partial = File('${directory.path}/$artifactPartialName');
       ownedPartial = partial;
       _partial = partial;
       final sink = widget.openSink(partial);
@@ -1620,12 +1399,16 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
     _popWhenCancelled = true;
     if (!_abort.isCompleted) _abort.complete();
   }
-  Future<void> _share() async {
+  Future<void> _share(BuildContext buttonContext) async {
     final path = _savedPath;
     if (path == null || _sharing) return;
     setState(() => _sharing = true);
+    final box = buttonContext.findRenderObject() as RenderBox?;
+    final Rect? origin = box != null && box.hasSize
+        ? box.localToGlobal(Offset.zero) & box.size
+        : null;
     try {
-      await shareDownloadedArtifact(widget.sharer, path);
+      await shareDownloadedArtifact(widget.sharer, path, sharePositionOrigin: origin);
     } catch (error) {
       if (mounted) showFailure(context, error);
     } finally {
@@ -1645,7 +1428,10 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
         if (_done) ...[
           Text('已下載 ${_savedName ?? widget.suggestedName} · ${formatByteCount(_savedBytes)}'),
           const SizedBox(height: 12),
-          FilledButton(onPressed: _sharing ? null : () => unawaited(_share()), child: const Text('開啟／分享')),
+          Builder(builder: (buttonContext) => FilledButton(
+            onPressed: _sharing ? null : () => unawaited(_share(buttonContext)),
+            child: const Text('開啟／分享'),
+          )),
           TextButton(onPressed: () => unawaited(openExternal(context, widget.webUri)), child: const Text('在 GitLab 開啟')),
         ],
         if (_error == null && !_done) ...[
@@ -1657,7 +1443,11 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
               final double? progress = total == null || total <= 0 ? null : (received / total).clamp(0.0, 1.0).toDouble();
               final bytes = total == null ? formatByteCount(received) : '${formatByteCount(received)} / ${formatByteCount(total)}';
               return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                LinearProgressIndicator(key: const Key('artifact-progress'), minHeight: 4, value: progress),
+                Semantics(
+                  label: '產物下載進度',
+                  value: progress != null ? '${(progress * 100).toInt()}%' : '下載中',
+                  child: LinearProgressIndicator(key: const Key('artifact-progress'), minHeight: 4, value: progress),
+                ),
                 const SizedBox(height: 8),
                 Text(bytes, style: Theme.of(context).textTheme.bodySmall),
               ]);
@@ -1670,26 +1460,12 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
   }
 }
 
-Future<void> _deleteAttemptFiles(Directory? directory, File? partial) async {
-  if (partial != null && partial.existsSync()) {
-    try {
-      await partial.delete();
-    } on FileSystemException {
-      // A cancelled attempt may already have removed the temp file.
-    }
-  }
-  if (directory != null && directory.existsSync()) {
-    try {
-      await directory.delete(recursive: true);
-    } on FileSystemException {
-      // The cache directory can disappear while cleanup is in progress.
-    }
-  }
-}
+Future<void> _deleteAttemptFiles(Directory? directory, File? partial) =>
+    deleteAttemptFiles(directory, partial);
 
 String _downloadFileName(String name, int job) {
   final base = name.split(RegExp(r'[\\/]')).last.trim();
-  if (base.isEmpty || base == '.' || base == '..' || base == '.partial' || base == _artifactPartialName ||
+  if (base.isEmpty || base == '.' || base == '..' || base == '.partial' || base == artifactPartialName ||
       base.contains('\u0000')) {
     return 'artifacts-$job.zip';
   }

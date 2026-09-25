@@ -32,6 +32,9 @@ class RecordsFeedState extends State<RecordsFeed> {
     if (oldWidget.identity != widget.identity) { controller.items = []; unawaited(controller.refresh()); }
   }
   Future<void> refresh() => controller.refresh();
+  void patchItem(Json item) => controller.patchItem(item);
+  void removeItem(String id) => controller.removeItem(id);
+  void prependItem(Json item) => controller.prependItem(item);
   @override
   void dispose() { controller.dispose(); super.dispose(); }
   @override

@@ -5,16 +5,22 @@ import '../core/failure.dart';
 import '../core/gitlab_api.dart';
 import '../core/models.dart';
 import '../core/providers.dart';
+import 'resume_target.dart';
 import 'theme.dart';
 
+export 'resume_target.dart';
+
 /// Ends the active session so the user can pick another account. Does not rotate accounts.
-VoidCallback endSessionFrom(BuildContext context) => () {
+VoidCallback endSessionFrom(BuildContext context, [ResumeTarget? resumeTarget]) => () {
   try {
     final session = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(sessionProvider);
-    unawaited(session.endSession());
+    if (resumeTarget != null) {
+      session.setPendingResumeTarget(resumeTarget);
+    }
+    unawaited(session.endSession(switching: resumeTarget != null));
   } catch (_) {}
 };
 
@@ -184,8 +190,8 @@ class StatusBadge extends StatelessWidget {
 /// centred 640 dp column on wider windows so lists and their search rows
 /// share one edge. The width is the viewport (`MediaQuery.sizeOf`), not the
 /// parent constraints, so a nested header and the list agree.
-double feedGutter(BuildContext context) {
-  final width = MediaQuery.sizeOf(context).width;
+double feedGutter(BuildContext context, [double? containerWidth]) {
+  final width = containerWidth ?? MediaQuery.sizeOf(context).width;
   return width > 672 ? (width - 640) / 2 : 16.0;
 }
 
@@ -238,17 +244,24 @@ class EntityCard extends StatelessWidget {
   const EntityCard({
     super.key, required this.title, this.leading, this.subtitle, this.body,
     this.meta = const [], this.trailing, this.chevron = true, this.onTap,
-    this.muted = false, this.titleMaxLines = 2,
+    this.muted = false, this.titleMaxLines = 2, this.selected = false,
   });
   final Widget title;
   final Widget? leading, subtitle, body, trailing;
   final List<Widget> meta;
-  final bool chevron, muted;
+  final bool chevron, muted, selected;
   final int titleMaxLines;
   final VoidCallback? onTap;
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final cardColor = selected ? scheme.secondaryContainer : null;
+    final cardShape = selected
+        ? RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+            side: BorderSide(color: scheme.primary, width: 2),
+          )
+        : null;
     final details = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       DefaultTextStyle.merge(
         style: Theme.of(context).textTheme.titleMedium!.copyWith(
@@ -276,11 +289,12 @@ class EntityCard extends StatelessWidget {
         if (chevron && onTap != null) ...[
           const SizedBox(width: 4),
           Padding(padding: const EdgeInsets.only(top: 2),
-            child: Icon(Icons.chevron_right, size: 20, color: scheme.onSurfaceVariant)),
+            child: Icon(selected ? Icons.check_circle : Icons.chevron_right, size: 20,
+              color: selected ? scheme.primary : scheme.onSurfaceVariant)),
         ],
       ]);
       final content = Padding(padding: const EdgeInsets.fromLTRB(16, 14, 12, 14), child: row);
-      final card = Card(clipBehavior: Clip.antiAlias,
+      final card = Card(clipBehavior: Clip.antiAlias, color: cardColor, shape: cardShape,
         child: onTap == null ? content : InkWell(onTap: onTap, overlayColor: overlay, child: content));
       return MergeSemantics(child: Semantics(button: onTap != null, child: card));
     }
@@ -292,10 +306,11 @@ class EntityCard extends StatelessWidget {
         Expanded(child: details),
       ]));
     final tappable = onTap == null ? content : InkWell(onTap: onTap, overlayColor: overlay, child: content);
-    return Card(clipBehavior: Clip.antiAlias, child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Expanded(child: MergeSemantics(child: Semantics(button: onTap != null, child: tappable))),
-      Padding(padding: const EdgeInsets.only(top: 6, right: 8), child: trailing!),
-    ]));
+    return Card(clipBehavior: Clip.antiAlias, color: cardColor, shape: cardShape,
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: MergeSemantics(child: Semantics(button: onTap != null, child: tappable))),
+        Padding(padding: const EdgeInsets.only(top: 6, right: 8), child: trailing!),
+      ]));
   }
 }
 
@@ -394,12 +409,14 @@ class FailureNotice extends StatelessWidget {
     this.resourceLabel,
     this.onRetry,
     this.onSwitchAccount,
+    this.resumeTarget,
   });
   final ApiFailure error;
   final Account? account;
   final String? resourceLabel;
   final VoidCallback? onRetry;
   final VoidCallback? onSwitchAccount;
+  final ResumeTarget? resumeTarget;
   @override
   Widget build(BuildContext context) {
     Account? effectiveAccount = account;
@@ -412,9 +429,24 @@ class FailureNotice extends StatelessWidget {
         ).read(sessionProvider);
         effectiveAccount ??= session.active;
         effectiveSwitch ??= () {
-          unawaited(session.endSession());
+          if (resumeTarget != null) {
+            session.setPendingResumeTarget(resumeTarget);
+          }
+          unawaited(session.endSession(switching: resumeTarget != null));
         };
       } catch (_) {}
+    } else if (resumeTarget != null) {
+      final original = effectiveSwitch;
+      effectiveSwitch = () {
+        try {
+          final session = ProviderScope.containerOf(
+            context,
+            listen: false,
+          ).read(sessionProvider);
+          session.setPendingResumeTarget(resumeTarget);
+        } catch (_) {}
+        original();
+      };
     }
     return Padding(
       padding: const EdgeInsets.all(16),

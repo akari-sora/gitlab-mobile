@@ -36,3 +36,5 @@ __pycache__/
 .gradle-user/
 ci-output/
 artifacts/
+.agents/
+
