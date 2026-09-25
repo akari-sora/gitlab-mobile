@@ -71,6 +71,10 @@ extension WorkspaceApi on GitLabApi {
     if (commit == null || commit.isEmpty) { throw const ApiFailure(FailureKind.invalidResponse); }
     return {'last_commit_id': commit, 'size': size};
   }
+  Future<Json> commit(int project, String sha) =>
+      record(['projects', '$project', 'repository', 'commits', sha]);
+  Future<ApiPage<Json>> commitDiff(int project, String sha, {Map<String, String> query = const {}, Uri? next}) =>
+      records(['projects', '$project', 'repository', 'commits', sha, 'diff'], query: query, next: next);
   Future<Json> createPipeline(int project, String ref) => writeRecord('POST', ['projects', '$project', 'pipeline'], {'ref': ref});
   Future<Json> pipelineAction(int project, int pipeline, String action) {
     if (!const ['retry', 'cancel'].contains(action)) { throw const ApiFailure(FailureKind.unsupported); }
