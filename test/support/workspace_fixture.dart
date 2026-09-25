@@ -75,9 +75,13 @@ class WorkspaceFixture {
     'milestone': ?milestone,
     'updated_at': 'revision-$counter', 'created_at': '2026-09-19T08:00:00Z',
   };
+  int mrAuthorId = 7;
+  final approvalsList = <Json>[];
+  int approvalsRequired = 1;
   final mergeFields = <String, dynamic>{};
   Json get mergeRequest => {
     ...issue(12, 'Improve private-project navigation'),
+    'author': {'id': mrAuthorId, 'username': mrAuthorId == 7 ? 'developer' : 'external_author'},
     'source_branch': 'feature/navigation', 'target_branch': 'main', 'sha': sha,
     'detailed_merge_status': 'mergeable', 'draft': false,
     'head_pipeline': {'id': 99, 'status': 'success'},
@@ -426,7 +430,37 @@ class WorkspaceFixture {
       mergeFields.remove('merge_user');
       return jsonResponse({...mergeRequest, 'merge_when_pipeline_succeeds': false, 'auto_merge_enabled': false});
     }
-    if (joined == 'projects/42/merge_requests/12/approvals') { return jsonResponse({'approved_by': <Json>[]}); }
+    if (joined == 'projects/42/merge_requests/12/approvals') {
+      return jsonResponse({
+        'id': 12, 'iid': 12, 'project_id': 42,
+        'title': 'Improve private-project navigation',
+        'approvals_required': approvalsRequired,
+        'approvals_left': (approvalsRequired - approvalsList.length).clamp(0, 99),
+        'approved_by': approvalsList,
+      });
+    }
+    if (joined == 'projects/42/merge_requests/12/approve' && method == 'POST') {
+      if (!approvalsList.any((v) => v['user']?['id'] == account.user.id)) {
+        approvalsList.add({'user': account.user.toJson()});
+      }
+      return jsonResponse({
+        'id': 12, 'iid': 12, 'project_id': 42,
+        'title': 'Improve private-project navigation',
+        'approvals_required': approvalsRequired,
+        'approvals_left': (approvalsRequired - approvalsList.length).clamp(0, 99),
+        'approved_by': approvalsList,
+      });
+    }
+    if (joined == 'projects/42/merge_requests/12/unapprove' && method == 'POST') {
+      approvalsList.removeWhere((v) => v['user']?['id'] == account.user.id);
+      return jsonResponse({
+        'id': 12, 'iid': 12, 'project_id': 42,
+        'title': 'Improve private-project navigation',
+        'approvals_required': approvalsRequired,
+        'approvals_left': (approvalsRequired - approvalsList.length).clamp(0, 99),
+        'approved_by': approvalsList,
+      });
+    }
     if (joined == 'projects/42/merge_requests/12/versions') { return jsonResponse([{'id': 1, 'head_commit_sha': versionHeadSha}]); }
     if (joined == 'projects/42/merge_requests/12/versions/1') {
       return jsonResponse({'id': 1, 'head_commit_sha': versionHeadSha, 'base_commit_sha': versionBaseSha, 'start_commit_sha': versionStartSha, 'diffs': versionDiffs ?? [

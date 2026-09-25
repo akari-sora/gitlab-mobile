@@ -264,6 +264,7 @@ class WorkItemPage extends StatefulWidget {
 }
 class _WorkItemPageState extends State<WorkItemPage> {
   Json? _data;
+  Json? _approvalsData;
   ApiFailure? _error;
   bool _loading = true, _busy = false;
   int _epoch = 0;
@@ -278,7 +279,20 @@ class _WorkItemPageState extends State<WorkItemPage> {
     if (mounted) { setState(() { _loading = true; _error = null; }); }
     try {
       final data = await widget.api.record(path);
-      if (mounted && epoch == _epoch) { setState(() => _data = data); }
+      Json? approvals;
+      if (mr) {
+        try {
+          approvals = await widget.api.record([...path, 'approvals']);
+        } catch (_) {
+          // fail-soft if approvals not supported
+        }
+      }
+      if (mounted && epoch == _epoch) {
+        setState(() {
+          _data = data;
+          _approvalsData = approvals;
+        });
+      }
     } catch (e) { if (mounted && epoch == _epoch) { setState(() => _error = safeFailure(e)); } }
     finally { if (mounted && epoch == _epoch) { setState(() => _loading = false); } }
   }
@@ -527,6 +541,15 @@ class _WorkItemPageState extends State<WorkItemPage> {
     }
     final autoScheduled = isAutoMergeEnabled(data);
     final autoCandidate = canAutoMerge(data);
+    final approvals = _approvalsData;
+    final approvedBy = approvals != null ? valueObjects(approvals, 'approved_by') : <Json>[];
+    final approvalsRequired = approvals != null ? valueInt(approvals, 'approvals_required') : 0;
+    final approvalsLeft = approvals != null ? valueInt(approvals, 'approvals_left') : 0;
+    final myId = widget.account.user.id;
+    final hasApproved = approvedBy.any((v) => valueInt(valueObject(v, 'user'), 'id') == myId);
+    final isAuthor = valueInt(valueObject(data, 'author'), 'id') == myId;
+    final isThresholdReached = approvalsLeft == 0 && (approvalsRequired > 0 || approvedBy.isNotEmpty);
+
     return Padding(padding: const EdgeInsets.only(bottom: 16), child: Card(child: Padding(
       padding: const EdgeInsets.all(14), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
@@ -538,9 +561,64 @@ class _WorkItemPageState extends State<WorkItemPage> {
           const SizedBox(height: 6),
           const Text('流水線通過後將自動執行合併。', style: TextStyle(fontSize: 12)),
         ],
+        if (approvals != null) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: isThresholdReached
+                  ? WorkshopColors.of(context).successContainer.withValues(alpha: 0.4)
+                  : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      isThresholdReached ? Icons.check_circle_outline : Icons.rule_outlined,
+                      size: 16,
+                      color: isThresholdReached ? WorkshopColors.of(context).onSuccessContainer : null,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        isThresholdReached
+                            ? '已達核准門檻（${approvedBy.length} 人已批准）'
+                            : '審查核准進度：已批准 ${approvedBy.length} 人${approvalsRequired > 0 ? ' · 尚需 $approvalsLeft 人' : ''}',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+                if (approvedBy.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '已核准：${approvedBy.map((v) => '@${valueText(valueObject(v, 'user'), 'username')}').join('、')}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         Wrap(spacing: 8, runSpacing: 8, children: [
-          OutlinedButton(onPressed: _busy ? null : () => _action('approve'), child: const Text('批准')),
+          if (hasApproved)
+            OutlinedButton.icon(
+              key: const ValueKey('mr-unapprove-btn'),
+              onPressed: _busy ? null : () => _action('unapprove'),
+              icon: const Icon(Icons.undo, size: 18),
+              label: const Text('撤回我的批准'),
+            )
+          else
+            OutlinedButton.icon(
+              key: const ValueKey('mr-approve-btn'),
+              onPressed: _busy ? null : () => _action('approve'),
+              icon: const Icon(Icons.verified_outlined, size: 18),
+              label: const Text('批准'),
+            ),
           if (autoScheduled)
             OutlinedButton.icon(
               key: const ValueKey('cancel-auto-merge'),
