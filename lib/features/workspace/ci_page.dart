@@ -137,6 +137,22 @@ class _PipelinePageState extends State<PipelinePage> {
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _busy = false); } }
   }
+  Future<void> _jobAction(int jobId, String action) async {
+    if (_busy) { return; }
+    final label = action == 'retry' ? '重試工作' : action == 'play' ? '啟動手動工作' : '取消工作';
+    if (!await confirmAction(context, '$label？', '${widget.project.path}\nJob #$jobId')) { return; }
+    if (!mounted) { return; }
+    setState(() => _busy = true);
+    try {
+      await widget.api.jobAction(widget.project.id, jobId, action);
+      await _load();
+      if (mounted) {
+        await _feed.currentState?.refresh();
+        await _testsKey.currentState?.refresh();
+      }
+    } catch (e) { if (mounted) { showFailure(context, e); } }
+    finally { if (mounted) { setState(() => _busy = false); } }
+  }
   @override
   Widget build(BuildContext context) => DefaultTabController(
     length: 2,
@@ -172,6 +188,28 @@ class _PipelinePageState extends State<PipelinePage> {
               StatusBadge(valueText(_data!, 'status')), Text(valueText(_data!, 'ref')),
               Text(shortSha(valueText(_data!, 'sha')), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12)),
               if (_data!['duration'] is num) Text('${(_data!['duration'] as num).round()} 秒', style: const TextStyle(fontSize: 12)),
+              if (valueText(_data!, 'status') == 'failed')
+                FilledButton.tonalIcon(
+                  key: const ValueKey('pipeline-quick-retry-btn'),
+                  onPressed: _busy ? null : () => _action('retry'),
+                  icon: const Icon(Icons.replay, size: 16),
+                  label: const Text('重試此流程', style: TextStyle(fontSize: 12)),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  ),
+                ),
+              if (const ['running', 'pending'].contains(valueText(_data!, 'status')))
+                OutlinedButton.icon(
+                  key: const ValueKey('pipeline-quick-cancel-btn'),
+                  onPressed: _busy ? null : () => _action('cancel'),
+                  icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.red),
+                  label: const Text('中止此流程', style: TextStyle(fontSize: 12, color: Colors.red)),
+                  style: OutlinedButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  ),
+                ),
             ]),
           ])),
         if (_data != null)
@@ -197,30 +235,72 @@ class _PipelinePageState extends State<PipelinePage> {
                     query: {'include_retried': 'false'},
                     next: next,
                   ),
-                  itemBuilder: (context, value) => SemanticButton(
-                    label: jobCardLabel(value),
-                    onTap: () => _openJob(requiredInt(value, 'id')),
-                    child: Card(
-                      child: ListTile(
-                        title: Text(valueText(value, 'name')),
-                        subtitle: Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 6,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              StatusBadge(valueText(value, 'status')),
-                              Text(valueText(value, 'stage'), style: const TextStyle(fontSize: 12)),
-                            ],
+                  itemBuilder: (context, value) {
+                    final jobId = requiredInt(value, 'id');
+                    final status = valueText(value, 'status');
+                    return Card(
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: SemanticButton(
+                              label: jobCardLabel(value),
+                              onTap: () => _openJob(jobId),
+                              child: InkWell(
+                                borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
+                                onTap: () => _openJob(jobId),
+                                child: Padding(
+                                  padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(valueText(value, 'name'), style: Theme.of(context).textTheme.titleSmall),
+                                      const SizedBox(height: 6),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 6,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        children: [
+                                          StatusBadge(status),
+                                          Text(valueText(value, 'stage'), style: const TextStyle(fontSize: 12)),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        trailing: const Icon(Icons.chevron_right, size: 18),
-                        onTap: () => _openJob(requiredInt(value, 'id')),
+                          if (status == 'manual')
+                            IconButton(
+                              key: ValueKey('job-action-play-$jobId'),
+                              icon: const Icon(Icons.play_circle_outline, color: Colors.blue),
+                              tooltip: '執行手動工作',
+                              onPressed: _busy ? null : () => _jobAction(jobId, 'play'),
+                            )
+                          else if (status == 'failed')
+                            IconButton(
+                              key: ValueKey('job-action-retry-$jobId'),
+                              icon: const Icon(Icons.replay, color: Colors.orange),
+                              tooltip: '重試工作',
+                              onPressed: _busy ? null : () => _jobAction(jobId, 'retry'),
+                            )
+                          else if (status == 'running' || status == 'pending')
+                            IconButton(
+                              key: ValueKey('job-action-cancel-$jobId'),
+                              icon: const Icon(Icons.cancel_outlined, color: Colors.red),
+                              tooltip: '取消工作',
+                              onPressed: _busy ? null : () => _jobAction(jobId, 'cancel'),
+                            ),
+                          IconButton(
+                            icon: const Icon(Icons.chevron_right, size: 18),
+                            tooltip: '查看 Log',
+                            onPressed: () => _openJob(jobId),
+                          ),
+                          const SizedBox(width: 4),
+                        ],
                       ),
-                    ),
-                  ),
+                    );
+                  },
                 ),
                 PipelineTestsView(
                   key: _testsKey,
@@ -1288,6 +1368,119 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     } catch (error) { if (mounted) showFailure(context, error); }
     finally { if (mounted) setState(() => _downloading = false); }
   }
+  Widget _buildJobActionCard(String status) {
+    if (status == 'manual') {
+      return Card(
+        key: ValueKey('job-banner-card-$_jobId'),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              const Icon(Icons.touch_app_outlined, color: Colors.blue, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('手動工作等待啟動', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 2),
+                    Text('需手動觸發執行此 CI 工作', style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.icon(
+                key: ValueKey('job-banner-play-$_jobId'),
+                onPressed: _busy || _confirming ? null : () => _action('play'),
+                icon: const Icon(Icons.play_arrow, size: 18),
+                label: const Text('啟動工作'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (status == 'failed') {
+      final failureReason = _job?['failure_reason'];
+      return Card(
+        key: ValueKey('job-banner-card-$_jobId'),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.3),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(Icons.error_outline, color: Theme.of(context).colorScheme.error, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('工作執行失敗', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 2),
+                    Text(
+                      failureReason != null && '$failureReason'.isNotEmpty
+                          ? '原因：$failureReason'
+                          : '點擊重試以重新啟動此工作',
+                      style: Theme.of(context).textTheme.bodySmall,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              FilledButton.tonalIcon(
+                key: ValueKey('job-banner-retry-$_jobId'),
+                onPressed: _busy || _confirming ? null : () => _action('retry'),
+                icon: const Icon(Icons.replay, size: 18),
+                label: const Text('重試此工作'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (status == 'running' || status == 'pending') {
+      final isRunning = status == 'running';
+      return Card(
+        key: ValueKey('job-banner-card-$_jobId'),
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(isRunning ? Icons.play_circle_filled : Icons.hourglass_top, color: Colors.blue, size: 24),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isRunning ? '工作執行中...' : '工作等待排程中...',
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Text('正在處理 CI 流程，可隨時取消', style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                key: ValueKey('job-banner-cancel-$_jobId'),
+                onPressed: _busy || _confirming ? null : () => _action('cancel'),
+                icon: const Icon(Icons.cancel_outlined, size: 18, color: Colors.red),
+                label: const Text('取消此工作', style: TextStyle(color: Colors.red)),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
   @override
   Widget build(BuildContext context) {
     final rows = _visibleRows();
@@ -1311,6 +1504,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
             }),
             FilterChip(label: const Text('跟隨尾端'), selected: _follow, onSelected: (value) => setState(() => _follow = value)),
           ])),
+        if (_job != null) _buildJobActionCard(valueText(_job!, 'status')),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Row(
@@ -1710,3 +1904,5 @@ String _downloadFileName(String name, int job) {
   }
   return base;
 }
+
+typedef JobPage = JobLogPage;
