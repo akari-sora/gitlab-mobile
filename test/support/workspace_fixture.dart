@@ -461,6 +461,10 @@ class WorkspaceFixture {
         'approved_by': approvalsList,
       });
     }
+    if (joined == 'projects/42/merge_requests/12/rebase' && method == 'POST') {
+      mergeFields['rebase_in_progress'] = true;
+      return jsonResponse({'rebase_in_progress': true});
+    }
     if (joined == 'projects/42/merge_requests/12/versions') { return jsonResponse([{'id': 1, 'head_commit_sha': versionHeadSha}]); }
     if (joined == 'projects/42/merge_requests/12/versions/1') {
       return jsonResponse({'id': 1, 'head_commit_sha': versionHeadSha, 'base_commit_sha': versionBaseSha, 'start_commit_sha': versionStartSha, 'diffs': versionDiffs ?? [

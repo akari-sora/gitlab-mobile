@@ -84,6 +84,39 @@ And visit http://gitlab.com/test or type a /slash in the middle
     expect(actions, ['/close', '/spend', '/label']);
   });
 
+  test('insertQuickAction replaces already typed slash or partial command on current line', () {
+    final slashOnly = insertQuickAction('/', 1, 1, '/close');
+    expect(slashOnly.text, '/close\n');
+    expect(slashOnly.base, '/close\n'.length);
+
+    final partial = insertQuickAction('/cl', 3, 3, '/close');
+    expect(partial.text, '/close\n');
+    expect(partial.base, '/close\n'.length);
+
+    final multilinePartial = insertQuickAction('intro\n/sp', 9, 9, '/spend 1h');
+    expect(multilinePartial.text, 'intro\n/spend 1h\n');
+    expect(multilinePartial.base, 'intro\n/spend 1h\n'.length);
+  });
+
+  test('extractQuickActions ignores commands inside fenced code blocks and quotes', () {
+    const text = '''
+Here is some code:
+```bash
+/close
+/spend 1h
+```
+And a quote:
+> /reopen
+Real action:
+/label ~bug
+~~~
+/approve
+~~~
+''';
+    final actions = extractQuickActions(text);
+    expect(actions, ['/label']);
+  });
+
   test('defaultQuickActions contains essential issue and merge request commands', () {
     expect(defaultQuickActions.any((a) => a.command == '/close'), isTrue);
     expect(defaultQuickActions.any((a) => a.command == '/reopen'), isTrue);

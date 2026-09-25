@@ -112,9 +112,22 @@ MarkupEdit insertMention(String text, int rawStart, int rawEnd, String username)
 
 MarkupEdit insertQuickAction(String text, int rawStart, int rawEnd, String command) {
   final range = _range(text, rawStart, rawEnd);
+  final lineStart = range.start == 0 ? 0 : text.lastIndexOf('\n', range.start - 1) + 1;
+  final beforeCaretOnLine = text.substring(lineStart, range.start);
+  final cmdClean = command.trim();
+
+  // If the user already started typing a slash command on this line, replace that partial prefix
+  final partialMatch = RegExp(r'^\s*(/\w*)$').firstMatch(beforeCaretOnLine);
+  if (partialMatch != null) {
+    final replaceStart = lineStart + partialMatch.start;
+    final snippet = '$cmdClean\n';
+    final next = text.replaceRange(replaceStart, range.end, snippet);
+    final caret = replaceStart + snippet.length;
+    return MarkupEdit(next, caret, caret);
+  }
+
   final atLineStart = range.start == 0 || text[range.start - 1] == '\n';
   final lead = atLineStart ? '' : '\n';
-  final cmdClean = command.trim();
   final snippet = '$lead$cmdClean\n';
   final next = text.replaceRange(range.start, range.end, snippet);
   final caret = range.start + snippet.length;
@@ -125,7 +138,15 @@ List<String> extractQuickActions(String text) {
   final actions = <String>[];
   final lines = text.split('\n');
   final pattern = RegExp(r'^\s*(/\w+)');
+  bool inCodeBlock = false;
   for (final line in lines) {
+    final trimmed = line.trim();
+    if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+      inCodeBlock = !inCodeBlock;
+      continue;
+    }
+    if (inCodeBlock) continue;
+    if (trimmed.startsWith('>')) continue;
     final match = pattern.firstMatch(line);
     if (match != null) {
       actions.add(match.group(1)!);

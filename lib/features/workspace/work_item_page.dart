@@ -292,6 +292,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
           _data = data;
           _approvalsData = approvals;
         });
+        widget.onMutated?.call(data);
       }
     } catch (e) { if (mounted && epoch == _epoch) { setState(() => _error = safeFailure(e)); } }
     finally { if (mounted && epoch == _epoch) { setState(() => _loading = false); } }
@@ -415,6 +416,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
     final confirmation = switch (action) {
       'delete' => ('刪除 $label？', '將刪除此項目與相關討論，無法復原。', label),
       'approve' => ('批准目前版本？', '$label · ${shortSha(valueText(data, 'sha'))}\n仍受專案批准與重新認證政策限制。', null),
+      'rebase' => ('Rebase 分支？', '將此合併請求來源分支 Rebase 至目標分支。', null),
       _ => null,
     };
     var squash = false;
@@ -472,12 +474,16 @@ class _WorkItemPageState extends State<WorkItemPage> {
         case 'todo': await widget.api.writeRecord('POST', [...path, 'todo'], {});
         case 'approve': await widget.api.approveMergeRequest(widget.project.id, widget.iid, requiredString(data, 'sha'));
         case 'unapprove': await widget.api.writeRecord('POST', [...path, 'unapprove'], {});
+        case 'rebase': await widget.api.rebaseMergeRequest(widget.project.id, widget.iid);
         case 'merge': await widget.api.mergeRequest(widget.project.id, widget.iid, requiredString(data, 'sha'),
           squash: squash, removeSourceBranch: removeSourceBranch, autoMerge: autoMerge);
       }
       await _load();
       if (mounted && _data != null) {
         widget.onMutated?.call(_data!);
+      }
+      if (mounted && action == 'rebase') {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已請求 Rebase 分支')));
       }
       if (mounted && action == 'merge') {
         final merged = _data?['state'] == 'merged';
@@ -548,6 +554,11 @@ class _WorkItemPageState extends State<WorkItemPage> {
     final myId = widget.account.user.id;
     final hasApproved = approvedBy.any((v) => valueInt(valueObject(v, 'user'), 'id') == myId);
     final isThresholdReached = approvalsLeft == 0 && (approvalsRequired > 0 || approvedBy.isNotEmpty);
+    final hasUnresolvedDiscussions = data['blocking_discussions_resolved'] == false;
+    final divergedCommits = valueInt(data, 'diverged_commits_count');
+    final rebaseInProgress = valueBool(data, 'rebase_in_progress');
+    final hasConflicts = valueBool(data, 'has_conflicts');
+    final canRebase = !hasConflicts && (divergedCommits > 0 || data['rebase_in_progress'] != null);
 
     return Padding(padding: const EdgeInsets.only(bottom: 16), child: Card(child: Padding(
       padding: const EdgeInsets.all(14), child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -559,6 +570,32 @@ class _WorkItemPageState extends State<WorkItemPage> {
         if (autoScheduled) ...[
           const SizedBox(height: 6),
           const Text('流水線通過後將自動執行合併。', style: TextStyle(fontSize: 12)),
+        ],
+        if (hasUnresolvedDiscussions) ...[
+          const SizedBox(height: 10),
+          Container(
+            key: const ValueKey('unresolved-discussions-notice'),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.errorContainer.withValues(alpha: 0.35),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.chat_bubble_outline, size: 16, color: Theme.of(context).colorScheme.error),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '尚有未解決的討論，解決後方可合併',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: Theme.of(context).colorScheme.error,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
         if (approvals != null) ...[
           const SizedBox(height: 10),
@@ -617,6 +654,20 @@ class _WorkItemPageState extends State<WorkItemPage> {
               onPressed: _busy ? null : () => _action('approve'),
               icon: const Icon(Icons.verified_outlined, size: 18),
               label: const Text('批准'),
+            ),
+          if (rebaseInProgress)
+            OutlinedButton.icon(
+              key: const ValueKey('mr-rebase-progress-btn'),
+              onPressed: null,
+              icon: const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+              label: const Text('Rebase 進行中…'),
+            )
+          else if (canRebase)
+            OutlinedButton.icon(
+              key: const ValueKey('mr-rebase-btn'),
+              onPressed: _busy ? null : () => _action('rebase'),
+              icon: const Icon(Icons.fork_right, size: 18),
+              label: Text(divergedCommits > 0 ? 'Rebase (落後 $divergedCommits)' : 'Rebase'),
             ),
           if (autoScheduled)
             OutlinedButton.icon(
