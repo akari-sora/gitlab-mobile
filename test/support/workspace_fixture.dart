@@ -359,7 +359,19 @@ class WorkspaceFixture {
       }
     }
     if (joined == 'projects/42/merge_requests/12/merge' && method == 'PUT') {
+      if (body['auto_merge'] == true || body['merge_when_pipeline_succeeds'] == true) {
+        mergeFields['merge_when_pipeline_succeeds'] = true;
+        mergeFields['auto_merge_enabled'] = true;
+        mergeFields['merge_user'] = {'id': 7, 'username': 'developer', 'name': 'Developer'};
+        return jsonResponse({...mergeRequest, 'merge_when_pipeline_succeeds': true, 'auto_merge_enabled': true});
+      }
       return jsonResponse({...mergeRequest, 'state': 'merged'});
+    }
+    if (joined == 'projects/42/merge_requests/12/cancel_merge_when_pipeline_succeeds' && method == 'POST') {
+      mergeFields['merge_when_pipeline_succeeds'] = false;
+      mergeFields['auto_merge_enabled'] = false;
+      mergeFields.remove('merge_user');
+      return jsonResponse({...mergeRequest, 'merge_when_pipeline_succeeds': false, 'auto_merge_enabled': false});
     }
     if (joined == 'projects/42/merge_requests/12/approvals') { return jsonResponse({'approved_by': <Json>[]}); }
     if (joined == 'projects/42/merge_requests/12/versions') { return jsonResponse([{'id': 1, 'head_commit_sha': versionHeadSha}]); }
