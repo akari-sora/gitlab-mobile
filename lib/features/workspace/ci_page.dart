@@ -563,10 +563,10 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     _sectionRoots = built.roots;
   }
   bool _collapsed(int index) {
-    if (_queryHits.contains(index)) return false;
     final section = _trace.sections[index];
     final opened = _sectionOpen[_sectionKey(section)];
     if (opened != null) return !opened;
+    if (_queryHits.contains(index)) return false;
     return section.collapsed;
   }
   void _toggleSection(int index) {
@@ -635,14 +635,19 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   void _scrollToMatch() {
     if (_matches.isEmpty || !_scroll.hasClients) return;
     final match = _matches[_currentMatch];
+    var openedAny = false;
     for (var s = 0; s < _trace.sections.length; s++) {
       final sec = _trace.sections[s];
       if (sec.startLine <= match.lineIndex && sec.endLine > match.lineIndex) {
         final key = _sectionKey(sec);
         if (_sectionOpen[key] == false || (sec.collapsed && _sectionOpen[key] != true)) {
           _sectionOpen[key] = true;
+          openedAny = true;
         }
       }
+    }
+    if (openedAny) {
+      setState(() {});
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || !_scroll.hasClients || _matches.isEmpty) return;
@@ -658,11 +663,13 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       final position = _scroll.position;
       if (!position.hasContentDimensions) return;
       final span = position.maxScrollExtent;
-      if (span <= 0) return;
+      if (span <= 0 || !span.isFinite) return;
       final rowCount = rows.isEmpty ? 1 : rows.length;
       final avg = (span + position.viewportDimension) / rowCount;
       final target = (rowIndex * avg - position.viewportDimension * 0.2).clamp(0.0, span);
-      _scroll.jumpTo(target);
+      if (target.isFinite) {
+        _scroll.jumpTo(target);
+      }
     });
   }
   List<InlineSpan> _buildHighlightSpans({
@@ -688,6 +695,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       }
       final end = idx + needle.length;
       final isActive = _matches.isNotEmpty &&
+          _currentMatch >= 0 &&
           _currentMatch < _matches.length &&
           _matches[_currentMatch].lineIndex == lineIndex &&
           _matches[_currentMatch].start == idx;

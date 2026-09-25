@@ -275,6 +275,71 @@ void main() {
       expect(find.text('1/1'), findsOneWidget);
       expect(find.descendant(of: find.byType(ListView), matching: find.textContaining('🚀 Rocket launched')), findsOneWidget);
     });
+
+    testWidgets('nested collapsed sections auto-expand all ancestors when jumped to', (tester) async {
+      final fixture = _SearchFixture();
+      addTearDown(fixture.api.close);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(workspaceHost(JobLogPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        id: 501,
+      )));
+      await settleWorkspace(tester);
+
+      expect(find.textContaining('Deeply nested secret target'), findsNothing);
+
+      final searchFinder = find.byKey(const ValueKey('job-log-search-501'));
+      await tester.enterText(searchFinder, 'secret target');
+      await tester.pump();
+
+      // Deeply nested text is revealed as both parent and child sections expand
+      expect(find.textContaining('Deeply nested secret target'), findsOneWidget);
+    });
+
+    testWidgets('manually collapsing a section with matches and then jumping re-expands it', (tester) async {
+      final fixture = _SearchFixture();
+      addTearDown(fixture.api.close);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 900);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(workspaceHost(JobLogPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        id: 501,
+      )));
+      await settleWorkspace(tester);
+
+      final searchFinder = find.byKey(const ValueKey('job-log-search-501'));
+      await tester.enterText(searchFinder, 'warning');
+      await tester.pump();
+
+      // Section was opened
+      expect(find.textContaining('Hidden warning in step'), findsOneWidget);
+
+      // Now user manually collapses the section header
+      final headerFinder = find.textContaining('hidden step');
+      expect(headerFinder, findsOneWidget);
+      await tester.tap(headerFinder);
+      await tester.pump();
+
+      // Section is now collapsed
+      expect(find.textContaining('Hidden warning in step'), findsNothing);
+
+      // Navigating or jumping to the match re-expands it
+      await tester.tap(find.byTooltip('下一個相符項目'));
+      await tester.pump();
+
+      expect(find.textContaining('Hidden warning in step'), findsOneWidget);
+    });
   });
 }
 
@@ -284,7 +349,10 @@ class _SearchFixture extends WorkspaceFixture {
       'First error detected in compilation\n'
       'section_start:10:hidden_step[collapsed=true]\r'
       'Hidden warning in step\n'
-      'section_end:12:hidden_step\r\n'
+      'section_start:11:nested_inner[collapsed=true]\r'
+      'Deeply nested secret target\n'
+      'section_end:12:nested_inner\r\n'
+      'section_end:13:hidden_step\r\n'
       'Normal log line 2\n'
       'Second error: runtime failure\n'
       'Final line with error code 123\n'
