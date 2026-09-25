@@ -291,4 +291,80 @@ void main() {
     // Verify progress reflects viewed status (1/1)
     expect(find.text('審查進度 (1/1)'), findsOneWidget);
   });
+
+  testWidgets('ReviewDiffPage correctly falls back to old_path for deleted files with empty new_path', (tester) async {
+    _surface(tester);
+    final fixture = WorkspaceFixture();
+    fixture.versionDiffs = [
+      {
+        'old_path': 'lib/deleted_legacy.dart',
+        'new_path': '',
+        'new_file': false,
+        'deleted_file': true,
+        'diff': '@@ -1,2 +0,0 @@\n-old line 1\n-old line 2\n',
+      },
+    ];
+
+    await tester.pumpWidget(_host(Scaffold(
+      body: ReviewDiffPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        iid: 12,
+        expectedSha: WorkspaceFixture.sha,
+      ),
+    )));
+    await settleNetworkWidgets(tester);
+
+    // Old path is rendered, not an empty title
+    expect(find.text('lib/deleted_legacy.dart'), findsWidgets);
+    expect(find.byIcon(Icons.indeterminate_check_box_outlined), findsOneWidget);
+
+    // Open screen, check AppBar title
+    await tester.tap(find.text('lib/deleted_legacy.dart'));
+    await settleNetworkWidgets(tester);
+
+    expect(find.descendant(of: find.byType(AppBar), matching: find.text('lib/deleted_legacy.dart')), findsOneWidget);
+
+    // Toggle viewed in AppBar and verify progress upon return
+    final appBarToggle = find.byKey(const ValueKey('diff-file-viewed-toggle'));
+    await tester.tap(appBarToggle);
+    await tester.pump();
+
+    await tester.tap(find.byType(BackButton));
+    await settleNetworkWidgets(tester);
+
+    expect(find.text('審查進度 (1/1)'), findsOneWidget);
+  });
+
+  testWidgets('WorkItemsTab search clear button displays immediately before debounce duration expires', (tester) async {
+    _surface(tester);
+    final fixture = WorkspaceFixture();
+
+    await tester.pumpWidget(_host(Scaffold(
+      body: WorkItemsTab(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        resource: 'issues',
+      ),
+    )));
+    await settleNetworkWidgets(tester);
+
+    final searchInput = find.byType(TextField);
+    await tester.enterText(searchInput, 'instant');
+    // Only 1ms pump, debounce (300ms) has NOT fired yet
+    await tester.pump(const Duration(milliseconds: 1));
+
+    // Clear button should already be visible via ValueListenableBuilder!
+    final clearBtn = find.byKey(const ValueKey('clear-work-items-search'));
+    expect(clearBtn, findsOneWidget);
+
+    // Tap clear button immediately
+    await tester.tap(clearBtn);
+    await tester.pump();
+
+    expect(clearBtn, findsNothing);
+  });
 }
+

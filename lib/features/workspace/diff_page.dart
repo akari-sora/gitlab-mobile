@@ -203,6 +203,14 @@ String _positionPath(Json position) {
   return '';
 }
 
+String diffFilePath(Json file) {
+  final newPath = valueText(file, 'new_path');
+  if (newPath.isNotEmpty) return newPath;
+  final oldPath = valueText(file, 'old_path');
+  if (oldPath.isNotEmpty) return oldPath;
+  return '未命名檔案';
+}
+
 String _positionLines(Json position) {
   final parts = <String>[];
   final newLine = position['new_line'];
@@ -444,7 +452,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
   Future<void> _open(Json file, {DiffTarget? target}) async {
     final version = _version;
     if (version == null) return;
-    final filePath = valueText(file, 'new_path', valueText(file, 'old_path'));
+    final filePath = diffFilePath(file);
     await Navigator.push(
       context,
       MaterialPageRoute<void>(
@@ -569,9 +577,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                                 if (_viewedFiles.length == files.length) {
                                   _viewedFiles.clear();
                                 } else {
-                                  _viewedFiles.addAll(
-                                    files.map((f) => valueText(f, 'new_path', valueText(f, 'old_path'))),
-                                  );
+                                  _viewedFiles.addAll(files.map(diffFilePath));
                                 }
                               });
                             },
@@ -600,7 +606,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
             const EmptyState('沒有可顯示的文字差異', detail: '可能沒有變更，或差異未由伺服器提供。'),
           for (final file in files) ...[
             () {
-              final filePath = valueText(file, 'new_path', valueText(file, 'old_path'));
+              final filePath = diffFilePath(file);
               final isViewed = _viewedFiles.contains(filePath);
               return Padding(
                 padding: const EdgeInsets.only(top: 10),
@@ -1091,7 +1097,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          valueText(widget.file, 'new_path'),
+          diffFilePath(widget.file),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),

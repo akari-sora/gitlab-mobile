@@ -89,17 +89,21 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
         decoration: InputDecoration(
           hintText: mr ? '搜尋合併請求' : '搜尋議題',
           prefixIcon: const Icon(Icons.search),
-          suffixIcon: _query.isNotEmpty
-              ? IconButton(
-                  key: const ValueKey('clear-work-items-search'),
-                  icon: const Icon(Icons.clear, size: 20),
-                  onPressed: () {
-                    _search.clear();
-                    _debounce?.cancel();
-                    setState(() => _query = '');
-                  },
-                )
-              : null,
+          suffixIcon: ValueListenableBuilder<TextEditingValue>(
+            valueListenable: _search,
+            builder: (context, value, _) {
+              if (value.text.isEmpty) return const SizedBox.shrink();
+              return IconButton(
+                key: const ValueKey('clear-work-items-search'),
+                icon: const Icon(Icons.clear, size: 20),
+                onPressed: () {
+                  _search.clear();
+                  _debounce?.cancel();
+                  setState(() => _query = '');
+                },
+              );
+            },
+          ),
         ),
         onChanged: (value) {
           _debounce?.cancel();

@@ -770,7 +770,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
     final controller = _controllers[field.key];
     final isTrue = controller?.text == 'true';
     return FormField<bool>(
-      key: ValueKey('toggle-${field.key}'),
+      key: ValueKey('toggle-${field.key}-$_pickerEpoch'),
       initialValue: isTrue,
       builder: (state) {
         final val = controller?.text == 'true';
