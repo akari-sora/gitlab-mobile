@@ -317,6 +317,82 @@ class _WorkItemPageState extends State<WorkItemPage> {
       }
     }
   }
+  Future<void> _editAssignees() async {
+    final data = _data;
+    if (data == null || _busy) { return; }
+    final field = EditField.picker(
+      'assignee_ids',
+      '指派成員',
+      source: PickerSource.members,
+      multi: true,
+      value: _peopleValue(valueObjects(data, 'assignees')),
+      hint: '留白會移除所有指派成員',
+    );
+    final saved = await openEditor(
+      context,
+      account: widget.account,
+      api: widget.api,
+      projectId: widget.project.id,
+      projectPath: widget.project.path,
+      title: '修改指派 · $label',
+      resource: '${widget.project.id}/${widget.resource}/${widget.iid}/assignees',
+      subtitle: widget.project.path,
+      baseRevision: valueText(data, 'updated_at'),
+      fields: [field],
+      save: (values) async {
+        final current = await widget.api.record(path);
+        if (current['updated_at'] != data['updated_at']) {
+          throw const ApiFailure(FailureKind.conflict);
+        }
+        final body = editorSubmission([field], values);
+        await widget.api.writeRecord('PUT', path, body);
+      },
+    );
+    if (saved && mounted) {
+      await _load();
+      if (mounted && _data != null) {
+        widget.onMutated?.call(_data!);
+      }
+    }
+  }
+  Future<void> _editReviewers() async {
+    final data = _data;
+    if (data == null || _busy || !mr) { return; }
+    final field = EditField.picker(
+      'reviewer_ids',
+      '審查者名單',
+      source: PickerSource.members,
+      multi: true,
+      value: _peopleValue(valueObjects(data, 'reviewers')),
+      hint: '留白會移除所有審查者',
+    );
+    final saved = await openEditor(
+      context,
+      account: widget.account,
+      api: widget.api,
+      projectId: widget.project.id,
+      projectPath: widget.project.path,
+      title: '修改審查者 · $label',
+      resource: '${widget.project.id}/${widget.resource}/${widget.iid}/reviewers',
+      subtitle: widget.project.path,
+      baseRevision: valueText(data, 'updated_at'),
+      fields: [field],
+      save: (values) async {
+        final current = await widget.api.record(path);
+        if (current['updated_at'] != data['updated_at']) {
+          throw const ApiFailure(FailureKind.conflict);
+        }
+        final body = editorSubmission([field], values);
+        await widget.api.writeRecord('PUT', path, body);
+      },
+    );
+    if (saved && mounted) {
+      await _load();
+      if (mounted && _data != null) {
+        widget.onMutated?.call(_data!);
+      }
+    }
+  }
   Future<void> _action(String action) async {
     if (_busy || _data == null) { return; }
     final data = _data!;
@@ -482,6 +558,134 @@ class _WorkItemPageState extends State<WorkItemPage> {
       ]),
     )));
   }
+
+  Widget _buildAssigneesSection(Json data) {
+    final assignees = valueObjects(data, 'assignees');
+    final myId = widget.account.user.id;
+    final isAssignedToMe = assignees.any((v) => valueInt(v, 'id') == myId);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('指派', style: Theme.of(context).textTheme.titleSmall),
+            TextButton.icon(
+              key: const ValueKey('quick-edit-assignees'),
+              onPressed: _busy ? null : _editAssignees,
+              icon: const Icon(Icons.group_add_outlined, size: 16),
+              label: const Text('修改名單'),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                minimumSize: const Size(48, 48),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            if (isAssignedToMe)
+              InputChip(
+                key: const ValueKey('quick-unassign-me'),
+                avatar: const Icon(Icons.check_circle, size: 16),
+                label: const Text('已指派給我'),
+                selected: true,
+                showCheckmark: false,
+                onDeleted: _busy ? null : () => _action('assign'),
+                deleteIcon: const Icon(Icons.close, size: 14),
+                deleteButtonTooltipMessage: '取消指派給我',
+                onPressed: _busy ? null : () => _action('assign'),
+              )
+            else
+              ActionChip(
+                key: const ValueKey('quick-assign-me'),
+                avatar: const Icon(Icons.person_add_alt_1, size: 16),
+                label: const Text('指派給我'),
+                onPressed: _busy ? null : () => _action('assign'),
+              ),
+            ...assignees.where((u) => valueInt(u, 'id') != myId).map((u) {
+              final username = valueText(u, 'username');
+              final name = valueText(u, 'name');
+              return Chip(
+                avatar: CircleAvatar(
+                  radius: 12,
+                  child: Text(
+                    (username.isNotEmpty ? username[0] : '?').toUpperCase(),
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                ),
+                label: Text(name.isNotEmpty ? '$name (@$username)' : '@$username'),
+              );
+            }),
+            if (assignees.isEmpty && !isAssignedToMe)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text('尚未指派成員', style: Theme.of(context).textTheme.bodySmall),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReviewersSection(Json data) {
+    final reviewers = valueObjects(data, 'reviewers');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('審查者', style: Theme.of(context).textTheme.titleSmall),
+            TextButton.icon(
+              key: const ValueKey('quick-edit-reviewers'),
+              onPressed: _busy ? null : _editReviewers,
+              icon: const Icon(Icons.person_search_outlined, size: 16),
+              label: const Text('修改審查者'),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                minimumSize: const Size(48, 48),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            ...reviewers.map((u) {
+              final username = valueText(u, 'username');
+              final name = valueText(u, 'name');
+              return Chip(
+                avatar: CircleAvatar(
+                  radius: 12,
+                  child: Text(
+                    (username.isNotEmpty ? username[0] : '?').toUpperCase(),
+                    style: const TextStyle(fontSize: 10),
+                  ),
+                ),
+                label: Text(name.isNotEmpty ? '$name (@$username)' : '@$username'),
+              );
+            }),
+            if (reviewers.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text('尚未指定審查者', style: Theme.of(context).textTheme.bodySmall),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = _data;
@@ -571,9 +775,11 @@ class _WorkItemPageState extends State<WorkItemPage> {
                 ]),
                 const SizedBox(height: 16),
               ],
-              Text('指派', style: Theme.of(context).textTheme.titleSmall), const SizedBox(height: 8),
-              Text(valueObjects(data, 'assignees').isEmpty ? '尚未指派'
-                : valueObjects(data, 'assignees').map((v) => '@${valueText(v, 'username')}').join('、')),
+              _buildAssigneesSection(data),
+              if (mr) ...[
+                const SizedBox(height: 16),
+                _buildReviewersSection(data),
+              ],
               if (data['labels'] is List<dynamic>) ...[const SizedBox(height: 16), Wrap(spacing: 6, runSpacing: 6,
                 children: (data['labels'] as List<dynamic>).whereType<String>().map((label) => Chip(label: Text(label))).toList())],
               const SizedBox(height: 16), Text('更新於 ${relativeDate(valueText(data, 'updated_at'))}', style: Theme.of(context).textTheme.bodySmall),
