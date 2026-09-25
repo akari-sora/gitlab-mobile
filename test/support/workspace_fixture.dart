@@ -31,6 +31,10 @@ class WorkspaceFixture {
     {'id': 7, 'username': 'developer', 'name': 'Developer', 'access_level': 30},
     {'id': 8, 'username': 'reviewer', 'name': 'Reviewer', 'access_level': 30},
   ];
+  final milestones = <Json>[
+    {'id': 101, 'title': 'v1.0.0', 'state': 'active', 'due_date': '2026-10-01'},
+    {'id': 102, 'title': 'v1.1.0', 'state': 'active', 'due_date': '2026-11-01'},
+  ];
   List<Json> get branches => [
     {'name': 'main', 'default': true, 'protected': true, 'commit': {'id': sha}},
     {'name': 'feature/navigation', 'default': false, 'protected': false, 'commit': {'id': sha}},
@@ -64,9 +68,11 @@ class WorkspaceFixture {
     return _storedDiscussions ??= <Json>[];
   }
   List<Json> get mergeRequestDiscussions => storedDiscussions;
-  Json issue(int iid, String title) => {
+  Json issue(int iid, String title, {bool confidential = false, Json? milestone}) => {
     'id': iid + 1000, 'iid': iid, 'project_id': 42, 'title': title, 'description': '## Overview\nA synthetic issue for UI verification.',
     'state': 'opened', 'author': {'id': 7, 'username': 'developer'}, 'assignees': <Json>[], 'labels': <String>[],
+    'confidential': confidential,
+    'milestone': ?milestone,
     'updated_at': 'revision-$counter', 'created_at': '2026-09-19T08:00:00Z',
   };
   final mergeFields = <String, dynamic>{};
@@ -230,6 +236,9 @@ class WorkspaceFixture {
     if (joined == 'projects/42/members/all') {
       return jsonResponse(_matching(members, request.uri.queryParameters['query'], const ['username', 'name']));
     }
+    if (joined == 'projects/42/milestones') {
+      return jsonResponse(_matching(milestones, request.uri.queryParameters['search'], const ['title']));
+    }
     if (joined == 'projects/42/uploads' && method == 'POST') {
       var name = 'file';
       final data = request.data;
@@ -257,12 +266,26 @@ class WorkspaceFixture {
     }
     if (joined == 'projects/42/issues' && method == 'POST') {
       final iid = ++counter;
-      issues[iid] = {...issue(iid, body['title'] as String), ...body};
+      final mId = body['milestone_id'];
+      final matchingMilestone = mId is int && mId > 0
+          ? milestones.cast<Json?>().firstWhere((m) => m?['id'] == mId, orElse: () => null)
+          : null;
+      issues[iid] = {
+        ...issue(iid, body['title'] as String),
+        ...body,
+        'milestone': ?matchingMilestone,
+      };
       return jsonResponse(issues[iid], status: 201);
     }
     if (joined == 'projects/42/issues') {
       final state = request.uri.queryParameters['state'];
-      return jsonResponse(issues.values.where((v) => state == null || state == 'all' || v['state'] == state).toList());
+      final search = request.uri.queryParameters['search'];
+      var list = issues.values.where((v) => state == null || state == 'all' || v['state'] == state);
+      if (search != null && search.isNotEmpty) {
+        final query = search.toLowerCase();
+        list = list.where((v) => (v['title'] as String? ?? '').toLowerCase().contains(query));
+      }
+      return jsonResponse(list.toList());
     }
     if (path.length >= 4 && path[0] == 'projects' && path[1] == '42' && path[2] == 'issues') {
       final iid = int.tryParse(path[3]);
@@ -273,6 +296,15 @@ class WorkspaceFixture {
         if (method == 'PUT') {
           item.addAll(body);
           if (body['state_event'] != null) { item['state'] = body['state_event'] == 'close' ? 'closed' : 'opened'; }
+          if (body.containsKey('milestone_id')) {
+            final mId = body['milestone_id'];
+            if (mId is int && mId > 0) {
+              final matching = milestones.cast<Json?>().firstWhere((m) => m?['id'] == mId, orElse: () => null);
+              if (matching != null) item['milestone'] = matching;
+            } else {
+              item.remove('milestone');
+            }
+          }
           item['updated_at'] = 'revision-${++counter}';
         }
         return jsonResponse(item);

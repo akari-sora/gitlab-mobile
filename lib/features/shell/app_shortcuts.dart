@@ -115,6 +115,7 @@ class LauncherShortcuts extends ChangeNotifier {
   LauncherShortcuts(this._host, this._recent);
   final AppShortcutHost _host;
   final RecentProjectStore _recent;
+  RecentProjectStore get recentStore => _recent;
   PendingShortcut? pending;
   String? _accountKey;
   bool _started = false;

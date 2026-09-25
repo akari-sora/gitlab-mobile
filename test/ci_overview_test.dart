@@ -340,4 +340,76 @@ void main() {
     expect(find.byType(FailureNotice), findsNothing);
     expect(find.text('Example 42'), findsOneWidget);
   });
+
+  testWidgets('CiOverviewPage renders ambiguous 404 text and tooltip conforming to AGENTS.md', (tester) async {
+    final api = testApi(FakeAdapter((request) {
+      if (request.uri.path.endsWith('/projects')) {
+        return jsonResponse([projectJson(99)]);
+      }
+      if (request.uri.path.endsWith('/projects/99/pipelines')) {
+        return jsonResponse({'message': '404 Not Found'}, status: 404);
+      }
+      return jsonResponse({}, status: 404);
+    }));
+    addTearDown(api.close);
+
+    final account = Account(
+      instance: GitLabInstance.parse('https://example.com/gitlab'),
+      user: const GitLabUser(id: 1, username: 'dev', name: 'Dev'),
+      token: 'tok',
+    );
+
+    await tester.pumpWidget(workspaceHost(CiOverviewPage(account: account, api: api)));
+    await settleWorkspace(tester);
+
+    final card = find.widgetWithText(Card, 'Example 99');
+    expect(find.descendant(of: card, matching: find.text('無法存取或無 CI 資源')), findsOneWidget);
+    final tooltip = tester.widget<Tooltip>(
+      find.descendant(of: card, matching: find.byType(Tooltip)),
+    );
+    expect(tooltip.message, '目前無法取得 CI 資源，可能不存在或目前帳號無權存取');
+  });
+
+  testWidgets('CiOverviewPage supports pagination with load more button', (tester) async {
+    final api = testApi(FakeAdapter((request) {
+      if (request.uri.path.endsWith('/projects')) {
+        final pageNum = request.uri.queryParameters['page'];
+        if (pageNum == null || pageNum == '1') {
+          return jsonResponse(
+            [projectJson(1)],
+            headers: {
+              'x-next-page': ['2'],
+            },
+          );
+        } else {
+          return jsonResponse([projectJson(2)]);
+        }
+      }
+      if (request.uri.path.contains('/pipelines')) {
+        return jsonResponse([]);
+      }
+      return jsonResponse({}, status: 404);
+    }));
+    addTearDown(api.close);
+
+    final account = Account(
+      instance: GitLabInstance.parse('https://example.com/gitlab'),
+      user: const GitLabUser(id: 1, username: 'dev', name: 'Dev'),
+      token: 'tok',
+    );
+
+    await tester.pumpWidget(workspaceHost(CiOverviewPage(account: account, api: api)));
+    await settleWorkspace(tester);
+
+    expect(find.text('Example 1'), findsOneWidget);
+
+    final loadMoreBtn = find.byKey(const ValueKey('ci-overview-load-more'));
+    expect(loadMoreBtn, findsOneWidget);
+
+    await tester.tap(loadMoreBtn);
+    await settleWorkspace(tester);
+
+    expect(find.text('Example 2'), findsOneWidget);
+    expect(find.byKey(const ValueKey('ci-overview-load-more')), findsNothing);
+  });
 }

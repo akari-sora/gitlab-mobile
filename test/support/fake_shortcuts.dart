@@ -2,21 +2,40 @@ import 'package:gitlab_mobile/features/auth/recent_project.dart';
 import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 
 class MemoryRecentProjectStore implements RecentProjectStore {
-  final Map<String, RecentProject> values = {};
+  final Map<String, List<RecentProject>> values = {};
   Future<void>? readDelay;
   Future<void>? writeDelay;
+
   @override
   Future<RecentProject?> read(String accountKey) async {
-    final delay = readDelay;
-    if (delay != null) await delay;
-    return values[accountKey];
+    final list = await readList(accountKey);
+    return list.isEmpty ? null : list.first;
   }
 
   @override
-  Future<void> write(String accountKey, RecentProject project) async {
+  Future<List<RecentProject>> readList(String accountKey) async {
+    final delay = readDelay;
+    if (delay != null) await delay;
+    return List.unmodifiable(values[accountKey] ?? const []);
+  }
+
+  @override
+  Future<void> write(String accountKey, RecentProject project) =>
+      touch(accountKey, project);
+
+  @override
+  Future<void> touch(String accountKey, RecentProject project) async {
     final delay = writeDelay;
     if (delay != null) await delay;
-    values[accountKey] = project;
+    final current = values[accountKey] ?? [];
+    final updated = [
+      project,
+      for (final p in current) if (p.id != project.id) p,
+    ];
+    if (updated.length > 10) {
+      updated.removeRange(10, updated.length);
+    }
+    values[accountKey] = updated;
   }
 
   @override

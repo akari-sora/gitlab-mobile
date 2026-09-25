@@ -6,6 +6,7 @@ import '../../core/project_locator.dart';
 import '../../shared/adaptive_breakpoints.dart';
 import '../../shared/list_detail_scaffold.dart';
 import '../../shared/workspace_ui.dart';
+import '../auth/recent_project.dart';
 import '../auth/session_controller.dart';
 import '../shell/app_shortcuts.dart';
 import 'editor.dart';
@@ -13,10 +14,18 @@ import 'project_page.dart';
 import 'records_feed.dart';
 
 class ProjectsPage extends StatefulWidget {
-  const ProjectsPage({super.key, required this.session, this.forCi = false, this.shortcuts, this.searchToken = 0});
+  const ProjectsPage({
+    super.key,
+    required this.session,
+    this.forCi = false,
+    this.shortcuts,
+    this.recentStore,
+    this.searchToken = 0,
+  });
   final SessionController session;
   final bool forCi;
   final LauncherShortcuts? shortcuts;
+  final RecentProjectStore? recentStore;
   final int searchToken;
   @override
   State<ProjectsPage> createState() => _ProjectsPageState();
@@ -32,6 +41,9 @@ class _ProjectsPageState extends State<ProjectsPage> {
   String _query = '';
   bool _opening = false;
   int _projectTabIndex = 0;
+  List<RecentProject> _recentProjects = const [];
+  RecentProjectStore get _recentStore =>
+      widget.recentStore ?? widget.shortcuts?.recentStore ?? SecureRecentProjectStore();
   Account get account => widget.session.active!;
   GitLabApi get api => widget.session.api!;
   @override
@@ -40,6 +52,18 @@ class _ProjectsPageState extends State<ProjectsPage> {
     _projectTabIndex = widget.forCi ? 3 : 0;
     _selection.addListener(_onSelectionChanged);
     widget.shortcuts?.addListener(_onShortcutsChanged);
+    unawaited(_loadRecentProjects());
+  }
+
+  Future<void> _loadRecentProjects() async {
+    final active = widget.session.active;
+    if (active == null) return;
+    try {
+      final list = await _recentStore.readList(active.key);
+      if (mounted && widget.session.active?.key == active.key) {
+        setState(() => _recentProjects = list);
+      }
+    } catch (_) {}
   }
 
   void _onSelectionChanged() {
@@ -92,6 +116,12 @@ class _ProjectsPageState extends State<ProjectsPage> {
     if (shortcuts != null) {
       unawaited(shortcuts.rememberOpened(accountKey: account.key, id: project.id, name: project.name));
     }
+    unawaited(_recentStore.touch(
+      account.key,
+      RecentProject(id: project.id, name: project.name, path: project.path),
+    ).then((_) {
+      if (mounted) _loadRecentProjects();
+    }).catchError((_) {}));
     _selection.select(project);
   }
   Future<void> _locator() async {
@@ -154,6 +184,46 @@ class _ProjectsPageState extends State<ProjectsPage> {
         children: [for (var i = 0; i < 3; i++) ChoiceChip(
           label: Text(const ['我的專案', '星標', '所有可存取'][i]), selected: _scope == i,
           showCheckmark: false, onSelected: (_) => setState(() => _scope = i))])),
+      if (_query.isEmpty && _recentProjects.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '最近開啟',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+              ),
+              const SizedBox(height: 6),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: [
+                    for (final rp in _recentProjects)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ActionChip(
+                          key: ValueKey('recent-project-${rp.id}'),
+                          avatar: const Icon(Icons.history, size: 16),
+                          label: Text('最近：${rp.name}'),
+                          onPressed: () async {
+                            try {
+                              final proj = await api.project('${rp.id}');
+                              if (mounted) _open(proj);
+                            } catch (e) {
+                              if (context.mounted) showFailure(context, e);
+                            }
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       if (_opening) const LinearProgressIndicator(minHeight: 2),
       Expanded(child: _scope == 2 && _query.isEmpty
         ? const SingleChildScrollView(child: EmptyState('搜尋所有可存取的專案',

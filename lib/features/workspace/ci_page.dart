@@ -908,6 +908,9 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   ApiFailure? _error;
   bool _loading = false, _busy = false, _confirming = false, _downloading = false, _auto = false, _follow = true;
   String _query = '';
+  final _searchController = TextEditingController();
+  List<_LogMatch> _matches = const <_LogMatch>[];
+  int _currentMatch = 0;
   Timer? _timer;
   final _scroll = ScrollController();
   @override
@@ -918,6 +921,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     _loadEpoch++; _timer?.cancel(); _scroll.dispose();
+    _searchController.dispose();
     WidgetsBinding.instance.removeObserver(this); super.dispose();
   }
   @override
@@ -971,7 +975,17 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         }
         final text = utf8.decode(_rawBytes.toBytes(), allowMalformed: true);
         final parsed = JobTrace.parse(text);
-        setState(() => _trace = parsed);
+        setState(() {
+          _trace = parsed;
+          if (_query.isNotEmpty) {
+            _matches = _findMatches(_query);
+            if (_matches.isEmpty) {
+              _currentMatch = 0;
+            } else if (_currentMatch >= _matches.length) {
+              _currentMatch = _matches.length - 1;
+            }
+          }
+        });
       }
       if (follow) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1006,7 +1020,8 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         _loadEpoch++; _loading = false; _error = null;
         _auto = false; _timer?.cancel(); _job = result;
         if (newId != _jobId || action == 'retry') {
-          _jobId = newId; _trace = JobTrace.empty; _query = ''; _follow = true; _sectionOpen.clear();
+          _jobId = newId; _trace = JobTrace.empty; _query = ''; _matches = const <_LogMatch>[];
+          _currentMatch = 0; _searchController.clear(); _follow = true; _sectionOpen.clear();
           _rawBytes = BytesBuilder(copy: false);
           _traceOffset = 0;
         }
@@ -1025,10 +1040,10 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     _sectionRoots = built.roots;
   }
   bool _collapsed(int index) {
-    if (_queryHits.contains(index)) return false;
     final section = _trace.sections[index];
     final opened = _sectionOpen[_sectionKey(section)];
     if (opened != null) return !opened;
+    if (_queryHits.contains(index)) return false;
     return section.collapsed;
   }
   void _toggleSection(int index) {
@@ -1055,6 +1070,124 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     }
     return hits;
   }
+  List<_LogMatch> _findMatches(String query) {
+    if (query.isEmpty) return const <_LogMatch>[];
+    final needle = query.toLowerCase();
+    final matches = <_LogMatch>[];
+    for (var l = 0; l < _trace.lines.length; l++) {
+      final text = _trace.lines[l].text;
+      final lower = text.toLowerCase();
+      var start = 0;
+      while (start < lower.length) {
+        final idx = lower.indexOf(needle, start);
+        if (idx < 0) break;
+        matches.add(_LogMatch(lineIndex: l, start: idx, end: idx + needle.length));
+        start = idx + needle.length;
+      }
+    }
+    return matches;
+  }
+  void _prevMatch() {
+    if (_matches.isEmpty) return;
+    setState(() {
+      _currentMatch = (_currentMatch - 1 + _matches.length) % _matches.length;
+    });
+    _scrollToMatch();
+  }
+  void _nextMatch() {
+    if (_matches.isEmpty) return;
+    setState(() {
+      _currentMatch = (_currentMatch + 1) % _matches.length;
+    });
+    _scrollToMatch();
+  }
+  void _clearSearch() {
+    _searchController.clear();
+    setState(() {
+      _query = '';
+      _matches = const <_LogMatch>[];
+      _currentMatch = 0;
+    });
+  }
+  void _scrollToMatch() {
+    if (_matches.isEmpty || !_scroll.hasClients) return;
+    final match = _matches[_currentMatch];
+    var openedAny = false;
+    for (var s = 0; s < _trace.sections.length; s++) {
+      final sec = _trace.sections[s];
+      if (sec.startLine <= match.lineIndex && sec.endLine > match.lineIndex) {
+        final key = _sectionKey(sec);
+        if (_sectionOpen[key] == false || (sec.collapsed && _sectionOpen[key] != true)) {
+          _sectionOpen[key] = true;
+          openedAny = true;
+        }
+      }
+    }
+    if (openedAny) {
+      setState(() {});
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients || _matches.isEmpty) return;
+      final rows = _visibleRows();
+      var rowIndex = -1;
+      for (var i = 0; i < rows.length; i++) {
+        if (rows[i].lineIndex == match.lineIndex) {
+          rowIndex = i;
+          break;
+        }
+      }
+      if (rowIndex < 0) return;
+      final position = _scroll.position;
+      if (!position.hasContentDimensions) return;
+      final span = position.maxScrollExtent;
+      if (span <= 0 || !span.isFinite) return;
+      final rowCount = rows.isEmpty ? 1 : rows.length;
+      final avg = (span + position.viewportDimension) / rowCount;
+      final target = (rowIndex * avg - position.viewportDimension * 0.2).clamp(0.0, span);
+      if (target.isFinite) {
+        _scroll.jumpTo(target);
+      }
+    });
+  }
+  List<InlineSpan> _buildHighlightSpans({
+    required String text,
+    required int? lineIndex,
+    required TextStyle baseStyle,
+  }) {
+    if (_query.isEmpty || lineIndex == null) {
+      return [TextSpan(text: text.isEmpty ? ' ' : text, style: baseStyle)];
+    }
+    final needle = _query.toLowerCase();
+    final lower = text.toLowerCase();
+    final spans = <InlineSpan>[];
+    var cursor = 0;
+    while (cursor < text.length) {
+      final idx = lower.indexOf(needle, cursor);
+      if (idx < 0) {
+        spans.add(TextSpan(text: text.substring(cursor), style: baseStyle));
+        break;
+      }
+      if (idx > cursor) {
+        spans.add(TextSpan(text: text.substring(cursor, idx), style: baseStyle));
+      }
+      final end = idx + needle.length;
+      final isActive = _matches.isNotEmpty &&
+          _currentMatch >= 0 &&
+          _currentMatch < _matches.length &&
+          _matches[_currentMatch].lineIndex == lineIndex &&
+          _matches[_currentMatch].start == idx;
+      spans.add(TextSpan(
+        text: text.substring(idx, end),
+        style: baseStyle.copyWith(
+          backgroundColor: isActive ? const Color(0xFFFF9800) : const Color(0xFFFFE082),
+          color: const Color(0xFF000000),
+          fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
+        ),
+      ));
+      cursor = end;
+    }
+    return spans;
+  }
   List<_LogRow> _visibleRows() {
     _ensureSectionIndex();
     _queryHits = _sectionsMatching(_query);
@@ -1063,8 +1196,10 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     final sections = _trace.sections;
     final needle = _query.toLowerCase();
     void addLine(int line) {
-      final text = lines[line].text;
-      if (needle.isEmpty || text.toLowerCase().contains(needle)) rows.add(_LogRow.line(text));
+      final traceLine = lines[line];
+      if (needle.isEmpty || traceLine.text.toLowerCase().contains(needle)) {
+        rows.add(_LogRow.line(traceLine, lineIndex: line));
+      }
     }
     final stack = <_SectionWalk>[_SectionWalk(0, lines.length, _sectionRoots)];
     while (stack.isNotEmpty) {
@@ -1176,10 +1311,76 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
             }),
             FilterChip(label: const Text('跟隨尾端'), selected: _follow, onSelected: (value) => setState(() => _follow = value)),
           ])),
-        Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: TextField(
-          key: ValueKey('job-log-search-$_jobId'),
-          decoration: const InputDecoration(hintText: '搜尋已載入的 Log', prefixIcon: Icon(Icons.search)),
-          onChanged: (value) => setState(() => _query = value))),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  key: ValueKey('job-log-search-$_jobId'),
+                  controller: _searchController,
+                  decoration: InputDecoration(
+                    hintText: '搜尋已載入的 Log',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _query.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            tooltip: '清除搜尋',
+                            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                            onPressed: _clearSearch,
+                          )
+                        : null,
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      _query = value;
+                      _matches = _findMatches(value);
+                      _currentMatch = 0;
+                      if (value.isNotEmpty) _follow = false;
+                    });
+                    if (_matches.isNotEmpty) {
+                      _scrollToMatch();
+                    }
+                  },
+                ),
+              ),
+              if (_query.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                Text(
+                  _matches.isNotEmpty ? '${_currentMatch + 1}/${_matches.length}' : '0/0',
+                  semanticsLabel: _matches.isNotEmpty
+                      ? '第 ${_currentMatch + 1} 個相符項目，共 ${_matches.length} 個'
+                      : '無相符項目',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.keyboard_arrow_up),
+                  tooltip: '上一個相符項目',
+                  constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                  onPressed: _matches.isNotEmpty
+                      ? () {
+                          setState(() => _follow = false);
+                          _prevMatch();
+                        }
+                      : null,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.keyboard_arrow_down),
+                  tooltip: '下一個相符項目',
+                  constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                  onPressed: _matches.isNotEmpty
+                      ? () {
+                          setState(() => _follow = false);
+                          _nextMatch();
+                        }
+                      : null,
+                ),
+              ],
+            ],
+          ),
+        ),
         if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
         if (_error != null) FailureNotice(_error!, onRetry: _busy || _confirming ? null : _load,
           account: widget.account, resourceLabel: '${widget.project.path} · Job #$_jobId',
@@ -1194,9 +1395,34 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 final row = rows[index];
                 final section = row.section;
                 if (section != null) return _sectionHeader(section);
+                final traceLine = row.line;
                 final text = row.text ?? '';
-                return Padding(padding: const EdgeInsets.only(bottom: 3), child: Text(text.isEmpty ? ' ' : text,
-                  style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12, height: 1.5)));
+                final baseStyle = TextStyle(
+                  fontFamily: codeFontFamily,
+                  fontFamilyFallback: const ['Menlo', 'monospace'],
+                  fontSize: 12,
+                  height: 1.5,
+                  color: Theme.of(context).colorScheme.onSurface,
+                );
+                Widget lineWidget;
+                if (_query.isEmpty || text.isEmpty) {
+                  final span = traceLine?.toInlineSpan(
+                    brightness: Theme.of(context).brightness,
+                    baseStyle: baseStyle,
+                  ) ?? TextSpan(text: text.isEmpty ? ' ' : text, style: baseStyle);
+                  lineWidget = Text.rich(span);
+                } else {
+                  final spans = _buildHighlightSpans(
+                    text: text,
+                    lineIndex: row.lineIndex,
+                    baseStyle: baseStyle,
+                  );
+                  lineWidget = Text.rich(TextSpan(style: baseStyle, children: spans));
+                }
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 3),
+                  child: lineWidget,
+                );
               },
             ))),
       ])));
@@ -1204,10 +1430,23 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
 }
 
 final class _LogRow {
-  const _LogRow.header(this.section) : text = null;
-  const _LogRow.line(this.text) : section = null;
+  const _LogRow.header(this.section) : text = null, line = null, lineIndex = null;
+  _LogRow.line(this.line, {this.lineIndex}) : section = null, text = line?.text;
   final int? section;
   final String? text;
+  final JobTraceLine? line;
+  final int? lineIndex;
+}
+
+final class _LogMatch {
+  const _LogMatch({
+    required this.lineIndex,
+    required this.start,
+    required this.end,
+  });
+  final int lineIndex;
+  final int start;
+  final int end;
 }
 
 final class _SectionWalk {
