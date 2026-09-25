@@ -109,3 +109,148 @@ MarkupEdit insertMention(String text, int rawStart, int rawEnd, String username)
   final caret = range.start + snippet.length;
   return MarkupEdit(next, caret, caret);
 }
+
+MarkupEdit insertQuickAction(String text, int rawStart, int rawEnd, String command) {
+  final range = _range(text, rawStart, rawEnd);
+  final atLineStart = range.start == 0 || text[range.start - 1] == '\n';
+  final lead = atLineStart ? '' : '\n';
+  final cmdClean = command.trim();
+  final snippet = '$lead$cmdClean\n';
+  final next = text.replaceRange(range.start, range.end, snippet);
+  final caret = range.start + snippet.length;
+  return MarkupEdit(next, caret, caret);
+}
+
+List<String> extractQuickActions(String text) {
+  final actions = <String>[];
+  final lines = text.split('\n');
+  final pattern = RegExp(r'^\s*(/\w+)');
+  for (final line in lines) {
+    final match = pattern.firstMatch(line);
+    if (match != null) {
+      actions.add(match.group(1)!);
+    }
+  }
+  return actions;
+}
+
+class QuickActionDef {
+  const QuickActionDef({
+    required this.command,
+    required this.label,
+    required this.description,
+    this.category = '一般',
+    this.isMergeRequestOnly = false,
+  });
+
+  final String command;
+  final String label;
+  final String description;
+  final String category;
+  final bool isMergeRequestOnly;
+}
+
+const defaultQuickActions = <QuickActionDef>[
+  QuickActionDef(
+    command: '/close',
+    label: '關閉',
+    description: '關閉此 Issue 或 MR',
+    category: '狀態',
+  ),
+  QuickActionDef(
+    command: '/reopen',
+    label: '重新開啟',
+    description: '重新開啟已關閉的 Issue 或 MR',
+    category: '狀態',
+  ),
+  QuickActionDef(
+    command: '/ready',
+    label: '標記就緒',
+    description: '移除 Draft/WIP 草稿狀態，標記為可審查',
+    category: '狀態',
+    isMergeRequestOnly: true,
+  ),
+  QuickActionDef(
+    command: '/draft',
+    label: '標記草稿',
+    description: '將 MR 標記為草稿 (Draft)',
+    category: '狀態',
+    isMergeRequestOnly: true,
+  ),
+  QuickActionDef(
+    command: '/assign @me',
+    label: '指派給我',
+    description: '將此項目指派給目前登入帳號',
+    category: '指派與審查',
+  ),
+  QuickActionDef(
+    command: '/unassign',
+    label: '取消指派',
+    description: '移除所有已被指派的成員',
+    category: '指派與審查',
+  ),
+  QuickActionDef(
+    command: '/approve',
+    label: '核准',
+    description: '核准此合併請求 (Approve MR)',
+    category: '指派與審查',
+    isMergeRequestOnly: true,
+  ),
+  QuickActionDef(
+    command: '/unapprove',
+    label: '撤銷核准',
+    description: '撤銷對此合併請求的核准',
+    category: '指派與審查',
+    isMergeRequestOnly: true,
+  ),
+  QuickActionDef(
+    command: '/merge',
+    label: '自動合併',
+    description: '當 CI 成功時自動執行合併 (Merge)',
+    category: '指派與審查',
+    isMergeRequestOnly: true,
+  ),
+  QuickActionDef(
+    command: '/label ~',
+    label: '加上標籤',
+    description: '為此項目新增標籤',
+    category: '標籤與里程碑',
+  ),
+  QuickActionDef(
+    command: '/unlabel ~',
+    label: '移除標籤',
+    description: '從此項目移除標籤',
+    category: '標籤與里程碑',
+  ),
+  QuickActionDef(
+    command: '/milestone %',
+    label: '里程碑',
+    description: '設定目標里程碑',
+    category: '標籤與里程碑',
+  ),
+  QuickActionDef(
+    command: '/spend 1h',
+    label: '登記耗時',
+    description: '登記實際工時（例如 1h, 30m, 2d）',
+    category: '工時追蹤',
+  ),
+  QuickActionDef(
+    command: '/estimate 1d',
+    label: '預估工時',
+    description: '設定預估所需工時（例如 1d, 4h）',
+    category: '工時追蹤',
+  ),
+  QuickActionDef(
+    command: '/lock',
+    label: '鎖定討論',
+    description: '鎖定討論串，僅專案成員可留言',
+    category: '討論管理',
+  ),
+  QuickActionDef(
+    command: '/unlock',
+    label: '解除鎖定',
+    description: '解除討論串鎖定',
+    category: '討論管理',
+  ),
+];
+
