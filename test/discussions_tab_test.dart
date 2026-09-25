@@ -142,4 +142,125 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 1));
   });
+
+  testWidgets('filter modes separate user comments from system notes and update empty states dynamically', (tester) async {
+    final fixture = WorkspaceFixture()..mrDiscussions.addAll([
+      {
+        'id': 'user-comment-1',
+        'individual_note': false,
+        'notes': [
+          _note(101, 'dev_user', '這是一般開發者評論', resolvable: false),
+        ],
+      },
+      {
+        'id': 'system-note-1',
+        'individual_note': true,
+        'notes': [
+          {
+            'id': 102,
+            'body': 'added label ~backend',
+            'system': true,
+            'resolvable': false,
+            'resolved': false,
+            'author': {'id': 99, 'username': 'gitlab-bot'},
+            'created_at': '2026-09-01T00:00:00Z',
+          },
+        ],
+      },
+      {
+        'id': 'resolved-comment-1',
+        'individual_note': false,
+        'notes': [
+          _note(103, 'reviewer', '已解決的程式碼審查意見', resolvable: true, resolved: true),
+        ],
+      },
+    ]);
+
+    await _openDiscussions(tester, fixture);
+    // 預設為全部活動 (all)：3 則全部顯示
+    expect(find.text('3 則討論 · 1 已解決'), findsOneWidget);
+    expect(find.textContaining('這是一般開發者評論', findRichText: true), findsOneWidget);
+    expect(find.textContaining('added label ~backend', findRichText: true), findsOneWidget);
+    expect(find.text('@reviewer'), findsOneWidget);
+
+    // 切換為「僅評論」 (comments)：系統 note 隱藏
+    await tester.tap(find.byKey(const ValueKey('filter-chip-comments')));
+    await tester.pump();
+    expect(find.textContaining('這是一般開發者評論', findRichText: true), findsOneWidget);
+    expect(find.textContaining('added label ~backend', findRichText: true), findsNothing);
+    expect(find.text('@reviewer'), findsOneWidget);
+
+    // 疊加「只看未解決」：已解決的 reviewer 評論隱藏
+    await tester.tap(find.byKey(const ValueKey('filter-chip-unresolved')));
+    await tester.pump();
+    expect(find.textContaining('這是一般開發者評論', findRichText: true), findsOneWidget);
+    expect(find.text('@reviewer'), findsNothing);
+
+    // 切換為「僅動態」 (system)：只有系統 note，但因為疊加了「只看未解決」（系統 note 不是 resolvable，_discussionResolved 為 false），所以系統 note 會顯示
+    await tester.tap(find.byKey(const ValueKey('filter-chip-system')));
+    await tester.pump();
+    expect(find.textContaining('這是一般開發者評論', findRichText: true), findsNothing);
+    expect(find.textContaining('added label ~backend', findRichText: true), findsOneWidget);
+
+    // 取消「只看未解決」，依然在「僅動態」
+    await tester.tap(find.byKey(const ValueKey('filter-chip-unresolved')));
+    await tester.pump();
+    expect(find.textContaining('added label ~backend', findRichText: true), findsOneWidget);
+
+    // 回到「全部活動」
+    await tester.tap(find.byKey(const ValueKey('filter-chip-all')));
+    await tester.pump();
+    expect(find.textContaining('這是一般開發者評論', findRichText: true), findsOneWidget);
+    expect(find.textContaining('added label ~backend', findRichText: true), findsOneWidget);
+
+    expect(tester.takeException(), isNull);
+    expect(fixture.unhandled, isEmpty);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('batch expand and collapse resolved discussions toggles all resolved threads', (tester) async {
+    final fixture = WorkspaceFixture()..mrDiscussions.addAll([
+      {
+        'id': 'resolved-1',
+        'individual_note': false,
+        'notes': [
+          _note(201, 'alice', '已解決主題 1', resolvable: true, resolved: true),
+        ],
+      },
+      {
+        'id': 'resolved-2',
+        'individual_note': false,
+        'notes': [
+          _note(202, 'bob', '已解決主題 2', resolvable: true, resolved: true),
+        ],
+      },
+    ]);
+
+    await _openDiscussions(tester, fixture);
+    // 初始狀態下已解決主題均收合
+    expect(find.textContaining('已解決主題 1', findRichText: true), findsNothing);
+    expect(find.textContaining('已解決主題 2', findRichText: true), findsNothing);
+    expect(find.byKey(const ValueKey('toggle-all-resolved-btn')), findsOneWidget);
+    expect(find.text('展開已解決'), findsOneWidget);
+
+    // 點擊「展開已解決」：所有已解決主題全部展開
+    await tester.tap(find.byKey(const ValueKey('toggle-all-resolved-btn')));
+    await tester.pump();
+    expect(find.textContaining('已解決主題 1', findRichText: true), findsOneWidget);
+    expect(find.textContaining('已解決主題 2', findRichText: true), findsOneWidget);
+    expect(find.text('收合已解決'), findsOneWidget);
+
+    // 再次點擊「收合已解決」：所有已解決主題全部收合
+    await tester.tap(find.byKey(const ValueKey('toggle-all-resolved-btn')));
+    await tester.pump();
+    expect(find.textContaining('已解決主題 1', findRichText: true), findsNothing);
+    expect(find.textContaining('已解決主題 2', findRichText: true), findsNothing);
+    expect(find.text('展開已解決'), findsOneWidget);
+
+    expect(tester.takeException(), isNull);
+    expect(fixture.unhandled, isEmpty);
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 1));
+  });
 }

@@ -20,6 +20,25 @@ String _discussionSummary(List<Json> items, {required bool partial}) {
   return '$line · ${items.where(_discussionResolved).length} 已解決';
 }
 
+enum DiscussionFilterMode {
+  all('全部活動'),
+  comments('僅評論'),
+  system('僅動態');
+
+  const DiscussionFilterMode(this.label);
+  final String label;
+}
+
+bool _isSystemDiscussion(Json discussion) {
+  final notes = valueObjects(discussion, 'notes');
+  return notes.isNotEmpty && notes.every((note) => note['system'] == true);
+}
+
+bool _isCommentDiscussion(Json discussion) {
+  final notes = valueObjects(discussion, 'notes');
+  return notes.any((note) => note['system'] != true);
+}
+
 class DiscussionsTab extends StatefulWidget {
   const DiscussionsTab({super.key, required this.account, required this.api, required this.project, required this.resource, required this.iid, this.headSha});
   final Account account;
@@ -36,6 +55,42 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
   final _attachments = AttachmentBudget();
   final _open = <String>{};
   bool _busy = false, _unresolvedOnly = false;
+  DiscussionFilterMode _filterMode = DiscussionFilterMode.all;
+
+  String get _filteredEmptyText {
+    if (_unresolvedOnly) {
+      switch (_filterMode) {
+        case DiscussionFilterMode.all:
+          return '沒有未解決的討論';
+        case DiscussionFilterMode.comments:
+          return '沒有未解決的使用者評論';
+        case DiscussionFilterMode.system:
+          return '沒有未解決的系統動態';
+      }
+    }
+    switch (_filterMode) {
+      case DiscussionFilterMode.all:
+        return '還沒有討論';
+      case DiscussionFilterMode.comments:
+        return '沒有符合條件的使用者評論';
+      case DiscussionFilterMode.system:
+        return '沒有符合條件的系統動態';
+    }
+  }
+
+  bool _isItemVisible(Json item) {
+    if (_unresolvedOnly && _discussionResolved(item)) {
+      return false;
+    }
+    switch (_filterMode) {
+      case DiscussionFilterMode.all:
+        return true;
+      case DiscussionFilterMode.comments:
+        return _isCommentDiscussion(item);
+      case DiscussionFilterMode.system:
+        return _isSystemDiscussion(item);
+    }
+  }
   List<String> get path => ['projects', '${widget.project.id}', widget.resource, '${widget.iid}'];
   void _toggle(String id) => setState(() { if (!_open.remove(id)) { _open.add(id); } });
   Future<void> _compose({Json? note, String? discussion, bool thread = false}) async {
@@ -190,19 +245,68 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
   @override
   Widget build(BuildContext context) => Column(children: [
     Expanded(child: RecordsFeed(key: _feed, identity: '${path.join('/')}/discussions', empty: '還沒有討論',
-      filteredEmpty: '沒有未解決的討論',
+      filteredEmpty: _filteredEmptyText,
       account: widget.account, resourceLabel: '${widget.project.path} · 討論',
       onSwitchAccount: endSessionFrom(context),
       load: (next) => widget.api.records([...path, 'discussions'], next: next),
-      visible: (item) => !_unresolvedOnly || !_discussionResolved(item),
+      visible: _isItemVisible,
       header: (_, controller) {
         if (controller.items.isEmpty && (controller.loading || controller.error != null)) { return const SizedBox.shrink(); }
+        final resolvedItems = controller.items.where(_discussionResolved).toList();
+        final hasResolved = resolvedItems.isNotEmpty;
+        final allResolvedOpen = hasResolved && resolvedItems.every((item) => _open.contains(valueText(item, 'id')));
+
         return Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Column(
           mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(_discussionSummary(controller.items, partial: controller.next != null), maxLines: 1, overflow: TextOverflow.ellipsis),
+            Row(children: [
+              Expanded(child: Text(_discussionSummary(controller.items, partial: controller.next != null), maxLines: 1, overflow: TextOverflow.ellipsis)),
+              if (hasResolved && !_unresolvedOnly)
+                TextButton.icon(
+                  key: const ValueKey('toggle-all-resolved-btn'),
+                  onPressed: () {
+                    setState(() {
+                      if (allResolvedOpen) {
+                        for (final item in resolvedItems) {
+                          _open.remove(valueText(item, 'id'));
+                        }
+                      } else {
+                        for (final item in resolvedItems) {
+                          _open.add(valueText(item, 'id'));
+                        }
+                      }
+                    });
+                  },
+                  icon: Icon(allResolvedOpen ? Icons.unfold_less : Icons.unfold_more, size: 18),
+                  label: Text(allResolvedOpen ? '收合已解決' : '展開已解決'),
+                ),
+            ]),
             const SizedBox(height: 8),
-            FilterChip(label: const Text('只看未解決'), selected: _unresolvedOnly, showCheckmark: false,
-              onSelected: (value) => setState(() => _unresolvedOnly = value)),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final mode in DiscussionFilterMode.values) ...[
+                    FilterChip(
+                      key: ValueKey('filter-chip-${mode.name}'),
+                      label: Text(mode.label),
+                      selected: _filterMode == mode,
+                      showCheckmark: false,
+                      onSelected: (val) {
+                        if (val) setState(() => _filterMode = mode);
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  FilterChip(
+                    key: const ValueKey('filter-chip-unresolved'),
+                    label: const Text('只看未解決'),
+                    selected: _unresolvedOnly,
+                    showCheckmark: false,
+                    onSelected: (value) => setState(() => _unresolvedOnly = value),
+                  ),
+                ],
+              ),
+            ),
           ],
         ));
       },
