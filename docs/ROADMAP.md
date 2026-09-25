@@ -53,3 +53,61 @@ Actual Android/iOS device matrix, TalkBack/VoiceOver, large text and narrow-scre
 For each gate record commit SHA, pipeline/job URLs, fixtures/environment, executed cases, failures and NOT_RUN items. No global PASS based solely on unit tests or template generation.
 
 Status (2026-09-22): OAuth login, push, iOS, store signing, TalkBack, a cross-project CI overview, a two-pane layout, and a phone run of !4–!8 remain NOT_RUN. See the [v0.3 ledger](V0_3_VERIFICATION.md). `main` is `9183f19`; pipeline `2869335026` reported `509` tests.
+
+## R4 — Follow-up specifications and Backlog (D1~D5 & Long-term)
+
+The follow-up engineering slices (D1~D5) and long-term backlog bridge the gaps identified in `docs/GITLAB_WEB_VS_MOBILE_GAP_AUDIT.md`. They are preserved with explicit technical dependency paths and acceptance criteria.
+
+### D1: Pipeline JUnit Test Report (`GET .../pipelines/:id/test_report`)
+- **Specification**: In `PipelinePage`, display a top test-result summary card (Total, Passed, Failed, Skipped). When failed tests > 0, highlight with red indicator; tap to open a dedicated test failure browser showing suite name, test name, duration, and error stacktrace.
+- **Dependencies**: `lib/features/workspace/ci_page.dart`, `lib/core/gitlab_api.dart` (bounded by 4 MiB streaming budget; payloads exceeding 4 MiB fail safe with `tooLarge` and offer external browser fallback).
+- **Acceptance Criteria**:
+  - Accurate parsing of standard GitLab test report payload.
+  - Zero crashes on empty or oversized test reports.
+  - Regression unit tests covering report models, failure lists, and error states.
+
+### D2: Commit Diff and Changed Files List (`GET .../commits/:sha/diff`)
+- **Specification**: Extend commit details (`project_more_page.dart`) to fetch commit diffs and embed `ReviewDiffPage`, providing changed file list, addition/deletion stats, and unified diff viewing on mobile.
+- **Dependencies**: `lib/core/unified_diff.dart`, `lib/features/workspace/diff_page.dart`.
+- **Acceptance Criteria**:
+  - Tapping a commit displays the list of touched files with additions/deletions badges.
+  - Tapping a changed file displays line-by-line unified diff.
+  - Binary and oversized diffs (> 2 MiB) gracefully display informational placeholders.
+
+### D3: Auto-Merge When Pipeline Succeeds (MWPS / Auto-merge)
+- **Specification**: Extend `mergeRequest` in `workspace_api.dart` with `merge_when_pipeline_succeeds: true`. In `work_item_page.dart`, when `detailed_merge_status` is `ci_still_running`, present the action button as "Auto-merge when pipeline succeeds" rather than failing with 405/406.
+- **Dependencies**: `lib/core/workspace_api.dart`, `lib/features/workspace/work_item_page.dart`.
+- **Acceptance Criteria**:
+  - Scheduling auto-merge on running pipeline succeeds without unexpected error dialogs.
+  - Dynamic button state updates to indicate scheduled status or cancel option.
+  - Unit tests covering MWPS API parameter dispatch and status transitions.
+
+### D4: Terminal ANSI Color Rendering & Streaming Robustness
+- **Specification**: Replace regex stripping in `lib/core/job_trace.dart:35` with a pure-Dart ANSI state machine, translating SGR escape sequences (red/green/yellow/cyan, bold, dim) into styled `TextSpan` elements.
+- **Dependencies**: `lib/core/job_trace.dart`, `lib/features/workspace/ci_page.dart`, HTTP Range 206 chunking (must gracefully handle escape sequences split across chunk boundaries).
+- **Acceptance Criteria**:
+  - Accurate rendering of standard 8/16-color ANSI output for compilation errors and test outcomes.
+  - Robust state-machine recovery across segmented chunks without emitting garbage glyphs.
+  - Performance validation ensuring smooth scrolling over 20,000 log lines.
+
+### D5: Code Reading Experience Suite
+- **D5.1 Collapsible README.md Preview**:
+  - Render collapsible `MarkdownView` card at the top of the repository file tree.
+- **D5.2 Tag Ref Picker for Repository Tree**:
+  - Add Tag selection sheet in `repository_page.dart`, integrating tags list from `project_more_page.dart`.
+- **D5.3 Lightweight Syntax Highlighting**:
+  - Pure-Dart token coloring for major languages (Dart, Python, JS, Go, JSON, YAML) in `repository_page.dart:666` preserving line virtualization.
+- **D5.4 Line Number Interaction & Permalink Sharing**:
+  - Interactive line number selection, highlighting, and copying URL anchors (`#L12-L20`).
+- **Acceptance Criteria**:
+  - README expands/collapses smoothly and remembers user preference.
+  - Tag selection pins tree to the resolved tag commit SHA without branch drift.
+  - Zero frame drops during fast scrolls on large code files (> 5,000 lines).
+
+### Long-Term Backlog (LT1 ~ LT5)
+- **LT1: Groups & Subgroups Hierarchy (`GET /groups`)**: Flattened multi-level hierarchy browsing, subgroup navigation, and group-scoped project discovery.
+- **LT2: GraphQL Polymorphic Work Items Pilot**: Targeted GraphQL queries for Task checkbox toggling and Epic linking alongside existing REST infrastructure.
+- **LT3: Issue Boards Kanban View**: Horizontal swiping board columns for label/milestone workflows on tablets (>= 840 dp).
+- **LT4: Batch Review & Draft Notes**: Integration with server-side draft notes API for staging comments and submitting unified reviews.
+- **LT5: Suggested Changes Application**: Markdown rendering of ```suggestion blocks with one-tap commit application via GitLab suggestions API.
+
