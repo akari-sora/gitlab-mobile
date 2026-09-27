@@ -7,6 +7,8 @@ import '../../shared/workspace_ui.dart';
 import 'diff_page.dart';
 import 'editor.dart';
 import 'records_feed.dart';
+import '../../core/suggestion.dart';
+import 'suggestion_card.dart';
 
 bool _discussionResolved(Json discussion) {
   final resolvable = valueObjects(discussion, 'notes').where((note) => note['resolvable'] == true);
@@ -128,6 +130,10 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
       widget.onChanged?.call();
     }
   }
+  void _reload() {
+    _feed.currentState?.refresh();
+    widget.onChanged?.call();
+  }
   Future<void> _delete(Json note, String? discussion) async {
     if (_busy || !await confirmAction(context, '刪除留言？', '此操作無法復原。')) { return; }
     if (!mounted) { return; }
@@ -212,6 +218,14 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
           base: widget.account.instance.projectWeb(widget.project.path), api: widget.api, projectId: widget.project.id,
           projectWeb: widget.account.instance.projectWeb(widget.project.path), projectPath: widget.project.path,
           budget: _attachments),
+        for (final suggestion in parseNoteSuggestions(notes[index])) ...[
+          const SizedBox(height: 6),
+          SuggestedChangeCard(
+            suggestion: suggestion,
+            api: widget.api,
+            onApplied: _reload,
+          ),
+        ],
         const SizedBox(height: 8), Text(relativeDate(valueText(notes[index], 'created_at')), style: Theme.of(context).textTheme.bodySmall),
       ],
       if (isThread) Wrap(spacing: 8, children: [

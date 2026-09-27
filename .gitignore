@@ -35,6 +35,7 @@ __pycache__/
 .android-sdk/
 .gradle-user/
 ci-output/
+public-smoke-output/
 artifacts/
 .agents/
 

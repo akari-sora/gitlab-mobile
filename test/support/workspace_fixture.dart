@@ -313,6 +313,14 @@ class WorkspaceFixture {
             final ids = (body['assignee_ids'] as List<dynamic>?)?.map((e) => int.tryParse('$e') ?? 0).where((id) => id > 0).toSet() ?? <int>{};
             item['assignees'] = members.where((m) => ids.contains(m['id'])).toList();
           }
+          if (body.containsKey('labels')) {
+            final raw = body['labels'];
+            if (raw is String) {
+              item['labels'] = raw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+            } else if (raw is List) {
+              item['labels'] = raw;
+            }
+          }
           item['updated_at'] = 'revision-${++counter}';
         }
         return jsonResponse(item);
@@ -349,16 +357,24 @@ class WorkspaceFixture {
     }
     if (joined == 'projects/42/merge_requests/12') {
       if (method == 'PUT') {
-        mergeRequest.addAll(body);
+        mergeFields.addAll(body);
         if (body.containsKey('assignee_ids')) {
           final ids = (body['assignee_ids'] as List<dynamic>?)?.map((e) => int.tryParse('$e') ?? 0).where((id) => id > 0).toSet() ?? <int>{};
-          mergeRequest['assignees'] = members.where((m) => ids.contains(m['id'])).toList();
+          mergeFields['assignees'] = members.where((m) => ids.contains(m['id'])).toList();
         }
         if (body.containsKey('reviewer_ids')) {
           final ids = (body['reviewer_ids'] as List<dynamic>?)?.map((e) => int.tryParse('$e') ?? 0).where((id) => id > 0).toSet() ?? <int>{};
-          mergeRequest['reviewers'] = members.where((m) => ids.contains(m['id'])).toList();
+          mergeFields['reviewers'] = members.where((m) => ids.contains(m['id'])).toList();
         }
-        mergeRequest['updated_at'] = 'revision-${++counter}';
+        if (body.containsKey('labels')) {
+          final raw = body['labels'];
+          if (raw is String) {
+            mergeFields['labels'] = raw.split(',').map((s) => s.trim()).where((s) => s.isNotEmpty).toList();
+          } else if (raw is List) {
+            mergeFields['labels'] = raw;
+          }
+        }
+        mergeFields['updated_at'] = 'revision-${++counter}';
         return jsonResponse(mergeRequest);
       }
       return jsonResponse(mergeRequest);
@@ -522,6 +538,16 @@ class WorkspaceFixture {
     if (joined == 'projects/42/jobs/502') { return jsonResponse(job(502, status: 'manual')); }
     if (joined == 'projects/42/jobs/501/trace') { return ResponseBody.fromString('flutter analyze\nNo issues found.\nAll tests passed.\n', 200); }
     if (joined == 'projects/42/jobs/502/trace') { return jsonResponse({}, status: 404); }
+    if (path.length == 3 && path[0] == 'suggestions' && path[2] == 'apply' && method == 'PUT') {
+      final id = int.tryParse(path[1]);
+      return jsonResponse({
+        'id': id,
+        'from_content': 'old code',
+        'to_content': 'new code',
+        'appliable': true,
+        'applied': true,
+      });
+    }
     if (path.length > 4 && path[0] == 'projects' && path[1] == '42' && path[2] == 'merge_requests') {
       final tail = path.sublist(4).join('/');
       if (tail == 'approvals') return jsonResponse({'approved_by': <Json>[]});
