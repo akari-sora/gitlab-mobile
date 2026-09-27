@@ -9,11 +9,375 @@ import '../../core/job_trace.dart';
 import '../../core/models.dart';
 import '../../shared/external_link.dart';
 import '../../shared/workspace_ui.dart';
-import 'editor.dart';
 import 'records_feed.dart';
 import '../../shared/artifact_storage.dart';
 import '../../shared/theme.dart';
 export '../../shared/artifact_storage.dart';
+
+class _CiVariableEntry {
+  _CiVariableEntry({
+    String key = '',
+    String value = '',
+  })  : keyController = TextEditingController(text: key),
+        valueController = TextEditingController(text: value);
+
+  final TextEditingController keyController;
+  final TextEditingController valueController;
+  String variableType = 'env_var';
+  String? keyError;
+
+  void dispose() {
+    keyController.dispose();
+    valueController.dispose();
+  }
+}
+
+class RunPipelineDialog extends StatefulWidget {
+  const RunPipelineDialog({
+    super.key,
+    required this.account,
+    required this.api,
+    required this.project,
+  });
+
+  final Account account;
+  final GitLabApi api;
+  final Project project;
+
+  @override
+  State<RunPipelineDialog> createState() => _RunPipelineDialogState();
+}
+
+class _RunPipelineDialogState extends State<RunPipelineDialog> {
+  late final TextEditingController _refController;
+  final _variables = <_CiVariableEntry>[];
+  String? _refError;
+  bool _submitting = false;
+  String? _submitError;
+  static final _validKeyRegex = RegExp(r'^[a-zA-Z_][a-zA-Z0-9_]*$');
+
+  @override
+  void initState() {
+    super.initState();
+    _refController = TextEditingController(
+      text: widget.project.defaultBranch ?? 'main',
+    );
+  }
+
+  @override
+  void dispose() {
+    _refController.dispose();
+    for (final v in _variables) {
+      v.dispose();
+    }
+    super.dispose();
+  }
+
+  void _addVariable() {
+    setState(() {
+      _variables.add(_CiVariableEntry());
+    });
+  }
+
+  void _removeVariable(int index) {
+    setState(() {
+      final removed = _variables.removeAt(index);
+      removed.dispose();
+    });
+  }
+
+  Future<void> _submit() async {
+    if (_submitting) return;
+    setState(() {
+      _refError = null;
+      _submitError = null;
+      for (final v in _variables) {
+        v.keyError = null;
+      }
+    });
+
+    final ref = _refController.text.trim();
+    if (ref.isEmpty) {
+      setState(() => _refError = '請輸入分支或標籤名稱');
+      return;
+    }
+
+    var hasError = false;
+    final seenKeys = <String>{};
+    final variablesToSubmit = <Map<String, String>>[];
+
+    for (var i = 0; i < _variables.length; i++) {
+      final entry = _variables[i];
+      final key = entry.keyController.text.trim();
+      final val = entry.valueController.text;
+
+      // 空值過濾: 如果 key 和 value 均為空，則直接忽略該列
+      if (key.isEmpty && val.isEmpty) {
+        continue;
+      }
+
+      if (key.isEmpty) {
+        entry.keyError = '變數名稱不可為空';
+        hasError = true;
+        continue;
+      }
+
+      if (!_validKeyRegex.hasMatch(key)) {
+        entry.keyError = '變數名稱格式不合（僅限英數字與底線，不可為數字開頭）';
+        hasError = true;
+        continue;
+      }
+
+      if (seenKeys.contains(key)) {
+        entry.keyError = '變數名稱重複';
+        hasError = true;
+        continue;
+      }
+      seenKeys.add(key);
+
+      variablesToSubmit.add({
+        'key': key,
+        'value': val,
+        'variable_type': entry.variableType,
+      });
+    }
+
+    if (hasError) {
+      setState(() {});
+      return;
+    }
+
+    setState(() => _submitting = true);
+    try {
+      final response = await widget.api.createPipeline(
+        widget.project.id,
+        ref,
+        variables: variablesToSubmit.isNotEmpty ? variablesToSubmit : null,
+      );
+      final id = requiredInt(response, 'id');
+      if (mounted) {
+        Navigator.of(context).pop(id);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+          _submitError = safeFailure(e).title;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return AlertDialog(
+      scrollable: true,
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.play_circle_outline),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '執行 Pipeline',
+                  style: theme.textTheme.titleLarge,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            widget.project.path,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+      content: SizedBox(
+        width: double.maxFinite,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              key: const ValueKey('editor-ref'),
+              controller: _refController,
+              decoration: InputDecoration(
+                labelText: '分支或標籤',
+                hintText: '例如: main 或 v1.0.0',
+                helperText: '將使用此 ref 上的 .gitlab-ci.yml；可能執行部署工作。',
+                helperMaxLines: 2,
+                errorText: _refError,
+                prefixIcon: const Icon(Icons.alt_route),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Text(
+                  'CI 變數 (${_variables.length})',
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                OutlinedButton.icon(
+                  key: const Key('add-ci-variable'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(48, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  onPressed: _submitting ? null : _addVariable,
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('新增變數'),
+                ),
+              ],
+            ),
+            if (_variables.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  '未設定自訂 CI 變數',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: colorScheme.outline,
+                  ),
+                ),
+              ),
+            for (var i = 0; i < _variables.length; i++) ...[
+              Card(
+                margin: const EdgeInsets.symmetric(vertical: 6),
+                color: colorScheme.surfaceContainerLow,
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            '變數 #${i + 1}',
+                            style: theme.textTheme.labelMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            key: ValueKey('ci-var-remove-$i'),
+                            constraints: const BoxConstraints(
+                              minWidth: 48,
+                              minHeight: 48,
+                            ),
+                            icon: const Icon(Icons.delete_outline, size: 20),
+                            tooltip: '刪除變數',
+                            onPressed: _submitting ? null : () => _removeVariable(i),
+                          ),
+                        ],
+                      ),
+                      TextField(
+                        key: ValueKey('ci-var-key-$i'),
+                        controller: _variables[i].keyController,
+                        decoration: InputDecoration(
+                          labelText: '變數名稱 (Key)',
+                          hintText: 'VARIABLE_NAME',
+                          errorText: _variables[i].keyError,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        key: ValueKey('ci-var-val-$i'),
+                        controller: _variables[i].valueController,
+                        decoration: const InputDecoration(
+                          labelText: '變數值 (Value)',
+                          hintText: '變數值',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        key: ValueKey('ci-var-type-$i'),
+                        initialValue: _variables[i].variableType,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          labelText: '變數類型',
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 12,
+                          ),
+                        ),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'env_var',
+                            child: Text(
+                              'env_var (環境變數)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          DropdownMenuItem(
+                            value: 'file',
+                            child: Text(
+                              'file (檔案)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                        onChanged: _submitting
+                            ? null
+                            : (val) {
+                                if (val != null) {
+                                  setState(() => _variables[i].variableType = val);
+                                }
+                              },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            if (_submitError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _submitError!,
+                  style: TextStyle(
+                    color: colorScheme.error,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+          onPressed: _submitting ? null : () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          key: const Key('editorSave'),
+          style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
+          onPressed: _submitting ? null : _submit,
+          child: _submitting
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('執行'),
+        ),
+      ],
+    );
+  }
+}
 
 class PipelinesTab extends StatefulWidget {
   const PipelinesTab({super.key, required this.account, required this.api, required this.project});
@@ -32,15 +396,18 @@ class _PipelinesTabState extends State<PipelinesTab> {
     if (mounted) { await _feed.currentState?.refresh(); }
   }
   Future<void> _run() async {
-    var id = 0;
-    final saved = await openEditor(context, account: widget.account, title: '執行 Pipeline',
-      resource: '${widget.project.id}/pipeline/new', subtitle: widget.project.path,
-      fields: [EditField('ref', '分支或標籤', required: true, value: widget.project.defaultBranch ?? 'main',
-        hint: '將使用此 ref 上的 .gitlab-ci.yml；可能執行部署工作。')],
-      save: (values) async {
-        id = requiredInt(await widget.api.createPipeline(widget.project.id, values['ref']!.trim()), 'id');
-      });
-    if (saved && mounted) { await _open(id); }
+    final id = await showDialog<int>(
+      context: context,
+      builder: (context) => RunPipelineDialog(
+        account: widget.account,
+        api: widget.api,
+        project: widget.project,
+      ),
+    );
+    if (id != null && mounted) {
+      await _feed.currentState?.refresh();
+      await _open(id);
+    }
   }
   @override
   Widget build(BuildContext context) => Column(children: [

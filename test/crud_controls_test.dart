@@ -146,7 +146,13 @@ class CrudFixture extends WorkspaceFixture {
     }
     if (sub.length == 1 && sub[0] == 'pipeline' && method == 'POST') {
       final id = ++counter;
-      pipelines[id] = {...pipeline, 'id': id, 'ref': body['ref'], 'status': 'failed'};
+      pipelines[id] = {
+        ...pipeline,
+        'id': id,
+        'ref': body['ref'],
+        if (body['variables'] != null) 'variables': body['variables'],
+        'status': 'failed',
+      };
       return jsonResponse(pipelines[id], status: 201);
     }
     if (sub[0] == 'pipelines') {

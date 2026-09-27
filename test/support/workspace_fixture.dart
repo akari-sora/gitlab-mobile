@@ -471,6 +471,14 @@ class WorkspaceFixture {
         {'old_path': 'lib/session.dart', 'new_path': 'lib/session.dart', 'diff': '@@ -1 +1 @@\n-old\n+new\n'},
       ]});
     }
+    if (joined == 'projects/42/pipeline' && method == 'POST') {
+      final body = request.data is Json ? request.data as Json : <String, dynamic>{};
+      return jsonResponse({
+        ...pipeline,
+        'ref': body['ref'] ?? 'main',
+        if (body['variables'] != null) 'variables': body['variables'],
+      }, status: 201);
+    }
     if (joined == 'projects/42/pipelines') { return jsonResponse([pipeline]); }
     if (joined == 'projects/42/pipelines/99') { return jsonResponse(pipeline); }
     if (joined == 'projects/42/pipelines/99/jobs') { return jsonResponse([job(501), job(502, status: 'manual')]); }
