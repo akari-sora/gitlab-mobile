@@ -70,10 +70,12 @@ class InstallAndroidToolsTests(unittest.TestCase):
             zip_bytes = dummy_zip.read_bytes()
 
             call_count = 0
+            captured_cmds = []
 
             def fake_run(cmd, *args, **kwargs):
                 nonlocal call_count
                 call_count += 1
+                captured_cmds.append(list(cmd))
                 if call_count == 1:
                     # Simulate curl exit 35 (TLS connect error)
                     return subprocess.CompletedProcess(cmd, 35)
@@ -95,10 +97,27 @@ class InstallAndroidToolsTests(unittest.TestCase):
 
             self.assertEqual(call_count, 2)
             mock_sleep.assert_called_once_with(2)
+            self.assertNotIn('--ipv4', captured_cmds[0])
+            self.assertIn('--ipv4', captured_cmds[1])
             self.assertTrue(dest.is_dir())
             sdkmanager = dest / 'bin' / 'sdkmanager'
             self.assertTrue(sdkmanager.is_file())
             self.assertEqual((sdkmanager.stat().st_mode & 0o777), 0o755)
+
+    def test_prefer_ipv4_flag_passes_ipv4_on_first_attempt(self):
+        with tempfile.TemporaryDirectory() as folder:
+            archive = Path(folder) / 'archive.zip'
+            with patch.object(installer.subprocess, 'run') as mock_run:
+                mock_run.return_value = subprocess.CompletedProcess(['curl'], 0)
+                installer.download_with_retry(
+                    url='https://dl.google.com/test.zip',
+                    output_path=archive,
+                    max_retries=1,
+                    prefer_ipv4=True,
+                )
+                self.assertEqual(mock_run.call_count, 1)
+                cmd = mock_run.call_args[0][0]
+                self.assertIn('--ipv4', cmd)
 
     def test_continuous_failure_reaches_retry_limit_without_swallowing_exit_code(self):
         with tempfile.TemporaryDirectory() as folder:

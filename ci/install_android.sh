@@ -11,7 +11,8 @@ if [ ! -x "$TOOLS_HOME/bin/sdkmanager" ]; then
   python3 "$ROOT/ci/install_android_tools.py" \
     --url "https://dl.google.com/android/repository/commandlinetools-linux-${TOOLS_REVISION}_latest.zip" \
     --sha256 "$TOOLS_SHA256" \
-    --destination "$TOOLS_HOME"
+    --destination "$TOOLS_HOME" \
+    --ipv4
 fi
 export PATH="$TOOLS_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"

@@ -35,25 +35,31 @@ def download_with_retry(
     connect_timeout: int = 30,
     max_time: int = 300,
     sleep_fn=time.sleep,
+    prefer_ipv4: bool = False,
 ) -> None:
     if not url.startswith('https://'):
         raise ValueError(f'Only HTTPS URLs are permitted: {url}')
 
-    curl_cmd = [
-        'curl',
-        '--proto', '=https',
-        '--proto-redir', '=https',
-        '--fail',
-        '--location',
-        '--connect-timeout', str(connect_timeout),
-        '--max-time', str(max_time),
-        '--output', str(output_path),
-        url,
-    ]
-
     for attempt in range(1, max_retries + 1):
         if output_path.exists():
             output_path.unlink()
+
+        curl_cmd = [
+            'curl',
+            '--proto', '=https',
+            '--proto-redir', '=https',
+            '--fail',
+            '--location',
+            '--connect-timeout', str(connect_timeout),
+            '--max-time', str(max_time),
+        ]
+        if prefer_ipv4 or attempt > 1:
+            curl_cmd.append('--ipv4')
+
+        curl_cmd.extend([
+            '--output', str(output_path),
+            url,
+        ])
 
         result = subprocess.run(curl_cmd)
         if result.returncode == 0:
@@ -78,6 +84,7 @@ def install_tools(
     connect_timeout: int = 30,
     max_time: int = 300,
     sleep_fn=time.sleep,
+    prefer_ipv4: bool = False,
 ) -> None:
     destination = Path(destination).resolve()
     expected_hash = expected_sha256.strip().lower()
@@ -93,6 +100,7 @@ def install_tools(
             connect_timeout=connect_timeout,
             max_time=max_time,
             sleep_fn=sleep_fn,
+            prefer_ipv4=prefer_ipv4,
         )
 
         actual_hash = compute_sha256(archive_path)
@@ -129,6 +137,7 @@ def parse_args(argv=None):
     parser.add_argument('--retries', type=int, default=3, help='Max download attempts (default: 3)')
     parser.add_argument('--connect-timeout', type=int, default=30, help='Connection timeout in seconds')
     parser.add_argument('--max-time', type=int, default=300, help='Max transfer time in seconds')
+    parser.add_argument('--ipv4', action='store_true', help='Force/prefer IPv4 to bypass broken dual-stack IPv6')
     return parser.parse_args(argv)
 
 
@@ -142,6 +151,7 @@ def main(argv=None):
             max_retries=args.retries,
             connect_timeout=args.connect_timeout,
             max_time=args.max_time,
+            prefer_ipv4=args.ipv4,
         )
     except subprocess.CalledProcessError as exc:
         print(f'Download failed with exit code {exc.returncode}', file=sys.stderr)
