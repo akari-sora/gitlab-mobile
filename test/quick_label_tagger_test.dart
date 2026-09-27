@@ -295,5 +295,104 @@ void main() {
       expect(mutatedCalled, isTrue);
       expect(mutatedData?['labels'], contains('a'));
     });
+
+    testWidgets('handles labels represented as structured Map objects from API', (tester) async {
+      _surface(tester);
+      final fixture = WorkspaceFixture();
+
+      fixture.issues[6] = {
+        'id': 106,
+        'iid': 6,
+        'title': 'Issue with map labels',
+        'state': 'opened',
+        'labels': [
+          {'id': 11, 'name': 'dev', 'color': '#ff0000'},
+          {'id': 12, 'name': 'security', 'color': '#00ff00'},
+        ],
+        'author': {'id': 7, 'username': 'developer', 'name': 'Developer'},
+        'updated_at': 'revision-1',
+        'assignees': <dynamic>[],
+      };
+
+      await tester.pumpWidget(_host(
+        WorkItemPage(
+          account: fixture.account,
+          api: fixture.api,
+          project: fixture.project,
+          resource: 'issues',
+          iid: 6,
+        ),
+      ));
+      await settleWorkspace(tester);
+
+      expect(find.byKey(const ValueKey('label-chip-dev')), findsOneWidget);
+      expect(find.byKey(const ValueKey('label-chip-security')), findsOneWidget);
+    });
+
+    testWidgets('handles labels represented as comma-separated string', (tester) async {
+      _surface(tester);
+      final fixture = WorkspaceFixture();
+
+      fixture.issues[7] = {
+        'id': 107,
+        'iid': 7,
+        'title': 'Issue with string labels',
+        'state': 'opened',
+        'labels': 'database, cache',
+        'author': {'id': 7, 'username': 'developer', 'name': 'Developer'},
+        'updated_at': 'revision-1',
+        'assignees': <dynamic>[],
+      };
+
+      await tester.pumpWidget(_host(
+        WorkItemPage(
+          account: fixture.account,
+          api: fixture.api,
+          project: fixture.project,
+          resource: 'issues',
+          iid: 7,
+        ),
+      ));
+      await settleWorkspace(tester);
+
+      expect(find.byKey(const ValueKey('label-chip-database')), findsOneWidget);
+      expect(find.byKey(const ValueKey('label-chip-cache')), findsOneWidget);
+    });
+
+    testWidgets('tapping on label chip body opens choice picker', (tester) async {
+      _surface(tester);
+      final fixture = WorkspaceFixture();
+
+      fixture.issues[8] = {
+        'id': 108,
+        'iid': 8,
+        'title': 'Issue to tap chip body',
+        'state': 'opened',
+        'labels': ['clickable-label'],
+        'author': {'id': 7, 'username': 'developer', 'name': 'Developer'},
+        'updated_at': 'revision-1',
+        'assignees': <dynamic>[],
+      };
+
+      await tester.pumpWidget(_host(
+        WorkItemPage(
+          account: fixture.account,
+          api: fixture.api,
+          project: fixture.project,
+          resource: 'issues',
+          iid: 8,
+        ),
+      ));
+      await settleWorkspace(tester);
+
+      final chipText = find.text('clickable-label');
+      expect(chipText, findsOneWidget);
+
+      await tester.tap(chipText);
+      await settleWorkspace(tester);
+
+      // BottomSheet ChoicePickerSheet should open
+      expect(find.byType(ChoicePickerSheet), findsOneWidget);
+    });
   });
 }

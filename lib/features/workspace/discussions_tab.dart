@@ -223,7 +223,10 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
           SuggestedChangeCard(
             suggestion: suggestion,
             api: widget.api,
-            onApplied: _reload,
+            onApplied: () {
+              _reload();
+              widget.onChanged?.call();
+            },
           ),
         ],
         const SizedBox(height: 8), Text(relativeDate(valueText(notes[index], 'created_at')), style: Theme.of(context).textTheme.bodySmall),

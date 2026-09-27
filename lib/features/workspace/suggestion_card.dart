@@ -38,45 +38,15 @@ class _SuggestedChangeCardState extends State<SuggestedChangeCard> {
     final id = _current.id;
     if (api == null || id == null || _applying) return;
 
-    final controller = TextEditingController(text: 'Apply suggestion to code');
-    final confirmed = await showDialog<bool>(
+    final commitMessage = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('套用建議修改'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('這將在當前分支產生一個新提交以套用此修改。'),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                labelText: '提交訊息 (Commit message)',
-                border: OutlineInputBorder(),
-              ),
-              maxLines: 2,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('確認套用'),
-          ),
-        ],
-      ),
+      builder: (_) => const _ApplySuggestionDialog(),
     );
 
-    if (confirmed != true || !mounted) return;
+    if (commitMessage == null || !mounted) return;
 
     setState(() => _applying = true);
     try {
-      final commitMessage = controller.text.trim();
       await api.applySuggestion(
         id,
         commitMessage: commitMessage.isNotEmpty ? commitMessage : null,
@@ -104,12 +74,14 @@ class _SuggestedChangeCardState extends State<SuggestedChangeCard> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    final fromLines = _current.fromContent.isEmpty
+    final normalizedFrom = _current.fromContent.replaceAll('\r\n', '\n').trimRight();
+    final normalizedTo = _current.toContent.replaceAll('\r\n', '\n').trimRight();
+    final fromLines = normalizedFrom.isEmpty
         ? const <String>[]
-        : _current.fromContent.trimRight().split('\n');
-    final toLines = _current.toContent.isEmpty
+        : normalizedFrom.split('\n');
+    final toLines = normalizedTo.isEmpty
         ? const <String>[]
-        : _current.toContent.trimRight().split('\n');
+        : normalizedTo.split('\n');
 
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 6),
@@ -234,6 +206,14 @@ class _SuggestedChangeCardState extends State<SuggestedChangeCard> {
                       ],
                     ),
                   ),
+                if (fromLines.isEmpty && toLines.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(
+                      '（無變更內容）',
+                      style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -261,6 +241,62 @@ class _SuggestedChangeCardState extends State<SuggestedChangeCard> {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _ApplySuggestionDialog extends StatefulWidget {
+  const _ApplySuggestionDialog();
+
+  @override
+  State<_ApplySuggestionDialog> createState() => _ApplySuggestionDialogState();
+}
+
+class _ApplySuggestionDialogState extends State<_ApplySuggestionDialog> {
+  late final TextEditingController _controller = TextEditingController(text: 'Apply suggestion to code');
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('套用建議修改'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('這將在當前分支產生一個新提交以套用此修改。'),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _controller,
+            decoration: const InputDecoration(
+              labelText: '提交訊息 (Commit message)',
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 2,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          style: TextButton.styleFrom(
+            minimumSize: const Size(48, 48),
+          ),
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(
+            minimumSize: const Size(48, 48),
+          ),
+          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
+          child: const Text('確認套用'),
+        ),
+      ],
     );
   }
 }
