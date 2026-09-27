@@ -548,6 +548,21 @@ class WorkspaceFixture {
         'applied': true,
       });
     }
+    if (path.length == 2 && path[0] == 'suggestions' && path[1] == 'batch_apply' && method == 'PUT') {
+      final ids = (body['ids'] as List<dynamic>?)?.map((e) => int.tryParse('$e') ?? 0).toList() ?? [];
+      return jsonResponse({
+        'suggestions': [
+          for (final id in ids)
+            {
+              'id': id,
+              'from_content': 'old code',
+              'to_content': 'new code',
+              'appliable': true,
+              'applied': true,
+            }
+        ]
+      });
+    }
     if (path.length > 4 && path[0] == 'projects' && path[1] == '42' && path[2] == 'merge_requests') {
       final tail = path.sublist(4).join('/');
       if (tail == 'approvals') return jsonResponse({'approved_by': <Json>[]});

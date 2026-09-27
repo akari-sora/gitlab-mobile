@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/suggestion.dart';
+import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/features/workspace/diff_page.dart';
+import 'package:gitlab_mobile/features/workspace/discussions_tab.dart';
 import 'package:gitlab_mobile/features/workspace/suggestion_card.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 import 'support/workspace_fixture.dart';
@@ -103,6 +105,51 @@ fix2();
 
       final results = parseNoteSuggestions(note);
       expect(results, isEmpty);
+    });
+
+    test('tolerates trailing spaces in suggestion fence tag and handles CRLF', () {
+      final note = {
+        'id': 106,
+        'body': "```suggestion:-0+1   \r\nfinal line = 'crlf';\r\n```",
+      };
+
+      final results = parseNoteSuggestions(note);
+      expect(results.length, 1);
+      expect(results.first.toContent.trim(), "final line = 'crlf';");
+    });
+
+    test('handles dynamic map typing and fills empty toContent when counts differ', () {
+      final note = <String, dynamic>{
+        'id': 107,
+        'body': '''
+```suggestion
+lineA();
+```
+```suggestion
+lineB();
+```
+''',
+        'suggestions': <dynamic>[
+          <dynamic, dynamic>{
+            'id': 5050,
+            'from_content': 'oldLineA();\n',
+            'to_content': '',
+            'appliable': true,
+            'applied': false,
+          }
+        ],
+      };
+
+      final results = parseNoteSuggestions(note);
+      expect(results.length, 2);
+      expect(results[0].id, 5050);
+      expect(results[0].fromContent, 'oldLineA();\n');
+      expect(results[0].toContent.trim(), 'lineA();');
+      expect(results[0].appliable, isTrue);
+      // Second markdown suggestion is preserved
+      expect(results[1].id, isNull);
+      expect(results[1].toContent.trim(), 'lineB();');
+      expect(results[1].appliable, isFalse);
     });
 
     test('copyWith properly preserves and overrides fields', () {
@@ -272,6 +319,66 @@ fix2();
       expect(find.text('套用建議修改'), findsNothing);
       expect(find.byKey(const ValueKey('apply-suggestion-889')), findsOneWidget);
     });
+
+    testWidgets('renders placeholder when both fromContent and toContent are empty', (tester) async {
+      _surface(tester);
+
+      const suggestion = SuggestedChange(
+        id: 890,
+        fromContent: '',
+        toContent: '',
+        appliable: false,
+        applied: false,
+      );
+
+      await tester.pumpWidget(_host(
+        const SuggestedChangeCard(suggestion: suggestion),
+      ));
+      await tester.pump();
+
+      expect(find.text('（無變更內容）'), findsOneWidget);
+    });
+
+    testWidgets('dialog action buttons meet 48dp minimum touch target', (tester) async {
+      _surface(tester);
+      final fixture = WorkspaceFixture();
+
+      const suggestion = SuggestedChange(
+        id: 891,
+        fromContent: 'a',
+        toContent: 'b',
+        appliable: true,
+        applied: false,
+      );
+
+      await tester.pumpWidget(_host(
+        SuggestedChangeCard(
+          suggestion: suggestion,
+          api: fixture.api,
+        ),
+      ));
+      await tester.pump();
+
+      await tester.tap(find.byKey(const ValueKey('apply-suggestion-891')));
+      await tester.pumpAndSettle();
+
+      final cancelBtn = find.ancestor(of: find.text('取消'), matching: find.byType(TextButton));
+      final confirmBtn = find.ancestor(of: find.text('確認套用'), matching: find.byType(FilledButton));
+      expect(tester.getSize(cancelBtn).height, greaterThanOrEqualTo(48.0));
+      expect(tester.getSize(confirmBtn).height, greaterThanOrEqualTo(48.0));
+
+      await tester.tap(cancelBtn);
+      await tester.pumpAndSettle();
+    });
+
+    test('batchApplySuggestions executes successfully against API', () async {
+      final fixture = WorkspaceFixture();
+      final result = await fixture.api.batchApplySuggestions([101, 102], commitMessage: 'Batch apply');
+      expect(result['suggestions'], isList);
+      final list = result['suggestions'] as List;
+      expect(list.length, 2);
+      expect(list.first['applied'], isTrue);
+    });
   });
 
   group('SuggestedChange in ReviewDiffPage integration', () {
@@ -333,6 +440,132 @@ fix2();
       expect(find.text('- var optimized = false;'), findsOneWidget);
       expect(find.text('+ final optimized = true;'), findsOneWidget);
       expect(find.byKey(const ValueKey('apply-suggestion-9901')), findsOneWidget);
+    });
+
+    testWidgets('applying suggestion in ReviewDiffPage invokes onApplied callback', (tester) async {
+      _surface(tester);
+      final fixture = WorkspaceFixture();
+
+      fixture.extraDiscussions.add({
+        'id': 'thread-suggestion-2',
+        'individual_note': false,
+        'notes': [
+          {
+            'id': 902,
+            'body': 'Suggestion in diff\n```suggestion\nint y = 2;\n```',
+            'author': {'id': 8, 'username': 'reviewer', 'name': 'Reviewer'},
+            'created_at': '2026-09-27T10:00:00Z',
+            'system': false,
+            'resolvable': true,
+            'resolved': false,
+            'suggestions': [
+              {
+                'id': 9902,
+                'from_content': 'int y = 1;\n',
+                'to_content': 'int y = 2;\n',
+                'appliable': true,
+                'applied': false,
+              }
+            ],
+            'position': {
+              'position_type': 'text',
+              'base_sha': WorkspaceFixture.sha,
+              'start_sha': WorkspaceFixture.sha,
+              'head_sha': WorkspaceFixture.sha,
+              'old_path': 'lib/session.dart',
+              'new_path': 'lib/session.dart',
+              'new_line': 1,
+            },
+          }
+        ],
+      });
+
+      var onAppliedCalled = false;
+
+      await tester.pumpWidget(_host(
+        ReviewDiffPage(
+          account: fixture.account,
+          api: fixture.api,
+          project: fixture.project,
+          iid: 12,
+          expectedSha: WorkspaceFixture.sha,
+          onApplied: () => onAppliedCalled = true,
+        ),
+      ));
+      await settleWorkspace(tester);
+
+      await tester.tap(find.text('lib/session.dart'));
+      await settleWorkspace(tester);
+
+      final applyBtn = find.byKey(const ValueKey('apply-suggestion-9902'));
+      expect(applyBtn, findsOneWidget);
+
+      await tester.tap(applyBtn);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('確認套用'));
+      await tester.pumpAndSettle();
+
+      expect(onAppliedCalled, isTrue);
+      expect(find.text('建議修改已成功套用'), findsOneWidget);
+    });
+  });
+
+  group('SuggestedChange in DiscussionsTab integration', () {
+    testWidgets('applying suggestion in DiscussionsTab invokes onChanged callback', (tester) async {
+      _surface(tester);
+      final fixture = WorkspaceFixture();
+
+      fixture.mrDiscussions.add({
+        'id': 'discussion-suggestion-1',
+        'individual_note': false,
+        'notes': [
+          {
+            'id': 950,
+            'body': 'Discussion suggestion\n```suggestion\nfinal z = 3;\n```',
+            'author': {'id': 8, 'username': 'reviewer', 'name': 'Reviewer'},
+            'created_at': '2026-09-27T10:00:00Z',
+            'system': false,
+            'resolvable': true,
+            'resolved': false,
+            'suggestions': [
+              {
+                'id': 9950,
+                'from_content': 'var z = 3;\n',
+                'to_content': 'final z = 3;\n',
+                'appliable': true,
+                'applied': false,
+              }
+            ],
+          }
+        ],
+      });
+
+      var onChangedCalled = false;
+
+      await tester.pumpWidget(_host(
+        DiscussionsTab(
+          account: fixture.account,
+          api: fixture.api,
+          project: fixture.project,
+          resource: 'merge_requests',
+          iid: 12,
+          onChanged: () => onChangedCalled = true,
+        ),
+      ));
+      await settleWorkspace(tester);
+
+      final applyBtn = find.byKey(const ValueKey('apply-suggestion-9950'));
+      expect(applyBtn, findsOneWidget);
+
+      await tester.tap(applyBtn);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('確認套用'));
+      await tester.pumpAndSettle();
+
+      expect(onChangedCalled, isTrue);
+      expect(find.text('建議修改已成功套用'), findsOneWidget);
     });
   });
 }

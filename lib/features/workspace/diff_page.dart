@@ -237,6 +237,7 @@ class ReviewDiffPage extends StatefulWidget {
     required this.iid,
     required this.expectedSha,
     this.initialTarget,
+    this.onApplied,
   });
   final Account account;
   final GitLabApi api;
@@ -244,6 +245,7 @@ class ReviewDiffPage extends StatefulWidget {
   final int iid;
   final String expectedSha;
   final DiffTarget? initialTarget;
+  final VoidCallback? onApplied;
   @override
   State<ReviewDiffPage> createState() => _ReviewDiffPageState();
 }
@@ -490,6 +492,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
               }
             });
           },
+          onApplied: widget.onApplied,
         ),
       ),
     );
@@ -729,6 +732,7 @@ class _DiffFileScreen extends StatefulWidget {
     this.initialTarget,
     this.isViewed = false,
     this.onToggleViewed,
+    this.onApplied,
   });
   final Account account;
   final GitLabApi api;
@@ -740,6 +744,7 @@ class _DiffFileScreen extends StatefulWidget {
   final DiffTarget? initialTarget;
   final bool isViewed;
   final VoidCallback? onToggleViewed;
+  final VoidCallback? onApplied;
   @override
   State<_DiffFileScreen> createState() => _DiffFileScreenState();
 }
@@ -1627,7 +1632,10 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                                         !_resolved(discussion),
                                       )
                                     : null,
-                                onApplied: _reloadDiscussions,
+                                onApplied: () async {
+                                  await _reloadDiscussions();
+                                  widget.onApplied?.call();
+                                },
                               ),
                           ],
                         );

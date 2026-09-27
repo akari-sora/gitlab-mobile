@@ -457,10 +457,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
       if (current['updated_at'] != data['updated_at']) {
         throw const ApiFailure(FailureKind.conflict);
       }
-      final rawLabels = current['labels'];
-      final labels = rawLabels is List<dynamic>
-          ? rawLabels.whereType<String>().toList()
-          : <String>[];
+      final labels = _extractLabels(current);
       final remaining = labels.where((l) => l != labelToRemove).join(', ');
       await widget.api.writeRecord('PUT', path, {'labels': remaining});
       if (mounted) {
@@ -885,10 +882,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
   }
 
   Widget _buildLabelsSection(Json data) {
-    final rawLabels = data['labels'];
-    final labels = rawLabels is List<dynamic>
-        ? rawLabels.whereType<String>().toList()
-        : <String>[];
+    final labels = _extractLabels(data);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -918,6 +912,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
               InputChip(
                 key: ValueKey('label-chip-$label'),
                 label: Text(label),
+                onPressed: _busy ? null : _editLabelsQuick,
                 onDeleted: _busy ? null : () => _removeLabelQuick(label),
                 deleteIcon: const Icon(Icons.close, size: 14),
                 deleteButtonTooltipMessage: '移除標籤 $label',
@@ -1037,7 +1032,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
               const SizedBox(height: 16), Text('更新於 ${relativeDate(valueText(data, 'updated_at'))}', style: Theme.of(context).textTheme.bodySmall),
             ]),
             if (mr) ReviewDiffPage(key: ValueKey(valueText(data, 'sha')), account: widget.account, api: widget.api,
-              project: widget.project, iid: widget.iid, expectedSha: valueText(data, 'sha')),
+              project: widget.project, iid: widget.iid, expectedSha: valueText(data, 'sha'), onApplied: _load),
             DiscussionsTab(
               account: widget.account,
               api: widget.api,
@@ -1118,16 +1113,26 @@ class _MergeChecksState extends State<_MergeChecks> {
 
 String _branchValue(String name) => encodeChoices([PickerChoice(id: name, name: name)]);
 
-String _labelsValue(Json data) {
+List<String> _extractLabels(Json data) {
   final raw = data['labels'];
   final names = <String>[];
   if (raw is List) {
     for (final item in raw) {
-      if (item is String && item.trim().isNotEmpty) names.add(item.trim());
+      if (item is String && item.trim().isNotEmpty) {
+        names.add(item.trim());
+      } else if (item is Map && item['name'] is String) {
+        final name = (item['name'] as String).trim();
+        if (name.isNotEmpty) names.add(name);
+      }
     }
   } else if (raw is String) {
     names.addAll(raw.split(',').map((part) => part.trim()).where((part) => part.isNotEmpty));
   }
+  return names;
+}
+
+String _labelsValue(Json data) {
+  final names = _extractLabels(data);
   return encodeChoices([for (final name in names) PickerChoice(id: name, name: name)]);
 }
 
