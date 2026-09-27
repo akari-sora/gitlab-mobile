@@ -93,7 +93,15 @@ extension WorkspaceApi on GitLabApi {
       record(['projects', '$project', 'repository', 'commits', sha]);
   Future<ApiPage<Json>> commitDiff(int project, String sha, {Map<String, String> query = const {}, Uri? next}) =>
       records(['projects', '$project', 'repository', 'commits', sha, 'diff'], query: query, next: next);
-  Future<Json> createPipeline(int project, String ref) => writeRecord('POST', ['projects', '$project', 'pipeline'], {'ref': ref});
+  Future<Json> createPipeline(
+    int project,
+    String ref, {
+    List<Map<String, String>>? variables,
+  }) =>
+      writeRecord('POST', ['projects', '$project', 'pipeline'], {
+        'ref': ref,
+        if (variables != null && variables.isNotEmpty) 'variables': variables,
+      });
   Future<Json> pipelineAction(int project, int pipeline, String action) {
     if (!const ['retry', 'cancel'].contains(action)) { throw const ApiFailure(FailureKind.unsupported); }
     return writeRecord('POST', ['projects', '$project', 'pipelines', '$pipeline', action], {});
