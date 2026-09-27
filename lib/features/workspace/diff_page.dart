@@ -1124,10 +1124,35 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     }
   }
 
+  int _navSeekStall = 0;
+
   void _scrollToDiscussionLine(int targetIndex, int totalItemCount) {
-    setState(() => _activeDiscussionTargetIndex = targetIndex);
+    setState(() {
+      _activeDiscussionTargetIndex = targetIndex;
+      final lines = _lines;
+      if (lines != null && targetIndex < lines.length) {
+        final threads = _anchored(lines)[targetIndex];
+        if (threads != null) {
+          for (final d in threads) {
+            _expanded.add('${d['id']}');
+          }
+        }
+      } else if (targetIndex == (_lines?.length ?? 0)) {
+        for (final d in _discussions) {
+          _expanded.add('${d['id']}');
+        }
+      }
+    });
+
+    _navSeekStall = 0;
+    _seekToNavTarget(targetIndex, totalItemCount);
+  }
+
+  void _seekToNavTarget(int targetIndex, int totalItemCount) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted || _disposed) return;
+      if (targetIndex != _activeDiscussionTargetIndex) return;
+
       final targetContext = _navTargetKey.currentContext;
       if (targetContext != null) {
         unawaited(Scrollable.ensureVisible(
@@ -1138,31 +1163,48 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
         ));
         return;
       }
+
       if (!_scroll.hasClients) return;
       final position = _scroll.position;
       if (!position.hasContentDimensions) return;
       final span = position.maxScrollExtent;
       if (span <= 0) return;
+
       final safeCount = totalItemCount < 1 ? 1 : totalItemCount;
       final average = (span + position.viewportDimension) / safeCount;
-      final targetPixels = (targetIndex * average).clamp(0.0, span);
+      final built = _builtRange();
+
+      var next = position.pixels;
+      if (built == null) {
+        next = (targetIndex * average).clamp(0.0, span);
+      } else if (targetIndex < built.$1) {
+        next = math.max(0.0, position.pixels - position.viewportDimension);
+      } else if (targetIndex > built.$2) {
+        next = math.min(span, position.pixels + position.viewportDimension);
+      } else {
+        _navSeekStall++;
+        if (_navSeekStall > 4) return;
+        _seekToNavTarget(targetIndex, totalItemCount);
+        return;
+      }
+
+      if ((next - position.pixels).abs() < 1) {
+        _navSeekStall++;
+        if (_navSeekStall > 4) return;
+        _seekToNavTarget(targetIndex, totalItemCount);
+        return;
+      }
+
+      _navSeekStall = 0;
       unawaited(_scroll.animateTo(
-        targetPixels,
-        duration: const Duration(milliseconds: 250),
+        next,
+        duration: const Duration(milliseconds: 200),
         curve: Curves.easeOut,
       ).then((_) {
         if (!mounted || _disposed) return;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          final ctx = _navTargetKey.currentContext;
-          if (ctx != null) {
-            unawaited(Scrollable.ensureVisible(
-              ctx,
-              alignment: 0.1,
-              duration: const Duration(milliseconds: 200),
-              curve: Curves.easeInOut,
-            ));
-          }
-        });
+        if (targetIndex == _activeDiscussionTargetIndex) {
+          _seekToNavTarget(targetIndex, totalItemCount);
+        }
       }));
     });
   }
@@ -1181,6 +1223,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isResolvedAll = unresolvedCount == 0;
+    final totalTargets = unresolvedLineIndices.length;
     final currentPos = _activeDiscussionTargetIndex == null
         ? -1
         : unresolvedLineIndices.indexOf(_activeDiscussionTargetIndex!);
@@ -1220,7 +1263,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
               isResolvedAll
                   ? '未解決討論 0'
                   : currentPos >= 0
-                      ? '未解決討論 $unresolvedCount (${currentPos + 1}/$unresolvedCount)'
+                      ? '未解決討論 $unresolvedCount (${currentPos + 1}/$totalTargets)'
                       : '未解決討論 $unresolvedCount',
               style: theme.textTheme.labelMedium?.copyWith(
                 fontWeight: FontWeight.w600,
@@ -1431,32 +1474,35 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                       itemBuilder: (context, index) {
                         if (index == lines.length) {
                           final isNavTarget = _activeDiscussionTargetIndex == index;
+                          final isInitialTarget = !onLine && widget.initialTarget != null;
                           final section = _OtherVersionSection(
                             discussions: others,
                             version: widget.version,
                             fallbackReason: _fallbackReason,
                           );
-                          final decorated = isNavTarget
-                              ? DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    border: Border.all(
-                                      color: scheme.tertiary,
-                                      width: 2,
-                                    ),
-                                    borderRadius: BorderRadius.circular(4),
+                          Widget content = section;
+                          if (isNavTarget) {
+                            content = KeyedSubtree(
+                              key: _navTargetKey,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  border: Border.all(
+                                    color: scheme.tertiary,
+                                    width: 2,
                                   ),
-                                  child: section,
-                                )
-                              : section;
-                          return _builtRow(
-                            index,
-                            KeyedSubtree(
-                              key: !onLine && widget.initialTarget != null
-                                  ? _targetKey
-                                  : (isNavTarget ? _navTargetKey : null),
-                              child: decorated,
-                            ),
-                          );
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: content,
+                              ),
+                            );
+                          }
+                          if (isInitialTarget) {
+                            content = KeyedSubtree(
+                              key: _targetKey,
+                              child: content,
+                            );
+                          }
+                          return _builtRow(index, content);
                         }
                         final line = lines[index];
                         final marker = line.kind == 'add'
@@ -1582,31 +1628,31 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                               ),
                           ],
                         );
-                        if (onLine && index == targetIndex) {
-                          return _builtRow(
-                            index,
-                            KeyedSubtree(key: _targetKey, child: row),
-                          );
-                        }
-                        if (index == _activeDiscussionTargetIndex) {
-                          return _builtRow(
-                            index,
-                            KeyedSubtree(
-                              key: _navTargetKey,
-                              child: DecoratedBox(
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: scheme.tertiary,
-                                    width: 2,
-                                  ),
-                                  borderRadius: BorderRadius.circular(4),
+                        final isNavTarget = index == _activeDiscussionTargetIndex;
+                        final isInitialTarget = onLine && index == targetIndex;
+                        Widget content = row;
+                        if (isNavTarget) {
+                          content = KeyedSubtree(
+                            key: _navTargetKey,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                border: Border.all(
+                                  color: scheme.tertiary,
+                                  width: 2,
                                 ),
-                                child: row,
+                                borderRadius: BorderRadius.circular(4),
                               ),
+                              child: content,
                             ),
                           );
                         }
-                        return _builtRow(index, row);
+                        if (isInitialTarget) {
+                          content = KeyedSubtree(
+                            key: _targetKey,
+                            child: content,
+                          );
+                        }
+                        return _builtRow(index, content);
                       },
                     ),
                   ),
