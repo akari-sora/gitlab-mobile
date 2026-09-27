@@ -8,15 +8,10 @@ TOOLS_REVISION=15859902
 TOOLS_SHA256=4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583
 TOOLS_HOME="$ANDROID_HOME/cmdline-tools/$TOOLS_REVISION"
 if [ ! -x "$TOOLS_HOME/bin/sdkmanager" ]; then
-  temporary="$(mktemp -d)"
-  curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
-    "https://dl.google.com/android/repository/commandlinetools-linux-${TOOLS_REVISION}_latest.zip" \
-    --output "$temporary/tools.zip"
-  printf '%s  %s\n' "$TOOLS_SHA256" "$temporary/tools.zip" | sha256sum --check --status
-  unzip -q "$temporary/tools.zip" -d "$temporary"
-  mkdir -p "$ANDROID_HOME/cmdline-tools"
-  mv "$temporary/cmdline-tools" "$TOOLS_HOME"
-  rm -rf "$temporary"
+  python3 "$ROOT/ci/install_android_tools.py" \
+    --url "https://dl.google.com/android/repository/commandlinetools-linux-${TOOLS_REVISION}_latest.zip" \
+    --sha256 "$TOOLS_SHA256" \
+    --destination "$TOOLS_HOME"
 fi
 export PATH="$TOOLS_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"
