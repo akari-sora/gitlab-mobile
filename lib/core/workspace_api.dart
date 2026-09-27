@@ -65,6 +65,17 @@ extension WorkspaceApi on GitLabApi {
     writeRecord('PUT', ['projects', '$project', resource, '$iid', 'notes', '$note'], {'body': body});
   Future<void> deleteNote(int project, String resource, int iid, int note) =>
     removeRecord(['projects', '$project', resource, '$iid', 'notes', '$note']);
+  Future<Json> applySuggestion(int suggestionId, {String? commitMessage}) =>
+    writeRecord('PUT', ['suggestions', '$suggestionId', 'apply'], {
+      if (commitMessage != null && commitMessage.trim().isNotEmpty)
+        'commit_message': commitMessage.trim(),
+    });
+  Future<Json> batchApplySuggestions(List<int> suggestionIds, {String? commitMessage}) =>
+    writeRecord('PUT', ['suggestions', 'batch_apply'], {
+      'ids': suggestionIds,
+      if (commitMessage != null && commitMessage.trim().isNotEmpty)
+        'commit_message': commitMessage.trim(),
+    });
   Future<Json> createBranch(int project, String branch, String ref) =>
     writeRecord('POST', ['projects', '$project', 'repository', 'branches'], {'branch': branch, 'ref': ref});
   Future<void> deleteBranch(int project, String branch) => removeRecord(['projects', '$project', 'repository', 'branches', branch]);

@@ -408,6 +408,76 @@ class _WorkItemPageState extends State<WorkItemPage> {
       }
     }
   }
+
+  Future<void> _editLabelsQuick() async {
+    final data = _data;
+    if (data == null || _busy) return;
+    final initialChoices = decodeChoices(_labelsValue(data), source: PickerSource.labels);
+    final picked = await showChoicePicker(
+      context,
+      api: widget.api,
+      account: widget.account,
+      projectId: widget.project.id,
+      source: PickerSource.labels,
+      multi: true,
+      title: '選擇標籤 · $label',
+      initial: initialChoices,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _busy = true);
+    try {
+      final current = await widget.api.record(path);
+      if (current['updated_at'] != data['updated_at']) {
+        throw const ApiFailure(FailureKind.conflict);
+      }
+      final newLabels = picked.map((c) => c.name).join(', ');
+      await widget.api.writeRecord('PUT', path, {'labels': newLabels});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('標籤已更新')),
+        );
+      }
+      await _load();
+      if (mounted && _data != null) {
+        widget.onMutated?.call(_data!);
+      }
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _removeLabelQuick(String labelToRemove) async {
+    final data = _data;
+    if (data == null || _busy) return;
+    setState(() => _busy = true);
+    try {
+      final current = await widget.api.record(path);
+      if (current['updated_at'] != data['updated_at']) {
+        throw const ApiFailure(FailureKind.conflict);
+      }
+      final rawLabels = current['labels'];
+      final labels = rawLabels is List<dynamic>
+          ? rawLabels.whereType<String>().toList()
+          : <String>[];
+      final remaining = labels.where((l) => l != labelToRemove).join(', ');
+      await widget.api.writeRecord('PUT', path, {'labels': remaining});
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已移除標籤「$labelToRemove」')),
+        );
+      }
+      await _load();
+      if (mounted && _data != null) {
+        widget.onMutated?.call(_data!);
+      }
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
   Future<void> _action(String action) async {
     if (_busy || _data == null) { return; }
     final data = _data!;
@@ -814,6 +884,61 @@ class _WorkItemPageState extends State<WorkItemPage> {
     );
   }
 
+  Widget _buildLabelsSection(Json data) {
+    final rawLabels = data['labels'];
+    final labels = rawLabels is List<dynamic>
+        ? rawLabels.whereType<String>().toList()
+        : <String>[];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('標籤', style: Theme.of(context).textTheme.titleSmall),
+            TextButton.icon(
+              key: const ValueKey('quick-edit-labels'),
+              onPressed: _busy ? null : _editLabelsQuick,
+              icon: const Icon(Icons.label_outline, size: 16),
+              label: const Text('管理標籤'),
+              style: TextButton.styleFrom(
+                minimumSize: const Size(48, 48),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            for (final label in labels)
+              InputChip(
+                key: ValueKey('label-chip-$label'),
+                label: Text(label),
+                onDeleted: _busy ? null : () => _removeLabelQuick(label),
+                deleteIcon: const Icon(Icons.close, size: 14),
+                deleteButtonTooltipMessage: '移除標籤 $label',
+              ),
+            ActionChip(
+              key: const ValueKey('quick-add-label'),
+              avatar: const Icon(Icons.add, size: 16),
+              label: const Text('新增標籤'),
+              onPressed: _busy ? null : _editLabelsQuick,
+            ),
+            if (labels.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Text('尚未設定標籤', style: Theme.of(context).textTheme.bodySmall),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = _data;
@@ -908,8 +1033,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
                 const SizedBox(height: 16),
                 _buildReviewersSection(data),
               ],
-              if (data['labels'] is List<dynamic>) ...[const SizedBox(height: 16), Wrap(spacing: 6, runSpacing: 6,
-                children: (data['labels'] as List<dynamic>).whereType<String>().map((label) => Chip(label: Text(label))).toList())],
+              _buildLabelsSection(data),
               const SizedBox(height: 16), Text('更新於 ${relativeDate(valueText(data, 'updated_at'))}', style: Theme.of(context).textTheme.bodySmall),
             ]),
             if (mr) ReviewDiffPage(key: ValueKey(valueText(data, 'sha')), account: widget.account, api: widget.api,

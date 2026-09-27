@@ -11,6 +11,8 @@ import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 import '../../shared/theme.dart';
+import '../../core/suggestion.dart';
+import 'suggestion_card.dart';
 
 const _maxDiscussionPages = 20;
 const _discussionPageBoundNote = '討論已達 20 頁上限，後續討論未載入。';
@@ -1625,6 +1627,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                                         !_resolved(discussion),
                                       )
                                     : null,
+                                onApplied: _reloadDiscussions,
                               ),
                           ],
                         );
@@ -1730,6 +1733,7 @@ class _DiffThreadCard extends StatelessWidget {
     required this.onExpand,
     required this.onReply,
     required this.onResolve,
+    this.onApplied,
   });
   final Json discussion;
   final bool expanded;
@@ -1742,6 +1746,7 @@ class _DiffThreadCard extends StatelessWidget {
   final VoidCallback onExpand;
   final VoidCallback onReply;
   final VoidCallback? onResolve;
+  final VoidCallback? onApplied;
 
   @override
   Widget build(BuildContext context) {
@@ -1810,6 +1815,14 @@ class _DiffThreadCard extends StatelessWidget {
                   projectPath: projectPath,
                   budget: budget,
                 ),
+                for (final suggestion in parseNoteSuggestions(visible[index])) ...[
+                  const SizedBox(height: 6),
+                  SuggestedChangeCard(
+                    suggestion: suggestion,
+                    api: api,
+                    onApplied: onApplied,
+                  ),
+                ],
               ],
               if (notes.length - visible.length > 0)
                 Padding(
