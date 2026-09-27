@@ -59,8 +59,11 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
   @override
   void initState() {
     super.initState();
+    final defaultBranch = widget.project.defaultBranch?.trim();
     _refController = TextEditingController(
-      text: widget.project.defaultBranch ?? 'main',
+      text: (defaultBranch != null && defaultBranch.isNotEmpty)
+          ? defaultBranch
+          : 'main',
     );
   }
 
@@ -80,10 +83,9 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
   }
 
   void _removeVariable(int index) {
-    setState(() {
-      final removed = _variables.removeAt(index);
-      removed.dispose();
-    });
+    final removed = _variables.removeAt(index);
+    setState(() {});
+    WidgetsBinding.instance.addPostFrameCallback((_) => removed.dispose());
   }
 
   Future<void> _submit() async {
@@ -217,6 +219,11 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
                 errorText: _refError,
                 prefixIcon: const Icon(Icons.alt_route),
               ),
+              onChanged: (_) {
+                if (_refError != null) {
+                  setState(() => _refError = null);
+                }
+              },
             ),
             const SizedBox(height: 16),
             Row(
@@ -252,6 +259,7 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
               ),
             for (var i = 0; i < _variables.length; i++) ...[
               Card(
+                key: ObjectKey(_variables[i]),
                 margin: const EdgeInsets.symmetric(vertical: 6),
                 color: colorScheme.surfaceContainerLow,
                 child: Padding(
@@ -288,11 +296,18 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
                           hintText: 'VARIABLE_NAME',
                           errorText: _variables[i].keyError,
                         ),
+                        onChanged: (_) {
+                          if (_variables[i].keyError != null) {
+                            setState(() => _variables[i].keyError = null);
+                          }
+                        },
                       ),
                       const SizedBox(height: 8),
                       TextField(
                         key: ValueKey('ci-var-val-$i'),
                         controller: _variables[i].valueController,
+                        minLines: 1,
+                        maxLines: 3,
                         decoration: const InputDecoration(
                           labelText: '變數值 (Value)',
                           hintText: '變數值',

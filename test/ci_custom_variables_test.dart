@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'support/fake_adapter.dart';
 import 'support/workspace_fixture.dart';
@@ -368,6 +369,127 @@ void main() {
       await settleWorkspace(tester);
 
       expect(find.byKey(const Key('editorSave')), findsOneWidget);
+    });
+
+    testWidgets('preserves remaining variable type and state when preceding variable is deleted', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 1200);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      RequestOptions? captured;
+      final adapter = FakeAdapter((options) {
+        if (options.uri.path.endsWith('/pipeline') && options.method == 'POST') {
+          captured = options;
+          return jsonResponse({'id': 1005, 'ref': 'main', 'status': 'created'});
+        }
+        return jsonResponse({});
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(workspaceHost(
+        RunPipelineDialog(
+          account: fixture.account,
+          api: api,
+          project: fixture.project,
+        ),
+      ));
+      await settleWorkspace(tester);
+
+      // Add first variable and set type to file
+      await tester.tap(find.byKey(const Key('add-ci-variable')));
+      await settleWorkspace(tester);
+      await tester.enterText(find.byKey(const ValueKey('ci-var-key-0')), 'VAR_FIRST');
+      await tester.enterText(find.byKey(const ValueKey('ci-var-val-0')), 'first_file_content');
+      await tester.tap(find.byKey(const ValueKey('ci-var-type-0')));
+      await settleWorkspace(tester);
+      await tester.tap(find.text('file (檔案)').last);
+      await settleWorkspace(tester);
+
+      // Add second variable (remains env_var)
+      await tester.tap(find.byKey(const Key('add-ci-variable')));
+      await settleWorkspace(tester);
+      await tester.enterText(find.byKey(const ValueKey('ci-var-key-1')), 'VAR_SECOND');
+      await tester.enterText(find.byKey(const ValueKey('ci-var-val-1')), 'second_env_val');
+      await settleWorkspace(tester);
+
+      // Delete the first variable (index 0)
+      await tester.tap(find.byKey(const ValueKey('ci-var-remove-0')));
+      await settleWorkspace(tester);
+
+      // Verify the remaining variable is VAR_SECOND with second_env_val
+      expect(find.text('CI 變數 (1)'), findsOneWidget);
+      expect(find.text('VAR_SECOND'), findsOneWidget);
+      expect(find.text('second_env_val'), findsOneWidget);
+
+      // Submit and verify payload submitted type is env_var
+      await tester.tap(find.byKey(const Key('editorSave')));
+      await settleWorkspace(tester);
+
+      expect(captured, isNotNull);
+      final data = captured!.data as Map<String, dynamic>;
+      expect(data['variables'], [
+        {'key': 'VAR_SECOND', 'value': 'second_env_val', 'variable_type': 'env_var'},
+      ]);
+    });
+
+    testWidgets('clears inline validation errors when user edits the input', (tester) async {
+      await tester.pumpWidget(workspaceHost(
+        RunPipelineDialog(
+          account: fixture.account,
+          api: fixture.api,
+          project: fixture.project,
+        ),
+      ));
+      await settleWorkspace(tester);
+
+      // Empty the ref field and submit -> error shown
+      await tester.enterText(find.byKey(const ValueKey('editor-ref')), '');
+      await tester.tap(find.byKey(const Key('editorSave')));
+      await settleWorkspace(tester);
+      expect(find.text('請輸入分支或標籤名稱'), findsOneWidget);
+
+      // Type in ref field -> error cleared immediately
+      await tester.enterText(find.byKey(const ValueKey('editor-ref')), 'feature');
+      await settleWorkspace(tester);
+      expect(find.text('請輸入分支或標籤名稱'), findsNothing);
+
+      // Add variable with invalid key format
+      await tester.tap(find.byKey(const Key('add-ci-variable')));
+      await settleWorkspace(tester);
+      await tester.enterText(find.byKey(const ValueKey('ci-var-key-0')), '9BAD_KEY');
+      await tester.enterText(find.byKey(const ValueKey('ci-var-val-0')), 'val');
+      await tester.tap(find.byKey(const Key('editorSave')));
+      await settleWorkspace(tester);
+      expect(find.text('變數名稱格式不合（僅限英數字與底線，不可為數字開頭）'), findsOneWidget);
+
+      // Edit the key -> error cleared immediately
+      await tester.enterText(find.byKey(const ValueKey('ci-var-key-0')), 'GOOD_KEY');
+      await settleWorkspace(tester);
+      expect(find.text('變數名稱格式不合（僅限英數字與底線，不可為數字開頭）'), findsNothing);
+    });
+
+    testWidgets('defaults ref to main when defaultBranch is empty string', (tester) async {
+      final projectWithEmptyBranch = Project.fromJson({
+        'id': 99,
+        'name': 'empty-branch-proj',
+        'path_with_namespace': 'group/empty-branch-proj',
+        'default_branch': '',
+        'web_url': 'https://gitlab.example.com/group/empty-branch-proj',
+      });
+
+      await tester.pumpWidget(workspaceHost(
+        RunPipelineDialog(
+          account: fixture.account,
+          api: fixture.api,
+          project: projectWithEmptyBranch,
+        ),
+      ));
+      await settleWorkspace(tester);
+
+      final refField = tester.widget<TextField>(find.byKey(const ValueKey('editor-ref')));
+      expect(refField.controller?.text, 'main');
     });
   });
 }

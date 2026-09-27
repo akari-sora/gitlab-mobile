@@ -202,5 +202,123 @@ void main() {
       expect(find.byKey(const ValueKey('diff-discussion-navigator')), findsOneWidget);
       expect(find.text('未解決討論 1'), findsOneWidget);
     });
+
+    testWidgets('handles multiple discussions on the same line with accurate location navigation and denominator', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 1000);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final f = WorkspaceFixture();
+      f.versionDiffs = [
+        {
+          'old_path': 'lib/multi.dart',
+          'new_path': 'lib/multi.dart',
+          'diff': '@@ -1,6 +1,6 @@\n line1\n-line2\n+line2_new\n line3\n line4\n-line5\n+line5_new\n line6\n',
+        },
+      ];
+      // 2 discussions on line 2, 1 on line 5
+      f.mrDiscussions.addAll([
+        textDiscussion(id: 'disc-2a', filePath: 'lib/multi.dart', newLine: 2, resolved: false, body: 'Note A on line 2'),
+        textDiscussion(id: 'disc-2b', filePath: 'lib/multi.dart', newLine: 2, resolved: false, body: 'Note B on line 2'),
+        textDiscussion(id: 'disc-5', filePath: 'lib/multi.dart', newLine: 5, resolved: false, body: 'Note on line 5'),
+      ]);
+      addTearDown(f.api.close);
+
+      await tester.pumpWidget(workspaceHost(
+        ReviewDiffPage(
+          account: f.account,
+          api: f.api,
+          project: f.project,
+          iid: 12,
+          expectedSha: WorkspaceFixture.sha,
+        ),
+      ));
+      await settleWorkspace(tester);
+
+      // Badge in file list displays total unresolved count = 3
+      expect(find.byKey(const ValueKey('file-unresolved-badge-lib/multi.dart')), findsOneWidget);
+      expect(find.text('3'), findsOneWidget);
+
+      await tester.tap(find.text('lib/multi.dart'));
+      await settleWorkspace(tester);
+
+      // Navigator displays 未解決討論 3
+      expect(find.text('未解決討論 3'), findsOneWidget);
+
+      // Next -> 1/2 (stop 1 of 2 locations, containing both line 2 notes)
+      await tester.tap(find.byKey(const ValueKey('diff-nav-next')));
+      await settleWorkspace(tester);
+      expect(find.text('未解決討論 3 (1/2)'), findsOneWidget);
+
+      // Next -> 2/2 (stop 2 of 2 locations, line 5)
+      await tester.tap(find.byKey(const ValueKey('diff-nav-next')));
+      await settleWorkspace(tester);
+      expect(find.text('未解決討論 3 (2/2)'), findsOneWidget);
+
+      // Next -> wraps around to 1/2
+      await tester.tap(find.byKey(const ValueKey('diff-nav-next')));
+      await settleWorkspace(tester);
+      expect(find.text('未解決討論 3 (1/2)'), findsOneWidget);
+    });
+
+    testWidgets('composes initialTarget and navigator highlight when navigating to initialTarget line', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 1000);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final f = WorkspaceFixture();
+      f.versionDiffs = [
+        {
+          'old_path': 'lib/multi.dart',
+          'new_path': 'lib/multi.dart',
+          'diff': '@@ -1,6 +1,6 @@\n line1\n-line2\n+line2_new\n line3\n line4\n-line5\n+line5_new\n line6\n',
+        },
+      ];
+      f.mrDiscussions.addAll([
+        textDiscussion(id: 'disc-20', filePath: 'lib/multi.dart', newLine: 2, resolved: false, body: 'Target discussion'),
+      ]);
+      addTearDown(f.api.close);
+
+      final target = DiffTarget(
+        path: 'lib/multi.dart',
+        newPath: 'lib/multi.dart',
+        newLine: 2,
+        baseSha: WorkspaceFixture.sha,
+        startSha: WorkspaceFixture.sha,
+        headSha: WorkspaceFixture.sha,
+      );
+
+      await tester.pumpWidget(workspaceHost(
+        ReviewDiffPage(
+          account: f.account,
+          api: f.api,
+          project: f.project,
+          iid: 12,
+          expectedSha: WorkspaceFixture.sha,
+          initialTarget: target,
+        ),
+      ));
+      await settleWorkspace(tester);
+
+      // Tap file to open diff
+      await tester.tap(find.text('lib/multi.dart'));
+      await settleWorkspace(tester);
+
+      // Tap Next to navigate to the unresolved discussion at line 2 (which is also initialTarget)
+      await tester.tap(find.byKey(const ValueKey('diff-nav-next')));
+      await settleWorkspace(tester);
+
+      expect(find.text('未解決討論 1 (1/1)'), findsOneWidget);
+
+      // Find DecoratedBox with tertiary border
+      final decoratedBoxes = tester.widgetList<DecoratedBox>(find.byType(DecoratedBox));
+      final hasTertiaryBorder = decoratedBoxes.any((box) {
+        final border = (box.decoration as BoxDecoration).border;
+        return border != null && border.top.width == 2.0;
+      });
+      expect(hasTertiaryBorder, isTrue);
+    });
   });
 }
