@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-# Verified Android tools downloader with retry
+"""Download and install Android commandline tools with multi-endpoint failover,
+adaptive network protocols, bounded retries, and integrity verification."""
 
 import argparse
 import hashlib
@@ -9,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 import zipfile
 
 # Specific transient curl exit codes permitted for bounded retry:
@@ -20,7 +22,17 @@ import zipfile
 RETRYABLE_CURL_EXIT_CODES = {7, 28, 35, 52, 56}
 
 
+class HTTPSOnlyRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Enforce HTTPS on all redirects to avoid credential or data leaks."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        if not newurl.startswith('https://'):
+            raise ValueError(f'Redirect to non-HTTPS URL prohibited: {newurl}')
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def compute_sha256(path: Path) -> str:
+    """Compute the SHA-256 hash of a file."""
     hasher = hashlib.sha256()
     with open(path, 'rb') as f:
         while chunk := f.read(1024 * 1024):
@@ -28,64 +40,215 @@ def compute_sha256(path: Path) -> str:
     return hasher.hexdigest()
 
 
-def download_with_retry(
+def download_with_curl(
     url: str,
     output_path: Path,
-    max_retries: int = 3,
-    connect_timeout: int = 30,
-    max_time: int = 300,
-    sleep_fn=time.sleep,
     prefer_ipv4: bool = False,
-) -> None:
+    force_http1: bool = False,
+    connect_timeout: int = 30,
+    max_time: int = 600,
+) -> int:
+    """Download a URL using curl with specific protocol flags."""
+    cmd = [
+        'curl',
+        '--proto', '=https',
+        '--proto-redir', '=https',
+        '--fail',
+        '--location',
+        '--connect-timeout', str(connect_timeout),
+        '--max-time', str(max_time),
+    ]
+    if prefer_ipv4:
+        cmd.append('--ipv4')
+    if force_http1:
+        cmd.append('--http1.1')
+    cmd.extend(['--output', str(output_path), url])
+
+    result = subprocess.run(cmd)
+    return result.returncode
+
+
+def download_with_python(url: str, output_path: Path, timeout: int = 90) -> None:
+    """Fallback download using Python urllib with HTTPS enforcement and streaming."""
     if not url.startswith('https://'):
         raise ValueError(f'Only HTTPS URLs are permitted: {url}')
+
+    req = urllib.request.Request(
+        url,
+        headers={'User-Agent': 'GitLab-CI-Android-Installer/1.0'},
+    )
+    opener = urllib.request.build_opener(HTTPSOnlyRedirectHandler())
+    with opener.open(req, timeout=timeout) as response:
+        final_url = response.geturl()
+        if not final_url.startswith('https://'):
+            raise ValueError(f'Redirect to non-HTTPS URL prohibited: {final_url}')
+        with open(output_path, 'wb') as out_file:
+            shutil.copyfileobj(response, out_file, length=1024 * 1024)
+
+
+def download_with_retry(
+    urls: list[str] | str | None = None,
+    output_path: Path | None = None,
+    arg3: str | int = '',
+    max_retries: int = 4,
+    connect_timeout: int = 30,
+    max_time: int = 600,
+    sleep_fn=time.sleep,
+    prefer_ipv4: bool = False,
+    *,
+    expected_sha256: str = '',
+    url: str | None = None,
+) -> None:
+    """Download archive using multi-endpoint rotation, adaptive curl, and Python fallback."""
+    if urls is None and url is not None:
+        urls = [url]
+    elif isinstance(urls, str):
+        urls = [urls]
+    elif urls is None:
+        raise ValueError('At least one download URL is required')
+
+    if output_path is None:
+        raise ValueError('output_path is required')
+
+    if isinstance(arg3, int):
+        max_retries = arg3
+    elif isinstance(arg3, str) and arg3:
+        expected_sha256 = arg3
+
+    for u in urls:
+        if not u.startswith('https://'):
+            raise ValueError(f'Only HTTPS URLs are permitted: {u}')
+
+    expected_hash = expected_sha256.strip().lower()
+    last_returncode = None
+    last_cmd = None
+    last_error = None
+    checksum_mismatch_hash = None
 
     for attempt in range(1, max_retries + 1):
         if output_path.exists():
             output_path.unlink()
 
-        curl_cmd = [
+        current_url = urls[(attempt - 1) % len(urls)]
+        use_ipv4 = prefer_ipv4 or (attempt > 1)
+        use_http1 = attempt > 2
+        attempt_timeout = connect_timeout if attempt == 1 else max(connect_timeout, 45)
+
+        cmd = [
             'curl',
             '--proto', '=https',
             '--proto-redir', '=https',
             '--fail',
             '--location',
-            '--connect-timeout', str(connect_timeout),
+            '--connect-timeout', str(attempt_timeout),
             '--max-time', str(max_time),
         ]
-        if prefer_ipv4 or attempt > 1:
-            curl_cmd.append('--ipv4')
+        if use_ipv4:
+            cmd.append('--ipv4')
+        if use_http1:
+            cmd.append('--http1.1')
+        cmd.extend(['--output', str(output_path), current_url])
 
-        curl_cmd.extend([
-            '--output', str(output_path),
-            url,
-        ])
+        last_cmd = cmd
+        try:
+            result = subprocess.run(cmd)
+            returncode = result.returncode
+        except Exception as exc:
+            returncode = -1
+            last_error = exc
 
-        result = subprocess.run(curl_cmd)
-        if result.returncode == 0:
-            return
+        last_returncode = returncode
 
-        if result.returncode not in RETRYABLE_CURL_EXIT_CODES:
-            # Fatal / non-retryable error (e.g. 404, protocol error)
-            raise subprocess.CalledProcessError(result.returncode, curl_cmd)
+        if returncode == 0:
+            if expected_hash:
+                if output_path.exists():
+                    actual_hash = compute_sha256(output_path)
+                    if actual_hash == expected_hash:
+                        return
+                    checksum_mismatch_hash = actual_hash
+                    print(
+                        f'Checksum mismatch on attempt {attempt}: got {actual_hash}, expected {expected_hash}',
+                        file=sys.stderr,
+                    )
+                    output_path.unlink()
+            else:
+                return
+
+        # Non-retryable exit code
+        if returncode != 0 and returncode not in RETRYABLE_CURL_EXIT_CODES:
+            if len(urls) == 1:
+                raise subprocess.CalledProcessError(returncode, cmd)
 
         if attempt < max_retries:
             backoff = min(attempt * 2, 10)
             sleep_fn(backoff)
-        else:
-            raise subprocess.CalledProcessError(result.returncode, curl_cmd)
+
+    # If all curl attempts failed or produced bad checksum, attempt Python urllib fallback
+    print('Curl attempts exhausted. Attempting fallback via Python urllib...', file=sys.stderr)
+    for fallback_url in urls:
+        try:
+            if output_path.exists():
+                output_path.unlink()
+            download_with_python(fallback_url, output_path, timeout=max_time)
+            if output_path.exists():
+                if expected_hash:
+                    actual_hash = compute_sha256(output_path)
+                    if actual_hash == expected_hash:
+                        return
+                    checksum_mismatch_hash = actual_hash
+                    print(
+                        f'Python fallback checksum mismatch: got {actual_hash}, expected {expected_hash}',
+                        file=sys.stderr,
+                    )
+                    output_path.unlink()
+                else:
+                    return
+        except Exception as exc:
+            last_error = exc
+            print(f'Python fallback for {fallback_url} failed: {exc}', file=sys.stderr)
+
+    if output_path.exists():
+        output_path.unlink()
+
+    if checksum_mismatch_hash is not None:
+        raise ValueError(
+            f'SHA-256 checksum mismatch: expected {expected_hash}, got {checksum_mismatch_hash}'
+        )
+
+    if last_returncode is not None and last_returncode != 0:
+        raise subprocess.CalledProcessError(last_returncode, last_cmd or ['curl'])
+
+    raise RuntimeError(f'All download attempts failed. Last error: {last_error}')
+
+
+# Alias for compatibility with orchestrator / explorer naming
+resilient_download = download_with_retry
 
 
 def install_tools(
-    url: str,
-    expected_sha256: str,
-    destination: Path,
-    max_retries: int = 3,
+    url: str | list[str] | None = None,
+    expected_sha256: str = '',
+    destination: Path | str | None = None,
+    max_retries: int = 4,
     connect_timeout: int = 30,
-    max_time: int = 300,
+    max_time: int = 600,
     sleep_fn=time.sleep,
     prefer_ipv4: bool = False,
+    *,
+    urls: list[str] | None = None,
 ) -> None:
+    """Download, verify, unpack, and install Android commandline tools."""
+    if urls is None:
+        if isinstance(url, list):
+            urls = url
+        elif isinstance(url, str):
+            urls = [url]
+        else:
+            raise ValueError('At least one URL must be specified')
+
+    if destination is None:
+        raise ValueError('Destination path is required')
+
     destination = Path(destination).resolve()
     expected_hash = expected_sha256.strip().lower()
 
@@ -94,8 +257,9 @@ def install_tools(
         archive_path = temp_dir / 'tools.zip'
 
         download_with_retry(
-            url=url,
+            urls=urls,
             output_path=archive_path,
+            expected_sha256=expected_hash,
             max_retries=max_retries,
             connect_timeout=connect_timeout,
             max_time=max_time,
@@ -106,7 +270,7 @@ def install_tools(
         actual_hash = compute_sha256(archive_path)
         if actual_hash != expected_hash:
             raise ValueError(
-                f'SHA-256 checksum mismatch for {url}: expected {expected_hash}, got {actual_hash}'
+                f'SHA-256 checksum mismatch: expected {expected_hash}, got {actual_hash}'
             )
 
         extract_dir = temp_dir / 'unpacked'
@@ -130,24 +294,58 @@ def install_tools(
 
 
 def parse_args(argv=None):
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--url', required=True, help='HTTPS download URL')
-    parser.add_argument('--sha256', required=True, help='Expected SHA-256 hash')
-    parser.add_argument('--destination', required=True, type=Path, help='Target installation path')
-    parser.add_argument('--retries', type=int, default=3, help='Max download attempts (default: 3)')
+    parser.add_argument('--primary-url', help='Primary HTTPS download URL')
+    parser.add_argument('--fallback-url', help='Fallback HTTPS download URL')
+    parser.add_argument('--url', help='Download URL (alias for --primary-url)')
+    parser.add_argument('--expected-sha256', help='Expected SHA-256 hash')
+    parser.add_argument('--sha256', help='Expected SHA-256 hash (alias for --expected-sha256)')
+    parser.add_argument('--output-dir', type=Path, help='Output directory for commandline-tools')
+    parser.add_argument('--destination', type=Path, help='Target installation path (alias for --output-dir)')
+    parser.add_argument('--tools-revision', help='Revision number for commandline-tools (e.g. 15859902)')
+    parser.add_argument('--retries', type=int, default=4, help='Max download attempts (default: 4)')
     parser.add_argument('--connect-timeout', type=int, default=30, help='Connection timeout in seconds')
-    parser.add_argument('--max-time', type=int, default=300, help='Max transfer time in seconds')
-    parser.add_argument('--ipv4', action='store_true', help='Force/prefer IPv4 to bypass broken dual-stack IPv6')
+    parser.add_argument('--max-time', type=int, default=600, help='Max transfer time in seconds')
+    parser.add_argument('--ipv4', action='store_true', help='Prefer IPv4 on initial attempt')
     return parser.parse_args(argv)
 
 
 def main(argv=None):
+    """Entry point for CLI execution."""
     args = parse_args(argv)
+
+    urls = []
+    if args.primary_url:
+        urls.append(args.primary_url)
+    elif args.url:
+        urls.append(args.url)
+    if args.fallback_url and args.fallback_url not in urls:
+        urls.append(args.fallback_url)
+
+    if not urls:
+        print('Error: At least one download URL (--primary-url or --url) is required.', file=sys.stderr)
+        sys.exit(2)
+
+    expected_sha256 = args.expected_sha256 or args.sha256
+    if not expected_sha256:
+        print('Error: Expected SHA-256 hash (--expected-sha256 or --sha256) is required.', file=sys.stderr)
+        sys.exit(2)
+
+    dest = args.output_dir or args.destination
+    if not dest:
+        print('Error: Target directory (--output-dir or --destination) is required.', file=sys.stderr)
+        sys.exit(2)
+
+    dest = Path(dest).resolve()
+    if args.tools_revision and dest.name != args.tools_revision:
+        dest = dest / args.tools_revision
+
     try:
         install_tools(
-            url=args.url,
-            expected_sha256=args.sha256,
-            destination=args.destination,
+            urls=urls,
+            expected_sha256=expected_sha256,
+            destination=dest,
             max_retries=args.retries,
             connect_timeout=args.connect_timeout,
             max_time=args.max_time,

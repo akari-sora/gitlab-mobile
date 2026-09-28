@@ -9,13 +9,16 @@ TOOLS_SHA256=4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583
 TOOLS_HOME="$ANDROID_HOME/cmdline-tools/$TOOLS_REVISION"
 if [ ! -x "$TOOLS_HOME/bin/sdkmanager" ]; then
   python3 "$ROOT/ci/install_android_tools.py" \
-    --url "https://dl.google.com/android/repository/commandlinetools-linux-${TOOLS_REVISION}_latest.zip" \
-    --sha256 "$TOOLS_SHA256" \
-    --destination "$TOOLS_HOME" \
-    --ipv4
+    --output-dir "$ANDROID_HOME/cmdline-tools" \
+    --tools-revision "$TOOLS_REVISION" \
+    --expected-sha256 "$TOOLS_SHA256" \
+    --primary-url "https://dl.google.com/android/repository/commandlinetools-linux-${TOOLS_REVISION}_latest.zip" \
+    --fallback-url "https://redirector.gvt1.com/edgedl/android/repository/commandlinetools-linux-${TOOLS_REVISION}_latest.zip"
 fi
 export PATH="$TOOLS_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"
+export JAVA_OPTS="-Djava.net.preferIPv4Stack=true"
+export _JAVA_OPTIONS="-Djava.net.preferIPv4Stack=true"
 java -version
 compile_sdk="$(python3 - <<'PY'
 import os, pathlib, re
@@ -37,5 +40,16 @@ if [ "$license_status" -ne 0 ]; then
   cat /tmp/gitlab-mobile-android-licenses.log
   exit "$license_status"
 fi
-sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "platforms;android-$compile_sdk" "build-tools;36.0.0"
+for attempt in 1 2 3; do
+  if sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "platforms;android-$compile_sdk" "build-tools;36.0.0"; then
+    break
+  fi
+  if [ "$attempt" -lt 3 ]; then
+    printf 'sdkmanager failed (attempt %s/3), retrying in 5s...\n' "$attempt" >&2
+    sleep 5
+  else
+    printf 'sdkmanager failed after 3 attempts\n' >&2
+    exit 1
+  fi
+done
 flutter config --android-sdk "$ANDROID_HOME"

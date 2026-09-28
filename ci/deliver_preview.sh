@@ -9,7 +9,8 @@ fi
 (cd artifacts && sha256sum --check SHA256SUMS)
 base="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/gitlab-mobile-preview/${CI_COMMIT_SHA}"
 for file in artifacts/*.apk artifacts/build-metadata.json artifacts/SHA256SUMS; do
-  curl --fail-with-body --retry 2 --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
+  curl --fail-with-body --retry 3 --retry-all-errors --retry-connrefused --retry-delay 2 \
+    --header "JOB-TOKEN: ${CI_JOB_TOKEN}" \
     --upload-file "$file" "$base/$(basename "$file")"
 done
 printf 'Preview package delivered for commit %s\n' "$CI_COMMIT_SHA"
