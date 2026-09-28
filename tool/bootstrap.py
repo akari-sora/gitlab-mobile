@@ -81,8 +81,12 @@ def harden_android(folder: Path) -> None:
     for key, value in {'allowBackup': 'false', 'usesCleartextTraffic': 'false',
                        'fullBackupContent': '@xml/backup_rules',
                        'dataExtractionRules': '@xml/data_extraction_rules',
-                       'enableOnBackInvokedCallback': 'true'}.items():
+                       'enableOnBackInvokedCallback': 'true',
+                       'label': 'GitLab Mobile'}.items():
         application.set(f'{{{ANDROID}}}{key}', value)
+    for activity in application.findall('activity'):
+        if f'{{{ANDROID}}}label' in activity.attrib:
+            activity.set(f'{{{ANDROID}}}label', 'GitLab Mobile')
     register_oauth_android(root)
     ET.indent(tree, space='    ')
     tree.write(manifest, encoding='utf-8', xml_declaration=True)
@@ -164,6 +168,31 @@ def configure_ios(folder: Path) -> None:
 ''', encoding='utf-8')
     register_oauth_ios(folder)
     register_photo_library_ios(folder)
+    configure_ios_app_name(folder)
+
+
+def configure_ios_app_name(folder: Path) -> None:
+    path = folder / 'Runner/Info.plist'
+    if not path.is_file():
+        return
+    tree = ET.parse(path)
+    plist = tree.getroot().find('dict')
+    if plist is None:
+        raise RuntimeError('Unknown iOS template: Info.plist dict missing.')
+    children = list(plist)
+    keys = {node.text: children[i + 1] for i, node in enumerate(children[:-1]) if node.tag == 'key'}
+    if 'CFBundleDisplayName' in keys:
+        keys['CFBundleDisplayName'].text = 'GitLab Mobile'
+    else:
+        plist.append(_plist_key('CFBundleDisplayName'))
+        ET.SubElement(plist, 'string').text = 'GitLab Mobile'
+    if 'CFBundleName' in keys:
+        keys['CFBundleName'].text = 'GitLab Mobile'
+    else:
+        plist.append(_plist_key('CFBundleName'))
+        ET.SubElement(plist, 'string').text = 'GitLab Mobile'
+    ET.indent(tree, space='\t')
+    tree.write(path, encoding='utf-8', xml_declaration=True)
 
 
 def register_oauth_ios(folder: Path) -> None:

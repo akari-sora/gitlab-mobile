@@ -45,7 +45,8 @@ void main() {
     )));
     await settleWorkspace(tester);
     expect(find.text('待刪除'), findsOneWidget);
-    final title = tester.widget<Text>(find.text('Mobile Workspace'));
-    expect(title.style?.color, Theme.of(tester.element(find.text('Mobile Workspace'))).colorScheme.onSurfaceVariant);
+    final headerTitle = find.descendant(of: find.byType(AppBar), matching: find.text('Mobile Workspace'));
+    final title = tester.widget<Text>(headerTitle);
+    expect(title.style?.color, Theme.of(tester.element(headerTitle)).colorScheme.onSurfaceVariant);
   });
 }

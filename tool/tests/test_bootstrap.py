@@ -22,6 +22,7 @@ class BootstrapTests(unittest.TestCase):
         manifest = ET.parse(source / 'AndroidManifest.xml').getroot()
         attribute = '{' + bootstrap.ANDROID + '}'
         app = manifest.find('application')
+        self.assertEqual(app.get(attribute + 'label'), 'GitLab Mobile')
         self.assertEqual(app.get(attribute + 'allowBackup'), 'false')
         self.assertEqual(app.get(attribute + 'usesCleartextTraffic'), 'false')
         self.assertEqual(manifest.find('uses-permission').get(attribute + 'name'), 'android.permission.INTERNET')
@@ -59,6 +60,46 @@ class BootstrapTests(unittest.TestCase):
         text = path.read_text()
         self.assertEqual(text.count('<string>io.gitlabmobile.app</string>'), 1)
         self.assertIn('CFBundleURLTypes', text)
+
+    def test_ios_configures_display_name_and_bundle_name(self):
+        (self.root / 'Runner').mkdir()
+        path = self.root / 'Runner/Info.plist'
+        path.write_text(
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<plist version="1.0"><dict>'
+            '<key>CFBundleName</key><string>gitlab_mobile</string>'
+            '</dict></plist>\n'
+        )
+        bootstrap.configure_ios_app_name(self.root)
+        bootstrap.configure_ios_app_name(self.root)
+        text = path.read_text()
+        self.assertIn('<key>CFBundleDisplayName</key>\n\t\t<string>GitLab Mobile</string>', text)
+        self.assertIn('<key>CFBundleName</key>\n\t\t<string>GitLab Mobile</string>', text)
+        self.assertNotIn('gitlab_mobile', text)
+
+    def test_ios_adds_display_name_and_bundle_name_when_absent(self):
+        folder = self.root / 'RunnerNoName'
+        folder.mkdir(parents=True)
+        path = folder / 'Runner/Info.plist'
+        path.parent.mkdir()
+        path.write_text('<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict></dict></plist>')
+        bootstrap.configure_ios_app_name(folder)
+        text = path.read_text()
+        self.assertIn('<key>CFBundleDisplayName</key>\n\t\t<string>GitLab Mobile</string>', text)
+        self.assertIn('<key>CFBundleName</key>\n\t\t<string>GitLab Mobile</string>', text)
+
+    def test_android_updates_activity_label_if_present(self):
+        source = self.root / 'app/src/main'
+        source.mkdir(parents=True, exist_ok=True)
+        (source / 'AndroidManifest.xml').write_text(
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+            '<application><activity android:label="gitlab_mobile" /></application></manifest>'
+        )
+        bootstrap.harden_android(self.root)
+        manifest = ET.parse(source / 'AndroidManifest.xml').getroot()
+        attribute = '{' + bootstrap.ANDROID + '}'
+        self.assertEqual(manifest.find('application').get(attribute + 'label'), 'GitLab Mobile')
+        self.assertEqual(manifest.find('application/activity').get(attribute + 'label'), 'GitLab Mobile')
 
     def test_android_enables_predictive_back(self):
         source = self.root / 'app/src/main'
