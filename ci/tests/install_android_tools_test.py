@@ -286,7 +286,7 @@ class InstallAndroidToolsTests(unittest.TestCase):
         self.assertTrue(args.ensure_network)
 
     def test_ensure_route_when_already_accessible(self):
-        with patch.object(installer, 'is_port_accessible', return_value=True):
+        with patch.object(installer, 'is_http_accessible', return_value=True):
             self.assertTrue(installer.ensure_dl_google_com_route())
 
     def test_ensure_route_appends_to_hosts_file_when_unreachable(self):
@@ -294,13 +294,34 @@ class InstallAndroidToolsTests(unittest.TestCase):
             fake_hosts = Path(folder) / 'hosts'
             fake_hosts.write_text('127.0.0.1 localhost\n')
 
-            with patch.object(installer, 'is_port_accessible', return_value=False):
+            with patch.object(installer, 'is_http_accessible', return_value=False):
                 with patch.object(installer, 'verify_tls_sni', return_value=True):
                     with patch('socket.getaddrinfo', return_value=[(None, None, None, None, ('173.194.174.100', 443))]):
                         result = installer.ensure_dl_google_com_route(hosts_file=fake_hosts)
                         self.assertTrue(result)
                         content = fake_hosts.read_text()
                         self.assertIn('173.194.174.100 dl.google.com', content)
+
+    def test_install_sdk_components_downloads_and_extracts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            android_home = Path(folder) / 'sdk'
+            
+            def fake_download(*args, **kwargs):
+                out = kwargs['output_path']
+                with zipfile.ZipFile(out, 'w') as zf:
+                    if 'platform-tools' in out.name:
+                        zf.writestr('platform-tools/adb', 'dummy')
+                    elif 'platforms' in out.name:
+                        zf.writestr('android-36/android.jar', 'dummy')
+                    elif 'build-tools' in out.name:
+                        zf.writestr('android-16/aapt2', 'dummy')
+
+            with patch.object(installer, 'download_with_retry', side_effect=fake_download):
+                installer.install_sdk_components(android_home, compile_sdk='36')
+
+            self.assertTrue((android_home / 'platform-tools' / 'adb').is_file())
+            self.assertTrue((android_home / 'platforms' / 'android-36' / 'android.jar').is_file())
+            self.assertTrue((android_home / 'build-tools' / '36.0.0' / 'aapt2').is_file())
 
 
 if __name__ == '__main__':

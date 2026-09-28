@@ -41,16 +41,19 @@ if [ "$license_status" -ne 0 ]; then
   cat /tmp/gitlab-mobile-android-licenses.log
   exit "$license_status"
 fi
-for attempt in 1 2 3; do
-  if timeout 300 sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "platforms;android-$compile_sdk" "build-tools;36.0.0"; then
+for attempt in 1 2; do
+  if timeout 90 sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "platforms;android-$compile_sdk" "build-tools;36.0.0"; then
     break
   fi
-  if [ "$attempt" -lt 3 ]; then
-    printf 'sdkmanager failed (attempt %s/3), retrying in 5s...\n' "$attempt" >&2
+  if [ "$attempt" -lt 2 ]; then
+    printf 'sdkmanager failed (attempt %s/2), retrying in 5s...\n' "$attempt" >&2
     sleep 5
   else
-    printf 'sdkmanager failed after 3 attempts\n' >&2
-    exit 1
+    printf 'sdkmanager failed or timed out; falling back to direct resilient installer...\n' >&2
+    python3 "$ROOT/ci/install_android_tools.py" \
+      --install-components \
+      --android-home "$ANDROID_HOME" \
+      --compile-sdk "$compile_sdk"
   fi
 done
 flutter config --android-sdk "$ANDROID_HOME"

@@ -297,11 +297,12 @@ def install_tools(
             sdkmanager.chmod(0o755)
 
 
-def is_port_accessible(host: str, port: int = 443, timeout: float = 3.0) -> bool:
-    """Test if a host:port responds within timeout."""
+def is_http_accessible(url: str = 'https://dl.google.com/android/repository/repository2-3.xml', timeout: float = 5.0) -> bool:
+    """Test if a URL responds with 200 within timeout."""
     try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return True
+        req = urllib.request.Request(url, headers={'User-Agent': 'curl/8.0'})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status == 200
     except Exception:
         return False
 
@@ -323,7 +324,8 @@ def verify_tls_sni(ip: str, hostname: str, timeout: float = 5.0) -> bool:
 
 def ensure_dl_google_com_route(hosts_file: Path = Path('/etc/hosts')) -> bool:
     """Ensure dl.google.com routes to a reachable edge endpoint on broken CI networks."""
-    if is_port_accessible('dl.google.com', 443, timeout=3.0):
+    test_url = 'https://dl.google.com/android/repository/repository2-3.xml'
+    if is_http_accessible(test_url, timeout=5.0):
         print('dl.google.com is reachable via default DNS.')
         return True
 
@@ -357,10 +359,83 @@ def ensure_dl_google_com_route(hosts_file: Path = Path('/etc/hosts')) -> bool:
     return False
 
 
+def install_sdk_components(android_home: Path, compile_sdk: str = '36') -> None:
+    """Directly download and install Android SDK platform-tools, platforms, and build-tools."""
+    android_home = Path(android_home).resolve()
+    components = {
+        'platform-tools': (
+            [
+                'https://dl.google.com/android/repository/platform-tools_r36.0.0-linux.zip',
+                'https://redirector.gvt1.com/edgedl/android/repository/platform-tools_r36.0.0-linux.zip',
+            ],
+            android_home / 'platform-tools',
+            'platform-tools',
+        ),
+        f'platforms;android-{compile_sdk}': (
+            [
+                f'https://dl.google.com/android/repository/platform-{compile_sdk}_r02.zip',
+                f'https://redirector.gvt1.com/edgedl/android/repository/platform-{compile_sdk}_r02.zip',
+            ],
+            android_home / f'platforms/android-{compile_sdk}',
+            f'android-{compile_sdk}',
+        ),
+        'build-tools;36.0.0': (
+            [
+                'https://dl.google.com/android/repository/build-tools_r36_linux.zip',
+                'https://redirector.gvt1.com/edgedl/android/repository/build-tools_r36_linux.zip',
+            ],
+            android_home / 'build-tools/36.0.0',
+            'android-16',
+        ),
+    }
+
+    with tempfile.TemporaryDirectory() as temp_dir_str:
+        temp_dir = Path(temp_dir_str)
+        for name, (urls, target_dir, inner_name) in components.items():
+            if target_dir.exists():
+                print(f'{name} already installed at {target_dir}')
+                continue
+            print(f'Directly installing {name} to {target_dir}...')
+            archive_path = temp_dir / f'{name.replace(";", "_")}.zip'
+            download_with_retry(
+                urls=urls,
+                output_path=archive_path,
+                max_retries=3,
+                connect_timeout=30,
+                max_time=300,
+                prefer_ipv4=True,
+            )
+            extract_dir = temp_dir / f'extract_{name.replace(";", "_")}'
+            extract_dir.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(archive_path, 'r') as zf:
+                zf.extractall(extract_dir)
+
+            source_folder = extract_dir / inner_name
+            if not source_folder.exists():
+                subdirs = [d for d in extract_dir.iterdir() if d.is_dir()]
+                if subdirs:
+                    source_folder = subdirs[0]
+                else:
+                    raise RuntimeError(f'No directory extracted for {name}')
+
+            target_dir.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source_folder), str(target_dir))
+            for item in target_dir.rglob('*'):
+                if item.is_file() and not item.name.endswith(('.jar', '.txt', '.prop', '.properties', '.xml', '.zip')):
+                    try:
+                        item.chmod(item.stat().st_mode | 0o755)
+                    except Exception:
+                        pass
+            print(f'Successfully installed {name} to {target_dir}')
+
+
 def parse_args(argv=None):
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--ensure-network', action='store_true', help='Ensure dl.google.com has accessible route and exit')
+    parser.add_argument('--install-components', action='store_true', help='Directly install platform-tools, platforms, and build-tools')
+    parser.add_argument('--android-home', type=Path, help='Target ANDROID_HOME for component installation')
+    parser.add_argument('--compile-sdk', default='36', help='Compile SDK version (default: 36)')
     parser.add_argument('--primary-url', help='Primary HTTPS download URL')
     parser.add_argument('--fallback-url', help='Fallback HTTPS download URL')
     parser.add_argument('--url', help='Download URL (alias for --primary-url)')
@@ -382,6 +457,13 @@ def main(argv=None):
 
     if args.ensure_network:
         ensure_dl_google_com_route()
+        sys.exit(0)
+
+    if args.install_components:
+        if not args.android_home:
+            print('Error: --android-home is required when using --install-components', file=sys.stderr)
+            sys.exit(2)
+        install_sdk_components(args.android_home, args.compile_sdk)
         sys.exit(0)
 
     urls = []
