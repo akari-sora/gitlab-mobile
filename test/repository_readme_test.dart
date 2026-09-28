@@ -91,26 +91,25 @@ void main() {
     expect(find.text('src'), findsOneWidget);
     expect(find.text('README.md'), findsAtLeastNWidgets(1));
 
-    // Verify collapsible toggle starts collapsed
-    expect(find.byTooltip('展開 README'), findsOneWidget);
-    expect(find.text('Welcome to Project'), findsNothing);
-
-    // Expand README
-    await tester.tap(find.byTooltip('展開 README'));
-    await settleNetworkWidgets(tester);
-
-    // After expanding, content is visible
+    // Verify collapsible toggle starts expanded by default
+    expect(find.byTooltip('收合 README'), findsOneWidget);
     expect(find.text('Welcome to Project'), findsOneWidget);
     expect(find.text('This is native README preview in GitLab Mobile.'), findsOneWidget);
-    expect(find.byTooltip('收合 README'), findsOneWidget);
 
-    // Collapse again
+    // Collapse README
     await tester.tap(find.byTooltip('收合 README'));
     await tester.pumpAndSettle();
 
     // After collapsing, content is hidden
     expect(find.text('Welcome to Project'), findsNothing);
     expect(find.byTooltip('展開 README'), findsOneWidget);
+
+    // Expand again
+    await tester.tap(find.byTooltip('展開 README'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Welcome to Project'), findsOneWidget);
+    expect(find.byTooltip('收合 README'), findsOneWidget);
   });
 
   testWidgets('README 404 shows failure in card without hiding or corrupting tree list', (tester) async {
@@ -169,13 +168,93 @@ void main() {
     // Tree list is still fully functional and visible
     expect(find.text('file.txt'), findsOneWidget);
 
-    // Expand README card to see failure notice
-    expect(find.byTooltip('展開 README'), findsOneWidget);
-    await tester.tap(find.byTooltip('展開 README'));
-    await settleNetworkWidgets(tester);
-
-    // README card shows failure notice with retry
+    // README card is expanded by default, showing failure notice with retry
+    expect(find.byTooltip('收合 README'), findsOneWidget);
     expect(find.byType(FailureNotice), findsOneWidget);
     expect(find.text('重新整理'), findsOneWidget);
+
+    // Collapse hides failure notice
+    await tester.tap(find.byTooltip('收合 README'));
+    await tester.pumpAndSettle();
+    expect(find.byType(FailureNotice), findsNothing);
+    expect(find.byTooltip('展開 README'), findsOneWidget);
+  });
+
+  testWidgets('Expanded README allows vertical scrolling by dragging inside markdown content without gesture conflict', (tester) async {
+    final adapter = FakeAdapter((request) {
+      final path = request.uri.path;
+      if (path.endsWith('/repository/branches/main')) {
+        return jsonResponse({
+          'name': 'main',
+          'protected': true,
+          'default': true,
+          'commit': {'id': sha},
+        });
+      }
+      if (path.endsWith('/repository/tree') && request.uri.queryParameters['path'] == '') {
+        return jsonResponse([
+          for (int i = 0; i < 2; i++)
+            {
+              'id': 'blob-$i',
+              'name': 'item_$i.txt',
+              'type': 'blob',
+              'path': 'item_$i.txt',
+              'mode': '100644',
+            },
+          {
+            'id': 'blob-readme',
+            'name': 'README.md',
+            'type': 'blob',
+            'path': 'README.md',
+            'mode': '100644',
+          },
+        ]);
+      }
+      if (path.endsWith('/repository/files/README.md/raw')) {
+        return ResponseBody.fromString(
+          '# Project Details\n\n'
+          '${List.generate(30, (i) => 'Paragraph $i: Multi-line description content for scrolling.\n\n').join()}'
+          '```dart\nvoid main() => print("codeblock");\n```\n',
+          200,
+        );
+      }
+      if (path.endsWith('/repository/files/README.md') && request.method == 'HEAD') {
+        return ResponseBody.fromString('', 200, headers: {'x-gitlab-size': ['200']});
+      }
+      return jsonResponse([]);
+    });
+
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RepositoryTab(
+            account: account,
+            api: api,
+            project: project,
+          ),
+        ),
+      ),
+    );
+
+    await settleNetworkWidgets(tester);
+
+    // Initial state: tree items and expanded README are visible
+    expect(find.text('item_0.txt'), findsOneWidget);
+    expect(find.text('Project Details'), findsOneWidget);
+    expect(find.byTooltip('收合 README'), findsOneWidget);
+
+    final scrollableFinder = find.byType(Scrollable).first;
+    final initialOffset = tester.state<ScrollableState>(scrollableFinder).position.pixels;
+
+    // Drag directly on the markdown text inside the expanded README card
+    await tester.drag(find.text('Project Details'), const Offset(0, -200));
+    await tester.pumpAndSettle();
+
+    final scrolledOffset = tester.state<ScrollableState>(scrollableFinder).position.pixels;
+    // The list scrolled smoothly from gesture within README content
+    expect(scrolledOffset, greaterThan(initialOffset));
   });
 }

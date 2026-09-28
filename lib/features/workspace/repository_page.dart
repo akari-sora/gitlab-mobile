@@ -41,7 +41,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
   RepositoryReadme? _readme;
   bool _readmeLoading = false;
   ApiFailure? _readmeError;
-  bool _readmeExpanded = false;
+  bool _readmeExpanded = true;
   String? _readmeCandidatePath;
 
   static const _readmeCandidateNames = <String>[
@@ -117,6 +117,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
             _readme = null;
             _readmeCandidatePath = null;
             _readmeError = null;
+            _readmeExpanded = true;
           }
         });
       }
@@ -163,6 +164,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
         _readme = null;
         _readmeCandidatePath = null;
         _readmeError = null;
+        _readmeExpanded = true;
       });
       unawaited(_feed.currentState?.refresh() ?? Future.value());
     }

@@ -26,6 +26,7 @@ class MarkdownView extends StatefulWidget {
     this.account,
     this.sharer = const SystemArtifactSharer(),
     this.downloader,
+    this.selectable = true,
   });
   final String text;
   final Uri? base;
@@ -40,6 +41,7 @@ class MarkdownView extends StatefulWidget {
   final Account? account;
   final ArtifactSharer sharer;
   final AttachmentDownloader? downloader;
+  final bool selectable;
 
   @override
   State<MarkdownView> createState() => _MarkdownViewState();
@@ -70,7 +72,7 @@ class _MarkdownViewState extends State<MarkdownView> {
     final api = widget.api;
     final projectId = widget.projectId;
     final projectWeb = widget.projectWeb;
-    return MarkdownBody(data: text, selectable: true,
+    final body = MarkdownBody(data: text, selectable: false,
       styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
         h1: Theme.of(context).textTheme.headlineSmall,
         h2: Theme.of(context).textTheme.titleLarge,
@@ -136,5 +138,9 @@ class _MarkdownViewState extends State<MarkdownView> {
         await openExternal(context, uri);
       },
     );
+    if (!widget.selectable) {
+      return body;
+    }
+    return SelectionArea(child: body);
   }
 }
