@@ -7,6 +7,7 @@ export ANDROID_SDK_ROOT="$ANDROID_HOME"
 TOOLS_REVISION=15859902
 TOOLS_SHA256=4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583
 TOOLS_HOME="$ANDROID_HOME/cmdline-tools/$TOOLS_REVISION"
+python3 "$ROOT/ci/install_android_tools.py" --ensure-network || true
 if [ ! -x "$TOOLS_HOME/bin/sdkmanager" ]; then
   python3 "$ROOT/ci/install_android_tools.py" \
     --output-dir "$ANDROID_HOME/cmdline-tools" \
@@ -17,8 +18,8 @@ if [ ! -x "$TOOLS_HOME/bin/sdkmanager" ]; then
 fi
 export PATH="$TOOLS_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"
-export JAVA_OPTS="-Djava.net.preferIPv4Stack=true"
-export _JAVA_OPTIONS="-Djava.net.preferIPv4Stack=true"
+export JAVA_OPTS="-Djava.net.preferIPv4Stack=true -Dsun.net.client.defaultConnectTimeout=30000 -Dsun.net.client.defaultReadTimeout=60000"
+export _JAVA_OPTIONS="-Djava.net.preferIPv4Stack=true -Dsun.net.client.defaultConnectTimeout=30000 -Dsun.net.client.defaultReadTimeout=60000"
 java -version
 compile_sdk="$(python3 - <<'PY'
 import os, pathlib, re
@@ -41,7 +42,7 @@ if [ "$license_status" -ne 0 ]; then
   exit "$license_status"
 fi
 for attempt in 1 2 3; do
-  if sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "platforms;android-$compile_sdk" "build-tools;36.0.0"; then
+  if timeout 300 sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "platforms;android-$compile_sdk" "build-tools;36.0.0"; then
     break
   fi
   if [ "$attempt" -lt 3 ]; then

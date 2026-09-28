@@ -275,6 +275,7 @@ class InstallAndroidToolsTests(unittest.TestCase):
             '--primary-url', 'https://dl.google.com/tools.zip',
             '--fallback-url', 'https://redirector.gvt1.com/tools.zip',
             '--ipv4',
+            '--ensure-network',
         ])
         self.assertEqual(str(args.output_dir), '/opt/android-sdk/cmdline-tools')
         self.assertEqual(args.tools_revision, '15859902')
@@ -282,6 +283,24 @@ class InstallAndroidToolsTests(unittest.TestCase):
         self.assertEqual(args.primary_url, 'https://dl.google.com/tools.zip')
         self.assertEqual(args.fallback_url, 'https://redirector.gvt1.com/tools.zip')
         self.assertTrue(args.ipv4)
+        self.assertTrue(args.ensure_network)
+
+    def test_ensure_route_when_already_accessible(self):
+        with patch.object(installer, 'is_port_accessible', return_value=True):
+            self.assertTrue(installer.ensure_dl_google_com_route())
+
+    def test_ensure_route_appends_to_hosts_file_when_unreachable(self):
+        with tempfile.TemporaryDirectory() as folder:
+            fake_hosts = Path(folder) / 'hosts'
+            fake_hosts.write_text('127.0.0.1 localhost\n')
+
+            with patch.object(installer, 'is_port_accessible', return_value=False):
+                with patch.object(installer, 'verify_tls_sni', return_value=True):
+                    with patch('socket.getaddrinfo', return_value=[(None, None, None, None, ('173.194.174.100', 443))]):
+                        result = installer.ensure_dl_google_com_route(hosts_file=fake_hosts)
+                        self.assertTrue(result)
+                        content = fake_hosts.read_text()
+                        self.assertIn('173.194.174.100 dl.google.com', content)
 
 
 if __name__ == '__main__':

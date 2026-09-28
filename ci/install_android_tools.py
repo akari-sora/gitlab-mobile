@@ -4,8 +4,11 @@ adaptive network protocols, bounded retries, and integrity verification."""
 
 import argparse
 import hashlib
+import os
 from pathlib import Path
 import shutil
+import socket
+import ssl
 import subprocess
 import sys
 import tempfile
@@ -255,6 +258,7 @@ def install_tools(
     with tempfile.TemporaryDirectory() as temp_dir_str:
         temp_dir = Path(temp_dir_str)
         archive_path = temp_dir / 'tools.zip'
+        ensure_dl_google_com_route()
 
         download_with_retry(
             urls=urls,
@@ -293,9 +297,70 @@ def install_tools(
             sdkmanager.chmod(0o755)
 
 
+def is_port_accessible(host: str, port: int = 443, timeout: float = 3.0) -> bool:
+    """Test if a host:port responds within timeout."""
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
+def verify_tls_sni(ip: str, hostname: str, timeout: float = 5.0) -> bool:
+    """Verify that connecting to IP with SNI hostname returns a valid certificate."""
+    ctx = ssl.create_default_context()
+    try:
+        with socket.create_connection((ip, 443), timeout=timeout) as sock:
+            with ctx.wrap_socket(sock, server_hostname=hostname) as ssock:
+                cert = ssock.getpeercert()
+                sans = [v for (k, v) in cert.get('subjectAltName', []) if k == 'DNS']
+                return hostname in sans or any(
+                    s.startswith('*.') and hostname.endswith(s[1:]) for s in sans
+                )
+    except Exception:
+        return False
+
+
+def ensure_dl_google_com_route(hosts_file: Path = Path('/etc/hosts')) -> bool:
+    """Ensure dl.google.com routes to a reachable edge endpoint on broken CI networks."""
+    if is_port_accessible('dl.google.com', 443, timeout=3.0):
+        print('dl.google.com is reachable via default DNS.')
+        return True
+
+    print('dl.google.com is unreachable or timing out on default DNS. Resolving edge mirrors...', file=sys.stderr)
+    fallback_hosts = ['redirector.gvt1.com', 'dl-ssl.google.com']
+    for host in fallback_hosts:
+        try:
+            addrs = socket.getaddrinfo(host, 443, socket.AF_INET)
+            ips = sorted(list(set(a[4][0] for a in addrs)))
+        except Exception as e:
+            print(f'Failed to resolve {host}: {e}', file=sys.stderr)
+            continue
+
+        for ip in ips:
+            if verify_tls_sni(ip, 'dl.google.com', timeout=3.0):
+                print(f'Verified dl.google.com TLS SNI on edge IP {ip} (from {host}).', file=sys.stderr)
+                try:
+                    if not hosts_file.exists() or not os.access(hosts_file, os.W_OK):
+                        print(f'{hosts_file} is not writable or does not exist.', file=sys.stderr)
+                        return False
+                    content = hosts_file.read_text()
+                    if 'dl.google.com' not in content:
+                        hosts_file.write_text(content.rstrip() + f'\n{ip} dl.google.com\n')
+                        print(f'Added "{ip} dl.google.com" to {hosts_file}', file=sys.stderr)
+                    return True
+                except Exception as e:
+                    print(f'Could not write {hosts_file}: {e}', file=sys.stderr)
+                    return False
+
+    print('Warning: No working edge IP found for dl.google.com routing.', file=sys.stderr)
+    return False
+
+
 def parse_args(argv=None):
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--ensure-network', action='store_true', help='Ensure dl.google.com has accessible route and exit')
     parser.add_argument('--primary-url', help='Primary HTTPS download URL')
     parser.add_argument('--fallback-url', help='Fallback HTTPS download URL')
     parser.add_argument('--url', help='Download URL (alias for --primary-url)')
@@ -314,6 +379,10 @@ def parse_args(argv=None):
 def main(argv=None):
     """Entry point for CLI execution."""
     args = parse_args(argv)
+
+    if args.ensure_network:
+        ensure_dl_google_com_route()
+        sys.exit(0)
 
     urls = []
     if args.primary_url:
