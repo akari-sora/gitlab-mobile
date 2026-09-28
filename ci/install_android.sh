@@ -7,19 +7,19 @@ export ANDROID_SDK_ROOT="$ANDROID_HOME"
 TOOLS_REVISION=15859902
 TOOLS_SHA256=4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583
 TOOLS_HOME="$ANDROID_HOME/cmdline-tools/$TOOLS_REVISION"
+python3 "$ROOT/ci/install_android_tools.py" --ensure-network || true
 if [ ! -x "$TOOLS_HOME/bin/sdkmanager" ]; then
-  temporary="$(mktemp -d)"
-  curl --fail --location --retry 3 --proto '=https' --proto-redir '=https' \
-    "https://dl.google.com/android/repository/commandlinetools-linux-${TOOLS_REVISION}_latest.zip" \
-    --output "$temporary/tools.zip"
-  printf '%s  %s\n' "$TOOLS_SHA256" "$temporary/tools.zip" | sha256sum --check --status
-  unzip -q "$temporary/tools.zip" -d "$temporary"
-  mkdir -p "$ANDROID_HOME/cmdline-tools"
-  mv "$temporary/cmdline-tools" "$TOOLS_HOME"
-  rm -rf "$temporary"
+  python3 "$ROOT/ci/install_android_tools.py" \
+    --output-dir "$ANDROID_HOME/cmdline-tools" \
+    --tools-revision "$TOOLS_REVISION" \
+    --expected-sha256 "$TOOLS_SHA256" \
+    --primary-url "https://dl.google.com/android/repository/commandlinetools-linux-${TOOLS_REVISION}_latest.zip" \
+    --fallback-url "https://redirector.gvt1.com/edgedl/android/repository/commandlinetools-linux-${TOOLS_REVISION}_latest.zip"
 fi
 export PATH="$TOOLS_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
 export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v javac)")")")"
+export JAVA_OPTS="-Djava.net.preferIPv4Stack=true -Dsun.net.client.defaultConnectTimeout=30000 -Dsun.net.client.defaultReadTimeout=60000"
+export _JAVA_OPTIONS="-Djava.net.preferIPv4Stack=true -Dsun.net.client.defaultConnectTimeout=30000 -Dsun.net.client.defaultReadTimeout=60000"
 java -version
 compile_sdk="$(python3 - <<'PY'
 import os, pathlib, re
@@ -41,5 +41,19 @@ if [ "$license_status" -ne 0 ]; then
   cat /tmp/gitlab-mobile-android-licenses.log
   exit "$license_status"
 fi
-sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "platforms;android-$compile_sdk" "build-tools;36.0.0"
+for attempt in 1 2; do
+  if timeout 90 sdkmanager --sdk_root="$ANDROID_HOME" "platform-tools" "platforms;android-$compile_sdk" "build-tools;36.0.0"; then
+    break
+  fi
+  if [ "$attempt" -lt 2 ]; then
+    printf 'sdkmanager failed (attempt %s/2), retrying in 5s...\n' "$attempt" >&2
+    sleep 5
+  else
+    printf 'sdkmanager failed or timed out; falling back to direct resilient installer...\n' >&2
+    python3 "$ROOT/ci/install_android_tools.py" \
+      --install-components \
+      --android-home "$ANDROID_HOME" \
+      --compile-sdk "$compile_sdk"
+  fi
+done
 flutter config --android-sdk "$ANDROID_HOME"

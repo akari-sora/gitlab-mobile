@@ -12,6 +12,7 @@ import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'support/fake_adapter.dart';
+import 'support/widget_settle.dart' show pumpUntil;
 import 'support/workspace_fixture.dart';
 import 'workspace_widget_test.dart' show settleWorkspace, workspaceHost;
 
@@ -496,15 +497,16 @@ void main() {
       },
     )));
     addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
       final created = directory;
       if (created != null) await removeQuietly(created);
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('下載產物').hitTestable().evaluate().isNotEmpty, description: 'popup menu item 下載產物 hitTestable');
     expect(find.text('下載產物'), findsOneWidget);
     await tester.tap(find.text('下載產物'));
-    await settleWorkspace(tester);
+    await pumpUntil(tester, () => find.text('取消').evaluate().isNotEmpty, description: 'download sheet mounted');
     expect(find.text('artifacts.zip'), findsWidgets);
     expect(find.text('4 B'), findsWidgets);
     expect(find.text('0 B / 4 B'), findsOneWidget);
@@ -512,11 +514,11 @@ void main() {
     expect(progress.value, 0);
     expect(find.text('取消'), findsOneWidget);
     fixture.pause!.complete();
-    await settleWorkspace(tester);
+    await pumpUntil(tester, () => find.text('已下載 artifacts.zip · 4 B').evaluate().isNotEmpty && find.text('開啟／分享').hitTestable().evaluate().isNotEmpty, description: 'download completed and 開啟／分享 button hitTestable');
     expect(find.text('已下載 artifacts.zip · 4 B'), findsOneWidget);
     expect(find.text('在 GitLab 開啟'), findsOneWidget);
     await tester.tap(find.text('開啟／分享'));
-    await tester.pump();
+    await pumpUntil(tester, () => sharer.paths.isNotEmpty, description: 'sharer paths');
     expect(sharer.paths.single, endsWith('/artifacts.zip'));
     expect(File(sharer.paths.single).readAsBytesSync(), [1, 2, 3, 4]);
   });
@@ -626,17 +628,26 @@ void main() {
       },
     )));
     addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
       final created = directory;
       if (created != null) await removeQuietly(created);
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('下載產物').hitTestable().evaluate().isNotEmpty, description: 'popup menu item 下載產物 hitTestable');
     await tester.tap(find.text('下載產物'));
-    await settleWorkspace(tester);
+    await pumpUntil(
+      tester,
+      () => find.text('取消').hitTestable().evaluate().isNotEmpty && directory != null && directory!.listSync().any((entity) => entity.path.endsWith('.download.partial')),
+      description: 'download sheet mounted with partial file and 取消 hitTestable',
+    );
     expect(directory!.listSync().map((entity) => entity.path), contains(endsWith('.download.partial')));
     await tester.tap(find.text('取消'));
-    await settleWorkspace(tester);
+    await pumpUntil(
+      tester,
+      () => find.text('取消').evaluate().isEmpty && !directory!.existsSync(),
+      description: 'sheet dismissed and partial directory removed after cancel',
+    );
     expect(find.text('取消'), findsNothing);
     expect(find.text('已下載 artifacts.zip · 4 B'), findsNothing);
     expect(directory!.existsSync(), isFalse);
@@ -659,14 +670,15 @@ void main() {
       },
     )));
     addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
       final created = directory;
       if (created != null) await removeQuietly(created);
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('下載產物').hitTestable().evaluate().isNotEmpty, description: 'popup menu item 下載產物 hitTestable');
     await tester.tap(find.text('下載產物'));
-    await settleWorkspace(tester);
+    await pumpUntil(tester, () => find.text('無法開啟此資源').evaluate().isNotEmpty, description: 'failure notice 無法開啟此資源');
     expect(find.text('無法開啟此資源'), findsOneWidget);
     expect(find.text('診斷資訊'), findsOneWidget);
     expect(find.text('重新整理'), findsOneWidget);
@@ -685,11 +697,14 @@ void main() {
       artifactDirectory: (account, projectId, jobId) async =>
           Directory.systemTemp.createTemp('gitlab-mobile-artifacts-cap-'),
     )));
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('下載產物').hitTestable().evaluate().isNotEmpty, description: 'popup menu item 下載產物 hitTestable');
     await tester.tap(find.text('下載產物'));
-    await settleWorkspace(tester);
+    await pumpUntil(tester, () => find.text('產物超過下載上限').evaluate().isNotEmpty, description: 'oversized sheet notice');
     expect(find.text('產物超過下載上限'), findsOneWidget);
     expect(find.textContaining('256 MiB'), findsOneWidget);
     expect(find.textContaining('2 MiB'), findsNothing);
@@ -712,19 +727,24 @@ void main() {
       },
     )));
     addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
       for (final directory in created) {
         await removeQuietly(directory);
       }
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('下載產物').hitTestable().evaluate().isNotEmpty, description: 'popup menu item 下載產物 hitTestable');
     await tester.tap(find.text('下載產物'));
-    await settleWorkspace(tester);
+    await pumpUntil(
+      tester,
+      () => find.text('無法開啟此資源').evaluate().isNotEmpty && find.text('重新整理').hitTestable().evaluate().isNotEmpty,
+      description: 'failure notice with hitTestable retry button',
+    );
     expect(find.text('無法開啟此資源'), findsOneWidget);
     fixture.artifactStatus = 200;
     await tester.tap(find.text('重新整理'));
-    await settleWorkspace(tester);
+    await pumpUntil(tester, () => find.text('已下載 artifacts.zip · 4 B').evaluate().isNotEmpty, description: 'retry download complete');
     expect(find.text('已下載 artifacts.zip · 4 B'), findsOneWidget);
     expect(created, hasLength(2));
     expect(created.first.path, isNot(created.last.path));
@@ -753,20 +773,29 @@ void main() {
       },
     )));
     addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
       final created = directory;
       if (created != null) await removeQuietly(created);
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('下載產物').hitTestable().evaluate().isNotEmpty, description: 'popup menu item 下載產物 hitTestable');
     await tester.tap(find.text('下載產物'));
-    await settleWorkspace(tester);
+    await pumpUntil(
+      tester,
+      () => find.text('4 B / 4 B').evaluate().isNotEmpty && find.text('取消').hitTestable().evaluate().isNotEmpty,
+      description: 'progress reached 4 B / 4 B and 取消 is hitTestable',
+    );
     expect(find.text('取消'), findsOneWidget);
     expect(find.text('4 B / 4 B'), findsOneWidget);
     expect(find.textContaining('已下載'), findsNothing);
     await tester.tap(find.text('取消'));
     gate.complete();
-    await settleWorkspace(tester);
+    await pumpUntil(
+      tester,
+      () => find.text('取消').evaluate().isEmpty && (directory == null || !directory!.existsSync()),
+      description: 'flush cancel cleanup finished and directory removed',
+    );
     expect(find.textContaining('已下載'), findsNothing);
     expect(find.text('取消'), findsNothing);
     expect(directory!.existsSync(), isFalse);
@@ -792,18 +821,24 @@ void main() {
       },
     )));
     addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
       final created = directory;
       if (created != null) await removeQuietly(created);
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('下載產物').hitTestable().evaluate().isNotEmpty, description: 'popup menu item 下載產物 hitTestable');
     await tester.tap(find.text('下載產物'));
-    await settleWorkspace(tester);
+    await pumpUntil(tester, () => find.text('4 B / 4 B').evaluate().isNotEmpty, description: 'progress 4 B / 4 B');
     expect(find.text('4 B / 4 B'), findsOneWidget);
     expect(find.textContaining('已下載'), findsNothing);
     fixture.api.close();
     gate.complete();
+    await pumpUntil(
+      tester,
+      () => directory == null || !directory!.existsSync(),
+      description: 'directory cleanup after api close during flush',
+    );
     await settleWorkspace(tester);
     expect(find.textContaining('已下載'), findsNothing);
     expect(directory!.existsSync(), isFalse);
@@ -840,14 +875,15 @@ void main() {
       )),
     ));
     addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
       final created = directory;
       if (created != null) await removeQuietly(created);
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('下載產物').hitTestable().evaluate().isNotEmpty, description: 'popup menu item 下載產物 hitTestable');
     await tester.tap(find.text('下載產物'));
-    await settleWorkspace(tester);
+    await pumpUntil(tester, () => entered.isCompleted, description: 'entered promoteArtifact');
     expect(entered.isCompleted, isTrue);
     expect(find.textContaining('已下載'), findsNothing);
     host.currentState!.switchAccount(Account(
@@ -857,6 +893,11 @@ void main() {
     ));
     await tester.pump();
     release.complete();
+    await pumpUntil(
+      tester,
+      () => directory == null || !directory!.existsSync(),
+      description: 'directory cleaned up after account switch during rename',
+    );
     await settleWorkspace(tester);
     expect(find.textContaining('已下載'), findsNothing);
     expect(directory!.existsSync(), isFalse);
@@ -884,14 +925,15 @@ void main() {
       },
     )));
     addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
       final created = directory;
       if (created != null) await removeQuietly(created);
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('下載產物').hitTestable().evaluate().isNotEmpty, description: 'popup menu item 下載產物 hitTestable');
     await tester.tap(find.text('下載產物'));
-    await settleWorkspace(tester);
+    await pumpUntil(tester, () => find.text('無法儲存產物').evaluate().isNotEmpty, description: 'sink failure notice 無法儲存產物');
     expect(find.text('無法儲存產物'), findsOneWidget);
     expect(find.textContaining('已下載'), findsNothing);
     expect(tester.takeException(), isNull);
@@ -900,7 +942,7 @@ void main() {
     expect(index, isNonNegative);
     var cancelled = false;
     unawaited(fixture.adapter.cancelFutures[index]!.then((_) { cancelled = true; }));
-    await tester.pump();
+    await pumpUntil(tester, () => cancelled, description: 'request cancelled');
     expect(cancelled, isTrue);
   });
 
@@ -921,14 +963,15 @@ void main() {
       },
     )));
     addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
       final created = directory;
       if (created != null) await removeQuietly(created);
     });
     await settleWorkspace(tester);
     await tester.tap(find.byTooltip('工作操作'));
-    await tester.pumpAndSettle();
+    await pumpUntil(tester, () => find.text('下載產物').hitTestable().evaluate().isNotEmpty, description: 'popup menu item 下載產物 hitTestable');
     await tester.tap(find.text('下載產物'));
-    await settleWorkspace(tester);
+    await pumpUntil(tester, () => find.textContaining('已下載 artifacts-501.zip').evaluate().isNotEmpty, description: 'finished downloading artifacts-501.zip');
     expect(find.textContaining('已下載 artifacts-501.zip'), findsOneWidget);
     expect(find.text('無法讀取回應'), findsNothing);
     expect(File('${directory!.path}/artifacts-501.zip').readAsBytesSync(), [1, 2, 3, 4]);
@@ -1212,16 +1255,17 @@ Future<void> _expectSharePlusCleared(
       return created;
     },
   )));
+  addTearDown(() async {
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
   await settleWorkspace(tester);
   await tester.tap(find.byTooltip('工作操作'));
-  await tester.pumpAndSettle();
+  await pumpUntil(tester, () => find.text('下載產物').hitTestable().evaluate().isNotEmpty, description: 'popup menu item 下載產物 hitTestable');
   await tester.tap(find.text('下載產物'));
-  await settleWorkspace(tester);
+  await pumpUntil(tester, () => find.text('開啟／分享').hitTestable().evaluate().isNotEmpty, description: 'download completed and 開啟／分享 button hitTestable');
   expect(find.text('開啟／分享'), findsOneWidget);
   await tester.tap(find.text('開啟／分享'));
-  await tester.pump();
-  await tester.pump(const Duration(milliseconds: 50));
-  expect(sharer.planted, isTrue);
+  await pumpUntil(tester, () => sharer.planted, description: 'sharer planted');
   final copy = Directory('${root.path}/share_plus');
   if (rootThrows) {
     expect(tester.takeException(), isNull);
