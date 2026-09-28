@@ -339,14 +339,19 @@ void main() {
       api: fixture.api, projectId: 42, projectWeb: web, base: web,
       budget: AttachmentBudget(maxConcurrent: 1),
     )));
-    for (var i = 0; i < 40 && _uploads(fixture) < 1; i++) {
-      await tester.pump(const Duration(milliseconds: 20));
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
-    }
+    await pumpUntil(
+      tester,
+      () => _uploads(fixture) >= 1 && find.bySemanticsLabel('附件載入中').evaluate().isNotEmpty,
+      description: 'first upload in flight with spinner mounted',
+    );
     expect(_uploads(fixture), 1);
     expect(find.bySemanticsLabel('附件載入中'), findsWidgets);
     gate.complete();
-    await settleNetworkWidgets(tester);
+    await pumpUntil(
+      tester,
+      () => _uploads(fixture) >= 2 && find.byType(Image).evaluate().length == 2,
+      description: 'second upload completed and both images rendered',
+    );
     expect(_uploads(fixture), 2);
     expect(find.byType(Image), findsNWidgets(2));
     expect(tester.takeException(), isNull);
@@ -369,12 +374,21 @@ void main() {
     expect(find.byIcon(Icons.image_outlined), findsOneWidget);
     expect(_uploads(fixture), 1);
     await tester.tap(find.bySemanticsLabel('附件載入失敗，查看詳情'));
-    await tester.pumpAndSettle();
+    await pumpUntil(
+      tester,
+      () => find.text('重新整理').hitTestable().evaluate().isNotEmpty,
+      description: 'failure notice opened with hitTestable 重新整理 button',
+    );
     expect(find.textContaining('@developer'), findsOneWidget);
     expect(find.textContaining('example.com'), findsOneWidget);
     expect(find.textContaining('studio/mobile-workspace/shot.png'), findsOneWidget);
     expect(find.text('切換帳號'), findsOneWidget);
     await tester.tap(find.text('重新整理'));
+    await pumpUntil(
+      tester,
+      () => _uploads(fixture) >= 2,
+      description: 'retry upload requested',
+    );
     await settleNetworkWidgets(tester);
     expect(_uploads(fixture), 2);
     expect(tester.takeException(), isNull);
@@ -394,7 +408,11 @@ void main() {
     expect(find.text('無法解碼圖片'), findsOneWidget);
     expect(find.byType(Image), findsOneWidget);
     await tester.tap(find.text('無法解碼圖片'));
-    await tester.pumpAndSettle();
+    await pumpUntil(
+      tester,
+      () => find.text('切換帳號').evaluate().isNotEmpty,
+      description: 'notice opened with 切換帳號',
+    );
     expect(find.text('切換帳號'), findsOneWidget);
     expect(find.text('在 GitLab 開啟'), findsNothing);
     expect(tester.takeException(), isNull);
