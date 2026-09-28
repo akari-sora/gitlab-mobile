@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download and install Android commandline tools with bounded retries, TLS enforcement, and integrity verification."""
+# Verified Android tools downloader with retry
 
 import argparse
 import hashlib
