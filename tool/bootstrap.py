@@ -84,6 +84,9 @@ def harden_android(folder: Path) -> None:
                        'enableOnBackInvokedCallback': 'true',
                        'label': 'GitLab Mobile'}.items():
         application.set(f'{{{ANDROID}}}{key}', value)
+    for activity in application.findall('activity'):
+        if f'{{{ANDROID}}}label' in activity.attrib:
+            activity.set(f'{{{ANDROID}}}label', 'GitLab Mobile')
     register_oauth_android(root)
     ET.indent(tree, space='    ')
     tree.write(manifest, encoding='utf-8', xml_declaration=True)
@@ -185,6 +188,9 @@ def configure_ios_app_name(folder: Path) -> None:
         ET.SubElement(plist, 'string').text = 'GitLab Mobile'
     if 'CFBundleName' in keys:
         keys['CFBundleName'].text = 'GitLab Mobile'
+    else:
+        plist.append(_plist_key('CFBundleName'))
+        ET.SubElement(plist, 'string').text = 'GitLab Mobile'
     ET.indent(tree, space='\t')
     tree.write(path, encoding='utf-8', xml_declaration=True)
 

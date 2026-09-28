@@ -213,8 +213,8 @@ void main() {
       if (path.endsWith('/repository/files/README.md/raw')) {
         return ResponseBody.fromString(
           '# Project Details\n\n'
-          '${List.generate(30, (i) => 'Paragraph $i: Multi-line description content for scrolling.\n\n').join()}'
-          '```dart\nvoid main() => print("codeblock");\n```\n',
+          '```dart\nvoid main() => print("codeblock");\n```\n\n'
+          '${List.generate(30, (i) => 'Paragraph $i: Multi-line description content for scrolling.\n\n').join()}',
           200,
         );
       }
@@ -245,16 +245,138 @@ void main() {
     expect(find.text('item_0.txt'), findsOneWidget);
     expect(find.text('Project Details'), findsOneWidget);
     expect(find.byTooltip('收合 README'), findsOneWidget);
+    // SelectionArea wraps MarkdownBody to enable text selection while delegating scroll gestures
+    expect(find.byType(SelectionArea), findsOneWidget);
 
     final scrollableFinder = find.byType(Scrollable).first;
     final initialOffset = tester.state<ScrollableState>(scrollableFinder).position.pixels;
 
-    // Drag directly on the markdown text inside the expanded README card
-    await tester.drag(find.text('Project Details'), const Offset(0, -200));
+    // 1. Drag directly on the markdown heading
+    await tester.drag(find.text('Project Details'), const Offset(0, -100));
     await tester.pumpAndSettle();
 
-    final scrolledOffset = tester.state<ScrollableState>(scrollableFinder).position.pixels;
-    // The list scrolled smoothly from gesture within README content
-    expect(scrolledOffset, greaterThan(initialOffset));
+    final offsetAfterHeadingDrag = tester.state<ScrollableState>(scrollableFinder).position.pixels;
+    expect(offsetAfterHeadingDrag, greaterThan(initialOffset));
+
+    // 2. Drag directly on codeblock inside markdown content
+    await tester.drag(find.textContaining('codeblock'), const Offset(0, -100));
+    await tester.pumpAndSettle();
+    final offsetAfterCodeDrag = tester.state<ScrollableState>(scrollableFinder).position.pixels;
+    expect(offsetAfterCodeDrag, greaterThan(offsetAfterHeadingDrag));
+
+    // 3. Drag directly on paragraph body text inside markdown content
+    await tester.drag(find.textContaining('Paragraph 0:'), const Offset(0, -100));
+    await tester.pumpAndSettle();
+    final offsetAfterParagraphDrag = tester.state<ScrollableState>(scrollableFinder).position.pixels;
+    expect(offsetAfterParagraphDrag, greaterThan(offsetAfterCodeDrag));
+
+    // 4. Reverse drag upward within markdown content scrolls back up smoothly
+    await tester.drag(find.textContaining('Paragraph 0:'), const Offset(0, 150));
+    await tester.pumpAndSettle();
+    final offsetAfterReverseDrag = tester.state<ScrollableState>(scrollableFinder).position.pixels;
+    expect(offsetAfterReverseDrag, lessThan(offsetAfterParagraphDrag));
+  });
+
+  testWidgets('Switching branch re-defaults README to expanded even if collapsed on previous branch', (tester) async {
+    const featSha = '2222222222222222222222222222222222222222';
+    final adapter = FakeAdapter((request) {
+      final path = request.uri.path;
+      if (path.endsWith('/repository/branches/main')) {
+        return jsonResponse({
+          'name': 'main',
+          'protected': true,
+          'default': true,
+          'commit': {'id': sha},
+        });
+      }
+      if (path.endsWith('/repository/branches/feature/new-branch')) {
+        return jsonResponse({
+          'name': 'feature/new-branch',
+          'protected': false,
+          'default': false,
+          'commit': {'id': featSha},
+        });
+      }
+      if (path.endsWith('/repository/branches')) {
+        return jsonResponse([
+          {
+            'name': 'main',
+            'protected': true,
+            'default': true,
+            'commit': {'id': sha},
+          },
+          {
+            'name': 'feature/new-branch',
+            'protected': false,
+            'default': false,
+            'commit': {'id': featSha},
+          },
+        ]);
+      }
+      if (path.endsWith('/repository/tags')) {
+        return jsonResponse([]);
+      }
+      if (path.endsWith('/repository/tree')) {
+        return jsonResponse([
+          {
+            'id': 'blob-readme',
+            'name': 'README.md',
+            'type': 'blob',
+            'path': 'README.md',
+            'mode': '100644',
+          },
+        ]);
+      }
+      if (path.endsWith('/repository/files/README.md/raw')) {
+        final ref = request.uri.queryParameters['ref'];
+        if (ref == featSha) {
+          return ResponseBody.fromString('# Feature Branch README\nContent on new branch.', 200);
+        }
+        return ResponseBody.fromString('# Main Branch README\nContent on main.', 200);
+      }
+      if (path.endsWith('/repository/files/README.md') && request.method == 'HEAD') {
+        return ResponseBody.fromString('', 200, headers: {'x-gitlab-size': ['50']});
+      }
+      return jsonResponse([]);
+    });
+
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: RepositoryTab(
+            account: account,
+            api: api,
+            project: project,
+          ),
+        ),
+      ),
+    );
+
+    await settleNetworkWidgets(tester);
+
+    // Initial state: main branch README is expanded
+    expect(find.text('Main Branch README'), findsOneWidget);
+    expect(find.byTooltip('收合 README'), findsOneWidget);
+
+    // User collapses the README on main
+    await tester.tap(find.byTooltip('收合 README'));
+    await tester.pumpAndSettle();
+    expect(find.text('Main Branch README'), findsNothing);
+    expect(find.byTooltip('展開 README'), findsOneWidget);
+
+    // Tap branch selector button to pick feature/new-branch
+    await tester.tap(find.text('main'));
+    await settleNetworkWidgets(tester);
+
+    expect(find.text('feature/new-branch'), findsOneWidget);
+    await tester.tap(find.text('feature/new-branch'));
+    await settleNetworkWidgets(tester);
+
+    // After switching branches, README is re-expanded by default
+    expect(find.text('Feature Branch README'), findsOneWidget);
+    expect(find.byTooltip('收合 README'), findsOneWidget);
   });
 }
