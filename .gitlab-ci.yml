@@ -150,7 +150,6 @@ public_api_smoke:
   extends: .flutter
   stage: verify
   timeout: 10m
-  retry: 0
   rules:
     - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1"'
       when: never
