@@ -5,6 +5,17 @@
 
 A mobile-first Flutter client for Android and iOS. Independent third-party software, not an official GitLab application. The interface is Traditional Chinese and supports light/dark appearance and large text.
 
+## v0.5 — mobile UX overhaul and GitLab parity
+
+Still a development preview. Evidence is in the [v0.5 ledger](docs/V0_5_VERIFICATION.md); anything it does not list is **NOT_RUN**.
+
+- Chrome gives way to content: page headers collapse while scrolling and return on any scroll up, the bottom navigation hides on scroll, and tapping the active destination scrolls its list to the top. The projects tab has a floating search bar; filters, sorting and recent projects scroll away with the list.
+- On phones an issue or merge request opened inside a project owns the screen: the project header and tabs step aside instead of stacking a second app bar and tab bar above the detail.
+- Dense lists: grouped rows for projects, files, pipelines, jobs and activity; issue and MR rows show GitLab label colours (scoped `scope::value` labels as two segments), assignees, comment and task counts, due dates and conflicts. System notes in discussions are one-line timeline entries. Code rows are text height with a 48 dp line-number column.
+- New GitLab features: global and per-project search (projects, issues, MRs, code, commits, comments, wiki, milestones, users); groups with subgroups, projects, issues and MRs; project and personal activity feeds; emoji reactions; related merge requests and linked issues; due date, time tracking, weight and notification subscription; MR commits, MR pipelines and a draft/ready toggle; file history, blame and find-file; project overview with stars, forks, languages, clone URLs, a real star state and fork; members, wiki, environments, deployments and pipeline schedules (run now); jobs grouped by stage.
+- Inbox: todos can be swiped away or marked done all at once; assigned, review-requested and created-by-me lists switch between issues and MRs.
+- Pasting a GitLab issue, MR, pipeline, job, commit or SHA-pinned file link into 以連結或路徑開啟 opens that resource.
+
 ## v0.3 — collaboration preview
 
 This revision continues the v0.2 API-backed collaboration screens. It is a **development preview**, not a claim that every GitLab feature, server edition, permission configuration, or device has passed end-to-end testing. !3, !7, !6, !8, !5 and !4 are merged. `main` is `9183f19`. A behaviour was exercised only on the build named in the [v0.3 ledger](docs/V0_3_VERIFICATION.md).

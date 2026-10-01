@@ -30,6 +30,13 @@ Destructive actions require explicit confirmation; project/file/resource deletio
 
 CI captures actual Flutter widgets with synthetic data and CJK fonts at 412 × 892: sign-in, projects, repository and MR, in light/dark. Full PNGs remain in the job artifacts. A reduced-colour thumbnail may be printed in the CI trace for inspection; it is a compressed derivative of the real rendered screenshot, not a design mock-up.
 
+## v0.5 changes
+
+- **Scroll-aware chrome.** `ScrollChromeController` hides page headers and the bottom navigation while the user scrolls toward the end of a list and shows them on any scroll back, within 56 dp of the top, when the content cannot scroll, and when a detail opens or closes. Programmatic scrolling (follow-tail logs, restored offsets) never moves it, and it never hides while a screen reader drives navigation. Tab bars stay pinned. The gesture-bar inset stays reserved when the navigation is tucked away, and the status bar keeps an opaque strip so rows never slide under the system icons.
+- **One app bar on phones.** An issue or MR opened in place inside a project reports itself through `DetailFocus`; the project page removes its header and tab bar and locks horizontal tab swipes until the detail closes. Resize continuity, the back chain and two-pane behaviour are unchanged. Re-selecting the active destination scrolls to the top and never closes an open detail.
+- **Density.** Lists use grouped rows inside one rounded surface instead of one card per item. Status keeps icon plus label (compact `StatusBadge`). Code rows are text height: the line-number column is 48 dp wide and at least 24 dp tall (the WCAG 2.5.8 minimum) instead of 48 dp per line, which showed about a third as much code.
+- **Headers scroll away.** Search fields and filter chips are the first rows of their list (`RecordsFeed.leading`) or live in a floating app bar; they are not pinned above the list.
+
 ## Explicit remaining UX work
 
 Physical-device keyboard/IME and back-gesture checks, screen-reader validation, a full navigation/permission matrix, native attachments/artifact downloads, OAuth, and installed APK upgrade/signing continuity are not claimed complete. The 840-pixel layout currently remains a mobile single-column experience rather than a desktop client.

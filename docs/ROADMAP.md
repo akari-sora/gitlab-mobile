@@ -111,6 +111,8 @@ The follow-up engineering slices (D1~D5) and long-term backlog bridge the gaps i
   - Tag selection pins tree to the resolved tag commit SHA without branch drift.
   - Zero frame drops during fast scrolls on large code files (> 5,000 lines).
 
+Status (2026-10-02, v0.5): D1–D5 had already landed on `main` before v0.5. v0.5 adds group browsing (the read side of LT1: groups, subgroups, group projects, group issues and MRs), emoji reactions, scoped-label rendering, global and per-project search, activity feeds, file history, blame and find-file, related items, members, wiki, environments, deployments and pipeline schedules. Evidence and NOT_RUN items are in the [v0.5 ledger](V0_5_VERIFICATION.md). Boards (LT3), draft-note batch review (LT4), GraphQL work items (LT2) and DAG graphs remain open.
+
 ### Long-Term Backlog (LT1 ~ LT5)
 - **LT1: Groups & Subgroups Hierarchy (`GET /groups`)**: Flattened multi-level hierarchy browsing, subgroup navigation, and group-scoped project discovery.
 - **LT2: GraphQL Polymorphic Work Items Pilot**: Targeted GraphQL queries for Task checkbox toggling and Epic linking alongside existing REST infrastructure.
