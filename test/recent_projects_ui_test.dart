@@ -73,11 +73,11 @@ void main() {
 
     // Verify recent projects section header and chips
     expect(find.text('最近開啟'), findsOneWidget);
-    expect(find.text('最近：Repo Two'), findsOneWidget);
-    expect(find.text('最近：Repo One'), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const ValueKey('recent-project-102')), matching: find.text('Repo Two')), findsOneWidget);
+    expect(find.descendant(of: find.byKey(const ValueKey('recent-project-101')), matching: find.text('Repo One')), findsOneWidget);
 
     // Click on Repo Two chip
-    await tester.tap(find.text('最近：Repo Two'));
+    await tester.tap(find.byKey(const ValueKey('recent-project-102')));
     await settleWorkspace(tester);
 
     // Repo Two project page should be open (showing project path and tabs)
@@ -118,8 +118,8 @@ void main() {
     await settleWorkspace(tester);
 
     // Initial account shows Repo One
-    expect(find.text('最近：Repo One'), findsOneWidget);
-    expect(find.text('最近：Other Repo'), findsNothing);
+    expect(find.byKey(const ValueKey('recent-project-101')), findsOneWidget);
+    expect(find.byKey(const ValueKey('recent-project-202')), findsNothing);
 
     // Switch account
     session.active = account2;
@@ -132,7 +132,7 @@ void main() {
     await settleWorkspace(tester);
 
     // Now shows Other Repo, Repo One is gone
-    expect(find.text('最近：Other Repo'), findsOneWidget);
-    expect(find.text('最近：Repo One'), findsNothing);
+    expect(find.byKey(const ValueKey('recent-project-202')), findsOneWidget);
+    expect(find.byKey(const ValueKey('recent-project-101')), findsNothing);
   });
 }

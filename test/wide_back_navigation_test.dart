@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart' show SemanticButton;
 import 'package:gitlab_mobile/features/shell/build_info.dart';
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'support/fake_adapter.dart';
@@ -99,7 +100,7 @@ void main() {
 
       // Verify after 2nd back: back to Projects list
       expect(find.byKey(const Key('projectSearch')), findsOneWidget, reason: 'Must return to Projects list');
-      expect(find.text('Mobile Workspace'), findsOneWidget);
+      expect(find.descendant(of: find.byType(SemanticButton), matching: find.text('Mobile Workspace')), findsOneWidget);
       expect(find.text('檔案'), findsNothing, reason: 'Project must be dismissed');
       expect(tester.takeException(), isNull);
     });
@@ -268,7 +269,7 @@ void main() {
       await settleNetworkWidgets(tester);
 
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
-      expect(find.text('Mobile Workspace'), findsOneWidget);
+      expect(find.descendant(of: find.byType(SemanticButton), matching: find.text('Mobile Workspace')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -375,7 +376,7 @@ void main() {
       await settleNetworkWidgets(tester);
 
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
-      expect(find.text('Mobile Workspace'), findsOneWidget);
+      expect(find.descendant(of: find.byType(SemanticButton), matching: find.text('Mobile Workspace')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

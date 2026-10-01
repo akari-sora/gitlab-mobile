@@ -2,7 +2,9 @@ import 'failure.dart';
 import 'instance.dart';
 import 'models.dart';
 
-enum RepositoryRefKind { branch, tag }
+/// [commit] pins a read-only view to one SHA, e.g. a file opened from a
+/// permalink or a search hit.
+enum RepositoryRefKind { branch, tag, commit }
 
 final class RepositoryRef {
   const RepositoryRef({

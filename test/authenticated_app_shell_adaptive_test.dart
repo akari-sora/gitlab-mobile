@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
 import 'package:gitlab_mobile/features/shell/build_info.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart' show SemanticButton;
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'support/fake_adapter.dart';
 import 'support/fake_shortcuts.dart';
@@ -185,7 +186,7 @@ void main() {
 
       // Verify: Project A is dismissed, back to Projects list
       expect(find.byKey(const Key('projectSearch')), findsOneWidget, reason: 'Must return to Projects list');
-      expect(find.text('Mobile Workspace'), findsOneWidget);
+      expect(find.descendant(of: find.byType(SemanticButton), matching: find.text('Mobile Workspace')), findsOneWidget);
       expect(find.text('檔案'), findsNothing, reason: 'Project A must be dismissed');
       expect(tester.takeException(), isNull);
     });
@@ -531,7 +532,7 @@ void main() {
 
       // Verify returned to Projects list with project search input visible
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
-      expect(find.text('Mobile Workspace'), findsOneWidget);
+      expect(find.descendant(of: find.byType(SemanticButton), matching: find.text('Mobile Workspace')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });

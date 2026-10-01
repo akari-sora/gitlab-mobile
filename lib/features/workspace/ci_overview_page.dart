@@ -328,43 +328,31 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
       ),
       body: SafeArea(
         top: false,
-        child: Column(
+        child: RefreshIndicator(
+          onRefresh: _load,
+          child: CustomScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            slivers: [
+              SliverToBoxAdapter(child: _header(context, gutter)),
+              ..._bodySlivers(gutter, displayed),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _header(BuildContext context, double gutter) => Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 12),
-              child: Row(
-                children: [
-                  Monogram(curAccount.user.name, size: 32),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '@${curAccount.user.username}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                        Text(
-                          '選擇專案，查看流程與工作紀錄',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (widget.session != null)
-                    IconButton(
-                      tooltip: '切換帳號',
-                      onPressed: () {
-                        unawaited(widget.session!.endSession());
-                      },
-                      icon: const Icon(Icons.swap_horiz, size: 20),
-                    ),
-                ],
+              padding: EdgeInsets.fromLTRB(gutter + 4, 0, gutter, 8),
+              child: Text(
+                '選擇專案，查看流程與工作紀錄',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
             ),
             Padding(
@@ -412,56 +400,31 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
               ),
             ),
             const SizedBox(height: 8),
-            Expanded(
-              child: RefreshIndicator(
-                onRefresh: _load,
-                child: _buildBody(gutter, displayed),
-              ),
-            ),
           ],
-        ),
-      ),
-    );
-  }
+        );
 
-  Widget _buildBody(double gutter, List<ProjectCiItem> displayed) {
+  List<Widget> _bodySlivers(double gutter, List<ProjectCiItem> displayed) {
     if (_loading && _items.isEmpty) {
-      return const Center(
-        child: CircularProgressIndicator(strokeWidth: 2),
-      );
+      return const [SliverFillRemaining(hasScrollBody: false, child: ListSkeleton())];
     }
     if (_error != null && _items.isEmpty) {
-      return Center(
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: FailureNotice(
-            _error!,
-            onRetry: _load,
-            onSwitchAccount:
-                widget.session != null ? endSessionFrom(context) : null,
-          ),
-        ),
-      );
+      return [SliverToBoxAdapter(child: FailureNotice(
+        _error!,
+        onRetry: _load,
+        onSwitchAccount: widget.session != null ? endSessionFrom(context) : null,
+      ))];
     }
     if (displayed.isEmpty) {
       final msg = _filter.isNotEmpty || _search.isNotEmpty
           ? '沒有符合條件的 Pipeline'
           : '沒有成員專案';
-      return Center(
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          child: EmptyState(
-            msg,
-            icon: Icons.account_tree_outlined,
-          ),
-        ),
-      );
+      return [SliverToBoxAdapter(child: EmptyState(msg, icon: Icons.account_tree_outlined))];
     }
 
     final hasMore = _nextPageUri != null || _loadingMore;
-    return ListView.builder(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: EdgeInsets.symmetric(horizontal: gutter, vertical: 4),
+    return [SliverPadding(
+      padding: EdgeInsets.fromLTRB(gutter, 4, gutter, 24),
+      sliver: SliverList.builder(
       itemCount: displayed.length + (hasMore ? 1 : 0),
       itemBuilder: (context, index) {
         if (index == displayed.length) {
@@ -486,7 +449,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         final item = displayed[index];
         return _buildProjectCard(item);
       },
-    );
+    ))];
   }
 
   Widget _buildProjectCard(ProjectCiItem item) {
@@ -505,7 +468,6 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Card(
-        elevation: item.isFailed || item.isRunning ? 2 : 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: side,
@@ -514,7 +476,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
           borderRadius: BorderRadius.circular(16),
           onTap: () => _openItem(item),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

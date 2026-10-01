@@ -7,13 +7,17 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/adaptive_breakpoints.dart';
 import '../../shared/list_detail_scaffold.dart';
+import '../../shared/scroll_chrome.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/recent_project.dart';
 import '../auth/session_controller.dart';
+import '../workspace/activity_page.dart';
+import '../workspace/groups_page.dart';
 import '../workspace/project_page.dart';
 import '../workspace/projects_page.dart';
 import '../workspace/inbox_page.dart';
+import '../workspace/search_page.dart';
 import '../workspace/ci_page.dart';
 import '../workspace/ci_overview_page.dart';
 import '../workspace/work_item_page.dart';
@@ -152,6 +156,8 @@ class _MobileShell extends StatefulWidget {
 
 class _MobileShellState extends State<_MobileShell> {
   final _backDispatcher = DetailBackDispatcher();
+  final _chrome = ScrollChromeController();
+  final _scrollTop = List.generate(4, (_) => ValueNotifier<int>(0));
   int _selected = 1;
   int _searchToken = 0;
   bool _removing = false;
@@ -202,6 +208,10 @@ class _MobileShellState extends State<_MobileShell> {
   @override
   void dispose() {
     _backDispatcher.dispose();
+    _chrome.dispose();
+    for (final signal in _scrollTop) {
+      signal.dispose();
+    }
     widget.session.removeListener(_onSession);
     widget.shortcuts.removeListener(_onShortcut);
     super.dispose();
@@ -226,6 +236,7 @@ class _MobileShellState extends State<_MobileShell> {
     if (!await _bringShellForward() || !mounted || widget.session.active?.key != account.key) {
       return;
     }
+    _chrome.show();
     switch (shortcut.kind) {
       case ShortcutKind.inbox:
         setState(() {
@@ -509,21 +520,88 @@ class _MobileShellState extends State<_MobileShell> {
 
   Widget _pane(int index, Widget child) => TabActiveScope(
     isActive: _selected == index,
-    child: ExcludeSemantics(
-      excluding: _selected != index,
-      child: TickerMode(
-        enabled: _selected == index,
-        child: IgnorePointer(ignoring: _selected != index, child: child),
+    child: ScrollTopSignal(
+      notifier: _scrollTop[index],
+      child: ExcludeSemantics(
+        excluding: _selected != index,
+        child: TickerMode(
+          enabled: _selected == index,
+          child: IgnorePointer(ignoring: _selected != index, child: child),
+        ),
       ),
     ),
   );
+
+  /// Switching destinations reveals the navigation again. Tapping the active
+  /// destination scrolls its lists back to the top; open details stay open.
+  void _select(int index) {
+    _chrome.show();
+    if (index != _selected) {
+      setState(() {
+        _selected = index;
+        _visited.add(index);
+      });
+      return;
+    }
+    _scrollTop[index].value++;
+  }
+
+  Widget _bottomNavigation(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.navigationBarTheme.backgroundColor ?? theme.colorScheme.surface,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          CollapsingChrome(
+            visible: _chrome,
+            edge: AxisDirection.down,
+            child: MediaQuery.removePadding(
+              context: context,
+              removeBottom: true,
+              child: NavigationBar(
+                maintainBottomViewPadding: true,
+                selectedIndex: _selected,
+                onDestinationSelected: _select,
+                destinations: const [
+                  NavigationDestination(
+                    icon: Icon(Icons.inbox_outlined),
+                    selectedIcon: Icon(Icons.inbox),
+                    label: '收件匣',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.folder_outlined),
+                    selectedIcon: Icon(Icons.folder),
+                    label: '專案',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.account_tree_outlined),
+                    selectedIcon: Icon(Icons.account_tree),
+                    label: 'CI',
+                  ),
+                  NavigationDestination(
+                    icon: Icon(Icons.person_outline),
+                    selectedIcon: Icon(Icons.person),
+                    label: '我的',
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // The gesture-bar inset stays reserved while the bar is tucked away,
+          // so list ends never slide under the system handle.
+          SizedBox(height: MediaQuery.viewPaddingOf(context).bottom),
+        ],
+      ),
+    );
+  }
   Widget _buildMyTab(BuildContext context, Account account, SessionController session) => Scaffold(
     appBar: AppBar(title: const Text('我的')),
     body: gestureSafe(
       ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         children: [
-          Row(
+          Card(child: Padding(padding: const EdgeInsets.all(16), child: Row(
             children: [
               Monogram(account.user.name, size: 56),
               const SizedBox(width: 16),
@@ -548,8 +626,67 @@ class _MobileShellState extends State<_MobileShell> {
                 ),
               ),
             ],
+          ))),
+          const SizedBox(height: 20),
+          Text(
+            '帳號',
+            style: Theme.of(context).textTheme.titleSmall,
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 8),
+          Card(child: Column(children: [
+            for (final (index, saved) in session.accounts.indexed) ...[
+              if (index > 0) const Divider(height: 1, indent: 64),
+              ListTile(
+                leading: Monogram(saved.user.name, size: 32),
+                title: Text(
+                  '@${saved.user.username}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                subtitle: Text(saved.key == account.key ? '${saved.instance.base.host} · 使用中' : saved.instance.base.host),
+                onTap:
+                    session.busy ||
+                            _removing ||
+                            saved.key == account.key
+                        ? null
+                        : () => session.select(saved),
+                trailing: IconButton(
+                  tooltip: '從此裝置移除帳號',
+                  icon: const Icon(Icons.logout, size: 20),
+                  onPressed: session.busy || _removing
+                      ? null
+                      : () => _remove(saved),
+                ),
+              ),
+            ],
+          ])),
+          Align(alignment: Alignment.centerLeft, child: TextButton.icon(
+            onPressed: () {
+              unawaited(session.endSession());
+            },
+            icon: const Icon(Icons.person_add_outlined),
+            label: const Text('新增或重新連接帳號'),
+          )),
+          const SizedBox(height: 4),
+          Row(children: [
+            for (final (icon, label, page) in <(IconData, String, Widget Function())>[
+              (Icons.timeline, '我的動態', () => ActivityPage(account: account, api: session.api!)),
+              (Icons.workspaces_outline, '我的群組', () => GroupsPage(account: account, api: session.api!)),
+              (Icons.manage_search, '全域搜尋', () => SearchPage(account: account, api: session.api!)),
+            ]) Expanded(child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: FilledButton.tonal(
+                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4)),
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page())),
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(icon, size: 22),
+                  const SizedBox(height: 4),
+                  Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                ]),
+              ),
+            )),
+          ]),
+          const SizedBox(height: 24),
           Text(
             '外觀',
             style: Theme.of(context).textTheme.titleSmall,
@@ -568,47 +705,6 @@ class _MobileShellState extends State<_MobileShell> {
             onChanged: widget.dynamicColorAvailable
                 ? widget.changeDynamicColor
                 : null,
-          ),
-          const SizedBox(height: 28),
-          Text(
-            '帳號',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 12),
-          for (final saved in session.accounts)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Card(
-                child: ListTile(
-                  leading: Monogram(saved.user.name, size: 32),
-                  title: Text(
-                    '@${saved.user.username}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  subtitle: Text(saved.instance.base.host),
-                  onTap:
-                      session.busy ||
-                              _removing ||
-                              saved.key == account.key
-                          ? null
-                          : () => session.select(saved),
-                  trailing: IconButton(
-                    tooltip: '從此裝置移除帳號',
-                    icon: const Icon(Icons.logout, size: 20),
-                    onPressed: session.busy || _removing
-                        ? null
-                        : () => _remove(saved),
-                  ),
-                ),
-              ),
-            ),
-          TextButton.icon(
-            onPressed: () {
-              unawaited(session.endSession());
-            },
-            icon: const Icon(Icons.person_add_outlined),
-            label: const Text('新增或重新連接帳號'),
           ),
           const SizedBox(height: 28),
           const Text(
@@ -653,6 +749,7 @@ class _MobileShellState extends State<_MobileShell> {
                 return;
               }
               if (_selected != 1) {
+                _chrome.show();
                 setState(() => _selected = 1);
               }
             },
@@ -671,10 +768,7 @@ class _MobileShellState extends State<_MobileShell> {
                           child: NavigationRail(
                             minWidth: AdaptiveBreakpoints.navigationRailWidth,
                             selectedIndex: _selected,
-                            onDestinationSelected: (index) => setState(() {
-                              _selected = index;
-                              _visited.add(index);
-                            }),
+                            onDestinationSelected: _select,
                             labelType: NavigationRailLabelType.all,
                             destinations: const [
                               NavigationRailDestination(
@@ -755,7 +849,9 @@ class _MobileShellState extends State<_MobileShell> {
                                     ),
                                   Expanded(
                                     key: const ValueKey('shell-indexed-stack-expanded'),
-                                    child: IndexedStack(
+                                    child: NotificationListener<ScrollNotification>(
+                                      onNotification: useRail ? null : _chrome.handle,
+                                      child: IndexedStack(
                                       key: const ValueKey('shell-indexed-stack'),
                                       index: _selected,
                                       children: [
@@ -786,6 +882,7 @@ class _MobileShellState extends State<_MobileShell> {
                                               : const SizedBox(),
                                         ),
                                       ],
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -803,38 +900,7 @@ class _MobileShellState extends State<_MobileShell> {
                       ),
                     ],
                   ),
-                  bottomNavigationBar: useRail
-                      ? null
-                      : NavigationBar(
-                          maintainBottomViewPadding: true,
-                          selectedIndex: _selected,
-                          onDestinationSelected: (index) => setState(() {
-                            _selected = index;
-                            _visited.add(index);
-                          }),
-                          destinations: const [
-                            NavigationDestination(
-                              icon: Icon(Icons.inbox_outlined),
-                              selectedIcon: Icon(Icons.inbox),
-                              label: '收件匣',
-                            ),
-                            NavigationDestination(
-                              icon: Icon(Icons.folder_outlined),
-                              selectedIcon: Icon(Icons.folder),
-                              label: '專案',
-                            ),
-                            NavigationDestination(
-                              icon: Icon(Icons.account_tree_outlined),
-                              selectedIcon: Icon(Icons.account_tree),
-                              label: 'CI',
-                            ),
-                            NavigationDestination(
-                              icon: Icon(Icons.person_outline),
-                              selectedIcon: Icon(Icons.person),
-                              label: '我的',
-                            ),
-                          ],
-                        ),
+                  bottomNavigationBar: useRail ? null : _bottomNavigation(context),
                 );
               },
             ),

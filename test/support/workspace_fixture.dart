@@ -22,6 +22,8 @@ class WorkspaceFixture {
   static const olderSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
   final issues = <int, Json>{};
   final notes = <int, Json>{};
+  /// Award emoji per awardable path, e.g. `projects/42/issues/1`.
+  final awards = <String, List<Json>>{};
   final createdMergeRequests = <int, Json>{};
   final labels = <Json>[
     {'id': 1, 'name': 'a', 'color': '#d9534f', 'description': ''},
@@ -576,6 +578,46 @@ class WorkspaceFixture {
     }
     if (const ['projects/42/milestones', 'projects/42/releases',
       'projects/42/repository/tags', 'projects/42/repository/commits'].contains(joined)) { return jsonResponse([]); }
+    if (path.isNotEmpty && path.last == 'award_emoji' || path.length >= 2 && path[path.length - 2] == 'award_emoji') {
+      final awardsAt = path.lastIndexOf('award_emoji');
+      final key = path.sublist(0, awardsAt).join('/');
+      final list = awards.putIfAbsent(key, () => <Json>[]);
+      if (method == 'GET' && awardsAt == path.length - 1) return jsonResponse(list);
+      if (method == 'POST' && awardsAt == path.length - 1) {
+        final award = <String, dynamic>{'id': ++counter, 'name': body['name'], 'user': account.user.toJson()};
+        list.add(award);
+        return jsonResponse(award, status: 201);
+      }
+      if (method == 'DELETE' && awardsAt == path.length - 2) {
+        final id = int.tryParse(path.last);
+        list.removeWhere((award) => award['id'] == id);
+        return ResponseBody.fromString('', 204);
+      }
+    }
+    if (path.length == 5 && path[0] == 'projects' && path[1] == '42' && (path[4] == 'subscribe' || path[4] == 'unsubscribe') &&
+        method == 'POST') {
+      final subscribed = path[4] == 'subscribe';
+      final iid = int.tryParse(path[3]);
+      if (path[2] == 'issues' && issues[iid] != null) {
+        if (issues[iid]!['subscribed'] == subscribed) return ResponseBody.fromString('', 304);
+        issues[iid]!['subscribed'] = subscribed;
+        return jsonResponse(issues[iid], status: 201);
+      }
+      if (path[2] == 'merge_requests') {
+        mergeFields['subscribed'] = subscribed;
+        return jsonResponse(mergeRequest, status: 201);
+      }
+    }
+    if (path.length == 5 && path[0] == 'projects' && path[1] == '42' &&
+        const ['related_merge_requests', 'links', 'closed_by', 'participants', 'commits', 'pipelines'].contains(path[4])) {
+      return jsonResponse(path[4] == 'pipelines' ? [pipeline] : <Json>[]);
+    }
+    if (joined == 'projects/42/languages') return jsonResponse({'Dart': 91.2, 'Kotlin': 6.3, 'Shell': 2.5});
+    if (const ['events', 'projects/42/events', 'users/7/events', 'projects/42/starrers', 'groups', 'search',
+      'projects/42/search', 'projects/42/wikis', 'projects/42/environments', 'projects/42/deployments',
+      'projects/42/pipeline_schedules', 'projects/42/snippets', 'projects/42/members/all/7'].contains(joined)) {
+      return jsonResponse(<Json>[]);
+    }
     unhandled.add('$method $joined');
     return jsonResponse({'error': 'unhandled-synthetic-endpoint'}, status: 404);
   }

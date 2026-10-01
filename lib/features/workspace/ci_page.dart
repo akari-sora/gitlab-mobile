@@ -8,6 +8,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/job_trace.dart';
 import '../../core/models.dart';
 import '../../shared/external_link.dart';
+import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
 import 'records_feed.dart';
 import '../../shared/artifact_storage.dart';
@@ -404,6 +405,7 @@ class PipelinesTab extends StatefulWidget {
 }
 class _PipelinesTabState extends State<PipelinesTab> {
   final _feed = GlobalKey<RecordsFeedState>();
+  final _refInput = TextEditingController();
   String _state = '', _ref = '';
   Future<void> _open(int id) async {
     await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => PipelinePage(
@@ -425,39 +427,110 @@ class _PipelinesTabState extends State<PipelinesTab> {
     }
   }
   @override
-  Widget build(BuildContext context) => Column(children: [
-    Padding(padding: const EdgeInsets.fromLTRB(16, 12, 12, 8), child: Row(children: [
-      Expanded(child: TextField(decoration: const InputDecoration(hintText: '依分支篩選', prefixIcon: Icon(Icons.alt_route)),
-        textInputAction: TextInputAction.search, onSubmitted: (value) => setState(() => _ref = value.trim()))),
-      const SizedBox(width: 8), IconButton(tooltip: '執行 Pipeline', onPressed: widget.project.archived == true ? null : _run,
-        icon: const Icon(Icons.play_circle_outline)),
-    ])),
-    SingleChildScrollView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(children: [for (final e in const {'': '全部', 'running': '執行中', 'failed': '失敗', 'success': '成功'}.entries)
-        Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(label: Text(e.value),
-          selected: _state == e.key, showCheckmark: false, onSelected: (_) => setState(() => _state = e.key)))])),
-    Expanded(child: RecordsFeed(key: _feed, identity: 'pipelines/$_state/$_ref', empty: '沒有符合的 Pipeline',
+  void dispose() {
+    _refInput.dispose();
+    super.dispose();
+  }
+
+  Widget _controls(BuildContext context) {
+    final gutter = feedGutter(context);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Padding(padding: EdgeInsets.fromLTRB(gutter, 12, gutter - 4, 6), child: Row(children: [
+        Expanded(child: TextField(controller: _refInput,
+          decoration: InputDecoration(hintText: '依分支篩選', prefixIcon: const Icon(Icons.alt_route),
+            suffixIcon: _ref.isEmpty ? null : IconButton(tooltip: '清除分支篩選', icon: const Icon(Icons.close, size: 18),
+              onPressed: () { _refInput.clear(); setState(() => _ref = ''); })),
+          textInputAction: TextInputAction.search, onSubmitted: (value) => setState(() => _ref = value.trim()))),
+        const SizedBox(width: 4), IconButton(tooltip: '執行 Pipeline', onPressed: widget.project.archived == true ? null : _run,
+          icon: const Icon(Icons.play_circle_outline)),
+      ])),
+      SingleChildScrollView(scrollDirection: Axis.horizontal, padding: EdgeInsets.symmetric(horizontal: gutter),
+        child: Row(children: [for (final e in const {'': '全部', 'running': '執行中', 'failed': '失敗', 'success': '成功'}.entries)
+          Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(label: Text(e.value),
+            selected: _state == e.key, showCheckmark: false, onSelected: (_) => setState(() => _state = e.key)))])),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) => RecordsFeed(key: _feed, identity: 'pipelines/$_state/$_ref', storageId: 'pipelines',
+      empty: '沒有符合的 Pipeline', emptyIcon: Icons.account_tree_outlined, grouped: true,
       account: widget.account, resourceLabel: '${widget.project.path} · Pipeline',
       onSwitchAccount: endSessionFrom(context),
+      leading: (context, _) => _controls(context),
       load: (next) => widget.api.records(['projects', '${widget.project.id}', 'pipelines'],
         query: {'order_by': 'id', 'sort': 'desc', if (_state.isNotEmpty) 'status': _state, if (_ref.isNotEmpty) 'ref': _ref}, next: next),
-      itemBuilder: (context, value) => SemanticButton(
-        label: pipelineCardLabel(value), onTap: () => _open(requiredInt(value, 'id')),
-        child: Card(child: InkWell(borderRadius: BorderRadius.circular(16),
-        onTap: () => _open(requiredInt(value, 'id')), child: Padding(padding: const EdgeInsets.all(16), child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Row(children: [Expanded(child: Text(valueText(value, 'name', 'Pipeline #${valueInt(value, 'id')}'),
-              style: Theme.of(context).textTheme.titleMedium, maxLines: 2, overflow: TextOverflow.ellipsis)),
-              const Icon(Icons.chevron_right, size: 18)]),
-            const SizedBox(height: 10), Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
-              children: [StatusBadge(valueText(value, 'status')),
-                Text(valueText(value, 'ref'), style: const TextStyle(fontSize: 12)),
-                Text(shortSha(valueText(value, 'sha')), style: const TextStyle(fontSize: 12, fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace']))]),
-            const SizedBox(height: 10), Text(relativeDate(valueText(value, 'updated_at')), style: Theme.of(context).textTheme.bodySmall),
-          ])))),
+      itemBuilder: (context, value) => pipelineRow(context, value, onTap: () => _open(requiredInt(value, 'id'))),
+    );
+}
+
+/// Jobs in pipeline order: stages in the order their first job was created,
+/// jobs inside a stage by creation. GitLab lists newest first.
+List<Json> stageOrder(List<Json> jobs) {
+  final byId = [...jobs]..sort((a, b) => valueInt(a, 'id').compareTo(valueInt(b, 'id')));
+  final stages = <String, List<Json>>{};
+  for (final job in byId) {
+    stages.putIfAbsent(valueText(job, 'stage', '其他'), () => <Json>[]).add(job);
+  }
+  return [for (final list in stages.values) ...list];
+}
+
+/// `83` → `1 分 23 秒`; hours roll over for long jobs.
+String formatDuration(int seconds) {
+  if (seconds < 60) return '$seconds 秒';
+  final h = seconds ~/ 3600, m = (seconds % 3600) ~/ 60, s = seconds % 60;
+  if (h > 0) return '$h 小時 $m 分';
+  return s == 0 ? '$m 分' : '$m 分 $s 秒';
+}
+
+String pipelineSourceLabel(String source) => switch (source) {
+  'push' => '推送',
+  'merge_request_event' => '合併請求',
+  'schedule' => '排程',
+  'web' => '手動執行',
+  'api' => 'API',
+  'trigger' => '觸發器',
+  'pipeline' || 'parent_pipeline' => '上游流程',
+  'external' || 'external_pull_request_event' => '外部',
+  'chat' => 'ChatOps',
+  _ => source,
+};
+
+/// One pipeline as a dense row: status, name or number, ref, commit and age.
+Widget pipelineRow(BuildContext context, Json value, {required VoidCallback onTap, String? project}) {
+  final theme = Theme.of(context);
+  final muted = theme.colorScheme.onSurfaceVariant;
+  final source = pipelineSourceLabel(valueText(value, 'source'));
+  final name = valueText(value, 'name');
+  final number = valueInt(value, 'iid') > 0 ? '#${valueInt(value, 'iid')}' : '#${valueInt(value, 'id')}';
+  return SemanticButton(
+    label: pipelineCardLabel(value), onTap: onTap,
+    child: InkWell(onTap: onTap, child: Padding(
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Flexible(child: StatusBadge(valueText(value, 'status'))),
+            const SizedBox(width: 8),
+            Expanded(flex: 2, child: Text(name.isNotEmpty ? name : 'Pipeline $number', maxLines: 1,
+              overflow: TextOverflow.ellipsis, style: theme.textTheme.titleSmall?.copyWith(fontSize: 15))),
+          ]),
+          if (project != null && project.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(project, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+          ],
+          const SizedBox(height: 6),
+          Wrap(spacing: 10, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            MetaChip(valueText(value, 'ref'), icon: Icons.alt_route, mono: true),
+            MetaChip(shortSha(valueText(value, 'sha')), icon: Icons.commit, mono: true),
+            if (name.isNotEmpty) MetaChip(number, mono: true),
+            if (source.isNotEmpty) MetaChip(source, icon: Icons.bolt_outlined),
+            MetaChip(relativeDate(valueText(value, 'updated_at')), icon: Icons.schedule_outlined),
+          ]),
+        ])),
+        Padding(padding: const EdgeInsets.only(top: 2), child: Icon(Icons.chevron_right, size: 18, color: muted)),
+      ]),
     )),
-      ),
-  ]);
+  );
 }
 
 class PipelinePage extends StatefulWidget {
@@ -472,6 +545,12 @@ class PipelinePage extends StatefulWidget {
 class _PipelinePageState extends State<PipelinePage> {
   final _feed = GlobalKey<RecordsFeedState>();
   final _testsKey = GlobalKey<PipelineTestsViewState>();
+  final _chrome = ScrollChromeController();
+  @override
+  void dispose() {
+    _chrome.dispose();
+    super.dispose();
+  }
   Json? _data;
   ApiFailure? _error;
   bool _busy = false, _loading = false;
@@ -536,10 +615,14 @@ class _PipelinePageState extends State<PipelinePage> {
     finally { if (mounted) { setState(() => _busy = false); } }
   }
   @override
-  Widget build(BuildContext context) => DefaultTabController(
-    length: 2,
-    child: Scaffold(
-      appBar: AppBar(title: Text('Pipeline #${widget.id}'), actions: [
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final appBar = AppBar(primary: false, titleSpacing: 0, title: Column(crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min, children: [
+        Text('Pipeline #${widget.id}', style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 19)),
+        Text(widget.project.path, maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+      ]), actions: [
         IconButton(tooltip: '重新整理', onPressed: _loading || _busy ? null : () async {
           await _load();
           if (mounted) {
@@ -552,24 +635,25 @@ class _PipelinePageState extends State<PipelinePage> {
           PopupMenuItem(value: 'cancel', child: Text('取消流程')),
           PopupMenuItem(value: 'delete', child: Text('刪除 Pipeline')),
         ]),
-      ]),
-      body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
-        if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
-          resourceLabel: '${widget.project.path} · Pipeline #${widget.id}',
-          onSwitchAccount: endSessionFrom(context, ResumeTarget(
-            projectId: widget.project.id,
-            projectPath: widget.project.path,
-            resource: 'pipelines',
-            iid: widget.id,
-          ))),
-        if (_data != null) Padding(padding: const EdgeInsets.fromLTRB(20, 8, 20, 12), child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 12),
+      ]);
+    return DefaultTabController(
+    length: 2,
+    child: Scaffold(
+      body: NotificationListener<ScrollNotification>(onNotification: _chrome.handle, child:
+        StatusBarInset(child: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        CollapsingChrome(visible: _chrome, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          appBar,
+          if (_data != null) Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 10), child:
             Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-              StatusBadge(valueText(_data!, 'status')), Text(valueText(_data!, 'ref')),
-              Text(shortSha(valueText(_data!, 'sha')), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12)),
-              if (_data!['duration'] is num) Text('${(_data!['duration'] as num).round()} 秒', style: const TextStyle(fontSize: 12)),
+              StatusBadge(valueText(_data!, 'status')),
+              MetaChip(valueText(_data!, 'ref'), icon: Icons.alt_route, mono: true),
+              MetaChip(shortSha(valueText(_data!, 'sha')), icon: Icons.commit, mono: true),
+              if (valueText(_data!, 'source').isNotEmpty)
+                MetaChip(pipelineSourceLabel(valueText(_data!, 'source')), icon: Icons.bolt_outlined),
+              if (_data!['duration'] is num)
+                MetaChip(formatDuration((_data!['duration'] as num).round()), icon: Icons.timer_outlined),
+              if (valueText(valueObject(_data!, 'user'), 'username').isNotEmpty)
+                MetaChip('@${valueText(valueObject(_data!, 'user'), 'username')}', icon: Icons.person_outline),
               if (valueText(_data!, 'status') == 'failed')
                 FilledButton.tonalIcon(
                   key: const ValueKey('pipeline-quick-retry-btn'),
@@ -592,11 +676,22 @@ class _PipelinePageState extends State<PipelinePage> {
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   ),
                 ),
-            ]),
-          ])),
+            ])),
+        ])),
+        if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
+        if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
+          resourceLabel: '${widget.project.path} · Pipeline #${widget.id}',
+          onSwitchAccount: endSessionFrom(context, ResumeTarget(
+            projectId: widget.project.id,
+            projectPath: widget.project.path,
+            resource: 'pipelines',
+            iid: widget.id,
+          ))),
         if (_data != null)
-          const TabBar(
-            tabs: [
+          TabBar(
+            onTap: (_) => _chrome.show(),
+            indicatorSize: TabBarIndicatorSize.tab,
+            tabs: const [
               Tab(text: '工作'),
               Tab(text: '測試'),
             ],
@@ -609,43 +704,42 @@ class _PipelinePageState extends State<PipelinePage> {
                   key: _feed,
                   identity: 'pipeline/${widget.id}/jobs',
                   empty: '尚無工作',
+                  emptyIcon: Icons.work_outline,
+                  grouped: true,
                   account: widget.account,
                   resourceLabel: '${widget.project.path} · Pipeline #${widget.id} 工作',
                   onSwitchAccount: endSessionFrom(context),
+                  arrange: stageOrder,
+                  sectionOf: (value) => valueText(value, 'stage', '其他'),
                   load: (next) => widget.api.records(
                     ['projects', '${widget.project.id}', 'pipelines', '${widget.id}', 'jobs'],
-                    query: {'include_retried': 'false'},
+                    query: {'include_retried': 'false', 'per_page': '100'},
                     next: next,
                   ),
                   itemBuilder: (context, value) {
                     final jobId = requiredInt(value, 'id');
                     final status = valueText(value, 'status');
-                    return Card(
-                      child: Row(
+                    final duration = value['duration'] is num ? formatDuration((value['duration'] as num).round()) : '';
+                    return Row(
                         children: [
                           Expanded(
                             child: SemanticButton(
                               label: jobCardLabel(value),
                               onTap: () => _openJob(jobId),
                               child: InkWell(
-                                borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
                                 onTap: () => _openJob(jobId),
                                 child: Padding(
-                                  padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
+                                  padding: const EdgeInsets.fromLTRB(14, 10, 4, 10),
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(valueText(value, 'name'), style: Theme.of(context).textTheme.titleSmall),
-                                      const SizedBox(height: 6),
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: 6,
-                                        crossAxisAlignment: WrapCrossAlignment.center,
-                                        children: [
-                                          StatusBadge(status),
-                                          Text(valueText(value, 'stage'), style: const TextStyle(fontSize: 12)),
-                                        ],
-                                      ),
+                                      Text(valueText(value, 'name'), maxLines: 2, overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context).textTheme.titleSmall),
+                                      const SizedBox(height: 5),
+                                      Wrap(spacing: 10, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                                        StatusBadge(status),
+                                        if (duration.isNotEmpty) MetaChip(duration, icon: Icons.timer_outlined),
+                                      ]),
                                     ],
                                   ),
                                 ),
@@ -680,7 +774,6 @@ class _PipelinePageState extends State<PipelinePage> {
                           ),
                           const SizedBox(width: 4),
                         ],
-                      ),
                     );
                   },
                 ),
@@ -696,9 +789,11 @@ class _PipelinePageState extends State<PipelinePage> {
               ],
             ),
           ),
-      ])),
+      ]))),
+      ),
     ),
   );
+  }
 }
 
 class PipelineTestsView extends StatefulWidget {

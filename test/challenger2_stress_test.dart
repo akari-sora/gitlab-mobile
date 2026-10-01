@@ -9,6 +9,7 @@ import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart' show SemanticButton;
 import 'package:gitlab_mobile/features/shell/build_info.dart';
 import 'package:gitlab_mobile/features/workspace/project_page.dart';
 import 'package:gitlab_mobile/features/workspace/projects_page.dart';
@@ -436,7 +437,7 @@ void main() {
       // Master list restored, project still highlighted
       final masterItem = find.descendant(
         of: find.byKey(const ValueKey('list-pane')),
-        matching: find.text('Mobile Workspace'),
+        matching: find.descendant(of: find.byType(SemanticButton), matching: find.text('Mobile Workspace')),
       );
       expect(masterItem, findsOneWidget);
       expect(find.byIcon(Icons.check_circle), findsOneWidget);
@@ -519,7 +520,7 @@ void main() {
       await settleNetworkWidgets(tester);
 
       // Verify Account A in Two-pane Projects tab
-      expect(find.text('@developer'), findsWidgets);
+      expect(find.byTooltip('帳號 @developer'), findsWidgets);
       expect(find.text('請選擇專案'), findsOneWidget);
 
       // Select Project
@@ -535,7 +536,7 @@ void main() {
       await settleNetworkWidgets(tester);
 
       // Assert Account B state
-      expect(find.text('@reviewer'), findsWidgets);
+      expect(find.byTooltip('帳號 @reviewer'), findsWidgets);
       expect(find.text('請選擇專案'), findsOneWidget, reason: 'Account B must see empty state, not Account A detail');
       expect(find.text('檔案'), findsNothing, reason: 'Account A project details must be 100% purged');
 
@@ -753,7 +754,20 @@ void main() {
       expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
       expect(find.text('Overview'), findsOneWidget, reason: 'Issue 42 must NOT have been cleared when popping from Settings');
 
-      // Phase 4: Switch nested tab within Project A to "MR" (Merge Requests)
+      // Phase 4: While Issue 42 owns the phone screen the project header and tabs step aside.
+      expect(find.text('MR'), findsNothing, reason: 'Project tabs must not stack above the open issue');
+
+      // Phase 5: Stage 1 Back - pop Issue 42; the project tabs come back.
+      final handledIssueBack = await tester.binding.handlePopRoute();
+      expect(handledIssueBack, isTrue);
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('Overview'), findsNothing);
+      expect(find.text('Shell Integration Issue 42'), findsOneWidget);
+      expect(find.text('檔案'), findsOneWidget);
+      expect(find.byKey(const Key('projectSearch')), findsNothing);
+
+      // Switch nested tab within Project A to "MR" (Merge Requests)
       await tester.tap(find.text('MR'));
       await settleNetworkWidgets(tester);
       expect(find.text('Improve private-project navigation'), findsOneWidget);
@@ -771,20 +785,10 @@ void main() {
       expect(find.text('Improve private-project navigation'), findsOneWidget);
       expect(find.text('檔案'), findsOneWidget);
 
-      // Switch back to "議題" tab: Issue 42 is still active in its tab!
+      // Switch back to "議題" tab: the issue list is intact.
       await tester.tap(find.text('議題'));
       await settleNetworkWidgets(tester);
-      expect(find.text('Overview'), findsOneWidget, reason: 'Issue 42 detail must still be preserved in Issues tab');
-
-      // Phase 5: Stage 1 Back - pop Issue 42
-      final handledIssueBack = await tester.binding.handlePopRoute();
-      expect(handledIssueBack, isTrue);
-      await settleNetworkWidgets(tester);
-
-      expect(find.text('Overview'), findsNothing);
       expect(find.text('Shell Integration Issue 42'), findsOneWidget);
-      expect(find.text('檔案'), findsOneWidget);
-      expect(find.byKey(const Key('projectSearch')), findsNothing);
 
       // Phase 6: Stage 2 Back - pop Project A
       final handledProjectBack = await tester.binding.handlePopRoute();
@@ -792,7 +796,7 @@ void main() {
       await settleNetworkWidgets(tester);
 
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
-      expect(find.text('Mobile Workspace'), findsOneWidget);
+      expect(find.descendant(of: find.byType(SemanticButton), matching: find.text('Mobile Workspace')), findsOneWidget);
       expect(find.text('檔案'), findsNothing);
 
       // Phase 7: Back at root Projects list -> cannot handle further back
@@ -812,9 +816,9 @@ void main() {
       final fixture = WorkspaceFixture();
 
       // Generate 6 test projects across 2 pages (3 on page 1, 3 on page 2)
-      // With height 800 dp:
-      // Page 1 (3 items + header ~670 dp) shows "載入更多" well within viewport.
-      // Page 2 (6 items + header ~1170 dp) exceeds 800 dp, giving positive maxScrollExtent (~370 dp).
+      // With height 520 dp and dense list rows:
+      // Page 1 (3 items + header) shows "載入更多" within the viewport.
+      // Page 2 (6 items + header) exceeds 520 dp, giving a positive maxScrollExtent.
       final page1 = List<Json>.generate(3, (i) => {
         'id': 201 + i,
         'name': 'Project Alpha ${i + 1}',
@@ -883,7 +887,7 @@ void main() {
       });
 
       tester.view.devicePixelRatio = 1.0;
-      tester.view.physicalSize = const Size(1000, 800);
+      tester.view.physicalSize = const Size(1000, 520);
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
@@ -913,10 +917,11 @@ void main() {
       expect(find.text('載入更多'), findsNothing);
 
       // Master list scrollable
+      // The list's own vertical scroll view; filter chips scroll sideways inside it.
       final projectsScrollable = find.descendant(
-        of: find.byKey(const PageStorageKey('projects/0/')),
+        of: find.byKey(const PageStorageKey('projects')),
         matching: find.byType(Scrollable),
-      );
+      ).first;
       expect(projectsScrollable, findsOneWidget);
 
       // Drag list up to scroll down
@@ -932,17 +937,18 @@ void main() {
       expect(scrolledOffset, greaterThan(30.0), reason: 'List must have non-zero scroll position');
 
       // Resize window: 1000 -> 800 dp (Two-Pane -> Single-Column)
-      tester.view.physicalSize = const Size(800, 800);
+      tester.view.physicalSize = const Size(800, 520);
       await tester.pump();
       await settleNetworkWidgets(tester);
 
       // Verify ZERO duplicate requests
       expect(projectsRequestCount, equals(2), reason: 'Resize 1000 -> 800 dp must NOT re-fetch projects');
       // Verify scroll offset is preserved in Single-Column
+      // The list's own vertical scroll view; filter chips scroll sideways inside it.
       final singleScrollable = find.descendant(
-        of: find.byKey(const PageStorageKey('projects/0/')),
+        of: find.byKey(const PageStorageKey('projects')),
         matching: find.byType(Scrollable),
-      );
+      ).first;
       expect(tester.state<ScrollableState>(singleScrollable).position.pixels, closeTo(scrolledOffset, 2.0),
         reason: 'Scroll position must be preserved across resize to 800 dp');
 
@@ -958,24 +964,25 @@ void main() {
 
       // Verify ZERO duplicate requests after back
       expect(projectsRequestCount, equals(2), reason: 'Navigating to detail and back must NOT re-fetch projects');
+      // The list's own vertical scroll view; filter chips scroll sideways inside it.
       final afterBackScrollable = find.descendant(
-        of: find.byKey(const PageStorageKey('projects/0/')),
+        of: find.byKey(const PageStorageKey('projects')),
         matching: find.byType(Scrollable),
-      );
+      ).first;
       expect(tester.state<ScrollableState>(afterBackScrollable).position.pixels, closeTo(scrolledOffset, 2.0),
         reason: 'Scroll position must be preserved after detail back');
 
       // Resize window: 800 -> 1000 dp (Single-Column -> Two-Pane)
-      tester.view.physicalSize = const Size(1000, 800);
+      tester.view.physicalSize = const Size(1000, 520);
       await tester.pump();
       await settleNetworkWidgets(tester);
 
       // Verify ZERO duplicate requests after expand
       expect(projectsRequestCount, equals(2), reason: 'Resize 800 -> 1000 dp must NOT re-fetch projects');
       final twoPaneScrollableAfter = find.descendant(
-        of: find.byKey(const PageStorageKey('projects/0/')),
+        of: find.byKey(const PageStorageKey('projects')),
         matching: find.byType(Scrollable),
-      );
+      ).first;
       expect(tester.state<ScrollableState>(twoPaneScrollableAfter).position.pixels, closeTo(scrolledOffset, 2.0),
         reason: 'Scroll position must be preserved across resize back to 1000 dp');
       expect(tester.takeException(), isNull);

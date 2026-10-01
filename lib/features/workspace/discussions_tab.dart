@@ -201,11 +201,19 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
     final discussionId = isThread ? requiredString(discussion, 'id') : null;
     final resolvable = widget.resource == 'merge_requests' && notes.any((v) => v['resolvable'] == true);
     final resolved = notes.where((v) => v['resolvable'] == true).every((v) => v['resolved'] == true);
+    final theme = Theme.of(context);
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       for (var index = 0; index < notes.length; index++) ...[
-        if (index > 0) const Divider(height: 28),
-        Row(children: [Expanded(child: Text('@${valueText(valueObject(notes[index], 'author'), 'username')}',
-          style: Theme.of(context).textTheme.titleSmall)),
+        if (index > 0) const Divider(height: 24),
+        Row(children: [
+          Monogram(valueText(valueObject(notes[index], 'author'), 'name',
+            valueText(valueObject(notes[index], 'author'), 'username')), size: 26),
+          const SizedBox(width: 8),
+          Flexible(child: Text('@${valueText(valueObject(notes[index], 'author'), 'username')}',
+            maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.titleSmall)),
+          const SizedBox(width: 6),
+          Expanded(child: Text(relativeDate(valueText(notes[index], 'created_at')), maxLines: 1,
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant))),
           if (notes[index]['system'] != true && valueInt(valueObject(notes[index], 'author'), 'id') == widget.account.user.id)
             PopupMenuButton<String>(tooltip: '留言操作', enabled: !_busy,
               onSelected: (action) => action == 'edit' ? _compose(note: notes[index], discussion: discussionId) : _delete(notes[index], discussionId),
@@ -229,7 +237,6 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
             },
           ),
         ],
-        const SizedBox(height: 8), Text(relativeDate(valueText(notes[index], 'created_at')), style: Theme.of(context).textTheme.bodySmall),
       ],
       if (isThread) Wrap(spacing: 8, children: [
         if (textPosition != null && widget.resource == 'merge_requests') TextButton.icon(
@@ -349,8 +356,9 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
       itemBuilder: (context, discussion) {
         final notes = valueObjects(discussion, 'notes');
         final resolved = _discussionResolved(discussion);
+        if (_isSystemDiscussion(discussion)) return _systemNote(context, notes);
         if (!resolved) {
-          return Card(child: Padding(padding: const EdgeInsets.all(16), child: _thread(discussion)));
+          return Card(child: Padding(padding: const EdgeInsets.fromLTRB(14, 10, 8, 12), child: _thread(discussion)));
         }
         final collapsed = !_open.contains(valueText(discussion, 'id'));
         return Card(child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -358,10 +366,52 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
           if (!collapsed) Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), child: _thread(discussion)),
         ]));
       })),
-    SafeArea(top: false, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), child: Wrap(
-      spacing: 8, runSpacing: 8, children: [
-        FilledButton.icon(onPressed: _busy ? null : () => _compose(), icon: const Icon(Icons.add_comment_outlined), label: const Text('留言')),
-        OutlinedButton(onPressed: _busy ? null : () => _compose(thread: true), child: const Text('新增討論串')),
+    Material(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      child: SafeArea(top: false, child: Padding(padding: const EdgeInsets.fromLTRB(12, 8, 8, 8), child: Row(children: [
+        Expanded(flex: 3, child: FilledButton.icon(
+          style: FilledButton.styleFrom(alignment: Alignment.centerLeft),
+          onPressed: _busy ? null : () => _compose(), icon: const Icon(Icons.add_comment_outlined),
+          label: const Text('留言', maxLines: 1, overflow: TextOverflow.ellipsis))),
+        const SizedBox(width: 8),
+        Flexible(flex: 2, child: OutlinedButton.icon(onPressed: _busy ? null : () => _compose(thread: true),
+          icon: const Icon(Icons.forum_outlined, size: 18),
+          label: const Text('新增討論串', maxLines: 1, overflow: TextOverflow.ellipsis))),
       ]))),
+    ),
   ]);
+
+  /// GitLab's own activity (mentions, label and assignee changes) as one quiet
+  /// timeline line instead of a full comment card.
+  Widget _systemNote(BuildContext context, List<Json> notes) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final note = notes.isEmpty ? const <String, dynamic>{} : notes.first;
+    final body = valueText(note, 'body').replaceAll(RegExp(r'\s+'), ' ').trim();
+    return Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Padding(padding: const EdgeInsets.only(top: 2), child: Icon(_systemIcon(body), size: 16, color: muted)),
+        const SizedBox(width: 10),
+        Expanded(child: Text.rich(TextSpan(children: [
+          TextSpan(text: '@${valueText(valueObject(note, 'author'), 'username')}',
+            style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface)),
+          TextSpan(text: ' $body · ${relativeDate(valueText(note, 'created_at'))}'),
+        ]), style: theme.textTheme.bodySmall?.copyWith(color: muted, height: 1.4))),
+      ],
+    ));
+  }
+
+  static IconData _systemIcon(String body) {
+    final lower = body.toLowerCase();
+    if (lower.contains('label')) return Icons.label_outline;
+    if (lower.contains('assign')) return Icons.person_outline;
+    if (lower.contains('mention')) return Icons.alternate_email;
+    if (lower.contains('closed')) return Icons.check_circle_outline;
+    if (lower.contains('reopen')) return Icons.adjust;
+    if (lower.contains('merged')) return Icons.merge;
+    if (lower.contains('milestone')) return Icons.flag_outlined;
+    if (lower.contains('commit')) return Icons.commit;
+    if (lower.contains('title') || lower.contains('description')) return Icons.edit_outlined;
+    return Icons.info_outline;
+  }
 }

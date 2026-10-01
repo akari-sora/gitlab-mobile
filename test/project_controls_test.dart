@@ -98,7 +98,11 @@ void main() {
     await tester.tap(find.widgetWithText(Tab, '更多')); await settleWorkspace(tester);
     Future<void> action(String text) async {
       final scroller = find.descendant(of: find.byType(ProjectMoreTab), matching: find.byType(Scrollable)).first;
+      // Controls sit both in the overview card at the top and in the list below.
+      await tester.drag(scroller, const Offset(0, 4000)); await tester.pump();
       await tester.scrollUntilVisible(find.text(text), 150, scrollable: scroller);
+      // A confirmation snack bar from the previous action may float over the target.
+      ScaffoldMessenger.of(tester.element(scroller)).removeCurrentSnackBar(); await tester.pump();
       await tester.tap(find.text(text)); await settleWorkspace(tester);
     }
     await action('名稱與說明');
