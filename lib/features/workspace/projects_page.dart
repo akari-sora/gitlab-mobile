@@ -5,6 +5,7 @@ import '../../core/models.dart';
 import '../../core/project_locator.dart';
 import '../../shared/adaptive_breakpoints.dart';
 import '../../shared/list_detail_scaffold.dart';
+import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/recent_project.dart';
 import '../auth/session_controller.dart';
@@ -310,7 +311,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
   }
 
   Widget _appBar(BuildContext context) => SliverAppBar(
-    floating: true, snap: true,
+    floating: true, snap: true, primary: false,
     title: Text(widget.forCi ? 'CI / CD' : '專案'),
     actions: [
       IconButton(tooltip: '全域搜尋', icon: const Icon(Icons.manage_search),
@@ -441,8 +442,10 @@ class _ProjectsPageState extends State<ProjectsPage> {
     final idleAllScope = _scope == 2 && _query.isEmpty;
     final groups = _scope == 3;
     final sort = _sorts[_sort]!;
+    // The status bar keeps an opaque strip so rows never slide under the
+    // system icons once the floating app bar has scrolled away.
     return Scaffold(
-      body: SafeArea(top: false, child: RecordsFeed(key: _feed,
+      body: StatusBarInset(child: SafeArea(top: false, child: RecordsFeed(key: _feed,
         identity: groups ? 'groups/$_query' : 'projects/$_scope/$_sort/$_query', storageId: 'projects',
         account: account, resourceLabel: groups ? '群組列表' : '專案列表', underShell: true, grouped: true,
         onSwitchAccount: () { unawaited(widget.session.endSession()); },
@@ -466,7 +469,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
             ? groupRow(context, data, onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
                 builder: (_) => GroupPage(account: account, api: api, group: data))))
             : _projectRow(context, data, isTwoPane),
-      )),
+      ))),
     );
   }
 

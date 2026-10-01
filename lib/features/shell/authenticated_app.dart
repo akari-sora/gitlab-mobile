@@ -849,7 +849,12 @@ class _MobileShellState extends State<_MobileShell> {
                                     ),
                                   Expanded(
                                     key: const ValueKey('shell-indexed-stack-expanded'),
-                                    child: NotificationListener<ScrollNotification>(
+                                    child: NotificationListener<RevealChromeNotification>(
+                                      onNotification: (_) {
+                                        _chrome.show();
+                                        return false;
+                                      },
+                                      child: NotificationListener<ScrollNotification>(
                                       onNotification: useRail ? null : _chrome.handle,
                                       child: IndexedStack(
                                       key: const ValueKey('shell-indexed-stack'),
@@ -883,6 +888,7 @@ class _MobileShellState extends State<_MobileShell> {
                                         ),
                                       ],
                                       ),
+                                    ),
                                     ),
                                   ),
                                 ],

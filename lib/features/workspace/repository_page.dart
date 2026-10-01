@@ -9,6 +9,7 @@ import '../../core/models.dart';
 import '../../core/repository_ref.dart';
 import '../../core/syntax_highlighter.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/scroll_chrome.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
@@ -878,6 +879,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
   late final bool _markdown;
   final _vertical = ScrollController();
   final _horizontal = ScrollController();
+  final _chrome = ScrollChromeController();
 
   int? _selectedLine;
   List<String> _lines = const [];
@@ -900,6 +902,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
   void dispose() {
     _vertical.dispose();
     _horizontal.dispose();
+    _chrome.dispose();
     super.dispose();
   }
 
@@ -1117,9 +1120,21 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
     final text = _text;
     final resolvedRef = widget.resolvedRef;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.filePath.split('/').last),
+    final theme = Theme.of(context);
+    final slash = widget.filePath.lastIndexOf('/');
+    final appBar = AppBar(
+        primary: false,
+        titleSpacing: 0,
+        title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text(widget.filePath.split('/').last, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 18)),
+          Text([
+            if (slash > 0) widget.filePath.substring(0, slash),
+            resolvedRef.name,
+            if (resolvedRef.sha.isNotEmpty) RepositoryRef.shortSha(resolvedRef.sha),
+          ].join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        ]),
         actions: [
           if (_markdown)
             IconButton(
@@ -1175,17 +1190,26 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
             ],
           ),
         ],
-      ),
-      body: gestureSafe(Column(
+      );
+    return Scaffold(
+      body: NotificationListener<ScrollNotification>(onNotification: _chrome.handle, child: StatusBarInset(child: gestureSafe(Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-            child: Text(
-              '${widget.filePath}\n${resolvedRef.name} · ${RepositoryRef.shortSha(resolvedRef.sha)}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
+          CollapsingChrome(visible: _chrome, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            appBar,
+            if (text != null && !_preview)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: TextField(
+                  decoration: const InputDecoration(
+                    hintText: '搜尋目前檔案',
+                    prefixIcon: Icon(Icons.search),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  onChanged: _onSearchChanged,
+                ),
+              ),
+          ])),
           if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
           if (_error != null)
             FailureNotice(
@@ -1199,17 +1223,6 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
             const Padding(
               padding: EdgeInsets.all(16),
               child: Text('這是 Git LFS pointer，不是原始檔案。此版本不會自動下載大型物件。'),
-            ),
-          if (text != null && !_preview)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: TextField(
-                decoration: const InputDecoration(
-                  hintText: '搜尋目前檔案',
-                  prefixIcon: Icon(Icons.search),
-                ),
-                onChanged: _onSearchChanged,
-              ),
             ),
           Expanded(
             child: text == null
@@ -1288,10 +1301,12 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                                             child: InkWell(
                                               onTap: () => _copyLinePermalink(lineNumber),
                                               borderRadius: BorderRadius.circular(4),
+                                              // Code reads line by line: rows stay at text height and the
+                                              // number keeps the 24dp WCAG 2.5.8 minimum in a 48dp-wide column.
                                               child: ConstrainedBox(
                                                 constraints: const BoxConstraints(
                                                   minWidth: 48,
-                                                  minHeight: 48,
+                                                  minHeight: 24,
                                                 ),
                                                 child: Align(
                                                   alignment: Alignment.centerLeft,
@@ -1319,7 +1334,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Padding(
-                                              padding: const EdgeInsets.symmetric(vertical: 14),
+                                              padding: const EdgeInsets.symmetric(vertical: 2),
                                               child: Text.rich(
                                                 lineContent.isEmpty
                                                     ? const TextSpan(text: ' ')
@@ -1354,7 +1369,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                   ),
           ),
         ],
-      )),
+      )))),
     );
   }
 }

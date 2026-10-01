@@ -62,6 +62,12 @@ class ScrollChromeController extends ValueNotifier<bool> {
   }
 }
 
+/// Asks the chrome above to come back, e.g. after opening or closing a detail
+/// from a list that was scrolled with the navigation tucked away.
+class RevealChromeNotification extends Notification {
+  const RevealChromeNotification();
+}
+
 /// Provides the nearest page-level [ScrollChromeController] so nested content
 /// (tabs, embedded lists) can reveal the chrome, for example after switching
 /// to a tab whose list starts at the top.

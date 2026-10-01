@@ -69,7 +69,12 @@ class _SearchPageState extends State<SearchPage> {
   String _projectLabel(Json value) {
     final full = valueText(valueObject(value, 'references'), 'full');
     if (full.isNotEmpty) return full.split(RegExp('[#!%]')).first;
-    return valueText(value, 'project_path');
+    // Search hits may omit references; the web URL still names the project.
+    final web = Uri.tryParse(valueText(value, 'web_url'));
+    if (web == null) return '';
+    final base = widget.account.instance.base.pathSegments.where((s) => s.isNotEmpty).length;
+    final segments = web.pathSegments.skip(base).takeWhile((s) => s != '-').toList();
+    return segments.join('/');
   }
 
   Widget _item(BuildContext context, Json value) {

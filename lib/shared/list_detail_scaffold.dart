@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'adaptive_breakpoints.dart';
+import 'scroll_chrome.dart';
 
 /// 狀態驅動的清單/詳情控制器
 class ListDetailController<T> extends ChangeNotifier {
@@ -316,6 +317,9 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
 
   void _onControllerChanged() {
     _registeredDispatcher?.notifyChanged();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) const RevealChromeNotification().dispatch(context);
+    });
   }
 
   bool _canHandleBack() {

@@ -2,24 +2,43 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
 import 'records_feed.dart';
 import 'search_page.dart';
 import 'work_item_page.dart';
 
-class InboxPage extends StatelessWidget {
+class InboxPage extends StatefulWidget {
   const InboxPage({super.key, required this.account, required this.api});
   final Account account;
   final GitLabApi api;
   @override
+  State<InboxPage> createState() => _InboxPageState();
+}
+
+class _InboxPageState extends State<InboxPage> {
+  final _chrome = ScrollChromeController();
+  Account get account => widget.account;
+  GitLabApi get api => widget.api;
+
+  @override
+  void dispose() {
+    _chrome.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) => DefaultTabController(length: 4, child: Scaffold(
-    appBar: AppBar(title: const Text('收件匣'), actions: [
-      IconButton(tooltip: '全域搜尋', icon: const Icon(Icons.manage_search),
-        onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-          builder: (_) => SearchPage(account: account, api: api)))),
-    ], bottom: const TabBar(isScrollable: true,
-      tabAlignment: TabAlignment.start, tabs: [Tab(text: '待辦'), Tab(text: '指派給我'), Tab(text: '待我審查'), Tab(text: '我建立的')])),
-    body: gestureSafe(TabBarView(children: [
+    body: NotificationListener<ScrollNotification>(onNotification: _chrome.handle, child: StatusBarInset(child: gestureSafe(Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      CollapsingChrome(visible: _chrome, child: AppBar(primary: false, title: const Text('收件匣'), actions: [
+        IconButton(tooltip: '全域搜尋', icon: const Icon(Icons.manage_search),
+          onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => SearchPage(account: account, api: api)))),
+      ])),
+      TabBar(isScrollable: true, tabAlignment: TabAlignment.start, onTap: (_) => _chrome.show(),
+        tabs: const [Tab(text: '待辦'), Tab(text: '指派給我'), Tab(text: '待我審查'), Tab(text: '我建立的')]),
+      Expanded(child: TabBarView(children: [
       _TodoFeed(account: account, api: api),
       _WorkFeed(account: account, api: api, kind: _WorkKind.assigned),
       RecordsFeed(identity: 'review-requests', empty: '沒有待審查的合併請求', account: account,
@@ -30,6 +49,7 @@ class InboxPage extends StatelessWidget {
         itemBuilder: (context, data) => inboxWorkItem(context, account, api, data, 'merge_requests')),
       _WorkFeed(account: account, api: api, kind: _WorkKind.created),
     ])),
+    ])))),
   ));
 }
 

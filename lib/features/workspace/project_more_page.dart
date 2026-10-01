@@ -122,7 +122,8 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
         ]),
         if (_languages.isNotEmpty) ...[
           const SizedBox(height: 14),
-          ClipRRect(borderRadius: BorderRadius.circular(4), child: SizedBox(height: 8, child: Row(children: [
+          ClipRRect(borderRadius: BorderRadius.circular(4), child: SizedBox(height: 8, child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             for (final (index, (_, share)) in _languages.take(6).indexed)
               Expanded(flex: math.max(1, (share * 10).round()), child: ColoredBox(color: _languageColor(index))),
           ]))),

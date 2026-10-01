@@ -293,7 +293,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
       onSwitchAccount: endSessionFrom(context),
       load: (next) => widget.api.records([...path, 'discussions'], next: next),
       visible: _isItemVisible,
-      header: (_, controller) {
+      leading: (_, controller) {
         if (controller.items.isEmpty && (controller.loading || controller.error != null)) { return const SizedBox.shrink(); }
         final resolvedItems = controller.items.where(_discussionResolved).toList();
         final hasResolved = resolvedItems.isNotEmpty;

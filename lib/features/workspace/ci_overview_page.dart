@@ -553,7 +553,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                         valueText(
                           item.latestPipeline!,
                           'name',
-                          'Pipeline #${valueInt(item.latestPipeline!, 'id')}',
+                          'Pipeline #${valueInt(item.latestPipeline!, 'iid') > 0 ? valueInt(item.latestPipeline!, 'iid') : valueInt(item.latestPipeline!, 'id')}',
                         ),
                         style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                       ),

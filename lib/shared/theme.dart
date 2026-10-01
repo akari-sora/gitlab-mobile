@@ -300,8 +300,8 @@ ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useD
     navigationRailTheme: NavigationRailThemeData(
       elevation: 0, backgroundColor: scheme.surface,
       indicatorColor: scheme.primaryContainer,
-      selectedLabelTextStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-      unselectedLabelTextStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+      selectedLabelTextStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: scheme.onSurface),
+      unselectedLabelTextStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: scheme.onSurfaceVariant),
       labelType: NavigationRailLabelType.all,
     ),
     tabBarTheme: TabBarThemeData(

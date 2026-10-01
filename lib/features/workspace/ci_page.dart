@@ -619,7 +619,8 @@ class _PipelinePageState extends State<PipelinePage> {
     final theme = Theme.of(context);
     final appBar = AppBar(primary: false, titleSpacing: 0, title: Column(crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min, children: [
-        Text('Pipeline #${widget.id}', style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 19)),
+        Text(_data != null && valueInt(_data!, 'iid') > 0 ? 'Pipeline #${valueInt(_data!, 'iid')}' : 'Pipeline #${widget.id}',
+          style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 19)),
         Text(widget.project.path, maxLines: 1, overflow: TextOverflow.ellipsis,
           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
       ]), actions: [
@@ -1470,6 +1471,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   int _currentMatch = 0;
   Timer? _timer;
   final _scroll = ScrollController();
+  final _chrome = ScrollChromeController();
   @override
   void initState() {
     super.initState(); _jobId = widget.id;
@@ -1478,7 +1480,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     _loadEpoch++; _timer?.cancel(); _scroll.dispose();
-    _searchController.dispose();
+    _searchController.dispose(); _chrome.dispose();
     WidgetsBinding.instance.removeObserver(this); super.dispose();
   }
   @override
@@ -1962,7 +1964,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final rows = _visibleRows();
     final noLog = _trace.lines.isEmpty && _trace.sections.isEmpty;
-    return Scaffold(appBar: AppBar(title: Text(_job == null ? 'Job #$_jobId' : valueText(_job!, 'name')),
+    final appBar = AppBar(primary: false, titleSpacing: 0, title: Text(_job == null ? 'Job #$_jobId' : valueText(_job!, 'name')),
       actions: [IconButton(tooltip: '重新讀取 Log', onPressed: _loading || _busy || _confirming ? null : _load, icon: const Icon(Icons.refresh)),
         PopupMenuButton<String>(tooltip: '工作操作', enabled: !_busy && !_confirming && !_downloading && _job != null, onSelected: _action, itemBuilder: (_) => [
           const PopupMenuItem(value: 'retry', child: Text('重試工作')),
@@ -1971,17 +1973,24 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           if (valueObject(_job ?? {}, 'artifacts_file')['filename'] != null)
             const PopupMenuItem(value: 'artifacts', child: Text('下載產物')),
         ]),
-      ]), body: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), child: Wrap(
-          spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
-            if (_job != null) StatusBadge(valueText(_job!, 'status')),
-            Text('#$_jobId', style: Theme.of(context).textTheme.bodySmall),
-            FilterChip(label: const Text('10 秒更新'), selected: _auto, onSelected: (value) {
-              setState(() => _auto = value); _schedule();
-            }),
-            FilterChip(label: const Text('跟隨尾端'), selected: _follow, onSelected: (value) => setState(() => _follow = value)),
-          ])),
-        if (_job != null) _buildJobActionCard(valueText(_job!, 'status')),
+      ]);
+    // The log owns the screen while reading: title, status and the action
+    // banner slide away on scroll; the search row stays.
+    return Scaffold(body: NotificationListener<ScrollNotification>(onNotification: _chrome.handle, child: StatusBarInset(
+      child: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        CollapsingChrome(visible: _chrome, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          appBar,
+          Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: Wrap(
+            spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              if (_job != null) StatusBadge(valueText(_job!, 'status')),
+              Text('#$_jobId', style: Theme.of(context).textTheme.bodySmall),
+              FilterChip(label: const Text('10 秒更新'), selected: _auto, onSelected: (value) {
+                setState(() => _auto = value); _schedule();
+              }),
+              FilterChip(label: const Text('跟隨尾端'), selected: _follow, onSelected: (value) => setState(() => _follow = value)),
+            ])),
+          if (_job != null) _buildJobActionCard(valueText(_job!, 'status')),
+        ])),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
           child: Row(
@@ -2096,7 +2105,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 );
               },
             ))),
-      ])));
+      ])))));
   }
 }
 

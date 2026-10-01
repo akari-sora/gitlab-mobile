@@ -39,7 +39,7 @@ line 4: }
 line 5: class MyApp extends StatelessWidget {}
 ''';
 
-  testWidgets('line numbers have >=48dp hit target, copy permalink to clipboard, and show SnackBar', (tester) async {
+  testWidgets('line numbers have a 48dp-wide, 24dp-tall hit target, copy permalink to clipboard, and show SnackBar', (tester) async {
     final adapter = FakeAdapter((request) {
       final path = request.uri.path;
       if (path.endsWith('/repository/files/lib%2Fmain.dart') && request.method == 'HEAD') {
@@ -88,7 +88,7 @@ line 5: class MyApp extends StatelessWidget {}
     // Verify line numbers exist
     expect(find.text('3'), findsOneWidget);
 
-    // Verify touch target size of the line number container is at least 48x48
+    // Dense code rows: the line number column is 48dp wide and at least the WCAG 2.5.8 24dp tall.
     final line3Finder = find.ancestor(
       of: find.text('3'),
       matching: find.byType(ConstrainedBox),
@@ -96,7 +96,7 @@ line 5: class MyApp extends StatelessWidget {}
     expect(line3Finder, findsWidgets);
     final size = tester.getSize(line3Finder.first);
     expect(size.width, greaterThanOrEqualTo(48.0));
-    expect(size.height, greaterThanOrEqualTo(48.0));
+    expect(size.height, greaterThanOrEqualTo(24.0));
 
     // Tap line 3
     await tester.tap(find.text('3'));

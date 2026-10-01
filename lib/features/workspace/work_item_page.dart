@@ -1083,7 +1083,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
           CollapsingChrome(visible: _chrome, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             appBar,
             Padding(padding: const EdgeInsets.fromLTRB(20, 2, 20, 10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              SelectableText(valueText(data, 'title'), maxLines: 4,
+              SelectableText(valueText(data, 'title'), minLines: 1, maxLines: 4,
                 style: theme.textTheme.titleLarge?.copyWith(height: 1.3)),
               const SizedBox(height: 8), Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
