@@ -21,6 +21,13 @@ extension WorkspaceApi on GitLabApi {
     return _object(instance.api(path), method: method, data: body);
   }
   Future<void> removeRecord(List<String> path, {Json? data}) async { await _read(instance.api(path), method: 'DELETE', data: data); }
+  /// Mutations such as publishing a review may return 204 without JSON.
+  Future<void> writeEmpty(String method, List<String> path, {Json data = const {}}) async {
+    if (!const ['POST', 'PUT', 'PATCH'].contains(method)) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    await _read(instance.api(path), method: method, data: data);
+  }
   Future<Project> createProject({required String name, String? path, String description = '',
       String visibility = 'private', bool initialize = true}) async =>
     Project.fromJson(await writeRecord('POST', ['projects'], {

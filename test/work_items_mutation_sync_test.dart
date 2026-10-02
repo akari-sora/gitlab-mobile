@@ -443,13 +443,14 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('Multi-page issues: Edit issue on page 2 preserves in-place position, 0 extra list requests, other page 2 items, page 3 cursor and allows page 3 load', (tester) async {
+    testWidgets('Multi-page issues: Edit reconciles two loaded pages with server ordering and refreshed page 3 cursor', (tester) async {
       tester.view.devicePixelRatio = 1.0;
       tester.view.physicalSize = const Size(840, 900);
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
       int issuesListRequestCount = 0;
+      final issuesListPages = <String>[];
       final fixture = WorkspaceFixture();
       final page1 = [fixture.issue(1, 'Issue 1'), fixture.issue(2, 'Issue 2'), fixture.issue(3, 'Issue 3')];
       final page2 = [fixture.issue(4, 'Issue 4'), fixture.issue(5, 'Issue 5'), fixture.issue(6, 'Issue 6')];
@@ -467,6 +468,8 @@ void main() {
         if (joined == 'projects/42/issues' && request.method == 'GET') {
           issuesListRequestCount++;
           final pageParam = request.uri.queryParameters['page'];
+          issuesListPages.add(pageParam ?? '1');
+          final wasEdited = fixture.issues[5]?['title'] == 'Updated Page 2 Issue 5';
           if (pageParam == '3') {
             return ResponseBody.fromString(
               jsonEncode(page3),
@@ -476,7 +479,7 @@ void main() {
           }
           if (pageParam == '2') {
             return ResponseBody.fromString(
-              jsonEncode(page2),
+              jsonEncode(wasEdited ? [page1[2], page2[0], page2[2]] : page2),
               200,
               headers: {
                 'content-type': ['application/json'],
@@ -485,7 +488,7 @@ void main() {
             );
           }
           return ResponseBody.fromString(
-            jsonEncode(page1),
+            jsonEncode(wasEdited ? [page2[1], page1[0], page1[1]] : page1),
             200,
             headers: {
               'content-type': ['application/json'],
@@ -555,8 +558,11 @@ void main() {
       await tester.tap(find.byKey(const Key('editorSave')));
       await settleNetworkWidgets(tester);
 
-      // Assert: Zero extra list GET requests!
-      expect(issuesListRequestCount, equals(2), reason: 'Zero extra list requests after edit mutation');
+      // The mutation reloads exactly the two pages that were resident, using
+      // the newly returned page-2 cursor so server ordering can move rows
+      // across the old pagination boundary.
+      expect(issuesListRequestCount, equals(4));
+      expect(issuesListPages, ['1', '2', '1', '2']);
 
       // Assert: Detail shows updated title
       expect(find.text('Overview'), findsOneWidget);
@@ -565,8 +571,9 @@ void main() {
       expect(find.text('Updated Page 2 Issue 5'), findsNWidgets(2), reason: 'Updated title appears on both list and detail');
 
       // Assert: Other page 2 items are STILL on the list!
-      expect(find.text('Issue 4'), findsOneWidget, reason: 'Issue 4 on page 2 preserved in memory');
-      expect(find.text('Issue 6'), findsOneWidget, reason: 'Issue 6 on page 2 preserved in memory');
+      expect(find.text('Issue 3'), findsOneWidget, reason: 'Server moved Issue 3 across the refreshed page boundary');
+      expect(find.text('Issue 4'), findsOneWidget, reason: 'Issue 4 on refreshed page 2 is preserved');
+      expect(find.text('Issue 6'), findsOneWidget, reason: 'Issue 6 on refreshed page 2 is preserved');
 
       // Assert: Page 3 cursor is STILL retained!
       expect(find.text('載入更多'), findsOneWidget, reason: 'Page 3 cursor preserved after edit mutation');
@@ -575,7 +582,8 @@ void main() {
       await tester.tap(find.text('載入更多'));
       await settleNetworkWidgets(tester);
 
-      expect(issuesListRequestCount, equals(3), reason: 'Page 3 loaded successfully with retained cursor');
+      expect(issuesListRequestCount, equals(5), reason: 'Page 3 loaded successfully with refreshed cursor');
+      expect(issuesListPages, ['1', '2', '1', '2', '3']);
       expect(find.text('Issue 7'), findsOneWidget);
       expect(find.text('載入更多'), findsNothing, reason: 'Page 3 was terminal page');
       expect(tester.takeException(), isNull);
@@ -588,6 +596,7 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
 
       int mrListRequestCount = 0;
+      final mrListPages = <String>[];
       final fixture = WorkspaceFixture();
 
       Json mrItem(int iid, String title) => {
@@ -616,16 +625,18 @@ void main() {
         if (joined == 'projects/42/merge_requests' && request.method == 'GET') {
           mrListRequestCount++;
           final pageParam = request.uri.queryParameters['page'];
+          mrListPages.add(pageParam ?? '1');
+          final wasClosed = fixture.createdMergeRequests[5]?['state'] == 'closed';
           if (pageParam == '3') {
             return ResponseBody.fromString(
-              jsonEncode(mrPage3),
+              jsonEncode(wasClosed ? [mrPage3[1], mrPage3[2]] : mrPage3),
               200,
               headers: {'content-type': ['application/json']},
             );
           }
           if (pageParam == '2') {
             return ResponseBody.fromString(
-              jsonEncode(mrPage2),
+              jsonEncode(wasClosed ? [mrPage2[0], mrPage2[2], mrPage3[0]] : mrPage2),
               200,
               headers: {
                 'content-type': ['application/json'],
@@ -706,8 +717,10 @@ void main() {
       await tester.tap(find.text('關閉'));
       await settleNetworkWidgets(tester);
 
-      // Zero extra MR list requests
-      expect(mrListRequestCount, equals(2), reason: 'Closing MR must NOT trigger full list re-fetch');
+      // Reconcile exactly the two resident pages; the server shifts MR 7
+      // into page 2 after the closed MR is filtered out.
+      expect(mrListRequestCount, equals(4));
+      expect(mrListPages, ['1', '2', '1', '2']);
 
       // MR 5 is removed from opened list
       expect(find.text('MR 5'), findsNWidgets(1), reason: 'MR 5 only in detail header, removed from opened list');
@@ -715,14 +728,16 @@ void main() {
       // MR 4, MR 6 and Page 3 cursor remain intact!
       expect(find.text('MR 4'), findsOneWidget, reason: 'MR 4 on page 2 preserved');
       expect(find.text('MR 6'), findsOneWidget, reason: 'MR 6 on page 2 preserved');
+      expect(find.text('MR 7'), findsOneWidget, reason: 'MR 7 shifted into refreshed page 2');
       expect(find.text('載入更多'), findsOneWidget, reason: 'Page 3 cursor preserved after closing MR 5');
 
       // Load page 3
       await tester.tap(find.text('載入更多'));
       await settleNetworkWidgets(tester);
 
-      expect(mrListRequestCount, equals(3));
-      expect(find.text('MR 7'), findsOneWidget);
+      expect(mrListRequestCount, equals(5));
+      expect(mrListPages, ['1', '2', '1', '2', '3']);
+      expect(find.text('MR 8'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

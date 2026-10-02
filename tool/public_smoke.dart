@@ -70,6 +70,14 @@ Future<void> main() async {
       await api.records(['projects', '86648389', 'repository', 'tags']);
       await api.records(['projects', '86648389', 'releases']);
     });
+    await check('public.compare.fixed_revisions', () async {
+      final result = await api.record(['projects', '86648389', 'repository', 'compare'], query: {
+        'from': '911a953ee92b2e3ddd3e526c3691e6495c311ad3',
+        'to': '0e1298e339bb5d23bdf80c31eef5d830d8716fe2',
+        'straight': 'true', 'unidiff': 'true',
+      });
+      require(result['commits'] is List && result['diffs'] is List && result['compare_same_ref'] == false);
+    });
     await check('public.missing_file_is_404_not_auth_failure', () async {
       try {
         await api.fileMetadata(86648389, '__nonexistent_public_smoke_fixture_86648389__.txt', 'main');
@@ -84,7 +92,7 @@ Future<void> main() async {
       'pipeline_id': Platform.environment['CI_PIPELINE_ID'],
       'authentication': 'anonymous; no credential read or sent',
       'writes': 0, 'status': failed ? 'FAIL' : 'PASS', 'checks': checks,
-      'not_run': ['PAT authentication', 'private project access', 'live writes/CRUD', 'Android/iOS device UI'],
+      'not_run': ['PAT authentication', 'authenticated issue boards', 'private project access', 'live writes/CRUD', 'Android/iOS device UI'],
     };
     Directory('public-smoke-output').createSync(recursive: true);
     File('public-smoke-output/report.json').writeAsStringSync(const JsonEncoder.withIndent('  ').convert(report));

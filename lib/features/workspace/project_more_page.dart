@@ -8,7 +8,9 @@ import '../../core/models.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
 import 'activity_page.dart';
+import 'boards_page.dart';
 import 'commit_page.dart';
+import 'compare_page.dart';
 import 'editor.dart';
 import 'project_extras.dart';
 import 'records_feed.dart';
@@ -261,12 +263,14 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     return ListView(padding: const EdgeInsets.fromLTRB(16, 14, 16, 24), children: [
       _overview(context),
       _section(context, '程式碼', [
+        (Icons.compare_arrows, '比較版本', () => _push(ComparePage(account: account, api: api, project: project))),
         (Icons.alt_route, metadataTitle(MetadataKind.branches), () => metadata(MetadataKind.branches)),
         (Icons.sell_outlined, metadataTitle(MetadataKind.tags), () => metadata(MetadataKind.tags)),
         (Icons.history, metadataTitle(MetadataKind.commits), () => metadata(MetadataKind.commits)),
         (Icons.manage_search, '搜尋程式碼與內容', () => _push(SearchPage(account: account, api: api, project: project))),
       ]),
       _section(context, '協作', [
+        (Icons.view_kanban_outlined, '議題看板', () => _push(BoardsPage(account: account, api: api, project: project))),
         (Icons.timeline, '專案動態', () => _push(ActivityPage(account: account, api: api, project: project))),
         (Icons.group_outlined, '成員', () => _push(MembersPage(account: account, api: api, project: project))),
         (Icons.menu_book_outlined, 'Wiki', () => _push(WikiPagesPage(account: account, api: api, project: project))),

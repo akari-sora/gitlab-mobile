@@ -12,6 +12,7 @@ import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 import '../../shared/theme.dart';
 import '../../core/suggestion.dart';
+import 'draft_review_page.dart';
 import 'suggestion_card.dart';
 
 const _maxDiscussionPages = 20;
@@ -1066,21 +1067,42 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       if (line.oldLine != null) 'old_line': line.oldLine,
       if (line.newLine != null) 'new_line': line.newLine,
     };
-    await openEditor(
+    var savedAsDraft = false;
+    final saved = await openEditor(
       context,
       account: widget.account,
       title: '對這一行留言',
       resource:
           '${widget.project.id}/mr/${widget.iid}/$sha/$oldPath/$newPath/${line.oldLine}/${line.newLine}',
       subtitle: '$newPath · ${line.newLine ?? line.oldLine} · ${shortSha(sha)}',
-      fields: const [EditField('body', '留言', lines: 8, required: true, markdown: true)],
+      fields: const [
+        EditField('body', '留言', lines: 8, required: true, markdown: true),
+        EditField.toggle(
+          'draft',
+          '暫存至審查草稿',
+          hint: '發布前只有你可見，可集中檢查後一次發布。',
+        ),
+      ],
       api: widget.api,
       projectId: widget.project.id,
       projectPath: widget.project.path,
       save: (values) async {
         final current = await widget.api.record(_mrPath);
         if (current['sha'] != sha) {
-          throw const ApiFailure(FailureKind.conflict);
+          throw const ApiFailure(
+            FailureKind.conflict,
+            title: '合併請求已有新版本',
+            detail: '請返回變更頁重新載入最新版本，再檢查留言內容。草稿已保留。',
+          );
+        }
+        savedAsDraft = values['draft'] == 'true';
+        if (savedAsDraft) {
+          await widget.api.writeRecord(
+            'POST',
+            [..._mrPath, 'draft_notes'],
+            {'note': values['body']!.trim(), 'position': position},
+          );
+          return;
         }
         await widget.api.writeRecord(
           'POST',
@@ -1088,6 +1110,29 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
           {'body': values['body'], 'position': position},
         );
       },
+    );
+    if (!saved || !mounted) return;
+    if (savedAsDraft) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已暫存，發布前只有你可見')),
+      );
+      return;
+    }
+    await _reloadDiscussions();
+  }
+
+  Future<void> _openDraftReview() async {
+    final sha = requiredString(widget.version, 'head_commit_sha');
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => DraftReviewPage(
+          account: widget.account,
+          api: widget.api,
+          project: widget.project,
+          iid: widget.iid,
+          headSha: sha,
+        ),
+      ),
     );
   }
 
@@ -1376,6 +1421,11 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
+          IconButton(
+            tooltip: '審查草稿',
+            icon: const Icon(Icons.rate_review_outlined),
+            onPressed: _openDraftReview,
+          ),
           IconButton(
             key: const ValueKey('diff-file-viewed-toggle'),
             tooltip: _viewed ? '標記為未檢視' : '標記為已檢視',

@@ -33,6 +33,49 @@ void main() {
 
   const sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 
+  testWidgets('permission denial on refresh removes retained private source', (
+    tester,
+  ) async {
+    var denied = false;
+    final adapter = FakeAdapter(
+      (request) => denied
+          ? jsonResponse({}, status: 403)
+          : request.method == 'HEAD'
+          ? ResponseBody.fromString(
+              '',
+              200,
+              headers: {
+                'x-gitlab-size': ['32'],
+                'x-gitlab-last-commit-id': [sha],
+              },
+            )
+          : ResponseBody.fromString('Private source must disappear', 200),
+    );
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RepositoryFilePage(
+          account: account,
+          api: api,
+          project: project,
+          branch: 'main',
+          sha: sha,
+          filePath: 'secret.txt',
+        ),
+      ),
+    );
+    await settleNetworkWidgets(tester);
+    expect(find.text('Private source must disappear'), findsOneWidget);
+    denied = true;
+    await tester.tap(find.byTooltip('檔案操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('重新載入'));
+    await settleNetworkWidgets(tester);
+    expect(find.text('沒有操作權限'), findsOneWidget);
+    expect(find.text('Private source must disappear'), findsNothing);
+  });
+
   testWidgets(
     'RepositoryFilePage renders code and synchronizes horizontal scrolling in no-wrap mode',
     (tester) async {

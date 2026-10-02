@@ -85,7 +85,7 @@ void main() {
     expect(find.text('（到期日：2026-10-01）'), findsOneWidget);
   });
 
-  testWidgets('WorkItemsTab search input has debounce and clear button', (tester) async {
+  testWidgets('WorkItemsTab search submits explicitly and clear restores the list', (tester) async {
     _surface(tester);
     final fixture = WorkspaceFixture();
     fixture.issues[1] = fixture.issue(1, 'Alpha task');
@@ -107,13 +107,17 @@ void main() {
     // Enter search text
     final searchInput = find.byType(TextField);
     await tester.enterText(searchInput, 'Alpha');
-    // Debounce is 300ms, not settled yet
-    await tester.pump(const Duration(milliseconds: 100));
-    // Wait past 300ms
-    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump(const Duration(milliseconds: 400));
     await settleNetworkWidgets(tester);
 
-    // Now query should filter to Alpha task only
+    // Typing alone does not spend a GitLab request.
+    expect(find.text('Alpha task'), findsOneWidget);
+    expect(find.text('Beta task'), findsOneWidget);
+
+    await tester.testTextInput.receiveAction(TextInputAction.search);
+    await settleNetworkWidgets(tester);
+
+    // The submitted query filters to Alpha task only.
     expect(find.text('Alpha task'), findsOneWidget);
     expect(find.text('Beta task'), findsNothing);
 
@@ -337,7 +341,7 @@ void main() {
     expect(find.text('審查進度 (1/1)'), findsOneWidget);
   });
 
-  testWidgets('WorkItemsTab search clear button displays immediately before debounce duration expires', (tester) async {
+  testWidgets('WorkItemsTab search clear button displays before an unsubmitted query runs', (tester) async {
     _surface(tester);
     final fixture = WorkspaceFixture();
 
@@ -353,7 +357,7 @@ void main() {
 
     final searchInput = find.byType(TextField);
     await tester.enterText(searchInput, 'instant');
-    // Only 1ms pump, debounce (300ms) has NOT fired yet
+    // The query remains local until search is submitted.
     await tester.pump(const Duration(milliseconds: 1));
 
     // Clear button should already be visible via ValueListenableBuilder!
@@ -405,5 +409,4 @@ void main() {
     expect(find.text('全部標記已檢視'), findsOneWidget);
   });
 }
-
 

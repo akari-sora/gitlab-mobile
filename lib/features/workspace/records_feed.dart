@@ -55,6 +55,15 @@ class RecordsFeed extends StatefulWidget {
 class RecordsFeedState extends State<RecordsFeed> {
   late final RecordController controller;
   final _scroll = ScrollController();
+  List<Json>? _derivedItems;
+  RecordsFeed? _derivedWidget;
+  bool Function(Json item)? _derivedVisible;
+  List<Json> Function(List<Json> items)? _derivedArrange;
+  String Function(Json item)? _derivedSectionOf;
+  String? _derivedIdentity;
+  List<Json> _shown = const [];
+  List<String>? _sections;
+  List<bool>? _derivedSections;
   @override
   void initState() { super.initState(); controller = RecordController(widget.load); unawaited(controller.refresh()); }
   @override
@@ -68,6 +77,7 @@ class RecordsFeedState extends State<RecordsFeed> {
     }
   }
   Future<void> refresh() => controller.refresh();
+  Future<void> reconcileLoadedWindow() => controller.reconcileLoadedWindow();
   void patchItem(Json item) => controller.patchItem(item);
   void removeItem(String id) => controller.removeItem(id);
   void prependItem(Json item) => controller.prependItem(item);
@@ -81,32 +91,62 @@ class RecordsFeedState extends State<RecordsFeed> {
   @override
   void dispose() { _scroll.dispose(); controller.dispose(); super.dispose(); }
 
-  Widget _groupedRow(BuildContext context, int index, int count, Widget child) {
-    final scheme = Theme.of(context).colorScheme;
-    final radius = const Radius.circular(16);
-    final first = index == 0, last = index == count - 1;
-    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      if (!first) Divider(height: 1, thickness: 1, indent: 16, color: scheme.outlineVariant.withValues(alpha: .6)),
-      ClipRRect(
-        borderRadius: BorderRadius.vertical(top: first ? radius : Radius.zero, bottom: last ? radius : Radius.zero),
-        child: Material(type: MaterialType.transparency, child: child),
-      ),
-    ]);
-  }
-
-  @override
-  Widget build(BuildContext context) => ListenableBuilder(listenable: controller, builder: (context, _) {
+  void _deriveRows() {
+    if (identical(_derivedItems, controller.items) && identical(_derivedWidget, widget) &&
+        identical(_derivedVisible, widget.visible) && identical(_derivedArrange, widget.arrange) &&
+        identical(_derivedSectionOf, widget.sectionOf) && _derivedIdentity == widget.identity) {
+      return;
+    }
     final visible = widget.visible;
     var shown = <Json>[
       for (final item in controller.items)
         if (visible == null || visible(item)) item,
     ];
-    if (widget.arrange != null) shown = widget.arrange!(shown);
+    final arrange = widget.arrange;
+    if (arrange != null) shown = arrange(shown);
     final sectionOf = widget.sectionOf;
+    _shown = shown;
+    _sections = sectionOf == null ? null : List<String>.filled(shown.length, '');
+    _derivedSections = sectionOf == null ? null : List<bool>.filled(shown.length, false);
+    _derivedItems = controller.items;
+    _derivedWidget = widget;
+    _derivedVisible = visible;
+    _derivedArrange = arrange;
+    _derivedSectionOf = sectionOf;
+    _derivedIdentity = widget.identity;
+  }
+
+  String _sectionAt(int index) {
+    final sections = _sections!, derived = _derivedSections!;
+    if (!derived[index]) {
+      sections[index] = widget.sectionOf!(_shown[index]);
+      derived[index] = true;
+    }
+    return sections[index];
+  }
+
+  Widget _groupedRow(BuildContext context, int index, int count, Widget child) {
+    final scheme = Theme.of(context).colorScheme;
+    final radius = const Radius.circular(16);
+    final first = index == 0, last = index == count - 1;
+    final material = Material(type: MaterialType.transparency, child: child);
+    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      if (!first) Divider(height: 1, thickness: 1, indent: 16, color: scheme.outlineVariant.withValues(alpha: .6)),
+      if (first || last) ClipRRect(
+        borderRadius: BorderRadius.vertical(top: first ? radius : Radius.zero, bottom: last ? radius : Radius.zero),
+        child: material,
+      ) else material,
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(listenable: controller, builder: (context, _) {
+    _deriveRows();
+    final shown = _shown, sections = _sections;
     Widget withSection(BuildContext context, int index, Widget row) {
-      if (sectionOf == null) return row;
-      final section = sectionOf(shown[index]);
-      if (index > 0 && sectionOf(shown[index - 1]) == section) return row;
+      if (sections == null) return row;
+      final section = _sectionAt(index);
+      if (index > 0 && _sectionAt(index - 1) == section) return row;
       return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Padding(padding: EdgeInsets.fromLTRB(widget.grouped ? 14 : 4, index == 0 ? 10 : 16, 4, 6), child: Text(section,
           style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.primary))),

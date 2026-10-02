@@ -5,6 +5,12 @@
 
 A mobile-first Flutter client for Android and iOS. Independent third-party software, not an official GitLab application. The interface is Traditional Chinese and supports light/dark appearance and large text.
 
+## 2026-10-02 — mobile parity and performance follow-up
+
+The current development branch fills three high-value gaps from a fresh 390 × 844 GitLab.com comparison: project issue boards, repository revision comparison and server-backed MR draft review. Issue/MR lists now have native filters for ordering, scope, labels, milestone and people. Boards deliberately use one active column on phones; issue changes refresh every mounted board column, while drag/drop and direct card reordering remain on the Web.
+
+Loading and scroll work adds a bounded, account-client in-memory read cache for project resolution and immutable-SHA text, concurrent request sharing, memoized list derivation and a page-owned syntax-span LRU. Server cache directives, explicit refresh, writes, account/client changes and authorization failures invalidate or disable reuse. See the [current parity and performance report](docs/MOBILE_PARITY_PERFORMANCE.md) for the complete Web navigation matrix, safety boundaries, measured results and remaining NOT_RUN lanes.
+
 ## v0.5 — mobile UX overhaul and GitLab parity
 
 Still a development preview. Evidence is in the [v0.5 ledger](docs/V0_5_VERIFICATION.md); anything it does not list is **NOT_RUN**.
@@ -34,11 +40,11 @@ This revision continues the v0.2 API-backed collaboration screens. It is a **dev
 - Release, project-label and milestone CRUD. Commits are immutable; branches and tags are not presented as having a fictitious update API.
 - Account-scoped encrypted drafts, retained write errors, no automatic retry of uncertain writes, typed confirmation for destructive resource operations.
 
-**Not yet implemented:** OAuth login stays inert. `oauthApplicationIdFor` is empty until a maintainer registers an Application ID per instance. Push delivery, iOS (deferred by the maintainer), a cross-project CI overview, and a two-pane wide layout are not in the tree. Local Git clone/rebase/terminal and complete enterprise policy management are not in the tree. App Store / Play signing, an independent human review, a physical-phone run of !4–!8, and a completed live CI job-control suite are **NOT_RUN**. Device evidence is one physical Android phone and one Android emulator. The live smoke was not re-run after the merges. Anything this README does not tie to the v0.3 ledger stays **NOT_RUN**.
+**Historical v0.3 boundary (at `9183f19`):** OAuth login stayed inert, and push delivery, iOS, a cross-project CI overview and a two-pane wide layout were not in that revision. The current source now contains cross-project CI and retained-state two-pane layouts; see the v0.5 ledger and current parity report for their separate evidence limits. Local Git clone/rebase/terminal and complete enterprise policy management remain outside the tree. App Store / Play signing, an independent human review, a physical-phone run of !4–!8, and a completed live CI job-control suite were **NOT_RUN** for v0.3. Device evidence was one physical Android phone and one Android emulator. The live smoke was not re-run after those merges. Anything this historical section does not tie to the v0.3 ledger stays **NOT_RUN** for that revision.
 
 ## Verification
 
-See [v0.3 verification](docs/V0_3_VERIFICATION.md), [v0.2 verification](docs/V0_2_VERIFICATION.md) and [mobile UX changes](docs/UI_REDESIGN.md). CI executes the actual Dart/Flutter code. Synthetic transport tests, live server checks, emulator runs and physical-device runs stay distinct. On `9183f19`, pipeline `2869335026` reported `509` tests in its JUnit report. That is the observed count for that pipeline.
+See [current mobile parity and performance](docs/MOBILE_PARITY_PERFORMANCE.md), [v0.5 verification](docs/V0_5_VERIFICATION.md), [v0.3 verification](docs/V0_3_VERIFICATION.md), [v0.2 verification](docs/V0_2_VERIFICATION.md) and [mobile UX changes](docs/UI_REDESIGN.md). CI executes the actual Dart/Flutter code. Synthetic transport tests, live server checks, emulator runs and physical-device runs stay distinct. On `9183f19`, pipeline `2869335026` reported `509` tests in its JUnit report. That is the observed count for that pipeline.
 
 A real GitLab `Link` header expanded omitted `false` defaults and caused the original project-list failure. The parser now validates immutable scope, preserves the caller's query, and extracts only a safe pagination cursor. Valid first-page data is no longer rejected because GitLab expanded defaults.
 

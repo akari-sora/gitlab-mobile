@@ -873,6 +873,13 @@ class RepositoryFilePage extends StatefulWidget {
 }
 
 class _RepositoryFilePageState extends State<RepositoryFilePage> {
+  static const _codeStyle = TextStyle(
+    fontFamily: codeFontFamily,
+    fontFamilyFallback: ['Menlo', 'monospace'],
+    fontSize: 13,
+    height: 1.55,
+  );
+
   String? _text, _lastCommit;
   ApiFailure? _error;
   bool _loading = true, _busy = false, _preview = false, _wrap = true;
@@ -881,6 +888,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
   final _horizontal = ScrollController();
   final _chrome = ScrollChromeController();
   final _searchFocus = FocusNode();
+  final _syntaxSpans = SyntaxSpanCache();
 
   int? _selectedLine;
   List<String> _lines = const [];
@@ -905,10 +913,12 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
     _horizontal.dispose();
     _chrome.dispose();
     _searchFocus.dispose();
+    _syntaxSpans.clear();
     super.dispose();
   }
 
   void _indexLines(String text) {
+    _syntaxSpans.clear();
     _lines = text.split('\n');
     _searchLines = [for (final line in _lines) line.toLowerCase()];
     _visibleIndices = List<int>.generate(_lines.length, (i) => i);
@@ -929,7 +939,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
     });
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool refresh = false}) async {
     setState(() {
       _loading = true;
       _error = null;
@@ -948,6 +958,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
         widget.project.id,
         resolved.sha,
         widget.filePath,
+        refresh: refresh,
       );
       if (mounted) {
         _indexLines(text);
@@ -970,9 +981,16 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
       }
     } catch (e) {
       if (mounted) {
+        final failure = safeFailure(e);
         setState(() {
-          _error = safeFailure(e);
+          _error = failure;
           _loading = false;
+          if (const {FailureKind.unauthenticated, FailureKind.forbidden, FailureKind.invisible}.contains(failure.kind)) {
+            _text = null;
+            _lastCommit = null;
+            _selectedLine = null;
+            _indexLines('');
+          }
         });
       }
     }
@@ -1154,6 +1172,9 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
           PopupMenuButton<String>(
             tooltip: '檔案操作',
             onSelected: (action) {
+              if (action == 'refresh') {
+                unawaited(_load(refresh: true));
+              }
               if (action == 'edit') {
                 unawaited(_edit());
               }
@@ -1175,6 +1196,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
               }
             },
             itemBuilder: (_) => [
+              PopupMenuItem(value: 'refresh', enabled: !_loading && !_busy, child: const Text('重新載入')),
               PopupMenuItem(
                 value: 'wrap',
                 child: Text(_wrap ? '關閉自動換行' : '開啟自動換行'),
@@ -1219,7 +1241,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
           if (_error != null)
             FailureNotice(
               _error!,
-              onRetry: _load,
+              onRetry: () => _load(refresh: true),
               account: widget.account,
               resourceLabel: '${widget.project.path} · ${widget.filePath}',
               onSwitchAccount: endSessionFrom(context),
@@ -1345,19 +1367,12 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                                               child: Text.rich(
                                                 lineContent.isEmpty
                                                     ? const TextSpan(text: ' ')
-                                                    : SyntaxHighlighter.highlightLine(
+                                                    : _syntaxSpans.highlight(
+                                                        lineIndex,
                                                         lineContent,
                                                         extension: widget.filePath,
                                                         isDark: Theme.of(context).brightness == Brightness.dark,
-                                                        baseStyle: const TextStyle(
-                                                          fontFamily: codeFontFamily,
-                                                          fontFamilyFallback: [
-                                                            'Menlo',
-                                                            'monospace',
-                                                          ],
-                                                          fontSize: 13,
-                                                          height: 1.55,
-                                                        ),
+                                                        baseStyle: _codeStyle,
                                                       ),
                                               ),
                                             ),

@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
 
 /// 輕量純 Dart 語法著色器
@@ -6,6 +8,11 @@ import 'package:flutter/material.dart';
 /// 支援 Dart, YAML, JSON, Python, Shell, Markdown 等常見格式。
 class SyntaxHighlighter {
   const SyntaxHighlighter._();
+
+  static final RegExp _tokenRegex = RegExp(
+    r'''("[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*'|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b|\b[a-zA-Z_]\w*\b|[^"'\s\w]+|\s+)''',
+  );
+  static final RegExp _numberStartRegex = RegExp(r'^\d');
 
   static const _dartKeywords = {
     'abstract', 'as', 'assert', 'async', 'await', 'break', 'case', 'catch',
@@ -342,11 +349,7 @@ class SyntaxHighlighter {
     Color? numCol,
     Set<String> keywords,
   ) {
-    final tokenRegex = RegExp(
-      r'''("[^"\\]*(?:\\.[^"\\]*)*"|'[^'\\]*(?:\\.[^'\\]*)*'|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b|\b[a-zA-Z_]\w*\b|[^"'\s\w]+|\s+)''',
-    );
-
-    final matches = tokenRegex.allMatches(code);
+    final matches = _tokenRegex.allMatches(code);
     if (matches.isEmpty) {
       if (code.isNotEmpty) {
         spans.add(TextSpan(text: code, style: base));
@@ -366,7 +369,7 @@ class SyntaxHighlighter {
           text: token,
           style: (base ?? const TextStyle()).copyWith(color: kwCol, fontWeight: FontWeight.w600),
         ));
-      } else if (numCol != null && RegExp(r'^\d').hasMatch(token)) {
+      } else if (numCol != null && _numberStartRegex.hasMatch(token)) {
         spans.add(TextSpan(
           text: token,
           style: (base ?? const TextStyle()).copyWith(color: numCol),
@@ -376,4 +379,100 @@ class SyntaxHighlighter {
       }
     }
   }
+}
+
+/// A small, page-owned LRU for lazily generated syntax spans.
+///
+/// It stores no account-global state and bounds retained source by both row
+/// count and character count. A theme, language, or base-style change clears
+/// the previous entries before the next row is highlighted.
+class SyntaxSpanCache {
+  SyntaxSpanCache({
+    this.maxRows = 512,
+    this.maxSourceCharacters = 128 * 1024,
+  }) : assert(maxRows > 0),
+       assert(maxSourceCharacters > 0);
+
+  final int maxRows;
+  final int maxSourceCharacters;
+  final LinkedHashMap<int, _CachedSyntaxSpan> _entries = LinkedHashMap();
+
+  String? _extension;
+  bool? _isDark;
+  TextStyle? _baseStyle;
+  int _cachedSourceCharacters = 0;
+
+  @visibleForTesting
+  int get cachedRows => _entries.length;
+  @visibleForTesting
+  int get cachedSourceCharacters => _cachedSourceCharacters;
+
+  TextSpan highlight(
+    int row,
+    String line, {
+    required String extension,
+    required bool isDark,
+    TextStyle? baseStyle,
+  }) {
+    _ensureConfiguration(extension, isDark, baseStyle);
+
+    final cached = _entries.remove(row);
+    if (cached != null) {
+      if (cached.line == line) {
+        _entries[row] = cached;
+        return cached.span;
+      }
+      _cachedSourceCharacters -= cached.line.length;
+    }
+
+    final span = SyntaxHighlighter.highlightLine(
+      line,
+      extension: extension,
+      isDark: isDark,
+      baseStyle: baseStyle,
+    );
+    if (line.length > maxSourceCharacters) return span;
+
+    _entries[row] = _CachedSyntaxSpan(line, span);
+    _cachedSourceCharacters += line.length;
+    _evictToBounds();
+    return span;
+  }
+
+  void clear() {
+    _entries.clear();
+    _cachedSourceCharacters = 0;
+  }
+
+  void _ensureConfiguration(
+    String extension,
+    bool isDark,
+    TextStyle? baseStyle,
+  ) {
+    if (_extension == extension &&
+        _isDark == isDark &&
+        _baseStyle == baseStyle) {
+      return;
+    }
+    clear();
+    _extension = extension;
+    _isDark = isDark;
+    _baseStyle = baseStyle;
+  }
+
+  void _evictToBounds() {
+    while (_entries.length > maxRows ||
+        _cachedSourceCharacters > maxSourceCharacters) {
+      final oldest = _entries.keys.first;
+      final removed = _entries.remove(oldest)!;
+      _cachedSourceCharacters -= removed.line.length;
+    }
+  }
+}
+
+class _CachedSyntaxSpan {
+  const _CachedSyntaxSpan(this.line, this.span);
+
+  final String line;
+  final TextSpan span;
 }

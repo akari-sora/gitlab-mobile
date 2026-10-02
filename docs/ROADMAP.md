@@ -2,6 +2,12 @@
 
 This repository imports the G0 R1 application slice, its Flutter regression tests and the native bootstrap from the September 19, 2026 handoff. CI-specific fixes and tests are subsequent commits. The full earlier 105-operation research/specification ZIP is a separate handoff artifact; it has not all been imported into this repository. Do not interpret these implementation notes as a replacement for that catalogue or a claim that all 105 APIs work.
 
+## Current follow-up — mobile parity and performance (2026-10-02)
+
+The development branch based on `0e1298e` adds project issue boards, server-backed MR draft review, repository revision comparison and native issue/MR filters. It also adds a bounded account-client read cache, concurrent request sharing, memoized/lazy list derivation and a page-owned syntax-span LRU. The full status matrix and safety boundaries are in [Mobile web parity and performance follow-up](MOBILE_PARITY_PERFORMANCE.md).
+
+This closes the read-oriented LT3 board slice and the core LT4 server draft-note slice. Boards do not provide drag/drop or direct reordering. Draft bulk publish remains subject to the unavoidable concurrent-change interval between the final list read and GitLab's bulk POST, which the confirmation names. LT2 GraphQL work items, pipeline DAG, repository graph, registries, OAuth application registration, push delivery and the analytics families remain open. Final tests, pipeline/jobs, physical-device measurements and NOT_RUN lanes belong in the current report; this roadmap is not acceptance evidence.
+
 ## G0 — Identity and private repository reader (implemented slice, acceptance incomplete)
 
 Native mobile UX: sign in, explicitly verify `/user`, separate member/starred/accessible project scopes, resolve private project URLs, browse one fixed commit SHA and read bounded raw text. Distinguish authentication failure, authorization failure, ambiguous 404, rate limits, network failures, unsupported content and oversized files. Preserve page-one content after page-two failure; prevent stale requests changing a new account or folder.
@@ -52,7 +58,7 @@ Actual Android/iOS device matrix, TalkBack/VoiceOver, large text and narrow-scre
 
 For each gate record commit SHA, pipeline/job URLs, fixtures/environment, executed cases, failures and NOT_RUN items. No global PASS based solely on unit tests or template generation.
 
-Status (2026-09-22): OAuth login, push, iOS, store signing, TalkBack, a cross-project CI overview, a two-pane layout, and a phone run of !4–!8 remain NOT_RUN. See the [v0.3 ledger](V0_3_VERIFICATION.md). `main` is `9183f19`; pipeline `2869335026` reported `509` tests.
+Historical status (2026-09-22, `9183f19`): OAuth login, push, iOS, store signing, TalkBack, a cross-project CI overview, a two-pane layout, and a phone run of !4–!8 remained NOT_RUN. Cross-project CI and retained-state two-pane layouts landed later; consult the v0.5 ledger and current parity report for their evidence boundaries. See the [v0.3 ledger](V0_3_VERIFICATION.md). Pipeline `2869335026` reported `509` tests for that revision.
 
 ## R4 — Follow-up specifications and Backlog (D1~D5 & Long-term)
 
@@ -111,7 +117,7 @@ The follow-up engineering slices (D1~D5) and long-term backlog bridge the gaps i
   - Tag selection pins tree to the resolved tag commit SHA without branch drift.
   - Zero frame drops during fast scrolls on large code files (> 5,000 lines).
 
-Status (2026-10-02, v0.5): D1–D5 had already landed on `main` before v0.5. v0.5 adds group browsing (the read side of LT1: groups, subgroups, group projects, group issues and MRs), emoji reactions, scoped-label rendering, global and per-project search, activity feeds, file history, blame and find-file, related items, members, wiki, environments, deployments and pipeline schedules. Evidence and NOT_RUN items are in the [v0.5 ledger](V0_5_VERIFICATION.md). Boards (LT3), draft-note batch review (LT4), GraphQL work items (LT2) and DAG graphs remain open.
+Status (2026-10-02): D1–D5 had already landed on `main` before v0.5. v0.5 adds group browsing (the read side of LT1: groups, subgroups, group projects, group issues and MRs), emoji reactions, scoped-label rendering, global and per-project search, activity feeds, file history, blame and find-file, related items, members, wiki, environments, deployments and pipeline schedules. Evidence and NOT_RUN items are in the [v0.5 ledger](V0_5_VERIFICATION.md). The current follow-up implements the read-oriented LT3 board slice and the core LT4 server draft-note slice; GraphQL work items (LT2), direct board reordering and DAG graphs remain open.
 
 ### Long-Term Backlog (LT1 ~ LT5)
 - **LT1: Groups & Subgroups Hierarchy (`GET /groups`)**: Flattened multi-level hierarchy browsing, subgroup navigation, and group-scoped project discovery.
@@ -119,4 +125,3 @@ Status (2026-10-02, v0.5): D1–D5 had already landed on `main` before v0.5. v0.
 - **LT3: Issue Boards Kanban View**: Horizontal swiping board columns for label/milestone workflows on tablets (>= 840 dp).
 - **LT4: Batch Review & Draft Notes**: Integration with server-side draft notes API for staging comments and submitting unified reviews.
 - **LT5: Suggested Changes Application**: Markdown rendering of ```suggestion blocks with one-tap commit application via GitLab suggestions API.
-

@@ -16,6 +16,8 @@ import 'picker_sheet.dart';
 import 'reactions.dart';
 import 'records_feed.dart';
 import 'discussions_tab.dart';
+import 'draft_review_page.dart';
+import 'work_item_filters.dart';
 import '../../shared/theme.dart';
 export 'discussions_tab.dart';
 
@@ -32,12 +34,11 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
   late final _selection = ListDetailController<int>();
   final _feed = GlobalKey<RecordsFeedState>();
   final _search = TextEditingController();
-  Timer? _debounce;
   String _state = 'opened', _query = '';
+  WorkItemFilters _filters = const WorkItemFilters();
   bool get mr => widget.resource == 'merge_requests';
   @override
   void dispose() {
-    _debounce?.cancel();
     _search.dispose();
     _selection.dispose();
     super.dispose();
@@ -48,12 +49,16 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
 
   void _applyMutation(Json updated) {
     final state = valueText(updated, 'state');
-    final matchesFilter = _state == 'all' || _state == state;
+    final matchesFilter = (_state == 'all' || _state == state) && _filters.matches(updated,
+      userId: widget.account.user.id, mergeRequest: mr, search: _query);
     if (matchesFilter) {
       _feed.currentState?.patchItem(updated);
     } else {
       _feed.currentState?.removeItem('${updated['id'] ?? updated['iid']}');
     }
+    // Edits can change updated_at/due_date and the pagination boundary. Let
+    // the server restore the selected order after immediate row feedback.
+    unawaited(_feed.currentState?.reconcileLoadedWindow() ?? Future<void>.value());
   }
   Future<void> _create() async {
     var iid = 0;
@@ -87,23 +92,29 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
         createdRecord = created;
       });
     if (saved && mounted) {
-      if (createdRecord != null && (_state == 'all' || _state == 'opened')) {
+      final created = createdRecord;
+      final matches = created != null && (_state == 'all' || _state == 'opened') && _filters.matches(created,
+        userId: widget.account.user.id, mergeRequest: mr, search: _query);
+      if (matches && _filters.canPrependCreated) {
         _feed.currentState?.prependItem(createdRecord!);
-      } else {
-        unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
+        unawaited(_feed.currentState?.reconcileLoadedWindow() ?? Future<void>.value());
+      } else if (matches || created == null) {
+        unawaited(_feed.currentState?.reconcileLoadedWindow() ?? Future<void>.value());
       }
       _open(iid);
     }
   }
   Widget _buildList(BuildContext context, bool isTwoPane, int? selected) {
-    return RecordsFeed(key: _feed, identity: '${widget.resource}/$_state/$_query', storageId: widget.resource,
+    final filterQuery = _filters.toQuery(mergeRequest: mr);
+    return RecordsFeed(key: _feed,
+      identity: '${widget.resource}/$_state/$_query/${_filters.identity(mergeRequest: mr)}', storageId: widget.resource,
       account: widget.account, resourceLabel: '${widget.project.path} · ${mr ? '合併請求' : '議題'}',
       onSwitchAccount: endSessionFrom(context),
       empty: mr ? '沒有符合的合併請求' : '沒有符合的議題',
       emptyIcon: mr ? Icons.merge : Icons.adjust,
       leading: (context, _) => _listControls(context),
       load: (next) => widget.api.records(['projects', '${widget.project.id}', widget.resource],
-        query: {'state': _state, 'scope': 'all', 'order_by': 'updated_at', 'sort': 'desc', 'with_labels_details': 'true',
+        query: {...filterQuery, 'state': _state, 'with_labels_details': 'true',
           if (_query.isNotEmpty) 'search': _query}, next: next),
       itemBuilder: (context, value) {
         final iid = requiredInt(value, 'iid');
@@ -118,9 +129,22 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
     );
   }
 
+  Future<void> _openFilters() async {
+    final selected = await showWorkItemFilters(context, api: widget.api, account: widget.account,
+      projectId: widget.project.id, mergeRequest: mr, initial: _filters);
+    if (!mounted || selected == null) return;
+    final query = _search.text.trim();
+    if (selected == _filters && query == _query) return;
+    setState(() {
+      _filters = selected;
+      _query = query;
+    });
+  }
+
   Widget _listControls(BuildContext context) => Column(children: [
     Padding(padding: EdgeInsets.fromLTRB(feedGutter(context), 12, feedGutter(context) - 4, 4), child: Row(children: [
       Expanded(child: TextField(
+        key: const Key('work-items-search'),
         controller: _search,
         textInputAction: TextInputAction.search,
         decoration: InputDecoration(
@@ -135,25 +159,21 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
                 icon: const Icon(Icons.clear, size: 20),
                 onPressed: () {
                   _search.clear();
-                  _debounce?.cancel();
-                  setState(() => _query = '');
+                  if (_query.isNotEmpty) setState(() => _query = '');
                 },
               );
             },
           ),
         ),
-        onChanged: (value) {
-          _debounce?.cancel();
-          _debounce = Timer(const Duration(milliseconds: 300), () {
-            if (mounted) setState(() => _query = value.trim());
-          });
-        },
         onSubmitted: (value) {
-          _debounce?.cancel();
-          setState(() => _query = value.trim());
+          final query = value.trim();
+          if (query != _query) setState(() => _query = query);
         },
       )),
-      const SizedBox(width: 8), IconButton(tooltip: mr ? '新增合併請求' : '新增議題',
+      const SizedBox(width: 4), IconButton(tooltip: '篩選與排序', onPressed: _openFilters,
+        icon: _filters.activeCount(mergeRequest: mr) == 0 ? const Icon(Icons.tune) : Badge.count(
+          count: _filters.activeCount(mergeRequest: mr), child: const Icon(Icons.tune))),
+      IconButton(tooltip: mr ? '新增合併請求' : '新增議題',
         onPressed: widget.project.archived == true ? null : _create, icon: const Icon(Icons.add_circle_outline)),
     ])),
     Padding(padding: EdgeInsets.symmetric(horizontal: feedGutter(context), vertical: 4), child: Align(
@@ -176,6 +196,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
     onDeleted: () {
       _selection.clear();
       _feed.currentState?.removeItem('$iid');
+      unawaited(_feed.currentState?.reconcileLoadedWindow() ?? Future<void>.value());
     },
     onMutated: _applyMutation,
   );
@@ -325,10 +346,16 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
           _data = data;
           _approvalsData = approvals;
         });
-        widget.onMutated?.call(data);
       }
     } catch (e) { if (mounted && epoch == _epoch) { setState(() => _error = safeFailure(e)); } }
     finally { if (mounted && epoch == _epoch) { setState(() => _loading = false); } }
+  }
+  Future<void> _loadAfterMutation() async {
+    final expectedEpoch = _epoch + 1;
+    await _load();
+    if (mounted && _epoch == expectedEpoch && _error == null && _data != null) {
+      widget.onMutated?.call(_data!);
+    }
   }
   Future<void> _edit() async {
     final data = _data;
@@ -359,10 +386,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         await widget.api.writeRecord('PUT', path, body);
       });
     if (saved && mounted) {
-      await _load();
-      if (mounted && _data != null) {
-        widget.onMutated?.call(_data!);
-      }
+      await _loadAfterMutation();
     }
   }
   Future<void> _editAssignees() async {
@@ -397,10 +421,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
       },
     );
     if (saved && mounted) {
-      await _load();
-      if (mounted && _data != null) {
-        widget.onMutated?.call(_data!);
-      }
+      await _loadAfterMutation();
     }
   }
   Future<void> _editReviewers() async {
@@ -435,10 +456,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
       },
     );
     if (saved && mounted) {
-      await _load();
-      if (mounted && _data != null) {
-        widget.onMutated?.call(_data!);
-      }
+      await _loadAfterMutation();
     }
   }
 
@@ -470,10 +488,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
           const SnackBar(content: Text('標籤已更新')),
         );
       }
-      await _load();
-      if (mounted && _data != null) {
-        widget.onMutated?.call(_data!);
-      }
+      await _loadAfterMutation();
     } catch (e) {
       if (mounted) showFailure(context, e);
     } finally {
@@ -498,10 +513,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
           SnackBar(content: Text('已移除標籤「$labelToRemove」')),
         );
       }
-      await _load();
-      if (mounted && _data != null) {
-        widget.onMutated?.call(_data!);
-      }
+      await _loadAfterMutation();
     } catch (e) {
       if (mounted) showFailure(context, e);
     } finally {
@@ -531,7 +543,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
       setState(() => _busy = true);
       try {
         await widget.api.cancelAutoMerge(widget.project.id, widget.iid);
-        await _load();
+        await _loadAfterMutation();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已取消自動合併')));
         }
@@ -591,10 +603,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         case 'merge': await widget.api.mergeRequest(widget.project.id, widget.iid, requiredString(data, 'sha'),
           squash: squash, removeSourceBranch: removeSourceBranch, autoMerge: autoMerge);
       }
-      await _load();
-      if (mounted && _data != null) {
-        widget.onMutated?.call(_data!);
-      }
+      await _loadAfterMutation();
       if (mounted && action == 'rebase') {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已請求 Rebase 分支')));
       }
@@ -652,6 +661,20 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         ],
       ),
     ));
+  }
+  Future<void> _openDraftReview(Json data) async {
+    final headSha = valueText(data, 'sha');
+    if (headSha.isEmpty) {
+      showFailure(context, const ApiFailure(FailureKind.invalidResponse));
+      return;
+    }
+    await Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => DraftReviewPage(
+      account: widget.account,
+      api: widget.api,
+      project: widget.project,
+      iid: widget.iid,
+      headSha: headSha,
+    )));
   }
   Widget _reviewCard(Json data) {
     final state = valueText(data, 'state');
@@ -758,6 +781,12 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         ],
         const SizedBox(height: 12),
         Wrap(spacing: 8, runSpacing: 8, children: [
+          OutlinedButton.icon(
+            key: const ValueKey('mr-draft-review-btn'),
+            onPressed: _busy ? null : () => _openDraftReview(data),
+            icon: const Icon(Icons.rate_review_outlined, size: 18),
+            label: const Text('審查草稿'),
+          ),
           if (hasApproved)
             OutlinedButton.icon(
               key: const ValueKey('mr-unapprove-btn'),
@@ -1178,7 +1207,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
               ].join(' · '), style: Theme.of(context).textTheme.bodySmall),
             ]),
             if (mr) ReviewDiffPage(key: ValueKey(valueText(data, 'sha')), account: widget.account, api: widget.api,
-              project: widget.project, iid: widget.iid, expectedSha: valueText(data, 'sha'), onApplied: _load),
+              project: widget.project, iid: widget.iid, expectedSha: valueText(data, 'sha'), onApplied: _loadAfterMutation),
             DiscussionsTab(
               account: widget.account,
               api: widget.api,
@@ -1186,7 +1215,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
               resource: widget.resource,
               iid: widget.iid,
               headSha: mr ? valueText(data, 'sha') : null,
-              onChanged: _load,
+              onChanged: _loadAfterMutation,
             ),
             if (mr) _MergeChecks(account: widget.account, api: widget.api, path: path, data: data, busy: _busy, act: _action),
           ])),
