@@ -45,7 +45,7 @@ GitLab edition lacks the feature.
 | MR review | Discussions, inline single-line positions, approvals/merge, suggested changes, auto-merge, local viewed-file state and the MR draft/ready toggle | Server draft-note list, add/edit/discard and bulk publish, tied to account/project/MR/head SHA | Viewed-file state is not server-synchronised; multi-line positioning and full desktop review policy administration remain open |
 | Build | Pipelines, stage-grouped jobs, controls, incremental ANSI logs and search, JUnit report views, artifacts, cross-project CI overview and schedules | Read-only pipeline dependency graph with paginated actual GraphQL needs | Cross-project/downstream graph and the complete pipeline editor remain open |
 | Deploy and operate | Environments and deployment history | Package/Container/Terraform lists, details and guarded deletion; Incident severity and a separately modelled escalation lifecycle | Registry downloads/publish, model registries, complete Incident operations and Service Desk remain open |
-| Analyze | Basic project counts and activity | No structural change | Value-stream, contributor, repository, code-review and issue analytics, insights and model experiments remain open |
+| Analyze | Basic project counts and activity | Native contributor aggregates, bounded repository activity/languages/coverage, CI source/ref/date filters and actual aggregate/time-series statistics | Value-stream, complete per-author/distribution charts, code-review/issue analytics, insights and model experiments remain open |
 | Adaptive layout | Compact phone navigation and retained-state two-pane layout at the expanded breakpoint | New boards show one active column at a time on phones; filters use a native bottom sheet; long result screens remain lazy | iOS physical-device, VoiceOver/TalkBack and authenticated enterprise-screen walks remain NOT_RUN |
 
 This matrix is a navigation and workflow comparison, not a declaration of full
@@ -167,6 +167,47 @@ ProjectMore and Pipeline owned navigation stacks, board modal editors and snippe
 routes are removed on account/project/API replacement. Registry feed identities
 include owner generation, so reconnecting the same account clears old rows before
 loading from the replacement API.
+
+### Project analytics
+
+更多 → 專案分析 groups contributor, repository and CI data in native tabs. It
+loads the active tab, keeps completed data while navigating tabs, and bounds
+repository/contributor pagination to 20 pages / 2,000 rows. Contributor records
+contain only a display name and aggregate commit/addition/deletion counts;
+emails and inferred GitLab-user identities are discarded. Equal author names
+remain separate. Contributor aggregates cover the selected ref's history;
+the repository and CI date window is explicitly UTC, with an inclusive start
+and exclusive end.
+
+Repository activity requests actual commit statistics, excludes multi-parent
+merge commits from its local-date aggregate, and retains loaded data after a
+later-page failure. GitLab's inclusive REST `until` is converted from the
+exclusive App boundary. Canonical timezone spellings in pagination links are
+accepted only when they represent the same instant; ref/window/stat filters
+and endpoint origin remain fixed.
+
+CI uses a fixed read-only GraphQL query with a verified source enum, project
+identity, actual aggregate count/p50/p95 and bounded daily series. Success and
+failure rates exclude cancelled/skipped pipelines and require supplied counts.
+No overall median is calculated from daily medians. Missing fields, null
+coverage and unsupported schemas remain explicit. Language/coverage are
+project-scoped repository sections and have independent retries.
+
+The expanded anonymous public smoke read actual contributors/commit activity,
+pipeline series, aggregate statistics with Any/Push sources, and the nullable
+coverage contract: 17 PASS, one Boards authentication GAP, zero writes.
+These reads establish public API compatibility; complete Web chart interactions,
+private/paid analytics and installed-build acceptance remain separate lanes.
+
+The final Analytics source passed full analysis and 1,299 JUnit tests with zero
+failures/errors/skips on pinned Flutter 3.47.2 / Dart 3.13.2. Local coverage is
+88.06% (15,776 / 17,916 lines); the dependency lock is unchanged. The 46 targeted
+Analytics cases include delayed same-filter refreshes, unrelated-tab refreshes,
+pending project-read sharing, account replacement, pagination failures and
+320–840dp / 2x text / keyboard / safe-inset checks. Independent source review
+found no actionable defect. Exact submitted-source CI and the installed Android
+Analytics walk follow separately; the earlier `1709c0f` evidence below does not
+cover these newer screens.
 
 ## Loading, cache and scroll work
 
@@ -341,8 +382,41 @@ Flutter 3.47.2 with the committed dependency lock unchanged: clean analysis,
 (14,901 / 16,983 lines). The complete run was repeated after repairing four
 synthetic Issue fixtures to include GitLab's actual numeric `project_id`;
 production identity validation remains strict. Independent bounded review
-found no outstanding actionable defect. Device/CI evidence for this follow-up
-is still pending here, and authenticated lifecycle mutations remain NOT_RUN.
+found no outstanding actionable defect. Submitted commit
+`1709c0f922938e213d52b71a65b1327f5c76497e` has exact-head CI evidence in
+[pipeline 2906606845](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2906606845):
+all five jobs finished successfully. Flutter
+[16895165988](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16895165988)
+passed 1,253 tests with zero failures/errors/skips and 87.73% CI coverage
+(14,900 / 16,983). Native templates
+[16895165989](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16895165989)
+retained Android backup/cleartext and iOS ATS/keychain restrictions. Public API
+[16895165990](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16895165990)
+passed 13 checks with one anonymous Boards GAP and zero writes. Android
+[16895165991](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16895165991)
+produced a checksum/signature-verified debug APK with the compiled source marker
+and restricted manifest. Its signer differs from the installed preview, so it
+was not installed. Python
+[16895165987](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16895165987)
+also passed. This CI evidence applies to `1709c0f`, before the analytics slice.
+
+A normal release APK built from an isolated exact `1709c0f` archive was
+installed in place on the S24 Ultra, preserving its account. SHA-256:
+`9e85b213d8faaa1e0e5b57b9ee70c6e7611c92e287108b915da89d15d5c707d6`.
+Its development signer matches the previous preview; it is not store-signed.
+The App showed Task/Incident empty lists and cancelled create editors, Incident
+severity choices, the corrected Snippet editor and private/public visibility
+choices, and actual pipeline #286 dependencies with corrected status-bar and
+gesture insets. The own-process log sample contained no Flutter overflow,
+uncaught exception or native crash marker. No server writes were performed.
+Authenticated nonempty CRUD and lifecycle mutations remain NOT_RUN.
+
+An isolated exact-source iOS bootstrap preserved the committed lock and native
+security settings. Both simulator and unsigned-device builds stopped before
+compilation with missing Xcode build settings. Installing the official iOS 26.2
+simulator runtime did not resolve Xcode's first-launch prerequisite; its
+component installer is waiting for macOS administrator authentication. No iOS
+binary or device pass follows from bootstrap or runtime installation.
 
 The expanded local public suite additionally verifies typed Task/Incident
 lists and the fixed incident query schema: 13 PASS, one anonymous Boards GAP,

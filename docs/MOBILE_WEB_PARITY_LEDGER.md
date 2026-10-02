@@ -28,7 +28,7 @@ specification numbers have been invented.
 | Code / Tags | Loaded search/order/direction, release and pipeline links | List/create/delete | Full signature/release policy parity |
 | Code / Repository graph | Loaded mobile timeline and branch/history controls | Selected-ref parent graph, branch/tag picker, bounded pagination | Web full all-branch/simplified history modes and live large graphs |
 | Code / Compare | Fixed-revision comparison observed | Merge-base/direct compare, lazy actual unified diffs | Cross-project compare and complete controls |
-| Code / Snippets | Actual empty list | Explicit single-file reader/editor and guarded CRUD | Multi-file tree/preview/edit; immutable snippet HEAD API unresolved |
+| Code / Snippets | Empty project list plus a real three-file public Snippet; README source/preview toggle verified at phone width | Explicit single-file reader/editor and guarded CRUD | Multi-file tree/preview/edit; current snapshots need change detection because no immutable HEAD is exposed |
 | Build / Pipelines | List/detail/stage controls observed | Lists/actions/tests plus actual paginated needs graph | Downstream/cross-project graph and pipeline editor |
 | Build / Jobs | Loaded kind/state filters, stacked job/pipeline/stage rows and runner tags | Incremental ANSI logs/search/actions/artifacts | Full Web filters, large-log physical profiling |
 | Build / Pipeline schedules | Loaded periodic-run empty state and owner/variable explanation | List/create/edit/run/delete | Inputs, ownership, complete policy and live CRUD |
@@ -41,11 +41,18 @@ specification numbers have been invented.
 | Monitor / Incidents | Actual empty Open/Closed/All view observed | Typed list/create/edit/severity; separate issue state and GraphQL escalation lifecycle | Actual Incident fixture CRUD/lifecycle, alerts, timeline, metrics and on-call capabilities |
 | Monitor / Service Desk | Loaded email-support explanation and sign-in requirement | Not implemented | Capability/permissions, confidential Ticket widgets and email-aware replies |
 | Analyze / Value stream | Loaded six stages, lifecycle metrics and filters | Not implemented | Scope/date/stream/stages/metrics, tier-dependent aggregation |
-| Analyze / Contributors | Loaded per-author/day charts, ref selector and 6,000-commit limit | Not implemented | Ref/paged aggregate; complete Web time series API unresolved |
-| Analyze / CI/CD | Loaded source/ref/date controls, counts/rates and duration chart | Pipeline operational pages only | Bounded pipeline time series/percentiles and capability-gated job analytics |
-| Analyze / Repository | Loaded language/coverage/distribution sections and 2,000-commit limit | Overview languages bar | Coverage summary plus complete commit histograms API unresolved |
+| Analyze / Contributors | Loaded per-author/day charts, ref selector and 6,000-commit limit | Native ref-scoped contributor aggregate with bounded pagination; no author email or inferred GitLab identity | Complete per-author Web time series and authenticated acceptance |
+| Analyze / CI/CD | Loaded source/ref/date controls, counts/rates and duration chart; actual Push filter readback | Native source/ref/date filters, actual aggregate counts/median and daily counts/p50/p95 | Capability-gated job analytics, full chart interactions and authenticated/edition acceptance |
+| Analyze / Repository | Loaded language/coverage/distribution sections and 2,000-commit limit | Native languages, nullable coverage summary and paged non-merge commit activity | Full Web distribution histograms and authenticated coverage acceptance |
 
 ## Account and performance acceptance
+
+The additional read-only Snippet walk used
+[GitLab's public three-file fixture](https://gitlab.com/gitlab-org/gitlab/-/snippets/6030720).
+Its README and two shell-file headers, source/preview toggle and server-provided
+raw URLs were observed. The GraphQL lookup obtains an opaque Snippet GID through
+project-scoped enumeration; it does not construct one from a REST numeric ID.
+This observation is not native multi-file implementation or write acceptance.
 
 Each new page binds responses and modal closures to account/instance, numeric
 project identity, API generation and request epoch. ProjectMore/Pipeline remove
@@ -71,8 +78,10 @@ on one S24 Ultra do not establish statistical improvement on every screen.
 3. Multi-file Snippet blobs: lazy paths/content with `updatedAt` change detection.
    Describe a current snapshot; do not claim a fixed SHA or infer a ref.
 4. Registry safe type-specific download/publish and complete repository graph.
-5. Analytics: contributor aggregate and coverage summary, CI/CD series, VSA.
-   Unverified public APIs for complete histograms/time series remain open.
+5. Contributor aggregate, coverage summary and CI/CD series now have native
+   implementation work. Complete installed-build/CI readback; VSA, complete
+   histograms, per-author time series and capability-gated job analytics remain
+   open. Null/unavailable analytics do not become zero-valued charts.
 6. All 30 public page walks are recorded. Continue authenticated/paid/configured cataloguing,
    new Android screens, real private-project integration, disposable-fixture
    CRUD, iOS binary/device and screen-reader verification.

@@ -4,6 +4,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:dio/dio.dart';
+import 'package:gitlab_mobile/core/analytics_models.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
@@ -16,6 +17,41 @@ import 'package:gitlab_mobile/core/unified_diff.dart';
 const _publicProjectId = 86648389;
 const _publicProjectPath = 'aa22396584/gitlab-mobile';
 const _publicPipelineId = 2906089178;
+const _analyticsFrom = '2026-09-01T00:00:00.000Z';
+const _analyticsTo = '2026-10-03T00:00:00.000Z';
+const _pipelineAnalyticsQuery = r'''
+query MobilePipelineAnalytics($path: ID!, $ref: String!, $fromTime: Time!, $toTime: Time!, $period: AnalyticsAggregationPeriod!, $source: CiPipelineSources) {
+  project(fullPath: $path) {
+    id
+    pipelineAnalytics(ref: $ref, fromTime: $fromTime, toTime: $toTime, source: $source) {
+      aggregate {
+        label
+        all: count
+        success: count(status: SUCCESS)
+        failed: count(status: FAILED)
+        other: count(status: OTHER)
+        durationStatistics { p50 p95 }
+      }
+      timeSeries(period: $period) {
+        label
+        all: count
+        success: count(status: SUCCESS)
+        failed: count(status: FAILED)
+        other: count(status: OTHER)
+        durationStatistics { p50 p95 }
+      }
+    }
+  }
+}
+''';
+const _codeCoverageSummaryQuery = r'''
+query MobileCodeCoverageSummary($path: ID!) {
+  project(fullPath: $path) {
+    id
+    codeCoverageSummary { averageCoverage coverageCount lastUpdatedOn }
+  }
+}
+''';
 const _incidentStatusQuery = r'''
 query MobileIncidentStatus($path: ID!, $iid: String!) {
   project(fullPath: $path) {
@@ -61,7 +97,10 @@ Future<void> main() async {
             request.uri.scheme == 'https' &&
             request.uri.host == 'gitlab.com' &&
             request.uri.path.startsWith('/api/v4/');
-        final graphRead = _isExactPublicPipelineGraph(request) || _isExactPublicIncidentGraph(request);
+        final graphRead =
+            _isExactPublicPipelineGraph(request) ||
+            _isExactPublicIncidentGraph(request) ||
+            _isExactPublicAnalyticsGraph(request);
         if (!restRead && !graphRead) {
           handler.reject(
             DioException(
@@ -222,9 +261,17 @@ Future<void> main() async {
     });
     await check('public.typed_task_incident_lists', () async {
       for (final type in ['task', 'incident']) {
-        final page = await api.records(['projects', '$_publicProjectId', 'issues'],
-          query: {'scope': 'all', 'state': 'all', 'issue_type': type});
-        require(page.items.every((issue) => issue['issue_type'] == type && issue['project_id'] == _publicProjectId));
+        final page = await api.records(
+          ['projects', '$_publicProjectId', 'issues'],
+          query: {'scope': 'all', 'state': 'all', 'issue_type': type},
+        );
+        require(
+          page.items.every(
+            (issue) =>
+                issue['issue_type'] == type &&
+                issue['project_id'] == _publicProjectId,
+          ),
+        );
       }
     });
     await check('public.incident.lifecycle_query_schema_only', () async {
@@ -234,10 +281,86 @@ Future<void> main() async {
       try {
         await api.incidentStatus(project, 1);
       } on ApiFailure catch (failure) {
-        require(failure.kind == FailureKind.invisible && failure.status == null);
+        require(
+          failure.kind == FailureKind.invisible && failure.status == null,
+        );
         return;
       }
       throw const FormatException('Ordinary issue returned as Incident');
+    });
+    await check('public.analytics.sanitized_repository_models', () async {
+      final project = await api.project('$_publicProjectId');
+      final contributors = await api.repositoryContributors(
+        project,
+        ref: 'main',
+      );
+      require(contributors.items.isNotEmpty);
+      require(
+        contributors.items.every(
+          (row) => row.commits >= 0 && row.displayName.isNotEmpty,
+        ),
+      );
+      final activity = await api.repositoryActivity(
+        project,
+        ref: 'main',
+        from: DateTime.parse(_analyticsFrom),
+        to: DateTime.parse(_analyticsTo),
+      );
+      require(activity.items.isNotEmpty);
+      require(
+        activity.items.every(
+          (row) =>
+              row.parentCount >= 0 &&
+              !row.committedAt.isBefore(DateTime.parse(_analyticsFrom)) &&
+              row.committedAt.isBefore(DateTime.parse(_analyticsTo)),
+        ),
+      );
+    });
+    await check('public.analytics.actual_pipeline_series', () async {
+      final project = await api.project('$_publicProjectId');
+      final analytics = await api.pipelineAnalytics(
+        project,
+        ref: 'main',
+        from: DateTime.parse(_analyticsFrom),
+        to: DateTime.parse(_analyticsTo),
+      );
+      require(analytics.buckets.isNotEmpty);
+      require(
+        analytics.buckets.any(
+          (bucket) => bucket.total != null && bucket.total! > BigInt.zero,
+        ),
+      );
+      require(
+        analytics.aggregate?.total != null &&
+            analytics.aggregate!.total! > BigInt.zero,
+      );
+    });
+    await check(
+      'public.analytics.actual_source_filter_and_aggregate',
+      () async {
+        final project = await api.project('$_publicProjectId');
+        final analytics = await api.pipelineAnalytics(
+          project,
+          ref: 'main',
+          from: DateTime.parse(_analyticsFrom),
+          to: DateTime.parse(_analyticsTo),
+          source: AnalyticsPipelineSource.push,
+        );
+        require(
+          analytics.aggregate?.total != null &&
+              analytics.aggregate!.total! > BigInt.zero,
+        );
+        require(analytics.aggregate?.p50Seconds != null);
+      },
+    );
+    await check('public.analytics.coverage_query_nullable_contract', () async {
+      final project = await api.project('$_publicProjectId');
+      final summary = await api.codeCoverageSummary(project);
+      // A public project may not expose coverage; null is never treated as 0%.
+      require(
+        summary?.averageCoverage == null ||
+            (summary!.averageCoverage! >= 0 && summary.averageCoverage! <= 100),
+      );
     });
     await check('public.registry.list_detail_files', () async {
       final page = await api.records(
@@ -439,10 +562,47 @@ bool _isExactPublicPipelineGraph(RequestOptions request) {
 }
 
 bool _isExactPublicIncidentGraph(RequestOptions request) {
-  if (request.method != 'POST' || request.uri != Uri.parse('https://gitlab.com/api/graphql')) return false;
+  if (request.method != 'POST' ||
+      request.uri != Uri.parse('https://gitlab.com/api/graphql')) {
+    return false;
+  }
   final body = request.data;
-  if (body is! Map || body.length != 2 || body['query'] != _incidentStatusQuery) return false;
+  if (body is! Map ||
+      body.length != 2 ||
+      body['query'] != _incidentStatusQuery) {
+    return false;
+  }
   final variables = body['variables'];
-  return variables is Map && variables.length == 2 &&
-      variables['path'] == _publicProjectPath && variables['iid'] == '1';
+  return variables is Map &&
+      variables.length == 2 &&
+      variables['path'] == _publicProjectPath &&
+      variables['iid'] == '1';
+}
+
+bool _isExactPublicAnalyticsGraph(RequestOptions request) {
+  if (request.method != 'POST' ||
+      request.uri != Uri.parse('https://gitlab.com/api/graphql')) {
+    return false;
+  }
+  final body = request.data;
+  if (body is! Map ||
+      body.length != 2 ||
+      !body.containsKey('query') ||
+      !body.containsKey('variables')) {
+    return false;
+  }
+  final variables = body['variables'];
+  if (variables is! Map || variables['path'] != _publicProjectPath) {
+    return false;
+  }
+  if (body['query'] == _codeCoverageSummaryQuery) return variables.length == 1;
+  final sourceAllowed =
+      variables.length == 5 && !variables.containsKey('source') ||
+      variables.length == 6 && variables['source'] == 'PUSH';
+  return body['query'] == _pipelineAnalyticsQuery &&
+      sourceAllowed &&
+      variables['ref'] == 'main' &&
+      variables['fromTime'] == _analyticsFrom &&
+      variables['toTime'] == _analyticsTo &&
+      variables['period'] == 'DAY';
 }

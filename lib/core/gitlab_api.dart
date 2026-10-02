@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'failure.dart';
+import 'analytics_models.dart';
 import 'instance.dart';
 import 'models.dart';
 import 'oauth.dart';
@@ -13,6 +14,7 @@ import 'upload_names.dart';
 
 part 'workspace_api.dart';
 part 'incident_api.dart';
+part 'analytics_api.dart';
 
 final _artifactCancelled = Object();
 const _artifactRedirects = {301, 302, 303, 307, 308};

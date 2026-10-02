@@ -17,6 +17,7 @@ import 'registries_page.dart';
 import 'snippets_page.dart';
 import 'editor.dart';
 import 'project_extras.dart';
+import 'project_analytics_page.dart';
 import 'records_feed.dart';
 import 'search_page.dart';
 import 'work_item_page.dart';
@@ -343,6 +344,17 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     return ListView(padding: const EdgeInsets.fromLTRB(16, 14, 16, 24), children: [
       _overview(context),
       _section(context, '程式碼', [
+        (
+          Icons.analytics_outlined,
+          '專案分析',
+          () => _push(
+            ProjectAnalyticsPage(
+              account: account,
+              api: api,
+              project: project,
+            ),
+          ),
+        ),
         (Icons.compare_arrows, '比較版本', () => _push(ComparePage(account: account, api: api, project: project))),
         (Icons.alt_route, metadataTitle(MetadataKind.branches), () => metadata(MetadataKind.branches)),
         (Icons.sell_outlined, metadataTitle(MetadataKind.tags), () => metadata(MetadataKind.tags)),
