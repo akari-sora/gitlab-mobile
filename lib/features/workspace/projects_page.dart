@@ -183,19 +183,22 @@ class _ProjectsPageState extends State<ProjectsPage> {
     if (targetAccount == null) return;
     final targetAccountKey = targetAccount.key;
     final targetGeneration = widget.session.generation;
+    final targetApi = api;
     setState(() => _opening = true);
     try {
-      final proj = await api.project('${rp.id}');
+      final proj = await targetApi.project('${rp.id}');
       if (!mounted) return;
       if (widget.session.active?.key != targetAccountKey ||
-          widget.session.generation != targetGeneration) {
+          widget.session.generation != targetGeneration ||
+          !identical(widget.session.api, targetApi)) {
         return;
       }
       _open(proj);
     } catch (e) {
       if (!mounted) return;
       if (widget.session.active?.key != targetAccountKey ||
-          widget.session.generation != targetGeneration) {
+          widget.session.generation != targetGeneration ||
+          !identical(widget.session.api, targetApi)) {
         return;
       }
       showFailure(context, e);
@@ -222,25 +225,37 @@ class _ProjectsPageState extends State<ProjectsPage> {
     if (targetAccount == null) return;
     final targetAccountKey = targetAccount.key;
     final targetGeneration = widget.session.generation;
+    final targetApi = api;
     setState(() => _opening = true);
     try {
-      final parsed = ProjectLocator.parse(locator, account.instance);
-      final link = GitLabLink.parse(locator, account.instance);
+      final parsed = ProjectLocator.parse(locator, targetAccount.instance);
+      final link = GitLabLink.parse(locator, targetAccount.instance);
       if (link.target != LinkTarget.project) {
-        await ResourceNavigator(account, api).link(context, link);
+        await ResourceNavigator(
+          targetAccount,
+          targetApi,
+          ownerChanges: widget.session,
+          isCurrent: () =>
+              mounted &&
+              widget.session.active?.key == targetAccountKey &&
+              widget.session.generation == targetGeneration &&
+              identical(widget.session.api, targetApi),
+        ).link(context, link);
         return;
       }
-      final project = await api.project(parsed.idOrPath);
+      final project = await targetApi.project(parsed.idOrPath);
       if (!mounted) return;
       if (widget.session.active?.key != targetAccountKey ||
-          widget.session.generation != targetGeneration) {
+          widget.session.generation != targetGeneration ||
+          !identical(widget.session.api, targetApi)) {
         return;
       }
       _open(project);
     } catch (e) {
       if (!mounted) return;
       if (widget.session.active?.key != targetAccountKey ||
-          widget.session.generation != targetGeneration) {
+          widget.session.generation != targetGeneration ||
+          !identical(widget.session.api, targetApi)) {
         return;
       }
       if (e is FormatException) {

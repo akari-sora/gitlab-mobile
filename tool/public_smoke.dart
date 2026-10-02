@@ -53,6 +53,119 @@ query MobileSnippetBlob($ids: [SnippetID!], $paths: [String!]) {
   }
 }
 ''';
+const _publicWorkItemIid = 631894;
+const _publicGroupWorkItemIid = 23883;
+const _publicGroupWorkItemPath = 'gitlab-org';
+const _publicWorkItemSummaryFields = r'''
+id
+iid
+title
+state
+createdAt
+updatedAt
+project { id fullPath }
+namespace { id fullPath }
+workItemType { id name }
+''';
+
+final _publicProjectWorkItemsQuery =
+    '''
+query MobileProjectWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
+  project(fullPath: \$path) {
+    id
+    fullPath
+    workItems(first: \$first, after: \$after) {
+      nodes { $_publicWorkItemSummaryFields }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+
+final _publicProjectWorkItemQuery =
+    '''
+query MobileProjectWorkItem(\$path: ID!, \$iid: String!) {
+  project(fullPath: \$path) {
+    id
+    fullPath
+    workItems(first: 2, iid: \$iid) {
+      nodes { ${_publicWorkItemDetailFields()} }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+
+final _publicNamespaceWorkItemQuery =
+    '''
+query MobileNamespaceWorkItem(\$path: ID!, \$iid: String!) {
+  namespace(fullPath: \$path) {
+    id
+    fullPath
+    workItem(iid: \$iid) { ${_publicWorkItemDetailFields()} }
+  }
+}
+''';
+
+const _publicNamespaceWorkItemTypesQuery = r'''
+query MobileNamespaceWorkItemTypes($path: ID!, $first: Int!, $after: String) {
+  namespace(fullPath: $path) {
+    id
+    fullPath
+    workItemTypes(first: $first, after: $after) {
+      nodes {
+        id
+        name
+        enabled
+        isGroupWorkItemType
+        widgetDefinitions { type }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+
+String _publicWorkItemDetailFields() =>
+    '''
+$_publicWorkItemSummaryFields
+description
+widgets {
+  type
+  ... on WorkItemWidgetDescription {
+    description
+    edited
+    lastEditedAt
+  }
+  ... on WorkItemWidgetAssignees {
+    assignees(first: 20) {
+      nodes { id name username avatarUrl }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on WorkItemWidgetLabels {
+    labels(first: 50) {
+      nodes { id title color description textColor }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on WorkItemWidgetHierarchy {
+    hasParent
+    hasChildren
+    parent { $_publicWorkItemSummaryFields }
+    children(first: 20) {
+      nodes { $_publicWorkItemSummaryFields }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on WorkItemWidgetStartAndDueDate {
+    startDate
+    dueDate
+    rollUp
+  }
+}
+''';
+
 const _analyticsFrom = '2026-09-01T00:00:00.000Z';
 const _analyticsTo = '2026-10-03T00:00:00.000Z';
 const _pipelineAnalyticsQuery = r'''
@@ -139,7 +252,8 @@ Future<void> main() async {
             _isExactPublicPipelineGraph(request) ||
             _isExactPublicIncidentGraph(request) ||
             _isExactPublicAnalyticsGraph(request) ||
-            _isExactPublicSnippetGraph(request, discoveredSnippetGraphId);
+            _isExactPublicSnippetGraph(request, discoveredSnippetGraphId) ||
+            _isExactPublicWorkItemGraph(request);
         if (!restRead && !graphRead) {
           handler.reject(
             DioException(
@@ -509,6 +623,49 @@ Future<void> main() async {
             utf8.encode(blob.content!).length == blob.size,
       );
     });
+    await check('public.work_items.project_page_identity', () async {
+      final project = await api.project('$_publicSnippetProjectId');
+      final page = await api.projectWorkItems(project);
+      require(page.items.isNotEmpty && page.items.length <= 20);
+      require(page.nextCursor != null);
+      require(
+        page.items.every(
+          (item) => item.project?.fullPath == project.path && item.iid > 0,
+        ),
+      );
+    });
+    await check('public.work_items.actual_dynamic_widgets', () async {
+      final project = await api.project('$_publicSnippetProjectId');
+      final detail = await api.projectWorkItem(project, _publicWorkItemIid);
+      require(detail.summary.iid == _publicWorkItemIid);
+      require(detail.summary.project?.fullPath == project.path);
+      require(detail.widgetsAvailable && detail.widgetTypes.isNotEmpty);
+      require(
+        detail.summary.type.id.isNotEmpty &&
+            detail.summary.type.name.isNotEmpty,
+      );
+      require(detail.description != null && detail.labels?.labels != null);
+    });
+    await check('public.work_items.server_type_capabilities', () async {
+      final page = await api.namespaceWorkItemTypes(_publicSnippetProjectPath);
+      require(page.namespace.fullPath == _publicSnippetProjectPath);
+      require(page.items.isNotEmpty && page.items.length <= 20);
+      require(page.items.any((type) => type.enabled));
+      require(
+        page.items.map((type) => type.type.id).toSet().length ==
+            page.items.length,
+      );
+    });
+    await check('public.work_items.group_owned_detail', () async {
+      final detail = await api.namespaceWorkItem(
+        _publicGroupWorkItemPath,
+        _publicGroupWorkItemIid,
+      );
+      require(detail.summary.iid == _publicGroupWorkItemIid);
+      require(detail.summary.project == null);
+      require(detail.summary.namespace?.fullPath == _publicGroupWorkItemPath);
+      require(detail.widgetsAvailable);
+    });
     await expectedGap('public.boards.authentication_required', () async {
       await api.records(
         ['projects', '$_publicProjectId', 'boards'],
@@ -613,6 +770,7 @@ Future<void> main() async {
         'private project access',
         'snippet CRUD',
         'Task/Incident fixture CRUD and escalation lifecycle mutation',
+        'Work Item writes/CRUD and licensed extension widgets',
         'live writes/CRUD',
         'Android/iOS device UI',
       ],
@@ -734,4 +892,37 @@ bool _isExactPublicSnippetGraph(
       paths is List &&
       paths.length == 1 &&
       _publicSnippetPaths.contains(paths.single);
+}
+
+bool _isExactPublicWorkItemGraph(RequestOptions request) {
+  if (request.method != 'POST' ||
+      request.uri != Uri.parse('https://gitlab.com/api/graphql')) {
+    return false;
+  }
+  final body = request.data;
+  if (body is! Map ||
+      body.length != 2 ||
+      !body.containsKey('query') ||
+      !body.containsKey('variables')) {
+    return false;
+  }
+  final variables = body['variables'];
+  if (variables is! Map) return false;
+  if (body['query'] == _publicProjectWorkItemsQuery ||
+      body['query'] == _publicNamespaceWorkItemTypesQuery) {
+    return variables.length == 3 &&
+        variables['path'] == _publicSnippetProjectPath &&
+        variables['first'] == 20 &&
+        variables.containsKey('after') &&
+        variables['after'] == null;
+  }
+  if (body['query'] == _publicProjectWorkItemQuery) {
+    return variables.length == 2 &&
+        variables['path'] == _publicSnippetProjectPath &&
+        variables['iid'] == '$_publicWorkItemIid';
+  }
+  return body['query'] == _publicNamespaceWorkItemQuery &&
+      variables.length == 2 &&
+      variables['path'] == _publicGroupWorkItemPath &&
+      variables['iid'] == '$_publicGroupWorkItemIid';
 }

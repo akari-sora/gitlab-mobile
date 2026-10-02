@@ -17,7 +17,7 @@ specification numbers have been invented.
 | Manage / Activity | Loaded timeline and eight event filters at phone width | Activity feed | Full event-kind/authenticated parity walk |
 | Manage / Members | Loaded roles/source/search/sort and member rows | Member list/actions | Custom roles, complete administration and live permissions |
 | Manage / Labels | Loaded Active/Archived, search/sort and empty state | List/create/edit/delete | Scoped labels/subscriptions and live CRUD |
-| Plan / Work items | Loaded six issues, side-panel detail, display fields, sort and paging; creation requires sign-in | Issues, typed Tasks/Incidents, linked work; server filters/order | GraphQL widgets, group Epic, OKR, Ticket and authenticated live CRUD |
+| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project cursor list, server type capabilities, project/group details, description/assignees/labels/hierarchy/dates | Richer widgets/activity, group lists, filters, Work Item mutations and authenticated/edition acceptance |
 | Plan / Boards | Development board observed | Phone-width columns, card move, board/list management | Paid scope/list creation, touch drag/drop and live mutation readback |
 | Plan / Milestones | Loaded empty-state explanation | List/detail/create/edit/delete | Full progress/reporting and live CRUD |
 | Plan / Wiki | Loaded empty Wiki explanation | Page list/read/create/edit/delete | History, attachments, tree and live CRUD |
@@ -52,7 +52,17 @@ The additional read-only Snippet walk used
 Its README and two shell-file headers, source/preview toggle and server-provided
 raw URLs were observed. The GraphQL lookup obtains an opaque Snippet GID through
 project-scoped enumeration; it does not construct one from a REST numeric ID.
-This observation is not native multi-file implementation or write acceptance.
+Native multi-file source and regression coverage now exist; this browser observation
+does not establish installed-build or write acceptance.
+
+The later 390 × 844 walk also loaded project Work Item
+[631894](https://gitlab.com/gitlab-org/gitlab/-/work_items/631894) and group Epic
+[23883](https://gitlab.com/groups/gitlab-org/-/work_items/23883). Both place
+attributes below the description. The group Epic has a group parent and ten
+project children, so hierarchy navigation must preserve each server-returned
+scope. Status, milestone, weight, iteration, health, time tracking, development
+and activity were observed separately; they remain open in the new GraphQL UI.
+Type names are configurable and opaque IDs are not REST route discriminators.
 
 Each new page binds responses and modal closures to account/instance, numeric
 project identity, API generation and request epoch. ProjectMore/Pipeline remove
@@ -73,8 +83,10 @@ on one S24 Ultra do not establish statistical improvement on every screen.
 1. Typed REST Tasks/Incidents now have source and regression coverage. Complete
    installed-build checks and disposable-fixture CRUD/lifecycle readback; alert,
    timeline, metrics and on-call workflows remain open.
-2. Fixed-query GraphQL Work Items: scope-specific available types/type IDs,
-   widgets, cursor paging, group Epics and available OKR/Ticket types.
+2. Fixed-query GraphQL Work Items now include server-returned scope/type IDs,
+   project cursor paging and exact project/group details with five base widgets.
+   Complete richer capability-dependent widgets/activity, group lists, filters,
+   native mutations and actual authenticated/private/edition validation.
 3. Multi-file Snippet blobs now have lazy paths/content, source/Markdown preview
    and guarded file actions with `updatedAt` change detection. Complete
    installed-build and private disposable-fixture validation. Describe a current

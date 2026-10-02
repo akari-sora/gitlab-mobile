@@ -7,7 +7,6 @@ final class ProjectLocator {
   factory ProjectLocator.parse(String input, GitLabInstance instance) =>
     ProjectLocator._(projectLocator(instance, input));
 }
-
 /// Resolve the project root only. Never guess slash-containing branch names.
 String projectLocator(GitLabInstance instance, String input) {
   final text = input.trim();
@@ -51,20 +50,23 @@ String projectLocator(GitLabInstance instance, String input) {
   return path;
 }
 
-enum LinkTarget { project, issue, mergeRequest, pipeline, job, commit, file }
+enum LinkTarget { project, issue, workItem, mergeRequest, pipeline, job, commit, file }
+
+enum WorkItemLinkScope { project, group }
 
 /// A pasted GitLab link resolved to the resource it names. The project part
 /// goes through [projectLocator]; the resource part is only recognised when it
 /// is unambiguous. File links need a commit SHA ref, because a branch name may
 /// itself contain slashes.
 final class GitLabLink {
-  const GitLabLink._(this.project, this.target, {this.number, this.sha, this.filePath, this.line});
+  const GitLabLink._(this.project, this.target, {this.number, this.sha, this.filePath, this.line, this.workItemScope});
   final String project;
   final LinkTarget target;
   final int? number;
   final String? sha;
   final String? filePath;
   final int? line;
+  final WorkItemLinkScope? workItemScope;
 
   factory GitLabLink.parse(String input, GitLabInstance instance) {
     final project = projectLocator(instance, input);
@@ -72,14 +74,30 @@ final class GitLabLink {
     if (!text.contains('://')) return GitLabLink._(project, LinkTarget.project);
     final uri = Uri.parse(text);
     final segments = uri.pathSegments.toList();
-    final dash = segments.indexOf('-', instance.base.pathSegments.where((part) => part.isNotEmpty).length);
+    final baseLength = instance.base.pathSegments.where((part) => part.isNotEmpty).length;
+    final dash = segments.indexOf('-', baseLength);
     if (dash < 0 || dash + 2 > segments.length) return GitLabLink._(project, LinkTarget.project);
     final kind = segments[dash + 1];
     final rest = segments.skip(dash + 2).where((part) => part.isNotEmpty).toList();
     final number = rest.isEmpty ? null : int.tryParse(rest.first);
     final positive = number != null && number > 0 ? number : null;
+    final beforeDash = segments.sublist(baseLength, dash);
+    final groupLink = beforeDash.length >= 2 && beforeDash.first == 'groups';
+    if (kind == 'work_items' && positive != null && rest.length == 1) {
+      if (groupLink) {
+        final groupPath = beforeDash.skip(1).join('/');
+        if (groupPath.isEmpty) return GitLabLink._(project, LinkTarget.project);
+        return GitLabLink._(groupPath, LinkTarget.workItem, number: positive,
+          workItemScope: WorkItemLinkScope.group);
+      }
+      return GitLabLink._(project, LinkTarget.workItem, number: positive,
+        workItemScope: WorkItemLinkScope.project);
+    }
+    if (groupLink) {
+      throw const FormatException('目前只支援完整的群組工作項目連結。');
+    }
     switch (kind) {
-      case 'issues' || 'work_items' when positive != null:
+      case 'issues' when positive != null:
         return GitLabLink._(project, LinkTarget.issue, number: positive);
       case 'merge_requests' when positive != null:
         return GitLabLink._(project, LinkTarget.mergeRequest, number: positive);

@@ -1257,14 +1257,27 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
       ),
       if (snippet.description.isNotEmpty) ...[
         const SizedBox(height: 12),
-        MarkdownView(
-          snippet.description,
-          base: null,
-          api: widget.api,
-          projectId: widget.project.id,
-          projectWeb: widget.account.instance.projectWeb(widget.project.path),
-          projectPath: widget.project.path,
-          account: widget.account,
+        ExpansionTile(
+          key: PageStorageKey(
+            '${widget.account.key}/${widget.project.id}/${widget.project.path}/snippets/${snippet.id}/${snippet.updatedAt}/description',
+          ),
+          initiallyExpanded: snippet.description.length <= 800,
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(bottom: 12),
+          title: const Text('說明', key: ValueKey('snippet-description-toggle')),
+          children: [
+            MarkdownView(
+              snippet.description,
+              base: null,
+              api: widget.api,
+              projectId: widget.project.id,
+              projectWeb: widget.account.instance.projectWeb(
+                widget.project.path,
+              ),
+              projectPath: widget.project.path,
+              account: widget.account,
+            ),
+          ],
         ),
       ],
     ],

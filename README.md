@@ -11,7 +11,8 @@ The current development branch adds issue boards and card/list management,
 revision comparison, server-backed MR draft review, selected-ref repository
 graphs, actual pipeline dependency graphs, package/container/Terraform registries,
 native contributor/repository/CI analytics, lazy multi-file Snippets and guarded
-file actions, and typed Task/Incident workflows
+file actions, server-discovered GraphQL Work Item types and read-only project/group
+details, and typed Task/Incident workflows
 with separate incident escalation state. Issue/MR filters use server
 ordering. Phone board columns, vertical graphs and lazy lists retain native
 navigation. The [full-function ledger](docs/MOBILE_WEB_PARITY_LEDGER.md) records

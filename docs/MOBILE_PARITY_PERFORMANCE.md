@@ -40,7 +40,7 @@ GitLab edition lacks the feature.
 | Global navigation | Projects, groups/subgroups, todos, assigned/review-requested/created work, activity and global search | No structural change | Administration, help and creation workflows remain unimplemented; they are part of the full-function backlog |
 | Project overview | Description, stars, forks, languages, licence, clone URLs, star/fork actions | No structural change | Full Web analytics and settings are not reproduced |
 | Manage | Activity, members and labels | No structural change | Access-token, webhook, integration and full member-role administration remain open |
-| Plan | Issues, milestones and linked work already existed | Issue boards with card movement and board/list management; typed REST Tasks/Incidents; native issue/MR filters and server ordering for date, direction, scope, labels, milestone, assignee, author and reviewer | Iterations, requirements, epics and GraphQL polymorphic work items remain open |
+| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project Work Item cursor list, server types and exact project/group detail with five base widgets | Richer Work Item widgets/activity, group lists, mutations, full iterations/requirements/Epic/OKR workflows remain open |
 | Code | Repository tree, README, branches, commits and tags; fixed-SHA file view, history, blame, search, syntax highlighting and line permalinks; MR list/detail/diffs | Compare two refs; selected-ref repository graph; multi-file Snippets with explicit file enumeration, lazy source/preview and guarded file actions | Locked files, cross-project comparison, full all-branch graph and private Snippet CRUD acceptance remain open |
 | MR review | Discussions, inline single-line positions, approvals/merge, suggested changes, auto-merge, local viewed-file state and the MR draft/ready toggle | Server draft-note list, add/edit/discard and bulk publish, tied to account/project/MR/head SHA | Viewed-file state is not server-synchronised; multi-line positioning and full desktop review policy administration remain open |
 | Build | Pipelines, stage-grouped jobs, controls, incremental ANSI logs and search, JUnit report views, artifacts, cross-project CI overview and schedules | Read-only pipeline dependency graph with paginated actual GraphQL needs | Cross-project/downstream graph and the complete pipeline editor remain open |
@@ -189,6 +189,62 @@ were unchanged throughout testing. Local coverage is 87.89%
 Submitted-source CI, installed-build UI and authenticated/private CRUD remain
 separate acceptance lanes.
 
+The exact Snippet commit `fd3ac5539be1ee9288df44b9e949fb11a58a4a80`
+has fresh successful Python, Flutter (1,328 tests; CI coverage 87.89%,
+16,381 / 18,639), native-template and public-read jobs in
+[pipeline 2906953486](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2906953486).
+All five jobs, including Android development APK build, subsequently succeeded.
+This validates the exact submitted Snippet source; it does not validate the newer
+Work Item and table-layout follow-up. The normal local release
+APK was installed without clearing account data; installed bytes match SHA-256
+`0163eb4305cc409d70654e35463491a09ad752f9277a88b59c627e67a8c057c7`,
+with its full source marker and backup/cleartext restrictions verified.
+
+That installed public Snippet exposed a further layout issue: a six-column
+Markdown table squeezed headers into narrow vertical text, and the long
+description kept the file controls below several screenfuls. The follow-up uses
+the pinned Markdown package's existing per-table horizontal scroller with
+fixed-width columns and large-text scaling. Long multi-file descriptions start
+collapsed so the file picker and source/preview controls are reachable. Four
+layout regressions failed before the repair; 62 related Markdown, Snippet and
+attachment cases pass afterward. Fresh installed-build and frame-performance
+verification of this follow-up are still separate lanes.
+
+### GraphQL Work Item reads
+
+更多 → 工作項目 reads project pages and the namespace's actual enabled types
+with fixed 20-item cursor queries. Exact project and group Work Item links open
+native details with description, assignees, labels, hierarchy and calendar dates.
+IDs remain opaque; type display names never choose a REST subtype or route.
+Project scope is verified against the numeric REST project identity, while
+namespace scope uses its independently returned GraphQL ID. Hierarchy links
+preserve those distinct scopes. Date-only start/due fields retain their calendar
+day regardless of device timezone.
+
+Fields and nested collections are bounded and distinguish unavailable widgets,
+null data, empty collections and truncated pages. Unsupported schema errors
+remain explicit; production pages do not fill gaps with mock content. Requests,
+already-visible details and ambiguous 403/404 recovery pages are fenced to the
+account/client generation and close when that owner changes.
+
+The read-only responsive browser walk observed project Issue `631894` and group
+Epic `23883`, including the Epic's group parent and project children. The expanded
+production-client public smoke passes 23 checks with one anonymous Boards GAP
+and zero writes, including project identity, actual base widgets, server type
+capabilities and group-owned detail. These checks used the current local source;
+submitted-source CI and installed-build checks have not yet accepted this slice.
+The final repaired local source passed full analysis and 1,370 JUnit tests with
+zero failures/errors/skips. All 215 Dart source/test/tool files and the committed
+dependency lock retained their hashes during the run; coverage is 87.67%
+(17,260 / 19,687). The 36 CI and 15 bootstrap Python cases also pass. Independent
+review approved the API, owner lifecycle, public-query allowlist, table/Snippet
+repair and both directions of cross-page Work Item identity validation. An
+earlier complete local test run passed, but its optional global Pillow install
+was blocked by macOS PEP 668; the final run uses the already installed image
+package for the screenshot derivative and exits successfully.
+Richer widgets/activity, group lists, filters, native Work Item mutations and
+authenticated/private/edition acceptance remain open.
+
 ProjectMore and Pipeline owned navigation stacks, board modal editors and snippet
 routes are removed on account/project/API replacement. Registry feed identities
 include owner generation, so reconnecting the same account clears old rows before
@@ -268,7 +324,9 @@ keyboard focus, typed input, Apply dismissal, scrollable 2x-text controls and
 newest-first CI dates. Temporary font scale was restored; own-process logs had
 no observed Flutter overflow/unhandled/fatal markers. Exact-source
 [pipeline 2906882413](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2906882413)
-was still pending at this observation. These UI checks do not establish fresh
+passed Python and full Flutter checks (1,303 tests; CI coverage 88.05%,
+15,780 / 17,921). Native/public/Android jobs were canceled after the newer Snippet
+push, so that pipeline is not a complete pass. These UI checks do not establish fresh
 frame-performance, private/paid Analytics or iOS acceptance.
 
 ## Loading, cache and scroll work

@@ -32,6 +32,7 @@ class MultiSnippetFixture {
   final blobPaths = <String>[];
   Completer<ResponseBody>? blobGate;
   bool failBlobAfterWrite = false;
+  String description = '**Markdown** notes';
   int revision = 1;
 
   String get restUpdatedAt =>
@@ -43,7 +44,7 @@ class MultiSnippetFixture {
     'id': 6030720,
     'project_id': 42,
     'title': 'Multi example',
-    'description': '**Markdown** notes',
+    'description': description,
     'visibility': 'private',
     'file_name': files.keys.first,
     'updated_at': restUpdatedAt,
@@ -229,6 +230,36 @@ class OwnerHarnessState extends State<OwnerHarness> {
 
 void main() {
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+  testWidgets('long description folds so file controls stay reachable', (
+    tester,
+  ) async {
+    final fixture = MultiSnippetFixture()
+      ..description = List.filled(
+        80,
+        'A long explanatory paragraph.',
+      ).join('\n\n');
+    await openMulti(tester, fixture);
+    expect(
+      find.byKey(const ValueKey('snippet-description-toggle')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(find.text('README.md').hitTestable(), findsWidgets);
+    expect(
+      find.byKey(const ValueKey('snippet-source-mode')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(fixture.blobPaths, ['README.md']);
+    await tester.tap(find.byKey(const ValueKey('snippet-description-toggle')));
+    await settleNetworkWidgets(tester);
+    expect(
+      find.textContaining('A long explanatory paragraph.', findRichText: true),
+      findsWidgets,
+    );
+    expect(fixture.blobPaths, ['README.md']);
+    expect(fixture.writes, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'loads only the selected path and toggles Markdown at 320dp with 2x text',

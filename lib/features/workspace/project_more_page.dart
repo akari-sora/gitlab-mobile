@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../core/providers.dart';
 import '../../core/work_item_types.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
@@ -16,12 +18,14 @@ import 'repository_graph_page.dart';
 import 'registries_page.dart';
 import 'snippets_page.dart';
 import 'editor.dart';
+import 'graph_work_items_page.dart';
 import 'project_extras.dart';
 import 'project_analytics_page.dart';
 import 'records_feed.dart';
 import 'search_page.dart';
 import 'work_item_page.dart';
 import '../../shared/theme.dart';
+import '../auth/session_controller.dart';
 
 enum MetadataKind { branches, tags, commits, releases, labels, milestones }
 String metadataTitle(MetadataKind kind) => switch (kind) {
@@ -48,6 +52,8 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
   int _generation = 0, _overviewEpoch = 0;
   NavigatorState? _navigator;
   final Set<Route<dynamic>> _ownedRoutes = {};
+  SessionController? _session;
+  int? _sessionGeneration;
 
   bool _current(int generation) => mounted && generation == _generation;
 
@@ -55,6 +61,45 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     _navigator = Navigator.of(context);
+    if (_session == null) _bindSession();
+  }
+
+  void _bindSession() {
+    try {
+      final candidate = ProviderScope.containerOf(context, listen: false)
+          .read(sessionProvider);
+      if (candidate.active?.key != widget.account.key ||
+          !identical(candidate.api, widget.api)) {
+        return;
+      }
+      if (!identical(_session, candidate)) {
+        _session?.removeListener(_sessionChanged);
+        _session = candidate;
+        candidate.addListener(_sessionChanged);
+      }
+      _sessionGeneration = candidate.generation;
+    } catch (_) {
+      // Some isolated widget tests intentionally have no ProviderScope.
+    }
+  }
+
+  bool _sessionCurrent() => mounted && (_session == null ||
+      (_session!.active?.key == widget.account.key &&
+       identical(_session!.api, widget.api) &&
+       _session!.generation == _sessionGeneration));
+
+  void _sessionChanged() {
+    if (_sessionCurrent()) return;
+    _generation++;
+    _overviewEpoch++;
+    _dismissRoutes();
+    setState(() {
+      _busy = false;
+      _details = null;
+      _starred = null;
+      _starChecked = false;
+      _languages = const [];
+    });
   }
 
   void _ownRoute(Route<dynamic> route) {
@@ -83,6 +128,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.account.key != widget.account.key ||
         oldWidget.project.id != widget.project.id ||
+        oldWidget.project.path != widget.project.path ||
         !identical(oldWidget.api, widget.api)) {
       _generation++;
       _overviewEpoch++;
@@ -92,12 +138,14 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
       _starred = null;
       _starChecked = false;
       _languages = const [];
+      _bindSession();
       unawaited(_loadOverview());
     }
   }
 
   @override
   void dispose() {
+    _session?.removeListener(_sessionChanged);
     _generation++;
     _overviewEpoch++;
     _dismissRoutes();
@@ -365,6 +413,9 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
       ]),
       _section(context, '協作', [
         (Icons.view_kanban_outlined, '議題看板', () => _push(BoardsPage(account: account, api: api, project: project))),
+        (Icons.workspaces_outline, '工作項目', () => _push(GraphWorkItemsPage(
+          account: account, api: api, project: project,
+          isCurrent: _sessionCurrent, ownerChanges: _session))),
         (Icons.task_alt, 'Tasks', () => _push(ProjectWorkItemsPage(account: account, api: api, project: project, type: ProjectWorkItemType.task))),
         (Icons.warning_amber_rounded, 'Incidents', () => _push(ProjectWorkItemsPage(account: account, api: api, project: project, type: ProjectWorkItemType.incident))),
         (Icons.timeline, '專案動態', () => _push(ActivityPage(account: account, api: api, project: project))),
@@ -392,7 +443,6 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     ]);
   }
 }
-
 class MetadataPage extends StatefulWidget {
   const MetadataPage({super.key, required this.account, required this.api, required this.project, required this.kind});
   final Account account;

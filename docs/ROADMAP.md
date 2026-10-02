@@ -6,14 +6,15 @@ This repository imports the G0 R1 application slice, its Flutter regression test
 
 The branch based on `0e1298e` adds boards/card moves/list management, server-backed
 MR draft review, revision compare, native issue/MR filters, repository and
-pipeline dependency graphs, registries, single-file Snippets, typed Task/Incident workflows and native contributor/repository/CI analytics. Account-client
+pipeline dependency graphs, registries, lazy multi-file Snippets, typed Task/Incident
+workflows, native contributor/repository/CI analytics and read-only GraphQL Work Items. Account-client
 read caching, request sharing, lazy list derivation and syntax-span LRU reduce
 repeated work. See [the parity/performance report](MOBILE_PARITY_PERFORMANCE.md)
 and [the full-function ledger](MOBILE_WEB_PARITY_LEDGER.md).
 
 Core board and draft workflows now have source/tests. Draft bulk publication still
-has GitLab's concurrent-change interval after its final GET. Typed GraphQL work
-items, paid board scope/list creation, all-branch graph, multi-file Snippets,
+has GitLab's concurrent-change interval after its final GET. GraphQL Work Item
+mutations and richer widgets, group lists, paid board scope/list creation, all-branch graph,
 registry downloads/publishing, complete incident operations and live lifecycle proof, Service Desk, complete analytics families, OAuth live
 login and push remain open under the all-function goal. Exact-head CI, Android
 readback, live private/CRUD and iOS acceptance remain separate evidence lanes.
@@ -133,7 +134,7 @@ The later follow-up adds native contributor/repository/CI analytics and lazy
 multi-file Snippet source/Markdown with guarded file actions. Its current-source
 verification and device/CI boundaries are recorded in
 [mobile parity and performance](MOBILE_PARITY_PERFORMANCE.md). These slices do
-not close GraphQL Work Items, group Epic/OKR workflows, private fixture CRUD or
+not close GraphQL Work Item mutations/richer widgets, complete group Epic/OKR workflows, private fixture CRUD or
 Android/iOS acceptance.
 
 ### Long-Term Backlog (LT1 ~ LT5)
