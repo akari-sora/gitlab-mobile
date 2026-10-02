@@ -1,38 +1,52 @@
 # v0.5 verification ledger
 
-Recorded on 2026-10-02 for branch `feat/v05-mobile-ux-overhaul` (version `0.5.0+5`). It does not accept G0 or v0.5. Synthetic tests, live API reads, live writes and physical-device runs are listed separately; anything not listed here is **NOT_RUN**. The CI pipeline and its JUnit count are recorded in the merge request, not inferred from this file.
+Recorded on 2026-10-02 for branch `feat/v05-mobile-ux-overhaul` (version `0.5.0+5`). It does not accept G0 or v0.5. Synthetic tests, live API reads, live writes and physical-device runs are listed separately; anything not listed here is **NOT_RUN**. Test counts come from the CI JUnit report and are recorded in the merge request and the release, not in this file.
 
 ## Local checks on the submitted source
 
-- `dart analyze lib test` (pinned SDK 3.47.2 / Dart 3.13.2): no issues, including infos.
-- `flutter test --no-pub`: the full suite passed on macOS on the head before this ledger (947 tests in that run). New coverage: `test/v05_api_test.dart` (search, groups, events, award emoji, subscribe with 304, mark-all-done, languages, blame, starrers, file history, fork, schedule play, GitLab link parsing) and `test/v05_ui_test.dart` (scroll chrome, collapsing header, scroll-to-top signal, scoped labels, stage order, activity sentences, find-file matching, draft titles, reactions toggle, focus mode on a phone, issue details and subscription, inbox swipe-to-done, global search scopes, group page, stage-grouped jobs).
-- The earlier local-only failure `attachment_limit_test.dart: discardPickedCopy keeps a file outside /cache/` appeared once on unmodified `main` on macOS and passed in later runs; CI runs on Linux.
-- Python: `ci/tests` 36 OK, `tool/tests` 15 OK, `compileall` clean.
+Run on macOS with the pinned SDK (Flutter 3.47.2 / Dart 3.13.2) against code commit `72c3e37`:
 
-Existing tests were updated where they encoded the old layout, not the behaviour: recent-project chips are now labelled with the project name (finders scope to the project row), the account row moved into the app-bar account button, the projects scroll view is keyed `projects`, project rows are no longer `Card`s, controls in 更多 can sit above the scroll position, a phone back-stack scenario closes the focused issue before switching project tabs, the pagination stress test uses a 520 dp viewport because rows are denser, and code line numbers assert a 48 dp width with the 24 dp WCAG 2.5.8 height.
+- `dart analyze lib test`: no issues, including infos.
+- `flutter test --no-pub`: the full suite passed. v0.5 coverage lives in `test/v05_api_test.dart` (search, groups, events, award emoji, subscribe and star with 304, starrers paging, mark-all-done, languages, blame, file history, fork, schedule play, GitLab link parsing, external-link filtering, label contrast, system-note text, stage order with retried jobs, draft prefixes, the activity name cache) and `test/v05_ui_test.dart` (scroll chrome thresholds, out-of-sight lists, short-list hysteresis, collapsing header, screen-reader and reduced-motion chrome, scroll-to-top signal, focus mode on a phone, reactions, issue details and subscription, linked issues, related-items failure, unresolved cross-project links, inbox swipe with undo, tab switch during undo, refused and uncertain writes, global search on submit, group page, draft toggle and stale copy, fork and schedule confirmation, star state, blame at 320 dp / 2x, stage-grouped jobs). `test/workspace_widget_test.dart` adds issue detail, inbox, search, group page and 更多 to the 320/412/840 dp × 1x/2x × light/dark matrix; `test/authenticated_app_test.dart` checks every shell destination at 320 dp / 2x and that the gesture inset is reserved once.
+- Python: `ci/tests`, `tool/tests` and `compileall` passed.
+- The earlier local-only failure `attachment_limit_test.dart: discardPickedCopy keeps a file outside /cache/` appeared once on unmodified `main` on macOS and passed in later runs; CI runs on Linux.
+
+Existing tests were changed where the layout or behaviour changed on purpose:
+
+- Layout only: recent-project chips are labelled with the project name (finders scope to the project row), the account row moved into the app-bar account button, the projects scroll view is keyed `projects`, project rows are no longer `Card`s, controls in 更多 can sit above the scroll position, and the pagination stress test uses a 520 dp viewport because rows are denser.
+- Behaviour: an open issue no longer survives switching project tabs on a phone, because the detail now owns the screen and the tabs are hidden while it is open (`challenger2_stress_test` closes it first); code line numbers are 48 dp wide and 24 dp tall (WCAG 2.5.8) instead of 48 dp tall; the bottom navigation no longer sets `maintainBottomViewPadding` because the shell reserves the gesture inset below it; global search runs on submit instead of on every keystroke; a swiped todo is written after the undo window instead of immediately.
+
+## Code review
+
+Three Grok reviewers (state and lifecycle; security and API contract; UI, accessibility and tests) and one Opus reviewer reviewed `911a953..549c388`, then each re-checked the fixes in `76773a5` and `72c3e37`. Every reviewer's final verdict on `72c3e37` had no Critical or Important findings; Opus left only this ledger and the CI run on the final commit. Fixed after review: inbox swipes conflicting with tab paging and writing without undo, offstage lists moving the chrome, re-tap scrolling hidden lists, an older refresh restoring a removed todo, offset paging skipping a todo, a todo dropped by a tab switch during undo, star 304 and unknown star state, award and starrer paging, retried jobs reordering stages, draft prefixes, related items and cross-project links hiding ambiguous 404s, overflow at 320 dp / 2x, label contrast, English labels, and search spending the rate limit. Rejected with evidence: the claim that `GET /projects/:id/issues/:iid/links` returns `source_issue`/`target_issue` wrappers (an authenticated read-only GET on `gitlab-org/gitlab#629525` returned flat issue objects with `iid`, `project_id`, `link_type` and `issue_link_id`).
 
 ## Physical device
 
-Samsung **SM-S9280** (Galaxy S24 Ultra), Android 16, 1080×2340 at 450 dpi (≈384×832 dp). Release APK built locally from this branch with the pinned SDK and the local debug key, installed in place over the 0.4.0 build (`adb install -r`), so the saved account was kept. 我的 showed 「版本 0.5.0 (5) · commit dev」 (local builds have no CI commit define).
+Samsung **SM-S9280** (Galaxy S24 Ultra), Android 16, 1080×2340 at 450 dpi (≈384×832 dp).
 
-Walked in dark and light appearance, portrait, and landscape (NavigationRail at 832 dp):
+**Run 1 (before review).** Release APK built locally with the pinned SDK from the branch while the walkthrough fixes of `2da8452` were made, signed with the local debug key and installed in place over 0.4.0 (`adb install -r`), so the saved account was kept. Walked in dark and light appearance, portrait, and landscape (NavigationRail at 832 dp):
 
 - Projects: floating search bar returns on scroll up; filter, sort and recent rows scroll away; the bottom navigation hides on scroll and returns on scroll up and when a project opens; the status bar keeps an opaque strip. Groups scope → group page with 專案／子群組／議題／合併請求 tabs.
-- Project: collapsing app bar with pinned tabs; dense file tree with breadcrumbs, branch menu, pinned SHA and README; find-file indexed 1056 files and filtered `pubspec`; file viewer with text-height code rows, syntax colours, 檔案歷史 and Blame on real history.
-- Issues and MRs: coloured and scoped labels, task and comment counts; opening one hides the project header and tabs (one app bar); the detail header collapses on scroll; system back closes the detail, then the project. MR overview, 變更 file list, 提交紀錄 and Pipelines pages. Related merge requests on an issue. Discussions show system notes as one-line entries.
+- Project: collapsing app bar with pinned tabs; dense file tree with breadcrumbs, branch menu, pinned SHA and README; find-file on a 1056-file tree; file viewer with text-height code rows, syntax colours, 檔案歷史 and blame on real history.
+- Issues and MRs: coloured and scoped labels, task and comment counts; opening one hides the project header and tabs (one app bar); the detail header collapses on scroll; system back closes the detail, then the project. MR overview, 變更 file list, 提交紀錄 and pipelines pages. Related merge requests on an issue.
 - CI: pipeline rows with source and age; pipeline page with jobs under their stage; job log page with the collapsing header and failure banner.
 - 更多: overview with stars, forks, open issues, language bar and clone URLs; 專案動態, 成員, 環境 (empty state), Pipeline 排程 (empty state), Wiki (GitLab answered 403 for a project with the wiki disabled; the failure notice showed account, instance and target).
-- Inbox: collapsing title; 待辦 with the swipe hint and 全部完成; 指派給我 and 我建立的 with the 議題／合併請求 switch (real data).
-- Search: 專案 and 議題 scopes against gitlab.com. Link open: pasting `https://gitlab.com/aa22396584/telltale/-/merge_requests/79` opened that merge request.
-- 我的: account card, quick links, 我的動態 with project names resolved.
+- Inbox, search, link open (`https://gitlab.com/aa22396584/telltale/-/merge_requests/79` opened that merge request) and 我的 with 我的動態.
 
-Live writes from the phone, each reversed and checked through the API with `glab api` afterwards:
+Live writes in run 1, each reversed and checked through the API with `glab api`: 👍 added to and removed from `aa22396584/telltale!79` (`award_emoji` read back `[]`); star added to and removed from `aa22396584/personal-media-archiver` (`star_count` 1, then 0); notification subscription on `aa22396584/telltale#106` off, then on (`subscribed` `false`, then `true`).
 
-- Emoji reaction 👍 added to and removed from `aa22396584/telltale!79`; `award_emoji` read back `[]`.
-- Star added to and removed from `aa22396584/personal-media-archiver`; `star_count` read back 1, then 0.
-- Notification subscription on `aa22396584/telltale#106` turned off, then on; `subscribed` read back `false`, then `true`.
+**Run 2 (review fixes).** Release APK built locally from code commit `72c3e37` with the pinned SDK, SHA-256 `f2ae76c6ceaa558f0b6e5437f723382849514c50582fb8dd14a98e6f92e3fafa`, installed in place (我的 showed 「版本 0.5.0 (5) · commit dev」; local builds have no CI commit define). The commit after it changes only documentation and one doc comment. Checked:
+
+- Projects list: header and bottom navigation hide on scroll and return on scroll back.
+- Inbox, on two todos created for the test with `POST /projects/86385809/issues/106/todo` (action `marked`): a swipe hid the row, the count dropped by one and 「已標示為完成 / 復原」 appeared above the navigation; 復原 brought the row back and the API still listed the todo as pending. A second swipe left to time out removed the row, and the API listed that todo as `done`. A third swipe followed by switching to 指派給我 kept the bar on screen and the todo was marked `done` once. A sideways swipe on 指派給我 stayed on that tab. The 32 pre-existing todos were not touched (pending count 32 before and after).
+- 我的: content shorter than 200 dp of scroll keeps the navigation; re-tapping 我的 scrolled back to the top.
+- Link open of `gitlab-mobile!38`, back to the projects tab with the navigation visible; `telltale!65` discussions show 「added 1 commit」 without the HTML list or compare link.
+- Pipeline `2903147150` titled 「Pipeline #278」 with an 「ID 2903147150」 chip; pipeline `2890534227`, which has retried `native_templates`, `public_api_smoke` and `publish_preview`, lists verify → build → deliver with only the latest (successful) attempt of each job.
+- Global search did not query while typing (the hint says to press search) and listed results after the keyboard search action.
+- `telltale` 更多: licence 「GNU General …」 and 「移除星標」, matching the API (`license` = GNU General Public License v3.0 or later; starred by the signed-in user).
+- Find-file on a 756-file tree: the empty query explains that it lists the first 200; 「README」 reported 27 matches. Blame on `README.md` is titled 逐行作者 with readable commit headers.
 
 ## NOT_RUN
 
-- On the phone: swiping a todo or 全部完成 (would clear real todos), the MR draft toggle, merge, fork, running a pipeline schedule, wiki page rendering (no project with an enabled wiki was used), deployments with data, the two-pane layout at ≥840 dp, TalkBack.
+- On the phone: swiping or 全部完成 on real todos (only the two test todos above were written), the MR draft toggle, merge, fork, running a pipeline schedule, wiki page rendering (no project with an enabled wiki was used), linked issues with real links, deployments with data, the unresolved-project page against a real 404, the two-pane layout at ≥840 dp, TalkBack, reduced motion, 2x system font size (covered only by widget tests).
 - iOS, store signing, OAuth login, push, the live CRUD smoke on this branch.

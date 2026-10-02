@@ -5,9 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 /// Whether chrome that gives way to content is showing: the bottom navigation
-/// and collapsing page headers. It hides while the user scrolls toward the end
-/// of a list and returns on a scroll back, near the top of the content, and
-/// whenever there is little or nothing to scroll.
+/// and collapsing page headers. It hides while the user drags toward the end
+/// of a list that scrolls far enough, and returns on a scroll back, near the
+/// top of the content, and when nothing scrolls any more.
 class ScrollChromeController extends ValueNotifier<bool> {
   ScrollChromeController() : super(true);
 
