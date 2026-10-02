@@ -415,6 +415,34 @@ New installed-build and exact-head CI results
 must be read separately; these checks do not close descendant aggregation,
 list filters, private/role-specific acceptance or iOS.
 
+The exact `ad49850` release was installed in place with matching APK bytes
+(SHA-256 `e637c0192061e56bb65025478a011708b7dcb07250cf8cdbf096dfd89698de3e`),
+preserving the saved account. The phone opened the fifth group tab from its list
+URL, rendered the actual group-owned rows, opened public `23883`, returned to
+retained list state, loaded issued-cursor second-page rows, scrolled back and
+refreshed. Every visible row was checked against anonymous public IIDs before
+capturing content; zero server writes were submitted. Own-process checks found
+zero earlier storage/build/overflow or uncaught/native-crash markers.
+
+At 2x font scale, content remained readable without overflow, but the active
+fifth tab moved outside the horizontal viewport after the scale change. The
+original font setting was restored. That observed navigation defect requires its
+own source regression and installed-build readback; it is not a full large-text
+pass for `ad49850`. Its exact-head
+[pipeline 2907497989](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2907497989)
+was pending with zero started jobs at the readback. No full CI pass follows.
+
+The accessibility follow-up registers the tab container as a text-scaler
+dependent and reveals the currently selected tab after layout. It keeps the
+user's font size and rechecks the current owner, mounted context and selected
+index in the callback. The regression keeps the same mounted group page and
+Navigator while changing only inherited text scale from 1x to 2x; the selected
+Work Items tab remains inside the 390dp viewport. Independent review has zero
+open findings. Fresh full analysis is clean; all 1,452 JUnit tests pass with zero
+failures/errors/skips and unchanged hashes for all 232 Dart/lock files. Coverage
+is 88.09% (18,438 / 20,932 lines). Installed runtime-scale verification and the
+follow-up commit's CI are separate evidence lanes.
+
 ProjectMore and Pipeline owned navigation stacks, board modal editors and snippet
 routes are removed on account/project/API replacement. Registry feed identities
 include owner generation, so reconnecting the same account clears old rows before

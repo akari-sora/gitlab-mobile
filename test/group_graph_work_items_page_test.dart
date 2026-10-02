@@ -182,6 +182,64 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets(
+    'selected Work Items tab stays visible after text scale changes',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final adapter = FakeAdapter((request) {
+        final query = _query(request);
+        if (query.contains('MobileGroupWorkItems')) return _groupList(const []);
+        if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        throw StateError('Unexpected request ${request.uri.path}');
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final scale = ValueNotifier(1.0);
+      addTearDown(scale.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => ValueListenableBuilder<double>(
+            valueListenable: scale,
+            child: child,
+            builder: (context, value, navigator) => MediaQuery(
+              data: MediaQuery.of(
+                context,
+              ).copyWith(textScaler: TextScaler.linear(value)),
+              child: navigator!,
+            ),
+          ),
+          home: GroupPage(
+            account: _account(api),
+            api: api,
+            group: const {'id': 9, 'name': 'Team', 'full_path': _groupPath},
+            initialTab: 4,
+            isCurrent: () => true,
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      final groupPageBefore = tester.state(find.byType(GroupPage));
+      final navigatorBefore = tester.state(find.byType(Navigator));
+
+      scale.value = 2;
+      await tester.pumpAndSettle();
+
+      expect(tester.state(find.byType(GroupPage)), same(groupPageBefore));
+      expect(tester.state(find.byType(Navigator)), same(navigatorBefore));
+
+      final selectedTab = find.widgetWithText(Tab, '工作項目');
+      expect(selectedTab, findsOneWidget);
+      final rect = tester.getRect(selectedTab);
+      expect(rect.left, greaterThanOrEqualTo(0));
+      expect(rect.right, lessThanOrEqualTo(390));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('a group page without an owner fails closed before requests', (
     tester,
   ) async {

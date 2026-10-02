@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/failure.dart';
@@ -98,6 +100,7 @@ class GroupPage extends StatefulWidget {
 }
 
 class _GroupPageState extends State<GroupPage> {
+  final _tabKeys = List<GlobalKey>.generate(5, (_) => GlobalKey());
   SessionController? _session;
   int? _sessionGeneration;
   Listenable? _listenedOwner;
@@ -160,6 +163,18 @@ class _GroupPageState extends State<GroupPage> {
 
   void _ownerChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _keepSelectedTabVisible(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !context.mounted || !_ownerCurrent()) return;
+      final index = DefaultTabController.of(context).index;
+      if (index < 0 || index >= _tabKeys.length) return;
+      final target = _tabKeys[index].currentContext;
+      if (target == null) return;
+      unawaited(Scrollable.ensureVisible(target, alignment: 0.5,
+        duration: Duration.zero));
+    });
   }
 
   Widget _projects() => RecordsFeed(
@@ -250,7 +265,12 @@ class _GroupPageState extends State<GroupPage> {
         ])),
       );
     }
-    return DefaultTabController(length: 5, initialIndex: widget.initialTab, child: Scaffold(
+    return DefaultTabController(length: 5, initialIndex: widget.initialTab, child: Builder(builder: (tabContext) {
+      // Re-run this builder when accessibility text metrics change so the
+      // selected tab is measured again after its label width changes.
+      MediaQuery.textScalerOf(tabContext);
+      _keepSelectedTabVisible(tabContext);
+      return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
@@ -263,12 +283,19 @@ class _GroupPageState extends State<GroupPage> {
           if (fullPath.isNotEmpty) IconButton(tooltip: '在 GitLab 開啟', icon: const Icon(Icons.open_in_new, size: 20),
             onPressed: () => openExternal(context, widget.account.instance.projectWeb(fullPath))),
         ],
-        bottom: const TabBar(isScrollable: true, tabAlignment: TabAlignment.start,
-          tabs: [Tab(text: '專案'), Tab(text: '子群組'), Tab(text: '議題'), Tab(text: '合併請求'), Tab(text: '工作項目')]),
+        bottom: TabBar(isScrollable: true, tabAlignment: TabAlignment.start,
+          tabs: [
+            Tab(key: _tabKeys[0], text: '專案'),
+            Tab(key: _tabKeys[1], text: '子群組'),
+            Tab(key: _tabKeys[2], text: '議題'),
+            Tab(key: _tabKeys[3], text: '合併請求'),
+            Tab(key: _tabKeys[4], text: '工作項目'),
+          ]),
       ),
       body: gestureSafe(TabBarView(children: [
         _projects(), _subgroups(), _workItems('issues'), _workItems('merge_requests'), _graphWorkItems(),
       ])),
-    ));
+      );
+    }));
   }
 }
