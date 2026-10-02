@@ -289,27 +289,9 @@ class _QaChrome extends StatelessWidget {
     child: SafeArea(
       bottom: false,
       child: Column(
+        verticalDirection: VerticalDirection.up,
         children: [
-          Semantics(
-            container: true,
-            liveRegion: true,
-            label: '合成資料 QA，無 GitLab 連線，來源 $emulatorUiQaCommit',
-            child: Container(
-              key: const ValueKey('emulator-qa-banner'),
-              width: double.infinity,
-              color: Theme.of(context).colorScheme.errorContainer,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Text(
-                '合成資料 QA · 無 GitLab 連線',
-                maxLines: 2,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onErrorContainer,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ),
+          Expanded(child: child),
           ListenableBuilder(
             listenable: session,
             builder: (context, _) => Container(
@@ -338,7 +320,26 @@ class _QaChrome extends StatelessWidget {
               ),
             ),
           ),
-          Expanded(child: child),
+          Semantics(
+            container: true,
+            liveRegion: true,
+            label: '合成資料 QA，無 GitLab 連線，來源 $emulatorUiQaCommit',
+            child: Container(
+              key: const ValueKey('emulator-qa-banner'),
+              width: double.infinity,
+              color: Theme.of(context).colorScheme.errorContainer,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Text(
+                '合成資料 QA · 無 GitLab 連線',
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onErrorContainer,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     ),

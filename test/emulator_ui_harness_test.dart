@@ -81,6 +81,15 @@ void main() {
   testWidgets('banner and QA controls persist across production routes', (
     tester,
   ) async {
+    final semantics = tester.ensureSemantics();
+    var semanticsDisposed = false;
+    void disposeSemantics() {
+      if (semanticsDisposed) return;
+      semanticsDisposed = true;
+      semantics.dispose();
+    }
+
+    addTearDown(disposeSemantics);
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(320, 900);
     tester.platformDispatcher.textScaleFactorTestValue = 2;
@@ -88,38 +97,48 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
-    await tester.pumpWidget(buildEmulatorQaApp(qaEnabled: true));
-    await tester.pumpAndSettle();
+    try {
+      await tester.pumpWidget(buildEmulatorQaApp(qaEnabled: true));
+      await tester.pumpAndSettle();
 
-    expect(find.byType(ScrollPerformance), findsOneWidget);
-    expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
-    expect(find.text('重設 Session'), findsOneWidget);
-    expect(find.text('結束 Session'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+      expect(find.byType(ScrollPerformance), findsOneWidget);
+      expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
+      expect(find.text('重設 Session'), findsOneWidget);
+      expect(find.text('結束 Session'), findsOneWidget);
+      expect(tester.takeException(), isNull);
 
-    await tester.tap(find.text('環境與部署'));
-    await settleNetworkWidgets(tester);
+      await tester.tap(find.text('環境與部署'));
+      await settleNetworkWidgets(tester);
 
-    expect(find.byType(EnvironmentsPage), findsOneWidget);
-    expect(
-      MediaQuery.textScalerOf(
-        tester.element(find.byType(EnvironmentsPage)),
-      ).scale(14),
-      28,
-    );
-    expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
-    expect(find.text('staging/mobile'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+      expect(find.byType(EnvironmentsPage), findsOneWidget);
+      expect(
+        MediaQuery.textScalerOf(
+          tester.element(find.byType(EnvironmentsPage)),
+        ).scale(14),
+        28,
+      );
+      expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
+      expect(find.text('staging/mobile'), findsOneWidget);
+      expect(
+        find.bySemanticsLabel(RegExp('合成資料 QA.*來源 $emulatorUiQaCommit')),
+        findsOneWidget,
+      );
+      expect(find.bySemanticsLabel('重設 Session'), findsOneWidget);
+      expect(find.bySemanticsLabel('結束 Session'), findsOneWidget);
+      expect(tester.takeException(), isNull);
 
-    await tester.tap(find.text('staging/mobile'));
-    await settleNetworkWidgets(tester);
-    await tester.tap(find.text('#120'));
-    await settleNetworkWidgets(tester);
+      await tester.tap(find.text('staging/mobile'));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.text('#120'));
+      await settleNetworkWidgets(tester);
 
-    expect(find.byType(JobLogPage), findsOneWidget);
-    expect(find.textContaining('deployment job 5120'), findsOneWidget);
-    expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
-    expect(tester.takeException(), isNull);
+      expect(find.byType(JobLogPage), findsOneWidget);
+      expect(find.textContaining('deployment job 5120'), findsOneWidget);
+      expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    } finally {
+      disposeSemantics();
+    }
   });
 
   testWidgets('compact scaled schedule confirmation keeps the QA chrome', (
