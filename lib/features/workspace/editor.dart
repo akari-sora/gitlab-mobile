@@ -40,8 +40,22 @@ class EditField {
     this.markdown = false,
     this.quickActions = false,
   }) : source = null,
+       choices = const [],
        multi = false,
        toggle = false;
+  const EditField.choice(
+    this.key,
+    this.label, {
+    required this.choices,
+    this.value = '',
+    this.required = false,
+    this.hint,
+  }) : source = null,
+       multi = false,
+       lines = 1,
+       markdown = false,
+       toggle = false,
+       quickActions = false;
   const EditField.picker(
     this.key,
     this.label, {
@@ -51,6 +65,7 @@ class EditField {
     this.required = false,
     this.hint,
   }) : lines = 1,
+       choices = const [],
        markdown = false,
        toggle = false,
        quickActions = false;
@@ -60,6 +75,7 @@ class EditField {
     this.value = 'false',
     this.hint,
   }) : source = null,
+       choices = const [],
        multi = false,
        required = false,
        lines = 1,
@@ -67,10 +83,18 @@ class EditField {
        toggle = true,
        quickActions = false;
   final String key, label, value;
+  final List<EditChoice> choices;
   final bool required, multi, markdown, toggle, quickActions;
   final int lines;
   final String? hint;
   final PickerSource? source;
+}
+
+final class EditChoice {
+  const EditChoice(this.value, this.label);
+
+  final String value;
+  final String label;
 }
 
 Map<String, dynamic> editorSubmission(List<EditField> fields, Map<String, String> values) {
@@ -233,6 +257,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
           } else {
             _applyFieldMap(value);
             _dirty = true;
+            _pickerEpoch++;
           }
         }
       }
@@ -559,6 +584,8 @@ class _ResourceEditorState extends State<ResourceEditor> {
                                   ? _markdownBlock(field)
                                   : field.toggle
                                   ? _toggleField(field)
+                                  : field.choices.isNotEmpty
+                                  ? _choiceField(field)
                                   : field.source == null
                                   ? _textField(field)
                                   : _pickerField(field),
@@ -607,6 +634,40 @@ class _ResourceEditorState extends State<ResourceEditor> {
     decoration: InputDecoration(labelText: field.label, helperText: field.hint),
     validator: (value) => field.required && (value == null || value.trim().isEmpty) ? '此欄位必填' : null,
   );
+
+  Widget _choiceField(EditField field) {
+    final controller = _controllers[field.key];
+    final raw = controller?.text ?? '';
+    final supported = field.choices.any((choice) => choice.value == raw);
+    final unsupported = raw.isNotEmpty && !supported
+        ? '目前值「$raw」不受支援，請選擇其他選項。'
+        : null;
+    return KeyedSubtree(
+      key: ValueKey('choice-${field.key}-$_pickerEpoch'),
+      child: DropdownButtonFormField<String>(
+        key: ValueKey('editor-${field.key}'),
+        initialValue: supported ? raw : null,
+        isExpanded: true,
+        decoration: InputDecoration(labelText: field.label, helperText: field.hint, errorText: unsupported),
+        items: [for (final choice in field.choices)
+          DropdownMenuItem(value: choice.value, child: Text(choice.label))],
+        onChanged: _locked ? null : (value) {
+          if (value == null) return;
+          controller?.text = value;
+          _changed(value);
+          setState(() {});
+        },
+        validator: (value) {
+          final current = controller?.text ?? '';
+          if (current.isNotEmpty && !field.choices.any((choice) => choice.value == current)) {
+            return '目前值「$current」不受支援，請選擇其他選項。';
+          }
+          if (field.required && (value == null || value.isEmpty)) return '此欄位必填';
+          return null;
+        },
+      ),
+    );
+  }
 
   Widget _markdownBlock(EditField field) {
     final path = widget.projectPath;

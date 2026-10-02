@@ -16,6 +16,17 @@ import 'package:gitlab_mobile/core/unified_diff.dart';
 const _publicProjectId = 86648389;
 const _publicProjectPath = 'aa22396584/gitlab-mobile';
 const _publicPipelineId = 2906089178;
+const _incidentStatusQuery = r'''
+query MobileIncidentStatus($path: ID!, $iid: String!) {
+  project(fullPath: $path) {
+    id
+    issues(iids: [$iid], types: [INCIDENT], first: 2) {
+      nodes { id iid projectId state severity escalationStatus updatedAt }
+      pageInfo { hasNextPage }
+    }
+  }
+}
+''';
 const _pipelineGraphQuery = r'''
 query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) {
   project(fullPath: $path) {
@@ -50,7 +61,7 @@ Future<void> main() async {
             request.uri.scheme == 'https' &&
             request.uri.host == 'gitlab.com' &&
             request.uri.path.startsWith('/api/v4/');
-        final graphRead = _isExactPublicPipelineGraph(request);
+        final graphRead = _isExactPublicPipelineGraph(request) || _isExactPublicIncidentGraph(request);
         if (!restRead && !graphRead) {
           handler.reject(
             DioException(
@@ -208,6 +219,25 @@ Future<void> main() async {
               (need) => need.state == PipelineGraphNeedState.resolved,
             ),
       );
+    });
+    await check('public.typed_task_incident_lists', () async {
+      for (final type in ['task', 'incident']) {
+        final page = await api.records(['projects', '$_publicProjectId', 'issues'],
+          query: {'scope': 'all', 'state': 'all', 'issue_type': type});
+        require(page.items.every((issue) => issue['issue_type'] == type && issue['project_id'] == _publicProjectId));
+      }
+    });
+    await check('public.incident.lifecycle_query_schema_only', () async {
+      // Public issue #1 is an ordinary issue, so the INCIDENT-only connection
+      // is empty. This proves the fixed operation parses, not a live mutation.
+      final project = await api.project('$_publicProjectId');
+      try {
+        await api.incidentStatus(project, 1);
+      } on ApiFailure catch (failure) {
+        require(failure.kind == FailureKind.invisible && failure.status == null);
+        return;
+      }
+      throw const FormatException('Ordinary issue returned as Incident');
     });
     await check('public.registry.list_detail_files', () async {
       final page = await api.records(
@@ -368,6 +398,7 @@ Future<void> main() async {
         'authenticated issue boards',
         'private project access',
         'snippet CRUD',
+        'Task/Incident fixture CRUD and escalation lifecycle mutation',
         'live writes/CRUD',
         'Android/iOS device UI',
       ],
@@ -405,4 +436,13 @@ bool _isExactPublicPipelineGraph(RequestOptions request) {
       variables['pipeline'] == 'gid://gitlab/Ci::Pipeline/$_publicPipelineId' &&
       variables.containsKey('after') &&
       variables['after'] == null;
+}
+
+bool _isExactPublicIncidentGraph(RequestOptions request) {
+  if (request.method != 'POST' || request.uri != Uri.parse('https://gitlab.com/api/graphql')) return false;
+  final body = request.data;
+  if (body is! Map || body.length != 2 || body['query'] != _incidentStatusQuery) return false;
+  final variables = body['variables'];
+  return variables is Map && variables.length == 2 &&
+      variables['path'] == _publicProjectPath && variables['iid'] == '1';
 }

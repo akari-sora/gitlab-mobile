@@ -12,6 +12,7 @@ import 'pagination.dart';
 import 'upload_names.dart';
 
 part 'workspace_api.dart';
+part 'incident_api.dart';
 
 final _artifactCancelled = Object();
 const _artifactRedirects = {301, 302, 303, 307, 308};
@@ -285,11 +286,12 @@ final class GitLabApi {
     Map<String, String>? headers,
     bool allowRangeNotSatisfiable = false,
     bool graphQuery = false,
+    bool graphMutation = false,
   }) async {
     if (_closed) throw const ApiFailure(FailureKind.cancelled);
-    if (graphQuery
+    if ((graphQuery && graphMutation) || (graphQuery || graphMutation
         ? method != 'POST' || !instance.allowsGraphQL(uri)
-        : !instance.allowsApi(uri)) {
+        : !instance.allowsApi(uri))) {
       throw const ApiFailure(FailureKind.unsupported);
     }
     final until = _retryAt;
@@ -320,7 +322,7 @@ final class GitLabApi {
           maxRedirects: 0,
           validateStatus: (s) => s != null,
           headers: {
-            ...graphQuery
+            ...(graphQuery || graphMutation)
                 ? {
                     'Authorization': 'Bearer ${_credential.accessToken}',
                     'Accept': 'application/json',
@@ -383,22 +385,38 @@ final class GitLabApi {
           statusCode: status,
         );
       }
-      if (body == null) throw const ApiFailure(FailureKind.invalidResponse);
+      if (body == null) {
+        throw ApiFailure(writing
+            ? FailureKind.writeUncertain
+            : FailureKind.invalidResponse);
+      }
       final length = int.tryParse(
         response.headers.value('content-length') ?? '',
       );
       if (length != null && length > maxBytes) {
         await body.stream.listen((_) {}).cancel();
-        throw const ApiFailure(FailureKind.tooLarge);
+        throw ApiFailure(writing
+            ? FailureKind.writeUncertain
+            : FailureKind.tooLarge);
       }
       final bytes = BytesBuilder(copy: false);
-      await for (final chunk in body.stream) {
-        if (_closed) throw const ApiFailure(FailureKind.cancelled);
-        if (bytes.length + chunk.length > maxBytes) {
-          cancel.cancel('response budget exceeded');
-          throw const ApiFailure(FailureKind.tooLarge);
+      try {
+        await for (final chunk in body.stream) {
+          if (_closed) throw const ApiFailure(FailureKind.cancelled);
+          if (bytes.length + chunk.length > maxBytes) {
+            cancel.cancel('response budget exceeded');
+            throw ApiFailure(writing
+                ? FailureKind.writeUncertain
+                : FailureKind.tooLarge);
+          }
+          bytes.add(chunk);
         }
-        bytes.add(chunk);
+      } on ApiFailure {
+        rethrow;
+      } catch (_) {
+        throw ApiFailure(writing
+            ? FailureKind.writeUncertain
+            : FailureKind.network);
       }
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
       return (
@@ -429,11 +447,15 @@ final class GitLabApi {
     String method = 'GET',
     Object? data,
   }) async {
+    final result = await _read(uri, method: method, data: data);
     try {
-      final result = await _read(uri, method: method, data: data);
       return objectJson(jsonDecode(utf8.decode(result.bytes)));
     } on FormatException {
-      throw const ApiFailure(FailureKind.invalidResponse);
+      // A successful mutation can have taken effect despite an unreadable
+      // acknowledgement. The editor must keep its pending-write fence.
+      throw ApiFailure(method == 'GET' || method == 'HEAD'
+          ? FailureKind.invalidResponse
+          : FailureKind.writeUncertain);
     }
   }
 

@@ -360,8 +360,13 @@ void main() {
       addTearDown(api.close);
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = Size(width, 900);
+      const insets = FakeViewPadding(top: 32, bottom: 24);
+      tester.view.padding = insets;
+      tester.view.viewPadding = insets;
       addTearDown(tester.view.resetDevicePixelRatio);
       addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetPadding);
+      addTearDown(tester.view.resetViewPadding);
 
       await tester.pumpWidget(
         host(
@@ -381,6 +386,16 @@ void main() {
         find.bySemanticsLabel(RegExp('工作 a very long compile job')),
         findsOneWidget,
       );
+      // A standalone graph route owns its system insets, unlike the
+      // non-primary app bars inside the project's collapsing header.
+      final titleRect = tester.getRect(find.text('Pipeline #12 相依圖'));
+      final subtitleRect = tester.getRect(find.text(project.path));
+      final appBarRect = tester.getRect(find.byType(AppBar));
+      final listRect = tester.getRect(find.byType(ListView));
+      expect(titleRect.top, greaterThanOrEqualTo(32));
+      expect(subtitleRect.bottom, lessThanOrEqualTo(appBarRect.bottom));
+      expect(listRect.top, greaterThanOrEqualTo(appBarRect.bottom));
+      expect(listRect.bottom, lessThanOrEqualTo(900 - 24));
       expect(tester.takeException(), isNull);
     });
   }

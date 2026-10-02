@@ -40,11 +40,11 @@ GitLab edition lacks the feature.
 | Global navigation | Projects, groups/subgroups, todos, assigned/review-requested/created work, activity and global search | No structural change | Administration, help and creation workflows remain unimplemented; they are part of the full-function backlog |
 | Project overview | Description, stars, forks, languages, licence, clone URLs, star/fork actions | No structural change | Full Web analytics and settings are not reproduced |
 | Manage | Activity, members and labels | No structural change | Access-token, webhook, integration and full member-role administration remain open |
-| Plan | Issues, milestones and linked work already existed | Issue boards with card movement and board/list management; native issue/MR filters and server ordering for date, direction, scope, labels, milestone, assignee, author and reviewer | Iterations, requirements, epics and GraphQL polymorphic work items remain open |
+| Plan | Issues, milestones and linked work already existed | Issue boards with card movement and board/list management; typed REST Tasks/Incidents; native issue/MR filters and server ordering for date, direction, scope, labels, milestone, assignee, author and reviewer | Iterations, requirements, epics and GraphQL polymorphic work items remain open |
 | Code | Repository tree, README, branches, commits and tags; fixed-SHA file view, history, blame, search, syntax highlighting and line permalinks; MR list/detail/diffs | Compare two refs; selected-ref repository graph; single-file Snippets reader/editor with explicit file enumeration | Locked files, cross-project comparison, full all-branch graph and multi-file snippet browsing/editing remain open |
 | MR review | Discussions, inline single-line positions, approvals/merge, suggested changes, auto-merge, local viewed-file state and the MR draft/ready toggle | Server draft-note list, add/edit/discard and bulk publish, tied to account/project/MR/head SHA | Viewed-file state is not server-synchronised; multi-line positioning and full desktop review policy administration remain open |
 | Build | Pipelines, stage-grouped jobs, controls, incremental ANSI logs and search, JUnit report views, artifacts, cross-project CI overview and schedules | Read-only pipeline dependency graph with paginated actual GraphQL needs | Cross-project/downstream graph and the complete pipeline editor remain open |
-| Deploy and operate | Environments and deployment history | Package/Container/Terraform lists, details and guarded deletion | Registry downloads/publish, model registries, incidents and Service Desk remain open |
+| Deploy and operate | Environments and deployment history | Package/Container/Terraform lists, details and guarded deletion; Incident severity and a separately modelled escalation lifecycle | Registry downloads/publish, model registries, complete Incident operations and Service Desk remain open |
 | Analyze | Basic project counts and activity | No structural change | Value-stream, contributor, repository, code-review and issue analytics, insights and model experiments remain open |
 | Adaptive layout | Compact phone navigation and retained-state two-pane layout at the expanded breakpoint | New boards show one active column at a time on phones; filters use a native bottom sheet; long result screens remain lazy | iOS physical-device, VoiceOver/TalkBack and authenticated enterprise-screen walks remain NOT_RUN |
 
@@ -80,6 +80,24 @@ server query includes supported order, direction, scope and people/label/
 milestone filters; client-side mutation reconciliation uses the same criteria.
 Successful writes recheck the already-loaded page range against server ordering
 and replace its next cursor. Reading a detail does not refresh the resident list.
+
+### Tasks and Incidents
+
+更多 → Tasks / Incidents uses the REST `issue_type` filter and validates numeric
+project identity and the returned resource type before displaying rows or details.
+Create/edit, severity and issue open/close use the existing native editor and
+discussion flows. Ordinary Issue/MR encrypted-draft keys remain compatible;
+Task/Incident keys are separated by type. Owned editors and popups close when
+the account, project or API client changes.
+
+Incident escalation state is read through a fixed GraphQL query and remains
+separate from issue open/close state. A lifecycle change checks a fresh snapshot,
+performs one mutation and verifies independent readback, then refreshes REST
+detail/list state. Unsupported schemas and missing lifecycle fields stay explicit.
+A malformed or lost successful mutation acknowledgement remains unconfirmed;
+the editor cannot replay its create request. Complete incident timelines,
+escalation policy administration, alerts and authenticated lifecycle acceptance
+remain open.
 
 ### Compare revisions
 
@@ -275,27 +293,72 @@ hardware, secure-storage backup/restore, OAuth login, push and store signing.
 No G0 or complete GitLab parity acceptance is claimed.
 <!-- ROOT:VERIFICATION_RESULTS:END -->
 
-## Subsequent functionality validation
+## Graph/registry/snippet/board-management validation
 
-New graph/registry/snippet/board-management source is not covered by the
-`a86c0ad` pipeline or APK above. Fresh pinned-SDK local validation of these
-additions: 1,197 JUnit tests, zero failures/errors/skips, 87.43% line coverage,
-clean full analysis, 51 Python tests, shell/compileall and SDK-baseline checks.
-The expanded production public suite passed 11 anonymous read checks and records
-Boards' anonymous HTTP 401 separately as a GAP; it issued zero writes. It parses
-real topological parents, four pipeline dependencies, registry files, and
-multi-file snippet metadata. Its exact source commit, pipeline/jobs and installed
-Android readback are reported in the delivery MR; local tests do not substitute
-for those lanes. See
-[MOBILE_WEB_PARITY_LEDGER.md](MOBILE_WEB_PARITY_LEDGER.md) for the full navigation
-ledger and outstanding functional acceptance lanes.
+Submitted application commit `9515c91e9d9a7cd5306ab8a5a59132f99aaad1a8` has
+fresh local validation: 1,197 JUnit tests, zero failures/errors/skips, 87.43% local
+line coverage, clean full analysis, 51 Python tests, shell/compileall and SDK
+checks. Exact-head [pipeline 2906348213](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2906348213)
+finished successfully with all five jobs:
+
+- Python [16893375828](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16893375828).
+- Flutter [16893375829](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16893375829):
+  1,197 tests, zero failures/errors/skips, clean analyzer, 87.42% CI line coverage.
+- Native templates [16893375830](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16893375830):
+  Android backup/cleartext restrictions and iOS keychain/ATS restrictions retained.
+- Public API [16893375831](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16893375831):
+  11 anonymous read checks passed; Boards' anonymous HTTP 401 recorded as GAP;
+  zero writes. Actual topology, needs, registry files and multi-file snippet
+  metadata were parsed.
+- Android [16893375832](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16893375832):
+  debug APK checksum, signature, compiled source marker and manifest restrictions
+  verified. This CI APK was not installed because its signer differs from the
+  existing physical-phone preview.
+
+A separate normal release APK from an isolated exact `9515c91e` source archive
+was installed in place on the S24 Ultra, preserving its saved account. SHA-256:
+`e0317dfee2cd6caefb0d23839d4ad2be5ebb7742a4e48d57edcf874c6ba5fbb6`.
+It uses the existing development signer and is not store-signed. The phone
+rendered branch/tag repository graphs and actual commit parents; Development
+board management/card-move controls; the 20-package registry and three real
+asset records; empty Container/Terraform/Snippet states; and the exact CI
+pipeline needs graph with a dependency jump into its actual job log. Editors and
+mutation dialogs were cancelled; no server writes were performed.
+
+That phone walk exposed two UX defects: the Snippet visibility text field was
+not a constrained choice and retained issue-specific description commands;
+the standalone pipeline graph overlapped the status bar. The follow-up source
+adds labelled visibility choices, removes those description commands, and
+respects status-bar/gesture insets with large-text regression checks. Its source
+also adds typed REST Tasks/Incidents and a separately modelled GraphQL escalation
+lifecycle, with account-switch and ambiguous-write regressions. These newer
+changes require their own exact-head CI and installed-build evidence; the
+`9515c91e` results above do not cover them.
+
+The Task/Incident and UX follow-up has final local full-source validation on
+Flutter 3.47.2 with the committed dependency lock unchanged: clean analysis,
+1,253 JUnit tests, zero failures/errors/skips, and 87.74% line coverage
+(14,901 / 16,983 lines). The complete run was repeated after repairing four
+synthetic Issue fixtures to include GitLab's actual numeric `project_id`;
+production identity validation remains strict. Independent bounded review
+found no outstanding actionable defect. Device/CI evidence for this follow-up
+is still pending here, and authenticated lifecycle mutations remain NOT_RUN.
+
+The expanded local public suite additionally verifies typed Task/Incident
+lists and the fixed incident query schema: 13 PASS, one anonymous Boards GAP,
+zero writes. The public project has no Incident fixture, so an empty filtered
+connection establishes schema compatibility only. It does not establish actual
+lifecycle mutation, private access or role-based acceptance.
+
+See [MOBILE_WEB_PARITY_LEDGER.md](MOBILE_WEB_PARITY_LEDGER.md) for the full public
+navigation ledger and outstanding functional acceptance lanes.
 
 ## Remaining product priorities
 
 The largest mobile workflow gaps are OAuth application registration and live
 login validation, push delivery, server-synchronised viewed-file state, GraphQL
 work items/epics/OKR, full repository graph and multi-file snippets, registry
-downloads/publishing, incident/Service Desk and analytics families. These are open
+downloads/publishing, complete incident operations, Service Desk and analytics families. These are open
 requirements under the all-function goal, not features delegated permanently to Web. Store signing, iOS physical-device evidence, accessibility
 screen-reader walks, real private-project integration on the submitted build
 and live draft/board writes are separate acceptance lanes.

@@ -324,6 +324,7 @@ void main() {
           return jsonResponse({
             'id': 7007,
             'iid': 7,
+            'project_id': 333,
             'title': 'Recovered Issue After Retry',
             'state': 'opened',
             'author': {'id': 2, 'username': 'user_b', 'name': 'User B'},

@@ -146,6 +146,7 @@ void main() {
         return jsonResponse({
           'id': 501,
           'iid': 101,
+          'project_id': 200,
           'title': 'Secret Resume Issue',
           'state': 'opened',
           'author': {'id': 2, 'username': 'user_b', 'name': 'User B'},

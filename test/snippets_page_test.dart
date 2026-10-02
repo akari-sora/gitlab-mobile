@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -12,12 +13,17 @@ import 'support/widget_settle.dart';
 import 'workspace_widget_test.dart' show workspaceHost;
 
 class SnippetFixture {
-  SnippetFixture({this.explicitFiles, this.omitFiles = false});
+  SnippetFixture({
+    this.explicitFiles,
+    this.omitFiles = false,
+    this.host = 'https://example.com/gitlab',
+  });
 
   final List<Map<String, dynamic>>? explicitFiles;
   final bool omitFiles;
+  final String host;
   late final adapter = FakeAdapter(respond);
-  late final api = testApi(adapter);
+  late final api = testApi(adapter, host: host);
   late final account = Account(
     instance: api.instance,
     user: const GitLabUser(id: 7, username: 'developer', name: 'Developer'),
@@ -161,9 +167,14 @@ Future<void> host(
   WidgetTester tester,
   SnippetFixture fixture, {
   double width = 412,
+  double devicePixelRatio = 1,
+  double textScale = 1,
 }) async {
-  tester.view.devicePixelRatio = 1;
-  tester.view.physicalSize = Size(width, 900);
+  tester.view.devicePixelRatio = devicePixelRatio;
+  tester.view.physicalSize = Size(
+    width * devicePixelRatio,
+    900 * devicePixelRatio,
+  );
   addTearDown(tester.view.resetPhysicalSize);
   addTearDown(tester.view.resetDevicePixelRatio);
   addTearDown(fixture.api.close);
@@ -174,6 +185,7 @@ Future<void> host(
         api: fixture.api,
         project: fixture.project,
       ),
+      scale: textScale,
     ),
   );
   await settleNetworkWidgets(tester);
@@ -182,6 +194,15 @@ Future<void> host(
 Future<void> saveEditor(WidgetTester tester) async {
   await tester.tap(find.byKey(const Key('editorSave')));
   await settleNetworkWidgets(tester);
+}
+
+Future<void> chooseVisibility(WidgetTester tester, String label) async {
+  final field = find.byKey(const ValueKey('editor-visibility'));
+  await tester.ensureVisible(field);
+  await tester.tap(field);
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(label).last);
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -293,6 +314,7 @@ void main() {
       find.byKey(const ValueKey('editor-description')),
       'Details',
     );
+    await chooseVisibility(tester, '公開');
     await tester.enterText(
       find.byKey(const ValueKey('editor-file_name')),
       'note.txt',
@@ -307,7 +329,7 @@ void main() {
     expect(find.text('first'), findsOneWidget);
     final post = fixture.writes.singleWhere((r) => r.method == 'POST');
     final postBody = Map<String, dynamic>.from(post.data as Map);
-    expect(postBody['visibility'], 'private');
+    expect(postBody['visibility'], 'public');
     expect(postBody['files'], [
       {'file_path': 'note.txt', 'content': 'first'},
     ]);
@@ -322,12 +344,14 @@ void main() {
       find.byKey(const ValueKey('editor-content')),
       'second',
     );
+    await chooseVisibility(tester, '私人');
     await saveEditor(tester);
 
     expect(find.text('Updated'), findsOneWidget);
     expect(find.text('second'), findsOneWidget);
     final put = fixture.writes.singleWhere((r) => r.method == 'PUT');
     final putBody = Map<String, dynamic>.from(put.data as Map);
+    expect(putBody['visibility'], 'private');
     expect(putBody['files'], [
       {'action': 'update', 'file_path': 'note.txt', 'content': 'second'},
     ]);
@@ -351,6 +375,112 @@ void main() {
 
     expect(fixture.snippets, isEmpty);
     expect(find.text('這個專案沒有 Snippet'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'snippet editor keeps Markdown controls, omits issue actions, and restores a visibility draft',
+    (tester) async {
+      final fixture = SnippetFixture();
+      await host(
+        tester,
+        fixture,
+        width: 320,
+        devicePixelRatio: 2,
+        textScale: 2,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('create-snippet')));
+      await settleNetworkWidgets(tester);
+      await tester.ensureVisible(find.byTooltip('粗體'));
+      expect(find.byTooltip('粗體'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('editor-quick-actions-btn')),
+        findsNothing,
+      );
+      expect(find.text('/close'), findsNothing);
+      await chooseVisibility(tester, '內部');
+      await tester.tap(find.byTooltip('保留草稿並返回'));
+      await settleNetworkWidgets(tester);
+
+      await tester.tap(find.byKey(const ValueKey('create-snippet')));
+      await settleNetworkWidgets(tester);
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('editor-visibility')),
+      );
+      expect(find.text('內部'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('gitlab.com visibility choices exclude internal', (tester) async {
+    final fixture = SnippetFixture(host: 'https://gitlab.com');
+    await host(tester, fixture);
+    await tester.tap(find.byKey(const ValueKey('create-snippet')));
+    await settleNetworkWidgets(tester);
+
+    await tester.ensureVisible(find.byKey(const ValueKey('editor-visibility')));
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('editor-visibility')),
+        matching: find.byType(EditableText),
+      ),
+      findsNothing,
+    );
+    await tester.tap(find.byKey(const ValueKey('editor-visibility')));
+    await tester.pumpAndSettle();
+    expect(find.text('私人'), findsWidgets);
+    expect(find.text('公開'), findsOneWidget);
+    expect(find.text('內部'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'unsupported visibility draft is explicit without dropdown assertion',
+    (tester) async {
+      final fixture = SnippetFixture();
+      final prefix = base64Url.encode(utf8.encode(fixture.account.key));
+      final resource = base64Url.encode(utf8.encode('42/snippets/new'));
+      FlutterSecureStorage.setMockInitialValues({
+        'draft.v2.$prefix.$resource': jsonEncode({
+          'visibility': 'legacy_scope',
+        }),
+      });
+      await host(tester, fixture);
+      await tester.tap(find.byKey(const ValueKey('create-snippet')));
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('目前值「legacy_scope」不受支援，請選擇其他選項。'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await saveEditor(tester);
+      expect(fixture.writes, isEmpty);
+      expect(find.text('新增 Snippet'), findsOneWidget);
+    },
+  );
+
+  testWidgets('unsupported current visibility is explicit and blocks save', (
+    tester,
+  ) async {
+    final fixture = SnippetFixture();
+    fixture.snippets[1] = fixture.snippet(1, visibility: 'restricted');
+    fixture.content[1] = 'content';
+    await host(tester, fixture);
+    await tester.tap(find.text('Useful example'));
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.byTooltip('編輯 Snippet'));
+    await settleNetworkWidgets(tester);
+
+    expect(find.text('目前值「restricted」不受支援，請選擇其他選項。'), findsOneWidget);
+    await saveEditor(tester);
+    expect(find.text('編輯 Snippet'), findsOneWidget);
+    expect(fixture.writes.where((request) => request.method == 'PUT'), isEmpty);
+
+    await chooseVisibility(tester, '公開');
+    await saveEditor(tester);
+    final put = fixture.writes.singleWhere(
+      (request) => request.method == 'PUT',
+    );
+    expect((put.data as Map<String, dynamic>)['visibility'], 'public');
     expect(tester.takeException(), isNull);
   });
 
@@ -410,6 +540,38 @@ void main() {
     expect(first.writes, isEmpty);
     expect(next.writes, isEmpty);
   });
+
+  testWidgets(
+    'account API change dismisses an open visibility popup with its editor',
+    (tester) async {
+      final first = SnippetFixture();
+      final next = SnippetFixture(host: 'https://gitlab.com');
+      addTearDown(first.api.close);
+      addTearDown(next.api.close);
+      final key = GlobalKey<SnippetOwnerHarnessState>();
+      await tester.pumpWidget(
+        workspaceHost(SnippetOwnerHarness(key: key, first: first, next: next)),
+      );
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.byKey(const ValueKey('create-snippet')));
+      await settleNetworkWidgets(tester);
+      final visibility = find.byKey(const ValueKey('editor-visibility'));
+      await tester.ensureVisible(visibility);
+      await tester.tap(visibility);
+      await tester.pumpAndSettle();
+      expect(find.text('內部'), findsOneWidget);
+
+      key.currentState!.switchOwner();
+      await tester.pump();
+      await settleNetworkWidgets(tester);
+
+      expect(find.byKey(const Key('editorSave')), findsNothing);
+      expect(find.text('內部'), findsNothing);
+      expect(first.writes, isEmpty);
+      expect(next.writes, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'account API change dismisses detail confirmation without delete',

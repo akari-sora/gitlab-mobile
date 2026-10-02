@@ -32,6 +32,7 @@ void main() {
       fixture.issues[1] = {
         'id': 101,
         'iid': 1,
+        'project_id': 42,
         'title': 'Test Issue with Labels',
         'state': 'opened',
         'labels': ['bug', 'critical', 'frontend'],
@@ -77,6 +78,7 @@ void main() {
       fixture.issues[2] = {
         'id': 102,
         'iid': 2,
+        'project_id': 42,
         'title': 'Issue without labels',
         'state': 'opened',
         'labels': <dynamic>[],
@@ -107,6 +109,7 @@ void main() {
       fixture.issues[3] = {
         'id': 103,
         'iid': 3,
+        'project_id': 42,
         'title': 'Issue to remove label from',
         'state': 'opened',
         'labels': ['backend', 'urgent'],
@@ -201,6 +204,7 @@ void main() {
       fixture.issues[4] = {
         'id': 104,
         'iid': 4,
+        'project_id': 42,
         'title': 'Conflict Test Issue',
         'state': 'opened',
         'labels': ['stale-label'],
@@ -241,6 +245,7 @@ void main() {
       fixture.issues[5] = {
         'id': 105,
         'iid': 5,
+        'project_id': 42,
         'title': 'Issue to edit via picker',
         'state': 'opened',
         'labels': <dynamic>[],
@@ -303,6 +308,7 @@ void main() {
       fixture.issues[6] = {
         'id': 106,
         'iid': 6,
+        'project_id': 42,
         'title': 'Issue with map labels',
         'state': 'opened',
         'labels': [
@@ -336,6 +342,7 @@ void main() {
       fixture.issues[7] = {
         'id': 107,
         'iid': 7,
+        'project_id': 42,
         'title': 'Issue with string labels',
         'state': 'opened',
         'labels': 'database, cache',
@@ -366,6 +373,7 @@ void main() {
       fixture.issues[8] = {
         'id': 108,
         'iid': 8,
+        'project_id': 42,
         'title': 'Issue to tap chip body',
         'state': 'opened',
         'labels': ['clickable-label'],

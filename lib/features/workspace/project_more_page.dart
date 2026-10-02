@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../core/work_item_types.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
 import 'activity_page.dart';
@@ -18,6 +19,7 @@ import 'editor.dart';
 import 'project_extras.dart';
 import 'records_feed.dart';
 import 'search_page.dart';
+import 'work_item_page.dart';
 import '../../shared/theme.dart';
 
 enum MetadataKind { branches, tags, commits, releases, labels, milestones }
@@ -351,6 +353,8 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
       ]),
       _section(context, '協作', [
         (Icons.view_kanban_outlined, '議題看板', () => _push(BoardsPage(account: account, api: api, project: project))),
+        (Icons.task_alt, 'Tasks', () => _push(ProjectWorkItemsPage(account: account, api: api, project: project, type: ProjectWorkItemType.task))),
+        (Icons.warning_amber_rounded, 'Incidents', () => _push(ProjectWorkItemsPage(account: account, api: api, project: project, type: ProjectWorkItemType.incident))),
         (Icons.timeline, '專案動態', () => _push(ActivityPage(account: account, api: api, project: project))),
         (Icons.group_outlined, '成員', () => _push(MembersPage(account: account, api: api, project: project))),
         (Icons.menu_book_outlined, 'Wiki', () => _push(WikiPagesPage(account: account, api: api, project: project))),

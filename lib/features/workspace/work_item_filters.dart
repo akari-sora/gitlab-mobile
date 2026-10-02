@@ -200,26 +200,36 @@ Future<WorkItemFilters?> showWorkItemFilters(
   required int projectId,
   required bool mergeRequest,
   required WorkItemFilters initial,
-}) => showModalBottomSheet<WorkItemFilters>(
-  context: context,
-  isScrollControlled: true,
-  useSafeArea: true,
-  builder: (context) => SizedBox(
-    height: MediaQuery.sizeOf(context).height * .92,
-    child: Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 640),
-        child: WorkItemFilterSheet(
-          api: api,
-          account: account,
-          projectId: projectId,
-          mergeRequest: mergeRequest,
-          initial: initial,
+  ValueChanged<Route<dynamic>>? onRoute,
+}) {
+  final navigator = Navigator.of(context);
+  final localizations = MaterialLocalizations.of(context);
+  final route = ModalBottomSheetRoute<WorkItemFilters>(
+    capturedThemes: InheritedTheme.capture(from: context, to: navigator.context),
+    isScrollControlled: true,
+    useSafeArea: true,
+    barrierLabel: localizations.scrimLabel,
+    barrierOnTapHint: localizations.scrimOnTapHint(localizations.bottomSheetLabel),
+    modalBarrierColor: Theme.of(context).bottomSheetTheme.modalBarrierColor,
+    builder: (context) => SizedBox(
+      height: MediaQuery.sizeOf(context).height * .92,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 640),
+          child: WorkItemFilterSheet(
+            api: api,
+            account: account,
+            projectId: projectId,
+            mergeRequest: mergeRequest,
+            initial: initial,
+          ),
         ),
       ),
     ),
-  ),
-);
+  );
+  onRoute?.call(route);
+  return navigator.push(route);
+}
 
 class WorkItemFilterSheet extends StatefulWidget {
   const WorkItemFilterSheet({

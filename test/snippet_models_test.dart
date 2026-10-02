@@ -23,6 +23,24 @@ Map<String, dynamic> snippetJson({
 }
 
 void main() {
+  test('snippet visibility values follow the exact GitLab.com host', () {
+    expect(snippetVisibilitiesForHost('gitlab.com'), ['private', 'public']);
+    expect(snippetVisibilitiesForHost('GitLab.COM'), ['private', 'public']);
+    expect(snippetVisibilitiesForHost('www.gitlab.com'), [
+      'private',
+      'internal',
+      'public',
+    ]);
+    expect(snippetVisibilitiesForHost('gitlab.example.com'), [
+      'private',
+      'internal',
+      'public',
+    ]);
+    expect(snippetVisibilityLabel('private'), '私人');
+    expect(snippetVisibilityLabel('internal'), '內部');
+    expect(snippetVisibilityLabel('public'), '公開');
+  });
+
   test('legacy raw is allowed only for a verifiable single file', () {
     expect(ProjectSnippet.fromJson(snippetJson()).canUseLegacyRaw, isFalse);
     expect(

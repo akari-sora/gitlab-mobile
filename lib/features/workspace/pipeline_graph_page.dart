@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -254,20 +255,29 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
     final title = _iid == null
         ? 'Pipeline #${widget.pipelineId} 相依圖'
         : 'Pipeline #$_iid 相依圖';
+    final theme = Theme.of(context);
+    final titleStyle = theme.appBarTheme.titleTextStyle ?? theme.textTheme.titleLarge!;
+    final subtitleStyle = theme.textTheme.bodySmall!;
+    final scaler = MediaQuery.textScalerOf(context);
+    final toolbarHeight = math.max(
+      kToolbarHeight,
+      scaler.scale(titleStyle.fontSize ?? 22) * (titleStyle.height ?? 1.2) +
+          scaler.scale(subtitleStyle.fontSize ?? 12) * (subtitleStyle.height ?? 1.2) + 8,
+    );
     return Scaffold(
       appBar: AppBar(
-        primary: false,
+        toolbarHeight: toolbarHeight,
         titleSpacing: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(title),
+            Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
             Text(
               widget.project.path,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.bodySmall,
+              style: subtitleStyle,
             ),
           ],
         ),
@@ -279,12 +289,12 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
           ),
         ],
       ),
-      body: Column(
+      body: gestureSafe(Column(
         children: [
           if (_loading) const LinearProgressIndicator(minHeight: 2),
           Expanded(child: _buildBody()),
         ],
-      ),
+      )),
     );
   }
 

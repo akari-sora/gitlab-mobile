@@ -282,6 +282,7 @@ void main() {
           return jsonResponse({
             'id': 888,
             'iid': 5,
+            'project_id': 102,
             'title': 'Issue 5 Resumed',
             'state': 'opened',
             'author': {'id': 2, 'username': 'user_b', 'name': 'User B'},

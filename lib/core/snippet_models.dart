@@ -3,6 +3,21 @@ import 'models.dart';
 
 typedef SnippetJson = Map<String, dynamic>;
 
+const _allSnippetVisibilities = ['private', 'internal', 'public'];
+const _gitLabComSnippetVisibilities = ['private', 'public'];
+
+List<String> snippetVisibilitiesForHost(String host) =>
+    host.toLowerCase() == 'gitlab.com'
+    ? _gitLabComSnippetVisibilities
+    : _allSnippetVisibilities;
+
+String snippetVisibilityLabel(String value) => switch (value) {
+  'private' => '私人',
+  'internal' => '內部',
+  'public' => '公開',
+  _ => value,
+};
+
 final class ProjectSnippet {
   const ProjectSnippet({
     required this.id,

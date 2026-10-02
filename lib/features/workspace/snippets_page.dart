@@ -28,6 +28,29 @@ class SnippetsPage extends StatefulWidget {
   State<SnippetsPage> createState() => _SnippetsPageState();
 }
 
+List<EditChoice> _visibilityChoices(Account account) => [
+  for (final value in snippetVisibilitiesForHost(account.instance.base.host))
+    EditChoice(value, snippetVisibilityLabel(value)),
+];
+
+void _dismissOwnedRoutes(
+  NavigatorState? navigator,
+  Set<Route<dynamic>> ownedRoutes,
+) {
+  final routes = ownedRoutes.toList(growable: false);
+  ownedRoutes.clear();
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (navigator == null || !navigator.mounted) return;
+    for (final route in routes) {
+      if (!route.isActive) continue;
+      navigator.popUntil(
+        (candidate) => candidate == route || candidate.isFirst,
+      );
+      if (route.isActive) navigator.removeRoute(route);
+    }
+  });
+}
+
 class _SnippetsPageState extends State<SnippetsPage> {
   final _feed = GlobalKey<RecordsFeedState>();
   final Set<Route<dynamic>> _ownedRoutes = {};
@@ -47,17 +70,7 @@ class _SnippetsPageState extends State<SnippetsPage> {
     unawaited(route.popped.then((_) => _ownedRoutes.remove(route)));
   }
 
-  void _dismissRoutes() {
-    final navigator = _navigator;
-    final routes = _ownedRoutes.toList(growable: false);
-    _ownedRoutes.clear();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (navigator == null || !navigator.mounted) return;
-      for (final route in routes) {
-        if (route.isActive) navigator.removeRoute(route);
-      }
-    });
-  }
+  void _dismissRoutes() => _dismissOwnedRoutes(_navigator, _ownedRoutes);
 
   bool _currentOwner(
     int generation,
@@ -106,24 +119,18 @@ class _SnippetsPageState extends State<SnippetsPage> {
       subtitle: project.path,
       resource: '${project.id}/snippets/new',
       onRoute: _ownRoute,
-      fields: const [
-        EditField('title', '標題', required: true),
-        EditField(
-          'description',
-          '說明',
-          lines: 4,
-          markdown: true,
-          quickActions: true,
-        ),
-        EditField(
+      fields: [
+        const EditField('title', '標題', required: true),
+        const EditField('description', '說明', lines: 4, markdown: true),
+        EditField.choice(
           'visibility',
           '可見性',
+          choices: _visibilityChoices(account),
           value: 'private',
           required: true,
-          hint: 'private、internal 或 public；GitLab.com 不支援 internal',
         ),
-        EditField('file_name', '檔名', required: true),
-        EditField('content', '內容', lines: 16, required: true),
+        const EditField('file_name', '檔名', required: true),
+        const EditField('content', '內容', lines: 16, required: true),
       ],
       save: (values) async {
         if (!_currentOwner(generation, account, api, project)) {
@@ -276,17 +283,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     unawaited(route.popped.then((_) => _ownedRoutes.remove(route)));
   }
 
-  void _dismissRoutes() {
-    final navigator = _navigator;
-    final routes = _ownedRoutes.toList(growable: false);
-    _ownedRoutes.clear();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (navigator == null || !navigator.mounted) return;
-      for (final route in routes) {
-        if (route.isActive) navigator.removeRoute(route);
-      }
-    });
-  }
+  void _dismissRoutes() => _dismissOwnedRoutes(_navigator, _ownedRoutes);
 
   bool _currentOwner(
     int generation,
@@ -399,14 +396,13 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
           value: snippet.description,
           lines: 4,
           markdown: true,
-          quickActions: true,
         ),
-        EditField(
+        EditField.choice(
           'visibility',
           '可見性',
+          choices: _visibilityChoices(account),
           value: snippet.visibility,
           required: true,
-          hint: 'private、internal 或 public；GitLab.com 不支援 internal',
         ),
         EditField('file_name', '檔名', value: snippet.fileName, required: true),
         EditField('content', '內容', value: content, lines: 16, required: true),
