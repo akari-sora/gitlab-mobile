@@ -4,9 +4,19 @@ This repository imports the G0 R1 application slice, its Flutter regression test
 
 ## Current follow-up — mobile parity and performance (2026-10-02)
 
-The development branch based on `0e1298e` adds project issue boards, server-backed MR draft review, repository revision comparison and native issue/MR filters. It also adds a bounded account-client read cache, concurrent request sharing, memoized/lazy list derivation and a page-owned syntax-span LRU. The full status matrix and safety boundaries are in [Mobile web parity and performance follow-up](MOBILE_PARITY_PERFORMANCE.md).
+The branch based on `0e1298e` adds boards/card moves/list management, server-backed
+MR draft review, revision compare, native issue/MR filters, repository and
+pipeline dependency graphs, registries and single-file Snippets. Account-client
+read caching, request sharing, lazy list derivation and syntax-span LRU reduce
+repeated work. See [the parity/performance report](MOBILE_PARITY_PERFORMANCE.md)
+and [the full-function ledger](MOBILE_WEB_PARITY_LEDGER.md).
 
-This closes the read-oriented LT3 board slice and the core LT4 server draft-note slice. Boards do not provide drag/drop or direct reordering. Draft bulk publish remains subject to the unavoidable concurrent-change interval between the final list read and GitLab's bulk POST, which the confirmation names. LT2 GraphQL work items, pipeline DAG, repository graph, registries, OAuth application registration, push delivery and the analytics families remain open. Final tests, pipeline/jobs, physical-device measurements and NOT_RUN lanes belong in the current report; this roadmap is not acceptance evidence.
+Core board and draft workflows now have source/tests. Draft bulk publication still
+has GitLab's concurrent-change interval after its final GET. Typed GraphQL work
+items, paid board scope/list creation, all-branch graph, multi-file Snippets,
+registry downloads/publishing, incidents, Service Desk, analytics, OAuth live
+login and push remain open under the all-function goal. Exact-head CI, Android
+readback, live private/CRUD and iOS acceptance remain separate evidence lanes.
 
 ## G0 — Identity and private repository reader (implemented slice, acceptance incomplete)
 
@@ -117,7 +127,7 @@ The follow-up engineering slices (D1~D5) and long-term backlog bridge the gaps i
   - Tag selection pins tree to the resolved tag commit SHA without branch drift.
   - Zero frame drops during fast scrolls on large code files (> 5,000 lines).
 
-Status (2026-10-02): D1–D5 had already landed on `main` before v0.5. v0.5 adds group browsing (the read side of LT1: groups, subgroups, group projects, group issues and MRs), emoji reactions, scoped-label rendering, global and per-project search, activity feeds, file history, blame and find-file, related items, members, wiki, environments, deployments and pipeline schedules. Evidence and NOT_RUN items are in the [v0.5 ledger](V0_5_VERIFICATION.md). The current follow-up implements the read-oriented LT3 board slice and the core LT4 server draft-note slice; GraphQL work items (LT2), direct board reordering and DAG graphs remain open.
+Status (2026-10-02): D1–D5 had already landed on `main` before v0.5. v0.5 adds group browsing (the read side of LT1: groups, subgroups, group projects, group issues and MRs), emoji reactions, scoped-label rendering, global and per-project search, activity feeds, file history, blame and find-file, related items, members, wiki, environments, deployments and pipeline schedules. Evidence and NOT_RUN items are in the [v0.5 ledger](V0_5_VERIFICATION.md). The current follow-up adds board management/card moves, core server drafts and actual pipeline needs graphs; GraphQL work items (LT2), paid board semantics and full downstream DAG workflows remain open.
 
 ### Long-Term Backlog (LT1 ~ LT5)
 - **LT1: Groups & Subgroups Hierarchy (`GET /groups`)**: Flattened multi-level hierarchy browsing, subgroup navigation, and group-scoped project discovery.

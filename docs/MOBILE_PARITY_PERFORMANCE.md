@@ -9,7 +9,9 @@ performance branch. It is not a release or G0 acceptance record.
 The comparison used three distinct sources of evidence:
 
 - GitLab.com responsive pages at 390 × 844: a public project overview, issue
-  boards, merge-request list, pipeline list and the project navigation drawer.
+  boards, merge-request list, pipeline list, repository graph, snippets, package list/detail, incidents,
+  Service Desk, four analytics pages and the complete project navigation drawer. The 30-entry ledger
+  distinguishes menu observation from a completed page walk.
 - The current Flutter source and regression tests. This is the source of truth
   for App capability claims below.
 - GitLab's official API documentation for [issue boards][boards-api],
@@ -35,15 +37,15 @@ GitLab edition lacks the feature.
 
 | GitLab Web area | Before this follow-up | Added or changed here | Remaining boundary |
 |---|---|---|---|
-| Global navigation | Projects, groups/subgroups, todos, assigned/review-requested/created work, activity and global search | No structural change | Web administration, help and create menus are outside the native client scope |
+| Global navigation | Projects, groups/subgroups, todos, assigned/review-requested/created work, activity and global search | No structural change | Administration, help and creation workflows remain unimplemented; they are part of the full-function backlog |
 | Project overview | Description, stars, forks, languages, licence, clone URLs, star/fork actions | No structural change | Full Web analytics and settings are not reproduced |
-| Manage | Activity, members and labels | No structural change | Access-token, webhook, integration and full member-role administration remain on Web |
-| Plan | Issues, milestones and linked work already existed | Issue boards; native issue/MR filters and server ordering for date, direction, scope, labels, milestone, assignee, author and reviewer | Iterations, requirements, epics and GraphQL polymorphic work items remain open |
-| Code | Repository tree, README, branches, commits and tags; fixed-SHA file view, history, blame, search, syntax highlighting and line permalinks; MR list/detail/diffs | Compare two refs using merge-base or direct mode, with lazy commit/file lists and unified diff viewing | Repository graph, snippets, locked files and cross-project comparison remain open |
+| Manage | Activity, members and labels | No structural change | Access-token, webhook, integration and full member-role administration remain open |
+| Plan | Issues, milestones and linked work already existed | Issue boards with card movement and board/list management; native issue/MR filters and server ordering for date, direction, scope, labels, milestone, assignee, author and reviewer | Iterations, requirements, epics and GraphQL polymorphic work items remain open |
+| Code | Repository tree, README, branches, commits and tags; fixed-SHA file view, history, blame, search, syntax highlighting and line permalinks; MR list/detail/diffs | Compare two refs; selected-ref repository graph; single-file Snippets reader/editor with explicit file enumeration | Locked files, cross-project comparison, full all-branch graph and multi-file snippet browsing/editing remain open |
 | MR review | Discussions, inline single-line positions, approvals/merge, suggested changes, auto-merge, local viewed-file state and the MR draft/ready toggle | Server draft-note list, add/edit/discard and bulk publish, tied to account/project/MR/head SHA | Viewed-file state is not server-synchronised; multi-line positioning and full desktop review policy administration remain open |
-| Build | Pipelines, stage-grouped jobs, controls, incremental ANSI logs and search, JUnit report views, artifacts, cross-project CI overview and schedules | List rendering work is reduced; no new CI surface | Pipeline DAG/graph editing and the complete Web pipeline editor remain open |
-| Deploy and operate | Environments and deployment history | No structural change | Package, container and model registries; Terraform modules; incidents and Service Desk remain on Web |
-| Analyze | Basic project counts and activity | No structural change | Value-stream, contributor, repository, code-review and issue analytics, insights and model experiments remain on Web |
+| Build | Pipelines, stage-grouped jobs, controls, incremental ANSI logs and search, JUnit report views, artifacts, cross-project CI overview and schedules | Read-only pipeline dependency graph with paginated actual GraphQL needs | Cross-project/downstream graph and the complete pipeline editor remain open |
+| Deploy and operate | Environments and deployment history | Package/Container/Terraform lists, details and guarded deletion | Registry downloads/publish, model registries, incidents and Service Desk remain open |
+| Analyze | Basic project counts and activity | No structural change | Value-stream, contributor, repository, code-review and issue analytics, insights and model experiments remain open |
 | Adaptive layout | Compact phone navigation and retained-state two-pane layout at the expanded breakpoint | New boards show one active column at a time on phones; filters use a native bottom sheet; long result screens remain lazy | iOS physical-device, VoiceOver/TalkBack and authenticated enterprise-screen walks remain NOT_RUN |
 
 This matrix is a navigation and workflow comparison, not a declaration of full
@@ -60,9 +62,13 @@ phone, a `PageView` presents one full-width column with a board/column selector
 and explicit search. Cards open the existing issue detail, where supported
 issue mutations remain available.
 
-The App does not expose drag/drop, list reordering or direct “move card” writes.
-After a mutation it refreshes all mounted columns because one issue can belong
-to several label columns. If a returned board scope cannot be translated safely
+Long-pressing a card offers a native move action. It removes only the source
+label and preserves other board and unrelated labels, because one issue can
+legally belong to several columns. The manager creates/renames/deletes boards,
+shows/hides system columns, and adds/reorders/removes lists. Each write uses a
+fresh board/issue snapshot and verifies the returned state. Touch drag/drop and
+creation of paid assignee/milestone/iteration/weight lists remain open.
+After a mutation it refreshes mounted columns. If a returned board scope cannot be translated safely
 to the Issues API, the App shows it as unsupported instead of loading an
 incorrect fallback list.
 
@@ -107,6 +113,42 @@ server-side draft set; another client can still add a draft in the interval
 between the final GET and POST. The confirmation states this race explicitly.
 After an accepted write, failed readback is reported as unconfirmed and further
 writes stay blocked until refresh.
+
+### Repository and pipeline graphs
+
+更多 → 儲存庫圖 renders actual topological commits and their `parent_ids` as a
+vertical mobile timeline. Branch/tag selection is lazy. The page loads 30 commits
+at a time, caps the loaded window at 300, and marks parents outside that window.
+It explicitly describes the selected ref's reachable history, rather than
+claiming GitLab Web's complete all-branch graph.
+
+Pipeline → 工作相依圖 uses a fixed read-only GraphQL query and the returned job
+`needs`, scheduling type and stage order. It loads 20 jobs per page, caps the
+window at 300, identifies unloaded/ambiguous dependencies, and opens real build
+logs. Stage scheduling is described without invented pairwise dependency edges.
+The exact instance GraphQL endpoint uses Bearer authentication, no redirects,
+response budgets and generation fences; partial GraphQL errors fail explicitly.
+
+### Registries and Snippets
+
+更多 → 套件與容器 Registry offers package, container and Terraform tabs. Package
+search/sort is server-side; container loaded-window search is labelled explicitly.
+Details expose actual files/digests/sizes. Guarded deletion rechecks permission,
+identity and complete bounded pagination before readback. Type-specific downloads,
+publishing and full registry policy administration remain unfinished.
+
+更多 → Snippets supports a lazy list and explicitly enumerated single-file
+preview/create/edit/delete. A nonempty legacy `file_name` alone is insufficient to
+prove a single-file snippet; an instance without safe enumeration displays an
+unsupported state. Writes check `updated_at` and source content and perform full
+readback. Multi-file preview/tree/editing remains unfinished. Current official
+REST/GraphQL data does not establish a snippet HEAD SHA, so the App does not guess
+`main`, `master`, or use the project's default branch as the snippet ref.
+
+ProjectMore and Pipeline owned navigation stacks, board modal editors and snippet
+routes are removed on account/project/API replacement. Registry feed identities
+include owner generation, so reconnecting the same account clears old rows before
+loading from the replacement API.
 
 ## Loading, cache and scroll work
 
@@ -175,7 +217,10 @@ The normal build omits the diagnostics listener and emits no profile records.
 ## Verification status
 
 <!-- ROOT:VERIFICATION_RESULTS:START -->
-Local evidence on the submitted application source (Flutter 3.47.2 / Dart
+First-slice evidence on submitted commit `a86c0ad` (the subsequent functionality
+additions below require their own exact-head validation):
+
+Local evidence on that submitted application source (Flutter 3.47.2 / Dart
 3.13.2; committed dependency lock unchanged):
 
 - `flutter analyze --no-pub`: no issues. `flutter test --no-pub --coverage
@@ -230,12 +275,28 @@ hardware, secure-storage backup/restore, OAuth login, push and store signing.
 No G0 or complete GitLab parity acceptance is claimed.
 <!-- ROOT:VERIFICATION_RESULTS:END -->
 
+## Subsequent functionality validation
+
+New graph/registry/snippet/board-management source is not covered by the
+`a86c0ad` pipeline or APK above. Fresh pinned-SDK local validation of these
+additions: 1,197 JUnit tests, zero failures/errors/skips, 87.43% line coverage,
+clean full analysis, 51 Python tests, shell/compileall and SDK-baseline checks.
+The expanded production public suite passed 11 anonymous read checks and records
+Boards' anonymous HTTP 401 separately as a GAP; it issued zero writes. It parses
+real topological parents, four pipeline dependencies, registry files, and
+multi-file snippet metadata. Its exact source commit, pipeline/jobs and installed
+Android readback are reported in the delivery MR; local tests do not substitute
+for those lanes. See
+[MOBILE_WEB_PARITY_LEDGER.md](MOBILE_WEB_PARITY_LEDGER.md) for the full navigation
+ledger and outstanding functional acceptance lanes.
+
 ## Remaining product priorities
 
 The largest mobile workflow gaps are OAuth application registration and live
 login validation, push delivery, server-synchronised viewed-file state, GraphQL
-work items/epics, pipeline DAG, repository graph and the registry/operate/
-analytics families. Store signing, iOS physical-device evidence, accessibility
+work items/epics/OKR, full repository graph and multi-file snippets, registry
+downloads/publishing, incident/Service Desk and analytics families. These are open
+requirements under the all-function goal, not features delegated permanently to Web. Store signing, iOS physical-device evidence, accessibility
 screen-reader walks, real private-project integration on the submitted build
 and live draft/board writes are separate acceptance lanes.
 

@@ -21,6 +21,48 @@ extension WorkspaceApi on GitLabApi {
     return _object(instance.api(path), method: method, data: body);
   }
   Future<void> removeRecord(List<String> path, {Json? data}) async { await _read(instance.api(path), method: 'DELETE', data: data); }
+
+  Future<String> snippetText(
+    int project,
+    int snippet, {
+    String? ref,
+    String? filePath,
+  }) async {
+    if ((ref == null) != (filePath == null) ||
+        ref?.trim().isEmpty == true ||
+        filePath?.trim().isEmpty == true) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    final path = ref == null
+        ? ['projects', '$project', 'snippets', '$snippet', 'raw']
+        : [
+            'projects',
+            '$project',
+            'snippets',
+            '$snippet',
+            'files',
+            ref,
+            filePath!,
+            'raw',
+          ];
+    final response = await _read(
+      instance.api(path),
+      maxBytes: GitLabApi.maxTextBytes,
+      headers: {'Cache-Control': 'max-age=0'},
+    );
+    if (response.bytes.contains(0)) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    try {
+      final text = utf8.decode(response.bytes);
+      if ('\n'.allMatches(text).length + 1 > GitLabApi.maxTextLines) {
+        throw const ApiFailure(FailureKind.tooLarge);
+      }
+      return text;
+    } on FormatException {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+  }
   /// Mutations such as publishing a review may return 204 without JSON.
   Future<void> writeEmpty(String method, List<String> path, {Json data = const {}}) async {
     if (!const ['POST', 'PUT', 'PATCH'].contains(method)) {

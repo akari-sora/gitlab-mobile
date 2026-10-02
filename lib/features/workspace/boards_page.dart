@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/board_queries.dart';
+import '../../core/board_mutations.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
@@ -33,10 +34,20 @@ class _BoardsPageState extends State<BoardsPage> {
   BoardDefinition? _board;
   ApiFailure? _error;
   bool _loading = true;
+  bool _writing = false;
   int _columnIndex = 0;
   int _generation = 0;
   String _query = '';
   final Map<String, GlobalKey<RecordsFeedState>> _feeds = {};
+  final Set<Route<dynamic>> _ownedRoutes = {};
+  NavigatorState? _navigator;
+
+  BoardColumn? _columnWithKey(BoardDefinition board, String key) {
+    for (final column in board.columns) {
+      if (column.key == key) return column;
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -45,11 +56,37 @@ class _BoardsPageState extends State<BoardsPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _navigator = Navigator.of(context);
+  }
+
+  void _ownRoute(Route<dynamic> route) {
+    if (!_ownedRoutes.add(route)) return;
+    unawaited(route.popped.then((_) => _ownedRoutes.remove(route)));
+  }
+
+  void _dismissRoutes() {
+    final navigator = _navigator;
+    final routes = _ownedRoutes.toList(growable: false);
+    _ownedRoutes.clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (navigator == null || !navigator.mounted) return;
+      for (final route in routes) {
+        if (route.isActive) navigator.removeRoute(route);
+      }
+    });
+  }
+
+  @override
   void didUpdateWidget(covariant BoardsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.account.key != widget.account.key ||
         oldWidget.project.id != widget.project.id ||
         !identical(oldWidget.api, widget.api)) {
+      _generation++;
+      _dismissRoutes();
+      _writing = false;
       _boards = const [];
       _board = null;
       _feeds.clear();
@@ -62,17 +99,22 @@ class _BoardsPageState extends State<BoardsPage> {
   @override
   void dispose() {
     _generation++;
+    _dismissRoutes();
     _search.dispose();
     _pages.dispose();
     super.dispose();
   }
 
-  Future<List<Json>> _allPages(List<String> path, {int maxPages = 4}) async {
+  Future<List<Json>> _allPagesFor(
+    GitLabApi api,
+    List<String> path, {
+    int maxPages = 4,
+  }) async {
     final values = <Json>[];
     Uri? next;
     final seen = <String>{};
     for (var page = 0; page < maxPages; page++) {
-      final response = await widget.api.records(path, next: next);
+      final response = await api.records(path, next: next);
       values.addAll(response.items);
       next = response.next;
       if (next == null) return values;
@@ -89,6 +131,9 @@ class _BoardsPageState extends State<BoardsPage> {
     }
     throw const ApiFailure(FailureKind.invalidResponse);
   }
+
+  Future<List<Json>> _allPages(List<String> path, {int maxPages = 4}) =>
+      _allPagesFor(widget.api, path, maxPages: maxPages);
 
   Future<void> _loadBoards({int? preferredId}) async {
     final generation = ++_generation;
@@ -203,27 +248,644 @@ class _BoardsPageState extends State<BoardsPage> {
     await Future.wait(feeds.map((feed) => feed.refresh()));
   }
 
+  List<String> _boardPathFor(int projectId, [int? boardId]) => [
+    'projects',
+    '$projectId',
+    'boards',
+    if (boardId != null) '$boardId',
+  ];
+
+  Future<BoardDefinition> _freshBoardFor(
+    GitLabApi api,
+    int projectId,
+    int boardId,
+  ) async {
+    final results = await Future.wait<Object>([
+      api.record(_boardPathFor(projectId, boardId)),
+      _allPagesFor(api, [..._boardPathFor(projectId, boardId), 'lists']),
+    ]);
+    return BoardDefinition.fromJson(
+      results[0] as Json,
+      results[1] as List<Json>,
+    );
+  }
+
+  Future<void> _showMoveSheet(BoardColumn source, Json issue) async {
+    final board = _board;
+    if (board == null || _writing) return;
+    final generation = _generation;
+    final api = widget.api;
+    final projectId = widget.project.id;
+    final targets = board.columns
+        .where(boardColumnAcceptsDirectMove)
+        .where((column) => column.key != source.key)
+        .toList(growable: false);
+    if (!boardColumnAcceptsDirectMove(source) || targets.isEmpty) {
+      showFailure(
+        context,
+        const ApiFailure(
+          FailureKind.unsupported,
+          title: '沒有可直接移動的欄位',
+          detail: '目前只支援 Open、Closed 與標籤欄位之間的直接移動。',
+        ),
+      );
+      return;
+    }
+    final target = await showModalBottomSheet<BoardColumn>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        final route = ModalRoute.of(context);
+        if (route != null) _ownRoute(route);
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              const ListTile(
+                title: Text('移動議題'),
+                subtitle: Text('會保留不屬於此看板欄位的標籤。'),
+              ),
+              for (final column in targets)
+                ListTile(
+                  key: ValueKey('move-issue-to-${column.key}'),
+                  leading: Icon(_columnIcon(column.kind)),
+                  title: Text(column.title),
+                  onTap: () => Navigator.pop(context, column),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+    if (target == null ||
+        !mounted ||
+        generation != _generation ||
+        !identical(widget.api, api) ||
+        widget.project.id != projectId) {
+      return;
+    }
+    await _moveIssue(
+      source.key,
+      target.key,
+      requiredInt(issue, 'iid'),
+      api: api,
+      projectId: projectId,
+      ownerGeneration: generation,
+    );
+  }
+
+  Future<void> _moveIssue(
+    String sourceKey,
+    String targetKey,
+    int iid, {
+    required GitLabApi api,
+    required int projectId,
+    required int ownerGeneration,
+  }) async {
+    if (_writing) return;
+    final generation = ownerGeneration;
+    final boardId = _board?.id;
+    if (boardId == null) return;
+    setState(() => _writing = true);
+    try {
+      final freshBoard = await _freshBoardFor(api, projectId, boardId);
+      if (!mounted || generation != _generation) return;
+      final source = _columnWithKey(freshBoard, sourceKey);
+      final target = _columnWithKey(freshBoard, targetKey);
+      if (source == null || target == null) {
+        throw const ApiFailure(
+          FailureKind.conflict,
+          title: '看板欄位已變更',
+          detail: '請重新整理看板後再移動議題。',
+        );
+      }
+      final issuePath = ['projects', '$projectId', 'issues', '$iid'];
+      final freshIssue = await api.record(issuePath);
+      if (!mounted || generation != _generation) return;
+      final plan = planBoardIssueMove(
+        board: freshBoard,
+        source: source,
+        target: target,
+        issue: freshIssue,
+      );
+      await api.writeRecord('PUT', issuePath, plan.payload);
+      if (!mounted || generation != _generation) return;
+      final readback = await api.record(issuePath);
+      if (!mounted || generation != _generation) return;
+      final refreshedBoard = await _freshBoardFor(api, projectId, boardId);
+      if (!mounted || generation != _generation) return;
+      final refreshedTarget = _columnWithKey(refreshedBoard, targetKey);
+      final refreshedSource = _columnWithKey(refreshedBoard, sourceKey);
+      if (refreshedTarget == null ||
+          refreshedSource == null ||
+          !boardMoveReadbackMatches(
+            refreshedBoard,
+            refreshedSource,
+            refreshedTarget,
+            readback,
+          )) {
+        throw const ApiFailure(
+          FailureKind.writeUncertain,
+          title: '尚未確認議題移動結果',
+          detail: 'GitLab 的重新讀取結果與目標欄位不一致。請重新整理後確認，避免重複操作。',
+        );
+      }
+      if (!mounted || generation != _generation) return;
+      await _loadBoard(boardId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('已移動到「${refreshedTarget.title}」')),
+        );
+      }
+    } catch (error) {
+      if (mounted && generation == _generation) showFailure(context, error);
+    } finally {
+      if (mounted) setState(() => _writing = false);
+    }
+  }
+
+  Future<String?> _askName(String title, {String initial = ''}) async {
+    var value = initial;
+    return showDialog<String>(
+      context: context,
+      builder: (context) {
+        final route = ModalRoute.of(context);
+        if (route != null) _ownRoute(route);
+        return AlertDialog(
+          title: Text(title),
+          content: TextFormField(
+            key: const ValueKey('board-name-field'),
+            initialValue: initial,
+            autofocus: true,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(labelText: '名稱'),
+            onChanged: (next) => value = next,
+            onFieldSubmitted: (next) {
+              if (next.trim().isNotEmpty) Navigator.pop(context, next.trim());
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final trimmed = value.trim();
+                if (trimmed.isNotEmpty) Navigator.pop(context, trimmed);
+              },
+              child: const Text('儲存'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<bool> _confirm(String title, String detail) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) {
+          final route = ModalRoute.of(context);
+          if (route != null) _ownRoute(route);
+          return AlertDialog(
+            title: Text(title),
+            content: Text(detail),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('取消'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('確認'),
+              ),
+            ],
+          );
+        },
+      ) ??
+      false;
+
+  Future<void> _boardWrite(Future<void> Function(int generation) action) async {
+    if (_writing) return;
+    final generation = _generation;
+    setState(() => _writing = true);
+    try {
+      await action(generation);
+    } catch (error) {
+      if (mounted && generation == _generation) showFailure(context, error);
+    } finally {
+      if (mounted) setState(() => _writing = false);
+    }
+  }
+
+  Future<void> _createBoard() async {
+    final ownerGeneration = _generation;
+    final api = widget.api;
+    final projectId = widget.project.id;
+    final name = await _askName('新增看板');
+    if (name == null ||
+        !mounted ||
+        ownerGeneration != _generation ||
+        !identical(widget.api, api) ||
+        widget.project.id != projectId) {
+      return;
+    }
+    await _boardWrite((generation) async {
+      final created = await api.writeRecord('POST', _boardPathFor(projectId), {
+        'name': name,
+      });
+      if (!mounted || generation != _generation) return;
+      final id = requiredInt(created, 'id');
+      final readback = await api.record(_boardPathFor(projectId, id));
+      if (optionalString(readback, 'name') != name) {
+        throw const ApiFailure(FailureKind.writeUncertain);
+      }
+      if (!mounted || generation != _generation) return;
+      await _loadBoards(preferredId: id);
+    });
+  }
+
+  Future<void> _renameBoard(BoardDefinition board) async {
+    final ownerGeneration = _generation;
+    final api = widget.api;
+    final projectId = widget.project.id;
+    final name = await _askName('重新命名看板', initial: board.name);
+    if (name == null ||
+        name == board.name ||
+        !mounted ||
+        ownerGeneration != _generation ||
+        !identical(widget.api, api) ||
+        widget.project.id != projectId) {
+      return;
+    }
+    await _boardWrite((generation) async {
+      await api.writeRecord('PUT', _boardPathFor(projectId, board.id), {
+        'name': name,
+      });
+      if (!mounted || generation != _generation) return;
+      final readback = await api.record(_boardPathFor(projectId, board.id));
+      if (optionalString(readback, 'name') != name) {
+        throw const ApiFailure(FailureKind.writeUncertain);
+      }
+      if (!mounted || generation != _generation) return;
+      await _loadBoards(preferredId: board.id);
+    });
+  }
+
+  Future<void> _setSystemColumnHidden(
+    BoardDefinition board, {
+    required bool backlog,
+    required bool hidden,
+  }) async {
+    final api = widget.api;
+    final projectId = widget.project.id;
+    final field = backlog ? 'hide_backlog_list' : 'hide_closed_list';
+    await _boardWrite((generation) async {
+      await api.writeRecord('PUT', _boardPathFor(projectId, board.id), {
+        field: hidden,
+      });
+      if (!mounted || generation != _generation) return;
+      final readback = await api.record(_boardPathFor(projectId, board.id));
+      if (readback[field] != hidden) {
+        throw const ApiFailure(FailureKind.writeUncertain);
+      }
+      if (!mounted || generation != _generation) return;
+      await _loadBoard(board.id);
+    });
+  }
+
+  Future<Json?> _chooseLabel(BoardDefinition board) async {
+    final generation = _generation;
+    final api = widget.api;
+    final projectId = widget.project.id;
+    final labels = await _allPagesFor(api, [
+      'projects',
+      '$projectId',
+      'labels',
+    ]);
+    if (!mounted ||
+        generation != _generation ||
+        !identical(widget.api, api) ||
+        widget.project.id != projectId) {
+      return null;
+    }
+    final existing = board.columns
+        .where((column) => column.kind == BoardColumnKind.label)
+        .map((column) => column.label)
+        .toSet();
+    final available = labels
+        .where((label) => !existing.contains(optionalString(label, 'name')))
+        .toList(growable: false);
+    if (available.isEmpty) {
+      showFailure(
+        context,
+        const ApiFailure(
+          FailureKind.unsupported,
+          title: '沒有可新增的標籤欄位',
+          detail: '專案中的標籤都已經出現在這個看板。',
+        ),
+      );
+      return null;
+    }
+    return showDialog<Json>(
+      context: context,
+      builder: (context) {
+        final route = ModalRoute.of(context);
+        if (route != null) _ownRoute(route);
+        return SimpleDialog(
+          title: const Text('新增標籤欄位'),
+          children: [
+            for (final label in available)
+              SimpleDialogOption(
+                key: ValueKey('add-board-label-${requiredInt(label, 'id')}'),
+                onPressed: () => Navigator.pop(context, label),
+                child: Text(valueText(label, 'name', 'Label')),
+              ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _addLabelList(BoardDefinition board) async {
+    final ownerGeneration = _generation;
+    final api = widget.api;
+    final projectId = widget.project.id;
+    Json? label;
+    try {
+      label = await _chooseLabel(board);
+    } catch (error) {
+      if (mounted) showFailure(context, error);
+      return;
+    }
+    if (label == null ||
+        !mounted ||
+        ownerGeneration != _generation ||
+        !identical(widget.api, api) ||
+        widget.project.id != projectId) {
+      return;
+    }
+    final labelId = requiredInt(label, 'id');
+    await _boardWrite((generation) async {
+      final created = await api.writeRecord(
+        'POST',
+        [..._boardPathFor(projectId, board.id), 'lists'],
+        {'label_id': labelId},
+      );
+      if (!mounted || generation != _generation) return;
+      final listId = requiredInt(created, 'id');
+      final lists = await _allPagesFor(api, [
+        ..._boardPathFor(projectId, board.id),
+        'lists',
+      ]);
+      if (!lists.any((value) => value['id'] == listId)) {
+        throw const ApiFailure(FailureKind.writeUncertain);
+      }
+      if (!mounted || generation != _generation) return;
+      await _loadBoard(board.id);
+    });
+  }
+
+  Future<void> _deleteList(BoardDefinition board, BoardColumn column) async {
+    final ownerGeneration = _generation;
+    final api = widget.api;
+    final projectId = widget.project.id;
+    final listId = column.listId;
+    if (listId == null ||
+        !await _confirm('刪除「${column.title}」欄位？', '議題本身不會被刪除。')) {
+      return;
+    }
+    if (!mounted ||
+        ownerGeneration != _generation ||
+        !identical(widget.api, api) ||
+        widget.project.id != projectId) {
+      return;
+    }
+    await _boardWrite((generation) async {
+      await api.removeRecord([
+        ..._boardPathFor(projectId, board.id),
+        'lists',
+        '$listId',
+      ]);
+      if (!mounted || generation != _generation) return;
+      final lists = await _allPagesFor(api, [
+        ..._boardPathFor(projectId, board.id),
+        'lists',
+      ]);
+      if (lists.any((value) => value['id'] == listId)) {
+        throw const ApiFailure(FailureKind.writeUncertain);
+      }
+      if (!mounted || generation != _generation) return;
+      await _loadBoard(board.id);
+    });
+  }
+
+  Future<void> _moveList(
+    BoardDefinition board,
+    BoardColumn column,
+    int direction,
+  ) async {
+    final api = widget.api;
+    final projectId = widget.project.id;
+    final serverColumns = board.columns
+        .where((value) => value.listId != null)
+        .toList(growable: false);
+    final index = serverColumns.indexWhere((value) => value.key == column.key);
+    final targetIndex = index + direction;
+    if (index < 0 || targetIndex < 0 || targetIndex >= serverColumns.length) {
+      return;
+    }
+    final listId = column.listId!;
+    final position = serverColumns[targetIndex].position ?? targetIndex;
+    await _boardWrite((generation) async {
+      await api.writeRecord(
+        'PUT',
+        [..._boardPathFor(projectId, board.id), 'lists', '$listId'],
+        {'position': position},
+      );
+      if (!mounted || generation != _generation) return;
+      final fresh = await _freshBoardFor(api, projectId, board.id);
+      final freshColumns = fresh.columns
+          .where((value) => value.listId != null)
+          .toList(growable: false);
+      final freshIndex = freshColumns.indexWhere(
+        (value) => value.listId == listId,
+      );
+      if ((direction < 0 && freshIndex >= index) ||
+          (direction > 0 && freshIndex <= index)) {
+        throw const ApiFailure(FailureKind.writeUncertain);
+      }
+      if (!mounted || generation != _generation) return;
+      await _loadBoard(board.id);
+    });
+  }
+
+  Future<void> _deleteBoard(BoardDefinition board) async {
+    final ownerGeneration = _generation;
+    final api = widget.api;
+    final projectId = widget.project.id;
+    if (!await _confirm('刪除「${board.name}」？', '看板欄位設定會被刪除，議題不會被刪除。')) {
+      return;
+    }
+    if (!mounted ||
+        ownerGeneration != _generation ||
+        !identical(widget.api, api) ||
+        widget.project.id != projectId) {
+      return;
+    }
+    await _boardWrite((generation) async {
+      await api.removeRecord(_boardPathFor(projectId, board.id));
+      if (!mounted || generation != _generation) return;
+      final boards = await _allPagesFor(api, _boardPathFor(projectId));
+      if (boards.any((value) => value['id'] == board.id)) {
+        throw const ApiFailure(FailureKind.writeUncertain);
+      }
+      if (!mounted || generation != _generation) return;
+      await _loadBoards();
+    });
+  }
+
+  Future<void> _showBoardManager(BoardDefinition board) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        final route = ModalRoute.of(sheetContext);
+        if (route != null) _ownRoute(route);
+        return SafeArea(
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(
+                title: Text(board.name),
+                subtitle: const Text('看板與欄位管理'),
+              ),
+              ListTile(
+                key: const ValueKey('rename-board'),
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('重新命名'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  unawaited(_renameBoard(board));
+                },
+              ),
+              SwitchListTile(
+                key: const ValueKey('show-open-column'),
+                title: const Text('顯示 Open 欄位'),
+                value: !board.hideBacklogList,
+                onChanged: (value) {
+                  Navigator.pop(sheetContext);
+                  unawaited(
+                    _setSystemColumnHidden(
+                      board,
+                      backlog: true,
+                      hidden: !value,
+                    ),
+                  );
+                },
+              ),
+              SwitchListTile(
+                key: const ValueKey('show-closed-column'),
+                title: const Text('顯示 Closed 欄位'),
+                value: !board.hideClosedList,
+                onChanged: (value) {
+                  Navigator.pop(sheetContext);
+                  unawaited(
+                    _setSystemColumnHidden(
+                      board,
+                      backlog: false,
+                      hidden: !value,
+                    ),
+                  );
+                },
+              ),
+              ListTile(
+                key: const ValueKey('add-label-list'),
+                leading: const Icon(Icons.add),
+                title: const Text('新增標籤欄位'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  unawaited(_addLabelList(board));
+                },
+              ),
+              const Divider(),
+              for (final (index, column)
+                  in board.columns
+                      .where((value) => value.listId != null)
+                      .indexed)
+                ListTile(
+                  key: ValueKey('manage-board-list-${column.listId}'),
+                  leading: Icon(_columnIcon(column.kind)),
+                  title: Text(column.title),
+                  trailing: PopupMenuButton<String>(
+                    tooltip: '欄位操作',
+                    onSelected: (value) {
+                      Navigator.pop(sheetContext);
+                      if (value == 'left') {
+                        unawaited(_moveList(board, column, -1));
+                      } else if (value == 'right') {
+                        unawaited(_moveList(board, column, 1));
+                      } else if (value == 'delete') {
+                        unawaited(_deleteList(board, column));
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'left',
+                        enabled: index > 0,
+                        child: const Text('向左移'),
+                      ),
+                      PopupMenuItem(
+                        value: 'right',
+                        enabled:
+                            index <
+                            board.columns
+                                    .where((value) => value.listId != null)
+                                    .length -
+                                1,
+                        child: const Text('向右移'),
+                      ),
+                      const PopupMenuItem(value: 'delete', child: Text('刪除欄位')),
+                    ],
+                  ),
+                ),
+              const Divider(),
+              ListTile(
+                key: const ValueKey('delete-board'),
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('刪除看板'),
+                onTap: () {
+                  Navigator.pop(sheetContext);
+                  unawaited(_deleteBoard(board));
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   void _openIssue(BoardColumn column, Json issue) {
     final iid = requiredInt(issue, 'iid');
-    unawaited(
-      Navigator.push<void>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => WorkItemPage(
-            account: widget.account,
-            api: widget.api,
-            project: widget.project,
-            resource: 'issues',
-            iid: iid,
-            onDeleted: () {
-              _removeIssueFromMountedFeeds(iid);
-              if (mounted) Navigator.pop(context);
-            },
-            onMutated: (_) => unawaited(_refreshMountedFeeds()),
-          ),
-        ),
+    final route = MaterialPageRoute<void>(
+      builder: (_) => WorkItemPage(
+        account: widget.account,
+        api: widget.api,
+        project: widget.project,
+        resource: 'issues',
+        iid: iid,
+        onDeleted: () {
+          _removeIssueFromMountedFeeds(iid);
+          if (mounted) Navigator.pop(context);
+        },
+        onMutated: (_) => unawaited(_refreshMountedFeeds()),
       ),
     );
+    _ownRoute(route);
+    unawaited(Navigator.push<void>(context, route));
   }
 
   Widget _controls(BoardDefinition board) {
@@ -358,11 +1020,20 @@ class _BoardsPageState extends State<BoardsPage> {
         query: query.parameters,
         next: next,
       ),
-      itemBuilder: (context, issue) => workItemCard(
-        context,
-        issue,
-        mr: false,
-        onTap: () => _openIssue(column, issue),
+      itemBuilder: (context, issue) => Semantics(
+        button: true,
+        onLongPressHint: '移動到其他欄位',
+        child: GestureDetector(
+          onLongPress: _writing
+              ? null
+              : () => unawaited(_showMoveSheet(column, issue)),
+          child: workItemCard(
+            context,
+            issue,
+            mr: false,
+            onTap: () => _openIssue(column, issue),
+          ),
+        ),
       ),
     );
   }
@@ -438,6 +1109,30 @@ class _BoardsPageState extends State<BoardsPage> {
     appBar: AppBar(
       title: const Text('議題看板'),
       actions: [
+        PopupMenuButton<String>(
+          tooltip: '管理看板',
+          enabled: !_loading && !_writing,
+          onSelected: (value) {
+            if (value == 'create') unawaited(_createBoard());
+            if (value == 'manage' && _board != null) {
+              unawaited(_showBoardManager(_board!));
+            }
+          },
+          itemBuilder: (context) => [
+            const PopupMenuItem(
+              value: 'create',
+              child: ListTile(leading: Icon(Icons.add), title: Text('新增看板')),
+            ),
+            if (_board != null)
+              const PopupMenuItem(
+                value: 'manage',
+                child: ListTile(
+                  leading: Icon(Icons.settings_outlined),
+                  title: Text('管理目前看板'),
+                ),
+              ),
+          ],
+        ),
         IconButton(
           tooltip: '重新整理看板',
           onPressed: _loading

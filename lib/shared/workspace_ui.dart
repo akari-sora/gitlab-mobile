@@ -674,11 +674,15 @@ Future<bool> confirmAction(
   String title,
   String detail, {
   String? requiredText,
+  ValueChanged<Route<dynamic>>? onRoute,
 }) async {
   final input = TextEditingController();
   final answer = await showDialog<bool>(
     context: context,
-    builder: (context) => StatefulBuilder(
+    builder: (context) {
+      final route = ModalRoute.of(context);
+      if (route != null) onRoute?.call(route);
+      return StatefulBuilder(
       builder: (context, setState) => AlertDialog(
         title: Text(title),
         content: SingleChildScrollView(
@@ -714,7 +718,8 @@ Future<bool> confirmAction(
           ),
         ],
       ),
-    ),
+      );
+    },
   );
   // The route may still be animating out; do not dispose its controller early.
   Future<void>.delayed(const Duration(milliseconds: 400), input.dispose);

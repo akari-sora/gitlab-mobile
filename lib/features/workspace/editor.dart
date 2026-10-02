@@ -122,9 +122,9 @@ Future<bool> openEditor(
   int? projectId,
   String? projectPath,
   AttachmentPicker? attachments,
-}) async =>
-    await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
+  ValueChanged<Route<dynamic>>? onRoute,
+}) async {
+    final route = MaterialPageRoute<bool>(
         builder: (_) => ResourceEditor(
           account: account,
           title: title,
@@ -139,9 +139,10 @@ Future<bool> openEditor(
           projectPath: projectPath,
           attachments: attachments,
         ),
-      ),
-    ) ??
-    false;
+      );
+    onRoute?.call(route);
+    return await Navigator.of(context).push<bool>(route) ?? false;
+}
 
 class ResourceEditor extends StatefulWidget {
   const ResourceEditor({

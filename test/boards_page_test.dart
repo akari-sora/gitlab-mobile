@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/board_queries.dart';
@@ -96,6 +97,30 @@ Widget _host(Widget child, {double textScale = 1}) => MaterialApp(
   ),
   home: child,
 );
+
+class _BoardOwnerHarness extends StatefulWidget {
+  const _BoardOwnerHarness({
+    super.key,
+    required this.first,
+    required this.next,
+  });
+
+  final GitLabApi first;
+  final GitLabApi next;
+
+  @override
+  State<_BoardOwnerHarness> createState() => _BoardOwnerHarnessState();
+}
+
+class _BoardOwnerHarnessState extends State<_BoardOwnerHarness> {
+  late GitLabApi api = widget.first;
+
+  void switchOwner() => setState(() => api = widget.next);
+
+  @override
+  Widget build(BuildContext context) =>
+      BoardsPage(account: _account(api), api: api, project: _project);
+}
 
 void main() {
   test(
@@ -596,6 +621,186 @@ void main() {
       expect(find.text('Moves across columns'), findsNothing);
     },
   );
+
+  testWidgets(
+    'long press moves a card using fresh snapshots and verifies readback',
+    (tester) async {
+      final board = {
+        'id': 1,
+        'name': 'Move board',
+        'hide_backlog_list': false,
+        'hide_closed_list': false,
+      };
+      final lists = [
+        {
+          'id': 11,
+          'position': 1,
+          'label': {'id': 21, 'name': 'doing', 'color': '#336699'},
+        },
+      ];
+      final issue = <String, Object?>{
+        ..._issue(1, 'Move me', inBug: false),
+        'labels': [
+          {'name': 'customer', 'color': '#999999'},
+        ],
+      };
+      Map<String, Object?>? write;
+      final adapter = FakeAdapter((request) {
+        final path = request.uri.path;
+        if (path.endsWith('/projects/42/boards')) return jsonResponse([board]);
+        if (path.endsWith('/projects/42/boards/1/lists')) {
+          return jsonResponse(lists);
+        }
+        if (path.endsWith('/projects/42/boards/1')) {
+          return jsonResponse(board);
+        }
+        if (path.endsWith('/projects/42/issues/1')) {
+          if (request.method == 'PUT') {
+            write = Map<String, Object?>.from(request.data! as Map);
+            issue['labels'] = [
+              {'name': 'customer', 'color': '#999999'},
+              {'name': 'doing', 'color': '#336699'},
+            ];
+          }
+          return jsonResponse(issue);
+        }
+        if (path.endsWith('/projects/42/issues')) {
+          final requested = request.uri.queryParameters['labels'];
+          if (requested?.contains('doing') == true && write == null) {
+            return jsonResponse([]);
+          }
+          return jsonResponse([issue]);
+        }
+        return jsonResponse([]);
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      await tester.pumpWidget(
+        _host(BoardsPage(account: _account(api), api: api, project: _project)),
+      );
+      await settleNetworkWidgets(tester);
+
+      await tester.longPress(find.text('Move me'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('move-issue-to-list-11')));
+      await settleNetworkWidgets(tester);
+
+      expect(write, {'labels': 'customer,doing'});
+      expect(find.text('已移動到「doing」'), findsOneWidget);
+      expect(
+        adapter.requests
+            .where(
+              (request) =>
+                  request.uri.path.endsWith('/projects/42/issues/1') &&
+                  request.method == 'GET',
+            )
+            .length,
+        greaterThanOrEqualTo(2),
+      );
+    },
+  );
+
+  testWidgets('board manager renames with server readback', (tester) async {
+    var name = 'Before';
+    Map<String, Object?>? write;
+    Map<String, Object?> board() => {
+      'id': 1,
+      'name': name,
+      'hide_backlog_list': false,
+      'hide_closed_list': false,
+    };
+    final adapter = FakeAdapter((request) {
+      final path = request.uri.path;
+      if (path.endsWith('/projects/42/boards')) {
+        return jsonResponse([board()]);
+      }
+      if (path.endsWith('/projects/42/boards/1/lists')) {
+        return jsonResponse([]);
+      }
+      if (path.endsWith('/projects/42/boards/1')) {
+        if (request.method == 'PUT') {
+          write = Map<String, Object?>.from(request.data! as Map);
+          name = write!['name']! as String;
+        }
+        return jsonResponse(board());
+      }
+      if (path.endsWith('/projects/42/issues')) return jsonResponse([]);
+      return jsonResponse([]);
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    await tester.pumpWidget(
+      _host(BoardsPage(account: _account(api), api: api, project: _project)),
+    );
+    await settleNetworkWidgets(tester);
+
+    await tester.tap(find.byTooltip('管理看板'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('管理目前看板'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('rename-board')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('board-name-field')),
+      'After',
+    );
+    await tester.tap(find.text('儲存'));
+    await settleNetworkWidgets(tester);
+
+    expect(write, {'name': 'After'});
+    expect(find.text('After'), findsOneWidget);
+  });
+
+  testWidgets('API change dismisses board dialogs without writing', (
+    tester,
+  ) async {
+    ResponseBody respond(RequestOptions request) {
+      final path = request.uri.path;
+      if (path.endsWith('/projects/42/boards')) return jsonResponse([_board]);
+      if (path.endsWith('/projects/42/boards/1/lists')) {
+        return jsonResponse(_supportedLists);
+      }
+      if (path.endsWith('/projects/42/boards/1')) return jsonResponse(_board);
+      if (path.endsWith('/projects/42/issues')) return jsonResponse([]);
+      return jsonResponse([]);
+    }
+
+    final firstAdapter = FakeAdapter(respond);
+    final nextAdapter = FakeAdapter(respond);
+    final first = testApi(firstAdapter);
+    final next = testApi(nextAdapter);
+    addTearDown(first.close);
+    addTearDown(next.close);
+    final key = GlobalKey<_BoardOwnerHarnessState>();
+    await tester.pumpWidget(
+      _host(_BoardOwnerHarness(key: key, first: first, next: next)),
+    );
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.byTooltip('管理看板'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('管理目前看板'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('rename-board')));
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('board-name-field')),
+      'Must not write',
+    );
+
+    key.currentState!.switchOwner();
+    await tester.pump();
+    await settleNetworkWidgets(tester);
+
+    expect(find.byKey(const ValueKey('board-name-field')), findsNothing);
+    expect(
+      firstAdapter.requests.where((request) => request.method == 'PUT'),
+      isEmpty,
+    );
+    expect(
+      nextAdapter.requests.where((request) => request.method == 'PUT'),
+      isEmpty,
+    );
+  });
 
   for (final width in [320.0, 412.0, 840.0]) {
     testWidgets('board has no overflow at ${width.toInt()}dp and 2x text', (

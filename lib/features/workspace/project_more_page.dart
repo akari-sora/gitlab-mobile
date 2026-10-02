@@ -11,6 +11,9 @@ import 'activity_page.dart';
 import 'boards_page.dart';
 import 'commit_page.dart';
 import 'compare_page.dart';
+import 'repository_graph_page.dart';
+import 'registries_page.dart';
+import 'snippets_page.dart';
 import 'editor.dart';
 import 'project_extras.dart';
 import 'records_feed.dart';
@@ -39,6 +42,64 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
   bool? _starred;
   bool _starChecked = false;
   List<(String, double)> _languages = const [];
+  int _generation = 0, _overviewEpoch = 0;
+  NavigatorState? _navigator;
+  final Set<Route<dynamic>> _ownedRoutes = {};
+
+  bool _current(int generation) => mounted && generation == _generation;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _navigator = Navigator.of(context);
+  }
+
+  void _ownRoute(Route<dynamic> route) {
+    if (!_ownedRoutes.add(route)) return;
+    unawaited(route.popped.then((_) => _ownedRoutes.remove(route)));
+  }
+
+  void _dismissRoutes() {
+    final navigator = _navigator;
+    final routes = _ownedRoutes.toList(growable: false);
+    _ownedRoutes.clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (navigator == null || !navigator.mounted) return;
+      for (final route in routes) {
+        if (!route.isActive) continue;
+        // A detail/editor opened by this page belongs to the same account
+        // scope as its root. Removing only the root leaves those routes live.
+        navigator.popUntil((candidate) => candidate == route || candidate.isFirst);
+        if (route.isActive) navigator.removeRoute(route);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant ProjectMoreTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.account.key != widget.account.key ||
+        oldWidget.project.id != widget.project.id ||
+        !identical(oldWidget.api, widget.api)) {
+      _generation++;
+      _overviewEpoch++;
+      _dismissRoutes();
+      _busy = false;
+      _details = null;
+      _starred = null;
+      _starChecked = false;
+      _languages = const [];
+      unawaited(_loadOverview());
+    }
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    _overviewEpoch++;
+    _dismissRoutes();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -50,7 +111,9 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
   /// part out. An unknown star state stays unknown instead of reading as
   /// unstarred, so the toggle never sends the wrong direction.
   Future<void> _loadOverview() async {
-    final id = widget.project.id;
+    final owner = widget;
+    final generation = _generation, epoch = ++_overviewEpoch;
+    final id = owner.project.id;
     Future<T?> soft<T>(Future<T> Function() read) async {
       try {
         return await read();
@@ -59,11 +122,11 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
       }
     }
     final results = await Future.wait<Object?>([
-      soft(() => widget.api.record(['projects', '$id'], query: {'license': 'true'})),
-      soft(() => widget.api.hasStarred(id, widget.account.user.username)),
-      soft(() => widget.api.languages(id)),
+      soft(() => owner.api.record(['projects', '$id'], query: {'license': 'true'})),
+      soft(() => owner.api.hasStarred(id, owner.account.user.username)),
+      soft(() => owner.api.languages(id)),
     ]);
-    if (!mounted) return;
+    if (!_current(generation) || epoch != _overviewEpoch) return;
     setState(() {
       _details = results[0] as Json?;
       _starred = results[1] as bool?;
@@ -73,33 +136,37 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
   }
 
   Future<void> _recheckStar() async {
+    if (_busy) return;
+    final owner = widget, generation = _generation;
+    ++_overviewEpoch;
     setState(() => _busy = true);
     try {
-      final starred = await widget.api.hasStarred(widget.project.id, widget.account.user.username);
-      if (mounted) setState(() => _starred = starred);
+      final starred = await owner.api.hasStarred(owner.project.id, owner.account.user.username);
+      if (mounted && _current(generation)) setState(() => _starred = starred);
     } catch (e) {
-      if (mounted) showFailure(context, e);
+      if (mounted && _current(generation)) showFailure(context, e);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && _current(generation)) setState(() => _busy = false);
     }
   }
 
   Future<void> _fork() async {
-    if (_busy || !await confirmAction(context, 'Fork 這個專案？', '會在你的個人 namespace 建立 ${widget.project.path} 的副本。')) {
+    final owner = widget, generation = _generation;
+    if (_busy || !await confirmAction(context, 'Fork 這個專案？', '會在你的個人 namespace 建立 ${owner.project.path} 的副本。', onRoute: _ownRoute)) {
       return;
     }
-    if (!mounted) return;
+    if (!mounted || !_current(generation)) return;
     setState(() => _busy = true);
     try {
-      final fork = await widget.api.forkProject(widget.project.id);
-      if (mounted) {
+      final fork = await owner.api.forkProject(owner.project.id);
+      if (mounted && _current(generation)) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('已建立 Fork：${valueText(fork, 'path_with_namespace')}，匯入可能需要幾分鐘。')));
       }
     } catch (e) {
-      if (mounted) showFailure(context, e);
+      if (mounted && _current(generation)) showFailure(context, e);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && _current(generation)) setState(() => _busy = false);
     }
   }
 
@@ -108,7 +175,11 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已複製$label')));
   }
 
-  void _push(Widget page) => unawaited(Navigator.push(context, MaterialPageRoute<void>(builder: (_) => page)));
+  void _push(Widget page) {
+    final route = MaterialPageRoute<void>(builder: (_) => page);
+    _ownRoute(route);
+    unawaited(Navigator.push(context, route));
+  }
 
   Widget _overview(BuildContext context) {
     final theme = Theme.of(context);
@@ -213,48 +284,55 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     Color(0xFF4763E4), Color(0xFF1B9E77), Color(0xFFE6A100), Color(0xFFD95F02), Color(0xFF7570B3), Color(0xFF66A61E),
   ][index % 6];
   Future<void> _edit() async {
+    if (_busy) return;
+    final owner = widget, generation = _generation;
     Project? updated;
-    final saved = await openEditor(context, account: widget.account, title: '專案設定',
-      resource: '${widget.project.id}/settings', subtitle: widget.project.path,
-      fields: [EditField('name', '顯示名稱', required: true, value: widget.project.name),
-        EditField('description', '專案說明', lines: 6, value: widget.project.description ?? '')], save: (values) async {
-        updated = await widget.api.editProject(widget.project.id, name: values['name']!.trim(), description: values['description']!);
+    final saved = await openEditor(context, account: owner.account, title: '專案設定',
+      resource: '${owner.project.id}/settings', subtitle: owner.project.path,
+      onRoute: _ownRoute,
+      fields: [EditField('name', '顯示名稱', required: true, value: owner.project.name),
+        EditField('description', '專案說明', lines: 6, value: owner.project.description ?? '')], save: (values) async {
+        if (!_current(generation)) throw const ApiFailure(FailureKind.cancelled);
+        updated = await owner.api.editProject(owner.project.id, name: values['name']!.trim(), description: values['description']!);
       });
-    if (saved && mounted && updated != null) { widget.onChanged(updated!); }
+    if (saved && _current(generation) && updated != null) { owner.onChanged(updated!); }
   }
   Future<void> _star(bool starred) async {
     if (_busy) return;
+    final owner = widget, generation = _generation;
+    ++_overviewEpoch;
     setState(() => _busy = true);
     try {
-      final updated = await widget.api.setStar(widget.project.id, starred);
-      if (mounted) {
+      final updated = await owner.api.setStar(owner.project.id, starred);
+      if (mounted && _current(generation)) {
         setState(() {
           _starred = starred;
           if (_details != null && updated?['star_count'] is int) _details = {..._details!, 'star_count': updated!['star_count']};
         });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(starred ? '已加入星標' : '已移除星標')));
       }
-    } catch (e) { if (mounted) { showFailure(context, e); } }
-    finally { if (mounted) { setState(() => _busy = false); } }
+    } catch (e) { if (mounted && _current(generation)) { showFailure(context, e); } }
+    finally { if (mounted && _current(generation)) { setState(() => _busy = false); } }
   }
   Future<void> _delete() async {
+    final owner = widget, generation = _generation;
     if (_busy || !await confirmAction(context, '刪除整個專案？',
       '包含 repository、議題、MR 及相關資料。部分實例會先排程刪除；App 不會要求立即永久刪除。',
-      requiredText: widget.project.path)) { return; }
-    if (!mounted) { return; }
+      requiredText: owner.project.path, onRoute: _ownRoute)) { return; }
+    if (!mounted || !_current(generation)) { return; }
     setState(() => _busy = true);
     try {
-      await widget.api.deleteProject(widget.project.id);
-      if (mounted) {
+      await owner.api.deleteProject(owner.project.id);
+      if (mounted && _current(generation)) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('GitLab 已接受專案刪除要求。')));
-        if (widget.onDeleted != null) {
-          widget.onDeleted!();
+        if (owner.onDeleted != null) {
+          owner.onDeleted!();
         } else {
           Navigator.pop(context);
         }
       }
-    } catch (e) { if (mounted) { showFailure(context, e); } }
-    finally { if (mounted) { setState(() => _busy = false); } }
+    } catch (e) { if (mounted && _current(generation)) { showFailure(context, e); } }
+    finally { if (mounted && _current(generation)) { setState(() => _busy = false); } }
   }
   @override
   Widget build(BuildContext context) {
@@ -267,6 +345,8 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
         (Icons.alt_route, metadataTitle(MetadataKind.branches), () => metadata(MetadataKind.branches)),
         (Icons.sell_outlined, metadataTitle(MetadataKind.tags), () => metadata(MetadataKind.tags)),
         (Icons.history, metadataTitle(MetadataKind.commits), () => metadata(MetadataKind.commits)),
+        (Icons.account_tree_outlined, '儲存庫圖', () => _push(RepositoryGraphPage(account: account, api: api, project: project))),
+        (Icons.code_outlined, 'Snippets', () => _push(SnippetsPage(account: account, api: api, project: project))),
         (Icons.manage_search, '搜尋程式碼與內容', () => _push(SearchPage(account: account, api: api, project: project))),
       ]),
       _section(context, '協作', [
@@ -279,6 +359,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
         (Icons.inventory_2_outlined, metadataTitle(MetadataKind.releases), () => metadata(MetadataKind.releases)),
       ]),
       _section(context, '部署', [
+        (Icons.layers_outlined, '套件與容器 Registry', () => _push(RegistriesPage(account: account, api: api, project: project))),
         (Icons.dns_outlined, '環境', () => _push(EnvironmentsPage(account: account, api: api, project: project))),
         (Icons.rocket_launch_outlined, '部署紀錄', () => _push(DeploymentsPage(account: account, api: api, project: project))),
         (Icons.event_repeat_outlined, 'Pipeline 排程', () => _push(PipelineSchedulesPage(account: account, api: api, project: project))),

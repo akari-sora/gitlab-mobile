@@ -262,6 +262,7 @@ final class GitLabApi {
     bool retried = false,
     Map<String, String>? headers,
     bool allowRangeNotSatisfiable = false,
+    bool graphQuery = false,
   }) => _send(
     uri,
     method: method,
@@ -270,6 +271,7 @@ final class GitLabApi {
     retried: retried,
     headers: headers,
     allowRangeNotSatisfiable: allowRangeNotSatisfiable,
+    graphQuery: graphQuery,
   );
 
   /// Shared request path for JSON calls and multipart uploads.
@@ -282,9 +284,12 @@ final class GitLabApi {
     bool retried = false,
     Map<String, String>? headers,
     bool allowRangeNotSatisfiable = false,
+    bool graphQuery = false,
   }) async {
     if (_closed) throw const ApiFailure(FailureKind.cancelled);
-    if (!instance.allowsApi(uri)) {
+    if (graphQuery
+        ? method != 'POST' || !instance.allowsGraphQL(uri)
+        : !instance.allowsApi(uri)) {
       throw const ApiFailure(FailureKind.unsupported);
     }
     final until = _retryAt;
@@ -293,7 +298,9 @@ final class GitLabApi {
     }
     final cancel = CancelToken();
     _requests.add(cancel);
-    final writing = method != 'GET' && method != 'HEAD';
+    // Only private, fixed GraphQL queries use this read path. POST mutations
+    // retain the write fences and are never retried automatically.
+    final writing = method != 'GET' && method != 'HEAD' && !graphQuery;
     if (writing) {
       _writesInFlight++;
       clearReadCache();
@@ -313,7 +320,13 @@ final class GitLabApi {
           maxRedirects: 0,
           validateStatus: (s) => s != null,
           headers: {
-            ..._authHeaders,
+            ...graphQuery
+                ? {
+                    'Authorization': 'Bearer ${_credential.accessToken}',
+                    'Accept': 'application/json',
+                    'Cache-Control': 'no-store',
+                  }
+                : _authHeaders,
             ...?headers,
           },
         ),
@@ -323,13 +336,17 @@ final class GitLabApi {
       final body = response.data;
       if (allowRangeNotSatisfiable && status == 416) {
         if (body != null) await body.stream.listen((_) {}).cancel();
-        return (bytes: Uint8List(0), headers: response.headers, statusCode: 416);
+        return (
+          bytes: Uint8List(0),
+          headers: response.headers,
+          statusCode: 416,
+        );
       }
       if (status < 200 || status >= 300) {
         if (status == 401 || status == 403 || status == 404) clearReadCache();
         if (body != null) await body.stream.listen((_) {}).cancel();
         if (status == 401 && !retried && await _refreshOAuth()) {
-          if (method == 'GET' || method == 'HEAD') {
+          if (method == 'GET' || method == 'HEAD' || graphQuery) {
             return await _read(
               uri,
               method: method,
@@ -338,6 +355,7 @@ final class GitLabApi {
               retried: true,
               headers: headers,
               allowRangeNotSatisfiable: allowRangeNotSatisfiable,
+              graphQuery: graphQuery,
             );
           }
           throw const ApiFailure(FailureKind.writeUncertain);
@@ -359,7 +377,11 @@ final class GitLabApi {
       }
       if (method == 'HEAD' || status == 204) {
         if (body != null) await body.stream.listen((_) {}).cancel();
-        return (bytes: Uint8List(0), headers: response.headers, statusCode: status);
+        return (
+          bytes: Uint8List(0),
+          headers: response.headers,
+          statusCode: status,
+        );
       }
       if (body == null) throw const ApiFailure(FailureKind.invalidResponse);
       final length = int.tryParse(
@@ -379,13 +401,17 @@ final class GitLabApi {
         bytes.add(chunk);
       }
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
-      return (bytes: bytes.takeBytes(), headers: response.headers, statusCode: status);
+      return (
+        bytes: bytes.takeBytes(),
+        headers: response.headers,
+        statusCode: status,
+      );
     } on DioException catch (error) {
       if (error.type == DioExceptionType.cancel || _closed) {
         throw const ApiFailure(FailureKind.cancelled);
       }
       throw ApiFailure(
-        method == 'GET' || method == 'HEAD'
+        method == 'GET' || method == 'HEAD' || graphQuery
             ? FailureKind.network
             : FailureKind.writeUncertain,
       );
@@ -406,6 +432,108 @@ final class GitLabApi {
     try {
       final result = await _read(uri, method: method, data: data);
       return objectJson(jsonDecode(utf8.decode(result.bytes)));
+    } on FormatException {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+  }
+
+  /// Actual job dependencies, rather than inferred REST stage relationships.
+  /// Fixed query, no mutations, no caching, and no partial GraphQL success.
+  Future<Map<String, dynamic>> pipelineGraphPage(
+    Project project,
+    int pipelineId, {
+    String? after,
+  }) async {
+    if (pipelineId <= 0 ||
+        project.id <= 0 ||
+        project.path.isEmpty ||
+        (after != null && (after.isEmpty || after.length > 4096))) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    const query = r'''
+query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) {
+  project(fullPath: $path) {
+    id
+    pipeline(id: $pipeline) {
+      id iid
+      stages(first: 100) { nodes { name } pageInfo { hasNextPage } }
+      jobs(first: 20, after: $after) {
+        nodes {
+          id name status kind retried schedulingType stage { name }
+          needs(first: 100) {
+            nodes { name }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}
+''';
+    try {
+      final response = await _read(
+        instance.graphQL,
+        method: 'POST',
+        graphQuery: true,
+        data: {
+          'query': query,
+          'variables': {
+            'path': project.path,
+            'pipeline': 'gid://gitlab/Ci::Pipeline/$pipelineId',
+            'after': after,
+          },
+        },
+      );
+      final envelope = objectJson(jsonDecode(utf8.decode(response.bytes)));
+      final errors = envelope['errors'];
+      if (errors != null) {
+        if (errors is! List) {
+          throw const ApiFailure(FailureKind.invalidResponse);
+        }
+        if (errors.isNotEmpty) {
+          final incompatible = errors.every(
+            (error) =>
+                error is Map &&
+                error['extensions'] is Map &&
+                const {
+                  'undefinedField',
+                  'undefinedArgument',
+                  'variableRequiresValidType',
+                  'argumentLiteralsIncompatible',
+                  'missingRequiredArguments',
+                }.contains((error['extensions'] as Map)['code']),
+          );
+          throw ApiFailure(
+            incompatible
+                ? FailureKind.unsupported
+                : FailureKind.invalidResponse,
+            title: incompatible ? '實例未提供工作相依圖' : null,
+            detail: incompatible
+                ? '這個 GitLab 版本未提供所需欄位。仍可從工作分頁查看工作與 Log。'
+                : null,
+          );
+        }
+      }
+      final data = objectJson(envelope['data']);
+      if (data['project'] == null) {
+        throw const ApiFailure(FailureKind.invisible);
+      }
+      final remoteProject = objectJson(data['project']);
+      if (remoteProject['id'] != 'gid://gitlab/Project/${project.id}') {
+        throw const ApiFailure(FailureKind.invalidResponse);
+      }
+      if (remoteProject['pipeline'] == null) {
+        throw const ApiFailure(FailureKind.invisible);
+      }
+      final pipeline = objectJson(remoteProject['pipeline']);
+      if (pipeline['id'] != 'gid://gitlab/Ci::Pipeline/$pipelineId') {
+        throw const ApiFailure(FailureKind.invalidResponse);
+      }
+      if (pipeline['jobs'] == null || pipeline['stages'] == null) {
+        throw const ApiFailure(FailureKind.forbidden);
+      }
+      return pipeline;
     } on FormatException {
       throw const ApiFailure(FailureKind.invalidResponse);
     }

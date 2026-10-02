@@ -55,6 +55,21 @@ final class GitLabInstance {
     queryParameters: query,
   );
 
+  /// GraphQL has a separate endpoint, including an installation subpath.
+  /// It must not broaden the REST continuation/redirect allowlist.
+  Uri get graphQL => Uri(
+    scheme: base.scheme,
+    host: base.host,
+    port: base.port == 443 ? null : base.port,
+    pathSegments: [
+      ...base.pathSegments.where((s) => s.isNotEmpty),
+      'api',
+      'graphql',
+    ],
+  );
+
+  bool allowsGraphQL(Uri uri) => uri == graphQL;
+
   /// `/oauth/{name}` on this instance, never a third-party host.
   Uri oauth(String name, [Map<String, String>? query]) => Uri(
     scheme: 'https',

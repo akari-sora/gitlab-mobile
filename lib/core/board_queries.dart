@@ -33,6 +33,9 @@ final class BoardColumn {
     this.milestoneId,
     this.milestoneTitle,
     this.unsupportedReason,
+    this.listId,
+    this.labelId,
+    this.position,
   });
 
   final String key;
@@ -44,6 +47,9 @@ final class BoardColumn {
   final int? milestoneId;
   final String? milestoneTitle;
   final String? unsupportedReason;
+  final int? listId;
+  final int? labelId;
+  final int? position;
 }
 
 final class BoardDefinition {
@@ -52,6 +58,8 @@ final class BoardDefinition {
     required this.name,
     required this.scope,
     required this.columns,
+    this.hideBacklogList = false,
+    this.hideClosedList = false,
   });
 
   factory BoardDefinition.fromJson(BoardJson board, List<BoardJson> lists) {
@@ -142,6 +150,8 @@ final class BoardDefinition {
             kind: BoardColumnKind.closed,
           ),
       ]),
+      hideBacklogList: board['hide_backlog_list'] == true,
+      hideClosedList: board['hide_closed_list'] == true,
     );
   }
 
@@ -149,6 +159,8 @@ final class BoardDefinition {
   final String name;
   final BoardScope scope;
   final List<BoardColumn> columns;
+  final bool hideBacklogList;
+  final bool hideClosedList;
 }
 
 final class BoardIssueQuery {
@@ -289,6 +301,7 @@ bool boardIssueMatches(BoardJson issue, BoardIssueQuery query) {
 
 BoardColumn _columnFromList(BoardJson list) {
   final id = _positiveInt(list['id']);
+  final position = _nonNegativeInt(list['position']);
   final key = id == null ? 'unknown-${list['position'] ?? 0}' : 'list-$id';
   final label = list['label'];
   if (label is BoardJson) {
@@ -300,6 +313,9 @@ BoardColumn _columnFromList(BoardJson list) {
         kind: BoardColumnKind.label,
         label: name,
         labelColor: optionalString(label, 'color'),
+        listId: id,
+        labelId: _positiveInt(label['id']),
+        position: position,
       );
     }
   }
@@ -316,6 +332,8 @@ BoardColumn _columnFromList(BoardJson list) {
             : '@${username?.isNotEmpty == true ? username : assigneeId}',
         kind: BoardColumnKind.assignee,
         assigneeId: assigneeId,
+        listId: id,
+        position: position,
       );
     }
   }
@@ -330,6 +348,8 @@ BoardColumn _columnFromList(BoardJson list) {
         kind: BoardColumnKind.milestone,
         milestoneId: milestoneId,
         milestoneTitle: milestoneTitle,
+        listId: id,
+        position: position,
       );
     }
     return BoardColumn(
@@ -337,6 +357,8 @@ BoardColumn _columnFromList(BoardJson list) {
       title: '不支援的里程碑欄位',
       kind: BoardColumnKind.unsupported,
       unsupportedReason: '這個里程碑欄位缺少 ID 或 title，未載入任何替代議題。',
+      listId: id,
+      position: position,
     );
   }
   final type =
@@ -349,6 +371,8 @@ BoardColumn _columnFromList(BoardJson list) {
     unsupportedReason: type == 'iteration'
         ? '目前版本尚未支援 Iteration 看板欄位，未載入任何替代議題。'
         : 'GitLab 回傳了不支援的「$type」看板欄位，未載入任何替代議題。',
+    listId: id,
+    position: position,
   );
 }
 

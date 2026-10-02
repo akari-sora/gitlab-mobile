@@ -7,7 +7,14 @@ A mobile-first Flutter client for Android and iOS. Independent third-party softw
 
 ## 2026-10-02 — mobile parity and performance follow-up
 
-The current development branch fills three high-value gaps from a fresh 390 × 844 GitLab.com comparison: project issue boards, repository revision comparison and server-backed MR draft review. Issue/MR lists now have native filters for ordering, scope, labels, milestone and people. Boards deliberately use one active column on phones; issue changes refresh every mounted board column, while drag/drop and direct card reordering remain on the Web.
+The current development branch adds issue boards and card/list management,
+revision comparison, server-backed MR draft review, selected-ref repository
+graphs, actual pipeline dependency graphs, package/container/Terraform registries,
+and explicitly enumerated single-file Snippets. Issue/MR filters use server
+ordering. Phone board columns, vertical graphs and lazy lists retain native
+navigation. The [full-function ledger](docs/MOBILE_WEB_PARITY_LEDGER.md) records
+all 30 observed Web project entries and keeps every remaining workflow open;
+these additions do not establish complete GitLab parity.
 
 Loading and scroll work adds a bounded, account-client in-memory read cache for project resolution and immutable-SHA text, concurrent request sharing, memoized list derivation and a page-owned syntax-span LRU. Server cache directives, explicit refresh, writes, account/client changes and authorization failures invalidate or disable reuse. See the [current parity and performance report](docs/MOBILE_PARITY_PERFORMANCE.md) for the complete Web navigation matrix, safety boundaries, measured results and remaining NOT_RUN lanes.
 
