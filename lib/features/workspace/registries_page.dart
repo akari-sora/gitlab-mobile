@@ -1,11 +1,17 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../core/providers.dart';
 import '../../core/registry_models.dart';
+import '../../shared/artifact_storage.dart';
+import '../../shared/package_download.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
+import '../auth/session_controller.dart';
 import 'records_feed.dart';
 
 const _maintainerAccess = 40;
@@ -374,11 +380,19 @@ class PackageDetailPage extends StatefulWidget {
     required this.api,
     required this.project,
     required this.packageId,
+    this.isCurrent,
+    this.ownerChanges,
+    this.packageDownloader,
+    this.sharer = const SystemArtifactSharer(),
   });
   final Account account;
   final GitLabApi api;
   final Project project;
   final int packageId;
+  final bool Function()? isCurrent;
+  final Listenable? ownerChanges;
+  final PackageDownloader? packageDownloader;
+  final ArtifactSharer sharer;
   @override
   State<PackageDetailPage> createState() => _PackageDetailPageState();
 }
@@ -389,6 +403,61 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
   ApiFailure? _error;
   bool _busy = false;
   int _generation = 0;
+  int _detailEpoch = 0;
+  SessionController? _session;
+  int? _sessionGeneration;
+
+  Listenable? get _effectiveOwnerChanges =>
+      widget.isCurrent != null ? widget.ownerChanges : _session;
+
+  bool _downloadOwnerCurrent() {
+    final explicit = widget.isCurrent;
+    if (explicit != null) {
+      return !widget.api.isClosed && explicit();
+    }
+    final session = _session;
+    return !widget.api.isClosed &&
+        session != null &&
+        session.active?.key == widget.account.key &&
+        identical(session.api, widget.api) &&
+        session.generation == _sessionGeneration;
+  }
+
+  void _bindOwner() {
+    if (widget.isCurrent != null) return;
+    SessionController? candidate;
+    try {
+      candidate = ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(sessionProvider);
+    } on StateError {
+      candidate = null;
+    }
+    if (!identical(_session, candidate)) {
+      _session?.removeListener(_ownerChanged);
+      _session = candidate;
+      candidate?.addListener(_ownerChanged);
+    }
+    _sessionGeneration = candidate?.generation;
+  }
+
+  void _listenToExplicitOwner(Listenable? owner) {
+    owner?.removeListener(_ownerChanged);
+    owner?.addListener(_ownerChanged);
+  }
+
+  void _ownerChanged() {
+    if (_downloadOwnerCurrent()) return;
+    _generation++;
+    _detailEpoch++;
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _package = null;
+      _error = const ApiFailure(FailureKind.cancelled);
+    });
+  }
 
   _RequestScope get _scope => _RequestScope(
     widget.account.key,
@@ -413,7 +482,16 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
   @override
   void initState() {
     super.initState();
+    if (widget.isCurrent != null) {
+      _listenToExplicitOwner(widget.ownerChanges);
+    }
     unawaited(_load());
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _bindOwner();
   }
 
   @override
@@ -427,20 +505,134 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
       _package = null;
       _error = null;
       _busy = false;
+      _detailEpoch++;
+      _bindOwner();
       unawaited(_load());
     }
+    if (!identical(oldWidget.ownerChanges, widget.ownerChanges) ||
+        (oldWidget.isCurrent == null) != (widget.isCurrent == null)) {
+      if (oldWidget.isCurrent != null) {
+        oldWidget.ownerChanges?.removeListener(_ownerChanged);
+      }
+      if (widget.isCurrent != null) {
+        _session?.removeListener(_ownerChanged);
+        _session = null;
+        _sessionGeneration = null;
+        _listenToExplicitOwner(widget.ownerChanges);
+      } else {
+        _bindOwner();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _session?.removeListener(_ownerChanged);
+    if (widget.isCurrent != null) {
+      widget.ownerChanges?.removeListener(_ownerChanged);
+    }
+    _generation++;
+    _detailEpoch++;
+    super.dispose();
   }
 
   Future<void> _load() async {
     final scope = _scope;
+    final epoch = ++_detailEpoch;
     if (mounted) setState(() => _error = null);
     try {
       final value = await scope.api.record(_path);
       final package = RegistryPackage.fromJson(value);
-      if (_current(scope)) setState(() => _package = package);
+      if (_current(scope) && epoch == _detailEpoch) {
+        setState(() => _package = package);
+      }
     } catch (error) {
-      if (_current(scope)) setState(() => _error = safeFailure(error));
+      if (_current(scope) && epoch == _detailEpoch) {
+        setState(() => _error = safeFailure(error));
+      }
     }
+  }
+
+  Future<void> _downloadFile(
+    RegistryPackage package,
+    RegistryPackageFile file,
+  ) async {
+    final blocked = packageFileDownloadBlockReason(package, file);
+    if (blocked != null) {
+      showFailure(
+        context,
+        ApiFailure(
+          file.size > packageDownloadMaximumBytes
+              ? FailureKind.tooLarge
+              : FailureKind.unsupported,
+          title: '無法下載套件檔案',
+          detail: blocked,
+        ),
+      );
+      return;
+    }
+    if (!_downloadOwnerCurrent()) {
+      showFailure(
+        context,
+        const ApiFailure(
+          FailureKind.cancelled,
+          title: '工作階段已變更',
+          detail: '請用目前帳號重新開啟這個套件後再下載。',
+        ),
+      );
+      return;
+    }
+    final scope = _scope;
+    final epoch = _detailEpoch;
+    bool current() =>
+        _current(scope) &&
+        epoch == _detailEpoch &&
+        _downloadOwnerCurrent() &&
+        _package?.id == package.id &&
+        _package?.name == package.name &&
+        _package?.version == package.version &&
+        _package?.type == package.type;
+    await showPackageDownloadSheet(
+      context,
+      account: widget.account,
+      api: widget.api,
+      project: widget.project,
+      package: package,
+      file: file,
+      isCurrent: current,
+      ownerChanges: _effectiveOwnerChanges,
+      downloader: widget.packageDownloader,
+      sharer: widget.sharer,
+    );
+  }
+
+  Future<void> _copyFileSha(RegistryPackageFile file) async {
+    final scope = _scope;
+    final epoch = _detailEpoch;
+    final canonical = RegExp(r'^[0-9a-f]{64}$').hasMatch(file.sha256);
+    bool current() =>
+        _current(scope) &&
+        epoch == _detailEpoch &&
+        _downloadOwnerCurrent() &&
+        _package?.id == widget.packageId;
+    if (!canonical || !current()) {
+      if (mounted) {
+        showFailure(
+          context,
+          const ApiFailure(
+            FailureKind.cancelled,
+            title: '工作階段已變更',
+            detail: '請用目前帳號重新開啟這個套件後再複製。',
+          ),
+        );
+      }
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: file.sha256));
+    if (!mounted || !current()) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('已複製完整 SHA-256')));
   }
 
   Future<void> _deletePackage() async {
@@ -589,6 +781,20 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
                         } on FormatException {
                           return const ListTile(title: Text('無法解析套件檔案'));
                         }
+                        final blocked = packageFileDownloadBlockReason(
+                          package,
+                          file,
+                        );
+                        final ownerReady = _downloadOwnerCurrent();
+                        final canonicalSha = RegExp(
+                          r'^[0-9a-f]{64}$',
+                        ).hasMatch(file.sha256);
+                        final downloadEnabled = blocked == null && ownerReady;
+                        final downloadTooltip =
+                            blocked ??
+                            (ownerReady
+                                ? '下載並驗證 ${file.name}'
+                                : '請從目前帳號工作階段重新開啟後下載');
                         return ListTile(
                           minTileHeight: 64,
                           leading: Icon(fileIconFor(file.name)),
@@ -604,25 +810,77 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
                                 'SHA-256 ${shortSha(file.sha256)}',
                               if (relativeDate(file.createdAt).isNotEmpty)
                                 relativeDate(file.createdAt),
+                              ?blocked,
                             ].join(' · '),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          trailing:
-                              package.canDelete &&
-                                  widget.project.archived != true
-                              ? IconButton(
-                                  tooltip: '刪除 ${file.name}',
-                                  onPressed: _busy
-                                      ? null
-                                      : () => _deleteFile(file),
-                                  icon: const Icon(Icons.delete_outline),
-                                )
+                          onTap: downloadEnabled
+                              ? () => unawaited(_downloadFile(package, file))
                               : null,
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: downloadTooltip,
+                                onPressed: downloadEnabled
+                                    ? () => unawaited(
+                                        _downloadFile(package, file),
+                                      )
+                                    : null,
+                                icon: const Icon(Icons.download_outlined),
+                              ),
+                              if (canonicalSha ||
+                                  (package.canDelete &&
+                                      widget.project.archived != true))
+                                PopupMenuButton<String>(
+                                  tooltip: '更多檔案動作',
+                                  enabled: !_busy,
+                                  onSelected: (value) {
+                                    if (value == 'copy-sha') {
+                                      unawaited(_copyFileSha(file));
+                                    }
+                                    if (value == 'delete') {
+                                      unawaited(_deleteFile(file));
+                                    }
+                                  },
+                                  itemBuilder: (_) => [
+                                    if (canonicalSha)
+                                      PopupMenuItem(
+                                        value: 'copy-sha',
+                                        enabled: ownerReady,
+                                        child: const Row(
+                                          children: [
+                                            Icon(Icons.copy_outlined),
+                                            SizedBox(width: 12),
+                                            Expanded(child: Text('複製 SHA-256')),
+                                          ],
+                                        ),
+                                      ),
+                                    if (package.canDelete &&
+                                        widget.project.archived != true)
+                                      PopupMenuItem(
+                                        value: 'delete',
+                                        child: Row(
+                                          children: [
+                                            const Icon(Icons.delete_outline),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Text('刪除 ${file.name}'),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                            ],
+                          ),
                         );
                       },
                       footer: (_, _) => const Padding(
                         padding: EdgeInsets.only(top: 4),
                         child: Text(
-                          '下載需依套件類型使用專屬端點；此頁不會把 App Token 帶到轉址或第三方網址。',
+                          '下載完成後會核對檔案大小與 SHA-256，驗證通過後才能開啟／分享。單一檔案上限為 256 MiB。',
                         ),
                       ),
                     ),

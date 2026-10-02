@@ -6,7 +6,8 @@ This repository imports the G0 R1 application slice, its Flutter regression test
 
 The branch based on `0e1298e` adds boards/card moves/list management, server-backed
 MR draft review, revision compare, native issue/MR filters, repository and
-pipeline dependency graphs, registries, lazy multi-file Snippets, typed Task/Incident
+pipeline dependency graphs, registries with verified package-file downloads,
+lazy multi-file Snippets, typed Task/Incident
 workflows, native contributor/repository/CI analytics and read-only GraphQL Work Items
 with bounded group-owned lists, seven independently loaded attribute kinds and
 lazy read-only activity.
@@ -20,7 +21,8 @@ has GitLab's concurrent-change interval after its final GET. GraphQL Work Item
 mutations, activity filtering/order/replies and remaining widgets, descendant
 group Work Item aggregation and list filters,
 paid board scope/list creation, all-branch graph,
-registry downloads/publishing, complete incident operations and live lifecycle proof, Service Desk, complete analytics families, OAuth live
+registry publishing/policies and complete type-specific installation workflows,
+complete incident operations and live lifecycle proof, Service Desk, complete analytics families, OAuth live
 login and push remain open under the all-function goal. Exact-head CI, Android
 readback, live private/CRUD and iOS acceptance remain separate evidence lanes.
 

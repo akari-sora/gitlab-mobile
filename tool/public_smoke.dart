@@ -3,6 +3,7 @@
 // removed for GitLab endpoints that explicitly permit anonymous public reads.
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:gitlab_mobile/core/analytics_models.dart';
 import 'package:gitlab_mobile/core/failure.dart';
@@ -470,6 +471,9 @@ Future<void> main() async {
   var groupActivitySystemNotes = 0;
   var nestedActivityNotes = 0;
   var nestedActivityContinuationExercised = false;
+  RegistryPackage? publicRegistryPackage;
+  RegistryPackageFile? publicRegistryFile;
+  var packageDownloadedBytes = 0;
   final dio = Dio();
   dio.interceptors.add(
     InterceptorsWrapper(
@@ -799,6 +803,81 @@ Future<void> main() async {
       require(detail.id == listed.id && detail.name == 'gitlab-mobile-preview');
       require(files.any((file) => file.name == 'SHA256SUMS'));
       require(files.any((file) => file.name.endsWith('-debug.apk')));
+    });
+    await check('public.registry.numeric_file_download_integrity', () async {
+      const packageId = 71215360;
+      const fileId = 361672601;
+      const checksum =
+          'e72c27dcd464ea3bda6b0b3dda910ac3a4ee551f91387c17f1c2abe9dcf1ca88';
+      final verifiedPackage = RegistryPackage.fromJson(
+        await api.record([
+          'projects',
+          '$_publicProjectId',
+          'packages',
+          '$packageId',
+        ]),
+      );
+      require(verifiedPackage.id == packageId);
+      final files = await api.records(
+        [
+          'projects',
+          '$_publicProjectId',
+          'packages',
+          '$packageId',
+          'package_files',
+        ],
+        query: const {'per_page': '100'},
+      );
+      final selected = files.items
+          .map(RegistryPackageFile.fromJson)
+          .singleWhere((file) => file.id == fileId);
+      final file = await api.packageFileForDownload(
+        _publicProjectId,
+        verifiedPackage,
+        selected,
+        isCurrent: () => true,
+      );
+      // Only the small public checksum manifest is fetched, never the APK.
+      require(
+        file.id == fileId &&
+            file.name == 'SHA256SUMS' &&
+            file.size == 185 &&
+            file.sha256 == checksum,
+      );
+      publicRegistryPackage = verifiedPackage;
+      publicRegistryFile = file;
+      final directory = await Directory.systemTemp.createTemp(
+        'public-package-',
+      );
+      final target = File('${directory.path}/checksum-manifest');
+      IOSink? sink;
+      var sinkClosed = false;
+      try {
+        sink = target.openWrite();
+        final downloaded = await api.downloadPackageFile(
+          _publicProjectId,
+          verifiedPackage.id,
+          file.id,
+          sink: sink,
+          fileName: file.name,
+          maxBytes: 4096,
+        );
+        await sink.close();
+        sinkClosed = true;
+        final bytes = await target.readAsBytes();
+        require(downloaded.fileName == file.name);
+        require(
+          downloaded.bytesWritten == file.size && bytes.length == file.size,
+        );
+        require(sha256.convert(bytes).toString() == file.sha256);
+        packageDownloadedBytes = bytes.length;
+      } finally {
+        try {
+          if (!sinkClosed) await sink?.close();
+        } finally {
+          await directory.delete(recursive: true);
+        }
+      }
     });
     await check('public.snippet.actual_multifile_metadata_not_crud', () async {
       final response = await api.record([
@@ -1206,6 +1285,9 @@ Future<void> main() async {
       'status': failed ? 'FAIL' : 'PASS',
       'checks': checks,
       'metrics': {
+        'public_package_id': publicRegistryPackage?.id,
+        'public_package_file_id': publicRegistryFile?.id,
+        'public_package_downloaded_bytes': packageDownloadedBytes,
         'work_item_group_first_rows': groupItemsFirstCount,
         'work_item_group_next_rows': groupItemsNextCount,
         'public_group_owned_item_iids': publicGroupItemIids,

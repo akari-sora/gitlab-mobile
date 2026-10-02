@@ -34,10 +34,10 @@ specification numbers have been invented.
 | Build / Pipeline schedules | Loaded periodic-run empty state and owner/variable explanation | List/create/edit/run/delete | Inputs, ownership, complete policy and live CRUD |
 | Build / Artifacts | Loaded 53 records, archive/trace expansion, sizes and created dates | Pipeline/job artifacts browse/download | Project-wide inventory, retention and bulk operations |
 | Deploy / Releases | Loaded release cards, order, archives, assets and evidence | List/detail/create/edit/delete | Evidence/assets/milestone workflow parity and live CRUD |
-| Deploy / Package registry | Actual 20-version list and three-asset detail observed | Search/sort/paged list, files, guarded deletion | Type-specific download/publish/policies and live write proof |
+| Deploy / Package registry | Actual 20-version list and three-asset detail observed; mobile asset expansion exposes SHA-256 | Search/sort/paged list, files, verified numeric file download/open/share, guarded deletion | Older-instance download capability, type-specific installation/publish/policies and live write proof |
 | Deploy / Container registry | Loaded empty state, search/order and cleanup explanation | Repository/tag/digest/detail and guarded deletion | Empty project has no live tag example; publish/policies/bulk cleanup |
 | Operate / Environments | Loaded empty state and review-app controls | List/detail/create/stop/delete | Full metrics/terminal/rollback/protection and live CRUD |
-| Operate / Terraform modules | Loaded module-registry empty state and documentation | Filtered package list/files/guarded deletion | Download/publish, real module instance and live write proof |
+| Operate / Terraform modules | Loaded module-registry empty state and documentation | Filtered package list/files/verified numeric download/guarded deletion | Real module download proof, installation/publish and live write proof |
 | Monitor / Incidents | Actual empty Open/Closed/All view observed | Typed list/create/edit/severity; separate issue state and GraphQL escalation lifecycle | Actual Incident fixture CRUD/lifecycle, alerts, timeline, metrics and on-call capabilities |
 | Monitor / Service Desk | Loaded email-support explanation and sign-in requirement | Not implemented | Capability/permissions, confidential Ticket widgets and email-aware replies |
 | Analyze / Value stream | Loaded six stages, lifecycle metrics and filters | Not implemented | Scope/date/stream/stages/metrics, tier-dependent aggregation |
@@ -152,7 +152,7 @@ on one S24 Ultra do not establish statistical improvement on every screen.
    and guarded file actions with `updatedAt` change detection. Complete
    installed-build and private disposable-fixture validation. Describe a current
    snapshot; do not claim a fixed SHA or infer a ref.
-4. Registry safe type-specific download/publish and complete repository graph.
+4. Registry type-specific installation/publish/policies and complete repository graph.
 5. Contributor aggregate, coverage summary and CI/CD series now have native
    implementation work. Complete installed-build/CI readback; VSA, complete
    histograms, per-author time series and capability-gated job analytics remain

@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/registry_models.dart';
 import 'package:gitlab_mobile/features/workspace/registries_page.dart';
+import 'package:gitlab_mobile/shared/package_download.dart';
 
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
@@ -43,6 +46,7 @@ String _apiPath(RequestOptions request) {
 Map<String, Object?> _package({
   String name = 'mobile-kit',
   String type = 'npm',
+  bool canDelete = true,
 }) => {
   'id': 11,
   'name': name,
@@ -50,7 +54,8 @@ Map<String, Object?> _package({
   'package_type': type,
   'status': 'default',
   'created_at': '2026-10-01T08:00:00Z',
-  '_links': {'delete_api_path': '/api/v4/projects/42/packages/11'},
+  if (canDelete)
+    '_links': {'delete_api_path': '/api/v4/projects/42/packages/11'},
 };
 
 Map<String, Object?> _file() => {
@@ -90,8 +95,9 @@ Map<String, Object?> _tag({bool detail = false}) => {
 };
 
 final class RegistryFixture {
-  RegistryFixture({this.access = 40});
+  RegistryFixture({this.access = 40, this.canDelete = true});
   final int access;
+  final bool canDelete;
   bool packageExists = true;
   bool fileExists = true;
   bool tagExists = true;
@@ -108,7 +114,12 @@ final class RegistryFixture {
       final type = request.uri.queryParameters['package_type'];
       return jsonResponse(
         packageExists
-            ? [_package(type: type == 'terraform_module' ? type! : 'npm')]
+            ? [
+                _package(
+                  type: type == 'terraform_module' ? type! : 'npm',
+                  canDelete: canDelete,
+                ),
+              ]
             : <Object>[],
       );
     }
@@ -119,7 +130,7 @@ final class RegistryFixture {
         return ResponseBody.fromString('', 204);
       }
       return packageExists
-          ? jsonResponse(_package())
+          ? jsonResponse(_package(canDelete: canDelete))
           : jsonResponse({}, status: 404);
     }
     if (path == 'projects/42/packages/11/package_files' && method == 'GET') {
@@ -170,6 +181,27 @@ final class RegistryFixture {
 }
 
 Future<void> _settle(WidgetTester tester) => settleNetworkWidgets(tester);
+
+final class _ImmediatePackageDownloader implements PackageDownloader {
+  _ImmediatePackageDownloader(this.file);
+  final File file;
+  int calls = 0;
+
+  @override
+  Future<File> download({
+    required int projectId,
+    required RegistryPackage package,
+    required RegistryPackageFile file,
+    required Account account,
+    required bool Function() isCurrent,
+    void Function(int received, int? total)? onProgress,
+    Future<void>? cancel,
+  }) async {
+    calls++;
+    onProgress?.call(file.size, file.size);
+    return this.file;
+  }
+}
 
 void main() {
   test('registry models parse useful fields and format sizes', () {
@@ -243,9 +275,11 @@ void main() {
       expect(find.text('mobile-kit@1.2.3'), findsOneWidget);
       expect(find.text('mobile-kit-1.2.3.tgz'), findsOneWidget);
       expect(find.textContaining('1.5 KiB'), findsOneWidget);
-      expect(find.textContaining('不會把 App Token'), findsOneWidget);
+      expect(find.textContaining('驗證通過後才能開啟／分享'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('刪除 mobile-kit-1.2.3.tgz'));
+      await tester.tap(find.byTooltip('更多檔案動作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('刪除 mobile-kit-1.2.3.tgz'));
       await _settle(tester);
       expect(find.widgetWithText(FilledButton, '確認'), findsOneWidget);
       expect(
@@ -277,6 +311,84 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('reader can copy full SHA and open download sheet at 320dp 2x', (
+    tester,
+  ) async {
+    final fixture = RegistryFixture(access: 20, canDelete: false);
+    addTearDown(fixture.api.close);
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied.add(
+            (call.arguments as Map<Object?, Object?>)['text']! as String,
+          );
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final directory = Directory.systemTemp.createTempSync(
+      'registry-package-row-',
+    );
+    final saved = File('${directory.path}/mobile-kit-1.2.3.tgz')
+      ..writeAsBytesSync(List<int>.filled(1536, 1));
+    final downloader = _ImmediatePackageDownloader(saved);
+    addTearDown(() async {
+      await tester.pumpWidget(const SizedBox.shrink());
+      if (directory.existsSync()) await directory.delete(recursive: true);
+    });
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 700);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(
+      _host(
+        PackageDetailPage(
+          account: _account(fixture.api),
+          api: fixture.api,
+          project: _project,
+          packageId: 11,
+          isCurrent: () => true,
+          packageDownloader: downloader,
+        ),
+        textScale: 2,
+      ),
+    );
+    await _settle(tester);
+    await tester.tap(find.byTooltip('更多檔案動作'));
+    await tester.pumpAndSettle();
+    expect(find.text('刪除 mobile-kit-1.2.3.tgz'), findsNothing);
+    await tester.tap(find.text('複製 SHA-256'));
+    await tester.pumpAndSettle();
+    expect(copied, [
+      'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    ]);
+    expect(find.text('已複製完整 SHA-256'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('下載並驗證 mobile-kit-1.2.3.tgz'));
+    await pumpUntil(
+      tester,
+      () => find.byType(PackageDownloadSheet).evaluate().isNotEmpty,
+      description: 'package download sheet',
+    );
+    await pumpUntil(
+      tester,
+      () => find.textContaining('已驗證並下載').evaluate().isNotEmpty,
+      description: 'package download success',
+    );
+    expect(downloader.calls, 1);
+    expect(find.text('開啟／分享'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('Terraform tab uses the documented package_type filter', (
     tester,

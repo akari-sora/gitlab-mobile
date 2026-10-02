@@ -152,8 +152,9 @@ response budgets and generation fences; partial GraphQL errors fail explicitly.
 更多 → 套件與容器 Registry offers package, container and Terraform tabs. Package
 search/sort is server-side; container loaded-window search is labelled explicitly.
 Details expose actual files/digests/sizes. Guarded deletion rechecks permission,
-identity and complete bounded pagination before readback. Type-specific downloads,
-publishing and full registry policy administration remain unfinished.
+identity and complete bounded pagination before readback. Package-file downloads
+now verify fresh metadata, size and SHA-256 before open/share. Type-specific
+installation, publishing and full registry policy administration remain unfinished.
 
 更多 → Snippets supports an explicit file list, one selected blob loaded on
 demand, virtualized source and Markdown preview. Multi-file metadata editing,
@@ -745,12 +746,60 @@ lifecycle mutation, private access or role-based acceptance.
 See [MOBILE_WEB_PARITY_LEDGER.md](MOBILE_WEB_PARITY_LEDGER.md) for the full public
 navigation ledger and outstanding functional acceptance lanes.
 
+## Verified package-file download follow-up (2026-10-03)
+
+The public package `71215360` was observed at 390 × 844 in the browser. Its
+three assets use stacked mobile rows; expanding `SHA256SUMS` exposes the actual
+SHA-256 and copy action. Native package and Terraform file rows now offer
+full SHA-256 copy, download with progress, cancellation, retry and open/share
+after verification. Reader-only users can copy the checksum without receiving
+destructive controls; narrow-screen / large-text rows retain the download action.
+
+The production client uses GitLab's numeric
+`/projects/:project/packages/:package/package_files/:file/download` endpoint.
+It re-reads the package identity and file name/size/SHA-256 before streaming,
+stops metadata paging after fully validating the target page, and rejects
+changed metadata. Search is bounded to ten pages / 200 inspected files.
+Missing canonical SHA-256, invalid sizes and files above 256 MiB remain blocked.
+This universal endpoint avoids guessing type-specific protocol coordinates;
+an older instance's ambiguous 404 retains retry and account-switch options.
+The [official package-read route catalogue](https://docs.gitlab.com/auth/tokens/fine_grained_access_tokens_rest/)
+documents the endpoint. Compatibility on other instance versions remains open.
+
+Downloads use the existing account/project attempt directory, a partial file,
+bounded streaming and atomic promotion. Size is verified before SHA-256 runs
+in a separate isolate. Account/session changes, widget replacement and closing
+the sheet cancel ownership and delete stale files. Progress reuses the existing
+100 ms notifier throttle. Redirects reuse the single-hop HTTPS artifact policy
+and strip all authorization/cookie headers, including same-origin redirects.
+No dependencies or package publishing operations were added.
+
+The frozen-source anonymous production-client suite passed 37 checks with zero
+failures, one Boards HTTP 401 GAP and zero writes. It downloaded exactly 185
+bytes through the numeric endpoint and verified the saved file's SHA-256.
+The run uses local source-content digest
+`3dfeb32215f5723ccb5966e0ed98e732391f3078d87ed693bcf189ae3ac2cc4f`;
+the commit-binding receipt is retained with its ignored evidence artifacts.
+CI/bootstrap Python tests passed 36 + 15 cases and syntax checks. Independent
+writer/reviewer passes have no open finding.
+
+Full pinned Flutter analysis has no issues; the frozen-source run passed 1,479
+JUnit tests with zero failures/errors/skips. All 236 Dart/lock hashes remained
+unchanged. Local line coverage is 88.02% (18,844 / 21,408). Exact commit binding,
+installed-build readback and exact-head CI are separate receipts tracked in the
+draft MR and ignored evidence directory; local tests do not establish device,
+CI, private-project or G0 acceptance.
+The live fixture is only the public 185-byte `SHA256SUMS`
+file `361672601`; the 170 MiB APK asset is not fetched or executed. Container
+image pulls, type-specific installation, publishing/policies, real Terraform
+downloads, private/role-based acceptance and iOS remain separate gaps.
+
 ## Remaining product priorities
 
 The largest mobile workflow gaps are OAuth application registration and live
 login validation, push delivery, server-synchronised viewed-file state, GraphQL
 work items/epics/OKR, full repository graph and private Snippet CRUD, registry
-downloads/publishing, complete incident operations, Service Desk and analytics families. These are open
+publishing/policies and type-specific installation, complete incident operations, Service Desk and analytics families. These are open
 requirements under the all-function goal, not features delegated permanently to Web. Store signing, iOS physical-device evidence, accessibility
 screen-reader walks, real private-project integration on the submitted build
 and live draft/board writes are separate acceptance lanes.
