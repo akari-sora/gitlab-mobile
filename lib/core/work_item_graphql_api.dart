@@ -33,6 +33,25 @@ query MobileProjectWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
 }
 ''';
 
+final _groupWorkItemsQuery =
+    '''
+query MobileGroupWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
+  group(fullPath: \$path) {
+    id
+    fullPath
+    workItems(
+      first: \$first
+      after: \$after
+      sort: CREATED_DESC
+      includeDescendants: false
+    ) {
+      nodes { $_workItemSummaryFields }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+
 final _projectWorkItemQuery =
     '''
 query MobileProjectWorkItem(\$path: ID!, \$iid: String!) {
@@ -126,6 +145,64 @@ const _workItemSchemaErrors = {
 };
 
 extension WorkItemGraphQlApi on GitLabApi {
+  /// Reads one bounded group-owned page without including descendant projects.
+  /// A continuation must carry the opaque group ID returned by its first page.
+  Future<GroupWorkItemGraphPage> groupWorkItems(
+    String fullPath, {
+    String? expectedGroupId,
+    String? after,
+    bool Function()? isCurrent,
+  }) async {
+    final path = _validatedNamespacePath(fullPath);
+    final expectedId = _validatedOptionalOpaqueId(expectedGroupId);
+    final cursor = _validatedWorkItemCursor(after);
+    if (cursor != null && expectedId == null) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    _requireCurrentWorkItemRequest(isCurrent);
+    final response = await _read(
+      instance.graphQL,
+      method: 'POST',
+      graphQuery: true,
+      data: {
+        'query': _groupWorkItemsQuery,
+        'variables': {
+          'path': path,
+          'first': _workItemPageSize,
+          'after': cursor,
+        },
+      },
+    );
+    _requireCurrentWorkItemRequest(isCurrent);
+    try {
+      final data = _workItemGraphData(response.bytes);
+      final group = _groupGraphContainer(data, path, expectedId: expectedId);
+      final connection = _requiredWorkItemConnection(
+        group.container,
+        'workItems',
+      );
+      final nodes = _boundedNodes(connection, _workItemPageSize);
+      final seenIds = <String>{};
+      final seenIids = <int>{};
+      final items = <WorkItemGraphSummary>[];
+      for (final raw in nodes) {
+        final item = _parseWorkItemSummary(raw);
+        _requireGroupWorkItem(item, group.ref);
+        if (!seenIds.add(item.id) || !seenIids.add(item.iid)) {
+          throw const FormatException('Duplicate work item');
+        }
+        items.add(item);
+      }
+      return GroupWorkItemGraphPage(
+        group: group.ref,
+        items: items,
+        nextCursor: _nextWorkItemCursor(connection, previous: cursor),
+      );
+    } on FormatException {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+  }
+
   /// Reads one bounded project page. Type names remain display-only metadata.
   Future<WorkItemGraphPage> projectWorkItems(
     Project project, {
@@ -437,6 +514,20 @@ void _requireCurrentWorkItemRequest(bool Function()? isCurrent) {
   return (container: remote, ref: ref);
 }
 
+({Json container, GraphResourceRef ref}) _groupGraphContainer(
+  Json data,
+  String path, {
+  String? expectedId,
+}) {
+  if (data['group'] == null) throw const ApiFailure(FailureKind.invisible);
+  final remote = objectJson(data['group']);
+  final ref = _parseResourceRef(remote);
+  if (ref.fullPath != path || (expectedId != null && ref.id != expectedId)) {
+    throw const FormatException('Wrong group');
+  }
+  return (container: remote, ref: ref);
+}
+
 Json _requiredWorkItemConnection(Json parent, String key) {
   if (parent[key] == null) throw const ApiFailure(FailureKind.forbidden);
   return objectJson(parent[key]);
@@ -579,6 +670,14 @@ void _requireProjectWorkItem(
   if (item.project?.id != project.id ||
       item.project?.fullPath != project.fullPath) {
     throw const FormatException('Wrong work item project');
+  }
+}
+
+void _requireGroupWorkItem(WorkItemGraphSummary item, GraphResourceRef group) {
+  if (item.project != null ||
+      item.namespace?.id != group.id ||
+      item.namespace?.fullPath != group.fullPath) {
+    throw const FormatException('Wrong work item group');
   }
 }
 

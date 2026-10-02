@@ -10,6 +10,7 @@ import '../../shared/workspace_ui.dart';
 import 'ci_page.dart';
 import 'commit_page.dart';
 import 'graph_work_items_page.dart';
+import 'groups_page.dart';
 import 'project_page.dart';
 import 'repository_page.dart';
 import 'work_item_page.dart';
@@ -72,6 +73,10 @@ class ResourceNavigator {
   Future<Project?> _project(BuildContext context, String idOrPath) =>
       _resolve(context, '專案 $idOrPath', () => api.project(idOrPath));
 
+  Future<Json?> _group(BuildContext context, String fullPath, _NavigationOwner owner) =>
+      _resolve(context, '群組 $fullPath',
+        () => api.groupByPath(fullPath, isCurrent: owner.current), owner: owner);
+
   Future<void> _push(BuildContext context, Widget page) {
     if (!context.mounted || !_active()) return Future.value();
     return Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
@@ -82,6 +87,17 @@ class ResourceNavigator {
     if (found == null || !context.mounted || !_active()) return;
     await _push(context, ProjectPage(account: account, api: api, project: found, initialTab: initialTab));
   }
+
+  Future<void> group(BuildContext context, String fullPath, {int initialTab = 0}) async {
+    final owner = _owner(context);
+    final found = await _group(context, fullPath, owner);
+    if (found == null || !context.mounted || !owner.current()) return;
+    await _push(context, GroupPage(account: account, api: api, group: found,
+      initialTab: initialTab, isCurrent: owner.current, ownerChanges: owner.changes));
+  }
+
+  Future<void> groupWorkItems(BuildContext context, String fullPath) =>
+      group(context, fullPath, initialTab: 4);
 
   Future<void> workItem(BuildContext context, String projectIdOrPath, String resource, int iid) async {
     final found = await _project(context, projectIdOrPath);
@@ -144,6 +160,8 @@ class ResourceNavigator {
 
   Future<void> link(BuildContext context, GitLabLink link) => switch (link.target) {
     LinkTarget.project => project(context, link.project),
+    LinkTarget.group => group(context, link.project),
+    LinkTarget.groupWorkItems => groupWorkItems(context, link.project),
     LinkTarget.issue => workItem(context, link.project, 'issues', link.number!),
     LinkTarget.workItem => graphWorkItem(context, link),
     LinkTarget.mergeRequest => workItem(context, link.project, 'merge_requests', link.number!),

@@ -556,7 +556,7 @@ void main() {
     final fixture = WorkspaceFixture();
     addTearDown(fixture.api.close);
     await tester.pumpWidget(workspaceHost(GroupPage(account: fixture.account, api: api,
-      group: const {'id': 9, 'name': 'Team', 'full_path': 'team'})));
+      group: const {'id': 9, 'name': 'Team', 'full_path': 'team'}, isCurrent: () => true)));
     await settleNetworkWidgets(tester);
     expect(find.text('Core app'), findsOneWidget);
     await tester.tap(find.widgetWithText(Tab, '子群組'));

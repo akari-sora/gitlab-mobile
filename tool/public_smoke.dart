@@ -86,6 +86,25 @@ query MobileProjectWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
 }
 ''';
 
+final _publicGroupWorkItemsQuery =
+    '''
+query MobileGroupWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
+  group(fullPath: \$path) {
+    id
+    fullPath
+    workItems(
+      first: \$first
+      after: \$after
+      sort: CREATED_DESC
+      includeDescendants: false
+    ) {
+      nodes { $_publicWorkItemSummaryFields }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+
 final _publicProjectWorkItemQuery =
     '''
 query MobileProjectWorkItem(\$path: ID!, \$iid: String!) {
@@ -440,7 +459,11 @@ Future<void> main() async {
   SnippetGraphSnapshot? snippetSnapshot;
   WorkItemGraphSummary? discoveredPublicWorkItem;
   String? discoveredPublicGroupNamespaceId;
+  String? discoveredPublicGroupItemsCursor;
   WorkItemGraphSummary? discoveredPublicGroupWorkItem;
+  var groupItemsFirstCount = 0;
+  var groupItemsNextCount = 0;
+  final publicGroupItemIids = <int>[];
   var projectActivityFirstDiscussions = 0;
   var groupActivityFirstDiscussions = 0;
   var groupActivityNextDiscussions = 0;
@@ -461,7 +484,10 @@ Future<void> main() async {
             _isExactPublicIncidentGraph(request) ||
             _isExactPublicAnalyticsGraph(request) ||
             _isExactPublicSnippetGraph(request, discoveredSnippetGraphId) ||
-            _isExactPublicWorkItemGraph(request) ||
+            _isExactPublicWorkItemGraph(
+              request,
+              issuedGroupCursor: discoveredPublicGroupItemsCursor,
+            ) ||
             _isExactPublicWorkItemAttributeGraph(
               request,
               discoveredPublicWorkItem?.id,
@@ -934,6 +960,66 @@ Future<void> main() async {
       discoveredPublicGroupNamespaceId = detail.summary.namespace?.id;
       discoveredPublicGroupWorkItem = detail.summary;
     });
+    await check('public.work_items.group_owned_pages', () async {
+      final first = await api.groupWorkItems(_publicGroupWorkItemPath);
+      require(first.group.fullPath == _publicGroupWorkItemPath);
+      require(first.group.id == discoveredPublicGroupNamespaceId);
+      require(first.items.length == 20 && first.nextCursor != null);
+      require(
+        first.items.every(
+          (item) =>
+              item.project == null &&
+              item.namespace?.id == first.group.id &&
+              item.namespace?.fullPath == first.group.fullPath,
+        ),
+      );
+      groupItemsFirstCount = first.items.length;
+      publicGroupItemIids.addAll(first.items.map((item) => item.iid));
+      discoveredPublicGroupItemsCursor = first.nextCursor;
+      final next = await api.groupWorkItems(
+        _publicGroupWorkItemPath,
+        expectedGroupId: first.group.id,
+        after: discoveredPublicGroupItemsCursor,
+      );
+      require(next.group.id == first.group.id);
+      require(next.items.length == 20);
+      require(next.nextCursor != discoveredPublicGroupItemsCursor);
+      final ids = first.items.map((item) => item.id).toSet();
+      final iids = first.items.map((item) => item.iid).toSet();
+      require(
+        next.items.every(
+          (item) =>
+              item.project == null &&
+              item.namespace?.id == first.group.id &&
+              item.namespace?.fullPath == first.group.fullPath &&
+              ids.add(item.id) &&
+              iids.add(item.iid),
+        ),
+      );
+      groupItemsNextCount = next.items.length;
+      publicGroupItemIids.addAll(next.items.map((item) => item.iid));
+      discoveredPublicGroupItemsCursor = null;
+    });
+    await check('public.groups.exact_path_resolution', () async {
+      final group = await api.groupByPath(_publicGroupWorkItemPath);
+      require(group['id'] is int && (group['id'] as int) > 0);
+      require(group['full_path'] == _publicGroupWorkItemPath);
+      require(group['visibility'] == 'public');
+    });
+    await check('public.work_items.group_type_capabilities', () async {
+      final owner = discoveredPublicGroupNamespaceId;
+      require(owner != null);
+      final page = await api.namespaceWorkItemTypes(
+        _publicGroupWorkItemPath,
+        expectedNamespaceId: owner,
+      );
+      require(page.namespace.id == owner);
+      require(page.namespace.fullPath == _publicGroupWorkItemPath);
+      require(page.items.isNotEmpty && page.items.length <= 20);
+      require(
+        page.items.any((type) => type.enabled && type.isGroupWorkItemType),
+      );
+    });
     await check('public.work_items.group_activity_outer_pages', () async {
       final expected = discoveredPublicGroupWorkItem;
       require(expected != null);
@@ -1120,6 +1206,9 @@ Future<void> main() async {
       'status': failed ? 'FAIL' : 'PASS',
       'checks': checks,
       'metrics': {
+        'work_item_group_first_rows': groupItemsFirstCount,
+        'work_item_group_next_rows': groupItemsNextCount,
+        'public_group_owned_item_iids': publicGroupItemIids,
         'work_item_project_activity_first_discussions':
             projectActivityFirstDiscussions,
         'work_item_group_activity_first_discussions':
@@ -1266,7 +1355,10 @@ bool _isExactPublicSnippetGraph(
       _publicSnippetPaths.contains(paths.single);
 }
 
-bool _isExactPublicWorkItemGraph(RequestOptions request) {
+bool _isExactPublicWorkItemGraph(
+  RequestOptions request, {
+  String? issuedGroupCursor,
+}) {
   if (request.method != 'POST' ||
       request.uri != Uri.parse('https://gitlab.com/api/graphql')) {
     return false;
@@ -1280,6 +1372,22 @@ bool _isExactPublicWorkItemGraph(RequestOptions request) {
   }
   final variables = body['variables'];
   if (variables is! Map) return false;
+  if (body['query'] == _publicGroupWorkItemsQuery) {
+    return variables.length == 3 &&
+        variables['path'] == _publicGroupWorkItemPath &&
+        variables['first'] == 20 &&
+        variables.containsKey('after') &&
+        (variables['after'] == null ||
+            (issuedGroupCursor != null &&
+                variables['after'] == issuedGroupCursor));
+  }
+  if (body['query'] == _publicNamespaceWorkItemTypesQuery &&
+      variables['path'] == _publicGroupWorkItemPath) {
+    return variables.length == 3 &&
+        variables['first'] == 20 &&
+        variables.containsKey('after') &&
+        variables['after'] == null;
+  }
   if (body['query'] == _publicProjectWorkItemsQuery ||
       body['query'] == _publicNamespaceWorkItemTypesQuery) {
     return variables.length == 3 &&

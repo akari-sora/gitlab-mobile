@@ -244,6 +244,37 @@ extension WorkspaceApi on GitLabApi {
     if (search.trim().isNotEmpty) 'search': search.trim(),
   }, next: next);
   Future<Json> group(int id) => record(['groups', '$id'], query: {'with_projects': 'false'});
+  Future<Json> groupByPath(String fullPath, {bool Function()? isCurrent}) async {
+    final path = _validatedGroupPath(fullPath);
+    _requireCurrentGroupRequest(isCurrent);
+    final value = await _cachedRead<Json>(
+      'group-path:$path',
+      () async {
+        final result = await _read(instance.api(['groups', path], {'with_projects': 'false'}),
+          headers: {'Cache-Control': 'max-age=0'});
+        try {
+          final decoded = objectJson(jsonDecode(utf8.decode(result.bytes)));
+          final id = requiredInt(decoded, 'id');
+          if (requiredString(decoded, 'full_path') != path) {
+            throw const FormatException('Wrong group');
+          }
+          final group = Map<String, dynamic>.unmodifiable({
+            'id': id,
+            'name': requiredString(decoded, 'name'),
+            'full_path': path,
+            'visibility': optionalString(decoded, 'visibility'),
+            'description': optionalString(decoded, 'description'),
+          });
+          return _CacheRead<Json>(group,
+            _cacheTtl(result.headers, const Duration(seconds: 30)));
+        } on FormatException { throw const ApiFailure(FailureKind.invalidResponse); }
+      },
+      cost: (group) => 256 + 2 * group.entries.fold<int>(0,
+        (total, entry) => total + entry.key.length + entry.value.toString().length),
+    );
+    _requireCurrentGroupRequest(isCurrent);
+    return value;
+  }
   Future<ApiPage<Json>> subgroups(int id, {Uri? next}) =>
       records(['groups', '$id', 'subgroups'], query: {'order_by': 'name', 'sort': 'asc'}, next: next);
   Future<ApiPage<Json>> groupProjects(int id, {Uri? next}) =>
@@ -377,4 +408,18 @@ extension WorkspaceApi on GitLabApi {
       throw const ApiFailure(FailureKind.tooLarge, title: '超過大小上限', detail: '這張圖片超過附件預覽上限。');
     }
   }
+}
+
+String _validatedGroupPath(String value) {
+  final path = value.trim();
+  if (path.isEmpty || path.length > 1024 ||
+      path.split('/').any((part) => part == '.' || part == '..') ||
+      !RegExp(r'^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$').hasMatch(path)) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  return path;
+}
+
+void _requireCurrentGroupRequest(bool Function()? isCurrent) {
+  if (isCurrent != null && !isCurrent()) throw const ApiFailure(FailureKind.cancelled);
 }

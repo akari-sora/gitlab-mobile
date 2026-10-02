@@ -17,7 +17,7 @@ specification numbers have been invented.
 | Manage / Activity | Loaded timeline and eight event filters at phone width | Activity feed | Full event-kind/authenticated parity walk |
 | Manage / Members | Loaded roles/source/search/sort and member rows | Member list/actions | Custom roles, complete administration and live permissions |
 | Manage / Labels | Loaded Active/Archived, search/sort and empty state | List/create/edit/delete | Scoped labels/subscriptions and live CRUD |
-| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details and mobile Activity timeline observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project cursor list, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, seven lazy attribute kinds and read-only activity paging | Remaining widgets, activity filters/order/replies, group lists, filters, Work Item mutations and authenticated/edition acceptance |
+| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project and group-owned cursor lists, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, seven lazy attribute kinds and read-only activity paging | Remaining widgets, activity filters/order/replies, descendant group aggregation, list filters, Work Item mutations and authenticated/edition acceptance |
 | Plan / Boards | Development board observed | Phone-width columns, card move, board/list management | Paid scope/list creation, touch drag/drop and live mutation readback |
 | Plan / Milestones | Loaded empty-state explanation | List/detail/create/edit/delete | Full progress/reporting and live CRUD |
 | Plan / Wiki | Loaded empty Wiki explanation | Page list/read/create/edit/delete | History, attachments, tree and live CRUD |
@@ -86,8 +86,13 @@ expanding the description of public `6030720` made Markdown horizontal scroll
 views read the ancestor disclosure's boolean storage as a double. Table and
 fenced-code regressions both fail before the repair. `MarkdownView` now owns its
 own storage bucket; the joint Markdown/Snippet/attachment suite passes 77 tests.
-The repair still requires an installed-build check; the gray error area is not a
-successful table-layout validation.
+The `6ff3bf3` release was then installed with matching APK bytes
+(`1b4091db22e17d7efcfa41af50d7b08f2adce98bfed455c8b9534baacba9edc6`).
+Its actual Snippet description table renders, horizontal drag reveals additional
+columns, and collapse/re-expand works. README Markdown preview and selection of
+the non-default VM file also show actual content. File and metadata editors were
+opened and cancelled; no server write was submitted. The fenced-code repair has
+widget regression coverage; that separate physical path was not exercised.
 
 A further 390 × 844 browser walk reached group `23883`'s actual Activity section:
 parent/label/child additions and description/title changes appear in a timeline,
@@ -99,6 +104,25 @@ Over-budget responses leave the existing cache usable and show the limit. Empty
 pages retain pagination controls. Descriptions over 800 runes start collapsed,
 with their character count and preview cached between rebuilds. Filtering/order,
 editing and server-write acceptance remain separate work.
+
+That same `6ff3bf3` installed build reads the actual group `23883` activity,
+advances to the second page and returns to the cached first page. The long
+description initially stays collapsed, and after expansion it still renders
+when scrolled out of the viewport and back. Allowlisted checks of this App's own
+process logs find zero occurrences of the earlier bool/double storage error,
+build-time setState failure or RenderFlex overflow during this walk. These read
+checks do not establish nested-note continuation, private writes, iOS or measured
+frame-rate acceptance.
+
+The 2026-10-03 group-list browser walk at 390 × 844 showed the actual GitLab.org
+aggregate list, its Open-state filter, row type/path/state and 20-item next-page
+controls. That Web default includes descendant project items. The native fifth
+group tab instead labels its current scope explicitly as only the group's own
+Work Items. It reads the Group-root connection with `includeDescendants: false`
+and server-created order, preserving opaque group/type/namespace identities.
+Rows open through their returned namespace scope rather than a fabricated
+Project. Descendant aggregation, search/type/state/order controls and custom
+saved views remain open; the existing REST issues/MR tabs are separate workflows.
 
 Each new page binds responses and modal closures to account/instance, numeric
 project identity, API generation and request epoch. ProjectMore/Pipeline remove
@@ -122,7 +146,7 @@ on one S24 Ultra do not establish statistical improvement on every screen.
 2. Fixed-query GraphQL Work Items now include server-returned scope/type IDs,
    project cursor paging and exact project/group details with five base widgets
    plus seven independently loaded attributes and read-only activity. Complete remaining
-   widgets, activity filtering/order/replies, group lists, filters,
+   widgets, activity filtering/order/replies, descendant group aggregation, filters,
    native mutations and actual authenticated/private/edition validation.
 3. Multi-file Snippet blobs now have lazy paths/content, source/Markdown preview
    and guarded file actions with `updatedAt` change detection. Complete

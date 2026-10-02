@@ -40,7 +40,7 @@ GitLab edition lacks the feature.
 | Global navigation | Projects, groups/subgroups, todos, assigned/review-requested/created work, activity and global search | No structural change | Administration, help and creation workflows remain unimplemented; they are part of the full-function backlog |
 | Project overview | Description, stars, forks, languages, licence, clone URLs, star/fork actions | No structural change | Full Web analytics and settings are not reproduced |
 | Manage | Activity, members and labels | No structural change | Access-token, webhook, integration and full member-role administration remain open |
-| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project Work Item cursor list, server types and exact project/group detail with five base widgets, seven lazy attribute kinds and read-only activity | Remaining Work Item widgets, activity filters/order/replies, group lists, mutations, full iterations/requirements/Epic/OKR workflows remain open |
+| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project and group-owned Work Item cursor lists, server types and exact project/group detail with five base widgets, seven lazy attribute kinds and read-only activity | Remaining Work Item widgets, activity filters/order/replies, descendant group aggregation and filters, mutations, full iterations/requirements/Epic/OKR workflows remain open |
 | Code | Repository tree, README, branches, commits and tags; fixed-SHA file view, history, blame, search, syntax highlighting and line permalinks; MR list/detail/diffs | Compare two refs; selected-ref repository graph; multi-file Snippets with explicit file enumeration, lazy source/preview and guarded file actions | Locked files, cross-project comparison, full all-branch graph and private Snippet CRUD acceptance remain open |
 | MR review | Discussions, inline single-line positions, approvals/merge, suggested changes, auto-merge, local viewed-file state and the MR draft/ready toggle | Server draft-note list, add/edit/discard and bulk publish, tied to account/project/MR/head SHA | Viewed-file state is not server-synchronised; multi-line positioning and full desktop review policy administration remain open |
 | Build | Pipelines, stage-grouped jobs, controls, incremental ANSI logs and search, JUnit report views, artifacts, cross-project CI overview and schedules | Read-only pipeline dependency graph with paginated actual GraphQL needs | Cross-project/downstream graph and the complete pipeline editor remain open |
@@ -283,7 +283,8 @@ Public project `631894` showed all seven attribute sections, the actual group-ow
 19.5 milestone, zero time values and explicit unset/null fields. The actual group
 `23883` parent link now loads `18225` successfully. Its submitted-source
 [pipeline 2907264654](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2907264654)
-is pending; this local and physical evidence does not establish its CI result.
+was pending at submission and was subsequently cancelled before any of its five
+jobs started. This local and physical evidence does not establish a CI pass.
 Activity, remaining widgets,
 group lists, filters, native Work Item mutations and authenticated/private/edition
 acceptance remain open.
@@ -299,8 +300,12 @@ ExpansionTile. `MarkdownView` now keeps a state-owned PageStorageBucket around
 the complete Markdown/selection subtree, so disclosure state cannot enter its
 scroll offset storage. The regressions expand, drag horizontally, collapse and
 re-expand; the combined Markdown, Snippet and attachment suite passes 77 cases
-and scoped analysis reports no issues. Installed verification of this repair
-remains pending; no frame-rate improvement is inferred from widget tests.
+and scoped analysis reports no issues. The later `6ff3bf3` installed APK renders
+the actual public Snippet table, reveals new columns after horizontal drag and
+survives collapse/re-expand. README preview and the non-default VM file show
+actual content. Its file and metadata editors were opened and cancelled with no
+server write. Fenced-code device verification remains open; no frame-rate
+improvement is inferred from widget tests.
 
 ### Lazy Work Item activity and long descriptions
 
@@ -343,7 +348,72 @@ and 15 bootstrap cases and Python/shell syntax checks also pass. Independent
 review approves the final source, including the exact eviction reproduction,
 Markdown table/code regressions, Activity identity/paging/budget and the anonymous
 query allowlist. The interrupted run before the lifecycle repair is not counted.
-New submitted-source CI and installed-build readback remain separate lanes.
+The `6ff3bf3` release APK and installed bytes match SHA-256
+`1b4091db22e17d7efcfa41af50d7b08f2adce98bfed455c8b9534baacba9edc6`.
+Its actual group `23883` Activity advances to the second page and returns to the
+cached first page. The initially collapsed long description still renders after
+expansion, scrolling out of the viewport and returning. During that public walk,
+allowlisted own-process log checks found zero occurrences of bool/double storage,
+build-time setState and RenderFlex overflow errors. The submitted-source
+[pipeline 2907344085](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2907344085)
+is running at the latest readback: Python
+[16900837654](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16900837654), Flutter
+[16900837655](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16900837655)
+(1,418 tests, clean analysis, 88.02% CI coverage) and native templates
+[16900837656](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16900837656)
+succeeded. Public smoke is pending and Android is created behind its dependencies.
+These partial CI checks apply to `6ff3bf3`, before the group list changes. No full
+pipeline pass, nested-note device path or quantitative jank reduction is inferred.
+
+### Group-owned Work Item list
+
+The group page now has a fifth native Work Items tab with one app bar and an
+explicit group-only scope label. The production GraphQL query uses the Group
+root, 20-row pages, `CREATED_DESC` and `includeDescendants: false`. First-page
+responses discover the opaque owner ID; subsequent pages require it, and every
+row must match that group's namespace and have no project owner. Capability
+identity is checked against the same owner. Details use the row's returned
+namespace path/ID. No REST Project or GraphQL global ID is synthesized.
+
+The mobile Web aggregate list includes descendant project items and has search,
+Open-state filters, display options and custom views. Those controls remain
+separate follow-up work; this group's own list does not claim aggregate parity.
+Existing REST group issues/MR tabs retain their scope. Account/API/path changes
+discard list state and owned detail routes, and loading failures preserve already
+accepted pages with explicit retry.
+
+The group resolver accepts exact root/subgroup paths through the REST Groups
+endpoint, requests no embedded projects, and caches only the small fields used by
+the group page. Group and group-list URLs also work beneath an instance installation
+subpath. The list link opens Work Items directly; no Project lookup is used.
+Both project/group item and type pagination stop after ten pages or 200 resident
+records. An issued-cursor cycle stops with retained rows and an explicit error;
+empty pages can still advance, and reaching a bound while the server has more
+shows a refresh notice. Rows use a lazy SliverList builder so pagination/type
+updates do not first construct configurations for every resident row. Headers,
+continuation controls, stored scroll position and pull-to-refresh retain their
+mobile behavior.
+
+Missing, mismatched or replaced group-page ownership stops the entire tab body
+before REST or GraphQL requests. Explicit owner fences are used by isolated
+fixtures; failed provider lookup cannot enable a production page. Independent
+review verified these ownership/lazy-construction repairs, with zero outstanding
+findings.
+
+Final frozen-source validation passes 1,451 JUnit tests with zero
+failures/errors/skips, clean full analysis and unchanged hashes for all 232
+Dart/lock files. Local coverage is 88.07% (18,419 / 20,914 lines). All 36 CI Python
+and 15 bootstrap regressions and Python/shell syntax checks pass. The production
+anonymous suite passes 36 checks with one Boards HTTP 401 GAP and zero writes,
+including exact group-path resolution, group type capabilities, two disjoint
+20-row group-owned pages and issued-cursor continuation. Its local source content
+digest is `7cb4d7836d68d7e31f72b473aa64fcd1a00f40fb9d42dfc9b8342d22df124c20`;
+this is not a submitted commit SHA. Two earlier frozen-source public runs each
+retained a network failure on different repository/compare endpoints; neither is
+counted as a passing run. The final complete run is the 36-pass result above.
+New installed-build and exact-head CI results
+must be read separately; these checks do not close descendant aggregation,
+list filters, private/role-specific acceptance or iOS.
 
 ProjectMore and Pipeline owned navigation stacks, board modal editors and snippet
 routes are removed on account/project/API replacement. Registry feed identities

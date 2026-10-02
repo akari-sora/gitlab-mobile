@@ -191,6 +191,21 @@ final class WorkItemGraphPage {
   bool get isPartial => nextCursor != null;
 }
 
+/// One bounded page owned by an exact GitLab group identity.
+final class GroupWorkItemGraphPage {
+  GroupWorkItemGraphPage({
+    required this.group,
+    required List<WorkItemGraphSummary> items,
+    required this.nextCursor,
+  }) : items = List.unmodifiable(items);
+
+  /// Opaque server identity returned by the same response as [items].
+  final GraphResourceRef group;
+  final List<WorkItemGraphSummary> items;
+  final String? nextCursor;
+  bool get isPartial => nextCursor != null;
+}
+
 final class WorkItemTypeCapability {
   const WorkItemTypeCapability({
     required this.type,

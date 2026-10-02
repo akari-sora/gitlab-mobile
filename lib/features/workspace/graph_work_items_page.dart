@@ -33,11 +33,26 @@ class GraphWorkItemsPage extends StatefulWidget {
     required this.project,
     this.isCurrent,
     this.ownerChanges,
-  });
+  }) : _groupPath = null,
+       embedded = false;
+
+  const GraphWorkItemsPage.group({
+    super.key,
+    required this.account,
+    required this.api,
+    required String namespacePath,
+    this.isCurrent,
+    this.ownerChanges,
+  }) : project = null,
+       _groupPath = namespacePath,
+       embedded = true;
 
   final Account account;
   final GitLabApi api;
-  final Project project;
+  final Project? project;
+  final String? _groupPath;
+  String get namespacePath => project?.path ?? _groupPath!;
+  final bool embedded;
   final bool Function()? isCurrent;
   final Listenable? ownerChanges;
 
@@ -46,8 +61,15 @@ class GraphWorkItemsPage extends StatefulWidget {
 }
 
 class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
+  static const _maxItemPages = 10;
+  static const _maxTypePages = 10;
+  static const _maxResidentItems = 200;
+  static const _maxResidentTypes = 200;
+
   final List<WorkItemGraphSummary> _items = [];
   final List<WorkItemTypeCapability> _types = [];
+  final Set<String> _usedItemCursors = {};
+  final Set<String> _usedTypeCursors = {};
   ApiFailure? _itemsError;
   ApiFailure? _typesError;
   String? _nextItems;
@@ -55,6 +77,10 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   GraphResourceRef? _namespace;
   bool _loadingItems = false;
   bool _loadingTypes = false;
+  bool _itemsLimitReached = false;
+  bool _typesLimitReached = false;
+  int _itemPages = 0;
+  int _typePages = 0;
   int _generation = 0;
   NavigatorState? _navigator;
   final Set<Route<dynamic>> _ownedRoutes = {};
@@ -86,8 +112,8 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       widget.ownerChanges?.addListener(_ownerChanged);
     }
     if (oldWidget.account.key != widget.account.key ||
-        oldWidget.project.id != widget.project.id ||
-        oldWidget.project.path != widget.project.path ||
+        oldWidget.project?.id != widget.project?.id ||
+        oldWidget.namespacePath != widget.namespacePath ||
         !identical(oldWidget.api, widget.api)) {
       _generation++;
       _dismissOwnedRoutes();
@@ -98,6 +124,12 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       _nextItems = null;
       _nextTypes = null;
       _namespace = null;
+      _usedItemCursors.clear();
+      _usedTypeCursors.clear();
+      _itemPages = 0;
+      _typePages = 0;
+      _itemsLimitReached = false;
+      _typesLimitReached = false;
       _loadingItems = false;
       _loadingTypes = false;
       _ownerInvalid = false;
@@ -125,6 +157,12 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       _nextItems = null;
       _nextTypes = null;
       _namespace = null;
+      _usedItemCursors.clear();
+      _usedTypeCursors.clear();
+      _itemPages = 0;
+      _typePages = 0;
+      _itemsLimitReached = false;
+      _typesLimitReached = false;
       _loadingItems = false;
       _loadingTypes = false;
       _ownerInvalid = true;
@@ -176,27 +214,45 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       _nextItems = null;
       _nextTypes = null;
       _namespace = null;
+      _usedItemCursors.clear();
+      _usedTypeCursors.clear();
+      _itemPages = 0;
+      _typePages = 0;
+      _itemsLimitReached = false;
+      _typesLimitReached = false;
       _loadingItems = true;
       _loadingTypes = true;
     });
     final owner = widget;
     bool current() => _current(generation);
     final results = await Future.wait<Object?>([
-      owner.api
-          .projectWorkItems(owner.project, isCurrent: current)
+      (owner.project == null
+              ? owner.api.groupWorkItems(
+                  owner.namespacePath,
+                  isCurrent: current,
+                )
+              : owner.api.projectWorkItems(owner.project!, isCurrent: current))
           .then<Object?>((value) => value)
           .catchError((Object error) => error),
       owner.api
-          .namespaceWorkItemTypes(owner.project.path, isCurrent: current)
+          .namespaceWorkItemTypes(owner.namespacePath, isCurrent: current)
           .then<Object?>((value) => value)
           .catchError((Object error) => error),
     ]);
     if (!current()) return;
     setState(() {
       final itemResult = results[0];
-      if (itemResult is WorkItemGraphPage) {
+      GraphResourceRef? itemNamespace;
+      if (itemResult is GroupWorkItemGraphPage) {
+        itemNamespace = itemResult.group;
+        _namespace = itemResult.group;
         _items.addAll(itemResult.items);
         _nextItems = itemResult.nextCursor;
+        _itemPages = 1;
+      } else if (itemResult is WorkItemGraphPage) {
+        _items.addAll(itemResult.items);
+        _nextItems = itemResult.nextCursor;
+        _itemPages = 1;
       } else {
         final failure = safeFailure(itemResult!);
         if (failure.kind != FailureKind.cancelled) {
@@ -205,9 +261,24 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       }
       final typeResult = results[1];
       if (typeResult is WorkItemTypePage) {
-        _namespace = typeResult.namespace;
-        _types.addAll(typeResult.items);
-        _nextTypes = typeResult.nextCursor;
+        final matchesGroup =
+            itemNamespace == null ||
+            (itemNamespace.id == typeResult.namespace.id &&
+                itemNamespace.fullPath == typeResult.namespace.fullPath);
+        if (owner.project == null && !matchesGroup) {
+          _typesError = const ApiFailure(FailureKind.invalidResponse);
+        } else if (owner.project == null && itemNamespace == null) {
+          _typesError = const ApiFailure(FailureKind.invalidResponse);
+        } else {
+          _namespace = typeResult.namespace;
+          _types.addAll(
+            typeResult.items.where(
+              (item) => owner.project != null || item.isGroupWorkItemType,
+            ),
+          );
+          _nextTypes = typeResult.nextCursor;
+          _typePages = 1;
+        }
       } else {
         final failure = safeFailure(typeResult!);
         if (failure.kind != FailureKind.cancelled) {
@@ -222,30 +293,55 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   Future<void> _loadMoreItems() async {
     final cursor = _nextItems;
     if (cursor == null || _loadingItems) return;
+    final atItemLimit =
+        _itemPages >= _maxItemPages || _items.length >= _maxResidentItems;
+    if (atItemLimit || !_usedItemCursors.add(cursor)) {
+      setState(() {
+        _nextItems = null;
+        _itemsLimitReached = atItemLimit;
+        if (!atItemLimit) {
+          _itemsError = const ApiFailure(FailureKind.invalidResponse);
+        }
+      });
+      return;
+    }
     final owner = widget;
     final generation = _generation;
     setState(() => _loadingItems = true);
     try {
-      final page = await owner.api.projectWorkItems(
-        owner.project,
-        after: cursor,
-        isCurrent: () => _current(generation),
-      );
+      final page = owner.project == null
+          ? await owner.api.groupWorkItems(
+              owner.namespacePath,
+              expectedGroupId: _namespace?.id,
+              after: cursor,
+              isCurrent: () => _current(generation),
+            )
+          : await owner.api.projectWorkItems(
+              owner.project!,
+              after: cursor,
+              isCurrent: () => _current(generation),
+            );
       if (!_current(generation)) return;
+      final pageItems = page is GroupWorkItemGraphPage
+          ? page.items
+          : (page as WorkItemGraphPage).items;
+      if (page is GroupWorkItemGraphPage &&
+          (_namespace == null ||
+              page.group.id != _namespace!.id ||
+              page.group.fullPath != _namespace!.fullPath)) {
+        throw const ApiFailure(FailureKind.invalidResponse);
+      }
       final knownLocations = <String, String>{
         for (final item in _items)
-          '${item.project?.fullPath ?? owner.project.path}#${item.iid}':
-              item.id,
+          '${_itemNamespace(item)}#${item.iid}': item.id,
       };
       final knownIdentities = <String, String>{
         for (final item in _items)
-          item.id:
-              '${item.project?.fullPath ?? owner.project.path}#${item.iid}',
+          item.id: '${_itemNamespace(item)}#${item.iid}',
       };
       final additions = <WorkItemGraphSummary>[];
-      for (final item in page.items) {
-        final location =
-            '${item.project?.fullPath ?? owner.project.path}#${item.iid}';
+      for (final item in pageItems) {
+        final location = '${_itemNamespace(item)}#${item.iid}';
         final existingLocation = knownIdentities[item.id];
         final existingId = knownLocations[location];
         if (existingLocation == location && existingId == item.id) {
@@ -258,12 +354,27 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         knownLocations[location] = item.id;
         additions.add(item);
       }
+      if (_items.length + additions.length > _maxResidentItems) {
+        throw const ApiFailure(FailureKind.invalidResponse);
+      }
       setState(() {
         _items.addAll(additions);
-        _nextItems = page.nextCursor;
-        _itemsError = null;
+        _itemPages++;
+        final serverNext = page is GroupWorkItemGraphPage
+            ? page.nextCursor
+            : (page as WorkItemGraphPage).nextCursor;
+        final cursorLoop =
+            serverNext != null && _usedItemCursors.contains(serverNext);
+        _itemsLimitReached = serverNext != null && _itemPages >= _maxItemPages;
+        _nextItems = _itemsLimitReached || cursorLoop ? null : serverNext;
+        if (cursorLoop) {
+          _itemsError = const ApiFailure(FailureKind.invalidResponse);
+        } else {
+          _itemsError = null;
+        }
       });
     } catch (error) {
+      _usedItemCursors.remove(cursor);
       if (!_current(generation)) return;
       final failure = safeFailure(error);
       if (failure.kind != FailureKind.cancelled) {
@@ -277,24 +388,58 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   Future<void> _loadMoreTypes() async {
     final cursor = _nextTypes;
     if (cursor == null || _loadingTypes) return;
+    final atTypeLimit =
+        _typePages >= _maxTypePages || _types.length >= _maxResidentTypes;
+    if (atTypeLimit || !_usedTypeCursors.add(cursor)) {
+      setState(() {
+        _nextTypes = null;
+        _typesLimitReached = atTypeLimit;
+        if (!atTypeLimit) {
+          _typesError = const ApiFailure(FailureKind.invalidResponse);
+        }
+      });
+      return;
+    }
     final owner = widget;
     final generation = _generation;
     setState(() => _loadingTypes = true);
     try {
       final page = await owner.api.namespaceWorkItemTypes(
-        owner.project.path,
+        owner.namespacePath,
         expectedNamespaceId: _namespace?.id,
         after: cursor,
         isCurrent: () => _current(generation),
       );
       if (!_current(generation)) return;
+      if (_namespace == null ||
+          page.namespace.id != _namespace!.id ||
+          page.namespace.fullPath != _namespace!.fullPath) {
+        throw const ApiFailure(FailureKind.invalidResponse);
+      }
       setState(() {
         final known = _types.map((item) => item.type.id).toSet();
-        _types.addAll(page.items.where((item) => known.add(item.type.id)));
-        _nextTypes = page.nextCursor;
-        _typesError = null;
+        final additions = page.items.where(
+          (item) =>
+              (owner.project != null || item.isGroupWorkItemType) &&
+              known.add(item.type.id),
+        );
+        _types.addAll(additions.take(_maxResidentTypes - _types.length));
+        _typePages++;
+        final cursorLoop =
+            page.nextCursor != null &&
+            _usedTypeCursors.contains(page.nextCursor);
+        _typesLimitReached =
+            page.nextCursor != null &&
+            (_typePages >= _maxTypePages || _types.length >= _maxResidentTypes);
+        _nextTypes = _typesLimitReached || cursorLoop ? null : page.nextCursor;
+        if (cursorLoop) {
+          _typesError = const ApiFailure(FailureKind.invalidResponse);
+        } else {
+          _typesError = null;
+        }
       });
     } catch (error) {
+      _usedTypeCursors.remove(cursor);
       if (!_current(generation)) return;
       final failure = safeFailure(error);
       if (failure.kind != FailureKind.cancelled) {
@@ -306,19 +451,42 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   }
 
   void _open(WorkItemGraphSummary item) {
+    final project = widget.project;
+    final namespace = item.namespace;
+    if (project == null && namespace == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('伺服器沒有提供這個工作項目的群組位置，無法安全開啟。')),
+      );
+      return;
+    }
     final route = MaterialPageRoute<void>(
-      builder: (_) => GraphWorkItemDetailPage.project(
-        account: widget.account,
-        api: widget.api,
-        project: widget.project,
-        iid: item.iid,
-        isCurrent: widget.isCurrent,
-        ownerChanges: widget.ownerChanges,
-      ),
+      builder: (_) => project == null
+          ? GraphWorkItemDetailPage.namespace(
+              account: widget.account,
+              api: widget.api,
+              namespacePath: namespace!.fullPath,
+              expectedNamespaceId: namespace.id,
+              iid: item.iid,
+              isCurrent: widget.isCurrent,
+              ownerChanges: widget.ownerChanges,
+            )
+          : GraphWorkItemDetailPage.project(
+              account: widget.account,
+              api: widget.api,
+              project: project,
+              iid: item.iid,
+              isCurrent: widget.isCurrent,
+              ownerChanges: widget.ownerChanges,
+            ),
     );
     _ownRoute(route);
     unawaited(Navigator.of(context).push(route));
   }
+
+  String _itemNamespace(WorkItemGraphSummary item) =>
+      item.namespace?.fullPath ??
+      item.project?.fullPath ??
+      widget.namespacePath;
 
   Widget _capabilities(BuildContext context) {
     if (_loadingTypes && _types.isEmpty) {
@@ -333,7 +501,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
               SizedBox(width: 12),
-              Expanded(child: Text('讀取此專案可用的工作項目類型…')),
+              Expanded(child: Text('讀取可用的工作項目類型…')),
             ],
           ),
         ),
@@ -343,7 +511,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       return FailureNotice(
         _typesError!,
         account: widget.account,
-        resourceLabel: '${widget.project.path} · 工作項目類型',
+        resourceLabel: '${widget.namespacePath} · 工作項目類型',
         onRetry: _refresh,
         onSwitchAccount: endSessionFrom(context),
       );
@@ -358,7 +526,9 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
             const SizedBox(height: 8),
             if (_types.isEmpty)
               Text(
-                '此 namespace 沒有回傳可用類型。',
+                widget.project == null
+                    ? '此群組目前沒有啟用可顯示的工作項目類型。'
+                    : '此專案沒有回傳可用類型。',
                 style: Theme.of(context).textTheme.bodySmall,
               )
             else
@@ -386,6 +556,23 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                 '後續類型載入失敗；目前只顯示已取得的資料。',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              TextButton.icon(
+                onPressed: _nextTypes == null ? _refresh : _loadMoreTypes,
+                icon: const Icon(Icons.refresh),
+                label: const Text('重試'),
+              ),
+            ],
+            if (_typesLimitReached) ...[
+              const SizedBox(height: 8),
+              Text(
+                '已載入類型上限；重新整理可從第一頁重新讀取。',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              TextButton.icon(
+                onPressed: _refresh,
+                icon: const Icon(Icons.refresh),
+                label: const Text('重新整理'),
+              ),
             ],
             if (_nextTypes != null) ...[
               const SizedBox(height: 8),
@@ -407,112 +594,170 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) => _ownerInvalid
-      ? const Scaffold(
-          body: SafeArea(child: Center(child: Text('帳號已切換，工作項目頁面已關閉。'))),
-        )
-      : Scaffold(
-          appBar: AppBar(
-            title: const Text('工作項目'),
-            actions: [
-              IconButton(
-                onPressed: _loadingItems || _loadingTypes ? null : _refresh,
-                tooltip: '重新整理',
+  Widget _itemRow(WorkItemGraphSummary item) => EntityCard(
+    leading: const Icon(Icons.workspaces_outline),
+    title: Text(item.title),
+    subtitle: Text(
+      widget.project == null
+          ? '${_itemNamespace(item)} · ${item.type.name} · #${item.iid}'
+          : '${item.type.name} · #${item.iid}',
+    ),
+    meta: [
+      StatusBadge(_graphWorkItemState(item.state)),
+      MetaChip(
+        relativeDate(item.updatedAt.toIso8601String()),
+        icon: Icons.schedule_outlined,
+      ),
+    ],
+    onTap: () => _open(item),
+  );
+
+  List<Widget> _footer(BuildContext context) => [
+    if (_itemsError != null && _items.isNotEmpty)
+      Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: FailureNotice(
+          _itemsError!,
+          account: widget.account,
+          resourceLabel: '${widget.namespacePath} · 更多工作項目',
+          onRetry: _nextItems == null ? _refresh : _loadMoreItems,
+          onSwitchAccount: endSessionFrom(context),
+        ),
+      ),
+    if (_itemsLimitReached)
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '已載入工作項目上限；重新整理可從第一頁重新讀取。',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              TextButton.icon(
+                onPressed: _refresh,
                 icon: const Icon(Icons.refresh),
+                label: const Text('重新整理'),
               ),
             ],
           ),
-          body: gestureSafe(
-            RefreshIndicator(
-              onRefresh: _refresh,
-              child: ListView(
-                key: const PageStorageKey('graph-work-items-list'),
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: EdgeInsets.fromLTRB(
-                  feedGutter(context),
-                  12,
-                  feedGutter(context),
-                  24,
-                ),
+        ),
+      ),
+    if (_nextItems != null)
+      Padding(
+        padding: const EdgeInsets.only(top: 8),
+        child: OutlinedButton.icon(
+          onPressed: _loadingItems ? null : _loadMoreItems,
+          icon: _loadingItems
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.expand_more),
+          label: const Text('載入更多工作項目'),
+        ),
+      ),
+  ];
+
+  Widget _body(BuildContext context) {
+    final gutter = feedGutter(context);
+    final Widget itemSliver;
+    if (_loadingItems && _items.isEmpty) {
+      itemSliver = const SliverToBoxAdapter(child: ListSkeleton());
+    } else if (_itemsError != null && _items.isEmpty) {
+      itemSliver = SliverToBoxAdapter(
+        child: FailureNotice(
+          _itemsError!,
+          account: widget.account,
+          resourceLabel: '${widget.namespacePath} · 工作項目',
+          onRetry: _refresh,
+          onSwitchAccount: endSessionFrom(context),
+        ),
+      );
+    } else if (_items.isEmpty) {
+      itemSliver = const SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 44),
+          child: Column(
+            children: [
+              Icon(Icons.workspaces_outline, size: 38),
+              SizedBox(height: 10),
+              Text('沒有可顯示的工作項目'),
+            ],
+          ),
+        ),
+      );
+    } else {
+      itemSliver = SliverList.builder(
+        itemCount: _items.length,
+        itemBuilder: (context, index) => _itemRow(_items[index]),
+      );
+    }
+    return gestureSafe(
+      RefreshIndicator(
+        onRefresh: _refresh,
+        child: CustomScrollView(
+          key: PageStorageKey('graph-work-items-list-${widget.namespacePath}'),
+          physics: const AlwaysScrollableScrollPhysics(),
+          slivers: [
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 0),
+              sliver: SliverList.list(
                 children: [
                   Text(
-                    widget.project.path,
+                    widget.namespacePath,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
+                  if (widget.project == null) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      '僅此群組的工作項目',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   _capabilities(context),
                   const SizedBox(height: 10),
-                  if (_loadingItems && _items.isEmpty)
-                    const ListSkeleton()
-                  else if (_itemsError != null && _items.isEmpty)
-                    FailureNotice(
-                      _itemsError!,
-                      account: widget.account,
-                      resourceLabel: '${widget.project.path} · 工作項目',
-                      onRetry: _refresh,
-                      onSwitchAccount: endSessionFrom(context),
-                    )
-                  else if (_items.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 44),
-                      child: Column(
-                        children: [
-                          Icon(Icons.workspaces_outline, size: 38),
-                          SizedBox(height: 10),
-                          Text('沒有可顯示的工作項目'),
-                        ],
-                      ),
-                    )
-                  else ...[
-                    for (final item in _items)
-                      EntityCard(
-                        leading: const Icon(Icons.workspaces_outline),
-                        title: Text(item.title),
-                        subtitle: Text('${item.type.name} · #${item.iid}'),
-                        meta: [
-                          StatusBadge(_graphWorkItemState(item.state)),
-                          MetaChip(
-                            relativeDate(item.updatedAt.toIso8601String()),
-                            icon: Icons.schedule_outlined,
-                          ),
-                        ],
-                        onTap: () => _open(item),
-                      ),
-                    if (_itemsError != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: FailureNotice(
-                          _itemsError!,
-                          account: widget.account,
-                          resourceLabel: '${widget.project.path} · 更多工作項目',
-                          onRetry: _loadMoreItems,
-                          onSwitchAccount: endSessionFrom(context),
-                        ),
-                      ),
-                    if (_nextItems != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: OutlinedButton.icon(
-                          onPressed: _loadingItems ? null : _loadMoreItems,
-                          icon: _loadingItems
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.expand_more),
-                          label: const Text('載入更多工作項目'),
-                        ),
-                      ),
-                  ],
                 ],
               ),
             ),
+            SliverPadding(
+              padding: EdgeInsets.symmetric(horizontal: gutter),
+              sliver: itemSliver,
+            ),
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(gutter, 0, gutter, 24),
+              sliver: SliverList.list(children: _footer(context)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_ownerInvalid) {
+      const closed = SafeArea(child: Center(child: Text('帳號已切換，工作項目頁面已關閉。')));
+      return widget.embedded ? closed : const Scaffold(body: closed);
+    }
+    if (widget.embedded) return _body(context);
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('工作項目'),
+        actions: [
+          IconButton(
+            onPressed: _loadingItems || _loadingTypes ? null : _refresh,
+            tooltip: '重新整理',
+            icon: const Icon(Icons.refresh),
           ),
-        );
+        ],
+      ),
+      body: _body(context),
+    );
+  }
 }
 
 class GraphWorkItemDetailPage extends StatefulWidget {

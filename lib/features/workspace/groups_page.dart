@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../core/providers.dart';
 import '../../shared/external_link.dart';
 import '../../shared/workspace_ui.dart';
+import '../auth/session_controller.dart';
+import 'graph_work_items_page.dart';
 import 'navigation.dart';
 import 'records_feed.dart';
 import 'work_item_page.dart';
@@ -80,17 +85,82 @@ class _GroupsPageState extends State<GroupsPage> {
 
 /// A group: its projects, subgroups, and open issues and merge requests.
 class GroupPage extends StatefulWidget {
-  const GroupPage({super.key, required this.account, required this.api, required this.group});
+  const GroupPage({super.key, required this.account, required this.api, required this.group,
+    this.isCurrent, this.ownerChanges, this.initialTab = 0}) : assert(initialTab >= 0 && initialTab < 5);
   final Account account;
   final GitLabApi api;
   final Json group;
+  final bool Function()? isCurrent;
+  final Listenable? ownerChanges;
+  final int initialTab;
   @override
   State<GroupPage> createState() => _GroupPageState();
 }
 
 class _GroupPageState extends State<GroupPage> {
+  SessionController? _session;
+  int? _sessionGeneration;
+  Listenable? _listenedOwner;
+  bool _ownerLookupFailed = false;
+
   int get _id => valueInt(widget.group, 'id');
-  ResourceNavigator get _open => ResourceNavigator(widget.account, widget.api);
+  String get _path => valueText(widget.group, 'full_path');
+  Listenable? get _ownerChanges => widget.ownerChanges ?? _session;
+  bool _ownerCurrent() {
+    final explicit = widget.isCurrent;
+    if (explicit != null) return explicit();
+    final session = _session;
+    return session != null &&
+      (session.active?.key == widget.account.key && identical(session.api, widget.api) &&
+       session.generation == _sessionGeneration);
+  }
+  ResourceNavigator get _open => ResourceNavigator(widget.account, widget.api,
+    isCurrent: _ownerCurrent, ownerChanges: _ownerChanges);
+
+  @override
+  void initState() {
+    super.initState();
+    _listenToOwner(widget.ownerChanges);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (widget.isCurrent != null || _session != null || _ownerLookupFailed) return;
+    try {
+      final candidate = ProviderScope.containerOf(context, listen: false).read(sessionProvider);
+      _session = candidate;
+      _sessionGeneration = candidate.generation;
+      _listenToOwner(candidate);
+    } on StateError {
+      _ownerLookupFailed = true;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant GroupPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.ownerChanges, widget.ownerChanges)) {
+      _listenToOwner(widget.ownerChanges ?? _session);
+    }
+  }
+
+  @override
+  void dispose() {
+    _listenedOwner?.removeListener(_ownerChanged);
+    super.dispose();
+  }
+
+  void _listenToOwner(Listenable? owner) {
+    if (identical(owner, _listenedOwner)) return;
+    _listenedOwner?.removeListener(_ownerChanged);
+    _listenedOwner = owner;
+    owner?.addListener(_ownerChanged);
+  }
+
+  void _ownerChanged() {
+    if (mounted) setState(() {});
+  }
 
   Widget _projects() => RecordsFeed(
     identity: 'group/$_id/projects',
@@ -145,7 +215,8 @@ class _GroupPageState extends State<GroupPage> {
     grouped: true,
     load: (next) => widget.api.subgroups(_id, next: next),
     itemBuilder: (context, value) => groupRow(context, value, onTap: () => Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => GroupPage(account: widget.account, api: widget.api, group: value)))),
+      MaterialPageRoute<void>(builder: (_) => GroupPage(account: widget.account, api: widget.api, group: value,
+        isCurrent: _ownerCurrent, ownerChanges: _ownerChanges)))),
   );
 
   Widget _workItems(String resource) => RecordsFeed(
@@ -162,11 +233,24 @@ class _GroupPageState extends State<GroupPage> {
       onTap: () => _open.workItem(context, '${valueInt(value, 'project_id')}', resource, valueInt(value, 'iid'))),
   );
 
+  Widget _graphWorkItems() => GraphWorkItemsPage.group(account: widget.account, api: widget.api,
+    namespacePath: _path, isCurrent: _ownerCurrent, ownerChanges: _ownerChanges);
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final fullPath = valueText(widget.group, 'full_path');
-    return DefaultTabController(length: 4, child: Scaffold(
+    if (!_ownerCurrent()) {
+      return Scaffold(
+        appBar: AppBar(title: Text(valueText(widget.group, 'name'))),
+        body: gestureSafe(ListView(children: [
+          FailureNotice(const ApiFailure(FailureKind.cancelled),
+            account: widget.account, resourceLabel: '$fullPath · 群組',
+            onSwitchAccount: endSessionFrom(context)),
+        ])),
+      );
+    }
+    return DefaultTabController(length: 5, initialIndex: widget.initialTab, child: Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
@@ -180,9 +264,11 @@ class _GroupPageState extends State<GroupPage> {
             onPressed: () => openExternal(context, widget.account.instance.projectWeb(fullPath))),
         ],
         bottom: const TabBar(isScrollable: true, tabAlignment: TabAlignment.start,
-          tabs: [Tab(text: '專案'), Tab(text: '子群組'), Tab(text: '議題'), Tab(text: '合併請求')]),
+          tabs: [Tab(text: '專案'), Tab(text: '子群組'), Tab(text: '議題'), Tab(text: '合併請求'), Tab(text: '工作項目')]),
       ),
-      body: gestureSafe(TabBarView(children: [_projects(), _subgroups(), _workItems('issues'), _workItems('merge_requests')])),
+      body: gestureSafe(TabBarView(children: [
+        _projects(), _subgroups(), _workItems('issues'), _workItems('merge_requests'), _graphWorkItems(),
+      ])),
     ));
   }
 }

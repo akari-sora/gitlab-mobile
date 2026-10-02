@@ -50,7 +50,7 @@ String projectLocator(GitLabInstance instance, String input) {
   return path;
 }
 
-enum LinkTarget { project, issue, workItem, mergeRequest, pipeline, job, commit, file }
+enum LinkTarget { project, group, groupWorkItems, issue, workItem, mergeRequest, pipeline, job, commit, file }
 
 enum WorkItemLinkScope { project, group }
 
@@ -76,25 +76,30 @@ final class GitLabLink {
     final segments = uri.pathSegments.toList();
     final baseLength = instance.base.pathSegments.where((part) => part.isNotEmpty).length;
     final dash = segments.indexOf('-', baseLength);
+    final groupLink = segments.length > baseLength && segments[baseLength] == 'groups';
+    if (groupLink && dash < 0) {
+      return GitLabLink._(_groupPath(segments.skip(baseLength + 1)), LinkTarget.group);
+    }
     if (dash < 0 || dash + 2 > segments.length) return GitLabLink._(project, LinkTarget.project);
     final kind = segments[dash + 1];
     final rest = segments.skip(dash + 2).where((part) => part.isNotEmpty).toList();
     final number = rest.isEmpty ? null : int.tryParse(rest.first);
     final positive = number != null && number > 0 ? number : null;
     final beforeDash = segments.sublist(baseLength, dash);
-    final groupLink = beforeDash.length >= 2 && beforeDash.first == 'groups';
-    if (kind == 'work_items' && positive != null && rest.length == 1) {
-      if (groupLink) {
-        final groupPath = beforeDash.skip(1).join('/');
-        if (groupPath.isEmpty) return GitLabLink._(project, LinkTarget.project);
+    if (groupLink) {
+      final groupPath = _groupPath(beforeDash.skip(1));
+      if (kind == 'work_items') {
+        if (rest.isEmpty) return GitLabLink._(groupPath, LinkTarget.groupWorkItems);
+        if (positive != null && rest.length == 1) {
         return GitLabLink._(groupPath, LinkTarget.workItem, number: positive,
           workItemScope: WorkItemLinkScope.group);
+        }
       }
+      throw const FormatException('不支援這個群組連結。');
+    }
+    if (kind == 'work_items' && positive != null && rest.length == 1) {
       return GitLabLink._(project, LinkTarget.workItem, number: positive,
         workItemScope: WorkItemLinkScope.project);
-    }
-    if (groupLink) {
-      throw const FormatException('目前只支援完整的群組工作項目連結。');
     }
     switch (kind) {
       case 'issues' when positive != null:
@@ -117,4 +122,15 @@ final class GitLabLink {
   }
 
   static final _sha = RegExp(r'^[0-9a-fA-F]{7,64}$');
+
+  static String _groupPath(Iterable<String> rawParts) {
+    final parts = rawParts.toList();
+    while (parts.isNotEmpty && parts.last.isEmpty) { parts.removeLast(); }
+    if (parts.isEmpty || parts.any((part) => part.isEmpty || part == '.' || part == '..' ||
+        part.contains('/') || part.contains('\\') || part.contains('%') ||
+        RegExp(r'[?#\x00-\x1f\x7f]').hasMatch(part))) {
+      throw const FormatException('群組連結缺少有效的完整路徑。');
+    }
+    return parts.join('/');
+  }
 }
