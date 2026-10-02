@@ -394,6 +394,11 @@ void main() {
     gate.complete(stale);
     await tester.pumpAndSettle();
     expect(find.byType(PackageDownloadSheet), findsNothing);
+    await pumpUntil(
+      tester,
+      () => !stale.existsSync(),
+      description: 'stale completed download cleanup',
+    );
     expect(stale.existsSync(), isFalse);
   });
 
