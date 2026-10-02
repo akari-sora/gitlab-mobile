@@ -473,7 +473,18 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
         source: owner.source,
       );
       if (_currentPipeline(owner) && request == _pipelineRequest) {
-        setState(() => _pipelines = value);
+        final recentFirst = value.buckets.toList()
+          ..sort((a, b) {
+            if (a.label == null) return b.label == null ? 0 : 1;
+            if (b.label == null) return -1;
+            return b.label!.compareTo(a.label!);
+          });
+        setState(
+          () => _pipelines = PipelineAnalyticsSnapshot(
+            buckets: recentFirst,
+            aggregate: value.aggregate,
+          ),
+        );
       }
     } catch (error) {
       if (_currentPipeline(owner) && request == _pipelineRequest) {
@@ -1058,10 +1069,17 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
         viewportHeight -
         MediaQuery.viewInsetsOf(context).bottom -
         safePadding.vertical;
-    final compactControls = keyboardOpen || viewportHeight < 720;
-    final controlsHeight = keyboardOpen
-        ? (usableHeight - toolbarHeight - 56).clamp(0.0, 320.0)
-        : (usableHeight * .45).clamp(160.0, 340.0);
+    final compactControls = keyboardOpen || crowded || viewportHeight < 720;
+    final controlsBudget =
+        (usableHeight - toolbarHeight - 56 - (keyboardOpen ? 0 : 80)).clamp(
+          0.0,
+          double.infinity,
+        );
+    final controlsHeight =
+        (keyboardOpen ? 320.0 : (usableHeight * .45).clamp(160.0, 340.0)).clamp(
+          0.0,
+          controlsBudget,
+        );
     return Scaffold(
       body: StatusBarInset(
         child: gestureSafe(
@@ -1096,20 +1114,13 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
                   ),
                 ],
               ),
-              if (compactControls)
-                SizedBox(
-                  height: controlsHeight,
-                  child: SingleChildScrollView(
-                    key: ValueKey(
-                      keyboardOpen
-                          ? 'analytics-keyboard-controls'
-                          : 'analytics-compact-controls',
-                    ),
-                    child: _controls(context),
-                  ),
-                )
-              else
-                _controls(context),
+              SizedBox(
+                height: compactControls ? controlsHeight : null,
+                child: SingleChildScrollView(
+                  key: const ValueKey('analytics-controls'),
+                  child: _controls(context),
+                ),
+              ),
               TabBar(
                 controller: _tabs,
                 isScrollable: crowded,

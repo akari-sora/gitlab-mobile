@@ -209,6 +209,26 @@ found no actionable defect. Exact submitted-source CI and the installed Android
 Analytics walk follow separately; the earlier `1709c0f` evidence below does not
 cover these newer screens.
 
+Analytics commit `92288eedc06293d6ee86cbd4486e7892a8b7cbd1` was pushed and
+installed from its exact archived source on the S24 Ultra. Its
+[Flutter CI job](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16896782086)
+passed 1,299 tests with zero failures/errors/skips and 88.05% CI coverage
+(15,775 / 17,916); the other jobs in
+[pipeline 2906821268](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2906821268)
+were still pending at this observation. The in-place development-signed release
+APK has SHA-256 `08cc4fbcaf19b7b783f1b9d3e21a6d1f3b207792f40f084f415b5ef8c2711434`,
+a verified compiled full source marker and disabled backup/cleartext. Account
+data was preserved. Native public reads showed actual contributors, paginated
+commit activity, language/coverage and distinct Any/Push CI aggregates.
+
+The physical keyboard walk found a defect beyond those test passes: opening
+the keyboard changed the controls' parent/key, lost ref focus and immediately
+closed the keyboard. The follow-up keeps a stable controls subtree, bounds
+scrollable filters under large text/short landscape, and orders daily CI rows
+newest first. It passed 25 UI/race tests, clean scoped analysis and independent
+review; its own exact-source CI and corrected installed-build keyboard evidence
+remain required. Temporary Android font scaling was restored after the walk.
+
 ## Loading, cache and scroll work
 
 The new read cache belongs to one `GitLabApi` account client and exists only in

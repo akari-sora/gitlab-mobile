@@ -54,6 +54,7 @@ final class _AnalyticsBackend {
     this.contributorCount = 2,
     this.mixedCommitStats = false,
     this.secondCommitStatus,
+    this.differentPipelineDates = false,
   });
   final Completer<ResponseBody>? delayFirstContributor;
   final bool failSecondCommitPage,
@@ -62,7 +63,8 @@ final class _AnalyticsBackend {
       languageForbidden,
       partialCounts,
       emptyPipelines,
-      mixedCommitStats;
+      mixedCommitStats,
+      differentPipelineDates;
   final int contributorCount;
   final int? secondCommitStatus;
   late final adapter = FakeAdapter(respond);
@@ -115,7 +117,12 @@ final class _AnalyticsBackend {
                         'durationStatistics': {'p50': 1.25, 'p95': 9.5},
                       },
                       {
-                        'label': from,
+                        'label': differentPipelineDates
+                            ? DateTime.parse(from)
+                                  .add(const Duration(days: 3))
+                                  .toIso8601String()
+                                  .substring(0, 10)
+                            : from,
                         'all': 0,
                         if (!partialCounts) 'success': 0,
                         'failed': 0,
@@ -678,10 +685,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('analytics-ref')));
     tester.view.viewInsets = const FakeViewPadding(bottom: 600);
     await tester.pumpAndSettle();
-    expect(
-      find.byKey(const ValueKey('analytics-keyboard-controls')),
-      findsOneWidget,
-    );
+    expect(find.byKey(const ValueKey('analytics-controls')), findsOneWidget);
     await tester.ensureVisible(find.byKey(const ValueKey('analytics-apply')));
     await tester.pumpAndSettle();
     expect(find.byKey(const ValueKey('analytics-ref')), findsOneWidget);
@@ -696,6 +700,146 @@ void main() {
     );
     expect(refEditor.focusNode.hasFocus, isFalse);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('opening the keyboard preserves ref focus and input', (
+    tester,
+  ) async {
+    final backend = _AnalyticsBackend();
+    addTearDown(backend.api.close);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 915);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+      tester.view.resetViewInsets();
+    });
+    await tester.pumpWidget(
+      _host(
+        ProjectAnalyticsPage(
+          account: _account(backend.api),
+          api: backend.api,
+          project: _project(),
+        ),
+      ),
+    );
+    await settleNetworkWidgets(tester);
+    await _openTab(tester, 'CI');
+    final editor = find.descendant(
+      of: find.byKey(const ValueKey('analytics-ref')),
+      matching: find.byType(EditableText),
+    );
+    await tester.tap(find.byKey(const ValueKey('analytics-ref')));
+    await tester.pump();
+    expect(tester.widget<EditableText>(editor).focusNode.hasFocus, isTrue);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 300);
+    await tester.pumpAndSettle();
+    expect(tester.widget<EditableText>(editor).focusNode.hasFocus, isTrue);
+    await tester.enterText(
+      find.byKey(const ValueKey('analytics-ref')),
+      'release/2',
+    );
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await settleNetworkWidgets(tester);
+    expect(tester.widget<EditableText>(editor).controller.text, 'release/2');
+    expect(tester.widget<EditableText>(editor).focusNode.hasFocus, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('CI shows the latest date first', (tester) async {
+    final backend = _AnalyticsBackend(differentPipelineDates: true);
+    addTearDown(backend.api.close);
+    await tester.pumpWidget(
+      _host(
+        ProjectAnalyticsPage(
+          account: _account(backend.api),
+          api: backend.api,
+          project: _project(),
+        ),
+      ),
+    );
+    await settleNetworkWidgets(tester);
+    await _openTab(tester, 'CI');
+    final request = backend.adapter.requests.singleWhere(
+      (r) =>
+          r.uri.path.endsWith('/api/graphql') &&
+          (r.data as Map)['query'].toString().contains(
+            'MobilePipelineAnalytics',
+          ),
+    );
+    final from =
+        ((request.data as Map)['variables'] as Map)['fromTime'] as String;
+    final latest = DateTime.parse(
+      from,
+    ).add(const Duration(days: 4)).toIso8601String().substring(0, 10);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('pipeline-bucket-0')),
+        matching: find.text(latest),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('2x text leaves meaningful space for CI results', (tester) async {
+    final backend = _AnalyticsBackend();
+    addTearDown(backend.api.close);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 915);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    await tester.pumpWidget(
+      _host(
+        ProjectAnalyticsPage(
+          account: _account(backend.api),
+          api: backend.api,
+          project: _project(),
+        ),
+        scale: 2,
+      ),
+    );
+    await settleNetworkWidgets(tester);
+    await _openTab(tester, 'CI');
+    expect(
+      tester.getTopLeft(find.byKey(const ValueKey('pipeline-summary'))).dy,
+      lessThan(915 * .65),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('short landscape keeps tabs and results without overflow', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(800, 320);
+    tester.view.padding = const FakeViewPadding(top: 24, bottom: 16);
+    tester.view.viewPadding = const FakeViewPadding(top: 24, bottom: 16);
+    addTearDown(() {
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetPhysicalSize();
+      tester.view.resetPadding();
+      tester.view.resetViewPadding();
+    });
+    for (final scale in [1.0, 2.0]) {
+      final backend = _AnalyticsBackend();
+      addTearDown(backend.api.close);
+      await tester.pumpWidget(
+        _host(
+          ProjectAnalyticsPage(
+            key: ValueKey(scale),
+            account: _account(backend.api),
+            api: backend.api,
+            project: _project(),
+          ),
+          scale: scale,
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      await _openTab(tester, 'CI');
+      expect(find.widgetWithText(Tab, 'CI').hitTestable(), findsOneWidget);
+      expect(find.byKey(const ValueKey('pipeline-summary')), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    }
   });
 
   testWidgets('long contributor result only builds visible lazy rows', (
