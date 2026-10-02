@@ -12,6 +12,12 @@ Paragraph before the table.
 Paragraph after the table.
 ''';
 
+const _wideCode = '''
+```text
+This deliberately long line stays unwrapped inside the fenced code block so that its horizontal scrolling can be checked in a narrow mobile viewport.
+```
+''';
+
 void main() {
   for (final configuration in [(320.0, 1.0), (390.0, 1.0), (320.0, 2.0)]) {
     testWidgets(
@@ -67,6 +73,54 @@ void main() {
           find.text('Paragraph after the table.', findRichText: true),
           findsOneWidget,
         );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+  for (final content in [('table', _wideTable), ('code', _wideCode)]) {
+    testWidgets(
+      'keyed disclosure storage does not become a ${content.$1} scroll offset',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(320, 1000);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ListView(
+                children: [
+                  ExpansionTile(
+                    key: const PageStorageKey('snippet-description'),
+                    title: const Text('說明'),
+                    children: [MarkdownView(content.$2)],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        await tester.tap(find.text('說明'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final horizontal = find.byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable &&
+              widget.axisDirection == AxisDirection.right,
+        );
+        expect(horizontal, findsOneWidget);
+        await tester.drag(horizontal, const Offset(-350, 0));
+        await tester.pumpAndSettle();
+        expect(
+          tester.state<ScrollableState>(horizontal).position.pixels,
+          greaterThan(0),
+        );
+        await tester.tap(find.text('說明'));
+        await tester.pumpAndSettle();
+        expect(horizontal, findsNothing);
+        await tester.tap(find.text('說明'));
+        await tester.pumpAndSettle();
+        expect(horizontal, findsOneWidget);
         expect(tester.takeException(), isNull);
       },
     );

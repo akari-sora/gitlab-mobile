@@ -12,6 +12,7 @@ import 'oauth.dart';
 import 'pagination.dart';
 import 'snippet_models.dart';
 import 'upload_names.dart';
+import 'work_item_activity_models.dart';
 import 'work_item_attribute_models.dart';
 import 'work_item_graph_models.dart';
 
@@ -21,6 +22,7 @@ part 'analytics_api.dart';
 part 'snippet_graphql_api.dart';
 part 'work_item_graphql_api.dart';
 part 'work_item_attributes_api.dart';
+part 'work_item_activity_api.dart';
 
 final _artifactCancelled = Object();
 const _artifactRedirects = {301, 302, 303, 307, 308};

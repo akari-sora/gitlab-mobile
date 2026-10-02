@@ -40,7 +40,7 @@ GitLab edition lacks the feature.
 | Global navigation | Projects, groups/subgroups, todos, assigned/review-requested/created work, activity and global search | No structural change | Administration, help and creation workflows remain unimplemented; they are part of the full-function backlog |
 | Project overview | Description, stars, forks, languages, licence, clone URLs, star/fork actions | No structural change | Full Web analytics and settings are not reproduced |
 | Manage | Activity, members and labels | No structural change | Access-token, webhook, integration and full member-role administration remain open |
-| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project Work Item cursor list, server types and exact project/group detail with five base widgets and seven lazy attribute kinds | Remaining Work Item widgets/activity, group lists, mutations, full iterations/requirements/Epic/OKR workflows remain open |
+| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project Work Item cursor list, server types and exact project/group detail with five base widgets, seven lazy attribute kinds and read-only activity | Remaining Work Item widgets, activity filters/order/replies, group lists, mutations, full iterations/requirements/Epic/OKR workflows remain open |
 | Code | Repository tree, README, branches, commits and tags; fixed-SHA file view, history, blame, search, syntax highlighting and line permalinks; MR list/detail/diffs | Compare two refs; selected-ref repository graph; multi-file Snippets with explicit file enumeration, lazy source/preview and guarded file actions | Locked files, cross-project comparison, full all-branch graph and private Snippet CRUD acceptance remain open |
 | MR review | Discussions, inline single-line positions, approvals/merge, suggested changes, auto-merge, local viewed-file state and the MR draft/ready toggle | Server draft-note list, add/edit/discard and bulk publish, tied to account/project/MR/head SHA | Viewed-file state is not server-synchronised; multi-line positioning and full desktop review policy administration remain open |
 | Build | Pipelines, stage-grouped jobs, controls, incremental ANSI logs and search, JUnit report views, artifacts, cross-project CI overview and schedules | Read-only pipeline dependency graph with paginated actual GraphQL needs | Cross-project/downstream graph and the complete pipeline editor remain open |
@@ -237,7 +237,8 @@ installed without clearing account data; installed bytes match SHA-256
 The phone loaded public project `631894`, group `23883` and cross-scope project
 child `631872`; the child route survived 2x font scale and the setting was restored.
 Exact submitted-source [pipeline 2907138771](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2907138771)
-is still running/queued; the new attributes and parser repair below are a separate source slice.
+was superseded and canceled after its Python job passed; the new attributes and
+parser repair below are a separate source slice.
 The final repaired local source passed full analysis and 1,370 JUnit tests with
 zero failures/errors/skips. All 215 Dart source/test/tool files and the committed
 dependency lock retained their hashes during the run; coverage is 87.67%
@@ -275,10 +276,74 @@ HTTP 401 GAP and zero writes, including all seven attribute queries and the
 actual group parent with a verified namespace ID. This local smoke report has
 no submitted-source SHA. The frozen source passes full analysis and 1,388 JUnit tests with
 zero failures/errors/skips; 222 Dart/lock hashes remained unchanged.
-Local coverage is 87.86% (17,651 / 20,091). Installed-build
-attribute readback remains a separate acceptance lane. Activity, remaining widgets,
+Local coverage is 87.86% (17,651 / 20,091). The `24b622e` release was installed
+without clearing account data; the installed APK SHA-256 is
+`167a15bf31e3d6ff8d609ca7f84836a790a73569d469a90efd3e1abef6aa2cf4`.
+Public project `631894` showed all seven attribute sections, the actual group-owned
+19.5 milestone, zero time values and explicit unset/null fields. The actual group
+`23883` parent link now loads `18225` successfully. Its submitted-source
+[pipeline 2907264654](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2907264654)
+is pending; this local and physical evidence does not establish its CI result.
+Activity, remaining widgets,
 group lists, filters, native Work Item mutations and authenticated/private/edition
 acceptance remain open.
+
+### Markdown disclosure storage repair
+
+The installed `24b622e` public Snippet walk made the three file controls visible
+with its long description collapsed. Expanding that description exposed a real
+framework error: unkeyed horizontal scroll views in the Markdown package read
+the enclosing keyed disclosure's boolean PageStorage value as a double offset.
+Both a table and a fenced code block reproduce this failure in a collapsed
+ExpansionTile. `MarkdownView` now keeps a state-owned PageStorageBucket around
+the complete Markdown/selection subtree, so disclosure state cannot enter its
+scroll offset storage. The regressions expand, drag horizontally, collapse and
+re-expand; the combined Markdown, Snippet and attachment suite passes 77 cases
+and scoped analysis reports no issues. Installed verification of this repair
+remains pending; no frame-rate improvement is inferred from widget tests.
+
+### Lazy Work Item activity and long descriptions
+
+The Activity section reads only when expanded and only when NOTES is advertised.
+Fixed read-only queries bind the server-discovered opaque ID to the exact IID,
+project and namespace. Outer discussion and nested note continuations are issued
+by the owning API and validate anchor/discussion identity, cursor progression,
+account generation and close state. System events use plain text; user comments
+use Markdown, with additional replies disclosed explicitly. Empty and unavailable
+connections remain distinct, and empty pages keep usable paging controls.
+
+At most five discussion pages and five reply pages per discussion stay cached.
+A global retained limit rejects a candidate response atomically before accepting
+more than 2,000 notes or 4 Mi Dart body characters; existing cached navigation
+remains usable. Only the active 20-discussion page is built, with a shared
+100-body render cap and attachment budget. The controls display explicit limits;
+these bounds do not constitute measured frame-rate improvement. Long descriptions
+over 800 runes start collapsed. Character counts and previews are cached outside
+build, so theme/MediaQuery rebuilds do not normalize the full description again.
+
+An actual detail ListView regression also expands a long description, scrolls it
+out of the sliver cache and returns. ExpansionTile exclusively restores its
+expansion state; duplicate card state previously caused a build-time setState
+error and missing Markdown after restoration. Initial long descriptions still
+build no Markdown while collapsed. Combined Activity API/model/UI and description
+regressions pass 28 cases.
+The expanded anonymous production-client smoke passes 33 checks with one expected
+Boards HTTP 401 GAP and zero writes. It reads eight project discussions and group
+pages of 20 then one discussion, including 21 real system notes. No public fixture
+issued a nested note continuation; that real-server path remains an explicit gap.
+The local report identifies participating source with content digest
+`f30c135bb981481ba07b7aba67ae3d6d6b24df72cb9f46c704f45bdfd9d05074`,
+not a submitted commit SHA. Activity filters/order, replies/mutations, authenticated
+private integration and edition-specific widget acceptance remain open.
+
+Final integration analysis reports no issues. The complete suite passes 1,418
+JUnit cases with zero failures/errors/skips; all 229 Dart/lock file hashes match
+before and after the run. Coverage is 88.02% (18,169 / 20,641). The 36 CI Python
+and 15 bootstrap cases and Python/shell syntax checks also pass. Independent
+review approves the final source, including the exact eviction reproduction,
+Markdown table/code regressions, Activity identity/paging/budget and the anonymous
+query allowlist. The interrupted run before the lifecycle repair is not counted.
+New submitted-source CI and installed-build readback remain separate lanes.
 
 ProjectMore and Pipeline owned navigation stacks, board modal editors and snippet
 routes are removed on account/project/API replacement. Registry feed identities

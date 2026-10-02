@@ -49,6 +49,9 @@ class MarkdownView extends StatefulWidget {
 
 class _MarkdownViewState extends State<MarkdownView> {
   AttachmentBudget? _owned;
+  // Markdown's unkeyed horizontal scroll views must not read an ancestor
+  // ExpansionTile's boolean state as a scroll offset.
+  final _scrollStorage = PageStorageBucket();
 
   AttachmentBudget get _budget => widget.budget ?? (_owned ??= AttachmentBudget());
 
@@ -141,9 +144,9 @@ class _MarkdownViewState extends State<MarkdownView> {
         await openExternal(context, uri);
       },
     );
-    if (!widget.selectable) {
-      return body;
-    }
-    return SelectionArea(child: body);
+    return PageStorage(
+      bucket: _scrollStorage,
+      child: widget.selectable ? SelectionArea(child: body) : body,
+    );
   }
 }

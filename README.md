@@ -5,7 +5,7 @@
 
 A mobile-first Flutter client for Android and iOS. Independent third-party software, not an official GitLab application. The interface is Traditional Chinese and supports light/dark appearance and large text.
 
-## 2026-10-02 — mobile parity and performance follow-up
+## 2026-10-02–03 — mobile parity and performance follow-up
 
 The current development branch adds issue boards and card/list management,
 revision comparison, server-backed MR draft review, selected-ref repository
@@ -13,7 +13,8 @@ graphs, actual pipeline dependency graphs, package/container/Terraform registrie
 native contributor/repository/CI analytics, lazy multi-file Snippets and guarded
 file actions, server-discovered GraphQL Work Item types and read-only project/group
 details with lazy status, milestone, weight, iteration, health, time-tracking and
-development attributes, and typed Task/Incident workflows
+development attributes, a lazy read-only activity timeline with bounded discussion
+and reply paging, collapsed long descriptions, and typed Task/Incident workflows
 with separate incident escalation state. Issue/MR filters use server
 ordering. Phone board columns, vertical graphs and lazy lists retain native
 navigation. The [full-function ledger](docs/MOBILE_WEB_PARITY_LEDGER.md) records

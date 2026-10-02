@@ -13,6 +13,7 @@ import 'package:gitlab_mobile/core/registry_models.dart';
 import 'package:gitlab_mobile/core/repository_graph.dart';
 import 'package:gitlab_mobile/core/snippet_models.dart';
 import 'package:gitlab_mobile/core/unified_diff.dart';
+import 'package:gitlab_mobile/core/work_item_activity_models.dart';
 import 'package:gitlab_mobile/core/work_item_attribute_models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
@@ -363,6 +364,75 @@ query MobileWorkItemDevelopmentAttribute(\$id: WorkItemID!) {
 }
 ''';
 
+const _publicWorkItemActivityIdentityFields = r'''
+id
+iid
+project { id fullPath }
+namespace { id fullPath }
+''';
+
+const _publicWorkItemActivityNoteFields = r'''
+id
+system
+systemNoteIconName
+body
+createdAt
+updatedAt
+author { id name username }
+''';
+
+final _publicWorkItemActivityQuery =
+    '''
+query MobileWorkItemActivity(\$id: WorkItemID!, \$after: String) {
+  workItem(id: \$id) {
+    $_publicWorkItemActivityIdentityFields
+    widgets {
+      type
+      ... on WorkItemWidgetNotes {
+        discussions(first: 20, after: \$after) {
+          nodes {
+            id
+            replyId
+            createdAt
+            notes(first: 20) {
+              nodes { $_publicWorkItemActivityNoteFields }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }
+  }
+}
+''';
+
+final _publicWorkItemDiscussionNotesQuery =
+    '''
+query MobileWorkItemDiscussionNotes(
+  \$workItemId: WorkItemID!
+  \$anchorNoteId: NoteID!
+  \$after: String
+) {
+  workItem(id: \$workItemId) {
+    $_publicWorkItemActivityIdentityFields
+  }
+  anchor: note(id: \$anchorNoteId) {
+    id
+    project { id fullPath }
+    discussion {
+      id
+      replyId
+      createdAt
+      notes(first: 20, after: \$after) {
+        nodes { $_publicWorkItemActivityNoteFields }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}
+''';
+
 Future<void> main() async {
   final checks = <Map<String, Object?>>[];
   var failed = false, sawProjectsLink = false;
@@ -370,6 +440,13 @@ Future<void> main() async {
   SnippetGraphSnapshot? snippetSnapshot;
   WorkItemGraphSummary? discoveredPublicWorkItem;
   String? discoveredPublicGroupNamespaceId;
+  WorkItemGraphSummary? discoveredPublicGroupWorkItem;
+  var projectActivityFirstDiscussions = 0;
+  var groupActivityFirstDiscussions = 0;
+  var groupActivityNextDiscussions = 0;
+  var groupActivitySystemNotes = 0;
+  var nestedActivityNotes = 0;
+  var nestedActivityContinuationExercised = false;
   final dio = Dio();
   dio.interceptors.add(
     InterceptorsWrapper(
@@ -388,6 +465,11 @@ Future<void> main() async {
             _isExactPublicWorkItemAttributeGraph(
               request,
               discoveredPublicWorkItem?.id,
+            ) ||
+            _isExactPublicWorkItemActivityGraph(
+              request,
+              discoveredPublicWorkItem?.id,
+              discoveredPublicGroupWorkItem?.id,
             );
         if (!restRead && !graphRead) {
           handler.reject(
@@ -803,6 +885,33 @@ Future<void> main() async {
         );
       });
     }
+    await check('public.work_items.project_activity_first_page', () async {
+      final expected = discoveredPublicWorkItem;
+      require(expected != null);
+      final page = await api.workItemActivity(expected!);
+      require(
+        page.snapshot.workItemId == expected.id &&
+            page.snapshot.iid == expected.iid &&
+            page.snapshot.project?.id == expected.project?.id &&
+            page.snapshot.project?.fullPath == expected.project?.fullPath &&
+            page.snapshot.namespace?.id == expected.namespace?.id &&
+            page.snapshot.namespace?.fullPath == expected.namespace?.fullPath &&
+            page.snapshot.availability ==
+                WorkItemActivityAvailability.present &&
+            page.snapshot.discussions.availability ==
+                WorkItemActivityConnectionAvailability.present,
+      );
+      projectActivityFirstDiscussions = page.snapshot.discussions.items.length;
+      require(projectActivityFirstDiscussions <= 20);
+      require(
+        page.nextNotesByDiscussion.keys.every(
+          page.snapshot.discussions.items
+              .map((item) => item.id)
+              .toSet()
+              .contains,
+        ),
+      );
+    });
     await check('public.work_items.server_type_capabilities', () async {
       final page = await api.namespaceWorkItemTypes(_publicSnippetProjectPath);
       require(page.namespace.fullPath == _publicSnippetProjectPath);
@@ -823,6 +932,81 @@ Future<void> main() async {
       require(detail.summary.namespace?.fullPath == _publicGroupWorkItemPath);
       require(detail.widgetsAvailable);
       discoveredPublicGroupNamespaceId = detail.summary.namespace?.id;
+      discoveredPublicGroupWorkItem = detail.summary;
+    });
+    await check('public.work_items.group_activity_outer_pages', () async {
+      final expected = discoveredPublicGroupWorkItem;
+      require(expected != null);
+      final first = await api.workItemActivity(expected!);
+      require(
+        first.snapshot.workItemId == expected.id &&
+            first.snapshot.iid == expected.iid &&
+            first.snapshot.project == null &&
+            first.snapshot.namespace?.id == expected.namespace?.id &&
+            first.snapshot.namespace?.fullPath == _publicGroupWorkItemPath &&
+            first.snapshot.availability ==
+                WorkItemActivityAvailability.present &&
+            first.snapshot.discussions.availability ==
+                WorkItemActivityConnectionAvailability.present,
+      );
+      final firstDiscussions = first.snapshot.discussions.items;
+      groupActivityFirstDiscussions = firstDiscussions.length;
+      require(
+        groupActivityFirstDiscussions > 0 &&
+            groupActivityFirstDiscussions <= 20 &&
+            first.nextDiscussions != null,
+      );
+      final firstIds = firstDiscussions.map((item) => item.id).toSet();
+      require(firstIds.length == firstDiscussions.length);
+      final firstSystemNotes = firstDiscussions
+          .expand((discussion) => discussion.notes.items)
+          .where((note) => note.system)
+          .length;
+      require(firstSystemNotes > 0);
+
+      final next = await api.workItemActivityNext(first.nextDiscussions!);
+      require(
+        next.snapshot.workItemId == expected.id &&
+            next.snapshot.iid == expected.iid &&
+            next.snapshot.project == null &&
+            next.snapshot.namespace?.id == expected.namespace?.id &&
+            next.snapshot.namespace?.fullPath == _publicGroupWorkItemPath &&
+            next.snapshot.availability ==
+                WorkItemActivityAvailability.present &&
+            next.snapshot.discussions.availability ==
+                WorkItemActivityConnectionAvailability.present,
+      );
+      final nextDiscussions = next.snapshot.discussions.items;
+      groupActivityNextDiscussions = nextDiscussions.length;
+      require(
+        groupActivityNextDiscussions > 0 &&
+            groupActivityNextDiscussions <= 20 &&
+            nextDiscussions.every((item) => !firstIds.contains(item.id)),
+      );
+      final nextSystemNotes = nextDiscussions
+          .expand((discussion) => discussion.notes.items)
+          .where((note) => note.system)
+          .length;
+      require(nextSystemNotes > 0);
+      groupActivitySystemNotes = firstSystemNotes + nextSystemNotes;
+
+      final nested = <String, WorkItemDiscussionNotesContinuation>{
+        ...first.nextNotesByDiscussion,
+        ...next.nextNotesByDiscussion,
+      };
+      if (nested.isNotEmpty) {
+        final entry = nested.entries.first;
+        final notes = await api.workItemDiscussionNotesNext(entry.value);
+        require(
+          notes.workItemId == expected.id &&
+              notes.discussionId == entry.key &&
+              notes.notes.availability ==
+                  WorkItemActivityConnectionAvailability.present &&
+              notes.notes.items.isNotEmpty,
+        );
+        nestedActivityContinuationExercised = true;
+        nestedActivityNotes = notes.notes.items.length;
+      }
     });
     await check('public.work_items.group_parent_optional_metadata', () async {
       final namespaceId = discoveredPublicGroupNamespaceId;
@@ -935,14 +1119,30 @@ Future<void> main() async {
       'writes': 0,
       'status': failed ? 'FAIL' : 'PASS',
       'checks': checks,
-      'gaps': ['Issue boards return HTTP 401 to anonymous public reads'],
+      'metrics': {
+        'work_item_project_activity_first_discussions':
+            projectActivityFirstDiscussions,
+        'work_item_group_activity_first_discussions':
+            groupActivityFirstDiscussions,
+        'work_item_group_activity_next_discussions':
+            groupActivityNextDiscussions,
+        'work_item_group_activity_system_notes': groupActivitySystemNotes,
+        'work_item_nested_activity_continuation_exercised':
+            nestedActivityContinuationExercised,
+        'work_item_nested_activity_notes': nestedActivityNotes,
+      },
+      'gaps': [
+        'Issue boards return HTTP 401 to anonymous public reads',
+        if (!nestedActivityContinuationExercised)
+          'Public Work Item fixtures did not issue a nested note continuation',
+      ],
       'not_run': [
         'PAT authentication',
         'authenticated issue boards',
         'private project access',
         'snippet CRUD',
         'Task/Incident fixture CRUD and escalation lifecycle mutation',
-        'Work Item writes/CRUD, activity and edition-specific widget coverage',
+        'Work Item writes/CRUD and edition-specific widget coverage',
         'live writes/CRUD',
         'Android/iOS device UI',
       ],
@@ -1131,4 +1331,49 @@ bool _isExactPublicWorkItemAttributeGraph(
         _publicWorkItemTimeTrackingAttributeQuery,
         _publicWorkItemDevelopmentAttributeQuery,
       ].contains(body['query']);
+}
+
+bool _isExactPublicWorkItemActivityGraph(
+  RequestOptions request,
+  String? discoveredProjectWorkItemId,
+  String? discoveredGroupWorkItemId,
+) {
+  if (request.method != 'POST' ||
+      request.uri != Uri.parse('https://gitlab.com/api/graphql')) {
+    return false;
+  }
+  final body = request.data;
+  if (body is! Map ||
+      body.length != 2 ||
+      !body.containsKey('query') ||
+      !body.containsKey('variables')) {
+    return false;
+  }
+  final variables = body['variables'];
+  if (variables is! Map) return false;
+  final allowedWorkItemIds = {
+    ?discoveredProjectWorkItemId,
+    ?discoveredGroupWorkItemId,
+  };
+  if (body['query'] == _publicWorkItemActivityQuery) {
+    final after = variables['after'];
+    return variables.length == 2 &&
+        allowedWorkItemIds.contains(variables['id']) &&
+        variables.containsKey('after') &&
+        (after == null ||
+            after is String && after.isNotEmpty && after.length <= 4096);
+  }
+  if (body['query'] != _publicWorkItemDiscussionNotesQuery) return false;
+  final anchor = variables['anchorNoteId'];
+  final after = variables['after'];
+  // The tool cannot construct this request: production GitLabApi accepts only
+  // a private, owner-bound continuation minted from a validated activity page.
+  return variables.length == 3 &&
+      allowedWorkItemIds.contains(variables['workItemId']) &&
+      anchor is String &&
+      anchor.isNotEmpty &&
+      anchor.length <= 512 &&
+      after is String &&
+      after.isNotEmpty &&
+      after.length <= 4096;
 }

@@ -2,20 +2,22 @@
 
 This repository imports the G0 R1 application slice, its Flutter regression tests and the native bootstrap from the September 19, 2026 handoff. CI-specific fixes and tests are subsequent commits. The full earlier 105-operation research/specification ZIP is a separate handoff artifact; it has not all been imported into this repository. Do not interpret these implementation notes as a replacement for that catalogue or a claim that all 105 APIs work.
 
-## Current follow-up — mobile parity and performance (2026-10-02)
+## Current follow-up — mobile parity and performance (2026-10-02–03)
 
 The branch based on `0e1298e` adds boards/card moves/list management, server-backed
 MR draft review, revision compare, native issue/MR filters, repository and
 pipeline dependency graphs, registries, lazy multi-file Snippets, typed Task/Incident
 workflows, native contributor/repository/CI analytics and read-only GraphQL Work Items
-with seven independently loaded attribute kinds. Account-client
+with seven independently loaded attribute kinds and lazy read-only activity.
+Long descriptions collapse before building Markdown. Account-client
 read caching, request sharing, lazy list derivation and syntax-span LRU reduce
 repeated work. See [the parity/performance report](MOBILE_PARITY_PERFORMANCE.md)
 and [the full-function ledger](MOBILE_WEB_PARITY_LEDGER.md).
 
 Core board and draft workflows now have source/tests. Draft bulk publication still
 has GitLab's concurrent-change interval after its final GET. GraphQL Work Item
-mutations, activity and remaining widgets, group lists, paid board scope/list creation, all-branch graph,
+mutations, activity filtering/order/replies and remaining widgets, group lists,
+paid board scope/list creation, all-branch graph,
 registry downloads/publishing, complete incident operations and live lifecycle proof, Service Desk, complete analytics families, OAuth live
 login and push remain open under the all-function goal. Exact-head CI, Android
 readback, live private/CRUD and iOS acceptance remain separate evidence lanes.

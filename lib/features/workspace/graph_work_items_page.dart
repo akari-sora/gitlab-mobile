@@ -8,6 +8,7 @@ import '../../core/models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
+import 'work_item_activity.dart';
 import 'work_item_attributes.dart';
 
 String _graphWorkItemState(String value) => switch (value.toUpperCase()) {
@@ -557,6 +558,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   ApiFailure? _error;
   bool _loading = false;
   int _generation = 0;
+  int _detailEpoch = 0;
   NavigatorState? _navigator;
   final Set<Route<dynamic>> _ownedRoutes = {};
   bool _ownerInvalid = false;
@@ -656,6 +658,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     if (_loading || !_current(_generation)) return;
     final owner = widget;
     final generation = _generation;
+    _detailEpoch++;
     setState(() {
       _loading = true;
       _error = null;
@@ -814,22 +817,15 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         ),
         const SizedBox(height: 14),
         if (description != null && description.trim().isNotEmpty)
-          _section(
-            context,
-            '說明',
-            MarkdownView(
-              description,
-              account: widget.account,
-              api: project == null ? null : widget.api,
-              projectId: project?.id,
-              projectWeb: project == null
-                  ? null
-                  : widget.account.instance.projectWeb(project.path),
-              projectPath: project?.path,
-              base: project == null
-                  ? null
-                  : widget.account.instance.projectWeb(project.path),
+          _WorkItemDescriptionCard(
+            key: PageStorageKey(
+              'work-item-description:${widget.account.key}:${summary.id}:'
+              '${summary.updatedAt.toUtc().toIso8601String()}:$_detailEpoch',
             ),
+            description: description,
+            account: widget.account,
+            api: widget.api,
+            project: project,
           )
         else if (detail.descriptionWidget != null)
           _section(context, '說明', const Text('沒有說明')),
@@ -976,6 +972,14 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
               ],
             ),
           ),
+        WorkItemActivityPanel(
+          account: widget.account,
+          api: widget.api,
+          detail: detail,
+          project: project,
+          isCurrent: widget.isCurrent,
+          ownerChanges: widget.ownerChanges,
+        ),
         if (!detail.widgetsAvailable)
           _section(
             context,
@@ -1018,6 +1022,90 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         ),
         _ => const ListSkeleton(),
       }),
+    );
+  }
+}
+
+class _WorkItemDescriptionCard extends StatefulWidget {
+  const _WorkItemDescriptionCard({
+    super.key,
+    required this.description,
+    required this.account,
+    required this.api,
+    required this.project,
+  });
+
+  final String description;
+  final Account account;
+  final GitLabApi api;
+  final Project? project;
+
+  @override
+  State<_WorkItemDescriptionCard> createState() =>
+      _WorkItemDescriptionCardState();
+}
+
+class _WorkItemDescriptionCardState extends State<_WorkItemDescriptionCard> {
+  static const _collapsedThreshold = 800;
+  late int _characterCount;
+  late String _preview;
+
+  @override
+  void initState() {
+    super.initState();
+    _cacheDescriptionSummary();
+  }
+
+  @override
+  void didUpdateWidget(covariant _WorkItemDescriptionCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.description != widget.description) {
+      _cacheDescriptionSummary();
+    }
+  }
+
+  void _cacheDescriptionSummary() {
+    _characterCount = widget.description.runes.length;
+    final normalized = widget.description.trim().replaceAll(
+      RegExp(r'\s+'),
+      ' ',
+    );
+    _preview = String.fromCharCodes(normalized.runes.take(80));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final project = widget.project;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: ExpansionTile(
+        initiallyExpanded: _characterCount <= _collapsedThreshold,
+        maintainState: false,
+        title: Text('說明', style: Theme.of(context).textTheme.titleMedium),
+        subtitle: Text(
+          '$_characterCount 字元${_preview.isEmpty ? '' : ' · $_preview'}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: MarkdownView(
+              widget.description,
+              account: widget.account,
+              api: project == null ? null : widget.api,
+              projectId: project?.id,
+              projectWeb: project == null
+                  ? null
+                  : widget.account.instance.projectWeb(project.path),
+              projectPath: project?.path,
+              base: project == null
+                  ? null
+                  : widget.account.instance.projectWeb(project.path),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

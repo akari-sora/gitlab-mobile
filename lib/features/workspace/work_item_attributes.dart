@@ -24,10 +24,10 @@ const _kindTitles = <WorkItemAttributeKind, String>{
   WorkItemAttributeKind.status: '狀態',
   WorkItemAttributeKind.milestone: '里程碑',
   WorkItemAttributeKind.weight: '權重',
-  WorkItemAttributeKind.iteration: 'Iteration',
+  WorkItemAttributeKind.iteration: '迭代',
   WorkItemAttributeKind.health: '健康狀態',
   WorkItemAttributeKind.timeTracking: '時間追蹤',
-  WorkItemAttributeKind.development: 'Development',
+  WorkItemAttributeKind.development: '開發',
 };
 
 String workItemAttributeCalendarDate(DateTime value) =>
@@ -345,7 +345,7 @@ class _AttributeValue extends StatelessWidget {
     return _lines([
       iteration.title ?? '名稱未知',
       '群組：${iteration.group.fullPath}',
-      if (iteration.cadence.title != null) 'Cadence：${iteration.cadence.title}',
+      if (iteration.cadence.title != null) '迭代週期：${iteration.cadence.title}',
       if (iteration.startDate != null)
         '開始：${workItemAttributeCalendarDate(iteration.startDate!)}',
       if (iteration.dueDate != null)
@@ -356,13 +356,13 @@ class _AttributeValue extends StatelessWidget {
   Widget _health(WorkItemHealthAttribute value) {
     final rollup = value.rolledUpHealthStatus;
     return _lines([
-      '目前：${value.healthStatus ?? '未設定'}',
+      '目前：${value.healthStatus == null ? '未設定' : _healthLabel(value.healthStatus!)}',
       if (rollup == null)
         '彙整：未知'
       else if (rollup.isEmpty)
         '彙整：沒有資料'
       else
-        '彙整：${rollup.map((item) => '${item.healthStatus} ${item.count}').join('、')}',
+        '彙整：${rollup.map((item) => '${_healthLabel(item.healthStatus)} ${item.count}').join('、')}',
     ]);
   }
 
@@ -372,9 +372,16 @@ class _AttributeValue extends StatelessWidget {
   ]);
 
   Widget _development(WorkItemDevelopmentAttribute value) => _lines([
-    '關閉中的 Merge Request：${value.closingMergeRequestsCount}',
+    '可關閉此項目的 Merge Request：${value.closingMergeRequestsCount}',
     '合併時自動關閉：${value.willAutoCloseByMergeRequest ? '是' : '否'}',
   ]);
+
+  String _healthLabel(String status) => switch (status) {
+    'onTrack' => '正常',
+    'needsAttention' => '需關注',
+    'atRisk' => '有風險',
+    _ => status,
+  };
 
   String _number(int? value) => value?.toString() ?? '未知';
 

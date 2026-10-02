@@ -17,7 +17,7 @@ specification numbers have been invented.
 | Manage / Activity | Loaded timeline and eight event filters at phone width | Activity feed | Full event-kind/authenticated parity walk |
 | Manage / Members | Loaded roles/source/search/sort and member rows | Member list/actions | Custom roles, complete administration and live permissions |
 | Manage / Labels | Loaded Active/Archived, search/sort and empty state | List/create/edit/delete | Scoped labels/subscriptions and live CRUD |
-| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project cursor list, server type capabilities, project/group details, description/assignees/labels/hierarchy/dates and seven lazy attribute kinds | Remaining widgets/activity, group lists, filters, Work Item mutations and authenticated/edition acceptance |
+| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details and mobile Activity timeline observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project cursor list, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, seven lazy attribute kinds and read-only activity paging | Remaining widgets, activity filters/order/replies, group lists, filters, Work Item mutations and authenticated/edition acceptance |
 | Plan / Boards | Development board observed | Phone-width columns, card move, board/list management | Paid scope/list creation, touch drag/drop and live mutation readback |
 | Plan / Milestones | Loaded empty-state explanation | List/detail/create/edit/delete | Full progress/reporting and live CRUD |
 | Plan / Wiki | Loaded empty Wiki explanation | Page list/read/create/edit/delete | History, attachments, tree and live CRUD |
@@ -62,7 +62,8 @@ attributes below the description. The group Epic has a group parent and ten
 project children, so hierarchy navigation must preserve each server-returned
 scope. Status, milestone, weight, iteration, health, time tracking, development
 and activity were observed separately. Seven attribute kinds now have native lazy
-reads and per-row retries; activity and other widgets remain open.
+reads and per-row retries. Read-only activity now loads on expansion with opaque
+discussion/reply continuations; filtering/order/replies and other widgets remain open.
 Type names are configurable and opaque IDs are not REST route discriminators.
 
 The installed `0ff2265` Android release loaded project `631894`, group `23883`
@@ -72,7 +73,32 @@ font scale and the original device setting was restored. Opening group parent
 rejected. The unused avatar query/DTO field is now omitted, with failing-before
 regressions and anonymous production-client parent readback. A further 390 x 844
 browser walk loaded that actual parent, its assignee, dates, hierarchy and activity.
-The parser repair and new attributes still require their own installed build.
+The later `24b622e` Android release was installed without clearing account data;
+the installed APK bytes match SHA-256
+`167a15bf31e3d6ff8d609ca7f84836a790a73569d469a90efd3e1abef6aa2cf4`.
+Its project `631894` attributes show the actual New status, group-owned milestone
+19.5 and zero time values. Opening `18225` from the actual group parent link now
+loads Board Saved Views successfully. Null weight, iteration and health values
+remain explicit. These are public read checks, not private or write acceptance.
+
+That same installed build exposed a separate Snippet description failure:
+expanding the description of public `6030720` made Markdown horizontal scroll
+views read the ancestor disclosure's boolean storage as a double. Table and
+fenced-code regressions both fail before the repair. `MarkdownView` now owns its
+own storage bucket; the joint Markdown/Snippet/attachment suite passes 77 tests.
+The repair still requires an installed-build check; the gray error area is not a
+successful table-layout validation.
+
+A further 390 × 844 browser walk reached group `23883`'s actual Activity section:
+parent/label/child additions and description/title changes appear in a timeline,
+with activity-kind and order controls. Native read-only activity is the current
+implementation slice. It retains at most five discussion pages and five note pages
+per discussion, with a total 2,000-note / 4 Mi-character retained-payload budget.
+Only the active discussion page is built, with at most 100 activity bodies laid out.
+Over-budget responses leave the existing cache usable and show the limit. Empty
+pages retain pagination controls. Descriptions over 800 runes start collapsed,
+with their character count and preview cached between rebuilds. Filtering/order,
+editing and server-write acceptance remain separate work.
 
 Each new page binds responses and modal closures to account/instance, numeric
 project identity, API generation and request epoch. ProjectMore/Pipeline remove
@@ -95,7 +121,8 @@ on one S24 Ultra do not establish statistical improvement on every screen.
    timeline, metrics and on-call workflows remain open.
 2. Fixed-query GraphQL Work Items now include server-returned scope/type IDs,
    project cursor paging and exact project/group details with five base widgets
-   plus seven independently loaded attributes. Complete remaining widgets/activity, group lists, filters,
+   plus seven independently loaded attributes and read-only activity. Complete remaining
+   widgets, activity filtering/order/replies, group lists, filters,
    native mutations and actual authenticated/private/edition validation.
 3. Multi-file Snippet blobs now have lazy paths/content, source/Markdown preview
    and guarded file actions with `updatedAt` change detection. Complete

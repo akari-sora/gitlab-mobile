@@ -301,7 +301,7 @@ void main() {
     expect(find.text('已完成彙整權重：未知'), findsOneWidget);
     expect(find.text('預估：0 秒'), findsOneWidget);
     expect(find.text('已花費：1 小時（3600 秒）'), findsOneWidget);
-    expect(find.text('關閉中的 Merge Request：2'), findsOneWidget);
+    expect(find.text('可關閉此項目的 Merge Request：2'), findsOneWidget);
     expect(find.text('所屬：actual-owner/platform'), findsOneWidget);
     expect(find.text('到期：2026/01/01'), findsOneWidget);
     expect(tester.takeException(), isNull);
