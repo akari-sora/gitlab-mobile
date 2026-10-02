@@ -7,6 +7,7 @@ import '../../core/failure.dart';
 import '../../core/unified_diff.dart';
 import '../../shared/attachment_budget.dart';
 import '../../shared/external_link.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
@@ -1421,6 +1422,10 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
+          ResourceShareButton(
+            uri: widget.account.instance.projectWeb('${widget.project.path}/-/merge_requests/${widget.iid}/diffs'),
+            ownerKey: (widget.account.key, widget.api, widget.project.id, widget.iid, widget.version['head_commit_sha']),
+            isCurrent: () => mounted && !_disposed && !widget.api.isClosed),
           IconButton(
             tooltip: '審查草稿',
             icon: const Icon(Icons.rate_review_outlined),

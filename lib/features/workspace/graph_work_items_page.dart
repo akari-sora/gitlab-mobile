@@ -7,6 +7,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/workspace_ui.dart';
 import 'work_item_activity.dart';
 import 'work_item_attributes.dart';
@@ -1244,8 +1245,31 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     }
     return Scaffold(
       appBar: AppBar(
-        title: Text('工作項目 #${widget.iid}'),
+        toolbarHeight: (MediaQuery.textScalerOf(context).scale(19) * 1.3 + 16)
+            .clamp(56, double.infinity),
+        title: Text(
+          '工作項目 #${widget.iid}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         actions: [
+          if (_detail != null)
+            ResourceShareButton(
+              uri: widget.account.instance.projectWeb(
+                widget.project == null
+                    ? 'groups/${widget.namespacePath}/-/work_items/${widget.iid}'
+                    : '${widget.project!.path}/-/work_items/${widget.iid}',
+              ),
+              ownerKey: (
+                widget.account.key,
+                widget.api,
+                widget.project?.id,
+                widget.namespacePath,
+                widget.expectedNamespaceId,
+                widget.iid,
+              ),
+              isCurrent: widget.isCurrent,
+            ),
           IconButton(
             onPressed: _loading ? null : _load,
             tooltip: '重新整理',

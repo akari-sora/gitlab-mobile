@@ -7,6 +7,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/snippet_models.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
@@ -1537,22 +1538,50 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: Text('Snippet #${widget.snippetId}'),
-      actions: [
-        IconButton(
-          tooltip: '編輯 Snippet',
-          onPressed: _snippet == null || _busy ? null : _edit,
-          icon: const Icon(Icons.edit_outlined),
+  Widget build(BuildContext context) {
+    final owner = widget;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(
+          'Snippet #${widget.snippetId}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-        IconButton(
-          tooltip: '更多操作',
-          onPressed: _snippet == null || _busy ? null : _showMore,
-          icon: const Icon(Icons.more_vert),
-        ),
-      ],
-    ),
-    body: _body(),
-  );
+        actions: [
+          if (_snippet != null)
+            ResourceShareButton(
+              uri: widget.account.instance.projectWeb(
+                '${widget.project.path}/-/snippets/${widget.snippetId}',
+              ),
+              ownerKey: (
+                widget.account.key,
+                widget.api,
+                widget.project.id,
+                widget.project.path,
+                widget.snippetId,
+              ),
+              isCurrent: () =>
+                  mounted &&
+                  !owner.api.isClosed &&
+                  widget.account.key == owner.account.key &&
+                  identical(widget.api, owner.api) &&
+                  widget.project.id == owner.project.id &&
+                  widget.project.path == owner.project.path &&
+                  widget.snippetId == owner.snippetId,
+            ),
+          IconButton(
+            tooltip: '編輯 Snippet',
+            onPressed: _snippet == null || _busy ? null : _edit,
+            icon: const Icon(Icons.edit_outlined),
+          ),
+          IconButton(
+            tooltip: '更多操作',
+            onPressed: _snippet == null || _busy ? null : _showMore,
+            icon: const Icon(Icons.more_vert),
+          ),
+        ],
+      ),
+      body: _body(),
+    );
+  }
 }

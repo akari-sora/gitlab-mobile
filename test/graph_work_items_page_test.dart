@@ -155,13 +155,14 @@ ResponseBody _detail({int iid = 7, bool projectOnlyChild = false}) =>
 ResponseBody _response(
   RequestOptions request, {
   String title = 'Customer follow-up',
+  int iid = 7,
 }) {
   final data = request.data as Map;
   final query = data['query'] as String;
   if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
-  if (query.contains('MobileProjectWorkItem(')) return _detail();
+  if (query.contains('MobileProjectWorkItem(')) return _detail(iid: iid);
   if (query.contains('MobileProjectWorkItems(')) {
-    return _projectList(title: title);
+    return _projectList(title: title, iid: iid);
   }
   return jsonResponse({'message': 'unhandled'}, status: 404);
 }
@@ -203,6 +204,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Native Markdown description'), findsOneWidget);
+      expect(find.byTooltip('分享連結'), findsOneWidget);
+      expect(find.byTooltip('重新整理'), findsOneWidget);
       expect(find.text('Example User · @example'), findsOneWidget);
       expect(find.text('mobile'), findsOneWidget);
       expect(find.text('Bounded child'), findsOneWidget);
@@ -227,6 +230,47 @@ void main() {
       );
     },
   );
+
+  testWidgets('project detail header fits 320dp at 2x text scale', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 1000);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final adapter = FakeAdapter(
+      (request) => _response(request, iid: 123456789),
+    );
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: GraphWorkItemDetailPage.project(
+          account: _account(api, 7),
+          api: api,
+          project: _project,
+          iid: 123456789,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('工作項目 #123456789'), findsOneWidget);
+    expect(find.byTooltip('分享連結'), findsOneWidget);
+    expect(find.byTooltip('重新整理'), findsOneWidget);
+    expect(
+      tester.getRect(find.byTooltip('重新整理')).right,
+      lessThanOrEqualTo(320),
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('late old-account pages cannot replace the active account data', (
     tester,

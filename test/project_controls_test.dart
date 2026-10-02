@@ -44,6 +44,9 @@ class ProjectCrudFixture extends WorkspaceFixture {
       if (method == 'DELETE') { exists = false; return ResponseBody.fromString('', 202); }
       return jsonResponse(projectRecord);
     }
+    if (path == 'projects/42/starrers' && method == 'GET') {
+      return jsonResponse(starred ? [{'user': {'id': 7, 'username': 'developer'}}] : <Json>[]);
+    }
     if (const ['projects/42/star', 'projects/42/unstar'].contains(path) && method == 'POST') {
       if (!exists) { return jsonResponse({}, status: 404); }
       starred = path.endsWith('/star');
@@ -111,8 +114,25 @@ void main() {
     await tester.tap(find.byKey(const Key('editorSave'))); await settleWorkspace(tester);
     expect(fixture.projectRecord['name'], 'Updated project');
     expect(find.text('Updated project'), findsOneWidget);
+    int projectListReads() => fixture.adapter.requests.where((request) =>
+      request.method == 'GET' && request.uri.pathSegments.last == 'projects').length;
+    final readsBeforeStar = projectListReads();
     await action('加入星標'); expect(fixture.starred, isTrue);
+    expect(projectListReads(), greaterThan(readsBeforeStar), reason: 'a star mutation reconciles the loaded project feed');
+    await tester.tap(find.byType(BackButton)); await settleWorkspace(tester);
+    await tester.tap(find.widgetWithText(ChoiceChip, '星標')); await settleWorkspace(tester);
+    expect(find.text('Updated project'), findsOneWidget);
+    await tester.tap(find.text('Updated project')); await settleWorkspace(tester);
+    await tester.tap(find.widgetWithText(Tab, '更多')); await settleWorkspace(tester);
+    final readsBeforeUnstar = projectListReads();
     await action('移除星標'); expect(fixture.starred, isFalse);
+    expect(projectListReads(), greaterThan(readsBeforeUnstar), reason: 'an unstar mutation reconciles starred/count state');
+    await tester.tap(find.byType(BackButton)); await settleWorkspace(tester);
+    expect(find.text('目前沒有專案'), findsOneWidget,
+      reason: 'the reconciled starred feed removes an unstarred project row');
+    await tester.tap(find.widgetWithText(ChoiceChip, '我的專案')); await settleWorkspace(tester);
+    await tester.tap(find.text('Updated project').last); await settleWorkspace(tester);
+    await tester.tap(find.widgetWithText(Tab, '更多')); await settleWorkspace(tester);
     await action('刪除專案…');
     expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '確認')).onPressed, isNull);
     await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'studio/project-crud');

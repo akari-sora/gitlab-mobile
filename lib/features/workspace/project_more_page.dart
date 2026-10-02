@@ -9,6 +9,7 @@ import '../../core/models.dart';
 import '../../core/providers.dart';
 import '../../core/work_item_types.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/workspace_ui.dart';
 import 'activity_page.dart';
 import 'boards_page.dart';
@@ -33,13 +34,34 @@ String metadataTitle(MetadataKind kind) => switch (kind) {
   MetadataKind.releases => 'Releases', MetadataKind.labels => '議題標籤', MetadataKind.milestones => '里程碑',
 };
 
+final class ProjectStarControl {
+  const ProjectStarControl({
+    required this.starred,
+    required this.checked,
+    required this.busy,
+    required this.starCount,
+    required this.revision,
+    required this.recheck,
+    required this.setStar,
+  });
+  final bool? starred;
+  final bool checked, busy;
+  final int? starCount;
+  final int revision;
+  final Future<void> Function() recheck;
+  final Future<Json?> Function(bool starred) setStar;
+}
+
 class ProjectMoreTab extends StatefulWidget {
-  const ProjectMoreTab({super.key, required this.account, required this.api, required this.project, required this.onChanged, this.onDeleted});
+  const ProjectMoreTab({super.key, required this.account, required this.api, required this.project, required this.onChanged, this.onDeleted,
+    this.starControl,
+  });
   final Account account;
   final GitLabApi api;
   final Project project;
   final ValueChanged<Project> onChanged;
   final VoidCallback? onDeleted;
+  final ProjectStarControl? starControl;
   @override
   State<ProjectMoreTab> createState() => _ProjectMoreTabState();
 }
@@ -54,6 +76,11 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
   final Set<Route<dynamic>> _ownedRoutes = {};
   SessionController? _session;
   int? _sessionGeneration;
+
+  bool? get _effectiveStarred =>
+      widget.starControl != null ? widget.starControl!.starred : _starred;
+  bool get _effectiveStarChecked => widget.starControl?.checked ?? _starChecked;
+  bool get _starBusy => _busy || (widget.starControl?.busy ?? false);
 
   bool _current(int generation) => mounted && generation == _generation;
 
@@ -126,6 +153,13 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
   @override
   void didUpdateWidget(covariant ProjectMoreTab oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.starControl != null &&
+        oldWidget.starControl?.revision != widget.starControl!.revision &&
+        oldWidget.account.key == widget.account.key &&
+        oldWidget.project.id == widget.project.id &&
+        identical(oldWidget.api, widget.api)) {
+      unawaited(_loadOverview());
+    }
     if (oldWidget.account.key != widget.account.key ||
         oldWidget.project.id != widget.project.id ||
         oldWidget.project.path != widget.project.path ||
@@ -174,7 +208,9 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     }
     final results = await Future.wait<Object?>([
       soft(() => owner.api.record(['projects', '$id'], query: {'license': 'true'})),
-      soft(() => owner.api.hasStarred(id, owner.account.user.username)),
+      widget.starControl == null
+          ? soft(() => owner.api.hasStarred(id, owner.account.user.username))
+          : Future<Object?>.value(widget.starControl!.starred),
       soft(() => owner.api.languages(id)),
     ]);
     if (!_current(generation) || epoch != _overviewEpoch) return;
@@ -187,7 +223,20 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
   }
 
   Future<void> _recheckStar() async {
-    if (_busy) return;
+    if (_starBusy) return;
+    final shared = widget.starControl;
+    if (shared != null) {
+      final generation = _generation;
+      try {
+        await shared.recheck();
+      } catch (e) {
+        if (mounted && _current(generation) &&
+            (e is! ApiFailure || e.kind != FailureKind.cancelled)) {
+          showFailure(context, e);
+        }
+      }
+      return;
+    }
     final owner = widget, generation = _generation;
     ++_overviewEpoch;
     setState(() => _busy = true);
@@ -236,7 +285,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
     final details = _details ?? const <String, dynamic>{};
-    final stars = valueInt(details, 'star_count'), forks = valueInt(details, 'forks_count');
+    final stars = widget.starControl?.starCount ?? valueInt(details, 'star_count'), forks = valueInt(details, 'forks_count');
     final issues = valueInt(details, 'open_issues_count');
     final https = valueText(details, 'http_url_to_repo'), ssh = valueText(details, 'ssh_url_to_repo');
     final license = valueText(valueObject(details, 'license'), 'nickname',
@@ -255,7 +304,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
             api: widget.api, projectId: widget.project.id, projectWeb: widget.account.instance.projectWeb(widget.project.path),
             projectPath: widget.project.path)),
         if (_details != null) Row(children: [
-          stat(_starred == true ? Icons.star : Icons.star_border, '$stars', '星標'),
+          stat(_effectiveStarred == true ? Icons.star : Icons.star_border, '$stars', '星標'),
           stat(Icons.call_split, '$forks', 'Fork'),
           stat(Icons.adjust, '$issues', '開啟議題'),
           if (license.isNotEmpty) stat(Icons.gavel_outlined, license, '授權'),
@@ -293,19 +342,21 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
         ],
         const SizedBox(height: 8),
         Wrap(spacing: 8, runSpacing: 8, children: [
-          if (_starred == null)
+          if (_effectiveStarred == null)
             FilledButton.tonalIcon(
               key: const ValueKey('project-star-toggle'),
-              onPressed: _busy || !_starChecked ? null : _recheckStar,
+              onPressed: _starBusy || !_effectiveStarChecked
+                        ? null : _recheckStar,
               icon: const Icon(Icons.star_half, size: 18),
-              label: Text(_starChecked ? '重新確認星標' : '確認星標中…'),
+              label: Text(_effectiveStarChecked ? '重新確認星標' : '確認星標中…'),
             )
           else
             FilledButton.tonalIcon(
               key: const ValueKey('project-star-toggle'),
-              onPressed: _busy ? null : () => _star(!_starred!),
-              icon: Icon(_starred! ? Icons.star : Icons.star_border, size: 18),
-              label: Text(_starred! ? '移除星標' : '加入星標'),
+              onPressed: _starBusy
+                        ? null : () => _star(!_effectiveStarred!),
+              icon: Icon(_effectiveStarred! ? Icons.star : Icons.star_border, size: 18),
+              label: Text(_effectiveStarred! ? '移除星標' : '加入星標'),
             ),
           OutlinedButton.icon(
             onPressed: _busy || widget.project.archived == true ? null : _fork,
@@ -349,7 +400,35 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     if (saved && _current(generation) && updated != null) { owner.onChanged(updated!); }
   }
   Future<void> _star(bool starred) async {
-    if (_busy) return;
+    if (_starBusy) return;
+    final shared = widget.starControl;
+    if (shared != null) {
+      final generation = _generation;
+      try {
+        final updated = await shared.setStar(starred);
+        if (mounted &&
+            _current(generation) &&
+            _details != null &&
+            updated?['star_count'] is int) {
+          setState(
+            () =>
+                _details = {..._details!, 'star_count': updated!['star_count']},
+          );
+        }
+        if (mounted && _current(generation)) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(starred ? '已加入星標' : '已移除星標')));
+        }
+      } catch (e) {
+        if (mounted &&
+            _current(generation) &&
+            (e is! ApiFailure || e.kind != FailureKind.cancelled)) {
+          showFailure(context, e);
+        }
+      }
+      return;
+    }
     final owner = widget, generation = _generation;
     ++_overviewEpoch;
     setState(() => _busy = true);
@@ -455,6 +534,98 @@ class MetadataPage extends StatefulWidget {
 class _MetadataPageState extends State<MetadataPage> {
   final _feed = GlobalKey<RecordsFeedState>();
   bool _busy = false;
+  int _generation = 0;
+  NavigatorState? _navigator;
+  Route<void>? _detailRoute;
+  SessionController? _session;
+  int? _sessionGeneration;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _navigator = Navigator.of(context);
+    _bindSession();
+  }
+
+  void _bindSession() {
+    try {
+      final candidate = ProviderScope.containerOf(context, listen: false)
+          .read(sessionProvider);
+      if (!identical(_session, candidate)) {
+        _session?.removeListener(_sessionChanged);
+        _session = candidate;
+        candidate.addListener(_sessionChanged);
+      }
+      _sessionGeneration = candidate.generation;
+    } on StateError {
+      // Some isolated widget tests intentionally have no ProviderScope.
+    }
+  }
+
+  bool _sessionCurrent() => _session == null ||
+      (_session!.active?.key == widget.account.key &&
+       identical(_session!.api, widget.api) &&
+       _session!.generation == _sessionGeneration);
+
+  bool _ownerCurrent(({
+    String accountKey,
+    GitLabApi api,
+    int projectId,
+    String projectPath,
+    MetadataKind kind,
+    int generation,
+  }) owner) => mounted &&
+      owner.generation == _generation &&
+      !owner.api.isClosed &&
+      widget.account.key == owner.accountKey &&
+      identical(widget.api, owner.api) &&
+      widget.project.id == owner.projectId &&
+      widget.project.path == owner.projectPath &&
+      widget.kind == owner.kind &&
+      _sessionCurrent();
+
+  void _sessionChanged() {
+    if (_sessionCurrent()) return;
+    _generation++;
+    _dismissDetail();
+    if (mounted) setState(() => _busy = false);
+  }
+
+  void _dismissDetail() {
+    final navigator = _navigator;
+    final route = _detailRoute;
+    _detailRoute = null;
+    if (route == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (navigator?.mounted == true && route.isActive) {
+        navigator!.removeRoute(route);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant MetadataPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.account.key != widget.account.key ||
+        !identical(oldWidget.api, widget.api) ||
+        oldWidget.project.id != widget.project.id ||
+        oldWidget.project.path != widget.project.path ||
+        oldWidget.kind != widget.kind ||
+        widget.api.isClosed) {
+      _generation++;
+      _dismissDetail();
+      _bindSession();
+    }
+  }
+
+  @override
+  void dispose() {
+    _session?.removeListener(_sessionChanged);
+    _generation++;
+    _dismissDetail();
+    super.dispose();
+  }
+
   List<String> get path => ['projects', '${widget.project.id}',
     if (const [MetadataKind.branches, MetadataKind.tags, MetadataKind.commits].contains(widget.kind)) 'repository', widget.kind.name];
   String _name(Json value) => valueText(value, widget.kind == MetadataKind.commits ? 'title'
@@ -600,25 +771,85 @@ class _MetadataPageState extends State<MetadataPage> {
       );
       return;
     }
-    await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => Scaffold(
-      appBar: AppBar(title: Text(_name(value))), body: gestureSafe(ListView(padding: const EdgeInsets.all(20), children: [
-        Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 16),
+    final ownerAccount = widget.account;
+    final ownerApi = widget.api;
+    final ownerProject = widget.project;
+    final ownerKind = widget.kind;
+    final detailOwner = (
+      accountKey: ownerAccount.key,
+      api: ownerApi,
+      projectId: ownerProject.id,
+      projectPath: ownerProject.path,
+      kind: ownerKind,
+      generation: _generation,
+    );
+    if (!_ownerCurrent(detailOwner)) return;
+    final detailTitle = _name(value);
+    final resourceId = switch (ownerKind) {
+      MetadataKind.releases => valueText(value, 'tag_name'),
+      MetadataKind.milestones => valueInt(value, 'iid'),
+      _ => null,
+    };
+    final Uri? shareUri = switch ((ownerKind, resourceId)) {
+      (MetadataKind.releases, final String tag) when tag.trim().isNotEmpty => () {
+        final base = ownerAccount.instance.projectWeb(
+          '${ownerProject.path}/-/releases',
+        );
+        return base.replace(pathSegments: [...base.pathSegments, tag]);
+      }(),
+      (MetadataKind.milestones, final int iid) when iid > 0 =>
+        ownerAccount.instance.projectWeb(
+          '${ownerProject.path}/-/milestones/$iid',
+        ),
+      _ => null,
+    };
+    bool ownerCurrent() => _ownerCurrent(detailOwner);
+    final route = MaterialPageRoute<void>(builder: (_) => Scaffold(
+      appBar: AppBar(title: Text(detailTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            actions: [
+              if (shareUri != null)
+                ResourceShareButton(
+                  uri: shareUri,
+                  ownerKey: (
+                    ownerAccount.key,
+                    ownerApi,
+                    ownerProject.id,
+                    ownerProject.path,
+                    ownerKind,
+                    resourceId,
+                  ),
+                  isCurrent: ownerCurrent,
+                ),
+            ],
+          ), body: gestureSafe(ListView(padding: const EdgeInsets.all(20), children: [
+        Text(ownerProject.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 16),
         if (value['state'] is String) Align(alignment: Alignment.centerLeft, child: StatusBadge(valueText(value, 'state'))),
         MarkdownView(valueText(value, 'description', valueText(value, 'message', '尚未填寫說明。')),
-          base: widget.account.instance.projectWeb(widget.project.path), api: widget.api, projectId: widget.project.id,
-          projectWeb: widget.account.instance.projectWeb(widget.project.path), projectPath: widget.project.path),
+          base: ownerAccount.instance.projectWeb(ownerProject.path), api: ownerApi, projectId: ownerProject.id,
+          projectWeb: ownerAccount.instance.projectWeb(ownerProject.path), projectPath: ownerProject.path),
         if (value['commit'] is Json) ...[const SizedBox(height: 20), Text(valueText(valueObject(value, 'commit'), 'title')),
           SelectableText(valueText(valueObject(value, 'commit'), 'id'), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12))],
-        if (widget.kind == MetadataKind.milestones) ...[const SizedBox(height: 16),
+        if (ownerKind == MetadataKind.milestones) ...[const SizedBox(height: 16),
           Text('開始：${valueText(value, 'start_date', '未設定')}\n到期：${valueText(value, 'due_date', '未設定')}')],
       ])),
-    )));
+    ));
+    _detailRoute = route;
+    try {
+      await (_navigator ?? Navigator.of(context)).push<void>(route);
+    } finally {
+      if (identical(_detailRoute, route)) {
+        _detailRoute = null;
+      }
+    }
   }
   @override
   Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(metadataTitle(widget.kind)), actions: [
-    if (widget.kind != MetadataKind.commits) IconButton(tooltip: '新增${metadataTitle(widget.kind)}',
+    if (!widget.api.isClosed && _sessionCurrent() && widget.kind != MetadataKind.commits) IconButton(tooltip: '新增${metadataTitle(widget.kind)}',
       onPressed: _busy || widget.project.archived == true ? null : _edit, icon: const Icon(Icons.add)),
-  ]), body: gestureSafe(RecordsFeed(key: _feed, identity: '${widget.project.id}/${widget.kind.name}',
+  ]), body: widget.api.isClosed || !_sessionCurrent() ? const SizedBox.shrink() : gestureSafe(RecordsFeed(key: _feed, identity: '${widget.account.key}/${widget.project.id}/${widget.kind.name}/$_generation',
     account: widget.account, resourceLabel: '${widget.project.path} · ${metadataTitle(widget.kind)}',
     onSwitchAccount: endSessionFrom(context),
     empty: '尚無${metadataTitle(widget.kind)}', load: (next) => widget.api.records(path,

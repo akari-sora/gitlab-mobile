@@ -8,6 +8,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/pipeline_graph.dart';
 import '../../shared/workspace_ui.dart';
+import '../../shared/resource_share.dart';
 import 'ci_page.dart';
 
 class PipelineGraphPage extends StatefulWidget {
@@ -282,6 +283,10 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
           ],
         ),
         actions: [
+          ResourceShareButton(
+            uri: widget.account.instance.projectWeb('${widget.project.path}/-/pipelines/${widget.pipelineId}'),
+            ownerKey: (widget.account.key, widget.api, widget.project.id, widget.pipelineId),
+            isCurrent: () => mounted && !widget.api.isClosed),
           IconButton(
             tooltip: '重新整理相依圖',
             onPressed: _loading ? null : _refresh,

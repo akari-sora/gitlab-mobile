@@ -23,6 +23,12 @@ these additions do not establish complete GitLab parity.
 
 Loading and scroll work adds a bounded, account-client in-memory read cache for project resolution and immutable-SHA text, concurrent request sharing, memoized list derivation and a page-owned syntax-span LRU. Server cache directives, explicit refresh, writes, account/client changes and authorization failures invalidate or disable reuse. See the [current parity and performance report](docs/MOBILE_PARITY_PERFORMANCE.md) for the complete Web navigation matrix, safety boundaries, measured results and remaining NOT_RUN lanes.
 
+Resource details expose direct native link sharing. The project header also
+offers Star/Unstar, sharing the same confirmed state with 更多 and refreshing
+the project feed after a successful change. Link sharing sends only a canonical
+instance-aware URL; repository file links retain the immutable commit and any
+selected line. Account changes invalidate pending actions and reaction pickers.
+
 ## v0.5 — mobile UX overhaul and GitLab parity
 
 Still a development preview. Evidence is in the [v0.5 ledger](docs/V0_5_VERIFICATION.md); anything it does not list is **NOT_RUN**.

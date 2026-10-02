@@ -5,6 +5,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/external_link.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import 'navigation.dart';
@@ -37,8 +38,10 @@ String environmentStateLabel(String state) => switch (state) {
   _ => state,
 };
 
-Widget _extraScaffold(BuildContext context, String title, Widget body, {List<Widget>? actions}) => Scaffold(
-  appBar: AppBar(title: Text(title), actions: actions),
+Widget _extraScaffold(BuildContext context, String title, Widget body,
+  {List<Widget>? actions, bool compactTitle = false}) => Scaffold(
+  appBar: AppBar(title: Text(title, maxLines: compactTitle ? 1 : null,
+    overflow: compactTitle ? TextOverflow.ellipsis : null), actions: actions),
   body: gestureSafe(body),
 );
 
@@ -127,28 +130,62 @@ class WikiPageView extends StatefulWidget {
   State<WikiPageView> createState() => _WikiPageViewState();
 }
 
+typedef _WikiOwner = ({String accountKey, GitLabApi api, int projectId,
+  String projectPath, String slug, int generation});
+
 class _WikiPageViewState extends State<WikiPageView> {
   Json? _page;
   ApiFailure? _error;
+  int _generation = 0;
+  _WikiOwner get _owner => (accountKey: widget.account.key, api: widget.api,
+    projectId: widget.project.id, projectPath: widget.project.path,
+    slug: widget.slug, generation: _generation);
+  bool _current(_WikiOwner owner) => mounted && !owner.api.isClosed &&
+    owner.generation == _generation && owner.accountKey == widget.account.key &&
+    identical(owner.api, widget.api) && owner.projectId == widget.project.id &&
+    owner.projectPath == widget.project.path && owner.slug == widget.slug;
   @override
   void initState() {
     super.initState();
     unawaited(_load());
   }
 
+  @override
+  void didUpdateWidget(covariant WikiPageView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.account.key == widget.account.key && identical(oldWidget.api, widget.api) &&
+        oldWidget.project.id == widget.project.id && oldWidget.project.path == widget.project.path &&
+        oldWidget.slug == widget.slug) {
+      return;
+    }
+    _generation++;
+    _page = null;
+    _error = null;
+    unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    super.dispose();
+  }
+
   Future<void> _load() async {
+    final owner = _owner;
+    if (!_current(owner)) return;
     setState(() => _error = null);
     try {
-      final page = await widget.api.wikiPage(widget.project.id, widget.slug);
-      if (mounted) setState(() => _page = page);
+      final page = await owner.api.wikiPage(owner.projectId, owner.slug);
+      if (_current(owner)) setState(() => _page = page);
     } catch (e) {
-      if (mounted) setState(() => _error = safeFailure(e));
+      if (_current(owner)) setState(() => _error = safeFailure(e));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final page = _page;
+    final owner = _owner;
     final web = widget.account.instance.projectWeb('${widget.project.path}/-/wikis/${widget.slug}');
     return _extraScaffold(context, widget.title, page == null
       ? (_error == null ? const ListSkeleton() : SingleChildScrollView(child: FailureNotice(_error!, onRetry: _load,
@@ -160,8 +197,15 @@ class _WikiPageViewState extends State<WikiPageView> {
           else
             SelectableText(valueText(page, 'content'), style: codeTextStyle(context)),
         ])),
-      actions: [IconButton(tooltip: '在 GitLab 開啟', icon: const Icon(Icons.open_in_new, size: 20),
-        onPressed: () => openExternal(context, web))]);
+      compactTitle: true,
+      actions: [
+        ResourceShareButton(uri: web,
+          ownerKey: (owner.accountKey, owner.api, owner.projectId, owner.projectPath, owner.slug, owner.generation),
+          isCurrent: () => _current(owner)),
+        IconButton(tooltip: '在 GitLab 開啟', icon: const Icon(Icons.open_in_new, size: 20), onPressed: () {
+          if (_current(owner)) unawaited(openExternal(context, web));
+        }),
+      ]);
   }
 }
 

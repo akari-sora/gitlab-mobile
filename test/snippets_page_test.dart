@@ -333,6 +333,7 @@ void main() {
 
     expect(find.text('Snippet #1'), findsOneWidget);
     expect(find.text('first'), findsOneWidget);
+    expect(find.byTooltip('分享連結'), findsOneWidget);
     final post = fixture.writes.singleWhere((r) => r.method == 'POST');
     final postBody = Map<String, dynamic>.from(post.data as Map);
     expect(postBody['visibility'], 'public');
@@ -650,10 +651,17 @@ void main() {
       final fixture = SnippetFixture();
       fixture.snippets[1] = fixture.snippet(1);
       fixture.content[1] = 'x' * 2500;
-      await host(tester, fixture, width: 320);
+      await host(
+        tester,
+        fixture,
+        width: 320,
+        devicePixelRatio: 2,
+        textScale: 2,
+      );
       await tester.tap(find.text('Useful example'));
       await settleNetworkWidgets(tester);
 
+      expect(find.byTooltip('分享連結'), findsOneWidget);
       expect(find.textContaining('預覽已截短'), findsOneWidget);
       expect(find.textContaining(' …'), findsOneWidget);
       expect(tester.takeException(), isNull);

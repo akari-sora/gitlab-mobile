@@ -131,16 +131,24 @@ String _query(RequestOptions request) => _body(request)['query']! as String;
 Map<String, Object?> _variables(RequestOptions request) =>
     Map<String, Object?>.from(_body(request)['variables']! as Map);
 
-Widget _host(Account account, GitLabApi api, {String path = _groupPath}) =>
-    MaterialApp(
-      home: Scaffold(
-        body: GraphWorkItemsPage.group(
-          account: account,
-          api: api,
-          namespacePath: path,
-        ),
-      ),
-    );
+Widget _host(
+  Account account,
+  GitLabApi api, {
+  String path = _groupPath,
+  double scale = 1,
+}) => MaterialApp(
+  builder: (context, child) => MediaQuery(
+    data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)),
+    child: child!,
+  ),
+  home: Scaffold(
+    body: GraphWorkItemsPage.group(
+      account: account,
+      api: api,
+      namespacePath: path,
+    ),
+  ),
+);
 
 void main() {
   testWidgets('group page exposes one embedded Work Items tab', (tester) async {
@@ -177,6 +185,8 @@ void main() {
 
     expect(find.byType(Scaffold), findsOneWidget);
     expect(find.byType(AppBar), findsOneWidget);
+    expect(find.byTooltip('分享連結'), findsOneWidget);
+    expect(find.byTooltip('在 GitLab 開啟'), findsOneWidget);
     expect(find.text('僅此群組的工作項目'), findsOneWidget);
     expect(find.text('Visible from group'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -381,6 +391,51 @@ void main() {
       );
     },
   );
+
+  testWidgets('group detail header fits 320dp at 2x text scale', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 1000);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final adapter = FakeAdapter((request) {
+      expect(_query(request), contains('MobileNamespaceWorkItem'));
+      expect(_variables(request), containsPair('path', _groupPath));
+      expect(_variables(request), containsPair('iid', '123456789'));
+      return _detail(123456789, 'Group planning item');
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: GraphWorkItemDetailPage.namespace(
+          account: _account(api),
+          api: api,
+          namespacePath: _groupPath,
+          expectedNamespaceId: _groupId,
+          iid: 123456789,
+        ),
+      ),
+    );
+    await settleNetworkWidgets(tester);
+
+    expect(find.text('工作項目 #123456789'), findsOneWidget);
+    expect(find.byTooltip('分享連結'), findsOneWidget);
+    expect(find.byTooltip('重新整理'), findsOneWidget);
+    expect(
+      tester.getRect(find.byTooltip('重新整理')).right,
+      lessThanOrEqualTo(320),
+    );
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'continuations skip exact duplicates and stop identity collisions',

@@ -9,6 +9,7 @@ import '../../core/providers.dart';
 import '../../core/registry_models.dart';
 import '../../shared/artifact_storage.dart';
 import '../../shared/package_download.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
@@ -727,10 +728,15 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
   @override
   Widget build(BuildContext context) {
     final package = _package;
+    final scope = _scope;
     return Scaffold(
       appBar: AppBar(
-        title: Text(package?.name ?? '套件詳情'),
+        title: Text(package?.name ?? '套件詳情', maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
+          if (package != null)
+            ResourceShareButton(uri: widget.account.instance.projectWeb('${widget.project.path}/-/packages/${widget.packageId}'),
+              ownerKey: (widget.account.key, widget.api, widget.project.id, widget.packageId, _generation),
+              isCurrent: () => _current(scope) && _downloadOwnerCurrent()),
           if (package?.canDelete == true && widget.project.archived != true)
             IconButton(
               tooltip: '刪除套件',

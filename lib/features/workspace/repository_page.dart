@@ -9,6 +9,7 @@ import '../../core/models.dart';
 import '../../core/repository_ref.dart';
 import '../../core/syntax_highlighter.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
@@ -1144,6 +1145,8 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
     final slash = widget.filePath.lastIndexOf('/');
     final appBar = AppBar(
         primary: false,
+        toolbarHeight: (MediaQuery.textScalerOf(context).scale(18) * 1.3 +
+            MediaQuery.textScalerOf(context).scale(12) * 1.5 + 12).clamp(56, double.infinity),
         titleSpacing: 0,
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
           Text(widget.filePath.split('/').last, maxLines: 1, overflow: TextOverflow.ellipsis,
@@ -1156,6 +1159,13 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ]),
         actions: [
+          if (resolvedRef.sha.isNotEmpty)
+            ResourceShareButton(
+              uri: repositoryBlobWebUri(instance: widget.account.instance,
+                projectPath: widget.project.path, sha: resolvedRef.sha,
+                filePath: widget.filePath, line: _selectedLine),
+              ownerKey: (widget.account.key, widget.api, widget.project.id, resolvedRef.sha, widget.filePath),
+              isCurrent: () => mounted && !widget.api.isClosed),
           if (_markdown)
             IconButton(
               tooltip: _preview ? '顯示原始文字' : 'Markdown 預覽',

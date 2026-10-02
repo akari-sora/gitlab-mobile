@@ -38,13 +38,13 @@ GitLab edition lacks the feature.
 | GitLab Web area | Before this follow-up | Added or changed here | Remaining boundary |
 |---|---|---|---|
 | Global navigation | Projects, groups/subgroups, todos, assigned/review-requested/created work, activity and global search | No structural change | Administration, help and creation workflows remain unimplemented; they are part of the full-function backlog |
-| Project overview | Description, stars, forks, languages, licence, clone URLs, star/fork actions | No structural change | Full Web analytics and settings are not reproduced |
+| Project overview | Description, stars, forks, languages, licence, clone URLs, star/fork actions | Direct header Star/Unstar and link sharing; shared More state/count and project feed reconciliation | Full Web analytics and settings are not reproduced |
 | Manage | Activity, members and labels | No structural change | Access-token, webhook, integration and full member-role administration remain open |
 | Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project and group-owned Work Item cursor lists, server types and exact project/group detail with five base widgets, seven lazy attribute kinds and read-only activity | Remaining Work Item widgets, activity filters/order/replies, descendant group aggregation and filters, mutations, full iterations/requirements/Epic/OKR workflows remain open |
 | Code | Repository tree, README, branches, commits and tags; fixed-SHA file view, history, blame, search, syntax highlighting and line permalinks; MR list/detail/diffs | Compare two refs; selected-ref repository graph; multi-file Snippets with explicit file enumeration, lazy source/preview and guarded file actions | Locked files, cross-project comparison, full all-branch graph and private Snippet CRUD acceptance remain open |
 | MR review | Discussions, inline single-line positions, approvals/merge, suggested changes, auto-merge, local viewed-file state and the MR draft/ready toggle | Server draft-note list, add/edit/discard and bulk publish, tied to account/project/MR/head SHA | Viewed-file state is not server-synchronised; multi-line positioning and full desktop review policy administration remain open |
 | Build | Pipelines, stage-grouped jobs, controls, incremental ANSI logs and search, JUnit report views, artifacts, cross-project CI overview and schedules | Read-only pipeline dependency graph with paginated actual GraphQL needs | Cross-project/downstream graph and the complete pipeline editor remain open |
-| Deploy and operate | Environments and deployment history | Package/Container/Terraform lists, details and guarded deletion; Incident severity and a separately modelled escalation lifecycle | Registry downloads/publish, model registries, complete Incident operations and Service Desk remain open |
+| Deploy and operate | Environments and deployment history | Package/Container/Terraform lists, details and guarded deletion; numeric package file downloads with size/SHA-256 validation; Incident severity and a separately modelled escalation lifecycle | Registry publishing/policies and type-specific installation, model registries, complete Incident operations and Service Desk remain open |
 | Analyze | Basic project counts and activity | Native contributor aggregates, bounded repository activity/languages/coverage, CI source/ref/date filters and actual aggregate/time-series statistics | Value-stream, complete per-author/distribution charts, code-review/issue analytics, insights and model experiments remain open |
 | Adaptive layout | Compact phone navigation and retained-state two-pane layout at the expanded breakpoint | New boards show one active column at a time on phones; filters use a native bottom sheet; long result screens remain lazy | iOS physical-device, VoiceOver/TalkBack and authenticated enterprise-screen walks remain NOT_RUN |
 
@@ -793,6 +793,46 @@ The live fixture is only the public 185-byte `SHA256SUMS`
 file `361672601`; the 170 MiB APK asset is not fetched or executed. Container
 image pulls, type-specific installation, publishing/policies, real Terraform
 downloads, private/role-based acceptance and iOS remain separate gaps.
+
+## Direct resource actions (2026-10-03)
+
+A focused signed-out Web recheck at 390 × 844 confirmed that project Star is
+visible beside the project identity; project and issue overflow menus expose
+copy-reference/ID actions. The App now places Star/Unstar and native link Share
+in the project header. Star has an explicit unknown/retry state, one state owner
+for the header and 更多, shared confirmed counts, account/session generation
+fences and feed reconciliation after successful writes, including HTTP 304.
+Its synthetic mutation tests do not establish live account Star acceptance.
+
+Direct link sharing is available in group, issue/MR, project/group Work Item,
+commit, repository file, MR file diff, pipeline/dependency graph, job log,
+Snippet, package, Wiki, Release and Milestone details. Existing share_plus 13.3.0
+presents the system chooser with text-only canonical URLs and a button popover origin; it does not
+attach tokens, repository content, files or metadata-fetch URIs. Repeated taps,
+unsafe URLs and stale owner completions are fenced. Repository links pin the
+commit SHA and selected line; pipeline links use the global ID, and job retry
+links follow the current attempt. Wiki links retain the nested page slug;
+Milestone links use the positive project IID rather than the database ID, and
+Release tags remain one encoded path segment, including tags containing `/`.
+Missing identifiers omit the share action rather than inventing a URL. Metadata
+detail routes are removed when the account, API or session changes; their old
+list rows and actions are hidden until a matching owner loads them. No dependency
+or publishing operation was added. The chosen plugin contract was checked against its
+[versioned maintainer documentation](https://pub.dev/packages/share_plus/versions/13.3.0).
+Resource routing was checked against the [GitLab Release API](https://docs.gitlab.com/api/releases/),
+[GitLab slash-tag routing example](https://gitlab.com/gitlab-org/gitlab/-/issues/362696)
+and [milestone ID/IID example](https://docs.gitlab.com/api/resource_milestone_events/).
+
+Reaction loading, picker results and add/remove completion now snapshot their
+account/API/project/resource/item/note owner. Replacement or session ending
+invalidates stale results and dismisses the old picker; invalid owners cannot
+leave enabled reaction controls or a stale refresh button. The add chip explicitly
+says 新增表情回應. Subscription writes apply the confirmed switch state before
+refresh, so a failed refresh cannot misreport a completed write as failure.
+New tests first reproduced the three reaction ownership defects before repair;
+additional tests cover API replacement/closure, session ending, subscription
+refresh failure, numeric/canonical share routes, metadata session invalidation
+and 320dp/two-times text action layouts. Frozen-source suite, exact commit/device and CI receipts are recorded separately with the draft MR.
 
 ## Remaining product priorities
 

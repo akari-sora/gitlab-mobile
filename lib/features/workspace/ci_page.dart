@@ -8,6 +8,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/job_trace.dart';
 import '../../core/models.dart';
 import '../../shared/external_link.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
 import 'records_feed.dart';
@@ -678,13 +679,21 @@ class _PipelinePageState extends State<PipelinePage> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final appBar = AppBar(primary: false, titleSpacing: 0, title: Column(crossAxisAlignment: CrossAxisAlignment.start,
+    final generation = _generation;
+    final appBar = AppBar(primary: false,
+      toolbarHeight: (MediaQuery.textScalerOf(context).scale(19) * 1.3 +
+          MediaQuery.textScalerOf(context).scale(12) * 1.5 + 12).clamp(56, double.infinity),
+      titleSpacing: 0, title: Column(crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min, children: [
         Text(_data != null && valueInt(_data!, 'iid') > 0 ? 'Pipeline #${valueInt(_data!, 'iid')}' : 'Pipeline #${widget.id}',
+          maxLines: 1, overflow: TextOverflow.ellipsis,
           style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 19)),
         Text(widget.project.path, maxLines: 1, overflow: TextOverflow.ellipsis,
           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
       ]), actions: [
+        ResourceShareButton(uri: widget.account.instance.projectWeb('${widget.project.path}/-/pipelines/${widget.id}'),
+          ownerKey: (widget.account.key, widget.api, widget.project.id, widget.id, generation),
+          isCurrent: () => _current(generation) && !widget.api.isClosed),
         IconButton(tooltip: '工作相依圖',
           onPressed: _openGraph,
           icon: const Icon(Icons.account_tree_outlined)),
@@ -1517,6 +1526,7 @@ class JobLogPage extends StatefulWidget {
   State<JobLogPage> createState() => _JobLogPageState();
 }
 class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
+  late final JobLogPage _routeOwner;
   late int _jobId;
   int _loadEpoch = 0;
   Json? _job;
@@ -1540,7 +1550,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   final _chrome = ScrollChromeController();
   @override
   void initState() {
-    super.initState(); _jobId = widget.id;
+    super.initState(); _routeOwner = widget; _jobId = widget.id;
     WidgetsBinding.instance.addObserver(this); unawaited(_load());
   }
   @override
@@ -2030,8 +2040,15 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final rows = _visibleRows();
     final noLog = _trace.lines.isEmpty && _trace.sections.isEmpty;
-    final appBar = AppBar(primary: false, titleSpacing: 0, title: Text(_job == null ? 'Job #$_jobId' : valueText(_job!, 'name')),
-      actions: [IconButton(tooltip: '重新讀取 Log', onPressed: _loading || _busy || _confirming ? null : _load, icon: const Icon(Icons.refresh)),
+    final appBar = AppBar(primary: false, titleSpacing: 0, title: Text(_job == null ? 'Job #$_jobId' : valueText(_job!, 'name'), maxLines: 1, overflow: TextOverflow.ellipsis),
+      actions: [ResourceShareButton(
+        uri: widget.account.instance.projectWeb('${widget.project.path}/-/jobs/$_jobId'),
+        ownerKey: (widget.account.key, widget.api, widget.project.id, _jobId, widget.generation),
+        isCurrent: () => mounted && !widget.api.isClosed &&
+          widget.account.key == _routeOwner.account.key && identical(widget.api, _routeOwner.api) &&
+          widget.project.id == _routeOwner.project.id && widget.id == _routeOwner.id &&
+          widget.generation == _routeOwner.generation),
+        IconButton(tooltip: '重新讀取 Log', onPressed: _loading || _busy || _confirming ? null : _load, icon: const Icon(Icons.refresh)),
         PopupMenuButton<String>(tooltip: '工作操作', enabled: !_busy && !_confirming && !_downloading && _job != null, onSelected: _action, itemBuilder: (_) => [
           const PopupMenuItem(value: 'retry', child: Text('重試工作')),
           if (_job?['status'] == 'manual') const PopupMenuItem(value: 'play', child: Text('啟動手動工作')),

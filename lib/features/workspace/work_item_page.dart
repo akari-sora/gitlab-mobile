@@ -5,6 +5,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/work_item_types.dart';
 import '../../shared/external_link.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/list_detail_scaffold.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/scroll_chrome.dart';
@@ -1198,10 +1199,11 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     setState(() => _busy = true);
     try {
       await owner.api.setSubscribed(owner.project.id, owner.resource, owner.iid, subscribed);
-      if (!_currentOwner(owner)) return;
-      await _load();
       if (!mounted || !_currentOwner(owner)) return;
+      setState(() => _data = {...?_data, 'subscribed': subscribed});
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(subscribed ? '已開啟通知' : '已關閉通知')));
+      // A failed refresh must not erase a confirmed subscription write.
+      await _load();
     } catch (e) {
       if (!mounted || !_currentOwner(owner)) return;
       showFailure(context, e);
@@ -1398,8 +1400,11 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     final data = _data;
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
+    final owner = _owner;
     final appBar = AppBar(
       primary: false,
+      toolbarHeight: (MediaQuery.textScalerOf(context).scale(19) * 1.3 +
+          MediaQuery.textScalerOf(context).scale(12) * 1.5 + 12).clamp(56, double.infinity),
       automaticallyImplyLeading: false,
       leading: widget.showBackButton ? BackButton(onPressed: widget.onBack) : null,
       titleSpacing: widget.showBackButton ? 0 : null,
@@ -1407,7 +1412,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 19)),
+          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 19)),
           Text(
             widget.project.path,
             maxLines: 1,
@@ -1417,6 +1422,9 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         ],
       ),
       actions: [
+        ResourceShareButton(uri: web,
+          ownerKey: (owner.account.key, owner.api, owner.project.id, owner.resource, owner.iid, owner.generation),
+          isCurrent: () => _currentOwner(owner) && !owner.api.isClosed),
         IconButton(tooltip: '重新整理', onPressed: _loading || _busy ? null : _load, icon: const Icon(Icons.refresh)),
         PopupMenuButton<String>(
           tooltip: '更多操作',

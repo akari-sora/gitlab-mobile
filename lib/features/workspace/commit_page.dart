@@ -6,6 +6,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/unified_diff.dart';
 import '../../shared/external_link.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 
@@ -181,28 +182,47 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final owner = widget;
     final scheme = Theme.of(context).colorScheme;
-    final commit = _commit;
-
-    final webUrlString = commit != null ? valueText(commit, 'web_url') : '';
-    final webUri = webUrlString.isNotEmpty ? Uri.tryParse(webUrlString) : null;
+    final webUri = widget.account.instance.projectWeb(
+      '${widget.project.path}/-/commit/${widget.sha}',
+    );
 
     return Scaffold(
       appBar: AppBar(
         title: Text(
           '提交 ${shortSha(widget.sha)}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             fontFamily: codeFontFamily,
             fontFamilyFallback: ['Menlo', 'monospace'],
           ),
         ),
         actions: [
-          if (webUri != null && webUri.isAbsolute && webUri.scheme == 'https')
-            IconButton(
-              tooltip: '在瀏覽器開啟',
-              icon: const Icon(Icons.open_in_browser),
-              onPressed: () => openExternal(context, webUri),
+          ResourceShareButton(
+            uri: webUri,
+            ownerKey: (
+              widget.account.key,
+              widget.api,
+              widget.project.id,
+              widget.project.path,
+              widget.sha,
             ),
+            isCurrent: () =>
+                mounted &&
+                !owner.api.isClosed &&
+                widget.account.key == owner.account.key &&
+                identical(widget.api, owner.api) &&
+                widget.project.id == owner.project.id &&
+                widget.project.path == owner.project.path &&
+                widget.sha == owner.sha,
+          ),
+          IconButton(
+            tooltip: '在瀏覽器開啟',
+            icon: const Icon(Icons.open_in_browser),
+            onPressed: () => openExternal(context, webUri),
+          ),
         ],
       ),
       body: gestureSafe(_buildBody(context, scheme)),

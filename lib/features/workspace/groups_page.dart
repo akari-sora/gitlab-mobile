@@ -7,6 +7,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/providers.dart';
 import '../../shared/external_link.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
 import 'graph_work_items_page.dart';
@@ -280,6 +281,11 @@ class _GroupPageState extends State<GroupPage> {
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ]),
         actions: [
+          if (fullPath.isNotEmpty) ResourceShareButton(
+            uri: widget.account.instance.projectWeb(fullPath),
+            ownerKey: (widget.account.key, widget.api, _id, fullPath),
+            isCurrent: _ownerCurrent,
+          ),
           if (fullPath.isNotEmpty) IconButton(tooltip: '在 GitLab 開啟', icon: const Icon(Icons.open_in_new, size: 20),
             onPressed: () => openExternal(context, widget.account.instance.projectWeb(fullPath))),
         ],

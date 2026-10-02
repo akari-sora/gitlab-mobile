@@ -513,6 +513,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
           setState(() => _projectTabIndex = index);
         }
       },
+      onStarChanged: () => _feed.currentState?.reconcileLoadedWindow() ?? Future<void>.value(),
       onDeleted: () {
         _projectTabIndex = widget.forCi ? 3 : 0;
         _selection.clear();

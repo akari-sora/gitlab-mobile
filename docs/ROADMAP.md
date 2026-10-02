@@ -144,7 +144,14 @@ verification and device/CI boundaries are recorded in
 not close GraphQL Work Item mutations/activity/remaining widgets, complete group Epic/OKR workflows, private fixture CRUD or
 Android/iOS acceptance.
 
+The 2026-10-03 action follow-up adds direct canonical link sharing in resource
+details and project-header Star/Unstar with shared More state and feed refresh.
+Reaction owner changes invalidate pending pickers/results; confirmed notification
+subscription state survives a failed refresh. The parity report and draft MR
+retain exact-source tests, Android evidence and open iOS/private/CI boundaries.
+
 ### Long-Term Backlog (LT1 ~ LT5)
+
 - **LT1: Groups & Subgroups Hierarchy (`GET /groups`)**: Flattened multi-level hierarchy browsing, subgroup navigation, and group-scoped project discovery.
 - **LT2: GraphQL Polymorphic Work Items Pilot**: Targeted GraphQL queries for Task checkbox toggling and Epic linking alongside existing REST infrastructure.
 - **LT3: Issue Boards Kanban View**: Horizontal swiping board columns for label/milestone workflows on tablets (>= 840 dp).
