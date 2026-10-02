@@ -9,9 +9,11 @@ import '../../core/models.dart';
 import '../../core/repository_ref.dart';
 import '../../core/syntax_highlighter.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/scroll_chrome.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
+import 'file_history.dart';
 import 'records_feed.dart';
 
 class RepositoryTab extends StatefulWidget {
@@ -295,6 +297,125 @@ class _RepositoryTabState extends State<RepositoryTab> {
     }
   }
 
+  Widget _refBar(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final ref = _currentRef;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 4, 4, 0),
+      child: Row(
+        children: [
+          Expanded(child: Row(children: [
+            Flexible(
+              child: TextButton(
+                onPressed: _loading ? null : _pickRef,
+                style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 8)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(ref?.kind == RepositoryRefKind.tag ? Icons.label_outline : Icons.alt_route, size: 18),
+                  const SizedBox(width: 6),
+                  Flexible(child: Text(ref?.name ?? '選擇版本', maxLines: 1, overflow: TextOverflow.ellipsis)),
+                  const Icon(Icons.arrow_drop_down, size: 20),
+                ]),
+              ),
+            ),
+            if (ref != null && ref.sha.isNotEmpty)
+              Flexible(child: Tooltip(
+                message: '固定版本 ${ref.sha}',
+                child: Text(RepositoryRef.shortSha(ref.sha), maxLines: 1, overflow: TextOverflow.clip,
+                  style: codeTextStyle(context, fontSize: 12, color: scheme.onSurfaceVariant)),
+              )),
+          ])),
+          if (ref != null && ref.sha.isNotEmpty)
+            IconButton(
+              tooltip: '尋找檔案',
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => FindFilePage(
+                account: widget.account, api: widget.api, project: widget.project, ref: ref))),
+              icon: const Icon(Icons.search, size: 20),
+            ),
+          IconButton(
+            tooltip: '重新讀取最新版本',
+            onPressed: _loading ? null : _resolve,
+            icon: const Icon(Icons.refresh, size: 20),
+          ),
+          if (ref?.writable == true)
+            IconButton(
+              tooltip: '新增檔案',
+              onPressed: widget.project.archived == true || _loading ? null : _newFile,
+              icon: const Icon(Icons.note_add_outlined, size: 20),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// Tappable path segments; the first one returns to the repository root.
+  Widget _breadcrumbs(BuildContext context) {
+    final theme = Theme.of(context);
+    final segments = _folder.split('/');
+    final style = theme.textTheme.labelLarge?.copyWith(color: theme.colorScheme.primary);
+    return SizedBox(
+      height: 40,
+      child: LayoutBuilder(builder: (context, constraints) => SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        // Starts at the end so the current folder is visible on deep paths.
+        reverse: true,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minWidth: math.max(0, constraints.maxWidth - 16)),
+          child: Row(children: [
+            IconButton(
+              tooltip: '上一層目錄',
+              visualDensity: VisualDensity.compact,
+              onPressed: _up,
+              icon: const Icon(Icons.arrow_upward, size: 18),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(minimumSize: const Size(40, 40), padding: const EdgeInsets.symmetric(horizontal: 8)),
+              onPressed: () => setState(() => _folder = ''),
+              child: const Text('根目錄'),
+            ),
+            for (var i = 0; i < segments.length; i++) ...[
+              Icon(Icons.chevron_right, size: 16, color: theme.colorScheme.onSurfaceVariant),
+              if (i == segments.length - 1)
+                Padding(padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(segments[i], style: theme.textTheme.labelLarge))
+              else
+                TextButton(
+                  style: TextButton.styleFrom(minimumSize: const Size(40, 40), padding: const EdgeInsets.symmetric(horizontal: 8)),
+                  onPressed: () => setState(() => _folder = segments.take(i + 1).join('/')),
+                  child: Text(segments[i], style: style),
+                ),
+            ],
+          ]),
+        ),
+      )),
+    );
+  }
+
+  Widget _treeRow(BuildContext context, Json data) {
+    final scheme = Theme.of(context).colorScheme;
+    final type = valueText(data, 'type');
+    final name = valueText(data, 'name');
+    final folder = type == 'tree';
+    return InkWell(
+      onTap: () => _entry(data),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 48),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(children: [
+            Icon(folder ? Icons.folder : type == 'commit' ? Icons.link : fileIconFor(name),
+              size: 20, color: folder ? scheme.primary : scheme.onSurfaceVariant),
+            const SizedBox(width: 14),
+            Expanded(child: Text(name, maxLines: 2, overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: 15, height: 1.3))),
+            if (folder) Icon(Icons.chevron_right, size: 18, color: scheme.onSurfaceVariant),
+          ]),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => PopScope(
     canPop: !widget.active || _folder.isEmpty,
@@ -306,78 +427,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 8, 0),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextButton.icon(
-                  onPressed: _loading ? null : _pickRef,
-                  icon: Icon(
-                    _currentRef?.kind == RepositoryRefKind.tag
-                        ? Icons.label_outline
-                        : Icons.alt_route,
-                    size: 18,
-                  ),
-                  label: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      _currentRef?.name ?? '選擇版本',
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ),
-              ),
-              IconButton(
-                tooltip: '重新讀取最新版本',
-                onPressed: _loading ? null : _resolve,
-                icon: const Icon(Icons.refresh, size: 20),
-              ),
-              if (_currentRef?.writable == true)
-                IconButton(
-                  tooltip: '新增檔案',
-                  onPressed: widget.project.archived == true || _loading
-                      ? null
-                      : _newFile,
-                  icon: const Icon(Icons.note_add_outlined, size: 20),
-                ),
-            ],
-          ),
-        ),
-        if (_currentRef != null && _currentRef!.sha.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: Text(
-              '固定版本 ${RepositoryRef.shortSha(_currentRef!.sha)}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
-        if (_folder.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Row(
-              children: [
-                IconButton(
-                  tooltip: '上一層目錄',
-                  onPressed: _up,
-                  icon: const Icon(Icons.arrow_upward, size: 18),
-                ),
-                Expanded(
-                  child: Text(
-                    _folder,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-                TextButton(
-                  onPressed: () => setState(() => _folder = ''),
-                  child: const Text('根目錄'),
-                ),
-              ],
-            ),
-          ),
+        if (_currentRef == null || _currentRef!.sha.isEmpty) _refBar(context),
         if (_loading) const LinearProgressIndicator(minHeight: 2),
         if (_error != null)
           FailureNotice(
@@ -402,9 +452,15 @@ class _RepositoryTabState extends State<RepositoryTab> {
                   key: _feed,
                   identity: '${widget.project.id}/${_currentRef!.sha}/$_folder',
                   empty: '此目錄沒有檔案',
+                  emptyIcon: Icons.folder_open_outlined,
+                  grouped: true,
                   account: widget.account,
                   resourceLabel: '${widget.project.path} · $_folder',
                   onSwitchAccount: endSessionFrom(context),
+                  leading: (context, _) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    _refBar(context),
+                    if (_folder.isNotEmpty) _breadcrumbs(context),
+                  ]),
                   load: (next) async {
                     final page = await widget.api.records(
                       ['projects', '${widget.project.id}', 'repository', 'tree'],
@@ -420,27 +476,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
                     }
                     return page;
                   },
-                  itemBuilder: (context, data) => Card(
-                    child: ListTile(
-                      leading: Icon(
-                        data['type'] == 'tree'
-                            ? Icons.folder_outlined
-                            : data['type'] == 'commit'
-                            ? Icons.link
-                            : Icons.description_outlined,
-                        color: data['type'] == 'tree'
-                            ? Theme.of(context).colorScheme.primary
-                            : null,
-                      ),
-                      title: Text(
-                        valueText(data, 'name'),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      trailing: const Icon(Icons.chevron_right, size: 18),
-                      onTap: () => _entry(data),
-                    ),
-                  ),
+                  itemBuilder: _treeRow,
                   footer: (context, controller) {
                     if (_folder.isNotEmpty) return const SizedBox.shrink();
                     if (_readme == null && !_readmeLoading && _readmeError == null) {
@@ -843,6 +879,8 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
   late final bool _markdown;
   final _vertical = ScrollController();
   final _horizontal = ScrollController();
+  final _chrome = ScrollChromeController();
+  final _searchFocus = FocusNode();
 
   int? _selectedLine;
   List<String> _lines = const [];
@@ -865,6 +903,8 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
   void dispose() {
     _vertical.dispose();
     _horizontal.dispose();
+    _chrome.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -1082,9 +1122,21 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
     final text = _text;
     final resolvedRef = widget.resolvedRef;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.filePath.split('/').last),
+    final theme = Theme.of(context);
+    final slash = widget.filePath.lastIndexOf('/');
+    final appBar = AppBar(
+        primary: false,
+        titleSpacing: 0,
+        title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text(widget.filePath.split('/').last, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 18)),
+          Text([
+            if (slash > 0) widget.filePath.substring(0, slash),
+            resolvedRef.name,
+            if (resolvedRef.sha.isNotEmpty) RepositoryRef.shortSha(resolvedRef.sha),
+          ].join(' · '), maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+        ]),
         actions: [
           if (_markdown)
             IconButton(
@@ -1111,12 +1163,24 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
               if (action == 'wrap') {
                 setState(() => _wrap = !_wrap);
               }
+              if (action == 'history') {
+                unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => FileHistoryPage(
+                  account: widget.account, api: widget.api, project: widget.project, path: widget.filePath,
+                  ref: resolvedRef.sha.isNotEmpty ? resolvedRef.sha : resolvedRef.name))));
+              }
+              if (action == 'blame' && resolvedRef.sha.isNotEmpty) {
+                unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => BlamePage(
+                  account: widget.account, api: widget.api, project: widget.project, path: widget.filePath,
+                  sha: resolvedRef.sha))));
+              }
             },
             itemBuilder: (_) => [
               PopupMenuItem(
                 value: 'wrap',
                 child: Text(_wrap ? '關閉自動換行' : '開啟自動換行'),
               ),
+              const PopupMenuItem(value: 'history', child: Text('檔案歷史')),
+              if (resolvedRef.sha.isNotEmpty) const PopupMenuItem(value: 'blame', child: Text('Blame（逐行作者）')),
               if (resolvedRef.writable &&
                   text != null &&
                   !_lfs &&
@@ -1128,17 +1192,29 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
             ],
           ),
         ],
-      ),
-      body: gestureSafe(Column(
+      );
+    return Scaffold(
+      // The search field lives in the collapsing header; it stays while focused.
+      body: NotificationListener<ScrollNotification>(onNotification: (n) => !_searchFocus.hasFocus && _chrome.handle(n),
+        child: StatusBarInset(child: gestureSafe(Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
-            child: Text(
-              '${widget.filePath}\n${resolvedRef.name} · ${RepositoryRef.shortSha(resolvedRef.sha)}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ),
+          CollapsingChrome(visible: _chrome, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            appBar,
+            if (text != null && !_preview)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: TextField(
+                  focusNode: _searchFocus,
+                  decoration: const InputDecoration(
+                    hintText: '搜尋目前檔案',
+                    prefixIcon: Icon(Icons.search),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  ),
+                  onChanged: _onSearchChanged,
+                ),
+              ),
+          ])),
           if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
           if (_error != null)
             FailureNotice(
@@ -1152,17 +1228,6 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
             const Padding(
               padding: EdgeInsets.all(16),
               child: Text('這是 Git LFS pointer，不是原始檔案。此版本不會自動下載大型物件。'),
-            ),
-          if (text != null && !_preview)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: TextField(
-                decoration: const InputDecoration(
-                  hintText: '搜尋目前檔案',
-                  prefixIcon: Icon(Icons.search),
-                ),
-                onChanged: _onSearchChanged,
-              ),
             ),
           Expanded(
             child: text == null
@@ -1238,13 +1303,17 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                                             selected: isSelected,
                                             label: '第 $lineNumber 行',
                                             hint: '點擊複製此行永久連結',
+                                            excludeSemantics: true,
+                                            onTap: () => _copyLinePermalink(lineNumber),
                                             child: InkWell(
                                               onTap: () => _copyLinePermalink(lineNumber),
                                               borderRadius: BorderRadius.circular(4),
+                                              // Code reads line by line: rows stay at text height and the
+                                              // number keeps the 24dp WCAG 2.5.8 minimum in a 48dp-wide column.
                                               child: ConstrainedBox(
                                                 constraints: const BoxConstraints(
                                                   minWidth: 48,
-                                                  minHeight: 48,
+                                                  minHeight: 24,
                                                 ),
                                                 child: Align(
                                                   alignment: Alignment.centerLeft,
@@ -1272,7 +1341,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                                           const SizedBox(width: 8),
                                           Expanded(
                                             child: Padding(
-                                              padding: const EdgeInsets.symmetric(vertical: 14),
+                                              padding: const EdgeInsets.symmetric(vertical: 2),
                                               child: Text.rich(
                                                 lineContent.isEmpty
                                                     ? const TextSpan(text: ' ')
@@ -1307,7 +1376,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                   ),
           ),
         ],
-      )),
+      )))),
     );
   }
 }

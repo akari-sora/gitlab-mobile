@@ -6,6 +6,7 @@ import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
 import 'package:gitlab_mobile/features/shell/build_info.dart';
 import 'package:gitlab_mobile/features/workspace/projects_page.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart' show SemanticButton;
 import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
 import 'package:gitlab_mobile/shared/adaptive_breakpoints.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
@@ -351,7 +352,7 @@ void main() {
       final chipSize = tester.getSize(find.widgetWithText(ChoiceChip, '我的專案'));
       expect(chipSize.height, greaterThanOrEqualTo(48.0));
 
-      final cardSize = tester.getSize(find.widgetWithText(Card, 'Mobile Workspace'));
+      final cardSize = tester.getSize(find.widgetWithText(SemanticButton, 'Mobile Workspace'));
       expect(cardSize.height, greaterThanOrEqualTo(48.0));
       expect(cardSize.width, greaterThanOrEqualTo(48.0));
     });

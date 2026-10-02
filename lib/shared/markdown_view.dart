@@ -107,8 +107,7 @@ class _MarkdownViewState extends State<MarkdownView> {
         final parsed = Uri.tryParse(href);
         if (parsed == null) { return; }
         final uri = parsed.hasScheme ? parsed : base?.resolveUri(parsed);
-        if (uri == null || uri.scheme != 'https' || uri.userInfo.isNotEmpty ||
-            uri.queryParameters.keys.any((key) => const ['private_token', 'access_token', 'token', 'job_token'].contains(key.toLowerCase()))) {
+        if (uri == null || !safeExternalUri(uri)) {
           return;
         }
         final uploadRef = parseProjectUpload(uri, base: base, projectId: projectId, projectWeb: projectWeb);

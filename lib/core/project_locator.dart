@@ -50,3 +50,53 @@ String projectLocator(GitLabInstance instance, String input) {
   }
   return path;
 }
+
+enum LinkTarget { project, issue, mergeRequest, pipeline, job, commit, file }
+
+/// A pasted GitLab link resolved to the resource it names. The project part
+/// goes through [projectLocator]; the resource part is only recognised when it
+/// is unambiguous. File links need a commit SHA ref, because a branch name may
+/// itself contain slashes.
+final class GitLabLink {
+  const GitLabLink._(this.project, this.target, {this.number, this.sha, this.filePath, this.line});
+  final String project;
+  final LinkTarget target;
+  final int? number;
+  final String? sha;
+  final String? filePath;
+  final int? line;
+
+  factory GitLabLink.parse(String input, GitLabInstance instance) {
+    final project = projectLocator(instance, input);
+    final text = input.trim();
+    if (!text.contains('://')) return GitLabLink._(project, LinkTarget.project);
+    final uri = Uri.parse(text);
+    final segments = uri.pathSegments.toList();
+    final dash = segments.indexOf('-', instance.base.pathSegments.where((part) => part.isNotEmpty).length);
+    if (dash < 0 || dash + 2 > segments.length) return GitLabLink._(project, LinkTarget.project);
+    final kind = segments[dash + 1];
+    final rest = segments.skip(dash + 2).where((part) => part.isNotEmpty).toList();
+    final number = rest.isEmpty ? null : int.tryParse(rest.first);
+    final positive = number != null && number > 0 ? number : null;
+    switch (kind) {
+      case 'issues' || 'work_items' when positive != null:
+        return GitLabLink._(project, LinkTarget.issue, number: positive);
+      case 'merge_requests' when positive != null:
+        return GitLabLink._(project, LinkTarget.mergeRequest, number: positive);
+      case 'pipelines' when positive != null:
+        return GitLabLink._(project, LinkTarget.pipeline, number: positive);
+      case 'jobs' when positive != null:
+        return GitLabLink._(project, LinkTarget.job, number: positive);
+      case 'commit' when rest.isNotEmpty && _sha.hasMatch(rest.first):
+        return GitLabLink._(project, LinkTarget.commit, sha: rest.first.toLowerCase());
+      case 'blob' when rest.length >= 2 && _sha.hasMatch(rest.first) &&
+          !rest.skip(1).any((part) => part == '.' || part == '..'):
+        final line = RegExp(r'^L(\d+)').firstMatch(uri.fragment)?.group(1);
+        return GitLabLink._(project, LinkTarget.file, sha: rest.first.toLowerCase(),
+          filePath: rest.skip(1).join('/'), line: line == null ? null : int.tryParse(line));
+    }
+    return GitLabLink._(project, LinkTarget.project);
+  }
+
+  static final _sha = RegExp(r'^[0-9a-fA-F]{7,64}$');
+}

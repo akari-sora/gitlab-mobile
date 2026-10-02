@@ -1,12 +1,18 @@
+import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
+import 'activity_page.dart';
 import 'commit_page.dart';
 import 'editor.dart';
+import 'project_extras.dart';
 import 'records_feed.dart';
+import 'search_page.dart';
 import '../../shared/theme.dart';
 
 enum MetadataKind { branches, tags, commits, releases, labels, milestones }
@@ -27,6 +33,183 @@ class ProjectMoreTab extends StatefulWidget {
 }
 class _ProjectMoreTabState extends State<ProjectMoreTab> {
   bool _busy = false;
+  Json? _details;
+  bool? _starred;
+  bool _starChecked = false;
+  List<(String, double)> _languages = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadOverview());
+  }
+
+  /// Counts, clone URLs and languages are decoration: a failure leaves that
+  /// part out. An unknown star state stays unknown instead of reading as
+  /// unstarred, so the toggle never sends the wrong direction.
+  Future<void> _loadOverview() async {
+    final id = widget.project.id;
+    Future<T?> soft<T>(Future<T> Function() read) async {
+      try {
+        return await read();
+      } catch (_) {
+        return null;
+      }
+    }
+    final results = await Future.wait<Object?>([
+      soft(() => widget.api.record(['projects', '$id'], query: {'license': 'true'})),
+      soft(() => widget.api.hasStarred(id, widget.account.user.username)),
+      soft(() => widget.api.languages(id)),
+    ]);
+    if (!mounted) return;
+    setState(() {
+      _details = results[0] as Json?;
+      _starred = results[1] as bool?;
+      _starChecked = true;
+      _languages = (results[2] as List<(String, double)>?) ?? const [];
+    });
+  }
+
+  Future<void> _recheckStar() async {
+    setState(() => _busy = true);
+    try {
+      final starred = await widget.api.hasStarred(widget.project.id, widget.account.user.username);
+      if (mounted) setState(() => _starred = starred);
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _fork() async {
+    if (_busy || !await confirmAction(context, 'Fork 這個專案？', '會在你的個人 namespace 建立 ${widget.project.path} 的副本。')) {
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _busy = true);
+    try {
+      final fork = await widget.api.forkProject(widget.project.id);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('已建立 Fork：${valueText(fork, 'path_with_namespace')}，匯入可能需要幾分鐘。')));
+      }
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _copy(String label, String value) async {
+    await Clipboard.setData(ClipboardData(text: value));
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已複製$label')));
+  }
+
+  void _push(Widget page) => unawaited(Navigator.push(context, MaterialPageRoute<void>(builder: (_) => page)));
+
+  Widget _overview(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final details = _details ?? const <String, dynamic>{};
+    final stars = valueInt(details, 'star_count'), forks = valueInt(details, 'forks_count');
+    final issues = valueInt(details, 'open_issues_count');
+    final https = valueText(details, 'http_url_to_repo'), ssh = valueText(details, 'ssh_url_to_repo');
+    final license = valueText(valueObject(details, 'license'), 'nickname',
+      valueText(valueObject(details, 'license'), 'name'));
+    Widget stat(IconData icon, String value, String label) => Expanded(child: Column(children: [
+      Icon(icon, size: 20, color: muted),
+      const SizedBox(height: 4),
+      Text(value, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+        style: theme.textTheme.titleMedium),
+      Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+    ]));
+    return Card(child: Padding(padding: const EdgeInsets.fromLTRB(16, 14, 16, 12), child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (widget.project.description?.isNotEmpty ?? false) Padding(padding: const EdgeInsets.only(bottom: 12),
+          child: MarkdownView(widget.project.description!, base: widget.account.instance.projectWeb(widget.project.path),
+            api: widget.api, projectId: widget.project.id, projectWeb: widget.account.instance.projectWeb(widget.project.path),
+            projectPath: widget.project.path)),
+        if (_details != null) Row(children: [
+          stat(_starred == true ? Icons.star : Icons.star_border, '$stars', '星標'),
+          stat(Icons.call_split, '$forks', 'Fork'),
+          stat(Icons.adjust, '$issues', '開啟議題'),
+          if (license.isNotEmpty) stat(Icons.gavel_outlined, license, '授權'),
+        ]),
+        if (_languages.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          ClipRRect(borderRadius: BorderRadius.circular(4), child: SizedBox(height: 8, child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            for (final (index, (_, share)) in _languages.take(6).indexed)
+              Expanded(flex: math.max(1, (share * 10).round()), child: ColoredBox(color: _languageColor(index))),
+          ]))),
+          const SizedBox(height: 8),
+          Wrap(spacing: 12, runSpacing: 4, children: [
+            for (final (index, (name, share)) in _languages.take(6).indexed)
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(width: 8, height: 8, decoration: BoxDecoration(color: _languageColor(index), shape: BoxShape.circle)),
+                const SizedBox(width: 4),
+                Flexible(child: Text('$name ${share.toStringAsFixed(share < 10 ? 1 : 0)}%', style: theme.textTheme.bodySmall)),
+              ]),
+          ]),
+        ],
+        if (https.isNotEmpty || ssh.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          for (final (label, url) in [('HTTPS', https), ('SSH', ssh)])
+            if (url.isNotEmpty) InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => _copy(' $label 位址', url),
+              child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 44), child: Row(children: [
+                SizedBox(width: 52, child: Text(label, style: theme.textTheme.labelMedium?.copyWith(color: muted))),
+                Expanded(child: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: codeTextStyle(context, fontSize: 12))),
+                Icon(Icons.copy, size: 16, color: muted),
+              ])),
+            ),
+        ],
+        const SizedBox(height: 8),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          if (_starred == null)
+            FilledButton.tonalIcon(
+              key: const ValueKey('project-star-toggle'),
+              onPressed: _busy || !_starChecked ? null : _recheckStar,
+              icon: const Icon(Icons.star_half, size: 18),
+              label: Text(_starChecked ? '重新確認星標' : '確認星標中…'),
+            )
+          else
+            FilledButton.tonalIcon(
+              key: const ValueKey('project-star-toggle'),
+              onPressed: _busy ? null : () => _star(!_starred!),
+              icon: Icon(_starred! ? Icons.star : Icons.star_border, size: 18),
+              label: Text(_starred! ? '移除星標' : '加入星標'),
+            ),
+          OutlinedButton.icon(
+            onPressed: _busy || widget.project.archived == true ? null : _fork,
+            icon: const Icon(Icons.call_split, size: 18),
+            label: const Text('Fork'),
+          ),
+        ]),
+      ],
+    )));
+  }
+
+  Widget _section(BuildContext context, String title, List<(IconData, String, VoidCallback)> entries) => Padding(
+    padding: const EdgeInsets.only(top: 16),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(padding: const EdgeInsets.only(left: 4, bottom: 6), child: Text(title,
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
+      Card(child: Column(children: [
+        for (final (index, (icon, label, onTap)) in entries.indexed) ...[
+          if (index > 0) const Divider(height: 1, indent: 56),
+          ListTile(leading: Icon(icon), title: Text(label), trailing: const Icon(Icons.chevron_right, size: 18), onTap: onTap),
+        ],
+      ])),
+    ]),
+  );
+
+  static Color _languageColor(int index) => const [
+    Color(0xFF4763E4), Color(0xFF1B9E77), Color(0xFFE6A100), Color(0xFFD95F02), Color(0xFF7570B3), Color(0xFF66A61E),
+  ][index % 6];
   Future<void> _edit() async {
     Project? updated;
     final saved = await openEditor(context, account: widget.account, title: '專案設定',
@@ -41,8 +224,14 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      await widget.api.setStar(widget.project.id, starred);
-      if (mounted) { ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(starred ? '已加入星標' : '已移除星標'))); }
+      final updated = await widget.api.setStar(widget.project.id, starred);
+      if (mounted) {
+        setState(() {
+          _starred = starred;
+          if (_details != null && updated?['star_count'] is int) _details = {..._details!, 'star_count': updated!['star_count']};
+        });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(starred ? '已加入星標' : '已移除星標')));
+      }
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _busy = false); } }
   }
@@ -66,31 +255,41 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     finally { if (mounted) { setState(() => _busy = false); } }
   }
   @override
-  Widget build(BuildContext context) => ListView(padding: const EdgeInsets.all(16), children: [
-    if (widget.project.description?.isNotEmpty ?? false) Padding(padding: const EdgeInsets.only(bottom: 20),
-      child: MarkdownView(widget.project.description!, base: widget.account.instance.projectWeb(widget.project.path),
-        api: widget.api, projectId: widget.project.id, projectWeb: widget.account.instance.projectWeb(widget.project.path),
-        projectPath: widget.project.path)),
-    for (final kind in MetadataKind.values) Padding(padding: const EdgeInsets.only(bottom: 8), child: Card(child: ListTile(
-      leading: Icon(switch (kind) {
-        MetadataKind.branches => Icons.alt_route, MetadataKind.tags => Icons.sell_outlined,
-        MetadataKind.commits => Icons.history, MetadataKind.releases => Icons.inventory_2_outlined,
-        MetadataKind.labels => Icons.label_outline, MetadataKind.milestones => Icons.flag_outlined,
-      }), title: Text(metadataTitle(kind)), trailing: const Icon(Icons.chevron_right, size: 18),
-      onTap: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => MetadataPage(
-        account: widget.account, api: widget.api, project: widget.project, kind: kind))),
-    ))),
-    const SizedBox(height: 16), Text('專案管理', style: Theme.of(context).textTheme.titleSmall), const SizedBox(height: 8),
-    Card(child: Column(children: [
-      ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('名稱與說明'),
-        onTap: _busy || widget.project.archived == true ? null : _edit),
-      const Divider(), ListTile(leading: const Icon(Icons.star_border), title: const Text('加入星標'), onTap: _busy ? null : () => _star(true)),
-      const Divider(), ListTile(leading: const Icon(Icons.star_half), title: const Text('移除星標'), onTap: _busy ? null : () => _star(false)),
-    ])),
-    const SizedBox(height: 24), OutlinedButton.icon(onPressed: _busy ? null : _delete,
-      icon: const Icon(Icons.delete_outline), label: const Text('刪除專案…')),
-    const SizedBox(height: 12), Text('ID ${widget.project.id} · @${widget.account.user.username}', style: Theme.of(context).textTheme.bodySmall),
-  ]);
+  Widget build(BuildContext context) {
+    final account = widget.account, api = widget.api, project = widget.project;
+    void metadata(MetadataKind kind) => _push(MetadataPage(account: account, api: api, project: project, kind: kind));
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 14, 16, 24), children: [
+      _overview(context),
+      _section(context, '程式碼', [
+        (Icons.alt_route, metadataTitle(MetadataKind.branches), () => metadata(MetadataKind.branches)),
+        (Icons.sell_outlined, metadataTitle(MetadataKind.tags), () => metadata(MetadataKind.tags)),
+        (Icons.history, metadataTitle(MetadataKind.commits), () => metadata(MetadataKind.commits)),
+        (Icons.manage_search, '搜尋程式碼與內容', () => _push(SearchPage(account: account, api: api, project: project))),
+      ]),
+      _section(context, '協作', [
+        (Icons.timeline, '專案動態', () => _push(ActivityPage(account: account, api: api, project: project))),
+        (Icons.group_outlined, '成員', () => _push(MembersPage(account: account, api: api, project: project))),
+        (Icons.menu_book_outlined, 'Wiki', () => _push(WikiPagesPage(account: account, api: api, project: project))),
+        (Icons.flag_outlined, metadataTitle(MetadataKind.milestones), () => metadata(MetadataKind.milestones)),
+        (Icons.label_outline, metadataTitle(MetadataKind.labels), () => metadata(MetadataKind.labels)),
+        (Icons.inventory_2_outlined, metadataTitle(MetadataKind.releases), () => metadata(MetadataKind.releases)),
+      ]),
+      _section(context, '部署', [
+        (Icons.dns_outlined, '環境', () => _push(EnvironmentsPage(account: account, api: api, project: project))),
+        (Icons.rocket_launch_outlined, '部署紀錄', () => _push(DeploymentsPage(account: account, api: api, project: project))),
+        (Icons.event_repeat_outlined, 'Pipeline 排程', () => _push(PipelineSchedulesPage(account: account, api: api, project: project))),
+      ]),
+      const SizedBox(height: 16),
+      Padding(padding: const EdgeInsets.only(left: 4, bottom: 6), child: Text('專案管理',
+        style: Theme.of(context).textTheme.labelLarge?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
+      Card(child: ListTile(leading: const Icon(Icons.settings_outlined), title: const Text('名稱與說明'),
+        trailing: const Icon(Icons.chevron_right, size: 18),
+        onTap: _busy || project.archived == true ? null : _edit)),
+      const SizedBox(height: 16), OutlinedButton.icon(onPressed: _busy ? null : _delete,
+        icon: const Icon(Icons.delete_outline), label: const Text('刪除專案…')),
+      const SizedBox(height: 12), Text('ID ${project.id} · @${account.user.username}', style: Theme.of(context).textTheme.bodySmall),
+    ]);
+  }
 }
 
 class MetadataPage extends StatefulWidget {

@@ -3,10 +3,12 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/features/auth/session_controller.dart';
 import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
@@ -93,7 +95,8 @@ void main() {
     final tile = tester.widget<SwitchListTile>(find.byType(SwitchListTile));
     expect(tile.onChanged, isNull);
     expect(tile.value, isFalse);
-    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).maintainBottomViewPadding, isTrue);
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).maintainBottomViewPadding, isFalse,
+      reason: 'the shell reserves the gesture inset below the bar itself');
   });
 
   testWidgets('AuthenticatedApp persists the theme mode chosen in My tab', (
@@ -665,6 +668,60 @@ void main() {
     expect(find.byType(NavigationRail), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
     expect(find.text('待辦'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  Future<SessionController> connectedSession(WidgetTester tester, WorkspaceFixture fixture) async {
+    final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+    addTearDown(session.dispose);
+    addTearDown(fixture.api.close);
+    await tester.runAsync(() async {
+      await session.initialize();
+      await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+    });
+    return session;
+  }
+
+  testWidgets('the bottom navigation reserves the gesture inset exactly once', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(412, 900);
+    tester.view.padding = const FakeViewPadding(bottom: 24);
+    tester.view.viewPadding = const FakeViewPadding(bottom: 24);
+    addTearDown(tester.view.reset);
+    final session = await connectedSession(tester, WorkspaceFixture());
+    await tester.pumpWidget(
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
+    );
+    await settleNetworkWidgets(tester);
+    final bar = tester.getRect(find.byType(NavigationBar));
+    final height = Theme.of(tester.element(find.byType(NavigationBar))).navigationBarTheme.height ?? 80;
+    expect(bar.bottom, 900 - 24, reason: 'the inset sits below the bar, reserved once');
+    expect(bar.height, height, reason: 'the bar itself adds no second inset');
+  });
+
+  testWidgets('every destination fits a 320 dp phone at double text size', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(320, 700);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final session = await connectedSession(tester, WorkspaceFixture());
+    await tester.pumpWidget(
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
+    );
+    await settleNetworkWidgets(tester);
+    expect(tester.takeException(), isNull, reason: 'projects');
+    for (final destination in ['收件匣', 'CI', '我的']) {
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(destination)));
+      await settleNetworkWidgets(tester);
+      expect(tester.takeException(), isNull, reason: destination);
+    }
+    await tester.dragUntilVisible(find.text('我的動態'), find.text('帳號'), const Offset(0, -120));
+    await tester.pumpAndSettle();
+    for (final label in ['我的動態', '我的群組', '全域搜尋']) {
+      expect(tester.renderObject<RenderParagraph>(find.text(label)).didExceedMaxLines, isFalse,
+        reason: '$label wraps instead of truncating to 我的…');
+    }
     expect(tester.takeException(), isNull);
   });
 }

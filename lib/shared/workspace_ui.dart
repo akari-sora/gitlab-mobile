@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/failure.dart';
@@ -36,6 +37,28 @@ Json valueObject(Json value, String key) => value[key] is Map<String, dynamic>
 List<Json> valueObjects(Json value, String key) =>
     value[key] is List ? (value[key] as List).whereType<Json>().toList() : [];
 String shortSha(String sha) => sha.length > 8 ? sha.substring(0, 8) : sha;
+
+/// A glyph for a repository file by its name, so trees scan by kind.
+IconData fileIconFor(String name) {
+  final lower = name.toLowerCase();
+  final dot = lower.lastIndexOf('.');
+  final ext = dot < 0 ? '' : lower.substring(dot + 1);
+  if (lower == 'dockerfile' || lower == 'makefile' || lower.startsWith('.git')) return Icons.settings_outlined;
+  if (lower.endsWith('.lock') || lower == 'license' || lower.startsWith('license.')) return Icons.gavel_outlined;
+  return switch (ext) {
+    'md' || 'markdown' || 'mdown' || 'txt' || 'rst' || 'adoc' => Icons.article_outlined,
+    'png' || 'jpg' || 'jpeg' || 'gif' || 'webp' || 'svg' || 'ico' || 'bmp' => Icons.image_outlined,
+    'pdf' => Icons.picture_as_pdf_outlined,
+    'json' || 'yaml' || 'yml' || 'toml' || 'xml' || 'ini' || 'cfg' || 'conf' || 'properties' || 'gradle' || 'kts' =>
+      Icons.data_object,
+    'sh' || 'bash' || 'zsh' || 'fish' || 'ps1' || 'bat' => Icons.terminal,
+    'zip' || 'tar' || 'gz' || 'tgz' || 'xz' || '7z' || 'jar' || 'apk' || 'aab' => Icons.folder_zip_outlined,
+    'dart' || 'kt' || 'java' || 'swift' || 'js' || 'jsx' || 'ts' || 'tsx' || 'py' || 'go' || 'rs' || 'rb' || 'php' ||
+    'c' || 'h' || 'cc' || 'cpp' || 'hpp' || 'cs' || 'm' || 'mm' || 'scala' || 'lua' || 'sql' || 'vue' || 'svelte' ||
+    'html' || 'css' || 'scss' => Icons.code,
+    _ => Icons.description_outlined,
+  };
+}
 /// Keeps a scrolling body clear of the gesture bar and of side insets from
 /// landscape navigation or a display cutout. The app bar already owns the top.
 Widget gestureSafe(Widget child) => SafeArea(top: false, child: child);
@@ -171,13 +194,13 @@ class StatusBadge extends StatelessWidget {
       _ => (workshop.neutralContainer, workshop.onNeutralContainer),
     };
     return MergeSemantics(child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(8)),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(7)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          ExcludeSemantics(child: Icon(icon, size: 14, color: foreground)),
-          const SizedBox(width: 5),
+          ExcludeSemantics(child: Icon(icon, size: 13, color: foreground)),
+          const SizedBox(width: 4),
           Flexible(
             child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
               style: Theme.of(context).textTheme.labelMedium?.copyWith(color: foreground)),
@@ -185,6 +208,117 @@ class StatusBadge extends StatelessWidget {
         ],
       ),
     ));
+  }
+}
+
+/// `#RRGGBB` (GitLab label and avatar colours) to a [Color]; null if malformed.
+Color? parseHexColor(String value) {
+  final hex = value.trim().replaceFirst('#', '');
+  if (hex.length != 6) return null;
+  final parsed = int.tryParse(hex, radix: 16);
+  return parsed == null ? null : Color(0xFF000000 | parsed);
+}
+
+/// Label names with their colours, from either plain names or the objects
+/// returned with `with_labels_details=true`.
+List<({String name, Color? color, Color? textColor})> labelDetails(Json value) {
+  final raw = value['labels'];
+  final out = <({String name, Color? color, Color? textColor})>[];
+  if (raw is List) {
+    for (final item in raw) {
+      if (item is String && item.trim().isNotEmpty) {
+        out.add((name: item.trim(), color: null, textColor: null));
+      } else if (item is Map && item['name'] is String && (item['name'] as String).trim().isNotEmpty) {
+        out.add((
+          name: (item['name'] as String).trim(),
+          color: item['color'] is String ? parseHexColor(item['color'] as String) : null,
+          textColor: item['text_color'] is String ? parseHexColor(item['text_color'] as String) : null,
+        ));
+      }
+    }
+  }
+  return out;
+}
+
+double contrastRatio(Color a, Color b) {
+  final la = a.computeLuminance(), lb = b.computeLuminance();
+  return (math.max(la, lb) + .05) / (math.min(la, lb) + .05);
+}
+
+/// Text colour for small type on [fill]: [preferred] when it reaches the WCAG
+/// 4.5:1 ratio, otherwise whichever of white or near-black contrasts more.
+Color readableInk(Color fill, {Color? preferred}) {
+  if (preferred != null && contrastRatio(preferred, fill) >= 4.5) return preferred;
+  const dark = Color(0xFF1F1F1F);
+  return contrastRatio(Colors.white, fill) >= contrastRatio(dark, fill) ? Colors.white : dark;
+}
+
+/// A GitLab label in its own colour. Scoped labels (`scope::value`) render as
+/// two joined segments, the way GitLab shows them.
+class LabelPill extends StatelessWidget {
+  const LabelPill(this.name, {super.key, this.color, this.textColor});
+  final String name;
+  final Color? color, textColor;
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final base = Theme.of(context).textTheme.labelSmall!;
+    final fill = color ?? scheme.surfaceContainerHighest;
+    final ink = color == null ? scheme.onSurfaceVariant : readableInk(fill, preferred: textColor);
+    final split = name.lastIndexOf('::');
+    const radius = Radius.circular(10);
+    if (split > 0 && split < name.length - 2) {
+      final scope = name.substring(0, split), value = name.substring(split + 2);
+      return Semantics(label: name, excludeSemantics: true, child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Flexible(child: Container(
+          padding: const EdgeInsets.fromLTRB(8, 2, 6, 2),
+          decoration: BoxDecoration(color: fill, borderRadius: const BorderRadius.horizontal(left: radius),
+            border: Border.all(color: fill)),
+          child: Text(scope, maxLines: 1, overflow: TextOverflow.ellipsis, style: base.copyWith(color: ink)),
+        )),
+        Flexible(child: Container(
+          padding: const EdgeInsets.fromLTRB(6, 2, 8, 2),
+          decoration: BoxDecoration(color: scheme.surface, borderRadius: const BorderRadius.horizontal(right: radius),
+            border: Border.all(color: fill)),
+          child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: base.copyWith(color: scheme.onSurface)),
+        )),
+      ]));
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(color: fill, borderRadius: BorderRadius.circular(10)),
+      child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: base.copyWith(color: ink)),
+    );
+  }
+}
+
+/// Up to [max] overlapping monograms for assignees or reviewers.
+class PeopleStack extends StatelessWidget {
+  const PeopleStack(this.people, {super.key, this.size = 22, this.max = 3});
+  final List<Json> people;
+  final double size;
+  final int max;
+  @override
+  Widget build(BuildContext context) {
+    if (people.isEmpty) return const SizedBox.shrink();
+    final shown = people.take(max).toList();
+    final names = people.map((p) => '@${valueText(p, 'username')}').join('、');
+    final surface = Theme.of(context).colorScheme.surface;
+    return Semantics(label: names, excludeSemantics: true, child: Row(mainAxisSize: MainAxisSize.min, children: [
+      SizedBox(
+        height: size,
+        width: size + (shown.length - 1) * size * .62,
+        child: Stack(children: [
+          for (var i = 0; i < shown.length; i++)
+            Positioned(left: i * size * .62, child: Container(
+              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: surface, width: 1.5)),
+              child: ClipOval(child: Monogram(valueText(shown[i], 'name', valueText(shown[i], 'username')), size: size - 3)),
+            )),
+        ]),
+      ),
+      if (people.length > max) Padding(padding: const EdgeInsets.only(left: 3),
+        child: Text('+${people.length - max}', style: Theme.of(context).textTheme.labelSmall)),
+    ]));
   }
 }
 
@@ -267,7 +401,7 @@ class EntityCard extends StatelessWidget {
     final details = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       DefaultTextStyle.merge(
         style: Theme.of(context).textTheme.titleMedium!.copyWith(
-          color: muted ? scheme.onSurfaceVariant : scheme.onSurface),
+          fontSize: 15, height: 1.35, color: muted ? scheme.onSurfaceVariant : scheme.onSurface),
         maxLines: titleMaxLines, overflow: TextOverflow.ellipsis, child: title),
       if (subtitle != null) ...[
         const SizedBox(height: 2),
@@ -275,10 +409,10 @@ class EntityCard extends StatelessWidget {
           style: Theme.of(context).textTheme.bodySmall!.copyWith(color: scheme.onSurfaceVariant),
           maxLines: 1, overflow: TextOverflow.ellipsis, child: subtitle!),
       ],
-      if (body != null) ...[const SizedBox(height: 8), body!],
+      if (body != null) ...[const SizedBox(height: 6), body!],
       if (meta.isNotEmpty) ...[
-        const SizedBox(height: 10),
-        Wrap(spacing: 10, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: meta),
+        const SizedBox(height: 7),
+        Wrap(spacing: 10, runSpacing: 5, crossAxisAlignment: WrapCrossAlignment.center, children: meta),
       ],
     ]);
     final overlay = WidgetStatePropertyAll(scheme.onSurface.withValues(alpha: .06));
@@ -286,32 +420,32 @@ class EntityCard extends StatelessWidget {
       // Whole card is one merged node: title, status and meta are read together
       // with the tap action instead of as separate stops.
       final row = Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (leading != null) ...[leading!, const SizedBox(width: 14)],
+        if (leading != null) ...[leading!, const SizedBox(width: 12)],
         Expanded(child: details),
         if (chevron && onTap != null) ...[
           const SizedBox(width: 4),
-          Padding(padding: const EdgeInsets.only(top: 2),
+          Padding(padding: const EdgeInsets.only(top: 1),
             child: Icon(selected ? Icons.check_circle : Icons.chevron_right, size: 20,
               color: selected ? scheme.primary : scheme.onSurfaceVariant)),
         ],
       ]);
-      final content = Padding(padding: const EdgeInsets.fromLTRB(16, 14, 12, 14), child: row);
+      final content = Padding(padding: const EdgeInsets.fromLTRB(14, 12, 10, 12), child: row);
       final card = Card(clipBehavior: Clip.antiAlias, color: cardColor, shape: cardShape,
         child: onTap == null ? content : InkWell(onTap: onTap, overlayColor: overlay, child: content));
       return MergeSemantics(child: Semantics(button: onTap != null, child: card));
     }
     // A trailing control (todo completion, metadata menu) keeps its own node and
     // action; the tappable content is one merged, named button beside it.
-    final content = Padding(padding: const EdgeInsets.fromLTRB(16, 14, 8, 14),
+    final content = Padding(padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        if (leading != null) ...[leading!, const SizedBox(width: 14)],
+        if (leading != null) ...[leading!, const SizedBox(width: 12)],
         Expanded(child: details),
       ]));
     final tappable = onTap == null ? content : InkWell(onTap: onTap, overlayColor: overlay, child: content);
     return Card(clipBehavior: Clip.antiAlias, color: cardColor, shape: cardShape,
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(child: MergeSemantics(child: Semantics(button: onTap != null, child: tappable))),
-        Padding(padding: const EdgeInsets.only(top: 6, right: 8), child: trailing!),
+        Padding(padding: const EdgeInsets.only(top: 4, right: 4), child: trailing!),
       ]));
   }
 }

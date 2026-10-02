@@ -6,10 +6,14 @@ import '../../core/models.dart';
 import '../../shared/external_link.dart';
 import '../../shared/list_detail_scaffold.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
+import 'ci_page.dart';
 import 'diff_page.dart';
 import 'editor.dart';
+import 'navigation.dart';
 import 'picker_sheet.dart';
+import 'reactions.dart';
 import 'records_feed.dart';
 import 'discussions_tab.dart';
 import '../../shared/theme.dart';
@@ -40,6 +44,16 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
   }
   void _open(int iid) {
     _selection.select(iid);
+  }
+
+  void _applyMutation(Json updated) {
+    final state = valueText(updated, 'state');
+    final matchesFilter = _state == 'all' || _state == state;
+    if (matchesFilter) {
+      _feed.currentState?.patchItem(updated);
+    } else {
+      _feed.currentState?.removeItem('${updated['id'] ?? updated['iid']}');
+    }
   }
   Future<void> _create() async {
     var iid = 0;
@@ -73,15 +87,38 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
         createdRecord = created;
       });
     if (saved && mounted) {
-      _open(iid);
       if (createdRecord != null && (_state == 'all' || _state == 'opened')) {
         _feed.currentState?.prependItem(createdRecord!);
       } else {
         unawaited(_feed.currentState?.refresh() ?? Future<void>.value());
       }
+      _open(iid);
     }
   }
-  Widget _buildList(BuildContext context, bool isTwoPane, int? selected) => Column(children: [
+  Widget _buildList(BuildContext context, bool isTwoPane, int? selected) {
+    return RecordsFeed(key: _feed, identity: '${widget.resource}/$_state/$_query', storageId: widget.resource,
+      account: widget.account, resourceLabel: '${widget.project.path} · ${mr ? '合併請求' : '議題'}',
+      onSwitchAccount: endSessionFrom(context),
+      empty: mr ? '沒有符合的合併請求' : '沒有符合的議題',
+      emptyIcon: mr ? Icons.merge : Icons.adjust,
+      leading: (context, _) => _listControls(context),
+      load: (next) => widget.api.records(['projects', '${widget.project.id}', widget.resource],
+        query: {'state': _state, 'scope': 'all', 'order_by': 'updated_at', 'sort': 'desc', 'with_labels_details': 'true',
+          if (_query.isNotEmpty) 'search': _query}, next: next),
+      itemBuilder: (context, value) {
+        final iid = requiredInt(value, 'iid');
+        return workItemCard(
+          context,
+          value,
+          mr: mr,
+          selected: isTwoPane && selected == iid,
+          onTap: () => _open(iid),
+        );
+      },
+    );
+  }
+
+  Widget _listControls(BuildContext context) => Column(children: [
     Padding(padding: EdgeInsets.fromLTRB(feedGutter(context), 12, feedGutter(context) - 4, 4), child: Row(children: [
       Expanded(child: TextField(
         controller: _search,
@@ -125,23 +162,6 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
           ChoiceChip(label: Text(e.value), selected: _state == e.key, showCheckmark: false,
             onSelected: (_) => setState(() => _state = e.key)),
       ]))),
-    Expanded(child: RecordsFeed(key: _feed, identity: '${widget.resource}/$_state/$_query',
-      account: widget.account, resourceLabel: '${widget.project.path} · ${mr ? '合併請求' : '議題'}',
-      onSwitchAccount: endSessionFrom(context),
-      empty: mr ? '沒有符合的合併請求' : '沒有符合的議題',
-      load: (next) => widget.api.records(['projects', '${widget.project.id}', widget.resource],
-        query: {'state': _state, 'scope': 'all', 'order_by': 'updated_at', 'sort': 'desc', if (_query.isNotEmpty) 'search': _query}, next: next),
-      itemBuilder: (context, value) {
-        final iid = requiredInt(value, 'iid');
-        return workItemCard(
-          context,
-          value,
-          mr: mr,
-          selected: isTwoPane && selected == iid,
-          onTap: () => _open(iid),
-        );
-      },
-    )),
   ]);
 
   Widget _buildDetail(BuildContext context, int iid, bool isTwoPane, VoidCallback onBack) => WorkItemPage(
@@ -157,15 +177,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
       _selection.clear();
       _feed.currentState?.removeItem('$iid');
     },
-    onMutated: (updated) {
-      final state = valueText(updated, 'state');
-      final matchesFilter = _state == 'all' || _state == state;
-      if (matchesFilter) {
-        _feed.currentState?.patchItem(updated);
-      } else {
-        _feed.currentState?.removeItem('${updated['id'] ?? updated['iid']}');
-      }
-    },
+    onMutated: _applyMutation,
   );
 
   Widget _buildEmpty(BuildContext context) => Center(
@@ -196,34 +208,41 @@ Widget workItemCard(
   String? project,
   bool selected = false,
 }) {
-  final scheme = Theme.of(context).colorScheme;
-  final workshop = WorkshopColors.of(context);
   final state = valueText(value, 'state');
-  final (markBackground, markForeground) = switch (state) {
-    'opened' => (scheme.primaryContainer, scheme.onPrimaryContainer),
-    'merged' => (workshop.successContainer, workshop.onSuccessContainer),
-    _ => (workshop.neutralContainer, workshop.onNeutralContainer),
-  };
   final source = valueText(value, 'source_branch'), target = valueText(value, 'target_branch');
   final pipeline = valueText(valueObject(value, 'head_pipeline'), 'status');
   final iid = '${mr ? '!' : '#'}${valueInt(value, 'iid')}';
   final isConfidential = valueBool(value, 'confidential');
   final milestone = valueObject(value, 'milestone');
   final milestoneTitle = valueText(milestone, 'title');
+  final labels = labelDetails(value);
+  final assignees = valueObjects(value, 'assignees');
+  final notes = valueInt(value, 'user_notes_count');
+  final upvotes = valueInt(value, 'upvotes');
+  final tasks = valueObject(value, 'task_completion_status');
+  final taskCount = valueInt(tasks, 'count');
+  final due = valueText(value, 'due_date');
+  final branch = mr && source.isNotEmpty && target.isNotEmpty
+      ? MetaChip('$source → $target', icon: Icons.call_split, mono: true)
+      : null;
+  final labelRow = labels.isEmpty ? null : Wrap(spacing: 4, runSpacing: 4, children: [
+    for (final label in labels.take(6)) LabelPill(label.name, color: label.color, textColor: label.textColor),
+    if (labels.length > 6) MetaChip('+${labels.length - 6}'),
+  ]);
   return EntityCard(
     onTap: onTap,
     selected: selected,
     titleMaxLines: 3,
-    leading: Container(width: 40, height: 40, alignment: Alignment.center,
-      decoration: BoxDecoration(color: markBackground, borderRadius: BorderRadius.circular(12)),
-      child: Icon(mr ? Icons.merge : (isConfidential ? Icons.lock_outline : Icons.adjust), size: 20, color: markForeground)),
     title: Text(valueText(value, 'title')),
     subtitle: project == null || project.isEmpty ? null : Text(project),
-    body: mr && source.isNotEmpty && target.isNotEmpty
-        ? MetaChip('$source → $target', icon: Icons.call_split, mono: true)
-        : null,
+    body: branch == null && labelRow == null ? null : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      ?branch,
+      if (branch != null && labelRow != null) const SizedBox(height: 6),
+      ?labelRow,
+    ]),
     meta: [
       StatusBadge(state),
+      if (mr && value['draft'] == true) const MetaChip('草稿', icon: Icons.edit_note),
       if (isConfidential)
         const MetaChip('機密', icon: Icons.lock_outline),
       if (milestoneTitle.isNotEmpty)
@@ -231,8 +250,14 @@ Widget workItemCard(
       if (mr && pipeline.isNotEmpty) StatusBadge(pipeline),
       if (mr && isAutoMergeEnabled(value))
         const MetaChip('自動合併', icon: Icons.schedule_send),
+      if (mr && value['has_conflicts'] == true) const MetaChip('衝突', icon: Icons.warning_amber_rounded),
       MetaChip(iid, mono: true),
+      if (taskCount > 0) MetaChip('${valueInt(tasks, 'completed_count')}/$taskCount', icon: Icons.checklist),
+      if (due.isNotEmpty) MetaChip('到期 $due', icon: Icons.event_outlined),
+      if (notes > 0) MetaChip('$notes', icon: Icons.chat_bubble_outline),
+      if (upvotes > 0) MetaChip('$upvotes', icon: Icons.thumb_up_outlined),
       MetaChip(relativeDate(valueText(value, 'updated_at')), icon: Icons.schedule_outlined),
+      if (assignees.isNotEmpty) PeopleStack(assignees),
     ],
   );
 }
@@ -262,18 +287,26 @@ class WorkItemPage extends StatefulWidget {
   @override
   State<WorkItemPage> createState() => _WorkItemPageState();
 }
-class _WorkItemPageState extends State<WorkItemPage> {
+class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderStateMixin {
   Json? _data;
   Json? _approvalsData;
   ApiFailure? _error;
   bool _loading = true, _busy = false;
   int _epoch = 0;
+  final _chrome = ScrollChromeController();
+  late final TabController _tabs = TabController(length: mr ? 4 : 2, vsync: this)..addListener(_chrome.show);
   bool get mr => widget.resource == 'merge_requests';
   List<String> get path => ['projects', '${widget.project.id}', widget.resource, '${widget.iid}'];
   String get label => '${mr ? '!' : '#'}${widget.iid}';
   Uri get web => widget.account.instance.projectWeb('${widget.project.path}/-/${widget.resource}/${widget.iid}');
   @override
   void initState() { super.initState(); unawaited(_load()); }
+  @override
+  void dispose() {
+    _tabs.dispose();
+    _chrome.dispose();
+    super.dispose();
+  }
   Future<void> _load() async {
     final epoch = ++_epoch;
     if (mounted) { setState(() { _loading = true; _error = null; }); }
@@ -489,6 +522,7 @@ class _WorkItemPageState extends State<WorkItemPage> {
     var squash = false;
     var removeSourceBranch = false;
     var autoMerge = false;
+    var stillDraft = false;
     if (action == 'cancel_auto_merge') {
       if (!await confirmAction(context, '取消自動合併？', '取消後將不再於流水線通過時自動合併此變更。')) {
         return;
@@ -539,6 +573,18 @@ class _WorkItemPageState extends State<WorkItemPage> {
           ids.contains(widget.account.user.id) ? ids.remove(widget.account.user.id) : ids.add(widget.account.user.id);
           await widget.api.writeRecord('PUT', path, {'assignee_ids': ids.toList()});
         case 'todo': await widget.api.writeRecord('POST', [...path, 'todo'], {});
+        case 'draft':
+          final current = await widget.api.record(path);
+          if (current['updated_at'] != data['updated_at']) { throw const ApiFailure(FailureKind.conflict); }
+          final wasDraft = current['draft'] == true;
+          final title = valueText(current, 'title').trim();
+          final next = toggledDraftTitle(title, wasDraft);
+          if (next.isEmpty || next == title) {
+            stillDraft = true;
+          } else {
+            final updated = await widget.api.writeRecord('PUT', path, {'title': next});
+            stillDraft = wasDraft && updated['draft'] == true;
+          }
         case 'approve': await widget.api.approveMergeRequest(widget.project.id, widget.iid, requiredString(data, 'sha'));
         case 'unapprove': await widget.api.writeRecord('POST', [...path, 'unapprove'], {});
         case 'rebase': await widget.api.rebaseMergeRequest(widget.project.id, widget.iid);
@@ -551,6 +597,10 @@ class _WorkItemPageState extends State<WorkItemPage> {
       }
       if (mounted && action == 'rebase') {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已請求 Rebase 分支')));
+      }
+      if (mounted && stillDraft) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('GitLab 仍將此合併請求視為草稿：標題沒有可移除的草稿標記，請編輯標題或在 GitLab 網頁標示為可審查。')));
       }
       if (mounted && action == 'merge') {
         final merged = _data?['state'] == 'merged';
@@ -754,6 +804,64 @@ class _WorkItemPageState extends State<WorkItemPage> {
     )));
   }
 
+  Future<void> _subscribe(bool subscribed) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await widget.api.setSubscribed(widget.project.id, widget.resource, widget.iid, subscribed);
+      await _load();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(subscribed ? '已開啟通知' : '已關閉通知')));
+      }
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  List<Widget> _detailRows(Json data) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final rows = <Widget>[];
+    void add(IconData icon, String label, String value) {
+      rows
+        ..add(const Divider(height: 20))
+        ..add(Row(children: [
+          Icon(icon, size: 18, color: muted),
+          const SizedBox(width: 10),
+          Text(label, style: theme.textTheme.titleSmall),
+          const SizedBox(width: 12),
+          Expanded(child: Text(value, textAlign: TextAlign.end, style: theme.textTheme.bodyMedium)),
+        ]));
+    }
+    final due = valueText(data, 'due_date');
+    if (due.isNotEmpty) add(Icons.event_outlined, '到期日', due);
+    final time = valueObject(data, 'time_stats');
+    final estimate = valueText(time, 'human_time_estimate'), spent = valueText(time, 'human_total_time_spent');
+    if (estimate.isNotEmpty || spent.isNotEmpty) {
+      add(Icons.timer_outlined, '工時', '已花費 ${spent.isEmpty ? '0' : spent} · 預估 ${estimate.isEmpty ? '未設定' : estimate}');
+    }
+    if (data['weight'] is int) add(Icons.fitness_center, '權重', '${data['weight']}');
+    if (data['discussion_locked'] == true) add(Icons.lock_outline, '討論', '已鎖定，只有成員可留言');
+    final subscribed = data['subscribed'];
+    if (subscribed is bool) {
+      rows
+        ..add(const Divider(height: 12))
+        ..add(SwitchListTile(
+          key: const ValueKey('work-item-subscribe'),
+          contentPadding: EdgeInsets.zero,
+          minTileHeight: 48,
+          secondary: Icon(subscribed ? Icons.notifications_active_outlined : Icons.notifications_off_outlined, color: muted),
+          title: const Text('通知'),
+          subtitle: Text(subscribed ? '有新動態時通知我' : '不接收此項目的通知'),
+          value: subscribed,
+          onChanged: _busy ? null : _subscribe,
+        ));
+    }
+    return rows;
+  }
+
   Widget _buildAssigneesSection(Json data) {
     final assignees = valueObjects(data, 'assignees');
     final myId = widget.account.user.id;
@@ -937,16 +1045,25 @@ class _WorkItemPageState extends State<WorkItemPage> {
   @override
   Widget build(BuildContext context) {
     final data = _data;
-    return DefaultTabController(length: mr ? 4 : 2, child: Scaffold(
-      appBar: AppBar(
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final appBar = AppBar(
+        primary: false,
         automaticallyImplyLeading: false,
         leading: widget.showBackButton ? BackButton(onPressed: widget.onBack) : null,
-        title: Text(label),
+        titleSpacing: widget.showBackButton ? 0 : null,
+        title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Text(label, style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 19)),
+          Text(widget.project.path, maxLines: 1, overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+        ]),
         actions: [
         IconButton(tooltip: '重新整理', onPressed: _loading || _busy ? null : _load, icon: const Icon(Icons.refresh)),
         PopupMenuButton<String>(tooltip: '更多操作', enabled: !_busy && data != null, onSelected: _action, itemBuilder: (_) => [
           const PopupMenuItem(value: 'edit', child: Text('編輯')),
           if (data?['state'] == 'opened') const PopupMenuItem(value: 'close', child: Text('關閉')),
+          if (mr && data?['state'] == 'opened')
+            PopupMenuItem(value: 'draft', child: Text(data?['draft'] == true ? '標示為可審查' : '標示為草稿')),
           if (data?['state'] == 'closed') const PopupMenuItem(value: 'reopen', child: Text('重新開啟')),
           PopupMenuItem(value: 'assign', child: Text(valueObjects(data ?? {}, 'assignees')
             .any((v) => v['id'] == widget.account.user.id) ? '取消指派給我' : '指派給我')),
@@ -954,44 +1071,57 @@ class _WorkItemPageState extends State<WorkItemPage> {
           const PopupMenuItem(value: 'web', child: Text('在 GitLab 開啟')),
           const PopupMenuItem(value: 'delete', child: Text('刪除')),
         ]),
-      ]),
-      body: gestureSafe(data == null ? (_error != null ? SingleChildScrollView(child: FailureNotice(_error!, onRetry: _load,
-        account: widget.account, resourceLabel: '${widget.project.path} · $label',
-        onSwitchAccount: endSessionFrom(context, ResumeTarget(
-          projectId: widget.project.id,
-          projectPath: widget.project.path,
-          resource: widget.resource,
-          iid: widget.iid,
-        )))) : const ListSkeleton()) : Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
-          Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(widget.project.path, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
-            const SizedBox(height: 8), Text(valueText(data, 'title'), maxLines: 3, overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 10), Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                StatusBadge(valueText(data, 'state')),
-                if (data['draft'] == true) const Text('草稿'),
-                if (valueBool(data, 'confidential'))
-                  const Chip(
-                    visualDensity: VisualDensity.compact,
-                    avatar: Icon(Icons.lock_outline, size: 16),
-                    label: Text('機密'),
-                  ),
-                if (valueObject(data, 'milestone').isNotEmpty)
-                  Chip(
-                    visualDensity: VisualDensity.compact,
-                    avatar: const Icon(Icons.tour_outlined, size: 16),
-                    label: Text(valueText(valueObject(data, 'milestone'), 'title')),
-                  ),
-                Text('@${valueText(valueObject(data, 'author'), 'username')}', style: Theme.of(context).textTheme.bodySmall),
-              ]),
+      ]);
+    if (data == null) {
+      return Scaffold(
+        body: StatusBarInset(child: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            appBar,
+            Expanded(child: _error != null ? SingleChildScrollView(child: FailureNotice(_error!, onRetry: _load,
+              account: widget.account, resourceLabel: '${widget.project.path} · $label',
+              onSwitchAccount: endSessionFrom(context, ResumeTarget(
+                projectId: widget.project.id,
+                projectPath: widget.project.path,
+                resource: widget.resource,
+                iid: widget.iid,
+              )))) : const ListSkeleton()),
+          ]))),
+      );
+    }
+    final author = valueObject(data, 'author');
+    final authorName = valueText(author, 'name', valueText(author, 'username'));
+    final created = relativeDate(valueText(data, 'created_at'));
+    final crowded = MediaQuery.textScalerOf(context).scale(14) > 14 * 1.3;
+    return Scaffold(
+      body: NotificationListener<ScrollNotification>(onNotification: _chrome.handle, child:
+          StatusBarInset(child: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          CollapsingChrome(visible: _chrome, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            appBar,
+            Padding(padding: const EdgeInsets.fromLTRB(20, 2, 20, 10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SelectableText(valueText(data, 'title'), minLines: 1, maxLines: 4,
+                style: theme.textTheme.titleLarge?.copyWith(height: 1.3)),
+              const SizedBox(height: 8), Wrap(spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  StatusBadge(valueText(data, 'state')),
+                  if (data['draft'] == true) const MetaChip('草稿', icon: Icons.edit_note),
+                  if (valueBool(data, 'confidential')) const MetaChip('機密', icon: Icons.lock_outline),
+                  if (valueObject(data, 'milestone').isNotEmpty)
+                    MetaChip(valueText(valueObject(data, 'milestone'), 'title'), icon: Icons.tour_outlined),
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    Monogram(authorName, size: 18),
+                    const SizedBox(width: 6),
+                    Flexible(child: Text('@${valueText(author, 'username')}${created.isEmpty ? '' : ' · $created'}',
+                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(color: muted))),
+                  ]),
+                ]),
+            ])),
           ])),
-          TabBar(isScrollable: true, tabAlignment: TabAlignment.start,
+          if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
+          TabBar(controller: _tabs, indicatorSize: TabBarIndicatorSize.tab,
+            isScrollable: crowded, tabAlignment: crowded ? TabAlignment.start : null,
             tabs: [const Tab(text: '摘要'), if (mr) const Tab(text: '變更'), const Tab(text: '討論'), if (mr) const Tab(text: '檢查')]),
-          Expanded(child: TabBarView(children: [
-            ListView(padding: const EdgeInsets.all(20), children: [
+          Expanded(child: TabBarView(controller: _tabs, children: [
+            ListView(padding: const EdgeInsets.fromLTRB(16, 14, 16, 24), children: [
               if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
                 resourceLabel: '${widget.project.path} · $label',
                 onSwitchAccount: endSessionFrom(context, ResumeTarget(
@@ -1001,35 +1131,51 @@ class _WorkItemPageState extends State<WorkItemPage> {
                   iid: widget.iid,
                 ))),
               if (mr) _reviewCard(data),
-              if (mr) Padding(padding: const EdgeInsets.only(bottom: 16), child: Card(child: Padding(padding: const EdgeInsets.all(14),
-                child: Text('${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}',
-                  style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 13))))),
+              if (mr) Padding(padding: const EdgeInsets.only(bottom: 12), child: Wrap(spacing: 10, runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  MetaChip('${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}',
+                    icon: Icons.alt_route, mono: true),
+                  if (valueText(data, 'changes_count').isNotEmpty)
+                    MetaChip('${valueText(data, 'changes_count')} 個檔案', icon: Icons.difference_outlined),
+                ])),
               MarkdownView(valueText(data, 'description').isEmpty ? '尚未填寫說明。' : valueText(data, 'description'),
                 base: web, api: widget.api, projectId: widget.project.id,
                 projectWeb: widget.account.instance.projectWeb(widget.project.path),
                 projectPath: widget.project.path),
-              const SizedBox(height: 24), const Divider(), const SizedBox(height: 16),
-              if (valueObject(data, 'milestone').isNotEmpty) ...[
-                Text('里程碑', style: Theme.of(context).textTheme.titleSmall), const SizedBox(height: 8),
-                Row(children: [
-                  const Icon(Icons.tour_outlined, size: 18),
-                  const SizedBox(width: 8),
-                  Text(valueText(valueObject(data, 'milestone'), 'title')),
-                  if (valueText(valueObject(data, 'milestone'), 'due_date').isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    Text('（到期日：${valueText(valueObject(data, 'milestone'), 'due_date')}）',
-                      style: Theme.of(context).textTheme.bodySmall),
+              const SizedBox(height: 14),
+              ReactionsBar(account: widget.account, api: widget.api, project: widget.project,
+                resource: widget.resource, iid: widget.iid),
+              const SizedBox(height: 16),
+              Card(child: Padding(padding: const EdgeInsets.fromLTRB(14, 4, 8, 12), child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  _buildAssigneesSection(data),
+                  if (mr) ...[const Divider(height: 20), _buildReviewersSection(data)],
+                  const Divider(height: 20),
+                  _buildLabelsSection(data),
+                  if (valueObject(data, 'milestone').isNotEmpty) ...[
+                    const Divider(height: 20),
+                    Text('里程碑', style: Theme.of(context).textTheme.titleSmall), const SizedBox(height: 8),
+                    Wrap(spacing: 8, runSpacing: 2, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        const Icon(Icons.tour_outlined, size: 18),
+                        const SizedBox(width: 8),
+                        Flexible(child: Text(valueText(valueObject(data, 'milestone'), 'title'))),
+                      ]),
+                      if (valueText(valueObject(data, 'milestone'), 'due_date').isNotEmpty)
+                        Text('（到期日：${valueText(valueObject(data, 'milestone'), 'due_date')}）',
+                          style: Theme.of(context).textTheme.bodySmall),
+                    ]),
                   ],
-                ]),
-                const SizedBox(height: 16),
-              ],
-              _buildAssigneesSection(data),
-              if (mr) ...[
-                const SizedBox(height: 16),
-                _buildReviewersSection(data),
-              ],
-              _buildLabelsSection(data),
-              const SizedBox(height: 16), Text('更新於 ${relativeDate(valueText(data, 'updated_at'))}', style: Theme.of(context).textTheme.bodySmall),
+                  ..._detailRows(data),
+                ],
+              ))),
+              if (!mr) _RelatedIssueItems(account: widget.account, api: widget.api, project: widget.project, iid: widget.iid),
+              if (mr) _MergeRequestHistory(account: widget.account, api: widget.api, project: widget.project, iid: widget.iid),
+              const SizedBox(height: 12),
+              Text([
+                if (valueText(data, 'created_at').isNotEmpty) '建立於 ${relativeDate(valueText(data, 'created_at'))}',
+                '更新於 ${relativeDate(valueText(data, 'updated_at'))}',
+              ].join(' · '), style: Theme.of(context).textTheme.bodySmall),
             ]),
             if (mr) ReviewDiffPage(key: ValueKey(valueText(data, 'sha')), account: widget.account, api: widget.api,
               project: widget.project, iid: widget.iid, expectedSha: valueText(data, 'sha'), onApplied: _load),
@@ -1044,9 +1190,9 @@ class _WorkItemPageState extends State<WorkItemPage> {
             ),
             if (mr) _MergeChecks(account: widget.account, api: widget.api, path: path, data: data, busy: _busy, act: _action),
           ])),
-        ],
-      )),
-    ));
+          ]))),
+      ),
+    );
   }
 }
 class _MergeChecks extends StatefulWidget {
@@ -1111,6 +1257,159 @@ class _MergeChecksState extends State<_MergeChecks> {
   ]);
 }
 
+/// Merge requests that mention or close an issue, and its linked issues.
+class _RelatedIssueItems extends StatefulWidget {
+  const _RelatedIssueItems({required this.account, required this.api, required this.project, required this.iid});
+  final Account account;
+  final GitLabApi api;
+  final Project project;
+  final int iid;
+  @override
+  State<_RelatedIssueItems> createState() => _RelatedIssueItemsState();
+}
+
+class _RelatedIssueItemsState extends State<_RelatedIssueItems> {
+  List<Json> _mergeRequests = const [], _links = const [];
+  ApiFailure? _error;
+  int _epoch = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    _epoch++;
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    final epoch = ++_epoch;
+    final base = ['projects', '${widget.project.id}', 'issues', '${widget.iid}'];
+    if (_error != null) setState(() => _error = null);
+    try {
+      final results = await Future.wait([
+        widget.api.records([...base, 'related_merge_requests']),
+        widget.api.records([...base, 'links']),
+      ]);
+      if (!mounted || epoch != _epoch) return;
+      setState(() {
+        _mergeRequests = results[0].items;
+        _links = results[1].items;
+      });
+    } catch (e) {
+      if (mounted && epoch == _epoch) setState(() => _error = safeFailure(e));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final error = _error;
+    if (error != null) {
+      return FailureNotice(error, account: widget.account, onRetry: _load, onSwitchAccount: endSessionFrom(context),
+        resourceLabel: '${widget.project.path} · #${widget.iid} 相關合併請求與關聯議題');
+    }
+    if (_mergeRequests.isEmpty && _links.isEmpty) return const SizedBox.shrink();
+    final open = ResourceNavigator(widget.account, widget.api);
+    final theme = Theme.of(context);
+    Widget row(Json item, {required bool mr}) {
+      final linkType = valueText(item, 'link_type');
+      final relation = switch (linkType) {
+        'blocks' => '阻擋', 'is_blocked_by' => '被阻擋', 'relates_to' => '相關', _ => '',
+      };
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        minTileHeight: 48,
+        leading: Icon(mr ? Icons.merge : Icons.adjust, size: 20),
+        title: Text(valueText(item, 'title'), maxLines: 2, overflow: TextOverflow.ellipsis),
+        subtitle: Text([
+          '${mr ? '!' : '#'}${valueInt(item, 'iid')}',
+          statusLabel(valueText(item, 'state')),
+          if (relation.isNotEmpty) relation,
+        ].join(' · ')),
+        onTap: () => open.workItem(context, '${valueInt(item, 'project_id')}', mr ? 'merge_requests' : 'issues',
+          valueInt(item, 'iid')),
+      );
+    }
+    return Padding(padding: const EdgeInsets.only(top: 12), child: Card(child: Padding(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        if (_mergeRequests.isNotEmpty) ...[
+          Text('相關合併請求', style: theme.textTheme.titleSmall),
+          for (final item in _mergeRequests) row(item, mr: true),
+        ],
+        if (_links.isNotEmpty) ...[
+          if (_mergeRequests.isNotEmpty) const Divider(height: 16),
+          Text('關聯議題', style: theme.textTheme.titleSmall),
+          for (final item in _links) row(item, mr: false),
+        ],
+      ]),
+    )));
+  }
+}
+
+/// Entry points to a merge request's commits and pipelines.
+class _MergeRequestHistory extends StatelessWidget {
+  const _MergeRequestHistory({required this.account, required this.api, required this.project, required this.iid});
+  final Account account;
+  final GitLabApi api;
+  final Project project;
+  final int iid;
+
+  @override
+  Widget build(BuildContext context) {
+    final open = ResourceNavigator(account, api);
+    final base = ['projects', '${project.id}', 'merge_requests', '$iid'];
+    Future<void> push(String title, Widget body) => Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => Scaffold(appBar: AppBar(title: Text(title)), body: gestureSafe(body))));
+    return Padding(padding: const EdgeInsets.only(top: 12), child: Card(child: Column(children: [
+      ListTile(
+        key: const ValueKey('mr-commits-entry'),
+        leading: const Icon(Icons.commit),
+        title: const Text('提交紀錄'),
+        trailing: const Icon(Icons.chevron_right, size: 18),
+        onTap: () => push('!$iid 提交紀錄', RecordsFeed(
+          identity: '${base.join('/')}/commits',
+          account: account,
+          resourceLabel: '${project.path} · !$iid 提交',
+          onSwitchAccount: endSessionFrom(context),
+          empty: '沒有提交',
+          grouped: true,
+          load: (next) => api.records([...base, 'commits'], next: next),
+          itemBuilder: (context, value) => ListTile(
+            minTileHeight: 56,
+            leading: Monogram(valueText(value, 'author_name', '?'), size: 32),
+            title: Text(valueText(value, 'title'), maxLines: 2, overflow: TextOverflow.ellipsis),
+            subtitle: Text('${valueText(value, 'short_id')} · ${valueText(value, 'author_name')} · '
+              '${relativeDate(valueText(value, 'created_at'))}'),
+            onTap: () => open.commit(context, '${project.id}', valueText(value, 'id')),
+          ),
+        )),
+      ),
+      const Divider(height: 1),
+      ListTile(
+        key: const ValueKey('mr-pipelines-entry'),
+        leading: const Icon(Icons.account_tree_outlined),
+        title: const Text('流程'),
+        trailing: const Icon(Icons.chevron_right, size: 18),
+        onTap: () => push('!$iid 流程', RecordsFeed(
+          identity: '${base.join('/')}/pipelines',
+          account: account,
+          resourceLabel: '${project.path} · !$iid 流程',
+          onSwitchAccount: endSessionFrom(context),
+          empty: '沒有 Pipeline',
+          grouped: true,
+          load: (next) => api.records([...base, 'pipelines'], next: next),
+          itemBuilder: (context, value) => pipelineRow(context, value,
+            onTap: () => open.pipeline(context, '${project.id}', valueInt(value, 'id'))),
+        )),
+      ),
+    ])));
+  }
+}
+
 String _branchValue(String name) => encodeChoices([PickerChoice(id: name, name: name)]);
 
 List<String> _extractLabels(Json data) {
@@ -1156,6 +1455,19 @@ String _milestoneValue(Json data) {
       name: valueText(milestone, 'title'),
     ),
   ]);
+}
+
+final _draftPrefix = RegExp(r'^\s*(\[draft\]|\(draft\)|draft:|draft\s+-|\[wip\]|wip:)\s*', caseSensitive: false);
+
+/// GitLab marks a merge request as draft by its title prefix; toggling adds
+/// `Draft: ` or strips every prefix GitLab recognises, which may be stacked.
+String toggledDraftTitle(String title, bool isDraft) {
+  if (!isDraft) return 'Draft: ${title.trim()}';
+  var stripped = title;
+  for (var next = stripped.replaceFirst(_draftPrefix, ''); next != stripped; next = stripped.replaceFirst(_draftPrefix, '')) {
+    stripped = next;
+  }
+  return stripped.trim();
 }
 
 bool isAutoMergeEnabled(Json data) {

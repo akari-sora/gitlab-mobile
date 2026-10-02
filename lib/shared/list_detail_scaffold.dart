@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'adaptive_breakpoints.dart';
+import 'scroll_chrome.dart';
 
 /// 狀態驅動的清單/詳情控制器
 class ListDetailController<T> extends ChangeNotifier {
@@ -153,6 +154,39 @@ class TabActiveScope extends InheritedWidget {
   bool updateShouldNotify(TabActiveScope oldWidget) => isActive != oldWidget.isActive;
 }
 
+/// Whether any nested [ListDetailScaffold] below a page currently shows its
+/// detail full-width in compact mode. The page hides its own header and tab
+/// bar meanwhile, so a phone shows one app bar instead of two stacked ones.
+class DetailFocus extends ChangeNotifier {
+  final Set<Object> _owners = {};
+  bool _disposed = false;
+  bool get active => _owners.isNotEmpty;
+
+  /// Late reports from a scaffold torn down with the page are ignored.
+  void report(Object owner, bool focused) {
+    if (_disposed) return;
+    final changed = focused ? _owners.add(owner) : _owners.remove(owner);
+    if (changed) notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+}
+
+class DetailFocusScope extends InheritedWidget {
+  const DetailFocusScope({super.key, required this.focus, required super.child});
+  final DetailFocus focus;
+
+  static DetailFocus? maybeOf(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<DetailFocusScope>()?.focus;
+
+  @override
+  bool updateShouldNotify(DetailFocusScope oldWidget) => focus != oldWidget.focus;
+}
+
 /// 自適應清單詳情雙欄腳手架
 class ListDetailScaffold<T> extends StatefulWidget {
   const ListDetailScaffold({
@@ -199,6 +233,8 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
   bool _isActive = true;
 
   bool _lastShouldCollapse = false;
+  DetailFocus? _focus;
+  bool _focused = false;
 
   @override
   void initState() {
@@ -207,9 +243,34 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
     widget.controller.addListener(_onControllerChanged);
   }
 
+  /// The page reacting to a report rebuilds its own header, which must not
+  /// happen while this subtree is building: reports made during a build wait
+  /// for the end of the frame, others (a tap selecting an item) go out at once
+  /// so the header and the detail change in the same frame.
+  void _reportFocus(bool focused) {
+    if (focused == _focused) return;
+    _focused = focused;
+    if (SchedulerBinding.instance.schedulerPhase != SchedulerPhase.persistentCallbacks) {
+      _focus?.report(this, focused);
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _focused == focused) _focus?.report(this, focused);
+    });
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final focus = DetailFocusScope.maybeOf(context);
+    if (!identical(focus, _focus)) {
+      final previous = _focus;
+      _focus = focus;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        previous?.report(this, false);
+        if (mounted && _focused && identical(_focus, focus)) focus?.report(this, true);
+      });
+    }
     _isActive = widget.active ?? TabActiveScope.of(context);
     final parentScope = DetailBackScope.maybeOf(context);
     final dispatcher = parentScope?.dispatcher ?? (_localDispatcher ??= DetailBackDispatcher());
@@ -247,6 +308,11 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
 
   @override
   void dispose() {
+    final focus = _focus;
+    if (focus != null && _focused) {
+      // The page may be disposing too; report once this frame is over.
+      WidgetsBinding.instance.addPostFrameCallback((_) => focus.report(this, false));
+    }
     widget.controller.removeListener(_onControllerChanged);
     if (_entry != null && _registeredDispatcher != null) {
       _registeredDispatcher!.unregister(_entry!);
@@ -257,6 +323,10 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
 
   void _onControllerChanged() {
     _registeredDispatcher?.notifyChanged();
+    if (mounted) _reportFocus(!_isTwoPane && widget.controller.selected != null && (widget.active ?? _isActive));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) const RevealChromeNotification().dispatch(context);
+    });
   }
 
   bool _canHandleBack() {
@@ -300,6 +370,7 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
           listenable: widget.controller,
           builder: (context, _) {
             final selected = widget.controller.selected;
+            _reportFocus(!_isTwoPane && selected != null && (widget.active ?? _isActive));
             final shouldCollapse = _isTwoPane && (widget.collapseMaster?.call(selected) ?? false);
             if (_lastShouldCollapse != shouldCollapse) {
               _lastShouldCollapse = shouldCollapse;

@@ -22,6 +22,16 @@ class WorkspaceFixture {
   static const olderSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
   final issues = <int, Json>{};
   final notes = <int, Json>{};
+  /// Award emoji per awardable path, e.g. `projects/42/issues/1`.
+  final awards = <String, List<Json>>{};
+  /// `GET /projects/42/issues/:iid/links` bodies: issue objects plus `link_type`
+  /// and `issue_link_id`, the shape GitLab returns for the list endpoint.
+  final issueLinks = <int, List<Json>>{};
+  final relatedMergeRequests = <int, List<Json>>{};
+  bool failRelated = false;
+  int forks = 0;
+  final playedSchedules = <int>[];
+  final pipelineSchedules = <Json>[];
   final createdMergeRequests = <int, Json>{};
   final labels = <Json>[
     {'id': 1, 'name': 'a', 'color': '#d9534f', 'description': ''},
@@ -358,6 +368,10 @@ class WorkspaceFixture {
     if (joined == 'projects/42/merge_requests/12') {
       if (method == 'PUT') {
         mergeFields.addAll(body);
+        if (body['title'] is String) {
+          // GitLab derives the draft flag from the title prefix.
+          mergeFields['draft'] = RegExp(r'^\s*(\[draft\]|\(draft\)|draft:)', caseSensitive: false).hasMatch(body['title'] as String);
+        }
         if (body.containsKey('assignee_ids')) {
           final ids = (body['assignee_ids'] as List<dynamic>?)?.map((e) => int.tryParse('$e') ?? 0).where((id) => id > 0).toSet() ?? <int>{};
           mergeFields['assignees'] = members.where((m) => ids.contains(m['id'])).toList();
@@ -576,6 +590,66 @@ class WorkspaceFixture {
     }
     if (const ['projects/42/milestones', 'projects/42/releases',
       'projects/42/repository/tags', 'projects/42/repository/commits'].contains(joined)) { return jsonResponse([]); }
+    if (path.isNotEmpty && path.last == 'award_emoji' || path.length >= 2 && path[path.length - 2] == 'award_emoji') {
+      final awardsAt = path.lastIndexOf('award_emoji');
+      final key = path.sublist(0, awardsAt).join('/');
+      final list = awards.putIfAbsent(key, () => <Json>[]);
+      if (method == 'GET' && awardsAt == path.length - 1) return jsonResponse(list);
+      if (method == 'POST' && awardsAt == path.length - 1) {
+        final award = <String, dynamic>{'id': ++counter, 'name': body['name'], 'user': account.user.toJson()};
+        list.add(award);
+        return jsonResponse(award, status: 201);
+      }
+      if (method == 'DELETE' && awardsAt == path.length - 2) {
+        final id = int.tryParse(path.last);
+        list.removeWhere((award) => award['id'] == id);
+        return ResponseBody.fromString('', 204);
+      }
+    }
+    if (path.length == 5 && path[0] == 'projects' && path[1] == '42' && (path[4] == 'subscribe' || path[4] == 'unsubscribe') &&
+        method == 'POST') {
+      final subscribed = path[4] == 'subscribe';
+      final iid = int.tryParse(path[3]);
+      if (path[2] == 'issues' && issues[iid] != null) {
+        if (issues[iid]!['subscribed'] == subscribed) return ResponseBody.fromString('', 304);
+        issues[iid]!['subscribed'] = subscribed;
+        return jsonResponse(issues[iid], status: 201);
+      }
+      if (path[2] == 'merge_requests') {
+        mergeFields['subscribed'] = subscribed;
+        return jsonResponse(mergeRequest, status: 201);
+      }
+    }
+    if (path.length == 5 && path[0] == 'projects' && path[1] == '42' && method == 'GET' &&
+        (path[2] == 'issues' && const ['related_merge_requests', 'links', 'closed_by', 'participants'].contains(path[4]) ||
+         path[2] == 'merge_requests' && const ['commits', 'pipelines', 'participants', 'closes_issues'].contains(path[4]))) {
+      if (failRelated && path[2] == 'issues') return jsonResponse({'message': '404 Not found'}, status: 404);
+      final iid = int.tryParse(path[3]) ?? 0;
+      return jsonResponse(switch (path[4]) {
+        'pipelines' => [pipeline],
+        'links' => issueLinks[iid] ?? <Json>[],
+        'related_merge_requests' => relatedMergeRequests[iid] ?? <Json>[],
+        _ => <Json>[],
+      });
+    }
+    if (joined == 'projects/42/fork' && method == 'POST') {
+      forks++;
+      return jsonResponse({'id': 4242, 'path_with_namespace': 'developer/mobile-workspace'}, status: 201);
+    }
+    if (path.length == 5 && joined.startsWith('projects/42/pipeline_schedules/') && path[4] == 'play' && method == 'POST') {
+      playedSchedules.add(int.tryParse(path[3]) ?? 0);
+      return jsonResponse({'message': '201 Created'}, status: 201);
+    }
+    if (joined == 'projects/42/pipeline_schedules' && method == 'GET') return jsonResponse(pipelineSchedules);
+    if (joined == 'groups/9' && method == 'GET') return jsonResponse({'id': 9, 'name': 'Studio', 'full_path': 'studio'});
+    if (joined == 'groups/9/projects' && method == 'GET') return jsonResponse([projectRecord]);
+    if (joined == 'groups/9/subgroups' && method == 'GET') return jsonResponse(<Json>[]);
+    if (joined == 'projects/42/languages') return jsonResponse({'Dart': 91.2, 'Kotlin': 6.3, 'Shell': 2.5});
+    if (const ['events', 'projects/42/events', 'users/7/events', 'projects/42/starrers', 'groups', 'search',
+      'projects/42/search', 'projects/42/wikis', 'projects/42/environments', 'projects/42/deployments',
+      'projects/42/snippets', 'projects/42/members/all/7'].contains(joined)) {
+      return jsonResponse(<Json>[]);
+    }
     unhandled.add('$method $joined');
     return jsonResponse({'error': 'unhandled-synthetic-endpoint'}, status: 404);
   }
