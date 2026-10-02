@@ -40,7 +40,7 @@ GitLab edition lacks the feature.
 | Global navigation | Projects, groups/subgroups, todos, assigned/review-requested/created work, activity and global search | No structural change | Administration, help and creation workflows remain unimplemented; they are part of the full-function backlog |
 | Project overview | Description, stars, forks, languages, licence, clone URLs, star/fork actions | No structural change | Full Web analytics and settings are not reproduced |
 | Manage | Activity, members and labels | No structural change | Access-token, webhook, integration and full member-role administration remain open |
-| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project Work Item cursor list, server types and exact project/group detail with five base widgets | Richer Work Item widgets/activity, group lists, mutations, full iterations/requirements/Epic/OKR workflows remain open |
+| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project Work Item cursor list, server types and exact project/group detail with five base widgets and seven lazy attribute kinds | Remaining Work Item widgets/activity, group lists, mutations, full iterations/requirements/Epic/OKR workflows remain open |
 | Code | Repository tree, README, branches, commits and tags; fixed-SHA file view, history, blame, search, syntax highlighting and line permalinks; MR list/detail/diffs | Compare two refs; selected-ref repository graph; multi-file Snippets with explicit file enumeration, lazy source/preview and guarded file actions | Locked files, cross-project comparison, full all-branch graph and private Snippet CRUD acceptance remain open |
 | MR review | Discussions, inline single-line positions, approvals/merge, suggested changes, auto-merge, local viewed-file state and the MR draft/ready toggle | Server draft-note list, add/edit/discard and bulk publish, tied to account/project/MR/head SHA | Viewed-file state is not server-synchronised; multi-line positioning and full desktop review policy administration remain open |
 | Build | Pipelines, stage-grouped jobs, controls, incremental ANSI logs and search, JUnit report views, artifacts, cross-project CI overview and schedules | Read-only pipeline dependency graph with paginated actual GraphQL needs | Cross-project/downstream graph and the complete pipeline editor remain open |
@@ -228,11 +228,16 @@ already-visible details and ambiguous 403/404 recovery pages are fenced to the
 account/client generation and close when that owner changes.
 
 The read-only responsive browser walk observed project Issue `631894` and group
-Epic `23883`, including the Epic's group parent and project children. The expanded
-production-client public smoke passes 23 checks with one anonymous Boards GAP
+Epic `23883`, including the Epic's group parent and project children. The initial
+production-client public smoke passed 23 checks with one anonymous Boards GAP
 and zero writes, including project identity, actual base widgets, server type
-capabilities and group-owned detail. These checks used the current local source;
-submitted-source CI and installed-build checks have not yet accepted this slice.
+capabilities and group-owned detail. Those checks used the `0ff2265` local source. Its full-marker release APK was
+installed without clearing account data; installed bytes match SHA-256
+`24013a1a1311ed5553f93d90fafc82eb073ea29e1b2f0da93a8d3a83185531d1`.
+The phone loaded public project `631894`, group `23883` and cross-scope project
+child `631872`; the child route survived 2x font scale and the setting was restored.
+Exact submitted-source [pipeline 2907138771](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2907138771)
+is still running/queued; the new attributes and parser repair below are a separate source slice.
 The final repaired local source passed full analysis and 1,370 JUnit tests with
 zero failures/errors/skips. All 215 Dart source/test/tool files and the committed
 dependency lock retained their hashes during the run; coverage is 87.67%
@@ -242,8 +247,38 @@ repair and both directions of cross-page Work Item identity validation. An
 earlier complete local test run passed, but its optional global Pillow install
 was blocked by macOS PEP 668; the final run uses the already installed image
 package for the screenshot derivative and exits successfully.
-Richer widgets/activity, group lists, filters, native Work Item mutations and
-authenticated/private/edition acceptance remain open.
+### Lazy Work Item attributes and optional-metadata repair
+
+The native collapsible 屬性 panel reads only kinds advertised by the loaded
+Work Item: status, milestone, weight, iteration, health, time tracking and
+development. It starts no reads while collapsed, allows two concurrent requests,
+retains completed values across collapse/re-expand and isolates failure/retry by
+row. Each fixed query uses the server-discovered opaque Work Item ID and verifies
+IID, project and namespace identity. Missing widgets, null values, empty data and
+zero remain distinct; milestone/iteration ownership uses actual server scope and
+date-only values do not shift with the device timezone. Development fetches a
+count and auto-close flag without expensive MR/branch connections. Refresh
+removes old detail before replacing it so cached attributes cannot survive a
+new detail generation.
+
+The physical parent-link failure at public group Epic `18225` was caused by an
+absolute-only validator on unused assignee avatar metadata. GitLab legitimately
+returns relative avatar references, including installation subpaths. The App
+already uses monograms, so this slice removes the unused query/DTO field while
+retaining all assignee identity, duplicate and collection validation. Root-path
+and installation-subpath regressions failed before repair and pass afterward.
+
+Independent reviews approve the attribute slice and the metadata/query-allowlist
+repair. Joint targeted validation passes 46 tests with scoped analysis clean.
+The expanded anonymous production-client suite passes 31 checks, one Boards
+HTTP 401 GAP and zero writes, including all seven attribute queries and the
+actual group parent with a verified namespace ID. This local smoke report has
+no submitted-source SHA. The frozen source passes full analysis and 1,388 JUnit tests with
+zero failures/errors/skips; 222 Dart/lock hashes remained unchanged.
+Local coverage is 87.86% (17,651 / 20,091). Installed-build
+attribute readback remains a separate acceptance lane. Activity, remaining widgets,
+group lists, filters, native Work Item mutations and authenticated/private/edition
+acceptance remain open.
 
 ProjectMore and Pipeline owned navigation stacks, board modal editors and snippet
 routes are removed on account/project/API replacement. Registry feed identities

@@ -8,6 +8,7 @@ import '../../core/models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
+import 'work_item_attributes.dart';
 
 String _graphWorkItemState(String value) => switch (value.toUpperCase()) {
   'OPEN' => 'opened',
@@ -658,6 +659,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     setState(() {
       _loading = true;
       _error = null;
+      _detail = null;
     });
     try {
       final detail = owner.project == null
@@ -831,6 +833,13 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           )
         else if (detail.descriptionWidget != null)
           _section(context, '說明', const Text('沒有說明')),
+        WorkItemAttributesPanel(
+          account: widget.account,
+          api: widget.api,
+          detail: detail,
+          isCurrent: widget.isCurrent,
+          ownerChanges: widget.ownerChanges,
+        ),
         if (assignees != null)
           _section(
             context,

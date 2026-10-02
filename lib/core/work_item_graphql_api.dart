@@ -90,7 +90,7 @@ widgets {
   }
   ... on WorkItemWidgetAssignees {
     assignees(first: $_workItemAssigneeLimit) {
-      nodes { id name username avatarUrl }
+      nodes { id name username }
       pageInfo { hasNextPage endCursor }
     }
   }
@@ -766,27 +766,10 @@ WorkItemGraphAssignee _parseAssignee(Object? raw) {
   final node = objectJson(raw);
   final id = requiredString(node, 'id');
   if (!_validOpaqueGraphId(id)) throw const FormatException('Invalid user ID');
-  final rawAvatar = node['avatarUrl'];
-  Uri? avatar;
-  if (rawAvatar != null) {
-    if (rawAvatar is! String || rawAvatar.length > 8192) {
-      throw const FormatException('Invalid avatar URL');
-    }
-    final parsed = Uri.tryParse(rawAvatar);
-    if (parsed == null ||
-        !parsed.isAbsolute ||
-        parsed.scheme != 'https' ||
-        parsed.userInfo.isNotEmpty ||
-        parsed.host.isEmpty) {
-      throw const FormatException('Invalid avatar URL');
-    }
-    avatar = parsed;
-  }
   return WorkItemGraphAssignee(
     id: id,
     name: _boundedRequiredText(node, 'name', 512),
     username: _boundedRequiredText(node, 'username', 255),
-    avatarUrl: avatar,
   );
 }
 

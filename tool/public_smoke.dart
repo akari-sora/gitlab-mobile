@@ -13,6 +13,8 @@ import 'package:gitlab_mobile/core/registry_models.dart';
 import 'package:gitlab_mobile/core/repository_graph.dart';
 import 'package:gitlab_mobile/core/snippet_models.dart';
 import 'package:gitlab_mobile/core/unified_diff.dart';
+import 'package:gitlab_mobile/core/work_item_attribute_models.dart';
+import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 const _publicProjectId = 86648389;
 const _publicProjectPath = 'aa22396584/gitlab-mobile';
@@ -55,6 +57,7 @@ query MobileSnippetBlob($ids: [SnippetID!], $paths: [String!]) {
 ''';
 const _publicWorkItemIid = 631894;
 const _publicGroupWorkItemIid = 23883;
+const _publicGroupParentWorkItemIid = 18225;
 const _publicGroupWorkItemPath = 'gitlab-org';
 const _publicWorkItemSummaryFields = r'''
 id
@@ -139,7 +142,7 @@ widgets {
   }
   ... on WorkItemWidgetAssignees {
     assignees(first: 20) {
-      nodes { id name username avatarUrl }
+      nodes { id name username }
       pageInfo { hasNextPage endCursor }
     }
   }
@@ -234,11 +237,139 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
 }
 ''';
 
+const _publicWorkItemAttributeIdentityFields = r'''
+id
+iid
+project { id fullPath }
+namespace { id fullPath }
+''';
+
+final _publicWorkItemStatusAttributeQuery =
+    '''
+query MobileWorkItemStatusAttribute(\$id: WorkItemID!) {
+  workItem(id: \$id) {
+    $_publicWorkItemAttributeIdentityFields
+    widgets {
+      type
+      ... on WorkItemWidgetStatus {
+        status { id name iconName color category }
+      }
+    }
+  }
+}
+''';
+
+final _publicWorkItemMilestoneAttributeQuery =
+    '''
+query MobileWorkItemMilestoneAttribute(\$id: WorkItemID!) {
+  workItem(id: \$id) {
+    $_publicWorkItemAttributeIdentityFields
+    widgets {
+      type
+      ... on WorkItemWidgetMilestone {
+        milestone {
+          id iid title state webPath dueDate startDate
+          project { id fullPath }
+          group { id fullPath }
+        }
+      }
+    }
+  }
+}
+''';
+
+final _publicWorkItemWeightAttributeQuery =
+    '''
+query MobileWorkItemWeightAttribute(\$id: WorkItemID!) {
+  workItem(id: \$id) {
+    $_publicWorkItemAttributeIdentityFields
+    widgets {
+      type
+      ... on WorkItemWidgetWeight {
+        weight
+        rolledUpWeight
+        rolledUpCompletedWeight
+      }
+    }
+  }
+}
+''';
+
+final _publicWorkItemIterationAttributeQuery =
+    '''
+query MobileWorkItemIterationAttribute(\$id: WorkItemID!) {
+  workItem(id: \$id) {
+    $_publicWorkItemAttributeIdentityFields
+    widgets {
+      type
+      ... on WorkItemWidgetIteration {
+        iteration {
+          id iid title state webUrl startDate dueDate
+          group { id fullPath }
+          iterationCadence { id title }
+        }
+      }
+    }
+  }
+}
+''';
+
+final _publicWorkItemHealthAttributeQuery =
+    '''
+query MobileWorkItemHealthAttribute(\$id: WorkItemID!) {
+  workItem(id: \$id) {
+    $_publicWorkItemAttributeIdentityFields
+    widgets {
+      type
+      ... on WorkItemWidgetHealthStatus {
+        healthStatus
+        rolledUpHealthStatus { healthStatus count }
+      }
+    }
+  }
+}
+''';
+
+final _publicWorkItemTimeTrackingAttributeQuery =
+    '''
+query MobileWorkItemTimeTrackingAttribute(\$id: WorkItemID!) {
+  workItem(id: \$id) {
+    $_publicWorkItemAttributeIdentityFields
+    widgets {
+      type
+      ... on WorkItemWidgetTimeTracking {
+        timeEstimate
+        totalTimeSpent
+        humanReadableAttributes { timeEstimate totalTimeSpent }
+      }
+    }
+  }
+}
+''';
+
+final _publicWorkItemDevelopmentAttributeQuery =
+    '''
+query MobileWorkItemDevelopmentAttribute(\$id: WorkItemID!) {
+  workItem(id: \$id) {
+    $_publicWorkItemAttributeIdentityFields
+    widgets {
+      type
+      ... on WorkItemWidgetDevelopment {
+        closingMergeRequestsCount
+        willAutoCloseByMergeRequest
+      }
+    }
+  }
+}
+''';
+
 Future<void> main() async {
   final checks = <Map<String, Object?>>[];
   var failed = false, sawProjectsLink = false;
   String? discoveredSnippetGraphId;
   SnippetGraphSnapshot? snippetSnapshot;
+  WorkItemGraphSummary? discoveredPublicWorkItem;
+  String? discoveredPublicGroupNamespaceId;
   final dio = Dio();
   dio.interceptors.add(
     InterceptorsWrapper(
@@ -253,7 +384,11 @@ Future<void> main() async {
             _isExactPublicIncidentGraph(request) ||
             _isExactPublicAnalyticsGraph(request) ||
             _isExactPublicSnippetGraph(request, discoveredSnippetGraphId) ||
-            _isExactPublicWorkItemGraph(request);
+            _isExactPublicWorkItemGraph(request) ||
+            _isExactPublicWorkItemAttributeGraph(
+              request,
+              discoveredPublicWorkItem?.id,
+            );
         if (!restRead && !graphRead) {
           handler.reject(
             DioException(
@@ -645,7 +780,29 @@ Future<void> main() async {
             detail.summary.type.name.isNotEmpty,
       );
       require(detail.description != null && detail.labels?.labels != null);
+      // Bind attribute reads to the production-validated public response.
+      discoveredPublicWorkItem = detail.summary;
     });
+    for (final kind in WorkItemAttributeKind.values) {
+      await check('public.work_items.attribute_${kind.name}', () async {
+        final expected = discoveredPublicWorkItem;
+        require(expected != null);
+        final attribute = await api.workItemAttribute(expected!, kind);
+        require(
+          attribute.workItemId == expected.id &&
+              attribute.iid == expected.iid &&
+              attribute.kind == kind &&
+              attribute.project?.id == expected.project?.id &&
+              attribute.project?.fullPath == expected.project?.fullPath &&
+              attribute.namespace?.id == expected.namespace?.id &&
+              attribute.namespace?.fullPath == expected.namespace?.fullPath,
+        );
+        require(
+          attribute.availability == WorkItemAttributeAvailability.present &&
+              attribute.value != null,
+        );
+      });
+    }
     await check('public.work_items.server_type_capabilities', () async {
       final page = await api.namespaceWorkItemTypes(_publicSnippetProjectPath);
       require(page.namespace.fullPath == _publicSnippetProjectPath);
@@ -665,6 +822,21 @@ Future<void> main() async {
       require(detail.summary.project == null);
       require(detail.summary.namespace?.fullPath == _publicGroupWorkItemPath);
       require(detail.widgetsAvailable);
+      discoveredPublicGroupNamespaceId = detail.summary.namespace?.id;
+    });
+    await check('public.work_items.group_parent_optional_metadata', () async {
+      final namespaceId = discoveredPublicGroupNamespaceId;
+      require(namespaceId != null);
+      final detail = await api.namespaceWorkItem(
+        _publicGroupWorkItemPath,
+        _publicGroupParentWorkItemIid,
+        expectedNamespaceId: namespaceId,
+      );
+      require(detail.summary.iid == _publicGroupParentWorkItemIid);
+      require(detail.summary.project == null);
+      require(detail.summary.namespace?.id == namespaceId);
+      require(detail.summary.namespace?.fullPath == _publicGroupWorkItemPath);
+      require(detail.widgetsAvailable && detail.assignees?.assignees != null);
     });
     await expectedGap('public.boards.authentication_required', () async {
       await api.records(
@@ -770,7 +942,7 @@ Future<void> main() async {
         'private project access',
         'snippet CRUD',
         'Task/Incident fixture CRUD and escalation lifecycle mutation',
-        'Work Item writes/CRUD and licensed extension widgets',
+        'Work Item writes/CRUD, activity and edition-specific widget coverage',
         'live writes/CRUD',
         'Android/iOS device UI',
       ],
@@ -924,5 +1096,39 @@ bool _isExactPublicWorkItemGraph(RequestOptions request) {
   return body['query'] == _publicNamespaceWorkItemQuery &&
       variables.length == 2 &&
       variables['path'] == _publicGroupWorkItemPath &&
-      variables['iid'] == '$_publicGroupWorkItemIid';
+      const [
+        '$_publicGroupWorkItemIid',
+        '$_publicGroupParentWorkItemIid',
+      ].contains(variables['iid']);
+}
+
+bool _isExactPublicWorkItemAttributeGraph(
+  RequestOptions request,
+  String? discoveredWorkItemId,
+) {
+  if (discoveredWorkItemId == null ||
+      request.method != 'POST' ||
+      request.uri != Uri.parse('https://gitlab.com/api/graphql')) {
+    return false;
+  }
+  final body = request.data;
+  if (body is! Map ||
+      body.length != 2 ||
+      !body.containsKey('query') ||
+      !body.containsKey('variables')) {
+    return false;
+  }
+  final variables = body['variables'];
+  return variables is Map &&
+      variables.length == 1 &&
+      variables['id'] == discoveredWorkItemId &&
+      [
+        _publicWorkItemStatusAttributeQuery,
+        _publicWorkItemMilestoneAttributeQuery,
+        _publicWorkItemWeightAttributeQuery,
+        _publicWorkItemIterationAttributeQuery,
+        _publicWorkItemHealthAttributeQuery,
+        _publicWorkItemTimeTrackingAttributeQuery,
+        _publicWorkItemDevelopmentAttributeQuery,
+      ].contains(body['query']);
 }

@@ -270,7 +270,6 @@ void main() {
       expect(detail.descriptionWidget!.edited, isTrue);
       expect(detail.assignees!.assignees!.isPartial, isTrue);
       expect(detail.assignees!.assignees!.items.single.username, 'synthetic');
-      expect(detail.assignees!.assignees!.items.single.avatarUrl, isNull);
       expect(detail.labels!.labels!.isPartial, isFalse);
       expect(detail.hierarchy!.children!.isPartial, isTrue);
       expect(detail.hierarchy!.hasChildren, isTrue);
@@ -312,6 +311,51 @@ void main() {
       expect(second.assignees!.assignees, isNull);
     },
   );
+
+  for (final avatarPath in [
+    '/uploads/-/system/user/avatar/7/example.png',
+    '/gitlab/uploads/-/system/user/avatar/7/example.png',
+  ]) {
+    test(
+      'unused relative assignee avatar $avatarPath cannot block detail',
+      () async {
+        final adapter = FakeAdapter(
+          (_) => jsonResponse(
+            _projectEnvelope(
+              workItems: _connection([
+                _detail(
+                  widgets: [
+                    {
+                      'type': 'ASSIGNEES',
+                      'assignees': _connection([
+                        {
+                          'id': 'gid://gitlab/FutureUser/server-user',
+                          'name': 'Synthetic User',
+                          'username': 'synthetic',
+                          'avatarUrl': avatarPath,
+                        },
+                      ]),
+                    },
+                  ],
+                ),
+              ]),
+            ),
+          ),
+        );
+        final api = testApi(adapter);
+        addTearDown(api.close);
+
+        final detail = await api.projectWorkItem(_project, 7);
+
+        expect(detail.assignees!.assignees!.items.single.username, 'synthetic');
+        expect(adapter.requests, hasLength(1));
+        expect(
+          (adapter.requests.single.data as Map)['query'],
+          isNot(contains('avatarUrl')),
+        );
+      },
+    );
+  }
 
   test(
     'nested widget connections reject duplicate server identities',

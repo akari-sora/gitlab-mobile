@@ -71,13 +71,11 @@ final class WorkItemGraphAssignee {
     required this.id,
     required this.name,
     required this.username,
-    required this.avatarUrl,
   });
 
   final String id;
   final String name;
   final String username;
-  final Uri? avatarUrl;
 }
 
 final class WorkItemAssigneesWidget {

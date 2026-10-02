@@ -17,7 +17,7 @@ specification numbers have been invented.
 | Manage / Activity | Loaded timeline and eight event filters at phone width | Activity feed | Full event-kind/authenticated parity walk |
 | Manage / Members | Loaded roles/source/search/sort and member rows | Member list/actions | Custom roles, complete administration and live permissions |
 | Manage / Labels | Loaded Active/Archived, search/sort and empty state | List/create/edit/delete | Scoped labels/subscriptions and live CRUD |
-| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project cursor list, server type capabilities, project/group details, description/assignees/labels/hierarchy/dates | Richer widgets/activity, group lists, filters, Work Item mutations and authenticated/edition acceptance |
+| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project cursor list, server type capabilities, project/group details, description/assignees/labels/hierarchy/dates and seven lazy attribute kinds | Remaining widgets/activity, group lists, filters, Work Item mutations and authenticated/edition acceptance |
 | Plan / Boards | Development board observed | Phone-width columns, card move, board/list management | Paid scope/list creation, touch drag/drop and live mutation readback |
 | Plan / Milestones | Loaded empty-state explanation | List/detail/create/edit/delete | Full progress/reporting and live CRUD |
 | Plan / Wiki | Loaded empty Wiki explanation | Page list/read/create/edit/delete | History, attachments, tree and live CRUD |
@@ -61,8 +61,18 @@ The later 390 × 844 walk also loaded project Work Item
 attributes below the description. The group Epic has a group parent and ten
 project children, so hierarchy navigation must preserve each server-returned
 scope. Status, milestone, weight, iteration, health, time tracking, development
-and activity were observed separately; they remain open in the new GraphQL UI.
+and activity were observed separately. Seven attribute kinds now have native lazy
+reads and per-row retries; activity and other widgets remain open.
 Type names are configurable and opaque IDs are not REST route discriminators.
+
+The installed `0ff2265` Android release loaded project `631894`, group `23883`
+and its project child `631872`; the cross-scope child remained accessible at 2x
+font scale and the original device setting was restored. Opening group parent
+`18225` exposed a legitimate relative assignee avatar URL that the old parser
+rejected. The unused avatar query/DTO field is now omitted, with failing-before
+regressions and anonymous production-client parent readback. A further 390 x 844
+browser walk loaded that actual parent, its assignee, dates, hierarchy and activity.
+The parser repair and new attributes still require their own installed build.
 
 Each new page binds responses and modal closures to account/instance, numeric
 project identity, API generation and request epoch. ProjectMore/Pipeline remove
@@ -84,8 +94,8 @@ on one S24 Ultra do not establish statistical improvement on every screen.
    installed-build checks and disposable-fixture CRUD/lifecycle readback; alert,
    timeline, metrics and on-call workflows remain open.
 2. Fixed-query GraphQL Work Items now include server-returned scope/type IDs,
-   project cursor paging and exact project/group details with five base widgets.
-   Complete richer capability-dependent widgets/activity, group lists, filters,
+   project cursor paging and exact project/group details with five base widgets
+   plus seven independently loaded attributes. Complete remaining widgets/activity, group lists, filters,
    native mutations and actual authenticated/private/edition validation.
 3. Multi-file Snippet blobs now have lazy paths/content, source/Markdown preview
    and guarded file actions with `updatedAt` change detection. Complete
