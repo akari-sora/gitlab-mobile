@@ -160,8 +160,15 @@ void main() {
   testWidgets('rows remain lazy and only rounded endpoints add clip layers', (
     tester,
   ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 900);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     var builtRows = 0;
     var sectionCalls = 0;
+    var taps = 0;
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -178,10 +185,8 @@ void main() {
             },
             itemBuilder: (context, item) {
               builtRows++;
-              return SizedBox(
-                height: 64,
-                child: Text(item['title']! as String),
-              );
+              return InkWell(onTap: () => taps++, child: SizedBox(
+                height: 64, child: Text(item['title']! as String)));
             },
           ),
         ),
@@ -189,6 +194,11 @@ void main() {
     );
     await tester.pump();
     await tester.pump();
+
+    expect(
+      MediaQuery.textScalerOf(tester.element(find.byType(RecordsFeed))).scale(1),
+      2,
+    );
 
     expect(
       builtRows,
@@ -212,8 +222,10 @@ void main() {
               for (var index = 0; index < 3; index++)
                 {'id': index, 'title': 'Short row $index'},
             ]),
+            sectionOf: (_) => 'Section',
             itemBuilder: (context, item) =>
-                SizedBox(height: 48, child: Text(item['title']! as String)),
+                InkWell(onTap: () => taps++, child:
+                  SizedBox(height: 48, child: Text(item['title']! as String))),
           ),
         ),
       ),
@@ -226,5 +238,18 @@ void main() {
       findsNWidgets(2),
       reason: 'middle rows do not need a zero-radius clip layer',
     );
+    expect(
+      find.byType(Divider),
+      findsNWidgets(2),
+      reason: 'each non-first row keeps one indented divider',
+    );
+    final divider = tester.widget<Divider>(find.byType(Divider).first);
+    expect(divider.height, 1);
+    expect(divider.indent, 16);
+    expect(find.text('Section'), findsOneWidget);
+    await tester.tap(find.text('Short row 1'));
+    await tester.pump();
+    expect(taps, 1, reason: 'the row Material still paints InkWell feedback');
+    expect(tester.takeException(), isNull);
   });
 }

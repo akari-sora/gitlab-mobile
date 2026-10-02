@@ -547,8 +547,9 @@ are never cached.
 
 `RecordsFeed` now derives filtering, ordering and section boundaries only when
 its input or derivation callbacks change. Sections are resolved lazily and only
-the first/last grouped rows receive clipping. Repository syntax spans are also
-generated lazily and held in a page-owned LRU capped at 512 rows and 131,072
+the first/last grouped rows receive clipping. Grouped backgrounds and outlines
+are painted within each built row instead of the full scroll extent. Repository
+syntax spans are also generated lazily and held in a page-owned LRU capped at 512 rows and 131,072
 source characters; changing file language, theme or base style clears it.
 
 These changes reduce repeated work. They do not by themselves prove a frame-rate

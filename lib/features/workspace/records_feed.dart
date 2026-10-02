@@ -139,6 +139,26 @@ class RecordsFeedState extends State<RecordsFeed> {
     ]);
   }
 
+  Widget _groupedSurface(BuildContext context, int index, int count, Widget child) {
+    final theme = Theme.of(context);
+    final color = theme.dividerTheme.color ?? theme.colorScheme.outlineVariant;
+    final side = BorderSide(color: color);
+    final absent = BorderSide(color: color, width: 0, style: BorderStyle.none);
+    final first = index == 0, last = index == count - 1;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.vertical(
+          top: first ? const Radius.circular(16) : Radius.zero,
+          bottom: last ? const Radius.circular(16) : Radius.zero,
+        ),
+        border: Border(left: side, top: first ? side : absent,
+          right: side, bottom: last ? side : absent),
+      ),
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(listenable: controller, builder: (context, _) {
     _deriveRows();
@@ -154,7 +174,6 @@ class RecordsFeedState extends State<RecordsFeed> {
       ]);
     }
     final gutter = feedGutter(context);
-    final theme = Theme.of(context);
     final before = <Widget>[
       if (controller.loading && controller.items.isEmpty) const ListSkeleton(),
       if (!controller.loading && shown.isEmpty && controller.error == null && controller.next == null) EmptyState(
@@ -175,8 +194,9 @@ class RecordsFeedState extends State<RecordsFeed> {
     ];
     final items = widget.grouped
         ? SliverList.builder(itemCount: shown.length,
-            itemBuilder: (context, index) => withSection(context, index,
-              _groupedRow(context, index, shown.length, widget.itemBuilder(context, shown[index]))))
+            itemBuilder: (context, index) => _groupedSurface(context, index, shown.length,
+              withSection(context, index,
+                _groupedRow(context, index, shown.length, widget.itemBuilder(context, shown[index])))))
         : SliverList.builder(itemCount: shown.length,
             itemBuilder: (context, index) => withSection(context, index, Padding(
               padding: EdgeInsets.only(bottom: widget.itemSpacing), child: widget.itemBuilder(context, shown[index]))));
@@ -187,15 +207,7 @@ class RecordsFeedState extends State<RecordsFeed> {
         if (widget.topSlivers != null) ...widget.topSlivers!(context, controller),
         if (widget.leading != null) SliverToBoxAdapter(child: widget.leading!(context, controller)),
         SliverPadding(padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 0), sliver: SliverList.list(children: before)),
-        SliverPadding(padding: EdgeInsets.symmetric(horizontal: gutter), sliver: widget.grouped && shown.isNotEmpty
-          ? DecoratedSliver(
-              decoration: BoxDecoration(
-                color: theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: theme.dividerTheme.color ?? theme.colorScheme.outlineVariant),
-              ),
-              sliver: items)
-          : items),
+        SliverPadding(padding: EdgeInsets.symmetric(horizontal: gutter), sliver: items),
         SliverPadding(padding: EdgeInsets.fromLTRB(gutter, 0, gutter, bottom), sliver: SliverList.list(children: after)),
       ],
     )));
