@@ -150,6 +150,14 @@ Reaction owner changes invalidate pending pickers/results; confirmed notificatio
 subscription state survives a failed refresh. The parity report and draft MR
 retain exact-source tests, Android evidence and open iOS/private/CI boundaries.
 
+The environment/schedule follow-up adds numeric environment link sharing and
+owner-scoped environment/deployment navigation. Schedule confirmation routes,
+pending writes and list responses are invalidated on owner/session changes;
+rapid Play taps cannot stack confirmations. Android verification now uses an
+isolated emulator while the physical phone is reserved for another session.
+Synthetic native UI, production APK cold-start and real read-only API evidence
+remain separate in the parity report.
+
 ### Long-Term Backlog (LT1 ~ LT5)
 
 - **LT1: Groups & Subgroups Hierarchy (`GET /groups`)**: Flattened multi-level hierarchy browsing, subgroup navigation, and group-scoped project discovery.

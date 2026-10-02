@@ -22,11 +22,13 @@ import 'work_item_page.dart';
 /// switch, and a successful retry continues to the resource; transient
 /// failures (network, rate limit) stay a snack bar.
 class ResourceNavigator {
-  const ResourceNavigator(this.account, this.api, {this.isCurrent, this.ownerChanges});
+  const ResourceNavigator(this.account, this.api,
+    {this.isCurrent, this.ownerChanges, this.onRoute});
   final Account account;
   final GitLabApi api;
   final bool Function()? isCurrent;
   final Listenable? ownerChanges;
+  final ValueChanged<Route<dynamic>>? onRoute;
 
   bool _active() => isCurrent?.call() ?? true;
 
@@ -64,9 +66,13 @@ class ResourceNavigator {
         showFailure(context, failure);
         return null;
       }
-      return Navigator.of(context).push<T>(MaterialPageRoute(builder: (_) =>
+      final route = MaterialPageRoute<T>(builder: (_) =>
         _UnresolvedPage<T>(account: account, target: target, error: failure, load: load,
-          isCurrent: fence.current, ownerChanges: fence.changes)));
+          isCurrent: fence.current, ownerChanges: fence.changes));
+      if (!context.mounted || !fence.current()) return null;
+      onRoute?.call(route);
+      if (!context.mounted || !fence.current()) return null;
+      return Navigator.of(context).push<T>(route);
     }
   }
 
@@ -79,7 +85,10 @@ class ResourceNavigator {
 
   Future<void> _push(BuildContext context, Widget page) {
     if (!context.mounted || !_active()) return Future.value();
-    return Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
+    final route = MaterialPageRoute<void>(builder: (_) => page);
+    onRoute?.call(route);
+    if (!context.mounted || !_active()) return Future.value();
+    return Navigator.of(context).push(route);
   }
 
   Future<void> project(BuildContext context, String idOrPath, {int initialTab = 0}) async {

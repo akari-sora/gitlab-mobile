@@ -834,6 +834,42 @@ additional tests cover API replacement/closure, session ending, subscription
 refresh failure, numeric/canonical share routes, metadata session invalidation
 and 320dp/two-times text action layouts. Frozen-source suite, exact commit/device and CI receipts are recorded separately with the draft MR.
 
+## Environment and schedule actions; emulator lane (2026-10-03)
+
+A signed-out mobile Web walk at 390 × 844 observed the project's environment
+and schedule empty states. No fixture was created on GitLab to turn an empty
+page into a success claim. The current upstream route source confirms
+[environment show and nested deployment routes](https://gitlab.com/gitlab-org/gitlab/-/blob/a59174e6b212fcc5ef2263f80d4e0319f46e92b9/config/routes/project.rb#L334-352)
+and [schedules without an individual show route](https://gitlab.com/gitlab-org/gitlab/-/blob/a59174e6b212fcc5ef2263f80d4e0319f46e92b9/config/routes/pipelines.rb#L35-40).
+Filtered deployment views now provide native Share and GitLab Open for a
+positive environment database ID, preserving the installation path and port.
+Environment names still filter deployment records; they are not URL IDs.
+Missing/nonpositive IDs omit canonical actions. A validated deployment website
+has its own labelled action rather than replacing the GitLab environment link.
+
+Environment and deployment feeds bind their account/API/project/path/session
+generation. Invalid owners hide old content and dismiss owned child routes,
+including a Job or ambiguous-access notice opened from a deployment. Schedule
+Play captures the owner and positive schedule ID before confirmation, locks
+repeated taps before opening a dialog, and checks ownership after confirmation
+and write completion. A confirmation first built after owner invalidation is
+also removed. Stale success/failure cannot update a replacement owner's UI.
+Regression cases reproduced the dialog timing and repeated-tap failures before
+the repairs; focused tests also cover nested routes, closed clients and large
+text. No dependency or automatic write retry was added.
+
+The user reserved the physical phone for another session. All subsequent
+Android input, installation and QA uses the isolated
+`GitLabMobile_API36_Codex_20261003` AVD, API 36, with an explicit emulator serial
+and qemu/AVD identity checks. Production APK cold login, synthetic native UI and
+anonymous production-client API checks have separate evidence receipts. The
+QA-only target requires an explicit opt-in, keeps all API/CDN requests in the
+existing fixture transport, and labels every route as synthetic data. It uses
+the production widgets and real Android Share plugin; opening and dismissing
+a native chooser is separate from sending a link. Numeric profile scroll
+summaries on the fixture emulator do not establish physical-device FPS, live
+Star/schedule writes, private-resource acceptance, iOS or G0 acceptance.
+
 ## Remaining product priorities
 
 The largest mobile workflow gaps are OAuth application registration and live

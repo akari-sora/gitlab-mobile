@@ -42,6 +42,34 @@ The output is a **debug development preview**. The preview records the commit in
 
 An iOS binary needs a macOS runner with an appropriate Xcode toolchain. App Store/TestFlight deployment also needs signing and distribution credentials. Neither has been assumed or enabled. G0 acceptance additionally needs actual private-project access, device secure-storage/backup tests, account switching, network failure and accessibility evidence on Android/iOS. These remain separate from green CI.
 
+## Isolated Android emulator UI QA
+
+The QA-only target `tool/emulator_ui.dart` renders the production project,
+environment/deployment and schedule pages through the existing synthetic
+transport. It requires `EMULATOR_UI_QA=true` and displays a persistent synthetic
+data banner. Its memory-only accounts use test credentials; every API request
+stays in the fixture adapter. Normal `lib/main.dart` has no fixture fallback.
+
+Use a project-owned AVD with an already installed official Android image and
+an explicit `emulator-*` serial. Confirm `ro.kernel.qemu=1` and the AVD name
+before installation or input. Do not use an unqualified `adb` command or copy
+accounts from a physical phone. For the current isolated AVD:
+
+```sh
+.fvm/flutter_sdk/bin/flutter run --profile --no-pub -d emulator-5580 \
+  -t tool/emulator_ui.dart --dart-define=EMULATOR_UI_QA=true \
+  --dart-define=PERF_LABEL=synthetic-emulator
+```
+
+Observe the actual Android Share chooser, verify its canonical URL and dismiss
+it without selecting a recipient. Cover Star/Unstar, environment navigation,
+schedule confirmation/cancellation, session invalidation and narrow/large-text
+layouts. Restore any emulator font/display changes after the run. The existing
+scroll sampler emits numeric frame summaries only; emulator fixture timings
+do not establish physical-device performance or live GitLab acceptance.
+Production APK login/cold-start and the anonymous `public_api_smoke` suite are
+recorded separately. This manual lane is not a new CI emulator job.
+
 Official references:
 - <https://docs.gitlab.com/ci/yaml/workflow/>
 - <https://docs.gitlab.com/ci/testing/unit_test_reports/>

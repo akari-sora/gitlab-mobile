@@ -29,6 +29,11 @@ the project feed after a successful change. Link sharing sends only a canonical
 instance-aware URL; repository file links retain the immutable commit and any
 selected line. Account changes invalidate pending actions and reaction pickers.
 
+Environment deployment views share the canonical GitLab environment link using
+its numeric ID; the deployment website remains a separate action. Pipeline
+schedule confirmations and results belong to the account/session that opened
+them, and repeated Play taps open one confirmation.
+
 ## v0.5 — mobile UX overhaul and GitLab parity
 
 Still a development preview. Evidence is in the [v0.5 ledger](docs/V0_5_VERIFICATION.md); anything it does not list is **NOT_RUN**.
