@@ -29,7 +29,16 @@ extension WorkspaceApi on GitLabApi {
   Future<Project> editProject(int id, {required String name, required String description}) async =>
     Project.fromJson(await writeRecord('PUT', ['projects', '$id'], {'name': name, 'description': description}));
   Future<void> deleteProject(int id) => removeRecord(['projects', '$id']);
-  Future<Json> setStar(int id, bool starred) => writeRecord('POST', ['projects', '$id', starred ? 'star' : 'unstar'], {});
+  /// `POST /projects/:id/star` or `unstar`. GitLab answers 304 when the project
+  /// is already in that state, reported as success without a body.
+  Future<Json?> setStar(int id, bool starred) async {
+    try {
+      return await writeRecord('POST', ['projects', '$id', starred ? 'star' : 'unstar'], {});
+    } on ApiFailure catch (failure) {
+      if (failure.status != 304) rethrow;
+      return null;
+    }
+  }
   Future<Json> createIssue(int project, Json fields) => writeRecord('POST', ['projects', '$project', 'issues'], fields);
   Future<Json> updateIssue(int project, int iid, Json fields) => writeRecord('PUT', ['projects', '$project', 'issues', '$iid'], fields);
   Future<void> deleteIssue(int project, int iid) => removeRecord(['projects', '$project', 'issues', '$iid']);
@@ -253,12 +262,23 @@ extension WorkspaceApi on GitLabApi {
       writeRecord('POST', ['projects', '$project', 'fork'], {'namespace_path': ?namespacePath});
 
   /// Whether [username] has starred the project, from `GET /projects/:id/starrers`.
+  /// The search also matches display names, so pages are read until the exact
+  /// username appears; past ten pages the answer is unknown and this throws.
   Future<bool> hasStarred(int project, String username) async {
-    final page = await records(['projects', '$project', 'starrers'], query: {'search': username});
-    return page.items.any((item) {
-      final user = item['user'];
-      return user is Map && user['username'] == username;
-    });
+    Uri? next;
+    for (var pages = 0; pages < 10; pages++) {
+      final page = await records(['projects', '$project', 'starrers'], query: {'search': username, 'per_page': '100'},
+        next: next);
+      if (page.items.any((item) {
+        final user = item['user'];
+        return user is Map && user['username'] == username;
+      })) {
+        return true;
+      }
+      next = page.next;
+      if (next == null) return false;
+    }
+    throw const ApiFailure(FailureKind.tooLarge);
   }
 
   Future<Json> uploadProjectFile(

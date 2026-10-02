@@ -7,12 +7,16 @@ import 'records_feed.dart';
 
 /// Project names for activity rows that span projects, fetched once per
 /// project and client. Bound to the [GitLabApi] instance, so an account switch
-/// (which closes the client) never reuses another account's answers.
+/// (which closes the client) never reuses another account's answers. A failed
+/// lookup is dropped, so the row asks again the next time it is built.
 final _projectNames = Expando<Map<int, Future<String>>>('projectNames');
 
-Future<String> _projectName(GitLabApi api, int id) {
+Future<String> activityProjectName(GitLabApi api, int id) {
   final cache = _projectNames[api] ??= <int, Future<String>>{};
-  return cache.putIfAbsent(id, () => api.project('$id').then((p) => p.path, onError: (Object _) => ''));
+  return cache[id] ??= api.project('$id').then((p) => p.path, onError: (Object _) {
+    cache.remove(id);
+    return '';
+  });
 }
 
 String _targetLabel(String type) => switch (type) {
@@ -140,7 +144,7 @@ Widget activityRow(BuildContext context, Json event, {required Account account, 
           Row(children: [
             Text(when, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
             if (showProject && projectId > 0) Flexible(child: FutureBuilder<String>(
-              future: _projectName(api, projectId),
+              future: activityProjectName(api, projectId),
               builder: (context, snap) => (snap.data ?? '').isEmpty ? const SizedBox.shrink() : Text(' · ${snap.data}',
                 maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
             )),

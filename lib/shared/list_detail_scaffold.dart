@@ -243,11 +243,17 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
     widget.controller.addListener(_onControllerChanged);
   }
 
-  /// Reported after the frame: the page reacting to it rebuilds its own
-  /// header, which must not happen while this subtree is building.
+  /// The page reacting to a report rebuilds its own header, which must not
+  /// happen while this subtree is building: reports made during a build wait
+  /// for the end of the frame, others (a tap selecting an item) go out at once
+  /// so the header and the detail change in the same frame.
   void _reportFocus(bool focused) {
     if (focused == _focused) return;
     _focused = focused;
+    if (SchedulerBinding.instance.schedulerPhase != SchedulerPhase.persistentCallbacks) {
+      _focus?.report(this, focused);
+      return;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && _focused == focused) _focus?.report(this, focused);
     });
@@ -317,6 +323,7 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
 
   void _onControllerChanged() {
     _registeredDispatcher?.notifyChanged();
+    if (mounted) _reportFocus(!_isTwoPane && widget.controller.selected != null && (widget.active ?? _isActive));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) const RevealChromeNotification().dispatch(context);
     });

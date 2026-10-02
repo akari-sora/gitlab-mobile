@@ -6,6 +6,10 @@ import 'package:gitlab_mobile/features/workspace/project_page.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'package:gitlab_mobile/features/workspace/editor.dart';
+import 'package:gitlab_mobile/features/workspace/groups_page.dart';
+import 'package:gitlab_mobile/features/workspace/inbox_page.dart';
+import 'package:gitlab_mobile/features/workspace/project_more_page.dart';
+import 'package:gitlab_mobile/features/workspace/search_page.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 import 'support/workspace_fixture.dart';
 import 'support/widget_settle.dart';
@@ -66,15 +70,22 @@ void main() {
   for (final width in [320.0, 412.0, 840.0]) {
     for (final scale in [1.0, 2.0]) {
       for (final brightness in Brightness.values) {
-        for (final screen in ['project', 'review', 'pipeline', 'editor']) {
+        for (final screen in ['project', 'review', 'issue', 'pipeline', 'editor', 'inbox', 'search', 'group', 'more']) {
           testWidgets('mobile $screen width=$width scale=$scale ${brightness.name}', (tester) async {
             final fixture = WorkspaceFixture(); addTearDown(fixture.api.close);
             tester.view.devicePixelRatio = 1; tester.view.physicalSize = Size(width, 900);
             addTearDown(tester.view.resetPhysicalSize); addTearDown(tester.view.resetDevicePixelRatio);
+            fixture.issues[1] = fixture.issue(1, 'A synthetic issue with a title long enough to wrap on a phone',
+              milestone: {'id': 101, 'title': 'Quarterly platform hardening milestone', 'due_date': '2026-12-31'});
             final Widget page = switch (screen) {
               'project' => ProjectPage(account: fixture.account, api: fixture.api, project: fixture.project),
               'review' => WorkItemPage(account: fixture.account, api: fixture.api, project: fixture.project, resource: 'merge_requests', iid: 12),
+              'issue' => WorkItemPage(account: fixture.account, api: fixture.api, project: fixture.project, resource: 'issues', iid: 1),
               'pipeline' => PipelinePage(account: fixture.account, api: fixture.api, project: fixture.project, id: 99),
+              'inbox' => InboxPage(account: fixture.account, api: fixture.api),
+              'search' => SearchPage(account: fixture.account, api: fixture.api),
+              'group' => GroupPage(account: fixture.account, api: fixture.api, group: const {'id': 9, 'name': 'Studio', 'full_path': 'studio'}),
+              'more' => Scaffold(body: ProjectMoreTab(account: fixture.account, api: fixture.api, project: fixture.project, onChanged: (_) {})),
               _ => ResourceEditor(account: fixture.account, title: '新增議題', resource: 'synthetic/editor', persistent: false,
                 fields: const [EditField('title', '標題', required: true), EditField('description', '說明', lines: 8)], save: (_) async {}),
             };

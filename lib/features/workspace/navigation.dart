@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/project_locator.dart';
@@ -11,21 +12,28 @@ import 'repository_page.dart';
 import 'work_item_page.dart';
 
 /// Opens resources named by numeric project ID from feeds that span projects
-/// (search, activity, groups). The project is resolved with the active account
-/// first; failures surface through [showFailure] like any other read.
+/// (search, activity, groups, the inbox, pasted links). The project is
+/// resolved with the active account first. A failed lookup, often an
+/// ambiguous 404, opens a page naming the account, instance and target with
+/// retry and account switch; a successful retry continues to the resource.
 class ResourceNavigator {
   const ResourceNavigator(this.account, this.api);
   final Account account;
   final GitLabApi api;
 
-  Future<Project?> _project(BuildContext context, String idOrPath) async {
+  Future<T?> _resolve<T>(BuildContext context, String target, Future<T> Function() load) async {
     try {
-      return await api.project(idOrPath);
+      return await load();
     } catch (e) {
-      if (context.mounted) showFailure(context, e);
-      return null;
+      final failure = safeFailure(e);
+      if (!context.mounted || failure.kind == FailureKind.cancelled) return null;
+      return Navigator.of(context).push<T>(MaterialPageRoute(builder: (_) =>
+        _UnresolvedPage<T>(account: account, target: target, error: failure, load: load)));
     }
   }
+
+  Future<Project?> _project(BuildContext context, String idOrPath) =>
+      _resolve(context, '專案 $idOrPath', () => api.project(idOrPath));
 
   Future<void> _push(BuildContext context, Widget page) =>
       Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page));
@@ -65,17 +73,13 @@ class ResourceNavigator {
   Future<void> file(BuildContext context, String projectIdOrPath, String ref, String path, {int? line}) async {
     final found = await _project(context, projectIdOrPath);
     if (found == null || !context.mounted) return;
-    try {
-      final commit = await api.commit(found.id, ref);
-      final sha = valueText(commit, 'id');
-      if (sha.isEmpty || !context.mounted) return;
-      await _push(context, RepositoryFilePage(
-        account: account, api: api, project: found, filePath: path, targetLine: line,
-        ref: RepositoryRef(kind: RepositoryRefKind.commit, name: shortSha(sha), sha: sha, protected: false),
-      ));
-    } catch (e) {
-      if (context.mounted) showFailure(context, e);
-    }
+    final commit = await _resolve(context, '${found.path} · $ref', () => api.commit(found.id, ref));
+    final sha = commit == null ? '' : valueText(commit, 'id');
+    if (sha.isEmpty || !context.mounted) return;
+    await _push(context, RepositoryFilePage(
+      account: account, api: api, project: found, filePath: path, targetLine: line,
+      ref: RepositoryRef(kind: RepositoryRefKind.commit, name: shortSha(sha), sha: sha, protected: false),
+    ));
   }
 
   Future<void> link(BuildContext context, GitLabLink link) => switch (link.target) {
@@ -87,4 +91,39 @@ class ResourceNavigator {
     LinkTarget.commit => commit(context, link.project, link.sha!),
     LinkTarget.file => file(context, link.project, link.sha!, link.filePath!, line: link.line),
   };
+}
+
+class _UnresolvedPage<T> extends StatefulWidget {
+  const _UnresolvedPage({required this.account, required this.target, required this.error, required this.load});
+  final Account account;
+  final String target;
+  final ApiFailure error;
+  final Future<T> Function() load;
+  @override
+  State<_UnresolvedPage<T>> createState() => _UnresolvedPageState<T>();
+}
+
+class _UnresolvedPageState<T> extends State<_UnresolvedPage<T>> {
+  late ApiFailure _error = widget.error;
+  bool _loading = false;
+
+  Future<void> _retry() async {
+    setState(() => _loading = true);
+    try {
+      final value = await widget.load();
+      if (mounted) Navigator.of(context).pop(value);
+    } catch (e) {
+      if (mounted) setState(() { _error = safeFailure(e); _loading = false; });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('無法開啟')),
+    body: gestureSafe(ListView(children: [
+      if (_loading) const LinearProgressIndicator(minHeight: 2),
+      FailureNotice(_error, account: widget.account, resourceLabel: widget.target,
+        onRetry: _loading ? null : _retry, onSwitchAccount: endSessionFrom(context)),
+    ])),
+  );
 }

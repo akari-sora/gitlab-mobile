@@ -243,7 +243,12 @@ class _ProjectsPageState extends State<ProjectsPage> {
           widget.session.generation != targetGeneration) {
         return;
       }
-      showFailure(context, e);
+      if (e is FormatException) {
+        // The locator explains why a pasted link was refused (other instance, token, relative path).
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
+      } else {
+        showFailure(context, e);
+      }
     } finally {
       if (mounted) setState(() => _opening = false);
     }
@@ -408,7 +413,8 @@ class _ProjectsPageState extends State<ProjectsPage> {
                 style: theme.textTheme.titleMedium?.copyWith(fontSize: 15, color: muted)),
               const SizedBox(height: 2),
               Row(children: [
-                Icon(visibilityIcon, size: 13, color: scheme.onSurfaceVariant, semanticLabel: visibilityLabel),
+                Tooltip(message: visibilityLabel, excludeFromSemantics: true,
+                  child: Icon(visibilityIcon, size: 13, color: scheme.onSurfaceVariant, semanticLabel: visibilityLabel)),
                 const SizedBox(width: 4),
                 Flexible(flex: 3, child: Text(namespace.isEmpty ? visibilityLabel : namespace,
                   maxLines: 1, overflow: TextOverflow.ellipsis, style: secondary)),

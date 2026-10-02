@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/failure.dart';
@@ -239,6 +240,19 @@ List<({String name, Color? color, Color? textColor})> labelDetails(Json value) {
   return out;
 }
 
+double contrastRatio(Color a, Color b) {
+  final la = a.computeLuminance(), lb = b.computeLuminance();
+  return (math.max(la, lb) + .05) / (math.min(la, lb) + .05);
+}
+
+/// Text colour for small type on [fill]: [preferred] when it reaches the WCAG
+/// 4.5:1 ratio, otherwise whichever of white or near-black contrasts more.
+Color readableInk(Color fill, {Color? preferred}) {
+  if (preferred != null && contrastRatio(preferred, fill) >= 4.5) return preferred;
+  const dark = Color(0xFF1F1F1F);
+  return contrastRatio(Colors.white, fill) >= contrastRatio(dark, fill) ? Colors.white : dark;
+}
+
 /// A GitLab label in its own colour. Scoped labels (`scope::value`) render as
 /// two joined segments, the way GitLab shows them.
 class LabelPill extends StatelessWidget {
@@ -250,10 +264,7 @@ class LabelPill extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final base = Theme.of(context).textTheme.labelSmall!;
     final fill = color ?? scheme.surfaceContainerHighest;
-    final ink = textColor ??
-        (color == null
-            ? scheme.onSurfaceVariant
-            : (ThemeData.estimateBrightnessForColor(fill) == Brightness.dark ? Colors.white : const Color(0xFF1F1F1F)));
+    final ink = color == null ? scheme.onSurfaceVariant : readableInk(fill, preferred: textColor);
     final split = name.lastIndexOf('::');
     const radius = Radius.circular(10);
     if (split > 0 && split < name.length - 2) {
@@ -293,20 +304,21 @@ class PeopleStack extends StatelessWidget {
     final shown = people.take(max).toList();
     final names = people.map((p) => '@${valueText(p, 'username')}').join('、');
     final surface = Theme.of(context).colorScheme.surface;
-    return Semantics(label: names, excludeSemantics: true, child: SizedBox(
-      height: size,
-      width: size + (shown.length - 1) * size * .62 + (people.length > max ? size * .9 : 0),
-      child: Stack(children: [
-        for (var i = 0; i < shown.length; i++)
-          Positioned(left: i * size * .62, child: Container(
-            decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: surface, width: 1.5)),
-            child: ClipOval(child: Monogram(valueText(shown[i], 'name', valueText(shown[i], 'username')), size: size - 3)),
-          )),
-        if (people.length > max)
-          Positioned(right: 0, top: 0, bottom: 0, child: Center(child: Text('+${people.length - max}',
-            style: Theme.of(context).textTheme.labelSmall))),
-      ]),
-    ));
+    return Semantics(label: names, excludeSemantics: true, child: Row(mainAxisSize: MainAxisSize.min, children: [
+      SizedBox(
+        height: size,
+        width: size + (shown.length - 1) * size * .62,
+        child: Stack(children: [
+          for (var i = 0; i < shown.length; i++)
+            Positioned(left: i * size * .62, child: Container(
+              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: surface, width: 1.5)),
+              child: ClipOval(child: Monogram(valueText(shown[i], 'name', valueText(shown[i], 'username')), size: size - 3)),
+            )),
+        ]),
+      ),
+      if (people.length > max) Padding(padding: const EdgeInsets.only(left: 3),
+        child: Text('+${people.length - max}', style: Theme.of(context).textTheme.labelSmall)),
+    ]));
   }
 }
 

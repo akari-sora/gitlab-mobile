@@ -522,6 +522,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     var squash = false;
     var removeSourceBranch = false;
     var autoMerge = false;
+    var stillDraft = false;
     if (action == 'cancel_auto_merge') {
       if (!await confirmAction(context, '取消自動合併？', '取消後將不再於流水線通過時自動合併此變更。')) {
         return;
@@ -575,7 +576,15 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         case 'draft':
           final current = await widget.api.record(path);
           if (current['updated_at'] != data['updated_at']) { throw const ApiFailure(FailureKind.conflict); }
-          await widget.api.writeRecord('PUT', path, {'title': toggledDraftTitle(valueText(current, 'title'), data['draft'] == true)});
+          final wasDraft = current['draft'] == true;
+          final title = valueText(current, 'title').trim();
+          final next = toggledDraftTitle(title, wasDraft);
+          if (next.isEmpty || next == title) {
+            stillDraft = true;
+          } else {
+            final updated = await widget.api.writeRecord('PUT', path, {'title': next});
+            stillDraft = wasDraft && updated['draft'] == true;
+          }
         case 'approve': await widget.api.approveMergeRequest(widget.project.id, widget.iid, requiredString(data, 'sha'));
         case 'unapprove': await widget.api.writeRecord('POST', [...path, 'unapprove'], {});
         case 'rebase': await widget.api.rebaseMergeRequest(widget.project.id, widget.iid);
@@ -588,6 +597,10 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
       }
       if (mounted && action == 'rebase') {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已請求 Rebase 分支')));
+      }
+      if (mounted && stillDraft) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('GitLab 仍將此合併請求視為草稿：標題沒有可移除的草稿標記，請編輯標題或在 GitLab 網頁標示為可審查。')));
       }
       if (mounted && action == 'merge') {
         final merged = _data?['state'] == 'merged';
@@ -1077,7 +1090,8 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     final author = valueObject(data, 'author');
     final authorName = valueText(author, 'name', valueText(author, 'username'));
     final created = relativeDate(valueText(data, 'created_at'));
-    return ScrollChromeScope(controller: _chrome, child: Scaffold(
+    final crowded = MediaQuery.textScalerOf(context).scale(14) > 14 * 1.3;
+    return Scaffold(
       body: NotificationListener<ScrollNotification>(onNotification: _chrome.handle, child:
           StatusBarInset(child: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           CollapsingChrome(visible: _chrome, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -1104,6 +1118,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
           ])),
           if (_loading || _busy) const LinearProgressIndicator(minHeight: 2),
           TabBar(controller: _tabs, indicatorSize: TabBarIndicatorSize.tab,
+            isScrollable: crowded, tabAlignment: crowded ? TabAlignment.start : null,
             tabs: [const Tab(text: '摘要'), if (mr) const Tab(text: '變更'), const Tab(text: '討論'), if (mr) const Tab(text: '檢查')]),
           Expanded(child: TabBarView(controller: _tabs, children: [
             ListView(padding: const EdgeInsets.fromLTRB(16, 14, 16, 24), children: [
@@ -1140,15 +1155,15 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                   if (valueObject(data, 'milestone').isNotEmpty) ...[
                     const Divider(height: 20),
                     Text('里程碑', style: Theme.of(context).textTheme.titleSmall), const SizedBox(height: 8),
-                    Row(children: [
-                      const Icon(Icons.tour_outlined, size: 18),
-                      const SizedBox(width: 8),
-                      Flexible(child: Text(valueText(valueObject(data, 'milestone'), 'title'))),
-                      if (valueText(valueObject(data, 'milestone'), 'due_date').isNotEmpty) ...[
+                    Wrap(spacing: 8, runSpacing: 2, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        const Icon(Icons.tour_outlined, size: 18),
                         const SizedBox(width: 8),
+                        Flexible(child: Text(valueText(valueObject(data, 'milestone'), 'title'))),
+                      ]),
+                      if (valueText(valueObject(data, 'milestone'), 'due_date').isNotEmpty)
                         Text('（到期日：${valueText(valueObject(data, 'milestone'), 'due_date')}）',
                           style: Theme.of(context).textTheme.bodySmall),
-                      ],
                     ]),
                   ],
                   ..._detailRows(data),
@@ -1176,7 +1191,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
             if (mr) _MergeChecks(account: widget.account, api: widget.api, path: path, data: data, busy: _busy, act: _action),
           ])),
           ]))),
-      )),
+      ),
     );
   }
 }
@@ -1243,7 +1258,6 @@ class _MergeChecksState extends State<_MergeChecks> {
 }
 
 /// Merge requests that mention or close an issue, and its linked issues.
-/// Both reads are optional context: a failure hides that list.
 class _RelatedIssueItems extends StatefulWidget {
   const _RelatedIssueItems({required this.account, required this.api, required this.project, required this.iid});
   final Account account;
@@ -1256,6 +1270,8 @@ class _RelatedIssueItems extends StatefulWidget {
 
 class _RelatedIssueItemsState extends State<_RelatedIssueItems> {
   List<Json> _mergeRequests = const [], _links = const [];
+  ApiFailure? _error;
+  int _epoch = 0;
 
   @override
   void initState() {
@@ -1263,25 +1279,38 @@ class _RelatedIssueItemsState extends State<_RelatedIssueItems> {
     unawaited(_load());
   }
 
+  @override
+  void dispose() {
+    _epoch++;
+    super.dispose();
+  }
+
   Future<void> _load() async {
+    final epoch = ++_epoch;
     final base = ['projects', '${widget.project.id}', 'issues', '${widget.iid}'];
-    Future<List<Json>> soft(List<String> path) async {
-      try {
-        return (await widget.api.records(path)).items;
-      } catch (_) {
-        return const [];
-      }
+    if (_error != null) setState(() => _error = null);
+    try {
+      final results = await Future.wait([
+        widget.api.records([...base, 'related_merge_requests']),
+        widget.api.records([...base, 'links']),
+      ]);
+      if (!mounted || epoch != _epoch) return;
+      setState(() {
+        _mergeRequests = results[0].items;
+        _links = results[1].items;
+      });
+    } catch (e) {
+      if (mounted && epoch == _epoch) setState(() => _error = safeFailure(e));
     }
-    final results = await Future.wait([soft([...base, 'related_merge_requests']), soft([...base, 'links'])]);
-    if (!mounted) return;
-    setState(() {
-      _mergeRequests = results[0];
-      _links = results[1];
-    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final error = _error;
+    if (error != null) {
+      return FailureNotice(error, account: widget.account, onRetry: _load, onSwitchAccount: endSessionFrom(context),
+        resourceLabel: '${widget.project.path} · #${widget.iid} 相關合併請求與關聯議題');
+    }
     if (_mergeRequests.isEmpty && _links.isEmpty) return const SizedBox.shrink();
     final open = ResourceNavigator(widget.account, widget.api);
     final theme = Theme.of(context);
@@ -1363,12 +1392,12 @@ class _MergeRequestHistory extends StatelessWidget {
       ListTile(
         key: const ValueKey('mr-pipelines-entry'),
         leading: const Icon(Icons.account_tree_outlined),
-        title: const Text('Pipelines'),
+        title: const Text('流程'),
         trailing: const Icon(Icons.chevron_right, size: 18),
-        onTap: () => push('!$iid Pipelines', RecordsFeed(
+        onTap: () => push('!$iid 流程', RecordsFeed(
           identity: '${base.join('/')}/pipelines',
           account: account,
-          resourceLabel: '${project.path} · !$iid Pipelines',
+          resourceLabel: '${project.path} · !$iid 流程',
           onSwitchAccount: endSessionFrom(context),
           empty: '沒有 Pipeline',
           grouped: true,
@@ -1428,13 +1457,17 @@ String _milestoneValue(Json data) {
   ]);
 }
 
-final _draftPrefix = RegExp(r'^\s*(\[draft\]|\(draft\)|draft:|draft\s+-|wip:)\s*', caseSensitive: false);
+final _draftPrefix = RegExp(r'^\s*(\[draft\]|\(draft\)|draft:|draft\s+-|\[wip\]|wip:)\s*', caseSensitive: false);
 
 /// GitLab marks a merge request as draft by its title prefix; toggling adds
-/// `Draft: ` or strips any prefix GitLab recognises.
+/// `Draft: ` or strips every prefix GitLab recognises, which may be stacked.
 String toggledDraftTitle(String title, bool isDraft) {
-  if (isDraft) return title.replaceFirst(_draftPrefix, '').trim();
-  return 'Draft: ${title.trim()}';
+  if (!isDraft) return 'Draft: ${title.trim()}';
+  var stripped = title;
+  for (var next = stripped.replaceFirst(_draftPrefix, ''); next != stripped; next = stripped.replaceFirst(_draftPrefix, '')) {
+    stripped = next;
+  }
+  return stripped.trim();
 }
 
 bool isAutoMergeEnabled(Json data) {

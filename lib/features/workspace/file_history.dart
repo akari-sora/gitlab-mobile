@@ -72,6 +72,9 @@ final class _BlameLine extends _BlameRow {
 }
 
 class _BlamePageState extends State<BlamePage> {
+  /// Characters drawn per line. Minified sources can put megabytes on one
+  /// line; the rest is clipped rather than laid out on an enormous canvas.
+  static const _maxLineChars = 400;
   List<_BlameRow> _rows = const [];
   int _longest = 0;
   ApiFailure? _error;
@@ -101,7 +104,8 @@ class _BlamePageState extends State<BlamePage> {
         final lines = range['lines'];
         if (lines is List) {
           for (final line in lines) {
-            final text = line is String ? line : '';
+            final raw = line is String ? line : '';
+            final text = raw.length > _maxLineChars ? '${raw.substring(0, _maxLineChars)}…' : raw;
             longest = math.max(longest, text.length);
             rows.add(_BlameLine(++number, text));
             if (number > GitLabApi.maxTextLines) throw const ApiFailure(FailureKind.tooLarge);
@@ -125,7 +129,7 @@ class _BlamePageState extends State<BlamePage> {
     return Scaffold(
       appBar: AppBar(titleSpacing: 0, title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('Blame'),
+          const Text('逐行作者'),
           Text('${widget.path} · ${shortSha(widget.sha)}', maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall),
         ])),
@@ -155,15 +159,16 @@ class _BlamePageState extends State<BlamePage> {
                             child: Padding(padding: const EdgeInsets.fromLTRB(12, 8, 12, 8), child: Row(children: [
                               Monogram(author, size: 22),
                               const SizedBox(width: 8),
-                              Text(author, style: theme.textTheme.labelLarge),
+                              Flexible(flex: 2, child: Text(author, maxLines: 1, overflow: TextOverflow.ellipsis,
+                                style: theme.textTheme.labelLarge)),
                               const SizedBox(width: 8),
                               Text(shortSha(valueText(commit, 'id')), style: codeTextStyle(context, fontSize: 12,
                                 color: scheme.primary)),
                               const SizedBox(width: 8),
-                              Text(relativeDate(valueText(commit, 'authored_date', valueText(commit, 'committed_date'))),
-                                style: theme.textTheme.bodySmall),
+                              Flexible(child: Text(relativeDate(valueText(commit, 'authored_date', valueText(commit, 'committed_date'))),
+                                maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall)),
                               const SizedBox(width: 12),
-                              Flexible(child: Text(valueText(commit, 'message').split('\n').first, maxLines: 1,
+                              Flexible(flex: 3, child: Text(valueText(commit, 'message').split('\n').first, maxLines: 1,
                                 overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall)),
                             ])),
                           ),
@@ -211,6 +216,11 @@ class FindFilePage extends StatefulWidget {
 
 class _FindFilePageState extends State<FindFilePage> {
   static const _maxEntries = 6000;
+
+  /// Tree entries read in total, folders included, so a folder-heavy tree
+  /// cannot keep paging the API long after the file cap stopped mattering.
+  static const _maxVisited = 12000;
+  static const _shownWithoutQuery = 200;
   final _paths = <String>[];
   final _input = TextEditingController();
   ApiFailure? _error;
@@ -235,11 +245,13 @@ class _FindFilePageState extends State<FindFilePage> {
     final epoch = ++_epoch;
     setState(() { _loading = true; _error = null; _paths.clear(); _truncated = false; });
     Uri? next;
+    var visited = 0;
     try {
       do {
         final page = await widget.api.records(['projects', '${widget.project.id}', 'repository', 'tree'],
           query: {'ref': widget.ref.sha, 'recursive': 'true', 'per_page': '100'}, next: next);
         if (!mounted || epoch != _epoch) return;
+        visited += page.items.length;
         setState(() {
           _paths.addAll([
             for (final item in page.items)
@@ -247,7 +259,7 @@ class _FindFilePageState extends State<FindFilePage> {
           ]);
         });
         next = page.next;
-        if (_paths.length >= _maxEntries && next != null) {
+        if ((_paths.length >= _maxEntries || visited >= _maxVisited) && next != null) {
           setState(() => _truncated = true);
           break;
         }
@@ -263,7 +275,7 @@ class _FindFilePageState extends State<FindFilePage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final query = _query.toLowerCase();
-    final hits = query.isEmpty ? _paths.take(200).toList()
+    final hits = query.isEmpty ? _paths.take(_shownWithoutQuery).toList()
         : (_paths.where((path) => findFileMatches(path, query)).toList()
             ..sort((a, b) {
               final ai = a.toLowerCase().contains(query) ? 0 : 1, bi = b.toLowerCase().contains(query) ? 0 : 1;
@@ -285,9 +297,11 @@ class _FindFilePageState extends State<FindFilePage> {
         if (_loading) const LinearProgressIndicator(minHeight: 2),
         if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
           resourceLabel: '${widget.project.path} · ${widget.ref.name}'),
-        Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text(
+        Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text([
           _truncated ? '已索引前 ${_paths.length} 個檔案（大型 repository 只搜尋前段）' : '${_paths.length} 個檔案',
-          style: theme.textTheme.bodySmall)),
+          if (query.isEmpty && _paths.length > _shownWithoutQuery) '先列出前 $_shownWithoutQuery 個，輸入名稱可搜尋全部',
+          if (query.isNotEmpty) '${hits.length} 個符合',
+        ].join(' · '), style: theme.textTheme.bodySmall)),
         Expanded(child: ListView.builder(
           itemCount: hits.length,
           itemBuilder: (context, index) {

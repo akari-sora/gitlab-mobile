@@ -46,12 +46,26 @@ class AuthenticatedApp extends StatefulWidget {
   State<AuthenticatedApp> createState() => _AuthenticatedAppState();
 }
 
+/// Fires when a route above the shell starts to pop, so navigation tucked away
+/// by scrolling returns together with the shell.
+class _PopObserver extends NavigatorObserver with ChangeNotifier {
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) => notifyListeners();
+}
+
 class _AuthenticatedAppState extends State<AuthenticatedApp> {
   // The appearance lives outside this widget on purpose: the whole
   // authenticated tree is rebuilt on every account switch, and the choice is a
   // device preference that must survive both that and a restart.
   bool _dynamicProbeSettled = false;
   bool _probedScheme = false;
+  final _pops = _PopObserver();
+
+  @override
+  void dispose() {
+    _pops.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -114,9 +128,11 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
           locale: const Locale('zh', 'TW'),
           supportedLocales: const [Locale('zh', 'TW'), Locale('en')],
           localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          navigatorObservers: [_pops],
           home: _MobileShell(
             session: widget.session,
             shortcuts: widget.shortcuts,
+            pops: _pops,
             theme: widget.appearance.mode,
             changeTheme: (mode) => unawaited(widget.appearance.select(mode)),
             useDynamicColor: widget.appearance.useDynamicColor,
@@ -135,6 +151,7 @@ class _MobileShell extends StatefulWidget {
   const _MobileShell({
     required this.session,
     required this.shortcuts,
+    required this.pops,
     required this.theme,
     required this.changeTheme,
     required this.useDynamicColor,
@@ -144,6 +161,7 @@ class _MobileShell extends StatefulWidget {
   });
   final SessionController session;
   final LauncherShortcuts shortcuts;
+  final Listenable pops;
   final ThemeMode theme;
   final ValueChanged<ThemeMode> changeTheme;
   final bool useDynamicColor;
@@ -158,6 +176,8 @@ class _MobileShellState extends State<_MobileShell> {
   final _backDispatcher = DetailBackDispatcher();
   final _chrome = ScrollChromeController();
   final _scrollTop = List.generate(4, (_) => ValueNotifier<int>(0));
+  final _meScroll = ScrollController();
+  bool? _useRail;
   int _selected = 1;
   int _searchToken = 0;
   bool _removing = false;
@@ -175,6 +195,7 @@ class _MobileShellState extends State<_MobileShell> {
     super.initState();
     widget.session.addListener(_onSession);
     widget.shortcuts.addListener(_onShortcut);
+    widget.pops.addListener(_chrome.show);
     final account = widget.session.active;
     if (account != null) {
       unawaited(widget.shortcuts.publish(account.key));
@@ -194,6 +215,10 @@ class _MobileShellState extends State<_MobileShell> {
       oldWidget.session.removeListener(_onSession);
       widget.session.addListener(_onSession);
     }
+    if (oldWidget.pops != widget.pops) {
+      oldWidget.pops.removeListener(_chrome.show);
+      widget.pops.addListener(_chrome.show);
+    }
   }
 
   void _onSession() {
@@ -207,8 +232,10 @@ class _MobileShellState extends State<_MobileShell> {
 
   @override
   void dispose() {
+    widget.pops.removeListener(_chrome.show);
     _backDispatcher.dispose();
     _chrome.dispose();
+    _meScroll.dispose();
     for (final signal in _scrollTop) {
       signal.dispose();
     }
@@ -560,7 +587,6 @@ class _MobileShellState extends State<_MobileShell> {
               context: context,
               removeBottom: true,
               child: NavigationBar(
-                maintainBottomViewPadding: true,
                 selectedIndex: _selected,
                 onDestinationSelected: _select,
                 destinations: const [
@@ -597,8 +623,10 @@ class _MobileShellState extends State<_MobileShell> {
   }
   Widget _buildMyTab(BuildContext context, Account account, SessionController session) => Scaffold(
     appBar: AppBar(title: const Text('我的')),
-    body: gestureSafe(
-      ListView(
+    body: gestureSafe(ScrollToTopOnSignal(
+      controller: _meScroll,
+      child: ListView(
+        controller: _meScroll,
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
         children: [
           Card(child: Padding(padding: const EdgeInsets.all(16), child: Row(
@@ -681,7 +709,7 @@ class _MobileShellState extends State<_MobileShell> {
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
                   Icon(icon, size: 22),
                   const SizedBox(height: 4),
-                  Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  Text(label, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis),
                 ]),
               ),
             )),
@@ -725,7 +753,7 @@ class _MobileShellState extends State<_MobileShell> {
           ),
         ],
       ),
-    ),
+    )),
   );
 
   @override
@@ -756,6 +784,13 @@ class _MobileShellState extends State<_MobileShell> {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 final useRail = AdaptiveBreakpoints.showNavigationRail(constraints.maxWidth);
+                if (_useRail != useRail) {
+                  // The rail never hides, so the bar comes back visible after rotating.
+                  if (_useRail != null) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) _chrome.show(); });
+                  }
+                  _useRail = useRail;
+                }
                 return Scaffold(
                   body: Row(
                     children: [

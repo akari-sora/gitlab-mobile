@@ -11,14 +11,30 @@ import 'navigation.dart';
 import 'records_feed.dart';
 
 String accessLevelLabel(int level) => switch (level) {
-  >= 50 => 'Owner',
-  >= 40 => 'Maintainer',
-  >= 30 => 'Developer',
-  >= 20 => 'Reporter',
-  >= 15 => 'Planner',
-  >= 10 => 'Guest',
-  >= 5 => 'Minimal',
+  >= 50 => '擁有者',
+  >= 40 => '維護者',
+  >= 30 => '開發者',
+  >= 20 => '報告者',
+  >= 15 => '規劃者',
+  >= 10 => '訪客',
+  >= 5 => '最低存取',
   _ => '無存取權',
+};
+
+String environmentTierLabel(String tier) => switch (tier) {
+  'production' => '正式',
+  'staging' => '預備',
+  'testing' => '測試',
+  'development' => '開發',
+  'other' => '其他',
+  _ => tier,
+};
+
+String environmentStateLabel(String state) => switch (state) {
+  'available' => '可用',
+  'stopping' => '停止中',
+  'stopped' => '已停止',
+  _ => state,
 };
 
 Widget _extraScaffold(BuildContext context, String title, Widget body, {List<Widget>? actions}) => Scaffold(
@@ -175,8 +191,8 @@ class EnvironmentsPage extends StatelessWidget {
         leading: Icon(state == 'available' ? Icons.cloud_done_outlined : Icons.cloud_off_outlined),
         title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text([
-          state == 'available' ? '可用' : state == 'stopped' ? '已停止' : state,
-          if (valueText(value, 'tier').isNotEmpty) valueText(value, 'tier'),
+          environmentStateLabel(state),
+          if (valueText(value, 'tier').isNotEmpty) environmentTierLabel(valueText(value, 'tier')),
           if (url != null && url.host.isNotEmpty) url.host,
         ].join(' · ')),
         trailing: url != null && url.scheme == 'https' && url.host.isNotEmpty

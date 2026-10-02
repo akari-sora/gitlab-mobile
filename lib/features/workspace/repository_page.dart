@@ -370,7 +370,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
               icon: const Icon(Icons.arrow_upward, size: 18),
             ),
             TextButton(
-              style: TextButton.styleFrom(minimumSize: const Size(40, 36), padding: const EdgeInsets.symmetric(horizontal: 8)),
+              style: TextButton.styleFrom(minimumSize: const Size(40, 40), padding: const EdgeInsets.symmetric(horizontal: 8)),
               onPressed: () => setState(() => _folder = ''),
               child: const Text('根目錄'),
             ),
@@ -381,7 +381,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
                   child: Text(segments[i], style: theme.textTheme.labelLarge))
               else
                 TextButton(
-                  style: TextButton.styleFrom(minimumSize: const Size(40, 36), padding: const EdgeInsets.symmetric(horizontal: 8)),
+                  style: TextButton.styleFrom(minimumSize: const Size(40, 40), padding: const EdgeInsets.symmetric(horizontal: 8)),
                   onPressed: () => setState(() => _folder = segments.take(i + 1).join('/')),
                   child: Text(segments[i], style: style),
                 ),
@@ -880,6 +880,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
   final _vertical = ScrollController();
   final _horizontal = ScrollController();
   final _chrome = ScrollChromeController();
+  final _searchFocus = FocusNode();
 
   int? _selectedLine;
   List<String> _lines = const [];
@@ -903,6 +904,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
     _vertical.dispose();
     _horizontal.dispose();
     _chrome.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -1192,7 +1194,9 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
         ],
       );
     return Scaffold(
-      body: NotificationListener<ScrollNotification>(onNotification: _chrome.handle, child: StatusBarInset(child: gestureSafe(Column(
+      // The search field lives in the collapsing header; it stays while focused.
+      body: NotificationListener<ScrollNotification>(onNotification: (n) => !_searchFocus.hasFocus && _chrome.handle(n),
+        child: StatusBarInset(child: gestureSafe(Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           CollapsingChrome(visible: _chrome, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -1201,6 +1205,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: TextField(
+                  focusNode: _searchFocus,
                   decoration: const InputDecoration(
                     hintText: '搜尋目前檔案',
                     prefixIcon: Icon(Icons.search),
@@ -1298,6 +1303,8 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                                             selected: isSelected,
                                             label: '第 $lineNumber 行',
                                             hint: '點擊複製此行永久連結',
+                                            excludeSemantics: true,
+                                            onTap: () => _copyLinePermalink(lineNumber),
                                             child: InkWell(
                                               onTap: () => _copyLinePermalink(lineNumber),
                                               borderRadius: BorderRadius.circular(4),

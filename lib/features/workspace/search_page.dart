@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
@@ -29,7 +28,18 @@ const projectSearchScopes = <String, String>{
   'users': '成員',
 };
 
-/// Instance-wide search, or project search when [project] is set.
+String userStateLabel(String state) => switch (state) {
+  'blocked' || 'blocked_pending_approval' => '已封鎖',
+  'deactivated' => '已停用',
+  'banned' => '已停權',
+  'ldap_blocked' => 'LDAP 封鎖',
+  'active' => '啟用中',
+  _ => state,
+};
+
+/// Instance-wide search, or project search when [project] is set. A search
+/// runs when submitted or when the scope changes, not on every keystroke:
+/// GitLab rate-limits search, and a 429 pauses every request of the client.
 class SearchPage extends StatefulWidget {
   const SearchPage({super.key, required this.account, required this.api, this.project, this.initialScope});
   final Account account;
@@ -43,7 +53,6 @@ class SearchPage extends StatefulWidget {
 class _SearchPageState extends State<SearchPage> {
   final _input = TextEditingController();
   final _focus = FocusNode();
-  Timer? _debounce;
   String _query = '';
   late String _scope = widget.initialScope ??
       (widget.project == null ? instanceSearchScopes.keys.first : projectSearchScopes.keys.first);
@@ -53,17 +62,9 @@ class _SearchPageState extends State<SearchPage> {
 
   @override
   void dispose() {
-    _debounce?.cancel();
     _input.dispose();
     _focus.dispose();
     super.dispose();
-  }
-
-  void _changed(String value) {
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 400), () {
-      if (mounted) setState(() => _query = value.trim());
-    });
   }
 
   String _projectLabel(Json value) {
@@ -120,7 +121,7 @@ class _SearchPageState extends State<SearchPage> {
           title: Text(valueText(value, 'name', valueText(value, 'username'))),
           subtitle: Text('@${valueText(value, 'username')}'),
           meta: [if (valueText(value, 'state').isNotEmpty && valueText(value, 'state') != 'active')
-            MetaChip(valueText(value, 'state'), icon: Icons.block)],
+            MetaChip(userStateLabel(valueText(value, 'state')), icon: Icons.block)],
           onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => UserPage(
             account: widget.account, api: widget.api, user: value))),
         );
@@ -188,15 +189,14 @@ class _SearchPageState extends State<SearchPage> {
           focusNode: _focus,
           autofocus: true,
           textInputAction: TextInputAction.search,
-          onChanged: _changed,
-          onSubmitted: (value) { _debounce?.cancel(); setState(() => _query = value.trim()); },
+          onSubmitted: (value) => setState(() => _query = value.trim()),
           decoration: InputDecoration(
             hintText: project == null ? '搜尋 ${widget.account.instance.base.host}' : '在 ${project.name} 中搜尋',
             filled: false,
             border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none,
             suffixIcon: ValueListenableBuilder<TextEditingValue>(valueListenable: _input, builder: (context, value, _) =>
               value.text.isEmpty ? const SizedBox.shrink() : IconButton(tooltip: '清除搜尋', icon: const Icon(Icons.close),
-                onPressed: () { _input.clear(); _debounce?.cancel(); setState(() => _query = ''); _focus.requestFocus(); })),
+                onPressed: () { _input.clear(); setState(() => _query = ''); _focus.requestFocus(); })),
           ),
         ),
       ),
@@ -216,8 +216,8 @@ class _SearchPageState extends State<SearchPage> {
               project == null ? '搜尋專案、議題、合併請求與使用者' : '搜尋程式碼、議題、提交與留言',
               icon: Icons.manage_search,
               detail: project == null
-                ? '程式碼、提交與留言請在專案內搜尋。'
-                : '程式碼搜尋使用 GitLab 預設分支。'))
+                ? '輸入後按鍵盤上的搜尋。程式碼、提交與留言請在專案內搜尋。'
+                : '輸入後按鍵盤上的搜尋。程式碼搜尋使用 GitLab 預設分支。'))
           : RecordsFeed(
               identity: 'search/${project?.id ?? 'all'}/$_scope/$_query',
               account: widget.account,

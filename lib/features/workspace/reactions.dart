@@ -41,6 +41,8 @@ class ReactionsBar extends StatefulWidget {
 }
 
 class _ReactionsBarState extends State<ReactionsBar> {
+  /// Awards are one record per user and emoji; ten pages cover any real issue.
+  static const _maxPages = 10;
   List<Json> _awards = const [];
   ApiFailure? _error;
   bool _loading = true, _busy = false;
@@ -52,13 +54,27 @@ class _ReactionsBarState extends State<ReactionsBar> {
     unawaited(_load());
   }
 
+  @override
+  void dispose() {
+    _epoch++;
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final epoch = ++_epoch;
+    if (!mounted) return;
     setState(() { _loading = true; _error = null; });
     try {
-      final page = await widget.api.awardEmoji(widget.project.id, widget.resource, widget.iid, note: widget.note);
-      if (!mounted || epoch != _epoch) return;
-      setState(() => _awards = page.items);
+      final awards = <Json>[];
+      Uri? next;
+      var pages = 0;
+      do {
+        final page = await widget.api.awardEmoji(widget.project.id, widget.resource, widget.iid, note: widget.note, next: next);
+        if (!mounted || epoch != _epoch) return;
+        awards.addAll(page.items);
+        next = page.next;
+      } while (next != null && ++pages < _maxPages);
+      setState(() => _awards = awards);
     } catch (e) {
       if (mounted && epoch == _epoch) setState(() => _error = safeFailure(e));
     } finally {
@@ -120,9 +136,10 @@ class _ReactionsBarState extends State<ReactionsBar> {
       if (name.isNotEmpty) counts[name] = (counts[name] ?? 0) + 1;
     }
     final scheme = Theme.of(context).colorScheme;
-    if (_error != null && _awards.isEmpty) {
-      return Align(alignment: Alignment.centerLeft, child: TextButton.icon(
-        onPressed: _load, icon: const Icon(Icons.refresh, size: 16), label: const Text('無法載入回應，重試')));
+    final error = _error;
+    if (error != null && _awards.isEmpty) {
+      return FailureNotice(error, account: widget.account, onRetry: _load, onSwitchAccount: endSessionFrom(context),
+        resourceLabel: '${widget.project.path} · ${widget.resource == 'merge_requests' ? '!' : '#'}${widget.iid} 回應');
     }
     return Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
       for (final entry in counts.entries)
@@ -131,6 +148,7 @@ class _ReactionsBarState extends State<ReactionsBar> {
           showCheckmark: false,
           selected: _mine(entry.key) != null,
           visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.padded,
           padding: const EdgeInsets.symmetric(horizontal: 4),
           tooltip: [
             for (final award in _awards)
@@ -143,6 +161,7 @@ class _ReactionsBarState extends State<ReactionsBar> {
         key: const ValueKey('reaction-add'),
         tooltip: '新增回應',
         visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.padded,
         avatar: Icon(Icons.add_reaction_outlined, size: 18, color: scheme.onSurfaceVariant),
         label: Text(counts.isEmpty ? '回應' : '新增'),
         onPressed: _busy || _loading && _awards.isEmpty ? null : _pick,

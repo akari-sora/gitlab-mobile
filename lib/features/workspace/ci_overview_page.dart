@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../shared/scroll_chrome.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
@@ -83,6 +84,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
   String _filter = ''; // '', 'running', 'failed'
   String _search = '';
   final _searchController = TextEditingController();
+  final _scroll = ScrollController();
 
   Account? get _account => widget.account ?? widget.session?.active;
   GitLabApi? get _api => widget.api ?? widget.session?.api;
@@ -96,6 +98,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
   @override
   void dispose() {
     _searchController.dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -330,12 +333,16 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         top: false,
         child: RefreshIndicator(
           onRefresh: _load,
-          child: CustomScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            slivers: [
-              SliverToBoxAdapter(child: _header(context, gutter)),
-              ..._bodySlivers(gutter, displayed),
-            ],
+          child: ScrollToTopOnSignal(
+            controller: _scroll,
+            child: CustomScrollView(
+              controller: _scroll,
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(child: _header(context, gutter)),
+                ..._bodySlivers(gutter, displayed),
+              ],
+            ),
           ),
         ),
       ),

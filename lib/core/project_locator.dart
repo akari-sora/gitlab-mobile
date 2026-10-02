@@ -72,7 +72,7 @@ final class GitLabLink {
     if (!text.contains('://')) return GitLabLink._(project, LinkTarget.project);
     final uri = Uri.parse(text);
     final segments = uri.pathSegments.toList();
-    final dash = segments.indexOf('-');
+    final dash = segments.indexOf('-', instance.base.pathSegments.where((part) => part.isNotEmpty).length);
     if (dash < 0 || dash + 2 > segments.length) return GitLabLink._(project, LinkTarget.project);
     final kind = segments[dash + 1];
     final rest = segments.skip(dash + 2).where((part) => part.isNotEmpty).toList();
@@ -88,14 +88,15 @@ final class GitLabLink {
       case 'jobs' when positive != null:
         return GitLabLink._(project, LinkTarget.job, number: positive);
       case 'commit' when rest.isNotEmpty && _sha.hasMatch(rest.first):
-        return GitLabLink._(project, LinkTarget.commit, sha: rest.first);
-      case 'blob' when rest.length >= 2 && _sha.hasMatch(rest.first):
+        return GitLabLink._(project, LinkTarget.commit, sha: rest.first.toLowerCase());
+      case 'blob' when rest.length >= 2 && _sha.hasMatch(rest.first) &&
+          !rest.skip(1).any((part) => part == '.' || part == '..'):
         final line = RegExp(r'^L(\d+)').firstMatch(uri.fragment)?.group(1);
-        return GitLabLink._(project, LinkTarget.file,
-          sha: rest.first, filePath: rest.skip(1).join('/'), line: line == null ? null : int.tryParse(line));
+        return GitLabLink._(project, LinkTarget.file, sha: rest.first.toLowerCase(),
+          filePath: rest.skip(1).join('/'), line: line == null ? null : int.tryParse(line));
     }
     return GitLabLink._(project, LinkTarget.project);
   }
 
-  static final _sha = RegExp(r'^[0-9a-f]{7,64}$');
+  static final _sha = RegExp(r'^[0-9a-fA-F]{7,64}$');
 }

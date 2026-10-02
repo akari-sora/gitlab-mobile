@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
@@ -56,19 +55,8 @@ class RecordsFeed extends StatefulWidget {
 class RecordsFeedState extends State<RecordsFeed> {
   late final RecordController controller;
   final _scroll = ScrollController();
-  ValueListenable<int>? _scrollTop;
   @override
   void initState() { super.initState(); controller = RecordController(widget.load); unawaited(controller.refresh()); }
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final signal = ScrollTopSignal.maybeOf(context);
-    if (!identical(signal, _scrollTop)) {
-      _scrollTop?.removeListener(_toTop);
-      _scrollTop = signal;
-      _scrollTop?.addListener(_toTop);
-    }
-  }
   @override
   void didUpdateWidget(covariant RecordsFeed oldWidget) {
     super.didUpdateWidget(oldWidget); controller.loader = widget.load;
@@ -90,9 +78,8 @@ class RecordsFeedState extends State<RecordsFeed> {
     await _scroll.animateTo(0, duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic);
   }
 
-  void _toTop() { if (mounted) unawaited(scrollToTop()); }
   @override
-  void dispose() { _scrollTop?.removeListener(_toTop); _scroll.dispose(); controller.dispose(); super.dispose(); }
+  void dispose() { _scroll.dispose(); controller.dispose(); super.dispose(); }
 
   Widget _groupedRow(BuildContext context, int index, int count, Widget child) {
     final scheme = Theme.of(context).colorScheme;
@@ -154,7 +141,7 @@ class RecordsFeedState extends State<RecordsFeed> {
             itemBuilder: (context, index) => withSection(context, index, Padding(
               padding: EdgeInsets.only(bottom: widget.itemSpacing), child: widget.itemBuilder(context, shown[index]))));
     final bottom = 16 + (widget.underShell ? 8 : 12) + MediaQuery.paddingOf(context).bottom;
-    final list = RefreshIndicator(onRefresh: controller.refresh, child: CustomScrollView(
+    final list = RefreshIndicator(onRefresh: controller.refresh, child: ScrollToTopOnSignal(controller: _scroll, child: CustomScrollView(
       key: PageStorageKey(widget.storageId ?? widget.identity), controller: _scroll, physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         if (widget.topSlivers != null) ...widget.topSlivers!(context, controller),
@@ -171,7 +158,7 @@ class RecordsFeedState extends State<RecordsFeed> {
           : items),
         SliverPadding(padding: EdgeInsets.fromLTRB(gutter, 0, gutter, bottom), sliver: SliverList.list(children: after)),
       ],
-    ));
+    )));
     final header = widget.header;
     if (header == null) { return list; }
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [

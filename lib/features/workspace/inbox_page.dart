@@ -4,6 +4,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
+import 'navigation.dart';
 import 'records_feed.dart';
 import 'search_page.dart';
 import 'work_item_page.dart';
@@ -38,7 +39,9 @@ class _InboxPageState extends State<InboxPage> {
       ])),
       TabBar(isScrollable: true, tabAlignment: TabAlignment.start, onTap: (_) => _chrome.show(),
         tabs: const [Tab(text: '待辦'), Tab(text: '指派給我'), Tab(text: '待我審查'), Tab(text: '我建立的')]),
-      Expanded(child: TabBarView(children: [
+      // Horizontal swipes belong to the todo rows (swipe to complete), so the
+      // tabs change from the tab bar only.
+      Expanded(child: TabBarView(physics: const NeverScrollableScrollPhysics(), children: [
       _TodoFeed(account: account, api: api),
       _WorkFeed(account: account, api: api, kind: _WorkKind.assigned),
       RecordsFeed(identity: 'review-requests', empty: '沒有待審查的合併請求', account: account,
@@ -56,14 +59,7 @@ class _InboxPageState extends State<InboxPage> {
 Widget inboxWorkItem(BuildContext context, Account account, GitLabApi api, Json data, String resource) => workItemCard(context, data,
   mr: resource == 'merge_requests',
   project: valueText(valueObject(data, 'references'), 'full').split(RegExp('[#!]')).first,
-  onTap: () async {
-    try {
-      final project = await api.project('${requiredInt(data, 'project_id')}');
-      if (!context.mounted) { return; }
-      await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => WorkItemPage(
-        account: account, api: api, project: project, resource: resource, iid: requiredInt(data, 'iid'))));
-    } catch (e) { if (context.mounted) { showFailure(context, e); } }
-  });
+  onTap: () => ResourceNavigator(account, api).workItem(context, '${valueInt(data, 'project_id')}', resource, valueInt(data, 'iid')));
 
 enum _WorkKind { assigned, created }
 
@@ -121,20 +117,48 @@ class _TodoFeed extends StatefulWidget {
 class _TodoFeedState extends State<_TodoFeed> {
   final _feed = GlobalKey<RecordsFeedState>();
   final _busy = <int>{};
+
+  /// Swiped rows waiting out the undo window, hidden even if a reload that
+  /// started earlier brings them back.
+  final _pending = <int>{};
   bool _clearing = false;
 
-  Future<void> _done(int id, {bool refresh = true}) async {
+  /// GitLab pages todos by offset: after a change the list reloads, otherwise
+  /// the next page would start one row late and skip a todo.
+  Future<void> _done(int id) async {
     if (_busy.contains(id)) return;
     setState(() => _busy.add(id));
     try {
       await widget.api.markTodoDone(id);
-      if (mounted && refresh) await _feed.currentState?.refresh();
+      if (mounted) _feed.currentState?.removeItem('$id');
     } catch (e) {
-      if (mounted) {
-        showFailure(context, e);
-        await _feed.currentState?.refresh();
+      if (mounted) showFailure(context, e);
+    } finally {
+      if (mounted) setState(() { _busy.remove(id); _pending.remove(id); });
+    }
+    if (mounted) await _feed.currentState?.refresh();
+  }
+
+  /// A swipe only hides the row; the write goes out once the undo snack bar
+  /// closes without 復原. A newer swipe closes the previous bar, committing it.
+  void _swiped(int id) {
+    setState(() => _pending.add(id));
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    final bar = messenger.showSnackBar(SnackBar(
+      content: const Text('已標示為完成'),
+      duration: const Duration(seconds: 4),
+      // Times out like a plain snack bar; screen-reader users keep it until they act.
+      persist: MediaQuery.accessibleNavigationOf(context),
+      action: SnackBarAction(label: '復原', onPressed: () {}),
+    ));
+    unawaited(bar.closed.then((reason) {
+      if (!mounted) return;
+      if (reason == SnackBarClosedReason.action) {
+        setState(() => _pending.remove(id));
+      } else {
+        unawaited(_done(id));
       }
-    } finally { if (mounted) { setState(() => _busy.remove(id)); } }
+    }));
   }
 
   Future<void> _clearAll() async {
@@ -143,12 +167,12 @@ class _TodoFeedState extends State<_TodoFeed> {
     setState(() => _clearing = true);
     try {
       await widget.api.markAllTodosDone();
-      if (mounted) await _feed.currentState?.refresh();
     } catch (e) {
       if (mounted) showFailure(context, e);
     } finally {
       if (mounted) setState(() => _clearing = false);
     }
+    if (mounted) await _feed.currentState?.refresh();
   }
 
   @override
@@ -156,6 +180,7 @@ class _TodoFeedState extends State<_TodoFeed> {
     empty: '待辦已清空', emptyDetail: 'GitLab 指派、提及與你建立的待辦會出現在這裡。', emptyIcon: Icons.task_alt,
     account: widget.account, resourceLabel: '待辦', underShell: true,
     onSwitchAccount: endSessionFrom(context),
+    visible: (item) => !_pending.contains(valueInt(item, 'id')),
     leading: (context, controller) => controller.items.isEmpty ? const SizedBox(height: 4) : Padding(
       padding: EdgeInsets.fromLTRB(feedGutter(context) + 4, 6, feedGutter(context) - 8, 0),
       child: Row(children: [
@@ -197,14 +222,8 @@ class _TodoFeedState extends State<_TodoFeed> {
         ],
         trailing: IconButton(tooltip: '完成此待辦', icon: const Icon(Icons.check_circle_outline),
           onPressed: _busy.contains(id) ? null : () => _done(id)),
-        onTap: !supported ? null : () async {
-          try {
-            final found = await widget.api.project('${requiredInt(project, 'id')}');
-            if (!context.mounted) { return; }
-            await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => WorkItemPage(
-              account: widget.account, api: widget.api, project: found, resource: resource, iid: requiredInt(target, 'iid'))));
-          } catch (e) { if (context.mounted) { showFailure(context, e); } }
-        },
+        onTap: !supported ? null : () => ResourceNavigator(widget.account, widget.api)
+          .workItem(context, '${valueInt(project, 'id')}', resource, valueInt(target, 'iid')),
       );
       Widget background(Alignment alignment) => Container(
         alignment: alignment,
@@ -220,12 +239,9 @@ class _TodoFeedState extends State<_TodoFeed> {
         key: ValueKey('todo-$id'),
         background: background(Alignment.centerLeft),
         secondaryBackground: background(Alignment.centerRight),
+        dismissThresholds: const {DismissDirection.startToEnd: .5, DismissDirection.endToStart: .5},
         confirmDismiss: (_) async => !_busy.contains(id),
-        // The row leaves the list at once; a failed write reloads it.
-        onDismissed: (_) {
-          _feed.currentState?.removeItem('$id');
-          unawaited(_done(id, refresh: false));
-        },
+        onDismissed: (_) => _swiped(id),
         child: card,
       );
     },

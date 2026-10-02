@@ -1,11 +1,12 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
 /// Whether chrome that gives way to content is showing: the bottom navigation
 /// and collapsing page headers. It hides while the user scrolls toward the end
-/// of a list and returns on any scroll back, near the top of the content, and
-/// whenever there is nothing to scroll.
+/// of a list and returns on a scroll back, near the top of the content, and
+/// whenever there is little or nothing to scroll.
 class ScrollChromeController extends ValueNotifier<bool> {
   ScrollChromeController() : super(true);
 
@@ -14,6 +15,11 @@ class ScrollChromeController extends ValueNotifier<bool> {
 
   /// Distance of continuous scrolling in one direction that flips the state.
   static const travelThreshold = 24.0;
+
+  /// Content that scrolls less than this keeps the chrome. Hiding a header and
+  /// the navigation bar together grows the viewport by about 150 dp, which
+  /// would end the scroll and bring the chrome straight back.
+  static const minHideExtent = 200.0;
 
   double _travel = 0;
   bool _userScrolling = false;
@@ -33,13 +39,16 @@ class ScrollChromeController extends ValueNotifier<bool> {
   bool handle(ScrollNotification notification) {
     final metrics = notification.metrics;
     if (metrics.axis != Axis.vertical) return false;
+    // Lists kept alive out of sight (other destinations, the list behind an
+    // open detail) still lay out and report metrics; they run without tickers.
+    final origin = notification.context;
+    if (origin is Element && origin.mounted && !TickerMode.getValuesNotifier(origin).value.enabled) return false;
     if (notification is UserScrollNotification) {
       _userScrolling = notification.direction != ScrollDirection.idle;
-      if (notification.direction == ScrollDirection.forward) show();
       return false;
     }
     if (!metrics.hasContentDimensions ||
-        metrics.maxScrollExtent <= metrics.minScrollExtent ||
+        metrics.maxScrollExtent - metrics.minScrollExtent < minHideExtent ||
         metrics.pixels <= metrics.minScrollExtent + topSlop) {
       if (!value) show();
       _travel = 0;
@@ -68,23 +77,9 @@ class RevealChromeNotification extends Notification {
   const RevealChromeNotification();
 }
 
-/// Provides the nearest page-level [ScrollChromeController] so nested content
-/// (tabs, embedded lists) can reveal the chrome, for example after switching
-/// to a tab whose list starts at the top.
-class ScrollChromeScope extends InheritedWidget {
-  const ScrollChromeScope({super.key, required this.controller, required super.child});
-  final ScrollChromeController controller;
-
-  static ScrollChromeController? maybeOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<ScrollChromeScope>()?.controller;
-
-  @override
-  bool updateShouldNotify(ScrollChromeScope oldWidget) => controller != oldWidget.controller;
-}
-
 /// Collapses [child] to zero height while [visible] is false. The child keeps
 /// its natural size and slides out toward [edge], so nothing reflows inside
-/// it. Screen-reader users always see it.
+/// it. Screen-reader users always see it; reduced motion skips the slide.
 class CollapsingChrome extends StatefulWidget {
   const CollapsingChrome({
     super.key,
@@ -132,7 +127,9 @@ class _CollapsingChromeState extends State<CollapsingChrome> with SingleTickerPr
 
   void _sync() {
     if (!mounted) return;
-    if (widget.visible.value) {
+    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+      _controller.value = widget.visible.value ? 1 : 0;
+    } else if (widget.visible.value) {
       _controller.forward();
     } else {
       _controller.reverse();
@@ -181,4 +178,45 @@ class ScrollTopSignal extends InheritedNotifier<ValueNotifier<int>> {
   /// Looked up without a rebuild dependency; listeners react to the bump.
   static ValueListenable<int>? maybeOf(BuildContext context) =>
       context.getInheritedWidgetOfExactType<ScrollTopSignal>()?.notifier;
+}
+
+/// Scrolls [controller] back to the top when the [ScrollTopSignal] above
+/// fires, but only while this subtree is on screen: lists kept alive behind
+/// an open detail or on an inactive tab run with tickers disabled.
+class ScrollToTopOnSignal extends StatefulWidget {
+  const ScrollToTopOnSignal({super.key, required this.controller, required this.child});
+  final ScrollController controller;
+  final Widget child;
+  @override
+  State<ScrollToTopOnSignal> createState() => _ScrollToTopOnSignalState();
+}
+
+class _ScrollToTopOnSignalState extends State<ScrollToTopOnSignal> {
+  ValueListenable<int>? _signal;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final signal = ScrollTopSignal.maybeOf(context);
+    if (!identical(signal, _signal)) {
+      _signal?.removeListener(_toTop);
+      _signal = signal?..addListener(_toTop);
+    }
+  }
+
+  void _toTop() {
+    final controller = widget.controller;
+    if (!mounted || !controller.hasClients || !TickerMode.getValuesNotifier(context).value.enabled) return;
+    unawaited(controller.animateTo(controller.position.minScrollExtent,
+      duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic));
+  }
+
+  @override
+  void dispose() {
+    _signal?.removeListener(_toTop);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }

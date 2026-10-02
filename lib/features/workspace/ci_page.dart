@@ -464,14 +464,18 @@ class _PipelinesTabState extends State<PipelinesTab> {
 }
 
 /// Jobs in pipeline order: stages in the order their first job was created,
-/// jobs inside a stage by creation. GitLab lists newest first.
+/// then the latest attempt of each job where that job first appeared. Expects
+/// retried attempts too (`include_retried=true`): a retry gets a new, higher
+/// ID, and only the original attempt still shows where its stage belongs.
 List<Json> stageOrder(List<Json> jobs) {
   final byId = [...jobs]..sort((a, b) => valueInt(a, 'id').compareTo(valueInt(b, 'id')));
-  final stages = <String, List<Json>>{};
+  final stages = <String, Map<String, Json>>{};
   for (final job in byId) {
-    stages.putIfAbsent(valueText(job, 'stage', '其他'), () => <Json>[]).add(job);
+    final attempts = stages.putIfAbsent(valueText(job, 'stage', '其他'), () => <String, Json>{});
+    // Replacing a value keeps the key's first position.
+    attempts[valueText(job, 'name', '#${valueInt(job, 'id')}')] = job;
   }
-  return [for (final list in stages.values) ...list];
+  return [for (final attempts in stages.values) ...attempts.values];
 }
 
 /// `83` → `1 分 23 秒`; hours roll over for long jobs.
@@ -649,6 +653,8 @@ class _PipelinePageState extends State<PipelinePage> {
               StatusBadge(valueText(_data!, 'status')),
               MetaChip(valueText(_data!, 'ref'), icon: Icons.alt_route, mono: true),
               MetaChip(shortSha(valueText(_data!, 'sha')), icon: Icons.commit, mono: true),
+              // The title shows the project-scoped number; links and the API use this ID.
+              if (valueInt(_data!, 'iid') > 0) MetaChip('ID ${widget.id}', icon: Icons.tag, mono: true),
               if (valueText(_data!, 'source').isNotEmpty)
                 MetaChip(pipelineSourceLabel(valueText(_data!, 'source')), icon: Icons.bolt_outlined),
               if (_data!['duration'] is num)
@@ -714,7 +720,7 @@ class _PipelinePageState extends State<PipelinePage> {
                   sectionOf: (value) => valueText(value, 'stage', '其他'),
                   load: (next) => widget.api.records(
                     ['projects', '${widget.project.id}', 'pipelines', '${widget.id}', 'jobs'],
-                    query: {'include_retried': 'false', 'per_page': '100'},
+                    query: {'include_retried': 'true', 'per_page': '100'},
                     next: next,
                   ),
                   itemBuilder: (context, value) {
@@ -750,7 +756,7 @@ class _PipelinePageState extends State<PipelinePage> {
                           if (status == 'manual')
                             IconButton(
                               key: ValueKey('job-action-play-$jobId'),
-                              icon: const Icon(Icons.play_circle_outline, color: Colors.blue),
+                              icon: Icon(Icons.play_circle_outline, color: Theme.of(context).colorScheme.primary),
                               tooltip: '執行手動工作',
                               onPressed: _busy ? null : () => _jobAction(jobId, 'play'),
                             )

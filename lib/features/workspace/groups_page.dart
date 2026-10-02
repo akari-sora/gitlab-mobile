@@ -26,7 +26,7 @@ Widget groupRow(BuildContext context, Json value, {required VoidCallback onTap})
           Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.titleMedium?.copyWith(fontSize: 15)),
           const SizedBox(height: 2),
           Row(children: [
-            Icon(icon, size: 13, color: muted),
+            Tooltip(message: visibility, excludeFromSemantics: true, child: Icon(icon, size: 13, color: muted)),
             const SizedBox(width: 4),
             Flexible(child: Text(fullPath, maxLines: 1, overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(color: muted))),

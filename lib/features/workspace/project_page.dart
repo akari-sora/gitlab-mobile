@@ -85,7 +85,7 @@ class _ProjectPageState extends State<ProjectPage> with SingleTickerProviderStat
     final marked = _project.markedForDeletionOn != null;
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
-    final (_, visibilityIcon) = statusStyle(_project.visibility ?? '');
+    final (visibilityLabel, visibilityIcon) = statusStyle(_project.visibility ?? '');
     final appBar = AppBar(
       primary: false,
       automaticallyImplyLeading: false,
@@ -95,7 +95,8 @@ class _ProjectPageState extends State<ProjectPage> with SingleTickerProviderStat
         Text(_project.name, maxLines: 1, overflow: TextOverflow.ellipsis,
           style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 19, color: marked ? muted : null)),
         Row(children: [
-          Semantics(label: _project.visibilityLabel, child: Icon(visibilityIcon, size: 13, color: muted)),
+          Tooltip(message: visibilityLabel, excludeFromSemantics: true, child: Semantics(label: _project.visibilityLabel,
+            child: Icon(visibilityIcon, size: 13, color: muted))),
           const SizedBox(width: 4),
           Flexible(flex: 3, child: Text(_project.path, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(color: muted))),
@@ -113,14 +114,14 @@ class _ProjectPageState extends State<ProjectPage> with SingleTickerProviderStat
     // An issue or MR opened in place on a phone owns the screen: the project
     // header and tabs step aside and horizontal swipes stay with the detail.
     final focused = _focus.active;
-    return ScrollChromeScope(
-      controller: _chrome,
-      child: Scaffold(
+    final crowded = MediaQuery.textScalerOf(context).scale(14) > 14 * 1.3;
+    return Scaffold(
         body: NotificationListener<ScrollNotification>(
           onNotification: _chrome.handle,
           child: StatusBarInset(child: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               if (!focused) CollapsingChrome(visible: _chrome, child: appBar),
               if (!focused) TabBar(controller: _tabs, indicatorSize: TabBarIndicatorSize.tab,
+                isScrollable: crowded, tabAlignment: crowded ? TabAlignment.start : null,
                 tabs: const [Tab(text: '檔案'), Tab(text: '議題'), Tab(text: 'MR'), Tab(text: 'CI'), Tab(text: '更多')]),
               Expanded(key: const ValueKey('project-tab-body'), child: DetailFocusScope(focus: _focus, child: TabBarView(controller: _tabs,
                 physics: focused ? const NeverScrollableScrollPhysics() : null, children: [
@@ -140,7 +141,6 @@ class _ProjectPageState extends State<ProjectPage> with SingleTickerProviderStat
               ]))),
             ]))),
         ),
-      ),
     );
   }
 }

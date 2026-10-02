@@ -1,9 +1,15 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/project_locator.dart';
+import 'package:gitlab_mobile/features/workspace/activity_page.dart';
+import 'package:gitlab_mobile/features/workspace/ci_page.dart';
+import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
+import 'package:gitlab_mobile/shared/external_link.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart';
 import 'support/fake_adapter.dart';
 
 void main() {
@@ -43,6 +49,71 @@ void main() {
     test('links to another instance are refused', () {
       expect(() => parse('https://gitlab.com/group/app/-/issues/1'), throwsFormatException);
     });
+
+    test('upper-case SHAs are accepted and normalised; traversal in a file path is refused', () {
+      final commit = parse('https://example.com/gitlab/group/app/-/commit/0123ABCD');
+      expect((commit.target, commit.sha), (LinkTarget.commit, '0123abcd'));
+      final file = parse('https://example.com/gitlab/group/app/-/blob/ABCDEF0123/README.md');
+      expect((file.target, file.sha, file.filePath), (LinkTarget.file, 'abcdef0123', 'README.md'));
+      expect(() => parse('https://example.com/gitlab/group/app/-/blob/abcdef0123/docs/../secret'), throwsFormatException);
+    });
+  });
+
+  test('external links refuse non-HTTPS, user info and credential query keys', () {
+    expect(safeExternalUri(Uri.parse('https://review.example.com/app?ref=main')), isTrue);
+    expect(safeExternalUri(Uri.parse('http://review.example.com/')), isFalse);
+    expect(safeExternalUri(Uri.parse('https://user:pass@review.example.com/')), isFalse);
+    expect(safeExternalUri(Uri.parse('https://review.example.com/?private_token=x')), isFalse);
+    expect(safeExternalUri(Uri.parse('https://review.example.com/?JOB_TOKEN=x')), isFalse);
+  });
+
+  test('label ink keeps 4.5:1 contrast and honours a readable text_color', () {
+    for (final fill in const [Color(0xFFD9534F), Color(0xFF428BCA), Color(0xFFF0AD4E), Color(0xFF5CB85C), Color(0xFF330066)]) {
+      final ink = readableInk(fill);
+      expect(contrastRatio(ink, fill), greaterThanOrEqualTo(4.0), reason: 'fill $fill');
+      expect(contrastRatio(ink, fill), greaterThanOrEqualTo(contrastRatio(ink == Colors.white ? const Color(0xFF1F1F1F) : Colors.white, fill)));
+    }
+    expect(readableInk(const Color(0xFF330066), preferred: Colors.white), Colors.white);
+    expect(readableInk(const Color(0xFFD9534F), preferred: Colors.white), isNot(Colors.white),
+      reason: 'white on #D9534F is under 4.5:1');
+  });
+
+  test('system notes read as their first paragraph without markup', () {
+    expect(systemNoteSummary('added 2 commits\n\n<ul><li>abc12345 - Fix</li></ul>\n\n[Compare with previous version](/x/-/merge_requests/1/diffs)'),
+      'added 2 commits');
+    expect(systemNoteSummary('changed title from **old** to **new**'), 'changed title from **old** to **new**');
+    expect(systemNoteSummary('mentioned in [!12](https://example.com/gitlab/group/app/-/merge_requests/12)'), 'mentioned in !12');
+  });
+
+  test('stage order survives a retried job and shows only its latest attempt', () {
+    final ordered = stageOrder([
+      {'id': 30, 'name': 'unit', 'stage': 'test', 'status': 'success'},
+      {'id': 12, 'name': 'unit', 'stage': 'test', 'status': 'failed'},
+      {'id': 11, 'name': 'compile', 'stage': 'build', 'status': 'success'},
+      {'id': 13, 'name': 'ship', 'stage': 'deploy', 'status': 'manual'},
+      {'id': 14, 'name': 'lint', 'stage': 'test', 'status': 'success'},
+    ]);
+    expect(ordered.map((job) => job['id']), [11, 30, 14, 13]);
+  });
+
+  test('draft toggling strips stacked and legacy prefixes', () {
+    expect(toggledDraftTitle('Draft: WIP: Ship', true), 'Ship');
+    expect(toggledDraftTitle('[WIP] Ship', true), 'Ship');
+    expect(toggledDraftTitle('Draft - Ship', true), 'Ship');
+    expect(toggledDraftTitle('Draft:', true), '');
+  });
+
+  test('a failed activity project lookup is not cached', () async {
+    var calls = 0;
+    final api = testApi(FakeAdapter((request) {
+      calls++;
+      return calls == 1 ? jsonResponse({'message': 'busy'}, status: 503) : jsonResponse(projectJson(10));
+    }));
+    addTearDown(api.close);
+    expect(await activityProjectName(api, 10), '');
+    expect(await activityProjectName(api, 10), 'team/example-10');
+    expect(await activityProjectName(api, 10), 'team/example-10');
+    expect(calls, 2);
   });
 
   group('workspace API additions', () {
@@ -130,6 +201,23 @@ void main() {
       expect(await api.hasStarred(42, 'developer'), isTrue);
       expect(await api.hasStarred(42, 'dev'), isFalse);
       expect(seen.first.uri.queryParameters, containsPair('search', 'developer'));
+    });
+
+    test('star state keeps reading pages until the exact username appears', () async {
+      final api = apiFor((request) => request.uri.queryParameters['page'] == '2'
+          ? jsonResponse([{'user': {'id': 7, 'username': 'dev'}}])
+          : jsonResponse([{'user': {'id': 8, 'username': 'devops'}}], headers: {'x-next-page': ['2']}));
+      expect(await api.hasStarred(42, 'dev'), isTrue);
+      expect(seen, hasLength(2));
+      expect(seen.first.uri.queryParameters, containsPair('per_page', '100'));
+    });
+
+    test('starring treats 304 Not Modified as already done and rethrows other failures', () async {
+      final api = apiFor((_) => ResponseBody.fromString('', 304));
+      expect(await api.setStar(42, true), isNull);
+      expect(seen.single.uri.path, endsWith('/projects/42/star'));
+      final failing = apiFor((_) => jsonResponse({'message': '403 Forbidden'}, status: 403));
+      await expectLater(failing.setStar(42, false), throwsA(isA<ApiFailure>()));
     });
 
     test('file history, fork and schedule play target the project', () async {

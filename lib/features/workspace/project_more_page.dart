@@ -35,6 +35,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
   bool _busy = false;
   Json? _details;
   bool? _starred;
+  bool _starChecked = false;
   List<(String, double)> _languages = const [];
 
   @override
@@ -43,8 +44,9 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     unawaited(_loadOverview());
   }
 
-  /// Counts, clone URLs, languages and the viewer's star. All optional: a
-  /// failure leaves that part of the overview out.
+  /// Counts, clone URLs and languages are decoration: a failure leaves that
+  /// part out. An unknown star state stays unknown instead of reading as
+  /// unstarred, so the toggle never sends the wrong direction.
   Future<void> _loadOverview() async {
     final id = widget.project.id;
     Future<T?> soft<T>(Future<T> Function() read) async {
@@ -55,7 +57,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
       }
     }
     final results = await Future.wait<Object?>([
-      soft(() => widget.api.record(['projects', '$id'])),
+      soft(() => widget.api.record(['projects', '$id'], query: {'license': 'true'})),
       soft(() => widget.api.hasStarred(id, widget.account.user.username)),
       soft(() => widget.api.languages(id)),
     ]);
@@ -63,8 +65,21 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     setState(() {
       _details = results[0] as Json?;
       _starred = results[1] as bool?;
+      _starChecked = true;
       _languages = (results[2] as List<(String, double)>?) ?? const [];
     });
+  }
+
+  Future<void> _recheckStar() async {
+    setState(() => _busy = true);
+    try {
+      final starred = await widget.api.hasStarred(widget.project.id, widget.account.user.username);
+      if (mounted) setState(() => _starred = starred);
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Future<void> _fork() async {
@@ -105,8 +120,9 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     Widget stat(IconData icon, String value, String label) => Expanded(child: Column(children: [
       Icon(icon, size: 20, color: muted),
       const SizedBox(height: 4),
-      Text(value, style: theme.textTheme.titleMedium),
-      Text(label, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+      Text(value, maxLines: 2, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center,
+        style: theme.textTheme.titleMedium),
+      Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
     ]));
     return Card(child: Padding(padding: const EdgeInsets.fromLTRB(16, 14, 16, 12), child: Column(
       crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -133,7 +149,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
               Row(mainAxisSize: MainAxisSize.min, children: [
                 Container(width: 8, height: 8, decoration: BoxDecoration(color: _languageColor(index), shape: BoxShape.circle)),
                 const SizedBox(width: 4),
-                Text('$name ${share.toStringAsFixed(share < 10 ? 1 : 0)}%', style: theme.textTheme.bodySmall),
+                Flexible(child: Text('$name ${share.toStringAsFixed(share < 10 ? 1 : 0)}%', style: theme.textTheme.bodySmall)),
               ]),
           ]),
         ],
@@ -153,12 +169,20 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
         ],
         const SizedBox(height: 8),
         Wrap(spacing: 8, runSpacing: 8, children: [
-          FilledButton.tonalIcon(
-            key: const ValueKey('project-star-toggle'),
-            onPressed: _busy ? null : () => _star(!(_starred ?? false)),
-            icon: Icon(_starred == true ? Icons.star : Icons.star_border, size: 18),
-            label: Text(_starred == true ? '移除星標' : '加入星標'),
-          ),
+          if (_starred == null)
+            FilledButton.tonalIcon(
+              key: const ValueKey('project-star-toggle'),
+              onPressed: _busy || !_starChecked ? null : _recheckStar,
+              icon: const Icon(Icons.star_half, size: 18),
+              label: Text(_starChecked ? '重新確認星標' : '確認星標中…'),
+            )
+          else
+            FilledButton.tonalIcon(
+              key: const ValueKey('project-star-toggle'),
+              onPressed: _busy ? null : () => _star(!_starred!),
+              icon: Icon(_starred! ? Icons.star : Icons.star_border, size: 18),
+              label: Text(_starred! ? '移除星標' : '加入星標'),
+            ),
           OutlinedButton.icon(
             onPressed: _busy || widget.project.archived == true ? null : _fork,
             icon: const Icon(Icons.call_split, size: 18),
@@ -204,7 +228,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
       if (mounted) {
         setState(() {
           _starred = starred;
-          if (_details != null && updated['star_count'] is int) _details = {..._details!, 'star_count': updated['star_count']};
+          if (_details != null && updated?['star_count'] is int) _details = {..._details!, 'star_count': updated!['star_count']};
         });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(starred ? '已加入星標' : '已移除星標')));
       }

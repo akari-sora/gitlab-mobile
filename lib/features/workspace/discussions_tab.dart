@@ -36,6 +36,17 @@ bool _isSystemDiscussion(Json discussion) {
   return notes.isNotEmpty && notes.every((note) => note['system'] == true);
 }
 
+/// First paragraph of a system note as plain text. Notes such as "added 2
+/// commits" continue with an HTML commit list and a Markdown compare link.
+String systemNoteSummary(String body) {
+  final first = body.trim().split(RegExp(r'\n\s*\n')).first;
+  return first
+      .replaceAll(RegExp(r'<[^>]*>'), ' ')
+      .replaceAllMapped(RegExp(r'\[([^\]]*)\]\([^)]*\)'), (match) => match.group(1)!)
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+}
+
 bool _isCommentDiscussion(Json discussion) {
   final notes = valueObjects(discussion, 'notes');
   return notes.any((note) => note['system'] != true);
@@ -381,23 +392,27 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
     ),
   ]);
 
-  /// GitLab's own activity (mentions, label and assignee changes) as one quiet
-  /// timeline line instead of a full comment card.
+  /// GitLab's own activity (mentions, label and assignee changes) as quiet
+  /// timeline lines instead of full comment cards.
   Widget _systemNote(BuildContext context, List<Json> notes) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
-    final note = notes.isEmpty ? const <String, dynamic>{} : notes.first;
-    final body = valueText(note, 'body').replaceAll(RegExp(r'\s+'), ' ').trim();
-    return Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Padding(padding: const EdgeInsets.only(top: 2), child: Icon(_systemIcon(body), size: 16, color: muted)),
-        const SizedBox(width: 10),
-        Expanded(child: Text.rich(TextSpan(children: [
-          TextSpan(text: '@${valueText(valueObject(note, 'author'), 'username')}',
-            style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface)),
-          TextSpan(text: ' $body · ${relativeDate(valueText(note, 'created_at'))}'),
-        ]), style: theme.textTheme.bodySmall?.copyWith(color: muted, height: 1.4))),
-      ],
+    Widget line(Json note) {
+      final body = systemNoteSummary(valueText(note, 'body'));
+      return Padding(padding: const EdgeInsets.symmetric(vertical: 1), child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(padding: const EdgeInsets.only(top: 2), child: Icon(_systemIcon(body), size: 16, color: muted)),
+          const SizedBox(width: 10),
+          Expanded(child: Text.rich(TextSpan(children: [
+            TextSpan(text: '@${valueText(valueObject(note, 'author'), 'username')}',
+              style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface)),
+            TextSpan(text: ' $body · ${relativeDate(valueText(note, 'created_at'))}'),
+          ]), style: theme.textTheme.bodySmall?.copyWith(color: muted, height: 1.4))),
+        ],
+      ));
+    }
+    return Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch, children: [for (final note in notes) line(note)],
     ));
   }
 
