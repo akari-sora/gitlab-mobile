@@ -17,6 +17,42 @@ import 'package:gitlab_mobile/core/unified_diff.dart';
 const _publicProjectId = 86648389;
 const _publicProjectPath = 'aa22396584/gitlab-mobile';
 const _publicPipelineId = 2906089178;
+const _publicSnippetProjectId = 278964;
+const _publicSnippetProjectPath = 'gitlab-org/gitlab';
+const _publicSnippetId = 6030720;
+const _publicSnippetPaths = ['README.md', 'verify-mattermost-docker.sh'];
+const _projectSnippetsQuery = r'''
+query MobileProjectSnippets($projectId: ProjectID!, $first: Int!, $after: String) {
+  snippets(projectId: $projectId, first: $first, after: $after) {
+    nodes { id project { id fullPath } updatedAt }
+    pageInfo { hasNextPage endCursor }
+  }
+}
+''';
+const _snippetBlobQuery = r'''
+query MobileSnippetBlob($ids: [SnippetID!], $paths: [String!]) {
+  snippets(ids: $ids) {
+    nodes {
+      id
+      project { id fullPath }
+      updatedAt
+      blobs(paths: $paths) {
+        hasUnretrievableBlobs
+        nodes {
+          binary
+          name
+          path
+          rawPath
+          size
+          rawPlainData
+          renderedAsText
+          simpleViewer { tooLarge renderError }
+        }
+      }
+    }
+  }
+}
+''';
 const _analyticsFrom = '2026-09-01T00:00:00.000Z';
 const _analyticsTo = '2026-10-03T00:00:00.000Z';
 const _pipelineAnalyticsQuery = r'''
@@ -88,6 +124,8 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
 Future<void> main() async {
   final checks = <Map<String, Object?>>[];
   var failed = false, sawProjectsLink = false;
+  String? discoveredSnippetGraphId;
+  SnippetGraphSnapshot? snippetSnapshot;
   final dio = Dio();
   dio.interceptors.add(
     InterceptorsWrapper(
@@ -100,7 +138,8 @@ Future<void> main() async {
         final graphRead =
             _isExactPublicPipelineGraph(request) ||
             _isExactPublicIncidentGraph(request) ||
-            _isExactPublicAnalyticsGraph(request);
+            _isExactPublicAnalyticsGraph(request) ||
+            _isExactPublicSnippetGraph(request, discoveredSnippetGraphId);
         if (!restRead && !graphRead) {
           handler.reject(
             DioException(
@@ -418,6 +457,58 @@ Future<void> main() async {
       require(snippet.filePaths.length > 1 && !snippet.canUseLegacyRaw);
       require(snippet.filePaths.every((path) => path.trim().isNotEmpty));
     });
+    await check('public.snippet.server_identity_and_lazy_markdown', () async {
+      final project = await api.project('$_publicSnippetProjectId');
+      require(
+        project.path == _publicSnippetProjectPath &&
+            project.visibility == 'public',
+      );
+      final snippet = ProjectSnippet.fromJson(
+        await api.record([
+          'projects',
+          '$_publicSnippetProjectId',
+          'snippets',
+          '$_publicSnippetId',
+        ]),
+      );
+      final snapshot = await api.projectSnippetSnapshot(project, snippet);
+      require(
+        snapshot.projectId == _publicSnippetProjectId &&
+            snapshot.snippetId == _publicSnippetId &&
+            snapshot.filePaths.length == 3,
+      );
+      // This value comes from the production client's validated server lookup.
+      // The read allowlist never constructs a Snippet Global ID.
+      discoveredSnippetGraphId = snapshot.graphId;
+      snippetSnapshot = snapshot;
+      final blob = await api.snippetBlob(
+        project,
+        snapshot,
+        path: _publicSnippetPaths.first,
+      );
+      require(
+        blob.path == _publicSnippetPaths.first &&
+            blob.availability == SnippetBlobAvailability.text &&
+            blob.content != null &&
+            utf8.encode(blob.content!).length == blob.size,
+      );
+    });
+    await check('public.snippet.lazy_nondefault_file', () async {
+      final snapshot = snippetSnapshot;
+      require(snapshot != null);
+      final project = await api.project('$_publicSnippetProjectId');
+      final blob = await api.snippetBlob(
+        project,
+        snapshot!,
+        path: _publicSnippetPaths.last,
+      );
+      require(
+        blob.path == _publicSnippetPaths.last &&
+            blob.availability == SnippetBlobAvailability.text &&
+            blob.content != null &&
+            utf8.encode(blob.content!).length == blob.size,
+      );
+    });
     await expectedGap('public.boards.authentication_required', () async {
       await api.records(
         ['projects', '$_publicProjectId', 'boards'],
@@ -605,4 +696,42 @@ bool _isExactPublicAnalyticsGraph(RequestOptions request) {
       variables['fromTime'] == _analyticsFrom &&
       variables['toTime'] == _analyticsTo &&
       variables['period'] == 'DAY';
+}
+
+bool _isExactPublicSnippetGraph(
+  RequestOptions request,
+  String? discoveredGraphId,
+) {
+  if (request.method != 'POST' ||
+      request.uri != Uri.parse('https://gitlab.com/api/graphql')) {
+    return false;
+  }
+  final body = request.data;
+  if (body is! Map ||
+      body.length != 2 ||
+      !body.containsKey('query') ||
+      !body.containsKey('variables')) {
+    return false;
+  }
+  final variables = body['variables'];
+  if (variables is! Map) return false;
+  if (body['query'] == _projectSnippetsQuery) {
+    return variables.length == 3 &&
+        variables['projectId'] ==
+            'gid://gitlab/Project/$_publicSnippetProjectId' &&
+        variables['first'] == 100 &&
+        variables.containsKey('after') &&
+        variables['after'] == null;
+  }
+  final ids = variables['ids'];
+  final paths = variables['paths'];
+  return discoveredGraphId != null &&
+      body['query'] == _snippetBlobQuery &&
+      variables.length == 2 &&
+      ids is List &&
+      ids.length == 1 &&
+      ids.single == discoveredGraphId &&
+      paths is List &&
+      paths.length == 1 &&
+      _publicSnippetPaths.contains(paths.single);
 }

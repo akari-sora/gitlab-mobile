@@ -10,7 +10,8 @@ A mobile-first Flutter client for Android and iOS. Independent third-party softw
 The current development branch adds issue boards and card/list management,
 revision comparison, server-backed MR draft review, selected-ref repository
 graphs, actual pipeline dependency graphs, package/container/Terraform registries,
-explicitly enumerated single-file Snippets, and typed Task/Incident workflows
+native contributor/repository/CI analytics, lazy multi-file Snippets and guarded
+file actions, and typed Task/Incident workflows
 with separate incident escalation state. Issue/MR filters use server
 ordering. Phone board columns, vertical graphs and lazy lists retain native
 navigation. The [full-function ledger](docs/MOBILE_WEB_PARITY_LEDGER.md) records

@@ -41,7 +41,7 @@ GitLab edition lacks the feature.
 | Project overview | Description, stars, forks, languages, licence, clone URLs, star/fork actions | No structural change | Full Web analytics and settings are not reproduced |
 | Manage | Activity, members and labels | No structural change | Access-token, webhook, integration and full member-role administration remain open |
 | Plan | Issues, milestones and linked work already existed | Issue boards with card movement and board/list management; typed REST Tasks/Incidents; native issue/MR filters and server ordering for date, direction, scope, labels, milestone, assignee, author and reviewer | Iterations, requirements, epics and GraphQL polymorphic work items remain open |
-| Code | Repository tree, README, branches, commits and tags; fixed-SHA file view, history, blame, search, syntax highlighting and line permalinks; MR list/detail/diffs | Compare two refs; selected-ref repository graph; single-file Snippets reader/editor with explicit file enumeration | Locked files, cross-project comparison, full all-branch graph and multi-file snippet browsing/editing remain open |
+| Code | Repository tree, README, branches, commits and tags; fixed-SHA file view, history, blame, search, syntax highlighting and line permalinks; MR list/detail/diffs | Compare two refs; selected-ref repository graph; multi-file Snippets with explicit file enumeration, lazy source/preview and guarded file actions | Locked files, cross-project comparison, full all-branch graph and private Snippet CRUD acceptance remain open |
 | MR review | Discussions, inline single-line positions, approvals/merge, suggested changes, auto-merge, local viewed-file state and the MR draft/ready toggle | Server draft-note list, add/edit/discard and bulk publish, tied to account/project/MR/head SHA | Viewed-file state is not server-synchronised; multi-line positioning and full desktop review policy administration remain open |
 | Build | Pipelines, stage-grouped jobs, controls, incremental ANSI logs and search, JUnit report views, artifacts, cross-project CI overview and schedules | Read-only pipeline dependency graph with paginated actual GraphQL needs | Cross-project/downstream graph and the complete pipeline editor remain open |
 | Deploy and operate | Environments and deployment history | Package/Container/Terraform lists, details and guarded deletion; Incident severity and a separately modelled escalation lifecycle | Registry downloads/publish, model registries, complete Incident operations and Service Desk remain open |
@@ -155,13 +155,39 @@ Details expose actual files/digests/sizes. Guarded deletion rechecks permission,
 identity and complete bounded pagination before readback. Type-specific downloads,
 publishing and full registry policy administration remain unfinished.
 
-更多 → Snippets supports a lazy list and explicitly enumerated single-file
-preview/create/edit/delete. A nonempty legacy `file_name` alone is insufficient to
-prove a single-file snippet; an instance without safe enumeration displays an
-unsupported state. Writes check `updated_at` and source content and perform full
-readback. Multi-file preview/tree/editing remains unfinished. Current official
-REST/GraphQL data does not establish a snippet HEAD SHA, so the App does not guess
-`main`, `master`, or use the project's default branch as the snippet ref.
+更多 → Snippets supports an explicit file list, one selected blob loaded on
+demand, virtualized source and Markdown preview. Multi-file metadata editing,
+add/update/rename/delete actions and typed whole-Snippet deletion use the native
+editor. The last file cannot be deleted. Relative non-upload Markdown links stay
+inactive because no immutable Snippet ref is available; project uploads retain
+their existing account/project-bound handling.
+
+The read API discovers the opaque Snippet GID from the project's server-returned
+connection, validates numeric project/path identity and fences GraphQL reads
+with fresh REST metadata before/after each query. REST/GraphQL timestamps must
+share a UTC second while their exact per-source versions stay separate. Every
+path is explicitly enumerated and validated; `file_name` alone never proves a
+complete file set. Binary/null/large/unretrievable/render-error states remain
+explicit. The aggregate unretrievable flag does not hide a valid selected blob.
+
+Writes recheck the snapshot, complete path set, selected source and visibility,
+then verify actual metadata/file/content readback. Acknowledged or uncertain
+writes remain fenced against resubmission if readback fails. GitLab REST has no
+conditional Snippet mutation: preflight/readback can detect a server race but
+cannot prevent a concurrent change between preflight and PUT. Current official
+REST/GraphQL data does not expose a Snippet HEAD SHA, so the App describes a
+current snapshot and does not guess `main`, `master` or a project default branch.
+
+Independent source review found no actionable issue; 43 combined API/model/UI
+tests and scoped analysis passed. The public three-file fixture
+`gitlab-org/gitlab/-/snippets/6030720` passed production-client identity lookup
+and lazy reads of README plus a nondefault shell file: expanded public smoke
+19 PASS / one Boards authentication GAP / zero writes. Frozen full source passed
+analysis and 1,328 JUnit tests with zero failures/errors/skips; Dart file hashes
+were unchanged throughout testing. Local coverage is 87.89%
+(16,382 / 18,639); 15 bootstrap and 36 CI Python regressions also passed.
+Submitted-source CI, installed-build UI and authenticated/private CRUD remain
+separate acceptance lanes.
 
 ProjectMore and Pipeline owned navigation stacks, board modal editors and snippet
 routes are removed on account/project/API replacement. Registry feed identities
@@ -213,9 +239,12 @@ Analytics commit `92288eedc06293d6ee86cbd4486e7892a8b7cbd1` was pushed and
 installed from its exact archived source on the S24 Ultra. Its
 [Flutter CI job](https://gitlab.com/aa22396584/gitlab-mobile/-/jobs/16896782086)
 passed 1,299 tests with zero failures/errors/skips and 88.05% CI coverage
-(15,775 / 17,916); the other jobs in
+(15,775 / 17,916). Python checks and native template generation also passed;
+the native artifact retained disabled Android backup/cleartext and no iOS
+arbitrary loads. Public smoke and Android build jobs in
 [pipeline 2906821268](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2906821268)
-were still pending at this observation. The in-place development-signed release
+were canceled after the newer push, so that pipeline is not a complete pass.
+The in-place development-signed release
 APK has SHA-256 `08cc4fbcaf19b7b783f1b9d3e21a6d1f3b207792f40f084f415b5ef8c2711434`,
 a verified compiled full source marker and disabled backup/cleartext. Account
 data was preserved. Native public reads showed actual contributors, paginated
@@ -225,9 +254,22 @@ The physical keyboard walk found a defect beyond those test passes: opening
 the keyboard changed the controls' parent/key, lost ref focus and immediately
 closed the keyboard. The follow-up keeps a stable controls subtree, bounds
 scrollable filters under large text/short landscape, and orders daily CI rows
-newest first. It passed 25 UI/race tests, clean scoped analysis and independent
-review; its own exact-source CI and corrected installed-build keyboard evidence
-remain required. Temporary Android font scaling was restored after the walk.
+newest first. Follow-up commit `a078f4b31ff816210ecb573e5e076d18b702f5c0`
+passed full analysis and 1,303 tests with zero failures/errors/skips from an
+isolated exact source archive. All 205 tracked Dart files/dependency lock matched
+that commit after testing; local coverage is 88.06% (15,781 / 17,921).
+The 25 targeted UI/race cases and independent review also passed.
+
+Its normal release APK has SHA-256
+`abf44b6fab71504cc3bc79ab468e74976c55449e480226fe023aeac9df47ccab`;
+the installed package hash matches this artifact, the compiled full commit marker
+was verified and backup/cleartext remain disabled. The S24 Ultra walk confirmed
+keyboard focus, typed input, Apply dismissal, scrollable 2x-text controls and
+newest-first CI dates. Temporary font scale was restored; own-process logs had
+no observed Flutter overflow/unhandled/fatal markers. Exact-source
+[pipeline 2906882413](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2906882413)
+was still pending at this observation. These UI checks do not establish fresh
+frame-performance, private/paid Analytics or iOS acceptance.
 
 ## Loading, cache and scroll work
 
@@ -451,7 +493,7 @@ navigation ledger and outstanding functional acceptance lanes.
 
 The largest mobile workflow gaps are OAuth application registration and live
 login validation, push delivery, server-synchronised viewed-file state, GraphQL
-work items/epics/OKR, full repository graph and multi-file snippets, registry
+work items/epics/OKR, full repository graph and private Snippet CRUD, registry
 downloads/publishing, complete incident operations, Service Desk and analytics families. These are open
 requirements under the all-function goal, not features delegated permanently to Web. Store signing, iOS physical-device evidence, accessibility
 screen-reader walks, real private-project integration on the submitted build

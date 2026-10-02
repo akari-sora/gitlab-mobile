@@ -10,11 +10,13 @@ import 'instance.dart';
 import 'models.dart';
 import 'oauth.dart';
 import 'pagination.dart';
+import 'snippet_models.dart';
 import 'upload_names.dart';
 
 part 'workspace_api.dart';
 part 'incident_api.dart';
 part 'analytics_api.dart';
+part 'snippet_graphql_api.dart';
 
 final _artifactCancelled = Object();
 const _artifactRedirects = {301, 302, 303, 307, 308};

@@ -41,6 +41,21 @@ void main() {
     expect(snippetVisibilityLabel('public'), '公開');
   });
 
+  test(
+    'server visibility must be explicit while unknown values are preserved',
+    () {
+      for (final value in [null, 1]) {
+        final json = snippetJson()..['visibility'] = value;
+        expect(() => ProjectSnippet.fromJson(json), throwsFormatException);
+      }
+      final missing = snippetJson()..remove('visibility');
+      expect(() => ProjectSnippet.fromJson(missing), throwsFormatException);
+
+      final restricted = snippetJson()..['visibility'] = 'restricted';
+      expect(ProjectSnippet.fromJson(restricted).visibility, 'restricted');
+    },
+  );
+
   test('legacy raw is allowed only for a verifiable single file', () {
     expect(ProjectSnippet.fromJson(snippetJson()).canUseLegacyRaw, isFalse);
     expect(
@@ -84,6 +99,32 @@ void main() {
     expect(snippet.canUseLegacyRaw, isFalse);
   });
 
+  test('server file paths fail closed instead of being normalized', () {
+    for (final path in [' README.md', '../secret', 'lib\\a.dart', 'a//b']) {
+      expect(
+        () => ProjectSnippet.fromJson(
+          snippetJson(
+            files: [
+              {'path': path},
+            ],
+          ),
+        ),
+        throwsFormatException,
+      );
+    }
+    expect(
+      () => ProjectSnippet.fromJson(
+        snippetJson(
+          files: [
+            {'path': 'README.md'},
+            {'file_path': 'README.md'},
+          ],
+        ),
+      ),
+      throwsFormatException,
+    );
+  });
+
   test('create payload uses the documented files schema', () {
     expect(
       createSnippetPayload(
@@ -120,7 +161,13 @@ void main() {
   });
 
   test('single-file update emits update or move and rejects ambiguous mix', () {
-    final before = ProjectSnippet.fromJson(snippetJson());
+    final before = ProjectSnippet.fromJson(
+      snippetJson(
+        files: [
+          {'path': 'main.dart'},
+        ],
+      ),
+    );
     expect(
       updateSingleFileSnippetPayload(
         before: before,
@@ -171,5 +218,101 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('single-file update never infers a file set from file_name', () {
+    final unverified = ProjectSnippet.fromJson(snippetJson());
+    expect(
+      () => updateSingleFileSnippetPayload(
+        before: unverified,
+        title: unverified.title,
+        description: unverified.description,
+        visibility: unverified.visibility,
+        fileName: unverified.fileName,
+        content: 'next',
+        previousContent: 'before',
+      ),
+      throwsA(
+        isA<ApiFailure>().having(
+          (error) => error.kind,
+          'kind',
+          FailureKind.validation,
+        ),
+      ),
+    );
+  });
+
+  test('multi-file update simulates the complete path set', () {
+    expect(
+      updateSnippetPayload(
+        title: ' Multi ',
+        description: 'Notes',
+        visibility: 'private',
+        currentPaths: const ['README.md', 'lib/old.dart'],
+        actions: const [
+          SnippetFileAction.update(path: 'README.md', content: 'next'),
+          SnippetFileAction.move(
+            previousPath: 'lib/old.dart',
+            path: 'lib/new.dart',
+          ),
+          SnippetFileAction.create(path: 'test/new_test.dart', content: 'test'),
+        ],
+      ),
+      {
+        'title': 'Multi',
+        'description': 'Notes',
+        'visibility': 'private',
+        'files': [
+          {'action': 'update', 'file_path': 'README.md', 'content': 'next'},
+          {
+            'action': 'move',
+            'previous_path': 'lib/old.dart',
+            'file_path': 'lib/new.dart',
+          },
+          {
+            'action': 'create',
+            'file_path': 'test/new_test.dart',
+            'content': 'test',
+          },
+        ],
+      },
+    );
+    expect(
+      updateSnippetPayload(
+        title: 'Metadata',
+        description: '',
+        visibility: 'public',
+        currentPaths: const ['README.md'],
+        actions: const [],
+      ),
+      {'title': 'Metadata', 'description': '', 'visibility': 'public'},
+    );
+  });
+
+  test('multi-file update rejects invalid paths and ambiguous actions', () {
+    for (final actions in <List<SnippetFileAction>>[
+      const [SnippetFileAction.delete(path: 'README.md')],
+      const [SnippetFileAction.create(path: '../secret', content: 'x')],
+      const [SnippetFileAction.create(path: 'README.md', content: 'x')],
+      const [SnippetFileAction.update(path: 'missing', content: 'x')],
+      const [
+        SnippetFileAction.move(
+          previousPath: 'README.md',
+          path: 'docs/README.md',
+        ),
+        SnippetFileAction.update(path: 'docs/README.md', content: 'x'),
+      ],
+    ]) {
+      expect(
+        () => updateSnippetPayload(
+          title: 'Example',
+          description: '',
+          visibility: 'private',
+          currentPaths: const ['README.md'],
+          actions: actions,
+        ),
+        throwsA(isA<ApiFailure>()),
+      );
+    }
   });
 }

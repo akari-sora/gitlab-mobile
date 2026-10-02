@@ -28,7 +28,7 @@ specification numbers have been invented.
 | Code / Tags | Loaded search/order/direction, release and pipeline links | List/create/delete | Full signature/release policy parity |
 | Code / Repository graph | Loaded mobile timeline and branch/history controls | Selected-ref parent graph, branch/tag picker, bounded pagination | Web full all-branch/simplified history modes and live large graphs |
 | Code / Compare | Fixed-revision comparison observed | Merge-base/direct compare, lazy actual unified diffs | Cross-project compare and complete controls |
-| Code / Snippets | Empty project list plus a real three-file public Snippet; README source/preview toggle verified at phone width | Explicit single-file reader/editor and guarded CRUD | Multi-file tree/preview/edit; current snapshots need change detection because no immutable HEAD is exposed |
+| Code / Snippets | Empty project list plus a real three-file public Snippet; README source/preview toggle verified at phone width | Explicit file list, lazy selected blob, source/Markdown preview and guarded metadata/file CRUD | Authenticated/private mutation and installed-build acceptance; current snapshots use change detection because no immutable HEAD is exposed |
 | Build / Pipelines | List/detail/stage controls observed | Lists/actions/tests plus actual paginated needs graph | Downstream/cross-project graph and pipeline editor |
 | Build / Jobs | Loaded kind/state filters, stacked job/pipeline/stage rows and runner tags | Incremental ANSI logs/search/actions/artifacts | Full Web filters, large-log physical profiling |
 | Build / Pipeline schedules | Loaded periodic-run empty state and owner/variable explanation | List/create/edit/run/delete | Inputs, ownership, complete policy and live CRUD |
@@ -75,8 +75,10 @@ on one S24 Ultra do not establish statistical improvement on every screen.
    timeline, metrics and on-call workflows remain open.
 2. Fixed-query GraphQL Work Items: scope-specific available types/type IDs,
    widgets, cursor paging, group Epics and available OKR/Ticket types.
-3. Multi-file Snippet blobs: lazy paths/content with `updatedAt` change detection.
-   Describe a current snapshot; do not claim a fixed SHA or infer a ref.
+3. Multi-file Snippet blobs now have lazy paths/content, source/Markdown preview
+   and guarded file actions with `updatedAt` change detection. Complete
+   installed-build and private disposable-fixture validation. Describe a current
+   snapshot; do not claim a fixed SHA or infer a ref.
 4. Registry safe type-specific download/publish and complete repository graph.
 5. Contributor aggregate, coverage summary and CI/CD series now have native
    implementation work. Complete installed-build/CI readback; VSA, complete

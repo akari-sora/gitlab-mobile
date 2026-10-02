@@ -82,13 +82,15 @@ class _SnippetsPageState extends State<SnippetsPage> {
       generation == _generation &&
       widget.account.key == account.key &&
       identical(widget.api, api) &&
-      widget.project.id == project.id;
+      widget.project.id == project.id &&
+      widget.project.path == project.path;
 
   @override
   void didUpdateWidget(covariant SnippetsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.account.key != widget.account.key ||
         oldWidget.project.id != widget.project.id ||
+        oldWidget.project.path != widget.project.path ||
         !identical(oldWidget.api, widget.api)) {
       _generation++;
       _dismissRoutes();
@@ -109,6 +111,7 @@ class _SnippetsPageState extends State<SnippetsPage> {
     final generation = _generation;
     final path = ['projects', '${project.id}', 'snippets'];
     int? createdId;
+    var writePending = false;
     final saved = await openEditor(
       context,
       account: account,
@@ -133,6 +136,9 @@ class _SnippetsPageState extends State<SnippetsPage> {
         const EditField('content', '內容', lines: 16, required: true),
       ],
       save: (values) async {
+        if (writePending) {
+          throw const ApiFailure(FailureKind.writeUncertain);
+        }
         if (!_currentOwner(generation, account, api, project)) {
           throw const ApiFailure(FailureKind.cancelled);
         }
@@ -147,26 +153,40 @@ class _SnippetsPageState extends State<SnippetsPage> {
             ),
           ],
         );
-        final created = await api.writeRecord('POST', path, payload);
+        writePending = true;
+        late final Map<String, dynamic> created;
+        try {
+          created = await api.writeRecord('POST', path, payload);
+        } on ApiFailure catch (failure) {
+          if (failure.kind != FailureKind.writeUncertain) writePending = false;
+          rethrow;
+        }
         if (!_currentOwner(generation, account, api, project)) {
           throw const ApiFailure(FailureKind.cancelled);
         }
-        final id = requiredInt(created, 'id');
-        final readbackJson = await api.record([...path, '$id']);
-        final readback = ProjectSnippet.fromJson(readbackJson)
-          ..requireProject(project.id);
-        if (!readback.canUseLegacyRaw ||
-            readback.title != payload['title'] ||
-            readback.description != payload['description'] ||
-            readback.visibility != payload['visibility'] ||
-            readback.fileName != values['file_name']!.trim()) {
+        try {
+          final id = requiredInt(created, 'id');
+          final readbackJson = await api.record([...path, '$id']);
+          final readback = ProjectSnippet.fromJson(readbackJson)
+            ..requireProject(project.id);
+          if (!readback.canUseLegacyRaw ||
+              readback.title != payload['title'] ||
+              readback.description != payload['description'] ||
+              readback.visibility != payload['visibility'] ||
+              readback.fileName != values['file_name']!.trim()) {
+            throw const ApiFailure(FailureKind.writeUncertain);
+          }
+          final content = await api.snippetText(project.id, id);
+          if (content != values['content']) {
+            throw const ApiFailure(FailureKind.writeUncertain);
+          }
+          createdId = id;
+        } catch (error) {
+          if (error is ApiFailure && error.kind == FailureKind.cancelled) {
+            rethrow;
+          }
           throw const ApiFailure(FailureKind.writeUncertain);
         }
-        final content = await api.snippetText(project.id, id);
-        if (content != values['content']) {
-          throw const ApiFailure(FailureKind.writeUncertain);
-        }
-        createdId = id;
       },
     );
     if (!saved || !_currentOwner(generation, account, api, project)) return;
@@ -203,7 +223,8 @@ class _SnippetsPageState extends State<SnippetsPage> {
     ),
     body: RecordsFeed(
       key: _feed,
-      identity: '${widget.account.key}/${widget.project.id}/snippets',
+      identity:
+          '${widget.account.key}/${widget.project.id}/${widget.project.path}/snippets',
       storageId: 'snippets/${widget.account.key}/${widget.project.id}',
       account: widget.account,
       resourceLabel: '${widget.project.path} · Snippets',
@@ -259,10 +280,17 @@ class _SnippetDetailPage extends StatefulWidget {
 class _SnippetDetailPageState extends State<_SnippetDetailPage> {
   ProjectSnippet? _snippet;
   String? _content;
+  SnippetGraphSnapshot? _snapshot;
+  SnippetBlob? _blob;
+  String? _selectedPath;
   ApiFailure? _error;
+  ApiFailure? _blobError;
   bool _loading = true;
+  bool _blobLoading = false;
   bool _busy = false;
+  bool _markdownPreview = false;
   int _generation = 0;
+  int _blobRequest = 0;
   final Set<Route<dynamic>> _ownedRoutes = {};
   NavigatorState? _navigator;
 
@@ -297,6 +325,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
       widget.account.key == account.key &&
       identical(widget.api, api) &&
       widget.project.id == project.id &&
+      widget.project.path == project.path &&
       widget.snippetId == snippetId;
 
   @override
@@ -304,6 +333,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.account.key != widget.account.key ||
         oldWidget.project.id != widget.project.id ||
+        oldWidget.project.path != widget.project.path ||
         oldWidget.snippetId != widget.snippetId ||
         !identical(oldWidget.api, widget.api)) {
       _dismissRoutes();
@@ -341,33 +371,177 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     return (snippet, await api.snippetText(projectId, snippetId));
   }
 
-  Future<(ProjectSnippet, String)> _freshSingle() =>
-      _freshSingleFor(widget.api, widget.project.id, widget.snippetId);
+  Future<ProjectSnippet> _readSnippet(
+    GitLabApi api,
+    Project project,
+    int snippetId,
+  ) async {
+    final json = await api.record([
+      'projects',
+      '${project.id}',
+      'snippets',
+      '$snippetId',
+    ]);
+    final snippet = ProjectSnippet.fromJson(json)..requireProject(project.id);
+    if (snippet.id != snippetId) {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+    return snippet;
+  }
 
-  Future<void> _load() async {
+  bool _samePaths(List<String> left, List<String> right) {
+    if (left.length != right.length) return false;
+    final expected = left.toSet();
+    return expected.length == left.length && expected.containsAll(right);
+  }
+
+  bool _sameSnapshot(SnippetGraphSnapshot left, SnippetGraphSnapshot right) =>
+      left.projectId == right.projectId &&
+      left.projectPath == right.projectPath &&
+      left.snippetId == right.snippetId &&
+      left.graphId == right.graphId &&
+      left.restUpdatedAt == right.restUpdatedAt &&
+      left.graphUpdatedAt == right.graphUpdatedAt &&
+      _samePaths(left.filePaths, right.filePaths);
+
+  Future<SnippetGraphSnapshot> _freshSnapshotFor(
+    GitLabApi api,
+    Project project,
+    SnippetGraphSnapshot expected,
+  ) async {
+    final fresh = await api.projectSnippetSnapshot(project, expected.snippet);
+    if (!_sameSnapshot(fresh, expected)) {
+      throw const ApiFailure(FailureKind.conflict);
+    }
+    return fresh;
+  }
+
+  Future<void> _load({String? preferredPath}) async {
     final generation = ++_generation;
+    _blobRequest++;
     setState(() {
       _loading = true;
       _error = null;
+      _blobError = null;
+      _blobLoading = false;
     });
     try {
-      final fresh = await _freshSingle();
+      final snippet = await _readSnippet(
+        widget.api,
+        widget.project,
+        widget.snippetId,
+      );
+      if (snippet.canUseLegacyRaw) {
+        final content = await widget.api.snippetText(
+          widget.project.id,
+          widget.snippetId,
+        );
+        if (!mounted || generation != _generation) return;
+        setState(() {
+          _snippet = snippet;
+          _content = content;
+          _snapshot = null;
+          _blob = null;
+          _selectedPath = null;
+          _loading = false;
+        });
+        return;
+      }
+      if (!snippet.hasExplicitFiles || snippet.filePaths.isEmpty) {
+        throw ApiFailure(
+          FailureKind.unsupported,
+          title: '無法確認 Snippet 檔案清單',
+          detail:
+              'file_name 不能證明 Snippet 只有一個檔案。伺服器未回傳可驗證的 files 清單，因此不顯示可能不完整的 legacy raw 內容。',
+        );
+      }
+      late final SnippetGraphSnapshot snapshot;
+      try {
+        snapshot = await widget.api.projectSnippetSnapshot(
+          widget.project,
+          snippet,
+        );
+      } on ApiFailure catch (failure) {
+        if (failure.kind == FailureKind.unsupported ||
+            failure.kind == FailureKind.invisible) {
+          throw const ApiFailure(
+            FailureKind.unsupported,
+            title: '多檔 Snippet 尚無法安全讀取',
+            detail: '這個 GitLab 實例未提供可驗證的多檔 Snippet 內容介面。',
+          );
+        }
+        rethrow;
+      }
       if (!mounted || generation != _generation) return;
+      final selected = snapshot.filePaths.contains(preferredPath)
+          ? preferredPath!
+          : snapshot.filePaths.first;
       setState(() {
-        _snippet = fresh.$1;
-        _content = fresh.$2;
+        _snippet = snapshot.snippet;
+        _content = null;
+        _snapshot = snapshot;
+        _blob = null;
+        _selectedPath = selected;
+        _markdownPreview = false;
         _loading = false;
       });
+      unawaited(_selectFile(selected));
     } catch (error) {
       if (!mounted || generation != _generation) return;
+      final failure = safeFailure(error);
       setState(() {
-        _error = safeFailure(error);
+        _error = failure;
         _loading = false;
       });
     }
   }
 
+  Future<void> _selectFile(String path) async {
+    final snapshot = _snapshot;
+    if (snapshot == null || !snapshot.filePaths.contains(path)) return;
+    final account = widget.account;
+    final api = widget.api;
+    final project = widget.project;
+    final snippetId = widget.snippetId;
+    final generation = _generation;
+    final request = ++_blobRequest;
+    setState(() {
+      _selectedPath = path;
+      _blob = null;
+      _blobError = null;
+      _blobLoading = true;
+      _markdownPreview = false;
+    });
+    try {
+      final blob = await api.snippetBlob(project, snapshot, path: path);
+      if (!_currentOwner(generation, account, api, project, snippetId) ||
+          request != _blobRequest ||
+          _selectedPath != path ||
+          !identical(_snapshot, snapshot)) {
+        return;
+      }
+      setState(() {
+        _blob = blob;
+        _blobLoading = false;
+      });
+    } catch (error) {
+      if (!_currentOwner(generation, account, api, project, snippetId) ||
+          request != _blobRequest ||
+          _selectedPath != path) {
+        return;
+      }
+      setState(() {
+        _blobError = safeFailure(error);
+        _blobLoading = false;
+      });
+    }
+  }
+
   Future<void> _edit() async {
+    if (_snapshot != null) {
+      await _editMetadata();
+      return;
+    }
     final snippet = _snippet;
     final content = _content;
     if (snippet == null || content == null || _busy) return;
@@ -377,6 +551,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     final snippetId = widget.snippetId;
     final generation = _generation;
     final path = ['projects', '${project.id}', 'snippets', '$snippetId'];
+    var writePending = false;
     final saved = await openEditor(
       context,
       account: account,
@@ -408,6 +583,9 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
         EditField('content', '內容', value: content, lines: 16, required: true),
       ],
       save: (values) async {
+        if (writePending) {
+          throw const ApiFailure(FailureKind.writeUncertain);
+        }
         if (!_currentOwner(generation, account, api, project, snippetId)) {
           throw const ApiFailure(FailureKind.cancelled);
         }
@@ -427,13 +605,29 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
         if (!_currentOwner(generation, account, api, project, snippetId)) {
           throw const ApiFailure(FailureKind.cancelled);
         }
-        await api.writeRecord('PUT', path, payload);
-        final readback = await _freshSingleFor(api, project.id, snippetId);
-        if (readback.$1.title != (values['title'] ?? '').trim() ||
-            readback.$1.description != (values['description'] ?? '') ||
-            readback.$1.visibility != (values['visibility'] ?? '').trim() ||
-            readback.$1.fileName != (values['file_name'] ?? '').trim() ||
-            readback.$2 != (values['content'] ?? '')) {
+        writePending = true;
+        try {
+          await api.writeRecord('PUT', path, payload);
+        } on ApiFailure catch (failure) {
+          if (failure.kind != FailureKind.writeUncertain) writePending = false;
+          rethrow;
+        }
+        if (!_currentOwner(generation, account, api, project, snippetId)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        try {
+          final readback = await _freshSingleFor(api, project.id, snippetId);
+          if (readback.$1.title != (values['title'] ?? '').trim() ||
+              readback.$1.description != (values['description'] ?? '') ||
+              readback.$1.visibility != (values['visibility'] ?? '').trim() ||
+              readback.$1.fileName != (values['file_name'] ?? '').trim() ||
+              readback.$2 != (values['content'] ?? '')) {
+            throw const ApiFailure(FailureKind.writeUncertain);
+          }
+        } catch (error) {
+          if (error is ApiFailure && error.kind == FailureKind.cancelled) {
+            rethrow;
+          }
           throw const ApiFailure(FailureKind.writeUncertain);
         }
       },
@@ -443,10 +637,403 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     }
   }
 
+  Future<void> _editMetadata() async {
+    final snapshot = _snapshot;
+    if (snapshot == null || _busy) return;
+    final snippet = snapshot.snippet;
+    final account = widget.account;
+    final api = widget.api;
+    final project = widget.project;
+    final snippetId = widget.snippetId;
+    final generation = _generation;
+    final selected = _selectedPath;
+    final path = ['projects', '${project.id}', 'snippets', '$snippetId'];
+    var writePending = false;
+    final saved = await openEditor(
+      context,
+      account: account,
+      api: api,
+      projectId: project.id,
+      projectPath: project.path,
+      title: '編輯 Snippet 資訊',
+      subtitle: project.path,
+      resource: '${project.id}/snippets/${snippet.id}/metadata',
+      baseRevision:
+          '${snapshot.restUpdatedAt}/${snapshot.graphUpdatedAt.toIso8601String()}',
+      onRoute: _ownRoute,
+      fields: [
+        EditField('title', '標題', value: snippet.title, required: true),
+        EditField(
+          'description',
+          '說明',
+          value: snippet.description,
+          lines: 4,
+          markdown: true,
+        ),
+        EditField.choice(
+          'visibility',
+          '可見性',
+          choices: _visibilityChoices(account),
+          value: snippet.visibility,
+          required: true,
+        ),
+      ],
+      save: (values) async {
+        if (writePending) {
+          throw const ApiFailure(FailureKind.writeUncertain);
+        }
+        if (!_currentOwner(generation, account, api, project, snippetId)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        final fresh = await _freshSnapshotFor(api, project, snapshot);
+        final payload = updateSnippetPayload(
+          title: values['title'] ?? '',
+          description: values['description'] ?? '',
+          visibility: (values['visibility'] ?? '').trim(),
+          currentPaths: fresh.filePaths,
+          actions: const [],
+        );
+        if (!_currentOwner(generation, account, api, project, snippetId)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        writePending = true;
+        try {
+          await api.writeRecord('PUT', path, payload);
+        } on ApiFailure catch (failure) {
+          if (failure.kind != FailureKind.writeUncertain) writePending = false;
+          rethrow;
+        }
+        if (!_currentOwner(generation, account, api, project, snippetId)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        try {
+          final readbackSnippet = await _readSnippet(api, project, snippetId);
+          final readback = await api.projectSnippetSnapshot(
+            project,
+            readbackSnippet,
+          );
+          if (readback.snippet.title != (values['title'] ?? '').trim() ||
+              readback.snippet.description != (values['description'] ?? '') ||
+              readback.snippet.visibility !=
+                  (values['visibility'] ?? '').trim() ||
+              !_samePaths(readback.filePaths, snapshot.filePaths)) {
+            throw const ApiFailure(FailureKind.writeUncertain);
+          }
+        } catch (error) {
+          if (error is ApiFailure && error.kind == FailureKind.cancelled) {
+            rethrow;
+          }
+          throw const ApiFailure(FailureKind.writeUncertain);
+        }
+      },
+    );
+    if (saved && _currentOwner(generation, account, api, project, snippetId)) {
+      await _load(preferredPath: selected);
+    }
+  }
+
+  Future<void> _editFile({
+    required String title,
+    required String resourceSuffix,
+    required List<EditField> fields,
+    required List<SnippetFileAction> Function(
+      Map<String, String> values,
+      SnippetGraphSnapshot fresh,
+    )
+    actions,
+    required String? Function(Map<String, String> values) resultingPath,
+    String? Function()? expectedContent,
+  }) async {
+    final snapshot = _snapshot;
+    if (snapshot == null || _busy) return;
+    final account = widget.account;
+    final api = widget.api;
+    final project = widget.project;
+    final snippetId = widget.snippetId;
+    final generation = _generation;
+    final endpoint = ['projects', '${project.id}', 'snippets', '$snippetId'];
+    var writePending = false;
+    String? savedPath;
+    final saved = await openEditor(
+      context,
+      account: account,
+      api: api,
+      projectId: project.id,
+      projectPath: project.path,
+      title: title,
+      subtitle: project.path,
+      resource: '${project.id}/snippets/$snippetId/$resourceSuffix',
+      baseRevision:
+          '${snapshot.restUpdatedAt}/${snapshot.graphUpdatedAt.toIso8601String()}',
+      onRoute: _ownRoute,
+      fields: fields,
+      save: (values) async {
+        if (writePending) {
+          throw const ApiFailure(FailureKind.writeUncertain);
+        }
+        if (!_currentOwner(generation, account, api, project, snippetId)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        final fresh = await _freshSnapshotFor(api, project, snapshot);
+        final requestedActions = actions(
+          values,
+          fresh,
+        ).map(_canonicalFileAction).toList(growable: false);
+        final nextPath = resultingPath(values);
+        final payload = updateSnippetPayload(
+          title: fresh.snippet.title,
+          description: fresh.snippet.description,
+          visibility: fresh.snippet.visibility,
+          currentPaths: fresh.filePaths,
+          actions: requestedActions,
+        );
+        if (!_currentOwner(generation, account, api, project, snippetId)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        writePending = true;
+        try {
+          await api.writeRecord('PUT', endpoint, payload);
+        } on ApiFailure catch (failure) {
+          if (failure.kind != FailureKind.writeUncertain) writePending = false;
+          rethrow;
+        }
+        if (!_currentOwner(generation, account, api, project, snippetId)) {
+          throw const ApiFailure(FailureKind.cancelled);
+        }
+        try {
+          final readbackSnippet = await _readSnippet(api, project, snippetId);
+          final readback = await api.projectSnippetSnapshot(
+            project,
+            readbackSnippet,
+          );
+          final expectedPaths = snapshot.filePaths.toSet();
+          for (final action in requestedActions) {
+            switch (action.type) {
+              case SnippetFileActionType.create:
+                expectedPaths.add(action.path);
+              case SnippetFileActionType.update:
+                break;
+              case SnippetFileActionType.delete:
+                expectedPaths.remove(action.path);
+              case SnippetFileActionType.move:
+                expectedPaths
+                  ..remove(action.previousPath)
+                  ..add(action.path);
+            }
+          }
+          if (!_samePaths(readback.filePaths, expectedPaths.toList())) {
+            throw const ApiFailure(FailureKind.writeUncertain);
+          }
+          if (nextPath != null) {
+            final blob = await api.snippetBlob(
+              project,
+              readback,
+              path: nextPath,
+            );
+            if (blob.availability != SnippetBlobAvailability.text ||
+                (expectedContent != null &&
+                    blob.content != expectedContent())) {
+              throw const ApiFailure(FailureKind.writeUncertain);
+            }
+          }
+          savedPath = nextPath;
+        } catch (error) {
+          if (error is ApiFailure && error.kind == FailureKind.cancelled) {
+            rethrow;
+          }
+          throw const ApiFailure(FailureKind.writeUncertain);
+        }
+      },
+    );
+    if (saved && _currentOwner(generation, account, api, project, snippetId)) {
+      await _load(preferredPath: savedPath ?? _selectedPath);
+    }
+  }
+
+  SnippetFileAction _canonicalFileAction(SnippetFileAction action) {
+    final path = validatedSnippetPath(action.path);
+    return switch (action.type) {
+      SnippetFileActionType.create => SnippetFileAction.create(
+        path: path,
+        content: action.content!,
+      ),
+      SnippetFileActionType.update => SnippetFileAction.update(
+        path: path,
+        content: action.content!,
+      ),
+      SnippetFileActionType.delete => SnippetFileAction.delete(path: path),
+      SnippetFileActionType.move => SnippetFileAction.move(
+        previousPath: validatedSnippetPath(action.previousPath!),
+        path: path,
+      ),
+    };
+  }
+
+  Future<void> _addFile() async {
+    var submittedContent = '';
+    await _editFile(
+      title: '新增檔案',
+      resourceSuffix: 'files/new',
+      fields: const [
+        EditField('file_path', '檔案路徑', required: true),
+        EditField('content', '內容', lines: 16, required: true),
+      ],
+      actions: (values, _) {
+        submittedContent = values['content'] ?? '';
+        return [
+          SnippetFileAction.create(
+            path: values['file_path'] ?? '',
+            content: submittedContent,
+          ),
+        ];
+      },
+      resultingPath: (values) =>
+          validatedSnippetPath(values['file_path'] ?? ''),
+      expectedContent: () => submittedContent,
+    );
+  }
+
+  Future<void> _updateFile() async {
+    final blob = _blob;
+    final path = _selectedPath;
+    if (blob?.availability != SnippetBlobAvailability.text || path == null) {
+      return;
+    }
+    String submittedContent = blob!.content!;
+    await _editFile(
+      title: '編輯檔案',
+      resourceSuffix: 'files/$path/content',
+      fields: [
+        EditField(
+          'content',
+          '內容',
+          value: blob.content!,
+          lines: 16,
+          required: true,
+        ),
+      ],
+      actions: (values, _) {
+        submittedContent = values['content'] ?? '';
+        return [
+          SnippetFileAction.update(path: path, content: submittedContent),
+        ];
+      },
+      resultingPath: (_) => path,
+      expectedContent: () => submittedContent,
+    );
+  }
+
+  Future<void> _renameFile() async {
+    final blob = _blob;
+    final path = _selectedPath;
+    if (blob?.availability != SnippetBlobAvailability.text || path == null) {
+      return;
+    }
+    await _editFile(
+      title: '重新命名檔案',
+      resourceSuffix: 'files/$path/move',
+      fields: [EditField('file_path', '新路徑', value: path, required: true)],
+      actions: (values, _) => [
+        SnippetFileAction.move(
+          previousPath: path,
+          path: values['file_path'] ?? '',
+        ),
+      ],
+      resultingPath: (values) =>
+          validatedSnippetPath(values['file_path'] ?? ''),
+      expectedContent: () => blob!.content,
+    );
+  }
+
+  Future<void> _deleteFile() async {
+    final snapshot = _snapshot;
+    final selected = _selectedPath;
+    if (snapshot == null || selected == null || _busy) return;
+    if (snapshot.filePaths.length <= 1) {
+      showFailure(
+        context,
+        const ApiFailure(
+          FailureKind.validation,
+          title: '至少保留一個檔案',
+          detail: '若不再需要這個 Snippet，請刪除整個 Snippet。',
+        ),
+      );
+      return;
+    }
+    final confirmed = await confirmAction(
+      context,
+      '刪除「$selected」？',
+      '只會刪除這個檔案，其他檔案會保留。',
+      requiredText: selected,
+      onRoute: _ownRoute,
+    );
+    if (!confirmed) return;
+    final account = widget.account;
+    final api = widget.api;
+    final project = widget.project;
+    final snippetId = widget.snippetId;
+    final generation = _generation;
+    final endpoint = ['projects', '${project.id}', 'snippets', '$snippetId'];
+    setState(() => _busy = true);
+    var acknowledged = false;
+    try {
+      final fresh = await _freshSnapshotFor(api, project, snapshot);
+      final payload = updateSnippetPayload(
+        title: fresh.snippet.title,
+        description: fresh.snippet.description,
+        visibility: fresh.snippet.visibility,
+        currentPaths: fresh.filePaths,
+        actions: [SnippetFileAction.delete(path: selected)],
+      );
+      if (!_currentOwner(generation, account, api, project, snippetId)) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      await api.writeRecord('PUT', endpoint, payload);
+      acknowledged = true;
+      if (!_currentOwner(generation, account, api, project, snippetId)) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      final readbackSnippet = await _readSnippet(api, project, snippetId);
+      final readback = await api.projectSnippetSnapshot(
+        project,
+        readbackSnippet,
+      );
+      final expectedPaths = snapshot.filePaths
+          .where((path) => path != selected)
+          .toList();
+      if (!_samePaths(readback.filePaths, expectedPaths)) {
+        throw const ApiFailure(FailureKind.writeUncertain);
+      }
+      if (_currentOwner(generation, account, api, project, snippetId)) {
+        setState(() => _busy = false);
+        await _load(preferredPath: expectedPaths.first);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      final shown =
+          acknowledged &&
+              !(error is ApiFailure &&
+                  (error.kind == FailureKind.writeUncertain ||
+                      error.kind == FailureKind.cancelled))
+          ? const ApiFailure(FailureKind.writeUncertain)
+          : error;
+      if (_currentOwner(generation, account, api, project, snippetId)) {
+        showFailure(context, shown);
+      }
+    } finally {
+      if (_currentOwner(generation, account, api, project, snippetId)) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
   Future<void> _delete() async {
     final snippet = _snippet;
     final content = _content;
-    if (snippet == null || content == null || _busy) return;
+    final snapshot = _snapshot;
+    if (snippet == null || (content == null && snapshot == null) || _busy) {
+      return;
+    }
     final account = widget.account;
     final api = widget.api;
     final project = widget.project;
@@ -466,9 +1053,16 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     }
     setState(() => _busy = true);
     try {
-      final fresh = await _freshSingleFor(api, project.id, snippetId);
-      if (fresh.$1.updatedAt != snippet.updatedAt || fresh.$2 != content) {
-        throw const ApiFailure(FailureKind.conflict);
+      if (snapshot != null) {
+        await _freshSnapshotFor(api, project, snapshot);
+      } else {
+        final fresh = await _freshSingleFor(api, project.id, snippetId);
+        if (fresh.$1.updatedAt != snippet.updatedAt || fresh.$2 != content) {
+          throw const ApiFailure(FailureKind.conflict);
+        }
+      }
+      if (!_currentOwner(generation, account, api, project, snippetId)) {
+        throw const ApiFailure(FailureKind.cancelled);
       }
       await api.removeRecord(path);
       if (!_currentOwner(generation, account, api, project, snippetId)) return;
@@ -494,6 +1088,31 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     }
   }
 
+  Future<void> _showMore() async {
+    if (_snippet == null || _busy) return;
+    final route = DialogRoute<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('更多操作'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(dialogContext, 'delete'),
+            child: const Row(
+              children: [
+                Icon(Icons.delete_outline),
+                SizedBox(width: 12),
+                Text('刪除'),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    _ownRoute(route);
+    final selected = await Navigator.of(context).push(route);
+    if (selected == 'delete' && mounted) await _delete();
+  }
+
   Widget _body() {
     if (_loading) return const ListSkeleton();
     final error = _error;
@@ -512,6 +1131,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
         ],
       );
     }
+    if (_snapshot != null) return _multiBody();
     final snippet = _snippet!;
     final lines = _content!.split('\n');
     final truncatedLineCount = lines.where((line) => line.length > 2000).length;
@@ -546,9 +1166,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
                   const SizedBox(height: 12),
                   MarkdownView(
                     snippet.description,
-                    base: widget.account.instance.projectWeb(
-                      widget.project.path,
-                    ),
+                    base: null,
                     api: widget.api,
                     projectId: widget.project.id,
                     projectWeb: widget.account.instance.projectWeb(
@@ -614,6 +1232,297 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     );
   }
 
+  bool _isMarkdown(String path) {
+    final lower = path.toLowerCase();
+    return lower.endsWith('.md') ||
+        lower.endsWith('.markdown') ||
+        lower.endsWith('.mdown') ||
+        lower.endsWith('.mkd');
+  }
+
+  Widget _metadata(ProjectSnippet snippet) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(snippet.title, style: Theme.of(context).textTheme.headlineSmall),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 6,
+        children: [
+          Chip(label: Text(snippetVisibilityLabel(snippet.visibility))),
+          Chip(label: Text(snippet.authorName)),
+          if (_snapshot != null)
+            Chip(label: Text('${_snapshot!.filePaths.length} 個檔案')),
+        ],
+      ),
+      if (snippet.description.isNotEmpty) ...[
+        const SizedBox(height: 12),
+        MarkdownView(
+          snippet.description,
+          base: null,
+          api: widget.api,
+          projectId: widget.project.id,
+          projectWeb: widget.account.instance.projectWeb(widget.project.path),
+          projectPath: widget.project.path,
+          account: widget.account,
+        ),
+      ],
+    ],
+  );
+
+  List<Widget> _blobSlivers(double gutter) {
+    if (_blobLoading) {
+      return const [
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        ),
+      ];
+    }
+    final error = _blobError;
+    if (error != null) {
+      return [
+        SliverToBoxAdapter(
+          child: FailureNotice(
+            error,
+            account: widget.account,
+            resourceLabel:
+                '${widget.project.path} · Snippet #${widget.snippetId} · ${_selectedPath ?? ''}',
+            onSwitchAccount: endSessionFrom(context),
+            onRetry: _selectedPath == null
+                ? null
+                : () => _selectFile(_selectedPath!),
+          ),
+        ),
+      ];
+    }
+    final blob = _blob;
+    if (blob == null) return const [];
+    if (blob.availability != SnippetBlobAvailability.text) {
+      final message = switch (blob.availability) {
+        SnippetBlobAvailability.nullContent => '伺服器未提供這個檔案的文字內容。',
+        SnippetBlobAvailability.binary => '這是二進位檔案，無法顯示文字預覽。',
+        SnippetBlobAvailability.tooLarge => '檔案超出 2 MiB／20,000 行預覽上限。',
+        SnippetBlobAvailability.unretrievable => 'GitLab 無法讀取這個檔案。',
+        SnippetBlobAvailability.renderError =>
+          blob.renderError ?? 'GitLab 無法準備這個檔案的預覽。',
+        SnippetBlobAvailability.text => '',
+      };
+      return [
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 24),
+          sliver: SliverToBoxAdapter(
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(message),
+              ),
+            ),
+          ),
+        ),
+      ];
+    }
+    final content = blob.content!;
+    if (_markdownPreview && _isMarkdown(blob.path)) {
+      return [
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 24),
+          sliver: SliverToBoxAdapter(
+            child: MarkdownView(
+              content,
+              base: null,
+              api: widget.api,
+              projectId: widget.project.id,
+              projectWeb: widget.account.instance.projectWeb(
+                widget.project.path,
+              ),
+              projectPath: widget.project.path,
+              account: widget.account,
+            ),
+          ),
+        ),
+      ];
+    }
+    final lines = content.split('\n');
+    final truncated = lines.where((line) => line.length > 2000).length;
+    return [
+      if (truncated > 0)
+        SliverPadding(
+          padding: EdgeInsets.fromLTRB(gutter, 4, gutter, 4),
+          sliver: SliverToBoxAdapter(
+            child: Text(
+              '$truncated 行超過 2,000 字元，預覽已截短；編輯時保留完整內容。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+        ),
+      SliverPadding(
+        padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 24),
+        sliver: SliverList.builder(
+          itemCount: lines.length,
+          itemBuilder: (context, index) {
+            final raw = lines[index];
+            final shown = raw.length > 2000
+                ? '${raw.substring(0, 2000)} …'
+                : raw;
+            return Container(
+              color: index.isEven
+                  ? Theme.of(context).colorScheme.surfaceContainerLow
+                  : null,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 44,
+                    child: Text(
+                      '${index + 1}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  Expanded(
+                    child: SelectableText(
+                      shown.isEmpty ? ' ' : shown,
+                      style: codeTextStyle(context),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    ];
+  }
+
+  Widget _multiBody() {
+    final snapshot = _snapshot!;
+    final snippet = snapshot.snippet;
+    final selected = _selectedPath;
+    final editable = _blob?.availability == SnippetBlobAvailability.text;
+    final gutter = feedGutter(context);
+    return RefreshIndicator(
+      onRefresh: () => _load(preferredPath: selected),
+      child: CustomScrollView(
+        key: PageStorageKey(
+          '${widget.account.key}/${widget.project.id}/snippets/${snippet.id}/multi',
+        ),
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 8),
+            sliver: SliverToBoxAdapter(child: _metadata(snippet)),
+          ),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 4),
+            sliver: SliverToBoxAdapter(
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '檔案',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                  ),
+                  IconButton(
+                    key: const ValueKey('snippet-add-file'),
+                    tooltip: '新增檔案',
+                    onPressed: _busy ? null : _addFile,
+                    icon: const Icon(Icons.note_add_outlined),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: EdgeInsets.symmetric(horizontal: gutter),
+            sliver: SliverList.builder(
+              itemCount: snapshot.filePaths.length,
+              itemBuilder: (context, index) {
+                final path = snapshot.filePaths[index];
+                return ListTile(
+                  key: ValueKey('snippet-file-$path'),
+                  minVerticalPadding: 12,
+                  selected: path == selected,
+                  leading: Icon(
+                    path == selected
+                        ? Icons.description
+                        : Icons.description_outlined,
+                  ),
+                  title: Text(path),
+                  trailing: path == selected
+                      ? const Icon(Icons.check_circle_outline)
+                      : null,
+                  onTap: _busy ? null : () => unawaited(_selectFile(path)),
+                );
+              },
+            ),
+          ),
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(gutter, 16, gutter, 4),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    selected ?? '未選擇檔案',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: [
+                      if (selected != null && _isMarkdown(selected)) ...[
+                        ChoiceChip(
+                          key: const ValueKey('snippet-source-mode'),
+                          label: const Text('原始碼'),
+                          selected: !_markdownPreview,
+                          onSelected: (_) =>
+                              setState(() => _markdownPreview = false),
+                        ),
+                        ChoiceChip(
+                          key: const ValueKey('snippet-markdown-mode'),
+                          label: const Text('Markdown'),
+                          selected: _markdownPreview,
+                          onSelected: (_) =>
+                              setState(() => _markdownPreview = true),
+                        ),
+                      ],
+                      TextButton.icon(
+                        key: const ValueKey('snippet-edit-file'),
+                        onPressed: !_busy && editable ? _updateFile : null,
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('編輯'),
+                      ),
+                      TextButton.icon(
+                        key: const ValueKey('snippet-rename-file'),
+                        onPressed: !_busy && editable ? _renameFile : null,
+                        icon: const Icon(Icons.drive_file_rename_outline),
+                        label: const Text('重新命名'),
+                      ),
+                      TextButton.icon(
+                        key: const ValueKey('snippet-delete-file'),
+                        onPressed: _busy || selected == null
+                            ? null
+                            : _deleteFile,
+                        icon: const Icon(Icons.delete_outline),
+                        label: const Text('刪除檔案'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+          ..._blobSlivers(gutter),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -624,15 +1533,10 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
           onPressed: _snippet == null || _busy ? null : _edit,
           icon: const Icon(Icons.edit_outlined),
         ),
-        PopupMenuButton<String>(
+        IconButton(
           tooltip: '更多操作',
-          enabled: _snippet != null && !_busy,
-          onSelected: (value) {
-            if (value == 'delete') unawaited(_delete());
-          },
-          itemBuilder: (_) => const [
-            PopupMenuItem(value: 'delete', child: Text('刪除')),
-          ],
+          onPressed: _snippet == null || _busy ? null : _showMore,
+          icon: const Icon(Icons.more_vert),
         ),
       ],
     ),

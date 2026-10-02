@@ -34,6 +34,8 @@ class SnippetFixture {
   final content = <int, String>{};
   final writes = <RequestOptions>[];
   int revision = 1;
+  bool failCreatedReadback = false;
+  int? lastCreatedId;
 
   Map<String, dynamic> snippet(
     int id, {
@@ -96,13 +98,17 @@ class SnippetFixture {
           fileName: file['file_path'] as String,
         );
         content[id] = file['content'] as String;
+        lastCreatedId = id;
         return jsonResponse(snippets[id], status: 201);
       }
     }
     final id = int.tryParse(tail.first);
     if (id == null || !snippets.containsKey(id)) return missing();
     if (tail.length == 1) {
-      if (method == 'GET') return jsonResponse(snippets[id]);
+      if (method == 'GET') {
+        if (failCreatedReadback && id == lastCreatedId) return missing();
+        return jsonResponse(snippets[id]);
+      }
       if (method == 'PUT') {
         writes.add(request);
         final body = Map<String, dynamic>.from(request.data as Map);
@@ -376,6 +382,36 @@ void main() {
     expect(fixture.snippets, isEmpty);
     expect(find.text('這個專案沒有 Snippet'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('acknowledged create with failed readback cannot post twice', (
+    tester,
+  ) async {
+    final fixture = SnippetFixture()..failCreatedReadback = true;
+    await host(tester, fixture);
+
+    await tester.tap(find.byKey(const ValueKey('create-snippet')));
+    await settleNetworkWidgets(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('editor-title')),
+      'Uncertain create',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('editor-file_name')),
+      'note.txt',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('editor-content')),
+      'once',
+    );
+    await saveEditor(tester);
+
+    expect(find.text('尚未確認操作結果'), findsOneWidget);
+    await saveEditor(tester);
+    expect(
+      fixture.writes.where((request) => request.method == 'POST'),
+      hasLength(1),
+    );
   });
 
   testWidgets(

@@ -129,6 +129,13 @@ The follow-up engineering slices (D1~D5) and long-term backlog bridge the gaps i
 
 Status (2026-10-02): D1–D5 had already landed on `main` before v0.5. v0.5 adds group browsing (the read side of LT1: groups, subgroups, group projects, group issues and MRs), emoji reactions, scoped-label rendering, global and per-project search, activity feeds, file history, blame and find-file, related items, members, wiki, environments, deployments and pipeline schedules. Evidence and NOT_RUN items are in the [v0.5 ledger](V0_5_VERIFICATION.md). The current follow-up adds board management/card moves, core server drafts and actual pipeline needs graphs; GraphQL work items (LT2), paid board semantics and full downstream DAG workflows remain open.
 
+The later follow-up adds native contributor/repository/CI analytics and lazy
+multi-file Snippet source/Markdown with guarded file actions. Its current-source
+verification and device/CI boundaries are recorded in
+[mobile parity and performance](MOBILE_PARITY_PERFORMANCE.md). These slices do
+not close GraphQL Work Items, group Epic/OKR workflows, private fixture CRUD or
+Android/iOS acceptance.
+
 ### Long-Term Backlog (LT1 ~ LT5)
 - **LT1: Groups & Subgroups Hierarchy (`GET /groups`)**: Flattened multi-level hierarchy browsing, subgroup navigation, and group-scoped project discovery.
 - **LT2: GraphQL Polymorphic Work Items Pilot**: Targeted GraphQL queries for Task checkbox toggling and Epic linking alongside existing REST infrastructure.
