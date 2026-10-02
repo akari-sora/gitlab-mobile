@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -23,6 +24,12 @@ class ScrollChromeController extends ValueNotifier<bool> {
 
   double _travel = 0;
   bool _userScrolling = false;
+  double _hiddenViewport = 0;
+
+  /// How much the viewport grew the last time the chrome hid. Content whose
+  /// scroll range is not well above it would fit once the chrome is gone, so
+  /// it keeps the chrome instead of hiding and bouncing back.
+  double _growth = 0;
 
   void show() {
     _travel = 0;
@@ -47,9 +54,13 @@ class ScrollChromeController extends ValueNotifier<bool> {
       _userScrolling = notification.direction != ScrollDirection.idle;
       return false;
     }
-    if (!metrics.hasContentDimensions ||
-        metrics.maxScrollExtent - metrics.minScrollExtent < minHideExtent ||
-        metrics.pixels <= metrics.minScrollExtent + topSlop) {
+    if (!metrics.hasContentDimensions) return false;
+    if (!value && metrics.viewportDimension > _hiddenViewport) {
+      _growth = metrics.viewportDimension - _hiddenViewport;
+    }
+    // Hidden chrome only returns for content that no longer scrolls at all:
+    // anything still scrollable can bring it back with a scroll up.
+    if (metrics.maxScrollExtent <= metrics.minScrollExtent || metrics.pixels <= metrics.minScrollExtent + topSlop) {
       if (!value) show();
       _travel = 0;
       return false;
@@ -61,7 +72,9 @@ class ScrollChromeController extends ValueNotifier<bool> {
       if (delta == 0) return false;
       if ((delta > 0) != (_travel > 0)) _travel = 0;
       _travel += delta;
-      if (_travel > travelThreshold && value) {
+      final range = metrics.maxScrollExtent - metrics.minScrollExtent;
+      if (_travel > travelThreshold && value && range >= math.max(minHideExtent, _growth + topSlop + travelThreshold)) {
+        _hiddenViewport = metrics.viewportDimension;
         value = false;
       } else if (_travel < -travelThreshold && !value) {
         value = true;

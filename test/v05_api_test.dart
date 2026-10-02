@@ -70,8 +70,9 @@ void main() {
   test('label ink keeps 4.5:1 contrast and honours a readable text_color', () {
     for (final fill in const [Color(0xFFD9534F), Color(0xFF428BCA), Color(0xFFF0AD4E), Color(0xFF5CB85C), Color(0xFF330066)]) {
       final ink = readableInk(fill);
-      expect(contrastRatio(ink, fill), greaterThanOrEqualTo(4.0), reason: 'fill $fill');
-      expect(contrastRatio(ink, fill), greaterThanOrEqualTo(contrastRatio(ink == Colors.white ? const Color(0xFF1F1F1F) : Colors.white, fill)));
+      final best = [Colors.white, const Color(0xFF1F1F1F)].map((c) => contrastRatio(c, fill)).reduce((a, b) => a > b ? a : b);
+      expect(contrastRatio(ink, fill), best, reason: 'fill $fill gets the better of white and near-black');
+      if (best >= 4.5) expect(contrastRatio(ink, fill), greaterThanOrEqualTo(4.5), reason: 'fill $fill');
     }
     expect(readableInk(const Color(0xFF330066), preferred: Colors.white), Colors.white);
     expect(readableInk(const Color(0xFFD9534F), preferred: Colors.white), isNot(Colors.white),

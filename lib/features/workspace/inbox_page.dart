@@ -114,14 +114,23 @@ class _TodoFeed extends StatefulWidget {
   @override
   State<_TodoFeed> createState() => _TodoFeedState();
 }
-class _TodoFeedState extends State<_TodoFeed> {
+class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin {
   final _feed = GlobalKey<RecordsFeedState>();
   final _busy = <int>{};
 
   /// Swiped rows waiting out the undo window, hidden even if a reload that
-  /// started earlier brings them back.
+  /// started earlier brings them back. The tab stays alive meanwhile, so
+  /// switching tabs neither drops the write nor strands the 復原 button.
   final _pending = <int>{};
   bool _clearing = false;
+
+  @override
+  bool get wantKeepAlive => _pending.isNotEmpty;
+
+  void _setPending(int id, bool pending) {
+    setState(() => pending ? _pending.add(id) : _pending.remove(id));
+    updateKeepAlive();
+  }
 
   /// GitLab pages todos by offset: after a change the list reloads, otherwise
   /// the next page would start one row late and skip a todo.
@@ -134,7 +143,10 @@ class _TodoFeedState extends State<_TodoFeed> {
     } catch (e) {
       if (mounted) showFailure(context, e);
     } finally {
-      if (mounted) setState(() { _busy.remove(id); _pending.remove(id); });
+      if (mounted) {
+        setState(() => _busy.remove(id));
+        _setPending(id, false);
+      }
     }
     if (mounted) await _feed.currentState?.refresh();
   }
@@ -142,19 +154,22 @@ class _TodoFeedState extends State<_TodoFeed> {
   /// A swipe only hides the row; the write goes out once the undo snack bar
   /// closes without 復原. A newer swipe closes the previous bar, committing it.
   void _swiped(int id) {
-    setState(() => _pending.add(id));
+    _setPending(id, true);
+    final accessible = MediaQuery.accessibleNavigationOf(context);
     final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
     final bar = messenger.showSnackBar(SnackBar(
       content: const Text('已標示為完成'),
       duration: const Duration(seconds: 4),
-      // Times out like a plain snack bar; screen-reader users keep it until they act.
-      persist: MediaQuery.accessibleNavigationOf(context),
+      // Times out like a plain snack bar; screen-reader users keep it until
+      // they choose 復原 or close it, which commits.
+      persist: accessible,
+      showCloseIcon: accessible,
       action: SnackBarAction(label: '復原', onPressed: () {}),
     ));
     unawaited(bar.closed.then((reason) {
       if (!mounted) return;
       if (reason == SnackBarClosedReason.action) {
-        setState(() => _pending.remove(id));
+        _setPending(id, false);
       } else {
         unawaited(_done(id));
       }
@@ -176,15 +191,22 @@ class _TodoFeedState extends State<_TodoFeed> {
   }
 
   @override
-  Widget build(BuildContext context) => RecordsFeed(key: _feed, identity: 'todos',
+  Widget build(BuildContext context) {
+    super.build(context);
+    return _feedView(context);
+  }
+
+  Widget _feedView(BuildContext context) => RecordsFeed(key: _feed, identity: 'todos',
     empty: '待辦已清空', emptyDetail: 'GitLab 指派、提及與你建立的待辦會出現在這裡。', emptyIcon: Icons.task_alt,
+    filteredEmpty: '待辦即將標示為完成',
     account: widget.account, resourceLabel: '待辦', underShell: true,
     onSwitchAccount: endSessionFrom(context),
     visible: (item) => !_pending.contains(valueInt(item, 'id')),
     leading: (context, controller) => controller.items.isEmpty ? const SizedBox(height: 4) : Padding(
       padding: EdgeInsets.fromLTRB(feedGutter(context) + 4, 6, feedGutter(context) - 8, 0),
       child: Row(children: [
-        Expanded(child: Text('${controller.items.length}${controller.next == null ? '' : '+'} 則待辦 · 左右滑動可完成',
+        Expanded(child: Text('${controller.items.where((item) => !_pending.contains(valueInt(item, 'id'))).length}'
+          '${controller.next == null ? '' : '+'} 則待辦 · 左右滑動可完成',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
         TextButton.icon(
           key: const ValueKey('todos-mark-all-done'),

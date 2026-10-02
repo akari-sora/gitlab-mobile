@@ -98,6 +98,55 @@ void main() {
         dragDetails: DragUpdateDetails(globalPosition: Offset.zero, delta: const Offset(0, -60))));
       expect(chrome.value, isTrue, reason: 'hiding would grow the viewport past the content and bounce back');
     });
+
+    ScrollUpdateNotification drag(double pixels, double delta, {required double max, required double viewport}) =>
+      ScrollUpdateNotification(context: context, scrollDelta: delta,
+        metrics: FixedScrollMetrics(minScrollExtent: 0, maxScrollExtent: max, pixels: pixels, viewportDimension: viewport,
+          axisDirection: AxisDirection.down, devicePixelRatio: 1),
+        dragDetails: DragUpdateDetails(globalPosition: Offset.zero, delta: Offset(0, -delta)));
+
+    test('a list just above the threshold stays hidden while the grown viewport still scrolls', () {
+      final chrome = ScrollChromeController();
+      addTearDown(chrome.dispose);
+      chrome.handle(drag(90, 40, max: 250, viewport: 450));
+      expect(chrome.value, isFalse);
+      // The collapse grew the viewport by 150 dp; 100 dp of content still scrolls.
+      chrome.handle(drag(100, 10, max: 100, viewport: 600));
+      expect(chrome.value, isFalse, reason: 'no bounce back while the finger keeps going');
+      chrome.handle(drag(70, -30, max: 100, viewport: 600));
+      expect(chrome.value, isTrue, reason: 'a scroll back still reveals it');
+    });
+
+    test('content that fits once the chrome is gone brings it back once and then keeps it', () {
+      final chrome = ScrollChromeController();
+      addTearDown(chrome.dispose);
+      chrome.handle(drag(90, 40, max: 210, viewport: 450));
+      expect(chrome.value, isFalse);
+      chrome.handle(drag(0, -1, max: 0, viewport: 730));
+      expect(chrome.value, isTrue, reason: 'nothing left to scroll, so nothing could reveal it');
+      chrome.handle(drag(90, 40, max: 210, viewport: 450));
+      expect(chrome.value, isTrue, reason: 'it learnt that hiding grows the viewport by 280 dp');
+    });
+  });
+
+  testWidgets('a list slightly taller than the threshold hides the chrome without bouncing', (tester) async {
+    final chrome = ScrollChromeController();
+    addTearDown(chrome.dispose);
+    // 600 dp window: 450 dp list over 150 dp of chrome; 700 dp of rows scroll 250 dp, or 100 dp once hidden.
+    await tester.pumpWidget(MaterialApp(home: NotificationListener<ScrollNotification>(onNotification: chrome.handle,
+      child: Column(children: [
+        Expanded(child: ListView(children: [for (var i = 0; i < 14; i++) SizedBox(height: 50, child: Text('Row $i'))])),
+        CollapsingChrome(visible: chrome, edge: AxisDirection.down, child: const SizedBox(height: 150)),
+      ]))));
+    final gesture = await tester.startGesture(tester.getCenter(find.byType(ListView)));
+    for (var i = 0; i < 16; i++) {
+      await gesture.moveBy(const Offset(0, -10));
+      await tester.pump(const Duration(milliseconds: 30));
+    }
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(chrome.value, isFalse);
+    expect(tester.getSize(find.byType(CollapsingChrome)).height, 0);
   });
 
   testWidgets('a list running without tickers (out of sight) never moves the chrome', (tester) async {
@@ -415,6 +464,22 @@ void main() {
       expect(find.textContaining(const ApiFailure(FailureKind.forbidden).title), findsOneWidget);
     });
 
+    testWidgets('switching tabs during the undo window still writes the swipe once', (tester) async {
+      await pumpInbox(tester);
+      await tester.drag(find.text('Swipe me'), const Offset(-500, 0));
+      await tester.pumpAndSettle();
+      expect(find.text('待辦即將標示為完成'), findsOneWidget, reason: 'not 待辦已清空 while 復原 is still offered');
+      await tester.tap(find.widgetWithText(Tab, '指派給我'));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 5));
+      await settleNetworkWidgets(tester);
+      expect(done, 1);
+      await tester.tap(find.widgetWithText(Tab, '待辦'));
+      await settleNetworkWidgets(tester);
+      expect(find.text('Swipe me'), findsNothing);
+      expect(done, 1);
+    });
+
     testWidgets('a sideways swipe never changes the inbox tab', (tester) async {
       await pumpInbox(tester);
       await tester.drag(find.textContaining('左右滑動可完成'), const Offset(-500, 0));
@@ -574,6 +639,21 @@ void main() {
     await settleNetworkWidgets(tester);
     expect(find.text('無法開啟'), findsNothing);
     expect(find.text('Found after retry'), findsWidgets);
+  });
+
+  testWidgets('a transient failure opening a cross-project link stays a snack bar', (tester) async {
+    _phone(tester);
+    final api = testApi(FakeAdapter((_) => jsonResponse({'message': '503 Service Unavailable'}, status: 503)));
+    addTearDown(api.close);
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    await tester.pumpWidget(workspaceHost(Scaffold(body: Builder(builder: (context) => Center(child: TextButton(
+      onPressed: () => ResourceNavigator(fixture.account, api).workItem(context, '77', 'issues', 5),
+      child: const Text('open')))))));
+    await tester.tap(find.text('open'));
+    await settleNetworkWidgets(tester);
+    expect(find.text('無法開啟'), findsNothing);
+    expect(find.textContaining(const ApiFailure(FailureKind.server).title), findsOneWidget);
   });
 
   testWidgets('marking a draft ready strips its prefix, and a copy changed elsewhere is not overwritten', (tester) async {

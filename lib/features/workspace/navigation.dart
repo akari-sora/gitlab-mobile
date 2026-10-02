@@ -13,9 +13,10 @@ import 'work_item_page.dart';
 
 /// Opens resources named by numeric project ID from feeds that span projects
 /// (search, activity, groups, the inbox, pasted links). The project is
-/// resolved with the active account first. A failed lookup, often an
-/// ambiguous 404, opens a page naming the account, instance and target with
-/// retry and account switch; a successful retry continues to the resource.
+/// resolved with the active account first. An ambiguous 404 or a 403 opens a
+/// page naming the account, instance and target with retry and account
+/// switch, and a successful retry continues to the resource; transient
+/// failures (network, rate limit) stay a snack bar.
 class ResourceNavigator {
   const ResourceNavigator(this.account, this.api);
   final Account account;
@@ -27,6 +28,10 @@ class ResourceNavigator {
     } catch (e) {
       final failure = safeFailure(e);
       if (!context.mounted || failure.kind == FailureKind.cancelled) return null;
+      if (failure.kind != FailureKind.invisible && failure.kind != FailureKind.forbidden) {
+        showFailure(context, failure);
+        return null;
+      }
       return Navigator.of(context).push<T>(MaterialPageRoute(builder: (_) =>
         _UnresolvedPage<T>(account: account, target: target, error: failure, load: load)));
     }
@@ -74,8 +79,12 @@ class ResourceNavigator {
     final found = await _project(context, projectIdOrPath);
     if (found == null || !context.mounted) return;
     final commit = await _resolve(context, '${found.path} · $ref', () => api.commit(found.id, ref));
-    final sha = commit == null ? '' : valueText(commit, 'id');
-    if (sha.isEmpty || !context.mounted) return;
+    if (commit == null || !context.mounted) return;
+    final sha = valueText(commit, 'id');
+    if (sha.isEmpty) {
+      showFailure(context, const ApiFailure(FailureKind.invalidResponse));
+      return;
+    }
     await _push(context, RepositoryFilePage(
       account: account, api: api, project: found, filePath: path, targetLine: line,
       ref: RepositoryRef(kind: RepositoryRefKind.commit, name: shortSha(sha), sha: sha, protected: false),

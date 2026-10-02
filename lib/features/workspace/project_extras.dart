@@ -195,7 +195,7 @@ class EnvironmentsPage extends StatelessWidget {
           if (valueText(value, 'tier').isNotEmpty) environmentTierLabel(valueText(value, 'tier')),
           if (url != null && url.host.isNotEmpty) url.host,
         ].join(' · ')),
-        trailing: url != null && url.scheme == 'https' && url.host.isNotEmpty
+        trailing: url != null && url.host.isNotEmpty && safeExternalUri(url)
           ? IconButton(tooltip: '開啟 $name', icon: const Icon(Icons.open_in_new, size: 20),
               onPressed: () => openExternal(context, url))
           : const Icon(Icons.chevron_right, size: 18),
