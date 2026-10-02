@@ -12,7 +12,7 @@ revision comparison, server-backed MR draft review, selected-ref repository
 graphs, actual pipeline dependency graphs, package/container/Terraform registries,
 native contributor/repository/CI analytics, lazy multi-file Snippets and guarded
 file actions, server-discovered GraphQL Work Item types, bounded project/group-owned
-lists, group-list deep links and read-only project/group details with lazy status, milestone, weight, iteration, health, time-tracking and
+lists, group-list deep links and project/group details with guarded close/reopen actions and lazy status, milestone, weight, iteration, health, time-tracking and
 development attributes, a lazy read-only activity timeline with bounded discussion
 and reply paging, collapsed long descriptions, and typed Task/Incident workflows
 with separate incident escalation state. Issue/MR filters use server
@@ -33,6 +33,12 @@ Environment deployment views share the canonical GitLab environment link using
 its numeric ID; the deployment website remains a separate action. Pipeline
 schedule confirmations and results belong to the account/session that opened
 them, and repeated Play taps open one confirmation.
+
+Work Item close/reopen reads the latest lifecycle, identity and update permission,
+confirms the current account and scope, writes once and checks an independent
+readback. Unsupported servers remain readable; uncertain results require a fresh
+read before another action. OPEN/CLOSED remains separate from custom workflow
+status. GitLab exposes no timestamp compare-and-swap for this mutation.
 
 ## v0.5 — mobile UX overhaul and GitLab parity
 

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +15,7 @@ import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
 import 'package:gitlab_mobile/features/shell/build_info.dart';
 import 'package:gitlab_mobile/features/workspace/project_extras.dart';
+import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_page.dart';
 import 'package:gitlab_mobile/shared/scroll_performance.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
@@ -99,6 +101,61 @@ final class EmulatorQaFixture extends WorkspaceFixture {
 
   bool _starred = false;
   int _starCount = 12;
+  final Map<String, String> _workItemStates = {
+    'gid://gitlab/WorkItem/qa-project-31': 'OPEN',
+    'gid://gitlab/WorkItem/qa-group-41': 'OPEN',
+  };
+  final List<String> workItemStateEvents = [];
+  final Map<String, int> _workItemRevisions = {};
+
+  Json workItemRecord({required bool group}) {
+    final id = group
+        ? 'gid://gitlab/WorkItem/qa-group-41'
+        : 'gid://gitlab/WorkItem/qa-project-31';
+    return {
+      'id': id,
+      'iid': group ? '41' : '31',
+      'title': group
+          ? 'Synthetic group Work Item'
+          : 'Synthetic project Work Item',
+      'state': _workItemStates[id],
+      'createdAt': '2026-10-01T00:00:00Z',
+      'updatedAt': DateTime.utc(
+        2026,
+        10,
+        3,
+        0,
+        0,
+        _workItemRevisions[id] ?? 0,
+      ).toIso8601String(),
+      'project': group
+          ? null
+          : {
+              'id': 'gid://gitlab/Project/42',
+              'fullPath': 'studio/mobile-workspace',
+            },
+      'namespace': {
+        'id': group
+            ? 'gid://gitlab/Group/84'
+            : 'gid://gitlab/Namespaces::ProjectNamespace/42',
+        'fullPath': group ? 'qa/synthetic-group' : 'studio/mobile-workspace',
+      },
+      'workItemType': {
+        'id': 'gid://gitlab/WorkItems::Type/qa-${group ? 'group' : 'project'}',
+        'name': group ? 'Synthetic Epic' : 'Synthetic Task',
+      },
+      'userPermissions': {'updateWorkItem': true},
+      'description': 'Explicit in-memory QA fixture. No GitLab connection.',
+      'widgets': [
+        {
+          'type': 'DESCRIPTION',
+          'description': 'Explicit in-memory QA fixture. No GitLab connection.',
+          'edited': false,
+          'lastEditedAt': null,
+        },
+      ],
+    };
+  }
 
   late final _qaApi = testApi(
     adapter,
@@ -167,6 +224,85 @@ final class EmulatorQaFixture extends WorkspaceFixture {
 
   @override
   FutureOr<ResponseBody> respond(RequestOptions request) {
+    if (request.uri.path == '/gitlab/api/graphql' && request.method == 'POST') {
+      final raw = request.data is String
+          ? jsonDecode(request.data as String)
+          : request.data;
+      final data = raw is Map ? raw : const <String, Object?>{};
+      final query = data['query'] as String? ?? '';
+      final variables = data['variables'] is Map
+          ? data['variables'] as Map
+          : const <String, Object?>{};
+      final operation = RegExp(
+        r'^(query|mutation)\s+(\w+)',
+      ).firstMatch(query.trim())?.group(2);
+      if (operation == 'MobileProjectWorkItem' &&
+          variables['path'] == 'studio/mobile-workspace' &&
+          variables['iid'] == '31') {
+        return jsonResponse({
+          'data': {
+            'project': {
+              'id': 'gid://gitlab/Project/42',
+              'fullPath': 'studio/mobile-workspace',
+              'workItems': {
+                'nodes': [workItemRecord(group: false)],
+                'pageInfo': {'hasNextPage': false, 'endCursor': null},
+              },
+            },
+          },
+        });
+      }
+      if (operation == 'MobileNamespaceWorkItem' &&
+          variables['path'] == 'qa/synthetic-group' &&
+          variables['iid'] == '41') {
+        return jsonResponse({
+          'data': {
+            'namespace': {
+              'id': 'gid://gitlab/Group/84',
+              'fullPath': 'qa/synthetic-group',
+              'workItem': workItemRecord(group: true),
+            },
+          },
+        });
+      }
+      if (operation == 'MobileWorkItemState' &&
+          _workItemStates.containsKey(variables['id'])) {
+        return jsonResponse({
+          'data': {
+            'workItem': workItemRecord(
+              group: variables['id'] == 'gid://gitlab/WorkItem/qa-group-41',
+            ),
+          },
+        });
+      }
+      if (operation == 'MobileUpdateWorkItemState') {
+        final input = variables['input'] is Map
+            ? variables['input'] as Map
+            : const <String, Object?>{};
+        final id = input['id'];
+        final event = input['stateEvent'];
+        if (_workItemStates.containsKey(id) &&
+            const ['CLOSE', 'REOPEN'].contains(event)) {
+          _workItemStates[id as String] = event == 'CLOSE' ? 'CLOSED' : 'OPEN';
+          _workItemRevisions[id] = (_workItemRevisions[id] ?? 0) + 1;
+          workItemStateEvents.add(event as String);
+          return jsonResponse({
+            'data': {
+              'workItemUpdate': {
+                'errors': <String>[],
+                'workItem': workItemRecord(
+                  group: id == 'gid://gitlab/WorkItem/qa-group-41',
+                ),
+              },
+            },
+          });
+        }
+      }
+      unhandled.add('POST $operation');
+      return jsonResponse({
+        'message': '404 Synthetic GraphQL operation not found',
+      }, status: 404);
+    }
     final segments = request.uri.pathSegments;
     final apiStart = segments.indexOf('v4');
     final path = segments.skip(apiStart + 1).join('/');
@@ -426,6 +562,47 @@ class _QaLanding extends StatelessWidget {
               onTap: enabled
                   ? () =>
                         _open(context, _QaAuthenticatedShell(runtime: runtime))
+                  : null,
+            ),
+            _QaDestination(
+              icon: Icons.check_box_outlined,
+              label: '專案 Work Item',
+              onTap: enabled
+                  ? () => _open(
+                      context,
+                      GraphWorkItemDetailPage.project(
+                        account: runtime.fixture.account,
+                        api: runtime.fixture.api,
+                        project: runtime.fixture.project,
+                        iid: 31,
+                        isCurrent: () =>
+                            runtime.session.active?.key ==
+                                runtime.fixture.account.key &&
+                            identical(runtime.session.api, runtime.fixture.api),
+                        ownerChanges: runtime.session,
+                      ),
+                    )
+                  : null,
+            ),
+            _QaDestination(
+              icon: Icons.checklist_outlined,
+              label: '群組 Work Item',
+              onTap: enabled
+                  ? () => _open(
+                      context,
+                      GraphWorkItemDetailPage.namespace(
+                        account: runtime.fixture.account,
+                        api: runtime.fixture.api,
+                        namespacePath: 'qa/synthetic-group',
+                        expectedNamespaceId: 'gid://gitlab/Group/84',
+                        iid: 41,
+                        isCurrent: () =>
+                            runtime.session.active?.key ==
+                                runtime.fixture.account.key &&
+                            identical(runtime.session.api, runtime.fixture.api),
+                        ownerChanges: runtime.session,
+                      ),
+                    )
                   : null,
             ),
             _QaDestination(

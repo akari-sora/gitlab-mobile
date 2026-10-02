@@ -152,6 +152,29 @@ ResponseBody _detail({int iid = 7, bool projectOnlyChild = false}) =>
       },
     });
 
+ResponseBody _state(
+  int iid, {
+  String state = 'OPEN',
+  String updatedAt = '2026-09-02T03:04:05Z',
+  bool canUpdate = false,
+}) => jsonResponse({
+  'data': {
+    'workItem': {
+      'id': 'gid://gitlab/WorkItem/$iid',
+      'iid': '$iid',
+      'state': state,
+      'updatedAt': updatedAt,
+      'project': {'id': 'gid://gitlab/Project/42', 'fullPath': 'team/example'},
+      'namespace': {
+        'id': 'gid://gitlab/Namespaces::ProjectNamespace/42',
+        'fullPath': 'team/example',
+      },
+      'workItemType': {'id': 'gid://gitlab/WorkItems::Type/99'},
+      'userPermissions': {'updateWorkItem': canUpdate},
+    },
+  },
+});
+
 ResponseBody _response(
   RequestOptions request, {
   String title = 'Customer follow-up',
@@ -160,6 +183,7 @@ ResponseBody _response(
   final data = request.data as Map;
   final query = data['query'] as String;
   if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+  if (query.contains('MobileWorkItemState')) return _state(iid);
   if (query.contains('MobileProjectWorkItem(')) return _detail(iid: iid);
   if (query.contains('MobileProjectWorkItems(')) {
     return _projectList(title: title, iid: iid);
@@ -201,7 +225,7 @@ void main() {
       expect(find.text('Customer Request renamed'), findsWidgets);
       expect(find.text('Customer follow-up'), findsOneWidget);
       await tester.tap(find.text('Customer follow-up'));
-      await tester.pumpAndSettle();
+      await settleNetworkWidgets(tester);
 
       expect(find.text('Native Markdown description'), findsOneWidget);
       expect(find.byTooltip('分享連結'), findsOneWidget);
@@ -260,7 +284,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await settleNetworkWidgets(tester);
 
     expect(find.text('工作項目 #123456789'), findsOneWidget);
     expect(find.byTooltip('分享連結'), findsOneWidget);
@@ -270,6 +294,84 @@ void main() {
       lessThanOrEqualTo(320),
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'verified state snapshot updates header without reloading stale detail',
+    (tester) async {
+      var detailReads = 0;
+      final adapter = FakeAdapter((request) {
+        final query = (request.data as Map)['query'] as String;
+        if (query.contains('MobileWorkItemState')) {
+          return _state(7, state: 'CLOSED', updatedAt: '2026-09-03T03:04:05Z');
+        }
+        if (query.contains('MobileProjectWorkItem(')) {
+          detailReads++;
+          return _detail();
+        }
+        throw StateError('Unexpected query');
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GraphWorkItemDetailPage.project(
+            account: _account(api, 7),
+            api: api,
+            project: _project,
+            iid: 7,
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('已關閉'), findsOneWidget);
+      expect(find.text('目前為已關閉'), findsOneWidget);
+      expect(find.textContaining('更新於 2026/09/03'), findsOneWidget);
+      expect(
+        detailReads,
+        1,
+        reason: 'the stale detail response is not replayed',
+      );
+    },
+  );
+
+  testWidgets('direct account replacement dismisses an owned confirmation', (
+    tester,
+  ) async {
+    final adapter = FakeAdapter((request) {
+      final query = (request.data as Map)['query'] as String;
+      if (query.contains('MobileWorkItemState')) {
+        return _state(7, canUpdate: true);
+      }
+      if (query.contains('MobileProjectWorkItem(')) return _detail();
+      throw StateError('Unexpected query');
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    Widget host(int user) => MaterialApp(
+      home: GraphWorkItemDetailPage.project(
+        account: _account(api, user),
+        api: api,
+        project: _project,
+        iid: 7,
+      ),
+    );
+
+    await tester.pumpWidget(host(7));
+    await settleNetworkWidgets(tester);
+    await tester.ensureVisible(find.text('關閉工作項目'));
+    await tester.tap(find.text('關閉工作項目'));
+    await tester.pumpAndSettle();
+    expect(find.text('關閉工作項目？'), findsOneWidget);
+
+    await tester.pumpWidget(host(8));
+    await settleNetworkWidgets(tester);
+
+    expect(find.text('關閉工作項目？'), findsNothing);
+    expect(find.text('Native Markdown description'), findsOneWidget);
   });
 
   testWidgets('late old-account pages cannot replace the active account data', (
@@ -441,6 +543,10 @@ void main() {
       final data = request.data as Map;
       final query = data['query'] as String;
       if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+      if (query.contains('MobileWorkItemState')) {
+        final id = '${(data['variables'] as Map)['id']}';
+        return _state(int.parse(id.split('/').last));
+      }
       if (query.contains('MobileProjectWorkItems(')) return _projectList();
       if (query.contains('MobileProjectWorkItem(')) {
         final iid = int.parse('${(data['variables'] as Map)['iid']}');
@@ -454,11 +560,11 @@ void main() {
     await tester.pumpWidget(_host(_account(api, 7), api));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Customer follow-up'));
-    await tester.pumpAndSettle();
+    await settleNetworkWidgets(tester);
     await tester.drag(find.byType(ListView).last, const Offset(0, -320));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Bounded child'));
-    await tester.pumpAndSettle();
+    await settleNetworkWidgets(tester);
 
     expect(
       adapter.requests.any(
@@ -512,7 +618,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text('Customer follow-up'), findsOneWidget);
         await tester.tap(find.text('Customer follow-up'));
-        await tester.pumpAndSettle();
+        await settleNetworkWidgets(tester);
         expect(find.text('Native Markdown description'), findsOneWidget);
 
         switch (replacement) {

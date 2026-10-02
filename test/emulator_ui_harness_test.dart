@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/work_item_state_models.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_extras.dart';
 import 'package:gitlab_mobile/shared/scroll_performance.dart';
@@ -112,6 +113,8 @@ void main() {
       expect(find.text('結束 Session'), findsOneWidget);
       expect(tester.takeException(), isNull);
 
+      await tester.scrollUntilVisible(find.text('環境與部署'), 200);
+      await tester.pumpAndSettle();
       await tester.tap(find.text('環境與部署'));
       await settleNetworkWidgets(tester);
 
@@ -146,6 +149,106 @@ void main() {
     }
   });
 
+  test(
+    'project and group QA state changes stay in memory and read back independently',
+    () async {
+      final fixture = EmulatorQaFixture();
+      addTearDown(fixture.api.close);
+      final project = await fixture.api.projectWorkItem(fixture.project, 31);
+      final group = await fixture.api.namespaceWorkItem(
+        'qa/synthetic-group',
+        41,
+        expectedNamespaceId: 'gid://gitlab/Group/84',
+      );
+      for (final item in [project, group]) {
+        final before = await fixture.api.workItemState(item.summary);
+        expect(before.state, WorkItemState.open);
+        expect(before.canUpdate, isTrue);
+        final changed = await fixture.api.updateWorkItemState(
+          item.summary,
+          WorkItemStateEvent.close,
+          expectedUpdatedAt: before.updatedAt,
+        );
+        final readback = await fixture.api.workItemState(item.summary);
+        expect(changed.state, WorkItemState.closed);
+        expect(readback.state, WorkItemState.closed);
+        expect(readback.updatedAt, changed.updatedAt);
+      }
+      expect(fixture.workItemStateEvents, ['CLOSE', 'CLOSE']);
+      expect(fixture.unhandled, isEmpty);
+      expect(
+        fixture.adapter.requests.every(
+          (request) =>
+              request.uri.host == 'qa.invalid' &&
+              request.uri.port == 8443 &&
+              request.uri.path == '/gitlab/api/graphql',
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  for (final group in [false, true]) {
+    testWidgets(
+      'scaled ${group ? 'group' : 'project'} Work Item can cancel, close, reopen and invalidate its dialog',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(320, 1100);
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.view.reset);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await tester.pumpWidget(buildEmulatorQaApp(qaEnabled: true));
+        await tester.pumpAndSettle();
+        final destination = find.text(group ? '群組 Work Item' : '專案 Work Item');
+        await tester.scrollUntilVisible(destination, 200);
+        await tester.pumpAndSettle();
+        await tester.tap(destination);
+        await settleNetworkWidgets(tester);
+        expect(
+          find.text(
+            group ? 'Synthetic group Work Item' : 'Synthetic project Work Item',
+          ),
+          findsOneWidget,
+        );
+        await tester.scrollUntilVisible(
+          find.byKey(const ValueKey('work-item-state-control')),
+          200,
+        );
+        await settleNetworkWidgets(tester);
+        final close = find.text('關閉工作項目');
+        await tester.ensureVisible(close);
+        await tester.tap(close);
+        await tester.pumpAndSettle();
+        expect(find.text('關閉工作項目？'), findsOneWidget);
+        expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        expect(find.text('目前為開啟'), findsOneWidget);
+        await tester.tap(close);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('確認關閉'));
+        await settleNetworkWidgets(tester);
+        expect(find.text('目前為已關閉'), findsOneWidget);
+        final reopen = find.text('重新開啟');
+        await tester.ensureVisible(reopen);
+        await tester.tap(reopen);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('確認重開'));
+        await settleNetworkWidgets(tester);
+        expect(find.text('目前為開啟'), findsOneWidget);
+        await tester.ensureVisible(close);
+        await tester.tap(close);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('結束 Session'));
+        await settleNetworkWidgets(tester);
+        expect(find.text('關閉工作項目？'), findsNothing);
+        expect(find.text('確認關閉'), findsNothing);
+        expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('compact scaled schedule confirmation keeps the QA chrome', (
     tester,
   ) async {
@@ -157,6 +260,8 @@ void main() {
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
     await tester.pumpWidget(buildEmulatorQaApp(qaEnabled: true));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Pipeline 排程'), 200);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Pipeline 排程'));
     await settleNetworkWidgets(tester);
@@ -260,6 +365,8 @@ void main() {
     tester,
   ) async {
     await tester.pumpWidget(buildEmulatorQaApp(qaEnabled: true));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Pipeline 排程'), 200);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Pipeline 排程'));
     await settleNetworkWidgets(tester);

@@ -15,6 +15,11 @@ class ScrollPerformance extends StatefulWidget {
 }
 
 class _ScrollPerformanceState extends State<ScrollPerformance> {
+  static const _activeTimeout = Duration(seconds: 20);
+  static const _initialSettleDelay = Duration(milliseconds: 500);
+  static const _settleQuietPeriod = Duration(milliseconds: 250);
+  static const _maximumSettleDelay = Duration(milliseconds: 1200);
+
   final _samples = <_ScrollSample>[];
   _ScrollSample? _active;
   int _sequence = 0;
@@ -27,16 +32,22 @@ class _ScrollPerformanceState extends State<ScrollPerformance> {
 
   void _timings(List<FrameTiming> frames) {
     for (final sample in _samples) {
+      var addedFrame = false;
       for (final frame in frames) {
         final start = frame.timestampInMicroseconds(FramePhase.vsyncStart);
         if (start >= sample.start &&
             (sample.end == null || start <= sample.end!)) {
           if (sample.frames.length < 4096) {
             sample.frames.add(frame);
+            addedFrame = true;
           } else {
             sample.truncated = true;
           }
         }
+      }
+      if (addedFrame && sample.end != null) {
+        sample.settleTimer?.cancel();
+        sample.settleTimer = Timer(_settleQuietPeriod, () => _emit(sample));
       }
     }
   }
@@ -53,37 +64,64 @@ class _ScrollPerformanceState extends State<ScrollPerformance> {
         SchedulerBinding.instance.currentSystemFrameTimeStamp.inMicroseconds;
     if (notification is ScrollStartNotification &&
         notification.dragDetails != null &&
-        _active == null) {
-      final sample = _ScrollSample(++_sequence, now);
+        _active == null &&
+        origin != null) {
+      final sample = _ScrollSample(
+        ++_sequence,
+        now,
+        origin,
+        notification.depth,
+      );
       _active = sample;
       _samples.add(sample);
-      sample.timer = Timer(const Duration(seconds: 20), () {
+      sample.activeTimer = Timer(_activeTimeout, () {
         sample.truncated = true;
         _finish(sample);
       });
-    } else if (notification is ScrollEndNotification && _active != null) {
-      _finish(_active!);
+    } else if (notification is ScrollEndNotification) {
+      final sample = _active;
+      if (sample != null &&
+          identical(notification.context, sample.origin) &&
+          notification.depth == sample.depth) {
+        _finish(sample);
+      }
     }
     return false;
   }
 
   void _finish(_ScrollSample sample) {
-    sample.timer?.cancel();
+    if (sample.end != null) return;
+    sample.activeTimer?.cancel();
     sample.end =
         SchedulerBinding.instance.currentSystemFrameTimeStamp.inMicroseconds;
     if (identical(_active, sample)) _active = null;
-    // Wait for the final profile-mode batch, bounded even if a route vanished.
-    sample.timer = Timer(const Duration(milliseconds: 350), () {
-      _samples.remove(sample);
-      debugPrint('[scroll_perf] ${jsonEncode(sample.summary())}');
-    });
+    // Flutter documents profile/debug timing delivery as approximately every
+    // 100ms, not as a deadline. Use a conservative initial grace, then wait
+    // for a short quiet period after a matching late batch, with a hard cap.
+    // This reduces likely batch loss but cannot make the sample loss-proof.
+    sample.settleTimer = Timer(_initialSettleDelay, () => _emit(sample));
+    sample.settleDeadlineTimer = Timer(
+      _maximumSettleDelay,
+      () => _emit(sample),
+    );
+  }
+
+  void _emit(_ScrollSample sample) {
+    if (sample.emitted) return;
+    sample.emitted = true;
+    sample.settleTimer?.cancel();
+    sample.settleDeadlineTimer?.cancel();
+    _samples.remove(sample);
+    debugPrint('[scroll_perf] ${jsonEncode(sample.summary())}');
   }
 
   @override
   void dispose() {
     SchedulerBinding.instance.removeTimingsCallback(_timings);
     for (final sample in _samples) {
-      sample.timer?.cancel();
+      sample.activeTimer?.cancel();
+      sample.settleTimer?.cancel();
+      sample.settleDeadlineTimer?.cancel();
     }
     super.dispose();
   }
@@ -97,11 +135,14 @@ class _ScrollPerformanceState extends State<ScrollPerformance> {
 }
 
 class _ScrollSample {
-  _ScrollSample(this.sequence, this.start);
+  _ScrollSample(this.sequence, this.start, this.origin, this.depth);
   final int sequence, start;
+  final BuildContext origin;
+  final int depth;
   int? end;
-  Timer? timer;
+  Timer? activeTimer, settleTimer, settleDeadlineTimer;
   bool truncated = false;
+  bool emitted = false;
   final frames = <FrameTiming>[];
 
   Map<String, Object> summary() {

@@ -6,11 +6,13 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/work_item_graph_models.dart';
+import '../../core/work_item_state_models.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/workspace_ui.dart';
 import 'work_item_activity.dart';
 import 'work_item_attributes.dart';
+import 'work_item_state_control.dart';
 
 String _graphWorkItemState(String value) => switch (value.toUpperCase()) {
   'OPEN' => 'opened',
@@ -842,6 +844,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         oldWidget.iid != widget.iid ||
         !identical(oldWidget.isCurrent, widget.isCurrent)) {
       _generation++;
+      _dismissOwnedRoutes();
       _detail = null;
       _error = null;
       _loading = false;
@@ -936,6 +939,52 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     }
   }
 
+  Future<void> _applyStateSnapshot(WorkItemStateSnapshot snapshot) async {
+    final generation = _generation;
+    final detail = _detail;
+    if (detail == null || !_current(generation)) return;
+    final summary = detail.summary;
+    if (snapshot.id != summary.id ||
+        snapshot.iid != summary.iid ||
+        snapshot.project?.id != summary.project?.id ||
+        snapshot.project?.fullPath != summary.project?.fullPath ||
+        snapshot.namespace?.id != summary.namespace?.id ||
+        snapshot.namespace?.fullPath != summary.namespace?.fullPath ||
+        snapshot.typeId != summary.type.id) {
+      return;
+    }
+    final state = snapshot.state == WorkItemState.open ? 'OPEN' : 'CLOSED';
+    if (state == summary.state &&
+        snapshot.updatedAt.isAtSameMomentAs(summary.updatedAt)) {
+      return;
+    }
+    final updatedSummary = WorkItemGraphSummary(
+      id: summary.id,
+      iid: summary.iid,
+      title: summary.title,
+      state: state,
+      createdAt: summary.createdAt,
+      updatedAt: snapshot.updatedAt,
+      project: summary.project,
+      namespace: summary.namespace,
+      type: summary.type,
+    );
+    if (!_current(generation) || !identical(_detail, detail)) return;
+    setState(() {
+      _detail = WorkItemGraphDetail(
+        summary: updatedSummary,
+        description: detail.description,
+        widgetsAvailable: detail.widgetsAvailable,
+        widgetTypes: detail.widgetTypes,
+        descriptionWidget: detail.descriptionWidget,
+        assignees: detail.assignees,
+        labels: detail.labels,
+        hierarchy: detail.hierarchy,
+        dates: detail.dates,
+      );
+    });
+  }
+
   String _instantDate(DateTime value) {
     final local = value.toLocal();
     return '${local.year}/${local.month.toString().padLeft(2, '0')}/${local.day.toString().padLeft(2, '0')}';
@@ -1023,6 +1072,40 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     ),
   );
 
+  Future<bool> _confirmStateChange(
+    BuildContext context,
+    WorkItemStateSnapshot _,
+    WorkItemStateEvent event,
+  ) async {
+    final generation = _generation;
+    final closing = event == WorkItemStateEvent.close;
+    final route = DialogRoute<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        scrollable: true,
+        title: Text(closing ? '關閉工作項目？' : '重新開啟工作項目？'),
+        content: Text(
+          '@${widget.account.user.username} · ${widget.account.instance.key}\n'
+          '${widget.namespacePath} · #${widget.iid}\n\n'
+          '${closing ? '關閉' : '重新開啟'}這個工作項目？',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(closing ? '確認關閉' : '確認重開'),
+          ),
+        ],
+      ),
+    );
+    _ownRoute(route);
+    final accepted = await Navigator.of(context).push(route);
+    return _current(generation) && accepted == true;
+  }
+
   Widget _body(BuildContext context, WorkItemGraphDetail detail) {
     final summary = detail.summary;
     final description =
@@ -1066,7 +1149,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           _WorkItemDescriptionCard(
             key: PageStorageKey(
               'work-item-description:${widget.account.key}:${summary.id}:'
-              '${summary.updatedAt.toUtc().toIso8601String()}:$_detailEpoch',
+              '$_detailEpoch',
             ),
             description: description,
             account: widget.account,
@@ -1075,6 +1158,15 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           )
         else if (detail.descriptionWidget != null)
           _section(context, '說明', const Text('沒有說明')),
+        WorkItemStateControl(
+          account: widget.account,
+          api: widget.api,
+          summary: summary,
+          isCurrent: widget.isCurrent,
+          ownerChanges: widget.ownerChanges,
+          confirmChange: _confirmStateChange,
+          onChanged: _applyStateSnapshot,
+        ),
         WorkItemAttributesPanel(
           account: widget.account,
           api: widget.api,

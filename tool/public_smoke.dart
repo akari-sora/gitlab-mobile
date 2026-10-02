@@ -61,6 +61,20 @@ const _publicWorkItemIid = 631894;
 const _publicGroupWorkItemIid = 23883;
 const _publicGroupParentWorkItemIid = 18225;
 const _publicGroupWorkItemPath = 'gitlab-org';
+const _publicWorkItemStateQuery = r'''
+query MobileWorkItemState($id: WorkItemID!) {
+  workItem(id: $id) {
+    id
+    iid
+    state
+    updatedAt
+    project { id fullPath }
+    namespace { id fullPath }
+    workItemType { id }
+    userPermissions { updateWorkItem }
+  }
+}
+''';
 const _publicWorkItemSummaryFields = r'''
 id
 iid
@@ -496,6 +510,12 @@ Future<void> main() async {
               request,
               discoveredPublicWorkItem?.id,
             ) ||
+            _isExactPublicWorkItemStateGraph(request, {
+              if (discoveredPublicWorkItem != null)
+                discoveredPublicWorkItem!.id,
+              if (discoveredPublicGroupWorkItem != null)
+                discoveredPublicGroupWorkItem!.id,
+            }) ||
             _isExactPublicWorkItemActivityGraph(
               request,
               discoveredPublicWorkItem?.id,
@@ -970,6 +990,17 @@ Future<void> main() async {
       // Bind attribute reads to the production-validated public response.
       discoveredPublicWorkItem = detail.summary;
     });
+    await check(
+      'public.work_items.project_read_only_state_permission',
+      () async {
+        final expected = discoveredPublicWorkItem;
+        require(expected != null);
+        final state = await api.workItemState(expected!);
+        require(state.id == expected.id && state.iid == expected.iid);
+        require(state.state.name.toUpperCase() == expected.state);
+        require(!state.canUpdate);
+      },
+    );
     for (final kind in WorkItemAttributeKind.values) {
       await check('public.work_items.attribute_${kind.name}', () async {
         final expected = discoveredPublicWorkItem;
@@ -1038,6 +1069,14 @@ Future<void> main() async {
       require(detail.widgetsAvailable);
       discoveredPublicGroupNamespaceId = detail.summary.namespace?.id;
       discoveredPublicGroupWorkItem = detail.summary;
+    });
+    await check('public.work_items.group_read_only_state_permission', () async {
+      final expected = discoveredPublicGroupWorkItem;
+      require(expected != null);
+      final state = await api.workItemState(expected!);
+      require(state.id == expected.id && state.iid == expected.iid);
+      require(state.state.name.toUpperCase() == expected.state);
+      require(!state.canUpdate);
     });
     await check('public.work_items.group_owned_pages', () async {
       final first = await api.groupWorkItems(_publicGroupWorkItemPath);
@@ -1490,6 +1529,26 @@ bool _isExactPublicWorkItemGraph(
         '$_publicGroupWorkItemIid',
         '$_publicGroupParentWorkItemIid',
       ].contains(variables['iid']);
+}
+
+bool _isExactPublicWorkItemStateGraph(
+  RequestOptions request,
+  Set<String> discoveredIds,
+) {
+  if (request.method != 'POST' ||
+      request.uri != Uri.parse('https://gitlab.com/api/graphql')) {
+    return false;
+  }
+  final body = request.data;
+  if (body is! Map ||
+      body.length != 2 ||
+      body['query'] != _publicWorkItemStateQuery) {
+    return false;
+  }
+  final variables = body['variables'];
+  return variables is Map &&
+      variables.length == 1 &&
+      discoveredIds.contains(variables['id']);
 }
 
 bool _isExactPublicWorkItemAttributeGraph(

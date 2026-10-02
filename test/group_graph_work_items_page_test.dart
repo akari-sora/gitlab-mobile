@@ -123,6 +123,21 @@ ResponseBody _detail(int iid, String title) => jsonResponse({
   },
 });
 
+ResponseBody _state(int iid) => jsonResponse({
+  'data': {
+    'workItem': {
+      'id': 'gid://gitlab/WorkItem/$iid',
+      'iid': '$iid',
+      'state': 'OPEN',
+      'updatedAt': '2026-09-02T03:04:05Z',
+      'project': null,
+      'namespace': {'id': _groupId, 'fullPath': _groupPath},
+      'workItemType': {'id': 'gid://gitlab/WorkItems::Type/99'},
+      'userPermissions': {'updateWorkItem': false},
+    },
+  },
+});
+
 Map<String, Object?> _body(RequestOptions request) =>
     Map<String, Object?>.from(request.data as Map);
 
@@ -357,6 +372,7 @@ void main() {
           return _groupList([_summary(iid: 7, title: 'Group planning item')]);
         }
         if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileWorkItemState')) return _state(7);
         if (query.contains('MobileNamespaceWorkItem')) {
           final variables = _variables(request);
           expect(variables, containsPair('path', _groupPath));
@@ -400,6 +416,9 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
     final adapter = FakeAdapter((request) {
+      if (_query(request).contains('MobileWorkItemState')) {
+        return _state(123456789);
+      }
       expect(_query(request), contains('MobileNamespaceWorkItem'));
       expect(_variables(request), containsPair('path', _groupPath));
       expect(_variables(request), containsPair('iid', '123456789'));
@@ -703,6 +722,7 @@ void main() {
           return _groupList([_summary(iid: 7, title: 'Owned item')]);
         }
         if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileWorkItemState')) return _state(7);
         if (query.contains('MobileNamespaceWorkItem')) {
           return _detail(7, 'Owned item');
         }

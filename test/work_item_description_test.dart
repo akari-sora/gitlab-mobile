@@ -7,6 +7,7 @@ import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
 
 import 'support/fake_adapter.dart';
+import 'support/widget_settle.dart';
 
 const _project = Project(id: 42, name: 'Example', path: 'team/example');
 
@@ -60,6 +61,31 @@ ResponseBody _detailResponse(String description) => jsonResponse({
   },
 });
 
+ResponseBody _stateResponse() => jsonResponse({
+  'data': {
+    'workItem': {
+      'id': 'gid://gitlab/WorkItem/7',
+      'iid': '7',
+      'state': 'OPEN',
+      'updatedAt': '2026-09-02T03:04:05Z',
+      'project': {'id': 'gid://gitlab/Project/42', 'fullPath': 'team/example'},
+      'namespace': {
+        'id': 'gid://gitlab/Namespaces::ProjectNamespace/42',
+        'fullPath': 'team/example',
+      },
+      'workItemType': {'id': 'gid://gitlab/WorkItems::Type/99'},
+      'userPermissions': {'updateWorkItem': false},
+    },
+  },
+});
+
+ResponseBody _response(RequestOptions request, String description) {
+  final query = (request.data as Map)['query'] as String;
+  return query.contains('MobileWorkItemState')
+      ? _stateResponse()
+      : _detailResponse(description);
+}
+
 Widget _host(Account account, GitLabApi api) => MaterialApp(
   home: GraphWorkItemDetailPage.project(
     account: account,
@@ -78,12 +104,12 @@ void main() {
       addTearDown(tester.view.resetDevicePixelRatio);
       addTearDown(tester.view.resetPhysicalSize);
       final description = 'Preview ${List.filled(900, 'x').join()} END_MARKER';
-      final adapter = FakeAdapter((_) => _detailResponse(description));
+      final adapter = FakeAdapter((request) => _response(request, description));
       final api = testApi(adapter);
       addTearDown(api.close);
 
       await tester.pumpWidget(_host(_account(api), api));
-      await tester.pumpAndSettle();
+      await settleNetworkWidgets(tester);
 
       expect(find.byType(MarkdownView), findsNothing);
       expect(
@@ -100,16 +126,16 @@ void main() {
             .dy,
         lessThan(844),
       );
-      expect(adapter.requests.length, 1, reason: 'collapsed panels stay lazy');
+      expect(adapter.requests.length, 2, reason: 'collapsed panels stay lazy');
 
       await tester.tap(find.text('說明'));
-      await tester.pumpAndSettle();
+      await settleNetworkWidgets(tester);
       expect(find.byType(MarkdownView), findsOneWidget);
 
       await tester.tap(find.byTooltip('重新整理'));
       await tester.pumpAndSettle();
       expect(find.byType(MarkdownView), findsNothing);
-      expect(adapter.requests.length, 2);
+      expect(adapter.requests.length, 4);
     },
   );
 
@@ -121,7 +147,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     addTearDown(tester.view.resetPhysicalSize);
     final adapter = FakeAdapter(
-      (_) => _detailResponse('Short **Markdown** body'),
+      (request) => _response(request, 'Short **Markdown** body'),
     );
     final api = testApi(adapter);
     addTearDown(api.close);
@@ -142,7 +168,7 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await settleNetworkWidgets(tester);
 
     expect(find.byType(MarkdownView), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -160,11 +186,13 @@ void main() {
       (index) =>
           'Paragraph $index with enough words to wrap on a phone viewport.',
     ).join('\n\n');
-    final api = testApi(FakeAdapter((_) => _detailResponse(description)));
+    final api = testApi(
+      FakeAdapter((request) => _response(request, description)),
+    );
     addTearDown(api.close);
 
     await tester.pumpWidget(_host(_account(api), api));
-    await tester.pumpAndSettle();
+    await settleNetworkWidgets(tester);
     expect(find.byType(MarkdownView), findsNothing);
     await tester.tap(find.text('說明'));
     await tester.pumpAndSettle();

@@ -40,7 +40,7 @@ GitLab edition lacks the feature.
 | Global navigation | Projects, groups/subgroups, todos, assigned/review-requested/created work, activity and global search | No structural change | Administration, help and creation workflows remain unimplemented; they are part of the full-function backlog |
 | Project overview | Description, stars, forks, languages, licence, clone URLs, star/fork actions | Direct header Star/Unstar and link sharing; shared More state/count and project feed reconciliation | Full Web analytics and settings are not reproduced |
 | Manage | Activity, members and labels | No structural change | Access-token, webhook, integration and full member-role administration remain open |
-| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project and group-owned Work Item cursor lists, server types and exact project/group detail with five base widgets, seven lazy attribute kinds and read-only activity | Remaining Work Item widgets, activity filters/order/replies, descendant group aggregation and filters, mutations, full iterations/requirements/Epic/OKR workflows remain open |
+| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project and group-owned Work Item cursor lists, server types and exact project/group detail with five base widgets, seven lazy attribute kinds, read-only activity and guarded close/reopen | Remaining Work Item widgets, activity filters/order/replies, descendant group aggregation and filters, remaining mutations, full iterations/requirements/Epic/OKR workflows remain open |
 | Code | Repository tree, README, branches, commits and tags; fixed-SHA file view, history, blame, search, syntax highlighting and line permalinks; MR list/detail/diffs | Compare two refs; selected-ref repository graph; multi-file Snippets with explicit file enumeration, lazy source/preview and guarded file actions | Locked files, cross-project comparison, full all-branch graph and private Snippet CRUD acceptance remain open |
 | MR review | Discussions, inline single-line positions, approvals/merge, suggested changes, auto-merge, local viewed-file state and the MR draft/ready toggle | Server draft-note list, add/edit/discard and bulk publish, tied to account/project/MR/head SHA | Viewed-file state is not server-synchronised; multi-line positioning and full desktop review policy administration remain open |
 | Build | Pipelines, stage-grouped jobs, controls, incremental ANSI logs and search, JUnit report views, artifacts, cross-project CI overview and schedules | Read-only pipeline dependency graph with paginated actual GraphQL needs | Cross-project/downstream graph and the complete pipeline editor remain open |
@@ -870,6 +870,53 @@ the production widgets and real Android Share plugin; opening and dismissing
 a native chooser is separate from sending a link. Numeric profile scroll
 summaries on the fixture emulator do not establish physical-device FPS, live
 Star/schedule writes, private-resource acceptance, iOS or G0 acceptance.
+
+## Work Item completion and Inbox measurement (2026-10-03)
+
+A signed-out 390 × 844 Web walk observed the project Work Item list's Open
+filter, Display/sort controls and public Task
+[631946](https://gitlab.com/gitlab-org/gitlab/-/work_items/631946). Its OPEN
+lifecycle and New custom workflow status are separate. The App now has a
+permission-bearing state read and native close/reopen confirmation for exact
+project and group-owned Work Items. It preserves the server's opaque item/type
+and parent IDs, checks the displayed timestamp against a fresh preflight,
+performs one `workItemUpdate(stateEvent: CLOSE|REOPEN)` and independently reads
+back the state. It never changes the custom STATUS widget to mark completion.
+
+Schema capability errors preserve the existing detail reader. Denied access,
+stale snapshots and uncertain acknowledgements have explicit read/retry states;
+uncertain writes are not replayed. Account/client changes invalidate reads,
+confirmations and write completions. GitLab has no expected-timestamp/lock input
+for this mutation, so a concurrent-change interval remains between preflight and
+the write. The [current input contract](https://docs.gitlab.com/api/graphql/reference/experimental/input_objects/)
+and [state-event enum](https://docs.gitlab.com/api/graphql/reference/experimental/enums/)
+remain experimental; authenticated/private and older-instance acceptance are
+separate from synthetic tests and anonymous permission reads.
+
+The bottom navigation previously measured 108dp because its parent context
+reintroduced a 36dp top status inset. Removing that duplicated inset preserves
+the intended 72dp content area plus one bottom gesture inset. Exact `3904651`
+emulator readback covered all four roots, scroll hide/reveal and 320dp with 2x
+text; the production APK was restored after that verification.
+
+An exact `3904651` Inbox profile baseline uses three fresh launches, two excluded
+warmups and six measured alternating gestures per launch on the isolated AVD.
+Each gesture has one positive, nontruncated summary. Across 18 gestures it
+records 266 frames and 128 stage-budget-overrun proxies; per-run maximum raster
+times are 204,800, 220,421 and 265,619 microseconds. All three runs reproduce
+stalls with zero allowlisted App error markers. These values are emulator timing
+proxies, not dropped-frame counts, FPS, physical-phone acceptance or proof of a
+particular widget's cost. The raster-heavy results justify further profiling;
+no uniform scroll-performance improvement is claimed.
+
+The opt-in sampler now binds completion to the same scroll context and depth,
+so unrelated nested end notifications cannot prematurely finish a sample.
+Duplicate completion is idempotent; a bounded late-batch settling policy replaces
+the fixed 350ms flush. Its legacy numeric output is unchanged. Flutter's
+[timing callback delivery](https://api.flutter.dev/flutter/scheduler/SchedulerBinding/addTimingsCallback.html)
+is approximate, so this grace period reduces likely batch loss without proving
+complete capture. The sampler change improves measurement correctness and does
+not itself fix raster stalls.
 
 ## Remaining product priorities
 
