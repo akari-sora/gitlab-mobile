@@ -84,6 +84,10 @@ isolate, with loading/error feedback and an explicit notice for displayed lines
 truncated at 2,000 characters. Editing refs or comparison mode clears the prior
 result.
 
+Standard GitLab `---`/`+++` file headers are accepted as non-commentable
+metadata. Hunk counts and old/new line anchors remain validated; malformed,
+unpaired or header-only input fails explicitly.
+
 GitLab may return `compare_timeout`, `collapsed` or `too_large`. Those states
 are shown explicitly. A timeout means the commit list is complete while file
 diffs may be incomplete; an empty timed-out response is never presented as
@@ -175,26 +179,28 @@ Local evidence on the submitted application source (Flutter 3.47.2 / Dart
 3.13.2; committed dependency lock unchanged):
 
 - `flutter analyze --no-pub`: no issues. `flutter test --no-pub --coverage
-  --timeout=60s --machine`: JUnit 1,122 tests, zero failures/errors/skips;
-  line coverage 87.76%. The final test-only large-text correction was also
-  run separately: all eight filter tests passed, including 320/412/840 dp
-  with `TextScaler.linear(2)`.
+  --timeout=60s --machine`: JUnit 1,123 tests, zero failures/errors/skips;
+  line coverage 87.77%. This includes the final live-response diff regression
+  and actual large-text checks at 320/412/840 dp with `TextScaler.linear(2)`.
 - Python CI/tool unittest discovery: 51 tests passed; `compileall` and shell
   syntax checks passed. SDK bootstrap check passed. `ci/ui_evidence.py`
   processed the actual synthetic-data Flutter screenshot successfully.
 - `dart run tool/public_smoke.dart`: seven anonymous, read-only production
-  client checks passed, including real pagination and fixed-revision compare.
+  client checks passed, including real pagination and fixed-revision compare
+  with actual unified-diff parsing, rather than only JSON-shape checks.
   The board endpoint returned 401 anonymously; authenticated boards are not
   covered by that suite.
 - Android profile APK built; the normal release APK was built from an isolated
   exact-source snapshot using `flutter pub get --enforce-lockfile` followed by
   `flutter build apk --release`. Its SHA-256 is
-  `5c3eb59280b0bcd8ac6cda9605a4ea23c35806d8bf589f161679b72665dc210d`.
+  `dca237e3632cf7b4f1b3fb1992f1920594d5cb1e4dcdc13f6d0fcced2e450ab6`.
   It is non-debuggable, disallows backup and cleartext traffic, and uses the
   existing development signing configuration; it is not store-signed.
 - Independent final delta review found no blocking defect. Checks covered
   account-generation fences, draft snapshots/readback, compare result identity,
   cache expiry/invalidation, server ordering and refreshed pagination cursors.
+  The final shared-parser review also parsed all 41 non-collapsed diffs from
+  the real public comparison response with validated commentable anchors.
 
 The all-in-one local `ci/check.sh` wrapper reached its Homebrew-managed Python
 pip restriction after tests. Analyzer/test/report and screenshot processing
@@ -205,7 +211,11 @@ tooling to regenerate a release plugin registrant after profile/test use;
 
 Physical Android checks used the saved account without extracting a credential:
 the real Development board and issue cards, Closed empty state, native filters,
-and MR !31's empty server draft list rendered successfully. No server content
+and MR !31's empty server draft list rendered successfully. The normal release
+also loaded a real comparison from `911a953e` to `main` (seven commits / 45
+files); `lib/core/workspace_api.dart` displayed its standard file headers,
+validated hunk line numbers and additions/removals after the live parser fix.
+No server content
 was created, edited, discarded or published during this walk. Normal release
 installation preserves the existing app/account data and removes the opt-in
 profile listener.

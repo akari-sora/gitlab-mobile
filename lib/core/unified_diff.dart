@@ -17,9 +17,14 @@ List<DiffLine> parseUnifiedDiff(String source) {
   int? oldLine, newLine;
   var oldRemaining = 0, newRemaining = 0;
   var foundHunk = false;
+  var foundOldFileHeader = false;
+  var foundNewFileHeader = false;
   for (final line in source.split('\n')) {
     final match = header.firstMatch(line);
     if (match != null) {
+      if (foundOldFileHeader != foundNewFileHeader) {
+        throw const FormatException('Incomplete diff file header');
+      }
       if (oldRemaining != 0 || newRemaining != 0) {
         throw const FormatException('Incomplete diff hunk');
       }
@@ -31,7 +36,26 @@ List<DiffLine> parseUnifiedDiff(String source) {
       output.add(DiffLine(line, 'hunk'));
       continue;
     }
+    if (!foundHunk && line.startsWith('--- ')) {
+      if (foundOldFileHeader || foundNewFileHeader) {
+        throw const FormatException('Duplicate diff file header');
+      }
+      foundOldFileHeader = true;
+      output.add(DiffLine(line, 'meta'));
+      continue;
+    }
+    if (!foundHunk && line.startsWith('+++ ')) {
+      if (!foundOldFileHeader || foundNewFileHeader) {
+        throw const FormatException('Unpaired diff file header');
+      }
+      foundNewFileHeader = true;
+      output.add(DiffLine(line, 'meta'));
+      continue;
+    }
     if (line.startsWith(r'\ No newline at end of file')) {
+      if (!foundHunk) {
+        throw const FormatException('Diff metadata before hunk');
+      }
       output.add(DiffLine(line, 'meta'));
       continue;
     }
@@ -46,23 +70,43 @@ List<DiffLine> parseUnifiedDiff(String source) {
         if (oldRemaining < 1 || newRemaining < 1) {
           throw const FormatException('Context outside hunk');
         }
-        output.add(DiffLine(line.substring(1), 'context', oldLine: oldLine++, newLine: newLine++));
-        oldRemaining--; newRemaining--;
+        output.add(
+          DiffLine(
+            line.substring(1),
+            'context',
+            oldLine: oldLine++,
+            newLine: newLine++,
+          ),
+        );
+        oldRemaining--;
+        newRemaining--;
       case '-':
-        if (oldRemaining < 1) { throw const FormatException('Removal outside hunk'); }
+        if (oldRemaining < 1) {
+          throw const FormatException('Removal outside hunk');
+        }
         output.add(DiffLine(line.substring(1), 'remove', oldLine: oldLine++));
         oldRemaining--;
       case '+':
-        if (newRemaining < 1) { throw const FormatException('Addition outside hunk'); }
+        if (newRemaining < 1) {
+          throw const FormatException('Addition outside hunk');
+        }
         output.add(DiffLine(line.substring(1), 'add', newLine: newLine++));
         newRemaining--;
       default:
         throw const FormatException('Unrecognized diff line');
     }
-    if (output.length > 20000) { throw const FormatException('Diff line budget exceeded'); }
+    if (output.length > 20000) {
+      throw const FormatException('Diff line budget exceeded');
+    }
   }
   if (oldRemaining != 0 || newRemaining != 0) {
     throw const FormatException('Truncated diff');
+  }
+  if (foundOldFileHeader != foundNewFileHeader) {
+    throw const FormatException('Incomplete diff file header');
+  }
+  if (foundOldFileHeader && !foundHunk) {
+    throw const FormatException('Diff file header without hunk');
   }
   return List.unmodifiable(output);
 }

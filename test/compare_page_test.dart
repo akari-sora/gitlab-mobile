@@ -375,7 +375,18 @@ void main() {
     final adapter = FakeAdapter(
       (request) => jsonResponse(
         _response(
-          diffs: [_diff(1, diff: '@@ -8,2 +8,2 @@\n context\n-old\n+new')],
+          diffs: [
+            _diff(
+              1,
+              diff:
+                  '--- a/lib/core/workspace_api.dart\n'
+                  '+++ b/lib/core/workspace_api.dart\n'
+                  '@@ -8,2 +8,2 @@\n'
+                  ' context\n'
+                  '-old\n'
+                  '+new',
+            ),
+          ],
         ),
       ),
     );
@@ -389,15 +400,17 @@ void main() {
     await settleNetworkWidgets(tester);
 
     expect(
-      tester.widget<Text>(find.byKey(const ValueKey('compare-old-2'))).data,
+      tester.widget<Text>(find.byKey(const ValueKey('compare-old-4'))).data,
       '9',
     );
     expect(
-      tester.widget<Text>(find.byKey(const ValueKey('compare-new-3'))).data,
+      tester.widget<Text>(find.byKey(const ValueKey('compare-new-5'))).data,
       '9',
     );
     expect(find.text('old'), findsOneWidget);
     expect(find.text('new'), findsOneWidget);
+    expect(find.text('--- a/lib/core/workspace_api.dart'), findsOneWidget);
+    expect(find.text('+++ b/lib/core/workspace_api.dart'), findsOneWidget);
   });
 
   testWidgets(

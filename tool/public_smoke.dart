@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
+import 'package:gitlab_mobile/core/unified_diff.dart';
 
 Future<void> main() async {
   final checks = <Map<String, Object?>>[];
@@ -77,6 +78,12 @@ Future<void> main() async {
         'straight': 'true', 'unidiff': 'true',
       });
       require(result['commits'] is List && result['diffs'] is List && result['compare_same_ref'] == false);
+      final files = result['diffs'] as List<dynamic>;
+      final file = files.cast<Map<String, dynamic>>().firstWhere(
+        (row) => row['new_path'] == 'lib/core/workspace_api.dart');
+      require(file['collapsed'] != true && file['too_large'] != true);
+      final lines = parseUnifiedDiff(file['diff'] as String);
+      require(lines.any((line) => line.commentable));
     });
     await check('public.missing_file_is_404_not_auth_failure', () async {
       try {
