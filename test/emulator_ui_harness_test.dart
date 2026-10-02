@@ -29,6 +29,11 @@ void main() {
       expect(fixture.api.instance.base.path, '/gitlab');
       expect(fixture.account.user.id, 7);
       expect(fixture.project.id, 42);
+      expect(fixture.todoRows, hasLength(30));
+      expect(
+        fixture.todoRows.first['target'],
+        containsPair('title', 'Synthetic mobile QA todo 01'),
+      );
       expect(fixture.environmentRows, hasLength(120));
       expect(fixture.environmentRows.first['id'], 17);
       expect(fixture.environmentRows.first['name'], 'staging/mobile');
@@ -173,6 +178,81 @@ void main() {
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 500));
     expect(find.text('立即執行排程？'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'authenticated shell restores system insets and fits every tab at 320 dp with scaled text',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 1100);
+      tester.view.padding = const FakeViewPadding(top: 36, bottom: 24);
+      tester.view.viewPadding = const FakeViewPadding(top: 36, bottom: 24);
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+      await tester.pumpWidget(buildEmulatorQaApp(qaEnabled: true));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('主畫面與底部導航'));
+      await settleNetworkWidgets(tester);
+
+      final viewport = tester.element(
+        find.byKey(const ValueKey('emulator-qa-shell-viewport')),
+      );
+      final media = MediaQuery.of(viewport);
+      expect(media.padding.top, 36);
+      expect(media.padding.bottom, 24);
+      expect(media.textScaler.scale(14), 28);
+      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
+      expect(tester.takeException(), isNull, reason: '專案');
+
+      for (final destination in ['收件匣', 'CI', '我的', '專案']) {
+        await tester.tap(
+          find.descendant(
+            of: find.byType(NavigationBar),
+            matching: find.text(destination),
+          ),
+        );
+        await settleNetworkWidgets(tester);
+        if (destination == '收件匣') {
+          expect(find.text('Synthetic mobile QA todo 01'), findsOneWidget);
+        }
+        expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
+        expect(tester.takeException(), isNull, reason: destination);
+      }
+    },
+  );
+
+  testWidgets('end and reset discard the old authenticated QA shell', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(buildEmulatorQaApp(qaEnabled: true));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('主畫面與底部導航'));
+    await settleNetworkWidgets(tester);
+    expect(find.byType(NavigationBar), findsOneWidget);
+
+    await tester.tap(find.text('結束 Session'));
+    await settleNetworkWidgets(tester);
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
+
+    await tester.tap(find.text('重設 Session'));
+    await tester.pumpAndSettle();
+    expect(find.text('Emulator UI QA'), findsOneWidget);
+    expect(find.text('主畫面與底部導航'), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+
+    await tester.tap(find.text('主畫面與底部導航'));
+    await settleNetworkWidgets(tester);
+    expect(find.byType(NavigationBar), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

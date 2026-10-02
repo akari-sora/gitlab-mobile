@@ -414,6 +414,7 @@ GitLab Mobile 採用雙層架構組織導航體系 `[CODE_VERIFIED]`：
   - `lib/shared/theme.dart:261-264`：`listTileTheme: ListTileThemeData(minTileHeight: 48, ...)` `[CODE_VERIFIED]`。
   - `lib/shared/theme.dart:280-293`：所有標準按鈕主題（`filledButtonTheme`, `outlinedButtonTheme`, `textButtonTheme`, `iconButtonTheme`, `segmentedButtonTheme`）配置 `minimumSize: const Size(48, 48)` `[CODE_VERIFIED]`。
   - `lib/shared/theme.dart:294-299`：`navigationBarTheme: height: 72.0` `[CODE_VERIFIED]`。
+  - 底部導航本體維持 72dp；`authenticated_app.dart` 同時移除頂部與底部 padding，再於外層保留一次系統底部手勢區。頂部狀態列 inset 不應增加導航高度；非零頂部 inset、鍵盤與 320dp／兩倍文字由 widget regression 覆蓋 `[CODE_VERIFIED]`。
   - 關鍵組件強制包裹 `BoxConstraints(minHeight: 48)`：如 `diff_page.dart:1110`（Diff 代碼行點擊區）、`ci_page.dart:667`（日誌 Section Header 展開條）、`discussions_tab.dart:94`（討論串摺疊列）、`work_item_page.dart:325, 330`（合併開關 `minTileHeight: 48`）`[CODE_VERIFIED]`。
   - *規範標準邊界澄清*：
     * **Android Material Design 規範**：推薦最小觸控尺寸為 **48×48 dp**。

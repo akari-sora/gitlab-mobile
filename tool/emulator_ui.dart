@@ -9,12 +9,18 @@ import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/providers.dart';
 import 'package:gitlab_mobile/features/auth/account_store.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
+import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
+import 'package:gitlab_mobile/features/shell/appearance.dart';
+import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
+import 'package:gitlab_mobile/features/shell/build_info.dart';
 import 'package:gitlab_mobile/features/workspace/project_extras.dart';
 import 'package:gitlab_mobile/features/workspace/project_page.dart';
 import 'package:gitlab_mobile/shared/scroll_performance.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 
 import '../test/support/fake_adapter.dart';
+import '../test/support/fake_shortcuts.dart';
+import '../test/support/memory_appearance_store.dart';
 import '../test/support/workspace_fixture.dart';
 
 const emulatorUiQaEnabled = bool.fromEnvironment('EMULATOR_UI_QA');
@@ -135,12 +141,39 @@ final class EmulatorQaFixture extends WorkspaceFixture {
     };
   }, growable: false);
 
+  List<Json> get todoRows => List<Json>.generate(30, (index) {
+    final number = index + 1;
+    return {
+      'id': 7000 + number,
+      'action_name': switch (index % 3) {
+        0 => 'assigned',
+        1 => 'review_requested',
+        _ => 'build_failed',
+      },
+      'target_type': index.isEven ? 'Issue' : 'MergeRequest',
+      'state': 'pending',
+      'target': {
+        'id': 8000 + number,
+        'iid': number,
+        'title':
+            'Synthetic mobile QA todo ${number.toString().padLeft(2, '0')}',
+      },
+      'project': {'id': 42, 'path_with_namespace': 'qa/synthetic-mobile'},
+      'author': {'id': 7, 'username': 'qa-developer'},
+      'updated_at':
+          '2026-10-${((index % 3) + 1).toString().padLeft(2, '0')}T12:00:00Z',
+    };
+  }, growable: false);
+
   @override
   FutureOr<ResponseBody> respond(RequestOptions request) {
     final segments = request.uri.pathSegments;
     final apiStart = segments.indexOf('v4');
     final path = segments.skip(apiStart + 1).join('/');
     final method = request.method;
+    if (path == 'todos' && method == 'GET') {
+      return jsonResponse(todoRows);
+    }
     if (path == 'projects/42/environments' && method == 'GET') {
       return jsonResponse(environmentRows);
     }
@@ -197,20 +230,34 @@ final class EmulatorQaFixture extends WorkspaceFixture {
 final class _EmulatorQaRuntime {
   _EmulatorQaRuntime()
     : fixture = EmulatorQaFixture(),
-      store = EmulatorQaMemoryAccountStore() {
+      store = EmulatorQaMemoryAccountStore(),
+      appearance = AppearanceController(MemoryAppearanceStore('dark|0')),
+      shortcuts = LauncherShortcuts(
+        FakeAppShortcutHost(),
+        MemoryRecentProjectStore(),
+      ) {
     store.accounts = [fixture.account];
     store.lastActive = fixture.account.key;
     session = SessionController(store)
       ..active = fixture.account
       ..api = fixture.api
       ..initializing = false;
+    shortcuts.bind(fixture.account.key);
+    unawaited(appearance.load());
+    unawaited(shortcuts.start());
   }
 
   final EmulatorQaFixture fixture;
   final EmulatorQaMemoryAccountStore store;
+  final AppearanceController appearance;
+  final LauncherShortcuts shortcuts;
   late final SessionController session;
 
-  void dispose() => session.dispose();
+  void dispose() {
+    shortcuts.dispose();
+    appearance.dispose();
+    session.dispose();
+  }
 }
 
 class EmulatorQaApp extends StatefulWidget {
@@ -374,6 +421,14 @@ class _QaLanding extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             _QaDestination(
+              icon: Icons.phone_android_outlined,
+              label: '主畫面與底部導航',
+              onTap: enabled
+                  ? () =>
+                        _open(context, _QaAuthenticatedShell(runtime: runtime))
+                  : null,
+            ),
+            _QaDestination(
               icon: Icons.account_tree_outlined,
               label: '專案頁面',
               onTap: enabled
@@ -418,6 +473,36 @@ class _QaLanding extends StatelessWidget {
           ],
         );
       },
+    ),
+  );
+}
+
+Future<BuildInfo> _qaBuildInfo() async => const BuildInfo(
+  version: 'QA',
+  buildNumber: 'synthetic',
+  commit: emulatorUiQaCommit,
+);
+
+class _QaAuthenticatedShell extends StatelessWidget {
+  const _QaAuthenticatedShell({required this.runtime});
+
+  final _EmulatorQaRuntime runtime;
+
+  @override
+  Widget build(BuildContext context) => MediaQuery.fromView(
+    view: View.of(context),
+    child: Builder(
+      builder: (context) => KeyedSubtree(
+        key: const ValueKey('emulator-qa-shell-viewport'),
+        child: AuthenticatedApp(
+          session: runtime.session,
+          appearance: runtime.appearance,
+          shortcuts: runtime.shortcuts,
+          dynamicLight: const ColorScheme.light(),
+          dynamicDark: const ColorScheme.dark(),
+          buildInfoLoader: _qaBuildInfo,
+        ),
+      ),
     ),
   );
 }

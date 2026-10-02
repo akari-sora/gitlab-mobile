@@ -585,6 +585,9 @@ class _MobileShellState extends State<_MobileShell> {
             edge: AxisDirection.down,
             child: MediaQuery.removePadding(
               context: context,
+              // This context is above Scaffold: do not restore its status-bar
+              // inset inside NavigationBar's SafeArea.
+              removeTop: true,
               removeBottom: true,
               child: NavigationBar(
                 selectedIndex: _selected,
