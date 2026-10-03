@@ -151,6 +151,7 @@ Future<bool> openEditor(
   required Account account,
   required String title,
   required String resource,
+  String? resourceLabel,
   required List<EditField> fields,
   required SaveEditor save,
   String? subtitle,
@@ -171,6 +172,7 @@ Future<bool> openEditor(
           account: account,
           title: title,
           resource: resource,
+          resourceLabel: resourceLabel,
           fields: fields,
           save: save,
           subtitle: subtitle,
@@ -196,6 +198,7 @@ class ResourceEditor extends StatefulWidget {
     required this.account,
     required this.title,
     required this.resource,
+    this.resourceLabel,
     required this.fields,
     required this.save,
     this.subtitle,
@@ -212,6 +215,8 @@ class ResourceEditor extends StatefulWidget {
   });
   final Account account;
   final String title, resource;
+  /// Human-readable failure target. [resource] remains the secure draft key.
+  final String? resourceLabel;
   final List<EditField> fields;
   final SaveEditor save;
   final String? subtitle;
@@ -633,7 +638,8 @@ class _ResourceEditorState extends State<ResourceEditor> {
                             FailureNotice(
                               _error!,
                               account: widget.account,
-                              resourceLabel: widget.resource,
+                              resourceLabel:
+                                  widget.resourceLabel ?? widget.resource,
                               onSwitchAccount: endSessionFrom(context),
                             ),
                           if (_saveBlocked)

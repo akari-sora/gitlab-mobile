@@ -183,6 +183,7 @@ class _WorkItemContentControlState extends State<WorkItemContentControl> {
         subtitle: _subtitle(snapshot),
         resource:
             'work-item-content:${snapshot.summary.project?.id ?? snapshot.summary.namespace?.id}:${snapshot.summary.id}',
+        resourceLabel: _resourceLabel,
         baseRevision: snapshot.summary.updatedAt.toUtc().toIso8601String(),
         fields: fields,
         blockRetryOnSaveFailure: true,

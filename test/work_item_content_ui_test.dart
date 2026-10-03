@@ -19,6 +19,10 @@ const _namespaceRef = GraphResourceRef(
   id: 'gid://gitlab/Namespaces::ProjectNamespace/42',
   fullPath: 'studio/mobile-workspace',
 );
+const _groupNamespaceRef = GraphResourceRef(
+  id: 'gid://gitlab/Group/84',
+  fullPath: 'studio/mobile-group',
+);
 const _type = WorkItemGraphType(
   id: 'gid://gitlab/WorkItems::Type/9',
   name: 'Task',
@@ -27,6 +31,7 @@ const _type = WorkItemGraphType(
 WorkItemGraphSummary _summary({
   String title = 'Original title',
   DateTime? updatedAt,
+  bool group = false,
 }) => WorkItemGraphSummary(
   id: 'gid://gitlab/WorkItem/31',
   iid: 31,
@@ -34,13 +39,13 @@ WorkItemGraphSummary _summary({
   state: 'OPEN',
   createdAt: DateTime.utc(2026, 10, 1),
   updatedAt: updatedAt ?? DateTime.utc(2026, 10, 3, 10),
-  project: _projectRef,
-  namespace: _namespaceRef,
+  project: group ? null : _projectRef,
+  namespace: group ? _groupNamespaceRef : _namespaceRef,
   type: _type,
 );
 
-WorkItemGraphDetail _detail() => WorkItemGraphDetail(
-  summary: _summary(),
+WorkItemGraphDetail _detail({bool group = false}) => WorkItemGraphDetail(
+  summary: _summary(group: group),
   description: 'Displayed detail may be stale',
   widgetsAvailable: true,
   widgetTypes: const {'DESCRIPTION'},
@@ -64,6 +69,9 @@ Account _account(GitLabApi api) => Account(
 enum _DescriptionMode { present, absent, unavailable }
 
 final class _ContentServer {
+  _ContentServer({this.group = false});
+
+  final bool group;
   String title = 'Fresh title';
   String description = '  Fresh **Markdown**\n\n';
   String updatedAt = '2026-10-03T10:00:00Z';
@@ -94,8 +102,13 @@ final class _ContentServer {
     'state': 'OPEN',
     'createdAt': '2026-10-01T00:00:00Z',
     'updatedAt': updatedAt,
-    'project': {'id': _projectRef.id, 'fullPath': _projectRef.fullPath},
-    'namespace': {'id': _namespaceRef.id, 'fullPath': _namespaceRef.fullPath},
+    'project': group
+        ? null
+        : {'id': _projectRef.id, 'fullPath': _projectRef.fullPath},
+    'namespace': {
+      'id': group ? _groupNamespaceRef.id : _namespaceRef.id,
+      'fullPath': group ? _groupNamespaceRef.fullPath : _namespaceRef.fullPath,
+    },
     'workItemType': {'id': _type.id, 'name': _type.name},
     if (permission) 'userPermissions': {'updateWorkItem': canUpdate},
     'widgets': widgets,
@@ -160,11 +173,13 @@ Widget _host({
         account: _account(api),
         api: api,
         detail: detail ?? _detail(),
-        project: const Project(
-          id: 42,
-          name: 'Mobile workspace',
-          path: 'studio/mobile-workspace',
-        ),
+        project: (detail ?? _detail()).summary.project == null
+            ? null
+            : const Project(
+                id: 42,
+                name: 'Mobile workspace',
+                path: 'studio/mobile-workspace',
+              ),
         onSaved: onSaved,
       ),
     ),
@@ -352,6 +367,63 @@ void main() {
   );
 
   testWidgets(
+    'failed content save shows the scoped Work Item instead of draft identity',
+    (tester) async {
+      final server = _ContentServer()..rejectNextMutation = true;
+      final adapter = FakeAdapter(server.respond);
+      final api = testApi(adapter, host: 'https://example.com:8443/gitlab');
+      addTearDown(api.close);
+      await tester.pumpWidget(_host(api: api, onSaved: () async {}));
+      await _openEditor(tester);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('editor-title')),
+        'Rejected title',
+      );
+      await tester.tap(find.byKey(const Key('editorSave')));
+      await tester.pumpAndSettle();
+
+      expect(server.writes, 1);
+      expect(find.text('實例：https://example.com:8443/gitlab'), findsOneWidget);
+      expect(find.text('App 帳號：@reader7'), findsOneWidget);
+      expect(
+        find.text(
+          '目標：work-item-content:gid://gitlab/Project/42:'
+          'gid://gitlab/WorkItem/31',
+        ),
+        findsNothing,
+      );
+      expect(
+        find.text('目標：studio/mobile-workspace · 工作項目 #31'),
+        findsOneWidget,
+      );
+    },
+  );
+
+  testWidgets('group failure label keeps the same IID bound to group scope', (
+    tester,
+  ) async {
+    final server = _ContentServer(group: true)..rejectNextMutation = true;
+    final adapter = FakeAdapter(server.respond);
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    await tester.pumpWidget(
+      _host(api: api, detail: _detail(group: true), onSaved: () async {}),
+    );
+    await _openEditor(tester);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('editor-title')),
+      'Rejected group title',
+    );
+    await tester.tap(find.byKey(const Key('editorSave')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('目標：studio/mobile-group · 工作項目 #31'), findsOneWidget);
+    expect(find.text('目標：studio/mobile-workspace · 工作項目 #31'), findsNothing);
+  });
+
+  testWidgets(
     'single-use save failure disables retry until editor is reopened',
     (tester) async {
       final fixtureApi = testApi(
@@ -382,6 +454,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(calls, 1);
       expect(find.text('內容已經變更'), findsOneWidget);
+      expect(find.text('目標：work-item-content-single-use'), findsOneWidget);
       expect(find.text('請保留草稿並返回，重新開啟編輯以確認最新內容後再儲存。'), findsOneWidget);
       final save = tester.widget<FilledButton>(
         find.byKey(const Key('editorSave')),
