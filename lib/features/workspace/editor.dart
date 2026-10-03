@@ -623,7 +623,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
                           if (_saveBlocked)
                             const Padding(
                               padding: EdgeInsets.only(top: 12),
-                              child: Text('請保留草稿並返回，重新讀取活動確認是否已新增，再決定下一步。'),
+                              child: Text('請保留草稿並返回，重新讀取活動確認變更是否已套用，再決定下一步。'),
                             ),
                           for (final field in widget.fields)
                             Padding(
