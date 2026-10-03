@@ -16,6 +16,8 @@ import tempfile
 DEFAULT_PROPERTIES = Path.home() / '.config/gitlab-mobile/android-signing/signing.properties'
 KEYSTORE_NAME = 'gitlab-mobile.p12'
 KEY_ALIAS = 'gitlab-mobile'
+BEGIN_IMPORTS = '// GITLAB_MOBILE_SIGNING_IMPORTS_BEGIN'
+END_IMPORTS = '// GITLAB_MOBILE_SIGNING_IMPORTS_END'
 BEGIN_LOADER = '// GITLAB_MOBILE_SIGNING_LOADER_BEGIN'
 END_LOADER = '// GITLAB_MOBILE_SIGNING_LOADER_END'
 BEGIN_CONFIG = '    // GITLAB_MOBILE_SIGNING_CONFIG_BEGIN'
@@ -184,15 +186,23 @@ def write_ci_properties(path: Path, keystore: Path, mode: str,
         path, keystore, password, 'androiddebugkey', fingerprint, 'debug')
 
 
+IMPORTS = f'''{BEGIN_IMPORTS}
+import java.io.File as GitLabMobileFile
+import java.security.KeyStore as GitLabMobileKeyStore
+import java.security.MessageDigest as GitLabMobileMessageDigest
+import java.util.Properties as GitLabMobileProperties
+{END_IMPORTS}
+'''
+
 LOADER = f'''{BEGIN_LOADER}
-val gitLabMobileSigningPropertiesFile = java.io.File(
+val gitLabMobileSigningPropertiesFile = GitLabMobileFile(
     System.getenv("GITLAB_MOBILE_SIGNING_PROPERTIES")
         ?: "${{System.getProperty("user.home")}}/.config/gitlab-mobile/android-signing/signing.properties"
 )
 if (!gitLabMobileSigningPropertiesFile.isFile) {{
     throw GradleException("Stable Android signing properties are missing: $gitLabMobileSigningPropertiesFile")
 }}
-val gitLabMobileSigningProperties = java.util.Properties().apply {{
+val gitLabMobileSigningProperties = GitLabMobileProperties().apply {{
     gitLabMobileSigningPropertiesFile.reader(Charsets.UTF_8).use {{ load(it) }}
 }}
 val gitLabMobileRequiredSigningKeys = setOf(
@@ -208,18 +218,18 @@ if (gitLabMobileMissingSigningKeys.isNotEmpty()) {{
 if (gitLabMobileSigningProperties.getProperty("storeType") != "PKCS12") {{
     throw GradleException("Stable Android signing storeType must be PKCS12")
 }}
-val gitLabMobileSigningStore = java.io.File(gitLabMobileSigningProperties.getProperty("storeFile"))
+val gitLabMobileSigningStore = GitLabMobileFile(gitLabMobileSigningProperties.getProperty("storeFile"))
 if (!gitLabMobileSigningStore.isFile) {{
     throw GradleException("Stable Android signing keystore is missing")
 }}
 val gitLabMobileSigningStorePassword = gitLabMobileSigningProperties.getProperty("storePassword")
 val gitLabMobileSigningAlias = gitLabMobileSigningProperties.getProperty("keyAlias")
-val gitLabMobileKeyStore = java.security.KeyStore.getInstance("PKCS12").apply {{
+val gitLabMobileKeyStore = GitLabMobileKeyStore.getInstance("PKCS12").apply {{
     gitLabMobileSigningStore.inputStream().use {{ load(it, gitLabMobileSigningStorePassword.toCharArray()) }}
 }}
 val gitLabMobileCertificate = gitLabMobileKeyStore.getCertificate(gitLabMobileSigningAlias)
     ?: throw GradleException("Stable Android signing alias is missing")
-val gitLabMobileActualCertificateSha256 = java.security.MessageDigest.getInstance("SHA-256")
+val gitLabMobileActualCertificateSha256 = GitLabMobileMessageDigest.getInstance("SHA-256")
     .digest(gitLabMobileCertificate.encoded).joinToString("") {{ "%02X".format(it) }}
 val gitLabMobileExpectedCertificateSha256 = gitLabMobileSigningProperties
     .getProperty("certificateSha256").replace(":", "").uppercase()
@@ -237,8 +247,8 @@ if (gitLabMobileAllowedBuildTypes == setOf("debug") &&
         System.getenv("GITLAB_MOBILE_ALLOW_DEBUG_ONLY_SIGNING") != "1")) {{
     throw GradleException("Debug-only signing is restricted to the explicit CI path")
 }}
-gradle.taskGraph.whenReady {{ graph ->
-    if (gitLabMobileAllowedBuildTypes == setOf("debug") && graph.allTasks.any {{ task ->
+gradle.taskGraph.whenReady {{
+    if (gitLabMobileAllowedBuildTypes == setOf("debug") && allTasks.any {{ task ->
             task.project == project &&
                 (task.name.contains("release", ignoreCase = true) ||
                     task.name.contains("profile", ignoreCase = true))
@@ -275,16 +285,20 @@ def configure_gradle(path: Path) -> bool:
     if not path.is_file():
         raise RuntimeError(f'Android Gradle template not found: {path}')
     text = path.read_text(encoding='utf-8')
-    begin_counts = (text.count(BEGIN_LOADER), text.count(BEGIN_CONFIG))
-    end_counts = (text.count(END_LOADER), text.count(END_CONFIG))
-    if begin_counts == (1, 1) and end_counts == (1, 1):
+    begin_counts = (
+        text.count(BEGIN_IMPORTS), text.count(BEGIN_LOADER), text.count(BEGIN_CONFIG))
+    end_counts = (
+        text.count(END_IMPORTS), text.count(END_LOADER), text.count(END_CONFIG))
+    if begin_counts == (1, 1, 1) and end_counts == (1, 1, 1):
+        imports = text[text.index(BEGIN_IMPORTS):text.index(END_IMPORTS) + len(END_IMPORTS)]
         loader = text[text.index(BEGIN_LOADER):text.index(END_LOADER) + len(END_LOADER)]
         config = text[text.index(BEGIN_CONFIG):text.index(END_CONFIG) + len(END_CONFIG)]
-        if loader != LOADER.rstrip('\n') or config != CONFIG.rstrip('\n'):
+        if (imports != IMPORTS.rstrip('\n') or loader != LOADER.rstrip('\n') or
+                config != CONFIG.rstrip('\n')):
             raise RuntimeError(
                 'Stale managed Android signing configuration; review and refresh the owned blocks.')
         return False
-    if begin_counts != (0, 0) or end_counts != (0, 0):
+    if begin_counts != (0, 0, 0) or end_counts != (0, 0, 0):
         raise RuntimeError('Incomplete Android signing markers; review the Gradle file manually.')
     android_marker = 'android {'
     if text.count(android_marker) != 1:
@@ -293,6 +307,7 @@ def configure_gradle(path: Path) -> bool:
     legacy_count = text.count(legacy)
     if legacy_count > 1:
         raise RuntimeError('Unknown Android Gradle template: multiple debug signing fallbacks.')
+    text = IMPORTS + '\n' + text
     text = text.replace(legacy, '// Stable signing is configured above.')
     text = text.replace(android_marker, LOADER + android_marker + '\n' + CONFIG, 1)
     path.write_text(text, encoding='utf-8')

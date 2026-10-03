@@ -185,6 +185,7 @@ class BootstrapTests(unittest.TestCase):
         bootstrap.configure_android(self.root)
         bootstrap.configure_android(self.root)
         text = gradle.read_text()
+        self.assertEqual(text.count(android_signing.BEGIN_IMPORTS), 1)
         self.assertEqual(text.count(android_signing.BEGIN_LOADER), 1)
         self.assertEqual(text.count(android_signing.BEGIN_CONFIG), 1)
         self.assertNotIn('signingConfigs.getByName("debug")', text)

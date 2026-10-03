@@ -43,6 +43,8 @@ class AndroidSigningTests(unittest.TestCase):
         self.assertFalse(android_signing.configure_gradle(path))
         self.assertEqual(path.read_bytes(), first)
         text = first.decode()
+        self.assertTrue(text.startswith(android_signing.IMPORTS))
+        self.assertEqual(text.count(android_signing.BEGIN_IMPORTS), 1)
         self.assertEqual(text.count(android_signing.BEGIN_LOADER), 1)
         self.assertEqual(text.count(android_signing.BEGIN_CONFIG), 1)
         self.assertNotIn('signingConfigs.getByName("debug")', text)
@@ -66,6 +68,18 @@ class AndroidSigningTests(unittest.TestCase):
             path.read_text().replace(
                 'Stable Android signing certificate identity changed',
                 'Old unchecked certificate behavior'),
+            encoding='utf-8')
+        with self.assertRaisesRegex(RuntimeError, 'Stale managed Android signing configuration'):
+            android_signing.configure_gradle(path)
+
+    def test_configure_gradle_rejects_stale_managed_imports(self):
+        path = self.root / 'build.gradle.kts'
+        path.write_text(TEMPLATE, encoding='utf-8')
+        android_signing.configure_gradle(path)
+        path.write_text(
+            path.read_text().replace(
+                'import java.io.File as GitLabMobileFile',
+                'import java.io.File as OldSigningFile'),
             encoding='utf-8')
         with self.assertRaisesRegex(RuntimeError, 'Stale managed Android signing configuration'):
             android_signing.configure_gradle(path)
@@ -232,7 +246,10 @@ class AndroidSigningTests(unittest.TestCase):
         self.assertIn('task.name.contains("release"', android_signing.LOADER)
         self.assertIn('task.name.contains("profile"', android_signing.LOADER)
         self.assertIn('task.project == project', android_signing.LOADER)
+        self.assertIn('gradle.taskGraph.whenReady {\n', android_signing.LOADER)
+        self.assertNotIn('whenReady { graph ->', android_signing.LOADER)
         self.assertIn('reader(Charsets.UTF_8)', android_signing.LOADER)
+        self.assertNotIn('java.io.File(', android_signing.LOADER)
 
     def test_gitlab_ci_discovers_all_signing_tests(self):
         pipeline = (Path(__file__).resolve().parents[2] / '.gitlab-ci.yml').read_text()
