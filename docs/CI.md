@@ -34,9 +34,35 @@ JUnit, raw test JSON, analyzer output and LCOV remain attached to the check job 
 
 Delivery uses `CI_JOB_TOKEN`, not a personal token. No credentials are committed, printed deliberately, embedded into the APK or sent in URL query strings. CI fixtures contain only synthetic API identities. The pipeline does not enable CI job-token repository pushes.
 
-## Android preview versus production
+## Android signing lanes
 
-The output is a **debug development preview**. The preview records the commit in the app's 我的 tab. Ephemeral debug signing keys differ between runners and from a developer machine; updating between such previews then fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (silently under `adb install -r`) and requires uninstalling the old one, losing its local accounts and drafts. To make previews update in place, set the masked, protected CI variable `ANDROID_DEBUG_KEYSTORE_B64` to the base64 of one debug keystore (alias `androiddebugkey`, passwords `android`); `ci/build_android.sh` restores it to `~/.android/debug.keystore` before the build and records the choice in `build-metadata.json` (`signing`). That is still a debug signature. Production/updatable distribution requires a separately managed stable signing key and release configuration. Neither Play publication nor a production release is configured by this pipeline.
+Local Android debug, profile and release APKs use the same self-managed stable
+development signer. Its canonical configuration and commands are documented in
+[Android local signing](ANDROID_SIGNING.md). This gives local APKs a compatible
+signer across build modes and worktrees; it does not make them Play or
+production releases.
+
+The CI output remains a **debug development preview**. The preview records the
+commit in the app's 我的 tab. CI intentionally retains the existing
+`ANDROID_DEBUG_KEYSTORE_B64` path and ephemeral debug-keystore fallback until a
+stable key and properties file are provisioned as protected CI secrets. No new
+CI signing secret has been uploaded as part of the local-signing work. When the
+variable is set, `ci/build_android.sh` converts the legacy debug keystore to a
+temporary PKCS12 identity under the ignored `.ci-signing/` directory, restricts
+it to the debug build type and records the choice in `build-metadata.json`
+(`signing`). The explicit CI fallback creates an equally temporary debug-only
+PKCS12 identity in that directory.
+
+An Android update requires the same application ID, a compatible signer and a
+`versionCode` at least as high as the installed build. A preview signed by an
+unrelated historical debug key cannot update in place and reports
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Do not automatically uninstall it or clear
+its data: doing so loses local accounts and drafts. Preserve the installed app
+until a matching historical signer is available or data loss is explicitly
+accepted.
+
+Neither the local development signer nor the current CI debug-signing lane is
+Play App Signing. Play publication and production signing remain unconfigured.
 
 ## iOS and product acceptance
 
@@ -82,3 +108,5 @@ Official references:
 - <https://docs.gitlab.com/user/packages/generic_packages/>
 - <https://docs.gitlab.com/ci/jobs/ci_job_token/>
 - <https://developer.android.com/studio>
+- <https://developer.android.com/studio/publish/app-signing>
+- <https://docs.flutter.dev/deployment/android>

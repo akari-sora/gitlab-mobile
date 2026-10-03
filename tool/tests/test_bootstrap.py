@@ -6,6 +6,7 @@ import xml.etree.ElementTree as ET
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import bootstrap
+import android_signing
 
 
 class BootstrapTests(unittest.TestCase):
@@ -171,6 +172,22 @@ class BootstrapTests(unittest.TestCase):
         (source / 'AndroidManifest.xml').write_text('<manifest/>')
         with self.assertRaises(RuntimeError):
             bootstrap.harden_android(self.root)
+
+    def test_configure_android_embeds_stable_signing_loader(self):
+        source = self.root / 'app/src/main'
+        source.mkdir(parents=True)
+        (source / 'AndroidManifest.xml').write_text('<manifest><application/></manifest>')
+        gradle = self.root / 'app/build.gradle.kts'
+        gradle.write_text(
+            'plugins { id("com.android.application") }\n'
+            'android { buildTypes { release { '
+            'signingConfig = signingConfigs.getByName("debug") } } }\n')
+        bootstrap.configure_android(self.root)
+        bootstrap.configure_android(self.root)
+        text = gradle.read_text()
+        self.assertEqual(text.count(android_signing.BEGIN_LOADER), 1)
+        self.assertEqual(text.count(android_signing.BEGIN_CONFIG), 1)
+        self.assertNotIn('signingConfigs.getByName("debug")', text)
 
     def prepare_ios(self, count):
         (self.root / 'Runner.xcodeproj').mkdir()

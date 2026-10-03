@@ -15,6 +15,8 @@ import subprocess
 import tempfile
 import xml.etree.ElementTree as ET
 
+import android_signing
+
 ROOT = Path(__file__).resolve().parents[1]
 SDK = '3.47.2'
 ANDROID = 'http://schemas.android.com/apk/res/android'
@@ -99,6 +101,11 @@ def harden_android(folder: Path) -> None:
         '<data-extraction-rules><cloud-backup disableIfNoEncryptionCapabilities="true">'
         f'{excludes}</cloud-backup><device-transfer>{excludes}</device-transfer></data-extraction-rules>\n')
     _transparent_system_bars(folder)
+
+
+def configure_android(folder: Path) -> None:
+    harden_android(folder)
+    android_signing.configure_gradle(folder / 'app/build.gradle.kts')
 
 
 # Edge-to-edge (Android 15) draws behind the system bars. Opaque bar colours in
@@ -279,7 +286,7 @@ def main() -> int:
             template = Path(temporary) / 'gitlab_mobile'
             subprocess.run([flutter, 'create', '--platforms=android,ios', '--org=io.gitlabmobile',
                             '--project-name=gitlab_mobile', '--no-pub', str(template)], check=True)
-            harden_android(template / 'android')
+            configure_android(template / 'android')
             configure_ios(template / 'ios')
             for name in ('android', 'ios'):
                 shutil.copytree(template / name, ROOT / name)

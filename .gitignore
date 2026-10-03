@@ -34,8 +34,8 @@ __pycache__/
 .ci-cache/
 .android-sdk/
 .gradle-user/
+.ci-signing/
 ci-output/
 public-smoke-output/
 artifacts/
 .agents/
-
