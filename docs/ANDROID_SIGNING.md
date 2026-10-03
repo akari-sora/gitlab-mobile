@@ -105,13 +105,16 @@ Use the pinned Flutter SDK and committed dependency lock:
 
 ```sh
 ./.fvm/flutter_sdk/bin/flutter pub get --enforce-lockfile
-./.fvm/flutter_sdk/bin/flutter build apk --debug --no-pub
-./.fvm/flutter_sdk/bin/flutter build apk --profile --no-pub
-./.fvm/flutter_sdk/bin/flutter build apk --release --no-pub
+./.fvm/flutter_sdk/bin/flutter build apk --debug
+./.fvm/flutter_sdk/bin/flutter build apk --profile
+./.fvm/flutter_sdk/bin/flutter build apk --release
 ```
 
 Build only the variant required for the current task. A successful release build
-is a locally signed development release APK; it is not a Play release.
+is a locally signed development release APK; it is not a Play release. Keep the
+initial locked dependency resolution and confirm `pubspec.lock` remains
+unchanged, but do not add `--no-pub` to APK builds: Flutter 3.47.2 must regenerate
+plugin registration for the selected debug, profile or release mode.
 
 ## Update compatibility
 

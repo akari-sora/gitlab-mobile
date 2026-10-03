@@ -87,7 +87,7 @@ Pinned Flutter **3.47.2** / Dart **3.13.2**; committed `pubspec.lock`. Normal pi
 ./.fvm/flutter_sdk/bin/flutter test --no-pub
 python3 tool/bootstrap.py
 python3 tool/android_signing.py configure android/app/build.gradle.kts
-./.fvm/flutter_sdk/bin/flutter build apk --debug --no-pub
+./.fvm/flutter_sdk/bin/flutter build apk --debug
 ```
 
 Screenshots: `flutter_checks` job artifacts → `ci-output/screenshots/`. They are real Flutter host-rendered screens with synthetic data, not an Android/iOS device run or a generated design mock-up. Android APKs: `android_debug` artifacts; main previews: project Package Registry. Local debug, profile and release APKs use the stable development signer described in [Android local signing](docs/ANDROID_SIGNING.md). CI debug signing remains separate and may differ until its protected signing identity is provisioned. Neither path is a store-signed release.
