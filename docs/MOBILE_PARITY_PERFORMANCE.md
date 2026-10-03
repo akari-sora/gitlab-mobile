@@ -1090,4 +1090,64 @@ No scroll, frame or network measurement was added for this path. Provisional
 local synthetic tests are not an exact-archive, emulator, CI, live-private,
 iOS or TalkBack result. Those stay **NOT_RUN**. The slice does not claim a
 real-world performance change or full parity. Evidence paths are under
-`artifacts/mobile-parity/work-item-weight/`.
+`artifacts/mobile-parity/work-item-weight/`. This tree has no weight
+`browser-observation.json`; screenshot files are the visual record and no
+browser metadata hash is recorded. The prior frozen checkout
+`d745b81369dddda6186414d598d2026dbd9569ad` (short `d745b81`) is not the
+repository remote default `main`. That checkout records 2,133 full tests and
+339 tracked files whose bytes matched the tested archive. Its
+`native-cases-d745b81-attempt-4.json` matched the installed package SHA,
+passed startup QA, then failed the first case
+(`unchanged-and-accessibility`) on a bounded `uiautomator dump` timeout of
+1.1856 seconds: 0 PASS, 9 NOT_RUN. `native-final-release-d745b81-attempt-4.json`
+is PASS: Android package uid `10213`, matching hash and development
+certificate, restored default geometry, blank login. Earlier transport-guard
+stalls stay in their own receipts. Do not mix that checkout with this
+assignee source.
+
+## Work Item assignees
+
+Project and group detail can replace the assignee set. The editor opens after
+a complete fresh connection: `first: 100`, at most 20 pages, stop at 2,000.
+The parent already shows the first 20 names until a write starts. Search is
+one `autocompleteUsers(search)` call and at most 20 results, with no candidate
+page. Save always preflights actor, `readWorkItem`, `setWorkItemMetadata`,
+revision and the full current set before a write or a no-op. `assigneeIds: []`
+clears. Single-assignee widgets use a radio; multi-assignee widgets use
+checkboxes. `adminWorkItem` and `updateWorkItem` are not this permission. One
+write uses the matching scope and revision, once. An unchanged set sends
+nothing. There is no compare-and-swap. The input is `id` and
+`assigneesWidget` only. The mutation does not select `Query.currentUser`;
+that field is on the query. The following read must see the same complete set.
+An uncertain result is not replayed: close and reopen on fresh server state.
+Owner, session or revision changes close the editor. A late save is blocked,
+and item A's settle cannot clear item B. During the write and the parent
+refetch, stale chips and a false 尚未指派 stay hidden behind 更新中. A failed
+refetch keeps them hidden and shows 尚未確認最新負責人. A widget test checks the
+48 dp save row at 320 dp width and 2× text. That is not a device or TalkBack
+pass. Current evidence is 50 targeted tests (20 API, 20 UI, 10 fixture), zero
+failures, errors and skips, and scoped analysis. The earlier 39-test fixture
+run that includes weight and milestone passed on its own. API and fixture
+review approved with zero must-fix items. UI final review is APPROVE with zero
+required changes. Full suite, archive, new commit, APK, build, native,
+private, iOS, G0, TalkBack and performance are **NOT_RUN** for assignees. A
+signed-out 390×844 observation showed Assignees / None and no authenticated
+editor. Pin
+[`a011400989c4b7a5b626752dbfc35941e745bf34`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md):
+[`workItemUpdate`](https://gitlab.com/gitlab-org/gitlab/-/raw/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/mutations/work_items/update.rb)
+payload is `workItem` and `errors`;
+[`Mutation`](https://gitlab.com/gitlab-org/gitlab/-/raw/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/types/mutation_type.rb)
+has no `currentUser` field;
+[`Query.currentUser`](https://gitlab.com/gitlab-org/gitlab/-/raw/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/types/query_type.rb)
+is the query field. The same pin's reference has
+[`assigneesWidget`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md#mutation-workitemupdate-assigneeswidget),
+[`assigneeIds`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md#workitemwidgetassigneesinput-assigneeids),
+[`readWorkItem`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md#workitempermissions-readworkitem),
+[`setWorkItemMetadata`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md#workitempermissions-setworkitemmetadata),
+[`Project.autocompleteUsers` search](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md#project-autocompleteusers-search)
+and
+[`Group.autocompleteUsers` search](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md#group-autocompleteusers-search).
+[`allowsMultipleAssignees`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md#workitemwidgetassignees-allowsmultipleassignees)
+on the widget is marked deprecated in that pin; this client still reads that
+boolean. No scroll, frame or network budget was added for this path. Broader
+parity gaps stay open. These notes do not accept the feature.

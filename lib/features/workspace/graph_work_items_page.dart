@@ -5,12 +5,14 @@ import 'package:flutter/material.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../core/work_item_assignee_models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_state_models.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/workspace_ui.dart';
 import 'work_item_activity.dart';
+import 'work_item_assignees.dart';
 import 'work_item_attributes.dart';
 import 'work_item_content.dart';
 import 'work_item_notifications.dart';
@@ -1307,6 +1309,10 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   }
 }
 
+class _AssigneeSignals extends ChangeNotifier {
+  void bump() => notifyListeners();
+}
+
 class GraphWorkItemDetailPage extends StatefulWidget {
   GraphWorkItemDetailPage.project({
     super.key,
@@ -1357,6 +1363,15 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   NavigatorState? _navigator;
   final Set<Route<dynamic>> _ownedRoutes = {};
   bool _ownerInvalid = false;
+  final _AssigneeSignals _assigneeSignals = _AssigneeSignals();
+  Listenable? _assigneeOwner;
+  Object? _assigneesWriteToken;
+  int? _assigneesWriteGeneration;
+  bool _assigneesHideStalePreview = false;
+  bool _assigneesRefetchPending = false;
+  bool _assigneesRefreshFailed = false;
+  WorkItemAssigneeSnapshot? _assigneeOverlay;
+  int _assigneeReadSerial = 0;
 
   bool _current(int generation) =>
       mounted &&
@@ -1367,6 +1382,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   void initState() {
     super.initState();
     widget.ownerChanges?.addListener(_ownerChanged);
+    _assigneeOwner = _assigneeOwnerSignals();
     unawaited(_load());
   }
 
@@ -1382,6 +1398,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     if (!identical(oldWidget.ownerChanges, widget.ownerChanges)) {
       oldWidget.ownerChanges?.removeListener(_ownerChanged);
       widget.ownerChanges?.addListener(_ownerChanged);
+      _assigneeOwner = _assigneeOwnerSignals();
     }
     if (oldWidget.account.key != widget.account.key ||
         !identical(oldWidget.api, widget.api) ||
@@ -1391,6 +1408,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         oldWidget.iid != widget.iid ||
         !identical(oldWidget.isCurrent, widget.isCurrent)) {
       _generation++;
+      _dropAssigneeSession();
       _dismissOwnedRoutes();
       _detail = null;
       _resolvedProject = null;
@@ -1407,13 +1425,16 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   void dispose() {
     widget.ownerChanges?.removeListener(_ownerChanged);
     _generation++;
+    _dropAssigneeSession();
     _dismissOwnedRoutes();
+    _assigneeSignals.dispose();
     super.dispose();
   }
 
   void _ownerChanged() {
     if (widget.isCurrent?.call() ?? true) return;
     _generation++;
+    _dropAssigneeSession();
     _dismissOwnedRoutes();
     setState(() {
       _detail = null;
@@ -1461,10 +1482,11 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     final owner = widget;
     final generation = _generation;
     _detailEpoch++;
+    final keepDetail = _assigneesWriteToken != null;
     setState(() {
       _loading = true;
       _error = null;
-      _detail = null;
+      if (!keepDetail) _detail = null;
       _resolvedProject = null;
       _projectContextError = null;
       _resolvingProject = false;
@@ -1483,7 +1505,18 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
               isCurrent: () => _current(generation),
             );
       if (!_current(generation)) return;
+      final previous = _detail;
+      final assigneeBusy =
+          _assigneesWriteToken != null || _assigneesRefetchPending;
+      if (previous != null &&
+          assigneeBusy &&
+          !_sameAssigneeResource(previous.summary, detail.summary)) {
+        _dropAssigneeSession();
+      }
       setState(() => _detail = detail);
+      if (_assigneesWriteToken == null && _assigneesHideStalePreview) {
+        unawaited(_refetchAssignees(detail, generation));
+      }
       if (owner.project == null && detail.summary.project != null) {
         unawaited(_resolveProjectContext(detail, generation));
       }
@@ -1496,6 +1529,124 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     } finally {
       if (_current(generation)) setState(() => _loading = false);
     }
+  }
+
+  Listenable _assigneeOwnerSignals() => widget.ownerChanges == null
+      ? _assigneeSignals
+      : Listenable.merge([widget.ownerChanges!, _assigneeSignals]);
+
+  void _dropAssigneeSession() {
+    _assigneesWriteToken = null;
+    _assigneesWriteGeneration = null;
+    _assigneeOverlay = null;
+    _assigneesHideStalePreview = false;
+    _assigneesRefetchPending = false;
+    _assigneesRefreshFailed = false;
+    _assigneeReadSerial++;
+    _assigneeSignals.bump();
+  }
+
+  bool _sameAssigneeResource(
+    WorkItemGraphSummary left,
+    WorkItemGraphSummary right,
+  ) {
+    return left.id == right.id &&
+        left.iid == right.iid &&
+        left.type.id == right.type.id &&
+        left.project?.id == right.project?.id &&
+        left.project?.fullPath == right.project?.fullPath &&
+        left.namespace?.id == right.namespace?.id &&
+        left.namespace?.fullPath == right.namespace?.fullPath;
+  }
+
+  void _onAssigneesWrite(WorkItemAssigneesWritePhase phase, Object token) {
+    if (!mounted) return;
+    if (phase == WorkItemAssigneesWritePhase.start) {
+      final detail = _detail;
+      if (detail == null || !_current(_generation)) return;
+      setState(() {
+        _assigneesWriteToken = token;
+        _assigneesWriteGeneration = _generation;
+        _assigneesHideStalePreview = true;
+        _assigneesRefetchPending = false;
+        _assigneesRefreshFailed = false;
+        _assigneeOverlay = null;
+        _assigneeReadSerial++;
+      });
+      return;
+    }
+    if (!identical(_assigneesWriteToken, token)) return;
+    final detail = _detail;
+    final generation = _generation;
+    setState(() {
+      _assigneesWriteToken = null;
+      _assigneesRefetchPending = detail != null && _current(generation);
+      _assigneesRefreshFailed = false;
+    });
+    if (detail == null || !_current(generation)) return;
+    unawaited(_refetchAssignees(detail, generation));
+  }
+
+  void _acceptAssigneeSave(WorkItemAssigneeSnapshot snapshot) {
+    final detail = _detail;
+    if (!mounted || detail == null || _assigneesWriteToken == null) return;
+    if (_assigneesWriteGeneration != _generation || !_current(_generation)) {
+      return;
+    }
+    if (!_sameAssigneeResource(detail.summary, snapshot.summary)) return;
+  }
+
+  Future<void> _refetchAssignees(
+    WorkItemGraphDetail detail,
+    int generation,
+  ) async {
+    final serial = ++_assigneeReadSerial;
+    final startedToken = _assigneesWriteToken;
+    try {
+      final access = await widget.api.workItemAssignees(
+        detail,
+        expectedUserId: widget.account.user.id,
+        isCurrent: () =>
+            _current(generation) &&
+            identical(_assigneesWriteToken, startedToken) &&
+            _assigneeReadSerial == serial,
+      );
+      if (!mounted ||
+          !_current(generation) ||
+          !identical(_assigneesWriteToken, startedToken) ||
+          _assigneeReadSerial != serial ||
+          _detail == null ||
+          !_sameAssigneeResource(_detail!.summary, detail.summary)) {
+        return;
+      }
+      setState(() {
+        _assigneeOverlay = access.snapshot;
+        _assigneesHideStalePreview = false;
+        _assigneesRefetchPending = false;
+        _assigneesRefreshFailed = false;
+      });
+    } catch (error) {
+      if (!mounted || !_current(generation) || _assigneeReadSerial != serial) {
+        return;
+      }
+      final failure = safeFailure(error);
+      if (failure.kind == FailureKind.cancelled) return;
+      setState(() {
+        _assigneesRefetchPending = false;
+        _assigneesRefreshFailed = true;
+      });
+    }
+  }
+
+  Future<void> _openAssigneeRoster(WorkItemAssigneeSnapshot snapshot) async {
+    final generation = _generation;
+    final navigator = Navigator.of(context);
+    final route = MaterialPageRoute<void>(
+      builder: (context) => WorkItemAssigneeRosterPage(users: snapshot.users),
+    );
+    _ownRoute(route);
+    await navigator.push(route);
+    if (!_current(generation)) return;
   }
 
   Future<void> _resolveProjectContext(
@@ -1681,6 +1832,107 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     unawaited(Navigator.of(context).push(route));
   }
 
+  Widget _assigneePreview(
+    BuildContext context,
+    WorkItemGraphDetail detail,
+    BoundedGraphConnection<WorkItemGraphAssignee> preview,
+  ) {
+    final overlay = _assigneeOverlay;
+    final pending = _assigneesWriteToken != null || _assigneesRefetchPending;
+    final people = <WorkItemGraphAssignee>[];
+    if (!pending && !_assigneesHideStalePreview) {
+      if (overlay != null) {
+        for (final user in overlay.users.take(20)) {
+          people.add(
+            WorkItemGraphAssignee(
+              id: user.id,
+              name: user.name,
+              username: user.username,
+            ),
+          );
+        }
+      } else {
+        people.addAll(preview.items.take(20));
+      }
+    }
+    final total = overlay?.users.length;
+    final generation = _generation;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (pending)
+          const Text('更新中', key: ValueKey('work-item-assignees-updating'))
+        else if (_assigneesRefreshFailed)
+          const Text(
+            '尚未確認最新負責人。請重新整理後再查看，不要沿用送出前的名單。',
+            key: ValueKey('work-item-assignees-unconfirmed'),
+          )
+        else if (people.isEmpty)
+          const Text('尚未指派')
+        else
+          Wrap(
+            key: const ValueKey('work-item-assignee-preview'),
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final person in people)
+                Chip(
+                  key: ValueKey('work-item-assignee-preview-${person.id}'),
+                  avatar: Monogram(
+                    person.name.isEmpty ? person.username : person.name,
+                    size: 24,
+                  ),
+                  label: Text(
+                    person.name.isEmpty
+                        ? '@${person.username}'
+                        : '${person.name} · @${person.username}',
+                  ),
+                ),
+            ],
+          ),
+        if (!pending && total != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(
+              total == 0
+                  ? '目前沒有負責人。'
+                  : total <= 20
+                  ? '共 $total 位負責人。'
+                  : '共 $total 位負責人，這裡只顯示前 20 位。',
+              key: const ValueKey('work-item-assignee-count'),
+            ),
+          )
+        else if (!pending && !_assigneesHideStalePreview && preview.isPartial)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('只顯示前 20 位負責人。'),
+          ),
+        if (!pending && total != null && total > 20)
+          TextButton(
+            key: const ValueKey('work-item-assignees-roster'),
+            onPressed: () => unawaited(_openAssigneeRoster(overlay!)),
+            child: Text('查看全部 $total 位'),
+          )
+        else if (!pending && preview.isPartial && overlay == null)
+          TextButton(
+            key: const ValueKey('work-item-assignees-read-all'),
+            onPressed: () => unawaited(_refetchAssignees(detail, generation)),
+            child: const Text('讀取全部負責人'),
+          ),
+        WorkItemAssigneesControl(
+          account: widget.account,
+          api: widget.api,
+          detail: detail,
+          isCurrent: () => _current(generation),
+          ownerChanges: _assigneeOwner,
+          onRoute: _ownRoute,
+          onAssigneesWrite: _onAssigneesWrite,
+          onSaved: _acceptAssigneeSave,
+        ),
+      ],
+    );
+  }
+
   Widget _section(BuildContext context, String title, Widget child) => Card(
     child: Padding(
       padding: const EdgeInsets.all(16),
@@ -1813,37 +2065,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           _section(
             context,
             '負責人',
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (assignees.items.isEmpty)
-                  const Text('尚未指派')
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final person in assignees.items)
-                        Chip(
-                          avatar: Monogram(
-                            person.name.isEmpty ? person.username : person.name,
-                            size: 24,
-                          ),
-                          label: Text(
-                            person.name.isEmpty
-                                ? '@${person.username}'
-                                : '${person.name} · @${person.username}',
-                          ),
-                        ),
-                    ],
-                  ),
-                if (assignees.isPartial)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 8),
-                    child: Text('只顯示前 20 位負責人。'),
-                  ),
-              ],
-            ),
+            _assigneePreview(context, detail, assignees),
           ),
         if (detail.assignees != null && assignees == null)
           _section(context, '負責人', const Text('此伺服器未回傳負責人清單。')),

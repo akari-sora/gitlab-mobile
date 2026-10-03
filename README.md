@@ -12,7 +12,7 @@ revision comparison, server-backed MR draft review, selected-ref repository
 graphs, actual pipeline dependency graphs, package/container/Terraform registries,
 native contributor/repository/CI analytics, lazy multi-file Snippets and guarded
 file actions, server-discovered GraphQL Work Item types, bounded project/group and descendant
-lists with server-side scope/state/search/type/order controls, group-list deep links and project/group details with guarded close/reopen actions and lazy status, milestone, weight, iteration, health, time-tracking and
+lists with server-side scope/state/search/type/order controls, group-list deep links and project/group details with guarded close/reopen actions, native assignee replacement, and lazy status, milestone, weight, iteration, health, time-tracking and
 development attributes, a lazy activity timeline with server-side activity/comment/history filters,
 oldest/newest ordering, bounded discussion/reply paging and guarded Markdown comments,
 replies and ordinary note edits,
@@ -110,6 +110,33 @@ attempt is not replayed and does not replace the row. This describes the local
 source shape. Exact-archive, emulator, CI, live private, iOS and TalkBack runs
 are **NOT_RUN**. They are not G0 acceptance or a performance claim. See the
 [parity ledger](docs/MOBILE_WEB_PARITY_LEDGER.md).
+
+Project and group Work Items replace the whole assignee set from the detail.
+The editor opens after a complete fresh connection (`first: 100`, at most 20
+pages, stop at 2,000). The parent already shows the first 20 names until a
+write starts. Search calls project or group `autocompleteUsers` with the
+submitted text and keeps at most 20 users; it does not page candidates.
+People already assigned stay in the set when search omits them. Save always
+preflights actor, `readWorkItem`, `setWorkItemMetadata`, revision and the full
+current set before a write or a no-op. One `workItemUpdate` input is `id` and
+`assigneesWidget.assigneeIds` only. `[]` clears.
+`allowsMultipleAssignees: false` is one radio choice; `true` is checkboxes.
+`adminWorkItem` and `updateWorkItem` do not grant the metadata permission.
+The target matches actor, scope and revision, is used once, and has no
+compare-and-swap. The mutation does not select `Query.currentUser`; that name
+is a query field, not an input. Success is the acknowledgement plus a
+separate complete read of the requested set. An uncertain result is not
+replayed: close and reopen on fresh server state. Account, API or revision
+changes close the editor and block a late save. Settling one item cannot
+clear another. During the write and the parent refetch, stale names and a
+false 尚未指派 stay hidden behind 更新中. A failed refetch keeps them hidden
+and shows 尚未確認最新負責人. The widget test keeps the 48 dp save control above
+the keyboard at 320 dp and 2× text. A signed-out 390×844 public page showed
+Assignees / None and did not open this editor. The isolated run is 50 passed
+tests (20 API, 20 UI, 10 fixture) and scoped analysis. UI final review is
+APPROVE with zero required changes. Full suite, archive, new commit, APK,
+native, private, iOS, G0, TalkBack and performance for this editor are
+**NOT_RUN**. They are not acceptance.
 
 ## v0.5 — mobile UX overhaul and GitLab parity
 

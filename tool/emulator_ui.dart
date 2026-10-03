@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -57,6 +58,21 @@ enum _QaNoteEditControl {
   denyNotificationWrites,
   failNotificationAcknowledgement,
   failNotificationRead,
+  allowAssigneeMetadata,
+  denyAssigneeMetadata,
+  absentAssigneeWidget,
+  presentAssigneeWidget,
+  singleAssignee,
+  multipleAssignees,
+  loseNextAssigneeAck,
+  dropNextAssigneeAckUser,
+  mismatchAssigneeReadback,
+  reviseAssignee,
+  assigneeCount21,
+  assigneeCount101,
+  resetAssignees,
+  assigneePagePastMax,
+  assigneeRevisionDuringPage,
   allowMilestoneMetadata,
   denyMilestoneMetadata,
   failMilestoneCandidates,
@@ -191,6 +207,54 @@ final class EmulatorQaFixture extends WorkspaceFixture {
   bool workItemWeightAllowed = true;
   bool workItemWeightPresent = true;
   bool failNextWorkItemWeightAcknowledgement = false;
+  bool workItemAssigneeMetadataAllowed = true;
+  bool workItemAssigneeWidgetPresent = true;
+  final workItemAssigneeMultiple = <bool, bool>{false: true, true: true};
+  final workItemAssigneeIds = <bool, List<String>>{
+    false: ['gid://gitlab/User/1001', 'gid://gitlab/User/1002'],
+    true: ['gid://gitlab/User/3001', 'gid://gitlab/User/3002'],
+  };
+  bool failNextWorkItemAssigneeAcknowledgement = false;
+  bool dropNextWorkItemAssigneeAckUser = false;
+  bool mismatchNextWorkItemAssigneeReadback = false;
+  bool _assigneeReadbackMismatchArmed = false;
+  bool malformNextAssigneeRead = false;
+  bool workItemAssigneeRevisionDuringPagination = false;
+  final workItemAssigneeReads = <Json>[];
+  final workItemAssigneeCandidateEvents = <Json>[];
+  final workItemAssigneeEvents = <Json>[];
+  Json? lastAssigneeMutationResponse;
+
+  void setWorkItemAssigneeCount({required bool group, required int count}) {
+    final base = group ? 3000 : 1000;
+    workItemAssigneeIds[group] = [
+      for (var number = 1; number <= count; number++)
+        'gid://gitlab/User/${base + number}',
+    ];
+  }
+
+  void resetWorkItemAssignees() {
+    workItemAssigneeMetadataAllowed = true;
+    workItemAssigneeWidgetPresent = true;
+    workItemAssigneeMultiple[false] = true;
+    workItemAssigneeMultiple[true] = true;
+    failNextWorkItemAssigneeAcknowledgement = false;
+    dropNextWorkItemAssigneeAckUser = false;
+    mismatchNextWorkItemAssigneeReadback = false;
+    _assigneeReadbackMismatchArmed = false;
+    malformNextAssigneeRead = false;
+    workItemAssigneeRevisionDuringPagination = false;
+    setWorkItemAssigneeCount(group: false, count: 2);
+    setWorkItemAssigneeCount(group: true, count: 2);
+  }
+
+  void reviseWorkItemAssignee({required bool group}) {
+    final id = group
+        ? 'gid://gitlab/WorkItem/1041'
+        : 'gid://gitlab/WorkItem/1031';
+    _workItemRevisions[id] = (_workItemRevisions[id] ?? 0) + 1;
+  }
+
   final Map<bool, bool> workItemNoteEditAllowed = {false: true, true: true};
   // GitLab exposes the same adminNote permission for editing and deletion.
   Map<bool, bool> get workItemNoteDeleteAllowed => workItemNoteEditAllowed;
@@ -453,6 +517,8 @@ final class EmulatorQaFixture extends WorkspaceFixture {
                 : null,
           },
         {'type': 'NOTES', 'discussionLocked': false},
+        if (workItemAssigneeWidgetPresent)
+          _workItemAssigneePreviewWidget(group: group),
         {
           'type': 'MILESTONE',
           'milestone': currentWorkItemMilestone(group: group),
@@ -465,6 +531,319 @@ final class EmulatorQaFixture extends WorkspaceFixture {
             'rolledUpCompletedWeight': group ? 5 : null,
           },
       ],
+    };
+  }
+
+  Json _workItemAssigneePreviewWidget({required bool group}) {
+    final ids = workItemAssigneeIds[group] ?? const <String>[];
+    final shown = ids.take(20).map(_assigneeUserNode).toList(growable: false);
+    final more = ids.length > shown.length;
+    return {
+      'type': 'ASSIGNEES',
+      'allowsMultipleAssignees': workItemAssigneeMultiple[group] ?? true,
+      'assignees': {
+        'nodes': shown,
+        'pageInfo': {
+          'hasNextPage': more,
+          'endCursor': more ? 'qa-assignee-preview:20' : null,
+        },
+      },
+    };
+  }
+
+  Json _assigneeUserNode(String id) {
+    final number = int.tryParse(id.split('/').last) ?? 0;
+    return {'id': id, 'name': '負責人$number', 'username': 'user$number'};
+  }
+
+  int? _assigneePageOffset(bool group, Object? after) {
+    final total = workItemAssigneeIds[group]?.length ?? 0;
+    if (after == null) return 0;
+    if (after is! String || after.isEmpty) return null;
+    final scope = group ? 'group' : 'project';
+    final match = RegExp('^qa-assignees:$scope:(\\d+)\$').firstMatch(after);
+    if (match == null) return null;
+    final offset = int.tryParse(match.group(1)!);
+    if (offset == null || offset <= 0 || offset % 100 != 0) return null;
+    if (offset >= total) return null;
+    return offset;
+  }
+
+  Json workItemAssigneeRecord({
+    required bool group,
+    Object? after,
+    bool acknowledge = false,
+  }) {
+    final id = group
+        ? 'gid://gitlab/WorkItem/1041'
+        : 'gid://gitlab/WorkItem/1031';
+    final offset = _assigneePageOffset(group, after);
+    if (offset == null) {
+      return {
+        'errors': [
+          {'message': 'Synthetic assignee cursor rejected'},
+        ],
+      };
+    }
+    final ids = workItemAssigneeIds[group] ?? const <String>[];
+    final end = math.min(offset + 100, ids.length);
+    final page = ids.sublist(offset, end);
+    final hasNext = end < ids.length;
+    final revision = _workItemRevisions[id] ?? 0;
+    if (!acknowledge &&
+        after == null &&
+        hasNext &&
+        workItemAssigneeRevisionDuringPagination) {
+      workItemAssigneeRevisionDuringPagination = false;
+      reviseWorkItemAssignee(group: group);
+    }
+    if (!acknowledge && after == null && malformNextAssigneeRead) {
+      malformNextAssigneeRead = false;
+      return {
+        'data': {
+          'currentUser': {'id': 'gid://gitlab/User/7'},
+          'workItem': {'id': id, 'widgets': 'malformed'},
+        },
+      };
+    }
+    var nodes = page.map(_assigneeUserNode).toList(growable: false);
+    if (!acknowledge && after == null && _assigneeReadbackMismatchArmed) {
+      _assigneeReadbackMismatchArmed = false;
+      if (nodes.isEmpty) {
+        nodes = [_assigneeUserNode('gid://gitlab/User/9')];
+      } else {
+        nodes = [
+          ...nodes.take(nodes.length - 1),
+          _assigneeUserNode('gid://gitlab/User/9'),
+        ];
+      }
+    }
+    return {
+      'data': {
+        'currentUser': {'id': 'gid://gitlab/User/7'},
+        'workItem': {
+          'id': id,
+          'iid': group ? '41' : '31',
+          'title': workItemContentTitles[group],
+          'state': _workItemStates[id],
+          'createdAt': '2026-10-01T00:00:00Z',
+          'updatedAt': DateTime.utc(
+            2026,
+            10,
+            3,
+            0,
+            0,
+            revision,
+          ).toIso8601String(),
+          'description': workItemContentDescriptions[group],
+          'project': group
+              ? null
+              : {
+                  'id': 'gid://gitlab/Project/42',
+                  'fullPath': 'studio/mobile-workspace',
+                },
+          'namespace': {
+            'id': group
+                ? 'gid://gitlab/Group/84'
+                : 'gid://gitlab/Namespaces::ProjectNamespace/42',
+            'fullPath': group
+                ? 'qa/synthetic-group'
+                : 'studio/mobile-workspace',
+          },
+          'workItemType': {
+            'id':
+                'gid://gitlab/WorkItems::Type/qa-${group ? 'group' : 'project'}',
+            'name': group ? 'Synthetic Epic' : 'Synthetic Task',
+          },
+          'userPermissions': {
+            'readWorkItem': true,
+            'setWorkItemMetadata': workItemAssigneeMetadataAllowed,
+          },
+          'widgets': workItemAssigneeWidgetPresent
+              ? [
+                  {
+                    'type': 'ASSIGNEES',
+                    'allowsMultipleAssignees':
+                        workItemAssigneeMultiple[group] ?? true,
+                    'assignees': {
+                      'nodes': nodes,
+                      'pageInfo': {
+                        'hasNextPage': hasNext,
+                        'endCursor': hasNext
+                            ? 'qa-assignees:${group ? 'group' : 'project'}:$end'
+                            : null,
+                      },
+                    },
+                  },
+                ]
+              : <Object?>[],
+        },
+      },
+    };
+  }
+
+  Json? _assigneeMutationBody(Map<dynamic, dynamic> variables) {
+    final input = variables['input'];
+    if (input is! Map ||
+        input.length != 2 ||
+        !input.containsKey('id') ||
+        !input.containsKey('assigneesWidget')) {
+      return _assigneeRejectedMutation('Synthetic assignee input was rejected');
+    }
+    final widget = input['assigneesWidget'];
+    final rawIds = widget is Map ? widget['assigneeIds'] : null;
+    final ids = <String>[];
+    final seen = <String>{};
+    var validIds = widget is Map && widget.length == 1 && rawIds is List;
+    if (validIds) {
+      for (final raw in rawIds) {
+        if (raw is! String ||
+            !RegExp(r'^gid://gitlab/User/[1-9][0-9]*$').hasMatch(raw) ||
+            !seen.add(raw)) {
+          validIds = false;
+          break;
+        }
+        ids.add(raw);
+      }
+    }
+    final id = input['id'];
+    final shaped = validIds && id is String && _workItemStates.containsKey(id);
+    if (!shaped) {
+      return _assigneeRejectedMutation('Synthetic assignee input was rejected');
+    }
+    final group = id == 'gid://gitlab/WorkItem/1041';
+    final lostAck = failNextWorkItemAssigneeAcknowledgement;
+    final accepted =
+        workItemAssigneeMetadataAllowed &&
+        workItemAssigneeWidgetPresent &&
+        !lostAck;
+    final eventInput = <String, Object?>{
+      'id': id,
+      'assigneesWidget': <String, Object?>{'assigneeIds': ids},
+    };
+    workItemAssigneeEvents.add({
+      'input': eventInput,
+      'accepted': accepted,
+      'group': group,
+    });
+    final sorted = [...ids]..sort();
+    debugPrint(
+      '[work_item_assignee_qa] scope=${group ? 'group' : 'project'} '
+      'assigneeIds=$sorted accepted=$accepted '
+      'sequence=${workItemAssigneeEvents.length} input=$eventInput',
+    );
+    if (!workItemAssigneeMetadataAllowed || !workItemAssigneeWidgetPresent) {
+      return {
+        'data': {
+          'workItemUpdate': {
+            'errors': ['Synthetic assignee update not permitted'],
+            'workItem': null,
+          },
+        },
+      };
+    }
+    var stored = List<String>.from(ids);
+    if (dropNextWorkItemAssigneeAckUser) {
+      dropNextWorkItemAssigneeAckUser = false;
+      if (stored.isNotEmpty) stored = stored.sublist(0, stored.length - 1);
+    }
+    workItemAssigneeIds[group] = stored;
+    reviseWorkItemAssignee(group: group);
+    if (failNextWorkItemAssigneeAcknowledgement) {
+      failNextWorkItemAssigneeAcknowledgement = false;
+      return null;
+    }
+    if (mismatchNextWorkItemAssigneeReadback) {
+      mismatchNextWorkItemAssigneeReadback = false;
+      _assigneeReadbackMismatchArmed = true;
+    }
+    final ack = workItemAssigneeRecord(group: group, acknowledge: true);
+    final workItem = (ack['data'] as Json)['workItem'];
+    return {
+      'data': {
+        'workItemUpdate': {'errors': <String>[], 'workItem': workItem},
+      },
+    };
+  }
+
+  Json _assigneeCandidates(
+    String operation,
+    String query,
+    Map<dynamic, dynamic> variables,
+  ) {
+    final group = operation == 'MobileGroupAssigneeCandidates';
+    final search = variables['search'];
+    final paged =
+        variables.containsKey('first') ||
+        variables.containsKey('after') ||
+        query.contains('autocompleteUsers(first');
+    final path = group ? 'qa/synthetic-group' : 'studio/mobile-workspace';
+    final scoped = variables['fullPath'] == path && search is String && !paged;
+    final pool = [
+      for (var number = 1; number <= 25; number++)
+        {
+          'id': 'gid://gitlab/User/${(group ? 8000 : 6000) + number}',
+          'name':
+              '${group ? '群組候選' : '專案候選'}${number.toString().padLeft(2, '0')}',
+          'username': '${group ? 'gcand' : 'pcand'}$number',
+        },
+    ];
+    final matched = scoped
+        ? pool
+              .where(
+                (user) =>
+                    search.isEmpty ||
+                    (user['name'] as String).contains(search) ||
+                    (user['username'] as String).contains(search),
+              )
+              .take(20)
+              .toList(growable: false)
+        : const <Json>[];
+    workItemAssigneeCandidateEvents.add({
+      'group': group,
+      'search': search,
+      'count': matched.length,
+      'accepted': scoped,
+      'paged': paged,
+    });
+    if (!scoped) {
+      return {
+        'errors': [
+          {'message': 'Synthetic assignee candidates rejected'},
+        ],
+      };
+    }
+    final owner = group
+        ? {
+            'group': {
+              'id': 'gid://gitlab/Group/84',
+              'fullPath': path,
+              'autocompleteUsers': matched,
+            },
+          }
+        : {
+            'project': {
+              'id': 'gid://gitlab/Project/42',
+              'fullPath': path,
+              'autocompleteUsers': matched,
+            },
+          };
+    return {
+      'data': {
+        'currentUser': {'id': 'gid://gitlab/User/7'},
+        ...owner,
+      },
+    };
+  }
+
+  Json _assigneeRejectedMutation(String message) {
+    return {
+      'data': {
+        'workItemUpdate': {
+          'errors': [message],
+          'workItem': null,
+        },
+      },
     };
   }
 
@@ -1294,6 +1673,36 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           ],
         });
       }
+      if (operation == 'MobileWorkItemAssignees' &&
+          _workItemStates.containsKey(variables['id'])) {
+        final group = variables['id'] == 'gid://gitlab/WorkItem/1041';
+        final body = workItemAssigneeRecord(
+          group: group,
+          after: variables['after'],
+        );
+        workItemAssigneeReads.add({
+          'group': group,
+          'after': variables['after'],
+          'accepted': body.containsKey('data'),
+        });
+        return jsonResponse(body);
+      }
+      if (operation == 'MobileProjectAssigneeCandidates' ||
+          operation == 'MobileGroupAssigneeCandidates') {
+        return jsonResponse(
+          _assigneeCandidates(operation!, query, variables),
+        );
+      }
+      if (operation == 'MobileSetWorkItemAssignees') {
+        final body = _assigneeMutationBody(variables);
+        if (body == null) {
+          return jsonResponse({
+            'message': 'Synthetic assignee acknowledgement failure',
+          }, status: 503);
+        }
+        lastAssigneeMutationResponse = body;
+        return jsonResponse(body);
+      }
       if ((operation == 'MobileWorkItemMilestone' ||
               operation == 'MobileWorkItemMilestoneAttribute') &&
           _workItemStates.containsKey(variables['id'])) {
@@ -1945,6 +2354,67 @@ class _QaChromeState extends State<_QaChrome> {
         ),
         const PopupMenuDivider(),
         PopupMenuItem(
+          value: _QaNoteEditControl.allowAssigneeMetadata,
+          child: _qaMenuLabel('允許負責人設定'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.denyAssigneeMetadata,
+          child: _qaMenuLabel('撤回負責人權限'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.absentAssigneeWidget,
+          child: _qaMenuLabel('移除負責人 Widget'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.presentAssigneeWidget,
+          child: _qaMenuLabel('還原負責人 Widget'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.singleAssignee,
+          child: _qaMenuLabel('單人負責人'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.multipleAssignees,
+          child: _qaMenuLabel('多人負責人'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.loseNextAssigneeAck,
+          child: _qaMenuLabel('下次負責人確認失敗'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.dropNextAssigneeAckUser,
+          child: _qaMenuLabel('下次負責人確認少一人'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.mismatchAssigneeReadback,
+          child: _qaMenuLabel('下次負責人回讀不符'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.reviseAssignee,
+          child: _qaMenuLabel('更新負責人工作項目版本'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.assigneeCount21,
+          child: _qaMenuLabel('目前名單 21 人'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.assigneeCount101,
+          child: _qaMenuLabel('目前名單 101 人'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.resetAssignees,
+          child: _qaMenuLabel('還原負責人預設名單'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.assigneePagePastMax,
+          child: _qaMenuLabel('負責人第 20 頁仍有下一頁'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.assigneeRevisionDuringPage,
+          child: _qaMenuLabel('負責人翻頁時更新版本'),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
           value: _QaNoteEditControl.allowMilestoneMetadata,
           child: _qaMenuLabel('允許里程碑設定'),
         ),
@@ -2128,6 +2598,72 @@ class _QaChromeState extends State<_QaChrome> {
       _QaNoteEditControl.presentWeight => () {
         widget.fixture.workItemWeightPresent = true;
         return '權重 Widget：還原';
+      }(),
+      _QaNoteEditControl.allowAssigneeMetadata => () {
+        widget.fixture.workItemAssigneeMetadataAllowed = true;
+        return '負責人設定：允許';
+      }(),
+      _QaNoteEditControl.denyAssigneeMetadata => () {
+        widget.fixture.workItemAssigneeMetadataAllowed = false;
+        return '負責人權限：撤回';
+      }(),
+      _QaNoteEditControl.absentAssigneeWidget => () {
+        widget.fixture.workItemAssigneeWidgetPresent = false;
+        return '負責人 Widget：移除';
+      }(),
+      _QaNoteEditControl.presentAssigneeWidget => () {
+        widget.fixture.workItemAssigneeWidgetPresent = true;
+        return '負責人 Widget：還原';
+      }(),
+      _QaNoteEditControl.singleAssignee => () {
+        widget.fixture.workItemAssigneeMultiple[false] = false;
+        widget.fixture.workItemAssigneeMultiple[true] = false;
+        return '負責人：單人';
+      }(),
+      _QaNoteEditControl.multipleAssignees => () {
+        widget.fixture.workItemAssigneeMultiple[false] = true;
+        widget.fixture.workItemAssigneeMultiple[true] = true;
+        return '負責人：多人';
+      }(),
+      _QaNoteEditControl.loseNextAssigneeAck => () {
+        widget.fixture.failNextWorkItemAssigneeAcknowledgement = true;
+        return '下一次負責人確認將失敗';
+      }(),
+      _QaNoteEditControl.dropNextAssigneeAckUser => () {
+        widget.fixture.dropNextWorkItemAssigneeAckUser = true;
+        return '下一次負責人確認將少一人';
+      }(),
+      _QaNoteEditControl.mismatchAssigneeReadback => () {
+        widget.fixture.mismatchNextWorkItemAssigneeReadback = true;
+        return '下一次負責人回讀將不符';
+      }(),
+      _QaNoteEditControl.reviseAssignee => () {
+        widget.fixture.reviseWorkItemAssignee(group: false);
+        widget.fixture.reviseWorkItemAssignee(group: true);
+        return '負責人工作項目版本已更新';
+      }(),
+      _QaNoteEditControl.assigneeCount21 => () {
+        widget.fixture.setWorkItemAssigneeCount(group: false, count: 21);
+        widget.fixture.setWorkItemAssigneeCount(group: true, count: 21);
+        return '目前負責人名單：21 人';
+      }(),
+      _QaNoteEditControl.assigneeCount101 => () {
+        widget.fixture.setWorkItemAssigneeCount(group: false, count: 101);
+        widget.fixture.setWorkItemAssigneeCount(group: true, count: 101);
+        return '目前負責人名單：101 人';
+      }(),
+      _QaNoteEditControl.resetAssignees => () {
+        widget.fixture.resetWorkItemAssignees();
+        return '負責人名單已還原';
+      }(),
+      _QaNoteEditControl.assigneePagePastMax => () {
+        widget.fixture.setWorkItemAssigneeCount(group: false, count: 2001);
+        widget.fixture.setWorkItemAssigneeCount(group: true, count: 2001);
+        return '負責人第 20 頁仍有下一頁';
+      }(),
+      _QaNoteEditControl.assigneeRevisionDuringPage => () {
+        widget.fixture.workItemAssigneeRevisionDuringPagination = true;
+        return '負責人翻頁時將更新版本';
       }(),
       _QaNoteEditControl.allowMilestoneMetadata => () {
         widget.fixture.workItemMilestoneMetadataAllowed = true;

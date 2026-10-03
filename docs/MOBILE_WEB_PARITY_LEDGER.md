@@ -17,7 +17,7 @@ specification numbers have been invented.
 | Manage / Activity | Loaded timeline and eight event filters at phone width | Activity feed | Full event-kind/authenticated parity walk |
 | Manage / Members | Loaded roles/source/search/sort and member rows | Member list/actions | Custom roles, complete administration and live permissions |
 | Manage / Labels | Loaded Active/Archived, search/sort and empty state | List/create/edit/delete | Scoped labels/subscriptions and live CRUD |
-| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project/group-owned and descendant cursor lists with scope/state/search/type/order controls, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, seven lazy attribute kinds, server-filtered/ordered activity paging, guarded Markdown comments/replies, ordinary note editing/deletion, on-demand emoji reactions, lazy personal notification subscription and close/reopen | Remaining widgets, internal-note workflows, custom saved views and remaining list display/sort families, remaining Work Item mutations and authenticated/edition acceptance |
+| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project/group-owned and descendant cursor lists with scope/state/search/type/order controls, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, project/group assignee replacement, seven lazy attribute kinds, server-filtered/ordered activity paging, guarded Markdown comments/replies, ordinary note editing/deletion, on-demand emoji reactions, lazy personal notification subscription and close/reopen | Remaining widgets, internal-note workflows, custom saved views and remaining list display/sort families, remaining Work Item mutations and authenticated/edition acceptance |
 | Plan / Boards | Development board observed | Phone-width columns, card move, board/list management | Paid scope/list creation, touch drag/drop and live mutation readback |
 | Plan / Milestones | Loaded empty-state explanation | List/detail/create/edit/delete | Full progress/reporting and live CRUD |
 | Plan / Wiki | Loaded empty Wiki explanation | Page list/read/create/edit/delete | History, attachments, tree and live CRUD |
@@ -214,7 +214,7 @@ and [GraphQL pagination](https://docs.gitlab.com/api/graphql/getting_started/#pa
    timeline, metrics and on-call workflows remain open.
 2. Fixed-query GraphQL Work Items now include server-returned scope/type IDs,
    project cursor paging and exact project/group details with five base widgets
-   plus seven independently loaded attributes, guarded Markdown activity comments/replies,
+   plus seven independently loaded attributes, project/group assignee replacement, guarded Markdown activity comments/replies,
    ordinary note edits/deletion and emoji reactions. Complete remaining
    widgets and internal-note workflows, custom saved views and remaining list display/sort families,
    remaining native mutations and actual authenticated/private/edition validation.
@@ -330,8 +330,20 @@ Work Item `631759` and group Work Item `23883`. The project accessibility file
 saved with that walk is a sidebar diff and does not contain the Weight row;
 the screenshot is the visual record and a full project tree was not invented.
 The group accessibility tree is complete and shows Weight / None. Signed-in
-editing and live mutations were not run. Screenshot hashes are in
-`artifacts/mobile-parity/work-item-weight/browser-observation.json`.
+editing and live mutations were not run. This tree has no weight
+`browser-observation.json`. The screenshots from that walk are the visual
+record; this ledger does not invent a metadata hash. The prior frozen checkout
+`d745b81369dddda6186414d598d2026dbd9569ad` (short `d745b81`) is not the
+repository remote default `main`. It records 2,133 full tests and 339 tracked
+files whose bytes matched the tested archive.
+`native-cases-d745b81-attempt-4.json` matched the installed package SHA,
+passed startup QA, then failed the first case on a bounded `uiautomator dump`
+timeout of 1.1856 seconds: 0 PASS and 9 NOT_RUN.
+`native-final-release-d745b81-attempt-4.json` is PASS for Android package uid
+`10213`, matching hash and development certificate, restored default geometry
+and a blank login. Earlier transport-guard stalls stay in their own receipts.
+Those receipts are not this assignee source and are not a native pass for
+weight.
 
 The native action stays on the existing lazy attribute row. Own weight, zero
 and null remain distinct from `rolledUpWeight` and `rolledUpCompletedWeight`.
@@ -348,3 +360,59 @@ archive builds, the owned emulator, CI, authenticated private writes, iOS and
 TalkBack. Those remain **NOT_RUN**. This slice does not close the ledger gaps
 above and does not claim full Web parity, G0 acceptance or measured
 performance. Receipts belong under `artifacts/mobile-parity/work-item-weight/`.
+
+## Work Item assignees
+
+Project and group detail can replace the assignee set. The editor opens after
+`workItemAssignees` returns a complete fresh connection at `first: 100` for at
+most 20 pages, stopping at 2,000 people, with the same actor, scope, revision
+and a boolean `allowsMultipleAssignees`. The parent already shows the first 20
+names until a write starts. Search calls `autocompleteUsers` on the project,
+or on the group when the item has no project, with the submitted query and no
+candidate cursor. The client keeps at most 20 names. Inactive people already
+assigned stay in the saved set. Save always preflights actor, `readWorkItem`,
+`setWorkItemMetadata`, revision and the full current set before a write or a
+no-op. The input is `id` and `assigneesWidget.assigneeIds` only. An empty
+array clears the set. False `allowsMultipleAssignees` is one radio selection;
+true is checkboxes. `adminWorkItem` and `updateWorkItem` do not grant the
+metadata permission. The target is single use, sends no mutation when the set
+is unchanged, and GitLab's input has no compare-and-swap field. The mutation
+does not select `Query.currentUser`; that field is not an input. Success
+requires `workItemUpdate.errors: []` and an independent complete read of the
+same desired set. Uncertain transport or a mismatched readback is not
+replayed: close and reopen on fresh server state. Account, API or revision
+invalidation removes the editor and ignores a late save. One item's settle
+cannot clear another item. During the write and the parent refetch, stale
+chips and a false 尚未指派 stay hidden behind 更新中. A failed refetch keeps
+the chips hidden and shows 尚未確認最新負責人. Widget tests check the 48 dp footer
+at 320 dp and 2× text. That is test proof only.
+
+A signed-out 390×844 public observation recorded Assignees / None in main
+`AssigneesRoot/browser-observation.json` and did not authenticate or write.
+Current evidence is the isolated 50-test run (20 API, 20 UI, 10 fixture) and
+scoped analysis. An earlier 39-test fixture run, including weight and
+milestone, passed separately. API and fixture review approved with zero
+must-fix items. UI final review is APPROVE with zero required changes in
+`artifacts/mobile-parity/work-item-assignees/ui-final-review.json`. Full
+suite, archive, new commit, APK, native, private, iOS, G0, TalkBack and
+performance for assignees are **NOT_RUN**. The other parity gaps stay open.
+Walking all 30 menus does not mean every function is complete. Pin
+[`a011400989c4b7a5b626752dbfc35941e745bf34`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md)
+documents
+[`workItemUpdate.assigneesWidget`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md#mutation-workitemupdate-assigneeswidget),
+[`assigneeIds`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md#workitemwidgetassigneesinput-assigneeids),
+[`readWorkItem`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md#workitempermissions-readworkitem),
+[`setWorkItemMetadata`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md#workitempermissions-setworkitemmetadata),
+[`Project.autocompleteUsers` search](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md#project-autocompleteusers-search)
+and
+[`Group.autocompleteUsers` search](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md#group-autocompleteusers-search).
+[`update.rb`](https://gitlab.com/gitlab-org/gitlab/-/raw/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/mutations/work_items/update.rb),
+[`mutation_type.rb`](https://gitlab.com/gitlab-org/gitlab/-/raw/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/types/mutation_type.rb)
+and
+[`query_type.rb`](https://gitlab.com/gitlab-org/gitlab/-/raw/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/types/query_type.rb)
+are the checked primary files: the mutation payload has no actor field, and
+`currentUser` is only `Query.currentUser`. The pin marks widget
+[`allowsMultipleAssignees`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/doc/api/graphql/reference/_index.md#workitemwidgetassignees-allowsmultipleassignees)
+deprecated; this client still reads that boolean and does not read the type
+definition instead. Root full-suite, new commit, archive, build and native
+evidence remain separate receipts. This does not promise acceptance.

@@ -951,8 +951,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Customer follow-up'));
     await settleNetworkWidgets(tester);
-    await tester.drag(find.byType(ListView).last, const Offset(0, -320));
-    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(find.text('Bounded child'), 260);
+    await tester.pump();
     await tester.tap(find.text('Bounded child'));
     await settleNetworkWidgets(tester);
 

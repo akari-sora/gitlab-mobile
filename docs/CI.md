@@ -21,6 +21,8 @@ CI=true GITLAB_MOBILE_TEST_FONT='/System/Library/Fonts/STHeiti Medium.ttc' \
 
 A missing chosen font still fails that required CI check. The test does not install a font or fall back to a Mac path on its own.
 
+`test/work_item_assignee_api_test.dart`, `test/work_item_assignee_ui_test.dart` and `test/emulator_work_item_assignees_fixture_test.dart` cover project/group assignee replacement. The current isolated run is 50 passed (20 API, 20 UI, 10 fixture), with zero failures, errors and skips, plus scoped analysis of those files. An earlier fixture log passed 39 cases that also include weight and milestone; that is a separate run. API and fixture review approved with zero must-fix items. UI final review is APPROVE with zero required changes (`artifacts/mobile-parity/work-item-assignees/ui-final-review.json`: 50 passed, 20 API / 20 UI / 10 fixture, zero failures, errors and skips). Full suite, archive, new commit, APK, native, private, iOS and G0 checks for assignees are **NOT_RUN**. Run these with the enforced lockfile and `--no-pub` after that resolve. Do not skip the CJK font check and do not treat the targeted run as an APK. [Pipeline 2909579097](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2909579097) was observed running on the previous HEAD. This assignee source has no new commit, so that pipeline is not its result.
+
 No tests or analyzer failures are ignored. A missing/unsuccessful Flutter completion event makes the JUnit conversion fail. Tests emit compact live progress, per-test limits and an overall test-process deadline. CI does not silently fix or reformat the source and claim the changed code was tested.
 
 ## Toolchains and reproducibility
