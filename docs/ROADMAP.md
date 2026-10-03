@@ -15,6 +15,7 @@ lazy activity with server-side filtering/order, guarded Markdown comments/replie
 ordinary project/group note edits, guarded note deletion and emoji reactions,
 lazy personal notification subscription,
 on-demand title/Markdown description editing,
+on-demand milestone assignment/removal,
 and project/group close/reopen.
 Long descriptions collapse before building Markdown. Account-client
 read caching, request sharing, lazy list derivation and syntax-span LRU reduce
@@ -73,6 +74,16 @@ atomic compare-and-set. Official reviewed contracts:
 [`Work Item permissions`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/types/permission_types/work_item.rb).
 This slice does not close other Work Item mutations or authenticated/private/iOS
 acceptance.
+
+Milestone editing uses the existing lazy attribute row and stages an explicit
+current, clear or active candidate selection. Project and group pickers use the
+server-scoped ancestor connection, server expiry state, submitted searches and
+50-row pages bounded to 200 candidates. Cross-page duplicates and repeated
+cursors fail closed. A fresh metadata permission and original revision bind each
+single-use update; acknowledgement and independent readback must agree before
+the existing row changes. Candidate query failures still allow clearing the
+current assignment. Remaining widget edits, authenticated/private CRUD and iOS
+acceptance stay open.
 
 ## G0 — Identity and private repository reader (implemented slice, acceptance incomplete)
 

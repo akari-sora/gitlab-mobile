@@ -1058,3 +1058,20 @@ from empty Markdown. Local preflight is not an atomic server compare-and-swap.
 Source, public read-only, exact-commit APK, native emulator and CI receipts live
 under `artifacts/mobile-parity/work-item-content/`. This slice does not claim
 scroll improvement or authenticated private/iOS/full Web parity acceptance.
+
+## On-demand Work Item milestone editing
+
+The existing lazy milestone row opens a native staged picker on demand. It
+preserves closed/expired current milestones, labels the server's expiry state,
+offers explicit removal independently of candidate loading, and searches active
+project/group and ancestor milestones only on submission. Lazy candidate rows
+use bounded 50-row pages with a 200-row limit and checked cursor/ID history.
+
+Writes use the independent metadata permission, a single-use target, fresh
+actor/scope/type/revision preflight, milestone-only input and an exact independent
+readback. Candidate loading adds no request to ordinary base detail loading.
+Successful saves replace the existing milestone attribute row; failed saves
+cannot replay. Browser and attributable source/APK/native/CI evidence live under
+`artifacts/mobile-parity/work-item-milestone/`. This feature does not establish
+measured scroll improvement, atomic conflict protection, authenticated private
+writes or iOS acceptance.

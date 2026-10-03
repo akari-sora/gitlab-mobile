@@ -1807,6 +1807,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           detail: detail,
           isCurrent: widget.isCurrent,
           ownerChanges: widget.ownerChanges,
+          onRoute: _ownRoute,
         ),
         if (assignees != null)
           _section(

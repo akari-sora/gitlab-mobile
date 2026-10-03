@@ -92,6 +92,15 @@ acceptance. See the reviewed
 [`Update` mutation](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/mutations/work_items/update.rb)
 and [current ledger](docs/MOBILE_WEB_PARITY_LEDGER.md).
 
+The existing Work Item milestone row now opens a native selection page. It
+preserves the current assignment, including closed and server-expired milestones,
+and offers explicit removal, submitted name searches and bounded loading of
+active project/group and ancestor milestones. Clearing does not depend on the
+candidate query succeeding. Each save uses fresh `readWorkItem` and
+`setWorkItemMetadata` permission, exact scope/revision checks, one milestone-only
+mutation and an independent readback. A failed save requires closing and
+reopening; the preflight/update interval is not atomic conflict protection.
+
 ## v0.5 — mobile UX overhaul and GitLab parity
 
 Still a development preview. Evidence is in the [v0.5 ledger](docs/V0_5_VERIFICATION.md); anything it does not list is **NOT_RUN**.

@@ -8,7 +8,9 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/work_item_attribute_models.dart';
 import '../../core/work_item_graph_models.dart';
+import '../../core/work_item_milestone_models.dart';
 import '../../shared/workspace_ui.dart';
+import 'work_item_milestone.dart';
 
 const _widgetKinds = <String, WorkItemAttributeKind>{
   'STATUS': WorkItemAttributeKind.status,
@@ -51,6 +53,7 @@ class WorkItemAttributesPanel extends StatefulWidget {
     this.isCurrent,
     this.ownerChanges,
     this.loadAttribute,
+    this.onRoute,
   });
 
   final Account account;
@@ -59,6 +62,7 @@ class WorkItemAttributesPanel extends StatefulWidget {
   final bool Function()? isCurrent;
   final Listenable? ownerChanges;
   final WorkItemAttributeLoader? loadAttribute;
+  final ValueChanged<Route<dynamic>>? onRoute;
 
   @override
   State<WorkItemAttributesPanel> createState() =>
@@ -203,9 +207,38 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
     }
   }
 
+  void _applyMilestone(WorkItemMilestoneSnapshot snapshot, int epoch) {
+    if (!_current(epoch)) return;
+    final expected = widget.detail.summary;
+    final actual = snapshot.summary;
+    if (actual.id != expected.id ||
+        actual.iid != expected.iid ||
+        actual.type.id != expected.type.id ||
+        actual.project?.id != expected.project?.id ||
+        actual.project?.fullPath != expected.project?.fullPath ||
+        actual.namespace?.id != expected.namespace?.id ||
+        actual.namespace?.fullPath != expected.namespace?.fullPath ||
+        snapshot.availability != WorkItemMilestoneAvailability.present) {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+    setState(() {
+      _loaded[WorkItemAttributeKind.milestone] = WorkItemAttributeSnapshot(
+        workItemId: actual.id,
+        iid: actual.iid,
+        project: actual.project,
+        namespace: actual.namespace,
+        kind: WorkItemAttributeKind.milestone,
+        availability: WorkItemAttributeAvailability.present,
+        value: WorkItemMilestoneAttribute(milestone: snapshot.milestone),
+      );
+      _errors.remove(WorkItemAttributeKind.milestone);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final kinds = _kinds;
+    final epoch = _epoch;
     if (kinds.isEmpty) return const SizedBox.shrink();
     return Card(
       key: const ValueKey('work-item-attributes'),
@@ -226,6 +259,22 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
               snapshot: _loaded[kind],
               error: _errors[kind],
               onRetry: () => _retry(kind),
+              action:
+                  kind == WorkItemAttributeKind.milestone &&
+                      !_loading.contains(kind) &&
+                      !_errors.containsKey(kind) &&
+                      _loaded[kind]?.availability ==
+                          WorkItemAttributeAvailability.present
+                  ? WorkItemMilestoneControl(
+                      account: widget.account,
+                      api: widget.api,
+                      detail: widget.detail,
+                      isCurrent: () => _current(epoch),
+                      ownerChanges: widget.ownerChanges,
+                      onRoute: widget.onRoute,
+                      onSaved: (snapshot) => _applyMilestone(snapshot, epoch),
+                    )
+                  : null,
             ),
         ],
       ),
@@ -241,6 +290,7 @@ class _AttributeRow extends StatelessWidget {
     required this.snapshot,
     required this.error,
     required this.onRetry,
+    this.action,
   });
 
   final String title;
@@ -248,6 +298,7 @@ class _AttributeRow extends StatelessWidget {
   final WorkItemAttributeSnapshot? snapshot;
   final ApiFailure? error;
   final VoidCallback onRetry;
+  final Widget? action;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -273,6 +324,7 @@ class _AttributeRow extends StatelessWidget {
           _AttributeValue(snapshot!)
         else
           const Text('等待讀取'),
+        ?action,
         const Divider(height: 18),
       ],
     ),

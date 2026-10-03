@@ -294,3 +294,31 @@ Receipts under `artifacts/mobile-parity/work-item-content/` identify actual
 source, tests, installed emulator cases and CI; absent receipts are NOT_RUN.
 Authenticated private edits, quick-action side effects, older-server editions,
 iOS and remaining Work Item mutations remain open.
+
+## Work Item milestone follow-up
+
+A signed-out 390 x 844 browser walk actually painted Milestone / None in the
+project Issue and group Epic attribute rows above, and the project's milestone
+list with state tabs, title filter and due/start/name sort choices. It did not
+observe an authenticated editing picker or change a live milestone.
+
+The native milestone action belongs to the existing attribute row. Its full-page
+picker keeps the current closed/expired assignment visible, offers removal even
+when candidate loading fails, and stages one explicit selection before Save.
+Active candidates come from a fresh identity-checked project/group connection
+including ancestors; path prefixes never establish eligibility. Search submits
+explicitly. Pages contain at most 50 rows and stop at 200; duplicate IDs and
+cursor cycles fail closed. Expiry comes from the server rather than a client
+timezone calculation.
+
+Fresh `readWorkItem` and `setWorkItemMetadata` permission bind a single-use
+milestone target independently of general title/description editing. The exact
+update input contains only the item ID and nested `milestoneWidget.milestoneId`;
+inner null clears. Preflight checks the original revision and milestone, and
+acknowledgement plus an independent readback must confirm the desired state
+before replacing the existing row. Every failed attempt requires reopening.
+GitLab's update has no atomic compare-and-swap, so a final concurrent-change
+interval remains. Source/browser/build/native/CI receipts belong to
+`artifacts/mobile-parity/work-item-milestone/`; absent cases remain NOT_RUN.
+Other widget mutations and authenticated/private/edition/iOS acceptance remain
+open.

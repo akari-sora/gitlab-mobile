@@ -57,6 +57,11 @@ enum _QaNoteEditControl {
   denyNotificationWrites,
   failNotificationAcknowledgement,
   failNotificationRead,
+  allowMilestoneMetadata,
+  denyMilestoneMetadata,
+  failMilestoneCandidates,
+  failMilestoneAcknowledgement,
+  reviseMilestone,
 }
 
 void main() {
@@ -165,6 +170,15 @@ final class EmulatorQaFixture extends WorkspaceFixture {
   bool workItemNotificationWritesAllowed = true;
   bool failNextWorkItemNotificationAcknowledgement = false;
   bool failNextWorkItemNotificationRead = false;
+  final List<Json> workItemMilestoneEvents = [];
+  final List<Json> workItemMilestonePickerReads = [];
+  final Map<bool, String?> workItemMilestoneIds = {
+    false: 'gid://gitlab/Milestone/905',
+    true: 'gid://gitlab/Milestone/915',
+  };
+  bool workItemMilestoneMetadataAllowed = true;
+  bool failNextWorkItemMilestoneCandidates = false;
+  bool failNextWorkItemMilestoneAcknowledgement = false;
   final Map<bool, bool> workItemNoteEditAllowed = {false: true, true: true};
   // GitLab exposes the same adminNote permission for editing and deletion.
   Map<bool, bool> get workItemNoteDeleteAllowed => workItemNoteEditAllowed;
@@ -181,6 +195,120 @@ final class EmulatorQaFixture extends WorkspaceFixture {
   int _workItemNoteEditSequence = 0;
   final Map<String, int> _workItemRevisions = {};
   final Set<int> _doneTodos = {};
+
+  Json _workItemMilestoneOwner({required bool group, required int index}) {
+    if (group) {
+      return {
+        'project': null,
+        'group': {
+          'id': index.isEven
+              ? 'gid://gitlab/Group/84'
+              : 'gid://gitlab/Group/8',
+          'fullPath': index.isEven ? 'qa/synthetic-group' : 'qa',
+        },
+      };
+    }
+    if (index % 5 == 0) {
+      return {
+        'project': null,
+        'group': {
+          'id': 'gid://gitlab/Group/4',
+          'fullPath': 'studio',
+        },
+      };
+    }
+    return {
+      'project': {
+        'id': 'gid://gitlab/Project/42',
+        'fullPath': 'studio/mobile-workspace',
+      },
+      'group': null,
+    };
+  }
+
+  String _workItemMilestoneWebPath(Json owner, int iid) {
+    final project = owner['project'];
+    if (project is Map) {
+      return '/${project['fullPath']}/-/milestones/$iid';
+    }
+    final group = owner['group'] as Map;
+    return '/groups/${group['fullPath']}/-/milestones/$iid';
+  }
+
+  Json _closedWorkItemMilestone({required bool group}) {
+    final number = group ? 915 : 905;
+    final iid = group ? 15 : 5;
+    final owner = _workItemMilestoneOwner(group: group, index: 0);
+    return {
+      'id': 'gid://gitlab/Milestone/$number',
+      'iid': '$iid',
+      'title': 'Closed expired ${group ? 'group' : 'project'} milestone',
+      'state': 'CLOSED',
+      'expired': true,
+      'dueDate': '2026-09-15',
+      'startDate': '2026-09-01',
+      'webPath': _workItemMilestoneWebPath(owner, iid),
+      ...owner,
+    };
+  }
+
+  List<Json> workItemMilestoneCandidates({required bool group}) =>
+      List<Json>.generate(65, (index) {
+        final number = index + 1;
+        final id = (group ? 2000 : 1000) + number;
+        final owner = _workItemMilestoneOwner(group: group, index: number);
+        return {
+          'id': 'gid://gitlab/Milestone/$id',
+          'iid': '$number',
+          'title':
+              '${number.isEven ? 'Release' : 'Planning'} ${number.toString().padLeft(2, '0')} ${group ? 'group' : 'project'}',
+          'state': 'ACTIVE',
+          'expired': number % 11 == 0,
+          'dueDate': DateTime.utc(2026, 10, 1)
+              .add(Duration(days: number))
+              .toIso8601String()
+              .substring(0, 10),
+          'startDate': DateTime.utc(2026, 9, 1)
+              .add(Duration(days: number))
+              .toIso8601String()
+              .substring(0, 10),
+          'webPath': _workItemMilestoneWebPath(owner, number),
+          ...owner,
+        };
+      }, growable: false);
+
+  Json? workItemMilestoneById({required bool group, required String id}) {
+    final closed = _closedWorkItemMilestone(group: group);
+    if (closed['id'] == id) return closed;
+    for (final milestone in workItemMilestoneCandidates(group: group)) {
+      if (milestone['id'] == id) return milestone;
+    }
+    return null;
+  }
+
+  Json? currentWorkItemMilestone({required bool group}) {
+    final id = workItemMilestoneIds[group];
+    return id == null ? null : workItemMilestoneById(group: group, id: id);
+  }
+
+  Json workItemMilestoneRecord({required bool group}) => {
+    ...workItemRecord(group: group),
+    'userPermissions': {
+      'readWorkItem': true,
+      'setWorkItemMetadata': workItemMilestoneMetadataAllowed,
+    },
+    'widgets': [
+      {
+        'type': 'MILESTONE',
+        'milestone': currentWorkItemMilestone(group: group),
+      },
+    ],
+  };
+
+  void reviseWorkItemMilestone({required bool group}) {
+    final id = 'gid://gitlab/WorkItem/${group ? 1041 : 1031}';
+    _workItemRevisions[id] = (_workItemRevisions[id] ?? 0) + 1;
+  }
 
   List<Json> get groupListRows => List.generate(30, (index) {
     final root = index < 5;
@@ -267,7 +395,12 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         'id': 'gid://gitlab/WorkItems::Type/qa-${group ? 'group' : 'project'}',
         'name': group ? 'Synthetic Epic' : 'Synthetic Task',
       },
-      'userPermissions': {'updateWorkItem': true, 'createNote': true},
+      'userPermissions': {
+        'readWorkItem': true,
+        'updateWorkItem': true,
+        'setWorkItemMetadata': workItemMilestoneMetadataAllowed,
+        'createNote': true,
+      },
       'description': workItemContentDescriptions[group],
       'widgets': [
         if (workItemDescriptionPresent[group] == true)
@@ -287,6 +420,10 @@ final class EmulatorQaFixture extends WorkspaceFixture {
                 : null,
           },
         {'type': 'NOTES', 'discussionLocked': false},
+        {
+          'type': 'MILESTONE',
+          'milestone': currentWorkItemMilestone(group: group),
+        },
       ],
     };
   }
@@ -1039,6 +1176,149 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           },
         });
       }
+      if ((operation == 'MobileWorkItemMilestone' ||
+              operation == 'MobileWorkItemMilestoneAttribute') &&
+          _workItemStates.containsKey(variables['id'])) {
+        final group = variables['id'] == 'gid://gitlab/WorkItem/1041';
+        return jsonResponse({
+          'data': {
+            if (operation == 'MobileWorkItemMilestone')
+              'currentUser': {'id': 'gid://gitlab/User/7'},
+            'workItem': workItemMilestoneRecord(group: group),
+          },
+        });
+      }
+      if ((operation == 'MobileProjectWorkItemMilestones' &&
+              variables['fullPath'] == 'studio/mobile-workspace') ||
+          (operation == 'MobileGroupWorkItemMilestones' &&
+              variables['fullPath'] == 'qa/synthetic-group')) {
+        final group = operation == 'MobileGroupWorkItemMilestones';
+        final search = (variables['search'] as String? ?? '').toLowerCase();
+        final rawAfter = variables['after'];
+        final offset = rawAfter == null
+            ? 0
+            : int.parse((rawAfter as String).split(':').last);
+        final filtered = workItemMilestoneCandidates(group: group)
+            .where(
+              (milestone) => (milestone['title'] as String)
+                  .toLowerCase()
+                  .contains(search),
+            )
+            .toList(growable: false);
+        final page = filtered.skip(offset).take(50).toList(growable: false);
+        final hasNext = offset + page.length < filtered.length;
+        workItemMilestonePickerReads.add({
+          'group': group,
+          'search': variables['search'],
+          'after': rawAfter,
+          'count': page.length,
+        });
+        debugPrint(
+          '[work_item_milestone_picker_qa] '
+          'scope=${group ? 'group' : 'project'} search=${variables['search']} '
+          'after=$rawAfter count=${page.length} '
+          'sequence=${workItemMilestonePickerReads.length}',
+        );
+        if (failNextWorkItemMilestoneCandidates) {
+          failNextWorkItemMilestoneCandidates = false;
+          return jsonResponse({
+            'message': 'Synthetic milestone candidate failure',
+          }, status: 503);
+        }
+        final root = {
+          'id': group
+              ? 'gid://gitlab/Group/84'
+              : 'gid://gitlab/Project/42',
+          'fullPath': group
+              ? 'qa/synthetic-group'
+              : 'studio/mobile-workspace',
+          'milestones': {
+            'nodes': page,
+            'pageInfo': {
+              'hasNextPage': hasNext,
+              'endCursor': hasNext
+                  ? 'qa-milestones:${offset + page.length}'
+                  : null,
+            },
+          },
+        };
+        return jsonResponse({
+          'data': {
+            'currentUser': {'id': 'gid://gitlab/User/7'},
+            group ? 'group' : 'project': root,
+          },
+        });
+      }
+      if (operation == 'MobileSetWorkItemMilestone') {
+        final input = variables['input'];
+        final widget = input is Map ? input['milestoneWidget'] : null;
+        final id = input is Map ? input['id'] : null;
+        final validShape =
+            input is Map &&
+            input.length == 2 &&
+            input.containsKey('id') &&
+            input.containsKey('milestoneWidget') &&
+            widget is Map &&
+            widget.length == 1 &&
+            widget.containsKey('milestoneId');
+        final milestoneId = widget is Map ? widget['milestoneId'] : null;
+        final validMilestoneId = milestoneId == null || milestoneId is String;
+        if (validShape &&
+            validMilestoneId &&
+            _workItemStates.containsKey(id)) {
+          final group = id == 'gid://gitlab/WorkItem/1041';
+          final milestone = milestoneId is String
+              ? workItemMilestoneById(group: group, id: milestoneId)
+              : null;
+          final accepted =
+              workItemMilestoneMetadataAllowed &&
+              (milestoneId == null || milestone != null);
+          final eventInput = <String, Object?>{
+            'id': id,
+            'milestoneWidget': <String, Object?>{
+              'milestoneId': milestoneId,
+            },
+          };
+          workItemMilestoneEvents.add({
+            'group': group,
+            'accepted': accepted,
+            'input': eventInput,
+          });
+          debugPrint(
+            '[work_item_milestone_qa] '
+            'scope=${group ? 'group' : 'project'} '
+            'milestoneId=${milestoneId ?? 'clear'} accepted=$accepted '
+            'sequence=${workItemMilestoneEvents.length} input=$eventInput',
+          );
+          if (!accepted) {
+            return jsonResponse({
+              'data': {
+                'workItemUpdate': {
+                  'errors': ['Synthetic milestone update not permitted'],
+                  'workItem': null,
+                },
+              },
+            });
+          }
+          workItemMilestoneIds[group] = milestoneId as String?;
+          _workItemRevisions[id as String] =
+              (_workItemRevisions[id] ?? 0) + 1;
+          if (failNextWorkItemMilestoneAcknowledgement) {
+            failNextWorkItemMilestoneAcknowledgement = false;
+            return jsonResponse({
+              'message': 'Synthetic milestone acknowledgement failure',
+            }, status: 503);
+          }
+          return jsonResponse({
+            'data': {
+              'workItemUpdate': {
+                'errors': <String>[],
+                'workItem': workItemMilestoneRecord(group: group),
+              },
+            },
+          });
+        }
+      }
       if (operation == 'MobileWorkItemContent' &&
           _workItemStates.containsKey(variables['id'])) {
         final id = variables['id'] as String;
@@ -1532,6 +1812,27 @@ class _QaChromeState extends State<_QaChrome> {
         ),
         const PopupMenuDivider(),
         PopupMenuItem(
+          value: _QaNoteEditControl.allowMilestoneMetadata,
+          child: _qaMenuLabel('允許里程碑設定'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.denyMilestoneMetadata,
+          child: _qaMenuLabel('撤回里程碑權限'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.failMilestoneCandidates,
+          child: _qaMenuLabel('下次里程碑候選讀取失敗'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.failMilestoneAcknowledgement,
+          child: _qaMenuLabel('下次里程碑確認失敗'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.reviseMilestone,
+          child: _qaMenuLabel('更新里程碑工作項目版本'),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
           value: _QaNoteEditControl.notificationAuthenticated,
           child: _qaMenuLabel('還原通知帳號'),
         ),
@@ -1669,6 +1970,27 @@ class _QaChromeState extends State<_QaChrome> {
       _QaNoteEditControl.failNotificationRead => () {
         widget.fixture.failNextWorkItemNotificationRead = true;
         return '下一次訂閱讀取將失敗';
+      }(),
+      _QaNoteEditControl.allowMilestoneMetadata => () {
+        widget.fixture.workItemMilestoneMetadataAllowed = true;
+        return '里程碑設定：允許';
+      }(),
+      _QaNoteEditControl.denyMilestoneMetadata => () {
+        widget.fixture.workItemMilestoneMetadataAllowed = false;
+        return '里程碑權限：撤回';
+      }(),
+      _QaNoteEditControl.failMilestoneCandidates => () {
+        widget.fixture.failNextWorkItemMilestoneCandidates = true;
+        return '下一次里程碑候選讀取將失敗';
+      }(),
+      _QaNoteEditControl.failMilestoneAcknowledgement => () {
+        widget.fixture.failNextWorkItemMilestoneAcknowledgement = true;
+        return '下一次里程碑確認將失敗';
+      }(),
+      _QaNoteEditControl.reviseMilestone => () {
+        widget.fixture.reviseWorkItemMilestone(group: false);
+        widget.fixture.reviseWorkItemMilestone(group: true);
+        return '里程碑工作項目版本已更新';
       }(),
       _QaNoteEditControl.allow => () {
         widget.fixture.workItemNoteEditAllowed[false] = true;
