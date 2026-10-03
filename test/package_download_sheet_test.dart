@@ -443,6 +443,11 @@ void main() {
       owner.notifyListeners();
       sharer.release.complete();
       await tester.pumpAndSettle();
+      await pumpUntil(
+        tester,
+        () => !saved.existsSync(),
+        description: 'stale shared download cleanup',
+      );
       expect(saved.existsSync(), isFalse);
       expect(tester.takeException(), isNull);
     },
