@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
@@ -9,6 +10,7 @@ import '../../core/work_item_activity_models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../shared/attachment_budget.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/resource_share.dart';
 import 'editor.dart';
 
 const _maxDiscussionPages = 5;
@@ -27,6 +29,42 @@ String _orderLabel(WorkItemActivityOrder order) => switch (order) {
   WorkItemActivityOrder.oldestFirst => '最舊優先',
   WorkItemActivityOrder.newestFirst => '最新優先',
 };
+
+int? _positiveGraphId(String value, Set<String> types) {
+  final uri = Uri.tryParse(value);
+  if (uri == null ||
+      uri.scheme != 'gid' ||
+      uri.host != 'gitlab' ||
+      uri.userInfo.isNotEmpty ||
+      uri.hasQuery ||
+      uri.hasFragment ||
+      uri.pathSegments.length != 2 ||
+      !types.contains(uri.pathSegments.first)) {
+    return null;
+  }
+  final raw = uri.pathSegments.last;
+  if (!RegExp(r'^[1-9][0-9]*$').hasMatch(raw)) return null;
+  return int.tryParse(raw);
+}
+
+bool _safeWorkItemPath(String value) {
+  if (value.isEmpty ||
+      value.trim() != value ||
+      value.startsWith('/') ||
+      value.endsWith('/') ||
+      value.contains('//') ||
+      value.contains('\\') ||
+      value.contains('?') ||
+      value.contains('#') ||
+      RegExp(r'%(2f|5c|2e)', caseSensitive: false).hasMatch(value)) {
+    return false;
+  }
+  return value
+      .split('/')
+      .every(
+        (segment) => segment.isNotEmpty && segment != '.' && segment != '..',
+      );
+}
 
 /// A bounded activity reader for a work item.
 ///
@@ -60,6 +98,7 @@ class WorkItemActivityPanel extends StatefulWidget {
 class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   final List<_DiscussionPage> _pages = [];
   final Set<String> _retainedNoteIds = {};
+  final Set<String> _pendingNoteActionIds = {};
   AttachmentBudget _attachmentBudget = AttachmentBudget();
   ApiFailure? _initialError;
   ApiFailure? _nextPageError;
@@ -88,6 +127,9 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
       mounted &&
       ownerEpoch == _ownerEpoch &&
       (widget.isCurrent?.call() ?? true);
+
+  bool _noteActionCurrent(int ownerEpoch, int feedEpoch) =>
+      _writeCurrent(ownerEpoch) && feedEpoch == _epoch;
 
   @override
   void initState() {
@@ -296,6 +338,132 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
       onRoute: widget.onRoute,
     );
     if (saved && _writeCurrent(ownerEpoch)) _refreshAfterWrite();
+  }
+
+  Future<void> _openNoteActions(
+    WorkItemActivityDiscussion discussion,
+    WorkItemActivityNote note,
+  ) async {
+    if (note.system || !_pendingNoteActionIds.add(note.id)) return;
+    if (mounted) setState(() {});
+    final ownerEpoch = _ownerEpoch;
+    final feedEpoch = _epoch;
+    final expected = widget.detail.summary;
+    final permalink = _notePermalink(expected, note);
+    final route = DialogRoute<WorkItemActivityEditTarget>(
+      context: context,
+      builder: (_) => _WorkItemNoteActionsDialog(
+        load: () => widget.api.workItemActivityEditAccess(
+          expected,
+          discussion,
+          note,
+          isCurrent: () => _noteActionCurrent(ownerEpoch, feedEpoch),
+        ),
+        permalink: permalink,
+        ownerKey: (
+          widget.account.key,
+          widget.api,
+          expected.id,
+          note.id,
+          ownerEpoch,
+          feedEpoch,
+        ),
+        isCurrent: () => _noteActionCurrent(ownerEpoch, feedEpoch),
+      ),
+    );
+    widget.onRoute?.call(route);
+    try {
+      final target = await Navigator.of(context).push(route);
+      if (target != null && _noteActionCurrent(ownerEpoch, feedEpoch)) {
+        await _openEditNote(target, ownerEpoch, feedEpoch);
+      }
+    } finally {
+      _pendingNoteActionIds.remove(note.id);
+      if (mounted) setState(() {});
+    }
+  }
+
+  Uri? _notePermalink(WorkItemGraphSummary summary, WorkItemActivityNote note) {
+    if (summary.iid <= 0 ||
+        _positiveGraphId(summary.id, const {'WorkItem'}) == null) {
+      return null;
+    }
+    final noteId = _positiveGraphId(note.id, const {'Note', 'DiscussionNote'});
+    if (noteId == null) return null;
+
+    final project = summary.project;
+    final namespace = summary.namespace;
+    late final String path;
+    if (project != null) {
+      if (_positiveGraphId(project.id, const {'Project'}) == null ||
+          namespace == null ||
+          _positiveGraphId(namespace.id, const {
+                'Namespaces::ProjectNamespace',
+              }) ==
+              null ||
+          namespace.fullPath != project.fullPath ||
+          !_safeWorkItemPath(project.fullPath)) {
+        return null;
+      }
+      path = '${project.fullPath}/-/work_items/${summary.iid}';
+    } else {
+      if (namespace == null ||
+          _positiveGraphId(namespace.id, const {'Group'}) == null ||
+          !_safeWorkItemPath(namespace.fullPath)) {
+        return null;
+      }
+      path = 'groups/${namespace.fullPath}/-/work_items/${summary.iid}';
+    }
+    return widget.account.instance
+        .projectWeb(path)
+        .replace(fragment: 'note_$noteId');
+  }
+
+  Future<void> _openEditNote(
+    WorkItemActivityEditTarget target,
+    int ownerEpoch,
+    int feedEpoch,
+  ) async {
+    final summary = widget.detail.summary;
+    final note = target.note;
+    final saved = await openEditor(
+      context,
+      account: widget.account,
+      title: '編輯留言',
+      resource: 'work-item-activity:${summary.id}:note:${note.id}:edit',
+      subtitle:
+          '${summary.project?.fullPath ?? summary.namespace?.fullPath ?? ''} · #${summary.iid}',
+      baseRevision: note.updatedAt.toUtc().toIso8601String(),
+      fields: [
+        EditField(
+          'body',
+          '留言內容',
+          value: note.body,
+          required: true,
+          lines: 9,
+          markdown: true,
+          quickActions: false,
+          hint: '支援 Markdown；此編輯器不支援 / 開頭的 GitLab 快捷指令。',
+        ),
+      ],
+      save: (values) async {
+        await widget.api.editWorkItemActivityNote(
+          target,
+          values['body'] ?? '',
+          isCurrent: () => _noteActionCurrent(ownerEpoch, feedEpoch),
+        );
+      },
+      blockRetryOnWriteUncertain: true,
+      api: widget.project == null ? null : widget.api,
+      projectId: widget.project?.id,
+      projectPath: widget.project?.path,
+      projectToolsEnabled: widget.project != null,
+      isCurrent: () => _noteActionCurrent(ownerEpoch, feedEpoch),
+      onRoute: widget.onRoute,
+    );
+    if (saved && _noteActionCurrent(ownerEpoch, feedEpoch)) {
+      _refreshAfterWrite();
+    }
   }
 
   void _refreshAfterWrite() {
@@ -936,7 +1104,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
       children: [
         for (var index = 0; index < visible.length; index++) ...[
           if (index > 0) const SizedBox(height: 12),
-          _note(context, visible[index], budget),
+          _note(context, discussion.value, visible[index], budget),
         ],
         if (hiddenComments > 0)
           TextButton.icon(
@@ -1004,6 +1172,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
 
   Widget _note(
     BuildContext context,
+    WorkItemActivityDiscussion discussion,
     WorkItemActivityNote note,
     _ActivityRenderBudget budget,
   ) {
@@ -1046,11 +1215,41 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
     }
 
     final project = widget.project;
+    final actionsPending = _pendingNoteActionIds.contains(note.id);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(authorText, style: Theme.of(context).textTheme.labelLarge),
-        Text(date, style: Theme.of(context).textTheme.bodySmall),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    authorText,
+                    style: Theme.of(context).textTheme.labelLarge,
+                  ),
+                  Text(date, style: Theme.of(context).textTheme.bodySmall),
+                ],
+              ),
+            ),
+            IconButton(
+              key: ValueKey('work-item-activity-note-actions:${note.id}'),
+              tooltip: '留言動作',
+              onPressed: actionsPending
+                  ? null
+                  : () => unawaited(_openNoteActions(discussion, note)),
+              icon: actionsPending
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.more_vert),
+            ),
+          ],
+        ),
         const SizedBox(height: 6),
         MarkdownView(
           note.body,
@@ -1067,6 +1266,164 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
           budget: _attachmentBudget,
         ),
       ],
+    );
+  }
+}
+
+class _WorkItemNoteActionsDialog extends StatefulWidget {
+  const _WorkItemNoteActionsDialog({
+    required this.load,
+    required this.permalink,
+    required this.ownerKey,
+    required this.isCurrent,
+  });
+
+  final Future<WorkItemActivityEditAccess> Function() load;
+  final Uri? permalink;
+  final Object ownerKey;
+  final bool Function() isCurrent;
+
+  @override
+  State<_WorkItemNoteActionsDialog> createState() =>
+      _WorkItemNoteActionsDialogState();
+}
+
+class _WorkItemNoteActionsDialogState
+    extends State<_WorkItemNoteActionsDialog> {
+  WorkItemActivityEditAccess? _access;
+  ApiFailure? _error;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_load());
+  }
+
+  Future<void> _load() async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final access = await widget.load();
+      if (mounted) setState(() => _access = access);
+    } catch (error) {
+      if (mounted) setState(() => _error = safeFailure(error));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _copyPermalink() async {
+    final permalink = widget.permalink;
+    if (permalink == null || !widget.isCurrent()) return;
+    try {
+      await Clipboard.setData(ClipboardData(text: permalink.toString()));
+    } catch (_) {
+      if (!mounted || !widget.isCurrent()) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('無法複製留言連結。')));
+      return;
+    }
+    if (!mounted || !widget.isCurrent()) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('已複製留言連結。')));
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    scrollable: true,
+    title: const Text('留言動作'),
+    content: ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 360),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _permissionContent(context),
+          if (widget.permalink case final permalink?) ...[
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                key: const ValueKey('work-item-activity-copy-note-link'),
+                onPressed: widget.isCurrent() ? _copyPermalink : null,
+                icon: const Icon(Icons.link_outlined),
+                label: const Text('複製留言連結'),
+              ),
+            ),
+            Row(
+              children: [
+                const Expanded(child: Text('以其他 App 分享')),
+                ResourceShareButton(
+                  uri: permalink,
+                  ownerKey: widget.ownerKey,
+                  isCurrent: widget.isCurrent,
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('關閉'),
+      ),
+    ],
+  );
+
+  Widget _permissionContent(BuildContext context) {
+    if (_loading) {
+      return const Row(
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 8),
+          Expanded(child: Text('正在確認留言權限…')),
+        ],
+      );
+    }
+    if (_error case final error?) {
+      if (error.kind == FailureKind.unsupported) {
+        return const Text('此實例暫不支援編輯留言；留言仍可閱讀。');
+      }
+      if (error.kind == FailureKind.cancelled) {
+        return const Text('留言或帳號已變更，請關閉後重新開啟留言動作。');
+      }
+      return _InlineActivityFailure(
+        error: error,
+        onRetry: _load,
+        retryLabel: '重試留言權限',
+      );
+    }
+    final access = _access;
+    if (access == null) return const SizedBox.shrink();
+    final target = access.target;
+    if (!access.canEditNote) {
+      return const Text('目前帳號可閱讀這則留言，但沒有編輯留言的權限。');
+    }
+    if (target == null) {
+      return const Text('伺服器未提供安全的編輯目標；留言仍可閱讀。');
+    }
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        key: const ValueKey('work-item-activity-edit-note'),
+        onPressed: () => Navigator.of(context).pop(target),
+        icon: const Icon(Icons.edit_outlined),
+        label: const Text('編輯留言'),
+      ),
     );
   }
 }

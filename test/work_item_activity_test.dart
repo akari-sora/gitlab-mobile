@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
@@ -10,7 +11,11 @@ import 'package:gitlab_mobile/core/work_item_activity_models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_activity.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
+import 'package:gitlab_mobile/shared/resource_share.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
+import 'package:plugin_platform_interface/plugin_platform_interface.dart';
+// ignore: depend_on_referenced_packages
+import 'package:share_plus_platform_interface/share_plus_platform_interface.dart';
 
 import 'support/fake_adapter.dart';
 
@@ -158,6 +163,11 @@ bool _isWriteAccessRequest(RequestOptions request) =>
       'MobileWorkItemActivityWriteAccess',
     );
 
+bool _isEditAccessRequest(RequestOptions request) =>
+    ((request.data as Map)['query'] as String).contains(
+      'MobileWorkItemActivityEditAccess',
+    );
+
 Map<String, Object?> _createdNote(
   String suffix,
   String body, {
@@ -190,6 +200,26 @@ Map<String, Object?> _createdMutation(Map<String, Object?> note) => {
 
 Map<String, Object?> _createdReadback(Map<String, Object?> note) => {
   'data': {'workItem': _identity(), 'note': note},
+};
+
+Map<String, Object?> _editAccess(
+  Map<String, Object?> note, {
+  required bool canEditNote,
+}) => {
+  'data': {
+    'currentUser': {'id': 'gid://gitlab/User/7'},
+    'workItem': _identity(),
+    'note': {
+      ...note,
+      'userPermissions': {'adminNote': canEditNote},
+    },
+  },
+};
+
+Map<String, Object?> _updatedMutation(Map<String, Object?> note) => {
+  'data': {
+    'updateNote': {'errors': const <Object?>[], 'note': note},
+  },
 };
 
 Map<String, Object?> _replyPreflight({
@@ -228,6 +258,8 @@ Widget _host(
   double textScale = 1,
   Brightness? brightness,
   ValueChanged<Route<dynamic>>? onRoute,
+  WorkItemGraphDetail? detail,
+  Project? project = _project,
 }) => MaterialApp(
   theme: brightness == null ? null : appTheme(brightness),
   builder: (context, child) => MediaQuery(
@@ -241,8 +273,8 @@ Widget _host(
       child: WorkItemActivityPanel(
         account: _account(api),
         api: api,
-        detail: _detail,
-        project: _project,
+        detail: detail ?? _detail,
+        project: project,
         isCurrent: isCurrent,
         ownerChanges: ownerChanges,
         onRoute: onRoute,
@@ -250,6 +282,24 @@ Widget _host(
     ),
   ),
 );
+
+final class _FakeSharePlatform extends SharePlatform
+    with MockPlatformInterfaceMixin {
+  ShareParams? params;
+  int calls = 0;
+
+  void reset() {
+    params = null;
+    calls = 0;
+  }
+
+  @override
+  Future<ShareResult> share(ShareParams params) async {
+    calls++;
+    this.params = params;
+    return ShareResult.unavailable;
+  }
+}
 
 Future<void> _tap(WidgetTester tester, Finder finder) async {
   await tester.pump(const Duration(milliseconds: 300));
@@ -275,7 +325,21 @@ Future<void> _expand(WidgetTester tester) async {
 }
 
 void main() {
-  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+  TestWidgetsFlutterBinding.ensureInitialized();
+  final share = _FakeSharePlatform();
+  late SharePlatform originalShare;
+
+  setUpAll(() {
+    originalShare = SharePlatform.instance;
+    SharePlatform.instance = share;
+  });
+
+  tearDownAll(() => SharePlatform.instance = originalShare);
+
+  setUp(() {
+    FlutterSecureStorage.setMockInitialValues({});
+    share.reset();
+  });
 
   for (final brightness in Brightness.values) {
     for (final textScale in [1.0, 2.0]) {
@@ -540,7 +604,17 @@ void main() {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(320, 900);
     addTearDown(tester.view.reset);
-    final api = testApi(FakeAdapter((_) => jsonResponse(_activity())));
+    final api = testApi(
+      FakeAdapter(
+        (_) => jsonResponse(
+          _activity(
+            discussions: [
+              _discussion('large-text', notes: [_note('709')]),
+            ],
+          ),
+        ),
+      ),
+    );
     addTearDown(api.close);
     await tester.pumpWidget(_host(api, textScale: 2));
     await _expand(tester);
@@ -557,6 +631,12 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     }
+    final noteActions = find.byKey(
+      const ValueKey('work-item-activity-note-actions:gid://gitlab/Note/709'),
+    );
+    expect(noteActions, findsOneWidget);
+    expect(tester.getSize(noteActions).height, greaterThanOrEqualTo(48));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('activity stays network-idle while collapsed', (tester) async {
@@ -976,6 +1056,701 @@ void main() {
       );
     },
   );
+
+  testWidgets(
+    'server admin permission edits a different author note from its fresh body and refreshes',
+    (tester) async {
+      const submitted = '**edited on mobile**';
+      const otherAuthor = {
+        'id': 'gid://gitlab/User/9',
+        'name': 'Other User',
+        'username': 'other-user',
+      };
+      final fresh = {
+        ..._createdNote(
+          '710',
+          '**fresh server body**',
+          discussionId: 'gid://gitlab/Discussion/editable',
+          discussionCreatedAt: '2026-10-01T01:00:00Z',
+        ),
+        'updatedAt': '2026-10-03T01:02:03Z',
+        'author': otherAuthor,
+      };
+      final listed = fresh;
+      final updated = {
+        ..._createdNote(
+          '710',
+          submitted,
+          discussionId: 'gid://gitlab/Discussion/editable',
+          discussionCreatedAt: '2026-10-01T01:00:00Z',
+        ),
+        'updatedAt': '2026-10-03T01:04:05Z',
+        'author': otherAuthor,
+      };
+      var activityReads = 0;
+      var editAccessReads = 0;
+      var mutations = 0;
+      final adapter = FakeAdapter((request) {
+        final data = request.data as Map;
+        final query = data['query'] as String;
+        if (_isWriteAccessRequest(request)) {
+          return jsonResponse(_activity(canCreateNote: false));
+        }
+        if (_isEditAccessRequest(request)) {
+          editAccessReads++;
+          return jsonResponse(_editAccess(fresh, canEditNote: true));
+        }
+        if (query.contains('MobileUpdateWorkItemActivityNote')) {
+          mutations++;
+          final input = (data['variables'] as Map)['input'] as Map;
+          expect(input, {'id': 'gid://gitlab/Note/710', 'body': submitted});
+          return jsonResponse(_updatedMutation(updated));
+        }
+        if (query.contains('MobileWorkItemActivityNoteReadback')) {
+          return jsonResponse(_createdReadback(updated));
+        }
+        if (query.contains('MobileWorkItemActivity(')) {
+          activityReads++;
+          return jsonResponse(
+            _activity(
+              canCreateNote: false,
+              discussions: [
+                _discussion(
+                  'editable',
+                  notes: [activityReads == 1 ? listed : updated],
+                ),
+              ],
+            ),
+          );
+        }
+        throw StateError('Unexpected activity request: $query');
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final routes = <Route<dynamic>>[];
+
+      await tester.pumpWidget(_host(api, onRoute: routes.add));
+      await _expand(tester);
+      expect(editAccessReads, 0, reason: 'note permission must be on demand');
+      expect(find.textContaining('沒有新增留言的權限'), findsOneWidget);
+
+      await _tap(
+        tester,
+        find.byKey(
+          const ValueKey(
+            'work-item-activity-note-actions:gid://gitlab/Note/710',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(editAccessReads, 1);
+      expect(find.text('編輯留言'), findsOneWidget);
+      expect(routes.single.isActive, isTrue);
+
+      await _tap(
+        tester,
+        find.byKey(const ValueKey('work-item-activity-edit-note')),
+      );
+      await tester.pumpAndSettle();
+      final field = tester.widget<TextFormField>(
+        find.byKey(const ValueKey('editor-body')),
+      );
+      expect(field.controller!.text, '**fresh server body**');
+      expect(find.byTooltip('粗體'), findsOneWidget);
+      expect(find.byTooltip('提及'), findsOneWidget);
+      expect(routes, hasLength(2));
+      expect(routes.last.isActive, isTrue);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('editor-body')),
+        submitted,
+      );
+      await _tap(tester, find.byKey(const Key('editorSave')));
+      await tester.pumpAndSettle();
+
+      expect(editAccessReads, 2, reason: 'save must revalidate edit access');
+      expect(mutations, 1);
+      expect(activityReads, 2);
+      expect(find.text('edited on mobile'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('same-author note stays read-only when server denies adminNote', (
+    tester,
+  ) async {
+    final own = _createdNote(
+      '711',
+      'own note',
+      discussionId: 'gid://gitlab/Discussion/own',
+      discussionCreatedAt: '2026-10-01T01:00:00Z',
+    );
+    final adapter = FakeAdapter((request) {
+      if (_isWriteAccessRequest(request)) {
+        return jsonResponse(_activity(canCreateNote: false));
+      }
+      if (_isEditAccessRequest(request)) {
+        return jsonResponse(_editAccess(own, canEditNote: false));
+      }
+      return jsonResponse(
+        _activity(
+          canCreateNote: false,
+          discussions: [
+            _discussion('own', notes: [own]),
+          ],
+        ),
+      );
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(_host(api));
+    await _expand(tester);
+    await _tap(
+      tester,
+      find.byKey(
+        const ValueKey('work-item-activity-note-actions:gid://gitlab/Note/711'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.textContaining('沒有編輯留言的權限'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('work-item-activity-edit-note')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'project note copies and natively shares its canonical subpath permalink',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 640);
+      addTearDown(tester.view.reset);
+      final note = _createdNote(
+        '715',
+        'project permalink',
+        discussionId: 'gid://gitlab/Discussion/project-link',
+        discussionCreatedAt: '2026-10-01T01:00:00Z',
+      );
+      var editAccessReads = 0;
+      final adapter = FakeAdapter((request) {
+        if (_isWriteAccessRequest(request)) return jsonResponse(_activity());
+        if (_isEditAccessRequest(request)) {
+          editAccessReads++;
+          return jsonResponse(_editAccess(note, canEditNote: false));
+        }
+        return jsonResponse(
+          _activity(
+            discussions: [
+              _discussion('project-link', notes: [note]),
+            ],
+          ),
+        );
+      });
+      final api = testApi(adapter, host: 'https://example.com:8443/gitlab');
+      addTearDown(api.close);
+      String? clipboardText;
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') {
+          clipboardText = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
+      await tester.pumpWidget(_host(api, textScale: 2));
+      await _expand(tester);
+      expect(editAccessReads, 0);
+      await _tap(
+        tester,
+        find.byKey(
+          const ValueKey(
+            'work-item-activity-note-actions:gid://gitlab/Note/715',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(tester.takeException(), isNull);
+
+      const expected =
+          'https://example.com:8443/gitlab/team/example-42/-/work_items/7#note_715';
+      expect(editAccessReads, 1);
+      final nativeShare = tester.widget<ResourceShareButton>(
+        find.byType(ResourceShareButton),
+      );
+      expect(nativeShare.uri.toString(), expected);
+
+      await _tap(
+        tester,
+        find.byKey(const ValueKey('work-item-activity-copy-note-link')),
+      );
+      await tester.pump();
+      expect(clipboardText, expected);
+      expect(find.text('已複製留言連結。'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('分享連結'));
+      await tester.pump();
+      expect(share.calls, 1);
+      expect(share.params?.text, expected);
+      expect(share.params?.uri, isNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'clipboard failure keeps the note menu open with a useful error',
+    (tester) async {
+      final note = _createdNote(
+        '717',
+        'clipboard failure',
+        discussionId: 'gid://gitlab/Discussion/copy-failure',
+        discussionCreatedAt: '2026-10-01T01:00:00Z',
+      );
+      final adapter = FakeAdapter((request) {
+        if (_isWriteAccessRequest(request)) return jsonResponse(_activity());
+        if (_isEditAccessRequest(request)) {
+          return jsonResponse(_editAccess(note, canEditNote: false));
+        }
+        return jsonResponse(
+          _activity(
+            discussions: [
+              _discussion('copy-failure', notes: [note]),
+            ],
+          ),
+        );
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') {
+          throw PlatformException(code: 'synthetic-clipboard-failure');
+        }
+        return null;
+      });
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+      );
+
+      await tester.pumpWidget(_host(api));
+      await _expand(tester);
+      await _tap(
+        tester,
+        find.byKey(
+          const ValueKey(
+            'work-item-activity-note-actions:gid://gitlab/Note/717',
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await _tap(
+        tester,
+        find.byKey(const ValueKey('work-item-activity-copy-note-link')),
+      );
+      await tester.pump();
+
+      expect(find.text('無法複製留言連結。'), findsOneWidget);
+      expect(find.text('留言動作'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('group note copies its canonical anchored permalink', (
+    tester,
+  ) async {
+    const workItemId = 'gid://gitlab/WorkItem/701';
+    const namespaceId = 'gid://gitlab/Group/9';
+    const path = 'team/group';
+    const noteId = 'gid://gitlab/Note/716';
+    const discussionId = 'gid://gitlab/Discussion/group-link';
+    final summary = WorkItemGraphSummary(
+      id: workItemId,
+      iid: 8,
+      title: 'Group work item',
+      state: 'OPEN',
+      createdAt: DateTime.utc(2026, 10, 1),
+      updatedAt: DateTime.utc(2026, 10, 2),
+      project: null,
+      namespace: const GraphResourceRef(id: namespaceId, fullPath: path),
+      type: const WorkItemGraphType(
+        id: 'gid://gitlab/WorkItems::Type/group-task',
+        name: 'Task',
+      ),
+    );
+    final detail = WorkItemGraphDetail(
+      summary: summary,
+      description: null,
+      widgetsAvailable: true,
+      widgetTypes: const {'NOTES'},
+      descriptionWidget: null,
+      assignees: null,
+      labels: null,
+      hierarchy: null,
+      dates: null,
+    );
+    final note = {
+      'id': noteId,
+      'system': false,
+      'systemNoteIconName': null,
+      'body': 'group permalink',
+      'createdAt': '2026-10-01T01:02:03Z',
+      'updatedAt': '2026-10-01T01:03:04Z',
+      'author': {
+        'id': 'gid://gitlab/User/9',
+        'name': 'Synthetic User',
+        'username': 'synthetic-user',
+      },
+    };
+    final identity = {
+      'id': workItemId,
+      'iid': '8',
+      'project': null,
+      'namespace': {'id': namespaceId, 'fullPath': path},
+    };
+    final activity = {
+      'data': {
+        'currentUser': {'id': 'gid://gitlab/User/7'},
+        'workItem': {
+          ...identity,
+          'userPermissions': {'createNote': false},
+          'widgets': [
+            {
+              'type': 'NOTES',
+              'discussionLocked': false,
+              'discussions': {
+                'nodes': [
+                  {
+                    'id': discussionId,
+                    'replyId': 'reply-group-link',
+                    'createdAt': '2026-10-01T01:00:00Z',
+                    'notes': {
+                      'nodes': [note],
+                      'pageInfo': _pageInfo(),
+                    },
+                  },
+                ],
+                'pageInfo': _pageInfo(),
+              },
+            },
+          ],
+        },
+      },
+    };
+    final pendingAccess = Completer<ResponseBody>();
+    var editAccessReads = 0;
+    final adapter = FakeAdapter((request) {
+      if (_isEditAccessRequest(request)) {
+        editAccessReads++;
+        return pendingAccess.future;
+      }
+      return jsonResponse(activity);
+    });
+    final api = testApi(adapter, host: 'https://example.com:8443/gitlab');
+    addTearDown(api.close);
+    String? clipboardText;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        clipboardText = (call.arguments as Map)['text'] as String?;
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+
+    await tester.pumpWidget(_host(api, detail: detail, project: null));
+    await _expand(tester);
+    expect(editAccessReads, 0);
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-note-actions:$noteId')),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(editAccessReads, 1);
+
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-copy-note-link')),
+    );
+    await tester.pump();
+    expect(
+      clipboardText,
+      'https://example.com:8443/gitlab/groups/team/group/-/work_items/8#note_716',
+    );
+    pendingAccess.complete(
+      jsonResponse({
+        'data': {
+          'currentUser': {'id': 'gid://gitlab/User/7'},
+          'workItem': identity,
+          'note': {
+            ...note,
+            'internal': false,
+            'noteableType': 'Issue',
+            'noteableId': '701',
+            'project': null,
+            'discussion': {
+              'id': discussionId,
+              'createdAt': '2026-10-01T01:00:00Z',
+            },
+            'userPermissions': {'adminNote': false},
+          },
+        },
+      }),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('unsafe note id omits permalink actions', (tester) async {
+    final adapter = FakeAdapter((request) {
+      if (_isWriteAccessRequest(request)) return jsonResponse(_activity());
+      return jsonResponse(
+        _activity(
+          discussions: [
+            _discussion('unsafe-link', notes: [_note('opaque-note')]),
+          ],
+        ),
+      );
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(_host(api));
+    await _expand(tester);
+    await _tap(
+      tester,
+      find.byKey(
+        const ValueKey(
+          'work-item-activity-note-actions:gid://gitlab/Note/opaque-note',
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(
+      find.byKey(const ValueKey('work-item-activity-copy-note-link')),
+      findsNothing,
+    );
+    expect(find.byType(ResourceShareButton), findsNothing);
+  });
+
+  testWidgets('system notes omit actions and unsupported edit stays readable', (
+    tester,
+  ) async {
+    final adapter = FakeAdapter((request) {
+      if (_isWriteAccessRequest(request)) return jsonResponse(_activity());
+      if (_isEditAccessRequest(request)) {
+        return jsonResponse({
+          'errors': [
+            {
+              'message': 'private schema detail',
+              'extensions': {'code': 'undefinedField'},
+            },
+          ],
+        });
+      }
+      return jsonResponse(
+        _activity(
+          discussions: [
+            _discussion(
+              'mixed',
+              notes: [_note('system', system: true), _note('714')],
+            ),
+          ],
+        ),
+      );
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(_host(api));
+    await _expand(tester);
+    expect(
+      find.byKey(
+        const ValueKey(
+          'work-item-activity-note-actions:gid://gitlab/Note/system',
+        ),
+      ),
+      findsNothing,
+    );
+    await _tap(
+      tester,
+      find.byKey(
+        const ValueKey('work-item-activity-note-actions:gid://gitlab/Note/714'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(
+      find.textContaining('暫不支援編輯留言'),
+      findsOneWidget,
+      reason: tester
+          .widgetList<Text>(find.byType(Text))
+          .map((widget) => widget.data)
+          .whereType<String>()
+          .join(' | '),
+    );
+    expect(find.textContaining('comment-714'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('work-item-activity-edit-note')),
+      findsNothing,
+    );
+  });
+
+  testWidgets(
+    'pending note action suppresses duplicates and owner invalidation',
+    (tester) async {
+      final pending = Completer<ResponseBody>();
+      final note = _createdNote(
+        '712',
+        'pending access',
+        discussionId: 'gid://gitlab/Discussion/pending',
+        discussionCreatedAt: '2026-10-01T01:00:00Z',
+      );
+      var editAccessReads = 0;
+      final adapter = FakeAdapter((request) {
+        if (_isWriteAccessRequest(request)) return jsonResponse(_activity());
+        if (_isEditAccessRequest(request)) {
+          editAccessReads++;
+          return pending.future;
+        }
+        return jsonResponse(
+          _activity(
+            discussions: [
+              _discussion('pending', notes: [note]),
+            ],
+          ),
+        );
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final owner = ChangeNotifier();
+      addTearDown(owner.dispose);
+      var current = true;
+
+      await tester.pumpWidget(
+        _host(api, isCurrent: () => current, ownerChanges: owner),
+      );
+      await _expand(tester);
+      final actions = find.byKey(
+        const ValueKey('work-item-activity-note-actions:gid://gitlab/Note/712'),
+      );
+      final open = tester.widget<IconButton>(actions).onPressed!;
+      open();
+      open();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(editAccessReads, 1);
+
+      current = false;
+      owner.notifyListeners();
+      pending.complete(jsonResponse(_editAccess(note, canEditNote: true)));
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('editor-body')), findsNothing);
+      expect(find.text('編輯留言'), findsNothing);
+      expect(find.textContaining('留言或帳號已變更'), findsOneWidget);
+      expect(
+        tester
+            .widget<TextButton>(
+              find.byKey(const ValueKey('work-item-activity-copy-note-link')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<IconButton>(
+              find.widgetWithIcon(IconButton, Icons.share_outlined),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(share.calls, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('uncertain edit blocks repeat save', (tester) async {
+    final note = _createdNote(
+      '713',
+      'original',
+      discussionId: 'gid://gitlab/Discussion/uncertain',
+      discussionCreatedAt: '2026-10-01T01:00:00Z',
+    );
+    var mutations = 0;
+    final adapter = FakeAdapter((request) {
+      final query = ((request.data as Map)['query'] as String);
+      if (_isWriteAccessRequest(request)) return jsonResponse(_activity());
+      if (_isEditAccessRequest(request)) {
+        return jsonResponse(_editAccess(note, canEditNote: true));
+      }
+      if (query.contains('MobileUpdateWorkItemActivityNote')) {
+        mutations++;
+        throw DioException(
+          requestOptions: request,
+          type: DioExceptionType.receiveTimeout,
+        );
+      }
+      return jsonResponse(
+        _activity(
+          discussions: [
+            _discussion('uncertain', notes: [note]),
+          ],
+        ),
+      );
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(_host(api));
+    await _expand(tester);
+    await _tap(
+      tester,
+      find.byKey(
+        const ValueKey('work-item-activity-note-actions:gid://gitlab/Note/713'),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-edit-note')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byKey(const ValueKey('editor-body')),
+      'uncertain body',
+    );
+    await _tap(tester, find.byKey(const Key('editorSave')));
+    await tester.pumpAndSettle();
+
+    expect(mutations, 1);
+    expect(
+      tester
+          .widget<FilledButton>(find.byKey(const Key('editorSave')))
+          .onPressed,
+      isNull,
+    );
+    await tester.tap(find.byKey(const Key('editorSave')), warnIfMissed: false);
+    await tester.pump();
+    expect(mutations, 1);
+  });
 
   testWidgets('late write access cannot escape owner invalidation', (
     tester,

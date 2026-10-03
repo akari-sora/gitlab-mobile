@@ -14,7 +14,8 @@ native contributor/repository/CI analytics, lazy multi-file Snippets and guarded
 file actions, server-discovered GraphQL Work Item types, bounded project/group and descendant
 lists with server-side scope/state/search/type/order controls, group-list deep links and project/group details with guarded close/reopen actions and lazy status, milestone, weight, iteration, health, time-tracking and
 development attributes, a lazy activity timeline with server-side activity/comment/history filters,
-oldest/newest ordering, bounded discussion/reply paging and guarded Markdown comments/replies,
+oldest/newest ordering, bounded discussion/reply paging and guarded Markdown comments,
+replies and ordinary note edits,
 collapsed long descriptions, and typed Task/Incident workflows
 with separate incident escalation state. Issue/MR filters use server
 ordering. Phone board columns, vertical graphs and lazy lists retain native
@@ -44,8 +45,24 @@ status. GitLab exposes no timestamp compare-and-swap for this mutation.
 Work Item comments and replies use a fresh permission/identity check, one
 GraphQL mutation and an independent exact-note readback. Reply targets preserve
 the server's opaque `replyId`. Account/resource changes invalidate open editors;
-uncertain writes retain secure drafts and block repeat submission. Quick actions,
-internal notes, note editing/deletion and reactions remain outside this slice.
+uncertain writes retain secure drafts and block repeat submission.
+
+Ordinary project/group Work Item Markdown notes expose an on-demand edit action.
+Their action menu also copies and shares validated instance-aware note permalinks,
+including installation subpaths and the exact numeric note fragment.
+The App trusts GitLab's fresh `Note.userPermissions.adminNote` result rather than
+inferring permission from the author, then checks the displayed revision, scope,
+account and API owner again before one `updateNote` mutation. An exact independent
+readback confirms the result. A no-op consumes the target without sending the
+mutation, and edited Markdown preserves leading and trailing whitespace. Uncertain
+writes retain the secure draft and block repeat Save; older servers that reject the
+optional capability query remain readable. GitLab's current
+[`UpdateNoteInput`](https://docs.gitlab.com/api/graphql/reference/#updatenoteinput)
+has no compare-and-swap field, so a race remains between the final preflight and
+the update. This is not atomic conflict protection or authenticated private/iOS
+acceptance. See the [GraphQL guide](https://docs.gitlab.com/api/graphql/) and the
+upstream [`UpdateNote` mutation at the reviewed commit](https://gitlab.com/gitlab-org/gitlab/-/blob/26212baacadb5beea6664f7ef025d753dccfb0d6/app/graphql/mutations/notes/update/base.rb).
+Quick actions, internal notes, deletion and reactions remain outside this slice.
 
 ## v0.5 — mobile UX overhaul and GitLab parity
 

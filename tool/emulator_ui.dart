@@ -31,6 +31,8 @@ const emulatorUiQaCommit = String.fromEnvironment(
   defaultValue: 'local-qa',
 );
 
+enum _QaNoteEditControl { allow, deny, revise, failNextAcknowledgement }
+
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(buildEmulatorQaApp());
@@ -107,9 +109,14 @@ final class EmulatorQaFixture extends WorkspaceFixture {
   };
   final List<String> workItemStateEvents = [];
   final List<Json> workItemNoteEvents = [];
+  final List<Json> workItemNoteEditEvents = [];
+  final Map<bool, bool> workItemNoteEditAllowed = {false: true, true: true};
+  bool failNextWorkItemNoteUpdateAcknowledgement = false;
   final Map<bool, List<Json>> _addedWorkItemDiscussions = {};
   final Map<String, List<Json>> _addedWorkItemReplies = {};
+  final Map<String, Json> _editedWorkItemNotes = {};
   int _workItemNoteSequence = 0;
+  int _workItemNoteEditSequence = 0;
   final Map<String, int> _workItemRevisions = {};
   final Set<int> _doneTodos = {};
 
@@ -227,7 +234,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           0,
           number,
         ).toIso8601String();
-        Json note(String suffix, String body) => {
+        Json note(String suffix, String body) => _withWorkItemNoteEdit({
           'id':
               'gid://gitlab/Note/${(group ? 200000 : 100000) + number * 2 + (suffix == 'reply' ? 1 : 0)}',
           'system': system,
@@ -240,7 +247,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
             'name': 'Synthetic Reader',
             'username': 'synthetic-reader',
           },
-        };
+        });
         return {
           'id': 'gid://gitlab/Discussion/qa-$scope-$number',
           'replyId': 'gid://gitlab/Discussion/qa-$scope-reply-$number',
@@ -265,13 +272,49 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           ...discussion,
           'notes': {
             'nodes': [
-              ...((discussion['notes'] as Map)['nodes'] as List),
-              ...?_addedWorkItemReplies[discussion['id']],
+              for (final raw in ((discussion['notes'] as Map)['nodes'] as List))
+                _withWorkItemNoteEdit(raw as Json),
+              for (final raw
+                  in _addedWorkItemReplies[discussion['id']] ?? <Json>[])
+                _withWorkItemNoteEdit(raw),
             ],
             'pageInfo': {'hasNextPage': false, 'endCursor': null},
           },
         },
     ];
+  }
+
+  Json _withWorkItemNoteEdit(Json note) {
+    final edit = _editedWorkItemNotes[note['id']];
+    return edit == null ? note : {...note, ...edit};
+  }
+
+  bool reviseWorkItemActivityNote(
+    String noteId, {
+    String body = 'Synthetic concurrent server edit',
+  }) {
+    final located = _locateWorkItemActivityNote(noteId);
+    if (located == null || located.note['system'] == true) return false;
+    _recordWorkItemNoteEdit(noteId, body);
+    return true;
+  }
+
+  ({bool group, Json note})? _locateWorkItemActivityNote(String noteId) {
+    for (final group in [false, true]) {
+      final note = workItemActivityNoteRecord(noteId, group: group);
+      if (note != null) return (group: group, note: note);
+    }
+    return null;
+  }
+
+  Json _recordWorkItemNoteEdit(String noteId, String body) {
+    final sequence = ++_workItemNoteEditSequence;
+    final edit = <String, Object?>{
+      'body': body,
+      'updatedAt': DateTime.utc(2026, 10, 3, 6, 0, sequence).toIso8601String(),
+    };
+    _editedWorkItemNotes[noteId] = edit;
+    return edit;
   }
 
   Json? workItemActivityNoteRecord(String id, {required bool group}) {
@@ -362,6 +405,30 @@ final class EmulatorQaFixture extends WorkspaceFixture {
       '[work_item_note_qa] scope=$scope reply=${replyId != null} writes=${workItemNoteEvents.length}',
     );
     return workItemActivityNoteRecord(noteId, group: group);
+  }
+
+  Json? _updateWorkItemFixtureNote(Map<Object?, Object?> input) {
+    final noteId = input['id'];
+    final body = input['body'];
+    if (noteId is! String || body is! String || body.trim().isEmpty) {
+      return null;
+    }
+    final located = _locateWorkItemActivityNote(noteId);
+    if (located == null ||
+        located.note['system'] == true ||
+        workItemNoteEditAllowed[located.group] != true) {
+      return null;
+    }
+    _recordWorkItemNoteEdit(noteId, body);
+    workItemNoteEditEvents.add({
+      'scope': located.group ? 'group' : 'project',
+      'noteId': noteId,
+      'body': body,
+    });
+    debugPrint(
+      '[work_item_note_edit_qa] scope=${located.group ? 'group' : 'project'} writes=${workItemNoteEditEvents.length}',
+    );
+    return workItemActivityNoteRecord(noteId, group: located.group);
   }
 
   Json workItemActivityRecord({
@@ -502,6 +569,28 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           },
         });
       }
+      if (operation == 'MobileWorkItemActivityEditAccess' &&
+          _workItemStates.containsKey(variables['workItemId'])) {
+        final group = variables['workItemId'] == 'gid://gitlab/WorkItem/1041';
+        final noteId = variables['noteId'];
+        final note = noteId is String
+            ? workItemActivityNoteRecord(noteId, group: group)
+            : null;
+        return jsonResponse({
+          'data': {
+            'currentUser': {'id': 'gid://gitlab/User/7'},
+            'workItem': workItemRecord(group: group),
+            'note': note == null
+                ? null
+                : {
+                    ...note,
+                    'userPermissions': {
+                      'adminNote': workItemNoteEditAllowed[group] == true,
+                    },
+                  },
+          },
+        });
+      }
       if ((operation == 'MobileWorkItemActivityReplyPreflight' ||
               operation == 'MobileWorkItemActivityNoteReadback') &&
           _workItemStates.containsKey(variables['workItemId'])) {
@@ -530,6 +619,26 @@ final class EmulatorQaFixture extends WorkspaceFixture {
             'createNote': {
               'errors': note == null
                   ? ['Unknown synthetic note target']
+                  : <String>[],
+              'note': note,
+            },
+          },
+        });
+      }
+      if (operation == 'MobileUpdateWorkItemActivityNote') {
+        final input = variables['input'];
+        final note = input is Map ? _updateWorkItemFixtureNote(input) : null;
+        if (note != null && failNextWorkItemNoteUpdateAcknowledgement) {
+          failNextWorkItemNoteUpdateAcknowledgement = false;
+          return jsonResponse({
+            'message': 'Synthetic acknowledgement unavailable',
+          }, status: 503);
+        }
+        return jsonResponse({
+          'data': {
+            'updateNote': {
+              'errors': note == null
+                  ? ['Unknown or forbidden synthetic note target']
                   : <String>[],
               'note': note,
             },
@@ -829,6 +938,7 @@ final class _EmulatorQaRuntime {
   }
 
   final EmulatorQaFixture fixture;
+  final navigatorKey = GlobalKey<NavigatorState>();
   final EmulatorQaMemoryAccountStore store;
   final AppearanceController appearance;
   final LauncherShortcuts shortcuts;
@@ -878,6 +988,7 @@ class _EmulatorQaAppState extends State<EmulatorQaApp> {
       child: ScrollPerformance(
         child: MaterialApp(
           key: ValueKey(runtime.session),
+          navigatorKey: runtime.navigatorKey,
           debugShowCheckedModeBanner: false,
           theme: appTheme(Brightness.light),
           darkTheme: appTheme(Brightness.dark),
@@ -890,6 +1001,8 @@ class _EmulatorQaAppState extends State<EmulatorQaApp> {
           ],
           builder: (context, child) => _QaChrome(
             session: runtime.session,
+            fixture: runtime.fixture,
+            navigatorKey: runtime.navigatorKey,
             onReset: _resetSession,
             child: child ?? const SizedBox.shrink(),
           ),
@@ -900,78 +1013,205 @@ class _EmulatorQaAppState extends State<EmulatorQaApp> {
   }
 }
 
-class _QaChrome extends StatelessWidget {
+class _QaChrome extends StatefulWidget {
   const _QaChrome({
     required this.session,
+    required this.fixture,
+    required this.navigatorKey,
     required this.onReset,
     required this.child,
   });
 
   final SessionController session;
+  final EmulatorQaFixture fixture;
+  final GlobalKey<NavigatorState> navigatorKey;
   final VoidCallback onReset;
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: Theme.of(context).colorScheme.surface,
-    child: SafeArea(
-      bottom: false,
-      child: Column(
-        verticalDirection: VerticalDirection.up,
-        children: [
-          Expanded(child: child),
-          ListenableBuilder(
-            listenable: session,
-            builder: (context, _) => Container(
-              key: const ValueKey('emulator-qa-controls'),
-              width: double.infinity,
-              color: Theme.of(context).colorScheme.surfaceContainerHigh,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              child: Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  OutlinedButton.icon(
-                    onPressed: onReset,
-                    icon: const Icon(Icons.restart_alt, size: 18),
-                    label: const Text('重設 Session'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: session.active == null
-                        ? null
-                        : () => unawaited(session.endSession()),
-                    icon: const Icon(Icons.logout, size: 18),
-                    label: const Text('結束 Session'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Semantics(
-            container: true,
-            liveRegion: true,
-            label: '合成資料 QA，無 GitLab 連線，來源 $emulatorUiQaCommit',
-            child: Container(
-              key: const ValueKey('emulator-qa-banner'),
-              width: double.infinity,
-              color: Theme.of(context).colorScheme.errorContainer,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Text(
-                '合成資料 QA · 無 GitLab 連線',
-                maxLines: 2,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.onErrorContainer,
-                  fontWeight: FontWeight.w800,
+  State<_QaChrome> createState() => _QaChromeState();
+}
+
+class _QaChromeState extends State<_QaChrome> {
+  Future<void> _openNoteEditMenu() async {
+    final control = await showMenu<_QaNoteEditControl>(
+      context: widget.navigatorKey.currentContext!,
+      positionBuilder: (_, constraints) => RelativeRect.fromLTRB(
+        constraints.biggest.width - 48,
+        constraints.biggest.height - 48,
+        8,
+        8,
+      ),
+      items: [
+        PopupMenuItem(
+          value: _QaNoteEditControl.allow,
+          child: _qaMenuLabel('允許留言編輯'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.deny,
+          child: _qaMenuLabel('拒絕留言編輯'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.revise,
+          child: _qaMenuLabel('更新既有留言版本'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.failNextAcknowledgement,
+          child: _qaMenuLabel('下次編輯確認失敗'),
+        ),
+      ],
+    );
+    if (control != null && mounted) {
+      _applyNoteEditControl(context, control);
+    }
+  }
+
+  Widget _qaMenuLabel(String text) => MediaQuery.withClampedTextScaling(
+    maxScaleFactor: 1.25,
+    child: Text(text),
+  );
+
+  void _applyNoteEditControl(BuildContext context, _QaNoteEditControl control) {
+    final message = switch (control) {
+      _QaNoteEditControl.allow => () {
+        widget.fixture.workItemNoteEditAllowed[false] = true;
+        widget.fixture.workItemNoteEditAllowed[true] = true;
+        return '留言編輯權限：允許';
+      }(),
+      _QaNoteEditControl.deny => () {
+        widget.fixture.workItemNoteEditAllowed[false] = false;
+        widget.fixture.workItemNoteEditAllowed[true] = false;
+        return '留言編輯權限：拒絕';
+      }(),
+      _QaNoteEditControl.revise => () {
+        final revised = [
+          widget.fixture.reviseWorkItemActivityNote('gid://gitlab/Note/100002'),
+          widget.fixture.reviseWorkItemActivityNote('gid://gitlab/Note/200002'),
+        ].where((value) => value).length;
+        return '留言版本已更新：$revised 則';
+      }(),
+      _QaNoteEditControl.failNextAcknowledgement => () {
+        widget.fixture.failNextWorkItemNoteUpdateAcknowledgement = true;
+        return '下一次編輯確認將失敗';
+      }(),
+    };
+    debugPrint(
+      '[work_item_note_edit_qa_control] action=${control.name} '
+      'projectAllowed=${widget.fixture.workItemNoteEditAllowed[false]} '
+      'groupAllowed=${widget.fixture.workItemNoteEditAllowed[true]} '
+      'editEvents=${widget.fixture.workItemNoteEditEvents.length} '
+      'nextAckFailure=${widget.fixture.failNextWorkItemNoteUpdateAcknowledgement}',
+    );
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger
+      ?..removeCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(milliseconds: 1400),
+        ),
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          verticalDirection: VerticalDirection.up,
+          children: [
+            Expanded(child: widget.child),
+            ListenableBuilder(
+              listenable: widget.session,
+              builder: (context, _) => Container(
+                key: const ValueKey('emulator-qa-controls'),
+                width: double.infinity,
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Wrap(
+                      alignment: WrapAlignment.center,
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: widget.onReset,
+                          icon: const Icon(Icons.restart_alt, size: 18),
+                          label: const Text('重設 Session'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: widget.session.active == null
+                              ? null
+                              : () => unawaited(widget.session.endSession()),
+                          icon: const Icon(Icons.logout, size: 18),
+                          label: const Text('結束 Session'),
+                        ),
+                      ],
+                    ),
+                    Positioned(
+                      right: 0,
+                      top: 0,
+                      bottom: 0,
+                      child: Center(
+                        child: Semantics(
+                          button: true,
+                          label: '留言編輯 QA',
+                          child: IconButton(
+                            key: const ValueKey(
+                              'emulator-qa-note-edit-controls',
+                            ),
+                            icon: const Icon(
+                              Icons.edit_note_outlined,
+                              size: 20,
+                            ),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 40,
+                              height: 40,
+                            ),
+                            onPressed: widget.session.active == null
+                                ? null
+                                : _openNoteEditMenu,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ),
-        ],
+            Semantics(
+              container: true,
+              liveRegion: true,
+              label: '合成資料 QA，無 GitLab 連線，來源 $emulatorUiQaCommit',
+              child: Container(
+                key: const ValueKey('emulator-qa-banner'),
+                width: double.infinity,
+                color: Theme.of(context).colorScheme.errorContainer,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                child: Text(
+                  '合成資料 QA · 無 GitLab 連線',
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onErrorContainer,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _QaLanding extends StatelessWidget {

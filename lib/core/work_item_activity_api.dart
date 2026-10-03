@@ -185,6 +185,43 @@ query MobileWorkItemActivityNoteReadback(
 }
 ''';
 
+final _workItemActivityEditAccessQuery =
+    '''
+query MobileWorkItemActivityEditAccess(
+  \$workItemId: WorkItemID!
+  \$noteId: NoteID!
+) {
+  currentUser { id }
+  workItem(id: \$workItemId) { $_workItemActivityIdentityFields }
+  note(id: \$noteId) {
+    $_workItemActivityNoteFields
+    internal
+    noteableType
+    noteableId
+    project { id fullPath }
+    discussion { id createdAt }
+    userPermissions { adminNote }
+  }
+}
+''';
+
+final _workItemActivityUpdateNoteMutation =
+    '''
+mutation MobileUpdateWorkItemActivityNote(\$input: UpdateNoteInput!) {
+  updateNote(input: \$input) {
+    errors
+    note {
+      $_workItemActivityNoteFields
+      internal
+      noteableType
+      noteableId
+      project { id fullPath }
+      discussion { id createdAt }
+    }
+  }
+}
+''';
+
 /// One bounded activity page plus opaque, account-bound continuation handles.
 final class WorkItemActivityPage {
   WorkItemActivityPage._({
@@ -233,6 +270,39 @@ final class WorkItemActivityCreatedNote {
   final WorkItemActivityNote note;
   final String discussionId;
   final String replyId;
+}
+
+/// Fresh server permission for an existing ordinary note. Activity reading does
+/// not depend on this query, so a legacy schema can remain readable.
+final class WorkItemActivityEditAccess {
+  const WorkItemActivityEditAccess._({
+    required this.canEditNote,
+    required this.target,
+  });
+
+  final bool canEditNote;
+  final WorkItemActivityEditTarget? target;
+}
+
+/// One edit attempt bound to the API owner, actor and displayed note revision.
+final class WorkItemActivityEditTarget {
+  WorkItemActivityEditTarget._({
+    required GitLabApi owner,
+    required _WorkItemActivityIdentity identity,
+    required String actorId,
+    required _WorkItemActivityEditNote original,
+  }) : _owner = owner,
+       _identity = identity,
+       _actorId = actorId,
+       _original = original;
+
+  final GitLabApi _owner;
+  final _WorkItemActivityIdentity _identity;
+  final String _actorId;
+  final _WorkItemActivityEditNote _original;
+  bool _consumed = false;
+
+  WorkItemActivityNote get note => _original.note;
 }
 
 /// Opaque, owner-bound capability for one top-level comment attempt.
@@ -362,6 +432,210 @@ typedef _WorkItemActivityIdentity = ({
 });
 
 extension WorkItemActivityApi on GitLabApi {
+  Future<WorkItemActivityEditAccess> workItemActivityEditAccess(
+    WorkItemGraphSummary expected,
+    WorkItemActivityDiscussion discussion,
+    WorkItemActivityNote expectedNote, {
+    bool Function()? isCurrent,
+  }) async {
+    _validateExpectedAttributeIdentity(expected);
+    _workItemActivityModelId(expected.id);
+    if (expectedNote.system ||
+        !_isWritableActivityNoteId(expectedNote.id) ||
+        !_isGraphIdType(discussion.id, const {'Discussion'})) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    final identity = _activityIdentityFromExpected(expected);
+    final preflight = await _readActivityEditPreflight(
+      identity,
+      noteId: expectedNote.id,
+      discussionId: discussion.id,
+      discussionCreatedAt: discussion.createdAt,
+      isCurrent: isCurrent,
+    );
+    _requireDisplayedActivityNote(preflight.value.note, expectedNote);
+    return WorkItemActivityEditAccess._(
+      canEditNote: preflight.canEditNote,
+      target: preflight.canEditNote
+          ? WorkItemActivityEditTarget._(
+              owner: this,
+              identity: identity,
+              actorId: preflight.actorId!,
+              original: preflight.value,
+            )
+          : null,
+    );
+  }
+
+  Future<WorkItemActivityNote> editWorkItemActivityNote(
+    WorkItemActivityEditTarget target,
+    String body, {
+    bool Function()? isCurrent,
+  }) async {
+    _requireActivityOwner(target._owner);
+    if (target._consumed) {
+      throw const ApiFailure(FailureKind.writeUncertain);
+    }
+    final replacement = _validatedActivityWriteBody(body, trim: false);
+    final preflight = await _readActivityEditPreflight(
+      target._identity,
+      noteId: target.note.id,
+      discussionId: target._original.discussionId,
+      discussionCreatedAt: target._original.discussionCreatedAt,
+      isCurrent: isCurrent,
+    );
+    if (!preflight.canEditNote) {
+      throw const ApiFailure(
+        FailureKind.forbidden,
+        title: '無法編輯這則留言',
+        detail: '目前帳號沒有編輯這則留言的權限；草稿已保留。',
+      );
+    }
+    if (preflight.actorId != target._actorId) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    _requireDisplayedActivityNote(preflight.value.note, target.note);
+    _requireCurrentWorkItemRequest(isCurrent);
+    if (target._consumed) {
+      throw const ApiFailure(FailureKind.writeUncertain);
+    }
+    target._consumed = true;
+    if (replacement == target.note.body) return preflight.value.note;
+
+    late final _WorkItemActivityEditNote acknowledged;
+    try {
+      final response = await _send(
+        instance.graphQL,
+        method: 'POST',
+        graphMutation: true,
+        data: {
+          'query': _workItemActivityUpdateNoteMutation,
+          'variables': {
+            'input': {'id': target.note.id, 'body': replacement},
+          },
+        },
+      );
+      _requireCurrentWorkItemRequest(isCurrent);
+      final payload = objectJson(
+        _workItemGraphData(response.bytes)['updateNote'],
+      );
+      final errors = payload['errors'];
+      if (errors is! List ||
+          errors.any((error) => error is! String) ||
+          errors.isNotEmpty) {
+        throw const FormatException('Unconfirmed note update');
+      }
+      acknowledged = _parseActivityEditNote(
+        payload['note'],
+        identity: target._identity,
+        noteId: target.note.id,
+        discussionId: target._original.discussionId,
+        discussionCreatedAt: target._original.discussionCreatedAt,
+      );
+      _requireEditedActivityNote(acknowledged, target.note, replacement);
+    } on Object {
+      throw const ApiFailure(FailureKind.writeUncertain);
+    }
+
+    try {
+      _requireCurrentWorkItemRequest(isCurrent);
+      final response = await _read(
+        instance.graphQL,
+        method: 'POST',
+        graphQuery: true,
+        data: {
+          'query': _workItemActivityNoteReadbackQuery,
+          'variables': {
+            'workItemId': target._identity.id,
+            'noteId': target.note.id,
+          },
+        },
+      );
+      _requireCurrentWorkItemRequest(isCurrent);
+      final data = _workItemGraphData(response.bytes);
+      _requireActivityIdentity(
+        _parseAttributeIdentity(objectJson(data['workItem'])),
+        target._identity,
+      );
+      final readback = _parseActivityEditNote(
+        data['note'],
+        identity: target._identity,
+        noteId: target.note.id,
+        discussionId: target._original.discussionId,
+        discussionCreatedAt: target._original.discussionCreatedAt,
+      );
+      _requireEditedActivityNote(readback, target.note, replacement);
+      if (readback.note.updatedAt != acknowledged.note.updatedAt) {
+        throw const FormatException('Changed note update readback');
+      }
+      return readback.note;
+    } on Object {
+      throw const ApiFailure(FailureKind.writeUncertain);
+    }
+  }
+
+  Future<({bool canEditNote, String? actorId, _WorkItemActivityEditNote value})>
+  _readActivityEditPreflight(
+    _WorkItemActivityIdentity identity, {
+    required String noteId,
+    required String discussionId,
+    required DateTime discussionCreatedAt,
+    bool Function()? isCurrent,
+  }) async {
+    _requireCurrentWorkItemRequest(isCurrent);
+    final response = await _read(
+      instance.graphQL,
+      method: 'POST',
+      graphQuery: true,
+      data: {
+        'query': _workItemActivityEditAccessQuery,
+        'variables': {'workItemId': identity.id, 'noteId': noteId},
+      },
+    );
+    _requireCurrentWorkItemRequest(isCurrent);
+    try {
+      final data = _workItemGraphData(response.bytes);
+      if (data['workItem'] == null || data['note'] == null) {
+        throw const ApiFailure(FailureKind.invisible);
+      }
+      _requireActivityIdentity(
+        _parseAttributeIdentity(objectJson(data['workItem'])),
+        identity,
+      );
+      final value = _parseActivityEditNote(
+        data['note'],
+        identity: identity,
+        noteId: noteId,
+        discussionId: discussionId,
+        discussionCreatedAt: discussionCreatedAt,
+      );
+      final permission = objectJson(
+        objectJson(data['note'])['userPermissions'],
+      )['adminNote'];
+      if (permission is! bool) {
+        throw const FormatException('Invalid note edit permission');
+      }
+      String? actorId;
+      if (data['currentUser'] != null) {
+        actorId = requiredString(objectJson(data['currentUser']), 'id');
+        if (!_isGraphIdType(actorId, const {'User'})) {
+          throw const FormatException('Invalid note editor identity');
+        }
+      }
+      return (
+        canEditNote:
+            permission &&
+            actorId != null &&
+            !value.internal &&
+            !value.note.system,
+        actorId: actorId,
+        value: value,
+      );
+    } on FormatException {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+  }
+
   Future<WorkItemActivityWriteAccess> workItemActivityWriteAccess(
     WorkItemGraphSummary expected, {
     bool Function()? isCurrent,
@@ -998,6 +1272,85 @@ typedef _WorkItemActivityCreatedIdentity = ({
   DateTime discussionCreatedAt,
 });
 
+typedef _WorkItemActivityEditNote = ({
+  WorkItemActivityNote note,
+  bool internal,
+  String discussionId,
+  DateTime discussionCreatedAt,
+});
+
+_WorkItemActivityEditNote _parseActivityEditNote(
+  Object? raw, {
+  required _WorkItemActivityIdentity identity,
+  required String noteId,
+  required String discussionId,
+  required DateTime discussionCreatedAt,
+}) {
+  final node = objectJson(raw);
+  final note = _parseActivityNote(node);
+  if (note.id != noteId || !_isWritableActivityNoteId(note.id)) {
+    throw const FormatException('Wrong editable note');
+  }
+  final internal = node['internal'];
+  if (internal is! bool ||
+      (note.author != null &&
+          !_isGraphIdType(note.author!.id, const {'User'})) ||
+      _activityNoteableId(node) != _workItemActivityModelId(identity.id)) {
+    throw const FormatException('Invalid editable note metadata');
+  }
+  _requireCompatibleAnchorProject(
+    _parseOptionalResourceRef(node['project']),
+    identity.project,
+  );
+  final discussion = objectJson(node['discussion']);
+  if (requiredString(discussion, 'id') != discussionId ||
+      !_isGraphIdType(discussionId, const {'Discussion'}) ||
+      _workItemTimestamp(discussion['createdAt']) != discussionCreatedAt) {
+    throw const FormatException('Wrong editable discussion');
+  }
+  return (
+    note: note,
+    internal: internal,
+    discussionId: discussionId,
+    discussionCreatedAt: discussionCreatedAt,
+  );
+}
+
+void _requireDisplayedActivityNote(
+  WorkItemActivityNote current,
+  WorkItemActivityNote displayed,
+) {
+  if (current.id != displayed.id ||
+      current.system != displayed.system ||
+      current.body != displayed.body ||
+      current.createdAt != displayed.createdAt ||
+      current.updatedAt != displayed.updatedAt ||
+      current.author?.id != displayed.author?.id) {
+    throw const ApiFailure(
+      FailureKind.conflict,
+      title: '留言已被修改',
+      detail: '請重新載入最新留言再編輯；目前草稿已保留。',
+    );
+  }
+}
+
+void _requireEditedActivityNote(
+  _WorkItemActivityEditNote value,
+  WorkItemActivityNote original,
+  String body,
+) {
+  final note = value.note;
+  if (value.internal ||
+      note.system ||
+      note.id != original.id ||
+      note.body != body ||
+      note.createdAt != original.createdAt ||
+      note.updatedAt.isBefore(original.updatedAt) ||
+      note.author?.id != original.author?.id) {
+    throw const FormatException('Unconfirmed edited note');
+  }
+}
+
 int _workItemActivityModelId(String id) {
   final value = _workItemActivityModelIdOrNull(id);
   if (value == null) throw const ApiFailure(FailureKind.validation);
@@ -1042,12 +1395,12 @@ bool _isWritableActivityNoteId(String id) {
   return RegExp(r'^[1-9][0-9]*$').hasMatch(uri.pathSegments.last);
 }
 
-String _validatedActivityWriteBody(String raw) {
+String _validatedActivityWriteBody(String raw, {bool trim = true}) {
   if (raw.contains('\u0000')) {
     throw const ApiFailure(FailureKind.validation);
   }
-  final body = raw.trim();
-  if (body.isEmpty ||
+  final body = trim ? raw.trim() : raw;
+  if (body.trim().isEmpty ||
       utf8.encode(body).length > _workItemActivityWriteBodyBytes ||
       '\n'.allMatches(body).length + 1 > GitLabApi.maxTextLines) {
     throw const ApiFailure(FailureKind.validation);
@@ -1056,7 +1409,7 @@ String _validatedActivityWriteBody(String raw) {
     throw const ApiFailure(
       FailureKind.validation,
       title: '留言不支援快速指令',
-      detail: '請移除獨立一行的 / 指令；這個編輯器只會建立一般 Markdown 留言。',
+      detail: '請移除獨立一行的 / 指令；這個編輯器只支援一般 Markdown 留言。',
     );
   }
   return body;

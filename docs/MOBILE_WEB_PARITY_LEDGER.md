@@ -17,7 +17,7 @@ specification numbers have been invented.
 | Manage / Activity | Loaded timeline and eight event filters at phone width | Activity feed | Full event-kind/authenticated parity walk |
 | Manage / Members | Loaded roles/source/search/sort and member rows | Member list/actions | Custom roles, complete administration and live permissions |
 | Manage / Labels | Loaded Active/Archived, search/sort and empty state | List/create/edit/delete | Scoped labels/subscriptions and live CRUD |
-| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project/group-owned and descendant cursor lists with scope/state/search/type/order controls, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, seven lazy attribute kinds, server-filtered/ordered activity paging, guarded Markdown comments/replies and close/reopen | Remaining widgets, note editing/deletion/reactions, custom saved views and remaining list display/sort families, remaining Work Item mutations and authenticated/edition acceptance |
+| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project/group-owned and descendant cursor lists with scope/state/search/type/order controls, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, seven lazy attribute kinds, server-filtered/ordered activity paging, guarded Markdown comments/replies, ordinary note editing and close/reopen | Remaining widgets, note deletion/reactions, internal-note editing, custom saved views and remaining list display/sort families, remaining Work Item mutations and authenticated/edition acceptance |
 | Plan / Boards | Development board observed | Phone-width columns, card move, board/list management | Paid scope/list creation, touch drag/drop and live mutation readback |
 | Plan / Milestones | Loaded empty-state explanation | List/detail/create/edit/delete | Full progress/reporting and live CRUD |
 | Plan / Wiki | Loaded empty Wiki explanation | Page list/read/create/edit/delete | History, attachments, tree and live CRUD |
@@ -163,13 +163,35 @@ synthetic project/group regression coverage. Exact-source APK, installed native
 checks and CI evidence belong to the commit-bound delivery receipts; this does
 not establish authenticated live GitLab write acceptance.
 
+A fresh 390 × 844 signed-out walk of Issue 631759 opened an existing note's
+More actions menu: Copy link and Report abuse were visible; authenticated Edit
+was not observed. Native note actions now also provide copy and native sharing
+of validated project/group permalinks, preserving instance ports/subpaths and
+the numeric `#note_` fragment. Edit permission remains independently checked
+on demand. This browser observation does not establish live edit acceptance.
+
+Ordinary project/group Markdown notes now expose an on-demand edit action. The
+capability query uses GitLab's fresh `Note.userPermissions.adminNote` value; it
+does not infer permission from author identity. Before writing, the App checks
+the displayed revision, exact note/discussion and project/group scope, current
+actor, account and API owner. It sends one `updateNote` mutation and requires an
+exact independent readback. A no-op consumes the edit target without a mutation,
+while real edits preserve Markdown whitespace. Uncertain results retain the draft
+and block repeat Save. Unsupported optional edit queries do not break the normal
+activity reader. GitLab's current
+[`UpdateNoteInput`](https://docs.gitlab.com/api/graphql/reference/#updatenoteinput)
+has no compare-and-swap field, so the last preflight and update are not atomic.
+These source and synthetic checks do not establish authenticated private, live
+server-write or iOS acceptance. See the [GraphQL documentation](https://docs.gitlab.com/api/graphql/)
+and the reviewed upstream [`UpdateNote` mutation](https://gitlab.com/gitlab-org/gitlab/-/blob/26212baacadb5beea6664f7ef025d753dccfb0d6/app/graphql/mutations/notes/update/base.rb).
+
 1. Typed REST Tasks/Incidents now have source and regression coverage. Complete
    installed-build checks and disposable-fixture CRUD/lifecycle readback; alert,
    timeline, metrics and on-call workflows remain open.
 2. Fixed-query GraphQL Work Items now include server-returned scope/type IDs,
    project cursor paging and exact project/group details with five base widgets
-   plus seven independently loaded attributes and guarded Markdown activity comments/replies. Complete remaining
-   widgets, note editing/deletion/reactions, custom saved views and remaining list display/sort families,
+   plus seven independently loaded attributes, guarded Markdown activity comments/replies and ordinary note edits. Complete remaining
+   widgets, note deletion/reactions and internal-note workflows, custom saved views and remaining list display/sort families,
    remaining native mutations and actual authenticated/private/edition validation.
 3. Multi-file Snippet blobs now have lazy paths/content, source/Markdown preview
    and guarded file actions with `updatedAt` change detection. Complete

@@ -11,8 +11,8 @@ lazy multi-file Snippets, typed Task/Incident
 workflows, native contributor/repository/CI analytics and GraphQL Work Items
 with bounded group and descendant lists, server-side scope/state/search/type/order
 controls, seven independently loaded attribute kinds and
-lazy activity with server-side filtering/order, guarded Markdown comments/replies
-and project/group close/reopen.
+lazy activity with server-side filtering/order, guarded Markdown comments/replies,
+ordinary project/group note edits and project/group close/reopen.
 Long descriptions collapse before building Markdown. Account-client
 read caching, request sharing, lazy list derivation and syntax-span LRU reduce
 repeated work. See [the parity/performance report](MOBILE_PARITY_PERFORMANCE.md)
@@ -20,13 +20,26 @@ and [the full-function ledger](MOBILE_WEB_PARITY_LEDGER.md).
 
 Core board and draft workflows now have source/tests. Draft bulk publication still
 has GitLab's concurrent-change interval after its final GET. GraphQL Work Item
-remaining mutations, note editing/deletion/reactions and remaining widgets,
+remaining mutations, note deletion/reactions and remaining widgets,
 group Work Item custom saved views and remaining list display controls,
 paid board scope/list creation, all-branch graph,
 registry publishing/policies and complete type-specific installation workflows,
 complete incident operations and live lifecycle proof, Service Desk, complete analytics families, OAuth live
 login and push remain open under the all-function goal. Exact-head CI, Android
 readback, live private/CRUD and iOS acceptance remain separate evidence lanes.
+
+Ordinary Work Item note editing checks the server's on-demand `adminNote`
+permission instead of inferring access from note authorship. It validates the
+displayed revision, project/group scope, account and API owner, writes once, then
+requires an exact independent readback. No-op saves do not mutate and Markdown
+whitespace is preserved. Uncertain writes retain the draft and block replay. The
+normal activity reader does not depend on this optional query, so unsupported
+instances remain readable. GitLab's current
+[`UpdateNoteInput`](https://docs.gitlab.com/api/graphql/reference/#updatenoteinput)
+has no revision or timestamp compare-and-swap field; the preflight/update interval
+therefore remains non-atomic. This source slice is not authenticated private or
+iOS acceptance. Contracts: [GraphQL](https://docs.gitlab.com/api/graphql/) and
+the reviewed upstream [`UpdateNote` mutation](https://gitlab.com/gitlab-org/gitlab/-/blob/26212baacadb5beea6664f7ef025d753dccfb0d6/app/graphql/mutations/notes/update/base.rb).
 
 ## G0 — Identity and private repository reader (implemented slice, acceptance incomplete)
 
@@ -143,7 +156,7 @@ The later follow-up adds native contributor/repository/CI analytics and lazy
 multi-file Snippet source/Markdown with guarded file actions. Its current-source
 verification and device/CI boundaries are recorded in
 [mobile parity and performance](MOBILE_PARITY_PERFORMANCE.md). These slices do
-not close GraphQL Work Item mutations/activity/remaining widgets, complete group Epic/OKR workflows, private fixture CRUD or
+not close remaining GraphQL Work Item mutations/widgets, complete group Epic/OKR workflows, private fixture CRUD or
 Android/iOS acceptance.
 
 The 2026-10-03 action follow-up adds direct canonical link sharing in resource
