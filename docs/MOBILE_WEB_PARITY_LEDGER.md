@@ -322,3 +322,29 @@ interval remains. Source/browser/build/native/CI receipts belong to
 `artifacts/mobile-parity/work-item-milestone/`; absent cases remain NOT_RUN.
 Other widget mutations and authenticated/private/edition/iOS acceptance remain
 open.
+
+## Work Item weight follow-up
+
+A signed-out 390 x 844 browser walk painted Weight / None on public project
+Work Item `631759` and group Work Item `23883`. The project accessibility file
+saved with that walk is a sidebar diff and does not contain the Weight row;
+the screenshot is the visual record and a full project tree was not invented.
+The group accessibility tree is complete and shows Weight / None. Signed-in
+editing and live mutations were not run. Screenshot hashes are in
+`artifacts/mobile-parity/work-item-weight/browser-observation.json`.
+
+The native action stays on the existing lazy attribute row. Own weight, zero
+and null remain distinct from `rolledUpWeight` and `rolledUpCompletedWeight`.
+Opening the editor performs a fresh `readWorkItem` plus `adminWorkItem` read.
+An earlier attribute response cannot authorize the write. The mutation input is
+only the item ID and `weightWidget.weight`. Null clears. There is no
+compare-and-swap. Acknowledgement and an independent readback must show that
+own value before the row is replaced. A lost acknowledgement, a consumed
+target, a denied permission, a missing widget or a revision change does not
+send the mutation again.
+
+Provisional local synthetic tests are separate from exact submitted-source
+archive builds, the owned emulator, CI, authenticated private writes, iOS and
+TalkBack. Those remain **NOT_RUN**. This slice does not close the ledger gaps
+above and does not claim full Web parity, G0 acceptance or measured
+performance. Receipts belong under `artifacts/mobile-parity/work-item-weight/`.

@@ -28,10 +28,25 @@ Widget evidenceHost(Widget page, Brightness brightness) => MaterialApp(
   home: page,
 );
 
+/// Linux CI default when [GITLAB_MOBILE_TEST_FONT] is unset. An explicit
+/// absolute path lets a Mac host satisfy the same required CI glyph checks
+/// without bundling a font or hard-coding a platform fallback.
+File visualEvidenceCjkFont() {
+  final override = Platform.environment['GITLAB_MOBILE_TEST_FONT'];
+  if (override == null || override.isEmpty) {
+    return File('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc');
+  }
+  final font = File(override);
+  if (!font.isAbsolute) {
+    throw StateError('GITLAB_MOBILE_TEST_FONT must be an absolute path');
+  }
+  return font;
+}
+
 void main() {
   var fontsAvailable = false;
   setUpAll(() async {
-    final font = File('/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc');
+    final font = visualEvidenceCjkFont();
     if (!font.existsSync()) {
       if (Platform.environment['CI'] == 'true') { throw StateError('CJK font is required for CI visual evidence'); }
       return;

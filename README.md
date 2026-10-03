@@ -101,6 +101,16 @@ candidate query succeeding. Each save uses fresh `readWorkItem` and
 mutation and an independent readback. A failed save requires closing and
 reopening; the preflight/update interval is not atomic conflict protection.
 
+The existing weight row edits only that item's own weight. Null, zero and the
+read-only rolled-up totals stay distinct. The editor reads fresh `readWorkItem`
+and `adminWorkItem` permission instead of reusing the row that was already on
+screen. One save sends the item ID and `weightWidget.weight`; null clears and
+zero is stored. GitLab's update has no compare-and-swap. A failed or uncertain
+attempt is not replayed and does not replace the row. This describes the local
+source shape. Exact-archive, emulator, CI, live private, iOS and TalkBack runs
+are **NOT_RUN**. They are not G0 acceptance or a performance claim. See the
+[parity ledger](docs/MOBILE_WEB_PARITY_LEDGER.md).
+
 ## v0.5 — mobile UX overhaul and GitLab parity
 
 Still a development preview. Evidence is in the [v0.5 ledger](docs/V0_5_VERIFICATION.md); anything it does not list is **NOT_RUN**.

@@ -1075,3 +1075,19 @@ cannot replay. Browser and attributable source/APK/native/CI evidence live under
 `artifacts/mobile-parity/work-item-milestone/`. This feature does not establish
 measured scroll improvement, atomic conflict protection, authenticated private
 writes or iOS acceptance.
+
+## On-demand Work Item weight editing
+
+The existing lazy weight row keeps its read budget and cached collapse. The
+editor is a separate fresh read of actor, `readWorkItem` and `adminWorkItem`.
+Own null, own zero and the two read-only aggregates are not interchangeable.
+Save sends one weight-only update and replaces the weight snapshot only after
+an independent readback of that own value. Milestone behaviour on the same row
+is unchanged. Noop, denied permission, absent widget and revision mismatch do
+not send a mutation. A consumed target or lost acknowledgement is not retried.
+
+No scroll, frame or network measurement was added for this path. Provisional
+local synthetic tests are not an exact-archive, emulator, CI, live-private,
+iOS or TalkBack result. Those stay **NOT_RUN**. The slice does not claim a
+real-world performance change or full parity. Evidence paths are under
+`artifacts/mobile-parity/work-item-weight/`.

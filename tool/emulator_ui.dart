@@ -62,6 +62,12 @@ enum _QaNoteEditControl {
   failMilestoneCandidates,
   failMilestoneAcknowledgement,
   reviseMilestone,
+  allowWeight,
+  denyWeight,
+  failWeightAcknowledgement,
+  reviseWeight,
+  absentWeight,
+  presentWeight,
 }
 
 void main() {
@@ -179,6 +185,12 @@ final class EmulatorQaFixture extends WorkspaceFixture {
   bool workItemMilestoneMetadataAllowed = true;
   bool failNextWorkItemMilestoneCandidates = false;
   bool failNextWorkItemMilestoneAcknowledgement = false;
+  final List<Json> workItemWeightEvents = [];
+  final List<String> workItemWeightReads = [];
+  final Map<bool, int?> workItemWeights = {false: 0, true: 7};
+  bool workItemWeightAllowed = true;
+  bool workItemWeightPresent = true;
+  bool failNextWorkItemWeightAcknowledgement = false;
   final Map<bool, bool> workItemNoteEditAllowed = {false: true, true: true};
   // GitLab exposes the same adminNote permission for editing and deletion.
   Map<bool, bool> get workItemNoteDeleteAllowed => workItemNoteEditAllowed;
@@ -201,9 +213,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
       return {
         'project': null,
         'group': {
-          'id': index.isEven
-              ? 'gid://gitlab/Group/84'
-              : 'gid://gitlab/Group/8',
+          'id': index.isEven ? 'gid://gitlab/Group/84' : 'gid://gitlab/Group/8',
           'fullPath': index.isEven ? 'qa/synthetic-group' : 'qa',
         },
       };
@@ -211,10 +221,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
     if (index % 5 == 0) {
       return {
         'project': null,
-        'group': {
-          'id': 'gid://gitlab/Group/4',
-          'fullPath': 'studio',
-        },
+        'group': {'id': 'gid://gitlab/Group/4', 'fullPath': 'studio'},
       };
     }
     return {
@@ -252,30 +259,33 @@ final class EmulatorQaFixture extends WorkspaceFixture {
     };
   }
 
-  List<Json> workItemMilestoneCandidates({required bool group}) =>
-      List<Json>.generate(65, (index) {
-        final number = index + 1;
-        final id = (group ? 2000 : 1000) + number;
-        final owner = _workItemMilestoneOwner(group: group, index: number);
-        return {
-          'id': 'gid://gitlab/Milestone/$id',
-          'iid': '$number',
-          'title':
-              '${number.isEven ? 'Release' : 'Planning'} ${number.toString().padLeft(2, '0')} ${group ? 'group' : 'project'}',
-          'state': 'ACTIVE',
-          'expired': number % 11 == 0,
-          'dueDate': DateTime.utc(2026, 10, 1)
-              .add(Duration(days: number))
-              .toIso8601String()
-              .substring(0, 10),
-          'startDate': DateTime.utc(2026, 9, 1)
-              .add(Duration(days: number))
-              .toIso8601String()
-              .substring(0, 10),
-          'webPath': _workItemMilestoneWebPath(owner, number),
-          ...owner,
-        };
-      }, growable: false);
+  List<Json> workItemMilestoneCandidates({
+    required bool group,
+  }) => List<Json>.generate(65, (index) {
+    final number = index + 1;
+    final id = (group ? 2000 : 1000) + number;
+    final owner = _workItemMilestoneOwner(group: group, index: number);
+    return {
+      'id': 'gid://gitlab/Milestone/$id',
+      'iid': '$number',
+      'title':
+          '${number.isEven ? 'Release' : 'Planning'} ${number.toString().padLeft(2, '0')} ${group ? 'group' : 'project'}',
+      'state': 'ACTIVE',
+      'expired': number % 11 == 0,
+      'dueDate': DateTime.utc(
+        2026,
+        10,
+        1,
+      ).add(Duration(days: number)).toIso8601String().substring(0, 10),
+      'startDate': DateTime.utc(
+        2026,
+        9,
+        1,
+      ).add(Duration(days: number)).toIso8601String().substring(0, 10),
+      'webPath': _workItemMilestoneWebPath(owner, number),
+      ...owner,
+    };
+  }, growable: false);
 
   Json? workItemMilestoneById({required bool group, required String id}) {
     final closed = _closedWorkItemMilestone(group: group);
@@ -306,6 +316,28 @@ final class EmulatorQaFixture extends WorkspaceFixture {
   };
 
   void reviseWorkItemMilestone({required bool group}) {
+    final id = 'gid://gitlab/WorkItem/${group ? 1041 : 1031}';
+    _workItemRevisions[id] = (_workItemRevisions[id] ?? 0) + 1;
+  }
+
+  Json workItemWeightRecord({required bool group}) => {
+    ...workItemRecord(group: group),
+    'userPermissions': {
+      'readWorkItem': true,
+      'adminWorkItem': workItemWeightAllowed,
+    },
+    'widgets': [
+      if (workItemWeightPresent)
+        {
+          'type': 'WEIGHT',
+          'weight': workItemWeights[group],
+          'rolledUpWeight': group ? 12 : null,
+          'rolledUpCompletedWeight': group ? 5 : null,
+        },
+    ],
+  };
+
+  void reviseWorkItemWeight({required bool group}) {
     final id = 'gid://gitlab/WorkItem/${group ? 1041 : 1031}';
     _workItemRevisions[id] = (_workItemRevisions[id] ?? 0) + 1;
   }
@@ -399,6 +431,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         'readWorkItem': true,
         'updateWorkItem': true,
         'setWorkItemMetadata': workItemMilestoneMetadataAllowed,
+        'adminWorkItem': workItemWeightAllowed,
         'createNote': true,
       },
       'description': workItemContentDescriptions[group],
@@ -424,6 +457,13 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           'type': 'MILESTONE',
           'milestone': currentWorkItemMilestone(group: group),
         },
+        if (workItemWeightPresent)
+          {
+            'type': 'WEIGHT',
+            'weight': workItemWeights[group],
+            'rolledUpWeight': group ? 12 : null,
+            'rolledUpCompletedWeight': group ? 5 : null,
+          },
       ],
     };
   }
@@ -1176,6 +1216,84 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           },
         });
       }
+      if ((operation == 'MobileWorkItemWeight' ||
+              operation == 'MobileWorkItemWeightAttribute') &&
+          _workItemStates.containsKey(variables['id'])) {
+        final group = variables['id'] == 'gid://gitlab/WorkItem/1041';
+        workItemWeightReads.add(operation!);
+        return jsonResponse({
+          'data': {
+            if (operation == 'MobileWorkItemWeight')
+              'currentUser': {'id': 'gid://gitlab/User/7'},
+            'workItem': workItemWeightRecord(group: group),
+          },
+        });
+      }
+      if (operation == 'MobileSetWorkItemWeight') {
+        final input = variables['input'];
+        final widget = input is Map ? input['weightWidget'] : null;
+        final id = input is Map ? input['id'] : null;
+        final weight = widget is Map ? widget['weight'] : null;
+        final valid =
+            input is Map &&
+            input.length == 2 &&
+            input.containsKey('id') &&
+            input.containsKey('weightWidget') &&
+            widget is Map &&
+            widget.length == 1 &&
+            widget.containsKey('weight') &&
+            (weight == null ||
+                (weight is int && weight >= 0 && weight <= 2147483647));
+        if (valid && id is String && _workItemStates.containsKey(id)) {
+          final group = id == 'gid://gitlab/WorkItem/1041';
+          final accepted = workItemWeightAllowed && workItemWeightPresent;
+          final eventInput = <String, Object?>{
+            'id': id,
+            'weightWidget': <String, Object?>{'weight': weight},
+          };
+          workItemWeightEvents.add({
+            'input': eventInput,
+            'accepted': accepted,
+            'group': group,
+          });
+          debugPrint(
+            '[work_item_weight_qa] scope=${group ? 'group' : 'project'} '
+            'weight=${weight ?? 'clear'} accepted=$accepted '
+            'sequence=${workItemWeightEvents.length} input=$eventInput',
+          );
+          if (!accepted) {
+            return jsonResponse({
+              'data': {
+                'workItemUpdate': {
+                  'workItem': null,
+                  'errors': ['Synthetic weight update not permitted'],
+                },
+              },
+            });
+          }
+          workItemWeights[group] = weight as int?;
+          reviseWorkItemWeight(group: group);
+          if (failNextWorkItemWeightAcknowledgement) {
+            failNextWorkItemWeightAcknowledgement = false;
+            return jsonResponse({
+              'message': 'Synthetic weight acknowledgement failure',
+            }, status: 503);
+          }
+          return jsonResponse({
+            'data': {
+              'workItemUpdate': {
+                'errors': <String>[],
+                'workItem': workItemWeightRecord(group: group),
+              },
+            },
+          });
+        }
+        return jsonResponse({
+          'errors': [
+            {'message': 'Synthetic weight input was rejected'},
+          ],
+        });
+      }
       if ((operation == 'MobileWorkItemMilestone' ||
               operation == 'MobileWorkItemMilestoneAttribute') &&
           _workItemStates.containsKey(variables['id'])) {
@@ -1200,9 +1318,8 @@ final class EmulatorQaFixture extends WorkspaceFixture {
             : int.parse((rawAfter as String).split(':').last);
         final filtered = workItemMilestoneCandidates(group: group)
             .where(
-              (milestone) => (milestone['title'] as String)
-                  .toLowerCase()
-                  .contains(search),
+              (milestone) =>
+                  (milestone['title'] as String).toLowerCase().contains(search),
             )
             .toList(growable: false);
         final page = filtered.skip(offset).take(50).toList(growable: false);
@@ -1226,12 +1343,8 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           }, status: 503);
         }
         final root = {
-          'id': group
-              ? 'gid://gitlab/Group/84'
-              : 'gid://gitlab/Project/42',
-          'fullPath': group
-              ? 'qa/synthetic-group'
-              : 'studio/mobile-workspace',
+          'id': group ? 'gid://gitlab/Group/84' : 'gid://gitlab/Project/42',
+          'fullPath': group ? 'qa/synthetic-group' : 'studio/mobile-workspace',
           'milestones': {
             'nodes': page,
             'pageInfo': {
@@ -1263,9 +1376,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
             widget.containsKey('milestoneId');
         final milestoneId = widget is Map ? widget['milestoneId'] : null;
         final validMilestoneId = milestoneId == null || milestoneId is String;
-        if (validShape &&
-            validMilestoneId &&
-            _workItemStates.containsKey(id)) {
+        if (validShape && validMilestoneId && _workItemStates.containsKey(id)) {
           final group = id == 'gid://gitlab/WorkItem/1041';
           final milestone = milestoneId is String
               ? workItemMilestoneById(group: group, id: milestoneId)
@@ -1275,9 +1386,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
               (milestoneId == null || milestone != null);
           final eventInput = <String, Object?>{
             'id': id,
-            'milestoneWidget': <String, Object?>{
-              'milestoneId': milestoneId,
-            },
+            'milestoneWidget': <String, Object?>{'milestoneId': milestoneId},
           };
           workItemMilestoneEvents.add({
             'group': group,
@@ -1301,8 +1410,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
             });
           }
           workItemMilestoneIds[group] = milestoneId as String?;
-          _workItemRevisions[id as String] =
-              (_workItemRevisions[id] ?? 0) + 1;
+          _workItemRevisions[id as String] = (_workItemRevisions[id] ?? 0) + 1;
           if (failNextWorkItemMilestoneAcknowledgement) {
             failNextWorkItemMilestoneAcknowledgement = false;
             return jsonResponse({
@@ -1812,6 +1920,31 @@ class _QaChromeState extends State<_QaChrome> {
         ),
         const PopupMenuDivider(),
         PopupMenuItem(
+          value: _QaNoteEditControl.allowWeight,
+          child: _qaMenuLabel('允許權重設定'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.denyWeight,
+          child: _qaMenuLabel('撤回權重權限'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.failWeightAcknowledgement,
+          child: _qaMenuLabel('下次權重確認失敗'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.reviseWeight,
+          child: _qaMenuLabel('更新權重工作項目版本'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.absentWeight,
+          child: _qaMenuLabel('移除權重 Widget'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.presentWeight,
+          child: _qaMenuLabel('還原權重 Widget'),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
           value: _QaNoteEditControl.allowMilestoneMetadata,
           child: _qaMenuLabel('允許里程碑設定'),
         ),
@@ -1970,6 +2103,31 @@ class _QaChromeState extends State<_QaChrome> {
       _QaNoteEditControl.failNotificationRead => () {
         widget.fixture.failNextWorkItemNotificationRead = true;
         return '下一次訂閱讀取將失敗';
+      }(),
+      _QaNoteEditControl.allowWeight => () {
+        widget.fixture.workItemWeightAllowed = true;
+        return '權重設定：允許';
+      }(),
+      _QaNoteEditControl.denyWeight => () {
+        widget.fixture.workItemWeightAllowed = false;
+        return '權重權限：撤回';
+      }(),
+      _QaNoteEditControl.failWeightAcknowledgement => () {
+        widget.fixture.failNextWorkItemWeightAcknowledgement = true;
+        return '下一次權重確認將失敗';
+      }(),
+      _QaNoteEditControl.reviseWeight => () {
+        widget.fixture.reviseWorkItemWeight(group: false);
+        widget.fixture.reviseWorkItemWeight(group: true);
+        return '權重工作項目版本已更新';
+      }(),
+      _QaNoteEditControl.absentWeight => () {
+        widget.fixture.workItemWeightPresent = false;
+        return '權重 Widget：移除';
+      }(),
+      _QaNoteEditControl.presentWeight => () {
+        widget.fixture.workItemWeightPresent = true;
+        return '權重 Widget：還原';
       }(),
       _QaNoteEditControl.allowMilestoneMetadata => () {
         widget.fixture.workItemMilestoneMetadataAllowed = true;

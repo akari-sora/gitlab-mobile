@@ -9,8 +9,10 @@ import '../../core/models.dart';
 import '../../core/work_item_attribute_models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_milestone_models.dart';
+import '../../core/work_item_weight_models.dart';
 import '../../shared/workspace_ui.dart';
 import 'work_item_milestone.dart';
+import 'work_item_weight.dart';
 
 const _widgetKinds = <String, WorkItemAttributeKind>{
   'STATUS': WorkItemAttributeKind.status,
@@ -76,6 +78,11 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
   final Set<WorkItemAttributeKind> _loading = {};
   int _epoch = 0;
   int _activeReads = 0;
+  int _weightSerial = 0;
+  Object? _weightWriteToken;
+  String? _weightWriteAccount;
+  GitLabApi? _weightWriteApi;
+  WorkItemGraphSummary? _weightWriteSummary;
   bool _expanded = false;
 
   List<WorkItemAttributeKind> get _kinds => [
@@ -102,16 +109,12 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
       oldWidget.ownerChanges?.removeListener(_ownerChanged);
       widget.ownerChanges?.addListener(_ownerChanged);
     }
-    final oldSummary = oldWidget.detail.summary;
-    final summary = widget.detail.summary;
-    if (oldWidget.account.key != widget.account.key ||
+    final identityChanged =
+        oldWidget.account.key != widget.account.key ||
         !identical(oldWidget.api, widget.api) ||
-        oldSummary.id != summary.id ||
-        oldSummary.iid != summary.iid ||
-        oldSummary.project?.id != summary.project?.id ||
-        oldSummary.project?.fullPath != summary.project?.fullPath ||
-        oldSummary.namespace?.id != summary.namespace?.id ||
-        oldSummary.namespace?.fullPath != summary.namespace?.fullPath ||
+        !_sameWeightResource(oldWidget.detail.summary, widget.detail.summary);
+    if (identityChanged) _clearWeightWrite();
+    if (identityChanged ||
         !identical(oldWidget.loadAttribute, widget.loadAttribute) ||
         !identical(oldWidget.detail, widget.detail)) {
       _reset();
@@ -129,6 +132,7 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
 
   void _ownerChanged() {
     if (widget.isCurrent?.call() ?? true) return;
+    _clearWeightWrite();
     _reset();
   }
 
@@ -180,6 +184,7 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
     WorkItemAttributeKind kind,
     int epoch,
   ) async {
+    final weightSerial = _weightSerial;
     try {
       final load = widget.loadAttribute ?? widget.api.workItemAttribute;
       final snapshot = await load(
@@ -190,6 +195,10 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
       if (!_current(epoch)) return;
       if (snapshot.kind != kind) {
         throw const ApiFailure(FailureKind.invalidResponse);
+      }
+      if (kind == WorkItemAttributeKind.weight &&
+          (weightSerial != _weightSerial || _weightWriteBlocksCurrent)) {
+        return;
       }
       _loaded[kind] = snapshot;
       _errors.remove(kind);
@@ -235,6 +244,156 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
     });
   }
 
+  void _applyWeight(WorkItemWeightSnapshot snapshot, int epoch) {
+    if (!_current(epoch)) return;
+    final expected = widget.detail.summary;
+    final actual = snapshot.summary;
+    if (actual.id != expected.id ||
+        actual.iid != expected.iid ||
+        actual.type.id != expected.type.id ||
+        actual.project?.id != expected.project?.id ||
+        actual.project?.fullPath != expected.project?.fullPath ||
+        actual.namespace?.id != expected.namespace?.id ||
+        actual.namespace?.fullPath != expected.namespace?.fullPath ||
+        snapshot.availability != WorkItemAttributeAvailability.present ||
+        snapshot.value == null) {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+    _weightSerial++;
+    setState(() {
+      _loaded[WorkItemAttributeKind.weight] = WorkItemAttributeSnapshot(
+        workItemId: actual.id,
+        iid: actual.iid,
+        project: actual.project,
+        namespace: actual.namespace,
+        kind: WorkItemAttributeKind.weight,
+        availability: snapshot.availability,
+        value: snapshot.value,
+      );
+      _errors.remove(WorkItemAttributeKind.weight);
+    });
+  }
+
+  bool get _weightWriteBlocksCurrent {
+    final summary = _weightWriteSummary;
+    final api = _weightWriteApi;
+    if (_weightWriteToken == null ||
+        summary == null ||
+        api == null ||
+        _weightWriteAccount == null) {
+      return false;
+    }
+    return _weightWriteAccount == widget.account.key &&
+        identical(api, widget.api) &&
+        _sameWeightResource(summary, widget.detail.summary) &&
+        (widget.isCurrent?.call() ?? true);
+  }
+
+  bool _sameWeightResource(
+    WorkItemGraphSummary left,
+    WorkItemGraphSummary right,
+  ) {
+    return left.id == right.id &&
+        left.iid == right.iid &&
+        left.type.id == right.type.id &&
+        left.project?.id == right.project?.id &&
+        left.project?.fullPath == right.project?.fullPath &&
+        left.namespace?.id == right.namespace?.id &&
+        left.namespace?.fullPath == right.namespace?.fullPath;
+  }
+
+  bool _acceptsWeightWrite(
+    Account account,
+    GitLabApi api,
+    WorkItemGraphDetail detail,
+  ) {
+    return mounted &&
+        account.key == widget.account.key &&
+        identical(api, widget.api) &&
+        _sameWeightResource(detail.summary, widget.detail.summary) &&
+        (widget.isCurrent?.call() ?? true);
+  }
+
+  void _clearWeightWrite() {
+    _weightWriteToken = null;
+    _weightWriteAccount = null;
+    _weightWriteApi = null;
+    _weightWriteSummary = null;
+  }
+
+  void _onWeightWrite(
+    WorkItemWeightWritePhase phase,
+    Object token,
+    Account account,
+    GitLabApi api,
+    WorkItemGraphDetail detail,
+  ) {
+    if (phase == WorkItemWeightWritePhase.start) {
+      if (!_acceptsWeightWrite(account, api, detail)) return;
+      _weightWriteToken = token;
+      _weightWriteAccount = account.key;
+      _weightWriteApi = api;
+      _weightWriteSummary = detail.summary;
+      _weightSerial++;
+      return;
+    }
+    if (!identical(_weightWriteToken, token)) return;
+    _clearWeightWrite();
+    if (!_acceptsWeightWrite(account, api, detail)) return;
+    _weightSerial++;
+    _loaded.remove(WorkItemAttributeKind.weight);
+    _errors.remove(WorkItemAttributeKind.weight);
+    _queue.removeWhere((kind) => kind == WorkItemAttributeKind.weight);
+    if (!_expanded || !_kinds.contains(WorkItemAttributeKind.weight)) {
+      if (mounted) setState(() {});
+      return;
+    }
+    if (!_loading.contains(WorkItemAttributeKind.weight)) {
+      _queue.addFirst(WorkItemAttributeKind.weight);
+    } else {
+      _queue.add(WorkItemAttributeKind.weight);
+    }
+    _pump();
+  }
+
+  Widget? _attributeAction(WorkItemAttributeKind kind, int epoch) {
+    final snapshot = _loaded[kind];
+    final weightReadInFlight =
+        kind == WorkItemAttributeKind.weight &&
+        _loading.contains(kind) &&
+        !_errors.containsKey(kind) &&
+        (snapshot == null ||
+            snapshot.availability == WorkItemAttributeAvailability.present);
+    if (!weightReadInFlight &&
+        (_loading.contains(kind) ||
+            _errors.containsKey(kind) ||
+            snapshot?.availability != WorkItemAttributeAvailability.present)) {
+      return null;
+    }
+    return switch (kind) {
+      WorkItemAttributeKind.milestone => WorkItemMilestoneControl(
+        account: widget.account,
+        api: widget.api,
+        detail: widget.detail,
+        isCurrent: () => _current(epoch),
+        ownerChanges: widget.ownerChanges,
+        onRoute: widget.onRoute,
+        onSaved: (snapshot) => _applyMilestone(snapshot, epoch),
+      ),
+      WorkItemAttributeKind.weight => WorkItemWeightControl(
+        account: widget.account,
+        api: widget.api,
+        detail: widget.detail,
+        isCurrent: () => _current(epoch),
+        ownerChanges: widget.ownerChanges,
+        onRoute: widget.onRoute,
+        onWeightWrite: _onWeightWrite,
+        onSaved: (snapshot) => _applyWeight(snapshot, epoch),
+      ),
+      _ => null,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final kinds = _kinds;
@@ -259,22 +418,7 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
               snapshot: _loaded[kind],
               error: _errors[kind],
               onRetry: () => _retry(kind),
-              action:
-                  kind == WorkItemAttributeKind.milestone &&
-                      !_loading.contains(kind) &&
-                      !_errors.containsKey(kind) &&
-                      _loaded[kind]?.availability ==
-                          WorkItemAttributeAvailability.present
-                  ? WorkItemMilestoneControl(
-                      account: widget.account,
-                      api: widget.api,
-                      detail: widget.detail,
-                      isCurrent: () => _current(epoch),
-                      ownerChanges: widget.ownerChanges,
-                      onRoute: widget.onRoute,
-                      onSaved: (snapshot) => _applyMilestone(snapshot, epoch),
-                    )
-                  : null,
+              action: _attributeAction(kind, epoch),
             ),
         ],
       ),

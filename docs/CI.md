@@ -12,6 +12,15 @@ New projects require explicit runner registration and dispatcher onboarding on e
 4. `android_debug`: needs all three checks, reuses their dependency lock and native templates, and builds an Android debug APK.
 5. `publish_preview`: main/default branch only, verifies checksums and uploads APK/metadata/checksums to the same project's Generic Package Registry.
 
+`test/visual_evidence_test.dart` loads `/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc` when `GITLAB_MOBILE_TEST_FONT` is unset. That Linux path stays the CI default. On a Mac, keep `CI=true` and point the variable at an existing system font so the required CJK glyph checks still run. The path contains a space, so quote the assignment:
+
+```sh
+CI=true GITLAB_MOBILE_TEST_FONT='/System/Library/Fonts/STHeiti Medium.ttc' \
+  fvm flutter test --no-pub --timeout=60s test/visual_evidence_test.dart
+```
+
+A missing chosen font still fails that required CI check. The test does not install a font or fall back to a Mac path on its own.
+
 No tests or analyzer failures are ignored. A missing/unsuccessful Flutter completion event makes the JUnit conversion fail. Tests emit compact live progress, per-test limits and an overall test-process deadline. CI does not silently fix or reformat the source and claim the changed code was tested.
 
 ## Toolchains and reproducibility
