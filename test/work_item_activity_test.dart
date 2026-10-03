@@ -9,6 +9,7 @@ import 'package:gitlab_mobile/core/work_item_activity_models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_activity.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
+import 'package:gitlab_mobile/shared/theme.dart';
 
 import 'support/fake_adapter.dart';
 
@@ -150,7 +151,9 @@ Widget _host(
   bool Function()? isCurrent,
   Listenable? ownerChanges,
   double textScale = 1,
+  Brightness? brightness,
 }) => MaterialApp(
+  theme: brightness == null ? null : appTheme(brightness),
   builder: (context, child) => MediaQuery(
     data: MediaQuery.of(
       context,
@@ -195,6 +198,54 @@ Future<void> _expand(WidgetTester tester) async {
 }
 
 void main() {
+  for (final brightness in Brightness.values) {
+    for (final textScale in [1.0, 2.0]) {
+      testWidgets(
+        'activity labels clear their fields in $brightness at ${textScale}x text',
+        (tester) async {
+          tester.view.devicePixelRatio = 1;
+          tester.view.physicalSize = Size(textScale == 1 ? 390 : 320, 900);
+          addTearDown(tester.view.reset);
+          final semantics = tester.ensureSemantics();
+          try {
+            final api = testApi(FakeAdapter((_) => jsonResponse(_activity())));
+            addTearDown(api.close);
+            await tester.pumpWidget(
+              _host(api, brightness: brightness, textScale: textScale),
+            );
+            await _expand(tester);
+
+            for (final entry in {
+              'work-item-activity-filter': '活動篩選',
+              'work-item-activity-order': '活動排序',
+            }.entries) {
+              final control = find.byKey(ValueKey(entry.key));
+              await tester.ensureVisible(control);
+              await tester.pump();
+              final label = find.text(entry.value);
+              final field = find.ancestor(
+                of: control,
+                matching: find.byType(InputDecorator),
+              );
+              expect(label, findsOneWidget);
+              expect(field, findsOneWidget);
+              expect(
+                tester.getRect(label).bottom,
+                lessThanOrEqualTo(tester.getRect(field).top),
+                reason: 'The entire label must stay above the filled field.',
+              );
+              expect(tester.getSemantics(control).label, contains(entry.value));
+              expect(tester.getSize(control).height, greaterThanOrEqualTo(48));
+            }
+            expect(tester.takeException(), isNull);
+          } finally {
+            semantics.dispose();
+          }
+        },
+      );
+    }
+  }
+
   testWidgets('six activity configurations fetch a fresh server stream', (
     tester,
   ) async {

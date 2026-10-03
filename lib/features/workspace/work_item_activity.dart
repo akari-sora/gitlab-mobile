@@ -406,11 +406,10 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
               children: [
                 SizedBox(
                   width: width,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: '活動篩選',
-                      border: OutlineInputBorder(),
-                    ),
+                  child: _labelledControl(
+                    context,
+                    label: '活動篩選',
+                    enabled: enabled,
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<WorkItemActivityFilter>(
                         key: const ValueKey('work-item-activity-filter'),
@@ -445,11 +444,10 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
                 ),
                 SizedBox(
                   width: width,
-                  child: InputDecorator(
-                    decoration: const InputDecoration(
-                      labelText: '活動排序',
-                      border: OutlineInputBorder(),
-                    ),
+                  child: _labelledControl(
+                    context,
+                    label: '活動排序',
+                    enabled: enabled,
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<WorkItemActivityOrder>(
                         key: const ValueKey('work-item-activity-order'),
@@ -499,6 +497,40 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
               : _refresh,
           icon: const Icon(Icons.refresh),
           label: const Text('重新載入活動'),
+        ),
+      ],
+    );
+  }
+
+  Widget _labelledControl(
+    BuildContext context, {
+    required String label,
+    required bool enabled,
+    required Widget child,
+  }) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ExcludeSemantics(
+          child: Text(
+            label,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        InputDecorator(
+          decoration: InputDecoration(
+            enabled: enabled,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 4,
+            ),
+            border: const OutlineInputBorder(),
+          ),
+          child: Semantics(label: label, child: child),
         ),
       ],
     );

@@ -66,7 +66,11 @@ it without selecting a recipient. Cover Star/Unstar, environment navigation,
 schedule confirmation/cancellation, session invalidation and narrow/large-text
 layouts. Work Item QA also covers cancellation, close/reopen with fresh readback,
 and removing a confirmation after session ending. Activity QA covers both scopes,
-all six filter/order combinations, continuation, refresh and session invalidation. Restore any emulator font/display changes after the run. The existing
+all six filter/order combinations, continuation, refresh and session invalidation.
+Check the complete above-field activity labels in screenshots at both default
+size and 320dp/2× text; passing geometry tests or a successful tap alone does
+not establish correct label painting. Restore any emulator font/display changes
+after the run. The existing
 scroll sampler emits numeric frame summaries only; emulator fixture timings
 do not establish physical-device performance or live GitLab acceptance.
 Production APK login/cold-start and the anonymous `public_api_smoke` suite are

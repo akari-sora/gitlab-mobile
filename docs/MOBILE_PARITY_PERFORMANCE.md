@@ -936,7 +936,11 @@ initial, page and reply completions. Account/client/resource changes also reset
 selections and collapse the section.
 
 The controls wrap vertically at narrow/large-text sizes and preserve 48dp minimum
-menu targets. Refresh starts a fresh stream with the current selection. Explicit
+menu targets. Their explicit above-field labels remain outside the filled border;
+the dropdown carries the label in semantics without a duplicated visual label.
+Actual light/dark App themes at default and 320dp/2× text have geometry and
+semantics regressions after native QA exposed clipped floating labels.
+Refresh starts a fresh stream with the current selection. Explicit
 schema rejection of the controls triggers one initial-only legacy read, scoped to
 that API client, then displays all/oldest with disabled controls and an explanation.
 Authentication, network, malformed data and unrelated validation errors do not
@@ -953,8 +957,8 @@ remain in force. Reply creation, authenticated/older-instance acceptance and the
 remaining widgets remain open. Exact-source tests, live anonymous reads and
 Android synthetic readback are recorded as separate evidence lanes.
 
-The frozen Dart/lock source passes pinned full analysis and 1,605 Flutter tests
-with zero failures/errors/skips (20,318/22,708 covered lines, 89.48%). The anonymous
+The frozen Dart/lock source passes pinned full analysis and 1,609 Flutter tests
+with zero failures/errors/skips (20,329/22,719 covered lines, 89.48%). The anonymous
 production-client suite records 39 PASS / 0 FAIL / 1 expected GAP and zero writes.
 Both actual public scopes exercise all six configurations (12 initial queries),
 and the group newest-first cursor advances successfully. The public sample did
