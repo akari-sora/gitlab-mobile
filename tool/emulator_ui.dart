@@ -439,7 +439,8 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         });
       }
       if (operation == 'MobileNamespaceWorkItem' &&
-          variables['path'] != 'qa/synthetic-group') {
+          !(variables['path'] == 'qa/synthetic-group' &&
+              variables['iid'] == '41')) {
         final matches = groupListRows.where(
           (row) =>
               (row['namespace'] as Map)['fullPath'] == variables['path'] &&
@@ -492,6 +493,16 @@ final class EmulatorQaFixture extends WorkspaceFixture {
             ),
           },
         });
+      }
+      if (operation == 'MobileWorkItemState') {
+        final matches = groupListRows.where(
+          (row) => row['id'] == variables['id'],
+        );
+        if (matches.length == 1) {
+          return jsonResponse({
+            'data': {'workItem': matches.single},
+          });
+        }
       }
       if (operation == 'MobileWorkItemActivity' &&
           _workItemStates.containsKey(variables['id']) &&
