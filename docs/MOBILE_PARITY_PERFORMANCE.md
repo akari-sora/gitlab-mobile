@@ -1027,3 +1027,20 @@ and live draft/board writes are separate acceptance lanes.
 [issues]: https://docs.gitlab.com/api/issues/
 [merge-requests]: https://docs.gitlab.com/api/merge_requests/
 [compare-api]: https://docs.gitlab.com/api/repositories/#compare-branches-tags-or-commits
+
+## Lazy Work Item notification subscription
+
+Project/group detail adds a collapsed personal notification section. It makes
+no notification request until opened and does not enlarge the base detail
+query. Refresh and writes use independent, uncached GraphQL reads bound to the
+actor, API owner and exact resource. Server acknowledgement plus independent
+readback determines displayed state; a failed refresh preserves the last
+confirmed display with the old write target disabled. Missing widgets,
+anonymous access and unsupported schema remain explicit. Work Item editing
+permission does not govern personal subscription. The dedicated mutation
+authorizes at send time and has no atomic compare-and-set input.
+
+Exact-source validation, installed emulator painting and public read receipts
+belong to `artifacts/mobile-parity/work-item-notifications/`. This change does
+not establish measured physical scroll improvement, authenticated private
+subscription, iOS or full GitLab parity.

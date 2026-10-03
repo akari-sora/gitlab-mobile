@@ -17,7 +17,7 @@ specification numbers have been invented.
 | Manage / Activity | Loaded timeline and eight event filters at phone width | Activity feed | Full event-kind/authenticated parity walk |
 | Manage / Members | Loaded roles/source/search/sort and member rows | Member list/actions | Custom roles, complete administration and live permissions |
 | Manage / Labels | Loaded Active/Archived, search/sort and empty state | List/create/edit/delete | Scoped labels/subscriptions and live CRUD |
-| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project/group-owned and descendant cursor lists with scope/state/search/type/order controls, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, seven lazy attribute kinds, server-filtered/ordered activity paging, guarded Markdown comments/replies, ordinary note editing/deletion, on-demand emoji reactions and close/reopen | Remaining widgets, internal-note workflows, custom saved views and remaining list display/sort families, remaining Work Item mutations and authenticated/edition acceptance |
+| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project/group-owned and descendant cursor lists with scope/state/search/type/order controls, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, seven lazy attribute kinds, server-filtered/ordered activity paging, guarded Markdown comments/replies, ordinary note editing/deletion, on-demand emoji reactions, lazy personal notification subscription and close/reopen | Remaining widgets, internal-note workflows, custom saved views and remaining list display/sort families, remaining Work Item mutations and authenticated/edition acceptance |
 | Plan / Boards | Development board observed | Phone-width columns, card move, board/list management | Paid scope/list creation, touch drag/drop and live mutation readback |
 | Plan / Milestones | Loaded empty-state explanation | List/detail/create/edit/delete | Full progress/reporting and live CRUD |
 | Plan / Wiki | Loaded empty Wiki explanation | Page list/read/create/edit/delete | History, attachments, tree and live CRUD |
@@ -244,3 +244,23 @@ Official contracts: [Incident management](https://docs.gitlab.com/operations/inc
 [Project Snippets](https://docs.gitlab.com/api/project_snippets/),
 [CI/CD analytics](https://docs.gitlab.com/user/analytics/ci_cd_analytics/),
 [Repository analytics](https://docs.gitlab.com/user/analytics/repository_analytics/).
+
+## Work Item notification follow-up
+
+A fresh signed-out 390 x 844 browser walk actually paints Subscription / None on
+project Issue [631759](https://gitlab.com/gitlab-org/gitlab/-/work_items/631759) and
+group Epic [23883](https://gitlab.com/groups/gitlab-org/-/work_items/23883). The
+authenticated toggle was not observed. The owned tab closed and viewport reset;
+no live subscription changed.
+
+Native notification state loads only when expanded. The exact server-owned GID,
+project/group scope, type and actor bind an explicit subscribe/unsubscribe
+attempt, independent of general editing. The backend's dedicated subscription
+authorization is not exposed in WorkItem.userPermissions; widget presence plus
+an authenticated readable item permits an attempt, not a claim that write
+permission was pre-approved. One send and an independent state readback are
+required. Missing widgets remain distinct from unsubscribed, and uncertain
+results require manual refresh before another attempt. Delivery receipts live
+under `artifacts/mobile-parity/work-item-notifications/`; read their actual
+commit and executed cases before attributing installed-build or CI acceptance.
+Private/edition/iOS and other Work Item widgets and mutations remain open.

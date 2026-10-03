@@ -290,6 +290,7 @@ void main() {
       expect(find.byTooltip('重新整理'), findsOneWidget);
       expect(find.text('Example User · @example'), findsOneWidget);
       expect(find.text('mobile'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('Bounded child'), 260);
       expect(find.text('Bounded child'), findsOneWidget);
       expect(find.text('只顯示前 20 位負責人。'), findsOneWidget);
       expect(find.text('只顯示前 20 個子項目；請在 GitLab 查看完整清單。'), findsOneWidget);

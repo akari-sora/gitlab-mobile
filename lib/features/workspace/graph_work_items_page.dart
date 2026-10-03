@@ -12,6 +12,7 @@ import '../../shared/resource_share.dart';
 import '../../shared/workspace_ui.dart';
 import 'work_item_activity.dart';
 import 'work_item_attributes.dart';
+import 'work_item_notifications.dart';
 import 'work_item_state_control.dart';
 
 String _graphWorkItemState(String value) => switch (value.toUpperCase()) {
@@ -1787,6 +1788,13 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           ownerChanges: widget.ownerChanges,
           confirmChange: _confirmStateChange,
           onChanged: _applyStateSnapshot,
+        ),
+        WorkItemNotificationsControl(
+          account: widget.account,
+          api: widget.api,
+          summary: summary,
+          isCurrent: widget.isCurrent,
+          ownerChanges: widget.ownerChanges,
         ),
         WorkItemAttributesPanel(
           account: widget.account,

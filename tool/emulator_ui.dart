@@ -41,6 +41,12 @@ enum _QaNoteEditControl {
   denyReactions,
   failDeleteAcknowledgement,
   failReactionAcknowledgement,
+  notificationAuthenticated,
+  notificationAnonymous,
+  allowNotificationWrites,
+  denyNotificationWrites,
+  failNotificationAcknowledgement,
+  failNotificationRead,
 }
 
 void main() {
@@ -122,6 +128,16 @@ final class EmulatorQaFixture extends WorkspaceFixture {
   final List<Json> workItemNoteEditEvents = [];
   final List<Json> workItemNoteDeleteEvents = [];
   final List<Json> workItemNoteReactionEvents = [];
+  final List<Json> workItemNotificationEvents = [];
+  final List<String> workItemNotificationReads = [];
+  final Map<bool, bool> workItemNotificationSubscribed = {
+    false: false,
+    true: false,
+  };
+  bool workItemNotificationAuthenticated = true;
+  bool workItemNotificationWritesAllowed = true;
+  bool failNextWorkItemNotificationAcknowledgement = false;
+  bool failNextWorkItemNotificationRead = false;
   final Map<bool, bool> workItemNoteEditAllowed = {false: true, true: true};
   // GitLab exposes the same adminNote permission for editing and deletion.
   Map<bool, bool> get workItemNoteDeleteAllowed => workItemNoteEditAllowed;
@@ -239,6 +255,16 @@ final class EmulatorQaFixture extends WorkspaceFixture {
       ],
     };
   }
+
+  Json workItemNotificationsRecord({required bool group}) => {
+    ...workItemRecord(group: group),
+    'widgets': [
+      {
+        'type': 'NOTIFICATIONS',
+        'subscribed': workItemNotificationSubscribed[group],
+      },
+    ],
+  };
 
   List<Json> workItemActivityDiscussions({required bool group}) {
     final scope = group ? 'group' : 'project';
@@ -960,6 +986,81 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           },
         });
       }
+      if (operation == 'MobileWorkItemNotifications' &&
+          _workItemStates.containsKey(variables['id'])) {
+        workItemNotificationReads.add(variables['id'] as String);
+        debugPrint(
+          '[work_item_notification_read_qa] '
+          'scope=${variables['id'] == 'gid://gitlab/WorkItem/1041' ? 'group' : 'project'} '
+          'sequence=${workItemNotificationReads.length}',
+        );
+        if (failNextWorkItemNotificationRead) {
+          failNextWorkItemNotificationRead = false;
+          return jsonResponse({
+            'message': 'Synthetic notification read failure',
+          }, status: 503);
+        }
+        return jsonResponse({
+          'data': {
+            'currentUser': workItemNotificationAuthenticated
+                ? {'id': 'gid://gitlab/User/7'}
+                : null,
+            'workItem': workItemNotificationsRecord(
+              group: variables['id'] == 'gid://gitlab/WorkItem/1041',
+            ),
+          },
+        });
+      }
+      if (operation == 'MobileSetWorkItemNotifications') {
+        final input = variables['input'] is Map
+            ? variables['input'] as Map
+            : const <String, Object?>{};
+        final id = input['id'];
+        final subscribed = input['subscribed'];
+        if (_workItemStates.containsKey(id) && subscribed is bool) {
+          final group = id == 'gid://gitlab/WorkItem/1041';
+          final allowed =
+              workItemNotificationAuthenticated &&
+              workItemNotificationWritesAllowed;
+          workItemNotificationEvents.add({
+            'id': id,
+            'group': group,
+            'subscribed': subscribed,
+            'accepted': allowed,
+          });
+          debugPrint(
+            '[work_item_notification_qa] '
+            'scope=${group ? 'group' : 'project'} '
+            'subscribed=$subscribed accepted=$allowed '
+            'sequence=${workItemNotificationEvents.length}',
+          );
+          if (!allowed) {
+            return jsonResponse({
+              'data': {
+                'workItemSubscribe': {
+                  'errors': ['Synthetic subscription not permitted'],
+                  'workItem': null,
+                },
+              },
+            });
+          }
+          workItemNotificationSubscribed[group] = subscribed;
+          if (failNextWorkItemNotificationAcknowledgement) {
+            failNextWorkItemNotificationAcknowledgement = false;
+            return jsonResponse({
+              'message': 'Synthetic notification acknowledgement failure',
+            }, status: 503);
+          }
+          return jsonResponse({
+            'data': {
+              'workItemSubscribe': {
+                'errors': <String>[],
+                'workItem': workItemNotificationsRecord(group: group),
+              },
+            },
+          });
+        }
+      }
       if (operation == 'MobileWorkItemState' &&
           _workItemStates.containsKey(variables['id'])) {
         return jsonResponse({
@@ -1245,6 +1346,31 @@ class _QaChromeState extends State<_QaChrome> {
       ),
       items: [
         PopupMenuItem(
+          value: _QaNoteEditControl.notificationAuthenticated,
+          child: _qaMenuLabel('還原通知帳號'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.notificationAnonymous,
+          child: _qaMenuLabel('匿名讀取通知'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.allowNotificationWrites,
+          child: _qaMenuLabel('允許訂閱寫入'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.denyNotificationWrites,
+          child: _qaMenuLabel('拒絕訂閱寫入'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.failNotificationAcknowledgement,
+          child: _qaMenuLabel('下次訂閱確認失敗'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.failNotificationRead,
+          child: _qaMenuLabel('下次訂閱讀取失敗'),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
           value: _QaNoteEditControl.allow,
           child: _qaMenuLabel('允許留言編輯'),
         ),
@@ -1290,6 +1416,30 @@ class _QaChromeState extends State<_QaChrome> {
 
   void _applyNoteEditControl(BuildContext context, _QaNoteEditControl control) {
     final message = switch (control) {
+      _QaNoteEditControl.notificationAuthenticated => () {
+        widget.fixture.workItemNotificationAuthenticated = true;
+        return '通知帳號：已還原';
+      }(),
+      _QaNoteEditControl.notificationAnonymous => () {
+        widget.fixture.workItemNotificationAuthenticated = false;
+        return '通知帳號：匿名';
+      }(),
+      _QaNoteEditControl.allowNotificationWrites => () {
+        widget.fixture.workItemNotificationWritesAllowed = true;
+        return '訂閱寫入：允許';
+      }(),
+      _QaNoteEditControl.denyNotificationWrites => () {
+        widget.fixture.workItemNotificationWritesAllowed = false;
+        return '訂閱寫入：拒絕';
+      }(),
+      _QaNoteEditControl.failNotificationAcknowledgement => () {
+        widget.fixture.failNextWorkItemNotificationAcknowledgement = true;
+        return '下一次訂閱確認將失敗';
+      }(),
+      _QaNoteEditControl.failNotificationRead => () {
+        widget.fixture.failNextWorkItemNotificationRead = true;
+        return '下一次訂閱讀取將失敗';
+      }(),
       _QaNoteEditControl.allow => () {
         widget.fixture.workItemNoteEditAllowed[false] = true;
         widget.fixture.workItemNoteEditAllowed[true] = true;

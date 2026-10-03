@@ -91,7 +91,10 @@ Observe the actual Android Share chooser, verify its canonical URL and dismiss
 it without selecting a recipient. Cover Star/Unstar, environment navigation,
 schedule confirmation/cancellation, session invalidation and narrow/large-text
 layouts. Group-list QA covers descendant paths, bounded continuation, scope/state/search/type/order controls and root-owned type selection. Inbox QA covers single completion, clear-all cancellation/completion and retained scroll behavior. Work Item QA also covers cancellation, close/reopen with fresh readback,
-and removing a confirmation after session ending. Activity QA covers both scopes,
+and removing a confirmation after session ending. Notification QA covers lazy
+project/group personal reads, explicit subscribe/unsubscribe, backend rejection,
+expired-actor preflight, uncertain one-send, failed-refresh retention with stale
+controls disabled, and session invalidation. Activity QA covers both scopes,
 all six filter/order combinations, continuation, refresh and session invalidation.
 Check the complete above-field activity labels in screenshots at both default
 size and 320dp/2× text; passing geometry tests or a successful tap alone does

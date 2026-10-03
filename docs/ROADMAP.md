@@ -13,6 +13,7 @@ with bounded group and descendant lists, server-side scope/state/search/type/ord
 controls, seven independently loaded attribute kinds and
 lazy activity with server-side filtering/order, guarded Markdown comments/replies,
 ordinary project/group note edits, guarded note deletion and emoji reactions,
+lazy personal notification subscription,
 and project/group close/reopen.
 Long descriptions collapse before building Markdown. Account-client
 read caching, request sharing, lazy list derivation and syntax-span LRU reduce
@@ -55,6 +56,22 @@ authenticated/private CRUD and iOS acceptance remain open. Official contracts:
 [`destroyNote`](https://docs.gitlab.com/api/graphql/reference/#mutation-destroynote),
 [`awardEmojiAdd`](https://docs.gitlab.com/api/graphql/reference/#mutation-awardemojiadd),
 and [`awardEmojiRemove`](https://docs.gitlab.com/api/graphql/reference/#mutation-awardemojiremove).
+
+Work Item notification subscription is an independent optional widget read and
+a dedicated `workItemSubscribe` operation for both project and group scopes.
+The current actor, exact scope/type and API generation bind each single-use
+attempt; explicit desired state is checked by acknowledgement and a fresh read.
+An absent widget does not imply unsubscribed. General `updateWorkItem` permission
+is not a subscription gate, and `userPermissions` has no query-visible
+`updateSubscription` field. The server authorizes the actual attempt. Uncertain
+writes cannot be replayed until the user refreshes. Confirmed displayed state
+survives a refresh failure with stale controls disabled. The input exposes no
+atomic compare-and-set. Official reviewed contracts:
+[`Subscribe`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/mutations/work_items/subscribe.rb),
+[`Notifications widget`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/types/work_items/widgets/notifications_type.rb),
+[`Work Item permissions`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/types/permission_types/work_item.rb).
+This slice does not close other Work Item mutations or authenticated/private/iOS
+acceptance.
 
 ## G0 — Identity and private repository reader (implemented slice, acceptance incomplete)
 

@@ -62,7 +62,23 @@ has no compare-and-swap field, so a race remains between the final preflight and
 the update. This is not atomic conflict protection or authenticated private/iOS
 acceptance. See the [GraphQL guide](https://docs.gitlab.com/api/graphql/) and the
 upstream [`UpdateNote` mutation at the reviewed commit](https://gitlab.com/gitlab-org/gitlab/-/blob/26212baacadb5beea6664f7ef025d753dccfb0d6/app/graphql/mutations/notes/update/base.rb).
-Quick actions, internal notes, deletion and reactions remain outside this slice.
+Ordinary public notes also expose guarded deletion and on-demand reactions;
+internal notes and quick actions remain open. These write flows have source,
+synthetic regressions and dedicated-emulator UI evidence; authenticated private
+CRUD and iOS acceptance remain separate.
+
+Project and group Work Items independently load the current user's notification
+subscription when the notification section is expanded. The dedicated
+`workItemSubscribe` mutation accepts an explicit desired state and uses
+`update_subscription`, independently of general Work Item editing. GitLab does
+not expose that permission in `WorkItem.userPermissions`: an authenticated read
+with the notifications widget permits an attempt, and the server authorizes it.
+Each attempt binds the actor and exact Work Item scope, sends once and checks a
+fresh independent readback. Missing widgets and unsupported schemas stay explicit;
+uncertain writes require a manual refresh. Subscription is personal state and is
+not inferred from a Work Item type name or an absent widget. GitLab's input has
+no atomic compare-and-set field. See the reviewed upstream
+[`Subscribe` mutation](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/mutations/work_items/subscribe.rb).
 
 ## v0.5 — mobile UX overhaul and GitLab parity
 

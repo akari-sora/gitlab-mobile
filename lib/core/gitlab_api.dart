@@ -28,6 +28,7 @@ part 'work_item_attributes_api.dart';
 part 'work_item_activity_api.dart';
 part 'work_item_note_delete_api.dart';
 part 'work_item_note_reactions_api.dart';
+part 'work_item_notifications_api.dart';
 part 'work_item_state_api.dart';
 
 final _artifactCancelled = Object();
