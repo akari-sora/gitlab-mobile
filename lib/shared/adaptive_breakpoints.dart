@@ -89,27 +89,3 @@ class AdaptiveScope extends InheritedWidget {
     return hasRail != oldWidget.hasRail || railWidth != oldWidget.railWidth;
   }
 }
-
-/// 基於 LayoutBuilder 的局部容器寬度感知組件
-class AdaptiveBuilder extends StatelessWidget {
-  const AdaptiveBuilder({
-    super.key,
-    required this.builder,
-  });
-
-  final Widget Function(
-    BuildContext context,
-    AdaptiveWindowSize windowSize,
-    BoxConstraints constraints,
-  ) builder;
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final windowSize = AdaptiveWindowSize.fromWidth(constraints.maxWidth);
-        return builder(context, windowSize, constraints);
-      },
-    );
-  }
-}
