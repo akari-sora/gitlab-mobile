@@ -82,7 +82,7 @@ before installation or input. Do not use an unqualified `adb` command or copy
 accounts from a physical phone. For the current isolated AVD:
 
 ```sh
-.fvm/flutter_sdk/bin/flutter run --profile --no-pub -d emulator-5580 \
+.fvm/flutter_sdk/bin/flutter run --profile -d emulator-5580 \
   -t tool/emulator_ui.dart --dart-define=EMULATOR_UI_QA=true \
   --dart-define=PERF_LABEL=synthetic-emulator
 ```
@@ -90,7 +90,7 @@ accounts from a physical phone. For the current isolated AVD:
 Observe the actual Android Share chooser, verify its canonical URL and dismiss
 it without selecting a recipient. Cover Star/Unstar, environment navigation,
 schedule confirmation/cancellation, session invalidation and narrow/large-text
-layouts. Work Item QA also covers cancellation, close/reopen with fresh readback,
+layouts. Group-list QA covers descendant paths, bounded continuation, scope/state/search/type/order controls and root-owned type selection. Inbox QA covers single completion, clear-all cancellation/completion and retained scroll behavior. Work Item QA also covers cancellation, close/reopen with fresh readback,
 and removing a confirmation after session ending. Activity QA covers both scopes,
 all six filter/order combinations, continuation, refresh and session invalidation.
 Check the complete above-field activity labels in screenshots at both default

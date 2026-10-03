@@ -116,27 +116,34 @@ class _TodoFeed extends StatefulWidget {
 }
 class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin {
   final _feed = GlobalKey<RecordsFeedState>();
-  final _busy = <int>{};
+  final _busy = ValueNotifier<Set<int>>(<int>{});
+  final _clearing = ValueNotifier(false);
 
   /// Swiped rows waiting out the undo window, hidden even if a reload that
   /// started earlier brings them back. The tab stays alive meanwhile, so
   /// switching tabs neither drops the write nor strands the 復原 button.
   final _pending = <int>{};
-  bool _clearing = false;
 
   @override
   bool get wantKeepAlive => _pending.isNotEmpty;
 
   void _setPending(int id, bool pending) {
+    if (pending == _pending.contains(id)) return;
     setState(() => pending ? _pending.add(id) : _pending.remove(id));
     updateKeepAlive();
+  }
+
+  void _setBusy(int id, bool busy) {
+    final next = Set<int>.of(_busy.value);
+    final changed = busy ? next.add(id) : next.remove(id);
+    if (changed) _busy.value = next;
   }
 
   /// GitLab pages todos by offset: after a change the list reloads, otherwise
   /// the next page would start one row late and skip a todo.
   Future<void> _done(int id) async {
-    if (_busy.contains(id)) return;
-    setState(() => _busy.add(id));
+    if (_busy.value.contains(id)) return;
+    _setBusy(id, true);
     try {
       await widget.api.markTodoDone(id);
       if (mounted) _feed.currentState?.removeItem('$id');
@@ -144,7 +151,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
       if (mounted) showFailure(context, e);
     } finally {
       if (mounted) {
-        setState(() => _busy.remove(id));
+        _setBusy(id, false);
         _setPending(id, false);
       }
     }
@@ -177,17 +184,24 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
   }
 
   Future<void> _clearAll() async {
-    if (_clearing || !await confirmAction(context, '全部標示為完成？', '所有待辦都會從 GitLab 待辦清單移除。')) return;
+    if (_clearing.value || !await confirmAction(context, '全部標示為完成？', '所有待辦都會從 GitLab 待辦清單移除。')) return;
     if (!mounted) return;
-    setState(() => _clearing = true);
+    _clearing.value = true;
     try {
       await widget.api.markAllTodosDone();
     } catch (e) {
       if (mounted) showFailure(context, e);
     } finally {
-      if (mounted) setState(() => _clearing = false);
+      if (mounted) _clearing.value = false;
     }
     if (mounted) await _feed.currentState?.refresh();
+  }
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    _clearing.dispose();
+    super.dispose();
   }
 
   @override
@@ -208,11 +222,14 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
         Expanded(child: Text('${controller.items.where((item) => !_pending.contains(valueInt(item, 'id'))).length}'
           '${controller.next == null ? '' : '+'} 則待辦 · 左右滑動可完成',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
-        TextButton.icon(
-          key: const ValueKey('todos-mark-all-done'),
-          onPressed: _clearing ? null : _clearAll,
-          icon: const Icon(Icons.done_all, size: 18),
-          label: const Text('全部完成'),
+        ValueListenableBuilder<bool>(
+          valueListenable: _clearing,
+          builder: (context, clearing, _) => TextButton.icon(
+            key: const ValueKey('todos-mark-all-done'),
+            onPressed: clearing ? null : _clearAll,
+            icon: const Icon(Icons.done_all, size: 18),
+            label: const Text('全部完成'),
+          ),
         ),
       ]),
     ),
@@ -242,8 +259,11 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
           if (valueText(author, 'username').isNotEmpty) MetaChip('@${valueText(author, 'username')}', icon: Icons.person_outline),
           MetaChip(relativeDate(valueText(data, 'updated_at', valueText(data, 'created_at'))), icon: Icons.schedule_outlined),
         ],
-        trailing: IconButton(tooltip: '完成此待辦', icon: const Icon(Icons.check_circle_outline),
-          onPressed: _busy.contains(id) ? null : () => _done(id)),
+        trailing: ValueListenableBuilder<Set<int>>(
+          valueListenable: _busy,
+          builder: (context, busy, _) => IconButton(tooltip: '完成此待辦', icon: const Icon(Icons.check_circle_outline),
+            onPressed: busy.contains(id) ? null : () => _done(id)),
+        ),
         onTap: !supported ? null : () => ResourceNavigator(widget.account, widget.api)
           .workItem(context, '${valueInt(project, 'id')}', resource, valueInt(target, 'iid')),
       );
@@ -262,7 +282,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
         background: background(Alignment.centerLeft),
         secondaryBackground: background(Alignment.centerRight),
         dismissThresholds: const {DismissDirection.startToEnd: .5, DismissDirection.endToStart: .5},
-        confirmDismiss: (_) async => !_busy.contains(id),
+        confirmDismiss: (_) async => !_busy.value.contains(id),
         onDismissed: (_) => _swiped(id),
         child: card,
       );

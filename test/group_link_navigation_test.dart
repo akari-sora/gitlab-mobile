@@ -36,6 +36,17 @@ Map<String, Object?> _graphConnection() => {
   'pageInfo': {'hasNextPage': false, 'endCursor': null},
 };
 
+Map<String, Object?> _groupWorkItemVariables(
+  Iterable<RequestOptions> requests,
+) {
+  final request = requests.lastWhere((request) {
+    if (!request.uri.path.endsWith('/api/graphql')) return false;
+    final body = request.data as Map;
+    return (body['query'] as String).contains('MobileGroupWorkItems');
+  });
+  return Map<String, Object?>.from((request.data as Map)['variables'] as Map);
+}
+
 void main() {
   group('group link parser', () {
     test('recognises root, subgroup, installation subpath, and list URLs', () {
@@ -255,7 +266,17 @@ void main() {
       await tester.tap(find.text('Open group items'));
       await settleNetworkWidgets(tester);
 
-      expect(find.text('僅此群組的工作項目'), findsOneWidget);
+      expect(find.text('包含子群組與專案'), findsOneWidget);
+      expect(find.text('開啟中 · 最新建立'), findsOneWidget);
+      expect(_groupWorkItemVariables(requests), {
+        'path': 'team/sub',
+        'first': 20,
+        'after': null,
+        'includeDescendants': true,
+        'state': 'opened',
+        'search': '',
+        'sort': 'CREATED_DESC',
+      });
       expect(
         requests.where((request) => request.uri.path.contains('/projects/')),
         isEmpty,
@@ -327,7 +348,16 @@ void main() {
       hidden = false;
       await tester.tap(find.text('重新整理'));
       await settleNetworkWidgets(tester);
-      expect(find.text('僅此群組的工作項目'), findsOneWidget);
+      expect(find.text('包含子群組與專案'), findsOneWidget);
+      expect(find.text('開啟中 · 最新建立'), findsOneWidget);
+      expect(
+        _groupWorkItemVariables(requests),
+        containsPair('includeDescendants', true),
+      );
+      expect(
+        _groupWorkItemVariables(requests),
+        containsPair('state', 'opened'),
+      );
       expect(
         requests.where((request) => request.uri.path.contains('/projects/')),
         isEmpty,

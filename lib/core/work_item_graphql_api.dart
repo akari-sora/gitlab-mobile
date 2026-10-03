@@ -33,17 +33,29 @@ query MobileProjectWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
 }
 ''';
 
-final _groupWorkItemsQuery =
+String _groupWorkItemsQuery({required bool withType}) =>
     '''
-query MobileGroupWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
+query MobileGroupWorkItems(
+  \$path: ID!
+  \$first: Int!
+  \$after: String
+  \$includeDescendants: Boolean!
+  \$state: IssuableState!
+  \$search: String
+  \$sort: WorkItemSort!
+  ${withType ? r'$typeIds: [WorkItemsTypeID!]' : ''}
+) {
   group(fullPath: \$path) {
     id
     fullPath
     workItems(
       first: \$first
       after: \$after
-      sort: CREATED_DESC
-      includeDescendants: false
+      includeDescendants: \$includeDescendants
+      state: \$state
+      search: \$search
+      sort: \$sort
+      ${withType ? r'workItemTypeIds: $typeIds' : ''}
     ) {
       nodes { $_workItemSummaryFields }
       pageInfo { hasNextPage endCursor }
@@ -144,35 +156,86 @@ const _workItemSchemaErrors = {
   'missingRequiredArguments',
 };
 
+extension on GroupWorkItemState {
+  String get graphQlValue => switch (this) {
+    GroupWorkItemState.all => 'all',
+    GroupWorkItemState.opened => 'opened',
+    GroupWorkItemState.closed => 'closed',
+  };
+}
+
+extension on GroupWorkItemSort {
+  String get graphQlValue => switch (this) {
+    GroupWorkItemSort.createdDesc => 'CREATED_DESC',
+    GroupWorkItemSort.createdAsc => 'CREATED_ASC',
+    GroupWorkItemSort.updatedDesc => 'UPDATED_DESC',
+    GroupWorkItemSort.updatedAsc => 'UPDATED_ASC',
+  };
+}
+
 extension WorkItemGraphQlApi on GitLabApi {
-  /// Reads one bounded group-owned page without including descendant projects.
-  /// A continuation must carry the opaque group ID returned by its first page.
+  /// Reads one bounded group-owned or descendant page with server-side filters.
+  /// A continuation must carry both the opaque group ID and normalized filter
+  /// returned by its first page.
   Future<GroupWorkItemGraphPage> groupWorkItems(
     String fullPath, {
     String? expectedGroupId,
     String? after,
+    GroupWorkItemListFilter filter = const GroupWorkItemListFilter(),
+    GroupWorkItemListFilter? previousFilter,
     bool Function()? isCurrent,
   }) async {
     final path = _validatedNamespacePath(fullPath);
-    final expectedId = _validatedOptionalOpaqueId(expectedGroupId);
+    final requestedExpectedId = _validatedOptionalGroupId(expectedGroupId);
     final cursor = _validatedWorkItemCursor(after);
-    if (cursor != null && expectedId == null) {
+    final normalizedFilter = _validatedGroupWorkItemListFilter(
+      filter,
+      groupPath: path,
+      expectedGroupId: requestedExpectedId,
+    );
+    final expectedId =
+        requestedExpectedId ?? normalizedFilter.typeNamespace?.id;
+    final normalizedPrevious = previousFilter == null
+        ? null
+        : _validatedGroupWorkItemListFilter(
+            previousFilter,
+            groupPath: path,
+            expectedGroupId: expectedId,
+          );
+    if ((cursor != null &&
+            (expectedId == null ||
+                normalizedPrevious == null ||
+                normalizedPrevious != normalizedFilter)) ||
+        (cursor == null && previousFilter != null)) {
       throw const ApiFailure(FailureKind.validation);
     }
     _requireCurrentWorkItemRequest(isCurrent);
-    final response = await _read(
-      instance.graphQL,
-      method: 'POST',
-      graphQuery: true,
-      data: {
-        'query': _groupWorkItemsQuery,
-        'variables': {
-          'path': path,
-          'first': _workItemPageSize,
-          'after': cursor,
+    ({Uint8List bytes, Headers headers, int statusCode}) response;
+    try {
+      response = await _read(
+        instance.graphQL,
+        method: 'POST',
+        graphQuery: true,
+        data: {
+          'query': _groupWorkItemsQuery(
+            withType: normalizedFilter.typeId != null,
+          ),
+          'variables': {
+            'path': path,
+            'first': _workItemPageSize,
+            'after': cursor,
+            'includeDescendants': normalizedFilter.includeDescendants,
+            'state': normalizedFilter.state.graphQlValue,
+            'search': normalizedFilter.search,
+            'sort': normalizedFilter.sort.graphQlValue,
+            if (normalizedFilter.typeId case final typeId?) 'typeIds': [typeId],
+          },
         },
-      },
-    );
+      );
+    } catch (error, stackTrace) {
+      _requireCurrentWorkItemRequest(isCurrent);
+      Error.throwWithStackTrace(error, stackTrace);
+    }
     _requireCurrentWorkItemRequest(isCurrent);
     try {
       final data = _workItemGraphData(response.bytes);
@@ -183,12 +246,18 @@ extension WorkItemGraphQlApi on GitLabApi {
       );
       final nodes = _boundedNodes(connection, _workItemPageSize);
       final seenIds = <String>{};
-      final seenIids = <int>{};
+      final seenScopedIids = <String>{};
       final items = <WorkItemGraphSummary>[];
       for (final raw in nodes) {
         final item = _parseWorkItemSummary(raw);
-        _requireGroupWorkItem(item, group.ref);
-        if (!seenIds.add(item.id) || !seenIids.add(item.iid)) {
+        _requireGroupWorkItem(
+          item,
+          group.ref,
+          includeDescendants: normalizedFilter.includeDescendants,
+        );
+        final scope = item.namespace!;
+        if (!seenIds.add(item.id) ||
+            !seenScopedIids.add('${scope.fullPath}#${item.iid}')) {
           throw const FormatException('Duplicate work item');
         }
         items.add(item);
@@ -197,6 +266,7 @@ extension WorkItemGraphQlApi on GitLabApi {
         group: group.ref,
         items: items,
         nextCursor: _nextWorkItemCursor(connection, previous: cursor),
+        filter: normalizedFilter,
       );
     } on FormatException {
       throw const ApiFailure(FailureKind.invalidResponse);
@@ -466,12 +536,56 @@ String? _validatedOptionalOpaqueId(String? value) {
   return value;
 }
 
+String? _validatedOptionalGroupId(String? value) {
+  final id = _validatedOptionalOpaqueId(value);
+  if (id != null && !_isGraphResourceType(id, const {'Group'})) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  return id;
+}
+
 String? _validatedWorkItemCursor(String? value) {
   if (value == null) return null;
   if (value.isEmpty || value.length > _workItemCursorLimit) {
     throw const ApiFailure(FailureKind.validation);
   }
   return value;
+}
+
+GroupWorkItemListFilter _validatedGroupWorkItemListFilter(
+  GroupWorkItemListFilter filter, {
+  required String groupPath,
+  required String? expectedGroupId,
+}) {
+  final search = filter.search.trim();
+  if (search.runes.length > 256) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  final typeId = filter.typeId;
+  if (typeId != null &&
+      (!_validOpaqueGraphId(typeId) ||
+          !_isGraphResourceType(typeId, const {'WorkItems::Type'}))) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  GraphResourceRef? typeNamespace;
+  if (typeId != null) {
+    typeNamespace = filter.typeNamespace;
+    if (typeNamespace == null ||
+        !_validOpaqueGraphId(typeNamespace.id) ||
+        !_isGraphResourceType(typeNamespace.id, const {'Group'}) ||
+        _validatedNamespacePathOrNull(typeNamespace.fullPath) != groupPath ||
+        (expectedGroupId != null && typeNamespace.id != expectedGroupId)) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+  }
+  return GroupWorkItemListFilter(
+    includeDescendants: filter.includeDescendants,
+    state: filter.state,
+    search: search,
+    sort: filter.sort,
+    typeId: typeId,
+    typeNamespace: typeNamespace,
+  );
 }
 
 void _requireCurrentWorkItemRequest(bool Function()? isCurrent) {
@@ -522,7 +636,9 @@ void _requireCurrentWorkItemRequest(bool Function()? isCurrent) {
   if (data['group'] == null) throw const ApiFailure(FailureKind.invisible);
   final remote = objectJson(data['group']);
   final ref = _parseResourceRef(remote);
-  if (ref.fullPath != path || (expectedId != null && ref.id != expectedId)) {
+  if (!_isGraphResourceType(ref.id, const {'Group'}) ||
+      ref.fullPath != path ||
+      (expectedId != null && ref.id != expectedId)) {
     throw const FormatException('Wrong group');
   }
   return (container: remote, ref: ref);
@@ -673,12 +789,46 @@ void _requireProjectWorkItem(
   }
 }
 
-void _requireGroupWorkItem(WorkItemGraphSummary item, GraphResourceRef group) {
-  if (item.project != null ||
-      item.namespace?.id != group.id ||
-      item.namespace?.fullPath != group.fullPath) {
+void _requireGroupWorkItem(
+  WorkItemGraphSummary item,
+  GraphResourceRef group, {
+  required bool includeDescendants,
+}) {
+  final namespace = item.namespace;
+  if (namespace == null) {
     throw const FormatException('Wrong work item group');
   }
+  if (namespace.fullPath == group.fullPath) {
+    if (namespace.id != group.id || item.project != null) {
+      throw const FormatException('Wrong work item group');
+    }
+    return;
+  }
+  if (!includeDescendants ||
+      !namespace.fullPath.startsWith('${group.fullPath}/')) {
+    throw const FormatException('Wrong work item descendant');
+  }
+  final project = item.project;
+  if (project == null) {
+    if (!_isGraphResourceType(namespace.id, const {'Group'})) {
+      throw const FormatException('Wrong descendant namespace');
+    }
+    return;
+  }
+  if (project.fullPath != namespace.fullPath ||
+      !_isGraphResourceType(project.id, const {'Project'}) ||
+      !_isGraphResourceType(namespace.id, const {
+        'Namespaces::ProjectNamespace',
+      })) {
+    throw const FormatException('Wrong descendant project');
+  }
+}
+
+bool _isGraphResourceType(String id, Set<String> accepted) {
+  final uri = Uri.tryParse(id);
+  return uri != null &&
+      uri.pathSegments.isNotEmpty &&
+      accepted.contains(uri.pathSegments.first);
 }
 
 GraphResourceRef? _parseOptionalResourceRef(Object? raw) =>

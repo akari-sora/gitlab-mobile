@@ -11,8 +11,8 @@ The current development branch adds issue boards and card/list management,
 revision comparison, server-backed MR draft review, selected-ref repository
 graphs, actual pipeline dependency graphs, package/container/Terraform registries,
 native contributor/repository/CI analytics, lazy multi-file Snippets and guarded
-file actions, server-discovered GraphQL Work Item types, bounded project/group-owned
-lists, group-list deep links and project/group details with guarded close/reopen actions and lazy status, milestone, weight, iteration, health, time-tracking and
+file actions, server-discovered GraphQL Work Item types, bounded project/group and descendant
+lists with server-side scope/state/search/type/order controls, group-list deep links and project/group details with guarded close/reopen actions and lazy status, milestone, weight, iteration, health, time-tracking and
 development attributes, a lazy read-only activity timeline with server-side activity/comment/history filters,
 oldest/newest ordering and bounded discussion/reply paging, collapsed long descriptions, and typed Task/Incident workflows
 with separate incident escalation state. Issue/MR filters use server

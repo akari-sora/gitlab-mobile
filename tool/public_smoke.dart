@@ -103,15 +103,27 @@ query MobileProjectWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
 
 final _publicGroupWorkItemsQuery =
     '''
-query MobileGroupWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
+query MobileGroupWorkItems(
+  \$path: ID!
+  \$first: Int!
+  \$after: String
+  \$includeDescendants: Boolean!
+  \$state: IssuableState!
+  \$search: String
+  \$sort: WorkItemSort!
+
+) {
   group(fullPath: \$path) {
     id
     fullPath
     workItems(
       first: \$first
       after: \$after
-      sort: CREATED_DESC
-      includeDescendants: false
+      includeDescendants: \$includeDescendants
+      state: \$state
+      search: \$search
+      sort: \$sort
+
     ) {
       nodes { $_publicWorkItemSummaryFields }
       pageInfo { hasNextPage endCursor }
@@ -1177,6 +1189,8 @@ Future<void> main() async {
         _publicGroupWorkItemPath,
         expectedGroupId: first.group.id,
         after: discoveredPublicGroupItemsCursor,
+        filter: first.filter,
+        previousFilter: first.filter,
       );
       require(next.group.id == first.group.id);
       require(next.items.length == 20);
@@ -1581,10 +1595,16 @@ bool _isExactPublicWorkItemGraph(
   }
   final variables = body['variables'];
   if (variables is! Map) return false;
-  if (body['query'] == _publicGroupWorkItemsQuery) {
-    return variables.length == 3 &&
+  if (body['query'] is String &&
+      (body['query'] as String).replaceAll(RegExp(r'\s+'), ' ').trim() ==
+          _publicGroupWorkItemsQuery.replaceAll(RegExp(r'\s+'), ' ').trim()) {
+    return variables.length == 7 &&
         variables['path'] == _publicGroupWorkItemPath &&
         variables['first'] == 20 &&
+        variables['includeDescendants'] == false &&
+        variables['state'] == 'all' &&
+        variables['search'] == '' &&
+        variables['sort'] == 'CREATED_DESC' &&
         variables.containsKey('after') &&
         (variables['after'] == null ||
             (issuedGroupCursor != null &&

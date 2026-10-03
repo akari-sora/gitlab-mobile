@@ -73,8 +73,14 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   final List<WorkItemTypeCapability> _types = [];
   final Set<String> _usedItemCursors = {};
   final Set<String> _usedTypeCursors = {};
+  late final TextEditingController _searchController;
+  late final ScrollController _searchScrollController;
+  late GroupWorkItemListFilter _filter;
+  GroupWorkItemListFilter? _activePageFilter;
+  WorkItemTypePage? _pendingGroupTypes;
   ApiFailure? _itemsError;
   ApiFailure? _typesError;
+  String? _filterNotice;
   String? _nextItems;
   String? _nextTypes;
   GraphResourceRef? _namespace;
@@ -82,9 +88,12 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   bool _loadingTypes = false;
   bool _itemsLimitReached = false;
   bool _typesLimitReached = false;
+  bool _selectedTypeNeedsVerification = false;
+  GroupWorkItemListFilter? _typeVerificationFilter;
   int _itemPages = 0;
   int _typePages = 0;
   int _generation = 0;
+  int _itemGeneration = 0;
   NavigatorState? _navigator;
   final Set<Route<dynamic>> _ownedRoutes = {};
   bool _ownerInvalid = false;
@@ -94,9 +103,85 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       generation == _generation &&
       (widget.isCurrent?.call() ?? true);
 
+  bool _currentItems(int generation, int itemGeneration) =>
+      _current(generation) && itemGeneration == _itemGeneration;
+
+  GroupWorkItemListFilter get _defaultFilter => widget.project == null
+      ? const GroupWorkItemListFilter(
+          includeDescendants: true,
+          state: GroupWorkItemState.opened,
+        )
+      : const GroupWorkItemListFilter();
+
+  GroupWorkItemListFilter _withoutType(GroupWorkItemListFilter filter) =>
+      GroupWorkItemListFilter(
+        includeDescendants: filter.includeDescendants,
+        state: filter.state,
+        search: filter.search,
+        sort: filter.sort,
+      );
+
+  bool _supportsSelectedType(
+    GroupWorkItemListFilter filter,
+    Iterable<WorkItemTypeCapability> types,
+  ) {
+    final typeId = filter.typeId;
+    if (typeId == null) return true;
+    return types.any(
+      (item) =>
+          item.type.id == typeId &&
+          item.enabled &&
+          (filter.includeDescendants || item.isGroupWorkItemType),
+    );
+  }
+
+  bool _sameTypeBinding(
+    GroupWorkItemListFilter left,
+    GroupWorkItemListFilter right,
+  ) =>
+      left.includeDescendants == right.includeDescendants &&
+      left.typeId == right.typeId &&
+      left.typeNamespace?.id == right.typeNamespace?.id &&
+      left.typeNamespace?.fullPath == right.typeNamespace?.fullPath;
+
+  bool _replaceTypesForFilter(
+    GroupWorkItemListFilter filter,
+    List<WorkItemTypeCapability> items,
+    String? nextCursor,
+  ) {
+    final typeId = filter.typeId;
+    final retained = typeId == null
+        ? null
+        : _types.cast<WorkItemTypeCapability?>().firstWhere(
+            (item) => item?.type.id == typeId,
+            orElse: () => null,
+          );
+    final returned = typeId == null
+        ? const <WorkItemTypeCapability>[]
+        : items.where((item) => item.type.id == typeId).toList();
+    _types
+      ..clear()
+      ..addAll(items);
+    _selectedTypeNeedsVerification = false;
+    _typeVerificationFilter = null;
+    if (typeId == null || _supportsSelectedType(filter, returned)) {
+      return false;
+    }
+    if (returned.isNotEmpty || nextCursor == null || retained == null) {
+      return true;
+    }
+    if (_types.length < _maxResidentTypes) _types.add(retained);
+    _selectedTypeNeedsVerification = true;
+    _typeVerificationFilter = filter;
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
+    _filter = _defaultFilter;
+    _searchController = TextEditingController(text: _filter.search);
+    _searchScrollController = ScrollController(keepScrollOffset: false);
     widget.ownerChanges?.addListener(_ownerChanged);
     unawaited(_refresh());
   }
@@ -119,11 +204,17 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         oldWidget.namespacePath != widget.namespacePath ||
         !identical(oldWidget.api, widget.api)) {
       _generation++;
+      _itemGeneration++;
       _dismissOwnedRoutes();
+      _filter = _defaultFilter;
+      _activePageFilter = null;
+      _pendingGroupTypes = null;
+      _searchController.text = _filter.search;
       _items.clear();
       _types.clear();
       _itemsError = null;
       _typesError = null;
+      _filterNotice = null;
       _nextItems = null;
       _nextTypes = null;
       _namespace = null;
@@ -133,6 +224,8 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       _typePages = 0;
       _itemsLimitReached = false;
       _typesLimitReached = false;
+      _selectedTypeNeedsVerification = false;
+      _typeVerificationFilter = null;
       _loadingItems = false;
       _loadingTypes = false;
       _ownerInvalid = false;
@@ -144,20 +237,27 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   void dispose() {
     widget.ownerChanges?.removeListener(_ownerChanged);
     _generation++;
+    _itemGeneration++;
     _dismissOwnedRoutes();
+    _searchController.dispose();
+    _searchScrollController.dispose();
     super.dispose();
   }
 
   void _ownerChanged() {
     if (widget.isCurrent?.call() ?? true) return;
     _generation++;
+    _itemGeneration++;
     _dismissOwnedRoutes();
     setState(() {
       _items.clear();
       _types.clear();
       _itemsError = null;
       _typesError = null;
+      _filterNotice = null;
       _nextItems = null;
+      _activePageFilter = null;
+      _pendingGroupTypes = null;
       _nextTypes = null;
       _namespace = null;
       _usedItemCursors.clear();
@@ -166,6 +266,8 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       _typePages = 0;
       _itemsLimitReached = false;
       _typesLimitReached = false;
+      _selectedTypeNeedsVerification = false;
+      _typeVerificationFilter = null;
       _loadingItems = false;
       _loadingTypes = false;
       _ownerInvalid = true;
@@ -207,14 +309,18 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   }
 
   Future<void> _refresh() async {
-    if (_loadingItems || _loadingTypes) return;
     final generation = ++_generation;
+    final itemGeneration = ++_itemGeneration;
+    final requestFilter = _filter;
     setState(() {
       _items.clear();
-      _types.clear();
+      if (requestFilter.typeId == null) _types.clear();
       _itemsError = null;
       _typesError = null;
+      _filterNotice = null;
       _nextItems = null;
+      _activePageFilter = null;
+      _pendingGroupTypes = null;
       _nextTypes = null;
       _namespace = null;
       _usedItemCursors.clear();
@@ -223,18 +329,25 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       _typePages = 0;
       _itemsLimitReached = false;
       _typesLimitReached = false;
+      _selectedTypeNeedsVerification = false;
+      _typeVerificationFilter = null;
       _loadingItems = true;
       _loadingTypes = true;
     });
     final owner = widget;
     bool current() => _current(generation);
+    bool currentItems() => _currentItems(generation, itemGeneration);
     final results = await Future.wait<Object?>([
       (owner.project == null
               ? owner.api.groupWorkItems(
                   owner.namespacePath,
-                  isCurrent: current,
+                  filter: requestFilter,
+                  isCurrent: currentItems,
                 )
-              : owner.api.projectWorkItems(owner.project!, isCurrent: current))
+              : owner.api.projectWorkItems(
+                  owner.project!,
+                  isCurrent: currentItems,
+                ))
           .then<Object?>((value) => value)
           .catchError((Object error) => error),
       owner.api
@@ -243,20 +356,23 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
           .catchError((Object error) => error),
     ]);
     if (!current()) return;
+    final itemsCurrent = currentItems();
+    GroupWorkItemListFilter? retryWithoutType;
     setState(() {
       final itemResult = results[0];
-      GraphResourceRef? itemNamespace;
-      if (itemResult is GroupWorkItemGraphPage) {
+      GraphResourceRef? itemNamespace = _namespace;
+      if (itemsCurrent && itemResult is GroupWorkItemGraphPage) {
         itemNamespace = itemResult.group;
         _namespace = itemResult.group;
+        _activePageFilter = itemResult.filter;
         _items.addAll(itemResult.items);
         _nextItems = itemResult.nextCursor;
         _itemPages = 1;
-      } else if (itemResult is WorkItemGraphPage) {
+      } else if (itemsCurrent && itemResult is WorkItemGraphPage) {
         _items.addAll(itemResult.items);
         _nextItems = itemResult.nextCursor;
         _itemPages = 1;
-      } else {
+      } else if (itemsCurrent) {
         final failure = safeFailure(itemResult!);
         if (failure.kind != FailureKind.cancelled) {
           _itemsError = failure;
@@ -264,23 +380,38 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       }
       final typeResult = results[1];
       if (typeResult is WorkItemTypePage) {
+        final expectedNamespace = itemNamespace ?? _namespace;
         final matchesGroup =
-            itemNamespace == null ||
-            (itemNamespace.id == typeResult.namespace.id &&
-                itemNamespace.fullPath == typeResult.namespace.fullPath);
-        if (owner.project == null && !matchesGroup) {
-          _typesError = const ApiFailure(FailureKind.invalidResponse);
-        } else if (owner.project == null && itemNamespace == null) {
+            expectedNamespace == null ||
+            (expectedNamespace.id == typeResult.namespace.id &&
+                expectedNamespace.fullPath == typeResult.namespace.fullPath);
+        if (owner.project == null && expectedNamespace == null) {
+          if (!itemsCurrent && _loadingItems) {
+            _pendingGroupTypes = typeResult;
+          } else {
+            _typesError = const ApiFailure(FailureKind.invalidResponse);
+          }
+        } else if (owner.project == null && !matchesGroup) {
           _typesError = const ApiFailure(FailureKind.invalidResponse);
         } else {
           _namespace = typeResult.namespace;
-          _types.addAll(
-            typeResult.items.where(
-              (item) => owner.project != null || item.isGroupWorkItemType,
-            ),
-          );
           _nextTypes = typeResult.nextCursor;
           _typePages = 1;
+          final filterForTypes = itemsCurrent ? requestFilter : _filter;
+          if (_replaceTypesForFilter(
+            filterForTypes,
+            typeResult.items,
+            typeResult.nextCursor,
+          )) {
+            retryWithoutType = _withoutType(filterForTypes);
+            _items.clear();
+            _itemsError = null;
+            _nextItems = null;
+            _activePageFilter = null;
+            _usedItemCursors.clear();
+            _itemPages = 0;
+            _itemsLimitReached = false;
+          }
         }
       } else {
         final failure = safeFailure(typeResult!);
@@ -288,9 +419,110 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
           _typesError = failure;
         }
       }
-      _loadingItems = false;
-      _loadingTypes = false;
+      if (itemsCurrent) _loadingItems = false;
+      _loadingTypes = _pendingGroupTypes != null;
     });
+    if (retryWithoutType != null) {
+      await _refreshItems(retryWithoutType!, notice: '已選類型不再可用，已改為所有類型並重新讀取。');
+    } else if (_selectedTypeNeedsVerification && _nextTypes != null) {
+      await _loadMoreTypes();
+    }
+  }
+
+  Future<void> _refreshItems(
+    GroupWorkItemListFilter nextFilter, {
+    String? notice,
+  }) async {
+    if (widget.project != null) return;
+    final owner = widget;
+    final generation = _generation;
+    final itemGeneration = ++_itemGeneration;
+    setState(() {
+      if (!_sameTypeBinding(_filter, nextFilter)) {
+        _selectedTypeNeedsVerification = false;
+        _typeVerificationFilter = null;
+      }
+      _filter = nextFilter;
+      _filterNotice = notice;
+      _items.clear();
+      _itemsError = null;
+      _nextItems = null;
+      _activePageFilter = null;
+      _usedItemCursors.clear();
+      _itemPages = 0;
+      _itemsLimitReached = false;
+      _loadingItems = true;
+    });
+    bool current() => _currentItems(generation, itemGeneration);
+    try {
+      final page = await owner.api.groupWorkItems(
+        owner.namespacePath,
+        expectedGroupId: _namespace?.id,
+        filter: nextFilter,
+        isCurrent: current,
+      );
+      if (!current()) return;
+      if (_namespace != null &&
+          (page.group.id != _namespace!.id ||
+              page.group.fullPath != _namespace!.fullPath)) {
+        throw const ApiFailure(FailureKind.invalidResponse);
+      }
+      GroupWorkItemListFilter? retryWithoutType;
+      setState(() {
+        _namespace = page.group;
+        _activePageFilter = page.filter;
+        _items.addAll(page.items);
+        _nextItems = page.nextCursor;
+        _itemPages = 1;
+        final pendingTypes = _pendingGroupTypes;
+        if (pendingTypes != null) {
+          _pendingGroupTypes = null;
+          _loadingTypes = false;
+          if (pendingTypes.namespace.id != page.group.id ||
+              pendingTypes.namespace.fullPath != page.group.fullPath) {
+            _typesError = const ApiFailure(FailureKind.invalidResponse);
+          } else {
+            _namespace = pendingTypes.namespace;
+            _nextTypes = pendingTypes.nextCursor;
+            _typePages = 1;
+            if (_replaceTypesForFilter(
+              nextFilter,
+              pendingTypes.items,
+              pendingTypes.nextCursor,
+            )) {
+              retryWithoutType = _withoutType(nextFilter);
+              _items.clear();
+              _nextItems = null;
+              _activePageFilter = null;
+              _usedItemCursors.clear();
+              _itemPages = 0;
+              _itemsLimitReached = false;
+            }
+          }
+        }
+        _loadingItems = false;
+      });
+      if (retryWithoutType != null) {
+        await _refreshItems(
+          retryWithoutType!,
+          notice: '已選類型不再可用，已改為所有類型並重新讀取。',
+        );
+      } else if (_selectedTypeNeedsVerification && _nextTypes != null) {
+        await _loadMoreTypes();
+      }
+    } catch (error) {
+      if (!current()) return;
+      final failure = safeFailure(error);
+      setState(() {
+        if (failure.kind != FailureKind.cancelled) _itemsError = failure;
+        if (_pendingGroupTypes != null) {
+          _pendingGroupTypes = null;
+          _loadingTypes = false;
+          _typesError = const ApiFailure(FailureKind.invalidResponse);
+        }
+        _loadingItems = false;
+      });
+    }
   }
 
   Future<void> _loadMoreItems() async {
@@ -310,6 +542,9 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
     }
     final owner = widget;
     final generation = _generation;
+    final itemGeneration = _itemGeneration;
+    final pageFilter = _activePageFilter;
+    if (owner.project == null && pageFilter == null) return;
     setState(() => _loadingItems = true);
     try {
       final page = owner.project == null
@@ -317,14 +552,16 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
               owner.namespacePath,
               expectedGroupId: _namespace?.id,
               after: cursor,
-              isCurrent: () => _current(generation),
+              filter: pageFilter!,
+              previousFilter: pageFilter,
+              isCurrent: () => _currentItems(generation, itemGeneration),
             )
           : await owner.api.projectWorkItems(
               owner.project!,
               after: cursor,
-              isCurrent: () => _current(generation),
+              isCurrent: () => _currentItems(generation, itemGeneration),
             );
-      if (!_current(generation)) return;
+      if (!_currentItems(generation, itemGeneration)) return;
       final pageItems = page is GroupWorkItemGraphPage
           ? page.items
           : (page as WorkItemGraphPage).items;
@@ -332,6 +569,9 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
           (_namespace == null ||
               page.group.id != _namespace!.id ||
               page.group.fullPath != _namespace!.fullPath)) {
+        throw const ApiFailure(FailureKind.invalidResponse);
+      }
+      if (page is GroupWorkItemGraphPage && page.filter != pageFilter) {
         throw const ApiFailure(FailureKind.invalidResponse);
       }
       final knownLocations = <String, String>{
@@ -378,13 +618,15 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       });
     } catch (error) {
       _usedItemCursors.remove(cursor);
-      if (!_current(generation)) return;
+      if (!_currentItems(generation, itemGeneration)) return;
       final failure = safeFailure(error);
       if (failure.kind != FailureKind.cancelled) {
         setState(() => _itemsError = failure);
       }
     } finally {
-      if (_current(generation)) setState(() => _loadingItems = false);
+      if (_currentItems(generation, itemGeneration)) {
+        setState(() => _loadingItems = false);
+      }
     }
   }
 
@@ -397,15 +639,20 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       setState(() {
         _nextTypes = null;
         _typesLimitReached = atTypeLimit;
-        if (!atTypeLimit) {
+        if (!atTypeLimit || _selectedTypeNeedsVerification) {
           _typesError = const ApiFailure(FailureKind.invalidResponse);
         }
+        _selectedTypeNeedsVerification = false;
+        _typeVerificationFilter = null;
       });
       return;
     }
     final owner = widget;
     final generation = _generation;
+    final verificationFilter = _typeVerificationFilter;
     setState(() => _loadingTypes = true);
+    GroupWorkItemListFilter? retryWithoutType;
+    var loadedPage = false;
     try {
       final page = await owner.api.namespaceWorkItemTypes(
         owner.namespacePath,
@@ -420,12 +667,21 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         throw const ApiFailure(FailureKind.invalidResponse);
       }
       setState(() {
+        final ownsVerification =
+            _selectedTypeNeedsVerification &&
+            verificationFilter != null &&
+            _typeVerificationFilter == verificationFilter &&
+            _sameTypeBinding(_filter, verificationFilter);
+        final selectedId = ownsVerification ? verificationFilter.typeId : null;
+        final returnedSelected = selectedId == null
+            ? const <WorkItemTypeCapability>[]
+            : page.items.where((item) => item.type.id == selectedId).toList();
         final known = _types.map((item) => item.type.id).toSet();
-        final additions = page.items.where(
-          (item) =>
-              (owner.project != null || item.isGroupWorkItemType) &&
-              known.add(item.type.id),
-        );
+        if (returnedSelected.isNotEmpty) {
+          _types.removeWhere((item) => item.type.id == selectedId);
+          known.remove(selectedId);
+        }
+        final additions = page.items.where((item) => known.add(item.type.id));
         _types.addAll(additions.take(_maxResidentTypes - _types.length));
         _typePages++;
         final cursorLoop =
@@ -435,12 +691,32 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
             page.nextCursor != null &&
             (_typePages >= _maxTypePages || _types.length >= _maxResidentTypes);
         _nextTypes = _typesLimitReached || cursorLoop ? null : page.nextCursor;
-        if (cursorLoop) {
+        if (ownsVerification && returnedSelected.isNotEmpty) {
+          if (_supportsSelectedType(verificationFilter, returnedSelected)) {
+            _selectedTypeNeedsVerification = false;
+            _typeVerificationFilter = null;
+          } else {
+            retryWithoutType = _withoutType(_filter);
+            _selectedTypeNeedsVerification = false;
+            _typeVerificationFilter = null;
+          }
+        } else if (ownsVerification && page.nextCursor == null) {
+          retryWithoutType = _withoutType(_filter);
+          _selectedTypeNeedsVerification = false;
+          _typeVerificationFilter = null;
+        }
+        if (cursorLoop ||
+            (_typesLimitReached &&
+                ownsVerification &&
+                _selectedTypeNeedsVerification)) {
           _typesError = const ApiFailure(FailureKind.invalidResponse);
+          _selectedTypeNeedsVerification = false;
+          _typeVerificationFilter = null;
         } else {
           _typesError = null;
         }
       });
+      loadedPage = true;
     } catch (error) {
       _usedTypeCursors.remove(cursor);
       if (!_current(generation)) return;
@@ -450,6 +726,17 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       }
     } finally {
       if (_current(generation)) setState(() => _loadingTypes = false);
+    }
+    if (!_current(generation)) return;
+    if (retryWithoutType != null) {
+      await _refreshItems(retryWithoutType!, notice: '已選類型不再可用，已改為所有類型並重新讀取。');
+    } else if (loadedPage &&
+        _selectedTypeNeedsVerification &&
+        _typeVerificationFilter == verificationFilter &&
+        verificationFilter != null &&
+        _sameTypeBinding(_filter, verificationFilter) &&
+        _nextTypes != null) {
+      await _loadMoreTypes();
     }
   }
 
@@ -490,6 +777,256 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       item.namespace?.fullPath ??
       item.project?.fullPath ??
       widget.namespacePath;
+
+  void _changeScope(bool includeDescendants) {
+    String? typeId = _filter.typeId;
+    if (!includeDescendants && typeId != null) {
+      final selected = _types.where((item) => item.type.id == typeId);
+      if (selected.isEmpty || !selected.first.isGroupWorkItemType) {
+        typeId = null;
+      }
+    }
+    unawaited(
+      _refreshItems(
+        GroupWorkItemListFilter(
+          includeDescendants: includeDescendants,
+          state: _filter.state,
+          search: _filter.search,
+          sort: _filter.sort,
+          typeId: typeId,
+          typeNamespace: typeId == null ? null : _filter.typeNamespace,
+        ),
+      ),
+    );
+  }
+
+  void _changeState(GroupWorkItemState state) {
+    unawaited(
+      _refreshItems(
+        GroupWorkItemListFilter(
+          includeDescendants: _filter.includeDescendants,
+          state: state,
+          search: _filter.search,
+          sort: _filter.sort,
+          typeId: _filter.typeId,
+          typeNamespace: _filter.typeNamespace,
+        ),
+      ),
+    );
+  }
+
+  void _submitSearch() {
+    final search = _searchController.text.trim();
+    if (search == _filter.search) return;
+    _searchController.value = TextEditingValue(
+      text: search,
+      selection: TextSelection.collapsed(offset: search.length),
+    );
+    unawaited(
+      _refreshItems(
+        GroupWorkItemListFilter(
+          includeDescendants: _filter.includeDescendants,
+          state: _filter.state,
+          search: search,
+          sort: _filter.sort,
+          typeId: _filter.typeId,
+          typeNamespace: _filter.typeNamespace,
+        ),
+      ),
+    );
+  }
+
+  void _changeSort(GroupWorkItemSort? sort) {
+    if (sort == null || sort == _filter.sort) return;
+    unawaited(
+      _refreshItems(
+        GroupWorkItemListFilter(
+          includeDescendants: _filter.includeDescendants,
+          state: _filter.state,
+          search: _filter.search,
+          sort: sort,
+          typeId: _filter.typeId,
+          typeNamespace: _filter.typeNamespace,
+        ),
+      ),
+    );
+  }
+
+  void _changeType(String? typeId) {
+    if (typeId == _filter.typeId) return;
+    unawaited(
+      _refreshItems(
+        GroupWorkItemListFilter(
+          includeDescendants: _filter.includeDescendants,
+          state: _filter.state,
+          search: _filter.search,
+          sort: _filter.sort,
+          typeId: typeId,
+          typeNamespace: typeId == null ? null : _namespace,
+        ),
+      ),
+    );
+  }
+
+  Iterable<WorkItemTypeCapability> get _selectableTypes => _types.where(
+    (item) =>
+        item.enabled &&
+        (_filter.includeDescendants || item.isGroupWorkItemType),
+  );
+
+  Widget _groupFilters(BuildContext context) {
+    const stateLabels = {
+      GroupWorkItemState.opened: '開啟中',
+      GroupWorkItemState.closed: '已關閉',
+      GroupWorkItemState.all: '全部狀態',
+    };
+    const sortLabels = {
+      GroupWorkItemSort.createdDesc: '最新建立',
+      GroupWorkItemSort.createdAsc: '最早建立',
+      GroupWorkItemSort.updatedDesc: '最近更新',
+      GroupWorkItemSort.updatedAsc: '最早更新',
+    };
+    final selectableTypes = _selectableTypes.toList(growable: false);
+    final scopeLabel = _filter.includeDescendants ? '包含子群組與專案' : '僅此群組';
+    return Card(
+      key: const Key('group-work-item-filters'),
+      child: ExpansionTile(
+        key: const PageStorageKey('group-work-item-filters-expansion'),
+        title: Text(scopeLabel),
+        subtitle: Text(
+          '${stateLabels[_filter.state]} · ${sortLabels[_filter.sort]}'
+          '${_filterNotice == null ? '' : '\n$_filterNotice'}',
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  ChoiceChip(
+                    label: const Text('包含子群組與專案'),
+                    selected: _filter.includeDescendants,
+                    onSelected: (selected) {
+                      if (selected) _changeScope(true);
+                    },
+                  ),
+                  ChoiceChip(
+                    label: const Text('僅此群組'),
+                    selected: !_filter.includeDescendants,
+                    onSelected: (selected) {
+                      if (selected) _changeScope(false);
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final state in GroupWorkItemState.values)
+                    ChoiceChip(
+                      label: Text(stateLabels[state]!),
+                      selected: _filter.state == state,
+                      onSelected: (selected) {
+                        if (selected) _changeState(state);
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      key: const Key('group-work-item-search'),
+                      controller: _searchController,
+                      scrollController: _searchScrollController,
+                      textInputAction: TextInputAction.search,
+                      maxLength: 256,
+                      decoration: const InputDecoration(
+                        labelText: '搜尋工作項目',
+                        hintText: '標題或關鍵字',
+                        border: OutlineInputBorder(),
+                        counterText: '',
+                      ),
+                      onSubmitted: (_) => _submitSearch(),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton.filledTonal(
+                    onPressed: _submitSearch,
+                    tooltip: '套用搜尋',
+                    icon: const Icon(Icons.search),
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      _searchController.clear();
+                      _submitSearch();
+                    },
+                    tooltip: '清除搜尋',
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              KeyedSubtree(
+                key: const Key('group-work-item-sort'),
+                child: DropdownButtonFormField<GroupWorkItemSort>(
+                  key: ValueKey('group-work-item-sort-${_filter.sort}'),
+                  initialValue: _filter.sort,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: '排序',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    for (final sort in GroupWorkItemSort.values)
+                      DropdownMenuItem(
+                        value: sort,
+                        child: Text(sortLabels[sort]!),
+                      ),
+                  ],
+                  onChanged: _changeSort,
+                ),
+              ),
+              const SizedBox(height: 10),
+              KeyedSubtree(
+                key: const Key('group-work-item-type'),
+                child: DropdownButtonFormField<String?>(
+                  key: ValueKey(
+                    'group-work-item-type-${_filter.includeDescendants}-${_filter.typeId}',
+                  ),
+                  initialValue: _filter.typeId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: '類型',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                      value: null,
+                      child: Text('所有類型'),
+                    ),
+                    for (final capability in selectableTypes)
+                      DropdownMenuItem<String?>(
+                        value: capability.type.id,
+                        child: Text(capability.type.name),
+                      ),
+                  ],
+                  onChanged: _changeType,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _capabilities(BuildContext context) {
     if (_loadingTypes && _types.isEmpty) {
@@ -715,10 +1252,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                   ),
                   if (widget.project == null) ...[
                     const SizedBox(height: 6),
-                    Text(
-                      '僅此群組的工作項目',
-                      style: Theme.of(context).textTheme.titleSmall,
-                    ),
+                    _groupFilters(context),
                   ],
                   const SizedBox(height: 10),
                   _capabilities(context),

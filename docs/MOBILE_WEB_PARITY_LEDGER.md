@@ -117,12 +117,23 @@ frame-rate acceptance.
 The 2026-10-03 group-list browser walk at 390 × 844 showed the actual GitLab.org
 aggregate list, its Open-state filter, row type/path/state and 20-item next-page
 controls. That Web default includes descendant project items. The native fifth
-group tab instead labels its current scope explicitly as only the group's own
-Work Items. It reads the Group-root connection with `includeDescendants: false`
-and server-created order, preserving opaque group/type/namespace identities.
+group tab now defaults to open items including descendant groups and projects,
+and provides explicit root-only scope, state, submitted search, server-provided
+type and created/updated order controls. Filters apply on the server before
+bounded 20-row pagination. Changing conditions clears the previous rows and
+cursors; late responses cannot refill the new query. Continuations retain the
+exact normalized filter and opaque group identity. Type selection is bound to
+the root namespace that returned its capabilities, and unsupported schema
+controls remain explicit failures rather than silently changing scope.
 Rows open through their returned namespace scope rather than a fabricated
-Project. Descendant aggregation, search/type/state/order controls and custom
-saved views remain open; the existing REST issues/MR tabs are separate workflows.
+Project. The same IID in different descendant namespaces remains distinct.
+Custom saved views and the remaining list display/sort families remain open;
+the existing REST issues/MR tabs are separate workflows. The group-list controls
+and inbox transient-action regression receipts live under
+`artifacts/mobile-parity/group-list-controls/` and
+`artifacts/mobile-parity/inbox-action-rebuild/`. Installed-build and private/iOS
+acceptance must be read from their actual receipts rather than inferred from
+these source changes.
 
 Each new page binds responses and modal closures to account/instance, numeric
 project identity, API generation and request epoch. ProjectMore/Pipeline remove

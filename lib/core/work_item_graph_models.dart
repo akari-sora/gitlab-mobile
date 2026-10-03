@@ -191,18 +191,72 @@ final class WorkItemGraphPage {
   bool get isPartial => nextCursor != null;
 }
 
+enum GroupWorkItemState { all, opened, closed }
+
+enum GroupWorkItemSort { createdDesc, createdAsc, updatedDesc, updatedAsc }
+
+/// Server-side controls for one group Work Item connection.
+///
+/// [search] is normalized by trimming surrounding whitespace and is limited to
+/// 256 Unicode scalar values. [typeId] must be a canonical GitLab
+/// `WorkItems::Type` global ID and requires the exact root [typeNamespace] that
+/// supplied it. The normalized value returned on a page must be reused as
+/// `previousFilter` when following its cursor.
+final class GroupWorkItemListFilter {
+  const GroupWorkItemListFilter({
+    this.includeDescendants = false,
+    this.state = GroupWorkItemState.all,
+    this.search = '',
+    this.sort = GroupWorkItemSort.createdDesc,
+    this.typeId,
+    this.typeNamespace,
+  });
+
+  final bool includeDescendants;
+  final GroupWorkItemState state;
+  final String search;
+  final GroupWorkItemSort sort;
+  final String? typeId;
+  final GraphResourceRef? typeNamespace;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is GroupWorkItemListFilter &&
+          includeDescendants == other.includeDescendants &&
+          state == other.state &&
+          search == other.search &&
+          sort == other.sort &&
+          typeId == other.typeId &&
+          typeNamespace?.id == other.typeNamespace?.id &&
+          typeNamespace?.fullPath == other.typeNamespace?.fullPath;
+
+  @override
+  int get hashCode => Object.hash(
+    includeDescendants,
+    state,
+    search,
+    sort,
+    typeId,
+    typeNamespace?.id,
+    typeNamespace?.fullPath,
+  );
+}
+
 /// One bounded page owned by an exact GitLab group identity.
 final class GroupWorkItemGraphPage {
   GroupWorkItemGraphPage({
     required this.group,
     required List<WorkItemGraphSummary> items,
     required this.nextCursor,
+    required this.filter,
   }) : items = List.unmodifiable(items);
 
   /// Opaque server identity returned by the same response as [items].
   final GraphResourceRef group;
   final List<WorkItemGraphSummary> items;
   final String? nextCursor;
+  final GroupWorkItemListFilter filter;
   bool get isPartial => nextCursor != null;
 }
 

@@ -107,6 +107,58 @@ final class EmulatorQaFixture extends WorkspaceFixture {
   };
   final List<String> workItemStateEvents = [];
   final Map<String, int> _workItemRevisions = {};
+  final Set<int> _doneTodos = {};
+
+  List<Json> get groupListRows => List.generate(30, (index) {
+    final root = index < 5;
+    final project = index >= 10;
+    final iid =
+        41 +
+        (root
+            ? index
+            : project
+            ? index - 10
+            : index - 5);
+    final path = root
+        ? 'qa/synthetic-group'
+        : project
+        ? 'qa/synthetic-group/child-project'
+        : 'qa/synthetic-group/child-group';
+    return <String, Object?>{
+      'id': root && iid == 41
+          ? 'gid://gitlab/WorkItem/qa-group-41'
+          : 'gid://gitlab/WorkItem/qa-list-$index',
+      'iid': '$iid',
+      'title':
+          'Synthetic ${root
+              ? 'root'
+              : project
+              ? 'project'
+              : 'subgroup'} item $iid',
+      'state': index.isEven ? 'OPEN' : 'CLOSED',
+      'createdAt': DateTime.utc(2026, 10, 1, 0, index).toIso8601String(),
+      'updatedAt': DateTime.utc(2026, 10, 2, 0, 29 - index).toIso8601String(),
+      'namespace': {
+        'id': root
+            ? 'gid://gitlab/Group/84'
+            : project
+            ? 'gid://gitlab/Namespaces::ProjectNamespace/194'
+            : 'gid://gitlab/Group/85',
+        'fullPath': path,
+      },
+      'project': project
+          ? {'id': 'gid://gitlab/Project/94', 'fullPath': path}
+          : null,
+      'workItemType': {
+        'id':
+            'gid://gitlab/WorkItems::Type/qa-${project ? 'project' : 'group'}',
+        'name': project ? 'Synthetic Task' : 'Synthetic Epic',
+      },
+      'description': 'Explicit read-only group list QA fixture.',
+      'widgets': <Object?>[],
+      'userPermissions': {'updateWorkItem': false},
+    };
+  }, growable: false);
 
   Json workItemRecord({required bool group}) {
     final id = group
@@ -302,7 +354,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
       'updated_at':
           '2026-10-${((index % 3) + 1).toString().padLeft(2, '0')}T12:00:00Z',
     };
-  }, growable: false);
+  }, growable: false).where((row) => !_doneTodos.contains(row['id'])).toList();
 
   @override
   FutureOr<ResponseBody> respond(RequestOptions request) {
@@ -318,6 +370,90 @@ final class EmulatorQaFixture extends WorkspaceFixture {
       final operation = RegExp(
         r'^(query|mutation)\s+(\w+)',
       ).firstMatch(query.trim())?.group(2);
+      if (operation == 'MobileGroupWorkItems' &&
+          variables['path'] == 'qa/synthetic-group') {
+        final typeIds = variables['typeIds'] as List?;
+        final search = (variables['search'] as String? ?? '').toLowerCase();
+        final rows = groupListRows.where((row) {
+          final namespace = row['namespace'] as Map;
+          final type = row['workItemType'] as Map;
+          return (variables['includeDescendants'] == true ||
+                  namespace['fullPath'] == 'qa/synthetic-group') &&
+              (variables['state'] == 'all' ||
+                  row['state'] ==
+                      (variables['state'] == 'closed' ? 'CLOSED' : 'OPEN')) &&
+              (row['title'] as String).toLowerCase().contains(search) &&
+              (typeIds == null || typeIds.contains(type['id']));
+        }).toList();
+        final sort = variables['sort'] as String;
+        final field = sort.startsWith('UPDATED') ? 'updatedAt' : 'createdAt';
+        rows.sort((a, b) => (a[field] as String).compareTo(b[field] as String));
+        final ordered = sort.endsWith('DESC') ? rows.reversed.toList() : rows;
+        final after = variables['after'];
+        final offset = after == null
+            ? 0
+            : int.parse((after as String).split('-').last);
+        final page = ordered.skip(offset).take(20).toList();
+        final hasNext = offset + page.length < ordered.length;
+        return jsonResponse({
+          'data': {
+            'group': {
+              'id': 'gid://gitlab/Group/84',
+              'fullPath': 'qa/synthetic-group',
+              'workItems': {
+                'nodes': page,
+                'pageInfo': {
+                  'hasNextPage': hasNext,
+                  'endCursor': hasNext
+                      ? 'qa-group-list-${offset + page.length}'
+                      : null,
+                },
+              },
+            },
+          },
+        });
+      }
+      if (operation == 'MobileNamespaceWorkItemTypes' &&
+          variables['path'] == 'qa/synthetic-group') {
+        return jsonResponse({
+          'data': {
+            'namespace': {
+              'id': 'gid://gitlab/Group/84',
+              'fullPath': 'qa/synthetic-group',
+              'workItemTypes': {
+                'nodes': [
+                  for (final group in [true, false])
+                    {
+                      'id':
+                          'gid://gitlab/WorkItems::Type/qa-${group ? 'group' : 'project'}',
+                      'name': group ? 'Synthetic Epic' : 'Synthetic Task',
+                      'enabled': true,
+                      'isGroupWorkItemType': group,
+                      'widgetDefinitions': <Object?>[],
+                    },
+                ],
+                'pageInfo': {'hasNextPage': false, 'endCursor': null},
+              },
+            },
+          },
+        });
+      }
+      if (operation == 'MobileNamespaceWorkItem' &&
+          variables['path'] != 'qa/synthetic-group') {
+        final matches = groupListRows.where(
+          (row) =>
+              (row['namespace'] as Map)['fullPath'] == variables['path'] &&
+              row['iid'] == variables['iid'],
+        );
+        if (matches.length == 1) {
+          final row = matches.single;
+          return jsonResponse({
+            'data': {
+              'namespace': {...row['namespace'] as Map, 'workItem': row},
+            },
+          });
+        }
+      }
       if (operation == 'MobileProjectWorkItem' &&
           variables['path'] == 'studio/mobile-workspace' &&
           variables['iid'] == '31') {
@@ -410,6 +546,23 @@ final class EmulatorQaFixture extends WorkspaceFixture {
     final method = request.method;
     if (path == 'todos' && method == 'GET') {
       return jsonResponse(todoRows);
+    }
+    if (path == 'todos/mark_as_done' && method == 'POST') {
+      _doneTodos.addAll(todoRows.map((row) => row['id'] as int));
+      return Future.delayed(
+        const Duration(milliseconds: 600),
+        () => jsonResponse(<Json>[]),
+      );
+    }
+    final todoDone = RegExp(r'^todos/(\d+)/mark_as_done$').firstMatch(path);
+    if (todoDone != null && method == 'POST') {
+      final id = int.parse(todoDone.group(1)!);
+      if (id >= 7001 && id <= 7030 && _doneTodos.add(id)) {
+        return Future.delayed(
+          const Duration(milliseconds: 600),
+          () => jsonResponse({'id': id, 'state': 'done'}),
+        );
+      }
     }
     if (path == 'projects/42/environments' && method == 'GET') {
       return jsonResponse(environmentRows);
@@ -702,6 +855,31 @@ class _QaLanding extends StatelessWidget {
                                 runtime.fixture.account.key &&
                             identical(runtime.session.api, runtime.fixture.api),
                         ownerChanges: runtime.session,
+                      ),
+                    )
+                  : null,
+            ),
+            _QaDestination(
+              icon: Icons.filter_list_outlined,
+              label: '群組工作項目清單',
+              onTap: enabled
+                  ? () => _open(
+                      context,
+                      Scaffold(
+                        appBar: AppBar(title: const Text('群組工作項目清單')),
+                        body: GraphWorkItemsPage.group(
+                          account: runtime.fixture.account,
+                          api: runtime.fixture.api,
+                          namespacePath: 'qa/synthetic-group',
+                          isCurrent: () =>
+                              runtime.session.active?.key ==
+                                  runtime.fixture.account.key &&
+                              identical(
+                                runtime.session.api,
+                                runtime.fixture.api,
+                              ),
+                          ownerChanges: runtime.session,
+                        ),
                       ),
                     )
                   : null,
