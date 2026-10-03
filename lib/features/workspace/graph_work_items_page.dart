@@ -12,6 +12,7 @@ import '../../shared/resource_share.dart';
 import '../../shared/workspace_ui.dart';
 import 'work_item_activity.dart';
 import 'work_item_attributes.dart';
+import 'work_item_content.dart';
 import 'work_item_notifications.dart';
 import 'work_item_state_control.dart';
 
@@ -1755,11 +1756,15 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           ],
         ),
         const SizedBox(height: 12),
-        SelectionArea(
-          child: Text(
-            summary.title,
-            style: Theme.of(context).textTheme.headlineSmall,
-          ),
+        WorkItemContentControl(
+          account: widget.account,
+          api: widget.api,
+          detail: detail,
+          project: project,
+          isCurrent: widget.isCurrent,
+          ownerChanges: widget.ownerChanges,
+          onRoute: _ownRoute,
+          onSaved: _load,
         ),
         const SizedBox(height: 8),
         Text(

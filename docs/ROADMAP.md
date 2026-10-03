@@ -14,6 +14,7 @@ controls, seven independently loaded attribute kinds and
 lazy activity with server-side filtering/order, guarded Markdown comments/replies,
 ordinary project/group note edits, guarded note deletion and emoji reactions,
 lazy personal notification subscription,
+on-demand title/Markdown description editing,
 and project/group close/reopen.
 Long descriptions collapse before building Markdown. Account-client
 read caching, request sharing, lazy list derivation and syntax-span LRU reduce

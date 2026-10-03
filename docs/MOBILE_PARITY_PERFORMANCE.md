@@ -1044,3 +1044,17 @@ Exact-source validation, installed emulator painting and public read receipts
 belong to `artifacts/mobile-parity/work-item-notifications/`. This change does
 not establish measured physical scroll improvement, authenticated private
 subscription, iOS or full GitLab parity.
+
+## On-demand Work Item title and description editing
+
+The title's native edit action loads a fresh actor/permission/content snapshot
+on demand and uses the existing encrypted Markdown draft editor. Base detail
+loading gains no content-permission request. Title-only updates omit unchanged
+description Markdown, and description-only updates omit the unchanged title.
+Single-use attempts perform exact preflight and independent readback; every
+failed save requires reopening. Missing description widgets remain distinct
+from empty Markdown. Local preflight is not an atomic server compare-and-swap.
+
+Source, public read-only, exact-commit APK, native emulator and CI receipts live
+under `artifacts/mobile-parity/work-item-content/`. This slice does not claim
+scroll improvement or authenticated private/iOS/full Web parity acceptance.

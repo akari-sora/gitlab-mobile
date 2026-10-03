@@ -70,6 +70,13 @@ An iOS binary needs a macOS runner with an appropriate Xcode toolchain. App Stor
 
 ## Isolated Android emulator UI QA
 
+The content-editor fixture also supplies stateful project/group title/Markdown
+updates, explicit permission revocation and actor expiry, revision conflicts,
+absent description widgets and lost acknowledgements. Controls and logs belong
+only to the synthetic QA entrypoint. Production content editing never falls
+back to these records. API, editor and fixture regressions run in the normal
+Flutter test job; real private content updates remain a separate acceptance lane.
+
 The QA-only target `tool/emulator_ui.dart` renders the production project,
 environment/deployment, schedule and project/group Work Item pages through the existing synthetic
 transport. It requires `EMULATOR_UI_QA=true` and displays a persistent synthetic

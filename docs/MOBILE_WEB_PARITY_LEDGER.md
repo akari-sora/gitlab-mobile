@@ -264,3 +264,33 @@ results require manual refresh before another attempt. Delivery receipts live
 under `artifacts/mobile-parity/work-item-notifications/`; read their actual
 commit and executed cases before attributing installed-build or CI acceptance.
 Private/edition/iOS and other Work Item widgets and mutations remain open.
+
+## Work Item content editor follow-up
+
+The same project/group pages were actually viewed at 390 x 844 in a signed-out
+browser: titles wrap, Markdown headings/lists/links render, tables scroll within
+their area and long descriptions offer Read more. More actions offers Copy
+reference, Report abuse and Truncate descriptions. The authenticated edit flow
+was not observed. The owned tab closed and temporary viewport reset.
+
+The native title action opens a fresh permission/content read only when tapped.
+It reuses encrypted account drafts, Markdown preview and existing project tools.
+The server's DESCRIPTION widget determines whether the description is editable;
+an absent or unavailable widget does not invent that capability. Title-only
+editing remains available with update permission. The opaque single-use target
+binds actor, API owner, exact project/group scope/type, updatedAt and original
+title/raw Markdown. Preflight rejection sends no mutation; a no-op also sends
+none. A change sends only changed fields once and verifies acknowledgement plus
+independent readback. Every failed save blocks reuse until the user closes and
+reopens the editor. Unsupported optional queries preserve ordinary reading.
+
+The upstream
+[`Update` mutation](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/mutations/work_items/update.rb)
+and
+[`DescriptionInputType`](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/types/work_items/widgets/description_input_type.rb)
+accept direct title and nested descriptionWidget; neither provides a content
+compare-and-swap input. A concurrent write can still race after final preflight.
+Receipts under `artifacts/mobile-parity/work-item-content/` identify actual
+source, tests, installed emulator cases and CI; absent receipts are NOT_RUN.
+Authenticated private edits, quick-action side effects, older-server editions,
+iOS and remaining Work Item mutations remain open.

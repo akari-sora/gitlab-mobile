@@ -33,6 +33,16 @@ const emulatorUiQaCommit = String.fromEnvironment(
 );
 
 enum _QaNoteEditControl {
+  contentAuthenticated,
+  contentAnonymous,
+  allowContent,
+  denyContent,
+  denyContentWrites,
+  reviseContent,
+  failContentAcknowledgement,
+  failContentRead,
+  absentDescription,
+  presentDescription,
   allow,
   deny,
   revise,
@@ -124,6 +134,23 @@ final class EmulatorQaFixture extends WorkspaceFixture {
     'gid://gitlab/WorkItem/1041': 'OPEN',
   };
   final List<String> workItemStateEvents = [];
+  final List<Json> workItemContentEvents = [];
+  final List<String> workItemContentReads = [];
+  final Map<bool, String> workItemContentTitles = {
+    false: 'Synthetic project Work Item',
+    true: 'Synthetic group Work Item',
+  };
+  final Map<bool, String?> workItemContentDescriptions = {
+    false: 'Explicit in-memory QA fixture. No GitLab connection.',
+    true: 'Explicit in-memory QA fixture. No GitLab connection.',
+  };
+  final Map<bool, bool> workItemDescriptionPresent = {false: true, true: true};
+  final Set<bool> _editedWorkItemContent = {};
+  bool workItemContentAuthenticated = true;
+  bool workItemContentAllowed = true;
+  bool workItemContentWritesAllowed = true;
+  bool failNextWorkItemContentAcknowledgement = false;
+  bool failNextWorkItemContentRead = false;
   final List<Json> workItemNoteEvents = [];
   final List<Json> workItemNoteEditEvents = [];
   final List<Json> workItemNoteDeleteEvents = [];
@@ -213,9 +240,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
     return {
       'id': id,
       'iid': group ? '41' : '31',
-      'title': group
-          ? 'Synthetic group Work Item'
-          : 'Synthetic project Work Item',
+      'title': workItemContentTitles[group],
       'state': _workItemStates[id],
       'createdAt': '2026-10-01T00:00:00Z',
       'updatedAt': DateTime.utc(
@@ -243,17 +268,45 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         'name': group ? 'Synthetic Epic' : 'Synthetic Task',
       },
       'userPermissions': {'updateWorkItem': true, 'createNote': true},
-      'description': 'Explicit in-memory QA fixture. No GitLab connection.',
+      'description': workItemContentDescriptions[group],
       'widgets': [
-        {
-          'type': 'DESCRIPTION',
-          'description': 'Explicit in-memory QA fixture. No GitLab connection.',
-          'edited': false,
-          'lastEditedAt': null,
-        },
+        if (workItemDescriptionPresent[group] == true)
+          {
+            'type': 'DESCRIPTION',
+            'description': workItemContentDescriptions[group],
+            'edited': _editedWorkItemContent.contains(group),
+            'lastEditedAt': _editedWorkItemContent.contains(group)
+                ? DateTime.utc(
+                    2026,
+                    10,
+                    3,
+                    0,
+                    0,
+                    _workItemRevisions[id] ?? 0,
+                  ).toIso8601String()
+                : null,
+          },
         {'type': 'NOTES', 'discussionLocked': false},
       ],
     };
+  }
+
+  Json workItemContentRecord({required bool group}) {
+    final record = workItemRecord(group: group);
+    return {
+      ...record,
+      'userPermissions': {'updateWorkItem': workItemContentAllowed},
+      'widgets': (record['widgets'] as List)
+          .where((widget) => (widget as Map)['type'] == 'DESCRIPTION')
+          .toList(growable: false),
+    };
+  }
+
+  void reviseWorkItemContent({required bool group}) {
+    final id = 'gid://gitlab/WorkItem/${group ? 1041 : 1031}';
+    workItemContentTitles[group] =
+        'Synthetic concurrent ${group ? 'group' : 'project'} revision';
+    _workItemRevisions[id] = (_workItemRevisions[id] ?? 0) + 1;
   }
 
   Json workItemNotificationsRecord({required bool group}) => {
@@ -986,6 +1039,98 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           },
         });
       }
+      if (operation == 'MobileWorkItemContent' &&
+          _workItemStates.containsKey(variables['id'])) {
+        final id = variables['id'] as String;
+        workItemContentReads.add(id);
+        debugPrint(
+          '[work_item_content_read_qa] '
+          'scope=${id.endsWith('/1041') ? 'group' : 'project'} '
+          'sequence=${workItemContentReads.length}',
+        );
+        if (failNextWorkItemContentRead) {
+          failNextWorkItemContentRead = false;
+          return jsonResponse({
+            'message': 'Synthetic content read failure',
+          }, status: 503);
+        }
+        return jsonResponse({
+          'data': {
+            'currentUser': workItemContentAuthenticated
+                ? {'id': 'gid://gitlab/User/7'}
+                : null,
+            'workItem': workItemContentRecord(group: id.endsWith('/1041')),
+          },
+        });
+      }
+      if (operation == 'MobileUpdateWorkItemContent') {
+        final input = variables['input'] is Map
+            ? variables['input'] as Map
+            : const <String, Object?>{};
+        final id = input['id'];
+        final descriptionWidget = input['descriptionWidget'];
+        final title = input['title'];
+        final description = descriptionWidget is Map
+            ? descriptionWidget['description']
+            : null;
+        if (_workItemStates.containsKey(id) &&
+            (!input.containsKey('title') || title is String) &&
+            (!input.containsKey('descriptionWidget') ||
+                description is String)) {
+          final group = id == 'gid://gitlab/WorkItem/1041';
+          final allowed =
+              workItemContentAuthenticated &&
+              workItemContentAllowed &&
+              workItemContentWritesAllowed &&
+              (!input.containsKey('descriptionWidget') ||
+                  workItemDescriptionPresent[group] == true);
+          workItemContentEvents.add({
+            'id': id,
+            'group': group,
+            'accepted': allowed,
+            'title': title,
+            'descriptionWidget': descriptionWidget,
+            'fields': input.keys.where((key) => key != 'id').toList(),
+          });
+          debugPrint(
+            '[work_item_content_qa] scope=${group ? 'group' : 'project'} '
+            'accepted=$allowed sequence=${workItemContentEvents.length} '
+            'title=${input.containsKey('title')} description=${input.containsKey('descriptionWidget')}',
+          );
+          if (!allowed) {
+            return jsonResponse({
+              'data': {
+                'workItemUpdate': {
+                  'errors': ['Synthetic content update not permitted'],
+                  'workItem': null,
+                },
+              },
+            });
+          }
+          if (input.containsKey('title')) {
+            workItemContentTitles[group] = title as String;
+          }
+          if (input.containsKey('descriptionWidget')) {
+            workItemContentDescriptions[group] = description as String;
+            _editedWorkItemContent.add(group);
+          }
+          _workItemRevisions[id as String] = (_workItemRevisions[id] ?? 0) + 1;
+          if (failNextWorkItemContentAcknowledgement) {
+            failNextWorkItemContentAcknowledgement = false;
+            return jsonResponse({
+              'message': 'Synthetic content acknowledgement failure',
+            }, status: 503);
+          }
+          return jsonResponse({
+            'data': {
+              'workItemUpdate': {
+                'errors': <String>[],
+                'workItem': workItemContentRecord(group: group),
+              },
+            },
+          });
+        }
+      }
       if (operation == 'MobileWorkItemNotifications' &&
           _workItemStates.containsKey(variables['id'])) {
         workItemNotificationReads.add(variables['id'] as String);
@@ -1346,6 +1491,47 @@ class _QaChromeState extends State<_QaChrome> {
       ),
       items: [
         PopupMenuItem(
+          value: _QaNoteEditControl.contentAuthenticated,
+          child: _qaMenuLabel('還原內容帳號'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.contentAnonymous,
+          child: _qaMenuLabel('匿名讀取內容'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.allowContent,
+          child: _qaMenuLabel('允許內容編輯'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.denyContent,
+          child: _qaMenuLabel('撤回內容編輯權限'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.denyContentWrites,
+          child: _qaMenuLabel('拒絕內容寫入'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.reviseContent,
+          child: _qaMenuLabel('更新工作項目版本'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.failContentAcknowledgement,
+          child: _qaMenuLabel('下次內容確認失敗'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.failContentRead,
+          child: _qaMenuLabel('下次內容讀取失敗'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.absentDescription,
+          child: _qaMenuLabel('移除說明 Widget'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.presentDescription,
+          child: _qaMenuLabel('還原說明 Widget'),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
           value: _QaNoteEditControl.notificationAuthenticated,
           child: _qaMenuLabel('還原通知帳號'),
         ),
@@ -1416,6 +1602,50 @@ class _QaChromeState extends State<_QaChrome> {
 
   void _applyNoteEditControl(BuildContext context, _QaNoteEditControl control) {
     final message = switch (control) {
+      _QaNoteEditControl.contentAuthenticated => () {
+        widget.fixture.workItemContentAuthenticated = true;
+        return '內容帳號：已還原';
+      }(),
+      _QaNoteEditControl.contentAnonymous => () {
+        widget.fixture.workItemContentAuthenticated = false;
+        return '內容帳號：匿名';
+      }(),
+      _QaNoteEditControl.allowContent => () {
+        widget.fixture.workItemContentAllowed = true;
+        widget.fixture.workItemContentWritesAllowed = true;
+        return '內容編輯：允許';
+      }(),
+      _QaNoteEditControl.denyContent => () {
+        widget.fixture.workItemContentAllowed = false;
+        return '內容編輯權限：撤回';
+      }(),
+      _QaNoteEditControl.denyContentWrites => () {
+        widget.fixture.workItemContentWritesAllowed = false;
+        return '內容寫入：拒絕';
+      }(),
+      _QaNoteEditControl.reviseContent => () {
+        widget.fixture.reviseWorkItemContent(group: false);
+        widget.fixture.reviseWorkItemContent(group: true);
+        return '工作項目版本已更新';
+      }(),
+      _QaNoteEditControl.failContentAcknowledgement => () {
+        widget.fixture.failNextWorkItemContentAcknowledgement = true;
+        return '下一次內容確認將失敗';
+      }(),
+      _QaNoteEditControl.failContentRead => () {
+        widget.fixture.failNextWorkItemContentRead = true;
+        return '下一次內容讀取將失敗';
+      }(),
+      _QaNoteEditControl.absentDescription => () {
+        widget.fixture.workItemDescriptionPresent[false] = false;
+        widget.fixture.workItemDescriptionPresent[true] = false;
+        return '說明 Widget：已移除';
+      }(),
+      _QaNoteEditControl.presentDescription => () {
+        widget.fixture.workItemDescriptionPresent[false] = true;
+        widget.fixture.workItemDescriptionPresent[true] = true;
+        return '說明 Widget：已還原';
+      }(),
       _QaNoteEditControl.notificationAuthenticated => () {
         widget.fixture.workItemNotificationAuthenticated = true;
         return '通知帳號：已還原';

@@ -80,6 +80,18 @@ not inferred from a Work Item type name or an absent widget. GitLab's input has
 no atomic compare-and-set field. See the reviewed upstream
 [`Subscribe` mutation](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/mutations/work_items/subscribe.rb).
 
+Project/group Work Items also expose an on-demand title and Markdown description
+editor using account-scoped encrypted drafts. Opening reads fresh content and
+`updateWorkItem` permission; a missing DESCRIPTION widget permits title-only
+editing. Saving sends only changed fields, preserves Markdown whitespace, checks
+the actor, exact scope/type and original revision/content, then verifies one
+mutation with an independent readback. Any failed attempt requires reopening
+with fresh server state. GitLab accepts the nested `descriptionWidget` input and
+has no atomic compare-and-swap; this remains distinct from live private/iOS
+acceptance. See the reviewed
+[`Update` mutation](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/mutations/work_items/update.rb)
+and [current ledger](docs/MOBILE_WEB_PARITY_LEDGER.md).
+
 ## v0.5 — mobile UX overhaul and GitLab parity
 
 Still a development preview. Evidence is in the [v0.5 ledger](docs/V0_5_VERIFICATION.md); anything it does not list is **NOT_RUN**.

@@ -43,6 +43,8 @@ class EditField {
     this.hint,
     this.markdown = false,
     this.quickActions = false,
+    this.maxLength,
+    this.validator,
   }) : source = null,
        choices = const [],
        multi = false,
@@ -59,7 +61,9 @@ class EditField {
        lines = 1,
        markdown = false,
        toggle = false,
-       quickActions = false;
+       quickActions = false,
+       maxLength = null,
+       validator = null;
   const EditField.picker(
     this.key,
     this.label, {
@@ -72,7 +76,9 @@ class EditField {
        choices = const [],
        markdown = false,
        toggle = false,
-       quickActions = false;
+       quickActions = false,
+       maxLength = null,
+       validator = null;
   const EditField.toggle(
     this.key,
     this.label, {
@@ -85,11 +91,15 @@ class EditField {
        lines = 1,
        markdown = false,
        toggle = true,
-       quickActions = false;
+       quickActions = false,
+       maxLength = null,
+       validator = null;
   final String key, label, value;
   final List<EditChoice> choices;
   final bool required, multi, markdown, toggle, quickActions;
   final int lines;
+  final int? maxLength;
+  final String? Function(String value)? validator;
   final String? hint;
   final PickerSource? source;
 }
@@ -147,6 +157,7 @@ Future<bool> openEditor(
   String? baseRevision,
   bool persistent = true,
   bool blockRetryOnWriteUncertain = false,
+  bool blockRetryOnSaveFailure = false,
   bool projectToolsEnabled = true,
   bool Function()? isCurrent,
   GitLabApi? api,
@@ -166,6 +177,7 @@ Future<bool> openEditor(
           baseRevision: baseRevision,
           persistent: persistent,
           blockRetryOnWriteUncertain: blockRetryOnWriteUncertain,
+          blockRetryOnSaveFailure: blockRetryOnSaveFailure,
           projectToolsEnabled: projectToolsEnabled,
           isCurrent: isCurrent,
           api: api,
@@ -190,6 +202,7 @@ class ResourceEditor extends StatefulWidget {
     this.baseRevision,
     this.persistent = true,
     this.blockRetryOnWriteUncertain = false,
+    this.blockRetryOnSaveFailure = false,
     this.projectToolsEnabled = true,
     this.isCurrent,
     this.api,
@@ -207,6 +220,8 @@ class ResourceEditor extends StatefulWidget {
   final bool persistent;
   /// A creation whose result is unknown must be checked before another submit.
   final bool blockRetryOnWriteUncertain;
+  /// A single-use write target requires a fresh editor after every save error.
+  final bool blockRetryOnSaveFailure;
   final bool projectToolsEnabled;
   final bool Function()? isCurrent;
   final GitLabApi? api;
@@ -519,8 +534,9 @@ class _ResourceEditorState extends State<ResourceEditor> {
         final failure = safeFailure(e);
         setState(() {
           _error = failure;
-          if (widget.blockRetryOnWriteUncertain &&
-              failure.kind == FailureKind.writeUncertain) {
+          if (widget.blockRetryOnSaveFailure ||
+              (widget.blockRetryOnWriteUncertain &&
+                  failure.kind == FailureKind.writeUncertain)) {
             _saveBlocked = true;
           }
         });
@@ -621,9 +637,11 @@ class _ResourceEditorState extends State<ResourceEditor> {
                               onSwitchAccount: endSessionFrom(context),
                             ),
                           if (_saveBlocked)
-                            const Padding(
+                            Padding(
                               padding: EdgeInsets.only(top: 12),
-                              child: Text('請保留草稿並返回，重新讀取活動確認變更是否已套用，再決定下一步。'),
+                              child: Text(widget.blockRetryOnSaveFailure
+                                  ? '請保留草稿並返回，重新開啟編輯以確認最新內容後再儲存。'
+                                  : '請保留草稿並返回，重新讀取活動確認變更是否已套用，再決定下一步。'),
                             ),
                           for (final field in widget.fields)
                             Padding(
@@ -680,7 +698,12 @@ class _ResourceEditorState extends State<ResourceEditor> {
     scrollPadding: EdgeInsets.fromLTRB(20, 20, 20, field.markdown ? 80 : 20),
     onChanged: _changed,
     decoration: InputDecoration(labelText: field.label, helperText: field.hint),
-    validator: (value) => field.required && (value == null || value.trim().isEmpty) ? '此欄位必填' : null,
+    validator: (value) {
+      if (field.required && (value == null || value.trim().isEmpty)) return '此欄位必填';
+      final maxLength = field.maxLength;
+      if (maxLength != null && (value?.length ?? 0) > maxLength) return '不可超過 $maxLength 個字元';
+      return field.validator?.call(value ?? '');
+    },
   );
 
   Widget _choiceField(EditField field) {
