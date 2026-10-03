@@ -907,7 +907,15 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                 runSpacing: 8,
                 children: [
                   ChoiceChip(
-                    label: const Text('包含子群組與專案'),
+                    label: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 176),
+                      child: const Text(
+                        '包含子群組與專案',
+                        maxLines: 2,
+                        softWrap: true,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                     selected: _filter.includeDescendants,
                     onSelected: (selected) {
                       if (selected) _changeScope(true);
@@ -1524,6 +1532,25 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     return '${local.year}/${local.month.toString().padLeft(2, '0')}/${local.day.toString().padLeft(2, '0')}';
   }
 
+  Uri _shareUri(WorkItemGraphSummary summary) {
+    final project = summary.project;
+    final path = project == null
+        ? 'groups/${summary.namespace!.fullPath}/-/work_items/${summary.iid}'
+        : '${project.fullPath}/-/work_items/${summary.iid}';
+    return widget.account.instance.projectWeb(path);
+  }
+
+  Object _shareOwnerKey(WorkItemGraphSummary summary) => (
+    widget.account.key,
+    widget.api,
+    summary.id,
+    summary.project?.id,
+    summary.project?.fullPath,
+    summary.namespace?.id,
+    summary.namespace?.fullPath,
+    summary.iid,
+  );
+
   Color? _color(String raw) {
     final value = raw.replaceFirst('#', '');
     final parsed = int.tryParse(
@@ -1881,19 +1908,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         actions: [
           if (_detail != null)
             ResourceShareButton(
-              uri: widget.account.instance.projectWeb(
-                widget.project == null
-                    ? 'groups/${widget.namespacePath}/-/work_items/${widget.iid}'
-                    : '${widget.project!.path}/-/work_items/${widget.iid}',
-              ),
-              ownerKey: (
-                widget.account.key,
-                widget.api,
-                widget.project?.id,
-                widget.namespacePath,
-                widget.expectedNamespaceId,
-                widget.iid,
-              ),
+              uri: _shareUri(_detail!.summary),
+              ownerKey: _shareOwnerKey(_detail!.summary),
               isCurrent: widget.isCurrent,
             ),
           IconButton(

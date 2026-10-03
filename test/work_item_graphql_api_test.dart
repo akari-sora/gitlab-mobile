@@ -128,6 +128,20 @@ Map<String, Object?> _projectEnvelope({
   },
 };
 
+Map<String, Object?> _namespaceEnvelope({
+  required String namespaceId,
+  required String namespacePath,
+  required Map<String, Object?> detail,
+}) => {
+  'data': {
+    'namespace': {
+      'id': namespaceId,
+      'fullPath': namespacePath,
+      'workItem': detail,
+    },
+  },
+};
+
 Map<String, Object?> _connection(
   List<Object?> nodes, {
   bool hasNext = false,
@@ -501,6 +515,105 @@ void main() {
 
       expect(detail.summary.project, isNull);
       expect(detail.summary.namespace!.id, groupId);
+    },
+  );
+
+  test('namespace detail accepts a bound project namespace identity', () async {
+    const path = 'team/project';
+    const namespaceId = 'gid://gitlab/Namespaces::ProjectNamespace/142';
+    final detail = _detail(namespaceId: namespaceId, namespacePath: path)
+      ..['project'] = {'id': 'gid://gitlab/Project/42', 'fullPath': path};
+    final api = testApi(
+      FakeAdapter(
+        (_) => jsonResponse(
+          _namespaceEnvelope(
+            namespaceId: namespaceId,
+            namespacePath: path,
+            detail: detail,
+          ),
+        ),
+      ),
+    );
+    addTearDown(api.close);
+
+    final loaded = await api.namespaceWorkItem(
+      path,
+      7,
+      expectedNamespaceId: namespaceId,
+    );
+
+    expect(loaded.summary.project!.fullPath, path);
+    expect(loaded.summary.namespace!.id, namespaceId);
+  });
+
+  test(
+    'namespace detail rejects confused project and namespace scope',
+    () async {
+      const path = 'team/project';
+      const namespaceId = 'gid://gitlab/Namespaces::ProjectNamespace/142';
+
+      Future<void> expectInvalid(Map<String, Object?> detail) async {
+        final api = testApi(
+          FakeAdapter(
+            (_) => jsonResponse(
+              _namespaceEnvelope(
+                namespaceId: namespaceId,
+                namespacePath: path,
+                detail: detail,
+              ),
+            ),
+          ),
+        );
+        addTearDown(api.close);
+        await expectLater(
+          api.namespaceWorkItem(path, 7, expectedNamespaceId: namespaceId),
+          throwsA(_failure(FailureKind.invalidResponse)),
+        );
+      }
+
+      await expectInvalid(
+        _detail(namespaceId: namespaceId, namespacePath: path)
+          ..['project'] = {
+            'id': 'gid://gitlab/Project/42',
+            'fullPath': 'foreign/project',
+          },
+      );
+      await expectInvalid(
+        _detail(namespaceId: namespaceId, namespacePath: path)
+          ..['project'] = {'id': 'gid://gitlab/Group/42', 'fullPath': path},
+      );
+      await expectInvalid(
+        _detail(namespaceId: namespaceId, namespacePath: path)
+          ..['project'] = null,
+      );
+
+      const groupPath = 'team/group';
+      const wrongGroupId = 'gid://gitlab/Namespaces::Namespace/9';
+      final wrongGroupDetail = _detail(
+        namespaceId: wrongGroupId,
+        namespacePath: groupPath,
+      )..['project'] = null;
+      final wrongGroup = testApi(
+        FakeAdapter(
+          (_) => jsonResponse(
+            _namespaceEnvelope(
+              namespaceId: wrongGroupId,
+              namespacePath: groupPath,
+              detail: wrongGroupDetail,
+            ),
+          ),
+        ),
+      );
+      addTearDown(wrongGroup.close);
+
+      await expectLater(
+        wrongGroup.namespaceWorkItem(
+          groupPath,
+          7,
+          expectedNamespaceId: wrongGroupId,
+        ),
+        throwsA(_failure(FailureKind.invalidResponse)),
+      );
     },
   );
 

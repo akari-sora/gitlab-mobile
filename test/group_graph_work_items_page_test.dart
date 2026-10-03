@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
@@ -1209,6 +1210,23 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('group-work-item-filters')), findsOneWidget);
+    final scopeChip = find.widgetWithText(ChoiceChip, '包含子群組與專案');
+    final scopeLabel = find.descendant(
+      of: scopeChip,
+      matching: find.text('包含子群組與專案'),
+    );
+    final scopeParagraph = tester.renderObject<RenderParagraph>(scopeLabel);
+    final labelBoxes = scopeParagraph.getBoxesForSelection(
+      const TextSelection(baseOffset: 0, extentOffset: 8),
+    );
+    expect(scopeParagraph.didExceedMaxLines, isFalse);
+    expect(labelBoxes.length, greaterThanOrEqualTo(2));
+    expect(
+      tester.getRect(scopeChip).right,
+      lessThanOrEqualTo(
+        tester.getRect(find.byKey(const Key('group-work-item-filters'))).right,
+      ),
+    );
     expect(
       find.byKey(const Key('group-work-item-search'), skipOffstage: false),
       findsOneWidget,

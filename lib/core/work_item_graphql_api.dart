@@ -400,11 +400,10 @@ extension WorkItemGraphQlApi on GitLabApi {
         throw const ApiFailure(FailureKind.invisible);
       }
       final detail = _parseWorkItemDetail(namespace.container['workItem']);
-      if (detail.summary.iid != iid ||
-          detail.summary.namespace?.id != namespace.ref.id ||
-          detail.summary.namespace?.fullPath != path) {
+      if (detail.summary.iid != iid) {
         throw const FormatException('Wrong namespace work item');
       }
+      _requireNamespaceWorkItem(detail.summary, namespace.ref);
       return detail;
     } on FormatException {
       throw const ApiFailure(FailureKind.invalidResponse);
@@ -786,6 +785,31 @@ void _requireProjectWorkItem(
   if (item.project?.id != project.id ||
       item.project?.fullPath != project.fullPath) {
     throw const FormatException('Wrong work item project');
+  }
+}
+
+void _requireNamespaceWorkItem(
+  WorkItemGraphSummary item,
+  GraphResourceRef namespace,
+) {
+  final itemNamespace = item.namespace;
+  if (itemNamespace?.id != namespace.id ||
+      itemNamespace?.fullPath != namespace.fullPath) {
+    throw const FormatException('Wrong namespace work item');
+  }
+  final project = item.project;
+  if (project == null) {
+    if (!_isGraphResourceType(namespace.id, const {'Group'})) {
+      throw const FormatException('Wrong work item namespace type');
+    }
+    return;
+  }
+  if (!_isGraphResourceType(project.id, const {'Project'}) ||
+      !_isGraphResourceType(namespace.id, const {
+        'Namespaces::ProjectNamespace',
+      }) ||
+      project.fullPath != namespace.fullPath) {
+    throw const FormatException('Wrong work item project namespace');
   }
 }
 

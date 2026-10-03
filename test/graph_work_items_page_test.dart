@@ -7,6 +7,7 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/navigation.dart';
+import 'package:gitlab_mobile/shared/resource_share.dart';
 
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
@@ -175,6 +176,63 @@ ResponseBody _state(
   },
 });
 
+ResponseBody _namespaceDetail({
+  required int iid,
+  required String namespaceId,
+  required String namespacePath,
+  required String title,
+  String? projectId,
+  String? projectPath,
+}) => jsonResponse({
+  'data': {
+    'namespace': {
+      'id': namespaceId,
+      'fullPath': namespacePath,
+      'workItem': {
+        'id': 'gid://gitlab/WorkItem/$iid',
+        'iid': '$iid',
+        'title': title,
+        'state': 'OPEN',
+        'createdAt': '2026-09-01T01:02:03Z',
+        'updatedAt': '2026-09-02T03:04:05Z',
+        'project': projectId == null
+            ? null
+            : {'id': projectId, 'fullPath': projectPath},
+        'namespace': {'id': namespaceId, 'fullPath': namespacePath},
+        'workItemType': {
+          'id': 'gid://gitlab/WorkItems::Type/99',
+          'name': 'Issue',
+        },
+        'description': 'Verified namespace detail',
+        'widgets': const <Object?>[],
+      },
+    },
+  },
+});
+
+ResponseBody _namespaceState({
+  required int iid,
+  required String namespaceId,
+  required String namespacePath,
+  String? projectId,
+  String? projectPath,
+}) => jsonResponse({
+  'data': {
+    'workItem': {
+      'id': 'gid://gitlab/WorkItem/$iid',
+      'iid': '$iid',
+      'state': 'OPEN',
+      'updatedAt': '2026-09-02T03:04:05Z',
+      'project': projectId == null
+          ? null
+          : {'id': projectId, 'fullPath': projectPath},
+      'namespace': {'id': namespaceId, 'fullPath': namespacePath},
+      'workItemType': {'id': 'gid://gitlab/WorkItems::Type/99'},
+      'userPermissions': {'updateWorkItem': false},
+    },
+  },
+});
+
 ResponseBody _response(
   RequestOptions request, {
   String title = 'Customer follow-up',
@@ -294,6 +352,140 @@ void main() {
       lessThanOrEqualTo(320),
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'namespace detail shares a verified descendant project URL with instance subpath and port',
+    (tester) async {
+      const iid = 59;
+      const namespaceId = 'gid://gitlab/Namespaces::ProjectNamespace/194';
+      const path = 'qa/synthetic-group/child-project';
+      const projectId = 'gid://gitlab/Project/94';
+      final adapter = FakeAdapter((request) {
+        final query = (request.data as Map)['query'] as String;
+        if (query.contains('MobileWorkItemState')) {
+          return _namespaceState(
+            iid: iid,
+            namespaceId: namespaceId,
+            namespacePath: path,
+            projectId: projectId,
+            projectPath: path,
+          );
+        }
+        if (query.contains('MobileNamespaceWorkItem')) {
+          return _namespaceDetail(
+            iid: iid,
+            namespaceId: namespaceId,
+            namespacePath: path,
+            title: 'Descendant project item',
+            projectId: projectId,
+            projectPath: path,
+          );
+        }
+        throw StateError('Unexpected query');
+      });
+      final api = testApi(adapter, host: 'https://example.com:8443/gitlab');
+      addTearDown(api.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GraphWorkItemDetailPage.namespace(
+            account: _account(api, 7),
+            api: api,
+            namespacePath: path,
+            expectedNamespaceId: namespaceId,
+            iid: iid,
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      final share = tester.widget<ResourceShareButton>(
+        find.byType(ResourceShareButton),
+      );
+      expect(
+        share.uri.toString(),
+        'https://example.com:8443/gitlab/qa/synthetic-group/child-project/-/work_items/59',
+      );
+    },
+  );
+
+  testWidgets('namespace group detail keeps the groups share URL', (
+    tester,
+  ) async {
+    const iid = 49;
+    const namespaceId = 'gid://gitlab/Group/9';
+    const path = 'qa/synthetic-group/child-group';
+    final adapter = FakeAdapter((request) {
+      final query = (request.data as Map)['query'] as String;
+      if (query.contains('MobileWorkItemState')) {
+        return _namespaceState(
+          iid: iid,
+          namespaceId: namespaceId,
+          namespacePath: path,
+        );
+      }
+      if (query.contains('MobileNamespaceWorkItem')) {
+        return _namespaceDetail(
+          iid: iid,
+          namespaceId: namespaceId,
+          namespacePath: path,
+          title: 'Descendant group item',
+        );
+      }
+      throw StateError('Unexpected query');
+    });
+    final api = testApi(adapter, host: 'https://example.com:8443/gitlab');
+    addTearDown(api.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GraphWorkItemDetailPage.namespace(
+          account: _account(api, 7),
+          api: api,
+          namespacePath: path,
+          expectedNamespaceId: namespaceId,
+          iid: iid,
+        ),
+      ),
+    );
+    await settleNetworkWidgets(tester);
+
+    final share = tester.widget<ResourceShareButton>(
+      find.byType(ResourceShareButton),
+    );
+    expect(
+      share.uri.toString(),
+      'https://example.com:8443/gitlab/groups/qa/synthetic-group/child-group/-/work_items/49',
+    );
+  });
+
+  testWidgets('direct project detail keeps the project share URL', (
+    tester,
+  ) async {
+    final adapter = FakeAdapter(_response);
+    final api = testApi(adapter, host: 'https://example.com:8443/gitlab');
+    addTearDown(api.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GraphWorkItemDetailPage.project(
+          account: _account(api, 7),
+          api: api,
+          project: _project,
+          iid: 7,
+        ),
+      ),
+    );
+    await settleNetworkWidgets(tester);
+
+    final share = tester.widget<ResourceShareButton>(
+      find.byType(ResourceShareButton),
+    );
+    expect(
+      share.uri.toString(),
+      'https://example.com:8443/gitlab/team/example/-/work_items/7',
+    );
   });
 
   testWidgets(
