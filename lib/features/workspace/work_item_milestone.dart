@@ -315,7 +315,23 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
       Navigator.of(context).pop(saved.snapshot);
     } catch (error) {
       if (!mounted || !widget.isCurrent()) return;
-      setState(() => _saveError = safeFailure(error));
+      final failure = safeFailure(error);
+      // This selection lives only on this page. Closing it does not save a draft.
+      final detail = switch (failure.kind) {
+        FailureKind.validation => '里程碑設定未被接受。重新開啟後，請重新選擇里程碑。',
+        FailureKind.conflict => '工作項目已變更，請重新開啟確認最新的里程碑設定。',
+        FailureKind.writeUncertain => '連線在寫入時中斷。請重新開啟確認目前設定，避免重複送出。',
+        _ => failure.detail,
+      };
+      setState(() {
+        _saveError = ApiFailure(
+          failure.kind,
+          status: failure.status,
+          retryAt: failure.retryAt,
+          title: failure.title,
+          detail: detail,
+        );
+      });
     } finally {
       if (mounted && widget.isCurrent()) setState(() => _writing = false);
     }
@@ -326,28 +342,39 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
     required WorkItemMilestoneSelection selection,
     bool? expired,
     Key? key,
-  }) => Semantics(
-    key: key,
-    button: true,
-    checked: _selection?.milestone?.id == selection.milestone?.id,
-    inMutuallyExclusiveGroup: true,
-    child: ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      leading: ExcludeSemantics(
-        child: Icon(
+  }) {
+    final milestone = selection.milestone;
+    final onSelect = _editable
+        ? () => setState(() => _selection = selection)
+        : null;
+    return Semantics(
+      key: key,
+      excludeSemantics: true,
+      label: [
+        title,
+        if (milestone != null) _milestoneDetailsText(milestone, expired),
+      ].join('\n'),
+      button: true,
+      enabled: _editable,
+      checked: _selection?.milestone?.id == selection.milestone?.id,
+      inMutuallyExclusiveGroup: true,
+      onTap: onSelect,
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        leading: Icon(
           _selection?.milestone?.id == selection.milestone?.id
               ? Icons.radio_button_checked
               : Icons.radio_button_unchecked,
         ),
+        title: Text(title),
+        subtitle: selection.milestone == null
+            ? null
+            : _MilestoneDetails(selection.milestone!, expired: expired),
+        enabled: _editable,
+        onTap: onSelect,
       ),
-      title: Text(title),
-      subtitle: selection.milestone == null
-          ? null
-          : _MilestoneDetails(selection.milestone!, expired: expired),
-      enabled: _editable,
-      onTap: _editable ? () => setState(() => _selection = selection) : null,
-    ),
-  );
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -529,7 +556,11 @@ class _MilestoneDetails extends StatelessWidget {
   final bool? expired;
 
   @override
-  Widget build(BuildContext context) => Text(
+  Widget build(BuildContext context) =>
+      Text(_milestoneDetailsText(milestone, expired));
+}
+
+String _milestoneDetailsText(WorkItemMilestoneValue milestone, bool? expired) =>
     [
       '所屬：${milestone.group?.fullPath ?? milestone.project?.fullPath ?? '未知'}',
       if (milestone.state.toLowerCase() == 'closed') '已關閉',
@@ -538,9 +569,7 @@ class _MilestoneDetails extends StatelessWidget {
         '開始：${_milestoneCalendarDate(milestone.startDate!)}',
       if (milestone.dueDate != null)
         '到期：${_milestoneCalendarDate(milestone.dueDate!)}',
-    ].join('\n'),
-  );
-}
+    ].join('\n');
 
 String _milestoneCalendarDate(DateTime value) =>
     '${value.year}/${value.month.toString().padLeft(2, '0')}/${value.day.toString().padLeft(2, '0')}';

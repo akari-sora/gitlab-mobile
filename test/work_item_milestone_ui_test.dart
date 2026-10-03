@@ -114,6 +114,8 @@ final class _MilestoneServer {
   bool canSet = true;
   bool failChoices = false;
   bool rejectNextWrite = false;
+  bool conflictNextPreflight = false;
+  bool loseNextWriteAcknowledgement = false;
   Completer<ResponseBody>? choiceGate;
   Completer<ResponseBody>? oldSearch;
   int reads = 0;
@@ -153,6 +155,19 @@ final class _MilestoneServer {
     final query = body['query'] as String;
     if (query.startsWith('query MobileWorkItemMilestone(')) {
       reads++;
+      if (conflictNextPreflight && reads == 2) {
+        conflictNextPreflight = false;
+        return jsonResponse({
+          'data': {
+            'currentUser': {'id': 'gid://gitlab/User/7'},
+            'workItem': _workItem(
+              milestone: current,
+              updatedAt: '2026-10-03T10:00:01.000Z',
+              canSet: canSet,
+            ),
+          },
+        });
+      }
       return jsonResponse(readEnvelope());
     }
     if (query.startsWith('query MobileProjectWorkItemMilestones(')) {
@@ -193,6 +208,10 @@ final class _MilestoneServer {
             },
           },
         });
+      }
+      if (loseNextWriteAcknowledgement) {
+        loseNextWriteAcknowledgement = false;
+        return jsonResponse({'message': 'lost acknowledgement'}, status: 503);
       }
       final widget = lastInput!['milestoneWidget'] as Map;
       final desiredId = widget['milestoneId'];
@@ -352,49 +371,50 @@ void main() {
     await _openPicker(tester);
 
     final current = find.byKey(const ValueKey('work-item-milestone-current'));
+    final clear = find.byKey(const ValueKey('work-item-milestone-clear'));
     final candidate = find.byKey(
       const ValueKey('work-item-milestone-choice-gid://gitlab/Milestone/6'),
     );
+    void expectChoice(
+      Finder finder, {
+      required bool checked,
+      required String label,
+    }) {
+      expect(finder, findsOneWidget);
+      final node = tester.getSemantics(finder);
+      expect(
+        node,
+        isSemantics(
+          isButton: true,
+          hasCheckedState: true,
+          isChecked: checked,
+          isInMutuallyExclusiveGroup: true,
+          hasTapAction: true,
+        ),
+      );
+      expect(node.label, contains(label));
+      expect(
+        node.childrenCountInTraversalOrder,
+        0,
+        reason: 'the label and radio state must be one focusable AX node',
+      );
+    }
+
+    expectChoice(current, checked: true, label: '目前：October');
+    expectChoice(clear, checked: false, label: '移除里程碑');
+    expectChoice(candidate, checked: false, label: 'November');
+    final candidateNode = tester.getSemantics(candidate);
     expect(
-      tester.getSemantics(current),
-      isSemantics(
-        isButton: true,
-        hasCheckedState: true,
-        isChecked: true,
-        isInMutuallyExclusiveGroup: true,
-      ),
-    );
-    expect(
-      tester.getSemantics(candidate),
-      isSemantics(
-        isButton: true,
-        hasCheckedState: true,
-        isChecked: false,
-        isInMutuallyExclusiveGroup: true,
-      ),
+      candidateNode.label,
+      allOf(contains('所屬：studio/mobile-workspace'), contains('到期：2026/10/31')),
     );
 
     await tester.tap(candidate);
     await tester.pump();
 
-    expect(
-      tester.getSemantics(current),
-      isSemantics(
-        isButton: true,
-        hasCheckedState: true,
-        isChecked: false,
-        isInMutuallyExclusiveGroup: true,
-      ),
-    );
-    expect(
-      tester.getSemantics(candidate),
-      isSemantics(
-        isButton: true,
-        hasCheckedState: true,
-        isChecked: true,
-        isInMutuallyExclusiveGroup: true,
-      ),
-    );
+    expectChoice(current, checked: false, label: '目前：October');
+    expectChoice(clear, checked: false, label: '移除里程碑');
+    expectChoice(candidate, checked: true, label: 'November');
     semantics.dispose();
   });
 
@@ -541,6 +561,9 @@ void main() {
 
       expect(server.writes, 1);
       expect(find.textContaining('將更新為：November'), findsOneWidget);
+      expect(find.text('GitLab 未接受里程碑更新'), findsOneWidget);
+      expect(find.text('里程碑設定未被接受。重新開啟後，請重新選擇里程碑。'), findsOneWidget);
+      expect(find.textContaining('草稿已保留'), findsNothing);
       final save = tester.widget<FilledButton>(
         find.byKey(const ValueKey('work-item-milestone-save')),
       );
@@ -562,6 +585,51 @@ void main() {
       );
     },
   );
+
+  for (final failure in ['conflict', 'writeUncertain']) {
+    testWidgets(
+      '$failure save notice does not claim an in-memory choice is a saved draft',
+      (tester) async {
+        final server = _MilestoneServer();
+        if (failure == 'conflict') {
+          server.conflictNextPreflight = true;
+        } else {
+          server.loseNextWriteAcknowledgement = true;
+        }
+        final api = testApi(FakeAdapter(server.respond));
+        addTearDown(api.close);
+        await tester.pumpWidget(_controlHost(api: api, onSaved: (_) {}));
+        await _openPicker(tester);
+        await tester.tap(find.text('November'));
+        await tester.tap(
+          find.byKey(const ValueKey('work-item-milestone-save')),
+        );
+        final title = failure == 'conflict' ? '內容已經變更' : '尚未確認操作結果';
+        final recovery = failure == 'conflict'
+            ? '工作項目已變更，請重新開啟確認最新的里程碑設定。'
+            : '連線在寫入時中斷。請重新開啟確認目前設定，避免重複送出。';
+        await pumpUntil(
+          tester,
+          () => find.text(title).evaluate().isNotEmpty,
+          description: '$failure milestone save failure is visible',
+        );
+
+        expect(find.textContaining('草稿已保留'), findsNothing);
+        expect(find.text(recovery), findsOneWidget);
+        expect(find.textContaining('將更新為：November'), findsOneWidget);
+        expect(server.writes, failure == 'conflict' ? 0 : 1);
+        final save = tester.widget<FilledButton>(
+          find.byKey(const ValueKey('work-item-milestone-save')),
+        );
+        expect(save.onPressed, isNull);
+        await tester.tap(
+          find.byKey(const ValueKey('work-item-milestone-save')),
+        );
+        await tester.pump();
+        expect(server.writes, failure == 'conflict' ? 0 : 1);
+      },
+    );
+  }
 
   testWidgets('owner invalidation dismisses an open picker route', (
     tester,
