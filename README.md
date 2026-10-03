@@ -13,8 +13,8 @@ graphs, actual pipeline dependency graphs, package/container/Terraform registrie
 native contributor/repository/CI analytics, lazy multi-file Snippets and guarded
 file actions, server-discovered GraphQL Work Item types, bounded project/group-owned
 lists, group-list deep links and project/group details with guarded close/reopen actions and lazy status, milestone, weight, iteration, health, time-tracking and
-development attributes, a lazy read-only activity timeline with bounded discussion
-and reply paging, collapsed long descriptions, and typed Task/Incident workflows
+development attributes, a lazy read-only activity timeline with server-side activity/comment/history filters,
+oldest/newest ordering and bounded discussion/reply paging, collapsed long descriptions, and typed Task/Incident workflows
 with separate incident escalation state. Issue/MR filters use server
 ordering. Phone board columns, vertical graphs and lazy lists retain native
 navigation. The [full-function ledger](docs/MOBILE_WEB_PARITY_LEDGER.md) records

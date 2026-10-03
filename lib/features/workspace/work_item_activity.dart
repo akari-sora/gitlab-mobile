@@ -16,6 +16,17 @@ const _maxRenderedActivityItems = 100;
 const _maxRetainedNotes = 2000;
 const _maxRetainedBodyCharacters = 4 * 1024 * 1024;
 
+String _filterLabel(WorkItemActivityFilter filter) => switch (filter) {
+  WorkItemActivityFilter.all => '全部活動',
+  WorkItemActivityFilter.comments => '只看留言',
+  WorkItemActivityFilter.history => '只看歷史',
+};
+
+String _orderLabel(WorkItemActivityOrder order) => switch (order) {
+  WorkItemActivityOrder.oldestFirst => '最舊優先',
+  WorkItemActivityOrder.newestFirst => '最新優先',
+};
+
 /// A bounded, read-only activity reader for a work item.
 ///
 /// Nothing is requested until the user expands the section. Each server page
@@ -55,7 +66,11 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   bool _retentionLimitReached = false;
   int _activePage = 0;
   int _epoch = 0;
+  int _ownerEpoch = 0;
   int _retainedBodyCharacters = 0;
+  WorkItemActivityFilter _filter = WorkItemActivityFilter.all;
+  WorkItemActivityOrder _order = WorkItemActivityOrder.oldestFirst;
+  bool _controlsSupported = true;
 
   bool get _hasNotesWidget =>
       widget.detail.widgetTypes.any((type) => type.toUpperCase() == 'NOTES');
@@ -104,19 +119,49 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   }
 
   void _reset({bool notify = true}) {
+    _clearFeed();
+    _ownerEpoch++;
+    _expanded = false;
+    _filter = WorkItemActivityFilter.all;
+    _order = WorkItemActivityOrder.oldestFirst;
+    _controlsSupported = true;
+    if (notify && mounted) setState(() {});
+  }
+
+  void _clearFeed() {
     _epoch++;
     _pages.clear();
     _retainedNoteIds.clear();
     _attachmentBudget = AttachmentBudget();
     _initialError = null;
     _nextPageError = null;
-    _expanded = false;
     _loadingInitial = false;
     _loadingNextPage = false;
     _retentionLimitReached = false;
     _activePage = 0;
     _retainedBodyCharacters = 0;
-    if (notify && mounted) setState(() {});
+  }
+
+  void _changeSelection({
+    WorkItemActivityFilter? filter,
+    WorkItemActivityOrder? order,
+  }) {
+    if (!_controlsSupported || !_current(_epoch)) return;
+    final selectedFilter = filter ?? _filter;
+    final selectedOrder = order ?? _order;
+    if (selectedFilter == _filter && selectedOrder == _order) return;
+    setState(() {
+      _clearFeed();
+      _filter = selectedFilter;
+      _order = selectedOrder;
+    });
+    if (_expanded) unawaited(_loadInitial());
+  }
+
+  void _refresh() {
+    if (!_current(_epoch) || _loadingInitial || _loadingNextPage) return;
+    setState(_clearFeed);
+    if (_expanded) unawaited(_loadInitial());
   }
 
   Future<void> _loadInitial() async {
@@ -130,6 +175,8 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
     try {
       final result = await widget.api.workItemActivity(
         expected,
+        filter: _filter,
+        order: _order,
         isCurrent: () => _current(epoch),
       );
       if (!_current(epoch)) return;
@@ -138,7 +185,12 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
         setState(() => _retentionLimitReached = true);
         return;
       }
-      setState(() => _pages.add(_DiscussionPage(result)));
+      setState(() {
+        _filter = result.filter;
+        _order = result.order;
+        _controlsSupported = result.controlsSupported;
+        _pages.add(_DiscussionPage(result));
+      });
     } catch (error) {
       if (!_current(epoch)) return;
       final failure = safeFailure(error);
@@ -303,7 +355,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
       key: const ValueKey('work-item-activity'),
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
-        key: ValueKey('work-item-activity-expansion-$_epoch'),
+        key: ValueKey('work-item-activity-expansion-$_ownerEpoch'),
         maintainState: false,
         title: Text('活動', style: Theme.of(context).textTheme.titleMedium),
         subtitle: const Text('留言與系統事件'),
@@ -325,6 +377,134 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   }
 
   Widget _content(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _selectionControls(context),
+        const SizedBox(height: 16),
+        _feedContent(context),
+      ],
+    );
+  }
+
+  Widget _selectionControls(BuildContext context) {
+    final enabled = _controlsSupported && _current(_epoch);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final sideBySide =
+                constraints.maxWidth >= 300 &&
+                MediaQuery.textScalerOf(context).scale(14) <= 18.2;
+            final width = sideBySide
+                ? (constraints.maxWidth - 12) / 2
+                : constraints.maxWidth;
+            return Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                SizedBox(
+                  width: width,
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: '活動篩選',
+                      border: OutlineInputBorder(),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<WorkItemActivityFilter>(
+                        key: const ValueKey('work-item-activity-filter'),
+                        value: _filter,
+                        isExpanded: true,
+                        itemHeight: null,
+                        onChanged: enabled
+                            ? (value) {
+                                if (value != null) {
+                                  _changeSelection(filter: value);
+                                }
+                              }
+                            : null,
+                        items: [
+                          for (final value in WorkItemActivityFilter.values)
+                            DropdownMenuItem(
+                              value: value,
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  minHeight: 48,
+                                ),
+                                child: Align(
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: Text(_filterLabel(value)),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  width: width,
+                  child: InputDecorator(
+                    decoration: const InputDecoration(
+                      labelText: '活動排序',
+                      border: OutlineInputBorder(),
+                    ),
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<WorkItemActivityOrder>(
+                        key: const ValueKey('work-item-activity-order'),
+                        value: _order,
+                        isExpanded: true,
+                        itemHeight: null,
+                        onChanged: enabled
+                            ? (value) {
+                                if (value != null) {
+                                  _changeSelection(order: value);
+                                }
+                              }
+                            : null,
+                        items: [
+                          for (final value in WorkItemActivityOrder.values)
+                            DropdownMenuItem(
+                              value: value,
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(
+                                  minHeight: 48,
+                                ),
+                                child: Align(
+                                  alignment: AlignmentDirectional.centerStart,
+                                  child: Text(_orderLabel(value)),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        if (!_controlsSupported)
+          const Padding(
+            padding: EdgeInsets.only(top: 12),
+            child: Text('此實例未提供活動篩選或排序，顯示全部活動（最舊優先）。'),
+          ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          key: const ValueKey('work-item-activity-refresh'),
+          onPressed: !_current(_epoch) || _loadingInitial || _loadingNextPage
+              ? null
+              : _refresh,
+          icon: const Icon(Icons.refresh),
+          label: const Text('重新載入活動'),
+        ),
+      ],
+    );
+  }
+
+  Widget _feedContent(BuildContext context) {
     if (_loadingInitial) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 16),
@@ -359,7 +539,11 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('尚無活動'),
+          Text(switch (_filter) {
+            WorkItemActivityFilter.all => '尚無活動',
+            WorkItemActivityFilter.comments => '尚無留言',
+            WorkItemActivityFilter.history => '尚無歷史活動',
+          }),
           if (page.result.nextDiscussions != null)
             const Padding(
               padding: EdgeInsets.only(top: 8),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/work_item_activity_models.dart';
 import 'package:gitlab_mobile/core/work_item_state_models.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_extras.dart';
@@ -11,6 +12,147 @@ import '../tool/emulator_ui.dart';
 import 'support/widget_settle.dart';
 
 void main() {
+  test(
+    'activity fixture covers both scopes and all six server streams',
+    () async {
+      final fixture = EmulatorQaFixture();
+      addTearDown(fixture.api.close);
+      final project = await fixture.api.projectWorkItem(fixture.project, 31);
+      final group = await fixture.api.namespaceWorkItem(
+        'qa/synthetic-group',
+        41,
+        expectedNamespaceId: 'gid://gitlab/Group/84',
+      );
+      for (final detail in [project, group]) {
+        for (final filter in WorkItemActivityFilter.values) {
+          for (final order in WorkItemActivityOrder.values) {
+            var page = await fixture.api.workItemActivity(
+              detail.summary,
+              filter: filter,
+              order: order,
+            );
+            final discussions = [...page.snapshot.discussions.items];
+            expect(discussions, hasLength(20));
+            while (page.nextDiscussions != null) {
+              page = await fixture.api.workItemActivityNext(
+                page.nextDiscussions!,
+              );
+              expect(page.filter, filter);
+              expect(page.order, order);
+              discussions.addAll(page.snapshot.discussions.items);
+            }
+            expect(
+              discussions,
+              hasLength(filter == WorkItemActivityFilter.all ? 48 : 24),
+            );
+            expect(
+              discussions.map((entry) => entry.id).toSet(),
+              hasLength(discussions.length),
+            );
+            final timestamps = discussions
+                .map((entry) => entry.createdAt)
+                .toList();
+            for (var i = 1; i < timestamps.length; i++) {
+              expect(
+                order == WorkItemActivityOrder.oldestFirst
+                    ? timestamps[i].isAfter(timestamps[i - 1])
+                    : timestamps[i].isBefore(timestamps[i - 1]),
+                isTrue,
+              );
+            }
+            final notes = discussions.expand((entry) => entry.notes.items);
+            if (filter != WorkItemActivityFilter.all) {
+              expect(
+                notes.every(
+                  (note) =>
+                      note.system == (filter == WorkItemActivityFilter.history),
+                ),
+                isTrue,
+              );
+            }
+          }
+        }
+      }
+      expect(fixture.workItemStateEvents, isEmpty);
+      expect(fixture.unhandled, isEmpty);
+      expect(
+        fixture.adapter.requests.every(
+          (request) =>
+              request.uri.host == 'qa.invalid' &&
+              !((request.data as Map)['query'] as String).trimLeft().startsWith(
+                'mutation',
+              ),
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  for (final group in [false, true]) {
+    testWidgets(
+      '320dp scaled ${group ? 'group' : 'project'} activity controls reach fresh pages',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(320, 1100);
+        tester.platformDispatcher.textScaleFactorTestValue = 2;
+        addTearDown(tester.view.reset);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+        await tester.pumpWidget(buildEmulatorQaApp(qaEnabled: true));
+        await tester.pumpAndSettle();
+        final destination = find.text(group ? '群組 Work Item' : '專案 Work Item');
+        await tester.scrollUntilVisible(destination, 200);
+        await tester.pumpAndSettle();
+        await tester.tap(destination);
+        await settleNetworkWidgets(tester);
+        await tester.scrollUntilVisible(find.text('活動'), 200);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('活動'));
+        await settleNetworkWidgets(tester);
+        for (final choice in [
+          ('work-item-activity-order', '最新優先'),
+          ('work-item-activity-filter', '只看留言'),
+        ]) {
+          final control = find.byKey(ValueKey(choice.$1));
+          await tester.ensureVisible(control);
+          await tester.pumpAndSettle();
+          await tester.tap(control);
+          await tester.pumpAndSettle();
+          await tester.tap(find.text(choice.$2).last);
+          await settleNetworkWidgets(tester);
+        }
+        expect(find.text('Synthetic comment 47'), findsOneWidget);
+        expect(find.textContaining('Synthetic history 48'), findsNothing);
+        await tester.ensureVisible(find.text('載入下一頁').first);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('載入下一頁').first);
+        await settleNetworkWidgets(tester);
+        expect(find.text('Synthetic comment 7'), findsOneWidget);
+        expect(find.text('第 2 / 2 頁'), findsWidgets);
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('work-item-activity-filter')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('work-item-activity-filter')),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('只看歷史').last);
+        await settleNetworkWidgets(tester);
+        expect(find.textContaining('Synthetic history 48'), findsOneWidget);
+        expect(find.text('Synthetic comment 7'), findsNothing);
+        expect(find.text('第 1 / 1 頁'), findsWidgets);
+        await tester.tap(find.text('結束 Session'));
+        await settleNetworkWidgets(tester);
+        expect(
+          find.byKey(const ValueKey('work-item-activity-filter')),
+          findsNothing,
+        );
+        expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   test('QA target refuses to build without the explicit dart define', () {
     expect(
       () => buildEmulatorQaApp(qaEnabled: false),

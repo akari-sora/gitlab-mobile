@@ -10,7 +10,7 @@ pipeline dependency graphs, registries with verified package-file downloads,
 lazy multi-file Snippets, typed Task/Incident
 workflows, native contributor/repository/CI analytics and GraphQL Work Items
 with bounded group-owned lists, seven independently loaded attribute kinds and
-lazy read-only activity and guarded project/group close/reopen.
+lazy read-only activity with server-side filtering/order and guarded project/group close/reopen.
 Long descriptions collapse before building Markdown. Account-client
 read caching, request sharing, lazy list derivation and syntax-span LRU reduce
 repeated work. See [the parity/performance report](MOBILE_PARITY_PERFORMANCE.md)
@@ -18,7 +18,7 @@ and [the full-function ledger](MOBILE_WEB_PARITY_LEDGER.md).
 
 Core board and draft workflows now have source/tests. Draft bulk publication still
 has GitLab's concurrent-change interval after its final GET. GraphQL Work Item
-remaining mutations, activity filtering/order/replies and remaining widgets, descendant
+remaining mutations, activity reply creation and remaining widgets, descendant
 group Work Item aggregation and list filters,
 paid board scope/list creation, all-branch graph,
 registry publishing/policies and complete type-specific installation workflows,

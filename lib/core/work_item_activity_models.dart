@@ -4,6 +4,25 @@ enum WorkItemActivityAvailability { present, absent, widgetsUnavailable }
 
 enum WorkItemActivityConnectionAvailability { present, unavailable }
 
+enum WorkItemActivityFilter {
+  all('ALL_NOTES'),
+  comments('ONLY_COMMENTS'),
+  history('ONLY_ACTIVITY');
+
+  const WorkItemActivityFilter(this.graphValue);
+
+  final String graphValue;
+}
+
+enum WorkItemActivityOrder {
+  oldestFirst('CREATED_ASC'),
+  newestFirst('CREATED_DESC');
+
+  const WorkItemActivityOrder(this.graphValue);
+
+  final String graphValue;
+}
+
 final class WorkItemActivityConnection<T> {
   WorkItemActivityConnection({
     required this.availability,

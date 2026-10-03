@@ -21,6 +21,42 @@ author { id name username }
 
 final _workItemActivityQuery =
     '''
+query MobileWorkItemActivity(
+  \$id: WorkItemID!
+  \$after: String
+  \$filter: NotesFilterType!
+  \$sort: WorkItemDiscussionsSort!
+) {
+  workItem(id: \$id) {
+    $_workItemActivityIdentityFields
+    widgets {
+      type
+      ... on WorkItemWidgetNotes {
+        discussions(
+          first: $_workItemActivityPageSize
+          after: \$after
+          filter: \$filter
+          sort: \$sort
+        ) {
+          nodes {
+            id
+            replyId
+            createdAt
+            notes(first: $_workItemActivityPageSize) {
+              nodes { $_workItemActivityNoteFields }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }
+  }
+}
+''';
+
+final _workItemActivityLegacyQuery =
+    '''
 query MobileWorkItemActivity(\$id: WorkItemID!, \$after: String) {
   workItem(id: \$id) {
     $_workItemActivityIdentityFields
@@ -44,6 +80,8 @@ query MobileWorkItemActivity(\$id: WorkItemID!, \$after: String) {
   }
 }
 ''';
+
+final _workItemActivityControlsUnsupported = Expando<bool>();
 
 final _workItemDiscussionNotesQuery =
     '''
@@ -75,12 +113,18 @@ query MobileWorkItemDiscussionNotes(
 final class WorkItemActivityPage {
   WorkItemActivityPage._({
     required this.snapshot,
+    required this.filter,
+    required this.order,
+    required this.controlsSupported,
     required this.nextDiscussions,
     required Map<String, WorkItemDiscussionNotesContinuation>
     nextNotesByDiscussion,
   }) : nextNotesByDiscussion = Map.unmodifiable(nextNotesByDiscussion);
 
   final WorkItemActivitySnapshot snapshot;
+  final WorkItemActivityFilter filter;
+  final WorkItemActivityOrder order;
+  final bool controlsSupported;
   final WorkItemActivityContinuation? nextDiscussions;
   final Map<String, WorkItemDiscussionNotesContinuation> nextNotesByDiscussion;
 }
@@ -107,15 +151,24 @@ final class WorkItemActivityContinuation {
     required _WorkItemActivityIdentity identity,
     required String cursor,
     required Set<String> seenCursors,
+    required WorkItemActivityFilter filter,
+    required WorkItemActivityOrder order,
+    required bool controlsSupported,
   }) : _owner = owner,
        _identity = identity,
        _cursor = cursor,
-       _seenCursors = Set.unmodifiable(seenCursors);
+       _seenCursors = Set.unmodifiable(seenCursors),
+       _filter = filter,
+       _order = order,
+       _controlsSupported = controlsSupported;
 
   final GitLabApi _owner;
   final _WorkItemActivityIdentity _identity;
   final String _cursor;
   final Set<String> _seenCursors;
+  final WorkItemActivityFilter _filter;
+  final WorkItemActivityOrder _order;
+  final bool _controlsSupported;
 }
 
 /// Opaque capability minted from a note returned by a validated activity page.
@@ -158,11 +211,15 @@ typedef _WorkItemActivityIdentity = ({
 extension WorkItemActivityApi on GitLabApi {
   Future<WorkItemActivityPage> workItemActivity(
     WorkItemGraphSummary expected, {
+    WorkItemActivityFilter filter = WorkItemActivityFilter.all,
+    WorkItemActivityOrder order = WorkItemActivityOrder.oldestFirst,
     bool Function()? isCurrent,
   }) async {
     _validateExpectedAttributeIdentity(expected);
     return await _readWorkItemActivity(
       _activityIdentityFromExpected(expected),
+      filter: filter,
+      order: order,
       isCurrent: isCurrent,
     );
   }
@@ -176,6 +233,9 @@ extension WorkItemActivityApi on GitLabApi {
       continuation._identity,
       after: continuation._cursor,
       seenCursors: continuation._seenCursors,
+      filter: continuation._filter,
+      order: continuation._order,
+      controlsSupported: continuation._controlsSupported,
       isCurrent: isCurrent,
     );
   }
@@ -248,20 +308,47 @@ extension WorkItemActivityApi on GitLabApi {
     _WorkItemActivityIdentity expected, {
     String? after,
     Set<String> seenCursors = const {},
+    required WorkItemActivityFilter filter,
+    required WorkItemActivityOrder order,
+    bool? controlsSupported,
     bool Function()? isCurrent,
   }) async {
     final cursor = _validatedWorkItemCursor(after);
+    final initialRequest = cursor == null;
+    var useControls =
+        controlsSupported ?? _workItemActivityControlsUnsupported[this] != true;
     _requireCurrentWorkItemRequest(isCurrent);
-    final response = await _read(
-      instance.graphQL,
-      method: 'POST',
-      graphQuery: true,
-      data: {
-        'query': _workItemActivityQuery,
-        'variables': {'id': expected.id, 'after': cursor},
-      },
+    var response = await _readWorkItemActivityResponse(
+      expected.id,
+      cursor,
+      filter: filter,
+      order: order,
+      controlsSupported: useControls,
     );
     _requireCurrentWorkItemRequest(isCurrent);
+    if (useControls && _activityControlsSchemaUnavailable(response.bytes)) {
+      if (!initialRequest) {
+        throw const ApiFailure(
+          FailureKind.unsupported,
+          title: '實例未提供活動篩選與排序',
+          detail: '這個 GitLab 版本不支援活動篩選或排序。',
+        );
+      }
+      _workItemActivityControlsUnsupported[this] = true;
+      useControls = false;
+      response = await _readWorkItemActivityResponse(
+        expected.id,
+        null,
+        filter: WorkItemActivityFilter.all,
+        order: WorkItemActivityOrder.oldestFirst,
+        controlsSupported: false,
+      );
+      _requireCurrentWorkItemRequest(isCurrent);
+    }
+    final effectiveFilter = useControls ? filter : WorkItemActivityFilter.all;
+    final effectiveOrder = useControls
+        ? order
+        : WorkItemActivityOrder.oldestFirst;
     try {
       final data = _workItemGraphData(response.bytes);
       if (data['workItem'] == null) {
@@ -299,6 +386,9 @@ extension WorkItemActivityApi on GitLabApi {
           availability: parsed.availability,
           discussions: parsed.discussions,
         ),
+        filter: effectiveFilter,
+        order: effectiveOrder,
+        controlsSupported: useControls,
         nextDiscussions: nextCursor == null
             ? null
             : WorkItemActivityContinuation._(
@@ -306,6 +396,9 @@ extension WorkItemActivityApi on GitLabApi {
                 identity: identity,
                 cursor: nextCursor,
                 seenCursors: nextSeen,
+                filter: effectiveFilter,
+                order: effectiveOrder,
+                controlsSupported: useControls,
               ),
         nextNotesByDiscussion: notesContinuations,
       );
@@ -313,6 +406,32 @@ extension WorkItemActivityApi on GitLabApi {
       throw const ApiFailure(FailureKind.invalidResponse);
     }
   }
+
+  Future<({Uint8List bytes, Headers headers, int statusCode})>
+  _readWorkItemActivityResponse(
+    String id,
+    String? after, {
+    required WorkItemActivityFilter filter,
+    required WorkItemActivityOrder order,
+    required bool controlsSupported,
+  }) => _read(
+    instance.graphQL,
+    method: 'POST',
+    graphQuery: true,
+    data: {
+      'query': controlsSupported
+          ? _workItemActivityQuery
+          : _workItemActivityLegacyQuery,
+      'variables': controlsSupported
+          ? {
+              'id': id,
+              'after': after,
+              'filter': filter.graphValue,
+              'sort': order.graphValue,
+            }
+          : {'id': id, 'after': after},
+    },
+  );
 
   void _requireActivityOwner(GitLabApi owner) {
     if (!identical(owner, this)) {
@@ -348,6 +467,35 @@ extension WorkItemActivityApi on GitLabApi {
       seenCursors: {...seenCursors, cursor},
     );
   }
+}
+
+bool _activityControlsSchemaUnavailable(Uint8List bytes) {
+  try {
+    final envelope = objectJson(jsonDecode(utf8.decode(bytes)));
+    final errors = envelope['errors'];
+    if (errors is! List || errors.isEmpty) return false;
+    return errors.every(_activityControlSchemaError);
+  } on FormatException {
+    return false;
+  }
+}
+
+bool _activityControlSchemaError(Object? raw) {
+  if (raw is! Map || raw['extensions'] is! Map) return false;
+  final extensions = raw['extensions'] as Map;
+  final code = extensions['code'];
+  if (code == 'argumentNotAccepted') {
+    return extensions['name'] == 'discussions' &&
+        extensions['typeName'] == 'Field' &&
+        const {'filter', 'sort'}.contains(extensions['argumentName']);
+  }
+  if (code == 'variableRequiresValidType') {
+    return (extensions['typeName'] == 'NotesFilterType' &&
+            extensions['variableName'] == 'filter') ||
+        (extensions['typeName'] == 'WorkItemDiscussionsSort' &&
+            extensions['variableName'] == 'sort');
+  }
+  return false;
 }
 
 _WorkItemActivityIdentity _activityIdentityFromExpected(

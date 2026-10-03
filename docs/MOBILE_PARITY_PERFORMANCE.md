@@ -40,7 +40,7 @@ GitLab edition lacks the feature.
 | Global navigation | Projects, groups/subgroups, todos, assigned/review-requested/created work, activity and global search | No structural change | Administration, help and creation workflows remain unimplemented; they are part of the full-function backlog |
 | Project overview | Description, stars, forks, languages, licence, clone URLs, star/fork actions | Direct header Star/Unstar and link sharing; shared More state/count and project feed reconciliation | Full Web analytics and settings are not reproduced |
 | Manage | Activity, members and labels | No structural change | Access-token, webhook, integration and full member-role administration remain open |
-| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project and group-owned Work Item cursor lists, server types and exact project/group detail with five base widgets, seven lazy attribute kinds, read-only activity and guarded close/reopen | Remaining Work Item widgets, activity filters/order/replies, descendant group aggregation and filters, remaining mutations, full iterations/requirements/Epic/OKR workflows remain open |
+| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project and group-owned Work Item cursor lists, server types and exact project/group detail with five base widgets, seven lazy attribute kinds, server-filtered/ordered read-only activity and guarded close/reopen | Remaining Work Item widgets, activity reply creation, descendant group aggregation and filters, remaining mutations, full iterations/requirements/Epic/OKR workflows remain open |
 | Code | Repository tree, README, branches, commits and tags; fixed-SHA file view, history, blame, search, syntax highlighting and line permalinks; MR list/detail/diffs | Compare two refs; selected-ref repository graph; multi-file Snippets with explicit file enumeration, lazy source/preview and guarded file actions | Locked files, cross-project comparison, full all-branch graph and private Snippet CRUD acceptance remain open |
 | MR review | Discussions, inline single-line positions, approvals/merge, suggested changes, auto-merge, local viewed-file state and the MR draft/ready toggle | Server draft-note list, add/edit/discard and bulk publish, tied to account/project/MR/head SHA | Viewed-file state is not server-synchronised; multi-line positioning and full desktop review policy administration remain open |
 | Build | Pipelines, stage-grouped jobs, controls, incremental ANSI logs and search, JUnit report views, artifacts, cross-project CI overview and schedules | Read-only pipeline dependency graph with paginated actual GraphQL needs | Cross-project/downstream graph and the complete pipeline editor remain open |
@@ -917,6 +917,49 @@ the fixed 350ms flush. Its legacy numeric output is unchanged. Flutter's
 is approximate, so this grace period reduces likely batch loss without proving
 complete capture. The sampler change improves measurement correctness and does
 not itself fix raster stalls.
+
+## Work Item activity filters and ordering (2026-10-03)
+
+A fresh 390 × 844 signed-out browser walk of public project Work Item `631946`
+confirmed All activity / Comments only / History only and Oldest first / Newest
+first. Comments-only removed its three system events; history-only preserved them,
+and newest-first reversed their visible chronological order. The browser viewport
+was restored after observation; no GitLab content was written.
+
+The native Activity reader now sends `ALL_NOTES`, `ONLY_COMMENTS` or
+`ONLY_ACTIVITY` and `CREATED_ASC` or `CREATED_DESC` to the server. It keeps the
+existing all/oldest default and uses only `first: 20` plus `after: endCursor`.
+Filter/order is bound into each opaque continuation; the client does not locally
+sort or filter a partially loaded page. Selection changes clear retained pages,
+reply handles, note/body and attachment budgets, while a new epoch rejects late
+initial, page and reply completions. Account/client/resource changes also reset
+selections and collapse the section.
+
+The controls wrap vertically at narrow/large-text sizes and preserve 48dp minimum
+menu targets. Refresh starts a fresh stream with the current selection. Explicit
+schema rejection of the controls triggers one initial-only legacy read, scoped to
+that API client, then displays all/oldest with disabled controls and an explanation.
+Authentication, network, malformed data and unrelated validation errors do not
+trigger that downgrade, and a newer cursor is never replayed with a legacy query.
+
+The [official widget arguments](https://docs.gitlab.com/api/graphql/reference/experimental/objects/#workitemwidgetnotes)
+and [ordering enum](https://docs.gitlab.com/api/graphql/reference/experimental/enums/#workitemdiscussionssort)
+are experimental. Current GitLab.com query-only validation confirmed the
+`argumentNotAccepted` extension shape and newest-first forward continuation.
+The upstream Web reader loads all pages before local filtering/reversal; the App
+uses server filtering to preserve bounded loading instead. Five discussion/reply
+pages, 100 rendered bodies, 2,000 retained notes and the 4 Mi-character budget
+remain in force. Reply creation, authenticated/older-instance acceptance and the
+remaining widgets remain open. Exact-source tests, live anonymous reads and
+Android synthetic readback are recorded as separate evidence lanes.
+
+The frozen Dart/lock source passes pinned full analysis and 1,605 Flutter tests
+with zero failures/errors/skips (20,318/22,708 covered lines, 89.48%). The anonymous
+production-client suite records 39 PASS / 0 FAIL / 1 expected GAP and zero writes.
+Both actual public scopes exercise all six configurations (12 initial queries),
+and the group newest-first cursor advances successfully. The public sample did
+not issue a nested-note continuation, so that live case remains a gap. Native
+readback and exact-head CI require their separate commit-bound receipts.
 
 ## Remaining product priorities
 

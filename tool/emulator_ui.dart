@@ -153,6 +153,88 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           'edited': false,
           'lastEditedAt': null,
         },
+        {'type': 'NOTES'},
+      ],
+    };
+  }
+
+  Json workItemActivityRecord({
+    required bool group,
+    required String filter,
+    required String sort,
+    required Object? after,
+  }) {
+    final scope = group ? 'group' : 'project';
+    final prefix = 'activity:$scope:$filter:$sort:';
+    final offset = after == null
+        ? 0
+        : after is String && after.startsWith(prefix)
+        ? int.tryParse(after.substring(prefix.length))
+        : null;
+    if (offset == null || offset < 0 || offset > 48) {
+      throw StateError('Invalid synthetic activity cursor');
+    }
+    final entries = List<Json>.generate(48, (index) {
+      final number = index + 1;
+      final system = number.isEven;
+      final timestamp = DateTime.utc(2026, 10, 1, 0, number).toIso8601String();
+      Json note(String suffix, String body) => {
+        'id': 'gid://gitlab/Note/qa-$scope-$number-$suffix',
+        'system': system,
+        'systemNoteIconName': system ? 'status' : null,
+        'body': body,
+        'createdAt': timestamp,
+        'updatedAt': timestamp,
+        'author': {
+          'id': 'gid://gitlab/User/7',
+          'name': 'Synthetic Reader',
+          'username': 'synthetic-reader',
+        },
+      };
+      return {
+        'id': 'gid://gitlab/Discussion/qa-$scope-$number',
+        'replyId': 'qa-$scope-reply-$number',
+        'createdAt': timestamp,
+        'notes': {
+          'nodes': [
+            note(
+              'root',
+              system
+                  ? 'Synthetic history $number'
+                  : 'Synthetic comment $number',
+            ),
+            if (number == 1) note('reply', 'Synthetic reply 1'),
+          ],
+          'pageInfo': {'hasNextPage': false, 'endCursor': null},
+        },
+      };
+    });
+    final selected = entries.where((entry) {
+      final system = ((entry['notes'] as Map)['nodes'] as List).first['system'];
+      return filter == 'ALL_NOTES' ||
+          filter == 'ONLY_COMMENTS' && system == false ||
+          filter == 'ONLY_ACTIVITY' && system == true;
+    }).toList();
+    final ordered = sort == 'CREATED_DESC'
+        ? selected.reversed.toList()
+        : selected;
+    if (offset > ordered.length) throw StateError('Invalid activity offset');
+    final page = ordered.skip(offset).take(20).toList();
+    final nextOffset = offset + page.length;
+    final hasNext = nextOffset < ordered.length;
+    return {
+      ...workItemRecord(group: group),
+      'widgets': [
+        {
+          'type': 'NOTES',
+          'discussions': {
+            'nodes': page,
+            'pageInfo': {
+              'hasNextPage': hasNext,
+              'endCursor': hasNext ? '$prefix$nextOffset' : null,
+            },
+          },
+        },
       ],
     };
   }
@@ -271,6 +353,25 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           'data': {
             'workItem': workItemRecord(
               group: variables['id'] == 'gid://gitlab/WorkItem/qa-group-41',
+            ),
+          },
+        });
+      }
+      if (operation == 'MobileWorkItemActivity' &&
+          _workItemStates.containsKey(variables['id']) &&
+          const [
+            'ALL_NOTES',
+            'ONLY_COMMENTS',
+            'ONLY_ACTIVITY',
+          ].contains(variables['filter']) &&
+          const ['CREATED_ASC', 'CREATED_DESC'].contains(variables['sort'])) {
+        return jsonResponse({
+          'data': {
+            'workItem': workItemActivityRecord(
+              group: variables['id'] == 'gid://gitlab/WorkItem/qa-group-41',
+              filter: variables['filter'] as String,
+              sort: variables['sort'] as String,
+              after: variables['after'],
             ),
           },
         });

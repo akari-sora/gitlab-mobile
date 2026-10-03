@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/work_item_activity_models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_activity.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
@@ -170,12 +171,264 @@ Widget _host(
   ),
 );
 
+Future<void> _tap(WidgetTester tester, Finder finder) async {
+  await tester.pump(const Duration(milliseconds: 300));
+  await tester.ensureVisible(finder);
+  await tester.pump();
+  await tester.tap(finder);
+}
+
+Future<void> _selectControl(
+  WidgetTester tester,
+  String key,
+  String label,
+) async {
+  await _tap(tester, find.byKey(ValueKey(key)));
+  await tester.pump(const Duration(milliseconds: 300));
+  await _tap(tester, find.text(label).last);
+  await tester.pump(const Duration(milliseconds: 300));
+}
+
 Future<void> _expand(WidgetTester tester) async {
-  await tester.tap(find.text('活動'));
+  await _tap(tester, find.text('活動'));
   await tester.pumpAndSettle();
 }
 
 void main() {
+  testWidgets('six activity configurations fetch a fresh server stream', (
+    tester,
+  ) async {
+    final adapter = FakeAdapter((request) {
+      final variables = (request.data as Map)['variables'] as Map;
+      expect(variables['after'], isNull);
+      return jsonResponse(
+        _activity(
+          discussions: [
+            _discussion(
+              'same-id',
+              notes: [
+                _note(
+                  'same-note',
+                  body: '${variables['filter']}/${variables['sort']}',
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    await tester.pumpWidget(_host(api));
+    await _expand(tester);
+    expect(find.text('ALL_NOTES/CREATED_ASC'), findsOneWidget);
+    for (final entry in [
+      ('work-item-activity-order', '最新優先', 'ALL_NOTES/CREATED_DESC'),
+      ('work-item-activity-filter', '只看留言', 'ONLY_COMMENTS/CREATED_DESC'),
+      ('work-item-activity-order', '最舊優先', 'ONLY_COMMENTS/CREATED_ASC'),
+      ('work-item-activity-filter', '只看歷史', 'ONLY_ACTIVITY/CREATED_ASC'),
+      ('work-item-activity-order', '最新優先', 'ONLY_ACTIVITY/CREATED_DESC'),
+    ]) {
+      await _selectControl(tester, entry.$1, entry.$2);
+      await tester.pumpAndSettle();
+      expect(find.text(entry.$3), findsOneWidget);
+      expect(find.byType(MarkdownView), findsOneWidget);
+    }
+    expect(adapter.requests, hasLength(6));
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final pendingKind in ['initial', 'next', 'reply']) {
+    testWidgets('selection invalidates pending $pendingKind and cached notes', (
+      tester,
+    ) async {
+      final pending = Completer<ResponseBody>();
+      final adapter = FakeAdapter((request) {
+        final body = request.data as Map;
+        final variables = body['variables'] as Map;
+        final notesQuery = (body['query'] as String).contains(
+          'MobileWorkItemDiscussionNotes',
+        );
+        if (variables['filter'] == 'ONLY_COMMENTS') {
+          expect(variables['after'], isNull);
+          return jsonResponse(
+            _activity(
+              discussions: [
+                _discussion(
+                  'fresh',
+                  notes: [_note('shared', body: 'fresh stream')],
+                ),
+              ],
+            ),
+          );
+        }
+        if (pendingKind == 'initial' ||
+            pendingKind == 'next' && variables['after'] != null ||
+            pendingKind == 'reply' && notesQuery) {
+          return pending.future;
+        }
+        return jsonResponse(
+          _activity(
+            discussions: [
+              _discussion(
+                'thread',
+                notes: [_note('shared')],
+                notesNext: pendingKind == 'reply',
+                notesCursor: pendingKind == 'reply' ? 'notes-1' : null,
+              ),
+            ],
+            next: pendingKind == 'next',
+            cursor: pendingKind == 'next' ? 'outer-1' : null,
+          ),
+        );
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      await tester.pumpWidget(_host(api));
+      await _tap(tester, find.text('活動'));
+      await tester.pump(const Duration(milliseconds: 300));
+      if (pendingKind != 'initial') {
+        await _tap(
+          tester,
+          find.text(pendingKind == 'next' ? '載入下一頁' : '載入更多回覆').first,
+        );
+        await tester.pump();
+      }
+      await _selectControl(tester, 'work-item-activity-filter', '只看留言');
+      expect(find.text('fresh stream'), findsOneWidget);
+      pending.complete(
+        jsonResponse(
+          pendingKind == 'reply'
+              ? _notesPage('thread', anchor: 'shared', notes: [_note('late')])
+              : _activity(
+                  discussions: [
+                    _discussion('late', notes: [_note('late')]),
+                  ],
+                ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('comment-late'), findsNothing);
+      expect(find.text('fresh stream'), findsOneWidget);
+      expect(find.text('第 2 / 2 頁'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets(
+    'new selection resets loaded pages and refresh retains selection',
+    (tester) async {
+      final adapter = FakeAdapter((request) {
+        final variables = (request.data as Map)['variables'] as Map;
+        final suffix = variables['after'] == null ? 'first' : 'second';
+        return jsonResponse(
+          _activity(
+            discussions: [
+              _discussion(suffix, notes: [_note(suffix)]),
+            ],
+            next: variables['after'] == null,
+            cursor: variables['after'] == null ? 'next-1' : null,
+          ),
+        );
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      await tester.pumpWidget(_host(api));
+      await _expand(tester);
+      await _tap(tester, find.text('載入下一頁').first);
+      await tester.pumpAndSettle();
+      expect(find.text('第 2 / 2 頁'), findsWidgets);
+      await _selectControl(tester, 'work-item-activity-order', '最新優先');
+      await tester.pumpAndSettle();
+      expect(find.text('第 1 / 1 頁'), findsWidgets);
+      expect(find.textContaining('comment-second'), findsNothing);
+      await _tap(
+        tester,
+        find.byKey(const ValueKey('work-item-activity-refresh')),
+      );
+      await tester.pumpAndSettle();
+      expect(adapter.requests, hasLength(4));
+      final variables = (adapter.requests.last.data as Map)['variables'] as Map;
+      expect(variables['sort'], 'CREATED_DESC');
+      expect(variables['after'], isNull);
+      expect(find.textContaining('comment-first'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'unsupported controls show honest legacy options and disable menus',
+    (tester) async {
+      final adapter = FakeAdapter((request) {
+        final query = (request.data as Map)['query'] as String;
+        if (query.contains('NotesFilterType')) {
+          return jsonResponse({
+            'errors': [
+              {
+                'message':
+                    "Field 'discussions' doesn't accept argument 'filter'",
+                'extensions': {
+                  'code': 'argumentNotAccepted',
+                  'name': 'discussions',
+                  'typeName': 'Field',
+                  'argumentName': 'filter',
+                },
+              },
+            ],
+          });
+        }
+        return jsonResponse(
+          _activity(
+            discussions: [
+              _discussion('legacy', notes: [_note('legacy')]),
+            ],
+          ),
+        );
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      await tester.pumpWidget(_host(api));
+      await _expand(tester);
+      expect(adapter.requests, hasLength(2));
+      expect(find.textContaining('此實例未提供活動篩選或排序'), findsOneWidget);
+      final filter = tester.widget<DropdownButton<WorkItemActivityFilter>>(
+        find.byKey(const ValueKey('work-item-activity-filter')),
+      );
+      final order = tester.widget<DropdownButton<WorkItemActivityOrder>>(
+        find.byKey(const ValueKey('work-item-activity-order')),
+      );
+      expect(filter.value, WorkItemActivityFilter.all);
+      expect(order.value, WorkItemActivityOrder.oldestFirst);
+      expect(filter.onChanged, isNull);
+      expect(order.onChanged, isNull);
+      expect(find.textContaining('comment-legacy'), findsOneWidget);
+    },
+  );
+
+  testWidgets('320dp twice-text controls and every menu item remain usable', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 900);
+    addTearDown(tester.view.reset);
+    final api = testApi(FakeAdapter((_) => jsonResponse(_activity())));
+    addTearDown(api.close);
+    await tester.pumpWidget(_host(api, textScale: 2));
+    await _expand(tester);
+    for (final entry in [
+      ('work-item-activity-filter', '只看留言'),
+      ('work-item-activity-filter', '只看歷史'),
+      ('work-item-activity-filter', '全部活動'),
+      ('work-item-activity-order', '最新優先'),
+      ('work-item-activity-order', '最舊優先'),
+    ]) {
+      final control = find.byKey(ValueKey(entry.$1));
+      expect(tester.getSize(control).height, greaterThanOrEqualTo(48));
+      await _selectControl(tester, entry.$1, entry.$2);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    }
+  });
+
   testWidgets('activity stays network-idle while collapsed', (tester) async {
     final adapter = FakeAdapter(
       (_) => jsonResponse(_activity(discussions: const [])),
@@ -264,20 +517,20 @@ void main() {
     await _expand(tester);
     expect(find.textContaining('comment-one'), findsOneWidget);
 
-    await tester.tap(find.text('載入下一頁').first);
+    await _tap(tester, find.text('載入下一頁').first);
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(adapter.requests, hasLength(2));
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.text('無法讀取回應'), findsOneWidget);
 
-    await tester.tap(find.text('重試'));
+    await _tap(tester, find.text('重試'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.textContaining('comment-two'), findsOneWidget);
     expect(find.text('第 2 / 2 頁'), findsWidgets);
 
-    await tester.tap(find.text('上一頁').first);
+    await _tap(tester, find.text('上一頁').first);
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.textContaining('comment-one'), findsOneWidget);
@@ -310,16 +563,16 @@ void main() {
     expect(find.text('尚無活動'), findsOneWidget);
     expect(find.text('載入下一頁'), findsOneWidget);
 
-    await tester.tap(find.text('載入下一頁'));
+    await _tap(tester, find.text('載入下一頁'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
     expect(find.textContaining('comment-after-empty'), findsOneWidget);
 
-    await tester.tap(find.text('上一頁').first);
+    await _tap(tester, find.text('上一頁').first);
     await tester.pump();
     expect(find.text('尚無活動'), findsOneWidget);
     expect(find.text('下一頁'), findsOneWidget);
-    await tester.tap(find.text('下一頁'));
+    await _tap(tester, find.text('下一頁'));
     await tester.pump();
     expect(find.textContaining('comment-after-empty'), findsOneWidget);
     expect(calls, 2);
@@ -370,18 +623,18 @@ void main() {
     expect(find.textContaining('system-system'), findsOneWidget);
     expect(find.byType(MarkdownView), findsOneWidget);
 
-    await tester.tap(find.text('載入更多回覆'));
+    await _tap(tester, find.text('載入更多回覆'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.text('無法開啟此資源'), findsOneWidget);
     expect(find.textContaining('system-system'), findsOneWidget);
 
-    await tester.tap(find.text('重試'));
+    await _tap(tester, find.text('重試'));
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.textContaining('system-system'), findsOneWidget);
     expect(find.text('顯示其餘 1 則留言'), findsOneWidget);
-    await tester.tap(find.text('顯示其餘 1 則留言'));
+    await _tap(tester, find.text('顯示其餘 1 則留言'));
     await tester.pumpAndSettle();
     expect(find.text('作者資料不可用'), findsOneWidget);
     expect(find.byType(MarkdownView), findsNWidgets(2));
@@ -425,7 +678,7 @@ void main() {
 
     await tester.pumpWidget(_host(api));
     await _expand(tester);
-    await tester.tap(find.text('載入更多回覆'));
+    await _tap(tester, find.text('載入更多回覆'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 100));
 
@@ -475,7 +728,7 @@ void main() {
     await tester.pumpWidget(
       _host(api, isCurrent: () => current, ownerChanges: owner),
     );
-    await tester.tap(find.text('活動'));
+    await _tap(tester, find.text('活動'));
     await tester.pump();
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
 
@@ -515,7 +768,7 @@ void main() {
     addTearDown(newApi.close);
 
     await tester.pumpWidget(_host(oldApi));
-    await tester.tap(find.text('活動'));
+    await _tap(tester, find.text('活動'));
     await tester.pump();
 
     await tester.pumpWidget(_host(newApi));
@@ -586,7 +839,7 @@ void main() {
     await _expand(tester);
 
     for (var page = 1; page < 5; page++) {
-      await tester.tap(find.text('載入更多回覆'));
+      await _tap(tester, find.text('載入更多回覆'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -594,7 +847,7 @@ void main() {
     expect(notePage, 4);
 
     for (var page = 1; page < 5; page++) {
-      await tester.tap(find.text('載入下一頁').first);
+      await _tap(tester, find.text('載入下一頁').first);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -637,12 +890,12 @@ void main() {
       await _expand(tester);
       expect(find.textContaining('page-1-marker'), findsOneWidget);
 
-      await tester.tap(find.text('載入下一頁').first);
+      await _tap(tester, find.text('載入下一頁').first);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.textContaining('page-2-marker'), findsOneWidget);
 
-      await tester.tap(find.text('載入下一頁').first);
+      await _tap(tester, find.text('載入下一頁').first);
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.textContaining('活動快取上限'), findsOneWidget);
@@ -650,10 +903,10 @@ void main() {
       expect(find.text('第 2 / 2 頁'), findsWidgets);
       expect(find.text('載入下一頁'), findsNothing);
 
-      await tester.tap(find.text('上一頁').first);
+      await _tap(tester, find.text('上一頁').first);
       await tester.pump();
       expect(find.textContaining('page-1-marker'), findsOneWidget);
-      await tester.tap(find.text('下一頁').first);
+      await _tap(tester, find.text('下一頁').first);
       await tester.pump();
       expect(find.textContaining('page-2-marker'), findsOneWidget);
 
@@ -708,7 +961,7 @@ void main() {
     for (var index = 0; index < 6; index++) {
       final button = find.text('顯示其餘 19 則留言').first;
       await tester.ensureVisible(button);
-      await tester.tap(button);
+      await _tap(tester, button);
       await tester.pump();
     }
     await tester.pumpAndSettle();

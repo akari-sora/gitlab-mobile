@@ -417,6 +417,42 @@ author { id name username }
 
 final _publicWorkItemActivityQuery =
     '''
+query MobileWorkItemActivity(
+  \$id: WorkItemID!
+  \$after: String
+  \$filter: NotesFilterType!
+  \$sort: WorkItemDiscussionsSort!
+) {
+  workItem(id: \$id) {
+    $_publicWorkItemActivityIdentityFields
+    widgets {
+      type
+      ... on WorkItemWidgetNotes {
+        discussions(
+          first: 20
+          after: \$after
+          filter: \$filter
+          sort: \$sort
+        ) {
+          nodes {
+            id
+            replyId
+            createdAt
+            notes(first: 20) {
+              nodes { $_publicWorkItemActivityNoteFields }
+              pageInfo { hasNextPage endCursor }
+            }
+          }
+          pageInfo { hasNextPage endCursor }
+        }
+      }
+    }
+  }
+}
+''';
+
+final _publicWorkItemActivityLegacyQuery =
+    '''
 query MobileWorkItemActivity(\$id: WorkItemID!, \$after: String) {
   workItem(id: \$id) {
     $_publicWorkItemActivityIdentityFields
@@ -485,6 +521,9 @@ Future<void> main() async {
   var groupActivitySystemNotes = 0;
   var nestedActivityNotes = 0;
   var nestedActivityContinuationExercised = false;
+  var activityConfigurationCount = 0;
+  var activityContinuationCount = 0;
+  var groupNewestContinuationExercised = false;
   RegistryPackage? publicRegistryPackage;
   RegistryPackageFile? publicRegistryFile;
   var packageDownloadedBytes = 0;
@@ -558,6 +597,45 @@ Future<void> main() async {
   void require(bool value) {
     if (!value) {
       throw const FormatException('Public contract assertion');
+    }
+  }
+
+  void requireActivityPage(
+    WorkItemActivityPage page,
+    WorkItemGraphSummary expected,
+    WorkItemActivityFilter filter,
+    WorkItemActivityOrder order,
+  ) {
+    require(
+      page.controlsSupported &&
+          page.filter == filter &&
+          page.order == order &&
+          page.snapshot.workItemId == expected.id &&
+          page.snapshot.iid == expected.iid &&
+          page.snapshot.project?.id == expected.project?.id &&
+          page.snapshot.project?.fullPath == expected.project?.fullPath &&
+          page.snapshot.namespace?.id == expected.namespace?.id &&
+          page.snapshot.namespace?.fullPath == expected.namespace?.fullPath &&
+          page.snapshot.availability == WorkItemActivityAvailability.present &&
+          page.snapshot.discussions.availability ==
+              WorkItemActivityConnectionAvailability.present,
+    );
+    final discussions = page.snapshot.discussions.items;
+    require(discussions.length <= 20);
+    for (var index = 1; index < discussions.length; index++) {
+      final previous = discussions[index - 1].createdAt;
+      final current = discussions[index].createdAt;
+      require(
+        order == WorkItemActivityOrder.oldestFirst
+            ? !previous.isAfter(current)
+            : !previous.isBefore(current),
+      );
+    }
+    final notes = discussions.expand((discussion) => discussion.notes.items);
+    if (filter == WorkItemActivityFilter.comments) {
+      require(notes.every((note) => !note.system));
+    } else if (filter == WorkItemActivityFilter.history) {
+      require(notes.every((note) => note.system));
     }
   }
 
@@ -1021,32 +1099,33 @@ Future<void> main() async {
         );
       });
     }
-    await check('public.work_items.project_activity_first_page', () async {
+    await check('public.work_items.project_activity_controls', () async {
       final expected = discoveredPublicWorkItem;
       require(expected != null);
-      final page = await api.workItemActivity(expected!);
-      require(
-        page.snapshot.workItemId == expected.id &&
-            page.snapshot.iid == expected.iid &&
-            page.snapshot.project?.id == expected.project?.id &&
-            page.snapshot.project?.fullPath == expected.project?.fullPath &&
-            page.snapshot.namespace?.id == expected.namespace?.id &&
-            page.snapshot.namespace?.fullPath == expected.namespace?.fullPath &&
-            page.snapshot.availability ==
-                WorkItemActivityAvailability.present &&
-            page.snapshot.discussions.availability ==
-                WorkItemActivityConnectionAvailability.present,
-      );
-      projectActivityFirstDiscussions = page.snapshot.discussions.items.length;
-      require(projectActivityFirstDiscussions <= 20);
-      require(
-        page.nextNotesByDiscussion.keys.every(
-          page.snapshot.discussions.items
-              .map((item) => item.id)
-              .toSet()
-              .contains,
-        ),
-      );
+      for (final filter in WorkItemActivityFilter.values) {
+        for (final order in WorkItemActivityOrder.values) {
+          final page = await api.workItemActivity(
+            expected!,
+            filter: filter,
+            order: order,
+          );
+          requireActivityPage(page, expected, filter, order);
+          require(
+            page.nextNotesByDiscussion.keys.every(
+              page.snapshot.discussions.items
+                  .map((item) => item.id)
+                  .toSet()
+                  .contains,
+            ),
+          );
+          if (filter == WorkItemActivityFilter.all &&
+              order == WorkItemActivityOrder.oldestFirst) {
+            projectActivityFirstDiscussions =
+                page.snapshot.discussions.items.length;
+          }
+          activityConfigurationCount++;
+        }
+      }
     });
     await check('public.work_items.server_type_capabilities', () async {
       final page = await api.namespaceWorkItemTypes(_publicSnippetProjectPath);
@@ -1138,71 +1217,73 @@ Future<void> main() async {
         page.items.any((type) => type.enabled && type.isGroupWorkItemType),
       );
     });
-    await check('public.work_items.group_activity_outer_pages', () async {
+    await check('public.work_items.group_activity_controls', () async {
       final expected = discoveredPublicGroupWorkItem;
       require(expected != null);
-      final first = await api.workItemActivity(expected!);
-      require(
-        first.snapshot.workItemId == expected.id &&
-            first.snapshot.iid == expected.iid &&
-            first.snapshot.project == null &&
-            first.snapshot.namespace?.id == expected.namespace?.id &&
-            first.snapshot.namespace?.fullPath == _publicGroupWorkItemPath &&
-            first.snapshot.availability ==
-                WorkItemActivityAvailability.present &&
-            first.snapshot.discussions.availability ==
-                WorkItemActivityConnectionAvailability.present,
-      );
+      final groupExpected = expected!;
+      WorkItemActivityPage? newestFirst;
+      for (final filter in WorkItemActivityFilter.values) {
+        for (final order in WorkItemActivityOrder.values) {
+          final page = await api.workItemActivity(
+            groupExpected,
+            filter: filter,
+            order: order,
+          );
+          requireActivityPage(page, groupExpected, filter, order);
+          if (filter == WorkItemActivityFilter.history) {
+            groupActivitySystemNotes += page.snapshot.discussions.items
+                .expand((discussion) => discussion.notes.items)
+                .length;
+          }
+          if (filter == WorkItemActivityFilter.all &&
+              order == WorkItemActivityOrder.oldestFirst) {
+            groupActivityFirstDiscussions =
+                page.snapshot.discussions.items.length;
+          }
+          if (filter == WorkItemActivityFilter.all &&
+              order == WorkItemActivityOrder.newestFirst) {
+            newestFirst = page;
+          }
+          activityConfigurationCount++;
+        }
+      }
+      require(newestFirst != null);
+      final first = newestFirst!;
       final firstDiscussions = first.snapshot.discussions.items;
-      groupActivityFirstDiscussions = firstDiscussions.length;
-      require(
-        groupActivityFirstDiscussions > 0 &&
-            groupActivityFirstDiscussions <= 20 &&
-            first.nextDiscussions != null,
-      );
       final firstIds = firstDiscussions.map((item) => item.id).toSet();
       require(firstIds.length == firstDiscussions.length);
-      final firstSystemNotes = firstDiscussions
-          .expand((discussion) => discussion.notes.items)
-          .where((note) => note.system)
-          .length;
-      require(firstSystemNotes > 0);
-
-      final next = await api.workItemActivityNext(first.nextDiscussions!);
-      require(
-        next.snapshot.workItemId == expected.id &&
-            next.snapshot.iid == expected.iid &&
-            next.snapshot.project == null &&
-            next.snapshot.namespace?.id == expected.namespace?.id &&
-            next.snapshot.namespace?.fullPath == _publicGroupWorkItemPath &&
-            next.snapshot.availability ==
-                WorkItemActivityAvailability.present &&
-            next.snapshot.discussions.availability ==
-                WorkItemActivityConnectionAvailability.present,
-      );
-      final nextDiscussions = next.snapshot.discussions.items;
-      groupActivityNextDiscussions = nextDiscussions.length;
-      require(
-        groupActivityNextDiscussions > 0 &&
-            groupActivityNextDiscussions <= 20 &&
-            nextDiscussions.every((item) => !firstIds.contains(item.id)),
-      );
-      final nextSystemNotes = nextDiscussions
-          .expand((discussion) => discussion.notes.items)
-          .where((note) => note.system)
-          .length;
-      require(nextSystemNotes > 0);
-      groupActivitySystemNotes = firstSystemNotes + nextSystemNotes;
+      WorkItemActivityPage? next;
+      if (first.nextDiscussions != null) {
+        next = await api.workItemActivityNext(first.nextDiscussions!);
+        requireActivityPage(
+          next,
+          groupExpected,
+          WorkItemActivityFilter.all,
+          WorkItemActivityOrder.newestFirst,
+        );
+        activityContinuationCount++;
+        groupNewestContinuationExercised = true;
+        final nextDiscussions = next.snapshot.discussions.items;
+        groupActivityNextDiscussions = nextDiscussions.length;
+        require(nextDiscussions.every((item) => !firstIds.contains(item.id)));
+        if (firstDiscussions.isNotEmpty && nextDiscussions.isNotEmpty) {
+          require(
+            !firstDiscussions.last.createdAt.isBefore(
+              nextDiscussions.first.createdAt,
+            ),
+          );
+        }
+      }
 
       final nested = <String, WorkItemDiscussionNotesContinuation>{
         ...first.nextNotesByDiscussion,
-        ...next.nextNotesByDiscussion,
+        if (next != null) ...next.nextNotesByDiscussion,
       };
       if (nested.isNotEmpty) {
         final entry = nested.entries.first;
         final notes = await api.workItemDiscussionNotesNext(entry.value);
         require(
-          notes.workItemId == expected.id &&
+          notes.workItemId == groupExpected.id &&
               notes.discussionId == entry.key &&
               notes.notes.availability ==
                   WorkItemActivityConnectionAvailability.present &&
@@ -1210,6 +1291,7 @@ Future<void> main() async {
         );
         nestedActivityContinuationExercised = true;
         nestedActivityNotes = notes.notes.items.length;
+        activityContinuationCount++;
       }
     });
     await check('public.work_items.group_parent_optional_metadata', () async {
@@ -1340,11 +1422,17 @@ Future<void> main() async {
         'work_item_nested_activity_continuation_exercised':
             nestedActivityContinuationExercised,
         'work_item_nested_activity_notes': nestedActivityNotes,
+        'work_item_activity_configuration_count': activityConfigurationCount,
+        'work_item_activity_continuation_count': activityContinuationCount,
+        'work_item_group_newest_continuation_exercised':
+            groupNewestContinuationExercised,
       },
       'gaps': [
         'Issue boards return HTTP 401 to anonymous public reads',
         if (!nestedActivityContinuationExercised)
           'Public Work Item fixtures did not issue a nested note continuation',
+        if (!groupNewestContinuationExercised)
+          'Public group Work Item newest-first page did not issue an outer continuation',
       ],
       'not_run': [
         'PAT authentication',
@@ -1606,11 +1694,22 @@ bool _isExactPublicWorkItemActivityGraph(
   };
   if (body['query'] == _publicWorkItemActivityQuery) {
     final after = variables['after'];
+    return variables.length == 4 &&
+        allowedWorkItemIds.contains(variables['id']) &&
+        variables.containsKey('after') &&
+        _isSafePublicActivityCursor(after, nullable: true) &&
+        const {
+          'ALL_NOTES',
+          'ONLY_COMMENTS',
+          'ONLY_ACTIVITY',
+        }.contains(variables['filter']) &&
+        const {'CREATED_ASC', 'CREATED_DESC'}.contains(variables['sort']);
+  }
+  if (body['query'] == _publicWorkItemActivityLegacyQuery) {
     return variables.length == 2 &&
         allowedWorkItemIds.contains(variables['id']) &&
         variables.containsKey('after') &&
-        (after == null ||
-            after is String && after.isNotEmpty && after.length <= 4096);
+        _isSafePublicActivityCursor(variables['after'], nullable: true);
   }
   if (body['query'] != _publicWorkItemDiscussionNotesQuery) return false;
   final anchor = variables['anchorNoteId'];
@@ -1622,7 +1721,10 @@ bool _isExactPublicWorkItemActivityGraph(
       anchor is String &&
       anchor.isNotEmpty &&
       anchor.length <= 512 &&
-      after is String &&
-      after.isNotEmpty &&
-      after.length <= 4096;
+      _isSafePublicActivityCursor(after, nullable: false);
 }
+
+bool _isSafePublicActivityCursor(Object? value, {required bool nullable}) =>
+    value == null
+    ? nullable
+    : value is String && value.isNotEmpty && value.length <= 4096;

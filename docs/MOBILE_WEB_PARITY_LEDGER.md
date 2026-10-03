@@ -17,7 +17,7 @@ specification numbers have been invented.
 | Manage / Activity | Loaded timeline and eight event filters at phone width | Activity feed | Full event-kind/authenticated parity walk |
 | Manage / Members | Loaded roles/source/search/sort and member rows | Member list/actions | Custom roles, complete administration and live permissions |
 | Manage / Labels | Loaded Active/Archived, search/sort and empty state | List/create/edit/delete | Scoped labels/subscriptions and live CRUD |
-| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project and group-owned cursor lists, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, seven lazy attribute kinds, read-only activity paging and guarded close/reopen | Remaining widgets, activity filters/order/replies, descendant group aggregation, list filters, remaining Work Item mutations and authenticated/edition acceptance |
+| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project and group-owned cursor lists, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, seven lazy attribute kinds, server-filtered/ordered read-only activity paging and guarded close/reopen | Remaining widgets, activity reply creation, descendant group aggregation, list filters, remaining Work Item mutations and authenticated/edition acceptance |
 | Plan / Boards | Development board observed | Phone-width columns, card move, board/list management | Paid scope/list creation, touch drag/drop and live mutation readback |
 | Plan / Milestones | Loaded empty-state explanation | List/detail/create/edit/delete | Full progress/reporting and live CRUD |
 | Plan / Wiki | Loaded empty Wiki explanation | Page list/read/create/edit/delete | History, attachments, tree and live CRUD |
@@ -63,7 +63,7 @@ project children, so hierarchy navigation must preserve each server-returned
 scope. Status, milestone, weight, iteration, health, time tracking, development
 and activity were observed separately. Seven attribute kinds now have native lazy
 reads and per-row retries. Read-only activity now loads on expansion with opaque
-discussion/reply continuations; filtering/order/replies and other widgets remain open.
+discussion/reply continuations; reply creation and other widgets remain open.
 Type names are configurable and opaque IDs are not REST route discriminators.
 
 The installed `0ff2265` Android release loaded project `631894`, group `23883`
@@ -146,7 +146,7 @@ on one S24 Ultra do not establish statistical improvement on every screen.
 2. Fixed-query GraphQL Work Items now include server-returned scope/type IDs,
    project cursor paging and exact project/group details with five base widgets
    plus seven independently loaded attributes and read-only activity. Complete remaining
-   widgets, activity filtering/order/replies, descendant group aggregation, filters,
+   widgets, activity reply creation, descendant group aggregation, filters,
    remaining native mutations and actual authenticated/private/edition validation.
 3. Multi-file Snippet blobs now have lazy paths/content, source/Markdown preview
    and guarded file actions with `updatedAt` change detection. Complete

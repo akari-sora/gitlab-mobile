@@ -2,6 +2,18 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/work_item_activity_models.dart';
 
 void main() {
+  test('activity controls expose fixed GraphQL enum values', () {
+    expect(WorkItemActivityFilter.values.map((value) => value.graphValue), [
+      'ALL_NOTES',
+      'ONLY_COMMENTS',
+      'ONLY_ACTIVITY',
+    ]);
+    expect(WorkItemActivityOrder.values.map((value) => value.graphValue), [
+      'CREATED_ASC',
+      'CREATED_DESC',
+    ]);
+  });
+
   test('activity connection preserves unavailable and present-empty', () {
     final unavailable = WorkItemActivityConnection<WorkItemActivityNote>(
       availability: WorkItemActivityConnectionAvailability.unavailable,

@@ -109,6 +109,19 @@ Map<String, Object?> _notesWidget({
   },
 };
 
+Map<String, Object?> _schemaError(
+  String code,
+  String message, {
+  Map<String, Object?> details = const {},
+}) => {
+  'errors': [
+    {
+      'message': message,
+      'extensions': {'code': code, ...details},
+    },
+  ],
+};
+
 void main() {
   test(
     'fixed activity query parses bounded discussions and nullable author',
@@ -123,10 +136,18 @@ void main() {
         expect(query, contains('query MobileWorkItemActivity'));
         expect(query, contains(r'workItem(id: $id)'));
         expect(query, contains('WorkItemWidgetNotes'));
-        expect(query, contains('discussions(first: 20'));
+        expect(query, contains(r'$filter: NotesFilterType!'));
+        expect(query, contains(r'$sort: WorkItemDiscussionsSort!'));
+        expect(query, contains(r'filter: $filter'));
+        expect(query, contains(r'sort: $sort'));
         expect(query, isNot(contains('avatarUrl')));
         expect(query, isNot(contains('webUrl')));
-        expect(body['variables'], {'id': _workItemId, 'after': null});
+        expect(body['variables'], {
+          'id': _workItemId,
+          'after': null,
+          'filter': 'ALL_NOTES',
+          'sort': 'CREATED_ASC',
+        });
         return jsonResponse(
           _activityEnvelope(
             widgets: [
@@ -153,8 +174,45 @@ void main() {
       expect(note.createdAt.isUtc, isTrue);
       expect(page.nextDiscussions, isNull);
       expect(page.nextNotesByDiscussion, isEmpty);
+      expect(page.filter, WorkItemActivityFilter.all);
+      expect(page.order, WorkItemActivityOrder.oldestFirst);
+      expect(page.controlsSupported, isTrue);
     },
   );
+
+  test('sends every server filter and order combination', () async {
+    final expectedPairs = <(WorkItemActivityFilter, WorkItemActivityOrder)>[
+      for (final filter in WorkItemActivityFilter.values)
+        for (final order in WorkItemActivityOrder.values) (filter, order),
+    ];
+    var call = 0;
+    final api = testApi(
+      FakeAdapter((request) {
+        final pair = expectedPairs[call++];
+        final body = request.data as Map;
+        expect(body['variables'], {
+          'id': _workItemId,
+          'after': null,
+          'filter': pair.$1.graphValue,
+          'sort': pair.$2.graphValue,
+        });
+        return jsonResponse(_activityEnvelope());
+      }),
+    );
+    addTearDown(api.close);
+
+    for (final pair in expectedPairs) {
+      final page = await api.workItemActivity(
+        _expected,
+        filter: pair.$1,
+        order: pair.$2,
+      );
+      expect(page.filter, pair.$1);
+      expect(page.order, pair.$2);
+      expect(page.controlsSupported, isTrue);
+    }
+    expect(call, expectedPairs.length);
+  });
 
   test('preserves widget and connection availability distinctions', () async {
     final responses = <Object?>[
@@ -225,6 +283,8 @@ void main() {
       FakeAdapter((request) {
         call++;
         final variables = (request.data as Map)['variables'] as Map;
+        expect(variables['filter'], 'ONLY_COMMENTS');
+        expect(variables['sort'], 'CREATED_DESC');
         if (call == 1) {
           expect(variables['after'], isNull);
           return jsonResponse(
@@ -242,7 +302,13 @@ void main() {
       }),
     );
     addTearDown(firstApi.close);
-    final first = await firstApi.workItemActivity(_expected);
+    final first = await firstApi.workItemActivity(
+      _expected,
+      filter: WorkItemActivityFilter.comments,
+      order: WorkItemActivityOrder.newestFirst,
+    );
+    expect(first.filter, WorkItemActivityFilter.comments);
+    expect(first.order, WorkItemActivityOrder.newestFirst);
     final continuation = first.nextDiscussions!;
 
     final other = testApi(FakeAdapter((_) => fail('must reject before I/O')));
@@ -498,9 +564,15 @@ void main() {
     );
     var call = 0;
     final api = testApi(
-      FakeAdapter((_) {
+      FakeAdapter((request) {
         call++;
         if (call == 1) {
+          expect((request.data as Map)['variables'], {
+            'id': groupExpected.id,
+            'after': null,
+            'filter': 'ONLY_ACTIVITY',
+            'sort': 'CREATED_DESC',
+          });
           return jsonResponse(
             _activityEnvelope(
               id: groupExpected.id,
@@ -546,7 +618,13 @@ void main() {
     );
     addTearDown(api.close);
 
-    final first = await api.workItemActivity(groupExpected);
+    final first = await api.workItemActivity(
+      groupExpected,
+      filter: WorkItemActivityFilter.history,
+      order: WorkItemActivityOrder.newestFirst,
+    );
+    expect(first.filter, WorkItemActivityFilter.history);
+    expect(first.order, WorkItemActivityOrder.newestFirst);
     final next = await api.workItemDiscussionNotesNext(
       first.nextNotesByDiscussion[_discussionId]!,
     );
@@ -607,6 +685,270 @@ void main() {
       throwsA(_failure(FailureKind.invalidResponse)),
     );
   });
+
+  test(
+    'initial control schema rejection falls back once and caches per API',
+    () async {
+      var call = 0;
+      final adapter = FakeAdapter((request) {
+        call++;
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        final variables = body['variables'] as Map;
+        if (call == 1) {
+          expect(query, contains('NotesFilterType'));
+          expect(variables['filter'], 'ONLY_COMMENTS');
+          expect(variables['sort'], 'CREATED_DESC');
+          return jsonResponse(
+            _schemaError(
+              'argumentNotAccepted',
+              "Field 'discussions' doesn't accept argument 'filter'",
+              details: const {
+                'name': 'discussions',
+                'typeName': 'Field',
+                'argumentName': 'filter',
+              },
+            ),
+          );
+        }
+        expect(query, isNot(contains('NotesFilterType')));
+        expect(variables.keys, unorderedEquals(['id', 'after']));
+        if (call == 2) {
+          expect(variables['after'], isNull);
+          return jsonResponse(
+            _activityEnvelope(
+              widgets: [_notesWidget(next: true, cursor: 'legacy-next')],
+            ),
+          );
+        }
+        if (call == 3) {
+          expect(variables['after'], 'legacy-next');
+        } else {
+          expect(variables['after'], isNull);
+        }
+        return jsonResponse(_activityEnvelope());
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      final first = await api.workItemActivity(
+        _expected,
+        filter: WorkItemActivityFilter.comments,
+        order: WorkItemActivityOrder.newestFirst,
+      );
+      expect(first.controlsSupported, isFalse);
+      expect(first.filter, WorkItemActivityFilter.all);
+      expect(first.order, WorkItemActivityOrder.oldestFirst);
+
+      final next = await api.workItemActivityNext(first.nextDiscussions!);
+      expect(next.controlsSupported, isFalse);
+      expect(next.filter, WorkItemActivityFilter.all);
+      expect(next.order, WorkItemActivityOrder.oldestFirst);
+
+      final cached = await api.workItemActivity(
+        _expected,
+        filter: WorkItemActivityFilter.history,
+        order: WorkItemActivityOrder.newestFirst,
+      );
+      expect(cached.controlsSupported, isFalse);
+      expect(call, 4);
+
+      var otherCalls = 0;
+      final other = testApi(
+        FakeAdapter((request) {
+          otherCalls++;
+          expect((request.data as Map)['query'], contains('NotesFilterType'));
+          return jsonResponse(_activityEnvelope());
+        }),
+      );
+      await other.workItemActivity(_expected);
+      expect(otherCalls, 1);
+      other.close();
+    },
+  );
+
+  test(
+    'exact missing control variable types permit initial fallback',
+    () async {
+      var call = 0;
+      final api = testApi(
+        FakeAdapter((_) {
+          call++;
+          if (call == 1) {
+            return jsonResponse({
+              'errors': [
+                {
+                  'message': 'synthetic missing filter type',
+                  'extensions': {
+                    'code': 'variableRequiresValidType',
+                    'typeName': 'NotesFilterType',
+                    'variableName': 'filter',
+                  },
+                },
+                {
+                  'message': 'synthetic missing sort type',
+                  'extensions': {
+                    'code': 'variableRequiresValidType',
+                    'typeName': 'WorkItemDiscussionsSort',
+                    'variableName': 'sort',
+                  },
+                },
+              ],
+            });
+          }
+          return jsonResponse(_activityEnvelope());
+        }),
+      );
+      addTearDown(api.close);
+
+      final page = await api.workItemActivity(
+        _expected,
+        filter: WorkItemActivityFilter.history,
+        order: WorkItemActivityOrder.newestFirst,
+      );
+      expect(call, 2);
+      expect(page.controlsSupported, isFalse);
+      expect(page.filter, WorkItemActivityFilter.all);
+      expect(page.order, WorkItemActivityOrder.oldestFirst);
+    },
+  );
+
+  test('advanced continuation never falls back to a legacy cursor', () async {
+    var call = 0;
+    final api = testApi(
+      FakeAdapter((request) {
+        call++;
+        final variables = (request.data as Map)['variables'] as Map;
+        expect(variables['filter'], 'ONLY_COMMENTS');
+        expect(variables['sort'], 'CREATED_DESC');
+        if (call == 1) {
+          return jsonResponse(
+            _activityEnvelope(
+              widgets: [_notesWidget(next: true, cursor: 'advanced-next')],
+            ),
+          );
+        }
+        expect(variables['after'], 'advanced-next');
+        return jsonResponse(
+          _schemaError(
+            'argumentNotAccepted',
+            "Field 'discussions' doesn't accept argument 'sort'",
+            details: const {
+              'name': 'discussions',
+              'typeName': 'Field',
+              'argumentName': 'sort',
+            },
+          ),
+        );
+      }),
+    );
+    addTearDown(api.close);
+
+    final first = await api.workItemActivity(
+      _expected,
+      filter: WorkItemActivityFilter.comments,
+      order: WorkItemActivityOrder.newestFirst,
+    );
+    await expectLater(
+      api.workItemActivityNext(first.nextDiscussions!),
+      throwsA(_failure(FailureKind.unsupported)),
+    );
+    expect(call, 2);
+  });
+
+  test(
+    'fallback excludes unrelated schema, authentication, network, and stale errors',
+    () async {
+      Future<void> expectSingleFailure(
+        ResponseBody response,
+        FailureKind kind,
+      ) async {
+        var calls = 0;
+        final api = testApi(
+          FakeAdapter((_) {
+            calls++;
+            return response;
+          }),
+        );
+        await expectLater(
+          api.workItemActivity(_expected),
+          throwsA(_failure(kind)),
+        );
+        expect(calls, 1);
+        api.close();
+      }
+
+      for (final details in const [
+        {
+          'code': 'argumentNotAccepted',
+          'name': 'otherField',
+          'typeName': 'Field',
+          'argumentName': 'filter',
+        },
+        {
+          'code': 'argumentNotAccepted',
+          'name': 'discussions',
+          'typeName': 'Field',
+          'argumentName': 'unrelated',
+        },
+        {
+          'code': 'otherCode',
+          'name': 'discussions',
+          'typeName': 'Field',
+          'argumentName': 'filter',
+        },
+      ]) {
+        await expectSingleFailure(
+          jsonResponse({
+            'errors': [
+              {'message': 'synthetic schema failure', 'extensions': details},
+            ],
+          }),
+          FailureKind.invalidResponse,
+        );
+      }
+      await expectSingleFailure(
+        jsonResponse({}, status: 401),
+        FailureKind.unauthenticated,
+      );
+      await expectSingleFailure(
+        jsonResponse({}, status: 503),
+        FailureKind.server,
+      );
+
+      var current = true;
+      var calls = 0;
+      final pending = Completer<ResponseBody>();
+      final stale = testApi(
+        FakeAdapter((_) {
+          calls++;
+          return pending.future;
+        }),
+      );
+      final operation = stale.workItemActivity(
+        _expected,
+        isCurrent: () => current,
+      );
+      await Future<void>.delayed(Duration.zero);
+      current = false;
+      pending.complete(
+        jsonResponse(
+          _schemaError(
+            'argumentNotAccepted',
+            "Field 'discussions' doesn't accept argument 'filter'",
+            details: const {
+              'name': 'discussions',
+              'typeName': 'Field',
+              'argumentName': 'filter',
+            },
+          ),
+        ),
+      );
+      await expectLater(operation, throwsA(_failure(FailureKind.cancelled)));
+      expect(calls, 1);
+      stale.close();
+    },
+  );
 
   test(
     'shared reader enforces GraphQL errors, redirects, and OAuth rotation',
