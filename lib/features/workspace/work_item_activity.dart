@@ -9,6 +9,7 @@ import '../../core/work_item_activity_models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../shared/attachment_budget.dart';
 import '../../shared/markdown_view.dart';
+import 'editor.dart';
 
 const _maxDiscussionPages = 5;
 const _maxNotePages = 5;
@@ -27,7 +28,7 @@ String _orderLabel(WorkItemActivityOrder order) => switch (order) {
   WorkItemActivityOrder.newestFirst => '最新優先',
 };
 
-/// A bounded, read-only activity reader for a work item.
+/// A bounded activity reader for a work item.
 ///
 /// Nothing is requested until the user expands the section. Each server page
 /// stays cached, while only the selected page (at most 20 discussions) is
@@ -41,6 +42,7 @@ class WorkItemActivityPanel extends StatefulWidget {
     required this.project,
     this.isCurrent,
     this.ownerChanges,
+    this.onRoute,
   });
 
   final Account account;
@@ -49,6 +51,7 @@ class WorkItemActivityPanel extends StatefulWidget {
   final Project? project;
   final bool Function()? isCurrent;
   final Listenable? ownerChanges;
+  final ValueChanged<Route<dynamic>>? onRoute;
 
   @override
   State<WorkItemActivityPanel> createState() => _WorkItemActivityPanelState();
@@ -71,12 +74,20 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   WorkItemActivityFilter _filter = WorkItemActivityFilter.all;
   WorkItemActivityOrder _order = WorkItemActivityOrder.oldestFirst;
   bool _controlsSupported = true;
+  WorkItemActivityWriteAccess? _writeAccess;
+  ApiFailure? _writeAccessError;
+  bool _loadingWriteAccess = false;
 
   bool get _hasNotesWidget =>
       widget.detail.widgetTypes.any((type) => type.toUpperCase() == 'NOTES');
 
   bool _current(int epoch) =>
       mounted && epoch == _epoch && (widget.isCurrent?.call() ?? true);
+
+  bool _writeCurrent(int ownerEpoch) =>
+      mounted &&
+      ownerEpoch == _ownerEpoch &&
+      (widget.isCurrent?.call() ?? true);
 
   @override
   void initState() {
@@ -125,7 +136,14 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
     _filter = WorkItemActivityFilter.all;
     _order = WorkItemActivityOrder.oldestFirst;
     _controlsSupported = true;
+    _clearWriteAccess();
     if (notify && mounted) setState(() {});
+  }
+
+  void _clearWriteAccess() {
+    _writeAccess = null;
+    _writeAccessError = null;
+    _loadingWriteAccess = false;
   }
 
   void _clearFeed() {
@@ -162,6 +180,133 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
     if (!_current(_epoch) || _loadingInitial || _loadingNextPage) return;
     setState(_clearFeed);
     if (_expanded) unawaited(_loadInitial());
+  }
+
+  Future<void> _loadWriteAccess() async {
+    if (_loadingWriteAccess || _writeAccess != null) return;
+    final ownerEpoch = _ownerEpoch;
+    final expected = widget.detail.summary;
+    setState(() {
+      _loadingWriteAccess = true;
+      _writeAccessError = null;
+    });
+    try {
+      final access = await widget.api.workItemActivityWriteAccess(
+        expected,
+        isCurrent: () => _writeCurrent(ownerEpoch),
+      );
+      if (!_writeCurrent(ownerEpoch)) return;
+      setState(() => _writeAccess = access);
+    } catch (error) {
+      if (!_writeCurrent(ownerEpoch)) return;
+      final failure = safeFailure(error);
+      if (failure.kind != FailureKind.cancelled) {
+        setState(() => _writeAccessError = failure);
+      }
+    } finally {
+      if (_writeCurrent(ownerEpoch)) {
+        setState(() => _loadingWriteAccess = false);
+      }
+    }
+  }
+
+  void _retryWriteAccess() {
+    if (!_writeCurrent(_ownerEpoch) || _loadingWriteAccess) return;
+    setState(() => _writeAccessError = null);
+    unawaited(_loadWriteAccess());
+  }
+
+  Future<void> _openComment(WorkItemActivityCommentTarget target) async {
+    final ownerEpoch = _ownerEpoch;
+    final summary = widget.detail.summary;
+    final saved = await openEditor(
+      context,
+      account: widget.account,
+      title: '新增留言',
+      resource: 'work-item-activity:${summary.id}:comment',
+      subtitle:
+          '${summary.project?.fullPath ?? summary.namespace?.fullPath ?? ''} · #${summary.iid}',
+      fields: const [
+        EditField(
+          'body',
+          '留言內容',
+          required: true,
+          lines: 9,
+          markdown: true,
+          quickActions: false,
+          hint: '支援 Markdown；此編輯器不支援 / 開頭的 GitLab 快捷指令。',
+        ),
+      ],
+      save: (values) async {
+        await widget.api.createWorkItemActivityComment(
+          target,
+          values['body'] ?? '',
+          isCurrent: () => _writeCurrent(ownerEpoch),
+        );
+      },
+      blockRetryOnWriteUncertain: true,
+      api: widget.project == null ? null : widget.api,
+      projectId: widget.project?.id,
+      projectPath: widget.project?.path,
+      projectToolsEnabled: widget.project != null,
+      isCurrent: () => _writeCurrent(ownerEpoch),
+      onRoute: widget.onRoute,
+    );
+    if (saved && _writeCurrent(ownerEpoch)) _refreshAfterWrite();
+  }
+
+  Future<void> _openReply(
+    String discussionId,
+    WorkItemActivityReplyTarget target,
+  ) async {
+    final ownerEpoch = _ownerEpoch;
+    final summary = widget.detail.summary;
+    final saved = await openEditor(
+      context,
+      account: widget.account,
+      title: '回覆留言',
+      resource:
+          'work-item-activity:${summary.id}:discussion:$discussionId:reply',
+      subtitle:
+          '${summary.project?.fullPath ?? summary.namespace?.fullPath ?? ''} · #${summary.iid}',
+      fields: const [
+        EditField(
+          'body',
+          '回覆內容',
+          required: true,
+          lines: 9,
+          markdown: true,
+          quickActions: false,
+          hint: '支援 Markdown；此編輯器不支援 / 開頭的 GitLab 快捷指令。',
+        ),
+      ],
+      save: (values) async {
+        await widget.api.createWorkItemActivityReply(
+          target,
+          values['body'] ?? '',
+          isCurrent: () => _writeCurrent(ownerEpoch),
+        );
+      },
+      blockRetryOnWriteUncertain: true,
+      api: widget.project == null ? null : widget.api,
+      projectId: widget.project?.id,
+      projectPath: widget.project?.path,
+      projectToolsEnabled: widget.project != null,
+      isCurrent: () => _writeCurrent(ownerEpoch),
+      onRoute: widget.onRoute,
+    );
+    if (saved && _writeCurrent(ownerEpoch)) _refreshAfterWrite();
+  }
+
+  void _refreshAfterWrite() {
+    setState(() {
+      _clearFeed();
+      _clearWriteAccess();
+    });
+    if (_expanded) {
+      unawaited(_loadInitial());
+      unawaited(_loadWriteAccess());
+    }
   }
 
   Future<void> _loadInitial() async {
@@ -361,7 +506,10 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
         subtitle: const Text('留言與系統事件'),
         onExpansionChanged: (expanded) {
           _expanded = expanded;
-          if (expanded) unawaited(_loadInitial());
+          if (expanded) {
+            unawaited(_loadInitial());
+            unawaited(_loadWriteAccess());
+          }
           setState(() {});
         },
         children: _expanded
@@ -381,9 +529,65 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _selectionControls(context),
+        const SizedBox(height: 12),
+        _writeControls(context),
         const SizedBox(height: 16),
         _feedContent(context),
       ],
+    );
+  }
+
+  Widget _writeControls(BuildContext context) {
+    if (_loadingWriteAccess) {
+      return const Row(
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 8),
+          Expanded(child: Text('正在確認留言權限…')),
+        ],
+      );
+    }
+    if (_writeAccessError case final error?) {
+      if (error.kind == FailureKind.unsupported) {
+        return const Text('此實例暫不支援新增留言；已載入的活動仍可閱讀。');
+      }
+      return _InlineActivityFailure(
+        error: error,
+        onRetry: _retryWriteAccess,
+        retryLabel: '重試留言權限',
+      );
+    }
+    final access = _writeAccess;
+    if (access == null) return const SizedBox.shrink();
+    if (access.discussionLocked) {
+      return const Text('這個工作項目的討論已鎖定；已載入的活動仍可閱讀。');
+    }
+    if (!access.canCreateNote) {
+      return const Text('目前帳號可閱讀活動，但沒有新增留言的權限。');
+    }
+    final target = access.commentTarget;
+    if (target == null) {
+      return const Text('伺服器未提供安全的留言目標；已載入的活動仍可閱讀。');
+    }
+    if (_filter == WorkItemActivityFilter.history) {
+      return OutlinedButton.icon(
+        key: const ValueKey('work-item-activity-switch-to-comments'),
+        onPressed: _controlsSupported
+            ? () => _changeSelection(filter: WorkItemActivityFilter.comments)
+            : null,
+        icon: const Icon(Icons.comment_outlined),
+        label: const Text('切換至留言後新增'),
+      );
+    }
+    return FilledButton.icon(
+      key: const ValueKey('work-item-activity-add-comment'),
+      onPressed: () => unawaited(_openComment(target)),
+      icon: const Icon(Icons.add_comment_outlined),
+      label: const Text('新增留言'),
     );
   }
 
@@ -748,6 +952,21 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
             icon: const Icon(Icons.unfold_less),
             label: const Text('收合回覆'),
           ),
+        if (_writeAccess?.canCreateNote == true &&
+            _writeAccess?.discussionLocked == false &&
+            discussion.replyTarget != null &&
+            _filter != WorkItemActivityFilter.history)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: OutlinedButton.icon(
+              key: ValueKey('work-item-activity-reply:${discussion.value.id}'),
+              onPressed: () => unawaited(
+                _openReply(discussion.value.id, discussion.replyTarget!),
+              ),
+              icon: const Icon(Icons.reply_outlined),
+              label: const Text('回覆'),
+            ),
+          ),
         if (discussion.error case final error?)
           _InlineActivityFailure(
             error: error,
@@ -856,7 +1075,11 @@ class _DiscussionPage {
   _DiscussionPage(this.result)
     : discussions = [
         for (final value in result.snapshot.discussions.items)
-          _DiscussionState(value, next: result.nextNotesByDiscussion[value.id]),
+          _DiscussionState(
+            value,
+            next: result.nextNotesByDiscussion[value.id],
+            replyTarget: result.replyTargetsByDiscussion[value.id],
+          ),
       ];
 
   final WorkItemActivityPage result;
@@ -864,7 +1087,7 @@ class _DiscussionPage {
 }
 
 class _DiscussionState {
-  _DiscussionState(this.value, {required this.next})
+  _DiscussionState(this.value, {required this.next, required this.replyTarget})
     : notesAvailability = value.notes.availability,
       notes = value.notes.items.toList();
 
@@ -872,6 +1095,7 @@ class _DiscussionState {
   final List<WorkItemActivityNote> notes;
   WorkItemActivityConnectionAvailability notesAvailability;
   WorkItemDiscussionNotesContinuation? next;
+  final WorkItemActivityReplyTarget? replyTarget;
   ApiFailure? error;
   bool loading = false;
   bool commentsExpanded = false;
@@ -897,10 +1121,15 @@ class _ActivityRenderBudget {
 }
 
 class _InlineActivityFailure extends StatelessWidget {
-  const _InlineActivityFailure({required this.error, required this.onRetry});
+  const _InlineActivityFailure({
+    required this.error,
+    required this.onRetry,
+    this.retryLabel = '重試',
+  });
 
   final ApiFailure error;
   final VoidCallback onRetry;
+  final String retryLabel;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -913,7 +1142,7 @@ class _InlineActivityFailure extends StatelessWidget {
       OutlinedButton.icon(
         onPressed: onRetry,
         icon: const Icon(Icons.refresh),
-        label: const Text('重試'),
+        label: Text(retryLabel),
       ),
     ],
   );

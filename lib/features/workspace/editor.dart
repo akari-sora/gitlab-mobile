@@ -20,11 +20,15 @@ const _draftStorage = FlutterSecureStorage(
 );
 String _draftPrefix(Account account) =>
     'draft.v2.${base64Url.encode(utf8.encode(account.key))}.';
+final _draftClearEpochs = <String, int>{};
+final _draftWrites = <String, Future<void>>{};
 Future<void> clearSecureDrafts(Account account) async {
+  _draftClearEpochs[account.key] = (_draftClearEpochs[account.key] ?? 0) + 1;
+  await (_draftWrites[account.key] ?? Future<void>.value());
   final entries = await _draftStorage.readAll();
   for (final key in entries.keys.where(
     (key) => key.startsWith(_draftPrefix(account)),
-  )) {
+  ).toList(growable: false)) {
     await _draftStorage.delete(key: key);
   }
 }
@@ -142,6 +146,9 @@ Future<bool> openEditor(
   String? subtitle,
   String? baseRevision,
   bool persistent = true,
+  bool blockRetryOnWriteUncertain = false,
+  bool projectToolsEnabled = true,
+  bool Function()? isCurrent,
   GitLabApi? api,
   int? projectId,
   String? projectPath,
@@ -158,6 +165,9 @@ Future<bool> openEditor(
           subtitle: subtitle,
           baseRevision: baseRevision,
           persistent: persistent,
+          blockRetryOnWriteUncertain: blockRetryOnWriteUncertain,
+          projectToolsEnabled: projectToolsEnabled,
+          isCurrent: isCurrent,
           api: api,
           projectId: projectId,
           projectPath: projectPath,
@@ -179,6 +189,9 @@ class ResourceEditor extends StatefulWidget {
     this.subtitle,
     this.baseRevision,
     this.persistent = true,
+    this.blockRetryOnWriteUncertain = false,
+    this.projectToolsEnabled = true,
+    this.isCurrent,
     this.api,
     this.projectId,
     this.projectPath,
@@ -192,6 +205,10 @@ class ResourceEditor extends StatefulWidget {
   /// `updated_at` the fields were built from. Absent for creation editors.
   final String? baseRevision;
   final bool persistent;
+  /// A creation whose result is unknown must be checked before another submit.
+  final bool blockRetryOnWriteUncertain;
+  final bool projectToolsEnabled;
+  final bool Function()? isCurrent;
   final GitLabApi? api;
   final int? projectId;
   final String? projectPath;
@@ -206,6 +223,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
   final _focus = <String, FocusNode>{};
   final _picked = <String, List<PickerChoice>>{};
   late final String _key;
+  late final int _draftEpoch;
   Timer? _timer;
   Future<void> _writes = Future<void>.value();
   bool _loading = true, _saving = false, _done = false, _dirty = false, _draftUnavailable = false, _preview = false, _guarding = false;
@@ -215,11 +233,16 @@ class _ResourceEditorState extends State<ResourceEditor> {
   String? _uploadingName;
   TextSelection? _markdownSelection;
   ApiFailure? _error;
-  bool get _locked => _saving || _guarding;
+  bool _saveBlocked = false;
+  bool get _draftCurrent =>
+      _draftEpoch == (_draftClearEpochs[widget.account.key] ?? 0) &&
+      (widget.isCurrent?.call() ?? true);
+  bool get _locked => _saving || _guarding || !_draftCurrent;
 
   @override
   void initState() {
     super.initState();
+    _draftEpoch = _draftClearEpochs[widget.account.key] ?? 0;
     _key = '${_draftPrefix(widget.account)}${base64Url.encode(utf8.encode(widget.resource))}';
     for (final field in widget.fields) {
       if (field.source == null) {
@@ -242,7 +265,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
   Future<void> _restore() async {
     try {
       final raw = widget.persistent ? await _draftStorage.read(key: _key) : null;
-      if (raw != null && mounted) {
+      if (raw != null && mounted && _draftCurrent) {
         final value = jsonDecode(raw);
         if (value is Map<String, dynamic>) {
           final storedBase = value[_draftBaseKey];
@@ -329,12 +352,22 @@ class _ResourceEditorState extends State<ResourceEditor> {
   void _persist() {
     // While a stale draft is held, keystrokes, leave, and dispose must not
     // replace the stored copy. Apply persists only after the hold is cleared.
-    if (_done || !widget.persistent || !_dirty || _staleDraft != null) return;
+    if (_done || !widget.persistent || !_dirty || _staleDraft != null || !_draftCurrent) return;
     final data = jsonEncode(_storedDraft());
-    _writes = _writes.then((_) => _draftStorage.write(key: _key, value: data)).catchError((Object _) {
+    final pending = _draftWrites[widget.account.key] ?? Future<void>.value();
+    _writes = Future.wait([_writes, pending]).then((_) async {
+      if (_draftCurrent) await _draftStorage.write(key: _key, value: data);
+    }).catchError((Object _) {
       _draftUnavailable = true;
       if (mounted) setState(() {});
     });
+    final write = _writes;
+    _draftWrites[widget.account.key] = write;
+    unawaited(write.then((_) {
+      if (identical(_draftWrites[widget.account.key], write)) {
+        _draftWrites.remove(widget.account.key);
+      }
+    }));
   }
 
   void _changed(String _) {
@@ -460,7 +493,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
   }
 
   Future<void> _save() async {
-    if (_locked || _loading || _staleDraft != null || _form.currentState?.validate() != true) return;
+    if (_locked || _loading || _saveBlocked || _staleDraft != null || _form.currentState?.validate() != true) return;
     FocusScope.of(context).unfocus();
     _timer?.cancel();
     _persist();
@@ -472,6 +505,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
       await widget.save(_draftValues());
       _done = true;
       await _writes;
+      if (!_draftCurrent) return;
       if (widget.persistent) {
         try {
           await _draftStorage.delete(key: _key);
@@ -481,7 +515,16 @@ class _ResourceEditorState extends State<ResourceEditor> {
       }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      if (mounted) setState(() => _error = safeFailure(e));
+      if (mounted && _draftCurrent) {
+        final failure = safeFailure(e);
+        setState(() {
+          _error = failure;
+          if (widget.blockRetryOnWriteUncertain &&
+              failure.kind == FailureKind.writeUncertain) {
+            _saveBlocked = true;
+          }
+        });
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -541,7 +584,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton(
               key: const Key('editorSave'),
-              onPressed: _locked || _loading || _staleDraft != null ? null : _save,
+              onPressed: _locked || _loading || _saveBlocked || _staleDraft != null ? null : _save,
               child: Text(_saving ? '送出中…' : '儲存'),
             ),
           ),
@@ -576,6 +619,11 @@ class _ResourceEditorState extends State<ResourceEditor> {
                               account: widget.account,
                               resourceLabel: widget.resource,
                               onSwitchAccount: endSessionFrom(context),
+                            ),
+                          if (_saveBlocked)
+                            const Padding(
+                              padding: EdgeInsets.only(top: 12),
+                              child: Text('請保留草稿並返回，重新讀取活動確認是否已新增，再決定下一步。'),
                             ),
                           for (final field in widget.fields)
                             Padding(
@@ -924,17 +972,17 @@ class _ResourceEditorState extends State<ResourceEditor> {
               onPressed: _locked ? null : () => _markup(key, tool.$3),
               icon: Icon(tool.$2),
             ),
-          IconButton(
+          if (widget.projectToolsEnabled) IconButton(
             tooltip: '提及',
             onPressed: _locked ? null : () { unawaited(_mention(key)); },
             icon: const Icon(Icons.alternate_email),
           ),
-          IconButton(
+          if (widget.projectToolsEnabled) IconButton(
             tooltip: '附加圖片',
             onPressed: _locked ? null : () { unawaited(_attach(key, image: true)); },
             icon: const Icon(Icons.image_outlined),
           ),
-          IconButton(
+          if (widget.projectToolsEnabled) IconButton(
             tooltip: '附加檔案',
             onPressed: _locked ? null : () { unawaited(_attach(key, image: false)); },
             icon: const Icon(Icons.attach_file),

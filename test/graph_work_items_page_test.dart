@@ -362,6 +362,16 @@ void main() {
       const path = 'qa/synthetic-group/child-project';
       const projectId = 'gid://gitlab/Project/94';
       final adapter = FakeAdapter((request) {
+        if (!request.uri.path.endsWith('/api/graphql')) {
+          return jsonResponse({
+            'id': 94,
+            'name': 'Child project',
+            'path_with_namespace': path,
+            'visibility': 'private',
+            'default_branch': 'main',
+            'archived': false,
+          });
+        }
         final query = (request.data as Map)['query'] as String;
         if (query.contains('MobileWorkItemState')) {
           return _namespaceState(
@@ -407,6 +417,193 @@ void main() {
         share.uri.toString(),
         'https://example.com:8443/gitlab/qa/synthetic-group/child-project/-/work_items/59',
       );
+    },
+  );
+
+  testWidgets(
+    'wrong descendant project identity keeps plain Markdown and offers retry',
+    (tester) async {
+      const iid = 59;
+      const namespaceId = 'gid://gitlab/Namespaces::ProjectNamespace/194';
+      const path = 'qa/synthetic-group/child-project';
+      const projectId = 'gid://gitlab/Project/94';
+      var projectReads = 0;
+      final adapter = FakeAdapter((request) {
+        if (!request.uri.path.endsWith('/api/graphql')) {
+          projectReads++;
+          return jsonResponse({
+            'id': projectReads == 1 ? 95 : 94,
+            'name': 'Child project',
+            'path_with_namespace': path,
+            'visibility': 'private',
+            'default_branch': 'main',
+            'archived': false,
+          });
+        }
+        final query = (request.data as Map)['query'] as String;
+        if (query.contains('MobileWorkItemState')) {
+          return _namespaceState(
+            iid: iid,
+            namespaceId: namespaceId,
+            namespacePath: path,
+            projectId: projectId,
+            projectPath: path,
+          );
+        }
+        if (query.contains('MobileNamespaceWorkItem')) {
+          return _namespaceDetail(
+            iid: iid,
+            namespaceId: namespaceId,
+            namespacePath: path,
+            title: 'Descendant project item',
+            projectId: projectId,
+            projectPath: path,
+          );
+        }
+        throw StateError('Unexpected query');
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GraphWorkItemDetailPage.namespace(
+            account: _account(api, 7),
+            api: api,
+            namespacePath: path,
+            expectedNamespaceId: namespaceId,
+            iid: iid,
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      expect(projectReads, 1);
+      expect(find.text('專案 Markdown 整合'), findsOneWidget);
+      expect(find.textContaining('仍可使用純 Markdown'), findsOneWidget);
+      expect(find.text('無法讀取回應'), findsOneWidget);
+      expect(find.textContaining(path), findsWidgets);
+      expect(find.text('切換帳號'), findsOneWidget);
+
+      final retry = find.ancestor(
+        of: find.descendant(
+          of: find.byKey(const ValueKey('work-item-project-context-failure')),
+          matching: find.text('重新整理'),
+        ),
+        matching: find.byType(TextButton),
+      );
+      tester.widget<TextButton>(retry).onPressed!();
+      await settleNetworkWidgets(tester);
+
+      expect(projectReads, 2);
+      expect(find.text('專案 Markdown 整合'), findsNothing);
+      expect(find.text('無法讀取回應'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'late descendant project context cannot escape namespace replacement',
+    (tester) async {
+      const projectPath = 'qa/synthetic-group/child-project';
+      const projectNamespaceId =
+          'gid://gitlab/Namespaces::ProjectNamespace/194';
+      const replacementPath = 'qa/replacement-group';
+      const replacementNamespaceId = 'gid://gitlab/Group/99';
+      final pendingProject = Completer<ResponseBody>();
+      final adapter = FakeAdapter((request) {
+        if (!request.uri.path.endsWith('/api/graphql')) {
+          return pendingProject.future;
+        }
+        final data = request.data as Map;
+        final query = data['query'] as String;
+        final variables = data['variables'] as Map;
+        if (query.contains('MobileWorkItemState')) {
+          final replacement = '${variables['id']}'.endsWith('/60');
+          return _namespaceState(
+            iid: replacement ? 60 : 59,
+            namespaceId: replacement
+                ? replacementNamespaceId
+                : projectNamespaceId,
+            namespacePath: replacement ? replacementPath : projectPath,
+            projectId: replacement ? null : 'gid://gitlab/Project/94',
+            projectPath: replacement ? null : projectPath,
+          );
+        }
+        if (query.contains('MobileNamespaceWorkItem')) {
+          final replacement = variables['path'] == replacementPath;
+          return _namespaceDetail(
+            iid: replacement ? 60 : 59,
+            namespaceId: replacement
+                ? replacementNamespaceId
+                : projectNamespaceId,
+            namespacePath: replacement ? replacementPath : projectPath,
+            title: replacement
+                ? 'Replacement group detail'
+                : 'Old descendant project detail',
+            projectId: replacement ? null : 'gid://gitlab/Project/94',
+            projectPath: replacement ? null : projectPath,
+          );
+        }
+        throw StateError('Unexpected query: $query');
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final account = _account(api, 7);
+
+      Widget page({
+        required String path,
+        required String namespaceId,
+        required int iid,
+      }) => MaterialApp(
+        home: GraphWorkItemDetailPage.namespace(
+          account: account,
+          api: api,
+          namespacePath: path,
+          expectedNamespaceId: namespaceId,
+          iid: iid,
+        ),
+      );
+
+      await tester.pumpWidget(
+        page(path: projectPath, namespaceId: projectNamespaceId, iid: 59),
+      );
+      for (
+        var attempt = 0;
+        attempt < 10 &&
+            find.text('Old descendant project detail').evaluate().isEmpty;
+        attempt++
+      ) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(find.text('Old descendant project detail'), findsOneWidget);
+
+      await tester.pumpWidget(
+        page(
+          path: replacementPath,
+          namespaceId: replacementNamespaceId,
+          iid: 60,
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      expect(find.text('Replacement group detail'), findsOneWidget);
+
+      pendingProject.complete(
+        jsonResponse({
+          'id': 94,
+          'name': 'Old child project',
+          'path_with_namespace': projectPath,
+          'visibility': 'private',
+          'default_branch': 'main',
+          'archived': false,
+        }),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Replacement group detail'), findsOneWidget);
+      expect(find.text('Old descendant project detail'), findsNothing);
+      expect(find.text('專案 Markdown 整合'), findsNothing);
+      expect(tester.takeException(), isNull);
     },
   );
 

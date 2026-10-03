@@ -1,6 +1,7 @@
 part of 'gitlab_api.dart';
 
 const _workItemActivityPageSize = 20;
+const _workItemActivityWriteBodyBytes = 2 * 1024 * 1024;
 
 const _workItemActivityIdentityFields = r'''
 id
@@ -109,6 +110,81 @@ query MobileWorkItemDiscussionNotes(
 }
 ''';
 
+final _workItemActivityWriteAccessQuery =
+    '''
+query MobileWorkItemActivityWriteAccess(\$id: WorkItemID!) {
+  currentUser { id }
+  workItem(id: \$id) {
+    $_workItemActivityIdentityFields
+    userPermissions { createNote }
+    widgets {
+      type
+      ... on WorkItemWidgetNotes { discussionLocked }
+    }
+  }
+}
+''';
+
+final _workItemActivityReplyPreflightQuery =
+    '''
+query MobileWorkItemActivityReplyPreflight(
+  \$workItemId: WorkItemID!
+  \$anchorNoteId: NoteID!
+) {
+  currentUser { id }
+  workItem(id: \$workItemId) {
+    $_workItemActivityIdentityFields
+    userPermissions { createNote }
+    widgets {
+      type
+      ... on WorkItemWidgetNotes { discussionLocked }
+    }
+  }
+  anchor: note(id: \$anchorNoteId) {
+    id
+    noteableType
+    noteableId
+    project { id fullPath }
+    discussion { id replyId createdAt }
+  }
+}
+''';
+
+final _workItemActivityCreateNoteMutation =
+    '''
+mutation MobileCreateWorkItemActivityNote(\$input: CreateNoteInput!) {
+  createNote(input: \$input) {
+    errors
+    note {
+      $_workItemActivityNoteFields
+      internal
+      noteableType
+      noteableId
+      project { id fullPath }
+      discussion { id replyId createdAt }
+    }
+  }
+}
+''';
+
+final _workItemActivityNoteReadbackQuery =
+    '''
+query MobileWorkItemActivityNoteReadback(
+  \$workItemId: WorkItemID!
+  \$noteId: NoteID!
+) {
+  workItem(id: \$workItemId) { $_workItemActivityIdentityFields }
+  note(id: \$noteId) {
+    $_workItemActivityNoteFields
+    internal
+    noteableType
+    noteableId
+    project { id fullPath }
+    discussion { id replyId createdAt }
+  }
+}
+''';
+
 /// One bounded activity page plus opaque, account-bound continuation handles.
 final class WorkItemActivityPage {
   WorkItemActivityPage._({
@@ -119,7 +195,9 @@ final class WorkItemActivityPage {
     required this.nextDiscussions,
     required Map<String, WorkItemDiscussionNotesContinuation>
     nextNotesByDiscussion,
-  }) : nextNotesByDiscussion = Map.unmodifiable(nextNotesByDiscussion);
+    required Map<String, WorkItemActivityReplyTarget> replyTargetsByDiscussion,
+  }) : nextNotesByDiscussion = Map.unmodifiable(nextNotesByDiscussion),
+       replyTargetsByDiscussion = Map.unmodifiable(replyTargetsByDiscussion);
 
   final WorkItemActivitySnapshot snapshot;
   final WorkItemActivityFilter filter;
@@ -127,6 +205,81 @@ final class WorkItemActivityPage {
   final bool controlsSupported;
   final WorkItemActivityContinuation? nextDiscussions;
   final Map<String, WorkItemDiscussionNotesContinuation> nextNotesByDiscussion;
+  final Map<String, WorkItemActivityReplyTarget> replyTargetsByDiscussion;
+}
+
+/// A permission result isolated from the read-only activity query. Older
+/// schemas can keep their reader even when native note creation is unsupported.
+final class WorkItemActivityWriteAccess {
+  const WorkItemActivityWriteAccess._({
+    required this.canCreateNote,
+    required this.discussionLocked,
+    required this.commentTarget,
+  });
+
+  final bool canCreateNote;
+  final bool discussionLocked;
+  final WorkItemActivityCommentTarget? commentTarget;
+}
+
+/// A successfully acknowledged and independently read-back note.
+final class WorkItemActivityCreatedNote {
+  const WorkItemActivityCreatedNote._({
+    required this.note,
+    required this.discussionId,
+    required this.replyId,
+  });
+
+  final WorkItemActivityNote note;
+  final String discussionId;
+  final String replyId;
+}
+
+/// Opaque, owner-bound capability for one top-level comment attempt.
+final class WorkItemActivityCommentTarget {
+  WorkItemActivityCommentTarget._({
+    required GitLabApi owner,
+    required _WorkItemActivityIdentity identity,
+    required int workItemModelId,
+    required String authorId,
+  }) : _owner = owner,
+       _identity = identity,
+       _workItemModelId = workItemModelId,
+       _authorId = authorId;
+
+  final GitLabApi _owner;
+  final _WorkItemActivityIdentity _identity;
+  final int _workItemModelId;
+  final String _authorId;
+  bool _consumed = false;
+}
+
+/// Opaque, owner-bound capability for one reply attempt.
+final class WorkItemActivityReplyTarget {
+  WorkItemActivityReplyTarget._({
+    required GitLabApi owner,
+    required _WorkItemActivityIdentity identity,
+    required int workItemModelId,
+    required String discussionId,
+    required String replyId,
+    required DateTime discussionCreatedAt,
+    required String anchorNoteId,
+  }) : _owner = owner,
+       _identity = identity,
+       _workItemModelId = workItemModelId,
+       _discussionId = discussionId,
+       _replyId = replyId,
+       _discussionCreatedAt = discussionCreatedAt,
+       _anchorNoteId = anchorNoteId;
+
+  final GitLabApi _owner;
+  final _WorkItemActivityIdentity _identity;
+  final int _workItemModelId;
+  final String _discussionId;
+  final String _replyId;
+  final DateTime _discussionCreatedAt;
+  final String _anchorNoteId;
+  bool _consumed = false;
 }
 
 /// A bounded continuation page for exactly one validated discussion.
@@ -209,6 +362,132 @@ typedef _WorkItemActivityIdentity = ({
 });
 
 extension WorkItemActivityApi on GitLabApi {
+  Future<WorkItemActivityWriteAccess> workItemActivityWriteAccess(
+    WorkItemGraphSummary expected, {
+    bool Function()? isCurrent,
+  }) async {
+    _validateExpectedAttributeIdentity(expected);
+    final identity = _activityIdentityFromExpected(expected);
+    final modelId = _workItemActivityModelId(identity.id);
+    final preflight = await _readActivityWritePreflight(
+      identity,
+      isCurrent: isCurrent,
+    );
+    return WorkItemActivityWriteAccess._(
+      canCreateNote: preflight.canCreateNote,
+      discussionLocked: preflight.discussionLocked,
+      commentTarget: preflight.canCreateNote && !preflight.discussionLocked
+          ? WorkItemActivityCommentTarget._(
+              owner: this,
+              identity: identity,
+              workItemModelId: modelId,
+              authorId: preflight.authorId!,
+            )
+          : null,
+    );
+  }
+
+  Future<WorkItemActivityCreatedNote> createWorkItemActivityComment(
+    WorkItemActivityCommentTarget target,
+    String body, {
+    bool Function()? isCurrent,
+  }) async {
+    _requireActivityOwner(target._owner);
+    if (target._consumed) {
+      throw const ApiFailure(FailureKind.writeUncertain);
+    }
+    final normalized = _validatedActivityWriteBody(body);
+    _requireCurrentWorkItemRequest(isCurrent);
+    final preflight = await _readActivityWritePreflight(
+      target._identity,
+      isCurrent: isCurrent,
+    );
+    if (!preflight.canCreateNote) {
+      throw const ApiFailure(
+        FailureKind.forbidden,
+        title: '無法新增工作項目留言',
+        detail: '目前帳號沒有在這個工作項目留言的權限。',
+      );
+    }
+    if (preflight.discussionLocked) {
+      throw const ApiFailure(
+        FailureKind.conflict,
+        title: '工作項目討論已鎖定',
+        detail: '這個工作項目目前不接受新的留言。',
+      );
+    }
+    if (preflight.authorId != target._authorId) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    return _createWorkItemActivityNote(
+      identity: target._identity,
+      workItemModelId: target._workItemModelId,
+      expectedAuthorId: preflight.authorId!,
+      body: normalized,
+      consume: () {
+        if (target._consumed) return false;
+        target._consumed = true;
+        return true;
+      },
+      isCurrent: isCurrent,
+    );
+  }
+
+  Future<WorkItemActivityCreatedNote> createWorkItemActivityReply(
+    WorkItemActivityReplyTarget target,
+    String body, {
+    bool Function()? isCurrent,
+  }) async {
+    _requireActivityOwner(target._owner);
+    if (target._consumed) {
+      throw const ApiFailure(FailureKind.writeUncertain);
+    }
+    final normalized = _validatedActivityWriteBody(body);
+    _requireCurrentWorkItemRequest(isCurrent);
+    final preflight = await _readActivityWritePreflight(
+      target._identity,
+      anchorNoteId: target._anchorNoteId,
+      isCurrent: isCurrent,
+    );
+    if (!preflight.canCreateNote) {
+      throw const ApiFailure(
+        FailureKind.forbidden,
+        title: '無法回覆工作項目討論',
+        detail: '目前帳號沒有回覆這個工作項目討論的權限。',
+      );
+    }
+    if (preflight.discussionLocked) {
+      throw const ApiFailure(
+        FailureKind.conflict,
+        title: '工作項目討論已鎖定',
+        detail: '這個工作項目目前不接受新的回覆。',
+      );
+    }
+    final anchor = preflight.anchor;
+    if (anchor == null ||
+        anchor.noteableId != target._workItemModelId ||
+        anchor.discussionId != target._discussionId ||
+        anchor.replyId != target._replyId ||
+        anchor.discussionCreatedAt != target._discussionCreatedAt) {
+      throw const ApiFailure(FailureKind.conflict);
+    }
+    return _createWorkItemActivityNote(
+      identity: target._identity,
+      workItemModelId: target._workItemModelId,
+      expectedAuthorId: preflight.authorId!,
+      body: normalized,
+      expectedDiscussionId: target._discussionId,
+      expectedReplyId: target._replyId,
+      expectedDiscussionCreatedAt: target._discussionCreatedAt,
+      consume: () {
+        if (target._consumed) return false;
+        target._consumed = true;
+        return true;
+      },
+      isCurrent: isCurrent,
+    );
+  }
+
   Future<WorkItemActivityPage> workItemActivity(
     WorkItemGraphSummary expected, {
     WorkItemActivityFilter filter = WorkItemActivityFilter.all,
@@ -304,6 +583,201 @@ extension WorkItemActivityApi on GitLabApi {
     }
   }
 
+  Future<
+    ({
+      bool canCreateNote,
+      bool discussionLocked,
+      String? authorId,
+      _WorkItemActivityAnchor? anchor,
+    })
+  >
+  _readActivityWritePreflight(
+    _WorkItemActivityIdentity expected, {
+    String? anchorNoteId,
+    bool Function()? isCurrent,
+  }) async {
+    _requireCurrentWorkItemRequest(isCurrent);
+    final ({Uint8List bytes, Headers headers, int statusCode}) response;
+    try {
+      response = await _read(
+        instance.graphQL,
+        method: 'POST',
+        graphQuery: true,
+        data: {
+          'query': anchorNoteId == null
+              ? _workItemActivityWriteAccessQuery
+              : _workItemActivityReplyPreflightQuery,
+          'variables': anchorNoteId == null
+              ? {'id': expected.id}
+              : {'workItemId': expected.id, 'anchorNoteId': anchorNoteId},
+        },
+      );
+    } on Object {
+      _requireCurrentWorkItemRequest(isCurrent);
+      rethrow;
+    }
+    _requireCurrentWorkItemRequest(isCurrent);
+    try {
+      final data = _workItemGraphData(response.bytes);
+      final rawWorkItem = data['workItem'];
+      final rawCurrentUser = data['currentUser'];
+      if (rawWorkItem == null) {
+        throw const ApiFailure(FailureKind.invisible);
+      }
+      final workItem = objectJson(rawWorkItem);
+      final identity = _parseAttributeIdentity(workItem);
+      _requireActivityIdentity(identity, expected);
+      final permissions = objectJson(workItem['userPermissions']);
+      final serverCanCreateNote = permissions['createNote'];
+      if (serverCanCreateNote is! bool) {
+        throw const FormatException('Invalid note permission');
+      }
+      String? authorId;
+      if (rawCurrentUser != null) {
+        authorId = requiredString(objectJson(rawCurrentUser), 'id');
+        if (!_isGraphIdType(authorId, const {'User'})) {
+          throw const FormatException('Invalid current user identity');
+        }
+      }
+      final canCreateNote = serverCanCreateNote && authorId != null;
+      final discussionLocked = _parseActivityDiscussionLocked(
+        workItem['widgets'],
+      );
+      _WorkItemActivityAnchor? anchor;
+      if (anchorNoteId != null) {
+        if (data['anchor'] == null) {
+          throw const ApiFailure(FailureKind.invisible);
+        }
+        anchor = _parseActivityAnchor(
+          data['anchor'],
+          expected: expected,
+          expectedAnchorId: anchorNoteId,
+        );
+      }
+      return (
+        canCreateNote: canCreateNote,
+        discussionLocked: discussionLocked,
+        authorId: authorId,
+        anchor: anchor,
+      );
+    } on FormatException {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+  }
+
+  Future<WorkItemActivityCreatedNote> _createWorkItemActivityNote({
+    required _WorkItemActivityIdentity identity,
+    required int workItemModelId,
+    required String expectedAuthorId,
+    required String body,
+    required bool Function() consume,
+    String? expectedDiscussionId,
+    String? expectedReplyId,
+    DateTime? expectedDiscussionCreatedAt,
+    bool Function()? isCurrent,
+  }) async {
+    _requireCurrentWorkItemRequest(isCurrent);
+    if (!consume()) throw const ApiFailure(FailureKind.writeUncertain);
+
+    final ({Uint8List bytes, Headers headers, int statusCode}) response;
+    try {
+      response = await _send(
+        instance.graphQL,
+        method: 'POST',
+        graphMutation: true,
+        data: {
+          'query': _workItemActivityCreateNoteMutation,
+          'variables': {
+            'input': {
+              'noteableId': identity.id,
+              'body': body,
+              'internal': false,
+              'discussionId': ?expectedReplyId,
+            },
+          },
+        },
+      );
+    } on ApiFailure {
+      throw const ApiFailure(FailureKind.writeUncertain);
+    }
+
+    late final _WorkItemActivityCreatedIdentity acknowledged;
+    try {
+      _requireCurrentWorkItemRequest(isCurrent);
+      final data = _workItemGraphData(response.bytes);
+      final rawPayload = data['createNote'];
+      if (rawPayload == null) {
+        throw const FormatException('Missing createNote payload');
+      }
+      final payload = objectJson(rawPayload);
+      final errors = payload['errors'];
+      if (errors is! List || errors.any((error) => error is! String)) {
+        throw const FormatException('Invalid createNote errors');
+      }
+      if (errors.isNotEmpty) {
+        throw const ApiFailure(FailureKind.writeUncertain);
+      }
+      acknowledged = _parseCreatedActivityNote(
+        payload['note'],
+        expectedIdentity: identity,
+        expectedWorkItemModelId: workItemModelId,
+        expectedAuthorId: expectedAuthorId,
+        expectedBody: body,
+        expectedDiscussionId: expectedDiscussionId,
+        expectedReplyId: expectedReplyId,
+        expectedDiscussionCreatedAt: expectedDiscussionCreatedAt,
+      );
+    } on ApiFailure catch (failure) {
+      if (failure.kind == FailureKind.unsupported) rethrow;
+      throw const ApiFailure(FailureKind.writeUncertain);
+    } on FormatException {
+      throw const ApiFailure(FailureKind.writeUncertain);
+    }
+
+    try {
+      _requireCurrentWorkItemRequest(isCurrent);
+      final readbackResponse = await _read(
+        instance.graphQL,
+        method: 'POST',
+        graphQuery: true,
+        data: {
+          'query': _workItemActivityNoteReadbackQuery,
+          'variables': {
+            'workItemId': identity.id,
+            'noteId': acknowledged.note.id,
+          },
+        },
+      );
+      _requireCurrentWorkItemRequest(isCurrent);
+      final data = _workItemGraphData(readbackResponse.bytes);
+      if (data['workItem'] == null || data['note'] == null) {
+        throw const FormatException('Missing note readback');
+      }
+      final actualIdentity = _parseAttributeIdentity(
+        objectJson(data['workItem']),
+      );
+      _requireActivityIdentity(actualIdentity, identity);
+      final readback = _parseCreatedActivityNote(
+        data['note'],
+        expectedIdentity: identity,
+        expectedWorkItemModelId: workItemModelId,
+        expectedAuthorId: expectedAuthorId,
+        expectedBody: body,
+        expectedDiscussionId: acknowledged.discussionId,
+        expectedReplyId: acknowledged.replyId,
+        expectedDiscussionCreatedAt: acknowledged.discussionCreatedAt,
+        expectedNoteId: acknowledged.note.id,
+      );
+      return WorkItemActivityCreatedNote._(
+        note: readback.note,
+        discussionId: readback.discussionId,
+        replyId: readback.replyId,
+      );
+    } on Object {
+      throw const ApiFailure(FailureKind.writeUncertain);
+    }
+  }
+
   Future<WorkItemActivityPage> _readWorkItemActivity(
     _WorkItemActivityIdentity expected, {
     String? after,
@@ -365,6 +839,8 @@ extension WorkItemActivityApi on GitLabApi {
           : {...seenCursors, nextCursor};
       final notesContinuations =
           <String, WorkItemDiscussionNotesContinuation>{};
+      final replyTargets = <String, WorkItemActivityReplyTarget>{};
+      final workItemModelId = _workItemActivityModelIdOrNull(identity.id);
       for (final entry in parsed.discussionsWithCursors) {
         final continuation = _notesContinuation(
           identity: identity,
@@ -375,6 +851,14 @@ extension WorkItemActivityApi on GitLabApi {
         );
         if (continuation != null) {
           notesContinuations[entry.value.id] = continuation;
+        }
+        if (workItemModelId != null) {
+          final target = _activityReplyTarget(
+            identity: identity,
+            workItemModelId: workItemModelId,
+            discussion: entry.value,
+          );
+          if (target != null) replyTargets[entry.value.id] = target;
         }
       }
       return WorkItemActivityPage._(
@@ -401,6 +885,7 @@ extension WorkItemActivityApi on GitLabApi {
                 controlsSupported: useControls,
               ),
         nextNotesByDiscussion: notesContinuations,
+        replyTargetsByDiscussion: replyTargets,
       );
     } on FormatException {
       throw const ApiFailure(FailureKind.invalidResponse);
@@ -467,6 +952,241 @@ extension WorkItemActivityApi on GitLabApi {
       seenCursors: {...seenCursors, cursor},
     );
   }
+
+  WorkItemActivityReplyTarget? _activityReplyTarget({
+    required _WorkItemActivityIdentity identity,
+    required int workItemModelId,
+    required WorkItemActivityDiscussion discussion,
+  }) {
+    if (discussion.notes.availability !=
+            WorkItemActivityConnectionAvailability.present ||
+        discussion.notes.items.isEmpty) {
+      return null;
+    }
+    final anchorNoteId = discussion.notes.items.last.id;
+    if (!_isWritableActivityNoteId(anchorNoteId) ||
+        !_isGraphIdType(discussion.id, const {'Discussion'}) ||
+        !_isGraphIdType(discussion.replyId, const {
+          'Discussion',
+          'IndividualNoteDiscussion',
+        })) {
+      return null;
+    }
+    return WorkItemActivityReplyTarget._(
+      owner: this,
+      identity: identity,
+      workItemModelId: workItemModelId,
+      discussionId: discussion.id,
+      replyId: discussion.replyId,
+      discussionCreatedAt: discussion.createdAt,
+      anchorNoteId: anchorNoteId,
+    );
+  }
+}
+
+typedef _WorkItemActivityAnchor = ({
+  int noteableId,
+  String discussionId,
+  String replyId,
+  DateTime discussionCreatedAt,
+});
+
+typedef _WorkItemActivityCreatedIdentity = ({
+  WorkItemActivityNote note,
+  String discussionId,
+  String replyId,
+  DateTime discussionCreatedAt,
+});
+
+int _workItemActivityModelId(String id) {
+  final value = _workItemActivityModelIdOrNull(id);
+  if (value == null) throw const ApiFailure(FailureKind.validation);
+  return value;
+}
+
+int? _workItemActivityModelIdOrNull(String id) {
+  final uri = Uri.tryParse(id);
+  if (uri == null ||
+      uri.scheme != 'gid' ||
+      uri.host != 'gitlab' ||
+      uri.userInfo.isNotEmpty ||
+      uri.hasQuery ||
+      uri.hasFragment ||
+      uri.pathSegments.length != 2 ||
+      uri.pathSegments.first != 'WorkItem') {
+    return null;
+  }
+  final raw = uri.pathSegments.last;
+  if (!RegExp(r'^[1-9][0-9]*$').hasMatch(raw)) return null;
+  return int.tryParse(raw);
+}
+
+bool _isGraphIdType(String id, Set<String> types) {
+  if (!_validOpaqueGraphId(id)) return false;
+  final uri = Uri.parse(id);
+  return uri.pathSegments.isNotEmpty && types.contains(uri.pathSegments.first);
+}
+
+bool _isWritableActivityNoteId(String id) {
+  final uri = Uri.tryParse(id);
+  if (uri == null ||
+      uri.scheme != 'gid' ||
+      uri.host != 'gitlab' ||
+      uri.userInfo.isNotEmpty ||
+      uri.hasQuery ||
+      uri.hasFragment ||
+      uri.pathSegments.length != 2 ||
+      !const {'Note', 'DiscussionNote'}.contains(uri.pathSegments.first)) {
+    return false;
+  }
+  return RegExp(r'^[1-9][0-9]*$').hasMatch(uri.pathSegments.last);
+}
+
+String _validatedActivityWriteBody(String raw) {
+  if (raw.contains('\u0000')) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  final body = raw.trim();
+  if (body.isEmpty ||
+      utf8.encode(body).length > _workItemActivityWriteBodyBytes ||
+      '\n'.allMatches(body).length + 1 > GitLabApi.maxTextLines) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  if (_containsActivityQuickAction(body)) {
+    throw const ApiFailure(
+      FailureKind.validation,
+      title: '留言不支援快速指令',
+      detail: '請移除獨立一行的 / 指令；這個編輯器只會建立一般 Markdown 留言。',
+    );
+  }
+  return body;
+}
+
+bool _containsActivityQuickAction(String body) {
+  var fence = '';
+  for (final line in body.split('\n')) {
+    final trimmed = line.trimLeft();
+    if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+      final marker = trimmed.substring(0, 3);
+      if (fence.isEmpty) {
+        fence = marker;
+      } else if (fence == marker) {
+        fence = '';
+      }
+      continue;
+    }
+    if (fence.isNotEmpty || line.startsWith('    ') || line.startsWith('\t')) {
+      continue;
+    }
+    if (RegExp(r'^ {0,3}/[A-Za-z][A-Za-z0-9_-]*(?:\s|$)').hasMatch(line)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+_WorkItemActivityAnchor _parseActivityAnchor(
+  Object? raw, {
+  required _WorkItemActivityIdentity expected,
+  required String expectedAnchorId,
+}) {
+  final node = objectJson(raw);
+  if (requiredString(node, 'id') != expectedAnchorId ||
+      !_isWritableActivityNoteId(expectedAnchorId)) {
+    throw const FormatException('Wrong reply anchor');
+  }
+  _requireCompatibleAnchorProject(
+    _parseOptionalResourceRef(node['project']),
+    expected.project,
+  );
+  final noteableId = _activityNoteableId(node);
+  if (noteableId != _workItemActivityModelId(expected.id)) {
+    throw const FormatException('Wrong reply noteable');
+  }
+  final discussion = _parseActivityDiscussionIdentity(node['discussion']);
+  return (
+    noteableId: noteableId,
+    discussionId: discussion.id,
+    replyId: discussion.replyId,
+    discussionCreatedAt: discussion.createdAt,
+  );
+}
+
+_WorkItemActivityCreatedIdentity _parseCreatedActivityNote(
+  Object? raw, {
+  required _WorkItemActivityIdentity expectedIdentity,
+  required int expectedWorkItemModelId,
+  required String expectedAuthorId,
+  required String expectedBody,
+  String? expectedDiscussionId,
+  String? expectedReplyId,
+  DateTime? expectedDiscussionCreatedAt,
+  String? expectedNoteId,
+}) {
+  final node = objectJson(raw);
+  final note = _parseActivityNote(node);
+  if (!_isWritableActivityNoteId(note.id)) {
+    throw const FormatException('Invalid created note identity');
+  }
+  if (node['internal'] != false) {
+    throw const FormatException('Created note must be public');
+  }
+  if (expectedNoteId != null && note.id != expectedNoteId) {
+    throw const FormatException('Wrong created note');
+  }
+  if (note.system ||
+      note.body != expectedBody ||
+      note.author == null ||
+      note.author!.id != expectedAuthorId ||
+      !_isGraphIdType(expectedAuthorId, const {'User'})) {
+    throw const FormatException('Wrong created note content');
+  }
+  if (_activityNoteableId(node) != expectedWorkItemModelId) {
+    throw const FormatException('Wrong created noteable');
+  }
+  _requireCompatibleAnchorProject(
+    _parseOptionalResourceRef(node['project']),
+    expectedIdentity.project,
+  );
+  final discussion = _parseActivityDiscussionIdentity(node['discussion']);
+  if ((expectedDiscussionId != null && discussion.id != expectedDiscussionId) ||
+      (expectedReplyId != null && discussion.replyId != expectedReplyId) ||
+      (expectedDiscussionCreatedAt != null &&
+          discussion.createdAt != expectedDiscussionCreatedAt)) {
+    throw const FormatException('Wrong created discussion');
+  }
+  return (
+    note: note,
+    discussionId: discussion.id,
+    replyId: discussion.replyId,
+    discussionCreatedAt: discussion.createdAt,
+  );
+}
+
+int _activityNoteableId(Json note) {
+  if (note['noteableType'] != 'Issue') {
+    throw const FormatException('Wrong activity noteable type');
+  }
+  return _positiveWorkItemInt(note['noteableId']);
+}
+
+({String id, String replyId, DateTime createdAt})
+_parseActivityDiscussionIdentity(Object? raw) {
+  final node = objectJson(raw);
+  final id = requiredString(node, 'id');
+  final replyId = requiredString(node, 'replyId');
+  if (!_isGraphIdType(id, const {'Discussion'}) ||
+      !_isGraphIdType(replyId, const {
+        'Discussion',
+        'IndividualNoteDiscussion',
+      })) {
+    throw const FormatException('Invalid created discussion identity');
+  }
+  return (
+    id: id,
+    replyId: replyId,
+    createdAt: _workItemTimestamp(node['createdAt']),
+  );
 }
 
 bool _activityControlsSchemaUnavailable(Uint8List bytes) {
@@ -611,6 +1331,30 @@ _parseActivityWidgets(Object? raw, {String? previous}) {
     discussionsWithCursors: List.unmodifiable(values),
     nextCursor: parsedPage,
   );
+}
+
+bool _parseActivityDiscussionLocked(Object? raw) {
+  if (raw is! List || raw.length > _workItemWidgetLimit) {
+    throw const FormatException('Invalid activity widgets');
+  }
+  final seenTypes = <String>{};
+  Json? selected;
+  for (final value in raw) {
+    final widget = objectJson(value);
+    final type = _boundedRequiredText(widget, 'type', 128);
+    if (!seenTypes.add(type)) {
+      throw const FormatException('Duplicate activity widget');
+    }
+    if (type == 'NOTES') selected = widget;
+  }
+  if (selected == null) {
+    throw const FormatException('Missing discussion lock state');
+  }
+  final locked = selected['discussionLocked'];
+  if (locked != null && locked is! bool) {
+    throw const FormatException('Invalid discussion lock state');
+  }
+  return locked as bool? ?? false;
 }
 
 ({WorkItemActivityDiscussion value, String? nextCursor})

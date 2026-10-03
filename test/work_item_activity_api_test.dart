@@ -12,12 +12,14 @@ import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 import 'support/fake_adapter.dart';
 
-const _workItemId = 'gid://gitlab/WorkItem/server-owned';
+const _workItemId = 'gid://gitlab/WorkItem/31';
 const _projectId = 'gid://gitlab/Project/42';
 const _namespaceId = 'gid://gitlab/Namespaces::ProjectNamespace/42';
 const _path = 'team/example-42';
 const _discussionId = 'gid://gitlab/Discussion/server-owned';
-const _noteId = 'gid://gitlab/Note/server-owned';
+const _noteId = 'gid://gitlab/Note/401';
+const _replyId = 'gid://gitlab/IndividualNoteDiscussion/server-owned';
+const _authorId = 'gid://gitlab/User/9';
 
 final _expected = WorkItemGraphSummary(
   id: _workItemId,
@@ -34,6 +36,24 @@ final _expected = WorkItemGraphSummary(
   ),
 );
 
+final _groupExpected = WorkItemGraphSummary(
+  id: 'gid://gitlab/WorkItem/41',
+  iid: 8,
+  title: 'Synthetic group work item',
+  state: 'OPEN',
+  createdAt: DateTime.utc(2026, 10, 1),
+  updatedAt: DateTime.utc(2026, 10, 2),
+  project: null,
+  namespace: const GraphResourceRef(
+    id: 'gid://gitlab/Group/7',
+    fullPath: 'team',
+  ),
+  type: const WorkItemGraphType(
+    id: 'gid://gitlab/WorkItems::Type/group-owned',
+    name: 'Epic',
+  ),
+);
+
 Matcher _failure(FailureKind kind) =>
     isA<ApiFailure>().having((error) => error.kind, 'kind', kind);
 
@@ -45,7 +65,7 @@ Map<String, Object?> _pageInfo({bool next = false, String? cursor}) => {
 Map<String, Object?> _note({
   String id = _noteId,
   Object? author = const {
-    'id': 'gid://gitlab/User/9',
+    'id': _authorId,
     'name': 'Synthetic User',
     'username': 'synthetic-user',
   },
@@ -61,7 +81,7 @@ Map<String, Object?> _note({
 
 Map<String, Object?> _discussion({
   String id = _discussionId,
-  String replyId = 'reply-server-owned',
+  String replyId = _replyId,
   Object? nodes = const <Object?>[],
   bool notesNext = false,
   String? notesCursor,
@@ -101,8 +121,10 @@ Map<String, Object?> _notesWidget({
   Object? nodes = const <Object?>[],
   bool next = false,
   String? cursor,
+  Object? discussionLocked = false,
 }) => {
   'type': 'NOTES',
+  'discussionLocked': discussionLocked,
   'discussions': {
     'nodes': nodes,
     'pageInfo': _pageInfo(next: next, cursor: cursor),
@@ -121,6 +143,87 @@ Map<String, Object?> _schemaError(
     },
   ],
 };
+
+Map<String, Object?> _writeAccess({
+  WorkItemGraphSummary? expected,
+  bool canCreateNote = true,
+  String? authorId = _authorId,
+  Object? anchor,
+  Object? discussionLocked = false,
+}) {
+  final value = expected ?? _expected;
+  return {
+    'data': {
+      'currentUser': authorId == null ? null : {'id': authorId},
+      'workItem': {
+        ..._identity(
+          id: value.id,
+          iid: '${value.iid}',
+          project: value.project == null
+              ? null
+              : {'id': value.project!.id, 'fullPath': value.project!.fullPath},
+          namespace: value.namespace == null
+              ? null
+              : {
+                  'id': value.namespace!.id,
+                  'fullPath': value.namespace!.fullPath,
+                },
+        ),
+        'userPermissions': {'createNote': canCreateNote},
+        'widgets': [_notesWidget(discussionLocked: discussionLocked)],
+      },
+      'anchor': ?anchor,
+    },
+  };
+}
+
+Map<String, Object?> _writeNote({
+  String id = 'gid://gitlab/DiscussionNote/501',
+  String body = 'Synthetic note',
+  String authorId = _authorId,
+  int noteableId = 31,
+  String noteableType = 'Issue',
+  String discussionId = _discussionId,
+  String replyId = _replyId,
+  bool internal = false,
+  Object? project = const {'id': _projectId, 'fullPath': _path},
+}) => {
+  ..._note(
+    id: id,
+    author: {
+      'id': authorId,
+      'name': 'Synthetic User',
+      'username': 'synthetic-user',
+    },
+  ),
+  'body': body,
+  'internal': internal,
+  'noteableType': noteableType,
+  'noteableId': noteableId,
+  'project': project,
+  'discussion': {
+    'id': discussionId,
+    'replyId': replyId,
+    'createdAt': '2026-10-01T01:00:00Z',
+  },
+};
+
+Map<String, Object?> _writeAck({Object? note}) => {
+  'data': {
+    'createNote': {'errors': <Object?>[], 'note': note ?? _writeNote()},
+  },
+};
+
+Map<String, Object?> _writeReadback({Object? note}) => {
+  'data': {'workItem': _identity(), 'note': note ?? _writeNote()},
+};
+
+bool _isMutation(RequestOptions request) {
+  final data = request.data;
+  return data is Map &&
+      data['query'] is String &&
+      (data['query'] as String).startsWith('mutation ');
+}
 
 void main() {
   test(
@@ -220,7 +323,7 @@ void main() {
       _activityEnvelope(widgets: const []),
       _activityEnvelope(
         widgets: const [
-          {'type': 'NOTES', 'discussions': null},
+          {'type': 'NOTES', 'discussionLocked': false, 'discussions': null},
         ],
       ),
       _activityEnvelope(widgets: [_notesWidget(nodes: null)]),
@@ -365,7 +468,7 @@ void main() {
                 'id': _noteId,
                 'project': {'id': _projectId, 'fullPath': _path},
                 'discussion': _discussion(
-                  nodes: [_note(id: 'gid://gitlab/Note/next')],
+                  nodes: [_note(id: 'gid://gitlab/Note/402')],
                 ),
               },
             },
@@ -380,7 +483,7 @@ void main() {
 
       expect(next.workItemId, _workItemId);
       expect(next.discussionId, _discussionId);
-      expect(next.notes.items.single.id, 'gid://gitlab/Note/next');
+      expect(next.notes.items.single.id, 'gid://gitlab/Note/402');
       expect(next.next, isNull);
     },
   );
@@ -656,8 +759,8 @@ void main() {
         final variables = (request.data as Map)['variables'] as Map;
         final anchorId = variables['anchorNoteId'] as String;
         final nextNoteId = call == 2
-            ? 'gid://gitlab/Note/next'
-            : 'gid://gitlab/Note/third';
+            ? 'gid://gitlab/Note/402'
+            : 'gid://gitlab/Note/403';
         return jsonResponse({
           'data': {
             'workItem': _identity(),
@@ -1059,6 +1162,649 @@ void main() {
         closed.workItemActivityNext(page.nextDiscussions!),
         throwsA(_failure(FailureKind.cancelled)),
       );
+    },
+  );
+
+  test(
+    'write access is exact, permission-bearing, and independently optional',
+    () async {
+      var allowed = true;
+      var locked = false;
+      final adapter = FakeAdapter((request) {
+        final data = request.data as Map;
+        expect(
+          data['query'],
+          startsWith('query MobileWorkItemActivityWriteAccess'),
+        );
+        expect(data['variables'], {'id': _workItemId});
+        return jsonResponse(
+          _writeAccess(canCreateNote: allowed, discussionLocked: locked),
+        );
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      final access = await api.workItemActivityWriteAccess(_expected);
+      expect(access.canCreateNote, isTrue);
+      expect(access.discussionLocked, isFalse);
+      expect(access.commentTarget, isNotNull);
+
+      allowed = false;
+      final denied = await api.workItemActivityWriteAccess(_expected);
+      expect(denied.canCreateNote, isFalse);
+      expect(denied.discussionLocked, isFalse);
+      expect(denied.commentTarget, isNull);
+
+      allowed = true;
+      locked = true;
+      final lockedAccess = await api.workItemActivityWriteAccess(_expected);
+      expect(lockedAccess.canCreateNote, isTrue);
+      expect(lockedAccess.discussionLocked, isTrue);
+      expect(lockedAccess.commentTarget, isNull);
+
+      final anonymous = testApi(
+        FakeAdapter(
+          (_) =>
+              jsonResponse(_writeAccess(canCreateNote: false, authorId: null)),
+        ),
+      );
+      final anonymousAccess = await anonymous.workItemActivityWriteAccess(
+        _expected,
+      );
+      expect(anonymousAccess.canCreateNote, isFalse);
+      expect(anonymousAccess.discussionLocked, isFalse);
+      expect(anonymousAccess.commentTarget, isNull);
+      anonymous.close();
+
+      final anonymousServerAllowed = testApi(
+        FakeAdapter(
+          (_) => jsonResponse(
+            _writeAccess(
+              canCreateNote: true,
+              authorId: null,
+              discussionLocked: null,
+            ),
+          ),
+        ),
+      );
+      final signedOutAccess = await anonymousServerAllowed
+          .workItemActivityWriteAccess(_expected);
+      expect(signedOutAccess.canCreateNote, isFalse);
+      expect(signedOutAccess.discussionLocked, isFalse);
+      expect(signedOutAccess.commentTarget, isNull);
+      anonymousServerAllowed.close();
+    },
+  );
+
+  test(
+    'top-level project comment uses one createNote and exact readback',
+    () async {
+      var call = 0;
+      final adapter = FakeAdapter((request) {
+        call++;
+        final data = request.data as Map;
+        final query = data['query'] as String;
+        if (call <= 2) return jsonResponse(_writeAccess());
+        if (call == 3) {
+          expect(
+            query,
+            startsWith('mutation MobileCreateWorkItemActivityNote'),
+          );
+          expect(data['variables'], {
+            'input': {
+              'noteableId': _workItemId,
+              'body': 'Hello **mobile**',
+              'internal': false,
+            },
+          });
+          return jsonResponse(
+            _writeAck(note: _writeNote(body: 'Hello **mobile**')),
+          );
+        }
+        expect(query, startsWith('query MobileWorkItemActivityNoteReadback'));
+        expect(data['variables'], {
+          'workItemId': _workItemId,
+          'noteId': 'gid://gitlab/DiscussionNote/501',
+        });
+        return jsonResponse(
+          _writeReadback(note: _writeNote(body: 'Hello **mobile**')),
+        );
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      final access = await api.workItemActivityWriteAccess(_expected);
+      final created = await api.createWorkItemActivityComment(
+        access.commentTarget!,
+        '  Hello **mobile**  ',
+      );
+
+      expect(created.note.body, 'Hello **mobile**');
+      expect(created.discussionId, _discussionId);
+      expect(created.replyId, _replyId);
+      expect(adapter.requests.where(_isMutation), hasLength(1));
+    },
+  );
+
+  test(
+    'group discussion reply uses server replyId and validates anchor',
+    () async {
+      var call = 0;
+      final adapter = FakeAdapter((request) {
+        call++;
+        final data = request.data as Map;
+        final query = data['query'] as String;
+        if (call == 1) {
+          return jsonResponse(
+            _activityEnvelope(
+              id: _groupExpected.id,
+              iid: '${_groupExpected.iid}',
+              project: null,
+              namespace: {
+                'id': _groupExpected.namespace!.id,
+                'fullPath': _groupExpected.namespace!.fullPath,
+              },
+              widgets: [
+                _notesWidget(
+                  nodes: [
+                    _discussion(nodes: [_note()]),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }
+        if (call == 2) {
+          expect(
+            query,
+            startsWith('query MobileWorkItemActivityReplyPreflight'),
+          );
+          expect(data['variables'], {
+            'workItemId': _groupExpected.id,
+            'anchorNoteId': _noteId,
+          });
+          return jsonResponse(
+            _writeAccess(
+              expected: _groupExpected,
+              anchor: _writeNote(id: _noteId, noteableId: 41, project: null),
+            ),
+          );
+        }
+        if (call == 3) {
+          expect(data['variables'], {
+            'input': {
+              'noteableId': _groupExpected.id,
+              'body': 'Group reply',
+              'internal': false,
+              'discussionId': _replyId,
+            },
+          });
+          return jsonResponse(
+            _writeAck(
+              note: _writeNote(
+                body: 'Group reply',
+                noteableId: 41,
+                project: null,
+              ),
+            ),
+          );
+        }
+        return jsonResponse({
+          'data': {
+            'workItem': _identity(
+              id: _groupExpected.id,
+              iid: '${_groupExpected.iid}',
+              project: null,
+              namespace: {
+                'id': _groupExpected.namespace!.id,
+                'fullPath': _groupExpected.namespace!.fullPath,
+              },
+            ),
+            'note': _writeNote(
+              body: 'Group reply',
+              noteableId: 41,
+              project: null,
+            ),
+          },
+        });
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      final page = await api.workItemActivity(_groupExpected);
+      final target = page.replyTargetsByDiscussion[_discussionId];
+      expect(target, isNotNull);
+      final created = await api.createWorkItemActivityReply(
+        target!,
+        'Group reply',
+      );
+      expect(created.replyId, _replyId);
+      expect(adapter.requests.where(_isMutation), hasLength(1));
+    },
+  );
+
+  test('locked discussions suppress comment access targets', () async {
+    var call = 0;
+    final adapter = FakeAdapter((request) {
+      call++;
+      if (call == 1) {
+        return jsonResponse(
+          _activityEnvelope(
+            widgets: [
+              _notesWidget(
+                discussionLocked: true,
+                nodes: [
+                  _discussion(nodes: [_note()]),
+                ],
+              ),
+            ],
+          ),
+        );
+      }
+      return jsonResponse(_writeAccess(discussionLocked: true));
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    final page = await api.workItemActivity(_expected);
+    expect(page.replyTargetsByDiscussion, contains(_discussionId));
+
+    final access = await api.workItemActivityWriteAccess(_expected);
+    expect(access.canCreateNote, isTrue);
+    expect(access.discussionLocked, isTrue);
+    expect(access.commentTarget, isNull);
+    expect(adapter.requests.where(_isMutation), isEmpty);
+  });
+
+  test(
+    'write-access schema failure is explicit and does not weaken reader',
+    () async {
+      var call = 0;
+      final adapter = FakeAdapter((_) {
+        call++;
+        if (call == 1) {
+          return jsonResponse(
+            _schemaError('undefinedField', 'private schema detail'),
+          );
+        }
+        return jsonResponse(_activityEnvelope());
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await expectLater(
+        api.workItemActivityWriteAccess(_expected),
+        throwsA(_failure(FailureKind.unsupported)),
+      );
+      final page = await api.workItemActivity(_expected);
+      expect(page.snapshot.availability, WorkItemActivityAvailability.absent);
+      expect(adapter.requests, hasLength(2));
+    },
+  );
+
+  test('write access rejects nonnumeric WorkItem IDs before I/O', () async {
+    final invalid = WorkItemGraphSummary(
+      id: 'gid://gitlab/WorkItem/opaque',
+      iid: _expected.iid,
+      title: _expected.title,
+      state: _expected.state,
+      createdAt: _expected.createdAt,
+      updatedAt: _expected.updatedAt,
+      project: _expected.project,
+      namespace: _expected.namespace,
+      type: _expected.type,
+    );
+    final adapter = FakeAdapter((_) => fail('must reject before I/O'));
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    await expectLater(
+      api.workItemActivityWriteAccess(invalid),
+      throwsA(_failure(FailureKind.validation)),
+    );
+    expect(adapter.requests, isEmpty);
+  });
+
+  test(
+    'wrong-class and nonnumeric note IDs never mint reply targets',
+    () async {
+      for (final id in [
+        'gid://gitlab/Project/401',
+        'gid://gitlab/Note/not-numeric',
+      ]) {
+        final api = testApi(
+          FakeAdapter(
+            (_) => jsonResponse(
+              _activityEnvelope(
+                widgets: [
+                  _notesWidget(
+                    nodes: [
+                      _discussion(nodes: [_note(id: id)]),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+        final page = await api.workItemActivity(_expected);
+        expect(page.replyTargetsByDiscussion, isEmpty);
+        api.close();
+      }
+    },
+  );
+
+  test(
+    'reply preflight rejects foreign anchor scope and discussion before write',
+    () async {
+      final invalidAnchors = <Map<String, Object?>>[
+        _writeNote(id: 'gid://gitlab/Note/999'),
+        _writeNote(id: 'gid://gitlab/Project/401'),
+        _writeNote(id: 'gid://gitlab/Note/not-numeric'),
+        _writeNote(noteableId: 99),
+        _writeNote(
+          project: const {
+            'id': 'gid://gitlab/Project/99',
+            'fullPath': 'other/project',
+          },
+        ),
+        _writeNote(discussionId: 'gid://gitlab/Discussion/foreign'),
+        _writeNote(replyId: 'gid://gitlab/IndividualNoteDiscussion/foreign'),
+      ];
+      for (final invalidAnchor in invalidAnchors) {
+        var call = 0;
+        final adapter = FakeAdapter((_) {
+          call++;
+          if (call == 1) {
+            return jsonResponse(
+              _activityEnvelope(
+                widgets: [
+                  _notesWidget(
+                    nodes: [
+                      _discussion(nodes: [_note()]),
+                    ],
+                  ),
+                ],
+              ),
+            );
+          }
+          return jsonResponse(_writeAccess(anchor: invalidAnchor));
+        });
+        final api = testApi(adapter);
+        final page = await api.workItemActivity(_expected);
+        await expectLater(
+          api.createWorkItemActivityReply(
+            page.replyTargetsByDiscussion[_discussionId]!,
+            'Reply',
+          ),
+          throwsA(isA<ApiFailure>()),
+        );
+        expect(adapter.requests.where(_isMutation), isEmpty);
+        api.close();
+      }
+    },
+  );
+
+  test(
+    'late owner invalidation after reply preflight sends no write',
+    () async {
+      var current = true;
+      final pending = Completer<ResponseBody>();
+      var call = 0;
+      final adapter = FakeAdapter((_) {
+        call++;
+        if (call == 1) {
+          return jsonResponse(
+            _activityEnvelope(
+              widgets: [
+                _notesWidget(
+                  nodes: [
+                    _discussion(nodes: [_note()]),
+                  ],
+                ),
+              ],
+            ),
+          );
+        }
+        return pending.future;
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final page = await api.workItemActivity(_expected);
+      final operation = api.createWorkItemActivityReply(
+        page.replyTargetsByDiscussion[_discussionId]!,
+        'Reply',
+        isCurrent: () => current,
+      );
+      await Future<void>.delayed(Duration.zero);
+      current = false;
+      pending.complete(
+        jsonResponse(_writeAccess(anchor: _writeNote(id: _noteId))),
+      );
+      await expectLater(operation, throwsA(_failure(FailureKind.cancelled)));
+      expect(adapter.requests.where(_isMutation), isEmpty);
+    },
+  );
+
+  test(
+    'comment target is API-bound and consumed before concurrent dispatch',
+    () async {
+      final mutationResponse = Completer<ResponseBody>();
+      final adapter = FakeAdapter((request) {
+        final query = (request.data as Map)['query'] as String;
+        if (query.startsWith('query MobileWorkItemActivityWriteAccess')) {
+          return jsonResponse(_writeAccess());
+        }
+        if (_isMutation(request)) return mutationResponse.future;
+        return jsonResponse(_writeReadback(note: _writeNote(body: 'Once')));
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final target = (await api.workItemActivityWriteAccess(
+        _expected,
+      )).commentTarget!;
+
+      final other = testApi(
+        FakeAdapter((_) => fail('wrong API must not send')),
+      );
+      await expectLater(
+        other.createWorkItemActivityComment(target, 'Other'),
+        throwsA(_failure(FailureKind.validation)),
+      );
+      other.close();
+
+      final first = api.createWorkItemActivityComment(target, 'Once');
+      final second = api.createWorkItemActivityComment(target, 'Once');
+      await Future<void>.delayed(Duration.zero);
+      mutationResponse.complete(
+        jsonResponse(_writeAck(note: _writeNote(body: 'Once'))),
+      );
+      final outcomes = await Future.wait<Object>([
+        first.then<Object>((value) => value, onError: (Object error) => error),
+        second.then<Object>((value) => value, onError: (Object error) => error),
+      ]);
+      expect(outcomes.whereType<WorkItemActivityCreatedNote>(), hasLength(1));
+      expect(
+        outcomes.whereType<ApiFailure>().single.kind,
+        FailureKind.writeUncertain,
+      );
+      expect(adapter.requests.where(_isMutation), hasLength(1));
+    },
+  );
+
+  test('invalid body and stale owner send no writes', () async {
+    var call = 0;
+    final adapter = FakeAdapter((request) {
+      call++;
+      if (call <= 2) return jsonResponse(_writeAccess());
+      if (_isMutation(request)) {
+        return jsonResponse(
+          _writeAck(note: _writeNote(body: '```\n/close\n```')),
+        );
+      }
+      return jsonResponse(
+        _writeReadback(note: _writeNote(body: '```\n/close\n```')),
+      );
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final target = (await api.workItemActivityWriteAccess(
+      _expected,
+    )).commentTarget!;
+    final before = adapter.requests.length;
+
+    for (final body in [
+      '   ',
+      '/close',
+      'text\n  /assign @me',
+      'x' * (2 * 1024 * 1024 + 1),
+    ]) {
+      await expectLater(
+        api.createWorkItemActivityComment(target, body),
+        throwsA(_failure(FailureKind.validation)),
+      );
+    }
+    await expectLater(
+      api.createWorkItemActivityComment(
+        target,
+        'Fresh body',
+        isCurrent: () => false,
+      ),
+      throwsA(_failure(FailureKind.cancelled)),
+    );
+    expect(adapter.requests.length, before);
+
+    // Slash-like text inside code remains ordinary Markdown.
+    await api.createWorkItemActivityComment(target, '```\n/close\n```');
+    expect(adapter.requests.where(_isMutation), hasLength(1));
+  });
+
+  test(
+    'fresh locked preflight rejects a previously minted comment target',
+    () async {
+      var call = 0;
+      final adapter = FakeAdapter((_) {
+        call++;
+        return jsonResponse(_writeAccess(discussionLocked: call > 1));
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final target = (await api.workItemActivityWriteAccess(
+        _expected,
+      )).commentTarget!;
+
+      await expectLater(
+        api.createWorkItemActivityComment(target, 'Fresh body'),
+        throwsA(_failure(FailureKind.conflict)),
+      );
+      expect(adapter.requests.where(_isMutation), isEmpty);
+    },
+  );
+
+  test(
+    'foreign acknowledgement and readback identities are uncertain',
+    () async {
+      final invalidNotes = <Map<String, Object?>>[
+        _writeNote(id: 'gid://gitlab/Project/501'),
+        _writeNote(id: 'gid://gitlab/Note/not-numeric'),
+        _writeNote(noteableId: 99),
+        _writeNote(noteableType: 'MergeRequest'),
+        _writeNote(authorId: 'gid://gitlab/User/10'),
+        _writeNote(internal: true),
+        _writeNote(
+          project: const {
+            'id': 'gid://gitlab/Project/99',
+            'fullPath': 'other/project',
+          },
+        ),
+      ];
+      for (final invalid in invalidNotes) {
+        var call = 0;
+        final api = testApi(
+          FakeAdapter((request) {
+            call++;
+            if (call <= 2) return jsonResponse(_writeAccess());
+            if (_isMutation(request)) {
+              return jsonResponse(_writeAck(note: invalid));
+            }
+            return jsonResponse(_writeReadback());
+          }),
+        );
+        final target = (await api.workItemActivityWriteAccess(
+          _expected,
+        )).commentTarget!;
+        await expectLater(
+          api.createWorkItemActivityComment(target, 'Synthetic note'),
+          throwsA(_failure(FailureKind.writeUncertain)),
+        );
+        expect(api.isClosed, isFalse);
+        api.close();
+      }
+
+      for (final invalid in [
+        _writeNote(id: 'gid://gitlab/Project/501'),
+        _writeNote(id: 'gid://gitlab/DiscussionNote/not-numeric'),
+        _writeNote(noteableId: 99),
+        _writeNote(internal: true),
+      ]) {
+        var call = 0;
+        final readbackApi = testApi(
+          FakeAdapter((request) {
+            call++;
+            if (call <= 2) return jsonResponse(_writeAccess());
+            if (_isMutation(request)) return jsonResponse(_writeAck());
+            return jsonResponse(_writeReadback(note: invalid));
+          }),
+        );
+        final target = (await readbackApi.workItemActivityWriteAccess(
+          _expected,
+        )).commentTarget!;
+        await expectLater(
+          readbackApi.createWorkItemActivityComment(target, 'Synthetic note'),
+          throwsA(_failure(FailureKind.writeUncertain)),
+        );
+        readbackApi.close();
+      }
+    },
+  );
+
+  test(
+    'missing payload and mutation timeout are uncertain and never replay',
+    () async {
+      for (final timeout in [false, true]) {
+        var call = 0;
+        final adapter = FakeAdapter((request) {
+          call++;
+          if (call <= 2) return jsonResponse(_writeAccess());
+          if (_isMutation(request)) {
+            if (timeout) {
+              throw DioException(
+                requestOptions: request,
+                type: DioExceptionType.receiveTimeout,
+              );
+            }
+            return jsonResponse({
+              'data': {
+                'createNote': {'errors': <Object?>[], 'note': null},
+              },
+            });
+          }
+          return jsonResponse(_writeReadback());
+        });
+        final api = testApi(adapter);
+        final target = (await api.workItemActivityWriteAccess(
+          _expected,
+        )).commentTarget!;
+        await expectLater(
+          api.createWorkItemActivityComment(target, 'Synthetic note'),
+          throwsA(_failure(FailureKind.writeUncertain)),
+        );
+        await expectLater(
+          api.createWorkItemActivityComment(target, 'Synthetic note'),
+          throwsA(_failure(FailureKind.writeUncertain)),
+        );
+        expect(adapter.requests.where(_isMutation), hasLength(1));
+        api.close();
+      }
     },
   );
 }

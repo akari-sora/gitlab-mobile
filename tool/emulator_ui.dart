@@ -102,10 +102,14 @@ final class EmulatorQaFixture extends WorkspaceFixture {
   bool _starred = false;
   int _starCount = 12;
   final Map<String, String> _workItemStates = {
-    'gid://gitlab/WorkItem/qa-project-31': 'OPEN',
-    'gid://gitlab/WorkItem/qa-group-41': 'OPEN',
+    'gid://gitlab/WorkItem/1031': 'OPEN',
+    'gid://gitlab/WorkItem/1041': 'OPEN',
   };
   final List<String> workItemStateEvents = [];
+  final List<Json> workItemNoteEvents = [];
+  final Map<bool, List<Json>> _addedWorkItemDiscussions = {};
+  final Map<String, List<Json>> _addedWorkItemReplies = {};
+  int _workItemNoteSequence = 0;
   final Map<String, int> _workItemRevisions = {};
   final Set<int> _doneTodos = {};
 
@@ -126,7 +130,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         : 'qa/synthetic-group/child-group';
     return <String, Object?>{
       'id': root && iid == 41
-          ? 'gid://gitlab/WorkItem/qa-group-41'
+          ? 'gid://gitlab/WorkItem/1041'
           : 'gid://gitlab/WorkItem/qa-list-$index',
       'iid': '$iid',
       'title':
@@ -162,8 +166,8 @@ final class EmulatorQaFixture extends WorkspaceFixture {
 
   Json workItemRecord({required bool group}) {
     final id = group
-        ? 'gid://gitlab/WorkItem/qa-group-41'
-        : 'gid://gitlab/WorkItem/qa-project-31';
+        ? 'gid://gitlab/WorkItem/1041'
+        : 'gid://gitlab/WorkItem/1031';
     return {
       'id': id,
       'iid': group ? '41' : '31',
@@ -196,7 +200,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         'id': 'gid://gitlab/WorkItems::Type/qa-${group ? 'group' : 'project'}',
         'name': group ? 'Synthetic Epic' : 'Synthetic Task',
       },
-      'userPermissions': {'updateWorkItem': true},
+      'userPermissions': {'updateWorkItem': true, 'createNote': true},
       'description': 'Explicit in-memory QA fixture. No GitLab connection.',
       'widgets': [
         {
@@ -205,9 +209,159 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           'edited': false,
           'lastEditedAt': null,
         },
-        {'type': 'NOTES'},
+        {'type': 'NOTES', 'discussionLocked': false},
       ],
     };
+  }
+
+  List<Json> workItemActivityDiscussions({required bool group}) {
+    final scope = group ? 'group' : 'project';
+    return [
+      ...List<Json>.generate(48, (index) {
+        final number = index + 1;
+        final system = number.isEven;
+        final timestamp = DateTime.utc(
+          2026,
+          10,
+          1,
+          0,
+          number,
+        ).toIso8601String();
+        Json note(String suffix, String body) => {
+          'id':
+              'gid://gitlab/Note/${(group ? 200000 : 100000) + number * 2 + (suffix == 'reply' ? 1 : 0)}',
+          'system': system,
+          'systemNoteIconName': system ? 'status' : null,
+          'body': body,
+          'createdAt': timestamp,
+          'updatedAt': timestamp,
+          'author': {
+            'id': 'gid://gitlab/User/7',
+            'name': 'Synthetic Reader',
+            'username': 'synthetic-reader',
+          },
+        };
+        return {
+          'id': 'gid://gitlab/Discussion/qa-$scope-$number',
+          'replyId': 'gid://gitlab/Discussion/qa-$scope-reply-$number',
+          'createdAt': timestamp,
+          'notes': {
+            'nodes': [
+              note(
+                'root',
+                system
+                    ? 'Synthetic history $number'
+                    : 'Synthetic comment $number',
+              ),
+              if (number == 1) note('reply', 'Synthetic reply 1'),
+              ...?_addedWorkItemReplies['gid://gitlab/Discussion/qa-$scope-$number'],
+            ],
+            'pageInfo': {'hasNextPage': false, 'endCursor': null},
+          },
+        };
+      }),
+      for (final discussion in _addedWorkItemDiscussions[group] ?? <Json>[])
+        {
+          ...discussion,
+          'notes': {
+            'nodes': [
+              ...((discussion['notes'] as Map)['nodes'] as List),
+              ...?_addedWorkItemReplies[discussion['id']],
+            ],
+            'pageInfo': {'hasNextPage': false, 'endCursor': null},
+          },
+        },
+    ];
+  }
+
+  Json? workItemActivityNoteRecord(String id, {required bool group}) {
+    for (final discussion in workItemActivityDiscussions(group: group)) {
+      for (final raw in (discussion['notes'] as Map)['nodes'] as List) {
+        final note = raw as Json;
+        if (note['id'] != id) continue;
+        return {
+          ...note,
+          'internal': false,
+          'noteableType': 'Issue',
+          'noteableId': group ? 1041 : 1031,
+          'project': workItemRecord(group: group)['project'],
+          'discussion': {
+            'id': discussion['id'],
+            'replyId': discussion['replyId'],
+            'createdAt': discussion['createdAt'],
+          },
+        };
+      }
+    }
+    return null;
+  }
+
+  Json? _createWorkItemFixtureNote(Map<Object?, Object?> input) {
+    final id = input['noteableId'];
+    final body = input['body'];
+    final replyId = input['discussionId'];
+    if (!_workItemStates.containsKey(id) ||
+        body is! String ||
+        body.trim().isEmpty ||
+        (replyId != null && replyId is! String)) {
+      return null;
+    }
+    final group = id == 'gid://gitlab/WorkItem/1041';
+    Json? target;
+    if (replyId != null) {
+      final matches = workItemActivityDiscussions(
+        group: group,
+      ).where((entry) => entry['replyId'] == replyId);
+      if (matches.length != 1) return null;
+      target = matches.single;
+    }
+    final sequence = ++_workItemNoteSequence;
+    final scope = group ? 'group' : 'project';
+    final noteId = 'gid://gitlab/Note/${900000 + sequence}';
+    final timestamp = DateTime.utc(
+      2026,
+      10,
+      3,
+      5,
+      0,
+      sequence,
+    ).toIso8601String();
+    final note = <String, dynamic>{
+      'id': noteId,
+      'system': false,
+      'systemNoteIconName': null,
+      'body': body,
+      'createdAt': timestamp,
+      'updatedAt': timestamp,
+      'author': {
+        'id': 'gid://gitlab/User/7',
+        'name': 'Developer',
+        'username': 'developer',
+      },
+    };
+    if (target == null) {
+      (_addedWorkItemDiscussions[group] ??= []).add({
+        'id': 'gid://gitlab/Discussion/qa-$scope-added-$sequence',
+        'replyId':
+            'gid://gitlab/IndividualNoteDiscussion/qa-$scope-added-$sequence',
+        'createdAt': timestamp,
+        'notes': {
+          'nodes': [note],
+        },
+      });
+    } else {
+      (_addedWorkItemReplies[target['id'] as String] ??= []).add(note);
+    }
+    _workItemRevisions[id as String] = (_workItemRevisions[id] ?? 0) + 1;
+    workItemNoteEvents.add({
+      'scope': scope,
+      'reply': replyId != null,
+      'noteId': noteId,
+    });
+    debugPrint(
+      '[work_item_note_qa] scope=$scope reply=${replyId != null} writes=${workItemNoteEvents.length}',
+    );
+    return workItemActivityNoteRecord(noteId, group: group);
   }
 
   Json workItemActivityRecord({
@@ -223,44 +377,10 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         : after is String && after.startsWith(prefix)
         ? int.tryParse(after.substring(prefix.length))
         : null;
-    if (offset == null || offset < 0 || offset > 48) {
+    if (offset == null || offset < 0 || offset > 1000) {
       throw StateError('Invalid synthetic activity cursor');
     }
-    final entries = List<Json>.generate(48, (index) {
-      final number = index + 1;
-      final system = number.isEven;
-      final timestamp = DateTime.utc(2026, 10, 1, 0, number).toIso8601String();
-      Json note(String suffix, String body) => {
-        'id': 'gid://gitlab/Note/qa-$scope-$number-$suffix',
-        'system': system,
-        'systemNoteIconName': system ? 'status' : null,
-        'body': body,
-        'createdAt': timestamp,
-        'updatedAt': timestamp,
-        'author': {
-          'id': 'gid://gitlab/User/7',
-          'name': 'Synthetic Reader',
-          'username': 'synthetic-reader',
-        },
-      };
-      return {
-        'id': 'gid://gitlab/Discussion/qa-$scope-$number',
-        'replyId': 'qa-$scope-reply-$number',
-        'createdAt': timestamp,
-        'notes': {
-          'nodes': [
-            note(
-              'root',
-              system
-                  ? 'Synthetic history $number'
-                  : 'Synthetic comment $number',
-            ),
-            if (number == 1) note('reply', 'Synthetic reply 1'),
-          ],
-          'pageInfo': {'hasNextPage': false, 'endCursor': null},
-        },
-      };
-    });
+    final entries = workItemActivityDiscussions(group: group);
     final selected = entries.where((entry) {
       final system = ((entry['notes'] as Map)['nodes'] as List).first['system'];
       return filter == 'ALL_NOTES' ||
@@ -279,6 +399,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
       'widgets': [
         {
           'type': 'NOTES',
+          'discussionLocked': false,
           'discussions': {
             'nodes': page,
             'pageInfo': {
@@ -370,6 +491,51 @@ final class EmulatorQaFixture extends WorkspaceFixture {
       final operation = RegExp(
         r'^(query|mutation)\s+(\w+)',
       ).firstMatch(query.trim())?.group(2);
+      if (operation == 'MobileWorkItemActivityWriteAccess' &&
+          _workItemStates.containsKey(variables['id'])) {
+        return jsonResponse({
+          'data': {
+            'currentUser': {'id': 'gid://gitlab/User/7'},
+            'workItem': workItemRecord(
+              group: variables['id'] == 'gid://gitlab/WorkItem/1041',
+            ),
+          },
+        });
+      }
+      if ((operation == 'MobileWorkItemActivityReplyPreflight' ||
+              operation == 'MobileWorkItemActivityNoteReadback') &&
+          _workItemStates.containsKey(variables['workItemId'])) {
+        final group = variables['workItemId'] == 'gid://gitlab/WorkItem/1041';
+        final noteId =
+            variables[operation == 'MobileWorkItemActivityReplyPreflight'
+                ? 'anchorNoteId'
+                : 'noteId'];
+        return jsonResponse({
+          'data': {
+            'currentUser': {'id': 'gid://gitlab/User/7'},
+            'workItem': workItemRecord(group: group),
+            operation == 'MobileWorkItemActivityReplyPreflight'
+                ? 'anchor'
+                : 'note': noteId is String
+                ? workItemActivityNoteRecord(noteId, group: group)
+                : null,
+          },
+        });
+      }
+      if (operation == 'MobileCreateWorkItemActivityNote') {
+        final input = variables['input'];
+        final note = input is Map ? _createWorkItemFixtureNote(input) : null;
+        return jsonResponse({
+          'data': {
+            'createNote': {
+              'errors': note == null
+                  ? ['Unknown synthetic note target']
+                  : <String>[],
+              'note': note,
+            },
+          },
+        });
+      }
       if (operation == 'MobileGroupWorkItems' &&
           variables['path'] == 'qa/synthetic-group') {
         final typeIds = variables['typeIds'] as List?;
@@ -489,7 +655,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         return jsonResponse({
           'data': {
             'workItem': workItemRecord(
-              group: variables['id'] == 'gid://gitlab/WorkItem/qa-group-41',
+              group: variables['id'] == 'gid://gitlab/WorkItem/1041',
             ),
           },
         });
@@ -515,7 +681,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         return jsonResponse({
           'data': {
             'workItem': workItemActivityRecord(
-              group: variables['id'] == 'gid://gitlab/WorkItem/qa-group-41',
+              group: variables['id'] == 'gid://gitlab/WorkItem/1041',
               filter: variables['filter'] as String,
               sort: variables['sort'] as String,
               after: variables['after'],
@@ -539,7 +705,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
               'workItemUpdate': {
                 'errors': <String>[],
                 'workItem': workItemRecord(
-                  group: id == 'gid://gitlab/WorkItem/qa-group-41',
+                  group: id == 'gid://gitlab/WorkItem/1041',
                 ),
               },
             },
@@ -553,6 +719,20 @@ final class EmulatorQaFixture extends WorkspaceFixture {
     }
     final segments = request.uri.pathSegments;
     final apiStart = segments.indexOf('v4');
+    if (request.method == 'GET' &&
+        apiStart >= 0 &&
+        segments.length == apiStart + 3 &&
+        segments[apiStart + 1] == 'projects' &&
+        segments[apiStart + 2] == 'qa/synthetic-group/child-project') {
+      return jsonResponse({
+        ...projectRecord,
+        'id': 94,
+        'name': 'Synthetic descendant project',
+        'path_with_namespace': 'qa/synthetic-group/child-project',
+        'web_url':
+            'https://qa.invalid:8443/gitlab/qa/synthetic-group/child-project',
+      });
+    }
     final path = segments.skip(apiStart + 1).join('/');
     final method = request.method;
     if (path == 'todos' && method == 'GET') {

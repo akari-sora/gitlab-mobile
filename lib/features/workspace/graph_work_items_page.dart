@@ -1345,6 +1345,9 @@ class GraphWorkItemDetailPage extends StatefulWidget {
 
 class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   WorkItemGraphDetail? _detail;
+  Project? _resolvedProject;
+  ApiFailure? _projectContextError;
+  bool _resolvingProject = false;
   ApiFailure? _error;
   bool _loading = false;
   int _generation = 0;
@@ -1388,6 +1391,9 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       _generation++;
       _dismissOwnedRoutes();
       _detail = null;
+      _resolvedProject = null;
+      _projectContextError = null;
+      _resolvingProject = false;
       _error = null;
       _loading = false;
       _ownerInvalid = false;
@@ -1409,6 +1415,9 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     _dismissOwnedRoutes();
     setState(() {
       _detail = null;
+      _resolvedProject = null;
+      _projectContextError = null;
+      _resolvingProject = false;
       _error = null;
       _loading = false;
       _ownerInvalid = true;
@@ -1454,6 +1463,9 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       _loading = true;
       _error = null;
       _detail = null;
+      _resolvedProject = null;
+      _projectContextError = null;
+      _resolvingProject = false;
     });
     try {
       final detail = owner.project == null
@@ -1470,6 +1482,9 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
             );
       if (!_current(generation)) return;
       setState(() => _detail = detail);
+      if (owner.project == null && detail.summary.project != null) {
+        unawaited(_resolveProjectContext(detail, generation));
+      }
     } catch (error) {
       if (!_current(generation)) return;
       final failure = safeFailure(error);
@@ -1479,6 +1494,51 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     } finally {
       if (_current(generation)) setState(() => _loading = false);
     }
+  }
+
+  Future<void> _resolveProjectContext(
+    WorkItemGraphDetail detail,
+    int generation, {
+    bool refresh = false,
+  }) async {
+    final projectRef = detail.summary.project;
+    if (projectRef == null || _resolvingProject) return;
+    setState(() {
+      _resolvingProject = true;
+      _projectContextError = null;
+    });
+    try {
+      final project = await widget.api.project(
+        projectRef.fullPath,
+        refresh: refresh,
+      );
+      if (!_current(generation) || !identical(_detail, detail)) return;
+      final match = RegExp(
+        r'^gid://gitlab/Project/([1-9][0-9]*)$',
+      ).firstMatch(projectRef.id);
+      if (match == null ||
+          int.parse(match.group(1)!) != project.id ||
+          project.path != projectRef.fullPath) {
+        throw const ApiFailure(FailureKind.invalidResponse);
+      }
+      setState(() => _resolvedProject = project);
+    } catch (error) {
+      if (!_current(generation) || !identical(_detail, detail)) return;
+      final failure = safeFailure(error);
+      if (failure.kind != FailureKind.cancelled) {
+        setState(() => _projectContextError = failure);
+      }
+    } finally {
+      if (_current(generation) && identical(_detail, detail)) {
+        setState(() => _resolvingProject = false);
+      }
+    }
+  }
+
+  void _retryProjectContext() {
+    final detail = _detail;
+    if (detail == null || _resolvingProject || !_current(_generation)) return;
+    unawaited(_resolveProjectContext(detail, _generation, refresh: true));
   }
 
   Future<void> _applyStateSnapshot(WorkItemStateSnapshot snapshot) async {
@@ -1675,7 +1735,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     final labels = detail.labels?.labels;
     final hierarchy = detail.hierarchy;
     final dates = detail.dates;
-    final project = widget.project;
+    final project = widget.project ?? _resolvedProject;
     return ListView(
       padding: EdgeInsets.fromLTRB(
         feedGutter(context),
@@ -1878,7 +1938,46 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           project: project,
           isCurrent: widget.isCurrent,
           ownerChanges: widget.ownerChanges,
+          onRoute: _ownRoute,
         ),
+        if (widget.project == null && summary.project != null) ...[
+          if (_resolvingProject)
+            _section(
+              context,
+              '專案 Markdown 整合',
+              const Row(
+                children: [
+                  SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(child: Text('正在驗證專案身分…')),
+                ],
+              ),
+            )
+          else if (_projectContextError case final error?)
+            _section(
+              context,
+              '專案 Markdown 整合',
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('工作項目仍可閱讀，留言仍可使用純 Markdown。'),
+                  const SizedBox(height: 10),
+                  FailureNotice(
+                    error,
+                    key: const ValueKey('work-item-project-context-failure'),
+                    account: widget.account,
+                    resourceLabel: summary.project!.fullPath,
+                    onRetry: _retryProjectContext,
+                    onSwitchAccount: endSessionFrom(context),
+                  ),
+                ],
+              ),
+            ),
+        ],
         if (!detail.widgetsAvailable)
           _section(
             context,

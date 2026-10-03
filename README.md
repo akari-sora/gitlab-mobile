@@ -13,8 +13,9 @@ graphs, actual pipeline dependency graphs, package/container/Terraform registrie
 native contributor/repository/CI analytics, lazy multi-file Snippets and guarded
 file actions, server-discovered GraphQL Work Item types, bounded project/group and descendant
 lists with server-side scope/state/search/type/order controls, group-list deep links and project/group details with guarded close/reopen actions and lazy status, milestone, weight, iteration, health, time-tracking and
-development attributes, a lazy read-only activity timeline with server-side activity/comment/history filters,
-oldest/newest ordering and bounded discussion/reply paging, collapsed long descriptions, and typed Task/Incident workflows
+development attributes, a lazy activity timeline with server-side activity/comment/history filters,
+oldest/newest ordering, bounded discussion/reply paging and guarded Markdown comments/replies,
+collapsed long descriptions, and typed Task/Incident workflows
 with separate incident escalation state. Issue/MR filters use server
 ordering. Phone board columns, vertical graphs and lazy lists retain native
 navigation. The [full-function ledger](docs/MOBILE_WEB_PARITY_LEDGER.md) records
@@ -39,6 +40,12 @@ confirms the current account and scope, writes once and checks an independent
 readback. Unsupported servers remain readable; uncertain results require a fresh
 read before another action. OPEN/CLOSED remains separate from custom workflow
 status. GitLab exposes no timestamp compare-and-swap for this mutation.
+
+Work Item comments and replies use a fresh permission/identity check, one
+GraphQL mutation and an independent exact-note readback. Reply targets preserve
+the server's opaque `replyId`. Account/resource changes invalidate open editors;
+uncertain writes retain secure drafts and block repeat submission. Quick actions,
+internal notes, note editing/deletion and reactions remain outside this slice.
 
 ## v0.5 — mobile UX overhaul and GitLab parity
 

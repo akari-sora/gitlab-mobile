@@ -93,7 +93,7 @@ void main() {
       final genericRoot = rows.firstWhere(
         (item) =>
             item.namespace!.fullPath == path &&
-            item.id != 'gid://gitlab/WorkItem/qa-group-41',
+            item.id != 'gid://gitlab/WorkItem/1041',
       );
       final descendantGroup = rows.firstWhere(
         (item) => item.namespace!.fullPath == 'qa/synthetic-group/child-group',

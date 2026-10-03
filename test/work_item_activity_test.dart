@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
@@ -13,7 +14,7 @@ import 'package:gitlab_mobile/shared/theme.dart';
 
 import 'support/fake_adapter.dart';
 
-const _workItemId = 'gid://gitlab/WorkItem/server-owned';
+const _workItemId = 'gid://gitlab/WorkItem/700';
 const _projectId = 'gid://gitlab/Project/42';
 const _namespaceId = 'gid://gitlab/Namespaces::ProjectNamespace/42';
 const _path = 'team/example-42';
@@ -88,9 +89,10 @@ Map<String, Object?> _discussion(
   List<Object?> notes = const [],
   bool notesNext = false,
   String? notesCursor,
+  String? replyId,
 }) => {
   'id': 'gid://gitlab/Discussion/$suffix',
-  'replyId': 'reply-$suffix',
+  'replyId': replyId ?? 'reply-$suffix',
   'createdAt': '2026-10-01T01:00:00Z',
   'notes': {
     'nodes': notes,
@@ -104,16 +106,21 @@ Map<String, Object?> _activity({
   List<Object?> discussions = const [],
   bool next = false,
   String? cursor,
+  bool canCreateNote = true,
+  bool discussionLocked = false,
 }) => {
   'data': {
+    'currentUser': {'id': 'gid://gitlab/User/7'},
     'workItem': {
       ..._identity(),
+      'userPermissions': {'createNote': canCreateNote},
       'widgets': widgetsUnavailable
           ? null
           : widgets ??
                 [
                   {
                     'type': 'NOTES',
+                    'discussionLocked': discussionLocked,
                     'discussions': {
                       'nodes': discussions,
                       'pageInfo': _pageInfo(next: next, cursor: cursor),
@@ -146,12 +153,81 @@ Map<String, Object?> _notesPage(
   },
 };
 
+bool _isWriteAccessRequest(RequestOptions request) =>
+    ((request.data as Map)['query'] as String).contains(
+      'MobileWorkItemActivityWriteAccess',
+    );
+
+Map<String, Object?> _createdNote(
+  String suffix,
+  String body, {
+  String discussionId = 'gid://gitlab/Discussion/created',
+  String replyId = 'gid://gitlab/Discussion/created-reply',
+  String discussionCreatedAt = '2026-10-01T02:00:00Z',
+}) => {
+  ..._note(suffix, body: body),
+  'internal': false,
+  'author': {
+    'id': 'gid://gitlab/User/7',
+    'name': 'Reader',
+    'username': 'reader',
+  },
+  'noteableType': 'Issue',
+  'noteableId': '700',
+  'project': {'id': _projectId, 'fullPath': _path},
+  'discussion': {
+    'id': discussionId,
+    'replyId': replyId,
+    'createdAt': discussionCreatedAt,
+  },
+};
+
+Map<String, Object?> _createdMutation(Map<String, Object?> note) => {
+  'data': {
+    'createNote': {'errors': const <Object?>[], 'note': note},
+  },
+};
+
+Map<String, Object?> _createdReadback(Map<String, Object?> note) => {
+  'data': {'workItem': _identity(), 'note': note},
+};
+
+Map<String, Object?> _replyPreflight({
+  required String anchorNoteId,
+  required String discussionId,
+  required String replyId,
+  String discussionCreatedAt = '2026-10-01T01:00:00Z',
+}) => {
+  'data': {
+    'currentUser': {'id': 'gid://gitlab/User/7'},
+    'workItem': {
+      ..._identity(),
+      'userPermissions': {'createNote': true},
+      'widgets': const [
+        {'type': 'NOTES', 'discussionLocked': false},
+      ],
+    },
+    'anchor': {
+      'id': anchorNoteId,
+      'noteableType': 'Issue',
+      'noteableId': '700',
+      'project': {'id': _projectId, 'fullPath': _path},
+      'discussion': {
+        'id': discussionId,
+        'replyId': replyId,
+        'createdAt': discussionCreatedAt,
+      },
+    },
+  },
+};
+
 Widget _host(
   GitLabApi api, {
   bool Function()? isCurrent,
   Listenable? ownerChanges,
   double textScale = 1,
   Brightness? brightness,
+  ValueChanged<Route<dynamic>>? onRoute,
 }) => MaterialApp(
   theme: brightness == null ? null : appTheme(brightness),
   builder: (context, child) => MediaQuery(
@@ -169,6 +245,7 @@ Widget _host(
         project: _project,
         isCurrent: isCurrent,
         ownerChanges: ownerChanges,
+        onRoute: onRoute,
       ),
     ),
   ),
@@ -198,6 +275,8 @@ Future<void> _expand(WidgetTester tester) async {
 }
 
 void main() {
+  setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
   for (final brightness in Brightness.values) {
     for (final textScale in [1.0, 2.0]) {
       testWidgets(
@@ -285,7 +364,7 @@ void main() {
       expect(find.text(entry.$3), findsOneWidget);
       expect(find.byType(MarkdownView), findsOneWidget);
     }
-    expect(adapter.requests, hasLength(6));
+    expect(adapter.requests, hasLength(7));
     expect(tester.takeException(), isNull);
   });
 
@@ -398,7 +477,7 @@ void main() {
         find.byKey(const ValueKey('work-item-activity-refresh')),
       );
       await tester.pumpAndSettle();
-      expect(adapter.requests, hasLength(4));
+      expect(adapter.requests, hasLength(5));
       final variables = (adapter.requests.last.data as Map)['variables'] as Map;
       expect(variables['sort'], 'CREATED_DESC');
       expect(variables['after'], isNull);
@@ -439,7 +518,7 @@ void main() {
       addTearDown(api.close);
       await tester.pumpWidget(_host(api));
       await _expand(tester);
-      expect(adapter.requests, hasLength(2));
+      expect(adapter.requests, hasLength(3));
       expect(find.textContaining('此實例未提供活動篩選或排序'), findsOneWidget);
       final filter = tester.widget<DropdownButton<WorkItemActivityFilter>>(
         find.byKey(const ValueKey('work-item-activity-filter')),
@@ -494,6 +573,496 @@ void main() {
     expect(find.byKey(const ValueKey('work-item-activity')), findsOneWidget);
     expect(adapter.requests, isEmpty);
     expect(find.text('尚無活動'), findsNothing);
+  });
+
+  testWidgets(
+    'verified top-level comment refreshes the feed and keeps Markdown preview',
+    (tester) async {
+      var activityReads = 0;
+      var mutations = 0;
+      const submitted = '**new comment**';
+      final created = _createdNote('502', submitted);
+      final adapter = FakeAdapter((request) {
+        final data = request.data as Map;
+        final query = data['query'] as String;
+        if (query.contains('MobileWorkItemActivityWriteAccess')) {
+          return jsonResponse(_activity());
+        }
+        if (query.contains('MobileCreateWorkItemActivityNote')) {
+          mutations++;
+          final input = ((data['variables'] as Map)['input'] as Map);
+          expect(input['body'], submitted);
+          expect(input.containsKey('discussionId'), isFalse);
+          return jsonResponse(_createdMutation(created));
+        }
+        if (query.contains('MobileWorkItemActivityNoteReadback')) {
+          return jsonResponse(_createdReadback(created));
+        }
+        if (query.contains('MobileWorkItemActivity(')) {
+          activityReads++;
+          return jsonResponse(
+            _activity(
+              discussions: activityReads == 1
+                  ? [
+                      _discussion('before', notes: [_note('before')]),
+                    ]
+                  : [
+                      _discussion('created', notes: [created]),
+                    ],
+            ),
+          );
+        }
+        throw StateError('Unexpected activity request: $query');
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      Route<dynamic>? editorRoute;
+
+      await tester.pumpWidget(
+        _host(api, onRoute: (route) => editorRoute = route),
+      );
+      await _expand(tester);
+      tester
+          .widget<FilledButton>(
+            find.byKey(const ValueKey('work-item-activity-add-comment')),
+          )
+          .onPressed!();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(editorRoute, isNotNull);
+      expect(editorRoute!.isActive, isTrue);
+      expect(editorRoute!.isCurrent, isTrue);
+
+      expect(
+        find.byKey(const ValueKey('editor-quick-actions-btn')),
+        findsNothing,
+      );
+      expect(find.byTooltip('提及'), findsOneWidget);
+      expect(find.byTooltip('附加圖片'), findsOneWidget);
+      expect(find.byTooltip('附加檔案'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('editor-body'), skipOffstage: false),
+        findsOneWidget,
+        reason: tester
+            .widgetList<Text>(find.byType(Text))
+            .map((widget) => widget.data)
+            .whereType<String>()
+            .join(' | '),
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('editor-body'), skipOffstage: false),
+        submitted,
+      );
+      await _tap(tester, find.text('預覽'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('new comment'), findsOneWidget);
+
+      await _tap(tester, find.byKey(const Key('editorSave')));
+      await tester.pumpAndSettle();
+
+      expect(mutations, 1);
+      expect(
+        activityReads,
+        2,
+        reason:
+            '${adapter.requests.map((request) => ((request.data as Map)['query'] as String).split('\n').firstWhere((line) => line.contains('query ') || line.contains('mutation '), orElse: () => 'unknown')).join(' | ')}\n'
+            '${tester.widgetList<Text>(find.byType(Text)).map((widget) => widget.data).whereType<String>().join(' | ')}',
+      );
+      expect(find.text('new comment'), findsOneWidget);
+      expect(find.textContaining('comment-before'), findsNothing);
+      expect(
+        find.byKey(const ValueKey('work-item-activity-add-comment')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('group-owned editor keeps Markdown but hides project tools', (
+    tester,
+  ) async {
+    const groupWorkItemId = 'gid://gitlab/WorkItem/701';
+    const groupNamespaceId = 'gid://gitlab/Group/9';
+    const groupPath = 'team/group';
+    final groupSummary = WorkItemGraphSummary(
+      id: groupWorkItemId,
+      iid: 8,
+      title: 'Group work item',
+      state: 'OPEN',
+      createdAt: DateTime.utc(2026, 10, 1),
+      updatedAt: DateTime.utc(2026, 10, 2),
+      project: null,
+      namespace: const GraphResourceRef(
+        id: groupNamespaceId,
+        fullPath: groupPath,
+      ),
+      type: const WorkItemGraphType(
+        id: 'gid://gitlab/WorkItems::Type/group-task',
+        name: 'Task',
+      ),
+    );
+    final groupDetail = WorkItemGraphDetail(
+      summary: groupSummary,
+      description: null,
+      widgetsAvailable: true,
+      widgetTypes: const {'NOTES'},
+      descriptionWidget: null,
+      assignees: null,
+      labels: null,
+      hierarchy: null,
+      dates: null,
+    );
+    final groupResponse = {
+      'data': {
+        'currentUser': {'id': 'gid://gitlab/User/7'},
+        'workItem': {
+          'id': groupWorkItemId,
+          'iid': '8',
+          'project': null,
+          'namespace': {'id': groupNamespaceId, 'fullPath': groupPath},
+          'userPermissions': {'createNote': true},
+          'widgets': [
+            {
+              'type': 'NOTES',
+              'discussionLocked': false,
+              'discussions': {
+                'nodes': const <Object?>[],
+                'pageInfo': _pageInfo(),
+              },
+            },
+          ],
+        },
+      },
+    };
+    final api = testApi(FakeAdapter((_) => jsonResponse(groupResponse)));
+    addTearDown(api.close);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: WorkItemActivityPanel(
+            account: _account(api),
+            api: api,
+            detail: groupDetail,
+            project: null,
+          ),
+        ),
+      ),
+    );
+    await _expand(tester);
+    tester
+        .widget<FilledButton>(
+          find.byKey(const ValueKey('work-item-activity-add-comment')),
+        )
+        .onPressed!();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    expect(find.byTooltip('粗體'), findsOneWidget);
+    expect(find.byTooltip('提及'), findsNothing);
+    expect(find.byTooltip('附加圖片'), findsNothing);
+    expect(find.byTooltip('附加檔案'), findsNothing);
+    expect(
+      find.byKey(const ValueKey('editor-quick-actions-btn')),
+      findsNothing,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'verified discussion reply uses its opaque target and refreshes',
+    (tester) async {
+      const discussionId = 'gid://gitlab/Discussion/thread';
+      const replyId = 'gid://gitlab/Discussion/thread-reply';
+      const anchorId = 'gid://gitlab/Note/501';
+      const submitted = 'reply from native';
+      final created = _createdNote(
+        '503',
+        submitted,
+        discussionId: discussionId,
+        replyId: replyId,
+        discussionCreatedAt: '2026-10-01T01:00:00Z',
+      );
+      var activityReads = 0;
+      var mutations = 0;
+      final adapter = FakeAdapter((request) {
+        final data = request.data as Map;
+        final query = data['query'] as String;
+        if (query.contains('MobileWorkItemActivityReplyPreflight')) {
+          return jsonResponse(
+            _replyPreflight(
+              anchorNoteId: anchorId,
+              discussionId: discussionId,
+              replyId: replyId,
+            ),
+          );
+        }
+        if (query.contains('MobileWorkItemActivityWriteAccess')) {
+          return jsonResponse(_activity());
+        }
+        if (query.contains('MobileCreateWorkItemActivityNote')) {
+          mutations++;
+          final input = ((data['variables'] as Map)['input'] as Map);
+          expect(input['body'], submitted);
+          expect(input['discussionId'], replyId);
+          return jsonResponse(_createdMutation(created));
+        }
+        if (query.contains('MobileWorkItemActivityNoteReadback')) {
+          return jsonResponse(_createdReadback(created));
+        }
+        if (query.contains('MobileWorkItemActivity(')) {
+          activityReads++;
+          return jsonResponse(
+            _activity(
+              discussions: [
+                _discussion(
+                  'thread',
+                  replyId: replyId,
+                  notes: activityReads == 1
+                      ? [_note('501')]
+                      : [_note('501'), created],
+                ),
+              ],
+            ),
+          );
+        }
+        throw StateError('Unexpected activity request: $query');
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(_host(api));
+      await _expand(tester);
+      final reply = find.byKey(
+        const ValueKey('work-item-activity-reply:$discussionId'),
+      );
+      expect(reply, findsOneWidget);
+      tester.widget<OutlinedButton>(reply).onPressed!();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump();
+      await tester.enterText(
+        find.byKey(const ValueKey('editor-body')),
+        submitted,
+      );
+      await _tap(tester, find.byKey(const Key('editorSave')));
+      await tester.pumpAndSettle();
+
+      expect(mutations, 1);
+      expect(
+        activityReads,
+        2,
+        reason: adapter.requests
+            .map(
+              (request) => ((request.data as Map)['query'] as String)
+                  .split('\n')
+                  .firstWhere(
+                    (line) =>
+                        line.contains('query ') || line.contains('mutation '),
+                    orElse: () => 'unknown',
+                  ),
+            )
+            .join(' | '),
+      );
+      await _tap(tester, find.text('顯示其餘 1 則留言'));
+      await tester.pump();
+      expect(find.text(submitted), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('read-only permission keeps activity visible without composer', (
+    tester,
+  ) async {
+    final adapter = FakeAdapter((request) {
+      if (_isWriteAccessRequest(request)) {
+        return jsonResponse(_activity(canCreateNote: false));
+      }
+      return jsonResponse(
+        _activity(
+          discussions: [
+            _discussion('readable', notes: [_note('readable')]),
+          ],
+        ),
+      );
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(_host(api));
+    await _expand(tester);
+
+    expect(find.textContaining('comment-readable'), findsOneWidget);
+    expect(find.textContaining('沒有新增留言的權限'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('work-item-activity-add-comment')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('unsupported writer leaves the activity reader available', (
+    tester,
+  ) async {
+    final adapter = FakeAdapter((request) {
+      if (_isWriteAccessRequest(request)) {
+        return jsonResponse({
+          'errors': [
+            {
+              'message': 'private schema detail',
+              'extensions': {'code': 'undefinedField'},
+            },
+          ],
+        });
+      }
+      return jsonResponse(
+        _activity(
+          discussions: [
+            _discussion('unsupported-writer', notes: [_note('604')]),
+          ],
+        ),
+      );
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(_host(api));
+    await _expand(tester);
+
+    expect(find.textContaining('comment-604'), findsOneWidget);
+    expect(find.textContaining('暫不支援新增留言'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('work-item-activity-add-comment')),
+      findsNothing,
+    );
+    expect(find.text('重試留言權限'), findsNothing);
+  });
+
+  testWidgets(
+    'locked discussion stays readable and suppresses all composition',
+    (tester) async {
+      final adapter = FakeAdapter(
+        (_) => jsonResponse(
+          _activity(
+            discussionLocked: true,
+            discussions: [
+              _discussion(
+                'locked',
+                replyId: 'gid://gitlab/Discussion/locked-reply',
+                notes: [_note('601')],
+              ),
+            ],
+          ),
+        ),
+      );
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(_host(api));
+      await _expand(tester);
+
+      expect(find.textContaining('comment-601'), findsOneWidget);
+      expect(find.textContaining('討論已鎖定'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('work-item-activity-add-comment')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey(
+            'work-item-activity-reply:gid://gitlab/Discussion/locked',
+          ),
+        ),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets('late write access cannot escape owner invalidation', (
+    tester,
+  ) async {
+    final pendingAccess = Completer<ResponseBody>();
+    final adapter = FakeAdapter((request) {
+      if (_isWriteAccessRequest(request)) return pendingAccess.future;
+      return jsonResponse(
+        _activity(
+          discussions: [
+            _discussion('before-owner-change', notes: [_note('602')]),
+          ],
+        ),
+      );
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    final owner = ChangeNotifier();
+    addTearDown(owner.dispose);
+    var current = true;
+
+    await tester.pumpWidget(
+      _host(api, isCurrent: () => current, ownerChanges: owner),
+    );
+    await _tap(tester, find.text('活動'));
+    for (
+      var attempt = 0;
+      attempt < 10 && find.textContaining('comment-602').evaluate().isEmpty;
+      attempt++
+    ) {
+      await tester.pump(const Duration(milliseconds: 50));
+    }
+    expect(find.textContaining('comment-602'), findsOneWidget);
+
+    current = false;
+    owner.notifyListeners();
+    pendingAccess.complete(jsonResponse(_activity()));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('work-item-activity-add-comment')),
+      findsNothing,
+    );
+    expect(find.textContaining('comment-602'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('history mode requires an explicit switch before composing', (
+    tester,
+  ) async {
+    final filters = <String>[];
+    final adapter = FakeAdapter((request) {
+      if (_isWriteAccessRequest(request)) return jsonResponse(_activity());
+      final variables = (request.data as Map)['variables'] as Map;
+      filters.add('${variables['filter']}');
+      return jsonResponse(_activity());
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(_host(api));
+    await _expand(tester);
+    await _selectControl(tester, 'work-item-activity-filter', '只看歷史');
+    expect(
+      find.byKey(const ValueKey('work-item-activity-switch-to-comments')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey('work-item-activity-add-comment')),
+      findsNothing,
+    );
+
+    await _tap(
+      tester,
+      find.byKey(const ValueKey('work-item-activity-switch-to-comments')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(
+      filters,
+      containsAllInOrder(['ALL_NOTES', 'ONLY_ACTIVITY', 'ONLY_COMMENTS']),
+    );
+    expect(
+      find.byKey(const ValueKey('work-item-activity-add-comment')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('editorSave')), findsNothing);
   });
 
   testWidgets('activity is absent when NOTES was not advertised', (
@@ -571,7 +1140,7 @@ void main() {
     await _tap(tester, find.text('載入下一頁').first);
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    expect(adapter.requests, hasLength(2));
+    expect(adapter.requests, hasLength(3));
     expect(find.byType(CircularProgressIndicator), findsNothing);
     expect(find.text('無法讀取回應'), findsOneWidget);
 
@@ -585,7 +1154,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(find.textContaining('comment-one'), findsOneWidget);
-    expect(adapter.requests, hasLength(3));
+    expect(adapter.requests, hasLength(4));
   });
 
   testWidgets('empty outer page can advance and remains cached', (
@@ -593,6 +1162,9 @@ void main() {
   ) async {
     var calls = 0;
     final adapter = FakeAdapter((request) {
+      if (_isWriteAccessRequest(request)) {
+        return jsonResponse(_activity());
+      }
       calls++;
       final variables = (request.data as Map)['variables'] as Map;
       if (variables['after'] == null) {
@@ -742,13 +1314,19 @@ void main() {
       _activity(widgetsUnavailable: true),
       _activity(
         widgets: const [
-          {'type': 'NOTES', 'discussions': null},
+          {'type': 'NOTES', 'discussionLocked': false, 'discussions': null},
         ],
       ),
       _activity(discussions: const []),
     ];
     var call = 0;
-    final api = testApi(FakeAdapter((_) => jsonResponse(responses[call++])));
+    final api = testApi(
+      FakeAdapter(
+        (request) => jsonResponse(
+          _isWriteAccessRequest(request) ? _activity() : responses[call++],
+        ),
+      ),
+    );
     addTearDown(api.close);
 
     await tester.pumpWidget(_host(api));
@@ -781,7 +1359,7 @@ void main() {
     );
     await _tap(tester, find.text('活動'));
     await tester.pump();
-    expect(find.byType(CircularProgressIndicator), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNWidgets(2));
 
     current = false;
     owner.notifyListeners();
@@ -851,6 +1429,9 @@ void main() {
     var outerPage = 0;
     var notePage = 0;
     final adapter = FakeAdapter((request) {
+      if (_isWriteAccessRequest(request)) {
+        return jsonResponse(_activity());
+      }
       final body = request.data as Map;
       final query = body['query'] as String;
       if (query.contains('MobileWorkItemDiscussionNotes')) {
@@ -911,7 +1492,10 @@ void main() {
     (tester) async {
       final largeBody = List.filled(700000, 'x').join();
       var page = 0;
-      final oldAdapter = FakeAdapter((_) {
+      final oldAdapter = FakeAdapter((request) {
+        if (_isWriteAccessRequest(request)) {
+          return jsonResponse(_activity());
+        }
         page++;
         return jsonResponse(
           _activity(
@@ -979,7 +1563,7 @@ void main() {
 
       await _expand(tester);
       expect(find.textContaining('comment-fresh-budget'), findsOneWidget);
-      expect(newAdapter.requests, hasLength(1));
+      expect(newAdapter.requests, hasLength(2));
     },
   );
 

@@ -427,6 +427,21 @@ updatedAt
 author { id name username }
 ''';
 
+final _publicWorkItemActivityWriteAccessQuery =
+    '''
+query MobileWorkItemActivityWriteAccess(\$id: WorkItemID!) {
+  currentUser { id }
+  workItem(id: \$id) {
+    $_publicWorkItemActivityIdentityFields
+    userPermissions { createNote }
+    widgets {
+      type
+      ... on WorkItemWidgetNotes { discussionLocked }
+    }
+  }
+}
+''';
+
 final _publicWorkItemActivityQuery =
     '''
 query MobileWorkItemActivity(
@@ -1091,6 +1106,15 @@ Future<void> main() async {
         require(!state.canUpdate);
       },
     );
+    await check(
+      'public.work_items.project_read_only_note_permission',
+      () async {
+        final expected = discoveredPublicWorkItem;
+        require(expected != null);
+        final access = await api.workItemActivityWriteAccess(expected!);
+        require(!access.canCreateNote && access.commentTarget == null);
+      },
+    );
     for (final kind in WorkItemAttributeKind.values) {
       await check('public.work_items.attribute_${kind.name}', () async {
         final expected = discoveredPublicWorkItem;
@@ -1168,6 +1192,12 @@ Future<void> main() async {
       require(state.id == expected.id && state.iid == expected.iid);
       require(state.state.name.toUpperCase() == expected.state);
       require(!state.canUpdate);
+    });
+    await check('public.work_items.group_read_only_note_permission', () async {
+      final expected = discoveredPublicGroupWorkItem;
+      require(expected != null);
+      final access = await api.workItemActivityWriteAccess(expected!);
+      require(!access.canCreateNote && access.commentTarget == null);
     });
     await check('public.work_items.group_owned_pages', () async {
       final first = await api.groupWorkItems(_publicGroupWorkItemPath);
@@ -1712,6 +1742,10 @@ bool _isExactPublicWorkItemActivityGraph(
     ?discoveredProjectWorkItemId,
     ?discoveredGroupWorkItemId,
   };
+  if (body['query'] == _publicWorkItemActivityWriteAccessQuery) {
+    return variables.length == 1 &&
+        allowedWorkItemIds.contains(variables['id']);
+  }
   if (body['query'] == _publicWorkItemActivityQuery) {
     final after = variables['after'];
     return variables.length == 4 &&

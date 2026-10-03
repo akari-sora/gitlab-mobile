@@ -17,7 +17,7 @@ specification numbers have been invented.
 | Manage / Activity | Loaded timeline and eight event filters at phone width | Activity feed | Full event-kind/authenticated parity walk |
 | Manage / Members | Loaded roles/source/search/sort and member rows | Member list/actions | Custom roles, complete administration and live permissions |
 | Manage / Labels | Loaded Active/Archived, search/sort and empty state | List/create/edit/delete | Scoped labels/subscriptions and live CRUD |
-| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project and group-owned cursor lists, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, seven lazy attribute kinds, server-filtered/ordered read-only activity paging and guarded close/reopen | Remaining widgets, activity reply creation, descendant group aggregation, list filters, remaining Work Item mutations and authenticated/edition acceptance |
+| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project/group-owned and descendant cursor lists with scope/state/search/type/order controls, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, seven lazy attribute kinds, server-filtered/ordered activity paging, guarded Markdown comments/replies and close/reopen | Remaining widgets, note editing/deletion/reactions, custom saved views and remaining list display/sort families, remaining Work Item mutations and authenticated/edition acceptance |
 | Plan / Boards | Development board observed | Phone-width columns, card move, board/list management | Paid scope/list creation, touch drag/drop and live mutation readback |
 | Plan / Milestones | Loaded empty-state explanation | List/detail/create/edit/delete | Full progress/reporting and live CRUD |
 | Plan / Wiki | Loaded empty Wiki explanation | Page list/read/create/edit/delete | History, attachments, tree and live CRUD |
@@ -151,13 +151,25 @@ on one S24 Ultra do not establish statistical improvement on every screen.
 
 ## Next implementation lanes
 
+The later 390 × 844 public walk of project Task
+[631946](https://gitlab.com/gitlab-org/gitlab/-/work_items/631946), project Issue
+[631759](https://gitlab.com/gitlab-org/gitlab/-/work_items/631759) and group Epic
+[14501](https://gitlab.com/groups/gitlab-org/-/work_items/14501) confirmed
+comments/history controls, newest-first order, per-thread Reply to comment,
+Expand/Collapse replies and a signed-out register/sign-in prompt. Collapsing a
+thread retained its reply count and last-reply summary. No comment was posted.
+Native Markdown comment/reply creation now has guarded API/editor source and
+synthetic project/group regression coverage. Exact-source APK, installed native
+checks and CI evidence belong to the commit-bound delivery receipts; this does
+not establish authenticated live GitLab write acceptance.
+
 1. Typed REST Tasks/Incidents now have source and regression coverage. Complete
    installed-build checks and disposable-fixture CRUD/lifecycle readback; alert,
    timeline, metrics and on-call workflows remain open.
 2. Fixed-query GraphQL Work Items now include server-returned scope/type IDs,
    project cursor paging and exact project/group details with five base widgets
-   plus seven independently loaded attributes and read-only activity. Complete remaining
-   widgets, activity reply creation, descendant group aggregation, filters,
+   plus seven independently loaded attributes and guarded Markdown activity comments/replies. Complete remaining
+   widgets, note editing/deletion/reactions, custom saved views and remaining list display/sort families,
    remaining native mutations and actual authenticated/private/edition validation.
 3. Multi-file Snippet blobs now have lazy paths/content, source/Markdown preview
    and guarded file actions with `updatedAt` change detection. Complete

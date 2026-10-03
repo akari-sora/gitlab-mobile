@@ -40,7 +40,7 @@ GitLab edition lacks the feature.
 | Global navigation | Projects, groups/subgroups, todos, assigned/review-requested/created work, activity and global search | No structural change | Administration, help and creation workflows remain unimplemented; they are part of the full-function backlog |
 | Project overview | Description, stars, forks, languages, licence, clone URLs, star/fork actions | Direct header Star/Unstar and link sharing; shared More state/count and project feed reconciliation | Full Web analytics and settings are not reproduced |
 | Manage | Activity, members and labels | No structural change | Access-token, webhook, integration and full member-role administration remain open |
-| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project and group-owned Work Item cursor lists, server types and exact project/group detail with five base widgets, seven lazy attribute kinds, server-filtered/ordered read-only activity and guarded close/reopen | Remaining Work Item widgets, activity reply creation, descendant group aggregation and filters, remaining mutations, full iterations/requirements/Epic/OKR workflows remain open |
+| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project/group-owned and descendant Work Item cursor lists with scope/state/search/type/order controls, server types and exact project/group detail with five base widgets, seven lazy attribute kinds, server-filtered/ordered activity, guarded Markdown comments/replies and close/reopen | Remaining Work Item widgets, note editing/deletion/reactions, custom saved views and remaining list display/sort families, remaining mutations, full iterations/requirements/Epic/OKR workflows remain open |
 | Code | Repository tree, README, branches, commits and tags; fixed-SHA file view, history, blame, search, syntax highlighting and line permalinks; MR list/detail/diffs | Compare two refs; selected-ref repository graph; multi-file Snippets with explicit file enumeration, lazy source/preview and guarded file actions | Locked files, cross-project comparison, full all-branch graph and private Snippet CRUD acceptance remain open |
 | MR review | Discussions, inline single-line positions, approvals/merge, suggested changes, auto-merge, local viewed-file state and the MR draft/ready toggle | Server draft-note list, add/edit/discard and bulk publish, tied to account/project/MR/head SHA | Viewed-file state is not server-synchronised; multi-line positioning and full desktop review policy administration remain open |
 | Build | Pipelines, stage-grouped jobs, controls, incremental ANSI logs and search, JUnit report views, artifacts, cross-project CI overview and schedules | Read-only pipeline dependency graph with paginated actual GraphQL needs | Cross-project/downstream graph and the complete pipeline editor remain open |
@@ -964,6 +964,51 @@ Both actual public scopes exercise all six configurations (12 initial queries),
 and the group newest-first cursor advances successfully. The public sample did
 not issue a nested-note continuation, so that live case remains a gap. Native
 readback and exact-head CI require their separate commit-bound receipts.
+
+## Work Item Markdown comments and replies (2026-10-03)
+
+The 390 × 844 public browser walk of project Task `631946`, project Issue
+`631759` and group Epic `14501` observed the activity selection/order controls,
+per-thread reply buttons, expand/collapse replies and signed-out reply prompts.
+The native reader keeps bounded pages and builds Markdown only for the selected
+page and expanded replies. History offers an explicit switch to Comments before
+composing so the resulting comment belongs to the visible activity selection.
+
+The [GraphQL mutation reference](https://docs.gitlab.com/api/graphql/reference/#mutationcreatenote)
+and the [upstream Work Item note operation](https://gitlab.com/gitlab-org/gitlab/-/blob/a9f5833581f63b54b623c7025fc33d11c16b92e2/app/assets/javascripts/work_items/graphql/notes/create_work_item_note.mutation.graphql)
+identify `createNote` and the server-provided discussion `replyId`. The client
+uses the queried Work Item identity and opaque reply target; it does not invent
+a discussion or convert an IID into a GraphQL ID. A fresh read checks account,
+scope, author and create permission before one mutation. An independent query
+then verifies the exact returned Note ID, body, author, scope and discussion.
+Malformed acknowledgements, timeouts and unavailable readback produce an
+uncertain result without automatic replay.
+
+Comment/reply editors reuse encrypted, instance/account/resource-scoped drafts
+and Markdown formatting. Group-owned items expose plain Markdown tools; project
+mention/upload tools require a separately verified numeric Project and full path.
+Namespace-opened project descendants resolve that context explicitly and retain
+readable detail if resolution fails. Owner/resource changes close pending
+editors and prevent late results from changing the new view. An uncertain write
+disables further Save in that editor while keeping the draft editable and
+recoverable. Local validation failures permit correction before a write.
+
+Draft clearing advances an account generation before asynchronous deletion and
+waits for pending writes. Existing editor timers and disposal cannot recreate a
+removed account's draft; a fresh editor captures the newer generation. A
+failing-before disposal regression and an invalid-owner timer regression cover
+this boundary. Nullable lock metadata remains readable, and an anonymous
+`currentUser: null` never permits a write even when the server advertises
+`createNote: true`.
+
+Targets are single-use and consumed immediately before sending. Reusing or
+concurrently submitting the same target cannot send a second mutation. This
+slice accepts ordinary Markdown; standalone slash commands are rejected before
+a write, while code examples remain allowed. It does not implement internal
+notes, note editing/deletion, reactions or quick actions. Authenticated live
+project/group writes, older-instance schema support and private/iOS acceptance
+remain open. Synthetic API/widget tests, anonymous production reads, exact-source
+APK metadata, native emulator receipts and CI are recorded independently.
 
 ## Remaining product priorities
 
