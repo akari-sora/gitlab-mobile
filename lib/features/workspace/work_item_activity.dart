@@ -11,7 +11,9 @@ import '../../core/work_item_graph_models.dart';
 import '../../shared/attachment_budget.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/resource_share.dart';
+import '../../shared/workspace_ui.dart' show FailureNotice, endSessionFrom;
 import 'editor.dart';
+import 'reactions.dart' show reactionChoices, reactionGlyph;
 
 const _maxDiscussionPages = 5;
 const _maxNotePages = 5;
@@ -99,6 +101,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   final List<_DiscussionPage> _pages = [];
   final Set<String> _retainedNoteIds = {};
   final Set<String> _pendingNoteActionIds = {};
+  final Set<Route<dynamic>> _noteActionRoutes = {};
   AttachmentBudget _attachmentBudget = AttachmentBudget();
   ApiFailure? _initialError;
   ApiFailure? _nextPageError;
@@ -163,6 +166,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   void dispose() {
     widget.ownerChanges?.removeListener(_ownerChanged);
     _epoch++;
+    _dismissNoteActionRoutes();
     super.dispose();
   }
 
@@ -182,6 +186,18 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
     if (notify && mounted) setState(() {});
   }
 
+  void _dismissNoteActionRoutes() {
+    for (final route in _noteActionRoutes.toList()) {
+      final navigator = route.navigator;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (navigator?.mounted == true && route.isActive) {
+          navigator!.removeRoute(route);
+        }
+      });
+    }
+    _noteActionRoutes.clear();
+  }
+
   void _clearWriteAccess() {
     _writeAccess = null;
     _writeAccessError = null;
@@ -189,6 +205,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   }
 
   void _clearFeed() {
+    _dismissNoteActionRoutes();
     _epoch++;
     _pages.clear();
     _retainedNoteIds.clear();
@@ -350,15 +367,42 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
     final feedEpoch = _epoch;
     final expected = widget.detail.summary;
     final permalink = _notePermalink(expected, note);
-    final route = DialogRoute<WorkItemActivityEditTarget>(
+    final scope =
+        '${expected.project?.fullPath ?? expected.namespace?.fullPath ?? ''} · #${expected.iid}';
+    final route = DialogRoute<_WorkItemNoteActionResult>(
       context: context,
       builder: (_) => _WorkItemNoteActionsDialog(
-        load: () => widget.api.workItemActivityEditAccess(
+        loadEdit: () => widget.api.workItemActivityEditAccess(
           expected,
           discussion,
           note,
           isCurrent: () => _noteActionCurrent(ownerEpoch, feedEpoch),
         ),
+        loadDelete: () => widget.api.workItemActivityDeleteAccess(
+          expected,
+          discussion,
+          note,
+          isCurrent: () => _noteActionCurrent(ownerEpoch, feedEpoch),
+        ),
+        deleteNote: (target) => widget.api.deleteWorkItemActivityNote(
+          target,
+          isCurrent: () => _noteActionCurrent(ownerEpoch, feedEpoch),
+        ),
+        loadReactions: () => widget.api.workItemActivityReactionAccess(
+          expected,
+          discussion,
+          note,
+          isCurrent: () => _noteActionCurrent(ownerEpoch, feedEpoch),
+        ),
+        setReaction: (target, name, {required awarded}) =>
+            widget.api.setWorkItemActivityNoteReaction(
+              target,
+              name,
+              awarded: awarded,
+              isCurrent: () => _noteActionCurrent(ownerEpoch, feedEpoch),
+            ),
+        account: widget.account,
+        scopeLabel: scope,
         permalink: permalink,
         ownerKey: (
           widget.account.key,
@@ -371,13 +415,21 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
         isCurrent: () => _noteActionCurrent(ownerEpoch, feedEpoch),
       ),
     );
+    _noteActionRoutes.add(route);
     widget.onRoute?.call(route);
     try {
-      final target = await Navigator.of(context).push(route);
-      if (target != null && _noteActionCurrent(ownerEpoch, feedEpoch)) {
-        await _openEditNote(target, ownerEpoch, feedEpoch);
+      final result = await Navigator.of(context).push(route);
+      if (!_noteActionCurrent(ownerEpoch, feedEpoch)) return;
+      switch (result) {
+        case _EditWorkItemNoteAction(:final target):
+          await _openEditNote(target, ownerEpoch, feedEpoch);
+        case _WorkItemNoteChangedAction():
+          _refreshAfterWrite();
+        case null:
+          break;
       }
     } finally {
+      _noteActionRoutes.remove(route);
       _pendingNoteActionIds.remove(note.id);
       if (mounted) setState(() {});
     }
@@ -1270,15 +1322,46 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   }
 }
 
+sealed class _WorkItemNoteActionResult {
+  const _WorkItemNoteActionResult();
+}
+
+final class _EditWorkItemNoteAction extends _WorkItemNoteActionResult {
+  const _EditWorkItemNoteAction(this.target);
+
+  final WorkItemActivityEditTarget target;
+}
+
+final class _WorkItemNoteChangedAction extends _WorkItemNoteActionResult {
+  const _WorkItemNoteChangedAction();
+}
+
 class _WorkItemNoteActionsDialog extends StatefulWidget {
   const _WorkItemNoteActionsDialog({
-    required this.load,
+    required this.loadEdit,
+    required this.loadDelete,
+    required this.deleteNote,
+    required this.loadReactions,
+    required this.setReaction,
+    required this.account,
+    required this.scopeLabel,
     required this.permalink,
     required this.ownerKey,
     required this.isCurrent,
   });
 
-  final Future<WorkItemActivityEditAccess> Function() load;
+  final Future<WorkItemActivityEditAccess> Function() loadEdit;
+  final Future<WorkItemActivityDeleteAccess> Function() loadDelete;
+  final Future<void> Function(WorkItemActivityDeleteTarget target) deleteNote;
+  final Future<WorkItemActivityReactionAccess> Function() loadReactions;
+  final Future<WorkItemActivityReactionAccess> Function(
+    WorkItemActivityReactionTarget target,
+    String name, {
+    required bool awarded,
+  })
+  setReaction;
+  final Account account;
+  final String scopeLabel;
   final Uri? permalink;
   final Object ownerKey;
   final bool Function() isCurrent;
@@ -1290,29 +1373,204 @@ class _WorkItemNoteActionsDialog extends StatefulWidget {
 
 class _WorkItemNoteActionsDialogState
     extends State<_WorkItemNoteActionsDialog> {
-  WorkItemActivityEditAccess? _access;
-  ApiFailure? _error;
-  bool _loading = false;
+  WorkItemActivityEditAccess? _editAccess;
+  ApiFailure? _editError;
+  bool _loadingEdit = false;
+  bool _deleteOpen = false;
+  WorkItemActivityDeleteAccess? _deleteAccess;
+  ApiFailure? _deleteError;
+  bool _loadingDelete = false;
+  bool _deleting = false;
+  bool _deleteUncertain = false;
+  bool _reactionsOpen = false;
+  bool _reactionPickerOpen = false;
+  WorkItemActivityReactionAccess? _reactionAccess;
+  ApiFailure? _reactionError;
+  bool _loadingReactions = false;
+  bool _changingReaction = false;
+  bool _reactionUncertain = false;
+
+  bool get _writeBusy => _deleting || _changingReaction;
 
   @override
   void initState() {
     super.initState();
-    unawaited(_load());
+    unawaited(_loadEdit());
   }
 
-  Future<void> _load() async {
-    if (_loading) return;
+  Future<void> _loadEdit() async {
+    if (_loadingEdit || !widget.isCurrent()) return;
     setState(() {
-      _loading = true;
-      _error = null;
+      _loadingEdit = true;
+      _editError = null;
     });
     try {
-      final access = await widget.load();
-      if (mounted) setState(() => _access = access);
+      final access = await widget.loadEdit();
+      if (mounted && widget.isCurrent()) {
+        setState(() => _editAccess = access);
+      }
     } catch (error) {
-      if (mounted) setState(() => _error = safeFailure(error));
+      if (mounted && widget.isCurrent()) {
+        setState(() => _editError = safeFailure(error));
+      }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted && widget.isCurrent()) {
+        setState(() => _loadingEdit = false);
+      }
+    }
+  }
+
+  void _openDelete() {
+    if (_loadingDelete || _deleting || !widget.isCurrent()) return;
+    setState(() {
+      _deleteOpen = true;
+      _deleteAccess = null;
+      _deleteError = null;
+    });
+    unawaited(_loadDelete());
+  }
+
+  Future<void> _loadDelete() async {
+    if (_loadingDelete ||
+        _deleting ||
+        _deleteUncertain ||
+        !widget.isCurrent()) {
+      return;
+    }
+    setState(() {
+      _loadingDelete = true;
+      _deleteError = null;
+      _deleteAccess = null;
+    });
+    try {
+      final access = await widget.loadDelete();
+      if (mounted && widget.isCurrent()) {
+        setState(() => _deleteAccess = access);
+      }
+    } catch (error) {
+      if (mounted && widget.isCurrent()) {
+        setState(() => _deleteError = safeFailure(error));
+      }
+    } finally {
+      if (mounted && widget.isCurrent()) {
+        setState(() => _loadingDelete = false);
+      }
+    }
+  }
+
+  Future<void> _delete() async {
+    final target = _deleteAccess?.target;
+    if (target == null ||
+        _deleting ||
+        _deleteUncertain ||
+        !widget.isCurrent()) {
+      return;
+    }
+    setState(() {
+      _deleting = true;
+      _deleteError = null;
+    });
+    try {
+      await widget.deleteNote(target);
+      if (!mounted || !widget.isCurrent()) return;
+      Navigator.of(context).pop(const _WorkItemNoteChangedAction());
+    } catch (error) {
+      if (!mounted || !widget.isCurrent()) return;
+      final failure = safeFailure(error);
+      setState(() {
+        _deleteError = failure;
+        _deleteAccess = null;
+        _deleteUncertain = failure.kind == FailureKind.writeUncertain;
+      });
+    } finally {
+      if (mounted && widget.isCurrent()) setState(() => _deleting = false);
+    }
+  }
+
+  void _openReactions() {
+    if (!widget.isCurrent()) return;
+    if (_reactionsOpen) {
+      setState(() {
+        _reactionsOpen = false;
+        _reactionPickerOpen = false;
+      });
+      return;
+    }
+    setState(() => _reactionsOpen = true);
+    if (_reactionAccess == null && !_loadingReactions) {
+      unawaited(_loadReactions());
+    }
+  }
+
+  Future<void> _loadReactions() async {
+    if (_loadingReactions ||
+        _changingReaction ||
+        _reactionUncertain ||
+        !widget.isCurrent()) {
+      return;
+    }
+    setState(() {
+      _loadingReactions = true;
+      _reactionError = null;
+      _reactionAccess = null;
+      _reactionPickerOpen = false;
+    });
+    try {
+      final access = await widget.loadReactions();
+      if (mounted && widget.isCurrent()) {
+        setState(() => _reactionAccess = access);
+      }
+    } catch (error) {
+      if (mounted && widget.isCurrent()) {
+        setState(() => _reactionError = safeFailure(error));
+      }
+    } finally {
+      if (mounted && widget.isCurrent()) {
+        setState(() => _loadingReactions = false);
+      }
+    }
+  }
+
+  bool _hasMyReaction(WorkItemActivityReactionAccess access, String name) =>
+      access.actorId != null &&
+      access.reactions.any(
+        (reaction) =>
+            reaction.name == name && reaction.actorId == access.actorId,
+      );
+
+  Future<void> _setReaction(String name, {required bool awarded}) async {
+    final access = _reactionAccess;
+    final target = access?.target;
+    if (access == null ||
+        target == null ||
+        !access.canAward ||
+        _changingReaction ||
+        _reactionUncertain ||
+        !widget.isCurrent()) {
+      return;
+    }
+    setState(() {
+      _changingReaction = true;
+      _reactionError = null;
+      _reactionPickerOpen = false;
+    });
+    try {
+      final fresh = await widget.setReaction(target, name, awarded: awarded);
+      if (mounted && widget.isCurrent()) {
+        setState(() => _reactionAccess = fresh);
+      }
+    } catch (error) {
+      if (!mounted || !widget.isCurrent()) return;
+      final failure = safeFailure(error);
+      setState(() {
+        _reactionError = failure;
+        _reactionAccess = null;
+        _reactionUncertain = failure.kind == FailureKind.writeUncertain;
+      });
+    } finally {
+      if (mounted && widget.isCurrent()) {
+        setState(() => _changingReaction = false);
+      }
     }
   }
 
@@ -1335,53 +1593,87 @@ class _WorkItemNoteActionsDialogState
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    scrollable: true,
-    title: const Text('留言動作'),
-    content: ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 360),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _permissionContent(context),
-          if (widget.permalink case final permalink?) ...[
-            const SizedBox(height: 12),
-            const Divider(height: 1),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton.icon(
-                key: const ValueKey('work-item-activity-copy-note-link'),
-                onPressed: widget.isCurrent() ? _copyPermalink : null,
-                icon: const Icon(Icons.link_outlined),
-                label: const Text('複製留言連結'),
-              ),
-            ),
-            Row(
-              children: [
-                const Expanded(child: Text('以其他 App 分享')),
-                ResourceShareButton(
-                  uri: permalink,
-                  ownerKey: widget.ownerKey,
-                  isCurrent: widget.isCurrent,
-                ),
-              ],
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_writeBusy,
+    child: AlertDialog(
+      scrollable: true,
+      title: Text(_deleteOpen ? '刪除留言' : '留言動作'),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: _deleteOpen ? _deleteContent(context) : _actionsContent(context),
+      ),
+      actions: [
+        if (_deleteOpen && !_deleting && !_deleteUncertain)
+          TextButton(
+            onPressed: widget.isCurrent()
+                ? () => setState(() {
+                    _deleteOpen = false;
+                    _deleteAccess = null;
+                    _deleteError = null;
+                  })
+                : null,
+            child: const Text('返回'),
+          ),
+        TextButton(
+          onPressed: _writeBusy ? null : () => Navigator.of(context).pop(),
+          child: const Text('關閉'),
+        ),
+      ],
+    ),
+  );
+
+  Widget _actionsContent(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _permissionContent(context),
+      const SizedBox(height: 8),
+      SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          key: const ValueKey('work-item-activity-note-reactions'),
+          onPressed: widget.isCurrent() && !_changingReaction
+              ? _openReactions
+              : null,
+          icon: const Icon(Icons.add_reaction_outlined),
+          label: Text(_reactionsOpen ? '收合表情回應' : '表情回應'),
+        ),
+      ),
+      if (_reactionsOpen) ...[
+        const SizedBox(height: 8),
+        _reactionContent(context),
+      ],
+      if (widget.permalink case final permalink?) ...[
+        const SizedBox(height: 12),
+        const Divider(height: 1),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: TextButton.icon(
+            key: const ValueKey('work-item-activity-copy-note-link'),
+            onPressed: widget.isCurrent() && !_writeBusy
+                ? _copyPermalink
+                : null,
+            icon: const Icon(Icons.link_outlined),
+            label: const Text('複製留言連結'),
+          ),
+        ),
+        Row(
+          children: [
+            const Expanded(child: Text('以其他 App 分享')),
+            ResourceShareButton(
+              uri: permalink,
+              ownerKey: widget.ownerKey,
+              isCurrent: () => widget.isCurrent() && !_writeBusy,
             ),
           ],
-        ],
-      ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('關閉'),
-      ),
+        ),
+      ],
     ],
   );
 
   Widget _permissionContent(BuildContext context) {
-    if (_loading) {
+    if (_loadingEdit) {
       return const Row(
         children: [
           SizedBox(
@@ -1394,7 +1686,7 @@ class _WorkItemNoteActionsDialogState
         ],
       );
     }
-    if (_error case final error?) {
+    if (_editError case final error?) {
       if (error.kind == FailureKind.unsupported) {
         return const Text('此實例暫不支援編輯留言；留言仍可閱讀。');
       }
@@ -1403,27 +1695,289 @@ class _WorkItemNoteActionsDialogState
       }
       return _InlineActivityFailure(
         error: error,
-        onRetry: _load,
+        onRetry: _loadEdit,
         retryLabel: '重試留言權限',
       );
     }
-    final access = _access;
+    final access = _editAccess;
     if (access == null) return const SizedBox.shrink();
     final target = access.target;
     if (!access.canEditNote) {
       return const Text('目前帳號可閱讀這則留言，但沒有編輯留言的權限。');
     }
-    if (target == null) {
-      return const Text('伺服器未提供安全的編輯目標；留言仍可閱讀。');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (target == null)
+          const Text('伺服器未提供安全的編輯目標；留言仍可閱讀。')
+        else
+          FilledButton.icon(
+            key: const ValueKey('work-item-activity-edit-note'),
+            onPressed: _writeBusy
+                ? null
+                : () => Navigator.of(
+                    context,
+                  ).pop(_EditWorkItemNoteAction(target)),
+            icon: const Icon(Icons.edit_outlined),
+            label: const Text('編輯留言'),
+          ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          key: const ValueKey('work-item-activity-delete-note'),
+          onPressed: widget.isCurrent() && !_writeBusy ? _openDelete : null,
+          icon: const Icon(Icons.delete_outline),
+          label: const Text('刪除留言'),
+        ),
+      ],
+    );
+  }
+
+  Widget _deleteContent(BuildContext context) {
+    if (_loadingDelete || _deleting) {
+      return Row(
+        children: [
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          const SizedBox(width: 8),
+          Expanded(child: Text(_deleting ? '正在刪除留言…' : '正在重新確認刪除權限…')),
+        ],
+      );
     }
-    return SizedBox(
-      width: double.infinity,
-      child: FilledButton.icon(
-        key: const ValueKey('work-item-activity-edit-note'),
-        onPressed: () => Navigator.of(context).pop(target),
-        icon: const Icon(Icons.edit_outlined),
-        label: const Text('編輯留言'),
-      ),
+    if (_deleteError case final error?) {
+      if (_deleteUncertain) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(error.title, style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 4),
+            const Text('刪除結果尚未確認。請關閉並重新整理活動後再確認，這裡不會重複送出。'),
+          ],
+        );
+      }
+      if (error.kind == FailureKind.invisible) {
+        return FailureNotice(
+          error,
+          account: widget.account,
+          resourceLabel: '${widget.scopeLabel} 留言',
+          onRetry: _loadDelete,
+          onSwitchAccount: endSessionFrom(context),
+        );
+      }
+      return _InlineActivityFailure(
+        error: error,
+        onRetry: _loadDelete,
+        retryLabel: '重新確認刪除權限',
+      );
+    }
+    final access = _deleteAccess;
+    if (access == null) return const SizedBox.shrink();
+    final target = access.target;
+    if (!access.canDeleteNote) {
+      return const Text('目前帳號沒有刪除這則留言的權限。');
+    }
+    if (target == null) {
+      return const Text('伺服器未提供安全的刪除目標；留言仍會保留。');
+    }
+    final body = target.note.body.trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(widget.scopeLabel, style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: 8),
+        Container(
+          width: double.infinity,
+          constraints: const BoxConstraints(maxHeight: 144),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: SingleChildScrollView(
+            child: Text(body.isEmpty ? '（空白留言）' : body),
+          ),
+        ),
+        const SizedBox(height: 12),
+        const Text('刪除後無法復原。請確認這是你要刪除的留言。'),
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            key: const ValueKey('work-item-activity-confirm-delete-note'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: widget.isCurrent() ? _delete : null,
+            icon: const Icon(Icons.delete_forever_outlined),
+            label: const Text('永久刪除留言'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _reactionContent(BuildContext context) {
+    if (_loadingReactions) {
+      return const Row(
+        children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          SizedBox(width: 8),
+          Expanded(child: Text('正在讀取表情回應…')),
+        ],
+      );
+    }
+    if (_reactionError case final error?) {
+      if (_reactionUncertain) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(error.title, style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 4),
+            const Text('表情回應結果尚未確認。請關閉並重新整理活動後再確認，這裡不會重複送出。'),
+          ],
+        );
+      }
+      if (error.kind == FailureKind.invisible) {
+        return FailureNotice(
+          error,
+          account: widget.account,
+          resourceLabel: '${widget.scopeLabel} 留言',
+          onRetry: _loadReactions,
+          onSwitchAccount: endSessionFrom(context),
+        );
+      }
+      return _InlineActivityFailure(
+        error: error,
+        onRetry: _loadReactions,
+        retryLabel: '重新讀取表情回應',
+      );
+    }
+    final access = _reactionAccess;
+    if (access == null) return const SizedBox.shrink();
+    final counts = <String, int>{};
+    final glyphs = <String, String>{};
+    for (final reaction in access.reactions) {
+      counts[reaction.name] = (counts[reaction.name] ?? 0) + 1;
+      final unicode = reaction.unicode?.trim();
+      if (unicode != null && unicode.isNotEmpty) {
+        glyphs[reaction.name] = unicode;
+      }
+    }
+    final controlsEnabled =
+        access.canAward &&
+        access.target != null &&
+        !_changingReaction &&
+        widget.isCurrent();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (counts.isEmpty) const Text('目前還沒有表情回應。'),
+        if (counts.isNotEmpty)
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final entry in counts.entries)
+                Builder(
+                  builder: (context) {
+                    final selected = _hasMyReaction(access, entry.key);
+                    final glyph = glyphs[entry.key] ?? reactionGlyph(entry.key);
+                    return Semantics(
+                      button: controlsEnabled,
+                      selected: selected,
+                      label:
+                          '$glyph ${entry.key} 表情回應，${entry.value} 人${selected ? '，您已回應' : ''}',
+                      excludeSemantics: true,
+                      child: FilterChip(
+                        key: ValueKey(
+                          'work-item-activity-reaction:${entry.key}',
+                        ),
+                        showCheckmark: false,
+                        selected: selected,
+                        label: Text('$glyph ${entry.value}'),
+                        onSelected: controlsEnabled
+                            ? (_) => unawaited(
+                                _setReaction(entry.key, awarded: !selected),
+                              )
+                            : null,
+                      ),
+                    );
+                  },
+                ),
+            ],
+          ),
+        if (!access.canAward) ...[
+          const SizedBox(height: 8),
+          const Text('目前帳號可查看表情回應，但沒有新增或移除的權限。'),
+          const SizedBox(height: 8),
+          const ActionChip(
+            avatar: Icon(Icons.add_reaction_outlined, size: 18),
+            label: Text('新增表情回應'),
+            onPressed: null,
+          ),
+        ] else if (access.target == null) ...[
+          const SizedBox(height: 8),
+          const Text('伺服器未提供安全的表情回應目標。'),
+        ] else ...[
+          const SizedBox(height: 8),
+          ActionChip(
+            key: const ValueKey('work-item-activity-add-reaction'),
+            avatar: _changingReaction
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.add_reaction_outlined, size: 18),
+            label: Text(_reactionPickerOpen ? '收合表情選擇' : '新增表情回應'),
+            onPressed: controlsEnabled
+                ? () =>
+                      setState(() => _reactionPickerOpen = !_reactionPickerOpen)
+                : null,
+          ),
+          if (_reactionPickerOpen) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final entry in reactionChoices.entries)
+                  Semantics(
+                    button: true,
+                    label:
+                        '${entry.key} 表情回應${_hasMyReaction(access, entry.key) ? '，目前已選取' : ''}',
+                    excludeSemantics: true,
+                    child: IconButton(
+                      key: ValueKey(
+                        'work-item-activity-pick-reaction:${entry.key}',
+                      ),
+                      tooltip: entry.key,
+                      onPressed: controlsEnabled
+                          ? () => unawaited(
+                              _setReaction(
+                                entry.key,
+                                awarded: !_hasMyReaction(access, entry.key),
+                              ),
+                            )
+                          : null,
+                      icon: Text(
+                        entry.value,
+                        style: const TextStyle(fontSize: 24),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ],
     );
   }
 }

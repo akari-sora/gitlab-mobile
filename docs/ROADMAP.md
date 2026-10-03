@@ -12,7 +12,8 @@ workflows, native contributor/repository/CI analytics and GraphQL Work Items
 with bounded group and descendant lists, server-side scope/state/search/type/order
 controls, seven independently loaded attribute kinds and
 lazy activity with server-side filtering/order, guarded Markdown comments/replies,
-ordinary project/group note edits and project/group close/reopen.
+ordinary project/group note edits, guarded note deletion and emoji reactions,
+and project/group close/reopen.
 Long descriptions collapse before building Markdown. Account-client
 read caching, request sharing, lazy list derivation and syntax-span LRU reduce
 repeated work. See [the parity/performance report](MOBILE_PARITY_PERFORMANCE.md)
@@ -20,7 +21,7 @@ and [the full-function ledger](MOBILE_WEB_PARITY_LEDGER.md).
 
 Core board and draft workflows now have source/tests. Draft bulk publication still
 has GitLab's concurrent-change interval after its final GET. GraphQL Work Item
-remaining mutations, note deletion/reactions and remaining widgets,
+remaining mutations, internal-note workflows and remaining widgets,
 group Work Item custom saved views and remaining list display controls,
 paid board scope/list creation, all-branch graph,
 registry publishing/policies and complete type-specific installation workflows,
@@ -40,6 +41,20 @@ has no revision or timestamp compare-and-swap field; the preflight/update interv
 therefore remains non-atomic. This source slice is not authenticated private or
 iOS acceptance. Contracts: [GraphQL](https://docs.gitlab.com/api/graphql/) and
 the reviewed upstream [`UpdateNote` mutation](https://gitlab.com/gitlab-org/gitlab/-/blob/26212baacadb5beea6664f7ef025d753dccfb0d6/app/graphql/mutations/notes/update/base.rb).
+
+Ordinary public notes also support deletion with a fresh `adminNote` capability
+and an explicit irreversible-action confirmation, plus on-demand emoji reactions
+using the independent `awardEmoji` permission. Both validate the current actor,
+exact project/group scope, note/discussion identity and displayed revision before
+one mutation. Deletion requires an empty mutation error list and an independent
+read showing the same actor and parent with the exact note absent. Reactions page
+to a terminal connection (at most 20 pages of 50); partial data cannot establish
+absence. Add/remove acknowledgement and a fresh complete list must agree. Any
+uncertain result blocks replay. These APIs have no atomic revision guard; live
+authenticated/private CRUD and iOS acceptance remain open. Official contracts:
+[`destroyNote`](https://docs.gitlab.com/api/graphql/reference/#mutation-destroynote),
+[`awardEmojiAdd`](https://docs.gitlab.com/api/graphql/reference/#mutation-awardemojiadd),
+and [`awardEmojiRemove`](https://docs.gitlab.com/api/graphql/reference/#mutation-awardemojiremove).
 
 ## G0 — Identity and private repository reader (implemented slice, acceptance incomplete)
 

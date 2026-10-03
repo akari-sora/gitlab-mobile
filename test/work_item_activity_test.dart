@@ -1664,22 +1664,14 @@ void main() {
 
       expect(find.byKey(const ValueKey('editor-body')), findsNothing);
       expect(find.text('編輯留言'), findsNothing);
-      expect(find.textContaining('留言或帳號已變更'), findsOneWidget);
+      expect(find.text('留言動作'), findsNothing);
       expect(
-        tester
-            .widget<TextButton>(
-              find.byKey(const ValueKey('work-item-activity-copy-note-link')),
-            )
-            .onPressed,
-        isNull,
+        find.byKey(const ValueKey('work-item-activity-copy-note-link')),
+        findsNothing,
       );
       expect(
-        tester
-            .widget<IconButton>(
-              find.widgetWithIcon(IconButton, Icons.share_outlined),
-            )
-            .onPressed,
-        isNull,
+        find.widgetWithIcon(IconButton, Icons.share_outlined),
+        findsNothing,
       );
       expect(share.calls, 0);
       expect(tester.takeException(), isNull);

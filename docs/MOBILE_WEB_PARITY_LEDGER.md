@@ -17,7 +17,7 @@ specification numbers have been invented.
 | Manage / Activity | Loaded timeline and eight event filters at phone width | Activity feed | Full event-kind/authenticated parity walk |
 | Manage / Members | Loaded roles/source/search/sort and member rows | Member list/actions | Custom roles, complete administration and live permissions |
 | Manage / Labels | Loaded Active/Archived, search/sort and empty state | List/create/edit/delete | Scoped labels/subscriptions and live CRUD |
-| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project/group-owned and descendant cursor lists with scope/state/search/type/order controls, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, seven lazy attribute kinds, server-filtered/ordered activity paging, guarded Markdown comments/replies, ordinary note editing and close/reopen | Remaining widgets, note deletion/reactions, internal-note editing, custom saved views and remaining list display/sort families, remaining Work Item mutations and authenticated/edition acceptance |
+| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project/group-owned and descendant cursor lists with scope/state/search/type/order controls, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, seven lazy attribute kinds, server-filtered/ordered activity paging, guarded Markdown comments/replies, ordinary note editing/deletion, on-demand emoji reactions and close/reopen | Remaining widgets, internal-note workflows, custom saved views and remaining list display/sort families, remaining Work Item mutations and authenticated/edition acceptance |
 | Plan / Boards | Development board observed | Phone-width columns, card move, board/list management | Paid scope/list creation, touch drag/drop and live mutation readback |
 | Plan / Milestones | Loaded empty-state explanation | List/detail/create/edit/delete | Full progress/reporting and live CRUD |
 | Plan / Wiki | Loaded empty Wiki explanation | Page list/read/create/edit/delete | History, attachments, tree and live CRUD |
@@ -185,13 +185,38 @@ These source and synthetic checks do not establish authenticated private, live
 server-write or iOS acceptance. See the [GraphQL documentation](https://docs.gitlab.com/api/graphql/)
 and the reviewed upstream [`UpdateNote` mutation](https://gitlab.com/gitlab-org/gitlab/-/blob/26212baacadb5beea6664f7ef025d753dccfb0d6/app/graphql/mutations/notes/update/base.rb).
 
+Ordinary project/group public-note deletion and reactions now have guarded
+native source and synthetic API/widget coverage. Delete uses the same server
+`adminNote` permission as Edit and displays the current note and resource before
+explicit confirmation. Its acknowledgement requires `destroyNote.errors: []`
+plus an independent same-actor/same-parent read with an explicitly absent note;
+a missing parent, authorization/read failure or changed actor remains uncertain.
+Reactions use the separate `awardEmoji` permission, complete cursor paging before
+inferring absence, and explicit add/remove followed by independent readback.
+Targets are owner/revision bound and single use; uncertain results cannot replay.
+Opening the action menu does not fetch awards, and activity reading remains
+independent of optional mutation schemas. The shared native picker offers 26
+existing emoji choices, counts and current-user highlighting. Owned menus close
+when account, API, resource or feed identity changes. A fresh signed-out
+390 × 844 browser walk again observed Copy link and Report abuse; authenticated
+Delete/reaction controls were not observed. Four anonymous production-client
+reads of the actual existing public note successfully parsed both optional
+capability queries and granted neither write target. This is read-only evidence,
+not live authenticated delete/reaction acceptance. Commit-bound APK, emulator,
+review and CI receipts are stored under `artifacts/mobile-parity/work-item-note-actions`.
+GitLab's current mutations provide no CAS field. Reviewed source:
+[`DestroyNote`](https://gitlab.com/gitlab-org/gitlab/-/blob/26212baacadb5beea6664f7ef025d753dccfb0d6/app/graphql/mutations/notes/destroy.rb),
+[`AwardEmoji` permission/input](https://gitlab.com/gitlab-org/gitlab/-/blob/26212baacadb5beea6664f7ef025d753dccfb0d6/app/graphql/mutations/award_emojis/base.rb),
+and [GraphQL pagination](https://docs.gitlab.com/api/graphql/getting_started/#pagination).
+
 1. Typed REST Tasks/Incidents now have source and regression coverage. Complete
    installed-build checks and disposable-fixture CRUD/lifecycle readback; alert,
    timeline, metrics and on-call workflows remain open.
 2. Fixed-query GraphQL Work Items now include server-returned scope/type IDs,
    project cursor paging and exact project/group details with five base widgets
-   plus seven independently loaded attributes, guarded Markdown activity comments/replies and ordinary note edits. Complete remaining
-   widgets, note deletion/reactions and internal-note workflows, custom saved views and remaining list display/sort families,
+   plus seven independently loaded attributes, guarded Markdown activity comments/replies,
+   ordinary note edits/deletion and emoji reactions. Complete remaining
+   widgets and internal-note workflows, custom saved views and remaining list display/sort families,
    remaining native mutations and actual authenticated/private/edition validation.
 3. Multi-file Snippet blobs now have lazy paths/content, source/Markdown preview
    and guarded file actions with `updatedAt` change detection. Complete

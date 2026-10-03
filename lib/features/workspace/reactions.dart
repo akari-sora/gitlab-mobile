@@ -28,6 +28,9 @@ const _moreGlyphs = <String, String>{
 
 String reactionGlyph(String name) => quickReactions[name] ?? _moreGlyphs[name] ?? ':$name:';
 
+/// Shared choices for the REST and Work Item note pickers.
+const reactionChoices = {...quickReactions, ..._moreGlyphs};
+
 /// Emoji reactions on an issue, merge request or note: existing awards with
 /// counts, the signed-in user's own highlighted, and a picker to add one.
 class ReactionsBar extends StatefulWidget {
@@ -255,10 +258,7 @@ class _ReactionsBarState extends State<ReactionsBar> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  for (final entry in {
-                    ...quickReactions,
-                    ..._moreGlyphs,
-                  }.entries)
+                  for (final entry in reactionChoices.entries)
                     Semantics(
                       button: true,
                       label: entry.key,

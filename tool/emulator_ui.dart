@@ -17,6 +17,7 @@ import 'package:gitlab_mobile/features/shell/build_info.dart';
 import 'package:gitlab_mobile/features/workspace/project_extras.dart';
 import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_page.dart';
+import 'package:gitlab_mobile/features/workspace/reactions.dart';
 import 'package:gitlab_mobile/shared/scroll_performance.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 
@@ -31,7 +32,16 @@ const emulatorUiQaCommit = String.fromEnvironment(
   defaultValue: 'local-qa',
 );
 
-enum _QaNoteEditControl { allow, deny, revise, failNextAcknowledgement }
+enum _QaNoteEditControl {
+  allow,
+  deny,
+  revise,
+  failNextAcknowledgement,
+  allowReactions,
+  denyReactions,
+  failDeleteAcknowledgement,
+  failReactionAcknowledgement,
+}
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -110,8 +120,17 @@ final class EmulatorQaFixture extends WorkspaceFixture {
   final List<String> workItemStateEvents = [];
   final List<Json> workItemNoteEvents = [];
   final List<Json> workItemNoteEditEvents = [];
+  final List<Json> workItemNoteDeleteEvents = [];
+  final List<Json> workItemNoteReactionEvents = [];
   final Map<bool, bool> workItemNoteEditAllowed = {false: true, true: true};
+  // GitLab exposes the same adminNote permission for editing and deletion.
+  Map<bool, bool> get workItemNoteDeleteAllowed => workItemNoteEditAllowed;
+  final Map<bool, bool> workItemNoteReactionAllowed = {false: true, true: true};
   bool failNextWorkItemNoteUpdateAcknowledgement = false;
+  bool failNextWorkItemNoteDeleteAcknowledgement = false;
+  bool failNextWorkItemNoteReactionAcknowledgement = false;
+  final Set<String> _deletedWorkItemNotes = {};
+  final Map<String, List<Json>> _workItemNoteReactions = {};
   final Map<bool, List<Json>> _addedWorkItemDiscussions = {};
   final Map<String, List<Json>> _addedWorkItemReplies = {};
   final Map<String, Json> _editedWorkItemNotes = {};
@@ -223,7 +242,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
 
   List<Json> workItemActivityDiscussions({required bool group}) {
     final scope = group ? 'group' : 'project';
-    return [
+    final discussions = <Json>[
       ...List<Json>.generate(48, (index) {
         final number = index + 1;
         final system = number.isEven;
@@ -282,6 +301,104 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           },
         },
     ];
+    return [
+      for (final discussion in discussions)
+        if (((discussion['notes'] as Map)['nodes'] as List).any(
+          (note) => !_deletedWorkItemNotes.contains((note as Map)['id']),
+        ))
+          {
+            ...discussion,
+            'notes': {
+              'nodes': [
+                for (final note
+                    in (discussion['notes'] as Map)['nodes'] as List)
+                  if (!_deletedWorkItemNotes.contains((note as Map)['id']))
+                    note,
+              ],
+              'pageInfo': {'hasNextPage': false, 'endCursor': null},
+            },
+          },
+    ];
+  }
+
+  List<Json> _reactionsForNote(String noteId) =>
+      _workItemNoteReactions.putIfAbsent(
+        noteId,
+        () => [
+          {
+            'name': 'thumbsup',
+            'unicode': '👍',
+            'user': {'id': 'gid://gitlab/User/9'},
+          },
+        ],
+      );
+
+  List<Json> workItemNoteReactionRecords(String noteId) => [
+    for (final reaction in _reactionsForNote(noteId))
+      {
+        ...reaction,
+        'user': {...reaction['user'] as Map},
+      },
+  ];
+
+  bool _deleteWorkItemFixtureNote(Map<Object?, Object?> input) {
+    final noteId = input['id'];
+    final located = noteId is String
+        ? _locateWorkItemActivityNote(noteId)
+        : null;
+    if (located == null ||
+        located.note['system'] == true ||
+        workItemNoteEditAllowed[located.group] != true) {
+      return false;
+    }
+    _deletedWorkItemNotes.add(noteId as String);
+    workItemNoteDeleteEvents.add({
+      'scope': located.group ? 'group' : 'project',
+      'noteId': noteId,
+    });
+    debugPrint(
+      '[work_item_note_delete_qa] scope=${located.group ? 'group' : 'project'} writes=${workItemNoteDeleteEvents.length}',
+    );
+    return true;
+  }
+
+  Json? _reactToWorkItemFixtureNote(
+    Map<Object?, Object?> input, {
+    required bool awarded,
+  }) {
+    final noteId = input['awardableId'];
+    final name = input['name'];
+    final located = noteId is String
+        ? _locateWorkItemActivityNote(noteId)
+        : null;
+    if (located == null ||
+        name is! String ||
+        located.note['system'] == true ||
+        workItemNoteReactionAllowed[located.group] != true) {
+      return null;
+    }
+    final reactions = _reactionsForNote(noteId as String);
+    reactions.removeWhere(
+      (r) =>
+          r['name'] == name &&
+          (r['user'] as Map)['id'] == 'gid://gitlab/User/7',
+    );
+    final reaction = <String, Object?>{
+      'name': name,
+      'unicode': reactionGlyph(name),
+      'user': {'id': 'gid://gitlab/User/7'},
+    };
+    if (awarded) reactions.add(reaction);
+    workItemNoteReactionEvents.add({
+      'scope': located.group ? 'group' : 'project',
+      'noteId': noteId,
+      'name': name,
+      'awarded': awarded,
+    });
+    debugPrint(
+      '[work_item_note_reaction_qa] scope=${located.group ? 'group' : 'project'} name=$name awarded=$awarded writes=${workItemNoteReactionEvents.length}',
+    );
+    return reaction;
   }
 
   Json _withWorkItemNoteEdit(Json note) {
@@ -591,8 +708,49 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           },
         });
       }
+      if (operation == 'MobileWorkItemActivityReactionAccess' &&
+          _workItemStates.containsKey(variables['workItemId'])) {
+        final group = variables['workItemId'] == 'gid://gitlab/WorkItem/1041';
+        final noteId = variables['noteId'];
+        final note = noteId is String
+            ? workItemActivityNoteRecord(noteId, group: group)
+            : null;
+        final reactions = note == null
+            ? <Json>[]
+            : _reactionsForNote(noteId as String);
+        final after = variables['after'];
+        final offset = after == null
+            ? 0
+            : int.parse((after as String).split(':').last);
+        final page = reactions.skip(offset).take(50).toList();
+        final hasNext = offset + page.length < reactions.length;
+        return jsonResponse({
+          'data': {
+            'currentUser': {'id': 'gid://gitlab/User/7'},
+            'workItem': workItemRecord(group: group),
+            'note': note == null
+                ? null
+                : {
+                    ...note,
+                    'userPermissions': {
+                      'awardEmoji': workItemNoteReactionAllowed[group] == true,
+                    },
+                    'awardEmoji': {
+                      'nodes': page,
+                      'pageInfo': {
+                        'hasNextPage': hasNext,
+                        'endCursor': hasNext
+                            ? 'qa-reactions:${offset + page.length}'
+                            : null,
+                      },
+                    },
+                  },
+          },
+        });
+      }
       if ((operation == 'MobileWorkItemActivityReplyPreflight' ||
-              operation == 'MobileWorkItemActivityNoteReadback') &&
+              operation == 'MobileWorkItemActivityNoteReadback' ||
+              operation == 'MobileWorkItemActivityDeleteReadback') &&
           _workItemStates.containsKey(variables['workItemId'])) {
         final group = variables['workItemId'] == 'gid://gitlab/WorkItem/1041';
         final noteId =
@@ -608,6 +766,49 @@ final class EmulatorQaFixture extends WorkspaceFixture {
                 : 'note': noteId is String
                 ? workItemActivityNoteRecord(noteId, group: group)
                 : null,
+          },
+        });
+      }
+      if (operation == 'MobileDestroyWorkItemActivityNote') {
+        final input = variables['input'];
+        final removed = input is Map && _deleteWorkItemFixtureNote(input);
+        if (removed && failNextWorkItemNoteDeleteAcknowledgement) {
+          failNextWorkItemNoteDeleteAcknowledgement = false;
+          return jsonResponse({
+            'message': 'Synthetic acknowledgement unavailable',
+          }, status: 503);
+        }
+        return jsonResponse({
+          'data': {
+            'destroyNote': {
+              'errors': removed
+                  ? <String>[]
+                  : ['Unknown or forbidden synthetic note target'],
+            },
+          },
+        });
+      }
+      if (operation == 'MobileAddWorkItemActivityNoteReaction' ||
+          operation == 'MobileRemoveWorkItemActivityNoteReaction') {
+        final input = variables['input'];
+        final awarded = operation == 'MobileAddWorkItemActivityNoteReaction';
+        final reaction = input is Map
+            ? _reactToWorkItemFixtureNote(input, awarded: awarded)
+            : null;
+        if (reaction != null && failNextWorkItemNoteReactionAcknowledgement) {
+          failNextWorkItemNoteReactionAcknowledgement = false;
+          return jsonResponse({
+            'message': 'Synthetic acknowledgement unavailable',
+          }, status: 503);
+        }
+        return jsonResponse({
+          'data': {
+            awarded ? 'awardEmojiAdd' : 'awardEmojiRemove': {
+              'errors': reaction == null
+                  ? ['Unknown or forbidden synthetic note target']
+                  : <String>[],
+              'awardEmoji': awarded ? reaction : null,
+            },
           },
         });
       }
@@ -1059,6 +1260,22 @@ class _QaChromeState extends State<_QaChrome> {
           value: _QaNoteEditControl.failNextAcknowledgement,
           child: _qaMenuLabel('下次編輯確認失敗'),
         ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.allowReactions,
+          child: _qaMenuLabel('允許留言表情'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.denyReactions,
+          child: _qaMenuLabel('拒絕留言表情'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.failDeleteAcknowledgement,
+          child: _qaMenuLabel('下次刪除確認失敗'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.failReactionAcknowledgement,
+          child: _qaMenuLabel('下次表情確認失敗'),
+        ),
       ],
     );
     if (control != null && mounted) {
@@ -1093,6 +1310,24 @@ class _QaChromeState extends State<_QaChrome> {
       _QaNoteEditControl.failNextAcknowledgement => () {
         widget.fixture.failNextWorkItemNoteUpdateAcknowledgement = true;
         return '下一次編輯確認將失敗';
+      }(),
+      _QaNoteEditControl.allowReactions => () {
+        widget.fixture.workItemNoteReactionAllowed[false] = true;
+        widget.fixture.workItemNoteReactionAllowed[true] = true;
+        return '留言表情權限：允許';
+      }(),
+      _QaNoteEditControl.denyReactions => () {
+        widget.fixture.workItemNoteReactionAllowed[false] = false;
+        widget.fixture.workItemNoteReactionAllowed[true] = false;
+        return '留言表情權限：拒絕';
+      }(),
+      _QaNoteEditControl.failDeleteAcknowledgement => () {
+        widget.fixture.failNextWorkItemNoteDeleteAcknowledgement = true;
+        return '下一次刪除確認將失敗';
+      }(),
+      _QaNoteEditControl.failReactionAcknowledgement => () {
+        widget.fixture.failNextWorkItemNoteReactionAcknowledgement = true;
+        return '下一次表情確認將失敗';
       }(),
     };
     debugPrint(
