@@ -19,6 +19,7 @@ import 'work_item_labels_models.dart';
 import 'work_item_attribute_models.dart';
 import 'work_item_graph_models.dart';
 import 'work_item_milestone_models.dart';
+import 'work_item_status_models.dart';
 import 'work_item_weight_models.dart';
 import 'work_item_state_models.dart';
 
@@ -38,6 +39,7 @@ part 'work_item_milestone_api.dart';
 part 'work_item_weight_api.dart';
 part 'work_item_assignee_api.dart';
 part 'work_item_labels_api.dart';
+part 'work_item_status_api.dart';
 part 'work_item_state_api.dart';
 
 final _artifactCancelled = Object();
