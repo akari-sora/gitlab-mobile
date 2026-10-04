@@ -359,8 +359,30 @@ void main() {
     );
 
     final starred = await fixture.api.projects(scope: ProjectScope.starred);
-    expect(starred.items, hasLength(13));
+    expect(starred.items, hasLength(12));
+    expect(starred.items.every((project) => project.id != 42), isTrue);
     expect(starred.next, isNull);
+
+    final starResult = await fixture.api.setStar(42, true);
+    expect(starResult?['star_count'], 13);
+    final starredAfter = await fixture.api.projects(
+      scope: ProjectScope.starred,
+    );
+    expect(starredAfter.items, hasLength(13));
+    expect(starredAfter.items.first.id, 42);
+    expect(starredAfter.next, isNull);
+
+    final unstarResult = await fixture.api.setStar(42, false);
+    expect(unstarResult?['star_count'], 12);
+    final starredAfterUnstar = await fixture.api.projects(
+      scope: ProjectScope.starred,
+    );
+    expect(starredAfterUnstar.items, hasLength(12));
+    expect(
+      starredAfterUnstar.items.every((project) => project.id != 42),
+      isTrue,
+    );
+    expect(starredAfterUnstar.next, isNull);
 
     final search = await fixture.api.projects(
       scope: ProjectScope.accessibleSearch,
@@ -370,6 +392,199 @@ void main() {
     expect(search.items.single.name, 'Performance project 119');
     expect(search.next, isNull);
   });
+
+  test(
+    'performance projects star roundtrip updates live list, preserves historical snapshot and filters correctly',
+    () async {
+      final fixture = EmulatorQaFixture(performanceQa: true);
+      addTearDown(fixture.api.close);
+
+      // 1. Prime performance projects while unstarred.
+      final primedRecords = await fixture.api.records(['projects']);
+      expect(primedRecords.items, hasLength(30));
+      final initialProjectSnapshot = primedRecords.items.first;
+      expect(initialProjectSnapshot['id'], 42);
+      expect(initialProjectSnapshot['star_count'], 12);
+      expect(await fixture.api.hasStarred(42, 'developer'), isFalse);
+
+      // Starred filter initially excludes 42, retains the 12 multiple-of-10 synthetic projects.
+      final initialStarred = await fixture.api.projects(
+        scope: ProjectScope.starred,
+      );
+      expect(initialStarred.items, hasLength(12));
+      expect(initialStarred.items.any((project) => project.id == 42), isFalse);
+      expect(
+        initialStarred.items.map((project) => project.id).toList(),
+        [for (var n = 10; n <= emulatorPerfQaProjectCount; n += 10) 1000 + n],
+      );
+
+      // 2. Star project 42 via actual POST API.
+      final starResponse = await fixture.api.setStar(42, true);
+      expect(starResponse?['id'], 42);
+      expect(starResponse?['star_count'], 13);
+      expect(await fixture.api.hasStarred(42, 'developer'), isTrue);
+
+      // Fresh GET projects list reflects latest star_count 13 despite previous list reads.
+      final listAfterStar = await fixture.api.records(['projects']);
+      expect(listAfterStar.items.first['id'], 42);
+      expect(listAfterStar.items.first['star_count'], 13);
+
+      // Starred filter now includes project 42 once at index 0 (total 13 items).
+      final starredAfter = await fixture.api.projects(
+        scope: ProjectScope.starred,
+      );
+      expect(starredAfter.items, hasLength(13));
+      expect(starredAfter.items.first.id, 42);
+      expect(
+        starredAfter.items.skip(1).map((project) => project.id).toList(),
+        [for (var n = 10; n <= emulatorPerfQaProjectCount; n += 10) 1000 + n],
+      );
+
+      // 3. Repeated star preserves 13 (not 14).
+      final repeatedStarResponse = await fixture.api.setStar(42, true);
+      expect(repeatedStarResponse?['id'], 42);
+      expect(repeatedStarResponse?['star_count'], 13);
+      final listAfterRepeatedStar = await fixture.api.records(['projects']);
+      expect(listAfterRepeatedStar.items.first['star_count'], 13);
+      final starredAfterRepeated = await fixture.api.projects(
+        scope: ProjectScope.starred,
+      );
+      expect(starredAfterRepeated.items, hasLength(13));
+      expect(
+        starredAfterRepeated.items.where((project) => project.id == 42),
+        hasLength(1),
+      );
+
+      // 4. Unstar project 42 back to 12.
+      final unstarResponse = await fixture.api.setStar(42, false);
+      expect(unstarResponse?['id'], 42);
+      expect(unstarResponse?['star_count'], 12);
+      expect(await fixture.api.hasStarred(42, 'developer'), isFalse);
+
+      // Fresh GET projects list reflects unstarred count 12.
+      final listAfterUnstar = await fixture.api.records(['projects']);
+      expect(listAfterUnstar.items.first['id'], 42);
+      expect(listAfterUnstar.items.first['star_count'], 12);
+
+      // Starred filter removes 42 while retaining the 12 multiple-of-10 rows.
+      final starredAfterUnstar = await fixture.api.projects(
+        scope: ProjectScope.starred,
+      );
+      expect(starredAfterUnstar.items, hasLength(12));
+      expect(
+        starredAfterUnstar.items.any((project) => project.id == 42),
+        isFalse,
+      );
+      expect(
+        starredAfterUnstar.items.map((project) => project.id).toList(),
+        [for (var n = 10; n <= emulatorPerfQaProjectCount; n += 10) 1000 + n],
+      );
+
+      // Repeated unstar preserves 12.
+      final repeatedUnstarResponse = await fixture.api.setStar(42, false);
+      expect(repeatedUnstarResponse?['id'], 42);
+      expect(repeatedUnstarResponse?['star_count'], 12);
+      final listAfterRepeatedUnstar = await fixture.api.records(['projects']);
+      expect(listAfterRepeatedUnstar.items.first['star_count'], 12);
+
+      // 5. Response historical snapshot remains 12 after live 13 and live unstar.
+      expect(initialProjectSnapshot['star_count'], 12);
+      expect(listAfterStar.items.first['star_count'], 13);
+      expect(listAfterUnstar.items.first['star_count'], 12);
+
+      // 6. Paging and search match actual data.
+      final searchWorkspace = await fixture.api.projects(
+        scope: ProjectScope.accessibleSearch,
+        search: 'mobile-workspace',
+      );
+      expect(searchWorkspace.items, hasLength(1));
+      expect(searchWorkspace.items.single.id, 42);
+
+      final searchTenthProject = await fixture.api.projects(
+        scope: ProjectScope.starred,
+        search: 'performance project 050',
+      );
+      expect(searchTenthProject.items, hasLength(1));
+      expect(searchTenthProject.items.single.id, 1050);
+    },
+  );
+
+  test(
+    'regular QA projects star roundtrip honors starred filter, updates star counter and protects historical snapshot',
+    () async {
+      final fixture = EmulatorQaFixture(performanceQa: false);
+      addTearDown(fixture.api.close);
+
+      // Initial regular QA state
+      final initialRecords = await fixture.api.records(['projects']);
+      expect(initialRecords.items, hasLength(1));
+      final initialSnapshot = initialRecords.items.single;
+      expect(initialSnapshot['id'], 42);
+      expect(initialSnapshot['star_count'], 12);
+
+      final initialProjects = await fixture.api.projects(
+        scope: ProjectScope.member,
+      );
+      expect(initialProjects.items, hasLength(1));
+      expect(initialProjects.items.single.id, 42);
+
+      // Starred filter initially excludes unstarred project 42
+      final initialStarred = await fixture.api.projects(
+        scope: ProjectScope.starred,
+      );
+      expect(initialStarred.items, isEmpty);
+      expect(initialStarred.next, isNull);
+
+      // Star project 42
+      final starResult = await fixture.api.setStar(42, true);
+      expect(starResult?['id'], 42);
+      expect(starResult?['star_count'], 13);
+      expect(await fixture.api.hasStarred(42, 'developer'), isTrue);
+
+      // Starred filter now includes project 42
+      final starredAfter = await fixture.api.projects(
+        scope: ProjectScope.starred,
+      );
+      expect(starredAfter.items, hasLength(1));
+      expect(starredAfter.items.single.id, 42);
+
+      // Member list reflects 13
+      final memberAfter = await fixture.api.records(['projects']);
+      expect(memberAfter.items.single['star_count'], 13);
+
+      // Repeated star stays 13 (not 14)
+      final repeatedStar = await fixture.api.setStar(42, true);
+      expect(repeatedStar?['id'], 42);
+      expect(repeatedStar?['star_count'], 13);
+
+      // Historical snapshot remains 12
+      expect(initialSnapshot['star_count'], 12);
+
+      // Unstar project 42
+      final unstarResult = await fixture.api.setStar(42, false);
+      expect(unstarResult?['id'], 42);
+      expect(unstarResult?['star_count'], 12);
+      expect(await fixture.api.hasStarred(42, 'developer'), isFalse);
+
+      // Starred filter removes project 42
+      final starredAfterUnstar = await fixture.api.projects(
+        scope: ProjectScope.starred,
+      );
+      expect(starredAfterUnstar.items, isEmpty);
+
+      // Member list reflects 12
+      final memberAfterUnstar = await fixture.api.records(['projects']);
+      expect(memberAfterUnstar.items.single['star_count'], 12);
+
+      // Repeated unstar stays 12
+      final repeatedUnstar = await fixture.api.setStar(42, false);
+      expect(repeatedUnstar?['id'], 42);
+      expect(repeatedUnstar?['star_count'], 12);
+
+      // Historical snapshot remains 12
+      expect(initialSnapshot['star_count'], 12);
+    },
+  );
 
   test(
     'performance endpoints support production paths and stay fail closed',

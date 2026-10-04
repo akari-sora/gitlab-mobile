@@ -259,14 +259,54 @@ final class EmulatorQaFixture extends WorkspaceFixture {
     return _performanceLargeFileCache = buffer.toString();
   }
 
-  ResponseBody _performanceProjectsResponse(RequestOptions request) {
-    var rows = _performanceProjects;
-    if (request.uri.queryParameters['starred'] == 'true') {
-      rows = [
-        for (var index = 0; index < rows.length; index++)
-          if (index == 0 || (index + 1) % 10 == 0) rows[index],
-      ];
+  bool _starred = false;
+  int _starCount = 12;
+
+  Map<String, dynamic> get _latestProjectRecord {
+    projectRecord['star_count'] = _starCount;
+    return Map<String, dynamic>.unmodifiable({
+      ...projectRecord,
+      'star_count': _starCount,
+    });
+  }
+
+  ResponseBody _regularProjectsResponse(RequestOptions request) {
+    var rows = <Json>[
+      if (request.uri.queryParameters['starred'] != 'true' || _starred)
+        _latestProjectRecord,
+    ];
+    final search = request.uri.queryParameters['search']?.trim().toLowerCase();
+    if (search != null && search.isNotEmpty) {
+      rows = rows
+          .where(
+            (row) =>
+                (row['name'] as String).toLowerCase().contains(search) ||
+                (row['path_with_namespace'] as String).toLowerCase().contains(
+                  search,
+                ),
+          )
+          .toList(growable: false);
     }
+    final page = int.tryParse(request.uri.queryParameters['page'] ?? '') ?? 1;
+    if (page > 1) {
+      return jsonResponse(<Json>[]);
+    }
+    return jsonResponse(rows);
+  }
+
+  ResponseBody _performanceProjectsResponse(RequestOptions request) {
+    final baseRows = _performanceProjects;
+    final isStarredFilter = request.uri.queryParameters['starred'] == 'true';
+    var rows = isStarredFilter
+        ? [
+            if (_starred) _latestProjectRecord,
+            for (var index = 1; index < baseRows.length; index++)
+              if ((index + 1) % 10 == 0) baseRows[index],
+          ]
+        : [
+            _latestProjectRecord,
+            ...baseRows.skip(1),
+          ];
     final search = request.uri.queryParameters['search']?.trim().toLowerCase();
     if (search != null && search.isNotEmpty) {
       rows = rows
@@ -306,9 +346,6 @@ final class EmulatorQaFixture extends WorkspaceFixture {
       },
     );
   }
-
-  bool _starred = false;
-  int _starCount = 12;
   final Map<String, String> _workItemStates = {
     'gid://gitlab/WorkItem/1031': 'OPEN',
     'gid://gitlab/WorkItem/1041': 'OPEN',
@@ -2912,10 +2949,15 @@ final class EmulatorQaFixture extends WorkspaceFixture {
     }
     final path = segments.skip(apiStart + 1).join('/');
     final method = request.method;
+    if (path == 'projects' && method == 'GET') {
+      return performanceQaEnabled
+          ? _performanceProjectsResponse(request)
+          : _regularProjectsResponse(request);
+    }
+    if (path == 'projects/42' && method == 'GET') {
+      return jsonResponse(_latestProjectRecord);
+    }
     if (performanceQaEnabled) {
-      if (path == 'projects' && method == 'GET') {
-        return _performanceProjectsResponse(request);
-      }
       if (path == 'projects/42/merge_requests/12/versions/1' &&
           method == 'GET') {
         return jsonResponse({
@@ -3023,7 +3065,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         _starCount += next ? 1 : -1;
       }
       projectRecord['star_count'] = _starCount;
-      return jsonResponse(projectRecord, status: 201);
+      return jsonResponse(_latestProjectRecord, status: 201);
     }
     return super.respond(request);
   }
