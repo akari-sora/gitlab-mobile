@@ -12,7 +12,7 @@ revision comparison, server-backed MR draft review, selected-ref repository
 graphs, actual pipeline dependency graphs, package/container/Terraform registries,
 native contributor/repository/CI analytics, lazy multi-file Snippets and guarded
 file actions, server-discovered GraphQL Work Item types, bounded project/group and descendant
-lists with server-side scope/state/search/type/order controls, group-list deep links and project/group details with guarded close/reopen actions, native assignee replacement, and lazy status, milestone, weight, iteration, health, time-tracking and
+lists with server-side scope/state/search/type/order controls, group-list deep links and project/group details with guarded close/reopen actions, native assignee and label replacement, and lazy status, milestone, weight, iteration, health, time-tracking and
 development attributes, a lazy activity timeline with server-side activity/comment/history filters,
 oldest/newest ordering, bounded discussion/reply paging and guarded Markdown comments,
 replies and ordinary note edits,
@@ -24,6 +24,14 @@ all 30 observed Web project entries and keeps every remaining workflow open;
 these additions do not establish complete GitLab parity.
 
 Loading and scroll work adds a bounded, account-client in-memory read cache for project resolution and immutable-SHA text, concurrent request sharing, memoized list derivation and a page-owned syntax-span LRU. Server cache directives, explicit refresh, writes, account/client changes and authorization failures invalidate or disable reuse. See the [current parity and performance report](docs/MOBILE_PARITY_PERFORMANCE.md) for the complete Web navigation matrix, safety boundaries, measured results and remaining NOT_RUN lanes.
+
+Current Diff rendering also builds changed-file rows lazily, parses text over
+64 KiB in a background isolate, and reuses bounded parsed rows only for the
+same API owner, account, project, MR, head, path and exact source. Repository
+raw-source search is debounced, keeps line selection distinct from query
+matches, preserves valid same-resource state on refresh, and clears retained
+source/index state when account, API, project, ref or path ownership changes.
+These changes reduce repeated work; they are not a new FPS or smoothness claim.
 
 Resource details expose direct native link sharing. The project header also
 offers Star/Unstar, sharing the same confirmed state with 更多 and refreshing
@@ -137,6 +145,30 @@ tests (20 API, 20 UI, 10 fixture) and scoped analysis. UI final review is
 APPROVE with zero required changes. Full suite, archive, new commit, APK,
 native, private, iOS, G0, TalkBack and performance for this editor are
 **NOT_RUN**. They are not acceptance.
+
+Project and group Work Items also have a native Labels editor. Opening it reads
+the complete current connection in 100-label pages, bounded to 20 pages / 2,000
+labels; the detail keeps a 50-label preview. Submitted project/group candidate
+search retains completed pages and is bounded to five 20-label pages. The
+server's dynamic `allowsScopedLabels` value controls scoped-conflict guidance;
+conflicting names intentionally use a two-line preview with an ellipsis.
+
+Save preflights the actor, exact scope/revision, `readWorkItem`,
+`setWorkItemMetadata` and the complete current opaque label-ID set. A single-use
+target sends only the disjoint `addLabelIds` / `removeLabelIds` delta and requires
+a separate complete readback. A no-op consumes the target without a mutation;
+an uncertain send is never replayed. The parent retains the actual write token
+until terminal completion, including when the editor or row is removed, and
+manual refresh cannot publish over an active or newer write. GitLab exposes no
+compare-and-swap for this mutation.
+
+The exact eight merged Labels source/test files have a 149-case scoped
+Labels/API/UI/Graph/Assignee-preservation matrix and clean scoped analysis from
+the separate validation worktree. This is not a full-main aggregate run.
+Current-main full analysis/test/build, APK/native, authenticated private CRUD,
+iOS, accessibility, performance and G0 acceptance are **NOT_RUN**. Exact-head
+pipeline `2910293827` was pending in the retained snapshot; that snapshot is not
+a CI pass.
 
 ## v0.5 — mobile UX overhaul and GitLab parity
 

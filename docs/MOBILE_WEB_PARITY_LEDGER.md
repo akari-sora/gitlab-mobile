@@ -17,7 +17,7 @@ specification numbers have been invented.
 | Manage / Activity | Loaded timeline and eight event filters at phone width | Activity feed | Full event-kind/authenticated parity walk |
 | Manage / Members | Loaded roles/source/search/sort and member rows | Member list/actions | Custom roles, complete administration and live permissions |
 | Manage / Labels | Loaded Active/Archived, search/sort and empty state | List/create/edit/delete | Scoped labels/subscriptions and live CRUD |
-| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project/group-owned and descendant cursor lists with scope/state/search/type/order controls, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, project/group assignee replacement, seven lazy attribute kinds, server-filtered/ordered activity paging, guarded Markdown comments/replies, ordinary note editing/deletion, on-demand emoji reactions, lazy personal notification subscription and close/reopen | Remaining widgets, internal-note workflows, custom saved views and remaining list display/sort families, remaining Work Item mutations and authenticated/edition acceptance |
+| Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project/group-owned and descendant cursor lists with scope/state/search/type/order controls, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, project/group assignee and label replacement, seven lazy attribute kinds, server-filtered/ordered activity paging, guarded Markdown comments/replies, ordinary note editing/deletion, on-demand emoji reactions, lazy personal notification subscription and close/reopen | Remaining widgets, internal-note workflows, custom saved views and remaining list display/sort families, remaining Work Item mutations and authenticated/edition acceptance |
 | Plan / Boards | Development board observed | Phone-width columns, card move, board/list management | Paid scope/list creation, touch drag/drop and live mutation readback |
 | Plan / Milestones | Loaded empty-state explanation | List/detail/create/edit/delete | Full progress/reporting and live CRUD |
 | Plan / Wiki | Loaded empty Wiki explanation | Page list/read/create/edit/delete | History, attachments, tree and live CRUD |
@@ -148,6 +148,15 @@ physical profile measurements are documented in
 [MOBILE_PARITY_PERFORMANCE.md](MOBILE_PARITY_PERFORMANCE.md). New feature screens
 require their own installed-build readback. Frame-count-weighted profile samples
 on one S24 Ultra do not establish statistical improvement on every screen.
+
+The current merged Diff/repository slice lazily builds 120-file change-list
+fixtures, bounds large-Diff isolate parsing and exact-source API-owned cache
+reuse, debounces raw-source search over a 20,000-line fixture, preserves
+intentional line selection separately from matches, and verifies distant line
+anchors and owner invalidation. Its 92 passing scoped synthetic tests and clean
+scoped analysis came from a separate worktree, not a full-main aggregate.
+Current-main full analysis/test/build, APK/native and quantitative performance
+are **NOT_RUN**; no FPS or smoothness result is inferred.
 
 ## Next implementation lanes
 
@@ -416,3 +425,36 @@ are the checked primary files: the mutation payload has no actor field, and
 deprecated; this client still reads that boolean and does not read the type
 definition instead. Root full-suite, new commit, archive, build and native
 evidence remain separate receipts. This does not promise acceptance.
+
+## Work Item Labels editor
+
+Project and group Work Item detail now edits the complete current label set in a
+native sheet/page. It reads 100 labels per page to a terminal connection, bounded
+at 20 pages / 2,000 opaque IDs, while the parent preview remains capped at 50.
+Submitted project candidate search includes ancestor-group labels; group search
+is group-only. Both retain completed 20-row pages and stop after five pages.
+Selected current labels remain available when search omits them.
+
+Fresh `readWorkItem` and `setWorkItemMetadata`, actor, exact scope, revision and
+the complete current set bind a single-use target. Desired additions must come
+from the current set or completed candidate pages. A no-op consumes the target
+without writing. A change sends only the disjoint opaque-ID `addLabelIds` and
+`removeLabelIds` once, then requires a separate complete readback at the
+acknowledged revision. Uncertain sends are not replayed. There is no
+compare-and-swap, so this is conflict detection around a non-atomic
+preflight/write interval, not CAS.
+
+Dynamic `allowsScopedLabels` controls scoped-conflict guidance. Conflict names
+are intentionally bounded to two lines with an ellipsis. The actual async write
+token remains active until terminal settle even when the route or outer row is
+removed; manual refresh and old reads cannot publish over it, and owner
+replacement rejects late results.
+
+The exact eight merged files have a separate 149-case
+Labels/API/UI/Graph/Assignee-preservation run with zero
+failures/errors/skips, clean scoped analysis and an approving final review.
+That is scoped worktree evidence, not current-main aggregate proof. Full-main
+analysis/test/build, APK/native, authenticated private/live CRUD, iOS,
+accessibility, performance and G0 acceptance are **NOT_RUN**. Exact-head pipeline
+`2910293827` was pending in the retained snapshot. Historical native evidence
+stays attached to `2ccff57`; it does not validate Labels.

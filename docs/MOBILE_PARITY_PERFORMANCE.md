@@ -40,7 +40,7 @@ GitLab edition lacks the feature.
 | Global navigation | Projects, groups/subgroups, todos, assigned/review-requested/created work, activity and global search | No structural change | Administration, help and creation workflows remain unimplemented; they are part of the full-function backlog |
 | Project overview | Description, stars, forks, languages, licence, clone URLs, star/fork actions | Direct header Star/Unstar and link sharing; shared More state/count and project feed reconciliation | Full Web analytics and settings are not reproduced |
 | Manage | Activity, members and labels | No structural change | Access-token, webhook, integration and full member-role administration remain open |
-| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project/group-owned and descendant Work Item cursor lists with scope/state/search/type/order controls, server types and exact project/group detail with five base widgets, seven lazy attribute kinds, server-filtered/ordered activity, guarded Markdown comments/replies, ordinary note edits/deletion, on-demand emoji reactions and close/reopen | Remaining Work Item widgets, internal-note workflows, custom saved views and remaining list display/sort families, remaining mutations, full iterations/requirements/Epic/OKR workflows remain open |
+| Plan | Issues, milestones and linked work already existed | Issue boards/card moves; typed REST Tasks/Incidents; server filters; GraphQL project/group-owned and descendant Work Item cursor lists with scope/state/search/type/order controls, server types and exact project/group detail with five base widgets, seven lazy attribute kinds, native assignee/label replacement, server-filtered/ordered activity, guarded Markdown comments/replies, ordinary note edits/deletion, on-demand emoji reactions and close/reopen | Remaining Work Item widgets, internal-note workflows, custom saved views and remaining list display/sort families, remaining mutations, full iterations/requirements/Epic/OKR workflows remain open |
 | Code | Repository tree, README, branches, commits and tags; fixed-SHA file view, history, blame, search, syntax highlighting and line permalinks; MR list/detail/diffs | Compare two refs; selected-ref repository graph; multi-file Snippets with explicit file enumeration, lazy source/preview and guarded file actions | Locked files, cross-project comparison, full all-branch graph and private Snippet CRUD acceptance remain open |
 | MR review | Discussions, inline single-line positions, approvals/merge, suggested changes, auto-merge, local viewed-file state and the MR draft/ready toggle | Server draft-note list, add/edit/discard and bulk publish, tied to account/project/MR/head SHA | Viewed-file state is not server-synchronised; multi-line positioning and full desktop review policy administration remain open |
 | Build | Pipelines, stage-grouped jobs, controls, incremental ANSI logs and search, JUnit report views, artifacts, cross-project CI overview and schedules | Read-only pipeline dependency graph with paginated actual GraphQL needs | Cross-project/downstream graph and the complete pipeline editor remain open |
@@ -103,10 +103,12 @@ remain open.
 
 更多 → 比較版本 accepts branch names, tags or SHAs and offers GitLab's
 merge-base (`from...to`) and direct (`from..to`) modes. Results use lazy commit
-and file lists. Opening a file parses the unified diff on demand in a background
-isolate, with loading/error feedback and an explicit notice for displayed lines
-truncated at 2,000 characters. Editing refs or comparison mode clears the prior
-result.
+and file lists. MR changed-file rows are also built lazily. Opening a file parses
+the unified diff on demand; text over 64 KiB uses a background isolate, with
+loading/error feedback and an explicit notice for displayed lines truncated at
+2,000 characters. Parsed rows are reused only through the API owner's bounded
+cache and only when account, project, MR, head, path and exact source still
+match. Editing refs or comparison mode clears the prior result.
 
 Standard GitLab `---`/`+++` file headers are accepted as non-commentable
 metadata. Hunk counts and old/new line anchors remain validated; malformed,
@@ -552,8 +554,37 @@ are painted within each built row instead of the full scroll extent. Repository
 syntax spans are also generated lazily and held in a page-owned LRU capped at 512 rows and 131,072
 source characters; changing file language, theme or base style clears it.
 
+The current repository raw-source viewer indexes the fetched source once,
+debounces search by 250 ms and builds only matching line rows. Search matches do
+not manufacture a selected permalink line. Same-owner refresh preserves a valid
+query, selection and scroll position; account/API/project/ref/path replacement
+clears source bytes, indexes, selection and pending work before loading the new
+owner. Distant line anchors flush a pending query before seeking the actual row.
+Authorization failures clear retained private source. The current source does
+not move repository search into an isolate.
+
 These changes reduce repeated work. They do not by themselves prove a frame-rate
 improvement, so device measurements stay separate from unit/widget evidence.
+
+## Current Diff/repository source validation (2026-10-04)
+
+The exact merged four-file slice is `lib/features/workspace/diff_page.dart`,
+`lib/features/workspace/repository_page.dart`,
+`test/diff_page_performance_test.dart` and
+`test/repository_search_performance_test.dart`. Its separate scoped worktree run
+passed 92 synthetic widget tests with zero failures, errors or skips, clean
+scoped analysis and unchanged source/lock hashes. Coverage includes a 120-file
+lazy changed-file list, bounded Diff source/parsed-row/cache limits, production
+isolate parsing above 64 KiB, exact-source cache identity, parser and owner
+replacement, 20,000-line debounced repository search, and distant target-line
+placement.
+
+This was not a full-main aggregate run. No FPS, smoothness, memory or
+physical-device result follows from it. Current-main full analysis/test/build,
+APK/native, authenticated private GitLab, iOS, accessibility and G0 acceptance
+are **NOT_RUN**. The separately authored combined 120-Diff / 20,000-source /
+120-projects-plus-Labels helper was not merged and had no SDK run; it is not
+production or native evidence.
 
 ## Physical-device profile result
 
@@ -1151,3 +1182,43 @@ and
 on the widget is marked deprecated in that pin; this client still reads that
 boolean. No scroll, frame or network budget was added for this path. Broader
 parity gaps stay open. These notes do not accept the feature.
+
+## Work Item Labels editor
+
+Project and group Work Item detail now exposes a native Labels editor. Opening
+reads the current label connection to a terminal page with `first: 100`, at most
+20 pages / 2,000 opaque IDs; incomplete or inconsistent connections fail closed.
+The parent preview remains bounded to the first 50. Submitted project search
+includes ancestor-group labels, while group search stays group-only. Candidate
+results load 20 at a time for at most five pages; completed pages remain usable
+if a later page fails. Existing selected labels remain available even when a
+candidate query omits them.
+
+The server-discovered `allowsScopedLabels` value is parsed as allowed, disabled
+or unknown. Scoped-conflict guidance appears only when it is allowed. Its label
+name preview intentionally uses at most two lines and `TextOverflow.ellipsis`;
+this is the approved bounded mobile behavior, not missing data recovery.
+
+Save uses a fresh actor, exact project/group scope and revision,
+`readWorkItem`, `setWorkItemMetadata` and the complete current label-ID set.
+Only IDs from that current set or completed candidate pages can be selected. A
+single-use target is consumed before any await, including a no-op. A real change
+sends only disjoint `addLabelIds` and `removeLabelIds`, once, then performs a
+separate complete readback tied to the acknowledged revision. A transport,
+acknowledgement or readback uncertainty is not retried. GitLab's input provides
+no compare-and-swap, so the final preflight/write interval remains non-atomic.
+
+The editor's write lifecycle forwards the actual Future's token from send start
+through terminal settle. Removing the sheet or outer row cannot manufacture an
+early settle; manual refresh and older reads remain gated, and a replaced owner
+cannot publish a late terminal result. The exact eight merged Labels files match
+the approved source. A separate worktree matrix passed 149
+Labels/API/UI/Graph/Assignee-preservation tests with zero failures/errors/skips
+and clean scoped analysis. This is not a full-main aggregate test.
+
+Current-main full analysis/test/build, APK/native, authenticated private/live
+CRUD, iOS, TalkBack/VoiceOver, performance and G0 acceptance are **NOT_RUN**.
+Pipeline `2910293827` was recorded pending for exact head
+`a82892e74b59290b50379f7e7b7bdc6913fcd042`; no CI pass is inferred. Historical
+native evidence remains tied to its actual `2ccff57` source and does not validate
+this editor.
