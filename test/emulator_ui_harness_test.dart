@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
@@ -6,6 +9,7 @@ import 'package:gitlab_mobile/core/work_item_activity_models.dart';
 import 'package:gitlab_mobile/core/work_item_state_models.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_extras.dart';
+import 'package:gitlab_mobile/features/workspace/repository_page.dart';
 import 'package:gitlab_mobile/shared/scroll_performance.dart';
 
 import '../tool/emulator_ui.dart';
@@ -161,6 +165,331 @@ void main() {
   });
 
   test(
+    'performance fixture defaults off and preserves regular QA data',
+    () async {
+      expect(emulatorPerfQaEnabled, isFalse);
+      final fixture = EmulatorQaFixture(performanceQa: false);
+      addTearDown(fixture.api.close);
+
+      expect(fixture.performanceQaEnabled, isFalse);
+      expect(fixture.todoRows, hasLength(30));
+
+      final projects = await fixture.api.projects(scope: ProjectScope.member);
+      expect(projects.items, hasLength(1));
+      expect(projects.items.single.id, 42);
+      expect(projects.next, isNull);
+
+      final version = await fixture.api.record([
+        'projects',
+        '42',
+        'merge_requests',
+        '12',
+        'versions',
+        '1',
+      ]);
+      final diffs = (version['diffs'] as List).cast<Json>();
+      expect(diffs, hasLength(1));
+      expect(diffs.single['new_path'], 'lib/session.dart');
+      expect(utf8.encode(diffs.single['diff'] as String), hasLength(22));
+
+      final sha = await fixture.api.defaultBranchSha(fixture.project);
+      final root = await fixture.api.tree(42, sha);
+      expect(root.items.map((entry) => entry.path), ['lib', 'README.md']);
+      final readmeMetadata = await fixture.api.fileMetadata(
+        42,
+        'README.md',
+        sha,
+      );
+      expect(readmeMetadata['size'], 80);
+      final readme = await fixture.api.textFile(42, sha, 'README.md');
+      expect(utf8.encode(readme), hasLength(65));
+    },
+  );
+
+  test(
+    'performance fixture exposes bounded current-schema MR changes',
+    () async {
+      final fixture = EmulatorQaFixture(performanceQa: true);
+      addTearDown(fixture.api.close);
+
+      expect(fixture.performanceQaEnabled, isTrue);
+      final versions = await fixture.api.records([
+        'projects',
+        '42',
+        'merge_requests',
+        '12',
+        'versions',
+      ]);
+      expect(versions.items, hasLength(1));
+      final version = await fixture.api.record([
+        'projects',
+        '42',
+        'merge_requests',
+        '12',
+        'versions',
+        '1',
+      ]);
+      final diffs = (version['diffs'] as List).cast<Json>();
+      expect(diffs, hasLength(emulatorPerfQaChangedFileCount));
+      expect(diffs.first['new_path'], 'lib/session.dart');
+      expect(
+        diffs.map((diff) => diff['new_path']).toSet(),
+        hasLength(emulatorPerfQaChangedFileCount),
+      );
+      for (final diff in diffs) {
+        expect(
+          diff.keys,
+          containsAll(const [
+            'old_path',
+            'new_path',
+            'a_mode',
+            'b_mode',
+            'new_file',
+            'renamed_file',
+            'deleted_file',
+            'generated_file',
+            'too_large',
+            'collapsed',
+            'diff',
+          ]),
+        );
+        expect(diff['old_path'], diff['new_path']);
+        expect(diff['a_mode'], '100644');
+        expect(diff['b_mode'], '100644');
+        expect(diff['new_file'], isFalse);
+        expect(diff['renamed_file'], isFalse);
+        expect(diff['deleted_file'], isFalse);
+        expect(diff['generated_file'], isFalse);
+        expect(diff['too_large'], isFalse);
+        expect(diff['collapsed'], isFalse);
+      }
+
+      final byteLengths = [
+        for (final diff in diffs) utf8.encode(diff['diff'] as String).length,
+      ];
+      expect(byteLengths.where((bytes) => bytes > 64 * 1024), hasLength(1));
+      expect(byteLengths.first, 156021);
+      expect(byteLengths.first, lessThan(2 * 1024 * 1024));
+      expect(
+        const LineSplitter().convert(diffs.first['diff'] as String),
+        hasLength(emulatorPerfQaLargeDiffLineCount),
+      );
+      final tinyByteLengths = byteLengths.skip(1).toList();
+      expect(tinyByteLengths, hasLength(119));
+      expect(tinyByteLengths.reduce(math.min), 25);
+      expect(tinyByteLengths.reduce(math.max), 29);
+      expect(byteLengths.reduce((left, right) => left + right), 159256);
+    },
+  );
+
+  test(
+    'performance repository tree serves an exact 20000-line UTF-8 file',
+    () async {
+      final fixture = EmulatorQaFixture(performanceQa: true);
+      addTearDown(fixture.api.close);
+
+      final sha = await fixture.api.defaultBranchSha(fixture.project);
+      final root = await fixture.api.tree(42, sha);
+      expect(
+        root.items.where((entry) => entry.path == 'lib').single.isDirectory,
+        isTrue,
+      );
+      final lib = await fixture.api.tree(42, sha, path: 'lib');
+      final largeFile = lib.items.singleWhere(
+        (entry) => entry.path == emulatorPerfQaLargeFilePath,
+      );
+      expect(largeFile.name, 'large_code.dart');
+      expect(largeFile.isTextCandidate, isTrue);
+
+      final metadata = await fixture.api.fileMetadata(
+        42,
+        emulatorPerfQaLargeFilePath,
+        sha,
+      );
+      final source = await fixture.api.textFile(
+        42,
+        sha,
+        emulatorPerfQaLargeFilePath,
+      );
+      final lines = const LineSplitter().convert(source);
+      expect(lines, hasLength(emulatorPerfQaLargeFileLineCount));
+      expect(utf8.encode(source), hasLength(748919));
+      expect(metadata['size'], 748919);
+      expect(lines[500], contains(emulatorPerfQaSearchTokenAlpha));
+      expect(lines[15000], contains(emulatorPerfQaSearchTokenBeta));
+      expect(lines[19000], contains(emulatorPerfQaDistantAnchor));
+      expect(
+        lines.where((line) => line.contains(emulatorPerfQaSearchTokenAlpha)),
+        hasLength(1),
+      );
+      expect(
+        lines.where((line) => line.contains(emulatorPerfQaSearchTokenBeta)),
+        hasLength(1),
+      );
+      expect(
+        lines.where((line) => line.contains(emulatorPerfQaDistantAnchor)),
+        hasLength(1),
+      );
+    },
+  );
+
+  test('performance projects honor paging scopes and search', () async {
+    final fixture = EmulatorQaFixture(performanceQa: true);
+    addTearDown(fixture.api.close);
+
+    final ids = <int>[];
+    var page = await fixture.api.projects(scope: ProjectScope.member);
+    expect(page.items, hasLength(30));
+    expect(page.items.first.id, 42);
+    while (true) {
+      ids.addAll(page.items.map((project) => project.id));
+      final next = page.next;
+      if (next == null) break;
+      expect(next.queryParameters['per_page'], '30');
+      expect(next.queryParameters['membership'], 'true');
+      page = await fixture.api.projects(scope: ProjectScope.member, next: next);
+    }
+    expect(ids, hasLength(emulatorPerfQaProjectCount));
+    expect(ids.toSet(), hasLength(emulatorPerfQaProjectCount));
+    expect(
+      fixture.adapter.requests
+          .where((request) => request.uri.path.endsWith('/api/v4/projects'))
+          .map((request) => request.uri.queryParameters['page'] ?? '1'),
+      ['1', '2', '3', '4'],
+    );
+
+    final starred = await fixture.api.projects(scope: ProjectScope.starred);
+    expect(starred.items, hasLength(13));
+    expect(starred.next, isNull);
+
+    final search = await fixture.api.projects(
+      scope: ProjectScope.accessibleSearch,
+      search: 'performance project 119',
+    );
+    expect(search.items, hasLength(1));
+    expect(search.items.single.name, 'Performance project 119');
+    expect(search.next, isNull);
+  });
+
+  test(
+    'performance endpoints support production paths and stay fail closed',
+    () async {
+      final fixture = EmulatorQaFixture(performanceQa: true);
+
+      await fixture.api.record(['projects', '42']);
+      await fixture.api.records(['projects', '42', 'merge_requests']);
+      await fixture.api.record(['projects', '42', 'merge_requests', '12']);
+      await fixture.api.records([
+        'projects',
+        '42',
+        'merge_requests',
+        '12',
+        'versions',
+      ]);
+      await fixture.api.record([
+        'projects',
+        '42',
+        'merge_requests',
+        '12',
+        'versions',
+        '1',
+      ]);
+      final sha = await fixture.api.defaultBranchSha(fixture.project);
+      await fixture.api.tree(42, sha);
+      await fixture.api.tree(42, sha, path: 'lib');
+      await fixture.api.fileMetadata(42, emulatorPerfQaLargeFilePath, sha);
+      await fixture.api.textFile(42, sha, emulatorPerfQaLargeFilePath);
+
+      final requested = fixture.adapter.requests
+          .map(
+            (request) =>
+                '${request.method} ${request.uri.pathSegments.join('/')}',
+          )
+          .toList();
+      expect(
+        requested,
+        containsAll(const [
+          'GET gitlab/api/v4/projects/42',
+          'GET gitlab/api/v4/projects/42/merge_requests',
+          'GET gitlab/api/v4/projects/42/merge_requests/12',
+          'GET gitlab/api/v4/projects/42/merge_requests/12/versions',
+          'GET gitlab/api/v4/projects/42/merge_requests/12/versions/1',
+          'GET gitlab/api/v4/projects/42/repository/branches/main',
+          'GET gitlab/api/v4/projects/42/repository/tree',
+          'HEAD gitlab/api/v4/projects/42/repository/files/lib/large_code.dart',
+          'GET gitlab/api/v4/projects/42/repository/files/lib/large_code.dart/raw',
+        ]),
+      );
+      expect(
+        requested.where(
+          (route) =>
+              route ==
+              'GET gitlab/api/v4/projects/42/merge_requests/12/versions/1',
+        ),
+        hasLength(1),
+      );
+      expect(
+        requested.where(
+          (route) => route == 'GET gitlab/api/v4/projects/42/repository/tree',
+        ),
+        hasLength(2),
+      );
+      expect(
+        requested.where(
+          (route) =>
+              route ==
+              'HEAD gitlab/api/v4/projects/42/repository/files/lib/large_code.dart',
+        ),
+        hasLength(2),
+      );
+      expect(
+        requested.where(
+          (route) =>
+              route ==
+              'GET gitlab/api/v4/projects/42/repository/files/lib/large_code.dart/raw',
+        ),
+        hasLength(1),
+      );
+      expect(
+        fixture.adapter.requests.every(
+          (request) =>
+              request.uri.host == 'qa.invalid' &&
+              request.uri.port == 8443 &&
+              request.uri.path.startsWith('/gitlab/api/v4/'),
+        ),
+        isTrue,
+      );
+
+      await expectLater(
+        fixture.api.record(['projects', '1002']),
+        throwsA(
+          isA<ApiFailure>().having((failure) => failure.status, 'status', 404),
+        ),
+      );
+      await expectLater(
+        fixture.api.record(['qa-performance-unknown']),
+        throwsA(
+          isA<ApiFailure>().having((failure) => failure.status, 'status', 404),
+        ),
+      );
+      expect(fixture.unhandled, contains('GET projects/1002'));
+      expect(fixture.unhandled, contains('GET qa-performance-unknown'));
+
+      fixture.api.close();
+      await expectLater(
+        fixture.api.record(['projects', '42']),
+        throwsA(
+          isA<ApiFailure>().having(
+            (failure) => failure.kind,
+            'kind',
+            FailureKind.cancelled,
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
     'fixture is synthetic, deterministic, and closed to unknown endpoints',
     () async {
       final fixture = EmulatorQaFixture();
@@ -223,6 +552,38 @@ void main() {
         ),
         isTrue,
       );
+    },
+  );
+
+  testWidgets(
+    'QA project navigation reaches repository and MR changes directly',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 1200);
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(buildEmulatorQaApp(qaEnabled: true));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('專案頁面'), 200);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('專案頁面'));
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('Emulator UI QA'), findsNothing);
+      expect(find.text('檔案'), findsOneWidget);
+      expect(find.byType(RepositoryTab), findsOneWidget);
+      expect(find.text('README.md'), findsWidgets);
+
+      await tester.tap(find.text('MR'));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.text('Improve private-project navigation'));
+      await settleNetworkWidgets(tester);
+      await tester.tap(find.text('變更'));
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('lib/session.dart'), findsOneWidget);
+      expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     },
   );
 

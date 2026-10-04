@@ -8,6 +8,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/work_item_labels_models.dart';
 import 'package:gitlab_mobile/core/providers.dart';
 import 'package:gitlab_mobile/features/auth/account_store.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
@@ -28,10 +29,24 @@ import '../test/support/memory_appearance_store.dart';
 import '../test/support/workspace_fixture.dart';
 
 const emulatorUiQaEnabled = bool.fromEnvironment('EMULATOR_UI_QA');
+
+/// Adds bounded synthetic performance data only to the guarded QA target.
+///
+/// Native QA opts in with `--dart-define=EMULATOR_PERF_QA=true`. Regular QA
+/// fixtures remain unchanged when the flag is absent.
+const emulatorPerfQaEnabled = bool.fromEnvironment('EMULATOR_PERF_QA');
 const emulatorUiQaCommit = String.fromEnvironment(
   'GITLAB_MOBILE_COMMIT',
   defaultValue: 'local-qa',
 );
+const emulatorPerfQaChangedFileCount = 120;
+const emulatorPerfQaLargeDiffLineCount = 3001;
+const emulatorPerfQaLargeFileLineCount = 20000;
+const emulatorPerfQaProjectCount = 120;
+const emulatorPerfQaLargeFilePath = 'lib/large_code.dart';
+const emulatorPerfQaSearchTokenAlpha = 'uniqueSearchTargetAlpha';
+const emulatorPerfQaSearchTokenBeta = 'uniqueSearchTargetBeta';
+const emulatorPerfQaDistantAnchor = 'stableDistantAnchor19001';
 
 enum _QaNoteEditControl {
   contentAuthenticated,
@@ -84,6 +99,14 @@ enum _QaNoteEditControl {
   reviseWeight,
   absentWeight,
   presentWeight,
+  allowLabelMetadata,
+  denyLabelMetadata,
+  labelCount120,
+  failLabelCandidatePage,
+  partialLabelCandidatePage,
+  silentDenyLabelMutation,
+  mismatchLabelReadback,
+  resetLabels,
 }
 
 void main() {
@@ -131,7 +154,8 @@ final class EmulatorQaMemoryAccountStore implements AccountStore {
 }
 
 final class EmulatorQaFixture extends WorkspaceFixture {
-  EmulatorQaFixture() {
+  EmulatorQaFixture({bool performanceQa = emulatorPerfQaEnabled})
+    : performanceQaEnabled = performanceQa {
     projectRecord['star_count'] = _starCount;
     pipelineSchedules.addAll([
       {
@@ -152,6 +176,135 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         'active': false,
       },
     ]);
+  }
+
+  final bool performanceQaEnabled;
+  List<Json>? _performanceProjectsCache;
+  List<Json>? _performanceDiffsCache;
+  String? _performanceLargeDiffCache;
+  String? _performanceLargeFileCache;
+
+  List<Json> get _performanceProjects =>
+      _performanceProjectsCache ??= List<Json>.unmodifiable([
+        Map<String, dynamic>.unmodifiable(projectRecord),
+        for (var number = 2; number <= emulatorPerfQaProjectCount; number++)
+          Map<String, dynamic>.unmodifiable({
+            'id': 1000 + number,
+            'name': 'Performance project ${number.toString().padLeft(3, '0')}',
+            'path_with_namespace':
+                'qa/performance-project-${number.toString().padLeft(3, '0')}',
+            'description':
+                'Deterministic synthetic performance project $number.',
+            'visibility': 'private',
+            'default_branch': 'main',
+            'archived': false,
+            'last_activity_at':
+                '2026-10-${((number - 1) % 28 + 1).toString().padLeft(2, '0')}T12:00:00Z',
+          }),
+      ]);
+
+  String get _performanceLargeDiff {
+    final cached = _performanceLargeDiffCache;
+    if (cached != null) return cached;
+    final buffer = StringBuffer('@@ -1,3000 +1,3000 @@\n');
+    for (var line = 1; line <= 3000; line++) {
+      buffer.write(
+        ' performance UTF-8 差異 row ${line.toString().padLeft(4, '0')} '
+        'abcdefghijklmnop',
+      );
+      if (line != 3000) buffer.write('\n');
+    }
+    return _performanceLargeDiffCache = buffer.toString();
+  }
+
+  List<Json>
+  get _performanceDiffs => _performanceDiffsCache ??= List<Json>.unmodifiable([
+    for (var index = 0; index < emulatorPerfQaChangedFileCount; index++)
+      Map<String, dynamic>.unmodifiable({
+        'old_path': index == 0
+            ? 'lib/session.dart'
+            : 'lib/performance/file_${index.toString().padLeft(3, '0')}.dart',
+        'new_path': index == 0
+            ? 'lib/session.dart'
+            : 'lib/performance/file_${index.toString().padLeft(3, '0')}.dart',
+        'a_mode': '100644',
+        'b_mode': '100644',
+        'new_file': false,
+        'renamed_file': false,
+        'deleted_file': false,
+        'generated_file': false,
+        'too_large': false,
+        'collapsed': false,
+        'diff': index == 0
+            ? _performanceLargeDiff
+            : '@@ -1 +1 @@\n-old $index\n+new $index',
+      }),
+  ]);
+
+  String get _performanceLargeFile {
+    final cached = _performanceLargeFileCache;
+    if (cached != null) return cached;
+    final buffer = StringBuffer();
+    for (var line = 1; line <= emulatorPerfQaLargeFileLineCount; line++) {
+      final content = switch (line) {
+        501 => "const $emulatorPerfQaSearchTokenAlpha = 'line-00501';",
+        15001 => "const $emulatorPerfQaSearchTokenBeta = 'line-15001';",
+        19001 => "const $emulatorPerfQaDistantAnchor = 'line-19001';",
+        _ =>
+          'const performanceQaLine${line.toString().padLeft(5, '0')} = $line;',
+      };
+      buffer.write(content);
+      if (line != emulatorPerfQaLargeFileLineCount) buffer.write('\n');
+    }
+    return _performanceLargeFileCache = buffer.toString();
+  }
+
+  ResponseBody _performanceProjectsResponse(RequestOptions request) {
+    var rows = _performanceProjects;
+    if (request.uri.queryParameters['starred'] == 'true') {
+      rows = [
+        for (var index = 0; index < rows.length; index++)
+          if (index == 0 || (index + 1) % 10 == 0) rows[index],
+      ];
+    }
+    final search = request.uri.queryParameters['search']?.trim().toLowerCase();
+    if (search != null && search.isNotEmpty) {
+      rows = rows
+          .where(
+            (row) =>
+                (row['name'] as String).toLowerCase().contains(search) ||
+                (row['path_with_namespace'] as String).toLowerCase().contains(
+                  search,
+                ),
+          )
+          .toList(growable: false);
+    }
+    final perPage =
+        int.tryParse(request.uri.queryParameters['per_page'] ?? '') ?? 30;
+    final page = int.tryParse(request.uri.queryParameters['page'] ?? '') ?? 1;
+    if (perPage < 1 || perPage > 100 || page < 1) {
+      return jsonResponse({
+        'message': '400 Invalid synthetic pagination',
+      }, status: 400);
+    }
+    final start = (page - 1) * perPage;
+    final end = math.min(start + perPage, rows.length);
+    final pageRows = start >= rows.length
+        ? const <Json>[]
+        : rows.sublist(start, end);
+    final totalPages = rows.isEmpty ? 1 : (rows.length / perPage).ceil();
+    final nextPage = page < totalPages ? page + 1 : null;
+    return jsonResponse(
+      pageRows,
+      headers: {
+        'x-page': ['$page'],
+        'x-per-page': ['$perPage'],
+        'x-total': ['${rows.length}'],
+        'x-total-pages': ['$totalPages'],
+        'x-next-page': [nextPage == null ? '' : '$nextPage'],
+        'x-prev-page': [page > 1 ? '${page - 1}' : ''],
+      },
+    );
   }
 
   bool _starred = false;
@@ -253,6 +406,247 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         ? 'gid://gitlab/WorkItem/1041'
         : 'gid://gitlab/WorkItem/1031';
     _workItemRevisions[id] = (_workItemRevisions[id] ?? 0) + 1;
+  }
+
+  bool workItemLabelMetadataAllowed = true;
+  bool workItemLabelReadWorkItemAllowed = true;
+  bool workItemLabelWidgetPresent = true;
+  WorkItemLabelAllowsScoped workItemLabelAllowsScoped =
+      WorkItemLabelAllowsScoped.allowed;
+  final workItemLabelsMap = <bool, List<WorkItemLabel>>{};
+  bool failNextWorkItemLabelCandidates = false;
+  bool partialNextWorkItemLabelCandidates = false;
+  bool failNextWorkItemLabelAcknowledgement = false;
+  bool silentDenyNextWorkItemLabelMutation = false;
+  bool mismatchNextWorkItemLabelReadback = false;
+  bool _labelReadbackMismatchArmed = false;
+  bool malformNextLabelRead = false;
+  bool workItemLabelRevisionDuringPagination = false;
+  final workItemLabelReads = <Json>[];
+  final workItemLabelCandidateEvents = <Json>[];
+  final workItemLabelEvents = <Json>[];
+  Json? lastLabelMutationResponse;
+
+  List<WorkItemLabel> workItemLabelList({required bool group}) {
+    return workItemLabelsMap.putIfAbsent(
+      group,
+      () => _buildDefaultWorkItemLabels(group: group),
+    );
+  }
+
+  List<WorkItemLabel> _buildDefaultWorkItemLabels({required bool group}) {
+    return [
+      _buildWorkItemLabel(group: group, index: 1),
+      _buildWorkItemLabel(group: group, index: 2),
+    ];
+  }
+
+  WorkItemLabel _buildWorkItemLabel({required bool group, required int index}) {
+    final idNumber = (group ? 70000 : 50000) + index;
+    final id = group
+        ? 'gid://gitlab/GroupLabel/$idNumber'
+        : 'gid://gitlab/ProjectLabel/$idNumber';
+    final title = switch (index) {
+      1 => 'workflow::backend::review',
+      2 => 'priority::high',
+      3 => '::value',
+      4 => 'a::',
+      5 => 'a::b::c',
+      6 => '範疇::前端::審查',
+      7 => '狀態::進行中',
+      8 => 'plain',
+      9 => '標籤CJK',
+      10 => 'contrast::bad',
+      _ => group ? '群組標籤$index' : '專案標籤$index',
+    };
+    final color = switch (index) {
+      1 => '#1068BF',
+      2 => '#428BCA',
+      3 => '#E0E0E0',
+      4 => '#2EA44F',
+      5 => '#D9534F',
+      6 => '#6F42C1',
+      7 => '#F0AD4E',
+      8 => '#5CB85C',
+      9 => '#003366',
+      10 => '#1068BF',
+      _ => '#1068BF',
+    };
+    final textColor = switch (index) {
+      3 => '#000000',
+      7 => '#000000',
+      10 => '#1068BF',
+      _ => '#FFFFFF',
+    };
+    return WorkItemLabel(
+      id: id,
+      title: title,
+      color: color,
+      textColor: textColor,
+    );
+  }
+
+  void setWorkItemLabelCount({required bool group, required int count}) {
+    workItemLabelsMap[group] = [
+      for (var number = 1; number <= count; number++)
+        _buildWorkItemLabel(group: group, index: number),
+    ];
+  }
+
+  void resetWorkItemLabels() {
+    workItemLabelMetadataAllowed = true;
+    workItemLabelReadWorkItemAllowed = true;
+    workItemLabelWidgetPresent = true;
+    workItemLabelAllowsScoped = WorkItemLabelAllowsScoped.allowed;
+    failNextWorkItemLabelCandidates = false;
+    partialNextWorkItemLabelCandidates = false;
+    failNextWorkItemLabelAcknowledgement = false;
+    silentDenyNextWorkItemLabelMutation = false;
+    mismatchNextWorkItemLabelReadback = false;
+    _labelReadbackMismatchArmed = false;
+    malformNextLabelRead = false;
+    workItemLabelRevisionDuringPagination = false;
+    setWorkItemLabelCount(group: false, count: 2);
+    setWorkItemLabelCount(group: true, count: 2);
+    workItemLabelReads.clear();
+    workItemLabelCandidateEvents.clear();
+    workItemLabelEvents.clear();
+    lastLabelMutationResponse = null;
+  }
+
+  void reviseWorkItemLabel({required bool group}) {
+    final id = group
+        ? 'gid://gitlab/WorkItem/1041'
+        : 'gid://gitlab/WorkItem/1031';
+    _workItemRevisions[id] = (_workItemRevisions[id] ?? 0) + 1;
+  }
+
+  List<WorkItemLabel> _labelCandidates({required bool group}) {
+    final list = <WorkItemLabel>[];
+    if (group) {
+      for (var i = 1; i <= 100; i++) {
+        final id = 'gid://gitlab/GroupLabel/${90000 + i}';
+        final title = switch (i) {
+          1 => 'workflow::backend::done',
+          2 => 'workflow::frontend::review',
+          3 => 'priority::low',
+          4 => 'priority::urgent',
+          5 => '::value',
+          6 => 'a::',
+          7 => 'a::b::c',
+          8 => '範疇::後端',
+          9 => 'group::high',
+          10 => 'contrast::bad',
+          _ => '群組候選${i.toString().padLeft(2, '0')}',
+        };
+        final color = switch (i) {
+          3 => '#2EA44F',
+          4 => '#D9534F',
+          5 => '#E0E0E0',
+          8 => '#F0AD4E',
+          10 => '#1068BF',
+          _ => '#1068BF',
+        };
+        final textColor = switch (i) {
+          5 => '#000000',
+          8 => '#000000',
+          10 => '#1068BF',
+          _ => '#FFFFFF',
+        };
+        list.add(
+          WorkItemLabel(
+            id: id,
+            title: title,
+            color: color,
+            textColor: textColor,
+          ),
+        );
+      }
+    } else {
+      for (var i = 1; i <= 100; i++) {
+        final isAncestorGroup = (i % 3 == 0) || i == 1 || i == 5 || i == 8;
+        final id = isAncestorGroup
+            ? 'gid://gitlab/GroupLabel/${80000 + i}'
+            : 'gid://gitlab/ProjectLabel/${60000 + i}';
+        final title = switch (i) {
+          1 => 'workflow::backend::done',
+          2 => 'workflow::frontend::review',
+          3 => 'priority::low',
+          4 => 'priority::urgent',
+          5 => '::value',
+          6 => 'a::',
+          7 => 'a::b::c',
+          8 => '範疇::後端',
+          9 => 'bug',
+          10 => 'contrast::bad',
+          _ => '專案候選${i.toString().padLeft(2, '0')}',
+        };
+        final color = switch (i) {
+          3 => '#2EA44F',
+          4 => '#D9534F',
+          5 => '#E0E0E0',
+          8 => '#F0AD4E',
+          10 => '#1068BF',
+          _ => '#1068BF',
+        };
+        final textColor = switch (i) {
+          5 => '#000000',
+          8 => '#000000',
+          10 => '#1068BF',
+          _ => '#FFFFFF',
+        };
+        list.add(
+          WorkItemLabel(
+            id: id,
+            title: title,
+            color: color,
+            textColor: textColor,
+          ),
+        );
+      }
+    }
+    return list;
+  }
+
+  WorkItemLabel _lookupLabel(String id, {required bool group}) {
+    for (final candidate in _labelCandidates(group: group)) {
+      if (candidate.id == id) return candidate;
+    }
+    for (final candidate in _labelCandidates(group: !group)) {
+      if (candidate.id == id) return candidate;
+    }
+    return WorkItemLabel(
+      id: id,
+      title: '標籤-$id',
+      color: '#1068BF',
+      textColor: '#FFFFFF',
+    );
+  }
+
+  Json _workItemLabelPreviewWidget({required bool group}) {
+    final list = workItemLabelList(group: group);
+    final shown = list.take(50).map(_labelNode).toList(growable: false);
+    final more = list.length > shown.length;
+    return {
+      'type': 'LABELS',
+      'labels': {
+        'nodes': shown,
+        'pageInfo': {
+          'hasNextPage': more,
+          'endCursor': more ? 'qa-labels-preview:50' : null,
+        },
+      },
+    };
+  }
+
+  Json _labelNode(WorkItemLabel label) {
+    return {
+      'id': label.id,
+      'title': label.title,
+      'color': label.color,
+      'description': null,
+      'textColor': label.textColor,
+    };
   }
 
   final Map<bool, bool> workItemNoteEditAllowed = {false: true, true: true};
@@ -490,6 +884,16 @@ final class EmulatorQaFixture extends WorkspaceFixture {
       'workItemType': {
         'id': 'gid://gitlab/WorkItems::Type/qa-${group ? 'group' : 'project'}',
         'name': group ? 'Synthetic Epic' : 'Synthetic Task',
+        'widgetDefinitions': [
+          {
+            'type': 'LABELS',
+            'allowsScopedLabels': switch (workItemLabelAllowsScoped) {
+              WorkItemLabelAllowsScoped.allowed => true,
+              WorkItemLabelAllowsScoped.disabled => false,
+              WorkItemLabelAllowsScoped.unknown => null,
+            },
+          },
+        ],
       },
       'userPermissions': {
         'readWorkItem': true,
@@ -519,6 +923,8 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         {'type': 'NOTES', 'discussionLocked': false},
         if (workItemAssigneeWidgetPresent)
           _workItemAssigneePreviewWidget(group: group),
+        if (workItemLabelWidgetPresent)
+          _workItemLabelPreviewWidget(group: group),
         {
           'type': 'MILESTONE',
           'milestone': currentWorkItemMilestone(group: group),
@@ -1689,9 +2095,7 @@ final class EmulatorQaFixture extends WorkspaceFixture {
       }
       if (operation == 'MobileProjectAssigneeCandidates' ||
           operation == 'MobileGroupAssigneeCandidates') {
-        return jsonResponse(
-          _assigneeCandidates(operation!, query, variables),
-        );
+        return jsonResponse(_assigneeCandidates(operation!, query, variables));
       }
       if (operation == 'MobileSetWorkItemAssignees') {
         final body = _assigneeMutationBody(variables);
@@ -2065,6 +2469,426 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           });
         }
       }
+      if (operation == 'MobileWorkItemLabels' &&
+          _workItemStates.containsKey(variables['id'])) {
+        final id = variables['id'] as String;
+        final group = id == 'gid://gitlab/WorkItem/1041';
+        if (malformNextLabelRead) {
+          malformNextLabelRead = false;
+          return jsonResponse({
+            'data': {
+              'currentUser': {'id': 'gid://gitlab/User/7'},
+              'workItem': {
+                'id': id,
+                'iid': group ? '41' : '31',
+                'title': workItemContentTitles[group],
+                'state': _workItemStates[id],
+                'createdAt': '2026-10-01T00:00:00Z',
+                'updatedAt': DateTime.utc(2026, 10, 3).toIso8601String(),
+                'project': group
+                    ? null
+                    : {
+                        'id': 'gid://gitlab/Project/42',
+                        'fullPath': 'studio/mobile-workspace',
+                      },
+                'namespace': {
+                  'id': group
+                      ? 'gid://gitlab/Group/84'
+                      : 'gid://gitlab/Namespaces::ProjectNamespace/42',
+                  'fullPath': group
+                      ? 'qa/synthetic-group'
+                      : 'studio/mobile-workspace',
+                },
+                'workItemType': {
+                  'id':
+                      'gid://gitlab/WorkItems::Type/qa-${group ? 'group' : 'project'}',
+                  'name': group ? 'Synthetic Epic' : 'Synthetic Task',
+                  'widgetDefinitions': [
+                    {'type': 'LABELS', 'allowsScopedLabels': true},
+                  ],
+                },
+                'userPermissions': {
+                  'readWorkItem': true,
+                  'setWorkItemMetadata': true,
+                },
+                'widgets': 'malformed',
+              },
+            },
+          });
+        }
+        final list = workItemLabelList(group: group);
+        final rawAfter = variables['after'];
+        var offset = 0;
+        if (rawAfter is String) {
+          if (rawAfter.startsWith('qa-labels:')) {
+            offset = int.tryParse(rawAfter.split(':').last) ?? 0;
+          } else {
+            return jsonResponse({
+              'errors': [
+                {'message': 'Invalid cursor'},
+              ],
+            }, status: 400);
+          }
+        }
+        if (workItemLabelRevisionDuringPagination && offset > 0) {
+          workItemLabelRevisionDuringPagination = false;
+          _workItemRevisions[id] = (_workItemRevisions[id] ?? 0) + 1;
+        }
+        final page = list.skip(offset).take(100).toList(growable: false);
+        final hasNext = (offset + page.length) < list.length;
+        final revision = _workItemRevisions[id] ?? 0;
+        final updatedAt = _labelReadbackMismatchArmed
+            ? DateTime.utc(2026, 10, 3, 0, 0, revision + 99).toIso8601String()
+            : DateTime.utc(2026, 10, 3, 0, 0, revision).toIso8601String();
+        if (_labelReadbackMismatchArmed) {
+          _labelReadbackMismatchArmed = false;
+        }
+        final widgetDefinitions = [
+          {
+            'type': 'LABELS',
+            'allowsScopedLabels': switch (workItemLabelAllowsScoped) {
+              WorkItemLabelAllowsScoped.allowed => true,
+              WorkItemLabelAllowsScoped.disabled => false,
+              WorkItemLabelAllowsScoped.unknown => null,
+            },
+          },
+        ];
+        final widgets = workItemLabelWidgetPresent
+            ? [
+                {
+                  'type': 'LABELS',
+                  'labels': {
+                    'nodes': page
+                        .map(
+                          (label) => {
+                            'id': label.id,
+                            'title': label.title,
+                            'color': label.color,
+                            'textColor': label.textColor,
+                          },
+                        )
+                        .toList(growable: false),
+                    'pageInfo': {
+                      'hasNextPage': hasNext,
+                      'endCursor': hasNext
+                          ? 'qa-labels:${offset + page.length}'
+                          : null,
+                    },
+                  },
+                },
+              ]
+            : <Json>[];
+        workItemLabelReads.add({
+          'id': id,
+          'group': group,
+          'after': variables['after'],
+          'accepted': true,
+        });
+        debugPrint(
+          '[work_item_labels_read_qa] scope=${group ? 'group' : 'project'} '
+          'after=${variables['after']} sequence=${workItemLabelReads.length}',
+        );
+        return jsonResponse({
+          'data': {
+            'currentUser': {'id': 'gid://gitlab/User/7'},
+            'workItem': {
+              'id': id,
+              'iid': group ? '41' : '31',
+              'title': workItemContentTitles[group],
+              'state': _workItemStates[id],
+              'createdAt': '2026-10-01T00:00:00Z',
+              'updatedAt': updatedAt,
+              'project': group
+                  ? null
+                  : {
+                      'id': 'gid://gitlab/Project/42',
+                      'fullPath': 'studio/mobile-workspace',
+                    },
+              'namespace': {
+                'id': group
+                    ? 'gid://gitlab/Group/84'
+                    : 'gid://gitlab/Namespaces::ProjectNamespace/42',
+                'fullPath': group
+                    ? 'qa/synthetic-group'
+                    : 'studio/mobile-workspace',
+              },
+              'workItemType': {
+                'id':
+                    'gid://gitlab/WorkItems::Type/qa-${group ? 'group' : 'project'}',
+                'name': group ? 'Synthetic Epic' : 'Synthetic Task',
+                'widgetDefinitions': widgetDefinitions,
+              },
+              'userPermissions': {
+                'readWorkItem': workItemLabelReadWorkItemAllowed,
+                'setWorkItemMetadata': workItemLabelMetadataAllowed,
+              },
+              'widgets': widgets,
+            },
+          },
+        });
+      }
+      if (operation == 'MobileProjectLabelCandidates' ||
+          operation == 'MobileGroupLabelCandidates') {
+        final group = operation == 'MobileGroupLabelCandidates';
+        final expectedPath = group
+            ? 'qa/synthetic-group'
+            : 'studio/mobile-workspace';
+        final fullPath = variables['fullPath'];
+        final search = (variables['search'] as String? ?? '').trim();
+        final rawAfter = variables['after'];
+        final scoped = fullPath == expectedPath;
+        if (failNextWorkItemLabelCandidates) {
+          failNextWorkItemLabelCandidates = false;
+          return jsonResponse({
+            'errors': [
+              {'message': 'Synthetic label candidate failure'},
+            ],
+          });
+        }
+        if (!scoped) {
+          return jsonResponse({
+            'errors': [
+              {'message': 'Synthetic label candidates rejected: invalid scope'},
+            ],
+          }, status: 400);
+        }
+        final allCandidates = _labelCandidates(group: group);
+        final filtered = allCandidates
+            .where((label) {
+              if (search.isEmpty) return true;
+              return label.title.toLowerCase().contains(search.toLowerCase());
+            })
+            .toList(growable: false);
+        var offset = 0;
+        if (rawAfter is String) {
+          if (rawAfter.startsWith('qa-label-candidate:')) {
+            offset = int.tryParse(rawAfter.split(':').last) ?? 0;
+          } else {
+            return jsonResponse({
+              'errors': [
+                {'message': 'Invalid candidate cursor'},
+              ],
+            }, status: 400);
+          }
+        }
+        final int takeCount;
+        final bool hasNext;
+        final String? endCursor;
+        if (partialNextWorkItemLabelCandidates) {
+          partialNextWorkItemLabelCandidates = false;
+          takeCount = math.min(5, filtered.length - offset);
+          hasNext = false;
+          endCursor = null;
+        } else {
+          takeCount = math.min(20, math.max(0, filtered.length - offset));
+          hasNext = (offset + takeCount) < filtered.length;
+          endCursor = hasNext
+              ? 'qa-label-candidate:${offset + takeCount}'
+              : null;
+        }
+        final page = filtered
+            .skip(offset)
+            .take(takeCount)
+            .toList(growable: false);
+        workItemLabelCandidateEvents.add({
+          'group': group,
+          'search': variables['search'],
+          'after': rawAfter,
+          'count': page.length,
+          'accepted': scoped,
+        });
+        debugPrint(
+          '[work_item_labels_candidate_qa] scope=${group ? 'group' : 'project'} '
+          'search=${variables['search']} after=$rawAfter count=${page.length} '
+          'sequence=${workItemLabelCandidateEvents.length}',
+        );
+        final container = group
+            ? {
+                'group': {
+                  'id': 'gid://gitlab/Group/84',
+                  'fullPath': expectedPath,
+                  'labels': {
+                    'nodes': page
+                        .map(
+                          (l) => {
+                            'id': l.id,
+                            'title': l.title,
+                            'color': l.color,
+                            'textColor': l.textColor,
+                          },
+                        )
+                        .toList(growable: false),
+                    'pageInfo': {
+                      'hasNextPage': hasNext,
+                      'endCursor': endCursor,
+                    },
+                  },
+                },
+              }
+            : {
+                'project': {
+                  'id': 'gid://gitlab/Project/42',
+                  'fullPath': expectedPath,
+                  'labels': {
+                    'nodes': page
+                        .map(
+                          (l) => {
+                            'id': l.id,
+                            'title': l.title,
+                            'color': l.color,
+                            'textColor': l.textColor,
+                          },
+                        )
+                        .toList(growable: false),
+                    'pageInfo': {
+                      'hasNextPage': hasNext,
+                      'endCursor': endCursor,
+                    },
+                  },
+                },
+              };
+        return jsonResponse({
+          'data': {
+            'currentUser': {'id': 'gid://gitlab/User/7'},
+            ...container,
+          },
+        });
+      }
+      if (operation == 'MobileUpdateWorkItemLabels') {
+        final input = variables['input'] is Map
+            ? variables['input'] as Map
+            : const <String, Object?>{};
+        final id = input['id'];
+        final labelsWidget = input['labelsWidget'];
+        final validId = id is String && _workItemStates.containsKey(id);
+        final validWidget = labelsWidget is Map;
+        final rawAdd = validWidget ? labelsWidget['addLabelIds'] : null;
+        final rawRemove = validWidget ? labelsWidget['removeLabelIds'] : null;
+        final addLabelIds = <String>[];
+        final removeLabelIds = <String>[];
+        var validGids = true;
+        final gidPattern = RegExp(
+          r'^gid://gitlab/(Label|GroupLabel|ProjectLabel)/[1-9][0-9]*$',
+        );
+        if (rawAdd != null) {
+          if (rawAdd is! List) {
+            validGids = false;
+          } else {
+            for (final raw in rawAdd) {
+              if (raw is! String || !gidPattern.hasMatch(raw)) {
+                validGids = false;
+                break;
+              }
+              addLabelIds.add(raw);
+            }
+          }
+        }
+        if (rawRemove != null) {
+          if (rawRemove is! List) {
+            validGids = false;
+          } else {
+            for (final raw in rawRemove) {
+              if (raw is! String || !gidPattern.hasMatch(raw)) {
+                validGids = false;
+                break;
+              }
+              removeLabelIds.add(raw);
+            }
+          }
+        }
+        if (!validId || !validWidget || !validGids) {
+          return jsonResponse({
+            'data': {
+              'workItemUpdate': {
+                'errors': [
+                  'Synthetic label update was rejected: invalid input',
+                ],
+                'workItem': null,
+              },
+            },
+          });
+        }
+        final group = id == 'gid://gitlab/WorkItem/1041';
+        final accepted =
+            workItemLabelMetadataAllowed &&
+            workItemLabelWidgetPresent &&
+            !failNextWorkItemLabelAcknowledgement;
+        final eventInput = <String, Object?>{
+          'id': id,
+          'labelsWidget': <String, Object?>{
+            if (addLabelIds.isNotEmpty) 'addLabelIds': addLabelIds,
+            if (removeLabelIds.isNotEmpty) 'removeLabelIds': removeLabelIds,
+          },
+        };
+        workItemLabelEvents.add({
+          'input': eventInput,
+          'accepted': accepted,
+          'group': group,
+        });
+        debugPrint(
+          '[work_item_labels_qa] scope=${group ? 'group' : 'project'} '
+          'input=$eventInput accepted=$accepted sequence=${workItemLabelEvents.length}',
+        );
+        if (!workItemLabelMetadataAllowed || !workItemLabelWidgetPresent) {
+          return jsonResponse({
+            'data': {
+              'workItemUpdate': {
+                'errors': ['Synthetic label update not permitted'],
+                'workItem': null,
+              },
+            },
+          });
+        }
+        if (!silentDenyNextWorkItemLabelMutation) {
+          final current = List<WorkItemLabel>.from(
+            workItemLabelList(group: group),
+          );
+          final toRemove = removeLabelIds.toSet();
+          final retained = current
+              .where((l) => !toRemove.contains(l.id))
+              .toList();
+          final currentIds = retained.map((l) => l.id).toSet();
+          for (final addId in addLabelIds) {
+            if (!currentIds.contains(addId)) {
+              retained.add(_lookupLabel(addId, group: group));
+              currentIds.add(addId);
+            }
+          }
+          workItemLabelsMap[group] = retained;
+        } else {
+          silentDenyNextWorkItemLabelMutation = false;
+        }
+        reviseWorkItemLabel(group: group);
+        if (failNextWorkItemLabelAcknowledgement) {
+          failNextWorkItemLabelAcknowledgement = false;
+          return jsonResponse({
+            'message': 'Synthetic label acknowledgement failure',
+          }, status: 503);
+        }
+        if (mismatchNextWorkItemLabelReadback) {
+          mismatchNextWorkItemLabelReadback = false;
+          _labelReadbackMismatchArmed = true;
+        }
+        final revision = _workItemRevisions[id] ?? 0;
+        final ackUpdatedAt = DateTime.utc(
+          2026,
+          10,
+          3,
+          0,
+          0,
+          revision,
+        ).toIso8601String();
+        final ackBody = {
+          'data': {
+            'workItemUpdate': {
+              'errors': <String>[],
+              'workItem': {'id': id, 'updatedAt': ackUpdatedAt},
+            },
+          },
+        };
+        lastLabelMutationResponse = ackBody;
+        return jsonResponse(ackBody);
+      }
       unhandled.add('POST $operation');
       return jsonResponse({
         'message': '404 Synthetic GraphQL operation not found',
@@ -2088,6 +2912,50 @@ final class EmulatorQaFixture extends WorkspaceFixture {
     }
     final path = segments.skip(apiStart + 1).join('/');
     final method = request.method;
+    if (performanceQaEnabled) {
+      if (path == 'projects' && method == 'GET') {
+        return _performanceProjectsResponse(request);
+      }
+      if (path == 'projects/42/merge_requests/12/versions/1' &&
+          method == 'GET') {
+        return jsonResponse({
+          'id': 1,
+          'head_commit_sha': versionHeadSha,
+          'base_commit_sha': versionBaseSha,
+          'start_commit_sha': versionStartSha,
+          'diffs': _performanceDiffs,
+        });
+      }
+      if (path == 'projects/42/repository/tree' &&
+          method == 'GET' &&
+          request.uri.queryParameters['path'] == 'lib') {
+        return jsonResponse([
+          {
+            'id': 'performance-large-code',
+            'name': 'large_code.dart',
+            'path': emulatorPerfQaLargeFilePath,
+            'type': 'blob',
+            'mode': '100644',
+          },
+        ]);
+      }
+      if (path == 'projects/42/repository/files/$emulatorPerfQaLargeFilePath' &&
+          method == 'HEAD') {
+        return ResponseBody.fromString(
+          '',
+          200,
+          headers: {
+            'x-gitlab-size': ['${utf8.encode(_performanceLargeFile).length}'],
+            'x-gitlab-last-commit-id': [WorkspaceFixture.sha],
+          },
+        );
+      }
+      if (path ==
+              'projects/42/repository/files/$emulatorPerfQaLargeFilePath/raw' &&
+          method == 'GET') {
+        return ResponseBody.fromString(_performanceLargeFile, 200);
+      }
+    }
     if (path == 'todos' && method == 'GET') {
       return jsonResponse(todoRows);
     }
@@ -2492,6 +3360,39 @@ class _QaChromeState extends State<_QaChrome> {
           value: _QaNoteEditControl.failReactionAcknowledgement,
           child: _qaMenuLabel('下次表情確認失敗'),
         ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: _QaNoteEditControl.allowLabelMetadata,
+          child: _qaMenuLabel('允許標籤設定'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.denyLabelMetadata,
+          child: _qaMenuLabel('撤回標籤權限'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.labelCount120,
+          child: _qaMenuLabel('目前標籤 120 個'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.failLabelCandidatePage,
+          child: _qaMenuLabel('下次標籤候選讀取失敗'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.partialLabelCandidatePage,
+          child: _qaMenuLabel('下次標籤候選未完少頁'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.silentDenyLabelMutation,
+          child: _qaMenuLabel('下次標籤寫入靜默略過'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.mismatchLabelReadback,
+          child: _qaMenuLabel('下次標籤回讀不符'),
+        ),
+        PopupMenuItem(
+          value: _QaNoteEditControl.resetLabels,
+          child: _qaMenuLabel('還原標籤預設設定'),
+        ),
       ],
     );
     if (control != null && mounted) {
@@ -2724,6 +3625,39 @@ class _QaChromeState extends State<_QaChrome> {
       _QaNoteEditControl.failReactionAcknowledgement => () {
         widget.fixture.failNextWorkItemNoteReactionAcknowledgement = true;
         return '下一次表情確認將失敗';
+      }(),
+      _QaNoteEditControl.allowLabelMetadata => () {
+        widget.fixture.workItemLabelMetadataAllowed = true;
+        return '標籤設定：允許';
+      }(),
+      _QaNoteEditControl.denyLabelMetadata => () {
+        widget.fixture.workItemLabelMetadataAllowed = false;
+        return '標籤權限：撤回';
+      }(),
+      _QaNoteEditControl.labelCount120 => () {
+        widget.fixture.setWorkItemLabelCount(group: false, count: 120);
+        widget.fixture.setWorkItemLabelCount(group: true, count: 120);
+        return '目前標籤：120 個';
+      }(),
+      _QaNoteEditControl.failLabelCandidatePage => () {
+        widget.fixture.failNextWorkItemLabelCandidates = true;
+        return '下一次標籤候選讀取將失敗';
+      }(),
+      _QaNoteEditControl.partialLabelCandidatePage => () {
+        widget.fixture.partialNextWorkItemLabelCandidates = true;
+        return '下一次標籤候選將提前結束';
+      }(),
+      _QaNoteEditControl.silentDenyLabelMutation => () {
+        widget.fixture.silentDenyNextWorkItemLabelMutation = true;
+        return '下一次標籤寫入將被靜默略過';
+      }(),
+      _QaNoteEditControl.mismatchLabelReadback => () {
+        widget.fixture.mismatchNextWorkItemLabelReadback = true;
+        return '下一次標籤回讀將不符';
+      }(),
+      _QaNoteEditControl.resetLabels => () {
+        widget.fixture.resetWorkItemLabels();
+        return '標籤設定已還原';
       }(),
     };
     debugPrint(
