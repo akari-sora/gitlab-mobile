@@ -1389,4 +1389,118 @@ void main() {
       });
     },
   );
+
+  test(
+    'mutation callback runs only at actual assignee transport handoff',
+    () async {
+      Future<void> changed({required bool callbackThrows}) async {
+        var callbacks = 0;
+        var writes = 0;
+        final adapter = FakeAdapter((request) {
+          if (_isMutation(request)) {
+            writes++;
+            return jsonResponse(
+              _mutationBody(users: [_user(9)], updatedAt: _savedAt),
+            );
+          }
+          return jsonResponse(
+            _read(
+              users: [_user(writes == 0 ? 2 : 9)],
+              updatedAt: writes == 0 ? _freshAt : _savedAt,
+            ),
+          );
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final target = (await api.workItemAssignees(
+          _detail(),
+          expectedUserId: 7,
+          isCurrent: () => true,
+        )).target!;
+        final future = api.updateWorkItemAssignees(
+          target,
+          assigneeIds: const ['gid://gitlab/User/9'],
+          isCurrent: () => true,
+          onMutationSent: () {
+            callbacks++;
+            if (callbackThrows) throw StateError('synthetic callback failure');
+          },
+        );
+        if (callbackThrows) {
+          await expectLater(future, throwsA(isA<StateError>()));
+        } else {
+          expect((await future).assigneeIds, ['gid://gitlab/User/9']);
+        }
+        expect(callbacks, 1);
+        expect(writes, callbackThrows ? 0 : 1);
+      }
+
+      await changed(callbackThrows: false);
+      await changed(callbackThrows: true);
+
+      var noOpCallbacks = 0;
+      final noOpAdapter = FakeAdapter((request) {
+        if (_isMutation(request)) fail('no-op sent a mutation');
+        return jsonResponse(_read(users: [_user(2)]));
+      });
+      final noOpApi = testApi(noOpAdapter);
+      addTearDown(noOpApi.close);
+      final noOpTarget = (await noOpApi.workItemAssignees(
+        _detail(),
+        expectedUserId: 7,
+        isCurrent: () => true,
+      )).target!;
+      await noOpApi.updateWorkItemAssignees(
+        noOpTarget,
+        assigneeIds: const ['gid://gitlab/User/2'],
+        isCurrent: () => true,
+        onMutationSent: () => noOpCallbacks++,
+      );
+      expect(noOpCallbacks, 0);
+      expect(noOpAdapter.requests.where(_isMutation), isEmpty);
+
+      for (final cancelled in [false, true]) {
+        var callbacks = 0;
+        var reads = 0;
+        final adapter = FakeAdapter((request) {
+          if (_isMutation(request)) fail('preflight failure sent a mutation');
+          reads++;
+          return jsonResponse(
+            _read(
+              users: [_user(2)],
+              actor: cancelled && reads > 1
+                  ? const {'id': 'gid://gitlab/User/8'}
+                  : const {'id': _actorId},
+              permissions: {
+                'readWorkItem': true,
+                'setWorkItemMetadata': cancelled || reads == 1,
+              },
+            ),
+          );
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final target = (await api.workItemAssignees(
+          _detail(),
+          expectedUserId: 7,
+          isCurrent: () => true,
+        )).target!;
+        await expectLater(
+          api.updateWorkItemAssignees(
+            target,
+            assigneeIds: const ['gid://gitlab/User/9'],
+            isCurrent: () => true,
+            onMutationSent: () => callbacks++,
+          ),
+          throwsA(
+            _failure(
+              cancelled ? FailureKind.cancelled : FailureKind.forbidden,
+            ),
+          ),
+        );
+        expect(callbacks, 0);
+        expect(adapter.requests.where(_isMutation), isEmpty);
+      }
+    },
+  );
 }

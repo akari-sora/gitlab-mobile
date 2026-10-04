@@ -11,6 +11,7 @@ import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/core/work_item_weight_models.dart';
+import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_attributes.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_weight.dart';
 
@@ -937,7 +938,6 @@ void main() {
       final panel = await _startPanel(tester, weight: 4);
       await _openPanelEditor(tester);
       final ack = Completer<void>();
-      final stale = Completer<void>();
       panel.server.holdWrite = ack;
       panel.server.rolledAfterWrite = 41;
       panel.server.completedAfterWrite = 17;
@@ -948,10 +948,7 @@ void main() {
       await tester.pump();
       await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
       await _until(tester, () => panel.server.writes == 1);
-      panel.server.staleAttributeOwn = 4;
-      panel.server.staleAttributeRolled = 10;
-      panel.server.staleAttributeCompleted = 3;
-      panel.server.holdAttribute = stale;
+      final readsAtWrite = panel.server.attributeReads;
       panel.replace(() {
         panel.detail = _shifted(
           panel.detail,
@@ -964,16 +961,16 @@ void main() {
         findsNothing,
       );
       expect(panel.server.writes, 1);
+      expect(panel.server.attributeReads, readsAtWrite);
       ack.complete();
       await _until(
         tester,
         () =>
+            panel.server.attributeReads == readsAtWrite + 1 &&
             find.text('權重：9').evaluate().isNotEmpty &&
             find.text('彙整權重：41').evaluate().isNotEmpty,
       );
       expect(find.text('已完成彙整權重：17'), findsOneWidget);
-      stale.complete();
-      await settleNetworkWidgets(tester);
       expect(find.text('權重：9'), findsOneWidget);
       expect(find.text('權重：4'), findsNothing);
       expect(find.text('彙整權重：41'), findsOneWidget);
@@ -1017,6 +1014,528 @@ void main() {
     expect(find.text('權重：4'), findsNothing);
     expect(find.text('彙整權重：10'), findsNothing);
     expect(panel.server.writes, 1);
+  });
+
+  testWidgets(
+    'Graph project and group refresh keep Weight gated through terminal',
+    (tester) async {
+      for (final group in [false, true]) {
+        final detail = _detail(group: group, widgetTypes: const {'WEIGHT'});
+        final server = _WeightServer(detail: detail, weight: 4);
+        final api = testApi(server.adapter);
+        addTearDown(api.close);
+        final apply = Completer<void>();
+        final ack = Completer<void>();
+        server.holdWriteApply = apply;
+        server.holdWrite = ack;
+        try {
+          await _pumpGraphWeight(tester, api, server, group: group);
+          await _revealGraphWeight(
+            tester,
+            find.byKey(const ValueKey('work-item-attributes')),
+          );
+          await tester.tap(find.text('屬性'));
+          await pumpUntil(
+            tester,
+            () =>
+                server.attributeReads == 1 &&
+                find
+                    .byKey(const ValueKey('work-item-weight-edit'))
+                    .evaluate()
+                    .isNotEmpty,
+          );
+          await tester.pump(const Duration(milliseconds: 500));
+          final edit = tester.widget<TextButton>(
+            find.byKey(const ValueKey('work-item-weight-edit')),
+          );
+          expect(edit.onPressed, isNotNull);
+          edit.onPressed!.call();
+          await tester.pump();
+          await pumpUntil(
+            tester,
+            () => find
+                .byKey(const ValueKey('work-item-weight-save'))
+                .evaluate()
+                .isNotEmpty,
+          );
+          await tester.pump(const Duration(milliseconds: 300));
+          await tester.enterText(
+            find.byKey(const ValueKey('work-item-weight-input')),
+            '9',
+          );
+          await tester.pump();
+          await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
+          await pumpUntil(tester, () => server.writes == 1);
+          final readsAtHandoff = server.reads;
+          final attributesAtHandoff = server.attributeReads;
+
+          final editorContext = tester.element(
+            find.byKey(const ValueKey('work-item-weight-save')),
+          );
+          Navigator.of(
+            editorContext,
+          ).removeRoute(ModalRoute.of(editorContext)!);
+          await tester.pump();
+          final detailReads = server.detailReads;
+          tester
+              .widget<IconButton>(
+                find.widgetWithIcon(IconButton, Icons.refresh).last,
+              )
+              .onPressed!
+              .call();
+          await pumpUntil(tester, () => server.detailReads > detailReads);
+          await tester.pump(const Duration(milliseconds: 300));
+
+          expect(server.reads, readsAtHandoff);
+          expect(server.attributeReads, attributesAtHandoff);
+          expect(server.writes, 1);
+          expect(
+            tester
+                .widget<TextButton>(
+                  find.byKey(const ValueKey('work-item-weight-edit')),
+                )
+                .onPressed,
+            isNull,
+          );
+          expect(
+            find.byKey(const ValueKey('work-item-weight-save')),
+            findsNothing,
+          );
+
+          apply.complete();
+          await tester.pump();
+          expect(server.reads, readsAtHandoff);
+          expect(server.attributeReads, attributesAtHandoff);
+          expect(server.writes, 1);
+          expect(
+            tester
+                .widget<TextButton>(
+                  find.byKey(const ValueKey('work-item-weight-edit')),
+                )
+                .onPressed,
+            isNull,
+          );
+
+          ack.complete();
+          await pumpUntil(
+            tester,
+            () =>
+                server.reads == readsAtHandoff + 1 &&
+                server.attributeReads == attributesAtHandoff + 1 &&
+                find.text('權重：9').evaluate().isNotEmpty,
+          );
+          expect(server.writes, 1);
+          expect(
+            tester
+                .widget<TextButton>(
+                  find.byKey(const ValueKey('work-item-weight-edit')),
+                )
+                .onPressed,
+            isNotNull,
+          );
+        } finally {
+          if (!apply.isCompleted) apply.complete();
+          if (!ack.isCompleted) ack.complete();
+        }
+      }
+    },
+  );
+
+  testWidgets(
+    'project and group delayed APPLY survive back and keep B disabled',
+    (tester) async {
+      for (final group in [false, true]) {
+        final panel = await _startPanel(tester, weight: 4, group: group);
+        await _openPanelEditor(tester);
+        final apply = Completer<void>();
+        final ack = Completer<void>();
+        panel.server.holdWriteApply = apply;
+        panel.server.holdWrite = ack;
+        await tester.enterText(
+          find.byKey(const ValueKey('work-item-weight-input')),
+          '9',
+        );
+        await tester.pump();
+        await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
+        await _until(tester, () => panel.server.writes == 1);
+        final readsAtHandoff = panel.server.reads;
+
+        await tester.pageBack();
+        await tester.pump();
+        final editBeforeRefresh = tester.widget<TextButton>(
+          find.byKey(const ValueKey('work-item-weight-edit')),
+        );
+        expect(editBeforeRefresh.onPressed, isNull);
+        expect(panel.server.reads, readsAtHandoff);
+
+        final attributesBeforeRefresh = panel.server.attributeReads;
+        panel.replace(() {
+          panel.detail = _shifted(
+            panel.detail,
+            updatedAt: DateTime.utc(2026, 10, 4),
+          );
+        });
+        await tester.pump();
+        expect(panel.server.attributeReads, attributesBeforeRefresh);
+        final editAfterRefresh = tester.widget<TextButton>(
+          find.byKey(const ValueKey('work-item-weight-edit')),
+        );
+        expect(editAfterRefresh.onPressed, isNull);
+        expect(panel.server.reads, readsAtHandoff);
+        expect(panel.server.writes, 1);
+
+        apply.complete();
+        await tester.pump();
+        expect(
+          tester
+              .widget<TextButton>(
+                find.byKey(const ValueKey('work-item-weight-edit')),
+              )
+              .onPressed,
+          isNull,
+        );
+        expect(panel.server.reads, readsAtHandoff);
+
+        final attributesBeforeSettle = panel.server.attributeReads;
+        ack.complete();
+        await _until(
+          tester,
+          () =>
+              panel.server.attributeReads == attributesBeforeSettle + 1 &&
+              find.text('權重：9').evaluate().isNotEmpty,
+        );
+        expect(panel.server.writes, 1);
+        expect(panel.server.reads, readsAtHandoff + 1);
+        expect(
+          tester
+              .widget<TextButton>(
+                find.byKey(const ValueKey('work-item-weight-edit')),
+              )
+              .onPressed,
+          isNotNull,
+        );
+      }
+    },
+  );
+
+  testWidgets('a fully disposed weight panel ignores the old terminal', (
+    tester,
+  ) async {
+    final panel = await _startPanel(tester, weight: 4);
+    await _openPanelEditor(tester);
+    final apply = Completer<void>();
+    final ack = Completer<void>();
+    panel.server.holdWriteApply = apply;
+    panel.server.holdWrite = ack;
+    await tester.enterText(
+      find.byKey(const ValueKey('work-item-weight-input')),
+      '9',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
+    await _until(tester, () => panel.server.writes == 1);
+    final readsAtHandoff = panel.server.reads;
+
+    await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+    apply.complete();
+    await tester.pump();
+    ack.complete();
+    await settleNetworkWidgets(tester);
+
+    expect(panel.server.writes, 1);
+    expect(panel.server.reads, readsAtHandoff);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'disposed project and group parents cannot settle B held before APPLY',
+    (tester) async {
+      for (final group in [false, true]) {
+        final detail = _detail(group: group, widgetTypes: const {'WEIGHT'});
+        final server = _WeightServer(detail: detail, weight: 4);
+        final sharedApi = testApi(server.adapter);
+        addTearDown(sharedApi.close);
+        final applyA = Completer<void>();
+        final ackA = Completer<void>();
+        final applyB = Completer<void>();
+        final ackB = Completer<void>();
+        server.holdWriteApply = applyA;
+        try {
+          final oldParent = await _mountIndependentPanel(
+            tester,
+            server: server,
+            detail: detail,
+            api: sharedApi,
+            expectedWeight: 4,
+          );
+          await _openPanelEditor(tester);
+          await tester.enterText(
+            find.byKey(const ValueKey('work-item-weight-input')),
+            '9',
+          );
+          await tester.pump();
+          await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
+          await _until(
+            tester,
+            () => server.writes == 1 && oldParent.weightPhases.length == 1,
+          );
+          expect(server.sent, [9]);
+          expect(oldParent.weightPhases, [WorkItemWeightWritePhase.start]);
+          final oldRoute = oldParent.route!;
+          expect(oldRoute.isActive, isTrue);
+
+          await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+          await _frames(tester);
+          expect(oldParent.mounted, isFalse);
+          expect(oldRoute.isActive, isFalse);
+
+          server.holdWriteApply = applyB;
+          final newParent = await _mountIndependentPanel(
+            tester,
+            server: server,
+            detail: detail,
+            api: sharedApi,
+            expectedWeight: 4,
+          );
+          expect(identical(oldParent, newParent), isFalse);
+          expect(identical(oldParent.owner, newParent.owner), isFalse);
+          expect(identical(oldParent.api, newParent.api), isTrue);
+          await _openPanelEditor(tester);
+          await tester.enterText(
+            find.byKey(const ValueKey('work-item-weight-input')),
+            '12',
+          );
+          await tester.pump();
+          await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
+          await _until(
+            tester,
+            () => server.writes == 2 && newParent.weightPhases.length == 1,
+          );
+          expect(server.sent, [9, 12]);
+          expect(newParent.weightPhases, [WorkItemWeightWritePhase.start]);
+          final newRoute = newParent.route!;
+          final attributesBeforeASettle = server.attributeReads;
+
+          server.holdWrite = ackA;
+          applyA.complete();
+          await _until(
+            tester,
+            () => server.weight == 9 && server.holdWrite == null,
+          );
+          ackA.complete();
+          await _until(tester, () => oldParent.weightPhases.length == 2);
+
+          final save = find.byKey(const ValueKey('work-item-weight-save'));
+          expect(oldParent.weightPhases, [
+            WorkItemWeightWritePhase.start,
+            WorkItemWeightWritePhase.settle,
+          ]);
+          expect(newParent.weightPhases, [WorkItemWeightWritePhase.start]);
+          expect(newRoute.isActive, isTrue);
+          expect(tester.widget<FilledButton>(save).onPressed, isNull);
+          expect(
+            find.descendant(
+              of: save,
+              matching: find.byType(CircularProgressIndicator),
+            ),
+            findsOneWidget,
+          );
+          expect(server.attributeReads, attributesBeforeASettle);
+          expect(find.text('權重：9'), findsNothing);
+          expect(find.text('權重：12'), findsNothing);
+          expect(tester.takeException(), isNull);
+
+          server.holdWrite = ackB;
+          applyB.complete();
+          await _until(
+            tester,
+            () => server.weight == 12 && server.holdWrite == null,
+          );
+          ackB.complete();
+          await _until(
+            tester,
+            () =>
+                newParent.weightPhases.length == 2 &&
+                server.attributeReads == attributesBeforeASettle + 1 &&
+                find.text('權重：12').evaluate().isNotEmpty,
+          );
+          expect(newParent.weightPhases, [
+            WorkItemWeightWritePhase.start,
+            WorkItemWeightWritePhase.settle,
+          ]);
+          expect(find.text('權重：9'), findsNothing);
+          expect(server.sent, [9, 12]);
+          expect(tester.takeException(), isNull);
+        } finally {
+          if (!applyA.isCompleted) applyA.complete();
+          if (!ackA.isCompleted) ackA.complete();
+          if (!applyB.isCompleted) applyB.complete();
+          if (!ackB.isCompleted) ackB.complete();
+        }
+      }
+    },
+  );
+
+  testWidgets(
+    'disposed project and group API owners cannot settle B held before ACK',
+    (tester) async {
+      for (final group in [false, true]) {
+        final detail = _detail(group: group, widgetTypes: const {'WEIGHT'});
+        final server = _WeightServer(detail: detail, weight: 4);
+        final apiA = testApi(server.adapter);
+        final apiB = testApi(server.adapter);
+        addTearDown(apiA.close);
+        addTearDown(apiB.close);
+        final ackA = Completer<void>();
+        final ackB = Completer<void>();
+        server.holdWrite = ackA;
+        try {
+          final oldParent = await _mountIndependentPanel(
+            tester,
+            server: server,
+            detail: detail,
+            api: apiA,
+            expectedWeight: 4,
+          );
+          await _openPanelEditor(tester);
+          await tester.enterText(
+            find.byKey(const ValueKey('work-item-weight-input')),
+            '9',
+          );
+          await tester.pump();
+          await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
+          await _until(
+            tester,
+            () =>
+                server.writes == 1 &&
+                server.weight == 9 &&
+                oldParent.weightPhases.length == 1,
+          );
+          expect(server.sent, [9]);
+          expect(oldParent.weightPhases, [WorkItemWeightWritePhase.start]);
+          final oldRoute = oldParent.route!;
+
+          await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+          await _frames(tester);
+          expect(oldParent.mounted, isFalse);
+          expect(oldRoute.isActive, isFalse);
+
+          final newParent = await _mountIndependentPanel(
+            tester,
+            server: server,
+            detail: detail,
+            api: apiB,
+            expectedWeight: 9,
+          );
+          expect(identical(oldParent, newParent), isFalse);
+          expect(identical(oldParent.owner, newParent.owner), isFalse);
+          expect(identical(oldParent.api, newParent.api), isFalse);
+          server.holdWrite = ackB;
+          await _openPanelEditor(tester);
+          await tester.enterText(
+            find.byKey(const ValueKey('work-item-weight-input')),
+            '12',
+          );
+          await tester.pump();
+          await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
+          await _until(
+            tester,
+            () =>
+                server.writes == 2 &&
+                server.weight == 12 &&
+                newParent.weightPhases.length == 1,
+          );
+          expect(server.sent, [9, 12]);
+          expect(newParent.weightPhases, [WorkItemWeightWritePhase.start]);
+          final newRoute = newParent.route!;
+          final attributesBeforeASettle = server.attributeReads;
+
+          ackA.complete();
+          await _until(tester, () => oldParent.weightPhases.length == 2);
+
+          final save = find.byKey(const ValueKey('work-item-weight-save'));
+          expect(oldParent.weightPhases, [
+            WorkItemWeightWritePhase.start,
+            WorkItemWeightWritePhase.settle,
+          ]);
+          expect(newParent.weightPhases, [WorkItemWeightWritePhase.start]);
+          expect(newRoute.isActive, isTrue);
+          expect(tester.widget<FilledButton>(save).onPressed, isNull);
+          expect(
+            find.descendant(
+              of: save,
+              matching: find.byType(CircularProgressIndicator),
+            ),
+            findsOneWidget,
+          );
+          expect(server.attributeReads, attributesBeforeASettle);
+          expect(find.text('權重：12'), findsNothing);
+          expect(find.text('權重：9'), findsWidgets);
+          expect(tester.takeException(), isNull);
+
+          ackB.complete();
+          await _until(
+            tester,
+            () =>
+                newParent.weightPhases.length == 2 &&
+                server.attributeReads == attributesBeforeASettle + 1 &&
+                find.text('權重：12').evaluate().isNotEmpty,
+          );
+          expect(newParent.weightPhases, [
+            WorkItemWeightWritePhase.start,
+            WorkItemWeightWritePhase.settle,
+          ]);
+          expect(find.text('權重：9'), findsNothing);
+          expect(server.sent, [9, 12]);
+          expect(tester.takeException(), isNull);
+        } finally {
+          if (!ackA.isCompleted) ackA.complete();
+          if (!ackB.isCompleted) ackB.complete();
+        }
+      }
+    },
+  );
+
+  testWidgets('weight callback failure settles once without a send', (
+    tester,
+  ) async {
+    final detail = _detail();
+    final server = _WeightServer(detail: detail, weight: 4);
+    final api = testApi(server.adapter);
+    addTearDown(api.close);
+    final phases = <WorkItemWeightWritePhase>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: WorkItemWeightControl(
+            account: _account(7),
+            api: api,
+            detail: detail,
+            onSaved: (_) => fail('callback failure published a save'),
+            onWeightWrite: (phase, token, account, owner, expected) {
+              phases.add(phase);
+              if (phase == WorkItemWeightWritePhase.start) {
+                throw StateError('synthetic callback failure');
+              }
+            },
+          ),
+        ),
+      ),
+    );
+    await _open(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('work-item-weight-input')),
+      '9',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
+    await _until(tester, () => phases.length == 2);
+
+    expect(phases, [
+      WorkItemWeightWritePhase.start,
+      WorkItemWeightWritePhase.settle,
+    ]);
+    expect(server.writes, 0);
   });
 
   testWidgets('a revision before send closes the editor without a mutation', (
@@ -1114,165 +1633,175 @@ void main() {
     expect(find.text('彙整權重：41'), findsNothing);
   });
 
-  testWidgets(
-    'a new control keeps its pending write when the previous save settles',
-    (tester) async {
-      final panel = await _startPanel(tester, weight: 4);
-      await _openPanelEditor(tester);
-      final ackA = Completer<void>();
-      panel.server.holdWrite = ackA;
-      await tester.enterText(
-        find.byKey(const ValueKey('work-item-weight-input')),
-        '9',
+  testWidgets('API replacement waits for A terminal before starting B', (
+    tester,
+  ) async {
+    final panel = await _startPanel(tester, weight: 4);
+    await _openPanelEditor(tester);
+    final ackA = Completer<void>();
+    panel.server.holdWrite = ackA;
+    await tester.enterText(
+      find.byKey(const ValueKey('work-item-weight-input')),
+      '9',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
+    await _until(tester, () => panel.server.writes == 1);
+
+    panel.server.staleAttributeOwn = 4;
+    panel.server.staleAttributeRolled = 10;
+    panel.server.staleAttributeCompleted = 3;
+    panel.replace(() => panel.api = testApi(panel.server.adapter));
+    addTearDown(panel.api.close);
+    await _frames(tester);
+    await _until(tester, () => find.text('權重：4').evaluate().isNotEmpty);
+    expect(find.text('權重：9'), findsNothing);
+    expect(panel.server.writes, 1);
+    expect(
+      tester
+          .widget<TextButton>(
+            find.byKey(const ValueKey('work-item-weight-edit')),
+          )
+          .onPressed,
+      isNull,
+    );
+    ackA.complete();
+    await _until(
+      tester,
+      () =>
+          tester
+              .widget<TextButton>(
+                find.byKey(const ValueKey('work-item-weight-edit')),
+              )
+              .onPressed !=
+          null,
+    );
+
+    final ackB = Completer<void>();
+    panel.server.holdWrite = ackB;
+    panel.server.rolledAfterWrite = 41;
+    panel.server.completedAfterWrite = 17;
+    await _openPanelEditor(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('work-item-weight-input')),
+      '12',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
+    await _until(tester, () => panel.server.writes == 2);
+    expect(panel.server.sent, [9, 12]);
+
+    final readsAtWrite = panel.server.attributeReads;
+    panel.replace(() {
+      panel.detail = _shifted(
+        panel.detail,
+        updatedAt: DateTime.utc(2026, 10, 5),
       );
-      await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
-      await _until(tester, () => panel.server.writes == 1);
+    });
+    await _frames(tester);
+    expect(panel.server.attributeReads, readsAtWrite);
+    expect(find.text('權重：9'), findsNothing);
+    expect(panel.server.writes, 2);
 
-      panel.server.staleAttributeOwn = 4;
-      panel.server.staleAttributeRolled = 10;
-      panel.server.staleAttributeCompleted = 3;
-      panel.replace(() => panel.api = testApi(panel.server.adapter));
-      addTearDown(panel.api.close);
-      await _frames(tester);
-      await _until(tester, () => find.text('權重：4').evaluate().isNotEmpty);
-      expect(find.text('權重：9'), findsNothing);
-      expect(panel.server.writes, 1);
+    final readsBeforeSettle = panel.server.attributeReads;
+    ackB.complete();
+    await _until(
+      tester,
+      () =>
+          find.text('權重：12').evaluate().isNotEmpty &&
+          find.text('彙整權重：41').evaluate().isNotEmpty &&
+          panel.server.attributeReads > readsBeforeSettle,
+    );
+    expect(find.text('已完成彙整權重：17'), findsOneWidget);
+    expect(find.text('權重：4'), findsNothing);
+    expect(find.text('權重：9'), findsNothing);
+    expect(panel.server.writes, 2);
+    expect(panel.server.sent, [9, 12]);
+  });
 
-      final ackB = Completer<void>();
-      panel.server.holdWrite = ackB;
-      panel.server.rolledAfterWrite = 41;
-      panel.server.completedAfterWrite = 17;
-      await _openPanelEditor(tester);
-      await tester.enterText(
-        find.byKey(const ValueKey('work-item-weight-input')),
-        '12',
+  testWidgets('owner away and back retains A gate before starting B', (
+    tester,
+  ) async {
+    final panel = await _startPanel(tester, weight: 4);
+    await _openPanelEditor(tester);
+    final ackA = Completer<void>();
+    panel.server.holdWrite = ackA;
+    await tester.enterText(
+      find.byKey(const ValueKey('work-item-weight-input')),
+      '9',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
+    await _until(tester, () => panel.server.writes == 1);
+
+    panel.replace(() => panel.current = false);
+    panel.owner.ping();
+    await _frames(tester);
+    expect(find.byKey(const ValueKey('work-item-weight-input')), findsNothing);
+    panel.replace(() => panel.current = true);
+    panel.owner.ping();
+    await _frames(tester);
+    final readsBeforeReturn = panel.server.attributeReads;
+    await tester.tap(find.text('屬性'));
+    await tester.pump();
+    await tester.tap(find.text('屬性'));
+    await tester.pump();
+    expect(panel.server.attributeReads, readsBeforeReturn);
+    expect(
+      tester
+          .widget<TextButton>(
+            find.byKey(const ValueKey('work-item-weight-edit')),
+          )
+          .onPressed,
+      isNull,
+    );
+    expect(panel.server.writes, 1);
+    ackA.complete();
+    await _until(
+      tester,
+      () =>
+          panel.server.attributeReads == readsBeforeReturn + 1 &&
+          find.text('權重：9').evaluate().isNotEmpty,
+    );
+
+    final ackB = Completer<void>();
+    panel.server.holdWrite = ackB;
+    panel.server.rolledAfterWrite = 41;
+    panel.server.completedAfterWrite = 17;
+    await _openPanelEditor(tester);
+    await tester.enterText(
+      find.byKey(const ValueKey('work-item-weight-input')),
+      '12',
+    );
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
+    await _until(tester, () => panel.server.writes == 2);
+
+    final readsAtWrite = panel.server.attributeReads;
+    panel.replace(() {
+      panel.detail = _shifted(
+        panel.detail,
+        updatedAt: DateTime.utc(2026, 10, 6),
       );
-      await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
-      await _until(tester, () => panel.server.writes == 2);
-      expect(panel.server.sent, [9, 12]);
+    });
+    await _frames(tester);
+    expect(panel.server.attributeReads, readsAtWrite);
+    expect(panel.server.writes, 2);
+    expect(panel.server.sent, [9, 12]);
 
-      final poison = Completer<void>();
-      panel.server.staleAttributeOwn = 1;
-      panel.server.staleAttributeRolled = 2;
-      panel.server.staleAttributeCompleted = 3;
-      panel.server.holdAttribute = poison;
-      final readsAtWrite = panel.server.attributeReads;
-      panel.replace(() {
-        panel.detail = _shifted(
-          panel.detail,
-          updatedAt: DateTime.utc(2026, 10, 5),
-        );
-      });
-      await _until(tester, () => panel.server.attributeReads > readsAtWrite);
-      ackA.complete();
-      await settleNetworkWidgets(tester);
-      expect(panel.server.attributeReads, readsAtWrite + 1);
-      poison.complete();
-      await settleNetworkWidgets(tester);
-      expect(find.text('權重：1'), findsNothing);
-      expect(find.text('權重：9'), findsNothing);
-      expect(panel.server.writes, 2);
-
-      final readsBeforeSettle = panel.server.attributeReads;
-      ackB.complete();
-      await _until(
-        tester,
-        () =>
-            find.text('權重：12').evaluate().isNotEmpty &&
-            find.text('彙整權重：41').evaluate().isNotEmpty &&
-            panel.server.attributeReads > readsBeforeSettle,
-      );
-      expect(find.text('已完成彙整權重：17'), findsOneWidget);
-      expect(find.text('權重：4'), findsNothing);
-      expect(find.text('權重：9'), findsNothing);
-      expect(panel.server.writes, 2);
-      expect(panel.server.sent, [9, 12]);
-    },
-  );
-
-  testWidgets(
-    'owner away and back drops the old settle without clearing the new write',
-    (tester) async {
-      final panel = await _startPanel(tester, weight: 4);
-      await _openPanelEditor(tester);
-      final ackA = Completer<void>();
-      panel.server.holdWrite = ackA;
-      await tester.enterText(
-        find.byKey(const ValueKey('work-item-weight-input')),
-        '9',
-      );
-      await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
-      await _until(tester, () => panel.server.writes == 1);
-
-      panel.replace(() => panel.current = false);
-      panel.owner.ping();
-      await _frames(tester);
-      expect(
-        find.byKey(const ValueKey('work-item-weight-input')),
-        findsNothing,
-      );
-      panel.replace(() => panel.current = true);
-      panel.owner.ping();
-      await _frames(tester);
-      await tester.tap(find.text('屬性'));
-      await tester.pump();
-      await tester.tap(find.text('屬性'));
-      await tester.pump();
-      await _until(tester, () => find.text('權重：9').evaluate().isNotEmpty);
-      expect(panel.server.writes, 1);
-
-      final ackB = Completer<void>();
-      panel.server.holdWrite = ackB;
-      panel.server.rolledAfterWrite = 41;
-      panel.server.completedAfterWrite = 17;
-      await _openPanelEditor(tester);
-      await tester.enterText(
-        find.byKey(const ValueKey('work-item-weight-input')),
-        '12',
-      );
-      await tester.pump();
-      await tester.tap(find.byKey(const ValueKey('work-item-weight-save')));
-      await _until(tester, () => panel.server.writes == 2);
-
-      final poison = Completer<void>();
-      panel.server.staleAttributeOwn = 1;
-      panel.server.staleAttributeRolled = 2;
-      panel.server.staleAttributeCompleted = 3;
-      panel.server.holdAttribute = poison;
-      final readsAtWrite = panel.server.attributeReads;
-      panel.replace(() {
-        panel.detail = _shifted(
-          panel.detail,
-          updatedAt: DateTime.utc(2026, 10, 6),
-        );
-      });
-      await _until(tester, () => panel.server.attributeReads > readsAtWrite);
-      ackA.complete();
-      await settleNetworkWidgets(tester);
-      expect(panel.server.attributeReads, readsAtWrite + 1);
-      poison.complete();
-      await settleNetworkWidgets(tester);
-      expect(find.text('權重：1'), findsNothing);
-      expect(panel.server.writes, 2);
-      expect(panel.server.sent, [9, 12]);
-
-      final readsBeforeSettle = panel.server.attributeReads;
-      ackB.complete();
-      await _until(
-        tester,
-        () =>
-            find.text('權重：12').evaluate().isNotEmpty &&
-            find.text('彙整權重：41').evaluate().isNotEmpty &&
-            panel.server.attributeReads > readsBeforeSettle,
-      );
-      expect(find.text('已完成彙整權重：17'), findsOneWidget);
-      expect(panel.server.writes, 2);
-      expect(panel.server.sent, [9, 12]);
-    },
-  );
+    final readsBeforeSettle = panel.server.attributeReads;
+    ackB.complete();
+    await _until(
+      tester,
+      () =>
+          find.text('權重：12').evaluate().isNotEmpty &&
+          find.text('彙整權重：41').evaluate().isNotEmpty &&
+          panel.server.attributeReads > readsBeforeSettle,
+    );
+    expect(find.text('已完成彙整權重：17'), findsOneWidget);
+    expect(panel.server.writes, 2);
+    expect(panel.server.sent, [9, 12]);
+  });
 }
 
 Future<void> _frames(WidgetTester tester) async {
@@ -1308,10 +1837,12 @@ Future<void> _dropLateSave(
 }
 
 Future<void> _until(WidgetTester tester, bool Function() ready) async {
-  for (var attempt = 0; attempt < 30 && !ready(); attempt++) {
-    await tester.pump(const Duration(milliseconds: 1));
-  }
-  expect(ready(), isTrue);
+  await pumpUntil(
+    tester,
+    ready,
+    step: const Duration(milliseconds: 1),
+    realDelay: const Duration(milliseconds: 1),
+  );
 }
 
 Finder _weightBodyScroll() {
@@ -1436,8 +1967,9 @@ Future<_PanelState> _startPanel(
   WidgetTester tester, {
   required int? weight,
   bool expand = true,
+  bool group = false,
 }) async {
-  final detail = _detail(widgetTypes: const {'WEIGHT'});
+  final detail = _detail(group: group, widgetTypes: const {'WEIGHT'});
   final server = _WeightServer(detail: detail, weight: weight);
   await tester.pumpWidget(
     _PanelHarness(key: UniqueKey(), server: server, detail: detail),
@@ -1455,6 +1987,33 @@ Future<_PanelState> _startPanel(
   return state;
 }
 
+Future<_PanelState> _mountIndependentPanel(
+  WidgetTester tester, {
+  required _WeightServer server,
+  required WorkItemGraphDetail detail,
+  required GitLabApi api,
+  required int expectedWeight,
+}) async {
+  await tester.pumpWidget(
+    _PanelHarness(
+      key: UniqueKey(),
+      server: server,
+      detail: detail,
+      api: api,
+      observeWeightLifecycle: true,
+    ),
+  );
+  final state = tester.state<_PanelState>(find.byType(_PanelHarness));
+  await tester.pump();
+  await tester.tap(find.text('屬性'));
+  await tester.pump();
+  await _until(
+    tester,
+    () => find.text('權重：$expectedWeight').evaluate().isNotEmpty,
+  );
+  return state;
+}
+
 Future<void> _openPanelEditor(WidgetTester tester) async {
   await tester.pump(const Duration(milliseconds: 300));
   final edit = find.byKey(const ValueKey('work-item-weight-edit'));
@@ -1468,6 +2027,51 @@ Future<void> _openPanelEditor(WidgetTester tester) async {
         .evaluate()
         .isNotEmpty,
   );
+}
+
+Future<void> _pumpGraphWeight(
+  WidgetTester tester,
+  GitLabApi api,
+  _WeightServer server, {
+  required bool group,
+}) async {
+  await tester.pumpWidget(
+    MaterialApp(
+      home: group
+          ? GraphWorkItemDetailPage.namespace(
+              account: _account(7),
+              api: api,
+              namespacePath: _group.fullPath,
+              expectedNamespaceId: _group.id,
+              iid: server.detail.summary.iid,
+            )
+          : GraphWorkItemDetailPage.project(
+              account: _account(7),
+              api: api,
+              project: Project.fromJson({
+                ...projectJson(42),
+                'path_with_namespace': _project.fullPath,
+              }),
+              iid: server.detail.summary.iid,
+            ),
+    ),
+  );
+  await pumpUntil(
+    tester,
+    () =>
+        server.detailReads == 1 &&
+        find.text('Fresh weight item').evaluate().isNotEmpty,
+  );
+  await settleNetworkWidgets(tester);
+}
+
+Future<void> _revealGraphWeight(WidgetTester tester, Finder finder) async {
+  for (var step = 0; step < 50; step++) {
+    if (finder.hitTestable().evaluate().isNotEmpty) return;
+    await tester.drag(find.byType(Scrollable).last, const Offset(0, -320));
+    await tester.pump();
+  }
+  expect(finder.hitTestable(), findsWidgets);
 }
 
 WorkItemGraphDetail _detail({
@@ -1615,10 +2219,18 @@ Account _account(int id) => Account(
 );
 
 class _PanelHarness extends StatefulWidget {
-  const _PanelHarness({super.key, required this.server, required this.detail});
+  const _PanelHarness({
+    super.key,
+    required this.server,
+    required this.detail,
+    this.api,
+    this.observeWeightLifecycle = false,
+  });
 
   final _WeightServer server;
   final WorkItemGraphDetail detail;
+  final GitLabApi? api;
+  final bool observeWeightLifecycle;
 
   @override
   State<_PanelHarness> createState() => _PanelState();
@@ -1629,13 +2241,27 @@ class _PanelState extends State<_PanelHarness> {
   _Owner owner = _Owner();
   var current = true;
   late Account account = _account(7);
-  late GitLabApi api = testApi(widget.server.adapter);
+  late GitLabApi api = widget.api ?? testApi(widget.server.adapter);
   late WorkItemGraphDetail detail = widget.detail;
   Completer<void>? pendingAck;
+  final weightPhases = <WorkItemWeightWritePhase>[];
+  Route<dynamic>? route;
 
   _WeightServer get server => widget.server;
 
   void replace(VoidCallback change) => setState(change);
+
+  void _captureRoute(Route<dynamic> opened) => route = opened;
+
+  void _captureWeightPhase(
+    WorkItemWeightWritePhase phase,
+    Object token,
+    Account account,
+    GitLabApi api,
+    WorkItemGraphDetail detail,
+  ) {
+    weightPhases.add(phase);
+  }
 
   @override
   void dispose() {
@@ -1657,6 +2283,10 @@ class _PanelState extends State<_PanelHarness> {
               isCurrent: () =>
                   current && generation.value == 7 && account.user.id == 7,
               ownerChanges: owner,
+              onRoute: widget.observeWeightLifecycle ? _captureRoute : null,
+              onWeightWrite: widget.observeWeightLifecycle
+                  ? _captureWeightPhase
+                  : null,
             ),
           ],
         ),
@@ -1774,6 +2404,7 @@ class _WeightServer {
   int? rolledAfterWrite;
   int? completedAfterWrite;
   Completer<void>? holdRead;
+  Completer<void>? holdWriteApply;
   Completer<void>? holdWrite;
   Completer<void>? holdAttribute;
   int? staleAttributeOwn;
@@ -1782,6 +2413,7 @@ class _WeightServer {
   var reads = 0;
   var writes = 0;
   var attributeReads = 0;
+  var detailReads = 0;
   final sent = <Object?>[];
   late final FakeAdapter adapter = FakeAdapter(_respond);
 
@@ -1791,6 +2423,9 @@ class _WeightServer {
     if (query is! String) throw StateError('Missing GraphQL query');
     final operation = body['operationName'];
     final name = operation is String ? operation : '';
+    final isDetail =
+        query.contains('MobileProjectWorkItem') ||
+        query.contains('MobileNamespaceWorkItem');
     final isWrite =
         name == 'MobileSetWorkItemWeight' ||
         query.contains('MobileSetWorkItemWeight');
@@ -1803,6 +2438,10 @@ class _WeightServer {
         !isAttribute &&
         (name == 'MobileWorkItemWeight' ||
             query.contains('MobileWorkItemWeight'));
+    if (isDetail) {
+      detailReads++;
+      return jsonResponse(_detailEnvelope());
+    }
     if (!isRead && !isWrite && !isAttribute) {
       throw StateError('Unexpected weight operation: $name');
     }
@@ -1879,6 +2518,9 @@ class _WeightServer {
     if (desired != null && desired is! int) {
       throw StateError('Weight must be an int or null');
     }
+    final applyGate = holdWriteApply;
+    holdWriteApply = null;
+    if (applyGate != null) await applyGate.future;
     weight = desired as int?;
     if (rolledAfterWrite != null) {
       rolled = rolledAfterWrite;
@@ -1917,6 +2559,34 @@ class _WeightServer {
       },
     ];
     return item;
+  }
+
+  Map<String, Object?> _detailEnvelope() {
+    final item = _workItem();
+    final summary = detail.summary;
+    if (summary.project == null) {
+      return {
+        'data': {
+          'namespace': {
+            'id': summary.namespace!.id,
+            'fullPath': summary.namespace!.fullPath,
+            'workItem': item,
+          },
+        },
+      };
+    }
+    return {
+      'data': {
+        'project': {
+          'id': summary.project!.id,
+          'fullPath': summary.project!.fullPath,
+          'workItems': {
+            'nodes': [item],
+            'pageInfo': {'hasNextPage': false, 'endCursor': null},
+          },
+        },
+      },
+    };
   }
 
   Map<String, Object?> _workItem() {

@@ -26,6 +26,7 @@ class WorkItemAssigneesControl extends StatefulWidget {
     this.ownerChanges,
     this.onRoute,
     this.onAssigneesWrite,
+    this.writePending = false,
   });
 
   final Account account;
@@ -37,6 +38,7 @@ class WorkItemAssigneesControl extends StatefulWidget {
   final ValueChanged<Route<dynamic>>? onRoute;
   final void Function(WorkItemAssigneesWritePhase phase, Object token)?
   onAssigneesWrite;
+  final bool writePending;
 
   @override
   State<WorkItemAssigneesControl> createState() =>
@@ -52,6 +54,7 @@ class _WorkItemAssigneesControlState extends State<WorkItemAssigneesControl> {
 
   bool _current(int epoch) =>
       mounted && epoch == _epoch && (widget.isCurrent?.call() ?? true);
+  bool get _writePending => widget.writePending || !_phaseSettled;
 
   bool _resourceChanged(WorkItemAssigneesControl other) {
     final left = widget.detail.summary;
@@ -90,11 +93,6 @@ class _WorkItemAssigneesControlState extends State<WorkItemAssigneesControl> {
   void dispose() {
     widget.ownerChanges?.removeListener(_ownerChanged);
     _epoch++;
-    final token = _phaseToken;
-    if (token != null && !_phaseSettled) {
-      _phaseSettled = true;
-      widget.onAssigneesWrite?.call(WorkItemAssigneesWritePhase.settle, token);
-    }
     _editorRoute = null;
     super.dispose();
   }
@@ -130,10 +128,12 @@ class _WorkItemAssigneesControlState extends State<WorkItemAssigneesControl> {
   }
 
   Future<void> _open() async {
-    if (_openingEpoch != null || _editorRoute != null) return;
+    if (_openingEpoch != null || _editorRoute != null || _writePending) return;
     final epoch = _epoch;
     final api = widget.api;
     final detail = widget.detail;
+    final onWrite = widget.onAssigneesWrite;
+    final operationCurrent = widget.isCurrent;
     setState(() => _openingEpoch = epoch);
     try {
       final access = await api.workItemAssignees(
@@ -149,18 +149,20 @@ class _WorkItemAssigneesControlState extends State<WorkItemAssigneesControl> {
           access: access,
           accountKey: widget.account.key,
           isCurrent: () => _current(epoch) && identical(api, widget.api),
+          operationCurrent: () => operationCurrent?.call() ?? true,
           onPhase: (phase, token) {
-            if (!mounted) return;
             if (phase == WorkItemAssigneesWritePhase.start) {
-              if (!_current(epoch)) return;
+              if (!_current(epoch) || !_phaseSettled) return;
               _phaseToken = token;
               _phaseSettled = false;
-              widget.onAssigneesWrite?.call(phase, token);
+              onWrite?.call(phase, token);
+              if (mounted) setState(() {});
               return;
             }
             if (_phaseSettled || !identical(_phaseToken, token)) return;
             _phaseSettled = true;
-            widget.onAssigneesWrite?.call(phase, token);
+            onWrite?.call(phase, token);
+            if (mounted) setState(() {});
           },
           onSaved: (snapshot) {
             if (!_current(epoch) || !identical(api, widget.api)) return;
@@ -191,8 +193,14 @@ class _WorkItemAssigneesControlState extends State<WorkItemAssigneesControl> {
       alignment: Alignment.centerLeft,
       child: TextButton(
         key: const ValueKey('work-item-assignees-edit'),
-        onPressed: _openingEpoch != null ? null : _open,
-        child: Text(_openingEpoch != null ? '讀取負責人…' : '變更負責人'),
+        onPressed: _openingEpoch != null || _writePending ? null : _open,
+        child: Text(
+          _writePending
+              ? '變更中…'
+              : _openingEpoch != null
+              ? '讀取負責人…'
+              : '變更負責人',
+        ),
       ),
     );
   }
@@ -228,6 +236,7 @@ class _AssigneeEditor extends StatefulWidget {
     required this.access,
     required this.accountKey,
     required this.isCurrent,
+    required this.operationCurrent,
     required this.onPhase,
     required this.onSaved,
   });
@@ -236,6 +245,7 @@ class _AssigneeEditor extends StatefulWidget {
   final WorkItemAssigneeAccess access;
   final String accountKey;
   final bool Function() isCurrent;
+  final bool Function() operationCurrent;
   final void Function(WorkItemAssigneesWritePhase phase, Object token) onPhase;
   final ValueChanged<WorkItemAssigneeSnapshot> onSaved;
 
@@ -385,18 +395,25 @@ class _AssigneeEditorState extends State<_AssigneeEditor> {
     final epochToken = Object();
     final api = widget.api;
     final accountKey = widget.accountKey;
+    var phaseStarted = false;
     setState(() {
       _writing = true;
       _locked = true;
       _saveError = null;
       _phaseToken = epochToken;
     });
-    widget.onPhase(WorkItemAssigneesWritePhase.start, epochToken);
     try {
       final saved = await api.updateWorkItemAssignees(
         target,
         assigneeIds: _selected.toList(growable: false),
-        isCurrent: widget.isCurrent,
+        isCurrent: () =>
+            phaseStarted
+                ? widget.operationCurrent()
+                : mounted && widget.isCurrent(),
+        onMutationSent: () {
+          phaseStarted = true;
+          widget.onPhase(WorkItemAssigneesWritePhase.start, epochToken);
+        },
       );
       if (!mounted || !widget.isCurrent() || !identical(api, widget.api)) {
         return;
@@ -419,7 +436,7 @@ class _AssigneeEditorState extends State<_AssigneeEditor> {
       } else if (mounted && !widget.isCurrent()) {
         setState(() => _writing = false);
       }
-      if (identical(_phaseToken, epochToken)) {
+      if (phaseStarted && identical(_phaseToken, epochToken)) {
         widget.onPhase(WorkItemAssigneesWritePhase.settle, epochToken);
       }
     }

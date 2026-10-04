@@ -157,6 +157,7 @@ extension WorkItemWeightApi on GitLabApi {
     WorkItemWeightTarget target, {
     required int? weight,
     bool Function()? isCurrent,
+    void Function()? onMutationSent,
   }) async {
     _validateWeightInput(weight);
     _requireActivityOwner(target._owner);
@@ -183,6 +184,7 @@ extension WorkItemWeightApi on GitLabApi {
     if (before.snapshot.value?.weight == weight) return before.snapshot;
 
     ({Uint8List bytes, Headers headers, int statusCode}) response;
+    onMutationSent?.call();
     try {
       response = await _send(
         instance.graphQL,

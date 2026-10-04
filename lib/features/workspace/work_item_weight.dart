@@ -43,6 +43,8 @@ class WorkItemWeightControl extends StatefulWidget {
     this.ownerChanges,
     this.onRoute,
     this.onWeightWrite,
+    this.writePending = false,
+    this.operationCurrent,
   });
 
   final Account account;
@@ -53,6 +55,8 @@ class WorkItemWeightControl extends StatefulWidget {
   final Listenable? ownerChanges;
   final ValueChanged<Route<dynamic>>? onRoute;
   final WorkItemWeightWriteListener? onWeightWrite;
+  final bool writePending;
+  final bool Function()? operationCurrent;
 
   @override
   State<WorkItemWeightControl> createState() => _WorkItemWeightControlState();
@@ -68,8 +72,10 @@ class _WorkItemWeightControlState extends State<WorkItemWeightControl> {
   Account? _writeAccount;
   GitLabApi? _writeApi;
   WorkItemGraphDetail? _writeDetail;
+  WorkItemWeightWriteListener? _writeListener;
 
   bool _current(int epoch) => mounted && epoch == _epoch && widget.isCurrent();
+  bool get _writePending => widget.writePending || _writeToken != null;
 
   @override
   void initState() {
@@ -107,7 +113,8 @@ class _WorkItemWeightControlState extends State<WorkItemWeightControl> {
     _writeAccount = account;
     _writeApi = api;
     _writeDetail = detail;
-    widget.onWeightWrite?.call(
+    _writeListener = widget.onWeightWrite;
+    _writeListener?.call(
       WorkItemWeightWritePhase.start,
       token,
       account,
@@ -117,18 +124,28 @@ class _WorkItemWeightControlState extends State<WorkItemWeightControl> {
   }
 
   void _noteWeightWriteSettled(Object token) {
+    if (!identical(_writeToken, token)) return;
     final account = _writeAccount;
     final api = _writeApi;
     final detail = _writeDetail;
-    if (identical(_writeToken, token)) _writeToken = null;
+    final listener = _writeListener;
+    _writeToken = null;
+    _writeAccount = null;
+    _writeApi = null;
+    _writeDetail = null;
+    _writeListener = null;
     if (account == null || api == null || detail == null) return;
-    widget.onWeightWrite?.call(
-      WorkItemWeightWritePhase.settle,
-      token,
-      account,
-      api,
-      detail,
-    );
+    try {
+      listener?.call(
+        WorkItemWeightWritePhase.settle,
+        token,
+        account,
+        api,
+        detail,
+      );
+    } finally {
+      if (mounted) setState(() {});
+    }
   }
 
   void _ownerChanged() {
@@ -175,8 +192,9 @@ class _WorkItemWeightControlState extends State<WorkItemWeightControl> {
   }
 
   Future<void> _open() async {
-    if (!mounted || _opening || !widget.isCurrent()) return;
+    if (!mounted || _opening || _writePending || !widget.isCurrent()) return;
     final epoch = _epoch;
+    final operationCurrent = widget.operationCurrent ?? widget.isCurrent;
     _opening = true;
     _error = null;
     setState(() {});
@@ -196,6 +214,7 @@ class _WorkItemWeightControlState extends State<WorkItemWeightControl> {
           api: widget.api,
           access: access,
           isCurrent: () => _current(epoch),
+          operationCurrent: operationCurrent,
           onWriteStarted: () => _noteWeightWriteStarted(writeToken),
           onWriteSettled: () => _noteWeightWriteSettled(writeToken),
         ),
@@ -227,7 +246,7 @@ class _WorkItemWeightControlState extends State<WorkItemWeightControl> {
           alignment: Alignment.centerLeft,
           child: TextButton.icon(
             key: const ValueKey('work-item-weight-edit'),
-            onPressed: _opening || !widget.isCurrent()
+            onPressed: _opening || _writePending || !widget.isCurrent()
                 ? null
                 : () => unawaited(_open()),
             icon: _opening
@@ -236,7 +255,13 @@ class _WorkItemWeightControlState extends State<WorkItemWeightControl> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.scale_outlined),
-            label: Text(_opening ? '讀取權重權限…' : '變更權重'),
+            label: Text(
+              _writePending
+                  ? '變更中…'
+                  : _opening
+                  ? '讀取權重權限…'
+                  : '變更權重',
+            ),
           ),
         ),
         if (_error != null)
@@ -257,6 +282,7 @@ class WorkItemWeightEditor extends StatefulWidget {
     required this.account,
     required this.api,
     required this.access,
+    required this.operationCurrent,
     this.isCurrent = _alwaysCurrent,
     this.onWriteStarted,
     this.onWriteSettled,
@@ -266,6 +292,7 @@ class WorkItemWeightEditor extends StatefulWidget {
   final GitLabApi api;
   final WorkItemWeightAccess access;
   final bool Function() isCurrent;
+  final bool Function() operationCurrent;
   final VoidCallback? onWriteStarted;
   final VoidCallback? onWriteSettled;
 
@@ -342,17 +369,24 @@ class _WorkItemWeightEditorState extends State<WorkItemWeightEditor> {
     }
     final notifyStart = widget.onWriteStarted;
     final notifySettle = widget.onWriteSettled;
+    var phaseStarted = false;
     setState(() {
       _writing = true;
       _inputError = null;
       _saveError = null;
     });
-    notifyStart?.call();
     try {
       final saved = await widget.api.updateWorkItemWeight(
         target,
         weight: desired,
-        isCurrent: () => mounted && widget.isCurrent(),
+        isCurrent: () =>
+            phaseStarted
+                ? widget.operationCurrent()
+                : mounted && widget.isCurrent(),
+        onMutationSent: () {
+          phaseStarted = true;
+          notifyStart?.call();
+        },
       );
       if (!mounted || !widget.isCurrent()) return;
       Navigator.of(context).pop(saved);
@@ -371,7 +405,7 @@ class _WorkItemWeightEditorState extends State<WorkItemWeightEditor> {
         _saveError = _saveFailure(safeFailure(error));
       });
     } finally {
-      notifySettle?.call();
+      if (phaseStarted) notifySettle?.call();
     }
   }
 

@@ -10,6 +10,17 @@ import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_milestone_models.dart';
 import '../../shared/workspace_ui.dart';
 
+enum WorkItemMilestoneWritePhase { start, settle }
+
+typedef WorkItemMilestoneWriteListener =
+    void Function(
+      WorkItemMilestoneWritePhase phase,
+      Object token,
+      Account account,
+      GitLabApi api,
+      WorkItemGraphDetail detail,
+    );
+
 /// Editing is requested from the existing lazy attribute row. Displayed
 /// attribute data is never used as permission or as a writable target.
 class WorkItemMilestoneControl extends StatefulWidget {
@@ -22,6 +33,9 @@ class WorkItemMilestoneControl extends StatefulWidget {
     this.isCurrent,
     this.ownerChanges,
     this.onRoute,
+    this.onMilestoneWrite,
+    this.writePending = false,
+    this.operationCurrent,
   });
 
   final Account account;
@@ -31,6 +45,9 @@ class WorkItemMilestoneControl extends StatefulWidget {
   final bool Function()? isCurrent;
   final Listenable? ownerChanges;
   final ValueChanged<Route<dynamic>>? onRoute;
+  final WorkItemMilestoneWriteListener? onMilestoneWrite;
+  final bool writePending;
+  final bool Function()? operationCurrent;
 
   @override
   State<WorkItemMilestoneControl> createState() =>
@@ -43,9 +60,15 @@ class _WorkItemMilestoneControlState extends State<WorkItemMilestoneControl> {
   ApiFailure? _error;
   Route<WorkItemMilestoneSnapshot>? _route;
   NavigatorState? _navigator;
+  Object? _writeToken;
+  Account? _writeAccount;
+  GitLabApi? _writeApi;
+  WorkItemGraphDetail? _writeDetail;
+  WorkItemMilestoneWriteListener? _writeListener;
 
   bool _current(int epoch) =>
       mounted && epoch == _epoch && (widget.isCurrent?.call() ?? true);
+  bool get _writePending => widget.writePending || _writeToken != null;
 
   @override
   void initState() {
@@ -84,6 +107,49 @@ class _WorkItemMilestoneControlState extends State<WorkItemMilestoneControl> {
     super.dispose();
   }
 
+  void _noteMilestoneWriteStarted(Object token) {
+    _writeToken = token;
+    final account = widget.account;
+    final api = widget.api;
+    final detail = widget.detail;
+    _writeAccount = account;
+    _writeApi = api;
+    _writeDetail = detail;
+    _writeListener = widget.onMilestoneWrite;
+    _writeListener?.call(
+      WorkItemMilestoneWritePhase.start,
+      token,
+      account,
+      api,
+      detail,
+    );
+  }
+
+  void _noteMilestoneWriteSettled(Object token) {
+    if (!identical(_writeToken, token)) return;
+    final account = _writeAccount;
+    final api = _writeApi;
+    final detail = _writeDetail;
+    final listener = _writeListener;
+    _writeToken = null;
+    _writeAccount = null;
+    _writeApi = null;
+    _writeDetail = null;
+    _writeListener = null;
+    if (account == null || api == null || detail == null) return;
+    try {
+      listener?.call(
+        WorkItemMilestoneWritePhase.settle,
+        token,
+        account,
+        api,
+        detail,
+      );
+    } finally {
+      if (mounted) setState(() {});
+    }
+  }
+
   void _ownerChanged() {
     if (widget.isCurrent?.call() ?? true) return;
     _invalidate();
@@ -114,8 +180,13 @@ class _WorkItemMilestoneControlState extends State<WorkItemMilestoneControl> {
   String get _resourceLabel => _milestoneResourceLabel(widget.detail.summary);
 
   Future<void> _open() async {
-    if (_opening || !(widget.isCurrent?.call() ?? true)) return;
+    if (_opening ||
+        _writePending ||
+        !(widget.isCurrent?.call() ?? true)) {
+      return;
+    }
     final epoch = _epoch;
+    final operationCurrent = widget.operationCurrent ?? widget.isCurrent;
     setState(() {
       _opening = true;
       _error = null;
@@ -128,12 +199,16 @@ class _WorkItemMilestoneControlState extends State<WorkItemMilestoneControl> {
       );
       if (!mounted || !_current(epoch)) return;
       final navigator = Navigator.of(context);
+      final writeToken = Object();
       final route = MaterialPageRoute<WorkItemMilestoneSnapshot>(
         builder: (_) => WorkItemMilestonePicker(
           account: widget.account,
           api: widget.api,
           access: access,
           isCurrent: () => _current(epoch),
+          operationCurrent: () => operationCurrent?.call() ?? true,
+          onWriteStarted: () => _noteMilestoneWriteStarted(writeToken),
+          onWriteSettled: () => _noteMilestoneWriteSettled(writeToken),
         ),
       );
       _navigator = navigator;
@@ -160,7 +235,10 @@ class _WorkItemMilestoneControlState extends State<WorkItemMilestoneControl> {
     children: [
       TextButton.icon(
         key: const ValueKey('work-item-milestone-edit'),
-        onPressed: _opening || !(widget.isCurrent?.call() ?? true)
+        onPressed:
+            _opening ||
+                _writePending ||
+                !(widget.isCurrent?.call() ?? true)
             ? null
             : _open,
         icon: _opening
@@ -170,7 +248,13 @@ class _WorkItemMilestoneControlState extends State<WorkItemMilestoneControl> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             : const Icon(Icons.edit_outlined, size: 18),
-        label: Text(_opening ? '讀取里程碑權限…' : '變更里程碑'),
+        label: Text(
+          _writePending
+              ? '變更中…'
+              : _opening
+              ? '讀取里程碑權限…'
+              : '變更里程碑',
+        ),
       ),
       if (_error != null)
         FailureNotice(
@@ -196,12 +280,18 @@ class WorkItemMilestonePicker extends StatefulWidget {
     required this.api,
     required this.access,
     required this.isCurrent,
+    required this.operationCurrent,
+    this.onWriteStarted,
+    this.onWriteSettled,
   });
 
   final Account account;
   final GitLabApi api;
   final WorkItemMilestoneAccess access;
   final bool Function() isCurrent;
+  final bool Function() operationCurrent;
+  final VoidCallback? onWriteStarted;
+  final VoidCallback? onWriteSettled;
 
   @override
   State<WorkItemMilestonePicker> createState() =>
@@ -298,6 +388,9 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
     final target = widget.access.target;
     final selection = _selection;
     if (!_editable || target == null || selection == null || _writing) return;
+    final notifyStart = widget.onWriteStarted;
+    final notifySettle = widget.onWriteSettled;
+    var phaseStarted = false;
     setState(() {
       _writing = true;
       _saveAttempted = true;
@@ -309,7 +402,14 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
       final saved = await widget.api.updateWorkItemMilestone(
         target,
         selection: selection,
-        isCurrent: () => mounted && widget.isCurrent(),
+        isCurrent: () =>
+            phaseStarted
+                ? widget.operationCurrent()
+                : mounted && widget.isCurrent(),
+        onMutationSent: () {
+          phaseStarted = true;
+          notifyStart?.call();
+        },
       );
       if (!mounted || !widget.isCurrent()) return;
       Navigator.of(context).pop(saved.snapshot);
@@ -334,6 +434,7 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
       });
     } finally {
       if (mounted && widget.isCurrent()) setState(() => _writing = false);
+      if (phaseStarted) notifySettle?.call();
     }
   }
 

@@ -528,7 +528,14 @@ void main() {
     await _openEditor(tester, fixture);
     final secondAck = Completer<ResponseBody>();
     fixture.holdMutation = secondAck;
-    await tester.tap(find.byKey(const ValueKey('work-item-assignees-clear')));
+    await _search(tester, '候選');
+    await _reveal(
+      tester,
+      find.byKey(ValueKey('work-item-assignee-row-${fixture.userId(1001)}')),
+    );
+    await tester.tap(
+      find.byKey(ValueKey('work-item-assignee-row-${fixture.userId(1001)}')),
+    );
     await tester.pump();
     await tester.tap(find.byKey(const ValueKey('work-item-assignees-save')));
     await pumpUntil(tester, () => fixture.mutations == 2);
@@ -614,7 +621,12 @@ void main() {
           .evaluate()
           .isNotEmpty,
     );
-    expect(find.text('共 1 位負責人。'), findsOneWidget);
+    expect(
+      tester
+          .widget<Text>(find.byKey(const ValueKey('work-item-assignee-count')))
+          .data,
+      '共 1 位負責人。',
+    );
     expect(
       find.byKey(ValueKey('work-item-assignee-preview-${fixture.userId(2)}')),
       findsOneWidget,
@@ -819,6 +831,175 @@ void main() {
     },
   );
 
+  testWidgets(
+    'project and group delayed APPLY survive back and block reads and B',
+    (tester) async {
+      for (final group in [false, true]) {
+        final fixture = WorkItemAssigneeFixture(groupOnly: group);
+        addTearDown(fixture.api.close);
+        final apply = Completer<void>();
+        final ack = Completer<ResponseBody>();
+        fixture.holdMutationApply = apply;
+        fixture.holdMutation = ack;
+        fixture.holdParentAssigneeRead = Completer<ResponseBody>();
+        addTearDown(() {
+          if (!apply.isCompleted) apply.complete();
+          if (!ack.isCompleted) {
+            ack.complete(jsonResponse(fixture.mutationAck()));
+          }
+          fixture.releaseParentAssigneeRead();
+        });
+        await _pump(tester, fixture, group: group);
+        await _openEditor(tester, fixture);
+        await tester.tap(
+          find.byKey(const ValueKey('work-item-assignees-clear')),
+        );
+        await tester.pump();
+        await tester.tap(
+          find.byKey(const ValueKey('work-item-assignees-save')),
+        );
+        await pumpUntil(tester, () => fixture.mutations == 1);
+        final readsAtHandoff = fixture.assigneeReads;
+
+        await tester.pageBack();
+        await tester.pump();
+        expect(find.text('更新中'), findsOneWidget);
+        final edit = tester.widget<TextButton>(
+          find.byKey(const ValueKey('work-item-assignees-edit')),
+        );
+        expect(edit.onPressed, isNull);
+        expect(fixture.assigneeReads, readsAtHandoff);
+
+        final detailReads = fixture.queries(
+          group ? 'MobileNamespaceWorkItem' : 'MobileProjectWorkItem',
+        );
+        tester
+            .widget<IconButton>(
+              find.widgetWithIcon(IconButton, Icons.refresh).last,
+            )
+            .onPressed!
+            .call();
+        await pumpUntil(
+          tester,
+          () =>
+              fixture.queries(
+                group ? 'MobileNamespaceWorkItem' : 'MobileProjectWorkItem',
+              ) >
+              detailReads,
+        );
+        expect(find.text('更新中'), findsOneWidget);
+        expect(fixture.assigneeReads, readsAtHandoff);
+        expect(fixture.mutations, 1);
+
+        apply.complete();
+        await tester.pump();
+        expect(find.text('更新中'), findsOneWidget);
+        expect(fixture.assigneeReads, readsAtHandoff);
+        expect(fixture.mutations, 1);
+
+        ack.complete(jsonResponse(fixture.mutationAck()));
+        await pumpUntil(
+          tester,
+          () => fixture.assigneeReads == readsAtHandoff + 2,
+        );
+        expect(find.text('更新中'), findsOneWidget);
+        expect(fixture.mutations, 1);
+
+        fixture.releaseParentAssigneeRead();
+        await pumpUntil(
+          tester,
+          () => find.text('目前沒有負責人。').evaluate().isNotEmpty,
+        );
+        expect(fixture.assigneeReads, readsAtHandoff + 2);
+        expect(fixture.mutations, 1);
+      }
+    },
+  );
+
+  testWidgets('assignee row disposal forwards one terminal after APPLY', (
+    tester,
+  ) async {
+    final fixture = WorkItemAssigneeFixture();
+    addTearDown(fixture.api.close);
+    final apply = Completer<void>();
+    final ack = Completer<ResponseBody>();
+    fixture.holdMutationApply = apply;
+    fixture.holdMutation = ack;
+    fixture.holdParentAssigneeRead = Completer<ResponseBody>();
+    addTearDown(() {
+      if (!apply.isCompleted) apply.complete();
+      if (!ack.isCompleted) ack.complete(jsonResponse(fixture.mutationAck()));
+      fixture.releaseParentAssigneeRead();
+    });
+    await _pump(tester, fixture);
+    await _openEditor(tester, fixture);
+    await tester.tap(find.byKey(const ValueKey('work-item-assignees-clear')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('work-item-assignees-save')));
+    await pumpUntil(tester, () => fixture.mutations == 1);
+    final readsAtHandoff = fixture.assigneeReads;
+
+    fixture.widgetPresent = false;
+    fixture.updatedAt = '2026-10-04T04:05:06Z';
+    tester
+        .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.refresh).last)
+        .onPressed!
+        .call();
+    await pumpUntil(
+      tester,
+      () => find
+          .byKey(const ValueKey('work-item-assignees-edit'))
+          .evaluate()
+          .isEmpty,
+    );
+    expect(fixture.assigneeReads, readsAtHandoff);
+    fixture.widgetPresent = true;
+
+    apply.complete();
+    await tester.pump();
+    expect(fixture.assigneeReads, readsAtHandoff);
+    ack.complete(jsonResponse(fixture.mutationAck()));
+    await pumpUntil(tester, () => fixture.assigneeReads == readsAtHandoff + 2);
+    expect(fixture.mutations, 1);
+
+    fixture.releaseParentAssigneeRead();
+    await settleNetworkWidgets(tester);
+    expect(fixture.assigneeReads, readsAtHandoff + 2);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a fully disposed assignee parent ignores the old terminal', (
+    tester,
+  ) async {
+    final fixture = WorkItemAssigneeFixture();
+    addTearDown(fixture.api.close);
+    final apply = Completer<void>();
+    final ack = Completer<ResponseBody>();
+    fixture.holdMutationApply = apply;
+    fixture.holdMutation = ack;
+    addTearDown(() {
+      if (!apply.isCompleted) apply.complete();
+      if (!ack.isCompleted) ack.complete(jsonResponse(fixture.mutationAck()));
+    });
+    await _pump(tester, fixture);
+    await _openEditor(tester, fixture);
+    await tester.tap(find.byKey(const ValueKey('work-item-assignees-clear')));
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('work-item-assignees-save')));
+    await pumpUntil(tester, () => fixture.mutations == 1);
+    final readsAtHandoff = fixture.assigneeReads;
+
+    await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
+    apply.complete();
+    await tester.pump();
+    ack.complete(jsonResponse(fixture.mutationAck()));
+    await settleNetworkWidgets(tester);
+
+    expect(fixture.mutations, 1);
+    expect(fixture.assigneeReads, readsAtHandoff);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('save stays above the keyboard at 320 dp and double text', (
     tester,
   ) async {
@@ -869,6 +1050,7 @@ Future<void> _pump(
   tester.view.physicalSize = Size(width, height);
   await tester.pumpWidget(
     MaterialApp(
+      key: UniqueKey(),
       builder: (context, child) {
         final media = MediaQuery.of(context);
         return MediaQuery(
@@ -901,6 +1083,11 @@ Future<void> _pump(
 }
 
 Future<void> _reveal(WidgetTester tester, Finder finder) async {
+  if (finder.evaluate().isNotEmpty) {
+    await tester.ensureVisible(finder);
+    await tester.pump();
+    if (finder.hitTestable().evaluate().isNotEmpty) return;
+  }
   for (var step = 0; step < 50; step++) {
     if (finder.hitTestable().evaluate().isNotEmpty) return;
     final scrollables = find.byType(Scrollable);

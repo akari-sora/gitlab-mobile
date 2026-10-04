@@ -7,6 +7,7 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/navigation.dart';
+import 'package:gitlab_mobile/features/workspace/work_item_attributes.dart';
 import 'package:gitlab_mobile/shared/resource_share.dart';
 
 import 'support/fake_adapter.dart';
@@ -1067,4 +1068,350 @@ void main() {
     expect(find.text('Open missing'), findsOneWidget);
     expect(find.text('專案 77'), findsNothing);
   });
+
+  for (final kind in _MetadataKind.values) {
+    testWidgets(
+      'scroll-recreated Attributes reads ${kind.name} once after held A terminal',
+      (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(390, 700);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final server = _MetadataGraphServer();
+        final api = testApi(server.adapter);
+        addTearDown(api.close);
+        final ack = Completer<void>();
+        server.holdWriteAck = ack;
+        final edit = find.byKey(ValueKey('work-item-${kind.name}-edit'));
+        final save = find.byKey(ValueKey('work-item-${kind.name}-save'));
+        final row = find.byKey(ValueKey('work-item-attribute-${kind.name}'));
+        final other = kind == _MetadataKind.weight
+            ? _MetadataKind.milestone
+            : _MetadataKind.weight;
+        try {
+          await tester.pumpWidget(
+            MaterialApp(
+              home: GraphWorkItemDetailPage.project(
+                account: _account(api, 7),
+                api: api,
+                project: _project,
+                iid: 7,
+              ),
+            ),
+          );
+          await pumpUntil(
+            tester,
+            () =>
+                server.detailReads == 1 &&
+                find.text('Customer follow-up').evaluate().isNotEmpty,
+          );
+          await settleNetworkWidgets(tester);
+          await _scrollGraphUntil(
+            tester,
+            () => find.text('屬性').hitTestable().evaluate().isNotEmpty,
+            down: true,
+          );
+          await tester.tap(find.text('屬性'));
+          await pumpUntil(
+            tester,
+            () =>
+                server.attributeReads[_MetadataKind.weight] == 1 &&
+                server.attributeReads[_MetadataKind.milestone] == 1 &&
+                edit.evaluate().isNotEmpty,
+            description: 'panel A loads both metadata rows',
+          );
+          await tester.pump(const Duration(milliseconds: 300));
+          final panelA = tester.state(find.byType(WorkItemAttributesPanel));
+
+          tester.widget<TextButton>(edit).onPressed!.call();
+          await pumpUntil(
+            tester,
+            () => save.evaluate().isNotEmpty,
+            description: '${kind.name} editor opens',
+          );
+          await settleNetworkWidgets(tester);
+          await tester.pump(const Duration(milliseconds: 300));
+          if (kind == _MetadataKind.weight) {
+            await tester.enterText(
+              find.byKey(const ValueKey('work-item-weight-input')),
+              '9',
+            );
+            await tester.pump();
+          } else {
+            await tester.tap(find.text('November'));
+            await tester.pump();
+          }
+          await tester.tap(save);
+          await pumpUntil(
+            tester,
+            () => server.writes == 1 && server.holdWriteAck == null,
+            description: '${kind.name} write is held after apply',
+          );
+          final readsAtHandoff = server.attributeReads[kind]!;
+          final editorContext = tester.element(save);
+          Navigator.of(
+            editorContext,
+          ).removeRoute(ModalRoute.of(editorContext)!);
+          await tester.pump();
+
+          await _scrollGraphUntil(
+            tester,
+            () => find
+                .byType(WorkItemAttributesPanel, skipOffstage: false)
+                .evaluate()
+                .isEmpty,
+            down: true,
+          );
+          expect(panelA.mounted, isFalse);
+          await _scrollGraphUntil(
+            tester,
+            () => find.text('屬性').hitTestable().evaluate().isNotEmpty,
+            down: false,
+          );
+          final panelB = tester.state(find.byType(WorkItemAttributesPanel));
+          expect(identical(panelA, panelB), isFalse);
+          final otherReads = server.attributeReads[other]!;
+          await tester.tap(find.text('屬性'));
+          await pumpUntil(
+            tester,
+            () => server.attributeReads[other] == otherReads + 1,
+            description: 'panel B reads the ungated ${other.name} row',
+          );
+          await tester.pump(const Duration(milliseconds: 300));
+          expect(server.attributeReads[kind], readsAtHandoff);
+          expect(
+            find.descendant(of: row, matching: find.text('等待讀取')),
+            findsOneWidget,
+          );
+          expect(tester.widget<TextButton>(edit).onPressed, isNull);
+
+          ack.complete();
+          await pumpUntil(
+            tester,
+            () =>
+                server.attributeReads[kind] == readsAtHandoff + 1 &&
+                find
+                    .descendant(of: row, matching: find.text(kind.savedText))
+                    .evaluate()
+                    .isNotEmpty,
+            description:
+                'panel B shows the fresh ${kind.name} without collapse',
+          );
+          await settleNetworkWidgets(tester);
+          expect(
+            identical(
+              tester.state(find.byType(WorkItemAttributesPanel)),
+              panelB,
+            ),
+            isTrue,
+          );
+          expect(server.attributeReads[kind], readsAtHandoff + 1);
+          expect(server.attributeReads[other], otherReads + 1);
+          expect(server.writes, 1);
+          expect(
+            find.descendant(of: row, matching: find.text('等待讀取')),
+            findsNothing,
+          );
+          expect(tester.widget<TextButton>(edit).onPressed, isNotNull);
+          expect(tester.takeException(), isNull);
+        } finally {
+          if (!ack.isCompleted) ack.complete();
+        }
+      },
+    );
+  }
+}
+
+enum _MetadataKind {
+  weight('權重：9'),
+  milestone('November');
+
+  const _MetadataKind(this.savedText);
+
+  final String savedText;
+}
+
+Future<void> _scrollGraphUntil(
+  WidgetTester tester,
+  bool Function() done, {
+  required bool down,
+}) async {
+  for (var step = 0; step < 40; step++) {
+    if (done()) return;
+    await tester.drag(
+      find.byType(Scrollable).last,
+      Offset(0, down ? -320 : 320),
+    );
+    await tester.pump();
+  }
+  expect(done(), isTrue);
+}
+
+Map<String, Object?> _graphMilestone(int id, String title) => {
+  'id': 'gid://gitlab/Milestone/$id',
+  'iid': '$id',
+  'title': title,
+  'state': 'ACTIVE',
+  'expired': false,
+  'dueDate': '2026-10-31',
+  'startDate': '2026-10-01',
+  'webPath': '/team/example/-/milestones/$id',
+  'project': {'id': 'gid://gitlab/Project/42', 'fullPath': 'team/example'},
+  'group': null,
+};
+
+final class _MetadataGraphServer {
+  int weight = 4;
+  Map<String, Object?>? milestone = _graphMilestone(5, 'October');
+  final choices = [_graphMilestone(6, 'November')];
+  String updatedAt = '2026-09-02T03:04:05Z';
+  Completer<void>? holdWriteAck;
+  int detailReads = 0;
+  int writes = 0;
+  final attributeReads = {for (final kind in _MetadataKind.values) kind: 0};
+  late final FakeAdapter adapter = FakeAdapter(_respond);
+
+  Map<String, Object?> get _weightWidget => {
+    'type': 'WEIGHT',
+    'weight': weight,
+    'rolledUpWeight': 10,
+    'rolledUpCompletedWeight': 3,
+  };
+
+  Map<String, Object?> get _milestoneWidget => {
+    'type': 'MILESTONE',
+    'milestone': milestone,
+  };
+
+  Map<String, Object?> _item(
+    List<Object?> widgets, {
+    Map<String, Object?>? permissions,
+  }) => {
+    ..._summary(),
+    'updatedAt': updatedAt,
+    'userPermissions': ?permissions,
+    'widgets': widgets,
+  };
+
+  static const _weightPermissions = {
+    'readWorkItem': true,
+    'adminWorkItem': true,
+  };
+  static const _milestonePermissions = {
+    'readWorkItem': true,
+    'setWorkItemMetadata': true,
+  };
+
+  Future<ResponseBody> _respond(RequestOptions request) async {
+    final body = request.data as Map;
+    final query = body['query'] as String;
+    if (query.contains('query MobileProjectWorkItem(')) {
+      detailReads++;
+      return jsonResponse({
+        'data': {
+          'project': {
+            'id': 'gid://gitlab/Project/42',
+            'fullPath': 'team/example',
+            'workItems': _connection([
+              _item(
+                [
+                  _weightWidget,
+                  _milestoneWidget,
+                  {
+                    'type': 'HIERARCHY',
+                    'hasParent': false,
+                    'hasChildren': true,
+                    'parent': null,
+                    'children': _connection([
+                      for (var iid = 8; iid < 28; iid++)
+                        _summary(title: 'Scroll child $iid', iid: iid),
+                    ]),
+                  },
+                ],
+                permissions: const {'readWorkItem': true},
+              ),
+            ]),
+          },
+        },
+      });
+    }
+    if (query.contains('query MobileWorkItemWeightAttribute(')) {
+      attributeReads[_MetadataKind.weight] =
+          attributeReads[_MetadataKind.weight]! + 1;
+      return jsonResponse({
+        'data': {
+          'workItem': _item([_weightWidget], permissions: _weightPermissions),
+        },
+      });
+    }
+    if (query.contains('query MobileWorkItemMilestoneAttribute(')) {
+      attributeReads[_MetadataKind.milestone] =
+          attributeReads[_MetadataKind.milestone]! + 1;
+      return jsonResponse({
+        'data': {
+          'workItem': _item([_milestoneWidget]),
+        },
+      });
+    }
+    if (query.contains('query MobileWorkItemWeight(')) {
+      return jsonResponse({
+        'data': {
+          'currentUser': {'id': 'gid://gitlab/User/7'},
+          'workItem': _item([_weightWidget], permissions: _weightPermissions),
+        },
+      });
+    }
+    if (query.contains('query MobileWorkItemMilestone(')) {
+      return jsonResponse({
+        'data': {
+          'currentUser': {'id': 'gid://gitlab/User/7'},
+          'workItem': _item([
+            _milestoneWidget,
+          ], permissions: _milestonePermissions),
+        },
+      });
+    }
+    if (query.contains('query MobileProjectWorkItemMilestones(')) {
+      return jsonResponse({
+        'data': {
+          'currentUser': {'id': 'gid://gitlab/User/7'},
+          'project': {
+            'id': 'gid://gitlab/Project/42',
+            'fullPath': 'team/example',
+            'milestones': _connection(choices),
+          },
+        },
+      });
+    }
+    final weightWrite = query.contains('mutation MobileSetWorkItemWeight(');
+    final milestoneWrite = query.contains(
+      'mutation MobileSetWorkItemMilestone(',
+    );
+    if (weightWrite || milestoneWrite) {
+      writes++;
+      final input = (body['variables'] as Map)['input'] as Map;
+      if (weightWrite) {
+        weight = (input['weightWidget'] as Map)['weight'] as int;
+      } else {
+        final id = (input['milestoneWidget'] as Map)['milestoneId'];
+        milestone = choices.singleWhere((item) => item['id'] == id);
+      }
+      updatedAt = '2026-09-02T03:06:00Z';
+      final ack = holdWriteAck;
+      holdWriteAck = null;
+      if (ack != null) await ack.future;
+      return jsonResponse({
+        'data': {
+          'currentUser': {'id': 'gid://gitlab/User/7'},
+          'workItemUpdate': {
+            'errors': <Object?>[],
+            'workItem': weightWrite
+                ? _item([_weightWidget], permissions: _weightPermissions)
+                : _item([_milestoneWidget]),
+          },
+        },
+      });
+    }
+    return jsonResponse({'message': 'unhandled'}, status: 404);
+  }
 }

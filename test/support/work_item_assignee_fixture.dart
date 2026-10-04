@@ -25,7 +25,7 @@ class WorkItemAssigneeFixture {
   final int userCount;
   final bool allowsMultiple;
   final bool canWrite;
-  final bool widgetPresent;
+  bool widgetPresent;
   final bool groupOnly;
   int candidateLimit;
 
@@ -46,6 +46,7 @@ class WorkItemAssigneeFixture {
   bool mutationSent = false;
   int mutations = 0;
   List<String> lastAssigneeIds = const [];
+  Completer<void>? holdMutationApply;
   Completer<ResponseBody>? holdMutation;
   Completer<ResponseBody>? holdParentAssigneeRead;
   final heldSearches = <String, Completer<ResponseBody>>{};
@@ -109,6 +110,7 @@ class WorkItemAssigneeFixture {
           _ackReadPending = false;
           return jsonResponse(_assigneePage(null, ids: lastAssigneeIds));
         }
+        return jsonResponse(_assigneePage(null, ids: lastAssigneeIds));
       }
       if (conflictOnNextRead) {
         conflictOnNextRead = false;
@@ -128,16 +130,19 @@ class WorkItemAssigneeFixture {
     if (query.contains('MobileSetWorkItemAssignees')) {
       mutations++;
       mutationSent = true;
-      _ackReadPending = true;
+      var desired = const <String>[];
       final input = vars['input'];
       if (input is Map) {
         final widget = input['assigneesWidget'];
         if (widget is Map && widget['assigneeIds'] is List) {
-          lastAssigneeIds = [
-            for (final id in widget['assigneeIds'] as List) '$id',
-          ];
+          desired = [for (final id in widget['assigneeIds'] as List) '$id'];
         }
       }
+      final apply = holdMutationApply;
+      holdMutationApply = null;
+      if (apply != null) await apply.future;
+      lastAssigneeIds = desired;
+      _ackReadPending = true;
       final held = holdMutation;
       if (held != null) return held.future;
       return jsonResponse(_mutationEnvelope());

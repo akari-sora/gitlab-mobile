@@ -811,4 +811,102 @@ void main() {
       expect(adapter.requests, hasLength(1));
     },
   );
+
+  test(
+    'mutation callback runs only at actual milestone transport handoff',
+    () async {
+      Future<void> changed({required bool callbackThrows}) async {
+        var callbacks = 0;
+        var writes = 0;
+        var reads = 0;
+        final adapter = FakeAdapter((request) {
+          if (_mutation(request)) {
+            writes++;
+            return jsonResponse(_ack(milestone: null));
+          }
+          reads++;
+          return jsonResponse(
+            _read(
+              milestone: reads < 3 ? _sentinel : null,
+              updatedAt: reads < 3 ? _freshAt : _savedAt,
+            ),
+          );
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final target = await _target(api);
+        final future = api.updateWorkItemMilestone(
+          target,
+          selection: target.clearSelection,
+          isCurrent: () => true,
+          onMutationSent: () {
+            callbacks++;
+            if (callbackThrows) throw StateError('synthetic callback failure');
+          },
+        );
+        if (callbackThrows) {
+          await expectLater(future, throwsA(isA<StateError>()));
+        } else {
+          expect((await future).snapshot.milestone, isNull);
+        }
+        expect(callbacks, 1);
+        expect(writes, callbackThrows ? 0 : 1);
+      }
+
+      await changed(callbackThrows: false);
+      await changed(callbackThrows: true);
+
+      var noOpCallbacks = 0;
+      final noOpAdapter = FakeAdapter((request) {
+        if (_mutation(request)) fail('no-op sent a mutation');
+        return jsonResponse(_read());
+      });
+      final noOpApi = testApi(noOpAdapter);
+      addTearDown(noOpApi.close);
+      final noOpTarget = await _target(noOpApi);
+      await noOpApi.updateWorkItemMilestone(
+        noOpTarget,
+        selection: noOpTarget.currentSelection,
+        isCurrent: () => true,
+        onMutationSent: () => noOpCallbacks++,
+      );
+      expect(noOpCallbacks, 0);
+      expect(noOpAdapter.requests.where(_mutation), isEmpty);
+
+      for (final cancelled in [false, true]) {
+        var callbacks = 0;
+        var reads = 0;
+        final adapter = FakeAdapter((request) {
+          if (_mutation(request)) fail('preflight failure sent a mutation');
+          reads++;
+          return jsonResponse(
+            _read(
+              actor: cancelled && reads > 1
+                  ? const {'id': 'gid://gitlab/User/8'}
+                  : const {'id': _actorId},
+              metadataPermission: cancelled || reads == 1,
+            ),
+          );
+        });
+        final api = testApi(adapter);
+        addTearDown(api.close);
+        final target = await _target(api);
+        await expectLater(
+          api.updateWorkItemMilestone(
+            target,
+            selection: target.clearSelection,
+            isCurrent: () => true,
+            onMutationSent: () => callbacks++,
+          ),
+          throwsA(
+            _failure(
+              cancelled ? FailureKind.cancelled : FailureKind.forbidden,
+            ),
+          ),
+        );
+        expect(callbacks, 0);
+        expect(adapter.requests.where(_mutation), isEmpty);
+      }
+    },
+  );
 }

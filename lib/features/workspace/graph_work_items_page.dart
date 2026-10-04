@@ -17,8 +17,10 @@ import 'work_item_assignees.dart';
 import 'work_item_attributes.dart';
 import 'work_item_content.dart';
 import 'work_item_labels.dart';
+import 'work_item_milestone.dart';
 import 'work_item_notifications.dart';
 import 'work_item_state_control.dart';
+import 'work_item_weight.dart';
 
 String _graphWorkItemState(String value) => switch (value.toUpperCase()) {
   'OPEN' => 'opened',
@@ -1380,6 +1382,16 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   bool _labelsHidePreview = false;
   bool _labelsUnconfirmed = false;
   int _labelsReadSerial = 0;
+  Object? _milestoneWriteToken;
+  int? _milestoneWriteGeneration;
+  String? _milestoneWriteAccount;
+  GitLabApi? _milestoneWriteApi;
+  WorkItemGraphSummary? _milestoneWriteSummary;
+  Object? _weightWriteToken;
+  int? _weightWriteGeneration;
+  String? _weightWriteAccount;
+  GitLabApi? _weightWriteApi;
+  WorkItemGraphSummary? _weightWriteSummary;
 
   bool _current(int generation) =>
       mounted &&
@@ -1418,6 +1430,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       _generation++;
       _dropAssigneeSession();
       _dropLabelSession();
+      _dropMetadataWrites();
       _dismissOwnedRoutes();
       _detail = null;
       _resolvedProject = null;
@@ -1436,6 +1449,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     _generation++;
     _dropAssigneeSession();
     _dropLabelSession();
+    _dropMetadataWrites();
     _dismissOwnedRoutes();
     _assigneeSignals.dispose();
     super.dispose();
@@ -1446,6 +1460,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     _generation++;
     _dropAssigneeSession();
     _dropLabelSession();
+    _dropMetadataWrites();
     _dismissOwnedRoutes();
     setState(() {
       _detail = null;
@@ -1544,7 +1559,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     final detail = _detail;
     if (expectedSummary == null) return true;
     if (detail == null) return allowMissingDetail;
-    return _sameAssigneeResource(detail.summary, expectedSummary);
+    return _sameWorkItemResource(detail.summary, expectedSummary);
   }
 
   Future<void> _load() async {
@@ -1561,6 +1576,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     final keepDetail =
         _assigneesWriteToken != null ||
         _labelsWriteToken != null ||
+        _milestoneWriteToken != null ||
+        _weightWriteToken != null ||
         (_labelsRoute?.isActive ?? false);
     setState(() {
       _loading = true;
@@ -1608,7 +1625,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
             allowMissingDetail: true,
           ) ||
           (expectedLabelsSummary != null &&
-              !_sameAssigneeResource(detail.summary, expectedLabelsSummary))) {
+              !_sameWorkItemResource(detail.summary, expectedLabelsSummary))) {
         return;
       }
       final previous = _detail;
@@ -1616,12 +1633,22 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           _assigneesWriteToken != null || _assigneesRefetchPending;
       if (previous != null &&
           assigneeBusy &&
-          !_sameAssigneeResource(previous.summary, detail.summary)) {
+          !_sameWorkItemResource(previous.summary, detail.summary)) {
         _dropAssigneeSession();
       }
       if (previous != null &&
+          _milestoneWriteToken != null &&
+          !_sameWorkItemResource(previous.summary, detail.summary)) {
+        _dropMilestoneWrite();
+      }
+      if (previous != null &&
+          _weightWriteToken != null &&
+          !_sameWorkItemResource(previous.summary, detail.summary)) {
+        _dropWeightWrite();
+      }
+      if (previous != null &&
           _labelsWriteToken != null &&
-          !_sameAssigneeResource(previous.summary, detail.summary)) {
+          !_sameWorkItemResource(previous.summary, detail.summary)) {
         _dropLabelSession();
       }
       setState(() {
@@ -1753,7 +1780,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       )) {
         return;
       }
-      if (!_sameAssigneeResource(detail.summary, expectedSummary)) return;
+      if (!_sameWorkItemResource(detail.summary, expectedSummary)) return;
       setState(() {
         _detail = detail;
         _labelsHidePreview = false;
@@ -1776,7 +1803,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     }
   }
 
-  bool _sameAssigneeResource(
+  bool _sameWorkItemResource(
     WorkItemGraphSummary left,
     WorkItemGraphSummary right,
   ) {
@@ -1787,6 +1814,116 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         left.project?.fullPath == right.project?.fullPath &&
         left.namespace?.id == right.namespace?.id &&
         left.namespace?.fullPath == right.namespace?.fullPath;
+  }
+
+  void _dropMetadataWrites() {
+    _dropMilestoneWrite();
+    _dropWeightWrite();
+  }
+
+  void _dropMilestoneWrite() {
+    _milestoneWriteToken = null;
+    _milestoneWriteGeneration = null;
+    _milestoneWriteAccount = null;
+    _milestoneWriteApi = null;
+    _milestoneWriteSummary = null;
+  }
+
+  void _dropWeightWrite() {
+    _weightWriteToken = null;
+    _weightWriteGeneration = null;
+    _weightWriteAccount = null;
+    _weightWriteApi = null;
+    _weightWriteSummary = null;
+  }
+
+  bool _acceptsMetadataWriteStart(
+    Account account,
+    GitLabApi api,
+    WorkItemGraphDetail detail,
+  ) {
+    final current = _detail;
+    return current != null &&
+        _current(_generation) &&
+        account.key == widget.account.key &&
+        identical(api, widget.api) &&
+        _sameWorkItemResource(detail.summary, current.summary);
+  }
+
+  void _onMilestoneWrite(
+    WorkItemMilestoneWritePhase phase,
+    Object token,
+    Account account,
+    GitLabApi api,
+    WorkItemGraphDetail detail,
+  ) {
+    if (!mounted) return;
+    if (phase == WorkItemMilestoneWritePhase.start) {
+      if (_milestoneWriteToken != null ||
+          !_acceptsMetadataWriteStart(account, api, detail)) {
+        return;
+      }
+      setState(() {
+        _milestoneWriteToken = token;
+        _milestoneWriteGeneration = _generation;
+        _milestoneWriteAccount = account.key;
+        _milestoneWriteApi = api;
+        _milestoneWriteSummary = detail.summary;
+      });
+      return;
+    }
+    final summary = _milestoneWriteSummary;
+    final current = _detail;
+    if (!identical(_milestoneWriteToken, token) ||
+        _milestoneWriteGeneration != _generation ||
+        _milestoneWriteAccount != account.key ||
+        !identical(_milestoneWriteApi, api) ||
+        summary == null ||
+        current == null ||
+        !_current(_generation) ||
+        !_sameWorkItemResource(summary, detail.summary) ||
+        !_sameWorkItemResource(summary, current.summary)) {
+      return;
+    }
+    setState(_dropMilestoneWrite);
+  }
+
+  void _onWeightWrite(
+    WorkItemWeightWritePhase phase,
+    Object token,
+    Account account,
+    GitLabApi api,
+    WorkItemGraphDetail detail,
+  ) {
+    if (!mounted) return;
+    if (phase == WorkItemWeightWritePhase.start) {
+      if (_weightWriteToken != null ||
+          !_acceptsMetadataWriteStart(account, api, detail)) {
+        return;
+      }
+      setState(() {
+        _weightWriteToken = token;
+        _weightWriteGeneration = _generation;
+        _weightWriteAccount = account.key;
+        _weightWriteApi = api;
+        _weightWriteSummary = detail.summary;
+      });
+      return;
+    }
+    final summary = _weightWriteSummary;
+    final current = _detail;
+    if (!identical(_weightWriteToken, token) ||
+        _weightWriteGeneration != _generation ||
+        _weightWriteAccount != account.key ||
+        !identical(_weightWriteApi, api) ||
+        summary == null ||
+        current == null ||
+        !_current(_generation) ||
+        !_sameWorkItemResource(summary, detail.summary) ||
+        !_sameWorkItemResource(summary, current.summary)) {
+      return;
+    }
+    setState(_dropWeightWrite);
   }
 
   void _onAssigneesWrite(WorkItemAssigneesWritePhase phase, Object token) {
@@ -1823,7 +1960,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     if (_assigneesWriteGeneration != _generation || !_current(_generation)) {
       return;
     }
-    if (!_sameAssigneeResource(detail.summary, snapshot.summary)) return;
+    if (!_sameWorkItemResource(detail.summary, snapshot.summary)) return;
   }
 
   Future<void> _refetchAssignees(
@@ -1846,7 +1983,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           !identical(_assigneesWriteToken, startedToken) ||
           _assigneeReadSerial != serial ||
           _detail == null ||
-          !_sameAssigneeResource(_detail!.summary, detail.summary)) {
+          !_sameWorkItemResource(_detail!.summary, detail.summary)) {
         return;
       }
       setState(() {
@@ -2157,6 +2294,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           ownerChanges: _assigneeOwner,
           onRoute: _ownRoute,
           onAssigneesWrite: _onAssigneesWrite,
+          writePending: _assigneesWriteToken != null,
           onSaved: _acceptAssigneeSave,
         ),
       ],
@@ -2350,6 +2488,10 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           isCurrent: widget.isCurrent,
           ownerChanges: widget.ownerChanges,
           onRoute: _ownRoute,
+          milestoneWritePending: _milestoneWriteToken != null,
+          weightWritePending: _weightWriteToken != null,
+          onMilestoneWrite: _onMilestoneWrite,
+          onWeightWrite: _onWeightWrite,
         ),
         if (assignees != null)
           _section(

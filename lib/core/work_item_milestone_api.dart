@@ -414,6 +414,7 @@ extension WorkItemMilestoneApi on GitLabApi {
     WorkItemMilestoneTarget target, {
     required WorkItemMilestoneSelection selection,
     bool Function()? isCurrent,
+    void Function()? onMutationSent,
   }) async {
     _requireActivityOwner(target._owner);
     if (target._consumed) {
@@ -457,6 +458,7 @@ extension WorkItemMilestoneApi on GitLabApi {
 
     _requireCurrentWorkItemRequest(isCurrent);
     ({Uint8List bytes, Headers headers, int statusCode}) response;
+    onMutationSent?.call();
     try {
       response = await _send(
         instance.graphQL,

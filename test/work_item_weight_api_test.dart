@@ -1342,4 +1342,97 @@ void main() {
     );
     expect(adapter.requests.where(_mutation), hasLength(1));
   });
+
+  test('mutation callback runs only at actual weight transport handoff', () async {
+    Future<void> changed({required bool callbackThrows}) async {
+      var callbacks = 0;
+      var writes = 0;
+      var reads = 0;
+      final adapter = FakeAdapter((request) {
+        if (_mutation(request)) {
+          writes++;
+          return jsonResponse(_ack(weight: 8));
+        }
+        reads++;
+        return jsonResponse(
+          _read(
+            weight: reads < 3 ? 3 : 8,
+            updatedAt: reads < 3 ? _freshAt : _savedAt,
+          ),
+        );
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      final future = api.updateWorkItemWeight(
+        await _target(api),
+        weight: 8,
+        isCurrent: () => true,
+        onMutationSent: () {
+          callbacks++;
+          if (callbackThrows) throw StateError('synthetic callback failure');
+        },
+      );
+      if (callbackThrows) {
+        await expectLater(future, throwsA(isA<StateError>()));
+      } else {
+        expect((await future).value!.weight, 8);
+      }
+      expect(callbacks, 1);
+      expect(writes, callbackThrows ? 0 : 1);
+    }
+
+    await changed(callbackThrows: false);
+    await changed(callbackThrows: true);
+
+    var noOpCallbacks = 0;
+    final noOpAdapter = FakeAdapter((request) {
+      if (_mutation(request)) fail('no-op sent a mutation');
+      return jsonResponse(_read(weight: 3));
+    });
+    final noOpApi = testApi(noOpAdapter);
+    addTearDown(noOpApi.close);
+    await noOpApi.updateWorkItemWeight(
+      await _target(noOpApi),
+      weight: 3,
+      isCurrent: () => true,
+      onMutationSent: () => noOpCallbacks++,
+    );
+    expect(noOpCallbacks, 0);
+    expect(noOpAdapter.requests.where(_mutation), isEmpty);
+
+    for (final cancelled in [false, true]) {
+      var callbacks = 0;
+      var reads = 0;
+      final adapter = FakeAdapter((request) {
+        if (_mutation(request)) fail('preflight failure sent a mutation');
+        reads++;
+        return jsonResponse(
+          _read(
+            actor: cancelled && reads > 1
+                ? const {'id': 'gid://gitlab/User/8'}
+                : const {'id': _actorId},
+            permissions: {
+              'readWorkItem': true,
+              'adminWorkItem': cancelled || reads == 1,
+            },
+          ),
+        );
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      await expectLater(
+        api.updateWorkItemWeight(
+          await _target(api),
+          weight: 8,
+          isCurrent: () => true,
+          onMutationSent: () => callbacks++,
+        ),
+        throwsA(
+          _failure(cancelled ? FailureKind.cancelled : FailureKind.forbidden),
+        ),
+      );
+      expect(callbacks, 0);
+      expect(adapter.requests.where(_mutation), isEmpty);
+    }
+  });
 }

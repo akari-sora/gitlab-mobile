@@ -287,6 +287,7 @@ extension WorkItemAssigneeApi on GitLabApi {
     WorkItemAssigneeTarget target, {
     required List<String> assigneeIds,
     bool Function()? isCurrent,
+    void Function()? onMutationSent,
   }) async {
     _validateAssigneeSelection(
       assigneeIds,
@@ -320,6 +321,7 @@ extension WorkItemAssigneeApi on GitLabApi {
     }
 
     ({Uint8List bytes, Headers headers, int statusCode}) response;
+    onMutationSent?.call();
     try {
       response = await _send(
         instance.graphQL,
