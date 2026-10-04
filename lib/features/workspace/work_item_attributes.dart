@@ -9,9 +9,11 @@ import '../../core/models.dart';
 import '../../core/work_item_attribute_models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_milestone_models.dart';
+import '../../core/work_item_status_models.dart';
 import '../../core/work_item_weight_models.dart';
 import '../../shared/workspace_ui.dart';
 import 'work_item_milestone.dart';
+import 'work_item_status.dart';
 import 'work_item_weight.dart';
 
 const _widgetKinds = <String, WorkItemAttributeKind>{
@@ -60,6 +62,16 @@ class WorkItemAttributesPanel extends StatefulWidget {
     this.weightWritePending = false,
     this.onMilestoneWrite,
     this.onWeightWrite,
+    this.statusSessionGeneration,
+    this.statusWriteHeld = false,
+    this.statusConfirmed,
+    this.statusUnconfirmed = false,
+    this.statusStale = false,
+    this.onStatusWrite,
+    this.onStatusOutcome,
+    this.onStatusSaved,
+    this.statusDispatchAllowed,
+    this.statusOperationCurrent,
   });
 
   final Account account;
@@ -73,6 +85,27 @@ class WorkItemAttributesPanel extends StatefulWidget {
   final bool weightWritePending;
   final WorkItemMilestoneWriteListener? onMilestoneWrite;
   final WorkItemWeightWriteListener? onWeightWrite;
+
+  /// The session generation captured when the owning route opened. Without
+  /// it the STATUS row stays read-only.
+  final int? statusSessionGeneration;
+
+  /// The owner holds a STATUS write from START to SETTLE. No STATUS read is
+  /// issued or published and the other editors cannot dispatch meanwhile.
+  final bool statusWriteHeld;
+
+  /// The owner's confirmed STATUS snapshot for the current revision.
+  final WorkItemStatusSnapshot? statusConfirmed;
+  final bool statusUnconfirmed;
+
+  /// The detail is older than a confirmed STATUS write on this item: no
+  /// STATUS read is issued or published until a newer detail arrives.
+  final bool statusStale;
+  final WorkItemStatusWriteListener? onStatusWrite;
+  final WorkItemStatusWriteOutcome? onStatusOutcome;
+  final ValueChanged<WorkItemStatusSaveResult>? onStatusSaved;
+  final bool Function()? statusDispatchAllowed;
+  final bool Function()? statusOperationCurrent;
 
   @override
   State<WorkItemAttributesPanel> createState() =>
@@ -100,7 +133,13 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
   WorkItemGraphSummary? _weightWriteSummary;
   WorkItemWeightWriteListener? _weightWriteListener;
   bool _ignoreWeightParentPending = false;
+  int _statusSerial = 0;
   bool _expanded = false;
+
+  bool get _statusBlocksRead =>
+      widget.statusWriteHeld ||
+      widget.statusStale ||
+      widget.statusConfirmed != null;
 
   List<WorkItemAttributeKind> get _kinds => [
     for (final kind in WorkItemAttributeKind.values)
@@ -140,13 +179,27 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
         oldWidget.weightWritePending && !widget.weightWritePending;
     if (milestoneSettled) _ignoreMilestoneParentPending = false;
     if (weightSettled) _ignoreWeightParentPending = false;
+    final statusHeldNow = !oldWidget.statusWriteHeld && widget.statusWriteHeld;
+    final statusStaleNow = !oldWidget.statusStale && widget.statusStale;
+    final statusSettled =
+        (oldWidget.statusWriteHeld && !widget.statusWriteHeld) ||
+        (oldWidget.statusStale && !widget.statusStale);
+    if (statusHeldNow || statusStaleNow) {
+      // A value read before another write began is never current again.
+      _loaded.remove(WorkItemAttributeKind.status);
+      _errors.remove(WorkItemAttributeKind.status);
+    }
+    if (statusHeldNow || statusStaleNow || widget.statusConfirmed != null) {
+      _statusSerial++;
+      _queue.removeWhere((kind) => kind == WorkItemAttributeKind.status);
+    }
     if (identityChanged ||
         !identical(oldWidget.loadAttribute, widget.loadAttribute) ||
         !identical(oldWidget.detail, widget.detail)) {
       _reset();
       if (_expanded) _enqueueMissing();
     } else if (_expanded &&
-        (milestoneSettled || weightSettled) &&
+        (milestoneSettled || weightSettled || statusSettled) &&
         (widget.isCurrent?.call() ?? true)) {
       // A panel recreated while another panel's write was pending skipped
       // that row; the parent's settle is the only signal to read it now.
@@ -185,6 +238,7 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
       if (kind == WorkItemAttributeKind.weight && _weightWriteBlocksCurrent) {
         continue;
       }
+      if (kind == WorkItemAttributeKind.status && _statusBlocksRead) continue;
       if (_loaded.containsKey(kind) ||
           _errors.containsKey(kind) ||
           _loading.contains(kind) ||
@@ -204,6 +258,7 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
     if (kind == WorkItemAttributeKind.weight && _weightWriteBlocksCurrent) {
       return;
     }
+    if (kind == WorkItemAttributeKind.status && _statusBlocksRead) return;
     _errors.remove(kind);
     if (!_queue.contains(kind) && !_loading.contains(kind)) {
       _queue.addFirst(kind);
@@ -231,6 +286,7 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
   ) async {
     final milestoneSerial = _milestoneSerial;
     final weightSerial = _weightSerial;
+    final statusSerial = _statusSerial;
     try {
       final load = widget.loadAttribute ?? widget.api.workItemAttribute;
       final snapshot = await load(
@@ -249,6 +305,10 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
       }
       if (kind == WorkItemAttributeKind.weight &&
           (weightSerial != _weightSerial || _weightWriteBlocksCurrent)) {
+        return;
+      }
+      if (kind == WorkItemAttributeKind.status &&
+          (statusSerial != _statusSerial || _statusBlocksRead)) {
         return;
       }
       _loaded[kind] = snapshot;
@@ -532,7 +592,7 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
         account: widget.account,
         api: widget.api,
         detail: widget.detail,
-        isCurrent: () => _current(epoch),
+        isCurrent: () => _current(epoch) && !widget.statusWriteHeld,
         operationCurrent: operationCurrent,
         ownerChanges: widget.ownerChanges,
         onRoute: widget.onRoute,
@@ -544,7 +604,7 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
         account: widget.account,
         api: widget.api,
         detail: widget.detail,
-        isCurrent: () => _current(epoch),
+        isCurrent: () => _current(epoch) && !widget.statusWriteHeld,
         operationCurrent: operationCurrent,
         ownerChanges: widget.ownerChanges,
         onRoute: widget.onRoute,
@@ -573,15 +633,68 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
         },
         children: [
           for (final kind in kinds)
-            _AttributeRow(
-              key: ValueKey('work-item-attribute-${kind.name}'),
-              title: _kindTitles[kind]!,
-              loading: _loading.contains(kind) || _queue.contains(kind),
-              snapshot: _loaded[kind],
-              error: _errors[kind],
-              onRetry: () => _retry(kind),
-              action: _attributeAction(kind, epoch),
-            ),
+            if (kind == WorkItemAttributeKind.status &&
+                widget.statusSessionGeneration != null)
+              _statusRow(epoch, widget.statusSessionGeneration!)
+            else
+              _AttributeRow(
+                key: ValueKey('work-item-attribute-${kind.name}'),
+                title: _kindTitles[kind]!,
+                loading: _loading.contains(kind) || _queue.contains(kind),
+                snapshot: _loaded[kind],
+                error: _errors[kind],
+                onRetry: () => _retry(kind),
+                action:
+                    kind == WorkItemAttributeKind.status && widget.statusStale
+                    ? const Text(
+                        '尚未確認最新狀態。請重新整理後再查看。',
+                        key: ValueKey('work-item-status-field-stale'),
+                      )
+                    : _attributeAction(kind, epoch),
+              ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusRow(int epoch, int sessionGeneration) {
+    const kind = WorkItemAttributeKind.status;
+    final ownerDispatch = widget.statusDispatchAllowed;
+    return Padding(
+      key: const ValueKey('work-item-attribute-status'),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _kindTitles[kind]!,
+            style: Theme.of(context).textTheme.labelLarge,
+          ),
+          const SizedBox(height: 6),
+          WorkItemStatusField(
+            account: widget.account,
+            api: widget.api,
+            detail: widget.detail,
+            sessionGeneration: sessionGeneration,
+            isCurrent: () => _current(epoch),
+            ownerChanges: widget.ownerChanges,
+            onRoute: widget.onRoute,
+            confirmed: widget.statusConfirmed,
+            attribute: _loaded[kind],
+            loading: _loading.contains(kind) || _queue.contains(kind),
+            error: _errors[kind],
+            onRetry: () => _retry(kind),
+            writeHeld: widget.statusWriteHeld,
+            unconfirmed: widget.statusUnconfirmed,
+            stale: widget.statusStale,
+            onStatusWrite: widget.onStatusWrite,
+            onStatusOutcome: widget.onStatusOutcome,
+            operationCurrent: widget.statusOperationCurrent,
+            dispatchAllowed: () =>
+                (ownerDispatch?.call() ?? true) && !_loading.contains(kind),
+            onSaved: widget.onStatusSaved ?? (_) {},
+          ),
+          const Divider(height: 18),
         ],
       ),
     );
@@ -667,12 +780,13 @@ class _AttributeValue extends StatelessWidget {
   Widget _status(WorkItemStatusAttribute value) {
     final status = value.status;
     if (status == null) return const Text('未設定');
+    final category = workItemStatusCategoryText(status.category);
     return Wrap(
       spacing: 8,
       runSpacing: 6,
       children: [
         MetaChip(status.name ?? '名稱未知', icon: Icons.flag_outlined),
-        if (status.category != null) MetaChip(status.category!),
+        if (category != null) MetaChip('分類：$category'),
       ],
     );
   }

@@ -89,13 +89,16 @@ class _GroupsPageState extends State<GroupsPage> {
 /// A group: its projects, subgroups, and open issues and merge requests.
 class GroupPage extends StatefulWidget {
   const GroupPage({super.key, required this.account, required this.api, required this.group,
-    this.isCurrent, this.ownerChanges, this.initialTab = 0}) : assert(initialTab >= 0 && initialTab < 5);
+    this.isCurrent, this.ownerChanges, this.initialTab = 0, this.sessionGeneration})
+    : assert(initialTab >= 0 && initialTab < 5);
   final Account account;
   final GitLabApi api;
   final Json group;
   final bool Function()? isCurrent;
   final Listenable? ownerChanges;
   final int initialTab;
+  /// The `SessionController.generation` captured by an explicit owner.
+  final int? sessionGeneration;
   @override
   State<GroupPage> createState() => _GroupPageState();
 }
@@ -118,8 +121,9 @@ class _GroupPageState extends State<GroupPage> {
       (session.active?.key == widget.account.key && identical(session.api, widget.api) &&
        session.generation == _sessionGeneration);
   }
+  int? get _routeGeneration => widget.sessionGeneration ?? _sessionGeneration;
   ResourceNavigator get _open => ResourceNavigator(widget.account, widget.api,
-    isCurrent: _ownerCurrent, ownerChanges: _ownerChanges);
+    isCurrent: _ownerCurrent, ownerChanges: _ownerChanges, sessionGeneration: _routeGeneration);
 
   @override
   void initState() {
@@ -232,7 +236,7 @@ class _GroupPageState extends State<GroupPage> {
     load: (next) => widget.api.subgroups(_id, next: next),
     itemBuilder: (context, value) => groupRow(context, value, onTap: () => Navigator.of(context).push(
       MaterialPageRoute<void>(builder: (_) => GroupPage(account: widget.account, api: widget.api, group: value,
-        isCurrent: _ownerCurrent, ownerChanges: _ownerChanges)))),
+        isCurrent: _ownerCurrent, ownerChanges: _ownerChanges, sessionGeneration: _routeGeneration)))),
   );
 
   Widget _workItems(String resource) => RecordsFeed(
@@ -250,7 +254,8 @@ class _GroupPageState extends State<GroupPage> {
   );
 
   Widget _graphWorkItems() => GraphWorkItemsPage.group(account: widget.account, api: widget.api,
-    namespacePath: _path, isCurrent: _ownerCurrent, ownerChanges: _ownerChanges);
+    namespacePath: _path, isCurrent: _ownerCurrent, ownerChanges: _ownerChanges,
+    sessionGeneration: _routeGeneration);
 
   @override
   Widget build(BuildContext context) {

@@ -23,18 +23,20 @@ import 'work_item_page.dart';
 /// failures (network, rate limit) stay a snack bar.
 class ResourceNavigator {
   const ResourceNavigator(this.account, this.api,
-    {this.isCurrent, this.ownerChanges, this.onRoute});
+    {this.isCurrent, this.ownerChanges, this.onRoute, this.sessionGeneration});
   final Account account;
   final GitLabApi api;
   final bool Function()? isCurrent;
   final Listenable? ownerChanges;
   final ValueChanged<Route<dynamic>>? onRoute;
+  /// The `SessionController.generation` the explicit owner captured.
+  final int? sessionGeneration;
 
   bool _active() => isCurrent?.call() ?? true;
 
   _NavigationOwner _owner(BuildContext context) {
     if (isCurrent != null || ownerChanges != null) {
-      return _NavigationOwner(_active, ownerChanges);
+      return _NavigationOwner(_active, ownerChanges, sessionGeneration);
     }
     try {
       final session = ProviderScope.containerOf(context, listen: false)
@@ -45,9 +47,12 @@ class ResourceNavigator {
             session.generation == generation &&
             identical(session.api, api),
         session,
+        session.active?.key == account.key && identical(session.api, api)
+            ? generation
+            : null,
       );
     } catch (_) {
-      return _NavigationOwner(_active, null);
+      return _NavigationOwner(_active, null, null);
     }
   }
 
@@ -102,7 +107,8 @@ class ResourceNavigator {
     final found = await _group(context, fullPath, owner);
     if (found == null || !context.mounted || !owner.current()) return;
     await _push(context, GroupPage(account: account, api: api, group: found,
-      initialTab: initialTab, isCurrent: owner.current, ownerChanges: owner.changes));
+      initialTab: initialTab, isCurrent: owner.current, ownerChanges: owner.changes,
+      sessionGeneration: owner.generation));
   }
 
   Future<void> groupWorkItems(BuildContext context, String fullPath) =>
@@ -120,7 +126,8 @@ class ResourceNavigator {
     if (link.workItemScope == WorkItemLinkScope.group) {
       await _push(context, GraphWorkItemDetailPage.namespace(
         account: account, api: api, namespacePath: link.project, iid: link.number!,
-        isCurrent: owner.current, ownerChanges: owner.changes));
+        isCurrent: owner.current, ownerChanges: owner.changes,
+        sessionGeneration: owner.generation));
       return;
     }
     final found = await _resolve(context, '專案 ${link.project}',
@@ -128,7 +135,8 @@ class ResourceNavigator {
     if (found == null || !context.mounted || !owner.current()) return;
     await _push(context, GraphWorkItemDetailPage.project(
       account: account, api: api, project: found, iid: link.number!,
-      isCurrent: owner.current, ownerChanges: owner.changes));
+      isCurrent: owner.current, ownerChanges: owner.changes,
+      sessionGeneration: owner.generation));
   }
 
   Future<void> pipeline(BuildContext context, String projectIdOrPath, int id) async {
@@ -182,9 +190,10 @@ class ResourceNavigator {
 }
 
 final class _NavigationOwner {
-  const _NavigationOwner(this.current, this.changes);
+  const _NavigationOwner(this.current, this.changes, this.generation);
   final bool Function() current;
   final Listenable? changes;
+  final int? generation;
 }
 
 class _UnresolvedPage<T> extends StatefulWidget {

@@ -5,12 +5,112 @@ import 'package:flutter/material.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../core/work_item_attribute_models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_state_models.dart';
 import '../../core/work_item_status_models.dart';
 import '../../shared/workspace_ui.dart';
 
 final _hexColor = RegExp(r'^#[0-9A-Fa-f]{6}$');
+
+/// Human label for a known GitLab status category. Unknown, blank and
+/// identifier-shaped values return null; a category never implies lifecycle.
+String? workItemStatusCategoryLabel(String? raw) {
+  final value = raw?.trim();
+  if (value == null || value.isEmpty || value.startsWith('gid://')) {
+    return null;
+  }
+  return switch (value.toUpperCase()) {
+    'TO_DO' => '待辦',
+    'IN_PROGRESS' => '進行中',
+    'DONE' => '已完成',
+    'CANCELED' => '已取消',
+    _ => null,
+  };
+}
+
+/// Category text for display: the known label, otherwise the neutral raw
+/// server value (bounded). Blank and identifier-shaped values return null.
+String? workItemStatusCategoryText(String? raw) {
+  final known = workItemStatusCategoryLabel(raw);
+  if (known != null) return known;
+  final value = raw?.trim();
+  if (value == null || value.isEmpty || value.startsWith('gid://')) {
+    return null;
+  }
+  return value.length <= 40 ? value : '${value.substring(0, 40)}…';
+}
+
+/// STATUS mutations between START and SETTLE, per API client and Work Item.
+/// Every control and editor consults it, so two pages showing one item never
+/// overlap writes. An entry is removed only by the write's own `finally`.
+final class WorkItemStatusWriteRegistry extends ChangeNotifier {
+  WorkItemStatusWriteRegistry._();
+
+  static final instance = WorkItemStatusWriteRegistry._();
+
+  final _active = Expando<Set<String>>();
+  final _terminals = Expando<Map<String, WorkItemStatusTerminal>>();
+
+  bool isActive(GitLabApi api, String workItemId) =>
+      _active[api]?.contains(workItemId) ?? false;
+
+  /// The last settled write on this item through this client that sent a
+  /// mutation and was not refused. Null when there has been none.
+  WorkItemStatusTerminal? terminal(GitLabApi api, String workItemId) =>
+      _terminals[api]?[workItemId];
+
+  void _start(GitLabApi api, String workItemId) {
+    (_active[api] ??= <String>{}).add(workItemId);
+    notifyListeners();
+  }
+
+  void _settle(
+    GitLabApi api,
+    String workItemId,
+    WorkItemStatusSaveResult? confirmed, {
+    required bool mutationSent,
+  }) {
+    final earlier = _terminals[api]?[workItemId]?.revision;
+    if (confirmed == null && mutationSent) {
+      (_terminals[api] ??= {})[workItemId] = WorkItemStatusTerminal._(
+        earlier,
+        confirmed: false,
+      );
+    } else if (confirmed != null &&
+        confirmed.status != WorkItemStatusSaveStatus.notApplied) {
+      final revision = confirmed.snapshot.updatedAt;
+      (_terminals[api] ??= {})[workItemId] = WorkItemStatusTerminal._(
+        earlier != null && earlier.isAfter(revision) ? earlier : revision,
+        confirmed: true,
+      );
+    }
+    if (_active[api]?.remove(workItemId) ?? false) notifyListeners();
+  }
+}
+
+/// Server revision floor left by settled STATUS writes. [revision] is the
+/// newest confirmed `updatedAt`, null if none was confirmed; [confirmed] is
+/// false when the last write's outcome is unknown. A detail at the same
+/// instant counts as reaching the floor: revisions carry no finer order than
+/// the server's timestamp. Each settle is a distinct instance, so a page can
+/// tell whether it has already seen it.
+final class WorkItemStatusTerminal {
+  WorkItemStatusTerminal._(this.revision, {required this.confirmed});
+
+  final DateTime? revision;
+  final bool confirmed;
+}
+
+/// Delivered once from a started save's `finally`, immediately before SETTLE.
+/// [confirmed] is the API's confirmed result; null means the outcome is not
+/// confirmed and must be read again, never replayed.
+typedef WorkItemStatusWriteOutcome =
+    void Function(
+      Object token,
+      WorkItemStatusSaveResult? confirmed, {
+      required bool mutationSent,
+    });
 
 /// Status-only signal around one save that reached the mutation handoff.
 /// [token] is a fresh opaque object per save. [sessionGeneration] is the
@@ -43,6 +143,9 @@ class WorkItemStatusControl extends StatefulWidget {
     this.onStatusWrite,
     this.writePending = false,
     this.operationCurrent,
+    this.dispatchAllowed,
+    this.onStatusOutcome,
+    this.confirmedInValue = false,
   });
 
   final Account account;
@@ -56,6 +159,16 @@ class WorkItemStatusControl extends StatefulWidget {
   final WorkItemStatusWriteListener? onStatusWrite;
   final bool writePending;
   final bool Function()? operationCurrent;
+
+  /// Owner lock. False while the owner's own reads or other writes are in
+  /// flight; checked before the capability read, on Save and in the final
+  /// pre-START check.
+  final bool Function()? dispatchAllowed;
+  final WorkItemStatusWriteOutcome? onStatusOutcome;
+
+  /// The owner shows the confirmed value itself, so a success line would
+  /// repeat it.
+  final bool confirmedInValue;
 
   @override
   State<WorkItemStatusControl> createState() => _WorkItemStatusControlState();
@@ -73,10 +186,22 @@ class _WorkItemStatusControlState extends State<WorkItemStatusControl> {
   bool _current(int epoch) => mounted && epoch == _epoch && widget.isCurrent();
   bool get _writePending => widget.writePending || _writeToken != null;
 
+  bool get _dispatchAllowed =>
+      (widget.dispatchAllowed?.call() ?? true) &&
+      !WorkItemStatusWriteRegistry.instance.isActive(
+        widget.api,
+        widget.detail.summary.id,
+      );
+
   @override
   void initState() {
     super.initState();
     widget.ownerChanges?.addListener(_ownerChanged);
+    WorkItemStatusWriteRegistry.instance.addListener(_registryChanged);
+  }
+
+  void _registryChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -108,6 +233,7 @@ class _WorkItemStatusControlState extends State<WorkItemStatusControl> {
   @override
   void dispose() {
     widget.ownerChanges?.removeListener(_ownerChanged);
+    WorkItemStatusWriteRegistry.instance.removeListener(_registryChanged);
     _epoch++;
     _dismissRoute();
     super.dispose();
@@ -167,7 +293,8 @@ class _WorkItemStatusControlState extends State<WorkItemStatusControl> {
         _opening ||
         (existing != null && existing.isActive) ||
         _writePending ||
-        !widget.isCurrent()) {
+        !widget.isCurrent() ||
+        !_dispatchAllowed) {
       return;
     }
     final epoch = _epoch;
@@ -176,7 +303,13 @@ class _WorkItemStatusControlState extends State<WorkItemStatusControl> {
     final detail = widget.detail;
     final generation = widget.sessionGeneration;
     final writeListener = widget.onStatusWrite;
+    final outcome = widget.onStatusOutcome;
     final operationCurrent = widget.operationCurrent ?? widget.isCurrent;
+    final ownerDispatch = widget.dispatchAllowed;
+    final workItemId = detail.summary.id;
+    bool dispatchAllowed() =>
+        (ownerDispatch?.call() ?? true) &&
+        !WorkItemStatusWriteRegistry.instance.isActive(api, workItemId);
     setState(() {
       _opening = true;
       _error = null;
@@ -201,7 +334,9 @@ class _WorkItemStatusControlState extends State<WorkItemStatusControl> {
           access: access,
           isCurrent: () => _current(epoch),
           operationCurrent: operationCurrent,
+          dispatchAllowed: dispatchAllowed,
           writeListener: writeListener,
+          outcome: outcome,
           onWriteStarted: _noteStarted,
           onWriteSettled: _noteSettled,
         ),
@@ -237,7 +372,11 @@ class _WorkItemStatusControlState extends State<WorkItemStatusControl> {
           child: TextButton.icon(
             key: const ValueKey('work-item-status-edit'),
             style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
-            onPressed: _opening || _writePending || !widget.isCurrent()
+            onPressed:
+                _opening ||
+                    _writePending ||
+                    !widget.isCurrent() ||
+                    !_dispatchAllowed
                 ? null
                 : () => unawaited(_open()),
             icon: _opening
@@ -255,7 +394,7 @@ class _WorkItemStatusControlState extends State<WorkItemStatusControl> {
             ),
           ),
         ),
-        if (result != null)
+        if (result != null && !widget.confirmedInValue)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
             child: Text(
@@ -284,6 +423,7 @@ final class _StatusWrite {
     required this.detail,
     required this.sessionGeneration,
     required this.listener,
+    required this.outcome,
     required this.onStarted,
     required this.onSettled,
   });
@@ -294,16 +434,25 @@ final class _StatusWrite {
   final WorkItemGraphDetail detail;
   final int sessionGeneration;
   final WorkItemStatusWriteListener? listener;
+  final WorkItemStatusWriteOutcome? outcome;
   final ValueChanged<Object> onStarted;
   final ValueChanged<Object> onSettled;
   var _started = false;
   var _settled = false;
+  var _registered = false;
+
+  /// Set only from a returned API result. Anything else after START is
+  /// reported as unconfirmed.
+  WorkItemStatusSaveResult? confirmed;
+  var mutationSent = true;
 
   bool get started => _started;
 
   void start() {
     if (_started) return;
     _started = true;
+    WorkItemStatusWriteRegistry.instance._start(api, detail.summary.id);
+    _registered = true;
     onStarted(token);
     listener?.call(
       WorkItemStatusWritePhase.start,
@@ -319,16 +468,31 @@ final class _StatusWrite {
     if (!_started || _settled) return;
     _settled = true;
     try {
-      listener?.call(
-        WorkItemStatusWritePhase.settle,
-        token,
-        account,
-        api,
-        detail,
-        sessionGeneration,
-      );
+      if (_registered) {
+        WorkItemStatusWriteRegistry.instance._settle(
+          api,
+          detail.summary.id,
+          confirmed,
+          mutationSent: mutationSent,
+        );
+      }
     } finally {
-      onSettled(token);
+      try {
+        outcome?.call(token, confirmed, mutationSent: mutationSent);
+      } finally {
+        try {
+          listener?.call(
+            WorkItemStatusWritePhase.settle,
+            token,
+            account,
+            api,
+            detail,
+            sessionGeneration,
+          );
+        } finally {
+          onSettled(token);
+        }
+      }
     }
   }
 }
@@ -342,7 +506,9 @@ class _WorkItemStatusEditor extends StatefulWidget {
     required this.access,
     required this.isCurrent,
     required this.operationCurrent,
+    required this.dispatchAllowed,
     required this.writeListener,
+    required this.outcome,
     required this.onWriteStarted,
     required this.onWriteSettled,
   });
@@ -354,7 +520,9 @@ class _WorkItemStatusEditor extends StatefulWidget {
   final WorkItemStatusAccess access;
   final bool Function() isCurrent;
   final bool Function() operationCurrent;
+  final bool Function() dispatchAllowed;
   final WorkItemStatusWriteListener? writeListener;
+  final WorkItemStatusWriteOutcome? outcome;
   final ValueChanged<Object> onWriteStarted;
   final ValueChanged<Object> onWriteSettled;
 
@@ -395,6 +563,14 @@ class _WorkItemStatusEditorState extends State<_WorkItemStatusEditor> {
     final target = widget.access.target;
     final candidate = _selected;
     if (!_editable || target == null || candidate == null) return;
+    final dispatchAllowed = widget.dispatchAllowed;
+    if (!dispatchAllowed()) {
+      // The target stays unused, so Save can be pressed again later.
+      ScaffoldMessenger.maybeOf(
+        context,
+      )?.showSnackBar(const SnackBar(content: Text('工作項目正在讀取或更新，請稍後再儲存。')));
+      return;
+    }
     final api = widget.api;
     final isCurrent = widget.isCurrent;
     final operationCurrent = widget.operationCurrent;
@@ -404,6 +580,7 @@ class _WorkItemStatusEditorState extends State<_WorkItemStatusEditor> {
       detail: widget.detail,
       sessionGeneration: widget.sessionGeneration,
       listener: widget.writeListener,
+      outcome: widget.outcome,
       onStarted: widget.onWriteStarted,
       onSettled: widget.onWriteSettled,
     );
@@ -416,16 +593,19 @@ class _WorkItemStatusEditorState extends State<_WorkItemStatusEditor> {
       final result = await api.updateWorkItemStatus(
         target,
         candidateId: candidate,
-        isCurrent: () =>
-            write.started ? operationCurrent() : mounted && isCurrent(),
+        isCurrent: () => write.started
+            ? operationCurrent()
+            : mounted && isCurrent() && dispatchAllowed(),
         onMutationSent: (started) {
           started(write.token);
           write.start();
         },
       );
+      write.confirmed = result;
       if (!mounted || !widget.isCurrent()) return;
       Navigator.of(context).pop(result);
     } on WorkItemStatusWriteFailure catch (failure) {
+      write.mutationSent = failure.mutationSent;
       _showFailure(_writeFailure(failure));
     } catch (error) {
       _showFailure(safeFailure(error));
@@ -579,7 +759,8 @@ class _WorkItemStatusEditorState extends State<_WorkItemStatusEditor> {
         assignment.id == id;
     final name = _statusName(status.name);
     final label = isAssigned ? '$name（目前）' : name;
-    final category = '分類：${status.category ?? '未提供'}';
+    final category =
+        '分類：${workItemStatusCategoryText(status.category) ?? '未提供'}';
     final description = status.description;
     final scheme = Theme.of(context).colorScheme;
     return Semantics(
@@ -710,4 +891,175 @@ String _statusResourceLabel(WorkItemGraphSummary summary) {
 Color _dotColor(String? raw, ColorScheme scheme) {
   if (raw == null || !_hexColor.hasMatch(raw)) return scheme.outline;
   return Color(0xFF000000 | int.parse(raw.substring(1), radix: 16));
+}
+
+/// The STATUS attribute row: the confirmed STATUS snapshot when the owner has
+/// one for the current revision, otherwise the attribute read, plus the
+/// editor entry. The owner decides when reads may run and holds the write.
+class WorkItemStatusField extends StatelessWidget {
+  const WorkItemStatusField({
+    super.key,
+    required this.account,
+    required this.api,
+    required this.detail,
+    required this.sessionGeneration,
+    required this.isCurrent,
+    required this.onSaved,
+    this.confirmed,
+    this.attribute,
+    this.loading = false,
+    this.error,
+    this.onRetry,
+    this.writeHeld = false,
+    this.unconfirmed = false,
+    this.stale = false,
+    this.ownerChanges,
+    this.onRoute,
+    this.onStatusWrite,
+    this.onStatusOutcome,
+    this.operationCurrent,
+    this.dispatchAllowed,
+  });
+
+  final Account account;
+  final GitLabApi api;
+  final WorkItemGraphDetail detail;
+  final int sessionGeneration;
+  final bool Function() isCurrent;
+  final ValueChanged<WorkItemStatusSaveResult> onSaved;
+  final WorkItemStatusSnapshot? confirmed;
+  final WorkItemAttributeSnapshot? attribute;
+  final bool loading;
+  final ApiFailure? error;
+  final VoidCallback? onRetry;
+  final bool writeHeld;
+  final bool unconfirmed;
+
+  /// The detail on screen is older than a confirmed STATUS write on this
+  /// item, so no STATUS value is current.
+  final bool stale;
+  final Listenable? ownerChanges;
+  final ValueChanged<Route<dynamic>>? onRoute;
+  final WorkItemStatusWriteListener? onStatusWrite;
+  final WorkItemStatusWriteOutcome? onStatusOutcome;
+  final bool Function()? operationCurrent;
+  final bool Function()? dispatchAllowed;
+
+  @override
+  Widget build(BuildContext context) {
+    final failure = error;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (writeHeld)
+          const Row(
+            key: ValueKey('work-item-status-field-pending'),
+            children: [
+              SizedBox.square(
+                dimension: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              SizedBox(width: 8),
+              Flexible(child: Text('正在更新狀態，完成前不會重新讀取')),
+            ],
+          )
+        else if (stale && confirmed == null)
+          const Text(
+            '尚未確認最新狀態。請重新整理後再查看。',
+            key: ValueKey('work-item-status-field-stale'),
+          )
+        else if (confirmed == null && loading)
+          const LinearProgressIndicator(minHeight: 2)
+        else if (confirmed == null && failure != null)
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(failure.title),
+              if (onRetry != null)
+                TextButton(onPressed: onRetry, child: const Text('重試')),
+            ],
+          )
+        else
+          KeyedSubtree(
+            key: const ValueKey('work-item-status-field-value'),
+            child: _value(context),
+          ),
+        if (unconfirmed && !writeHeld)
+          const Padding(
+            key: ValueKey('work-item-status-field-unconfirmed'),
+            padding: EdgeInsets.only(top: 4),
+            child: Text('上次狀態變更的結果未確認，已重新讀取，不會自動重送。'),
+          ),
+        WorkItemStatusControl(
+          account: account,
+          api: api,
+          detail: detail,
+          sessionGeneration: sessionGeneration,
+          onSaved: onSaved,
+          isCurrent: isCurrent,
+          ownerChanges: ownerChanges,
+          onRoute: onRoute,
+          onStatusWrite: onStatusWrite,
+          onStatusOutcome: onStatusOutcome,
+          writePending: writeHeld,
+          operationCurrent: operationCurrent,
+          dispatchAllowed: dispatchAllowed,
+          confirmedInValue: true,
+        ),
+      ],
+    );
+  }
+
+  Widget _value(BuildContext context) {
+    final String label;
+    final String? category;
+    final String? color;
+    final confirmed = this.confirmed;
+    if (confirmed != null) {
+      final assignment = confirmed.assignment;
+      if (assignment.kind == WorkItemStatusAssignmentKind.unassigned) {
+        return const Text('未設定');
+      }
+      label = _assignmentLabel(assignment);
+      category = assignment.record?.category;
+      color = assignment.record?.color;
+    } else {
+      final snapshot = attribute;
+      if (snapshot == null) return const Text('等待讀取');
+      if (snapshot.availability == WorkItemAttributeAvailability.absent) {
+        return const Text('未設定');
+      }
+      if (snapshot.availability ==
+          WorkItemAttributeAvailability.widgetsUnavailable) {
+        return const Text('伺服器未回傳 widgets，無法判定');
+      }
+      final value = snapshot.value;
+      if (value is! WorkItemStatusAttribute) {
+        return const Text('伺服器未回傳欄位值');
+      }
+      final status = value.status;
+      if (status == null) return const Text('未設定');
+      final name = status.name?.trim();
+      label = name == null || name.isEmpty ? '名稱未知' : name;
+      category = status.category;
+      color = status.color;
+    }
+    final categoryLabel = workItemStatusCategoryText(category);
+    return Wrap(
+      spacing: 8,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        Icon(
+          Icons.circle,
+          size: 10,
+          color: _dotColor(color, Theme.of(context).colorScheme),
+        ),
+        MetaChip(label, icon: Icons.flag_outlined),
+        if (categoryLabel != null) MetaChip('分類：$categoryLabel'),
+      ],
+    );
+  }
 }

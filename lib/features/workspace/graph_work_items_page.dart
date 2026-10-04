@@ -9,9 +9,11 @@ import '../../core/work_item_assignee_models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_labels_models.dart';
 import '../../core/work_item_state_models.dart';
+import '../../core/work_item_status_models.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/workspace_ui.dart';
+import '../auth/session_controller.dart';
 import 'work_item_activity.dart';
 import 'work_item_assignees.dart';
 import 'work_item_attributes.dart';
@@ -20,6 +22,7 @@ import 'work_item_labels.dart';
 import 'work_item_milestone.dart';
 import 'work_item_notifications.dart';
 import 'work_item_state_control.dart';
+import 'work_item_status.dart';
 import 'work_item_weight.dart';
 
 String _graphWorkItemState(String value) => switch (value.toUpperCase()) {
@@ -33,6 +36,43 @@ String _graphWorkItemState(String value) => switch (value.toUpperCase()) {
 String workItemCalendarDate(DateTime value) =>
     '${value.year}/${value.month.toString().padLeft(2, '0')}/${value.day.toString().padLeft(2, '0')}';
 
+/// The `SessionController.generation` a route belongs to, taken once when the
+/// route opens. An injected value wins; otherwise only a current session
+/// owner for the same account and client supplies it. Null keeps
+/// session-bound writers closed.
+int? captureRouteSessionGeneration({
+  required int? injected,
+  required Listenable? owner,
+  required Account account,
+  required GitLabApi api,
+  bool Function()? isCurrent,
+}) {
+  if (injected != null) return injected;
+  if (owner is! SessionController) return null;
+  if (!(isCurrent?.call() ?? true) ||
+      owner.active?.key != account.key ||
+      !identical(owner.api, api)) {
+    return null;
+  }
+  return owner.generation;
+}
+
+/// Whether the captured generation still names the live session. The value
+/// is never re-sampled, so leaving and returning to the same account and
+/// client keeps an old route invalid.
+bool routeSessionMatches(
+  int? generation,
+  Listenable? owner,
+  Account account,
+  GitLabApi api,
+) {
+  if (generation == null) return false;
+  if (owner is! SessionController) return true;
+  return owner.generation == generation &&
+      owner.active?.key == account.key &&
+      identical(owner.api, api);
+}
+
 /// The native GraphQL list for every work-item type enabled by the server.
 /// Type names and opaque IDs are display/capability data only; they never
 /// select a REST endpoint or a navigation path.
@@ -44,6 +84,7 @@ class GraphWorkItemsPage extends StatefulWidget {
     required this.project,
     this.isCurrent,
     this.ownerChanges,
+    this.sessionGeneration,
   }) : _groupPath = null,
        embedded = false;
 
@@ -54,6 +95,7 @@ class GraphWorkItemsPage extends StatefulWidget {
     required String namespacePath,
     this.isCurrent,
     this.ownerChanges,
+    this.sessionGeneration,
   }) : project = null,
        _groupPath = namespacePath,
        embedded = true;
@@ -66,6 +108,9 @@ class GraphWorkItemsPage extends StatefulWidget {
   final bool embedded;
   final bool Function()? isCurrent;
   final Listenable? ownerChanges;
+
+  /// The `SessionController.generation` captured by the opener.
+  final int? sessionGeneration;
 
   @override
   State<GraphWorkItemsPage> createState() => _GraphWorkItemsPageState();
@@ -102,6 +147,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   int _typePages = 0;
   int _generation = 0;
   int _itemGeneration = 0;
+  int? _sessionGeneration;
   NavigatorState? _navigator;
   final Set<Route<dynamic>> _ownedRoutes = {};
   bool _ownerInvalid = false;
@@ -110,6 +156,14 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       mounted &&
       generation == _generation &&
       (widget.isCurrent?.call() ?? true);
+
+  int? _captureSessionGeneration() => captureRouteSessionGeneration(
+    injected: widget.sessionGeneration,
+    owner: widget.ownerChanges,
+    account: widget.account,
+    api: widget.api,
+    isCurrent: widget.isCurrent,
+  );
 
   bool _currentItems(int generation, int itemGeneration) =>
       _current(generation) && itemGeneration == _itemGeneration;
@@ -190,6 +244,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
     _filter = _defaultFilter;
     _searchController = TextEditingController(text: _filter.search);
     _searchScrollController = ScrollController(keepScrollOffset: false);
+    _sessionGeneration = _captureSessionGeneration();
     widget.ownerChanges?.addListener(_ownerChanged);
     unawaited(_refresh());
   }
@@ -211,6 +266,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         oldWidget.project?.id != widget.project?.id ||
         oldWidget.namespacePath != widget.namespacePath ||
         !identical(oldWidget.api, widget.api)) {
+      _sessionGeneration = _captureSessionGeneration();
       _generation++;
       _itemGeneration++;
       _dismissOwnedRoutes();
@@ -767,6 +823,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
               iid: item.iid,
               isCurrent: widget.isCurrent,
               ownerChanges: widget.ownerChanges,
+              sessionGeneration: _sessionGeneration,
             )
           : GraphWorkItemDetailPage.project(
               account: widget.account,
@@ -775,6 +832,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
               iid: item.iid,
               isCurrent: widget.isCurrent,
               ownerChanges: widget.ownerChanges,
+              sessionGeneration: _sessionGeneration,
             ),
     );
     _ownRoute(route);
@@ -1326,6 +1384,7 @@ class GraphWorkItemDetailPage extends StatefulWidget {
     required this.iid,
     this.isCurrent,
     this.ownerChanges,
+    this.sessionGeneration,
   }) : project = project,
        namespacePath = project.path,
        expectedNamespaceId = null;
@@ -1339,6 +1398,7 @@ class GraphWorkItemDetailPage extends StatefulWidget {
     this.expectedNamespaceId,
     this.isCurrent,
     this.ownerChanges,
+    this.sessionGeneration,
   }) : project = null;
 
   final Account account;
@@ -1349,6 +1409,11 @@ class GraphWorkItemDetailPage extends StatefulWidget {
   final int iid;
   final bool Function()? isCurrent;
   final Listenable? ownerChanges;
+
+  /// The `SessionController.generation` captured by the opener. Without it
+  /// (and without a session owner to capture from) the STATUS writer stays
+  /// closed.
+  final int? sessionGeneration;
 
   @override
   State<GraphWorkItemDetailPage> createState() =>
@@ -1382,6 +1447,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   bool _labelsHidePreview = false;
   bool _labelsUnconfirmed = false;
   int _labelsReadSerial = 0;
+  int? _labelsRefetchSerial;
   Object? _milestoneWriteToken;
   int? _milestoneWriteGeneration;
   String? _milestoneWriteAccount;
@@ -1392,16 +1458,108 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   String? _weightWriteAccount;
   GitLabApi? _weightWriteApi;
   WorkItemGraphSummary? _weightWriteSummary;
+  int? _sessionGeneration;
+  Object? _statusWriteToken;
+  int? _statusWriteGeneration;
+  WorkItemGraphSummary? _statusWriteSummary;
+  WorkItemStatusSnapshot? _statusConfirmed;
+  bool _statusUnconfirmed = false;
+  bool _statusReloadOnSettle = false;
+  int _stateOperations = 0;
+  bool _statusRegistryActive = false;
+  bool _statusReloadAfterLoad = false;
+  WorkItemStatusTerminal? _statusTerminalSeen;
+  late final WorkItemStateLoader _stateLoader = _loadStateGuarded;
+  late final WorkItemStateUpdater _stateUpdater = _updateStateGuarded;
 
   bool _current(int generation) =>
       mounted &&
       generation == _generation &&
       (widget.isCurrent?.call() ?? true);
 
+  int? _captureSessionGeneration() => captureRouteSessionGeneration(
+    injected: widget.sessionGeneration,
+    owner: widget.ownerChanges,
+    account: widget.account,
+    api: widget.api,
+    isCurrent: widget.isCurrent,
+  );
+
+  bool get _sessionCurrent => routeSessionMatches(
+    _sessionGeneration,
+    widget.ownerChanges,
+    widget.account,
+    widget.api,
+  );
+
+  /// A STATUS write on this item is between START and SETTLE, from this page
+  /// or from any other page using the same API client. Before the first
+  /// detail arrives the item id is unknown, so only this page's token counts.
+  bool get _statusHeld {
+    if (_statusWriteToken != null) return true;
+    final detail = _detail;
+    return detail != null &&
+        WorkItemStatusWriteRegistry.instance.isActive(
+          widget.api,
+          detail.summary.id,
+        );
+  }
+
+  WorkItemStatusTerminal? get _statusTerminal {
+    final detail = _detail;
+    return detail == null
+        ? null
+        : WorkItemStatusWriteRegistry.instance.terminal(
+            widget.api,
+            detail.summary.id,
+          );
+  }
+
+  /// The detail on screen predates a confirmed STATUS write on this item, so
+  /// its STATUS is not painted as current. Cleared only by a newer detail.
+  bool get _statusStale {
+    final revision = _statusTerminal?.revision;
+    final detail = _detail;
+    return revision != null &&
+        detail != null &&
+        detail.summary.updatedAt.isBefore(revision);
+  }
+
+  /// Another page's STATUS write on this item ended with an unknown outcome
+  /// and this page has not been refreshed by hand since.
+  bool get _statusForeignUnconfirmed {
+    final terminal = _statusTerminal;
+    return terminal != null &&
+        !terminal.confirmed &&
+        !identical(terminal, _statusTerminalSeen);
+  }
+
+  bool get _labelsRefetchPending =>
+      _labelsRefetchSerial != null &&
+      _labelsRefetchSerial == _labelsReadSerial;
+
+  /// The owner lock for a STATUS open/save. Checked again synchronously in
+  /// the editor's last pre-START check.
+  bool _statusDispatchAllowed() =>
+      _current(_generation) &&
+      _sessionCurrent &&
+      _detail != null &&
+      !_loading &&
+      _stateOperations == 0 &&
+      !_statusHeld &&
+      _labelsWriteToken == null &&
+      !_labelsRefetchPending &&
+      _assigneesWriteToken == null &&
+      !_assigneesRefetchPending &&
+      _milestoneWriteToken == null &&
+      _weightWriteToken == null;
+
   @override
   void initState() {
     super.initState();
+    _sessionGeneration = _captureSessionGeneration();
     widget.ownerChanges?.addListener(_ownerChanged);
+    WorkItemStatusWriteRegistry.instance.addListener(_statusRegistryChanged);
     _assigneeOwner = _assigneeOwnerSignals();
     unawaited(_load());
   }
@@ -1426,7 +1584,9 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         oldWidget.namespacePath != widget.namespacePath ||
         oldWidget.expectedNamespaceId != widget.expectedNamespaceId ||
         oldWidget.iid != widget.iid ||
-        !identical(oldWidget.isCurrent, widget.isCurrent)) {
+        !identical(oldWidget.isCurrent, widget.isCurrent) ||
+        oldWidget.sessionGeneration != widget.sessionGeneration) {
+      _sessionGeneration = _captureSessionGeneration();
       _generation++;
       _dropAssigneeSession();
       _dropLabelSession();
@@ -1439,6 +1599,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       _error = null;
       _loading = false;
       _ownerInvalid = false;
+      _statusRegistryActive = false;
+      _statusReloadAfterLoad = false;
       unawaited(_load());
     }
   }
@@ -1446,6 +1608,9 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   @override
   void dispose() {
     widget.ownerChanges?.removeListener(_ownerChanged);
+    WorkItemStatusWriteRegistry.instance.removeListener(
+      _statusRegistryChanged,
+    );
     _generation++;
     _dropAssigneeSession();
     _dropLabelSession();
@@ -1455,6 +1620,42 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     super.dispose();
   }
 
+  /// Another page's STATUS write on this item: hold while it is active, and
+  /// read the detail once after it settles. Its result supersedes this
+  /// page's own earlier confirmed or unconfirmed STATUS. This page's own
+  /// write is ordered by its outcome and SETTLE callbacks instead.
+  void _statusRegistryChanged() {
+    if (!mounted) return;
+    final detail = _detail;
+    if (detail == null) {
+      if (_loading) _statusReloadAfterLoad = true;
+      return;
+    }
+    final active = WorkItemStatusWriteRegistry.instance.isActive(
+      widget.api,
+      detail.summary.id,
+    );
+    if (active == _statusRegistryActive) return;
+    final settled = _statusRegistryActive && !active;
+    _statusRegistryActive = active;
+    if (settled && _statusWriteToken == null) {
+      setState(() {
+        _statusConfirmed = null;
+        _statusUnconfirmed = false;
+      });
+      if (_current(_generation) &&
+          (_sessionCurrent || widget.ownerChanges == null)) {
+        if (_loading) {
+          _statusReloadAfterLoad = true;
+        } else {
+          unawaited(_load());
+        }
+      }
+      return;
+    }
+    setState(() {});
+  }
+
   void _ownerChanged() {
     if (widget.isCurrent?.call() ?? true) return;
     _generation++;
@@ -1462,6 +1663,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     _dropLabelSession();
     _dropMetadataWrites();
     _dismissOwnedRoutes();
+    _statusRegistryActive = false;
+    _statusReloadAfterLoad = false;
     setState(() {
       _detail = null;
       _resolvedProject = null;
@@ -1562,9 +1765,14 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     return _sameWorkItemResource(detail.summary, expectedSummary);
   }
 
-  Future<void> _load() async {
+  /// A refresh the user asked for also acknowledges the unconfirmed STATUS
+  /// outcome shown when it started.
+  void _refresh() => unawaited(_load(acknowledge: _statusTerminal));
+
+  Future<void> _load({WorkItemStatusTerminal? acknowledge}) async {
     if (_loading ||
         _labelsWriteToken != null ||
+        _statusHeld ||
         !_current(_generation)) {
       return;
     }
@@ -1573,11 +1781,13 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     final loadEpoch = ++_detailEpoch;
     final expectedLabelsSummary = _detail?.summary;
     final labelsReadSerial = ++_labelsReadSerial;
+    _statusReloadAfterLoad = false;
     final keepDetail =
         _assigneesWriteToken != null ||
         _labelsWriteToken != null ||
         _milestoneWriteToken != null ||
         _weightWriteToken != null ||
+        _statusConfirmed != null ||
         (_labelsRoute?.isActive ?? false);
     setState(() {
       _loading = true;
@@ -1628,6 +1838,19 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
               !_sameWorkItemResource(detail.summary, expectedLabelsSummary))) {
         return;
       }
+      final statusRevision = _statusConfirmed?.updatedAt;
+      if (_statusWriteToken != null ||
+          (statusRevision != null &&
+              detail.summary.updatedAt.isBefore(statusRevision))) {
+        final kept = _detail;
+        if (_statusWriteToken == null &&
+            kept != null &&
+            owner.project == null &&
+            kept.summary.project != null) {
+          unawaited(_resolveProjectContext(kept, generation));
+        }
+        return;
+      }
       final previous = _detail;
       final assigneeBusy =
           _assigneesWriteToken != null || _assigneesRefetchPending;
@@ -1651,11 +1874,31 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           !_sameWorkItemResource(previous.summary, detail.summary)) {
         _dropLabelSession();
       }
+      if (previous != null &&
+          !_sameWorkItemResource(previous.summary, detail.summary)) {
+        _dropStatusWrite();
+      }
       setState(() {
         _detail = detail;
         _labelsHidePreview = false;
         _labelsUnconfirmed = false;
+        _statusConfirmed = null;
+        if (acknowledge != null &&
+            identical(
+              acknowledge,
+              WorkItemStatusWriteRegistry.instance.terminal(
+                owner.api,
+                detail.summary.id,
+              ),
+            )) {
+          _statusTerminalSeen = acknowledge;
+        }
       });
+      _statusRegistryActive = WorkItemStatusWriteRegistry.instance.isActive(
+        owner.api,
+        detail.summary.id,
+      );
+      if (_statusRegistryActive) _statusReloadAfterLoad = false;
       if (_assigneesWriteToken == null && _assigneesHideStalePreview) {
         unawaited(_refetchAssignees(detail, generation));
       }
@@ -1673,6 +1916,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           )) {
         return;
       }
+      _statusReloadAfterLoad = false;
       final failure = safeFailure(error);
       if (failure.kind != FailureKind.cancelled) {
         setState(() => _error = failure);
@@ -1680,6 +1924,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     } finally {
       if (_detailEpoch == loadEpoch && _sameLabelOwner(owner, generation)) {
         setState(() => _loading = false);
+        if (_statusReloadAfterLoad) unawaited(_load());
       }
     }
   }
@@ -1705,6 +1950,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     _labelsHidePreview = false;
     _labelsUnconfirmed = false;
     _labelsReadSerial++;
+    _labelsRefetchSerial = null;
   }
 
   void _onLabelWrite(WorkItemLabelWritePhase phase, Object token) {
@@ -1732,11 +1978,18 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     final detail = _detail;
     final generation = _labelsWriteGeneration!;
     final serial = ++_labelsReadSerial;
+    if (detail == null || !_current(generation)) {
+      setState(() {
+        _labelsWriteToken = null;
+        _labelsWriteGeneration = null;
+      });
+      return;
+    }
     setState(() {
       _labelsWriteToken = null;
       _labelsWriteGeneration = null;
+      _labelsRefetchSerial = serial;
     });
-    if (detail == null || !_current(generation)) return;
     unawaited(_refetchLabelsDetail(generation, detail.summary, serial));
   }
 
@@ -1781,10 +2034,21 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         return;
       }
       if (!_sameWorkItemResource(detail.summary, expectedSummary)) return;
+      final statusRevision = _statusConfirmed?.updatedAt;
+      if (_statusWriteToken != null ||
+          (statusRevision != null &&
+              detail.summary.updatedAt.isBefore(statusRevision))) {
+        setState(() {
+          _labelsHidePreview = true;
+          _labelsUnconfirmed = true;
+        });
+        return;
+      }
       setState(() {
         _detail = detail;
         _labelsHidePreview = false;
         _labelsUnconfirmed = false;
+        _statusConfirmed = null;
       });
     } catch (_) {
       if (!_labelsReadCurrent(
@@ -1800,6 +2064,10 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         _labelsHidePreview = true;
         _labelsUnconfirmed = true;
       });
+    } finally {
+      if (mounted && _labelsRefetchSerial == serial) {
+        setState(() => _labelsRefetchSerial = null);
+      }
     }
   }
 
@@ -1819,6 +2087,239 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   void _dropMetadataWrites() {
     _dropMilestoneWrite();
     _dropWeightWrite();
+    _dropStatusWrite();
+  }
+
+  /// Forgets the parent's STATUS hold for an old owner or resource. The
+  /// write itself still settles through its own `finally`, which also clears
+  /// the per-client registry; nothing here releases that early.
+  void _dropStatusWrite() {
+    _statusWriteToken = null;
+    _statusWriteGeneration = null;
+    _statusWriteSummary = null;
+    _statusConfirmed = null;
+    _statusUnconfirmed = false;
+    _statusReloadOnSettle = false;
+  }
+
+  bool _statusWriteMatches(
+    Object token,
+    Account account,
+    GitLabApi api,
+    int sessionGeneration,
+  ) {
+    final summary = _statusWriteSummary;
+    final current = _detail;
+    return identical(_statusWriteToken, token) &&
+        _statusWriteGeneration == _generation &&
+        account.key == widget.account.key &&
+        identical(api, widget.api) &&
+        sessionGeneration == _sessionGeneration &&
+        _sessionCurrent &&
+        summary != null &&
+        current != null &&
+        _current(_generation) &&
+        _sameWorkItemResource(summary, current.summary);
+  }
+
+  void _onStatusWrite(
+    WorkItemStatusWritePhase phase,
+    Object token,
+    Account account,
+    GitLabApi api,
+    WorkItemGraphDetail detail,
+    int sessionGeneration,
+  ) {
+    if (!mounted) return;
+    if (phase == WorkItemStatusWritePhase.start) {
+      if (_statusWriteToken != null ||
+          sessionGeneration != _sessionGeneration ||
+          !_sessionCurrent ||
+          !_acceptsMetadataWriteStart(account, api, detail)) {
+        return;
+      }
+      setState(() {
+        _statusWriteToken = token;
+        _statusWriteGeneration = _generation;
+        _statusWriteSummary = detail.summary;
+        _statusUnconfirmed = false;
+        _statusReloadOnSettle = false;
+      });
+      return;
+    }
+    if (!identical(_statusWriteToken, token)) return;
+    final matches = _statusWriteMatches(
+      token,
+      account,
+      api,
+      sessionGeneration,
+    );
+    final reload = matches && _statusReloadOnSettle;
+    setState(() {
+      _statusWriteToken = null;
+      _statusWriteGeneration = null;
+      _statusWriteSummary = null;
+      _statusReloadOnSettle = false;
+      _statusTerminalSeen = WorkItemStatusWriteRegistry.instance.terminal(
+        api,
+        detail.summary.id,
+      );
+    });
+    if (reload) unawaited(_load());
+  }
+
+  /// Runs from the write's `finally` just before SETTLE, while the parent
+  /// still holds the token.
+  void _onStatusOutcome(
+    Object token,
+    WorkItemStatusSaveResult? confirmed, {
+    required bool mutationSent,
+  }) {
+    if (!mounted ||
+        !_statusWriteMatches(
+          token,
+          widget.account,
+          widget.api,
+          _sessionGeneration ?? -1,
+        )) {
+      return;
+    }
+    if (confirmed == null ||
+        confirmed.status == WorkItemStatusSaveStatus.notApplied) {
+      setState(() {
+        _statusConfirmed = null;
+        _statusUnconfirmed = confirmed == null && mutationSent;
+        _statusReloadOnSettle = true;
+      });
+      return;
+    }
+    _applyStatusSnapshot(confirmed.snapshot);
+  }
+
+  /// A confirmed no-op save never reaches START; its fresh snapshot still
+  /// settles the row and revision.
+  void _onStatusSaved(WorkItemStatusSaveResult result) {
+    if (_statusHeld ||
+        result.status != WorkItemStatusSaveStatus.noop ||
+        !_current(_generation) ||
+        !_sessionCurrent) {
+      return;
+    }
+    _applyStatusSnapshot(result.snapshot);
+  }
+
+  void _applyStatusSnapshot(WorkItemStatusSnapshot snapshot) {
+    final detail = _detail;
+    if (detail == null ||
+        snapshot.accountKey != widget.account.key ||
+        snapshot.generation != _sessionGeneration) {
+      return;
+    }
+    final summary = detail.summary;
+    if (snapshot.id != summary.id ||
+        snapshot.iid != summary.iid ||
+        snapshot.project?.id != summary.project?.id ||
+        snapshot.namespace?.id != summary.namespace?.id ||
+        snapshot.typeId != summary.type.id ||
+        snapshot.updatedAt.isBefore(summary.updatedAt)) {
+      return;
+    }
+    final state = snapshot.state == WorkItemState.open ? 'OPEN' : 'CLOSED';
+    setState(() {
+      _statusConfirmed = snapshot;
+      _statusUnconfirmed = false;
+      _statusReloadOnSettle = false;
+      _detail = _withSummary(
+        detail,
+        WorkItemGraphSummary(
+          id: summary.id,
+          iid: summary.iid,
+          title: summary.title,
+          state: state,
+          createdAt: summary.createdAt,
+          updatedAt: snapshot.updatedAt,
+          project: summary.project,
+          namespace: summary.namespace,
+          type: summary.type,
+        ),
+      );
+    });
+  }
+
+  WorkItemGraphDetail _withSummary(
+    WorkItemGraphDetail detail,
+    WorkItemGraphSummary summary,
+  ) => WorkItemGraphDetail(
+    summary: summary,
+    description: detail.description,
+    widgetsAvailable: detail.widgetsAvailable,
+    widgetTypes: detail.widgetTypes,
+    descriptionWidget: detail.descriptionWidget,
+    assignees: detail.assignees,
+    labels: detail.labels,
+    hierarchy: detail.hierarchy,
+    dates: detail.dates,
+  );
+
+  Future<WorkItemStateSnapshot> _loadStateGuarded(
+    WorkItemGraphSummary expected, {
+    bool Function()? isCurrent,
+  }) async {
+    if (_statusWriteToken != null ||
+        WorkItemStatusWriteRegistry.instance.isActive(
+          widget.api,
+          expected.id,
+        )) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    _stateOperations++;
+    try {
+      return await widget.api.workItemState(
+        expected,
+        isCurrent: () =>
+            !_statusHeldFor(expected) && (isCurrent?.call() ?? true),
+      );
+    } finally {
+      _stateOperationSettled();
+    }
+  }
+
+  bool _statusHeldFor(WorkItemGraphSummary expected) =>
+      _statusWriteToken != null ||
+      WorkItemStatusWriteRegistry.instance.isActive(widget.api, expected.id);
+
+  /// The STATUS editor reads the counter at build time and nothing else
+  /// rebuilds it when a lifecycle operation ends. Always runs after an await.
+  void _stateOperationSettled() {
+    _stateOperations--;
+    if (mounted) setState(() {});
+  }
+
+  Future<WorkItemStateSnapshot> _updateStateGuarded(
+    WorkItemGraphSummary expected,
+    WorkItemStateEvent event, {
+    required DateTime expectedUpdatedAt,
+    bool Function()? isCurrent,
+  }) async {
+    if (_statusWriteToken != null ||
+        WorkItemStatusWriteRegistry.instance.isActive(
+          widget.api,
+          expected.id,
+        )) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    _stateOperations++;
+    try {
+      return await widget.api.updateWorkItemState(
+        expected,
+        event,
+        expectedUpdatedAt: expectedUpdatedAt,
+        isCurrent: () =>
+            !_statusHeldFor(expected) && (isCurrent?.call() ?? true),
+      );
+    } finally {
+      _stateOperationSettled();
+    }
   }
 
   void _dropMilestoneWrite() {
@@ -2065,6 +2566,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     final generation = _generation;
     final detail = _detail;
     if (detail == null || !_current(generation)) return;
+    if (_statusHeld) return;
     final summary = detail.summary;
     if (snapshot.id != summary.id ||
         snapshot.iid != summary.iid ||
@@ -2073,6 +2575,10 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         snapshot.namespace?.id != summary.namespace?.id ||
         snapshot.namespace?.fullPath != summary.namespace?.fullPath ||
         snapshot.typeId != summary.type.id) {
+      return;
+    }
+    if (_statusConfirmed != null &&
+        snapshot.updatedAt.isBefore(summary.updatedAt)) {
       return;
     }
     final state = snapshot.state == WorkItemState.open ? 'OPEN' : 'CLOSED';
@@ -2092,7 +2598,12 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       type: summary.type,
     );
     if (!_current(generation) || !identical(_detail, detail)) return;
+    final confirmedRevision = _statusConfirmed?.updatedAt;
     setState(() {
+      if (confirmedRevision != null &&
+          snapshot.updatedAt.isAfter(confirmedRevision)) {
+        _statusConfirmed = null;
+      }
       _detail = WorkItemGraphDetail(
         summary: updatedSummary,
         description: detail.description,
@@ -2153,6 +2664,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           iid: item.iid,
           isCurrent: widget.isCurrent,
           ownerChanges: widget.ownerChanges,
+          sessionGeneration: _sessionGeneration,
         ),
       );
       return;
@@ -2183,6 +2695,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           iid: item.iid,
           isCurrent: widget.isCurrent,
           ownerChanges: widget.ownerChanges,
+          sessionGeneration: _sessionGeneration,
         ),
       );
     } catch (error) {
@@ -2290,7 +2803,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           account: widget.account,
           api: widget.api,
           detail: detail,
-          isCurrent: () => _current(generation),
+          isCurrent: () => _current(generation) && !_statusHeld,
           ownerChanges: _assigneeOwner,
           onRoute: _ownRoute,
           onAssigneesWrite: _onAssigneesWrite,
@@ -2351,7 +2864,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           api: widget.api,
           detail: detail,
           generation: generation,
-          isCurrent: () => _current(generation),
+          isCurrent: () => _current(generation) && !_statusHeld,
           ownerChanges: widget.ownerChanges,
           onRoute: _ownLabelRoute,
           onLabelWrite: _onLabelWrite,
@@ -2381,6 +2894,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     WorkItemStateEvent event,
   ) async {
     final generation = _generation;
+    if (_statusHeld) return false;
     final closing = event == WorkItemStateEvent.close;
     final route = DialogRoute<bool>(
       context: context,
@@ -2471,6 +2985,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           summary: summary,
           isCurrent: widget.isCurrent,
           ownerChanges: widget.ownerChanges,
+          loadState: _stateLoader,
+          updateState: _stateUpdater,
           confirmChange: _confirmStateChange,
           onChanged: _applyStateSnapshot,
         ),
@@ -2492,7 +3008,24 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           weightWritePending: _weightWriteToken != null,
           onMilestoneWrite: _onMilestoneWrite,
           onWeightWrite: _onWeightWrite,
+          statusSessionGeneration: _sessionGeneration,
+          statusWriteHeld: _statusHeld,
+          statusConfirmed: _statusConfirmed,
+          statusUnconfirmed: _statusUnconfirmed || _statusForeignUnconfirmed,
+          statusStale: _statusStale,
+          onStatusWrite: _onStatusWrite,
+          onStatusOutcome: _onStatusOutcome,
+          onStatusSaved: _onStatusSaved,
+          statusDispatchAllowed: _statusDispatchAllowed,
+          statusOperationCurrent: () =>
+              _current(_generation) && _sessionCurrent,
         ),
+        if (_statusHeld)
+          const Padding(
+            key: ValueKey('work-item-status-hold-banner'),
+            padding: EdgeInsets.symmetric(vertical: 6),
+            child: Text('狀態更新中：完成前不會重新整理、變更開啟狀態或其他欄位。'),
+          ),
         if (assignees != null)
           _section(
             context,
@@ -2648,7 +3181,12 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
               isCurrent: widget.isCurrent,
             ),
           IconButton(
-            onPressed: _loading || _labelsWriteToken != null ? null : _load,
+            onPressed:
+                _loading ||
+                    _labelsWriteToken != null ||
+                    _statusHeld
+                ? null
+                : _refresh,
             tooltip: '重新整理',
             icon: const Icon(Icons.refresh),
           ),
@@ -2662,7 +3200,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
             error,
             account: widget.account,
             resourceLabel: '${widget.namespacePath} · 工作項目 #${widget.iid}',
-            onRetry: _load,
+            onRetry: _refresh,
             onSwitchAccount: endSessionFrom(context),
           ),
         ),
