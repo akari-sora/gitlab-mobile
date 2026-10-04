@@ -7,6 +7,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/work_item_assignee_models.dart';
 import '../../core/work_item_graph_models.dart';
+import '../../core/work_item_labels_models.dart';
 import '../../core/work_item_state_models.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/resource_share.dart';
@@ -15,6 +16,7 @@ import 'work_item_activity.dart';
 import 'work_item_assignees.dart';
 import 'work_item_attributes.dart';
 import 'work_item_content.dart';
+import 'work_item_labels.dart';
 import 'work_item_notifications.dart';
 import 'work_item_state_control.dart';
 
@@ -1372,6 +1374,12 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   bool _assigneesRefreshFailed = false;
   WorkItemAssigneeSnapshot? _assigneeOverlay;
   int _assigneeReadSerial = 0;
+  Route<dynamic>? _labelsRoute;
+  Object? _labelsWriteToken;
+  int? _labelsWriteGeneration;
+  bool _labelsHidePreview = false;
+  bool _labelsUnconfirmed = false;
+  int _labelsReadSerial = 0;
 
   bool _current(int generation) =>
       mounted &&
@@ -1409,6 +1417,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         !identical(oldWidget.isCurrent, widget.isCurrent)) {
       _generation++;
       _dropAssigneeSession();
+      _dropLabelSession();
       _dismissOwnedRoutes();
       _detail = null;
       _resolvedProject = null;
@@ -1426,6 +1435,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     widget.ownerChanges?.removeListener(_ownerChanged);
     _generation++;
     _dropAssigneeSession();
+    _dropLabelSession();
     _dismissOwnedRoutes();
     _assigneeSignals.dispose();
     super.dispose();
@@ -1435,6 +1445,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     if (widget.isCurrent?.call() ?? true) return;
     _generation++;
     _dropAssigneeSession();
+    _dropLabelSession();
     _dismissOwnedRoutes();
     setState(() {
       _detail = null;
@@ -1465,10 +1476,21 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     unawaited(route.popped.then((_) => _ownedRoutes.remove(route)));
   }
 
+  void _ownLabelRoute(Route<dynamic> route) {
+    _labelsRoute = route;
+    _ownRoute(route);
+    unawaited(
+      route.popped.then((_) {
+        if (identical(_labelsRoute, route)) _labelsRoute = null;
+      }),
+    );
+  }
+
   void _dismissOwnedRoutes() {
     final navigator = _navigator;
     final routes = _ownedRoutes.toList(growable: false);
     _ownedRoutes.clear();
+    _labelsRoute = null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (navigator == null || !navigator.mounted) return;
       for (final route in routes) {
@@ -1477,12 +1499,69 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     });
   }
 
+  bool _sameLabelOwner(GraphWorkItemDetailPage owner, int generation) {
+    return mounted &&
+        _current(generation) &&
+        owner.account.key == widget.account.key &&
+        identical(owner.api, widget.api) &&
+        owner.project?.id == widget.project?.id &&
+        owner.project?.path == widget.project?.path &&
+        owner.namespacePath == widget.namespacePath &&
+        owner.expectedNamespaceId == widget.expectedNamespaceId &&
+        owner.iid == widget.iid;
+  }
+
+  bool _ownerMatchesLabelResource(
+    GraphWorkItemDetailPage owner,
+    WorkItemGraphSummary summary,
+  ) {
+    if (owner.iid != summary.iid) return false;
+    final project = owner.project;
+    if (project != null) {
+      return summary.project?.id == 'gid://gitlab/Project/${project.id}' &&
+          summary.project?.fullPath == project.path;
+    }
+    return summary.project == null &&
+        summary.namespace?.fullPath == owner.namespacePath &&
+        (owner.expectedNamespaceId == null ||
+            summary.namespace?.id == owner.expectedNamespaceId);
+  }
+
+  bool _labelsReadCurrent(
+    GraphWorkItemDetailPage owner,
+    int generation,
+    WorkItemGraphSummary? expectedSummary,
+    int serial, {
+    required bool allowMissingDetail,
+  }) {
+    if (!_sameLabelOwner(owner, generation) ||
+        _labelsReadSerial != serial ||
+        _labelsWriteToken != null ||
+        (expectedSummary != null &&
+            !_ownerMatchesLabelResource(owner, expectedSummary))) {
+      return false;
+    }
+    final detail = _detail;
+    if (expectedSummary == null) return true;
+    if (detail == null) return allowMissingDetail;
+    return _sameAssigneeResource(detail.summary, expectedSummary);
+  }
+
   Future<void> _load() async {
-    if (_loading || !_current(_generation)) return;
+    if (_loading ||
+        _labelsWriteToken != null ||
+        !_current(_generation)) {
+      return;
+    }
     final owner = widget;
     final generation = _generation;
-    _detailEpoch++;
-    final keepDetail = _assigneesWriteToken != null;
+    final loadEpoch = ++_detailEpoch;
+    final expectedLabelsSummary = _detail?.summary;
+    final labelsReadSerial = ++_labelsReadSerial;
+    final keepDetail =
+        _assigneesWriteToken != null ||
+        _labelsWriteToken != null ||
+        (_labelsRoute?.isActive ?? false);
     setState(() {
       _loading = true;
       _error = null;
@@ -1497,14 +1576,41 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
               owner.namespacePath,
               owner.iid,
               expectedNamespaceId: owner.expectedNamespaceId,
-              isCurrent: () => _current(generation),
+              isCurrent: () =>
+                  _detailEpoch == loadEpoch &&
+                  _labelsReadCurrent(
+                    owner,
+                    generation,
+                    expectedLabelsSummary,
+                    labelsReadSerial,
+                    allowMissingDetail: true,
+                  ),
             )
           : await owner.api.projectWorkItem(
               owner.project!,
               owner.iid,
-              isCurrent: () => _current(generation),
+              isCurrent: () =>
+                  _detailEpoch == loadEpoch &&
+                  _labelsReadCurrent(
+                    owner,
+                    generation,
+                    expectedLabelsSummary,
+                    labelsReadSerial,
+                    allowMissingDetail: true,
+                  ),
             );
-      if (!_current(generation)) return;
+      if (_detailEpoch != loadEpoch ||
+          !_labelsReadCurrent(
+            owner,
+            generation,
+            expectedLabelsSummary,
+            labelsReadSerial,
+            allowMissingDetail: true,
+          ) ||
+          (expectedLabelsSummary != null &&
+              !_sameAssigneeResource(detail.summary, expectedLabelsSummary))) {
+        return;
+      }
       final previous = _detail;
       final assigneeBusy =
           _assigneesWriteToken != null || _assigneesRefetchPending;
@@ -1513,7 +1619,16 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           !_sameAssigneeResource(previous.summary, detail.summary)) {
         _dropAssigneeSession();
       }
-      setState(() => _detail = detail);
+      if (previous != null &&
+          _labelsWriteToken != null &&
+          !_sameAssigneeResource(previous.summary, detail.summary)) {
+        _dropLabelSession();
+      }
+      setState(() {
+        _detail = detail;
+        _labelsHidePreview = false;
+        _labelsUnconfirmed = false;
+      });
       if (_assigneesWriteToken == null && _assigneesHideStalePreview) {
         unawaited(_refetchAssignees(detail, generation));
       }
@@ -1521,13 +1636,24 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         unawaited(_resolveProjectContext(detail, generation));
       }
     } catch (error) {
-      if (!_current(generation)) return;
+      if (_detailEpoch != loadEpoch ||
+          !_labelsReadCurrent(
+            owner,
+            generation,
+            expectedLabelsSummary,
+            labelsReadSerial,
+            allowMissingDetail: true,
+          )) {
+        return;
+      }
       final failure = safeFailure(error);
       if (failure.kind != FailureKind.cancelled) {
         setState(() => _error = failure);
       }
     } finally {
-      if (_current(generation)) setState(() => _loading = false);
+      if (_detailEpoch == loadEpoch && _sameLabelOwner(owner, generation)) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -1544,6 +1670,110 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     _assigneesRefreshFailed = false;
     _assigneeReadSerial++;
     _assigneeSignals.bump();
+  }
+
+  void _dropLabelSession() {
+    _labelsWriteToken = null;
+    _labelsWriteGeneration = null;
+    _labelsHidePreview = false;
+    _labelsUnconfirmed = false;
+    _labelsReadSerial++;
+  }
+
+  void _onLabelWrite(WorkItemLabelWritePhase phase, Object token) {
+    if (!mounted) return;
+    if (phase == WorkItemLabelWritePhase.start) {
+      final detail = _detail;
+      if (detail == null ||
+          !_current(_generation) ||
+          _labelsWriteToken != null) {
+        return;
+      }
+      _labelsReadSerial++;
+      setState(() {
+        _labelsWriteToken = token;
+        _labelsWriteGeneration = _generation;
+        _labelsHidePreview = true;
+        _labelsUnconfirmed = false;
+      });
+      return;
+    }
+    if (!identical(_labelsWriteToken, token) ||
+        _labelsWriteGeneration != _generation) {
+      return;
+    }
+    final detail = _detail;
+    final generation = _labelsWriteGeneration!;
+    final serial = ++_labelsReadSerial;
+    setState(() {
+      _labelsWriteToken = null;
+      _labelsWriteGeneration = null;
+    });
+    if (detail == null || !_current(generation)) return;
+    unawaited(_refetchLabelsDetail(generation, detail.summary, serial));
+  }
+
+  Future<void> _refetchLabelsDetail(
+    int generation,
+    WorkItemGraphSummary expectedSummary,
+    int serial,
+  ) async {
+    final owner = widget;
+    try {
+      final detail = owner.project == null
+          ? await owner.api.namespaceWorkItem(
+              owner.namespacePath,
+              owner.iid,
+              expectedNamespaceId: owner.expectedNamespaceId,
+              isCurrent: () => _labelsReadCurrent(
+                owner,
+                generation,
+                expectedSummary,
+                serial,
+                allowMissingDetail: false,
+              ),
+            )
+          : await owner.api.projectWorkItem(
+              owner.project!,
+              owner.iid,
+              isCurrent: () => _labelsReadCurrent(
+                owner,
+                generation,
+                expectedSummary,
+                serial,
+                allowMissingDetail: false,
+              ),
+            );
+      if (!_labelsReadCurrent(
+        owner,
+        generation,
+        expectedSummary,
+        serial,
+        allowMissingDetail: false,
+      )) {
+        return;
+      }
+      if (!_sameAssigneeResource(detail.summary, expectedSummary)) return;
+      setState(() {
+        _detail = detail;
+        _labelsHidePreview = false;
+        _labelsUnconfirmed = false;
+      });
+    } catch (_) {
+      if (!_labelsReadCurrent(
+        owner,
+        generation,
+        expectedSummary,
+        serial,
+        allowMissingDetail: false,
+      )) {
+        return;
+      }
+      setState(() {
+        _labelsHidePreview = true;
+        _labelsUnconfirmed = true;
+      });
+    }
   }
 
   bool _sameAssigneeResource(
@@ -1933,6 +2163,66 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     );
   }
 
+  Widget _labelsPreview(
+    BuildContext context,
+    WorkItemGraphDetail detail,
+    BoundedGraphConnection<WorkItemGraphLabel>? labels,
+  ) {
+    final generation = _generation;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (_labelsHidePreview)
+          Text(
+            _labelsUnconfirmed ? '尚未確認最新標籤。請重新整理後再查看。' : '正在更新標籤',
+            key: ValueKey(
+              _labelsUnconfirmed
+                  ? 'work-item-labels-unconfirmed'
+                  : 'work-item-labels-updating',
+            ),
+          )
+        else if (labels != null) ...[
+          if (labels.items.isEmpty)
+            const Text('沒有標籤')
+          else
+            Wrap(
+              key: const ValueKey('work-item-labels-preview'),
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final label in labels.items)
+                  Chip(
+                    key: ValueKey('work-item-label-chip-${label.id}'),
+                    avatar: CircleAvatar(
+                      backgroundColor: _color(label.color),
+                      radius: 7,
+                    ),
+                    label: Text(label.title),
+                  ),
+              ],
+            ),
+          if (labels.isPartial)
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text('只顯示前 50 個標籤。'),
+            ),
+        ] else
+          const Text('此伺服器未回傳標籤清單。'),
+        WorkItemLabelsControl(
+          account: widget.account,
+          api: widget.api,
+          detail: detail,
+          generation: generation,
+          isCurrent: () => _current(generation),
+          ownerChanges: widget.ownerChanges,
+          onRoute: _ownLabelRoute,
+          onLabelWrite: _onLabelWrite,
+          writePending: _labelsWriteToken != null,
+        ),
+      ],
+    );
+  }
+
   Widget _section(BuildContext context, String title, Widget child) => Card(
     child: Padding(
       padding: const EdgeInsets.all(16),
@@ -2069,40 +2359,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           ),
         if (detail.assignees != null && assignees == null)
           _section(context, '負責人', const Text('此伺服器未回傳負責人清單。')),
-        if (labels != null)
-          _section(
-            context,
-            '標籤',
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (labels.items.isEmpty)
-                  const Text('沒有標籤')
-                else
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final label in labels.items)
-                        Chip(
-                          avatar: CircleAvatar(
-                            backgroundColor: _color(label.color),
-                            radius: 7,
-                          ),
-                          label: Text(label.title),
-                        ),
-                    ],
-                  ),
-                if (labels.isPartial)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 8),
-                    child: Text('只顯示前 50 個標籤。'),
-                  ),
-              ],
-            ),
-          ),
-        if (detail.labels != null && labels == null)
-          _section(context, '標籤', const Text('此伺服器未回傳標籤清單。')),
+        if (detail.labels != null)
+          _section(context, '標籤', _labelsPreview(context, detail, labels)),
         if (hierarchy != null)
           _section(
             context,
@@ -2248,7 +2506,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
               isCurrent: widget.isCurrent,
             ),
           IconButton(
-            onPressed: _loading ? null : _load,
+            onPressed: _loading || _labelsWriteToken != null ? null : _load,
             tooltip: '重新整理',
             icon: const Icon(Icons.refresh),
           ),

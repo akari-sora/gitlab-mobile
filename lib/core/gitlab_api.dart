@@ -15,6 +15,7 @@ import 'snippet_models.dart';
 import 'upload_names.dart';
 import 'work_item_activity_models.dart';
 import 'work_item_assignee_models.dart';
+import 'work_item_labels_models.dart';
 import 'work_item_attribute_models.dart';
 import 'work_item_graph_models.dart';
 import 'work_item_milestone_models.dart';
@@ -36,6 +37,7 @@ part 'work_item_content_api.dart';
 part 'work_item_milestone_api.dart';
 part 'work_item_weight_api.dart';
 part 'work_item_assignee_api.dart';
+part 'work_item_labels_api.dart';
 part 'work_item_state_api.dart';
 
 final _artifactCancelled = Object();
