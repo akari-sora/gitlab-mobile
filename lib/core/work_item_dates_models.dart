@@ -1,12 +1,9 @@
-import 'package:flutter/foundation.dart';
-
 import 'work_item_graph_models.dart';
 
 enum WorkItemDatesEdition { ceFixed, ee }
 
 enum WorkItemDatesMode { manual, inherited, unknown }
 
-@immutable
 final class WorkItemDatesSnapshot {
   const WorkItemDatesSnapshot({
     required this.summary,
@@ -49,7 +46,6 @@ final class WorkItemDatesSnapshot {
 
 enum WorkItemDatesWriteOutcome { applied, notApplied, writeUncertain }
 
-@immutable
 final class WorkItemDatesWriteResult {
   const WorkItemDatesWriteResult({
     required this.outcome,
