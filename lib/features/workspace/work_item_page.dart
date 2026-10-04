@@ -1542,7 +1542,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                   ],
                 ),
                 Expanded(
-                  child: TabBarView(
+                  child: NotificationListener<KeepAliveNotification>(onNotification: (_) => true, child: TabBarView(
                     controller: _tabs,
                     children: [
                       ListView(
@@ -1571,9 +1571,16 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                                 ],
                               ),
                             ),
-                          MarkdownView(valueText(data, 'description').isEmpty ? '尚未填寫說明。' : valueText(data, 'description'), base: web, api: widget.api, projectId: widget.project.id, projectWeb: widget.account.instance.projectWeb(widget.project.path), projectPath: widget.project.path),
+                          _RestDescription(
+                            valueText(data, 'description').isEmpty ? '尚未填寫說明。' : valueText(data, 'description'),
+                            key: ValueKey('rest-description/${owner.account.key}/${owner.project.id}/${owner.resource}/${owner.iid}/${owner.generation}'),
+                            base: web, api: widget.api, projectId: widget.project.id, projectWeb: widget.account.instance.projectWeb(widget.project.path), projectPath: widget.project.path,
+                          ),
                           const SizedBox(height: 14),
-                          ReactionsBar(account: widget.account, api: widget.api, project: widget.project, resource: widget.resource, iid: widget.iid),
+                          _WorkItemKeepAlive(
+                            key: ValueKey('work-item-reactions/${owner.account.key}/${owner.project.id}/${owner.resource}/${owner.iid}/${owner.generation}'),
+                            child: ReactionsBar(account: widget.account, api: widget.api, project: widget.project, resource: widget.resource, iid: widget.iid),
+                          ),
                           const SizedBox(height: 16),
                           Card(
                             child: Padding(
@@ -1611,7 +1618,11 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                               ),
                             ),
                           ),
-                          if (!mr) _RelatedIssueItems(account: widget.account, api: widget.api, project: widget.project, iid: widget.iid),
+                          if (!mr)
+                            _WorkItemKeepAlive(
+                              key: ValueKey('work-item-related-issues/${owner.account.key}/${owner.project.id}/${owner.iid}/${owner.generation}'),
+                              child: _RelatedIssueItems(account: widget.account, api: widget.api, project: widget.project, iid: widget.iid),
+                            ),
                           if (mr) _MergeRequestHistory(account: widget.account, api: widget.api, project: widget.project, iid: widget.iid),
                           const SizedBox(height: 12),
                           Text([if (valueText(data, 'created_at').isNotEmpty) '建立於 ${relativeDate(valueText(data, 'created_at'))}', '更新於 ${relativeDate(valueText(data, 'updated_at'))}'].join(' · '), style: Theme.of(context).textTheme.bodySmall),
@@ -1621,7 +1632,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                       DiscussionsTab(account: widget.account, api: widget.api, project: widget.project, resource: widget.resource, iid: widget.iid, headSha: mr ? valueText(data, 'sha') : null, onChanged: _loadAfterMutation),
                       if (mr) _MergeChecks(account: widget.account, api: widget.api, path: path, data: data, busy: _busy, act: _action),
                     ],
-                  ),
+                  )),
                 ),
               ],
             ),
@@ -1629,6 +1640,166 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         ),
       ),
     );
+  }
+}
+
+/// Long descriptions show a bounded plain-text preview; the Markdown tree is
+/// parsed and built only after the reader asks for the full text.
+class _RestDescription extends StatefulWidget {
+  const _RestDescription(
+    this.text, {
+    super.key,
+    required this.base,
+    required this.api,
+    required this.projectId,
+    required this.projectWeb,
+    required this.projectPath,
+  });
+  final String text;
+  final Uri base;
+  final GitLabApi api;
+  final int projectId;
+  final Uri projectWeb;
+  final String projectPath;
+  @override
+  State<_RestDescription> createState() => _RestDescriptionState();
+}
+
+class _RestDescriptionState extends State<_RestDescription>
+    with AutomaticKeepAliveClientMixin {
+  // Same rune threshold as the GraphQL description card.
+  static const _maxRichRunes = 800;
+  static const _maxRichLines = 30;
+  static const _previewLength = 280;
+  static const _previewWindow = _previewLength * 2;
+  bool _expanded = false;
+  late bool _long;
+  late int _runes;
+  late String _preview;
+
+  @override
+  bool get wantKeepAlive => _expanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _summarize();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RestDescription oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text == widget.text) return;
+    _summarize();
+    if (_expanded) {
+      _expanded = false;
+      updateKeepAlive();
+    }
+  }
+
+  void _summarize() {
+    final text = widget.text;
+    _runes = text.runes.length;
+    _long =
+        _runes > _maxRichRunes || '\n'.allMatches(text).length >= _maxRichLines;
+    _preview = _long ? _previewOf(text) : '';
+  }
+
+  static String _previewOf(String text) {
+    final head = text.characters.take(_previewWindow + 1);
+    final normalized = head
+        .take(_previewWindow)
+        .toString()
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim()
+        .characters;
+    final shown = normalized.take(_previewLength).toString().trimRight();
+    return head.length > _previewWindow || normalized.length > _previewLength
+        ? '$shown…'
+        : shown;
+  }
+
+  void _toggle() {
+    setState(() => _expanded = !_expanded);
+    updateKeepAlive();
+  }
+
+  Widget _markdown() => MarkdownView(
+    widget.text,
+    base: widget.base,
+    api: widget.api,
+    projectId: widget.projectId,
+    projectWeb: widget.projectWeb,
+    projectPath: widget.projectPath,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    if (!_long) return _markdown();
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Keep the toggle above the text: collapsing must not need a scroll past a long body.
+        TextButton.icon(
+          key: const ValueKey('work-item-description-toggle'),
+          onPressed: _toggle,
+          style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+          icon: Icon(
+            _expanded ? Icons.unfold_less : Icons.unfold_more,
+            size: 18,
+          ),
+          label: Semantics(
+            expanded: _expanded,
+            child: Text(_expanded ? '收合說明' : '展開完整說明'),
+          ),
+        ),
+        const SizedBox(height: 4),
+        if (_expanded)
+          _markdown()
+        else ...[
+          Text(
+            _preview,
+            key: const ValueKey('work-item-description-preview'),
+            maxLines: 6,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodyMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            '說明較長（共 $_runes 字元），目前僅顯示開頭摘要。',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Keeps bounded sibling widgets alive across viewport scrolling within the
+/// same work item binding and retains the summary tab across tab switches.
+/// Keyed on the owner's identity and generation so stale state is never
+/// retained across account, project, resource, or iid changes.
+class _WorkItemKeepAlive extends StatefulWidget {
+  const _WorkItemKeepAlive({super.key, required this.child});
+  final Widget child;
+
+  @override
+  State<_WorkItemKeepAlive> createState() => _WorkItemKeepAliveState();
+}
+
+class _WorkItemKeepAliveState extends State<_WorkItemKeepAlive>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
 
