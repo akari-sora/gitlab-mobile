@@ -1,13 +1,18 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/auth/recent_project.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
+import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/workspace/projects_page.dart';
 import 'session_test.dart' show MemoryAccountStore;
 import 'support/fake_adapter.dart';
+import 'support/fake_shortcuts.dart';
 import 'workspace_widget_test.dart' show settleWorkspace, workspaceHost;
 
 void main() {
@@ -135,4 +140,172 @@ void main() {
     expect(find.byKey(const ValueKey('recent-project-202')), findsOneWidget);
     expect(find.byKey(const ValueKey('recent-project-101')), findsNothing);
   });
+
+  testWidgets(
+    'opening a project writes one full recent record and updates chips and launcher',
+    (tester) async {
+      final accountStore = MemoryAccountStore();
+      final session = SessionController(accountStore)..active = account;
+      final store = _CountingRecentProjectStore();
+      final host = FakeAppShortcutHost();
+      final shortcuts = LauncherShortcuts(host, store)..bind(account.key);
+      addTearDown(shortcuts.dispose);
+      final adapter = FakeAdapter((request) {
+        if (request.uri.path.endsWith('/projects')) {
+          return jsonResponse([_project(303, 'Performance', 'team/performance')]);
+        }
+        return jsonResponse([]);
+      });
+      final api = testApi(adapter);
+      session.api = api;
+      addTearDown(api.close);
+      addTearDown(session.dispose);
+
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(840, 1000);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        workspaceHost(ProjectsPage(session: session, shortcuts: shortcuts)),
+      );
+      await settleWorkspace(tester);
+      await tester.tap(find.text('Performance').first);
+      await settleWorkspace(tester);
+
+      expect(store.mutations, 1);
+      expect(
+        await store.read(account.key),
+        const RecentProject(
+          id: 303,
+          name: 'Performance',
+          path: 'team/performance',
+        ),
+      );
+      expect(
+        find.byKey(const ValueKey('recent-project-303'), skipOffstage: false),
+        findsOneWidget,
+      );
+      expect(host.published, isNotEmpty);
+      expect(host.published.last.last.subtitle, 'Performance');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'distinct injected recent stores keep their roles without duplicate writes',
+    (tester) async {
+      final session = SessionController(MemoryAccountStore())..active = account;
+      final chipStore = _CountingRecentProjectStore();
+      final launcherStore = _CountingRecentProjectStore();
+      final host = FakeAppShortcutHost();
+      final shortcuts = LauncherShortcuts(host, launcherStore)
+        ..bind(account.key);
+      addTearDown(shortcuts.dispose);
+      final adapter = FakeAdapter((request) => request.uri.path.endsWith('/projects')
+          ? jsonResponse([_project(404, 'Injected', 'team/injected')])
+          : jsonResponse([]));
+      final api = testApi(adapter);
+      session.api = api;
+      addTearDown(api.close);
+      addTearDown(session.dispose);
+
+      await tester.pumpWidget(
+        workspaceHost(
+          ProjectsPage(
+            session: session,
+            shortcuts: shortcuts,
+            recentStore: chipStore,
+          ),
+        ),
+      );
+      await settleWorkspace(tester);
+      await tester.tap(find.text('Injected'));
+      await settleWorkspace(tester);
+
+      expect(chipStore.mutations, 1);
+      expect(launcherStore.mutations, 1);
+      expect((await chipStore.read(account.key))?.path, 'team/injected');
+      expect((await launcherStore.read(account.key))?.path, 'team/injected');
+      expect(host.published.last.last.subtitle, 'Injected');
+    },
+  );
+
+  testWidgets(
+    'delayed recent write cannot publish or paint into a replacement owner',
+    (tester) async {
+      final session = SessionController(MemoryAccountStore())..active = account;
+      final oldStore = _CountingRecentProjectStore();
+      final oldHost = FakeAppShortcutHost();
+      final oldShortcuts = LauncherShortcuts(oldHost, oldStore)
+        ..bind(account.key);
+      final gate = Completer<void>();
+      oldStore.writeDelay = gate.future;
+      addTearDown(oldShortcuts.dispose);
+      final adapter = FakeAdapter((request) => request.uri.path.endsWith('/projects')
+          ? jsonResponse([_project(505, 'Delayed', 'team/delayed')])
+          : jsonResponse([]));
+      final api = testApi(adapter);
+      session.api = api;
+      addTearDown(api.close);
+      addTearDown(session.dispose);
+
+      await tester.pumpWidget(
+        workspaceHost(
+          ProjectsPage(session: session, shortcuts: oldShortcuts),
+        ),
+      );
+      await settleWorkspace(tester);
+      await tester.tap(find.text('Delayed'));
+      await tester.pump();
+
+      final newStore = _CountingRecentProjectStore();
+      final newHost = FakeAppShortcutHost();
+      final newShortcuts = LauncherShortcuts(newHost, newStore)
+        ..bind(account.key);
+      addTearDown(newShortcuts.dispose);
+      session.generation++;
+      await tester.pumpWidget(
+        workspaceHost(
+          ProjectsPage(session: session, shortcuts: newShortcuts),
+        ),
+      );
+      await tester.pump();
+
+      gate.complete();
+      oldStore.writeDelay = null;
+      await settleWorkspace(tester);
+
+      expect(oldHost.published, isEmpty);
+      expect(newHost.published, isEmpty);
+      expect(await newStore.read(account.key), isNull);
+      expect(
+        find.byKey(const ValueKey('recent-project-505'), skipOffstage: false),
+        findsNothing,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+}
+
+Json _project(int id, String name, String path) => {
+  'id': id,
+  'name': name,
+  'path': path.split('/').last,
+  'path_with_namespace': path,
+  'description': '',
+  'visibility': 'private',
+  'default_branch': 'main',
+  'archived': false,
+  'last_activity_at': '2026-10-04T00:00:00Z',
+};
+
+final class _CountingRecentProjectStore extends MemoryRecentProjectStore {
+  int mutations = 0;
+
+  @override
+  Future<void> touch(String accountKey, RecentProject project) {
+    mutations++;
+    return super.touch(accountKey, project);
+  }
 }

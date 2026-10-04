@@ -56,7 +56,6 @@ class RecordsFeedState extends State<RecordsFeed> {
   late final RecordController controller;
   final _scroll = ScrollController();
   List<Json>? _derivedItems;
-  RecordsFeed? _derivedWidget;
   bool Function(Json item)? _derivedVisible;
   List<Json> Function(List<Json> items)? _derivedArrange;
   String Function(Json item)? _derivedSectionOf;
@@ -92,7 +91,7 @@ class RecordsFeedState extends State<RecordsFeed> {
   void dispose() { _scroll.dispose(); controller.dispose(); super.dispose(); }
 
   void _deriveRows() {
-    if (identical(_derivedItems, controller.items) && identical(_derivedWidget, widget) &&
+    if (identical(_derivedItems, controller.items) &&
         identical(_derivedVisible, widget.visible) && identical(_derivedArrange, widget.arrange) &&
         identical(_derivedSectionOf, widget.sectionOf) && _derivedIdentity == widget.identity) {
       return;
@@ -109,7 +108,6 @@ class RecordsFeedState extends State<RecordsFeed> {
     _sections = sectionOf == null ? null : List<String>.filled(shown.length, '');
     _derivedSections = sectionOf == null ? null : List<bool>.filled(shown.length, false);
     _derivedItems = controller.items;
-    _derivedWidget = widget;
     _derivedVisible = visible;
     _derivedArrange = arrange;
     _derivedSectionOf = sectionOf;

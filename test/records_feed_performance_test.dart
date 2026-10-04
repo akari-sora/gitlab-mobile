@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -127,11 +128,11 @@ void main() {
       await tester.pumpWidget(app());
       expect(
         visibleCalls,
-        3,
-        reason: 'a new widget instance can carry new closure state',
+        0,
+        reason: 'a parent rebuild with stable callbacks must reuse derived rows',
       );
-      expect(arrangeCalls, 1);
-      expect(sectionCalls, 3);
+      expect(arrangeCalls, 0);
+      expect(sectionCalls, 0);
 
       visibleCalls = 0;
       arrangeCalls = 0;
@@ -154,6 +155,233 @@ void main() {
       expect(visibleCalls, 3);
       expect(arrangeCalls, 1);
       expect(sectionCalls, 3);
+    },
+  );
+
+  testWidgets(
+    'parent rebuilds reuse null or stable derivation inputs while changed callbacks rederive',
+    (tester) async {
+      final probeItems = _ProbeList([
+        {'id': 1, 'title': 'One'},
+        {'id': 2, 'title': 'Two'},
+        {'id': 3, 'title': 'Three'},
+      ]);
+      var parentBuilds = 0;
+      var visibleCalls = 0;
+      var arrangeCalls = 0;
+      var sectionCalls = 0;
+      bool stableVisible(Json item) {
+        visibleCalls++;
+        return true;
+      }
+      List<Json> stableArrange(List<Json> items) {
+        arrangeCalls++;
+        return List<Json>.of(items);
+      }
+      String stableSection(Json item) {
+        sectionCalls++;
+        return 'Items';
+      }
+
+      bool Function(Json item)? visible;
+      List<Json> Function(List<Json> items)? arrange;
+      String Function(Json item)? sectionOf;
+      late StateSetter rebuild;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              rebuild = setState;
+              parentBuilds++;
+              return Scaffold(
+                body: RecordsFeed(
+                  identity: 'stable-parent',
+                  load: (_) async => ApiPage<Json>(probeItems),
+                  visible: visible,
+                  arrange: arrange,
+                  sectionOf: sectionOf,
+                  itemBuilder: (context, item) =>
+                      SizedBox(height: 48, child: Text(item['title']! as String)),
+                ),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+
+      probeItems.reads = 0;
+      rebuild(() {});
+      await tester.pump();
+      expect(parentBuilds, 2);
+      expect(
+        probeItems.reads,
+        0,
+        reason: 'null callbacks and the same item list need no row derivation',
+      );
+
+      visible = stableVisible;
+      arrange = stableArrange;
+      sectionOf = stableSection;
+      rebuild(() {});
+      await tester.pump();
+      expect(visibleCalls, 3);
+      expect(arrangeCalls, 1);
+      expect(sectionCalls, 3);
+      visibleCalls = 0;
+      arrangeCalls = 0;
+      sectionCalls = 0;
+      probeItems.reads = 0;
+
+      rebuild(() {});
+      await tester.pump();
+      expect(visibleCalls, 0);
+      expect(arrangeCalls, 0);
+      expect(sectionCalls, 0);
+      expect(probeItems.reads, 0);
+
+      visible = (item) {
+        visibleCalls++;
+        return true;
+      };
+      rebuild(() {});
+      await tester.pump();
+      expect(
+        visibleCalls,
+        3,
+        reason: 'a changed callback identity must invalidate derived rows',
+      );
+      expect(arrangeCalls, 1);
+      expect(sectionCalls, 3);
+
+      visibleCalls = 0;
+      arrangeCalls = 0;
+      sectionCalls = 0;
+      arrange = (items) {
+        arrangeCalls++;
+        return items.reversed.toList();
+      };
+      rebuild(() {});
+      await tester.pump();
+      expect(visibleCalls, 3);
+      expect(arrangeCalls, 1);
+      expect(sectionCalls, 3);
+      expect(find.text('Three'), findsOneWidget);
+
+      visibleCalls = 0;
+      arrangeCalls = 0;
+      sectionCalls = 0;
+      sectionOf = (item) {
+        sectionCalls++;
+        return item['id'] == 1 ? 'First' : 'Other';
+      };
+      rebuild(() {});
+      await tester.pump();
+      expect(visibleCalls, 3);
+      expect(arrangeCalls, 1);
+      expect(sectionCalls, 3);
+      expect(find.text('First'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'pagination and list mutations rederive while identity and controller changes start fresh',
+    (tester) async {
+      final feed = GlobalKey<RecordsFeedState>();
+      var visibleCalls = 0;
+      var identity = 'first';
+      var controllerEpoch = 0;
+      late StateSetter rebuild;
+
+      bool visible(Json item) {
+        visibleCalls++;
+        return true;
+      }
+
+      Future<ApiPage<Json>> load(Uri? next) async {
+        if (controllerEpoch == 1) {
+          return ApiPage<Json>([
+            {'id': 30, 'title': 'Replacement controller'},
+          ]);
+        }
+        if (identity == 'second') {
+          return ApiPage<Json>([
+            {'id': 20, 'title': 'Second identity'},
+          ]);
+        }
+        return next == null
+            ? ApiPage<Json>([
+                {'id': 1, 'title': 'First page'},
+              ], next: page2)
+            : ApiPage<Json>([
+                {'id': 2, 'title': 'Second page'},
+              ]);
+      }
+
+      Widget app() => MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            rebuild = setState;
+            return Scaffold(
+              body: RecordsFeed(
+                key: controllerEpoch == 0
+                    ? feed
+                    : ValueKey('controller-$controllerEpoch'),
+                identity: identity,
+                load: load,
+                visible: visible,
+                itemBuilder: (context, item) =>
+                    SizedBox(height: 48, child: Text(item['title']! as String)),
+              ),
+            );
+          },
+        ),
+      );
+
+      await tester.pumpWidget(app());
+      await tester.pump();
+      await tester.pump();
+      visibleCalls = 0;
+
+      await feed.currentState!.controller.more();
+      await tester.pump();
+      expect(visibleCalls, 2);
+      expect(find.text('Second page'), findsOneWidget);
+
+      visibleCalls = 0;
+      feed.currentState!.patchItem({'id': 1, 'title': 'Patched'});
+      await tester.pump();
+      expect(visibleCalls, 2);
+      expect(find.text('Patched'), findsOneWidget);
+
+      visibleCalls = 0;
+      feed.currentState!.removeItem('2');
+      await tester.pump();
+      expect(visibleCalls, 1);
+      expect(find.text('Second page'), findsNothing);
+
+      visibleCalls = 0;
+      feed.currentState!.prependItem({'id': 3, 'title': 'Prepended'});
+      await tester.pump();
+      expect(visibleCalls, 2);
+      expect(find.text('Prepended'), findsOneWidget);
+
+      visibleCalls = 0;
+      identity = 'second';
+      rebuild(() {});
+      await tester.pump();
+      expect(find.text('Patched'), findsNothing);
+      await tester.pump();
+      expect(find.text('Second identity'), findsOneWidget);
+      expect(visibleCalls, 1);
+
+      controllerEpoch = 1;
+      rebuild(() {});
+      await tester.pump();
+      expect(find.text('Second identity'), findsNothing);
+      await tester.pump();
+      expect(find.text('Replacement controller'), findsOneWidget);
     },
   );
 
@@ -252,4 +480,25 @@ void main() {
     expect(taps, 1, reason: 'the row Material still paints InkWell feedback');
     expect(tester.takeException(), isNull);
   });
+}
+
+final class _ProbeList extends ListBase<Json> {
+  _ProbeList(this._items);
+  final List<Json> _items;
+  int reads = 0;
+
+  @override
+  int get length => _items.length;
+
+  @override
+  set length(int value) => _items.length = value;
+
+  @override
+  Json operator [](int index) {
+    reads++;
+    return _items[index];
+  }
+
+  @override
+  void operator []=(int index, Json value) => _items[index] = value;
 }

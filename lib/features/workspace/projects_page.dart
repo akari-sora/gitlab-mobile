@@ -49,9 +49,18 @@ class _ProjectsPageState extends State<ProjectsPage> {
   List<RecentProject> _recentProjects = const [];
   String? _activeAccountKey;
   int _activeGeneration = 0;
+  GitLabApi? _activeApi;
+  int _recentEpoch = 0;
+  RecentProjectStore? _fallbackRecentStore;
 
   RecentProjectStore get _recentStore =>
-      widget.recentStore ?? widget.shortcuts?.recentStore ?? SecureRecentProjectStore();
+      widget.recentStore ??
+      widget.shortcuts?.recentStore ??
+      (_fallbackRecentStore ??= SecureRecentProjectStore());
+  RecentProjectStore _recentStoreFor(ProjectsPage page) =>
+      page.recentStore ??
+      page.shortcuts?.recentStore ??
+      (_fallbackRecentStore ??= SecureRecentProjectStore());
   Account get account => widget.session.active!;
   GitLabApi get api => widget.session.api!;
 
@@ -60,6 +69,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
     super.initState();
     _activeAccountKey = widget.session.active?.key;
     _activeGeneration = widget.session.generation;
+    _activeApi = widget.session.api;
     _projectTabIndex = widget.forCi ? 3 : 0;
     _selection.addListener(_onSelectionChanged);
     widget.shortcuts?.addListener(_onShortcutsChanged);
@@ -70,9 +80,14 @@ class _ProjectsPageState extends State<ProjectsPage> {
   void _onSessionChanged() {
     final currentKey = widget.session.active?.key;
     final currentGen = widget.session.generation;
-    if (currentKey != _activeAccountKey || currentGen != _activeGeneration) {
+    final currentApi = widget.session.api;
+    if (currentKey != _activeAccountKey ||
+        currentGen != _activeGeneration ||
+        !identical(currentApi, _activeApi)) {
       _activeAccountKey = currentKey;
       _activeGeneration = currentGen;
+      _activeApi = currentApi;
+      _recentEpoch++;
       if (mounted) {
         setState(() {
           _recentProjects = const [];
@@ -85,10 +100,19 @@ class _ProjectsPageState extends State<ProjectsPage> {
 
   Future<void> _loadRecentProjects() async {
     final active = widget.session.active;
-    if (active == null) return;
+    final ownerApi = widget.session.api;
+    if (active == null || ownerApi == null) return;
+    final generation = widget.session.generation;
+    final store = _recentStore;
+    final epoch = ++_recentEpoch;
     try {
-      final list = await _recentStore.readList(active.key);
-      if (mounted && widget.session.active?.key == active.key) {
+      final list = await store.readList(active.key);
+      if (mounted &&
+          epoch == _recentEpoch &&
+          widget.session.active?.key == active.key &&
+          widget.session.generation == generation &&
+          identical(widget.session.api, ownerApi) &&
+          identical(_recentStore, store)) {
         setState(() => _recentProjects = list);
       }
     } catch (_) {}
@@ -119,13 +143,27 @@ class _ProjectsPageState extends State<ProjectsPage> {
     }
     final currentKey = widget.session.active?.key;
     final currentGen = widget.session.generation;
-    if (currentKey != _activeAccountKey || currentGen != _activeGeneration) {
+    final currentApi = widget.session.api;
+    var reloadRecent = false;
+    if (currentKey != _activeAccountKey ||
+        currentGen != _activeGeneration ||
+        !identical(currentApi, _activeApi)) {
       _activeAccountKey = currentKey;
       _activeGeneration = currentGen;
+      _activeApi = currentApi;
+      _recentEpoch++;
       _recentProjects = const [];
       _opening = false;
-      unawaited(_loadRecentProjects());
+      reloadRecent = true;
     }
+    final oldRecentStore = _recentStoreFor(oldWidget);
+    final currentRecentStore = _recentStore;
+    if (!identical(oldRecentStore, currentRecentStore)) {
+      _recentEpoch++;
+      _recentProjects = const [];
+      reloadRecent = true;
+    }
+    if (reloadRecent) unawaited(_loadRecentProjects());
     if (oldWidget.shortcuts != widget.shortcuts) {
       oldWidget.shortcuts?.removeListener(_onShortcutsChanged);
       widget.shortcuts?.addListener(_onShortcutsChanged);
@@ -147,6 +185,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
     _selection.removeListener(_onSelectionChanged);
     widget.shortcuts?.removeListener(_onShortcutsChanged);
     _debounce?.cancel();
+    _recentEpoch++;
     _search.dispose();
     _searchFocus.dispose();
     _selection.dispose();
@@ -160,21 +199,60 @@ class _ProjectsPageState extends State<ProjectsPage> {
 
   void _open(Project project) {
     final activeAccount = widget.session.active;
-    if (activeAccount == null) return;
+    final ownerApi = widget.session.api;
+    if (activeAccount == null || ownerApi == null) return;
     _projectTabIndex = widget.forCi ? 3 : 0;
+    final generation = widget.session.generation;
+    final store = _recentStore;
     final shortcuts = widget.shortcuts;
-    if (shortcuts != null) {
-      unawaited(shortcuts.rememberOpened(accountKey: activeAccount.key, id: project.id, name: project.name));
-    }
-    unawaited(_recentStore.touch(
-      activeAccount.key,
-      RecentProject(id: project.id, name: project.name, path: project.path),
-    ).then((_) {
-      if (mounted && widget.session.active?.key == activeAccount.key) {
-        _loadRecentProjects();
-      }
-    }).catchError((_) {}));
+    final recent = RecentProject(
+      id: project.id,
+      name: project.name,
+      path: project.path,
+    );
+    unawaited(_rememberOpened(
+      accountKey: activeAccount.key,
+      generation: generation,
+      ownerApi: ownerApi,
+      store: store,
+      shortcuts: shortcuts,
+      recent: recent,
+    ));
     _selection.select(project);
+  }
+
+  Future<void> _rememberOpened({
+    required String accountKey,
+    required int generation,
+    required GitLabApi ownerApi,
+    required RecentProjectStore store,
+    required LauncherShortcuts? shortcuts,
+    required RecentProject recent,
+  }) async {
+    Future<void> touch(RecentProjectStore target) async {
+      try {
+        await target.touch(accountKey, recent);
+      } catch (_) {}
+    }
+
+    final shortcutStore = shortcuts?.recentStore;
+    if (shortcutStore == null || identical(store, shortcutStore)) {
+      await touch(store);
+    } else {
+      await Future.wait([touch(store), touch(shortcutStore)]);
+    }
+    if (!mounted ||
+        widget.session.active?.key != accountKey ||
+        widget.session.generation != generation ||
+        !identical(widget.session.api, ownerApi) ||
+        !identical(_recentStore, store) ||
+        !identical(widget.shortcuts, shortcuts)) {
+      return;
+    }
+    await Future.wait([
+      _loadRecentProjects(),
+      if (shortcuts != null) shortcuts.publish(accountKey),
+    ]);
   }
 
   Future<void> _openRecentProject(RecentProject rp) async {

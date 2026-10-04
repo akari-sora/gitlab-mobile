@@ -19,8 +19,35 @@ class InboxPage extends StatefulWidget {
 
 class _InboxPageState extends State<InboxPage> {
   final _chrome = ScrollChromeController();
+  PageStorageBucket _storage = PageStorageBucket();
+  int _ownerEpoch = 0;
+
+  /// Reused across parent rebuilds (tab taps, root destination switches) so
+  /// retained offstage panels are not rebuilt; dropped whenever the account or
+  /// client object changes.
+  Widget? _panels;
   Account get account => widget.account;
   GitLabApi get api => widget.api;
+
+  @override
+  void didUpdateWidget(covariant InboxPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.account.key != widget.account.key ||
+        !identical(oldWidget.api, widget.api)) {
+      _ownerEpoch++;
+      _storage = PageStorageBucket();
+    }
+    if (!identical(oldWidget.account, widget.account) ||
+        !identical(oldWidget.api, widget.api)) {
+      _panels = null;
+    }
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    _panels = null;
+  }
 
   @override
   void dispose() {
@@ -29,7 +56,10 @@ class _InboxPageState extends State<InboxPage> {
   }
 
   @override
-  Widget build(BuildContext context) => DefaultTabController(length: 4, child: Scaffold(
+  Widget build(BuildContext context) => DefaultTabController(
+    key: ValueKey('inbox-owner-$_ownerEpoch'),
+    length: 4,
+    child: Scaffold(
     body: NotificationListener<ScrollNotification>(onNotification: _chrome.handle, child: StatusBarInset(child: gestureSafe(Column(
       crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       CollapsingChrome(visible: _chrome, child: AppBar(primary: false, title: const Text('收件匣'), actions: [
@@ -39,21 +69,54 @@ class _InboxPageState extends State<InboxPage> {
       ])),
       TabBar(isScrollable: true, tabAlignment: TabAlignment.start, onTap: (_) => _chrome.show(),
         tabs: const [Tab(text: '待辦'), Tab(text: '指派給我'), Tab(text: '待我審查'), Tab(text: '我建立的')]),
-      // Horizontal swipes belong to the todo rows (swipe to complete), so the
-      // tabs change from the tab bar only.
-      Expanded(child: TabBarView(physics: const NeverScrollableScrollPhysics(), children: [
-      _TodoFeed(account: account, api: api),
-      _WorkFeed(account: account, api: api, kind: _WorkKind.assigned),
-      RecordsFeed(identity: 'review-requests', empty: '沒有待審查的合併請求', account: account,
+      Expanded(child: _panels ??= _buildPanels(context)),
+    ])))),
+  ));
+
+  // Horizontal swipes belong to the todo rows (swipe to complete), so the
+  // tabs change from the tab bar only.
+  Widget _buildPanels(BuildContext context) => PageStorage(bucket: _storage, child: TabBarView(
+    physics: const NeverScrollableScrollPhysics(),
+    children: [
+      _InboxPanel(index: 0, child: _TodoFeed(account: account, api: api)),
+      _InboxPanel(index: 1,
+        child: _WorkFeed(account: account, api: api, kind: _WorkKind.assigned)),
+      _InboxPanel(index: 2, child: RecordsFeed(
+        identity: 'review-requests', empty: '沒有待審查的合併請求', account: account,
         emptyIcon: Icons.rate_review_outlined,
         resourceLabel: '待我審查的合併請求', underShell: true, onSwitchAccount: endSessionFrom(context),
         load: (next) => api.records(['merge_requests'], query: {'scope': 'all', 'reviewer_id': '${account.user.id}',
           'state': 'opened', 'with_labels_details': 'true'}, next: next),
-        itemBuilder: (context, data) => inboxWorkItem(context, account, api, data, 'merge_requests')),
-      _WorkFeed(account: account, api: api, kind: _WorkKind.created),
-    ])),
-    ])))),
-  ));
+        itemBuilder: (context, data) => inboxWorkItem(context, account, api, data, 'merge_requests'))),
+      _InboxPanel(index: 3,
+        child: _WorkFeed(account: account, api: api, kind: _WorkKind.created)),
+    ]));
+}
+
+class _InboxPanel extends StatefulWidget {
+  const _InboxPanel({required this.index, required this.child});
+  final int index;
+  final Widget child;
+
+  @override
+  State<_InboxPanel> createState() => _InboxPanelState();
+}
+
+class _InboxPanelState extends State<_InboxPanel>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final tabs = DefaultTabController.of(context);
+    return ListenableBuilder(
+      listenable: tabs,
+      builder: (context, child) => TickerMode(enabled: tabs.index == widget.index, child: child!),
+      child: widget.child,
+    );
+  }
 }
 
 Widget inboxWorkItem(BuildContext context, Account account, GitLabApi api, Json data, String resource) => workItemCard(context, data,
@@ -124,12 +187,22 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
   /// switching tabs neither drops the write nor strands the 復原 button.
   final _pending = <int>{};
 
+  /// Replaced only when [_pending] changes, over a snapshot of it, so the feed
+  /// keeps its derived rows across rebuilds that leave the pending set alone.
+  bool Function(Json item) _visible = _visibleExcept(const <int>{});
+
+  static bool Function(Json item) _visibleExcept(Set<int> hidden) =>
+      (item) => !hidden.contains(valueInt(item, 'id'));
+
   @override
   bool get wantKeepAlive => _pending.isNotEmpty;
 
   void _setPending(int id, bool pending) {
     if (pending == _pending.contains(id)) return;
-    setState(() => pending ? _pending.add(id) : _pending.remove(id));
+    setState(() {
+      pending ? _pending.add(id) : _pending.remove(id);
+      _visible = _visibleExcept(Set<int>.unmodifiable(_pending));
+    });
     updateKeepAlive();
   }
 
@@ -215,11 +288,11 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
     filteredEmpty: '待辦即將標示為完成',
     account: widget.account, resourceLabel: '待辦', underShell: true,
     onSwitchAccount: endSessionFrom(context),
-    visible: (item) => !_pending.contains(valueInt(item, 'id')),
+    visible: _visible,
     leading: (context, controller) => controller.items.isEmpty ? const SizedBox(height: 4) : Padding(
       padding: EdgeInsets.fromLTRB(feedGutter(context) + 4, 6, feedGutter(context) - 8, 0),
       child: Row(children: [
-        Expanded(child: Text('${controller.items.where((item) => !_pending.contains(valueInt(item, 'id'))).length}'
+        Expanded(child: Text('${controller.items.where(_visible).length}'
           '${controller.next == null ? '' : '+'} 則待辦 · 左右滑動可完成',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
         ValueListenableBuilder<bool>(
