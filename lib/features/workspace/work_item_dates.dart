@@ -301,8 +301,14 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
   String? _validationError;
   String? _saveFeedback;
   _DatesWriteOperation? _operation;
+  ModalRoute<Object?>? _route;
+  bool _routeClosed = false;
 
   WorkItemDatesSnapshot get _snapshot => widget.access.snapshot;
+
+  /// False from the synchronous pop intent onwards, although the State stays
+  /// mounted through the exit transition.
+  bool get _routeOpen => !_routeClosed && (_route?.isActive ?? false);
 
   bool get _manual => _mode == WorkItemDatesMode.manual;
 
@@ -325,8 +331,14 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _route = ModalRoute.of(context);
+  }
+
+  @override
   void dispose() {
-    _operation?.disposeRoute();
+    _closeRoute();
     _start
       ..removeListener(_clearValidation)
       ..dispose();
@@ -334,6 +346,25 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
       ..removeListener(_clearValidation)
       ..dispose();
     super.dispose();
+  }
+
+  void _closeRoute() {
+    _routeClosed = true;
+    _operation?.disposeRoute();
+  }
+
+  /// Closes only this editor route: popping by position would remove whatever
+  /// route is on top once this one is exiting or covered.
+  void _leave() {
+    final route = _route;
+    final navigator = route?.navigator;
+    if (!_routeOpen || route == null || navigator == null) return;
+    _closeRoute();
+    if (route.isCurrent) {
+      navigator.pop();
+    } else {
+      navigator.removeRoute(route);
+    }
   }
 
   void _clearValidation() {
@@ -389,7 +420,7 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
 
   Future<void> _save() async {
     final target = widget.access.target;
-    if (!_canSave || target == null) return;
+    if (!_canSave || target == null || !_routeOpen) return;
     final validation = _validate();
     if (validation != null) {
       setState(() => _validationError = validation);
@@ -416,13 +447,16 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
             ? _emptyToNull(_due.text)
             : null,
         onMutationSent: operation.start,
-        isCurrent: operation.current,
+        isCurrent: () {
+          if (!_routeOpen) operation.disposeRoute();
+          return operation.current();
+        },
       );
-      if (!mounted || !widget.ownerCurrent()) return;
+      if (!mounted || !_routeOpen || !widget.ownerCurrent()) return;
       if (result.outcome == WorkItemDatesWriteOutcome.applied &&
           result.snapshot != null) {
         widget.onSaved(result.snapshot!);
-        if (mounted && widget.ownerCurrent()) Navigator.of(context).pop();
+        if (mounted && widget.ownerCurrent()) _leave();
         return;
       }
       final feedback =
@@ -434,7 +468,7 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
                     : _notSentFeedback);
       setState(() => _saveFeedback = feedback);
     } catch (error) {
-      if (!mounted || !widget.ownerCurrent()) return;
+      if (!mounted || !_routeOpen || !widget.ownerCurrent()) return;
       final failure = safeFailure(error);
       setState(() {
         // onMutationSent runs immediately before the only send, so a failure
@@ -448,7 +482,7 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
     } finally {
       operation.terminal();
       if (identical(_operation, operation)) _operation = null;
-      if (mounted) setState(() => _writing = false);
+      if (mounted && _routeOpen) setState(() => _writing = false);
     }
   }
 
@@ -456,134 +490,139 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
   Widget build(BuildContext context) {
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     final blocked = _blockedMessage();
-    return Scaffold(
-      resizeToAvoidBottomInset: false,
-      appBar: AppBar(title: const Text('編輯日期')),
-      body: SafeArea(
-        bottom: false,
-        child: ListView(
-          key: const ValueKey('work-item-dates-scroll'),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-          children: [
-            Text(
-              '@${widget.account.user.username} · ${widget.account.instance.key}',
-            ),
-            const SizedBox(height: 4),
-            Text(_resourceLabel(_snapshot.summary)),
-            const SizedBox(height: 16),
-            if (_snapshot.edition == WorkItemDatesEdition.ee) ...[
-              RadioGroup<WorkItemDatesMode>(
-                groupValue: _mode,
-                onChanged: (value) {
-                  if (_canSave && value != null) _selectMode(value);
-                },
-                child: Column(
-                  children: [
-                    RadioListTile<WorkItemDatesMode>(
-                      key: const ValueKey('work-item-dates-mode-manual'),
-                      contentPadding: EdgeInsets.zero,
-                      value: WorkItemDatesMode.manual,
-                      enabled: _canSave,
-                      title: const Text('手動日期'),
-                    ),
-                    RadioListTile<WorkItemDatesMode>(
-                      key: const ValueKey('work-item-dates-mode-inherited'),
-                      contentPadding: EdgeInsets.zero,
-                      value: WorkItemDatesMode.inherited,
-                      enabled: _canSave,
-                      title: const Text('由子項目繼承'),
-                    ),
-                  ],
-                ),
-              ),
-            ] else if (_snapshot.mode == WorkItemDatesMode.manual) ...[
-              const Text('手動日期'),
-            ] else ...[
-              const Text('日期模式不明'),
-            ],
-            if (_snapshot.rollUp) ...[
-              const SizedBox(height: 8),
-              const Text('此類型可以彙整子項目日期'),
-            ],
-            const SizedBox(height: 16),
-            _dateField(
-              controller: _start,
-              inputKey: const ValueKey('work-item-dates-start-input'),
-              pickerKey: const ValueKey('work-item-dates-start-picker'),
-              clearKey: const ValueKey('work-item-dates-start-clear'),
-              label: '開始日期 YYYY-MM-DD',
-              source: _sourceHint(
-                _snapshot.startDateSourcingWorkItemId,
-                _snapshot.startDateSourcingMilestoneId,
-              ),
-            ),
-            const SizedBox(height: 16),
-            _dateField(
-              controller: _due,
-              inputKey: const ValueKey('work-item-dates-due-input'),
-              pickerKey: const ValueKey('work-item-dates-due-picker'),
-              clearKey: const ValueKey('work-item-dates-due-clear'),
-              label: '到期日期 YYYY-MM-DD',
-              source: _sourceHint(
-                _snapshot.dueDateSourcingWorkItemId,
-                _snapshot.dueDateSourcingMilestoneId,
-              ),
-            ),
-            if (blocked != null) ...[
-              const SizedBox(height: 16),
-              Text(blocked, key: const ValueKey('work-item-dates-blocked')),
-            ],
-            if (_validationError != null) ...[
-              const SizedBox(height: 16),
+    return PopScope<Object?>(
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) _closeRoute();
+      },
+      child: Scaffold(
+        resizeToAvoidBottomInset: false,
+        appBar: AppBar(title: const Text('編輯日期')),
+        body: SafeArea(
+          bottom: false,
+          child: ListView(
+            key: const ValueKey('work-item-dates-scroll'),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+            children: [
               Text(
-                _validationError!,
-                key: const ValueKey('work-item-dates-validation-error'),
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
+                '@${widget.account.user.username} · ${widget.account.instance.key}',
               ),
-            ],
-            if (_saveFeedback != null) ...[
+              const SizedBox(height: 4),
+              Text(_resourceLabel(_snapshot.summary)),
               const SizedBox(height: 16),
-              Text(
-                _saveFeedback!,
-                key: const ValueKey('work-item-dates-save-feedback'),
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-              const SizedBox(height: 8),
-              const Text('請關閉並重新開啟，讀取最新日期後再變更。'),
-            ],
-          ],
-        ),
-      ),
-      bottomNavigationBar: Padding(
-        padding: EdgeInsets.only(bottom: keyboardInset),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    key: const ValueKey('work-item-dates-cancel'),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                    ),
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('取消'),
+              if (_snapshot.edition == WorkItemDatesEdition.ee) ...[
+                RadioGroup<WorkItemDatesMode>(
+                  groupValue: _mode,
+                  onChanged: (value) {
+                    if (_canSave && value != null) _selectMode(value);
+                  },
+                  child: Column(
+                    children: [
+                      RadioListTile<WorkItemDatesMode>(
+                        key: const ValueKey('work-item-dates-mode-manual'),
+                        contentPadding: EdgeInsets.zero,
+                        value: WorkItemDatesMode.manual,
+                        enabled: _canSave,
+                        title: const Text('手動日期'),
+                      ),
+                      RadioListTile<WorkItemDatesMode>(
+                        key: const ValueKey('work-item-dates-mode-inherited'),
+                        contentPadding: EdgeInsets.zero,
+                        value: WorkItemDatesMode.inherited,
+                        enabled: _canSave,
+                        title: const Text('由子項目繼承'),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton(
-                    key: const ValueKey('work-item-dates-save'),
-                    style: FilledButton.styleFrom(
-                      minimumSize: const Size.fromHeight(48),
-                    ),
-                    onPressed: _canSave ? () => unawaited(_save()) : null,
-                    child: Text(_writing ? '正在儲存…' : '儲存'),
-                  ),
+              ] else if (_snapshot.mode == WorkItemDatesMode.manual) ...[
+                const Text('手動日期'),
+              ] else ...[
+                const Text('日期模式不明'),
+              ],
+              if (_snapshot.rollUp) ...[
+                const SizedBox(height: 8),
+                const Text('此類型可以彙整子項目日期'),
+              ],
+              const SizedBox(height: 16),
+              _dateField(
+                controller: _start,
+                inputKey: const ValueKey('work-item-dates-start-input'),
+                pickerKey: const ValueKey('work-item-dates-start-picker'),
+                clearKey: const ValueKey('work-item-dates-start-clear'),
+                label: '開始日期 YYYY-MM-DD',
+                source: _sourceHint(
+                  _snapshot.startDateSourcingWorkItemId,
+                  _snapshot.startDateSourcingMilestoneId,
+                ),
+              ),
+              const SizedBox(height: 16),
+              _dateField(
+                controller: _due,
+                inputKey: const ValueKey('work-item-dates-due-input'),
+                pickerKey: const ValueKey('work-item-dates-due-picker'),
+                clearKey: const ValueKey('work-item-dates-due-clear'),
+                label: '到期日期 YYYY-MM-DD',
+                source: _sourceHint(
+                  _snapshot.dueDateSourcingWorkItemId,
+                  _snapshot.dueDateSourcingMilestoneId,
+                ),
+              ),
+              if (blocked != null) ...[
+                const SizedBox(height: 16),
+                Text(blocked, key: const ValueKey('work-item-dates-blocked')),
+              ],
+              if (_validationError != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  _validationError!,
+                  key: const ValueKey('work-item-dates-validation-error'),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ],
+              if (_saveFeedback != null) ...[
+                const SizedBox(height: 16),
+                Text(
+                  _saveFeedback!,
+                  key: const ValueKey('work-item-dates-save-feedback'),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                const SizedBox(height: 8),
+                const Text('請關閉並重新開啟，讀取最新日期後再變更。'),
+              ],
+            ],
+          ),
+        ),
+        bottomNavigationBar: Padding(
+          padding: EdgeInsets.only(bottom: keyboardInset),
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      key: const ValueKey('work-item-dates-cancel'),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                      onPressed: _leave,
+                      child: const Text('取消'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: FilledButton(
+                      key: const ValueKey('work-item-dates-save'),
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                      ),
+                      onPressed: _canSave ? () => unawaited(_save()) : null,
+                      child: Text(_writing ? '正在儲存…' : '儲存'),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

@@ -750,6 +750,359 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  for (final exit in _EditorExit.values) {
+    testWidgets(
+      '${exit.label} before START closes the gate while the exit transition runs',
+      (tester) async {
+        final fixture = WorkItemDatesFixture();
+        final h = await _pumpDetailRoute(tester, fixture);
+        await _open(tester);
+        final editor = h.editorRoute!;
+        await _enterDates(tester, '2026-10-04', '');
+        fixture.holdNextBaseRead = Completer<void>();
+        final reads = fixture.baseReads;
+        await tester.tap(find.byKey(const ValueKey('work-item-dates-save')));
+        await pumpUntil(tester, () => fixture.baseReads == reads + 1);
+        expect(fixture.operations, ['base', 'probe', 'base']);
+        final responses = fixture.baseResponses;
+
+        await _exitEditor(tester, exit);
+        _expectEditorExiting(h, editor);
+
+        fixture.releaseBaseRead();
+        await _driveNetworkWithFrozenClock(
+          tester,
+          () => fixture.baseResponses > responses,
+          description: 'held fence read responds during the exit transition',
+        );
+        await _driveNetworkWithFrozenClock(tester, () => false, cycles: 30);
+
+        expect(fixture.operations, ['base', 'probe', 'base']);
+        expect(fixture.mutations, 0);
+        expect(_mutationRequests(fixture), 0);
+        expect(h.phases, isEmpty);
+        expect(h.saves, isEmpty);
+        _expectEditorExiting(h, editor);
+
+        await settleNetworkWidgets(tester);
+        _expectEditorClosedOverDetail(h, editor);
+        expect(fixture.mutations, 0);
+        expect(_mutationRequests(fixture), 0);
+        expect(h.phases, isEmpty);
+        expect(h.saves, isEmpty);
+        expect(_editButton(tester).onPressed, isNotNull);
+        expect(tester.takeException(), isNull);
+      },
+    );
+
+    testWidgets(
+      '${exit.label} after START keeps the detail route when ACK and readback '
+      'land during the exit transition',
+      (tester) async {
+        final fixture = WorkItemDatesFixture()
+          ..holdMutationAck = Completer<void>();
+        final h = await _pumpDetailRoute(tester, fixture);
+        await _open(tester);
+        final editor = h.editorRoute!;
+        await _enterDates(tester, '2026-10-04', '');
+        await tester.tap(find.byKey(const ValueKey('work-item-dates-save')));
+        await pumpUntil(tester, () => fixture.mutationApplies == 1);
+        expect(h.phases.map((entry) => entry.$1), [
+          WorkItemDatesWritePhase.start,
+        ]);
+        expect(fixture.mutationAcks, 0);
+
+        await _exitEditor(tester, exit);
+        _expectEditorExiting(h, editor);
+
+        fixture.releaseAck();
+        await _driveNetworkWithFrozenClock(
+          tester,
+          () => h.phases.length == 2,
+          description: 'write Future terminal during the exit transition',
+        );
+
+        _expectEditorExiting(h, editor);
+        expect(fixture.mutationAcks, 1);
+        expect(fixture.operations, [
+          'base',
+          'probe',
+          'base',
+          'probe',
+          'mutation',
+          'base',
+          'probe',
+        ]);
+        expect(fixture.startDate, '2026-10-04');
+        expect(h.phases.map((entry) => entry.$1), [
+          WorkItemDatesWritePhase.start,
+          WorkItemDatesWritePhase.settle,
+        ]);
+        expect(identical(h.phases[0].$2, h.phases[1].$2), isTrue);
+        expect(h.saves, isEmpty);
+        expect(
+          find.byKey(
+            const ValueKey('work-item-dates-save-feedback'),
+            skipOffstage: false,
+          ),
+          findsNothing,
+        );
+        expect(find.byType(SnackBar, skipOffstage: false), findsNothing);
+
+        await settleNetworkWidgets(tester);
+        _expectEditorClosedOverDetail(h, editor);
+        expect(h.phases, hasLength(2));
+        expect(h.saves, isEmpty);
+        expect(fixture.mutations, 1);
+        expect(_mutationRequests(fixture), 1);
+        expect(_editButton(tester).onPressed, isNotNull);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'after the editor fully closes a held write settles once without UI or '
+    'navigation',
+    (tester) async {
+      final fixture = WorkItemDatesFixture()
+        ..holdMutationApply = Completer<void>()
+        ..holdMutationAck = Completer<void>();
+      final h = await _pumpDetailRoute(tester, fixture);
+      await _open(tester);
+      final editor = h.editorRoute!;
+      await _enterDates(tester, '2026-10-04', '');
+      await tester.tap(find.byKey(const ValueKey('work-item-dates-save')));
+      await pumpUntil(tester, () => fixture.mutations == 1);
+      expect(fixture.mutationApplies, 0);
+
+      await tester.tap(find.byKey(const ValueKey('work-item-dates-cancel')));
+      await tester.pumpAndSettle();
+      _expectEditorClosedOverDetail(h, editor);
+      expect(h.phases.map((entry) => entry.$1), [
+        WorkItemDatesWritePhase.start,
+      ]);
+      expect(find.text('正在更新日期…'), findsOneWidget);
+      expect(_editButton(tester).onPressed, isNull);
+
+      final newer = MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('newer-page')),
+      );
+      unawaited(h.navigator.push(newer));
+      await tester.pumpAndSettle();
+      expect(newer.isCurrent, isTrue);
+
+      fixture.releaseApply();
+      await pumpUntil(tester, () => fixture.mutationApplies == 1);
+      expect(h.phases, hasLength(1));
+      fixture.releaseAck();
+      await settleNetworkWidgets(tester);
+
+      expect(h.phases.map((entry) => entry.$1), [
+        WorkItemDatesWritePhase.start,
+        WorkItemDatesWritePhase.settle,
+      ]);
+      expect(identical(h.phases[0].$2, h.phases[1].$2), isTrue);
+      expect(h.saves, isEmpty);
+      expect(newer.isCurrent, isTrue);
+      expect(h.detailRoute.isActive, isTrue);
+      expect(h.log.popped, [editor]);
+      expect(h.log.removed, isEmpty);
+      expect(fixture.mutations, 1);
+      expect(_mutationRequests(fixture), 1);
+      expect(fixture.mutationAcks, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'a write applied under a newer route closes only its own editor route',
+    (tester) async {
+      final fixture = WorkItemDatesFixture()
+        ..holdMutationAck = Completer<void>();
+      final h = await _pumpDetailRoute(tester, fixture);
+      await _open(tester);
+      final editor = h.editorRoute!;
+      await _enterDates(tester, '2026-10-04', '');
+      await tester.tap(find.byKey(const ValueKey('work-item-dates-save')));
+      await pumpUntil(tester, () => fixture.mutationApplies == 1);
+
+      final newer = MaterialPageRoute<void>(
+        builder: (_) => const Scaffold(body: Text('newer-page')),
+      );
+      unawaited(h.navigator.push(newer));
+      await tester.pumpAndSettle();
+      expect(newer.isCurrent, isTrue);
+      expect(editor.isActive, isTrue);
+
+      fixture.releaseAck();
+      await settleNetworkWidgets(tester);
+
+      expect(newer.isCurrent, isTrue);
+      expect(find.text('newer-page'), findsOneWidget);
+      expect(editor.isActive, isFalse);
+      expect(h.detailRoute.isActive, isTrue);
+      expect(h.log.popped, isEmpty);
+      expect(h.log.removed, [editor]);
+      expect(h.saves.single.startDate, '2026-10-04');
+      expect(h.phases.map((entry) => entry.$1), [
+        WorkItemDatesWritePhase.start,
+        WorkItemDatesWritePhase.settle,
+      ]);
+      expect(fixture.mutations, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+}
+
+enum _EditorExit {
+  cancel('Cancel'),
+  systemBack('system back');
+
+  const _EditorExit(this.label);
+  final String label;
+}
+
+Future<void> _exitEditor(WidgetTester tester, _EditorExit exit) async {
+  switch (exit) {
+    case _EditorExit.cancel:
+      await tester.tap(find.byKey(const ValueKey('work-item-dates-cancel')));
+      break;
+    case _EditorExit.systemBack:
+      expect(await tester.binding.handlePopRoute(), isTrue);
+      break;
+  }
+  // Zero-duration frame: starts the reverse animation without advancing it.
+  await tester.pump();
+}
+
+/// Runs real Dio turns with zero-duration frames, so the route animation clock
+/// stays inside the exit transition while network work completes.
+Future<void> _driveNetworkWithFrozenClock(
+  WidgetTester tester,
+  bool Function() condition, {
+  int cycles = 120,
+  String? description,
+}) async {
+  for (var cycle = 0; cycle < cycles; cycle++) {
+    if (condition()) return;
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 15)),
+    );
+    await tester.pump(Duration.zero);
+  }
+  if (description != null && !condition()) {
+    fail('timed out with a frozen clock: $description');
+  }
+}
+
+void _expectEditorExiting(_DetailRouteHarness h, Route<dynamic> editor) {
+  expect(
+    (editor as TransitionRoute<dynamic>).animation!.status,
+    AnimationStatus.reverse,
+  );
+  expect(editor.isActive, isFalse);
+  expect(
+    find.byKey(const ValueKey('work-item-dates-save'), skipOffstage: false),
+    findsOneWidget,
+    reason: 'editor State is still mounted during the exit transition',
+  );
+  expect(h.detailRoute.isCurrent, isTrue);
+  expect(h.log.popped, [editor]);
+  expect(h.log.removed, isEmpty);
+}
+
+void _expectEditorClosedOverDetail(
+  _DetailRouteHarness h,
+  Route<dynamic> editor,
+) {
+  expect(editor.isActive, isFalse);
+  expect(
+    find.byKey(const ValueKey('work-item-dates-save'), skipOffstage: false),
+    findsNothing,
+  );
+  expect(h.detailRoute.isCurrent, isTrue);
+  expect(find.text('detail-page'), findsOneWidget);
+  expect(h.log.popped, [editor]);
+  expect(h.log.removed, isEmpty);
+}
+
+int _mutationRequests(WorkItemDatesFixture fixture) =>
+    fixture.adapter.requests.where((request) {
+      final body = request.data;
+      return body is Map &&
+          (body['query'] as String? ?? '').startsWith(
+            'mutation MobileSetWorkItemDates',
+          );
+    }).length;
+
+final class _RouteLog extends NavigatorObserver {
+  final popped = <Route<dynamic>>[];
+  final removed = <Route<dynamic>>[];
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      popped.add(route);
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) =>
+      removed.add(route);
+}
+
+final class _DetailRouteHarness {
+  _DetailRouteHarness(this.navigator, this.detailRoute, this.log);
+
+  final NavigatorState navigator;
+  final Route<void> detailRoute;
+  final _RouteLog log;
+  final saves = <WorkItemDatesSnapshot>[];
+  final phases = <(WorkItemDatesWritePhase, Object)>[];
+  Route<dynamic>? editorRoute;
+}
+
+/// Root page -> detail route hosting the control -> editor pushed by the
+/// control, mirroring an editor opened from a pushed detail page.
+Future<_DetailRouteHarness> _pumpDetailRoute(
+  WidgetTester tester,
+  WorkItemDatesFixture fixture,
+) async {
+  addTearDown(fixture.api.close);
+  addTearDown(fixture.releaseAll);
+  final navigatorKey = GlobalKey<NavigatorState>();
+  final log = _RouteLog();
+  await tester.pumpWidget(
+    MaterialApp(
+      key: UniqueKey(),
+      navigatorKey: navigatorKey,
+      navigatorObservers: [log],
+      home: const Scaffold(body: Text('root-page')),
+    ),
+  );
+  late final _DetailRouteHarness h;
+  final detail = MaterialPageRoute<void>(
+    builder: (_) => Scaffold(
+      body: Column(
+        children: [
+          const Text('detail-page'),
+          WorkItemDatesControl(
+            account: fixture.account,
+            api: fixture.api,
+            detail: fixture.detail,
+            generation: 4,
+            onRoute: (route) => h.editorRoute = route,
+            onDatesWrite: (phase, token) => h.phases.add((phase, token)),
+            onSaved: (snapshot) => h.saves.add(snapshot),
+          ),
+        ],
+      ),
+    ),
+  );
+  h = _DetailRouteHarness(navigatorKey.currentState!, detail, log);
+  unawaited(h.navigator.push(detail));
+  await tester.pumpAndSettle();
+  expect(detail.isCurrent, isTrue);
+  return h;
 }
 
 const _notSentCopy = '沒有送出日期變更。';

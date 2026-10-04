@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
+import '../../core/instance.dart';
 import '../../core/models.dart';
+import '../../shared/external_link.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
 import 'navigation.dart';
@@ -270,6 +272,35 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
     if (mounted) await _feed.currentState?.refresh();
   }
 
+  /// Native pages open only when the todo names its target unambiguously;
+  /// every other row explains itself and offers the server's own web link.
+  void _openTarget(BuildContext context, _TodoTarget target, String title, String projectPath) {
+    final navigator = ResourceNavigator(widget.account, widget.api);
+    switch (target.route) {
+      case _TodoRoute.workItem:
+        unawaited(navigator.workItem(context, '${target.projectId}', target.resource, target.iid));
+      case _TodoRoute.commit:
+        unawaited(navigator.commit(context, '${target.projectId}', target.sha));
+      case _TodoRoute.explain:
+        unawaited(_explain(context, target, title, projectPath));
+    }
+  }
+
+  Future<void> _explain(BuildContext context, _TodoTarget target, String title, String projectPath) async {
+    final api = widget.api;
+    final accountKey = widget.account.key;
+    bool current() => mounted && !api.isClosed && identical(api, widget.api) &&
+        accountKey == widget.account.key;
+    final refresh = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => _TodoTargetSheet(target: target, title: title, projectPath: projectPath,
+        isCurrent: current),
+    );
+    if (refresh == true && current()) await _feed.currentState?.refresh();
+  }
+
   @override
   void dispose() {
     _busy.dispose();
@@ -309,8 +340,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
     load: (next) => widget.api.records(['todos'], query: {'state': 'pending'}, next: next), itemBuilder: (context, data) {
       final target = valueObject(data, 'target'), project = valueObject(data, 'project');
       final id = valueInt(data, 'id');
-      final resource = data['target_type'] == 'MergeRequest' ? 'merge_requests' : 'issues';
-      final supported = const ['Issue', 'MergeRequest'].contains(data['target_type']);
+      final todoTarget = _TodoTarget.of(data, widget.account.instance);
       final action = valueText(data, 'action_name');
       final actionLabel = switch (action) {
         'assigned' => '指派給你', 'mentioned' || 'directly_addressed' => '提及你', 'review_requested' => '請你審查',
@@ -323,11 +353,13 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
         titleMaxLines: 3,
         leading: Container(width: 32, height: 32, alignment: Alignment.center,
           decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(10)),
-          child: Icon(resource == 'merge_requests' ? Icons.merge : Icons.adjust, size: 18,
-            color: scheme.onPrimaryContainer)),
+          child: Icon(todoTarget.icon, size: 18, color: scheme.onPrimaryContainer)),
         title: Text(valueText(target, 'title', valueText(data, 'body', 'GitLab 待辦'))),
         subtitle: Text(valueText(project, 'path_with_namespace')),
         meta: [
+          if (todoTarget.route == _TodoRoute.explain)
+            MetaChip('${todoTarget.typeLabel} · ${todoTarget.web == null ? '無法開啟' : '網頁版'}',
+              icon: todoTarget.web == null ? Icons.link_off : Icons.open_in_new),
           if (actionLabel.isNotEmpty) MetaChip(actionLabel, icon: Icons.notifications_none),
           if (valueText(author, 'username').isNotEmpty) MetaChip('@${valueText(author, 'username')}', icon: Icons.person_outline),
           MetaChip(relativeDate(valueText(data, 'updated_at', valueText(data, 'created_at'))), icon: Icons.schedule_outlined),
@@ -337,8 +369,9 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
           builder: (context, busy, _) => IconButton(tooltip: '完成此待辦', icon: const Icon(Icons.check_circle_outline),
             onPressed: busy.contains(id) ? null : () => _done(id)),
         ),
-        onTap: !supported ? null : () => ResourceNavigator(widget.account, widget.api)
-          .workItem(context, '${valueInt(project, 'id')}', resource, valueInt(target, 'iid')),
+        onTap: () => _openTarget(context, todoTarget,
+          valueText(target, 'title', valueText(data, 'body', 'GitLab 待辦')),
+          valueText(project, 'path_with_namespace')),
       );
       Widget background(Alignment alignment) => Container(
         alignment: alignment,
@@ -361,4 +394,143 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
       );
     },
   );
+}
+
+enum _TodoRoute { workItem, commit, explain }
+
+/// What a todo row opens. Issue and merge request rows need the numeric
+/// project ID and the target IID; commit rows need the project ID and a full
+/// SHA. Anything else, including a known type missing those fields, is never
+/// guessed into a native page.
+final class _TodoTarget {
+  const _TodoTarget._(this.route, this.typeLabel, this.icon,
+    {this.projectId = 0, this.resource = '', this.iid = 0, this.sha = '', this.web, this.nativeType = false});
+
+  factory _TodoTarget.of(Json data, GitLabInstance instance) {
+    final type = data['target_type'];
+    final target = valueObject(data, 'target');
+    final projectId = valueInt(valueObject(data, 'project'), 'id');
+    final label = _todoTypeLabel(type);
+    if (projectId > 0) {
+      final iid = valueInt(target, 'iid');
+      if ((type == 'Issue' || type == 'MergeRequest') && iid > 0) {
+        final mr = type == 'MergeRequest';
+        return _TodoTarget._(_TodoRoute.workItem, label, mr ? Icons.merge : Icons.adjust,
+          projectId: projectId, resource: mr ? 'merge_requests' : 'issues', iid: iid, nativeType: true);
+      }
+      final sha = valueText(target, 'id');
+      if (type == 'Commit' && _fullSha.hasMatch(sha)) {
+        return _TodoTarget._(_TodoRoute.commit, label, Icons.commit,
+          projectId: projectId, sha: sha.toLowerCase(), nativeType: true);
+      }
+    }
+    final web = _todoWebUri(valueText(data, 'target_url'), instance);
+    return _TodoTarget._(_TodoRoute.explain, label, web == null ? Icons.link_off : Icons.open_in_new,
+      web: web, nativeType: const ['Issue', 'MergeRequest', 'Commit'].contains(type));
+  }
+
+  final _TodoRoute route;
+  final String typeLabel;
+  final IconData icon;
+  final int projectId;
+  final String resource;
+  final int iid;
+  final String sha;
+  /// The server's `target_url`, kept only when it lies inside this instance.
+  final Uri? web;
+  final bool nativeType;
+
+  static final _fullSha = RegExp(r'^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$');
+}
+
+String _todoTypeLabel(Object? type) => switch (type) {
+  'Issue' => '議題',
+  'MergeRequest' => '合併請求',
+  'Commit' => '提交',
+  'Epic' => '史詩',
+  'WorkItem' => '工作項目',
+  'DesignManagement::Design' => '設計稿',
+  'AlertManagement::Alert' => '警示',
+  'Namespace' || 'Group' => '群組',
+  'Project' => '專案',
+  'Key' => 'SSH 金鑰',
+  'User' => '使用者',
+  'WikiPage::Meta' => 'Wiki 頁面',
+  _ => '其他 GitLab 項目',
+};
+
+/// Accepts only an HTTPS link on this account's instance (host, port and
+/// installation subpath) with no credentials, relative or encoded separators.
+Uri? _todoWebUri(String text, GitLabInstance instance) {
+  final value = text.trim();
+  final rawPath = RegExp(r'^https://[^/?#]+([^?#]*)', caseSensitive: false).firstMatch(value)?.group(1);
+  if (rawPath == null || rawPath.contains('\\') || rawPath.contains('//') ||
+      RegExp(r'%(2f|5c|2e)', caseSensitive: false).hasMatch(rawPath) ||
+      rawPath.split('/').any((part) => part == '.' || part == '..')) {
+    return null;
+  }
+  final uri = Uri.tryParse(value);
+  if (uri == null || !instance.sameOrigin(uri) || !safeExternalUri(uri)) return null;
+  final base = instance.base.pathSegments.where((part) => part.isNotEmpty).toList();
+  final segments = uri.pathSegments.where((part) => part.isNotEmpty).toList();
+  if (segments.length <= base.length) return null;
+  for (var i = 0; i < base.length; i++) {
+    if (segments[i] != base[i]) return null;
+  }
+  return uri;
+}
+
+class _TodoTargetSheet extends StatelessWidget {
+  const _TodoTargetSheet({required this.target, required this.title, required this.projectPath,
+    required this.isCurrent});
+  final _TodoTarget target;
+  final String title;
+  final String projectPath;
+  final bool Function() isCurrent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final web = target.web;
+    final reason = target.nativeType
+      ? '這則${target.typeLabel}待辦缺少可辨識目標的資料，無法在 App 內開啟。'
+      : '「${target.typeLabel}」類型的待辦目前沒有 App 內頁面。';
+    return SafeArea(child: SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(web == null ? '無法開啟此待辦' : '無法在 App 內開啟', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 12),
+        Text(title, style: theme.textTheme.bodyLarge),
+        if (projectPath.isNotEmpty) Text(projectPath, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+        const SizedBox(height: 12),
+        Text(reason),
+        const SizedBox(height: 4),
+        Text(web == null
+          ? '此待辦沒有屬於目前 GitLab 實例的有效連結，無法開啟。可重新整理後再試；完成此待辦仍可在列表中操作。'
+          : '可改在 GitLab 網頁版查看：'),
+        if (web != null) ...[
+          const SizedBox(height: 4),
+          Text(web.toString(), key: const ValueKey('todo-target-web-url'),
+            style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+        ],
+        const SizedBox(height: 16),
+        Wrap(alignment: WrapAlignment.end, spacing: 8, runSpacing: 8, children: [
+          TextButton(key: const ValueKey('todo-target-close'),
+            onPressed: () => Navigator.of(context).pop(false), child: const Text('關閉')),
+          if (web == null)
+            OutlinedButton.icon(key: const ValueKey('todo-target-refresh'),
+              onPressed: () => Navigator.of(context).pop(true),
+              icon: const Icon(Icons.refresh), label: const Text('重新整理')),
+          if (web != null)
+            FilledButton.icon(key: const ValueKey('todo-target-open-web'),
+              onPressed: () async {
+                if (isCurrent()) await openExternal(context, web);
+                if (context.mounted) Navigator.of(context).pop(false);
+              },
+              icon: const Icon(Icons.open_in_new), label: const Text('在 GitLab 開啟')),
+        ]),
+      ]),
+    ));
+  }
 }

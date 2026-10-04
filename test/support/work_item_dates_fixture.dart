@@ -66,6 +66,7 @@ final class WorkItemDatesFixture {
   String state = 'OPEN';
   String updatedAt = _initialUpdatedAt;
   int baseReads = 0;
+  int baseResponses = 0;
   int probeReads = 0;
   int mutations = 0;
   int mutationApplies = 0;
@@ -138,6 +139,7 @@ final class WorkItemDatesFixture {
       baseReads++;
       final held = holdNextBaseRead;
       if (held != null) await held.future;
+      baseResponses++;
       return jsonResponse(_readEnvelope(ee: false));
     }
     if (query.startsWith('query MobileWorkItemDatesProbe')) {
