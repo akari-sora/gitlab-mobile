@@ -22,6 +22,7 @@ import 'work_item_milestone_models.dart';
 import 'work_item_status_models.dart';
 import 'work_item_weight_models.dart';
 import 'work_item_state_models.dart';
+import 'work_item_dates_models.dart';
 
 part 'workspace_api.dart';
 part 'incident_api.dart';
@@ -41,6 +42,7 @@ part 'work_item_assignee_api.dart';
 part 'work_item_labels_api.dart';
 part 'work_item_status_api.dart';
 part 'work_item_state_api.dart';
+part 'work_item_dates_api.dart';
 
 final _artifactCancelled = Object();
 const _artifactRedirects = {301, 302, 303, 307, 308};
