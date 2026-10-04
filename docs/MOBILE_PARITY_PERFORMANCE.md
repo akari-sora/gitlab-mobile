@@ -582,9 +582,38 @@ placement.
 This was not a full-main aggregate run. No FPS, smoothness, memory or
 physical-device result follows from it. Current-main full analysis/test/build,
 APK/native, authenticated private GitLab, iOS, accessibility and G0 acceptance
-are **NOT_RUN**. The separately authored combined 120-Diff / 20,000-source /
-120-projects-plus-Labels helper was not merged and had no SDK run; it is not
-production or native evidence.
+are **NOT_RUN**.
+
+## Combined emulator QA fixtures (2026-10-04)
+
+Commit `9d9ebb0` integrates three QA-only files: `tool/emulator_ui.dart`,
+`test/emulator_ui_harness_test.dart` and
+`test/emulator_work_item_labels_fixture_test.dart`. The helper stays behind an
+explicit `EMULATOR_UI_QA` guard with a persistent synthetic banner;
+`EMULATOR_PERF_QA` defaults to false. Its synthetic server provides 120 MR
+changes with exactly one Diff over 64 KiB and 3,001 lines, a 20,000-line
+repository file with three distant anchors, 120 projects over four pages with
+13 starred, and project/group Labels mutations with authoritative state and
+independent readback. Unknown routes return 404 and closed clients report
+cancelled.
+
+An isolated worktree with the eight merged Labels files copied in as
+prerequisites passed 128 scoped synthetic tests with zero failures, errors or
+skips, clean scoped analysis and format check, and every recorded command exit
+0. All 19 recorded source/lock hashes matched the integrated `9d9ebb0` files.
+`c28bfbe` later changes one of them, `graph_work_items_page.dart`, through the
+approved Work Item metadata integration, so this run does not cover that newer
+file; the metadata change has its own separate 350-test scoped matrix. An independent
+final review approved with zero required changes. This is scoped evidence. It
+is not a full-main aggregate, not production behaviour, and not native, device
+or performance evidence. The 149 Labels and 92 Diff/repository runs remain
+separate scoped proofs and are not added to it.
+
+The combined helper imports `work_item_labels_models.dart`, which does not exist
+at the `a07ecdc` and `7f84309` comparison sources, so it is not
+baseline-compatible and no unchanged-baseline claim is made. A
+controlled baseline comparison must use the preserved performance-only helper
+(SHA-256 `a59c02db…41c3`) on both sources, with separate builds and launches.
 
 ## Physical-device profile result
 
@@ -1218,7 +1247,12 @@ and clean scoped analysis. This is not a full-main aggregate test.
 
 Current-main full analysis/test/build, APK/native, authenticated private/live
 CRUD, iOS, TalkBack/VoiceOver, performance and G0 acceptance are **NOT_RUN**.
-Pipeline `2910293827` was recorded pending for exact head
-`a82892e74b59290b50379f7e7b7bdc6913fcd042`; no CI pass is inferred. Historical
+Pipeline `2910293827` for `a82892e74b59290b50379f7e7b7bdc6913fcd042` was last
+read running and incomplete: `python_checks` passed, `public_api_smoke`,
+`native_templates` and `flutter_checks` were pending, and `android_debug` was
+still created; no CI pass
+is inferred, and it does not validate the newer `9d9ebb0` or `c28bfbe` source.
+The push of current head `c28bfbe` is verified on the remote only; no CI result
+is recorded. Historical
 native evidence remains tied to its actual `2ccff57` source and does not validate
 this editor.

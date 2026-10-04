@@ -158,6 +158,28 @@ scoped analysis came from a separate worktree, not a full-main aggregate.
 Current-main full analysis/test/build, APK/native and quantitative performance
 are **NOT_RUN**; no FPS or smoothness result is inferred.
 
+Commit `9d9ebb0` integrates the guarded combined emulator QA helper and its two
+tests (120-change Diff, 20,000-line source, 120 projects and authoritative
+project/group Labels flows). An isolated worktree with the eight Labels files
+copied in as prerequisites passed 128 scoped synthetic tests with zero
+failures/errors/skips, and an independent final review approved it with zero
+required changes. That run is separate from the 149 Labels and 92
+Diff/repository runs and is not a full-main aggregate, native or performance
+result. The helper needs Labels models absent from the `a07ecdc` / `7f84309`
+comparison sources, so baseline comparisons keep the preserved
+performance-only helper.
+
+Commit `c28bfbe` integrates the milestone, weight and assignee write fences.
+The detail page owns each metadata write token (account, API client, resource,
+generation and summary fences), so a write outlives its editor and a recreated
+attributes panel; the pending row shows 等待讀取 with editing disabled, and after
+the acknowledgement the recreated panel issues exactly one fresh read instead of
+stalling. Labels gating is unchanged. A scoped 350-test synthetic matrix passed
+with zero failures/errors/skips and clean scoped analysis, and an independent
+review approved with zero required changes. It is separate from the 128, 149 and
+92 runs and is not full acceptance; current-source full analysis/test/build,
+APK/native, CI, authenticated private CRUD, iOS and G0 remain pending.
+
 ## Next implementation lanes
 
 The later 390 × 844 public walk of project Task
@@ -455,6 +477,8 @@ Labels/API/UI/Graph/Assignee-preservation run with zero
 failures/errors/skips, clean scoped analysis and an approving final review.
 That is scoped worktree evidence, not current-main aggregate proof. Full-main
 analysis/test/build, APK/native, authenticated private/live CRUD, iOS,
-accessibility, performance and G0 acceptance are **NOT_RUN**. Exact-head pipeline
-`2910293827` was pending in the retained snapshot. Historical native evidence
+accessibility, performance and G0 acceptance are **NOT_RUN**. Pipeline
+`2910293827` for `a82892e` was last read running with only `python_checks`
+passed; it does not validate `9d9ebb0` or current `c28bfbe`, whose push is
+verified on the remote with no CI result recorded. Historical native evidence
 stays attached to `2ccff57`; it does not validate Labels.

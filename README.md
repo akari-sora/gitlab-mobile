@@ -166,9 +166,30 @@ The exact eight merged Labels source/test files have a 149-case scoped
 Labels/API/UI/Graph/Assignee-preservation matrix and clean scoped analysis from
 the separate validation worktree. This is not a full-main aggregate run.
 Current-main full analysis/test/build, APK/native, authenticated private CRUD,
-iOS, accessibility, performance and G0 acceptance are **NOT_RUN**. Exact-head
-pipeline `2910293827` was pending in the retained snapshot; that snapshot is not
-a CI pass.
+iOS, accessibility, performance and G0 acceptance are **NOT_RUN**.
+
+`9d9ebb0` adds a guarded, synthetic-only combined emulator QA helper for large
+Diff, repository-source, project-list and Labels flows. With the eight Labels
+files copied in as prerequisites, an isolated worktree passed 128 scoped
+synthetic tests with zero failures/errors/skips, and an independent review
+approved it. It is a separate scoped run, not full-main, native or performance
+evidence. Pipeline `2910293827` for `a82892e` was last read running with only
+`python_checks` passed; it is not a CI pass and does not validate `9d9ebb0` or
+`c28bfbe`.
+
+`c28bfbe` integrates the milestone, weight and assignee write fences into
+current main. The detail page owns each metadata write token, checked against
+account, API client, resource, generation and summary, so a write outlives its
+editor and a recreated attributes panel. While the write is pending the affected
+row shows 等待讀取 with editing disabled; after the acknowledgement the
+recreated panel issues exactly one fresh read instead of stalling. Labels write
+gating is unchanged. A scoped 350-test synthetic matrix (metadata API/UI, Labels,
+project/group Graph, attributes and emulator fixtures) passed with zero
+failures/errors/skips and clean scoped analysis, and an independent review
+approved with zero required changes. The 350, 128, 149 and 92 runs are separate
+scoped matrices on their own source cuts; they are not summed and are not full
+acceptance. Current-source full analysis/test/build, APK/native, CI,
+authenticated private CRUD, iOS and G0 remain pending.
 
 ## v0.5 — mobile UX overhaul and GitLab parity
 
