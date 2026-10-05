@@ -6,6 +6,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/work_item_assignee_models.dart';
+import '../../core/work_item_dates_models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_labels_models.dart';
 import '../../core/work_item_state_models.dart';
@@ -18,6 +19,7 @@ import 'work_item_activity.dart';
 import 'work_item_assignees.dart';
 import 'work_item_attributes.dart';
 import 'work_item_content.dart';
+import 'work_item_dates.dart';
 import 'work_item_labels.dart';
 import 'work_item_milestone.dart';
 import 'work_item_notifications.dart';
@@ -1375,6 +1377,88 @@ class _AssigneeSignals extends ChangeNotifier {
   void bump() => notifyListeners();
 }
 
+/// The page, session, account, client and item a Dates write started under.
+class _DatesWriteOwner {
+  const _DatesWriteOwner({
+    required this.pageGeneration,
+    required this.sessionGeneration,
+    required this.account,
+    required this.api,
+    required this.summary,
+  });
+
+  final int pageGeneration;
+  final int? sessionGeneration;
+  final Account account;
+  final GitLabApi api;
+  final WorkItemGraphSummary summary;
+}
+
+class _DatesWrite {
+  _DatesWrite(this.token, this.owner);
+
+  final Object token;
+  final _DatesWriteOwner owner;
+  DateTime? confirmedRevision;
+}
+
+/// How the last Dates write on an item ended. `revision` is the newest
+/// confirmed `updatedAt` seen on this client; an unconfirmed end keeps it.
+class _DatesTerminal {
+  const _DatesTerminal(this.revision, {required this.confirmed});
+
+  final DateTime? revision;
+  final bool confirmed;
+}
+
+/// Dates writes between START and SETTLE, per API client and item id. Every
+/// page on the same client holds the item's Dates and STATUS writers while
+/// one is active. The token is released only by the write's own SETTLE.
+class _DatesWriteRegistry extends ChangeNotifier {
+  _DatesWriteRegistry._();
+
+  static final instance = _DatesWriteRegistry._();
+
+  final Expando<Map<String, Set<Object>>> _active = Expando();
+  final Expando<Map<String, _DatesTerminal>> _terminals = Expando();
+
+  bool isActive(GitLabApi api, String id) =>
+      _active[api]?[id]?.isNotEmpty ?? false;
+
+  _DatesTerminal? terminal(GitLabApi api, String id) => _terminals[api]?[id];
+
+  void start(GitLabApi api, String id, Object token) {
+    final byId = _active[api] ??= <String, Set<Object>>{};
+    if (!(byId[id] ??= <Object>{}).add(token)) return;
+    notifyListeners();
+  }
+
+  void settle(
+    GitLabApi api,
+    String id,
+    Object token, {
+    DateTime? confirmedRevision,
+  }) {
+    final byId = _active[api];
+    final tokens = byId?[id];
+    if (tokens == null || !tokens.remove(token)) return;
+    if (tokens.isEmpty) byId!.remove(id);
+    final terminals = _terminals[api] ??= <String, _DatesTerminal>{};
+    final earlier = terminals[id]?.revision;
+    if (confirmedRevision == null) {
+      terminals[id] = _DatesTerminal(earlier, confirmed: false);
+    } else {
+      terminals[id] = _DatesTerminal(
+        earlier != null && earlier.isAfter(confirmedRevision)
+            ? earlier
+            : confirmedRevision,
+        confirmed: true,
+      );
+    }
+    notifyListeners();
+  }
+}
+
 class GraphWorkItemDetailPage extends StatefulWidget {
   GraphWorkItemDetailPage.project({
     super.key,
@@ -1469,6 +1553,11 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   bool _statusRegistryActive = false;
   bool _statusReloadAfterLoad = false;
   WorkItemStatusTerminal? _statusTerminalSeen;
+  _DatesWrite? _datesWrite;
+  bool _datesRegistryActive = false;
+  bool _datesReloadAfterLoad = false;
+  _DatesTerminal? _datesTerminalSeen;
+  DateTime? _datesDetailRevision;
   late final WorkItemStateLoader _stateLoader = _loadStateGuarded;
   late final WorkItemStateUpdater _stateUpdater = _updateStateGuarded;
 
@@ -1538,6 +1627,79 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       _labelsRefetchSerial != null &&
       _labelsRefetchSerial == _labelsReadSerial;
 
+  /// A Dates write on this item is between START and SETTLE, from this page
+  /// or from any other page using the same API client.
+  bool get _datesHeld {
+    if (_datesWrite != null) return true;
+    final detail = _detail;
+    return detail != null &&
+        _DatesWriteRegistry.instance.isActive(widget.api, detail.summary.id);
+  }
+
+  bool _datesHeldFor(WorkItemGraphSummary expected) =>
+      _datesWrite != null ||
+      _DatesWriteRegistry.instance.isActive(widget.api, expected.id);
+
+  _DatesTerminal? get _datesTerminal {
+    final detail = _detail;
+    return detail == null
+        ? null
+        : _DatesWriteRegistry.instance.terminal(widget.api, detail.summary.id);
+  }
+
+  /// The full detail on screen was read before a confirmed Dates write on
+  /// this item. Summary-only updates never advance this revision.
+  bool get _datesStale {
+    final revision = _datesTerminal?.revision;
+    final shown = _datesDetailRevision;
+    return revision != null && shown != null && shown.isBefore(revision);
+  }
+
+  bool get _datesUnconfirmed {
+    final terminal = _datesTerminal;
+    return terminal != null &&
+        !terminal.confirmed &&
+        !identical(terminal, _datesTerminalSeen);
+  }
+
+  bool _datesOwnerMatches(_DatesWriteOwner owner) {
+    final detail = _detail;
+    return mounted &&
+        _current(_generation) &&
+        owner.pageGeneration == _generation &&
+        owner.sessionGeneration == _sessionGeneration &&
+        _sessionCurrent &&
+        owner.account.key == widget.account.key &&
+        identical(owner.api, widget.api) &&
+        detail != null &&
+        _sameWorkItemResource(owner.summary, detail.summary);
+  }
+
+  /// The owner lock for a Dates open/save.
+  bool _datesDispatchAllowed() =>
+      _current(_generation) &&
+      _sessionCurrent &&
+      _detail != null &&
+      !_loading &&
+      _stateOperations == 0 &&
+      !_statusHeld &&
+      !_datesHeld &&
+      _labelsWriteToken == null &&
+      !_labelsRefetchPending &&
+      _assigneesWriteToken == null &&
+      !_assigneesRefetchPending &&
+      _milestoneWriteToken == null &&
+      _weightWriteToken == null;
+
+  /// Once this page's write has started, only its owner decides; another
+  /// writer's hold must not cut off the write's own confirmation.
+  bool _datesIsCurrent() {
+    final own = _datesWrite;
+    return own != null
+        ? _datesOwnerMatches(own.owner)
+        : _datesDispatchAllowed();
+  }
+
   /// The owner lock for a STATUS open/save. Checked again synchronously in
   /// the editor's last pre-START check.
   bool _statusDispatchAllowed() =>
@@ -1547,6 +1709,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       !_loading &&
       _stateOperations == 0 &&
       !_statusHeld &&
+      !_datesHeld &&
       _labelsWriteToken == null &&
       !_labelsRefetchPending &&
       _assigneesWriteToken == null &&
@@ -1560,6 +1723,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     _sessionGeneration = _captureSessionGeneration();
     widget.ownerChanges?.addListener(_ownerChanged);
     WorkItemStatusWriteRegistry.instance.addListener(_statusRegistryChanged);
+    _DatesWriteRegistry.instance.addListener(_datesRegistryChanged);
     _assigneeOwner = _assigneeOwnerSignals();
     unawaited(_load());
   }
@@ -1593,6 +1757,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       _dropMetadataWrites();
       _dismissOwnedRoutes();
       _detail = null;
+      _datesDetailRevision = null;
       _resolvedProject = null;
       _projectContextError = null;
       _resolvingProject = false;
@@ -1601,6 +1766,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       _ownerInvalid = false;
       _statusRegistryActive = false;
       _statusReloadAfterLoad = false;
+      _datesRegistryActive = false;
+      _datesReloadAfterLoad = false;
       unawaited(_load());
     }
   }
@@ -1611,6 +1778,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     WorkItemStatusWriteRegistry.instance.removeListener(
       _statusRegistryChanged,
     );
+    _DatesWriteRegistry.instance.removeListener(_datesRegistryChanged);
     _generation++;
     _dropAssigneeSession();
     _dropLabelSession();
@@ -1656,6 +1824,93 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     setState(() {});
   }
 
+  /// Any Dates write on this item, from this page or another page on the
+  /// same client: hold while it is active and read the full detail once after
+  /// it settles. This page's own write reloads from its SETTLE instead.
+  void _datesRegistryChanged() {
+    if (!mounted) return;
+    final detail = _detail;
+    if (detail == null) {
+      if (_loading) _datesReloadAfterLoad = true;
+      return;
+    }
+    final active = _DatesWriteRegistry.instance.isActive(
+      widget.api,
+      detail.summary.id,
+    );
+    if (active == _datesRegistryActive) return;
+    final settled = _datesRegistryActive && !active;
+    _datesRegistryActive = active;
+    if (settled &&
+        _datesWrite == null &&
+        _current(_generation) &&
+        (_sessionCurrent || widget.ownerChanges == null)) {
+      if (_loading) {
+        _datesReloadAfterLoad = true;
+      } else {
+        unawaited(_load(keepForDates: true));
+      }
+      return;
+    }
+    setState(() {});
+  }
+
+  /// The registry hears every START and SETTLE, even after this page lost
+  /// the write; the release always comes first so no other page stays held.
+  void _onDatesPhase(
+    _DatesWriteOwner owner,
+    WorkItemDatesWritePhase phase,
+    Object token,
+  ) {
+    final registry = _DatesWriteRegistry.instance;
+    if (phase == WorkItemDatesWritePhase.start) {
+      registry.start(owner.api, owner.summary.id, token);
+      if (!mounted || _datesWrite != null || !_datesOwnerMatches(owner)) {
+        return;
+      }
+      setState(() {
+        _datesWrite = _DatesWrite(token, owner);
+        _datesRegistryActive = true;
+      });
+      return;
+    }
+    final own = _datesWrite;
+    final mine = own != null && identical(own.token, token);
+    registry.settle(
+      owner.api,
+      owner.summary.id,
+      token,
+      confirmedRevision: mine ? own.confirmedRevision : null,
+    );
+    if (!mounted || !mine) return;
+    final reload = _datesOwnerMatches(owner);
+    setState(() => _datesWrite = null);
+    if (reload) unawaited(_load(keepForDates: true));
+  }
+
+  /// A confirmed Dates readback only records its revision; the dates shown
+  /// come from the full detail read after SETTLE.
+  void _onDatesSaved(WorkItemDatesSnapshot snapshot) {
+    final own = _datesWrite;
+    final detail = _detail;
+    if (own == null ||
+        detail == null ||
+        !_datesOwnerMatches(own.owner) ||
+        snapshot.summary.id != detail.summary.id ||
+        snapshot.expectedUserId != widget.account.user.id ||
+        snapshot.generation != _sessionGeneration) {
+      return;
+    }
+    final earlier = own.confirmedRevision;
+    if (earlier == null || snapshot.updatedAt.isAfter(earlier)) {
+      own.confirmedRevision = snapshot.updatedAt;
+    }
+  }
+
+  void _dropDatesWrite() {
+    _datesWrite = null;
+  }
+
   void _ownerChanged() {
     if (widget.isCurrent?.call() ?? true) return;
     _generation++;
@@ -1665,8 +1920,11 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     _dismissOwnedRoutes();
     _statusRegistryActive = false;
     _statusReloadAfterLoad = false;
+    _datesRegistryActive = false;
+    _datesReloadAfterLoad = false;
     setState(() {
       _detail = null;
+      _datesDetailRevision = null;
       _resolvedProject = null;
       _projectContextError = null;
       _resolvingProject = false;
@@ -1766,13 +2024,22 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   }
 
   /// A refresh the user asked for also acknowledges the unconfirmed STATUS
-  /// outcome shown when it started.
-  void _refresh() => unawaited(_load(acknowledge: _statusTerminal));
+  /// and Dates outcomes shown when it started.
+  void _refresh() => unawaited(
+    _load(acknowledge: _statusTerminal, acknowledgeDates: _datesTerminal),
+  );
 
-  Future<void> _load({WorkItemStatusTerminal? acknowledge}) async {
+  /// `keepForDates` keeps the Dates section and its editor mounted while the
+  /// detail after a Dates write is read.
+  Future<void> _load({
+    WorkItemStatusTerminal? acknowledge,
+    _DatesTerminal? acknowledgeDates,
+    bool keepForDates = false,
+  }) async {
     if (_loading ||
         _labelsWriteToken != null ||
         _statusHeld ||
+        _datesHeld ||
         !_current(_generation)) {
       return;
     }
@@ -1782,17 +2049,22 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     final expectedLabelsSummary = _detail?.summary;
     final labelsReadSerial = ++_labelsReadSerial;
     _statusReloadAfterLoad = false;
+    _datesReloadAfterLoad = false;
     final keepDetail =
         _assigneesWriteToken != null ||
         _labelsWriteToken != null ||
         _milestoneWriteToken != null ||
         _weightWriteToken != null ||
         _statusConfirmed != null ||
+        keepForDates ||
         (_labelsRoute?.isActive ?? false);
     setState(() {
       _loading = true;
       _error = null;
-      if (!keepDetail) _detail = null;
+      if (!keepDetail) {
+        _detail = null;
+        _datesDetailRevision = null;
+      }
       _resolvedProject = null;
       _projectContextError = null;
       _resolvingProject = false;
@@ -1880,6 +2152,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       }
       setState(() {
         _detail = detail;
+        _datesDetailRevision = detail.summary.updatedAt;
         _labelsHidePreview = false;
         _labelsUnconfirmed = false;
         _statusConfirmed = null;
@@ -1893,12 +2166,27 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
             )) {
           _statusTerminalSeen = acknowledge;
         }
+        if (acknowledgeDates != null &&
+            identical(
+              acknowledgeDates,
+              _DatesWriteRegistry.instance.terminal(
+                owner.api,
+                detail.summary.id,
+              ),
+            )) {
+          _datesTerminalSeen = acknowledgeDates;
+        }
       });
       _statusRegistryActive = WorkItemStatusWriteRegistry.instance.isActive(
         owner.api,
         detail.summary.id,
       );
       if (_statusRegistryActive) _statusReloadAfterLoad = false;
+      _datesRegistryActive = _DatesWriteRegistry.instance.isActive(
+        owner.api,
+        detail.summary.id,
+      );
+      if (_datesRegistryActive) _datesReloadAfterLoad = false;
       if (_assigneesWriteToken == null && _assigneesHideStalePreview) {
         unawaited(_refetchAssignees(detail, generation));
       }
@@ -1917,6 +2205,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         return;
       }
       _statusReloadAfterLoad = false;
+      _datesReloadAfterLoad = false;
       final failure = safeFailure(error);
       if (failure.kind != FailureKind.cancelled) {
         setState(() => _error = failure);
@@ -1924,7 +2213,11 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     } finally {
       if (_detailEpoch == loadEpoch && _sameLabelOwner(owner, generation)) {
         setState(() => _loading = false);
-        if (_statusReloadAfterLoad) unawaited(_load());
+        if (_statusReloadAfterLoad) {
+          unawaited(_load());
+        } else if (_datesReloadAfterLoad) {
+          unawaited(_load(keepForDates: true));
+        }
       }
     }
   }
@@ -2046,6 +2339,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       }
       setState(() {
         _detail = detail;
+        _datesDetailRevision = detail.summary.updatedAt;
         _labelsHidePreview = false;
         _labelsUnconfirmed = false;
         _statusConfirmed = null;
@@ -2088,6 +2382,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     _dropMilestoneWrite();
     _dropWeightWrite();
     _dropStatusWrite();
+    _dropDatesWrite();
   }
 
   /// Forgets the parent's STATUS hold for an old owner or resource. The
@@ -2269,7 +2564,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         WorkItemStatusWriteRegistry.instance.isActive(
           widget.api,
           expected.id,
-        )) {
+        ) ||
+        _datesHeldFor(expected)) {
       throw const ApiFailure(FailureKind.cancelled);
     }
     _stateOperations++;
@@ -2277,7 +2573,9 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       return await widget.api.workItemState(
         expected,
         isCurrent: () =>
-            !_statusHeldFor(expected) && (isCurrent?.call() ?? true),
+            !_statusHeldFor(expected) &&
+            !_datesHeldFor(expected) &&
+            (isCurrent?.call() ?? true),
       );
     } finally {
       _stateOperationSettled();
@@ -2305,7 +2603,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         WorkItemStatusWriteRegistry.instance.isActive(
           widget.api,
           expected.id,
-        )) {
+        ) ||
+        _datesHeldFor(expected)) {
       throw const ApiFailure(FailureKind.cancelled);
     }
     _stateOperations++;
@@ -2315,7 +2614,9 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         event,
         expectedUpdatedAt: expectedUpdatedAt,
         isCurrent: () =>
-            !_statusHeldFor(expected) && (isCurrent?.call() ?? true),
+            !_statusHeldFor(expected) &&
+            !_datesHeldFor(expected) &&
+            (isCurrent?.call() ?? true),
       );
     } finally {
       _stateOperationSettled();
@@ -2566,7 +2867,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     final generation = _generation;
     final detail = _detail;
     if (detail == null || !_current(generation)) return;
-    if (_statusHeld) return;
+    if (_statusHeld || _datesHeld) return;
     final summary = detail.summary;
     if (snapshot.id != summary.id ||
         snapshot.iid != summary.iid ||
@@ -2803,7 +3104,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           account: widget.account,
           api: widget.api,
           detail: detail,
-          isCurrent: () => _current(generation) && !_statusHeld,
+          isCurrent: () => _current(generation) && !_statusHeld && !_datesHeld,
           ownerChanges: _assigneeOwner,
           onRoute: _ownRoute,
           onAssigneesWrite: _onAssigneesWrite,
@@ -2864,11 +3165,97 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           api: widget.api,
           detail: detail,
           generation: generation,
-          isCurrent: () => _current(generation) && !_statusHeld,
+          isCurrent: () => _current(generation) && !_statusHeld && !_datesHeld,
           ownerChanges: widget.ownerChanges,
           onRoute: _ownLabelRoute,
           onLabelWrite: _onLabelWrite,
           writePending: _labelsWriteToken != null,
+        ),
+      ],
+    );
+  }
+
+  /// The chips come only from a full detail read; a stale detail hides them
+  /// rather than painting dates older than a confirmed write.
+  Widget _datesBody(WorkItemGraphDetail detail, WorkItemDatesWidget dates) {
+    final held = _datesHeld;
+    final stale = !held && _datesStale;
+    final unconfirmed = !held && !stale && _datesUnconfirmed;
+    final sessionGeneration = _sessionGeneration;
+    final owner = _DatesWriteOwner(
+      pageGeneration: _generation,
+      sessionGeneration: sessionGeneration,
+      account: widget.account,
+      api: widget.api,
+      summary: detail.summary,
+    );
+    final showControl =
+        detail.widgetsAvailable && _current(_generation) && _sessionCurrent;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!_datesStale)
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            children: [
+              if (dates.startDate != null)
+                MetaChip(
+                  '開始 ${workItemCalendarDate(dates.startDate!)}',
+                  icon: Icons.play_arrow_outlined,
+                ),
+              if (dates.dueDate != null)
+                MetaChip(
+                  '到期 ${workItemCalendarDate(dates.dueDate!)}',
+                  icon: Icons.event_outlined,
+                ),
+              if (dates.startDate == null && dates.dueDate == null)
+                const Text('沒有開始或到期日期'),
+              if (dates.rollUp == true)
+                const MetaChip('日期由階層彙整', icon: Icons.account_tree_outlined),
+            ],
+          ),
+        if (held)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              '日期更新中：完成前不會重新整理、變更開啟狀態或其他欄位。',
+              key: ValueKey('work-item-dates-hold'),
+            ),
+          )
+        else if (stale)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              '尚未確認最新日期。請重新整理後再查看。',
+              key: ValueKey('work-item-dates-stale'),
+            ),
+          )
+        else if (unconfirmed)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              '尚未確認日期是否已更新。請重新整理後再查看。',
+              key: ValueKey('work-item-dates-unconfirmed'),
+            ),
+          ),
+        KeyedSubtree(
+          key: const ValueKey('work-item-dates-control-slot'),
+          child: showControl && sessionGeneration != null
+              ? WorkItemDatesControl(
+                  api: widget.api,
+                  account: widget.account,
+                  detail: detail,
+                  generation: sessionGeneration,
+                  isCurrent: _datesIsCurrent,
+                  enabled: _datesDispatchAllowed(),
+                  onDatesWrite: (phase, token) =>
+                      _onDatesPhase(owner, phase, token),
+                  onSaved: _onDatesSaved,
+                  ownerChanges: null,
+                  onRoute: _ownRoute,
+                )
+              : const SizedBox.shrink(),
         ),
       ],
     );
@@ -2894,7 +3281,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     WorkItemStateEvent event,
   ) async {
     final generation = _generation;
-    if (_statusHeld) return false;
+    if (_statusHeld || _datesHeld) return false;
     final closing = event == WorkItemStateEvent.close;
     final route = DialogRoute<bool>(
       context: context,
@@ -3010,6 +3397,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           onWeightWrite: _onWeightWrite,
           statusSessionGeneration: _sessionGeneration,
           statusWriteHeld: _statusHeld,
+          datesWriteHeld: _datesHeld,
           statusConfirmed: _statusConfirmed,
           statusUnconfirmed: _statusUnconfirmed || _statusForeignUnconfirmed,
           statusStale: _statusStale,
@@ -3076,28 +3464,12 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
             ),
           ),
         if (dates != null)
-          _section(
-            context,
-            '日期',
-            Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              children: [
-                if (dates.startDate != null)
-                  MetaChip(
-                    '開始 ${workItemCalendarDate(dates.startDate!)}',
-                    icon: Icons.play_arrow_outlined,
-                  ),
-                if (dates.dueDate != null)
-                  MetaChip(
-                    '到期 ${workItemCalendarDate(dates.dueDate!)}',
-                    icon: Icons.event_outlined,
-                  ),
-                if (dates.startDate == null && dates.dueDate == null)
-                  const Text('沒有開始或到期日期'),
-                if (dates.rollUp == true)
-                  const MetaChip('日期由階層彙整', icon: Icons.account_tree_outlined),
-              ],
+          KeyedSubtree(
+            key: const ValueKey('work-item-dates-section'),
+            child: _section(
+              context,
+              '日期',
+              _datesBody(detail, dates),
             ),
           ),
         WorkItemActivityPanel(
@@ -3184,7 +3556,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
             onPressed:
                 _loading ||
                     _labelsWriteToken != null ||
-                    _statusHeld
+                    _statusHeld ||
+                    _datesHeld
                 ? null
                 : _refresh,
             tooltip: '重新整理',

@@ -72,6 +72,7 @@ class WorkItemAttributesPanel extends StatefulWidget {
     this.onStatusSaved,
     this.statusDispatchAllowed,
     this.statusOperationCurrent,
+    this.datesWriteHeld = false,
   });
 
   final Account account;
@@ -106,6 +107,10 @@ class WorkItemAttributesPanel extends StatefulWidget {
   final ValueChanged<WorkItemStatusSaveResult>? onStatusSaved;
   final bool Function()? statusDispatchAllowed;
   final bool Function()? statusOperationCurrent;
+
+  /// The owner holds a Dates write from START to SETTLE; milestone and weight
+  /// cannot dispatch meanwhile.
+  final bool datesWriteHeld;
 
   @override
   State<WorkItemAttributesPanel> createState() =>
@@ -592,7 +597,10 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
         account: widget.account,
         api: widget.api,
         detail: widget.detail,
-        isCurrent: () => _current(epoch) && !widget.statusWriteHeld,
+        isCurrent: () =>
+            _current(epoch) &&
+            !widget.statusWriteHeld &&
+            !widget.datesWriteHeld,
         operationCurrent: operationCurrent,
         ownerChanges: widget.ownerChanges,
         onRoute: widget.onRoute,
@@ -604,7 +612,10 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
         account: widget.account,
         api: widget.api,
         detail: widget.detail,
-        isCurrent: () => _current(epoch) && !widget.statusWriteHeld,
+        isCurrent: () =>
+            _current(epoch) &&
+            !widget.statusWriteHeld &&
+            !widget.datesWriteHeld,
         operationCurrent: operationCurrent,
         ownerChanges: widget.ownerChanges,
         onRoute: widget.onRoute,
