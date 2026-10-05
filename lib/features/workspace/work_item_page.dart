@@ -20,6 +20,11 @@ import 'records_feed.dart';
 import 'discussions_tab.dart';
 import 'draft_review_page.dart';
 import 'work_item_filters.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/providers.dart';
+import '../auth/session_controller.dart';
+import 'graph_work_items_page.dart';
+import 'rest_issue_graph_bridge.dart';
 import '../../shared/theme.dart';
 export 'discussions_tab.dart';
 
@@ -514,6 +519,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
   ApiFailure? _error;
   bool _loading = true, _busy = false;
   int _epoch = 0, _generation = 0;
+  int _graphEpoch = 0, _graphReadyEpoch = 0;
   final _chrome = ScrollChromeController();
   final Set<Route<dynamic>> _ownedRoutes = {};
   NavigatorState? _navigator;
@@ -598,6 +604,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     final owner = _owner;
     final ownerPath = _ownerPath(owner);
     final epoch = ++_epoch;
+    final graphEpoch = ++_graphEpoch;
     if (mounted) { setState(() { _loading = true; _error = null; }); }
     try {
       final data = await owner.api.record(ownerPath);
@@ -627,9 +634,53 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
           _approvalsData = approvals;
           _incidentStatus = incidentStatus;
           _incidentStatusError = incidentStatusError;
+          _graphReadyEpoch = graphEpoch;
         });
       }
     } catch (e) { if (mounted && epoch == _epoch) { setState(() => _error = safeFailure(e)); } } finally { if (mounted && epoch == _epoch) { setState(() => _loading = false); } }
+  }
+
+  Future<void> _onOpenEditor() async {
+    final oldOwner = _owner;
+    SessionController? session;
+    int? capturedSessionGeneration;
+    try {
+      session = ProviderScope.containerOf(context, listen: false).read(sessionProvider);
+      capturedSessionGeneration = captureRouteSessionGeneration(
+        injected: null,
+        owner: session,
+        account: oldOwner.account,
+        api: oldOwner.api,
+        isCurrent: () => _currentOwner(oldOwner) && !oldOwner.api.isClosed,
+      );
+    } catch (_) {
+      session = null;
+      capturedSessionGeneration = null;
+    }
+
+    if (!context.mounted) return;
+
+    final route = MaterialPageRoute<void>(
+      builder: (_) => GraphWorkItemDetailPage.project(
+        account: oldOwner.account,
+        api: oldOwner.api,
+        project: oldOwner.project,
+        iid: oldOwner.iid,
+        isCurrent: () => _currentOwner(oldOwner) && !oldOwner.api.isClosed,
+        ownerChanges: session,
+        sessionGeneration: capturedSessionGeneration,
+      ),
+    );
+    _ownRoute(route);
+
+    await Navigator.of(context).push(route);
+
+    if (!_currentOwner(oldOwner) || oldOwner.api.isClosed) return;
+    if (capturedSessionGeneration != null &&
+        !routeSessionMatches(capturedSessionGeneration, session, oldOwner.account, oldOwner.api)) {
+      return;
+    }
+    unawaited(_load());
   }
 
   Future<void> _loadAfterMutation() async {
@@ -1576,6 +1627,21 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                             key: ValueKey('rest-description/${owner.account.key}/${owner.project.id}/${owner.resource}/${owner.iid}/${owner.generation}'),
                             base: web, api: widget.api, projectId: widget.project.id, projectWeb: widget.account.instance.projectWeb(widget.project.path), projectPath: widget.project.path,
                           ),
+                          if (owner.resource == 'issues' && owner.type == ProjectWorkItemType.issue) ...[
+                            const SizedBox(height: 14),
+                            _WorkItemKeepAlive(
+                              key: ValueKey('rest-issue-graph-bridge/${owner.account.key}/${owner.project.id}/${owner.iid}/${owner.generation}'),
+                              child: RestIssueGraphBridge(
+                                account: widget.account,
+                                api: widget.api,
+                                project: widget.project,
+                                iid: widget.iid,
+                                graphEpoch: _graphEpoch,
+                                graphReadyEpoch: _graphReadyEpoch,
+                                onOpenEditor: () => unawaited(_onOpenEditor()),
+                              ),
+                            ),
+                          ],
                           const SizedBox(height: 14),
                           _WorkItemKeepAlive(
                             key: ValueKey('work-item-reactions/${owner.account.key}/${owner.project.id}/${owner.resource}/${owner.iid}/${owner.generation}'),

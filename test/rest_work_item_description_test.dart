@@ -718,7 +718,9 @@ void main() {
       expect(find.byKey(_previewKey), findsOneWidget);
       expect(_expand, findsOneWidget);
       expect(fixture.recordReads('issues', 1), 1);
-      final initialRequests = fixture.adapter.requests.length;
+      final initialRequests = fixture.adapter.requests
+          .where((r) => !r.uri.path.endsWith('/api/graphql'))
+          .length;
       expect(
         initialRequests,
         4,

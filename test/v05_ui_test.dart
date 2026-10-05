@@ -381,11 +381,15 @@ void main() {
       resource: 'issues', iid: 1)));
     await settleNetworkWidgets(tester);
     expect(find.byKey(const ValueKey('reaction-add')), findsOneWidget);
-    await tester.scrollUntilVisible(find.byKey(const ValueKey('work-item-subscribe')), 200,
+    final subscribe = find.byKey(const ValueKey('work-item-subscribe'));
+    await tester.scrollUntilVisible(subscribe, 200,
       scrollable: find.descendant(of: find.byType(ListView).first, matching: find.byType(Scrollable)).first);
+    await tester.ensureVisible(subscribe);
+    await tester.pump();
+    expect(subscribe.hitTestable(), findsOneWidget);
     expect(find.text('2026-12-31'), findsOneWidget);
     expect(find.text('已花費 1h 30m · 預估 3h'), findsOneWidget);
-    await tester.tap(find.byKey(const ValueKey('work-item-subscribe')));
+    await tester.tap(subscribe);
     await settleNetworkWidgets(tester);
     expect(fixture.issues[1]!['subscribed'], isTrue);
     expect(fixture.unhandled, isEmpty);
@@ -601,8 +605,12 @@ void main() {
     expect(find.text('App 帳號：@developer'), findsWidgets);
     fixture.failRelated = false;
     fixture.relatedMergeRequests[1] = [{...fixture.mergeRequest, 'title': 'Fixes the relation'}];
-    await tester.tap(find.descendant(of: find.ancestor(of: target, matching: find.byType(FailureNotice)),
-      matching: find.text('重新整理')));
+    final retry = find.descendant(of: find.ancestor(of: target, matching: find.byType(FailureNotice)),
+      matching: find.text('重新整理'));
+    await tester.ensureVisible(retry);
+    await tester.pump();
+    expect(retry.hitTestable(), findsOneWidget);
+    await tester.tap(retry);
     await settleNetworkWidgets(tester);
     expect(target, findsNothing);
     expect(find.text('Fixes the relation'), findsOneWidget);

@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/work_item_activity_models.dart';
 import 'package:gitlab_mobile/core/work_item_state_models.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
+import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_extras.dart';
 import 'package:gitlab_mobile/features/workspace/repository_page.dart';
 import 'package:gitlab_mobile/shared/scroll_performance.dart';
@@ -1103,4 +1104,494 @@ void main() {
     expect(find.text('Pipeline 排程'), findsOneWidget);
     expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
   });
+
+  testWidgets(
+    'Dates QA destination mounts GraphWorkItemDetailPage with Dates section and chips across project and group scopes',
+    (tester) async {
+      await tester.pumpWidget(buildEmulatorQaApp(qaEnabled: true));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('Work Item 日期 (Dates Parent QA)'),
+        200,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Work Item 日期 (Dates Parent QA)'));
+      await settleNetworkWidgets(tester);
+
+      expect(find.byType(DatesParentQaScreen), findsOneWidget);
+      expect(find.byType(GraphWorkItemDetailPage), findsOneWidget);
+      final projectScrollable = find.descendant(
+        of: find.byType(GraphWorkItemDetailPage),
+        matching: find.byType(Scrollable),
+      );
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('work-item-dates-section')),
+        200,
+        scrollable: projectScrollable,
+      );
+      expect(
+        find.byKey(const ValueKey('work-item-dates-section')),
+        findsOneWidget,
+      );
+      expect(find.text('開始 2026/10/10'), findsOneWidget);
+      expect(find.text('到期 2026/10/20'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('work-item-dates-edit')),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('群組'));
+      await settleNetworkWidgets(tester);
+
+      expect(find.byType(GraphWorkItemDetailPage), findsOneWidget);
+      final groupScrollable = find.descendant(
+        of: find.byType(GraphWorkItemDetailPage),
+        matching: find.byType(Scrollable),
+      );
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('work-item-dates-section')),
+        200,
+        scrollable: groupScrollable,
+      );
+      expect(
+        find.byKey(const ValueKey('work-item-dates-section')),
+        findsOneWidget,
+      );
+      expect(find.text('開始 2026/11/01'), findsOneWidget);
+      expect(find.text('到期 2026/11/30'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Dates QA save flow mutates server state and updates parent chips and ledger',
+    (tester) async {
+      await tester.pumpWidget(buildEmulatorQaApp(qaEnabled: true));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('Work Item 日期 (Dates Parent QA)'),
+        200,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Work Item 日期 (Dates Parent QA)'));
+      await settleNetworkWidgets(tester);
+
+      final datesScrollable = find.descendant(
+        of: find.byType(GraphWorkItemDetailPage),
+        matching: find.byType(Scrollable),
+      );
+      final editButton = find.byKey(const ValueKey('work-item-dates-edit'));
+      await tester.scrollUntilVisible(
+        editButton,
+        200,
+        scrollable: datesScrollable,
+      );
+      await tester.ensureVisible(editButton);
+      await tester.pumpAndSettle();
+      await pumpUntil(
+        tester,
+        () {
+          final matches = editButton.evaluate();
+          if (matches.isEmpty) return false;
+          final renderBox = matches.first.findRenderObject() as RenderBox?;
+          return renderBox != null &&
+              renderBox.hasSize &&
+              !renderBox.size.isEmpty &&
+              editButton.hitTestable().evaluate().isNotEmpty;
+        },
+        description: 'waiting for editButton layout and hit test readiness',
+      );
+
+      await tester.tap(editButton);
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('編輯日期'), findsOneWidget);
+      final editorScrollable = find.descendant(
+        of: find.byKey(const ValueKey('work-item-dates-scroll')),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable &&
+              (widget.axisDirection == AxisDirection.down ||
+                  widget.axisDirection == AxisDirection.up),
+        ),
+      );
+      expect(editorScrollable, findsOneWidget);
+      final dueInput = find.descendant(
+        of: find.byKey(const ValueKey('work-item-dates-scroll')),
+        matching: find.byKey(const ValueKey('work-item-dates-due-input')),
+      );
+      await tester.scrollUntilVisible(
+        dueInput,
+        150,
+        scrollable: editorScrollable,
+      );
+      await tester.ensureVisible(dueInput);
+      await tester.pumpAndSettle();
+      await pumpUntil(
+        tester,
+        () {
+          final matches = dueInput.evaluate();
+          if (matches.isEmpty) return false;
+          final widget = matches.first.widget;
+          if (widget is! TextField || widget.enabled != true) return false;
+          final editable = find
+              .descendant(of: dueInput, matching: find.byType(EditableText))
+              .evaluate();
+          if (editable.isEmpty) return false;
+          final renderBox = matches.first.findRenderObject() as RenderBox?;
+          return renderBox != null &&
+              renderBox.hasSize &&
+              !renderBox.size.isEmpty &&
+              dueInput.hitTestable().evaluate().isNotEmpty;
+        },
+        description: 'waiting for due-input TextField layout and editability',
+      );
+      await tester.enterText(dueInput, '2026-10-25');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('work-item-dates-save')));
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('編輯日期'), findsNothing);
+      expect(find.text('到期 2026/10/25'), findsOneWidget);
+
+      final ledgerButton = find.byKey(const ValueKey('dates-qa-view-ledger'));
+      final footerScrollable = find.ancestor(
+        of: ledgerButton,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable &&
+              (widget.axisDirection == AxisDirection.right ||
+                  widget.axisDirection == AxisDirection.left),
+        ),
+      );
+      expect(footerScrollable, findsOneWidget);
+      await tester.scrollUntilVisible(
+        ledgerButton,
+        150,
+        scrollable: footerScrollable,
+      );
+      await tester.ensureVisible(ledgerButton);
+      await tester.pumpAndSettle();
+      await pumpUntil(
+        tester,
+        () {
+          final matches = ledgerButton.evaluate();
+          if (matches.isEmpty) return false;
+          final renderBox = matches.first.findRenderObject() as RenderBox?;
+          return renderBox != null &&
+              renderBox.hasSize &&
+              !renderBox.size.isEmpty &&
+              ledgerButton.hitTestable().evaluate().isNotEmpty;
+        },
+        description: 'waiting for ledgerButton layout and hit test readiness',
+      );
+
+      await tester.tap(ledgerButton);
+      await tester.pumpAndSettle();
+
+      expect(find.text('網路紀錄與計數（開啟時快照）'), findsOneWidget);
+
+      final eeOperation = find.textContaining('MobileSetWorkItemDatesEe');
+      final sheetScrollable = find.descendant(
+        of: find.byType(DraggableScrollableSheet),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable &&
+              (widget.axisDirection == AxisDirection.down ||
+                  widget.axisDirection == AxisDirection.up),
+        ),
+      );
+      if (sheetScrollable.evaluate().isNotEmpty &&
+          (eeOperation.evaluate().isEmpty ||
+              eeOperation.hitTestable().evaluate().isEmpty)) {
+        await tester.scrollUntilVisible(
+          eeOperation,
+          100,
+          scrollable: sheetScrollable,
+        );
+      }
+      await tester.ensureVisible(eeOperation);
+      await tester.pumpAndSettle();
+      await pumpUntil(
+        tester,
+        () {
+          final matches = eeOperation.evaluate();
+          if (matches.isEmpty) return false;
+          final renderBox = matches.first.findRenderObject() as RenderBox?;
+          return renderBox != null &&
+              renderBox.hasSize &&
+              !renderBox.size.isEmpty &&
+              eeOperation.hitTestable().evaluate().isNotEmpty;
+        },
+        description: 'waiting for eeOperation layout and hit test readiness',
+      );
+      expect(eeOperation, findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Dates QA held write disables observer B and competing actions then settles',
+    (tester) async {
+      await tester.pumpWidget(buildEmulatorQaApp(qaEnabled: true));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('Work Item 日期 (Dates Parent QA)'),
+        200,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Work Item 日期 (Dates Parent QA)'));
+      await settleNetworkWidgets(tester);
+
+      await tester.tap(find.text('A/B'));
+      await settleNetworkWidgets(tester);
+
+      expect(find.byType(GraphWorkItemDetailPage), findsNWidgets(2));
+
+      await tester.tap(
+        find.byKey(const ValueKey('dates-qa-hold-apply')),
+      );
+      await tester.pumpAndSettle();
+
+      final paneAScrollable = find.descendant(
+        of: find.byKey(const ValueKey('dates-qa-split-pane-a')),
+        matching: find.byType(Scrollable),
+      );
+      final paneBScrollable = find.descendant(
+        of: find.byKey(const ValueKey('dates-qa-split-pane-b')),
+        matching: find.byType(Scrollable),
+      );
+      final editA = find.descendant(
+        of: find.byKey(const ValueKey('dates-qa-split-pane-a')),
+        matching: find.byKey(const ValueKey('work-item-dates-edit')),
+      );
+      final editB = find.descendant(
+        of: find.byKey(const ValueKey('dates-qa-split-pane-b')),
+        matching: find.byKey(const ValueKey('work-item-dates-edit')),
+      );
+
+      await tester.scrollUntilVisible(editA, 200, scrollable: paneAScrollable);
+      await tester.ensureVisible(editA);
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(editB, 200, scrollable: paneBScrollable);
+      await tester.ensureVisible(editB);
+      await tester.pumpAndSettle();
+
+      await pumpUntil(
+        tester,
+        () {
+          final matches = editA.evaluate();
+          if (matches.isEmpty) return false;
+          final renderBox = matches.first.findRenderObject() as RenderBox?;
+          return renderBox != null &&
+              renderBox.hasSize &&
+              !renderBox.size.isEmpty &&
+              editA.hitTestable().evaluate().isNotEmpty;
+        },
+        description: 'waiting for editA layout and hit test readiness',
+      );
+
+      await tester.tap(editA);
+      await settleNetworkWidgets(tester);
+
+      final editorScrollableA = find.descendant(
+        of: find.byKey(const ValueKey('dates-qa-split-pane-a')),
+        matching: find.descendant(
+          of: find.byKey(const ValueKey('work-item-dates-scroll')),
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Scrollable &&
+                (widget.axisDirection == AxisDirection.down ||
+                    widget.axisDirection == AxisDirection.up),
+          ),
+        ),
+      );
+      expect(editorScrollableA, findsOneWidget);
+      final dueInputA = find.descendant(
+        of: find.byKey(const ValueKey('dates-qa-split-pane-a')),
+        matching: find.byKey(const ValueKey('work-item-dates-due-input')),
+      );
+      await tester.scrollUntilVisible(
+        dueInputA,
+        150,
+        scrollable: editorScrollableA,
+      );
+      await tester.ensureVisible(dueInputA);
+      await tester.pumpAndSettle();
+      await pumpUntil(
+        tester,
+        () {
+          final matches = dueInputA.evaluate();
+          if (matches.isEmpty) return false;
+          final widget = matches.first.widget;
+          if (widget is! TextField || widget.enabled != true) return false;
+          final editable = find
+              .descendant(of: dueInputA, matching: find.byType(EditableText))
+              .evaluate();
+          if (editable.isEmpty) return false;
+          final renderBox = matches.first.findRenderObject() as RenderBox?;
+          return renderBox != null &&
+              renderBox.hasSize &&
+              !renderBox.size.isEmpty &&
+              dueInputA.hitTestable().evaluate().isNotEmpty;
+        },
+        description:
+            'waiting for pane A due-input TextField layout and editability',
+      );
+      await tester.enterText(dueInputA, '2026-10-28');
+      await tester.pumpAndSettle();
+
+      final saveA = find.descendant(
+        of: find.byKey(const ValueKey('dates-qa-split-pane-a')),
+        matching: find.byKey(const ValueKey('work-item-dates-save')),
+      );
+      await tester.tap(saveA);
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('work-item-dates-hold'), skipOffstage: false)
+            .evaluate()
+            .isNotEmpty,
+        description: 'Dates write START held at fixture',
+      );
+
+      expect(find.byKey(const ValueKey('work-item-dates-hold')), findsWidgets);
+      expect(
+        tester.widget<TextButton>(
+          find.byKey(const ValueKey('work-item-dates-edit')).last,
+        ).onPressed,
+        isNull,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('dates-qa-release-holds')));
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('到期 2026/10/28'), findsWidgets);
+      expect(find.byKey(const ValueKey('work-item-dates-hold')), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Dates QA owner loss during held write blocks late paint',
+    (tester) async {
+      await tester.pumpWidget(buildEmulatorQaApp(qaEnabled: true));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('Work Item 日期 (Dates Parent QA)'),
+        200,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Work Item 日期 (Dates Parent QA)'));
+      await settleNetworkWidgets(tester);
+
+      await tester.tap(
+        find.byKey(const ValueKey('dates-qa-hold-apply')),
+      );
+      await tester.pumpAndSettle();
+
+      final datesScrollable = find.descendant(
+        of: find.byType(GraphWorkItemDetailPage),
+        matching: find.byType(Scrollable),
+      );
+      final editButton = find.byKey(const ValueKey('work-item-dates-edit'));
+      await tester.scrollUntilVisible(
+        editButton,
+        200,
+        scrollable: datesScrollable,
+      );
+      await tester.ensureVisible(editButton);
+      await tester.pumpAndSettle();
+      await pumpUntil(
+        tester,
+        () {
+          final matches = editButton.evaluate();
+          if (matches.isEmpty) return false;
+          final renderBox = matches.first.findRenderObject() as RenderBox?;
+          return renderBox != null &&
+              renderBox.hasSize &&
+              !renderBox.size.isEmpty &&
+              editButton.hitTestable().evaluate().isNotEmpty;
+        },
+        description: 'waiting for editButton layout and hit test readiness',
+      );
+
+      await tester.tap(editButton);
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('編輯日期'), findsOneWidget);
+      final editorScrollable = find.descendant(
+        of: find.byKey(const ValueKey('work-item-dates-scroll')),
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Scrollable &&
+              (widget.axisDirection == AxisDirection.down ||
+                  widget.axisDirection == AxisDirection.up),
+        ),
+      );
+      expect(editorScrollable, findsOneWidget);
+      final dueInput = find.descendant(
+        of: find.byKey(const ValueKey('work-item-dates-scroll')),
+        matching: find.byKey(const ValueKey('work-item-dates-due-input')),
+      );
+      await tester.scrollUntilVisible(
+        dueInput,
+        150,
+        scrollable: editorScrollable,
+      );
+      await tester.ensureVisible(dueInput);
+      await tester.pumpAndSettle();
+      await pumpUntil(
+        tester,
+        () {
+          final matches = dueInput.evaluate();
+          if (matches.isEmpty) return false;
+          final widget = matches.first.widget;
+          if (widget is! TextField || widget.enabled != true) return false;
+          final editable = find
+              .descendant(of: dueInput, matching: find.byType(EditableText))
+              .evaluate();
+          if (editable.isEmpty) return false;
+          final renderBox = matches.first.findRenderObject() as RenderBox?;
+          return renderBox != null &&
+              renderBox.hasSize &&
+              !renderBox.size.isEmpty &&
+              dueInput.hitTestable().evaluate().isNotEmpty;
+        },
+        description: 'waiting for due-input TextField layout and editability',
+      );
+
+      await tester.enterText(dueInput, '2026-10-29');
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey('work-item-dates-save')));
+      await pumpUntil(
+        tester,
+        () => find
+            .byKey(const ValueKey('work-item-dates-hold'), skipOffstage: false)
+            .evaluate()
+            .isNotEmpty,
+        description: 'Dates write START held at fixture',
+      );
+
+      expect(find.text('正在儲存…'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('dates-qa-toggle-session')));
+      await tester.pump();
+
+      await tester.tap(find.byKey(const ValueKey('dates-qa-release-holds')));
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('帳號已切換，工作項目頁面已關閉。'), findsOneWidget);
+      expect(find.text('到期 2026/10/29'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
+

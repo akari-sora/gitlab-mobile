@@ -26,6 +26,8 @@ import 'package:gitlab_mobile/shared/theme.dart';
 import '../test/support/fake_adapter.dart';
 import '../test/support/fake_shortcuts.dart';
 import '../test/support/memory_appearance_store.dart';
+import '../test/support/work_item_dates_parent_fixture.dart';
+import '../test/support/work_item_status_fixture.dart';
 import '../test/support/workspace_fixture.dart';
 
 const emulatorUiQaEnabled = bool.fromEnvironment('EMULATOR_UI_QA');
@@ -3821,6 +3823,553 @@ class _QaChromeState extends State<_QaChrome> {
   }
 }
 
+enum DatesQaViewMode {
+  project,
+  group,
+  split,
+  launcher,
+}
+
+class DatesParentQaScreen extends StatefulWidget {
+  const DatesParentQaScreen({
+    super.key,
+    this.fixture,
+    this.session,
+    this.initialMode = DatesQaViewMode.project,
+  });
+
+  final WorkItemDatesParentFixture? fixture;
+  final SessionController? session;
+  final DatesQaViewMode initialMode;
+
+  @override
+  State<DatesParentQaScreen> createState() => _DatesParentQaScreenState();
+}
+
+class _DatesParentQaScreenState extends State<DatesParentQaScreen> {
+  late final bool _ownsFixture;
+  late final bool _ownsSession;
+  late final WorkItemDatesParentFixture _fixture;
+  EmulatorQaMemoryAccountStore? _ownedStore;
+  late SessionController _session;
+  late GitLabApi _api;
+  late DatesQaViewMode _viewMode;
+  int _rebindNonce = 0;
+  final Map<String, GlobalKey<NavigatorState>> _navKeys = {};
+
+  GlobalKey<NavigatorState> _navKeyFor(String paneId) {
+    return _navKeys.putIfAbsent(
+      '$paneId-$_rebindNonce',
+      () => GlobalKey<NavigatorState>(),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _viewMode = widget.initialMode;
+    _ownsFixture = widget.fixture == null;
+    _ownsSession = widget.session == null;
+    _fixture = widget.fixture ?? WorkItemDatesParentFixture();
+    if (widget.session != null) {
+      _session = widget.session!;
+      _api = _session.api ?? _fixture.primaryApi();
+    } else {
+      _ownedStore = EmulatorQaMemoryAccountStore()
+        ..accounts = [_fixture.account]
+        ..lastActive = _fixture.account.key;
+      _api = _fixture.primaryApi();
+      _session = SessionController(
+        _ownedStore!,
+        createApi: (instance, credential, oauth, onOAuthRotated) =>
+            _fixture.primaryApi(),
+      )
+        ..active = _fixture.account
+        ..api = _api
+        ..initializing = false;
+    }
+    _session.addListener(_onSessionChanged);
+  }
+
+  void _onSessionChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _session.removeListener(_onSessionChanged);
+    if (_ownsSession) {
+      _session.dispose();
+    }
+    if (_ownsFixture) {
+      _fixture.releaseHolds();
+      _fixture.closeAll();
+    }
+    super.dispose();
+  }
+
+  void _holdBeforeApply() {
+    _fixture.holdBeforeApply = Completer<void>();
+    _snack('已設定：暫停寫入 (Hold Before Apply)');
+    setState(() {});
+  }
+
+  void _holdAck() {
+    _fixture.holdAck = Completer<void>();
+    _snack('已設定：暫停確認 (Hold ACK)');
+    setState(() {});
+  }
+
+  void _releaseHolds() {
+    _fixture.releaseHolds();
+    _snack('已釋放所有 Hold 閘門');
+    setState(() {});
+  }
+
+  void _loseNextAck() {
+    _fixture.loseNextAck = true;
+    _snack('已設定：下次寫入遺失確認 (503 Lose Next ACK)');
+    setState(() {});
+  }
+
+  void _lagNextDetail() {
+    _fixture.lagNextDetail = true;
+    _snack('已設定：下次詳情讀取延遲 (Lag Next Detail)');
+    setState(() {});
+  }
+
+  void _toggleSession() {
+    if (_session.active == null) {
+      if (!_ownsSession || _ownedStore == null) {
+        _snack('外部注入的 Session 不支援由此還原');
+        return;
+      }
+      _session.removeListener(_onSessionChanged);
+      _session.dispose();
+      _api = _fixture.primaryApi();
+      _session = SessionController(
+        _ownedStore!,
+        createApi: (instance, credential, oauth, onOAuthRotated) =>
+            _fixture.primaryApi(),
+      )
+        ..active = _fixture.account
+        ..api = _api
+        ..initializing = false;
+      _session.addListener(_onSessionChanged);
+      setState(() => _rebindNonce++);
+      _snack('Session 已重新綁定為 ${_fixture.account.user.username}');
+    } else {
+      unawaited(_session.endSession());
+      _snack('Session 已結束 (Owner Loss)');
+      setState(() {});
+    }
+  }
+
+  void _resetDates() {
+    _fixture.releaseHolds();
+    _fixture.dates[WorkItemDatesParentFixture.itemX] = DatesParentItem(
+      startDate: '2026-10-10',
+      dueDate: '2026-10-20',
+    );
+    _fixture.dates[WorkItemDatesParentFixture.itemY] = DatesParentItem(
+      startDate: '2026-11-01',
+      dueDate: '2026-11-30',
+    );
+    _fixture.loseNextAck = false;
+    _fixture.lagNextDetail = false;
+    _fixture.armFinalFence = false;
+    setState(() => _rebindNonce++);
+    _snack('Dates 伺服器狀態與暫停已重設');
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger
+      ?..removeCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(milliseconds: 1200),
+        ),
+      );
+  }
+
+  void _showLedger() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (context, scrollController) => Padding(
+          padding: const EdgeInsets.all(16),
+          child: ListView(
+            controller: scrollController,
+            children: [
+              Text(
+                '網路紀錄與計數（開啟時快照）',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  Chip(label: Text('寫入請求: ${_fixture.datesMutationRequests}')),
+                  Chip(label: Text('已套用: ${_fixture.datesApplied}')),
+                  Chip(label: Text('詳情讀取: ${_fixture.detailReads()}')),
+                  Chip(
+                    label: Text(
+                      'Base: ${_fixture.count(WorkItemDatesParentFixture.baseOp)}',
+                    ),
+                  ),
+                  Chip(
+                    label: Text(
+                      'Probe: ${_fixture.count(WorkItemDatesParentFixture.probeOp)}',
+                    ),
+                  ),
+                  Chip(
+                    label: Text(
+                      'EE: ${_fixture.count(WorkItemDatesParentFixture.eeMutationOp)}',
+                    ),
+                  ),
+                  Chip(
+                    label: Text(
+                      'CE: ${_fixture.count(WorkItemDatesParentFixture.ceMutationOp)}',
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
+              Text(
+                '請求紀錄 (${_fixture.ledger.length} 筆)',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              if (_fixture.ledger.isEmpty)
+                const Text('目前尚無請求紀錄')
+              else
+                for (final req in _fixture.ledger.reversed.take(40))
+                  ListTile(
+                    dense: true,
+                    title: Text('#${req.nonce} ${req.operation}'),
+                    subtitle: Text(
+                      'client: ${req.clientTag} · item: ${req.item ?? "none"}',
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProjectPage({Key? key}) => GraphWorkItemDetailPage.project(
+    key: key ?? ValueKey('dates-qa-page-project-$_rebindNonce'),
+    account: _session.active ?? _fixture.account,
+    api: _session.api ?? _api,
+    project: const Project(id: 42, name: 'mobile', path: 'studio/mobile'),
+    iid: WorkItemStatusFixture.sharedIid,
+    isCurrent: () =>
+        _session.active?.key == _fixture.account.key &&
+        identical(_session.api, _api),
+    ownerChanges: _session,
+  );
+
+  Widget _buildGroupPage({Key? key}) => GraphWorkItemDetailPage.namespace(
+    key: key ?? ValueKey('dates-qa-page-group-$_rebindNonce'),
+    account: _session.active ?? _fixture.account,
+    api: _session.api ?? _api,
+    namespacePath: WorkItemStatusFixture.groupRef.fullPath,
+    expectedNamespaceId: WorkItemStatusFixture.groupRef.id,
+    iid: WorkItemStatusFixture.sharedIid,
+    isCurrent: () =>
+        _session.active?.key == _fixture.account.key &&
+        identical(_session.api, _api),
+    ownerChanges: _session,
+  );
+
+  void _openLauncherPage(String label, {required bool isProject}) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProviderScope(
+          overrides: [sessionProvider.overrideWithValue(_session)],
+          child: Scaffold(
+            appBar: AppBar(title: Text(label)),
+            body: isProject
+                ? _buildProjectPage(
+                    key: ValueKey('dates-qa-launcher-$label-$_rebindNonce'),
+                  )
+                : _buildGroupPage(
+                    key: ValueKey('dates-qa-launcher-$label-$_rebindNonce'),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _wrapNestedNavigator({
+    required String paneId,
+    required Widget child,
+  }) {
+    final navKey = _navKeyFor(paneId);
+    return NavigatorPopHandler(
+      key: ValueKey('dates-qa-pop-$paneId-$_rebindNonce'),
+      onPopWithResult: (_) => navKey.currentState?.maybePop(),
+      child: Navigator(
+        key: navKey,
+        onGenerateRoute: (settings) => MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => child,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    return switch (_viewMode) {
+      DatesQaViewMode.project => _wrapNestedNavigator(
+          paneId: 'project',
+          child: _buildProjectPage(
+            key: ValueKey('dates-qa-page-project-$_rebindNonce'),
+          ),
+        ),
+      DatesQaViewMode.group => _wrapNestedNavigator(
+          paneId: 'group',
+          child: _buildGroupPage(
+            key: ValueKey('dates-qa-page-group-$_rebindNonce'),
+          ),
+        ),
+      DatesQaViewMode.split => Row(
+          children: [
+            Expanded(
+              key: const ValueKey('dates-qa-split-pane-a'),
+              child: Column(
+                children: [
+                  Container(
+                    color: Theme.of(context).colorScheme.primaryContainer,
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    width: double.infinity,
+                    child: const Text(
+                      'Writer A (專案)',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Expanded(
+                    child: _wrapNestedNavigator(
+                      paneId: 'split-a',
+                      child: _buildProjectPage(
+                        key: ValueKey('dates-qa-page-a-$_rebindNonce'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const VerticalDivider(width: 1),
+            Expanded(
+              key: const ValueKey('dates-qa-split-pane-b'),
+              child: Column(
+                children: [
+                  Container(
+                    color: Theme.of(context).colorScheme.secondaryContainer,
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    width: double.infinity,
+                    child: const Text(
+                      'Observer B (專案)',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Expanded(
+                    child: _wrapNestedNavigator(
+                      paneId: 'split-b',
+                      child: _buildProjectPage(
+                        key: ValueKey('dates-qa-page-b-$_rebindNonce'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      DatesQaViewMode.launcher => Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                ElevatedButton.icon(
+                  key: const ValueKey('dates-qa-launcher-open-writer'),
+                  onPressed: () => _openLauncherPage('Writer A', isProject: true),
+                  icon: const Icon(Icons.edit_calendar),
+                  label: const Text('開啟工作項目 Writer A'),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  key: const ValueKey('dates-qa-launcher-open-observer'),
+                  onPressed: () =>
+                      _openLauncherPage('Observer B', isProject: true),
+                  icon: const Icon(Icons.remove_red_eye_outlined),
+                  label: const Text('開啟工作項目 Observer B'),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  key: const ValueKey('dates-qa-launcher-open-group'),
+                  onPressed: () =>
+                      _openLauncherPage('群組項目', isProject: false),
+                  icon: const Icon(Icons.group_work_outlined),
+                  label: const Text('開啟群組工作項目'),
+                ),
+              ],
+            ),
+          ),
+        ),
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ProviderScope(
+      overrides: [sessionProvider.overrideWithValue(_session)],
+      child: Material(
+        color: Theme.of(context).colorScheme.surface,
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              Container(
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.calendar_month, size: 20),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'Dates QA',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerRight,
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: SegmentedButton<DatesQaViewMode>(
+                            showSelectedIcon: false,
+                            style: const ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            segments: const [
+                              ButtonSegment(
+                                value: DatesQaViewMode.project,
+                                label: Text('專案', style: TextStyle(fontSize: 12)),
+                              ),
+                              ButtonSegment(
+                                value: DatesQaViewMode.group,
+                                label: Text('群組', style: TextStyle(fontSize: 12)),
+                              ),
+                              ButtonSegment(
+                                value: DatesQaViewMode.split,
+                                label: Text('A/B', style: TextStyle(fontSize: 12)),
+                              ),
+                              ButtonSegment(
+                                value: DatesQaViewMode.launcher,
+                                label: Text('啟動器', style: TextStyle(fontSize: 12)),
+                              ),
+                            ],
+                            selected: {_viewMode},
+                            onSelectionChanged: (selected) {
+                              setState(() => _viewMode = selected.first);
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(child: _buildBody()),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      IconButton(
+                        key: const ValueKey('dates-qa-reset-dates'),
+                        tooltip: '重設 Dates 狀態',
+                        icon: const Icon(Icons.restart_alt, size: 20),
+                        onPressed: _resetDates,
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        key: const ValueKey('dates-qa-hold-apply'),
+                        onPressed: _holdBeforeApply,
+                        child: const Text('暫停寫入'),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        key: const ValueKey('dates-qa-hold-ack'),
+                        onPressed: _holdAck,
+                        child: const Text('暫停 ACK'),
+                      ),
+                      const SizedBox(width: 4),
+                      FilledButton(
+                        key: const ValueKey('dates-qa-release-holds'),
+                        onPressed: _releaseHolds,
+                        child: const Text('釋放暫停'),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        key: const ValueKey('dates-qa-lose-ack'),
+                        onPressed: _loseNextAck,
+                        child: const Text('遺失 ACK'),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        key: const ValueKey('dates-qa-lag-detail'),
+                        onPressed: _lagNextDetail,
+                        child: const Text('延遲詳情'),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        key: const ValueKey('dates-qa-toggle-session'),
+                        onPressed:
+                            (_session.active == null && !_ownsSession)
+                                ? null
+                                : _toggleSession,
+                        child: Text(
+                          _session.active == null ? '還原 Session' : '結束 Session',
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton.icon(
+                        key: const ValueKey('dates-qa-view-ledger'),
+                        onPressed: _showLedger,
+                        icon: const Icon(Icons.list_alt, size: 16),
+                        label: const Text('紀錄'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _QaLanding extends StatelessWidget {
   const _QaLanding({required this.runtime});
 
@@ -3894,6 +4443,16 @@ class _QaLanding extends StatelessWidget {
                             identical(runtime.session.api, runtime.fixture.api),
                         ownerChanges: runtime.session,
                       ),
+                    )
+                  : null,
+            ),
+            _QaDestination(
+              icon: Icons.calendar_month_outlined,
+              label: 'Work Item 日期 (Dates Parent QA)',
+              onTap: enabled
+                  ? () => _open(
+                      context,
+                      const DatesParentQaScreen(),
                     )
                   : null,
             ),
