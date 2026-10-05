@@ -69,6 +69,8 @@ void main() {
           )
           .first,
     );
+    await tester.ensureVisible(toggle);
+    await settleWorkspace(tester);
     await tester.tap(toggle);
     await settleWorkspace(tester);
     expect(fixture.written, isTrue);

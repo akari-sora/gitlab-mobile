@@ -330,6 +330,46 @@ void main() {
             'author': {'id': 2, 'username': 'user_b', 'name': 'User B'},
           });
         }
+        if (path.endsWith('/graphql')) {
+          final query = request.data is Map ? (request.data as Map)['query'] as String? ?? '' : '';
+          if (query.startsWith('query MobileProjectWorkItem(')) {
+            return jsonResponse({
+              'data': {
+                'project': {
+                  'id': 'gid://gitlab/Project/333',
+                  'fullPath': 'group/flaky-repo',
+                  'workItems': {
+                    'nodes': [
+                      {
+                        'id': 'gid://gitlab/WorkItem/7007',
+                        'iid': '7',
+                        'title': 'Recovered Issue After Retry',
+                        'state': 'OPEN',
+                        'createdAt': '2026-09-01T01:02:03Z',
+                        'updatedAt': '2026-09-01T01:02:03Z',
+                        'project': {
+                          'id': 'gid://gitlab/Project/333',
+                          'fullPath': 'group/flaky-repo',
+                        },
+                        'namespace': {
+                          'id': 'gid://gitlab/Namespaces::ProjectNamespace/333',
+                          'fullPath': 'group/flaky-repo',
+                        },
+                        'workItemType': {
+                          'id': 'gid://gitlab/WorkItems::Type/1',
+                          'name': 'Issue',
+                        },
+                        'description': null,
+                        'widgets': <Object>[],
+                      },
+                    ],
+                    'pageInfo': {'hasNextPage': false, 'endCursor': null},
+                  },
+                },
+              },
+            });
+          }
+        }
         return jsonResponse([]);
       });
 

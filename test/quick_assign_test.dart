@@ -79,16 +79,50 @@ void main() {
       expect(find.byKey(const ValueKey('quick-assign-me')), findsOneWidget);
       expect(find.byKey(const ValueKey('quick-unassign-me')), findsNothing);
 
+      // Target the issue-detail vertical scrollable by binding directly to the
+      // actual quick-assign chip's vertical scrolling ancestor, guarding against the
+      // master list pane (RecordsFeed), inactive detail tabs, and horizontal ancestors (TabBarView).
+      final assignChip = find.byKey(const ValueKey('quick-assign-me'));
+      final detailScrollable = find.ancestor(
+        of: assignChip,
+        matching: find.byWidgetPredicate(
+          (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+        ),
+      );
+      expect(detailScrollable, findsOneWidget);
+
+      // Scroll only the issue-detail vertical scrollable with real vertical
+      // drag(s) until the required chip is hit-testable inside its visible clipping rect.
+      for (var i = 0; i < 20 && assignChip.hitTestable().evaluate().isEmpty; i++) {
+        await tester.drag(detailScrollable, const Offset(0, -200));
+        await settleNetworkWidgets(tester);
+      }
+      expect(assignChip.hitTestable(), findsOneWidget);
+
       // Tap "指派給我"
-      await tester.tap(find.byKey(const ValueKey('quick-assign-me')));
+      await tester.tap(assignChip);
       await settleNetworkWidgets(tester);
 
       // After assignment: should now show "已指派給我"
       expect(find.byKey(const ValueKey('quick-unassign-me')), findsOneWidget);
       expect(find.byKey(const ValueKey('quick-assign-me')), findsNothing);
 
+      // Ensure "已指派給我" chip is hit-testable before unassigning
+      final unassignChip = find.byKey(const ValueKey('quick-unassign-me'));
+      final unassignScrollable = find.ancestor(
+        of: unassignChip,
+        matching: find.byWidgetPredicate(
+          (w) => w is Scrollable && w.axisDirection == AxisDirection.down,
+        ),
+      );
+      for (var i = 0; i < 20 && unassignChip.hitTestable().evaluate().isEmpty; i++) {
+        await tester.drag(unassignScrollable, const Offset(0, -200));
+        await settleNetworkWidgets(tester);
+      }
+      expect(unassignChip.hitTestable(), findsOneWidget);
+
       // Tap "已指派給我" to unassign
-      await tester.tap(find.byKey(const ValueKey('quick-unassign-me')));
+      await tester.tap(unassignChip);
       await settleNetworkWidgets(tester);
 
       // Should return to "指派給我"

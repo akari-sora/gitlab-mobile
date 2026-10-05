@@ -577,6 +577,8 @@ void main() {
 
       await tester.tap(find.text('Moves across columns'));
       await settleNetworkWidgets(tester);
+      await tester.ensureVisible(find.byKey(const ValueKey('quick-add-label')));
+      await settleNetworkWidgets(tester);
       await tester.tap(find.byKey(const ValueKey('quick-add-label')));
       await settleNetworkWidgets(tester);
       await tester.tap(find.byKey(const ValueKey('picker-row-a')));
