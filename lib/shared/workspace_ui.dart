@@ -635,6 +635,7 @@ class FailureNotice extends StatelessWidget {
                 ],
               ),
               ExpansionTile(
+                key: const PageStorageKey<String>('failure-notice-diagnostics'),
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: EdgeInsets.zero,
                 title: const Text('診斷資訊', style: TextStyle(fontSize: 12)),
@@ -642,6 +643,9 @@ class FailureNotice extends StatelessWidget {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: SelectableText(
+                      key: const PageStorageKey<String>(
+                        'failure-notice-diagnostics-detail',
+                      ),
                       '${error.kind.name}${error.status == null ? '' : ' · HTTP ${error.status}'}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),

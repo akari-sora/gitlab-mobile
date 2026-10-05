@@ -19,6 +19,94 @@ namespace { id fullPath }
 workItemType { id name }
 ''';
 
+const _workItemSummaryTier1Widgets = r'''
+widgets {
+  type
+  ... on WorkItemWidgetLabels {
+    labels(first: 5) {
+      nodes { id title color description textColor }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on WorkItemWidgetAssignees {
+    assignees(first: 3) {
+      nodes { id name username }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on WorkItemWidgetMilestone {
+    milestone {
+      id
+      iid
+      title
+      dueDate
+      startDate
+    }
+  }
+  ... on WorkItemWidgetStartAndDueDate {
+    startDate
+    dueDate
+  }
+  ... on WorkItemWidgetHierarchy {
+    hasParent
+    parent {
+      id
+      iid
+      title
+      workItemType { id name }
+    }
+  }
+  ... on WorkItemWidgetStatus {
+    status {
+      id
+      name
+      iconName
+      color
+    }
+  }
+}
+''';
+
+const _workItemSummaryTier2Widgets = r'''
+widgets {
+  type
+  ... on WorkItemWidgetLabels {
+    labels(first: 5) {
+      nodes { id title color description textColor }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on WorkItemWidgetAssignees {
+    assignees(first: 3) {
+      nodes { id name username }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on WorkItemWidgetMilestone {
+    milestone {
+      id
+      iid
+      title
+      dueDate
+      startDate
+    }
+  }
+  ... on WorkItemWidgetStartAndDueDate {
+    startDate
+    dueDate
+  }
+  ... on WorkItemWidgetHierarchy {
+    hasParent
+    parent {
+      id
+      iid
+      title
+      workItemType { id name }
+    }
+  }
+}
+''';
+
 final _projectWorkItemsQuery =
     '''
 query MobileProjectWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
@@ -33,8 +121,68 @@ query MobileProjectWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
 }
 ''';
 
-String _groupWorkItemsQuery({required bool withType}) =>
-    '''
+String _projectWorkItemsFilteredQuery({
+  required bool hasFilter,
+  required int tier,
+  required bool summaries,
+}) {
+  final nodeFields = !summaries || tier == 3
+      ? _workItemSummaryFields
+      : (tier == 1
+          ? '$_workItemSummaryFields\n$_workItemSummaryTier1Widgets'
+          : '$_workItemSummaryFields\n$_workItemSummaryTier2Widgets');
+  if (!hasFilter) {
+    return '''
+query MobileProjectWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
+  project(fullPath: \$path) {
+    id
+    fullPath
+    workItems(first: \$first, after: \$after) {
+      nodes { $nodeFields }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+  }
+  return '''
+query MobileProjectWorkItems(
+  \$path: ID!
+  \$first: Int!
+  \$after: String
+  \$state: IssuableState!
+  \$search: String
+  \$sort: WorkItemSort!
+) {
+  project(fullPath: \$path) {
+    id
+    fullPath
+    workItems(
+      first: \$first
+      after: \$after
+      state: \$state
+      search: \$search
+      sort: \$sort
+    ) {
+      nodes { $nodeFields }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+}
+
+String _groupWorkItemsQuery({
+  required bool withType,
+  int? tier,
+  bool summaries = false,
+}) {
+  final nodeFields = !summaries || tier == null || tier == 3
+      ? _workItemSummaryFields
+      : (tier == 1
+          ? '$_workItemSummaryFields\n$_workItemSummaryTier1Widgets'
+          : '$_workItemSummaryFields\n$_workItemSummaryTier2Widgets');
+  return '''
 query MobileGroupWorkItems(
   \$path: ID!
   \$first: Int!
@@ -57,12 +205,13 @@ query MobileGroupWorkItems(
       sort: \$sort
       ${withType ? r'workItemTypeIds: $typeIds' : ''}
     ) {
-      nodes { $_workItemSummaryFields }
+      nodes { $nodeFields }
       pageInfo { hasNextPage endCursor }
     }
   }
 }
 ''';
+}
 
 final _projectWorkItemQuery =
     '''
@@ -154,6 +303,7 @@ const _workItemSchemaErrors = {
   'variableRequiresValidType',
   'argumentLiteralsIncompatible',
   'missingRequiredArguments',
+  'undefinedType',
 };
 
 extension on GroupWorkItemState {
@@ -173,6 +323,101 @@ extension on GroupWorkItemSort {
   };
 }
 
+final _apiSupportedListTier = Expando<int>('supportedListTier');
+
+int? _classifyListSchemaError(Map<dynamic, dynamic> envelope, int currentTier) {
+  if (envelope['data'] != null) return null;
+  final rawErrors = envelope['errors'];
+  if (rawErrors is! List || rawErrors.isEmpty) return null;
+  if (currentTier == 1) {
+    for (final error in rawErrors) {
+      if (error is! Map) return null;
+      final extensions = error['extensions'];
+      if (extensions is! Map) return null;
+      final code = extensions['code'] as String?;
+      if (code == null) return null;
+      final typeName = extensions['typeName'] is String
+          ? extensions['typeName'] as String
+          : null;
+      final fieldName = extensions['fieldName'] is String
+          ? extensions['fieldName'] as String
+          : (extensions['field'] is String
+              ? extensions['field'] as String
+              : null);
+      if (code == 'undefinedType') {
+        if (typeName != 'WorkItemWidgetStatus') return null;
+      } else if (code == 'undefinedField') {
+        final matchesStatus = typeName == 'WorkItemWidgetStatus' ||
+            (fieldName == 'status' &&
+                (typeName == null || typeName == 'WorkItemWidgetStatus'));
+        if (!matchesStatus) return null;
+      } else if (code == 'argumentLiteralsIncompatible') {
+        if (typeName != 'WorkItemWidgetStatus' && fieldName != 'status') {
+          return null;
+        }
+      } else {
+        return null;
+      }
+    }
+    return 2;
+  } else if (currentTier == 2) {
+    const t2Whitelist = {
+      'undefinedField',
+      'undefinedArgument',
+      'variableRequiresValidType',
+      'argumentLiteralsIncompatible',
+      'missingRequiredArguments',
+      'undefinedType',
+    };
+    const widgetTokens = {
+      'widgets',
+      'labels',
+      'assignees',
+      'milestone',
+      'startdate',
+      'duedate',
+      'hasparent',
+      'parent',
+    };
+    for (final error in rawErrors) {
+      if (error is! Map) return null;
+      final extensions = error['extensions'];
+      if (extensions is! Map) return null;
+      final code = extensions['code'] as String?;
+      if (code == null || !t2Whitelist.contains(code)) return null;
+
+      final message = (error['message'] is String
+              ? error['message'] as String
+              : '')
+          .toLowerCase();
+      final field = (extensions['field'] is String
+              ? extensions['field'] as String
+              : (extensions['fieldName'] is String
+                  ? extensions['fieldName'] as String
+                  : ''))
+          .toLowerCase();
+      final typeName = (extensions['typeName'] is String
+              ? extensions['typeName'] as String
+              : '')
+          .toLowerCase();
+      final List<Object?> pathList = error['path'] is List
+          ? (error['path'] as List).cast<Object?>()
+          : const <Object?>[];
+      final pathTokens =
+          pathList.map((e) => e.toString().toLowerCase()).toSet();
+
+      final matchesWidget = widgetTokens.any((token) =>
+          field.contains(token) ||
+          typeName.contains(token) ||
+          pathTokens.contains(token) ||
+          message.contains(token));
+      if (!matchesWidget) return null;
+    }
+    return 3;
+  }
+  return null;
+}
+
 extension WorkItemGraphQlApi on GitLabApi {
   /// Reads one bounded group-owned or descendant page with server-side filters.
   /// A continuation must carry both the opaque group ID and normalized filter
@@ -183,6 +428,8 @@ extension WorkItemGraphQlApi on GitLabApi {
     String? after,
     GroupWorkItemListFilter filter = const GroupWorkItemListFilter(),
     GroupWorkItemListFilter? previousFilter,
+    bool summaries = false,
+    int? previousTier,
     bool Function()? isCurrent,
   }) async {
     final path = _validatedNamespacePath(fullPath);
@@ -209,34 +456,75 @@ extension WorkItemGraphQlApi on GitLabApi {
         (cursor == null && previousFilter != null)) {
       throw const ApiFailure(FailureKind.validation);
     }
-    _requireCurrentWorkItemRequest(isCurrent);
-    ({Uint8List bytes, Headers headers, int statusCode}) response;
-    try {
-      response = await _read(
-        instance.graphQL,
-        method: 'POST',
-        graphQuery: true,
-        data: {
-          'query': _groupWorkItemsQuery(
-            withType: normalizedFilter.typeId != null,
-          ),
-          'variables': {
-            'path': path,
-            'first': _workItemPageSize,
-            'after': cursor,
-            'includeDescendants': normalizedFilter.includeDescendants,
-            'state': normalizedFilter.state.graphQlValue,
-            'search': normalizedFilter.search,
-            'sort': normalizedFilter.sort.graphQlValue,
-            if (normalizedFilter.typeId case final typeId?) 'typeIds': [typeId],
-          },
-        },
-      );
-    } catch (error, stackTrace) {
-      _requireCurrentWorkItemRequest(isCurrent);
-      Error.throwWithStackTrace(error, stackTrace);
+    if (!summaries && previousTier != null) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    int activeTier = summaries ? (_apiSupportedListTier[this] ?? 1) : 1;
+    if (summaries) {
+      if (cursor != null &&
+          (previousTier == null || previousTier != activeTier)) {
+        throw const ApiFailure(FailureKind.validation);
+      }
+      if (cursor == null && previousTier != null) {
+        throw const ApiFailure(FailureKind.validation);
+      }
     }
     _requireCurrentWorkItemRequest(isCurrent);
+    ({Uint8List bytes, Headers headers, int statusCode}) response;
+    while (true) {
+      try {
+        final queryText = !summaries
+            ? _groupWorkItemsQuery(withType: normalizedFilter.typeId != null)
+            : _groupWorkItemsQuery(
+                withType: normalizedFilter.typeId != null,
+                tier: activeTier,
+                summaries: true,
+              );
+        response = await _read(
+          instance.graphQL,
+          method: 'POST',
+          graphQuery: true,
+          data: {
+            'query': queryText,
+            'variables': {
+              'path': path,
+              'first': _workItemPageSize,
+              'after': cursor,
+              'includeDescendants': normalizedFilter.includeDescendants,
+              'state': normalizedFilter.state.graphQlValue,
+              'search': normalizedFilter.search,
+              'sort': normalizedFilter.sort.graphQlValue,
+              if (normalizedFilter.typeId case final typeId?) 'typeIds': [typeId],
+            },
+          },
+        );
+      } catch (error, stackTrace) {
+        _requireCurrentWorkItemRequest(isCurrent);
+        Error.throwWithStackTrace(error, stackTrace);
+      }
+      _requireCurrentWorkItemRequest(isCurrent);
+
+      if (summaries && cursor == null) {
+        int? nextTier;
+        try {
+          final decoded = jsonDecode(utf8.decode(response.bytes));
+          if (decoded is Map &&
+              decoded['data'] == null &&
+              decoded['errors'] != null) {
+            nextTier = _classifyListSchemaError(decoded, activeTier);
+          }
+        } catch (_) {
+          // ignore
+        }
+        if (nextTier != null && nextTier > activeTier) {
+          _requireCurrentWorkItemRequest(isCurrent);
+          activeTier = nextTier;
+          continue;
+        }
+      }
+      break;
+    }
+
     try {
       final data = _workItemGraphData(response.bytes);
       final group = _groupGraphContainer(data, path, expectedId: expectedId);
@@ -249,7 +537,11 @@ extension WorkItemGraphQlApi on GitLabApi {
       final seenScopedIids = <String>{};
       final items = <WorkItemGraphSummary>[];
       for (final raw in nodes) {
-        final item = _parseWorkItemSummary(raw);
+        final item = _parseWorkItemSummary(
+          raw,
+          summaries: summaries,
+          tier: activeTier,
+        );
         _requireGroupWorkItem(
           item,
           group.ref,
@@ -262,11 +554,15 @@ extension WorkItemGraphQlApi on GitLabApi {
         }
         items.add(item);
       }
+      if (summaries) {
+        _apiSupportedListTier[this] = activeTier;
+      }
       return GroupWorkItemGraphPage(
         group: group.ref,
         items: items,
         nextCursor: _nextWorkItemCursor(connection, previous: cursor),
         filter: normalizedFilter,
+        summaryTier: summaries ? activeTier : null,
       );
     } on FormatException {
       throw const ApiFailure(FailureKind.invalidResponse);
@@ -277,25 +573,118 @@ extension WorkItemGraphQlApi on GitLabApi {
   Future<WorkItemGraphPage> projectWorkItems(
     Project project, {
     String? after,
+    GroupWorkItemListFilter? filter,
+    GroupWorkItemListFilter? previousFilter,
+    bool summaries = false,
+    int? previousTier,
     bool Function()? isCurrent,
   }) async {
     _validateWorkItemProject(project);
     final cursor = _validatedWorkItemCursor(after);
+    GroupWorkItemListFilter? normalizedFilter;
+    if (filter != null) {
+      normalizedFilter = _validatedGroupWorkItemListFilter(
+        filter,
+        groupPath: project.path,
+        expectedGroupId: null,
+      );
+      if (normalizedFilter.typeId != null ||
+          normalizedFilter.includeDescendants) {
+        throw const ApiFailure(FailureKind.validation);
+      }
+    }
+    GroupWorkItemListFilter? normalizedPrevious;
+    if (previousFilter != null) {
+      normalizedPrevious = _validatedGroupWorkItemListFilter(
+        previousFilter,
+        groupPath: project.path,
+        expectedGroupId: null,
+      );
+    }
+    if ((cursor != null && normalizedFilter != normalizedPrevious) ||
+        (cursor == null && previousFilter != null)) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    if (!summaries && previousTier != null) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    int activeTier = summaries ? (_apiSupportedListTier[this] ?? 1) : 1;
+    if (summaries) {
+      if (cursor != null &&
+          (previousTier == null || previousTier != activeTier)) {
+        throw const ApiFailure(FailureKind.validation);
+      }
+      if (cursor == null && previousTier != null) {
+        throw const ApiFailure(FailureKind.validation);
+      }
+    }
     _requireCurrentWorkItemRequest(isCurrent);
-    final response = await _read(
-      instance.graphQL,
-      method: 'POST',
-      graphQuery: true,
-      data: {
-        'query': _projectWorkItemsQuery,
-        'variables': {
-          'path': project.path,
-          'first': _workItemPageSize,
-          'after': cursor,
-        },
-      },
-    );
-    _requireCurrentWorkItemRequest(isCurrent);
+
+    ({Uint8List bytes, Headers headers, int statusCode}) response;
+    while (true) {
+      try {
+        final String queryText;
+        final Map<String, Object?> variables;
+        if (!summaries && normalizedFilter == null) {
+          queryText = _projectWorkItemsQuery;
+          variables = {
+            'path': project.path,
+            'first': _workItemPageSize,
+            'after': cursor,
+          };
+        } else {
+          queryText = _projectWorkItemsFilteredQuery(
+            hasFilter: normalizedFilter != null,
+            tier: activeTier,
+            summaries: summaries,
+          );
+          variables = {
+            'path': project.path,
+            'first': _workItemPageSize,
+            'after': cursor,
+            if (normalizedFilter != null) ...{
+              'state': normalizedFilter.state.graphQlValue,
+              'search': normalizedFilter.search,
+              'sort': normalizedFilter.sort.graphQlValue,
+            },
+          };
+        }
+        response = await _read(
+          instance.graphQL,
+          method: 'POST',
+          graphQuery: true,
+          data: {
+            'query': queryText,
+            'variables': variables,
+          },
+        );
+      } catch (error, stackTrace) {
+        _requireCurrentWorkItemRequest(isCurrent);
+        Error.throwWithStackTrace(error, stackTrace);
+      }
+      _requireCurrentWorkItemRequest(isCurrent);
+
+      if (summaries && cursor == null) {
+        int? nextTier;
+        try {
+          final decoded = jsonDecode(utf8.decode(response.bytes));
+          if (decoded is Map &&
+              decoded['data'] == null &&
+              decoded['errors'] != null) {
+            nextTier = _classifyListSchemaError(decoded, activeTier);
+          }
+        } catch (_) {
+          // ignore
+        }
+        if (nextTier != null && nextTier > activeTier) {
+          _requireCurrentWorkItemRequest(isCurrent);
+          activeTier = nextTier;
+          continue;
+        }
+      }
+      break;
+    }
+
     try {
       final data = _workItemGraphData(response.bytes);
       final remote = _projectGraphContainer(data, project);
@@ -308,16 +697,25 @@ extension WorkItemGraphQlApi on GitLabApi {
       final seenIids = <int>{};
       final items = <WorkItemGraphSummary>[];
       for (final raw in nodes) {
-        final item = _parseWorkItemSummary(raw);
+        final item = _parseWorkItemSummary(
+          raw,
+          summaries: summaries,
+          tier: activeTier,
+        );
         _requireProjectWorkItem(item, remote.ref);
         if (!seenIds.add(item.id) || !seenIids.add(item.iid)) {
           throw const FormatException('Duplicate work item');
         }
         items.add(item);
       }
+      if (summaries) {
+        _apiSupportedListTier[this] = activeTier;
+      }
       return WorkItemGraphPage(
         items: List.unmodifiable(items),
         nextCursor: _nextWorkItemCursor(connection, previous: cursor),
+        filter: normalizedFilter,
+        summaryTier: summaries ? activeTier : null,
       );
     } on FormatException {
       throw const ApiFailure(FailureKind.invalidResponse);
@@ -674,7 +1072,11 @@ String? _nextWorkItemCursor(Json connection, {String? previous}) {
   return rawCursor;
 }
 
-WorkItemGraphSummary _parseWorkItemSummary(Object? raw) {
+WorkItemGraphSummary _parseWorkItemSummary(
+  Object? raw, {
+  bool summaries = false,
+  int? tier,
+}) {
   final node = objectJson(raw);
   final id = requiredString(node, 'id');
   if (!_validOpaqueGraphId(id)) {
@@ -692,6 +1094,76 @@ WorkItemGraphSummary _parseWorkItemSummary(Object? raw) {
       (namespace != null && !identities.add(namespace.id))) {
     throw const FormatException('Confused graph identity');
   }
+
+  WorkItemSummaryWidgets? widgets;
+  if (summaries) {
+    final effectiveTier = tier ?? 1;
+    if (effectiveTier <= 2) {
+      if (!node.containsKey('widgets')) {
+        throw const FormatException('Missing widgets in summary');
+      }
+      final rawWidgets = node['widgets'];
+      if (rawWidgets == null) {
+        widgets = WorkItemSummaryWidgets.unavailable(tier: effectiveTier);
+      } else {
+        if (rawWidgets is! List || rawWidgets.length > _workItemWidgetLimit) {
+          throw const FormatException('Invalid widgets in summary');
+        }
+        final widgetTypes = <String>{};
+        BoundedGraphConnection<WorkItemGraphLabel>? labels;
+        BoundedGraphConnection<WorkItemGraphAssignee>? assignees;
+        WorkItemMilestoneSummary? milestone;
+        WorkItemDatesSummary? dates;
+        WorkItemHierarchySummary? hierarchy;
+        WorkItemStatusSummary? status;
+
+        for (final rawWidget in rawWidgets) {
+          final widget = objectJson(rawWidget);
+          final widgetType = _boundedRequiredText(widget, 'type', 128);
+          if (!widgetTypes.add(widgetType)) {
+            throw const FormatException('Duplicate widget type in summary');
+          }
+          switch (widgetType) {
+            case 'LABELS':
+              labels = _parseOptionalConnection(
+                widget['labels'],
+                5,
+                _parseWorkItemLabel,
+                identity: (label) => label.id,
+              );
+            case 'ASSIGNEES':
+              assignees = _parseOptionalConnection(
+                widget['assignees'],
+                3,
+                _parseAssignee,
+                identity: (assignee) => assignee.id,
+              );
+            case 'MILESTONE':
+              milestone = _parseWorkItemMilestoneSummary(widget);
+            case 'START_AND_DUE_DATE':
+              dates = _parseWorkItemDatesSummary(widget);
+            case 'HIERARCHY':
+              hierarchy = _parseWorkItemHierarchySummary(widget);
+            case 'STATUS':
+              status = _parseWorkItemStatusSummary(widget);
+          }
+        }
+        widgets = WorkItemSummaryWidgets(
+          tier: effectiveTier,
+          widgetTypes: Set.unmodifiable(widgetTypes),
+          labels: labels,
+          assignees: assignees,
+          milestone: milestone,
+          dates: dates,
+          hierarchy: hierarchy,
+          status: status,
+        );
+      }
+    } else {
+      widgets = const WorkItemSummaryWidgets.unavailable(tier: 3);
+    }
+  }
+
   return WorkItemGraphSummary(
     id: id,
     iid: iid,
@@ -702,6 +1174,83 @@ WorkItemGraphSummary _parseWorkItemSummary(Object? raw) {
     project: project,
     namespace: namespace,
     type: type,
+    widgets: widgets,
+  );
+}
+
+WorkItemDatesSummary _parseWorkItemDatesSummary(Json widget) {
+  return WorkItemDatesSummary(
+    startDate: _workItemDate(widget['startDate']),
+    dueDate: _workItemDate(widget['dueDate']),
+  );
+}
+
+WorkItemMilestoneSummary? _parseWorkItemMilestoneSummary(Json widget) {
+  final rawMilestone = widget['milestone'];
+  if (rawMilestone == null) return null;
+  final ms = objectJson(rawMilestone);
+  final id = requiredString(ms, 'id');
+  if (!_validOpaqueGraphId(id)) {
+    throw const FormatException('Invalid milestone ID');
+  }
+  return WorkItemMilestoneSummary(
+    id: id,
+    iid: ms['iid'] == null ? null : _positiveWorkItemInt(ms['iid']),
+    title: _boundedRequiredText(ms, 'title', 512),
+    dueDate: _workItemDate(ms['dueDate']),
+    startDate: _workItemDate(ms['startDate']),
+  );
+}
+
+WorkItemHierarchySummary _parseWorkItemHierarchySummary(Json widget) {
+  final hasParent = widget['hasParent'];
+  if (hasParent != null && hasParent is! bool) {
+    throw const FormatException('Invalid hierarchy hasParent flag');
+  }
+  final parentRaw = widget['parent'];
+  final parent = parentRaw == null ? null : _parseHierarchySummaryParent(parentRaw);
+  if (hasParent == false && parent != null) {
+    throw const FormatException('Contradictory parent');
+  }
+  return WorkItemHierarchySummary(
+    hasParent: hasParent as bool? ?? false,
+    parent: parent,
+  );
+}
+
+WorkItemHierarchyEntry _parseHierarchySummaryParent(Object? raw) {
+  final node = objectJson(raw);
+  final id = requiredString(node, 'id');
+  if (!_validOpaqueGraphId(id)) {
+    throw const FormatException('Invalid hierarchy parent ID');
+  }
+  final iid = _positiveWorkItemInt(node['iid']);
+  final title = _boundedRequiredText(node, 'title', 4096);
+  final type = _parseWorkItemType(node['workItemType']);
+  return WorkItemHierarchyEntry(
+    id: id,
+    iid: iid,
+    title: title,
+    state: node['state'] is String ? node['state'] as String : '',
+    project: node['project'] != null ? _parseOptionalResourceRef(node['project']) : null,
+    namespace: node['namespace'] != null ? _parseOptionalResourceRef(node['namespace']) : null,
+    type: type,
+  );
+}
+
+WorkItemStatusSummary? _parseWorkItemStatusSummary(Json widget) {
+  final rawStatus = widget['status'];
+  if (rawStatus == null) return null;
+  final st = objectJson(rawStatus);
+  final id = st['id'] == null ? null : requiredString(st, 'id');
+  if (id != null && !_validOpaqueGraphId(id)) {
+    throw const FormatException('Invalid status ID');
+  }
+  return WorkItemStatusSummary(
+    id: id,
+    name: st['name'] == null ? null : _boundedRequiredText(st, 'name', 128),
+    iconName: st['iconName'] is String ? st['iconName'] as String : null,
+    color: st['color'] is String ? st['color'] as String : null,
   );
 }
 

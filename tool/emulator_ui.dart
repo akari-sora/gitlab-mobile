@@ -8,6 +8,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/work_item_health_edit_models.dart';
 import 'package:gitlab_mobile/core/work_item_labels_models.dart';
 import 'package:gitlab_mobile/core/providers.dart';
 import 'package:gitlab_mobile/features/auth/account_store.dart';
@@ -27,6 +28,8 @@ import '../test/support/fake_adapter.dart';
 import '../test/support/fake_shortcuts.dart';
 import '../test/support/memory_appearance_store.dart';
 import '../test/support/work_item_dates_parent_fixture.dart';
+import '../test/support/work_item_health_fixture.dart';
+import '../test/support/work_item_health_parent_fixture.dart';
 import '../test/support/work_item_status_fixture.dart';
 import '../test/support/workspace_fixture.dart';
 
@@ -263,6 +266,8 @@ final class EmulatorQaFixture extends WorkspaceFixture {
 
   bool _starred = false;
   int _starCount = 12;
+
+  int get starCount => _starCount;
 
   Map<String, dynamic> get _latestProjectRecord {
     projectRecord['star_count'] = _starCount;
@@ -885,7 +890,58 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         'name': project ? 'Synthetic Task' : 'Synthetic Epic',
       },
       'description': 'Explicit read-only group list QA fixture.',
-      'widgets': <Object?>[],
+      'widgets': <Object?>[
+        {
+          'type': 'LABELS',
+          'labels': {
+            'nodes': [
+              {
+                'id': 'gid://gitlab/GroupLabel/1',
+                'title': 'qa-label',
+                'color': '#108548',
+                'description': null,
+                'textColor': '#ffffff',
+              },
+            ],
+            'pageInfo': {'hasNextPage': true, 'endCursor': 'label-cursor'},
+          },
+        },
+        {
+          'type': 'ASSIGNEES',
+          'assignees': {
+            'nodes': [
+              {
+                'id': 'gid://gitlab/User/7',
+                'name': 'QA Tester',
+                'username': 'qatest',
+                'avatarUrl': null,
+                'webUrl': 'https://gitlab.example.com/qatest',
+              },
+            ],
+            'pageInfo': {'hasNextPage': true, 'endCursor': 'assignee-cursor'},
+          },
+        },
+        {
+          'type': 'MILESTONE',
+          'milestone': {
+            'id': 'gid://gitlab/Milestone/1',
+            'title': '17.5',
+          },
+        },
+        {
+          'type': 'START_AND_DUE_DATE',
+          'startDate': '2026-10-01',
+          'dueDate': '2026-10-31',
+          'rollUp': false,
+        },
+        {
+          'type': 'STATUS',
+          'status': {
+            'id': 'gid://gitlab/WorkItems::Widgets::Status/1',
+            'name': 'In progress',
+          },
+        },
+      ],
       'userPermissions': {'updateWorkItem': false},
     };
   }, growable: false);
@@ -1926,6 +1982,63 @@ final class EmulatorQaFixture extends WorkspaceFixture {
           },
         });
       }
+      if (operation == 'MobileProjectWorkItems' &&
+          variables['path'] == project.path) {
+        final search = (variables['search'] as String? ?? '').toLowerCase();
+        final rows = groupListRows.asMap().entries.where((entry) {
+          final row = entry.value;
+          final title = (row['title'] as String).toLowerCase();
+          return (variables['state'] == null ||
+                  variables['state'] == 'all' ||
+                  row['state'] ==
+                      (variables['state'] == 'closed' ? 'CLOSED' : 'OPEN')) &&
+              title.contains(search);
+        }).map((entry) {
+          final copy = Map<String, dynamic>.from(entry.value);
+          // One project owns every row, so iids must be unique (41..70).
+          copy['iid'] = '${41 + entry.key}';
+          copy['widgets'] = <Object?>[
+            ...(entry.value['widgets'] as List),
+            {'type': 'HIERARCHY', 'hasParent': true, 'parent': null},
+          ];
+          copy['project'] = {
+            'id': 'gid://gitlab/Project/${project.id}',
+            'fullPath': project.path,
+          };
+          copy['namespace'] = {
+            'id': 'gid://gitlab/Namespaces::ProjectNamespace/${project.id}',
+            'fullPath': project.path,
+          };
+          return copy;
+        }).toList();
+        final sort = variables['sort'] as String? ?? 'CREATED_DESC';
+        final field = sort.startsWith('UPDATED') ? 'updatedAt' : 'createdAt';
+        rows.sort((a, b) => (a[field] as String).compareTo(b[field] as String));
+        final ordered = sort.endsWith('DESC') ? rows.reversed.toList() : rows;
+        final after = variables['after'];
+        final offset = after == null
+            ? 0
+            : int.parse((after as String).split('-').last);
+        final page = ordered.skip(offset).take(20).toList();
+        final hasNext = offset + page.length < ordered.length;
+        return jsonResponse({
+          'data': {
+            'project': {
+              'id': 'gid://gitlab/Project/${project.id}',
+              'fullPath': project.path,
+              'workItems': {
+                'nodes': page,
+                'pageInfo': {
+                  'hasNextPage': hasNext,
+                  'endCursor': hasNext
+                      ? 'qa-project-list-${offset + page.length}'
+                      : null,
+                },
+              },
+            },
+          },
+        });
+      }
       if (operation == 'MobileGroupWorkItems' &&
           variables['path'] == 'qa/synthetic-group') {
         final typeIds = variables['typeIds'] as List?;
@@ -1970,12 +2083,16 @@ final class EmulatorQaFixture extends WorkspaceFixture {
         });
       }
       if (operation == 'MobileNamespaceWorkItemTypes' &&
-          variables['path'] == 'qa/synthetic-group') {
+          (variables['path'] == 'qa/synthetic-group' ||
+              variables['path'] == project.path)) {
+        final projectScope = variables['path'] == project.path;
         return jsonResponse({
           'data': {
             'namespace': {
-              'id': 'gid://gitlab/Group/84',
-              'fullPath': 'qa/synthetic-group',
+              'id': projectScope
+                  ? 'gid://gitlab/Namespaces::ProjectNamespace/${project.id}'
+                  : 'gid://gitlab/Group/84',
+              'fullPath': projectScope ? project.path : 'qa/synthetic-group',
               'workItemTypes': {
                 'nodes': [
                   for (final group in [true, false])
@@ -4370,6 +4487,821 @@ class _DatesParentQaScreenState extends State<DatesParentQaScreen> {
   }
 }
 
+enum HealthQaViewMode {
+  project,
+  group,
+  split,
+  launcher,
+}
+
+class HealthParentQaScreen extends StatefulWidget {
+  const HealthParentQaScreen({
+    super.key,
+    this.fixture,
+    this.session,
+    this.initialMode = HealthQaViewMode.project,
+  });
+
+  final WorkItemHealthParentFixture? fixture;
+  final SessionController? session;
+  final HealthQaViewMode initialMode;
+
+  @override
+  State<HealthParentQaScreen> createState() => _HealthParentQaScreenState();
+}
+
+class _HealthParentQaScreenState extends State<HealthParentQaScreen> {
+  late final bool _ownsFixture;
+  late final bool _ownsSession;
+  late final WorkItemHealthParentFixture _fixture;
+  EmulatorQaMemoryAccountStore? _ownedStore;
+  late SessionController _session;
+  late GitLabApi _api;
+  late HealthQaViewMode _viewMode;
+  int _rebindNonce = 0;
+  final Map<String, GlobalKey<NavigatorState>> _navKeys = {};
+
+  GlobalKey<NavigatorState> _navKeyFor(String paneId) {
+    return _navKeys.putIfAbsent(
+      '$paneId-$_rebindNonce',
+      () => GlobalKey<NavigatorState>(),
+    );
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _viewMode = widget.initialMode;
+    _ownsFixture = widget.fixture == null;
+    _ownsSession = widget.session == null;
+    _fixture = widget.fixture ?? WorkItemHealthParentFixture();
+    if (widget.session != null) {
+      _session = widget.session!;
+      _api = _session.api ?? _fixture.primaryApi();
+    } else {
+      _ownedStore = EmulatorQaMemoryAccountStore()
+        ..accounts = [_fixture.account]
+        ..lastActive = _fixture.account.key;
+      _api = _fixture.primaryApi();
+      _session = SessionController(
+        _ownedStore!,
+        createApi: (instance, credential, oauth, onOAuthRotated) =>
+            _fixture.primaryApi(),
+      )
+        ..active = _fixture.account
+        ..api = _api
+        ..initializing = false;
+    }
+    _session.addListener(_onSessionChanged);
+  }
+
+  void _onSessionChanged() {
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _session.removeListener(_onSessionChanged);
+    if (_ownsSession) {
+      _session.dispose();
+    }
+    if (_ownsFixture) {
+      _fixture.releaseHolds();
+      _fixture.closeAll();
+    }
+    super.dispose();
+  }
+
+  void _holdBeforeApply() {
+    _fixture.holdBeforeApply = Completer<void>();
+    _snack('已設定：暫停寫入 (Hold Before Apply)');
+    setState(() {});
+  }
+
+  void _holdAck() {
+    _fixture.holdAck = Completer<void>();
+    _snack('已設定：暫停確認 (Hold ACK)');
+    setState(() {});
+  }
+
+  void _armFence() {
+    _fixture.armFinalFence = !_fixture.armFinalFence;
+    _snack(_fixture.armFinalFence ? '已啟用：最終圍欄 (Arm Final Fence)' : '已解除：最終圍欄');
+    setState(() {});
+  }
+
+  void _releaseHolds() {
+    _fixture.releaseHolds();
+    _snack('已釋放所有 Hold 閘門');
+    setState(() {});
+  }
+
+  void _loseNextAck() {
+    _fixture.loseNextAck = true;
+    _snack('已設定：下次寫入遺失確認 (503 Lose Next ACK)');
+    setState(() {});
+  }
+
+  void _lagNextDetail() {
+    _fixture.lagNextDetail = true;
+    _snack('已設定：下次詳情讀取延遲 (Lag Next Detail)');
+    setState(() {});
+  }
+
+  void _toggleSession() {
+    if (_session.active == null) {
+      if (!_ownsSession || _ownedStore == null) {
+        _snack('外部注入的 Session 不支援由此還原');
+        return;
+      }
+      _session.removeListener(_onSessionChanged);
+      _session.dispose();
+      _api = _fixture.primaryApi();
+      _session = SessionController(
+        _ownedStore!,
+        createApi: (instance, credential, oauth, onOAuthRotated) =>
+            _fixture.primaryApi(),
+      )
+        ..active = _fixture.account
+        ..api = _api
+        ..initializing = false;
+      _session.addListener(_onSessionChanged);
+      setState(() => _rebindNonce++);
+      _snack('Session 已重新綁定為 ${_fixture.account.user.username}');
+    } else {
+      unawaited(_session.endSession());
+      _snack('Session 已結束 (Owner Loss)');
+      setState(() {});
+    }
+  }
+
+  void _resetHealth() {
+    _fixture.releaseHolds();
+    _fixture.health[WorkItemHealthParentFixture.itemX] = HealthParentItem(
+      value: WorkItemHealthEditValue.onTrack,
+      rolledUp: const [
+        {'healthStatus': 'onTrack', 'count': 1},
+      ],
+      widgets: HealthWidgetMode.present,
+      readWorkItem: true,
+      adminWorkItem: true,
+    );
+    _fixture.health[WorkItemHealthParentFixture.itemY] = HealthParentItem(
+      value: WorkItemHealthEditValue.needsAttention,
+      rolledUp: const [],
+      widgets: HealthWidgetMode.present,
+      readWorkItem: true,
+      adminWorkItem: true,
+    );
+    _fixture.loseNextAck = false;
+    _fixture.lagNextDetail = false;
+    _fixture.armFinalFence = false;
+    setState(() => _rebindNonce++);
+    _snack('Health 伺服器狀態與暫停已重設');
+  }
+
+  void _denyAdmin() {
+    _fixture.health[WorkItemHealthParentFixture.itemX]?.adminWorkItem = false;
+    _fixture.health[WorkItemHealthParentFixture.itemY]?.adminWorkItem = false;
+    setState(() => _rebindNonce++);
+    _snack('已設定：拒絕 Admin 權限 (唯讀模式)');
+  }
+
+  void _failRead() {
+    final itemX = _fixture.health[WorkItemHealthParentFixture.itemX];
+    if (itemX != null) itemX.readWorkItem = false;
+    final itemY = _fixture.health[WorkItemHealthParentFixture.itemY];
+    if (itemY != null) itemY.readWorkItem = false;
+    setState(() => _rebindNonce++);
+    _snack('已設定：讀取失敗 (Read Failure)');
+  }
+
+  void _snack(String message) {
+    if (!mounted) return;
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger
+      ?..removeCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(milliseconds: 1200),
+        ),
+      );
+  }
+
+  void _showLedger() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.6,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (context, scrollController) => Padding(
+          padding: const EdgeInsets.all(16),
+          child: ListView(
+            controller: scrollController,
+            children: [
+              Text(
+                '網路紀錄與計數（開啟時快照）',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  Chip(label: Text('寫入請求: ${_fixture.healthMutationRequests}')),
+                  Chip(label: Text('已套用: ${_fixture.healthApplied}')),
+                  Chip(label: Text('詳情讀取: ${_fixture.detailReads()}')),
+                  Chip(label: Text('編輯讀取: ${_fixture.editReads()}')),
+                  Chip(label: Text('屬性讀取: ${_fixture.attributeReads()}')),
+                  Chip(
+                    label: Text(
+                      '等待Apply: ${_fixture.awaitingApply ? 1 : 0}',
+                    ),
+                  ),
+                  Chip(
+                    label: Text(
+                      '等待Ack: ${_fixture.awaitingAck ? 1 : 0}',
+                    ),
+                  ),
+                  Chip(
+                    label: Text(
+                      '等待Confirm: ${_fixture.awaitingConfirmRead ? 1 : 0}',
+                    ),
+                  ),
+                  Chip(
+                    label: Text(
+                      '圍欄Parked: ${_fixture.awaitingFinalFenceReads}',
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(height: 24),
+              Text(
+                '請求紀錄 (${_fixture.ledger.length} 筆)',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              if (_fixture.ledger.isEmpty)
+                const Text('目前尚無請求紀錄')
+              else
+                for (final req in _fixture.ledger.reversed.take(40))
+                  ListTile(
+                    dense: true,
+                    title: Text('#${req.nonce} ${req.operation}'),
+                    subtitle: Text(
+                      'client: ${req.clientTag} · item: ${req.item ?? "none"}',
+                    ),
+                  ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool _isPageCurrent() =>
+      _session.active?.key == _fixture.account.key &&
+      identical(_session.api, _api);
+
+  // GraphWorkItemDetailPage reloads whenever isCurrent is not identical, so
+  // every rebuild of a mounted page must pass this same closure.
+  late final bool Function() _pageIsCurrent = _isPageCurrent;
+
+  Widget _buildProjectPage({Key? key}) => GraphWorkItemDetailPage.project(
+    key: key ?? ValueKey('health-qa-page-project-$_rebindNonce'),
+    account: _session.active ?? _fixture.account,
+    api: _session.api ?? _api,
+    project: const Project(id: 42, name: 'mobile', path: 'studio/mobile'),
+    iid: WorkItemStatusFixture.sharedIid,
+    isCurrent: _pageIsCurrent,
+    ownerChanges: _session,
+  );
+
+  Widget _buildGroupPage({Key? key}) => GraphWorkItemDetailPage.namespace(
+    key: key ?? ValueKey('health-qa-page-group-$_rebindNonce'),
+    account: _session.active ?? _fixture.account,
+    api: _session.api ?? _api,
+    namespacePath: WorkItemStatusFixture.groupRef.fullPath,
+    expectedNamespaceId: WorkItemStatusFixture.groupRef.id,
+    iid: WorkItemStatusFixture.sharedIid,
+    isCurrent: _pageIsCurrent,
+    ownerChanges: _session,
+  );
+
+  void _openLauncherPage(String label, {required bool isProject}) {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ProviderScope(
+          overrides: [sessionProvider.overrideWithValue(_session)],
+          child: Scaffold(
+            appBar: AppBar(title: Text(label)),
+            body: isProject
+                ? _buildProjectPage(
+                    key: ValueKey('health-qa-launcher-$label-$_rebindNonce'),
+                  )
+                : _buildGroupPage(
+                    key: ValueKey('health-qa-launcher-$label-$_rebindNonce'),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _wrapNestedNavigator({
+    required String paneId,
+    required WidgetBuilder builder,
+  }) {
+    final navKey = _navKeyFor(paneId);
+    return NavigatorPopHandler(
+      key: ValueKey('health-qa-pop-$paneId-$_rebindNonce'),
+      onPopWithResult: (_) => navKey.currentState?.maybePop(),
+      child: Navigator(
+        key: navKey,
+        onGenerateRoute: (settings) => MaterialPageRoute<void>(
+          settings: settings,
+          builder: builder,
+        ),
+      ),
+    );
+  }
+
+  Widget _splitPane({
+    required String paneKey,
+    required String paneId,
+    required String label,
+    required Color color,
+    required String pageKey,
+  }) => Column(
+    key: ValueKey(paneKey),
+    children: [
+      Container(
+        color: color,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        width: double.infinity,
+        child: Text(
+          label,
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
+      Expanded(
+        // Each pane lays out against its own size, not the whole window.
+        child: LayoutBuilder(
+          builder: (context, constraints) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(size: constraints.biggest),
+            child: _wrapNestedNavigator(
+              paneId: paneId,
+              builder: (_) => _buildProjectPage(
+                key: ValueKey('$pageKey-$_rebindNonce'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ],
+  );
+
+  Widget _buildBody() {
+    return switch (_viewMode) {
+      HealthQaViewMode.project => _wrapNestedNavigator(
+          paneId: 'project',
+          builder: (_) => _buildProjectPage(
+            key: ValueKey('health-qa-page-project-$_rebindNonce'),
+          ),
+        ),
+      HealthQaViewMode.group => _wrapNestedNavigator(
+          paneId: 'group',
+          builder: (_) => _buildGroupPage(
+            key: ValueKey('health-qa-page-group-$_rebindNonce'),
+          ),
+        ),
+      HealthQaViewMode.split => LayoutBuilder(
+          builder: (context, constraints) {
+            final sideBySide = constraints.maxWidth >= 600;
+            final panes = <Widget>[
+              Expanded(
+                child: _splitPane(
+                  paneKey: 'health-qa-split-pane-a',
+                  paneId: 'split-a',
+                  label: 'Writer A (專案)',
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  pageKey: 'health-qa-page-a',
+                ),
+              ),
+              sideBySide
+                  ? const VerticalDivider(width: 1)
+                  : const Divider(height: 1),
+              Expanded(
+                child: _splitPane(
+                  paneKey: 'health-qa-split-pane-b',
+                  paneId: 'split-b',
+                  label: 'Observer B (專案)',
+                  color: Theme.of(context).colorScheme.secondaryContainer,
+                  pageKey: 'health-qa-page-b',
+                ),
+              ),
+            ];
+            return sideBySide
+                ? Row(children: panes)
+                : Column(children: panes);
+          },
+        ),
+      HealthQaViewMode.launcher => Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ElevatedButton.icon(
+                  key: const ValueKey('health-qa-launcher-open-writer'),
+                  onPressed: () =>
+                      _openLauncherPage('Writer A', isProject: true),
+                  icon: const Icon(Icons.healing),
+                  label: const Text('開啟工作項目 Writer A'),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  key: const ValueKey('health-qa-launcher-open-observer'),
+                  onPressed: () =>
+                      _openLauncherPage('Observer B', isProject: true),
+                  icon: const Icon(Icons.remove_red_eye_outlined),
+                  label: const Text('開啟工作項目 Observer B'),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  key: const ValueKey('health-qa-launcher-open-group'),
+                  onPressed: () =>
+                      _openLauncherPage('群組項目', isProject: false),
+                  icon: const Icon(Icons.group_work_outlined),
+                  label: const Text('開啟群組工作項目'),
+                ),
+              ],
+            ),
+          ),
+        ),
+    };
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ProviderScope(
+      overrides: [sessionProvider.overrideWithValue(_session)],
+      child: Material(
+        color: Theme.of(context).colorScheme.surface,
+        child: SafeArea(
+          bottom: false,
+          child: Column(
+            children: [
+              Container(
+                color: Theme.of(context).colorScheme.surfaceContainerHigh,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.health_and_safety, size: 20),
+                        SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Health QA',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Align(
+                        alignment: Alignment.centerLeft,
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: SegmentedButton<HealthQaViewMode>(
+                            showSelectedIcon: false,
+                            style: const ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            segments: const [
+                              ButtonSegment(
+                                value: HealthQaViewMode.project,
+                                label: Text(
+                                  '專案',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ),
+                              ButtonSegment(
+                                value: HealthQaViewMode.group,
+                                label: Text(
+                                  '群組',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ),
+                              ButtonSegment(
+                                value: HealthQaViewMode.split,
+                                label: Text(
+                                  'A/B',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ),
+                              ButtonSegment(
+                                value: HealthQaViewMode.launcher,
+                                label: Text(
+                                  '啟動器',
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ],
+                            selected: {_viewMode},
+                            onSelectionChanged: (selected) {
+                              setState(() => _viewMode = selected.first);
+                            },
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Container(
+                key: const ValueKey('health-qa-witness-strip'),
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 3,
+                ),
+                color: Theme.of(context).colorScheme.surfaceContainer,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '寫入 ${_fixture.healthMutationRequests} · 套用 ${_fixture.healthApplied} · 詳情 ${_fixture.detailReads()} · 編輯 ${_fixture.editReads()}',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    IconButton(
+                      key: const ValueKey('health-qa-refresh-witness'),
+                      tooltip: '更新計數',
+                      visualDensity: VisualDensity.compact,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      onPressed: () => setState(() {}),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(child: _buildBody()),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      IconButton(
+                        key: const ValueKey('health-qa-reset-health'),
+                        tooltip: '重設 Health 狀態',
+                        icon: const Icon(Icons.restart_alt, size: 20),
+                        onPressed: _resetHealth,
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        key: const ValueKey('health-qa-hold-apply'),
+                        onPressed: _holdBeforeApply,
+                        child: const Text('暫停寫入'),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        key: const ValueKey('health-qa-hold-ack'),
+                        onPressed: _holdAck,
+                        child: const Text('暫停 ACK'),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        key: const ValueKey('health-qa-arm-fence'),
+                        onPressed: _armFence,
+                        child: Text(
+                          _fixture.armFinalFence ? '圍欄已開' : '最終圍欄',
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      FilledButton(
+                        key: const ValueKey('health-qa-release-holds'),
+                        onPressed: _releaseHolds,
+                        child: const Text('釋放暫停'),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        key: const ValueKey('health-qa-deny-admin'),
+                        onPressed: _denyAdmin,
+                        child: const Text('拒絕權限'),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        key: const ValueKey('health-qa-fail-read'),
+                        onPressed: _failRead,
+                        child: const Text('讀取失敗'),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        key: const ValueKey('health-qa-lose-ack'),
+                        onPressed: _loseNextAck,
+                        child: const Text('遺失 ACK'),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        key: const ValueKey('health-qa-lag-detail'),
+                        onPressed: _lagNextDetail,
+                        child: const Text('延遲詳情'),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton(
+                        key: const ValueKey('health-qa-toggle-session'),
+                        onPressed:
+                            (_session.active == null && !_ownsSession)
+                                ? null
+                                : _toggleSession,
+                        child: Text(
+                          _session.active == null
+                              ? '還原 Session'
+                              : '結束 Session',
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      OutlinedButton.icon(
+                        key: const ValueKey('health-qa-view-ledger'),
+                        onPressed: _showLedger,
+                        icon: const Icon(Icons.list_alt, size: 16),
+                        label: const Text('紀錄'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+enum DisplayQaRouteVariant {
+  group,
+  project,
+}
+
+class WorkItemsDisplayQaScreen extends StatefulWidget {
+  const WorkItemsDisplayQaScreen({
+    super.key,
+    required this.fixture,
+    required this.session,
+    this.initialVariant = DisplayQaRouteVariant.group,
+  });
+
+  final EmulatorQaFixture fixture;
+  final SessionController session;
+  final DisplayQaRouteVariant initialVariant;
+
+  @override
+  State<WorkItemsDisplayQaScreen> createState() =>
+      _WorkItemsDisplayQaScreenState();
+}
+
+class _WorkItemsDisplayQaScreenState extends State<WorkItemsDisplayQaScreen> {
+  late DisplayQaRouteVariant _variant;
+  int _rebindNonce = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _variant = widget.initialVariant;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Theme.of(context).colorScheme.surface,
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            Container(
+              color: Theme.of(context).colorScheme.surfaceContainerHigh,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.tune, size: 20),
+                      SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Display QA',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: SegmentedButton<DisplayQaRouteVariant>(
+                        showSelectedIcon: false,
+                        style: const ButtonStyle(
+                          visualDensity: VisualDensity.compact,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        segments: const [
+                          ButtonSegment(
+                            value: DisplayQaRouteVariant.group,
+                            label: Text(
+                              '群組',
+                              key: ValueKey('display-qa-variant-group'),
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                          ButtonSegment(
+                            value: DisplayQaRouteVariant.project,
+                            label: Text(
+                              '專案',
+                              key: ValueKey('display-qa-variant-project'),
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                        selected: {_variant},
+                        onSelectionChanged: (selected) {
+                          setState(() {
+                            _variant = selected.first;
+                            _rebindNonce++;
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: _variant == DisplayQaRouteVariant.group
+                  ? Scaffold(
+                      body: GraphWorkItemsPage.group(
+                        key: ValueKey('display-qa-page-group-$_rebindNonce'),
+                        account: widget.fixture.account,
+                        api: widget.fixture.api,
+                        namespacePath: 'qa/synthetic-group',
+                        isCurrent: () =>
+                            widget.session.active?.key ==
+                                widget.fixture.account.key &&
+                            identical(
+                              widget.session.api,
+                              widget.fixture.api,
+                            ),
+                        ownerChanges: widget.session,
+                      ),
+                    )
+                  : GraphWorkItemsPage(
+                      key: ValueKey('display-qa-page-project-$_rebindNonce'),
+                      account: widget.fixture.account,
+                      api: widget.fixture.api,
+                      project: widget.fixture.project,
+                      isCurrent: () =>
+                          widget.session.active?.key ==
+                              widget.fixture.account.key &&
+                          identical(
+                            widget.session.api,
+                            widget.fixture.api,
+                          ),
+                      ownerChanges: widget.session,
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _QaLanding extends StatelessWidget {
   const _QaLanding({required this.runtime});
 
@@ -4389,8 +5321,10 @@ class _QaLanding extends StatelessWidget {
             runtime.session.active != null &&
             runtime.session.api != null &&
             !runtime.fixture.api.isClosed;
-        return ListView(
+        return SingleChildScrollView(
           padding: const EdgeInsets.all(12),
+          child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
               '所有畫面皆使用固定合成資料；未知端點回傳 404。',
@@ -4457,6 +5391,16 @@ class _QaLanding extends StatelessWidget {
                   : null,
             ),
             _QaDestination(
+              icon: Icons.health_and_safety_outlined,
+              label: 'Work Item 健康狀態 (Health Parent QA)',
+              onTap: enabled
+                  ? () => _open(
+                      context,
+                      const HealthParentQaScreen(),
+                    )
+                  : null,
+            ),
+            _QaDestination(
               icon: Icons.filter_list_outlined,
               label: '群組工作項目清單',
               onTap: enabled
@@ -4477,6 +5421,19 @@ class _QaLanding extends StatelessWidget {
                               ),
                           ownerChanges: runtime.session,
                         ),
+                      ),
+                    )
+                  : null,
+            ),
+            _QaDestination(
+              icon: Icons.tune_outlined,
+              label: '工作項目顯示 (Display QA)',
+              onTap: enabled
+                  ? () => _open(
+                      context,
+                      WorkItemsDisplayQaScreen(
+                        fixture: runtime.fixture,
+                        session: runtime.session,
                       ),
                     )
                   : null,
@@ -4524,6 +5481,7 @@ class _QaLanding extends StatelessWidget {
                   : null,
             ),
           ],
+          ),
         );
       },
     ),

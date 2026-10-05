@@ -982,7 +982,13 @@ void main() {
     expect(find.byKey(_hold), findsNothing);
     expect(find.byKey(const ValueKey('work-item-attributes')), findsOneWidget);
     expect(find.text('伺服器提供 2 個欄位'), findsOneWidget, reason: 'STATUS+健康');
-    expect(find.byKey(const ValueKey('work-item-health-edit')), findsNothing);
+    expect(find.byKey(const ValueKey('work-item-health-edit')), findsOneWidget);
+    expect(
+      _onPressed(tester, find.byKey(const ValueKey('work-item-health-edit'))),
+      isNotNull,
+      reason: 'Health edit enabled',
+    );
+    expect(find.text('變更健康狀態'), findsOneWidget);
     expect(h.fixture.count(_baseOp), 0);
     expect(h.fixture.unhandled, isEmpty);
   });

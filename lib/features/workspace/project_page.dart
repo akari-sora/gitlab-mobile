@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
@@ -41,6 +42,11 @@ class ProjectPage extends StatefulWidget {
   final Future<void> Function()? onStarChanged;
   @override
   State<ProjectPage> createState() => _ProjectPageState();
+}
+
+enum _ProjectHeaderAction {
+  copyId,
+  openWeb,
 }
 
 class _ProjectPageState extends State<ProjectPage>
@@ -118,6 +124,50 @@ class _ProjectPageState extends State<ProjectPage>
       owner.project == widget.project.id &&
       !owner.api.isClosed &&
       _sessionCurrent();
+  ({String account, String instance, GitLabApi api, int project, int generation})
+  get _copyOwner => (
+    account: widget.account.key,
+    instance: widget.account.instance.key,
+    api: widget.api,
+    project: _project.id,
+    generation: _generation,
+  );
+  bool _currentCopy(
+    ({String account, String instance, GitLabApi api, int project, int generation}) owner,
+  ) =>
+      mounted &&
+      owner.generation == _generation &&
+      owner.account == widget.account.key &&
+      owner.instance == widget.account.instance.key &&
+      identical(owner.api, widget.api) &&
+      owner.project == _project.id &&
+      owner.project > 0 &&
+      !owner.api.isClosed &&
+      _sessionCurrent();
+
+  Future<void> _copyProjectId(
+    ({String account, String instance, GitLabApi api, int project, int generation}) owner,
+  ) async {
+    if (!_currentCopy(owner)) {
+      return;
+    }
+    try {
+      await Clipboard.setData(ClipboardData(text: '${owner.project}'));
+      if (!mounted || !_currentCopy(owner)) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('已複製專案 ID：${owner.project}')),
+      );
+    } catch (_) {
+      if (!mounted || !_currentCopy(owner)) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('無法複製專案 ID，請重試。')),
+      );
+    }
+  }
   void _sessionChanged() {
     if (_sessionCurrent()) {
       return;
@@ -448,13 +498,34 @@ class _ProjectPageState extends State<ProjectPage>
           ownerKey: shareOwner,
           isCurrent: shareCurrent,
         ),
-        IconButton(
-          tooltip: '在 GitLab 開啟',
-          icon: const Icon(Icons.open_in_new, size: 20),
-          onPressed: () => openExternal(
-            context,
-            widget.account.instance.projectWeb(_project.path),
-          ),
+        PopupMenuButton<_ProjectHeaderAction>(
+          key: const ValueKey('project-header-actions'),
+          tooltip: '更多動作',
+          icon: const Icon(Icons.more_vert, size: 20),
+          enabled: !widget.api.isClosed && _sessionCurrent(),
+          itemBuilder: (_) {
+            final owner = _copyOwner;
+            final web = widget.account.instance.projectWeb(_project.path);
+            return [
+              if (owner.project > 0)
+                PopupMenuItem(
+                  key: const ValueKey('project-header-action-copy-id'),
+                  value: _ProjectHeaderAction.copyId,
+                  onTap: () => unawaited(_copyProjectId(owner)),
+                  child: Text('複製專案 ID：${owner.project}'),
+                ),
+              PopupMenuItem(
+                key: const ValueKey('project-header-action-open-web'),
+                value: _ProjectHeaderAction.openWeb,
+                onTap: () {
+                  if (_currentCopy(owner)) {
+                    openExternal(context, web);
+                  }
+                },
+                child: const Text('在 GitLab 開啟'),
+              ),
+            ];
+          },
         ),
       ],
     );

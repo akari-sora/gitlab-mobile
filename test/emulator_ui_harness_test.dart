@@ -2,19 +2,28 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/providers.dart';
 import 'package:gitlab_mobile/core/work_item_activity_models.dart';
+import 'package:gitlab_mobile/core/work_item_health_edit_models.dart';
 import 'package:gitlab_mobile/core/work_item_state_models.dart';
+import 'package:gitlab_mobile/features/auth/session_controller.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_extras.dart';
+import 'package:gitlab_mobile/features/workspace/project_page.dart';
 import 'package:gitlab_mobile/features/workspace/repository_page.dart';
+import 'package:gitlab_mobile/shared/resource_share.dart';
 import 'package:gitlab_mobile/shared/scroll_performance.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
 import '../tool/emulator_ui.dart';
 import 'support/widget_settle.dart';
+import 'support/work_item_health_parent_fixture.dart';
 
 void main() {
   test(
@@ -1593,5 +1602,1332 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets(
+    'Health QA destination mounts GraphWorkItemDetailPage with Health section and chips across project and group scopes',
+    (tester) async {
+      _useSurface(tester, const Size(1080, 2400));
+      final fixture = WorkItemHealthParentFixture();
+      addTearDown(fixture.closeAll);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HealthParentQaScreen(fixture: fixture),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      expect(find.byType(HealthParentQaScreen), findsOneWidget);
+      expect(find.byType(GraphWorkItemDetailPage), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('health-qa-witness-strip')),
+        findsOneWidget,
+      );
+
+      final healthSection =
+          find.byKey(const ValueKey('work-item-health-section'));
+      await tester.scrollUntilVisible(
+        healthSection,
+        200,
+        scrollable: _detailScrollable(null),
+      );
+      expect(healthSection, findsOneWidget);
+      await _expandAttributes(tester);
+      await pumpUntil(
+        tester,
+        () => _shows(find.text('目前：正常')),
+        description: 'project attributes read item X Health',
+      );
+      expect(find.text('目前：正常'), findsOneWidget);
+      expect(find.text('彙整：正常 1'), findsOneWidget);
+      expect(
+        fixture.detailReads(item: WorkItemHealthParentFixture.itemX),
+        1,
+      );
+
+      await _tapHealthSegment(tester, '群組');
+
+      expect(find.byType(GraphWorkItemDetailPage), findsOneWidget);
+      await tester.scrollUntilVisible(
+        healthSection,
+        200,
+        scrollable: _detailScrollable(null),
+      );
+      expect(healthSection, findsOneWidget);
+      await _expandAttributes(tester);
+      await pumpUntil(
+        tester,
+        () => _shows(find.text('目前：需關注')),
+        description: 'group attributes read item Y Health',
+      );
+      expect(find.text('目前：需關注'), findsOneWidget);
+      expect(find.text('彙整：沒有資料'), findsOneWidget);
+      expect(find.text('目前：正常'), findsNothing);
+      expect(
+        fixture.detailReads(item: WorkItemHealthParentFixture.itemY),
+        1,
+      );
+      expect(fixture.unhandled, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Health QA held write and ledger controls reflect stage counts and settle correctly',
+    (tester) async {
+      _useSurface(tester, const Size(1080, 2400));
+      final fixture = WorkItemHealthParentFixture();
+      addTearDown(fixture.closeAll);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HealthParentQaScreen(fixture: fixture),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      expect(
+        find.byKey(const ValueKey('health-qa-witness-strip')),
+        findsOneWidget,
+      );
+      expect(find.textContaining('寫入 0 · 套用 0'), findsOneWidget);
+
+      await _expandAttributes(tester);
+      await pumpUntil(
+        tester,
+        () => _shows(find.text('目前：正常')),
+        description: 'attributes read the server Health before the write',
+      );
+
+      await _tapQaControl(tester, 'health-qa-hold-apply');
+      await _expectLedger(tester, ['寫入請求: 0', '已套用: 0', '等待Apply: 0']);
+
+      await _openHealthEditor(tester);
+      await _chooseHealth(tester, 'needsAttention');
+      final editsBeforeSave =
+          fixture.editReads(item: WorkItemHealthParentFixture.itemX);
+      final detailsBeforeSave =
+          fixture.detailReads(item: WorkItemHealthParentFixture.itemX);
+      await tester.tap(_healthSave());
+      await pumpUntil(
+        tester,
+        () => fixture.awaitingApply,
+        description: 'mutation parked before apply',
+      );
+
+      expect(fixture.healthMutationRequests, 1);
+      expect(fixture.healthApplied, 0);
+      expect(
+        fixture.editReads(item: WorkItemHealthParentFixture.itemX),
+        editsBeforeSave + 1,
+        reason: 'save preflight read only; no readback while held',
+      );
+      await _tapQaControl(tester, 'health-qa-refresh-witness');
+      expect(find.textContaining('寫入 1 · 套用 0'), findsOneWidget);
+      await _expectLedger(tester, ['寫入請求: 1', '已套用: 0', '等待Apply: 1']);
+
+      await _tapQaControl(tester, 'health-qa-release-holds');
+      await pumpUntil(
+        tester,
+        () => fixture.healthApplied == 1,
+        description: 'held mutation applied after release',
+      );
+      await pumpUntil(
+        tester,
+        () => _shows(find.text('目前：需關注')),
+        description: 'expanded attributes re-read the applied value',
+      );
+
+      expect(
+        fixture.health[WorkItemHealthParentFixture.itemX]?.value,
+        WorkItemHealthEditValue.needsAttention,
+      );
+      expect(find.text('目前：需關注'), findsOneWidget);
+      expect(find.text('目前：正常'), findsNothing);
+      expect(_healthSave(), findsNothing, reason: 'bumped reload dismisses the editor');
+      expect(
+        find.byKey(const ValueKey('work-item-health-stale')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey('work-item-health-unconfirmed')),
+        findsNothing,
+      );
+      expect(
+        fixture.editReads(item: WorkItemHealthParentFixture.itemX),
+        editsBeforeSave + 2,
+        reason: 'preflight plus one readback',
+      );
+      expect(
+        fixture.detailReads(item: WorkItemHealthParentFixture.itemX),
+        detailsBeforeSave + 1,
+        reason: 'one detail reload after the settled write',
+      );
+
+      await _tapQaControl(tester, 'health-qa-refresh-witness');
+      expect(find.textContaining('寫入 1 · 套用 1'), findsOneWidget);
+      await _expectLedger(tester, ['寫入請求: 1', '已套用: 1', '等待Apply: 0']);
+
+      expect(fixture.unhandled, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Health QA owner loss during held write blocks late paint',
+    (tester) async {
+      _useSurface(tester, const Size(1080, 2400));
+      final fixture = WorkItemHealthParentFixture();
+      addTearDown(fixture.closeAll);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HealthParentQaScreen(fixture: fixture),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      await _expandAttributes(tester);
+      await pumpUntil(
+        tester,
+        () => _shows(find.text('目前：正常')),
+        description: 'attributes read before the write',
+      );
+
+      await _tapQaControl(tester, 'health-qa-hold-apply');
+      await _openHealthEditor(tester);
+      await _chooseHealth(tester, 'atRisk');
+      await tester.tap(_healthSave());
+      await pumpUntil(
+        tester,
+        () => fixture.awaitingApply,
+        description: 'mutation parked before apply',
+      );
+
+      expect(fixture.healthMutationRequests, 1);
+      expect(fixture.healthApplied, 0);
+      final detailsHeld = fixture.detailReads();
+      final editsHeld = fixture.editReads();
+      final attributesHeld = fixture.attributeReads();
+
+      await _tapQaControl(tester, 'health-qa-toggle-session');
+      await _tapQaControl(tester, 'health-qa-release-holds');
+      await pumpUntil(
+        tester,
+        () => fixture.healthApplied == 1,
+        description: 'server applies the already-sent mutation',
+      );
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('帳號已切換，工作項目頁面已關閉。'), findsOneWidget);
+      expect(fixture.detailReads(), detailsHeld);
+      expect(fixture.editReads(), editsHeld);
+      expect(fixture.attributeReads(), attributesHeld);
+      expect(find.text('目前：有風險'), findsNothing);
+      expect(_healthSave(), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Display QA destination mounts and double-tapped display options sheet deduplicates route with 12 tier switches',
+    (tester) async {
+      _useSurface(tester, const Size(1080, 2400));
+      await tester.pumpWidget(buildEmulatorQaApp(qaEnabled: true));
+      await tester.pumpAndSettle();
+
+      await tester.scrollUntilVisible(
+        find.text('工作項目顯示 (Display QA)'),
+        200,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('工作項目顯示 (Display QA)'));
+      await settleNetworkWidgets(tester);
+
+      expect(find.byType(WorkItemsDisplayQaScreen), findsOneWidget);
+      await pumpUntil(
+        tester,
+        () => _shows(_displayRow()),
+        description: 'group rows loaded',
+      );
+      final optionsButton =
+          find.byKey(const Key('graph-work-items-display-options-button'));
+      expect(optionsButton, findsOneWidget);
+
+      final center = tester.getCenter(optionsButton);
+      await tester.tap(optionsButton);
+      await tester.tapAt(center);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.text('顯示設定'), findsOneWidget);
+      for (final title in [
+        ..._supportedDisplayTiles,
+        ..._unsupportedDisplayTiles,
+      ]) {
+        await _revealDisplayTile(tester, title);
+        expect(_displayTile(title), findsOneWidget);
+      }
+
+      // Group preference change must not leak into the project variant.
+      final labels = await _revealDisplayTile(tester, '標籤');
+      expect(labels.value, isTrue);
+      await tester.tap(_displayTile('標籤'));
+      await tester.pump();
+      expect(
+        tester.widget<SwitchListTile>(_displayTile('標籤')).value,
+        isFalse,
+      );
+      await _closeDisplaySheet(tester);
+      expect(
+        find.descendant(of: _displayRow(), matching: find.text('qa-label')),
+        findsNothing,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('display-qa-variant-project')));
+      await settleNetworkWidgets(tester);
+      await pumpUntil(
+        tester,
+        () => _shows(_displayRow()),
+        description: 'project rows loaded',
+      );
+      expect(find.byType(FailureNotice), findsNothing);
+      expect(
+        find.descendant(of: _displayRow(), matching: find.text('qa-label')),
+        findsOneWidget,
+      );
+      await _openDisplaySheet(tester);
+      for (final title in _supportedDisplayTiles) {
+        expect((await _revealDisplayTile(tester, title)).value, isTrue);
+      }
+      await _closeDisplaySheet(tester);
+      await _openDisplaySheet(tester);
+      await _revealDisplayTile(tester, '標籤');
+      await tester.tap(_displayTile('標籤'));
+      await tester.pump();
+      await _closeDisplaySheet(tester);
+      expect(
+        find.descendant(of: _displayRow(), matching: find.text('qa-label')),
+        findsNothing,
+      );
+
+      await tester.tap(find.byKey(const ValueKey('display-qa-variant-group')));
+      await settleNetworkWidgets(tester);
+      await pumpUntil(
+        tester,
+        () => _shows(_displayRow()),
+        description: 'group rows reloaded',
+      );
+      expect(
+        find.descendant(of: _displayRow(), matching: find.text('qa-label')),
+        findsOneWidget,
+      );
+      await _openDisplaySheet(tester);
+      for (final title in _supportedDisplayTiles) {
+        expect((await _revealDisplayTile(tester, title)).value, isTrue);
+      }
+      await _closeDisplaySheet(tester);
+
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Display QA loaded rows expose partial connection accessible label and support project and group route variants',
+    (tester) async {
+      _useSurface(tester, const Size(1080, 2400));
+      final fixture = EmulatorQaFixture();
+      final session = _qaSession(fixture);
+      addTearDown(session.dispose);
+      await tester.pumpWidget(_displayApp(fixture, session));
+      await settleNetworkWidgets(tester);
+
+      expect(find.byType(WorkItemsDisplayQaScreen), findsOneWidget);
+      expect(find.byType(GraphWorkItemsPage), findsOneWidget);
+      await pumpUntil(
+        tester,
+        () => _shows(_displayRow()),
+        description: 'group rows loaded',
+      );
+      expect(find.byType(FailureNotice), findsNothing);
+      expect(find.bySemanticsLabel('還有更多，未載入'), findsWidgets);
+      await _verifyDisplayToggles(tester, hierarchyMarker: false);
+
+      await tester.tap(find.byKey(const ValueKey('display-qa-variant-project')));
+      await settleNetworkWidgets(tester);
+      await pumpUntil(
+        tester,
+        () => _shows(_displayRow()),
+        description: 'project rows loaded',
+      );
+
+      expect(find.byType(GraphWorkItemsPage), findsOneWidget);
+      expect(find.byType(FailureNotice), findsNothing);
+      _expectUniqueRowIids(tester);
+      expect(find.bySemanticsLabel('還有更多，未載入'), findsWidgets);
+      await _verifyDisplayToggles(tester, hierarchyMarker: true);
+
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Project QA direct actions verify star count 12, share action and synthetic clipboard copy ID 42',
+    (tester) async {
+      _useSurface(tester, const Size(1080, 2400));
+      final clipboardWrites = _mockClipboard(tester);
+      final shared = _mockShare(tester);
+      final fixture = EmulatorQaFixture();
+      final session = _qaSession(fixture);
+      addTearDown(session.dispose);
+      await tester.pumpWidget(_projectApp(fixture, session));
+      await settleNetworkWidgets(tester);
+
+      expect(find.byType(ProjectPage), findsOneWidget);
+
+      final starFinder = find.byKey(const ValueKey('project-header-star'));
+      final shareFinder = find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byType(ResourceShareButton),
+      );
+      final overflowFinder =
+          find.byKey(const ValueKey('project-header-actions'));
+      expect(starFinder, findsOneWidget);
+      expect(shareFinder, findsOneWidget);
+      expect(overflowFinder, findsOneWidget);
+
+      IconButton starButton() => tester.widget<IconButton>(starFinder);
+      IconData? starIcon() => tester
+          .widget<Icon>(
+            find.descendant(of: starFinder, matching: find.byType(Icon)),
+          )
+          .icon;
+      final starStat = find
+          .ancestor(of: find.text('星標'), matching: find.byType(Column))
+          .first;
+
+      await pumpUntil(
+        tester,
+        () => starButton().tooltip == '加入星標',
+        description: 'header star state checked',
+      );
+      expect(starIcon(), Icons.star_border);
+      expect(fixture.starCount, 12);
+
+      await tester.tap(find.widgetWithText(Tab, '更多'));
+      await settleNetworkWidgets(tester);
+      await pumpUntil(
+        tester,
+        () => _shows(find.text('星標')),
+        description: 'More tab overview loaded',
+      );
+      expect(
+        find.descendant(of: starStat, matching: find.text('12')),
+        findsOneWidget,
+      );
+
+      await tester.tap(starFinder);
+      await pumpUntil(
+        tester,
+        () => fixture.starCount == 13 && starButton().tooltip == '移除星標',
+        description: 'star 12 -> 13',
+      );
+      expect(starIcon(), Icons.star);
+      await pumpUntil(
+        tester,
+        () => _shows(find.descendant(of: starStat, matching: find.text('13'))),
+        description: 'More tab star stat shows 13',
+      );
+      await _waitSnackBarsGone(tester);
+
+      await tester.tap(starFinder);
+      await pumpUntil(
+        tester,
+        () => fixture.starCount == 12 && starButton().tooltip == '加入星標',
+        description: 'star 13 -> 12',
+      );
+      expect(starIcon(), Icons.star_border);
+      await pumpUntil(
+        tester,
+        () => _shows(find.descendant(of: starStat, matching: find.text('12'))),
+        description: 'More tab star stat shows 12',
+      );
+      await _waitSnackBarsGone(tester);
+
+      final shareWidget = tester.widget<ResourceShareButton>(shareFinder);
+      expect(
+        shareWidget.uri,
+        fixture.account.instance.projectWeb(fixture.project.path),
+      );
+      expect(
+        shareWidget.uri.toString(),
+        'https://qa.invalid:8443/gitlab/studio/mobile-workspace',
+      );
+      expect(shareWidget.uri.hasQuery, isFalse);
+      await tester.tap(shareFinder);
+      await pumpUntil(
+        tester,
+        () => shared.isNotEmpty,
+        description: 'native share invoked',
+      );
+      expect(shared, ['https://qa.invalid:8443/gitlab/studio/mobile-workspace']);
+      expect(find.text('無法分享連結。'), findsNothing);
+
+      await tester.tap(overflowFinder);
+      await pumpUntil(
+        tester,
+        () => _shows(
+          find.byKey(const ValueKey('project-header-action-copy-id')),
+        ),
+        description: 'overflow menu opened',
+      );
+      await settleNetworkWidgets(tester);
+      expect(find.text('複製專案 ID：42'), findsOneWidget);
+      expect(find.text('在 GitLab 開啟'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey('project-header-action-copy-id')),
+      );
+      await pumpUntil(
+        tester,
+        () => clipboardWrites.isNotEmpty,
+        description: 'project id copied',
+      );
+      expect(clipboardWrites, ['42']);
+      await pumpUntil(
+        tester,
+        () => _shows(find.text('已複製專案 ID：42')),
+        description: 'copy confirmation shown',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Health QA A/B split mode settles shared health status across competing panes',
+    (tester) async {
+      _useSurface(tester, const Size(2000, 2400));
+      final fixture = WorkItemHealthParentFixture();
+      addTearDown(fixture.closeAll);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HealthParentQaScreen(fixture: fixture),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      await _tapHealthSegment(tester, 'A/B');
+      const paneA = 'health-qa-split-pane-a';
+      const paneB = 'health-qa-split-pane-b';
+      expect(find.byKey(const ValueKey(paneA)), findsOneWidget);
+      expect(find.byKey(const ValueKey(paneB)), findsOneWidget);
+      for (final pane in [paneA, paneB]) {
+        await _expandAttributes(tester, pane: pane);
+        await pumpUntil(
+          tester,
+          () => _shows(_inPane(pane, find.text('目前：正常'))),
+          description: '$pane attributes read before the write',
+        );
+      }
+
+      await _tapQaControl(tester, 'health-qa-hold-apply');
+      await _openHealthEditor(tester, pane: paneA);
+      await _chooseHealth(tester, 'atRisk', pane: paneA);
+      final detailsBeforeSave =
+          fixture.detailReads(item: WorkItemHealthParentFixture.itemX);
+      final editsBeforeSave =
+          fixture.editReads(item: WorkItemHealthParentFixture.itemX);
+      await tester.tap(_healthSave(pane: paneA));
+      await pumpUntil(
+        tester,
+        () => fixture.awaitingApply,
+        description: 'writer A mutation parked before apply',
+      );
+      expect(fixture.healthMutationRequests, 1);
+
+      final editB = _inPane(
+        paneB,
+        find.byKey(const ValueKey('work-item-health-edit')),
+      );
+      await tester.scrollUntilVisible(
+        editB,
+        200,
+        scrollable: _detailScrollable(paneB),
+      );
+      expect(editB, findsOneWidget);
+      expect(tester.widget<TextButton>(editB).onPressed, isNull);
+      expect(
+        _inPane(paneB, find.byKey(const ValueKey('work-item-health-hold'))),
+        findsOneWidget,
+      );
+      expect(_inPane(paneB, find.text('目前：有風險')), findsNothing);
+
+      await _tapQaControl(tester, 'health-qa-release-holds');
+      await pumpUntil(
+        tester,
+        () => fixture.healthApplied == 1,
+        description: 'writer A mutation applied',
+      );
+      for (final pane in [paneA, paneB]) {
+        await pumpUntil(
+          tester,
+          () => _shows(_inPane(pane, find.text('目前：有風險'))),
+          description: '$pane attributes re-read the applied value',
+        );
+        expect(_inPane(pane, find.text('目前：有風險')), findsOneWidget);
+        expect(_inPane(pane, find.text('目前：正常')), findsNothing);
+      }
+      await settleNetworkWidgets(tester);
+
+      expect(
+        fixture.health[WorkItemHealthParentFixture.itemX]?.value,
+        WorkItemHealthEditValue.atRisk,
+      );
+      expect(fixture.healthMutationRequests, 1);
+      expect(
+        fixture.detailReads(item: WorkItemHealthParentFixture.itemX),
+        detailsBeforeSave + 2,
+        reason: 'one settle reload per pane',
+      );
+      expect(
+        fixture.editReads(item: WorkItemHealthParentFixture.itemX),
+        editsBeforeSave + 2,
+        reason: 'writer preflight plus one readback',
+      );
+      expect(
+        tester.widget<TextButton>(editB).onPressed,
+        isNotNull,
+        reason: 'observer B is editable again after settle',
+      );
+      expect(fixture.unhandled, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'Health QA denial, read failure, final fence and lost ACK exercise defensive paths',
+    (tester) async {
+      _useSurface(tester, const Size(1080, 2400));
+      final fixture = WorkItemHealthParentFixture();
+      addTearDown(fixture.closeAll);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: HealthParentQaScreen(fixture: fixture),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+
+      final edit = find.byKey(const ValueKey('work-item-health-edit'));
+      final stale = find.byKey(const ValueKey('work-item-health-stale'));
+      final unconfirmed =
+          find.byKey(const ValueKey('work-item-health-unconfirmed'));
+      final confirmed =
+          find.byKey(const ValueKey('work-item-health-confirmed'));
+      final refresh = find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byTooltip('重新整理'),
+      );
+
+      // 1. Denial: adminWorkItem=false keeps the editor read-only.
+      await _tapQaControl(tester, 'health-qa-deny-admin');
+      await _openHealthEditor(tester);
+      expect(
+        find.byKey(const ValueKey('work-item-health-read-only')),
+        findsOneWidget,
+      );
+      expect(
+        find.text('目前帳號沒有管理這個工作項目健康狀態的權限，僅供檢視。'),
+        findsOneWidget,
+      );
+      expect(tester.widget<FilledButton>(_healthSave()).onPressed, isNull);
+      for (final choice in ['clear', 'onTrack', 'needsAttention', 'atRisk']) {
+        expect(
+          find.byKey(ValueKey('work-item-health-choice-$choice')),
+          findsNothing,
+        );
+      }
+      expect(fixture.healthMutationRequests, 0);
+      await _closeHealthEditor(tester);
+      await _tapQaControl(tester, 'health-qa-reset-health');
+
+      // 2. Read failure: readWorkItem=false with the widget still present.
+      await _tapQaControl(tester, 'health-qa-fail-read');
+      await tester.scrollUntilVisible(
+        edit,
+        200,
+        scrollable: _detailScrollable(null),
+      );
+      await tester.ensureVisible(edit);
+      await tester.pump();
+      final editsBeforeFailure =
+          fixture.editReads(item: WorkItemHealthParentFixture.itemX);
+      await tester.tap(edit);
+      await pumpUntil(
+        tester,
+        () => _shows(
+          find.text('無法讀取工作項目健康狀態。目前帳號沒有讀取這個工作項目的權限。'),
+        ),
+        description: 'read failure reported',
+      );
+      expect(
+        fixture.editReads(item: WorkItemHealthParentFixture.itemX),
+        editsBeforeFailure + 1,
+      );
+      expect(_healthSave(), findsNothing);
+      expect(find.textContaining('讀取時：'), findsNothing);
+      expect(tester.widget<TextButton>(edit).onPressed, isNotNull);
+      await _waitSnackBarsGone(tester);
+      await _tapQaControl(tester, 'health-qa-reset-health');
+
+      // 3. Final fence parks the editor's preflight read.
+      await _tapQaControl(tester, 'health-qa-arm-fence');
+      expect(fixture.armFinalFence, isTrue);
+      await tester.scrollUntilVisible(
+        edit,
+        200,
+        scrollable: _detailScrollable(null),
+      );
+      await tester.ensureVisible(edit);
+      await tester.pump();
+      await tester.tap(edit);
+      await pumpUntil(
+        tester,
+        () => fixture.awaitingFinalFenceReads == 1,
+        description: 'editor read parked at the fence',
+      );
+      await tester.pump();
+      expect(
+        find.descendant(of: edit, matching: find.text('讀取健康狀態…')),
+        findsOneWidget,
+      );
+      expect(tester.widget<TextButton>(edit).onPressed, isNull);
+      expect(_healthSave(), findsNothing);
+      await _tapQaControl(tester, 'health-qa-release-holds');
+      await pumpUntil(
+        tester,
+        () => _shows(_healthSave()),
+        description: 'editor opens after the fence releases',
+      );
+      expect(fixture.awaitingFinalFenceReads, 0);
+      expect(fixture.armFinalFence, isFalse);
+      await settleNetworkWidgets(tester);
+      await _closeHealthEditor(tester);
+
+      // 4. Lagged detail after a confirmed write: stale notice, then recovery.
+      await _tapQaControl(tester, 'health-qa-lag-detail');
+      expect(fixture.lagNextDetail, isTrue);
+      await _openHealthEditor(tester);
+      await _chooseHealth(tester, 'needsAttention');
+      await tester.tap(_healthSave());
+      await pumpUntil(
+        tester,
+        () => _shows(confirmed),
+        description: 'readback confirmed while the editor stays bound',
+      );
+      expect(find.text('GitLab 已確認健康狀態為「需關注」。'), findsOneWidget);
+      expect(
+        find.descendant(of: confirmed, matching: find.text('伺服器回讀：需關注')),
+        findsOneWidget,
+      );
+      await pumpUntil(
+        tester,
+        () => !fixture.lagNextDetail,
+        description: 'page reload consumed the lagged detail',
+      );
+      expect(fixture.healthApplied, 1);
+      await _closeHealthEditor(tester);
+      await pumpUntil(
+        tester,
+        () => _shows(stale),
+        description: 'stale notice after the lagged detail',
+      );
+      expect(
+        find.descendant(
+          of: stale,
+          matching: find.text('尚未確認最新健康狀態。請重新整理後再查看。'),
+          matchRoot: true,
+        ),
+        findsOneWidget,
+      );
+      final detailsBeforeRefresh =
+          fixture.detailReads(item: WorkItemHealthParentFixture.itemX);
+      expect(refresh, findsOneWidget);
+      await tester.tap(refresh);
+      await pumpUntil(
+        tester,
+        () => stale.evaluate().isEmpty,
+        description: 'refresh recovers from the stale notice',
+      );
+      expect(
+        fixture.detailReads(item: WorkItemHealthParentFixture.itemX),
+        detailsBeforeRefresh + 1,
+      );
+
+      // 5. Lost ACK: applied server-side, outcome unknown to the client.
+      await _tapQaControl(tester, 'health-qa-lose-ack');
+      expect(fixture.loseNextAck, isTrue);
+      await _openHealthEditor(tester);
+      await _chooseHealth(tester, 'atRisk');
+      await tester.tap(_healthSave());
+      await pumpUntil(
+        tester,
+        () => fixture.healthApplied == 2,
+        description: 'lost-ACK mutation applied',
+      );
+      await pumpUntil(
+        tester,
+        () => _shows(unconfirmed),
+        description: 'unconfirmed notice after the lost acknowledgement',
+      );
+      expect(
+        find.descendant(
+          of: unconfirmed,
+          matching: find.text('尚未確認健康狀態是否已更新。請重新整理後再查看。'),
+          matchRoot: true,
+        ),
+        findsOneWidget,
+      );
+      expect(_healthSave(), findsNothing);
+      expect(confirmed, findsNothing);
+      await settleNetworkWidgets(tester);
+      expect(fixture.healthMutationRequests, 2);
+      expect(fixture.loseNextAck, isFalse);
+      await tester.tap(refresh);
+      await pumpUntil(
+        tester,
+        () => unconfirmed.evaluate().isEmpty,
+        description: 'refresh acknowledges the unconfirmed outcome',
+      );
+
+      expect(fixture.unhandled, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final isGroup in [false, true]) {
+    testWidgets(
+      '320dp scaled 2.0x reaches all Health, Display and Project controls (${isGroup ? "group" : "project"}) without overflow',
+      (tester) async {
+        tester.view.physicalSize = const Size(320 * 2.0, 800 * 2.0);
+        tester.view.devicePixelRatio = 2.0;
+        tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+
+        final fixture = WorkItemHealthParentFixture();
+        addTearDown(fixture.closeAll);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: HealthParentQaScreen(
+              fixture: fixture,
+              initialMode: isGroup
+                  ? HealthQaViewMode.group
+                  : HealthQaViewMode.project,
+            ),
+          ),
+        );
+        await settleNetworkWidgets(tester);
+        _expectScaledViewport(tester, find.byType(HealthParentQaScreen));
+        expect(tester.takeException(), isNull);
+
+        for (final control in [
+          'health-qa-reset-health',
+          'health-qa-hold-apply',
+          'health-qa-hold-ack',
+          'health-qa-arm-fence',
+          'health-qa-release-holds',
+          'health-qa-deny-admin',
+          'health-qa-fail-read',
+          'health-qa-lose-ack',
+          'health-qa-lag-detail',
+          'health-qa-reset-health',
+          'health-qa-toggle-session',
+          'health-qa-toggle-session',
+          'health-qa-refresh-witness',
+        ]) {
+          await _tapQaControl(tester, control);
+          expect(tester.takeException(), isNull, reason: control);
+        }
+        await _expectLedger(tester, ['寫入請求: 0', '已套用: 0']);
+        expect(tester.takeException(), isNull);
+        for (final segment in ['專案', '群組', 'A/B', '啟動器']) {
+          await _tapHealthSegment(tester, segment);
+          expect(tester.takeException(), isNull, reason: segment);
+        }
+        fixture.releaseHolds();
+
+        final displayFixture = EmulatorQaFixture();
+        final displaySession = _qaSession(displayFixture);
+        addTearDown(displaySession.dispose);
+        await tester.pumpWidget(
+          _displayApp(
+            displayFixture,
+            displaySession,
+            variant: isGroup
+                ? DisplayQaRouteVariant.group
+                : DisplayQaRouteVariant.project,
+          ),
+        );
+        await settleNetworkWidgets(tester);
+        _expectScaledViewport(tester, find.byType(WorkItemsDisplayQaScreen));
+        await pumpUntil(
+          tester,
+          () => _shows(_displayRow()),
+          description: 'display rows loaded at 320dp',
+        );
+        expect(tester.takeException(), isNull);
+        await _openDisplaySheet(tester);
+        expect(tester.takeException(), isNull);
+        for (final title in _supportedDisplayTiles) {
+          final tile = await _revealDisplayTile(tester, title);
+          expect(tile.onChanged, isNotNull, reason: title);
+          expect(_displayTile(title).hitTestable(), findsOneWidget);
+          await tester.tap(_displayTile(title));
+          await tester.pump();
+          expect(
+            tester.widget<SwitchListTile>(_displayTile(title)).value,
+            !tile.value,
+            reason: title,
+          );
+          expect(tester.takeException(), isNull, reason: title);
+        }
+        for (final title in _unsupportedDisplayTiles) {
+          final tile = await _revealDisplayTile(tester, title);
+          expect(tile.onChanged, isNull, reason: title);
+          expect(_displayTile(title).hitTestable(), findsOneWidget);
+          expect(
+            find.descendant(
+              of: _displayTile(title),
+              matching: find.text('尚未支援'),
+            ),
+            findsOneWidget,
+          );
+          expect(tester.takeException(), isNull, reason: title);
+        }
+        await _closeDisplaySheet(tester);
+        expect(tester.takeException(), isNull);
+
+        final clipboardWrites = _mockClipboard(tester);
+        final shared = _mockShare(tester);
+        final projectFixture = EmulatorQaFixture();
+        final projectSession = _qaSession(projectFixture);
+        addTearDown(projectSession.dispose);
+        await tester.pumpWidget(_projectApp(projectFixture, projectSession));
+        await settleNetworkWidgets(tester);
+        _expectScaledViewport(tester, find.byType(ProjectPage));
+        expect(tester.takeException(), isNull);
+
+        final star = find.byKey(const ValueKey('project-header-star'));
+        await pumpUntil(
+          tester,
+          () => tester.widget<IconButton>(star).tooltip == '加入星標',
+          description: 'header star state checked at 320dp',
+        );
+        expect(star.hitTestable(), findsOneWidget);
+        await tester.tap(star);
+        await pumpUntil(
+          tester,
+          () =>
+              projectFixture.starCount == 13 &&
+              tester.widget<IconButton>(star).tooltip == '移除星標',
+          description: 'star toggled at 320dp',
+        );
+        expect(tester.takeException(), isNull);
+        await _waitSnackBarsGone(tester);
+
+        final share = find.descendant(
+          of: find.byType(AppBar),
+          matching: find.byType(ResourceShareButton),
+        );
+        expect(share.hitTestable(), findsOneWidget);
+        await tester.tap(share);
+        await pumpUntil(
+          tester,
+          () => shared.isNotEmpty,
+          description: 'share invoked at 320dp',
+        );
+        expect(shared, ['https://qa.invalid:8443/gitlab/studio/mobile-workspace']);
+        expect(tester.takeException(), isNull);
+
+        final overflow = find.byKey(const ValueKey('project-header-actions'));
+        expect(overflow.hitTestable(), findsOneWidget);
+        await tester.tap(overflow);
+        final copyId =
+            find.byKey(const ValueKey('project-header-action-copy-id'));
+        await pumpUntil(
+          tester,
+          () => _shows(copyId),
+          description: 'overflow menu opened at 320dp',
+        );
+        await settleNetworkWidgets(tester);
+        expect(copyId.hitTestable(), findsOneWidget);
+        await tester.tap(copyId);
+        await pumpUntil(
+          tester,
+          () => clipboardWrites.isNotEmpty,
+          description: 'project id copied at 320dp',
+        );
+        expect(clipboardWrites, ['42']);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
 }
 
+const _supportedDisplayTiles = [
+  '標籤',
+  '指派對象',
+  '里程碑',
+  '起訖日期',
+  '階層關係',
+  '工作流程狀態',
+];
+
+const _unsupportedDisplayTiles = [
+  '阻礙項目',
+  '留言數',
+  '健康狀態',
+  '疊代',
+  '熱門度',
+  '權重',
+];
+
+const _displayMarkers = {
+  '標籤': 'qa-label',
+  '指派對象': 'QA Tester',
+  '里程碑': '17.5',
+  '起訖日期': '2026/10/01 - 2026/10/31',
+  '階層關係': '上層不可見',
+  '工作流程狀態': 'In progress',
+};
+
+void _useSurface(WidgetTester tester, Size size) {
+  tester.view.physicalSize = size;
+  tester.view.devicePixelRatio = 1;
+  addTearDown(tester.view.resetPhysicalSize);
+  addTearDown(tester.view.resetDevicePixelRatio);
+}
+
+bool _shows(Finder finder) => finder.evaluate().isNotEmpty;
+
+void _expectScaledViewport(WidgetTester tester, Finder target) {
+  final context = tester.element(target);
+  expect(MediaQuery.sizeOf(context).width, 320);
+  expect(MediaQuery.textScalerOf(context).scale(14), 28);
+}
+
+Future<void> _waitSnackBarsGone(WidgetTester tester) => pumpUntil(
+  tester,
+  () => find.byType(SnackBar).evaluate().isEmpty,
+  maxCycles: 200,
+  description: 'snack bars dismissed',
+);
+
+Finder _inPane(String? pane, Finder matching) => pane == null
+    ? matching
+    : find.descendant(of: find.byKey(ValueKey(pane)), matching: matching);
+
+Finder _detailScrollable(String? pane) => find
+    .descendant(
+      of: _inPane(pane, find.byType(GraphWorkItemDetailPage)),
+      matching: find.byType(Scrollable),
+    )
+    .first;
+
+Finder _healthSave({String? pane}) =>
+    _inPane(pane, find.byKey(const ValueKey('work-item-health-save')));
+
+Future<void> _tapQaControl(WidgetTester tester, String key) async {
+  final control = find.byKey(ValueKey(key));
+  await tester.ensureVisible(control);
+  await tester.pump();
+  expect(control.hitTestable(), findsOneWidget, reason: key);
+  await tester.tap(control);
+  await settleNetworkWidgets(tester);
+  await _waitSnackBarsGone(tester);
+}
+
+Future<void> _tapHealthSegment(WidgetTester tester, String label) async {
+  final segment = find.descendant(
+    of: find.byType(SegmentedButton<HealthQaViewMode>),
+    matching: find.text(label),
+  );
+  await tester.ensureVisible(segment);
+  await tester.pump();
+  expect(segment.hitTestable(), findsOneWidget, reason: label);
+  await tester.tap(segment);
+  await settleNetworkWidgets(tester);
+}
+
+Future<void> _expectLedger(WidgetTester tester, List<String> chips) async {
+  const title = '網路紀錄與計數（開啟時快照）';
+  await _tapQaControl(tester, 'health-qa-view-ledger');
+  expect(find.text(title), findsOneWidget);
+  for (final chip in chips) {
+    expect(find.text(chip), findsOneWidget, reason: chip);
+  }
+  await tester.binding.handlePopRoute();
+  await pumpUntil(
+    tester,
+    () => find.text(title).evaluate().isEmpty,
+    description: 'ledger sheet closed',
+  );
+}
+
+Future<void> _expandAttributes(WidgetTester tester, {String? pane}) async {
+  final card = _inPane(
+    pane,
+    find.byKey(const ValueKey('work-item-attributes')),
+  );
+  await tester.scrollUntilVisible(
+    card,
+    200,
+    scrollable: _detailScrollable(pane),
+  );
+  final title = find.descendant(of: card, matching: find.text('屬性'));
+  await tester.ensureVisible(title);
+  await tester.pump();
+  await tester.tap(title);
+  await settleNetworkWidgets(tester);
+}
+
+Future<void> _openHealthEditor(WidgetTester tester, {String? pane}) async {
+  final edit = _inPane(
+    pane,
+    find.byKey(const ValueKey('work-item-health-edit')),
+  );
+  await tester.scrollUntilVisible(
+    edit,
+    200,
+    scrollable: _detailScrollable(pane),
+  );
+  await tester.ensureVisible(edit);
+  await tester.pump();
+  await tester.tap(edit);
+  await pumpUntil(
+    tester,
+    () => _shows(_healthSave(pane: pane)),
+    description: 'health editor opened',
+  );
+  await settleNetworkWidgets(tester);
+}
+
+Future<void> _chooseHealth(
+  WidgetTester tester,
+  String choice, {
+  String? pane,
+}) async {
+  final tile = _inPane(
+    pane,
+    find.byKey(ValueKey('work-item-health-choice-$choice')),
+  );
+  expect(tile, findsOneWidget, reason: choice);
+  await tester.ensureVisible(tile);
+  await tester.pump();
+  await tester.tap(tile);
+  await tester.pump();
+}
+
+Future<void> _closeHealthEditor(WidgetTester tester, {String? pane}) async {
+  final cancel = _inPane(
+    pane,
+    find.byKey(const ValueKey('work-item-health-cancel')),
+  );
+  await tester.tap(cancel);
+  await pumpUntil(
+    tester,
+    () => _healthSave(pane: pane).evaluate().isEmpty,
+    description: 'health editor closed',
+  );
+  await settleNetworkWidgets(tester);
+}
+
+SessionController _qaSession(EmulatorQaFixture fixture) {
+  final store = EmulatorQaMemoryAccountStore()
+    ..accounts = [fixture.account]
+    ..lastActive = fixture.account.key;
+  return SessionController(
+    store,
+    createApi: (instance, credential, oauth, onOAuthRotated) => fixture.api,
+  )
+    ..active = fixture.account
+    ..api = fixture.api
+    ..initializing = false;
+}
+
+Widget _displayApp(
+  EmulatorQaFixture fixture,
+  SessionController session, {
+  DisplayQaRouteVariant variant = DisplayQaRouteVariant.group,
+}) => ProviderScope(
+  overrides: [sessionProvider.overrideWithValue(session)],
+  child: MaterialApp(
+    home: WorkItemsDisplayQaScreen(
+      fixture: fixture,
+      session: session,
+      initialVariant: variant,
+    ),
+  ),
+);
+
+Widget _projectApp(EmulatorQaFixture fixture, SessionController session) =>
+    ProviderScope(
+      overrides: [sessionProvider.overrideWithValue(session)],
+      child: MaterialApp(
+        home: ProjectPage(
+          account: fixture.account,
+          api: fixture.api,
+          project: fixture.project,
+        ),
+      ),
+    );
+
+List<String> _mockClipboard(WidgetTester tester) {
+  final writes = <String>[];
+  final messenger = tester.binding.defaultBinaryMessenger;
+  messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+    if (call.method == 'Clipboard.setData') {
+      writes.add((call.arguments as Map<Object?, Object?>)['text']! as String);
+    }
+    return null;
+  });
+  addTearDown(
+    () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+  );
+  return writes;
+}
+
+List<String> _mockShare(WidgetTester tester) {
+  const channel = MethodChannel('dev.fluttercommunity.plus/share');
+  final shared = <String>[];
+  final messenger = tester.binding.defaultBinaryMessenger;
+  messenger.setMockMethodCallHandler(channel, (call) async {
+    if (call.method == 'share') {
+      shared.add((call.arguments as Map<Object?, Object?>)['text']! as String);
+    }
+    return 'dev.fluttercommunity.plus/share/success';
+  });
+  addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+  return shared;
+}
+
+Finder _displayTile(String title) =>
+    find.widgetWithText(SwitchListTile, title);
+
+Finder _displayRow() => find
+    .ancestor(
+      of: find.textContaining(RegExp(r'^Synthetic \w+ item \d+$')).first,
+      matching: find.byType(EntityCard),
+    )
+    .first;
+
+Future<void> _openDisplaySheet(WidgetTester tester) async {
+  final button =
+      find.byKey(const Key('graph-work-items-display-options-button'));
+  await tester.ensureVisible(button);
+  await tester.pump();
+  expect(button.hitTestable(), findsOneWidget);
+  await tester.tap(button);
+  await pumpUntil(
+    tester,
+    () => _shows(find.byType(BottomSheet)),
+    description: 'display sheet opened',
+  );
+  await settleNetworkWidgets(tester);
+}
+
+Future<void> _closeDisplaySheet(WidgetTester tester) async {
+  await tester.binding.handlePopRoute();
+  await pumpUntil(
+    tester,
+    () => find.byType(BottomSheet).evaluate().isEmpty,
+    description: 'display sheet closed',
+  );
+  await settleNetworkWidgets(tester);
+}
+
+Future<SwitchListTile> _revealDisplayTile(
+  WidgetTester tester,
+  String title,
+) async {
+  final tile = _displayTile(title);
+  await tester.scrollUntilVisible(
+    tile,
+    80,
+    scrollable: find
+        .descendant(
+          of: find.byType(BottomSheet),
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
+  await tester.pump();
+  return tester.widget<SwitchListTile>(tile);
+}
+
+void _expectUniqueRowIids(WidgetTester tester) {
+  final iids = [
+    for (final text in tester.widgetList<Text>(
+      find.descendant(
+        of: find.byType(EntityCard),
+        matching: find.byType(Text),
+      ),
+    ))
+      if (RegExp(r'#(\d+)$').firstMatch(text.data ?? '') case final match?)
+        match.group(1)!,
+  ];
+  expect(iids, isNotEmpty);
+  expect(iids.toSet(), hasLength(iids.length));
+}
+
+Future<void> _verifyDisplayToggles(
+  WidgetTester tester, {
+  required bool hierarchyMarker,
+}) async {
+  for (final MapEntry(key: title, value: marker) in _displayMarkers.entries) {
+    final rendered = title != '階層關係' || hierarchyMarker;
+    final markerInRow = find.descendant(
+      of: _displayRow(),
+      matching: find.text(marker),
+    );
+    expect(markerInRow, rendered ? findsOneWidget : findsNothing, reason: title);
+
+    await _openDisplaySheet(tester);
+    final before = await _revealDisplayTile(tester, title);
+    expect(before.onChanged, isNotNull, reason: title);
+    expect(before.value, isTrue, reason: title);
+    await tester.tap(_displayTile(title));
+    await tester.pump();
+    expect(
+      tester.widget<SwitchListTile>(_displayTile(title)).value,
+      isFalse,
+      reason: title,
+    );
+    await _closeDisplaySheet(tester);
+    expect(markerInRow, findsNothing, reason: '$title hidden');
+
+    await _openDisplaySheet(tester);
+    final retained = await _revealDisplayTile(tester, title);
+    expect(retained.value, isFalse, reason: '$title retained');
+    await tester.tap(_displayTile(title));
+    await tester.pump();
+    await _closeDisplaySheet(tester);
+    expect(
+      markerInRow,
+      rendered ? findsOneWidget : findsNothing,
+      reason: '$title restored',
+    );
+  }
+
+  await _openDisplaySheet(tester);
+  for (final title in _unsupportedDisplayTiles) {
+    final tile = await _revealDisplayTile(tester, title);
+    expect(tile.onChanged, isNull, reason: title);
+    expect(tile.value, isFalse, reason: title);
+    expect(
+      find.descendant(of: _displayTile(title), matching: find.text('尚未支援')),
+      findsOneWidget,
+      reason: title,
+    );
+  }
+  await _closeDisplaySheet(tester);
+}

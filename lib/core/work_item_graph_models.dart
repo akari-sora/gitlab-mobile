@@ -39,6 +39,7 @@ final class WorkItemGraphSummary {
     required this.project,
     required this.namespace,
     required this.type,
+    this.widgets,
   });
 
   /// Server-owned WorkItem global ID. It is never reconstructed by clients.
@@ -51,6 +52,12 @@ final class WorkItemGraphSummary {
   final GraphResourceRef? project;
   final GraphResourceRef? namespace;
   final WorkItemGraphType type;
+
+  /// List summary widgets. Null when widgets were not requested or unavailable.
+  final WorkItemSummaryWidgets? widgets;
+
+  /// Alias for [widgets] to support either naming.
+  WorkItemSummaryWidgets? get summary => widgets;
 }
 
 final class WorkItemDescriptionWidget {
@@ -183,11 +190,161 @@ final class WorkItemGraphDetail {
   final WorkItemDatesWidget? dates;
 }
 
+final class WorkItemMilestoneSummary {
+  const WorkItemMilestoneSummary({
+    required this.id,
+    this.iid,
+    required this.title,
+    this.dueDate,
+    this.startDate,
+  });
+
+  final String id;
+  final int? iid;
+  final String title;
+  final DateTime? dueDate;
+  final DateTime? startDate;
+}
+
+final class WorkItemDatesSummary {
+  const WorkItemDatesSummary({
+    this.startDate,
+    this.dueDate,
+  });
+
+  final DateTime? startDate;
+  final DateTime? dueDate;
+}
+
+final class WorkItemHierarchySummary {
+  const WorkItemHierarchySummary({
+    required this.hasParent,
+    this.parent,
+  });
+
+  final bool hasParent;
+  final WorkItemHierarchyEntry? parent;
+}
+
+final class WorkItemStatusSummary {
+  const WorkItemStatusSummary({
+    this.id,
+    this.name,
+    this.iconName,
+    this.color,
+  });
+
+  final String? id;
+  final String? name;
+  final String? iconName;
+  final String? color;
+}
+
+final class WorkItemSummaryWidgets {
+  const WorkItemSummaryWidgets({
+    required this.tier,
+    required this.widgetTypes,
+    this.labels,
+    this.assignees,
+    this.milestone,
+    this.dates,
+    this.hierarchy,
+    this.status,
+  });
+
+  const WorkItemSummaryWidgets.unavailable({required this.tier})
+      : widgetTypes = null,
+        labels = null,
+        assignees = null,
+        milestone = null,
+        dates = null,
+        hierarchy = null,
+        status = null;
+
+  /// The active GraphQL query tier (1: CE 5 + EE Status, 2: CE Core, 3: Baseline no widgets).
+  final int tier;
+
+  /// Null means GitLab returned null for widgets or widgets were not requested.
+  /// A non-null Set means the widgets collection was present.
+  final Set<String>? widgetTypes;
+
+  final BoundedGraphConnection<WorkItemGraphLabel>? labels;
+  final BoundedGraphConnection<WorkItemGraphAssignee>? assignees;
+  final WorkItemMilestoneSummary? milestone;
+  final WorkItemDatesSummary? dates;
+  final WorkItemHierarchySummary? hierarchy;
+  final WorkItemStatusSummary? status;
+}
+
+final class WorkItemDisplayPreferences {
+  const WorkItemDisplayPreferences({
+    this.showLabels = true,
+    this.showAssignees = true,
+    this.showMilestone = true,
+    this.showDates = true,
+    this.showHierarchy = true,
+    this.showStatus = true,
+  });
+
+  final bool showLabels;
+  final bool showAssignees;
+  final bool showMilestone;
+  final bool showDates;
+  final bool showHierarchy;
+  final bool showStatus;
+
+  WorkItemDisplayPreferences copyWith({
+    bool? showLabels,
+    bool? showAssignees,
+    bool? showMilestone,
+    bool? showDates,
+    bool? showHierarchy,
+    bool? showStatus,
+  }) {
+    return WorkItemDisplayPreferences(
+      showLabels: showLabels ?? this.showLabels,
+      showAssignees: showAssignees ?? this.showAssignees,
+      showMilestone: showMilestone ?? this.showMilestone,
+      showDates: showDates ?? this.showDates,
+      showHierarchy: showHierarchy ?? this.showHierarchy,
+      showStatus: showStatus ?? this.showStatus,
+    );
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is WorkItemDisplayPreferences &&
+          showLabels == other.showLabels &&
+          showAssignees == other.showAssignees &&
+          showMilestone == other.showMilestone &&
+          showDates == other.showDates &&
+          showHierarchy == other.showHierarchy &&
+          showStatus == other.showStatus;
+
+  @override
+  int get hashCode => Object.hash(
+    showLabels,
+    showAssignees,
+    showMilestone,
+    showDates,
+    showHierarchy,
+    showStatus,
+  );
+}
+
 final class WorkItemGraphPage {
-  const WorkItemGraphPage({required this.items, required this.nextCursor});
+  const WorkItemGraphPage({
+    required this.items,
+    required this.nextCursor,
+    this.filter,
+    this.summaryTier,
+  });
 
   final List<WorkItemGraphSummary> items;
   final String? nextCursor;
+  final GroupWorkItemListFilter? filter;
+  final int? summaryTier;
   bool get isPartial => nextCursor != null;
 }
 
@@ -250,6 +407,7 @@ final class GroupWorkItemGraphPage {
     required List<WorkItemGraphSummary> items,
     required this.nextCursor,
     required this.filter,
+    this.summaryTier,
   }) : items = List.unmodifiable(items);
 
   /// Opaque server identity returned by the same response as [items].
@@ -257,6 +415,7 @@ final class GroupWorkItemGraphPage {
   final List<WorkItemGraphSummary> items;
   final String? nextCursor;
   final GroupWorkItemListFilter filter;
+  final int? summaryTier;
   bool get isPartial => nextCursor != null;
 }
 

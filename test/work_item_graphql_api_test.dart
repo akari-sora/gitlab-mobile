@@ -844,4 +844,441 @@ void main() {
       late.close();
     },
   );
+
+  test(
+    'N1_default: Default project call produces byte-identical GraphQL body with exactly 3 variables',
+    () async {
+      final adapter = FakeAdapter((request) {
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        expect(
+          query,
+          r'''
+query MobileProjectWorkItems($path: ID!, $first: Int!, $after: String) {
+  project(fullPath: $path) {
+    id
+    fullPath
+    workItems(first: $first, after: $after) {
+      nodes { id
+iid
+title
+state
+createdAt
+updatedAt
+project { id fullPath }
+namespace { id fullPath }
+workItemType { id name }
+ }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''',
+        );
+        expect(query.contains('widgets'), isFalse);
+        expect(body['variables'], {
+          'path': _project.path,
+          'first': 20,
+          'after': null,
+        });
+        return jsonResponse(
+          _projectEnvelope(workItems: _connection([_summary()])),
+        );
+      });
+      final api = testApi(adapter);
+      final page = await api.projectWorkItems(_project);
+      expect(page.items, hasLength(1));
+      expect(page.summaryTier, isNull);
+      expect(adapter.requests, hasLength(1));
+
+      await expectLater(
+        api.projectWorkItems(_project, previousTier: 1),
+        throwsA(_failure(FailureKind.validation)),
+      );
+      api.close();
+    },
+  );
+
+  test(
+    'T01: T1 list query sends 1 POST with 6 widget fragments and NO rollUp',
+    () async {
+      final adapter = FakeAdapter((request) {
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        expect(query.contains('... on WorkItemWidgetLabels'), isTrue);
+        expect(query.contains('... on WorkItemWidgetAssignees'), isTrue);
+        expect(query.contains('... on WorkItemWidgetMilestone'), isTrue);
+        expect(query.contains('... on WorkItemWidgetStartAndDueDate'), isTrue);
+        expect(query.contains('... on WorkItemWidgetHierarchy'), isTrue);
+        expect(query.contains('... on WorkItemWidgetStatus'), isTrue);
+        expect(query.contains('rollUp'), isFalse);
+        return jsonResponse(
+          _projectEnvelope(
+            workItems: _connection([
+              {
+                ..._summary(),
+                'widgets': <Object?>[],
+              },
+            ]),
+          ),
+        );
+      });
+      final api = testApi(adapter);
+      final page = await api.projectWorkItems(_project, summaries: true);
+      expect(page.items, hasLength(1));
+      expect(page.summaryTier, 1);
+      expect(adapter.requests, hasLength(1));
+      api.close();
+    },
+  );
+
+  test(
+    'T02: CE undefinedType(typeName WorkItemWidgetStatus) triggers clean 2-POST fallback to T2 with tier binding on continuation',
+    () async {
+      var callCount = 0;
+      final adapter = FakeAdapter((request) {
+        callCount++;
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (callCount == 1) {
+          expect(query.contains('... on WorkItemWidgetStatus'), isTrue);
+          return jsonResponse({
+            'data': null,
+            'errors': [
+              {
+                'message': 'Type WorkItemWidgetStatus is unknown',
+                'extensions': {
+                  'code': 'undefinedType',
+                  'typeName': 'WorkItemWidgetStatus',
+                },
+              },
+            ],
+          });
+        }
+        expect(query.contains('... on WorkItemWidgetStatus'), isFalse);
+        return jsonResponse(
+          _projectEnvelope(
+            workItems: _connection(
+              [
+                {
+                  ..._summary(),
+                  'widgets': <Object?>[],
+                },
+              ],
+              hasNext: true,
+              cursor: callCount == 2 ? 'cursor-t2-next' : 'cursor-t2-end',
+            ),
+          ),
+        );
+      });
+      final api = testApi(adapter);
+      final page = await api.projectWorkItems(_project, summaries: true);
+      expect(page.items, hasLength(1));
+      expect(page.summaryTier, 2);
+      expect(callCount, 2);
+
+      final continuation = await api.projectWorkItems(
+        _project,
+        after: page.nextCursor,
+        summaries: true,
+        previousTier: 2,
+      );
+      expect(continuation.summaryTier, 2);
+      expect(callCount, 3);
+
+      await expectLater(
+        api.projectWorkItems(
+          _project,
+          after: page.nextCursor,
+          summaries: true,
+          previousTier: 1,
+        ),
+        throwsA(_failure(FailureKind.validation)),
+      );
+      expect(callCount, 3);
+      api.close();
+    },
+  );
+
+  test(
+    'T03: undefinedType combined with uncoded error, 401, or 403 fails closed without fallback',
+    () async {
+      final uncodedAdapter = FakeAdapter((_) => jsonResponse({
+        'data': null,
+        'errors': [
+          {
+            'message': 'Type WorkItemWidgetStatus is unknown',
+            'extensions': {
+              'code': 'undefinedType',
+              'typeName': 'WorkItemWidgetStatus',
+            },
+          },
+          {
+            'message': 'General uncoded error',
+          },
+        ],
+      }));
+      final api1 = testApi(uncodedAdapter);
+      await expectLater(
+        api1.projectWorkItems(_project, summaries: true),
+        throwsA(_failure(FailureKind.invalidResponse)),
+      );
+      expect(uncodedAdapter.requests, hasLength(1));
+      api1.close();
+
+      final forbiddenAdapter = FakeAdapter((_) => ResponseBody.fromString(
+        'Forbidden',
+        403,
+        headers: {Headers.contentTypeHeader: [Headers.textPlainContentType]},
+      ));
+      final api2 = testApi(forbiddenAdapter);
+      await expectLater(
+        api2.projectWorkItems(_project, summaries: true),
+        throwsA(_failure(FailureKind.forbidden)),
+      );
+      expect(forbiddenAdapter.requests, hasLength(1));
+      api2.close();
+
+      final unauthAdapter = FakeAdapter((_) => ResponseBody.fromString(
+        'Unauthorized',
+        401,
+        headers: {Headers.contentTypeHeader: [Headers.textPlainContentType]},
+      ));
+      final api3 = testApi(unauthAdapter);
+      await expectLater(
+        api3.projectWorkItems(_project, summaries: true),
+        throwsA(_failure(FailureKind.unauthenticated)),
+      );
+      expect(unauthAdapter.requests, hasLength(1));
+      api3.close();
+
+      final mixedCodedAdapter = FakeAdapter((_) => jsonResponse({
+        'data': null,
+        'errors': [
+          {
+            'message': 'Type WorkItemWidgetStatus is unknown',
+            'extensions': {
+              'code': 'undefinedType',
+              'typeName': 'WorkItemWidgetStatus',
+            },
+          },
+          {
+            'message': 'Field unrelatedField is unknown',
+            'extensions': {
+              'code': 'undefinedField',
+              'field': 'unrelatedField',
+            },
+          },
+        ],
+      }));
+      final api4 = testApi(mixedCodedAdapter);
+      await expectLater(
+        api4.projectWorkItems(_project, summaries: true),
+        throwsA(_failure(FailureKind.unsupported)),
+      );
+      expect(mixedCodedAdapter.requests, hasLength(1));
+      api4.close();
+    },
+  );
+
+  test(
+    'T04: data.project or group null yields invisible/404 with zero fallback re-POST',
+    () async {
+      final adapter = FakeAdapter((_) => jsonResponse({
+        'data': {'project': null},
+      }));
+      final api = testApi(adapter);
+      await expectLater(
+        api.projectWorkItems(_project, summaries: true),
+        throwsA(_failure(FailureKind.invisible)),
+      );
+      expect(adapter.requests, hasLength(1));
+      api.close();
+
+      final groupAdapter = FakeAdapter((_) => jsonResponse({
+        'data': {'group': null},
+      }));
+      final apiGroup = testApi(groupAdapter);
+      await expectLater(
+        apiGroup.groupWorkItems('team/example', summaries: true),
+        throwsA(_failure(FailureKind.invisible)),
+      );
+      expect(groupAdapter.requests, hasLength(1));
+      apiGroup.close();
+    },
+  );
+
+  test(
+    'T05: Schema error code alongside partial data yields zero fallback',
+    () async {
+      final adapter = FakeAdapter((_) => jsonResponse({
+        'data': {
+          'project': {
+            'id': 'gid://gitlab/Project/42',
+            'fullPath': 'team/example-42',
+            'workItems': _connection([]),
+          },
+        },
+        'errors': [
+          {
+            'message': 'Type WorkItemWidgetStatus is unknown',
+            'extensions': {
+              'code': 'undefinedType',
+              'typeName': 'WorkItemWidgetStatus',
+            },
+          },
+        ],
+      }));
+      final api = testApi(adapter);
+      await expectLater(
+        api.projectWorkItems(_project, summaries: true),
+        throwsA(_failure(FailureKind.unsupported)),
+      );
+      expect(adapter.requests, hasLength(1));
+      api.close();
+    },
+  );
+
+  test(
+    'T06: Unrelated undefinedField (e.g. on labels) does not degrade to T2',
+    () async {
+      final adapter = FakeAdapter((_) => jsonResponse({
+        'data': null,
+        'errors': [
+          {
+            'message': 'Field labels is unknown',
+            'extensions': {
+              'code': 'undefinedField',
+              'field': 'labels',
+            },
+          },
+        ],
+      }));
+      final api = testApi(adapter);
+      await expectLater(
+        api.projectWorkItems(_project, summaries: true),
+        throwsA(_failure(FailureKind.unsupported)),
+      );
+      expect(adapter.requests, hasLength(1));
+      api.close();
+    },
+  );
+
+  test(
+    'T07: EE status null, milestone null, and parent null with hasParent true parse gracefully',
+    () async {
+      final adapter = FakeAdapter((_) => jsonResponse(
+        _projectEnvelope(
+          workItems: _connection([
+            {
+              ..._summary(),
+              'widgets': [
+                {'type': 'STATUS', 'status': null},
+                {'type': 'MILESTONE', 'milestone': null},
+                {'type': 'HIERARCHY', 'hasParent': true, 'parent': null},
+                {'type': 'START_AND_DUE_DATE', 'startDate': null, 'dueDate': null},
+              ],
+            },
+          ]),
+        ),
+      ));
+      final api = testApi(adapter);
+      final page = await api.projectWorkItems(_project, summaries: true);
+      expect(page.items, hasLength(1));
+      final item = page.items.single;
+      expect(item.summary, isNotNull);
+      expect(item.summary!.status, isNull);
+      expect(item.summary!.milestone, isNull);
+      expect(item.summary!.hierarchy, isNotNull);
+      expect(item.summary!.hierarchy!.hasParent, isTrue);
+      expect(item.summary!.hierarchy!.parent, isNull);
+      expect(item.summary!.dates, isNotNull);
+      expect(item.summary!.dates!.startDate, isNull);
+      expect(item.summary!.dates!.dueDate, isNull);
+      api.close();
+    },
+  );
+
+  test(
+    'T08: Malformed widget, duplicate widget type, or over-cap connection throws invalidResponse',
+    () async {
+      final missingWidgetsAdapter = FakeAdapter((_) => jsonResponse(
+        _projectEnvelope(
+          workItems: _connection([
+            _summary(),
+          ]),
+        ),
+      ));
+      final api1 = testApi(missingWidgetsAdapter);
+      await expectLater(
+        api1.projectWorkItems(_project, summaries: true),
+        throwsA(_failure(FailureKind.invalidResponse)),
+      );
+      api1.close();
+
+      final dupWidgetAdapter = FakeAdapter((_) => jsonResponse(
+        _projectEnvelope(
+          workItems: _connection([
+            {
+              ..._summary(),
+              'widgets': [
+                {
+                  'type': 'LABELS',
+                  'labels': {
+                    'nodes': <Object?>[],
+                    'pageInfo': {'hasNextPage': false},
+                  },
+                },
+                {
+                  'type': 'LABELS',
+                  'labels': {
+                    'nodes': <Object?>[],
+                    'pageInfo': {'hasNextPage': false},
+                  },
+                },
+              ],
+            },
+          ]),
+        ),
+      ));
+      final api2 = testApi(dupWidgetAdapter);
+      await expectLater(
+        api2.projectWorkItems(_project, summaries: true),
+        throwsA(_failure(FailureKind.invalidResponse)),
+      );
+      api2.close();
+
+      final overCapAdapter = FakeAdapter((_) => jsonResponse(
+        _projectEnvelope(
+          workItems: _connection([
+            {
+              ..._summary(),
+              'widgets': [
+                {
+                  'type': 'LABELS',
+                  'labels': {
+                    'nodes': List.generate(
+                      6,
+                      (i) => {
+                        'id': 'gid://gitlab/FutureLabel/$i',
+                        'title': 'label-$i',
+                        'color': '#123456',
+                      },
+                    ),
+                    'pageInfo': {'hasNextPage': false},
+                  },
+                },
+              ],
+            },
+          ]),
+        ),
+      ));
+      final api3 = testApi(overCapAdapter);
+      await expectLater(
+        api3.projectWorkItems(_project, summaries: true),
+        throwsA(_failure(FailureKind.invalidResponse)),
+      );
+      api3.close();
+    },
+  );
 }

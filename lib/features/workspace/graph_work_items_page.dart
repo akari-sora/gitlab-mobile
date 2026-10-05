@@ -22,6 +22,7 @@ import 'work_item_content.dart';
 import 'work_item_dates.dart';
 import 'work_item_labels.dart';
 import 'work_item_milestone.dart';
+import 'work_item_health.dart';
 import 'work_item_notifications.dart';
 import 'work_item_state_control.dart';
 import 'work_item_status.dart';
@@ -132,6 +133,9 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   late final ScrollController _searchScrollController;
   late GroupWorkItemListFilter _filter;
   GroupWorkItemListFilter? _activePageFilter;
+  int? _activePageTier;
+  WorkItemDisplayPreferences _displayPreferences =
+      const WorkItemDisplayPreferences();
   WorkItemTypePage? _pendingGroupTypes;
   ApiFailure? _itemsError;
   ApiFailure? _typesError;
@@ -152,6 +156,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   int? _sessionGeneration;
   NavigatorState? _navigator;
   final Set<Route<dynamic>> _ownedRoutes = {};
+  Route<void>? _displayOptionsRoute;
   bool _ownerInvalid = false;
 
   bool _current(int generation) =>
@@ -274,6 +279,8 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       _dismissOwnedRoutes();
       _filter = _defaultFilter;
       _activePageFilter = null;
+      _activePageTier = null;
+      _displayPreferences = const WorkItemDisplayPreferences();
       _pendingGroupTypes = null;
       _searchController.text = _filter.search;
       _items.clear();
@@ -323,6 +330,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       _filterNotice = null;
       _nextItems = null;
       _activePageFilter = null;
+      _activePageTier = null;
       _pendingGroupTypes = null;
       _nextTypes = null;
       _namespace = null;
@@ -359,6 +367,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   }
 
   void _dismissOwnedRoutes() {
+    _displayOptionsRoute = null;
     final navigator = _navigator;
     final routes = _ownedRoutes.toList(growable: false);
     _ownedRoutes.clear();
@@ -386,6 +395,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       _filterNotice = null;
       _nextItems = null;
       _activePageFilter = null;
+      _activePageTier = null;
       _pendingGroupTypes = null;
       _nextTypes = null;
       _namespace = null;
@@ -408,10 +418,13 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
               ? owner.api.groupWorkItems(
                   owner.namespacePath,
                   filter: requestFilter,
+                  summaries: true,
                   isCurrent: currentItems,
                 )
               : owner.api.projectWorkItems(
                   owner.project!,
+                  filter: requestFilter,
+                  summaries: true,
                   isCurrent: currentItems,
                 ))
           .then<Object?>((value) => value)
@@ -431,10 +444,13 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         itemNamespace = itemResult.group;
         _namespace = itemResult.group;
         _activePageFilter = itemResult.filter;
+        _activePageTier = itemResult.summaryTier;
         _items.addAll(itemResult.items);
         _nextItems = itemResult.nextCursor;
         _itemPages = 1;
       } else if (itemsCurrent && itemResult is WorkItemGraphPage) {
+        _activePageFilter = itemResult.filter;
+        _activePageTier = itemResult.summaryTier;
         _items.addAll(itemResult.items);
         _nextItems = itemResult.nextCursor;
         _itemPages = 1;
@@ -474,6 +490,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
             _itemsError = null;
             _nextItems = null;
             _activePageFilter = null;
+            _activePageTier = null;
             _usedItemCursors.clear();
             _itemPages = 0;
             _itemsLimitReached = false;
@@ -499,7 +516,6 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
     GroupWorkItemListFilter nextFilter, {
     String? notice,
   }) async {
-    if (widget.project != null) return;
     final owner = widget;
     final generation = _generation;
     final itemGeneration = ++_itemGeneration;
@@ -514,6 +530,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       _itemsError = null;
       _nextItems = null;
       _activePageFilter = null;
+      _activePageTier = null;
       _usedItemCursors.clear();
       _itemPages = 0;
       _itemsLimitReached = false;
@@ -521,10 +538,29 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
     });
     bool current() => _currentItems(generation, itemGeneration);
     try {
+      if (owner.project != null) {
+        final page = await owner.api.projectWorkItems(
+          owner.project!,
+          filter: nextFilter,
+          summaries: true,
+          isCurrent: current,
+        );
+        if (!current()) return;
+        setState(() {
+          _activePageFilter = page.filter;
+          _activePageTier = page.summaryTier;
+          _items.addAll(page.items);
+          _nextItems = page.nextCursor;
+          _itemPages = 1;
+          _loadingItems = false;
+        });
+        return;
+      }
       final page = await owner.api.groupWorkItems(
         owner.namespacePath,
         expectedGroupId: _namespace?.id,
         filter: nextFilter,
+        summaries: true,
         isCurrent: current,
       );
       if (!current()) return;
@@ -537,6 +573,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       setState(() {
         _namespace = page.group;
         _activePageFilter = page.filter;
+        _activePageTier = page.summaryTier;
         _items.addAll(page.items);
         _nextItems = page.nextCursor;
         _itemPages = 1;
@@ -560,6 +597,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
               _items.clear();
               _nextItems = null;
               _activePageFilter = null;
+              _activePageTier = null;
               _usedItemCursors.clear();
               _itemPages = 0;
               _itemsLimitReached = false;
@@ -594,6 +632,8 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   Future<void> _loadMoreItems() async {
     final cursor = _nextItems;
     if (cursor == null || _loadingItems) return;
+    final pageFilter = _activePageFilter;
+    if (pageFilter == null) return;
     final atItemLimit =
         _itemPages >= _maxItemPages || _items.length >= _maxResidentItems;
     if (atItemLimit || !_usedItemCursors.add(cursor)) {
@@ -609,8 +649,6 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
     final owner = widget;
     final generation = _generation;
     final itemGeneration = _itemGeneration;
-    final pageFilter = _activePageFilter;
-    if (owner.project == null && pageFilter == null) return;
     setState(() => _loadingItems = true);
     try {
       final page = owner.project == null
@@ -618,13 +656,19 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
               owner.namespacePath,
               expectedGroupId: _namespace?.id,
               after: cursor,
-              filter: pageFilter!,
+              filter: pageFilter,
               previousFilter: pageFilter,
+              summaries: true,
+              previousTier: _activePageTier,
               isCurrent: () => _currentItems(generation, itemGeneration),
             )
           : await owner.api.projectWorkItems(
               owner.project!,
               after: cursor,
+              filter: pageFilter,
+              previousFilter: pageFilter,
+              summaries: true,
+              previousTier: _activePageTier,
               isCurrent: () => _currentItems(generation, itemGeneration),
             );
       if (!_currentItems(generation, itemGeneration)) return;
@@ -638,6 +682,9 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         throw const ApiFailure(FailureKind.invalidResponse);
       }
       if (page is GroupWorkItemGraphPage && page.filter != pageFilter) {
+        throw const ApiFailure(FailureKind.invalidResponse);
+      }
+      if (page is WorkItemGraphPage && page.filter != pageFilter) {
         throw const ApiFailure(FailureKind.invalidResponse);
       }
       final knownLocations = <String, String>{
@@ -1210,23 +1257,134 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
     );
   }
 
-  Widget _itemRow(WorkItemGraphSummary item) => EntityCard(
-    leading: const Icon(Icons.workspaces_outline),
-    title: Text(item.title),
-    subtitle: Text(
-      widget.project == null
-          ? '${_itemNamespace(item)} · ${item.type.name} · #${item.iid}'
-          : '${item.type.name} · #${item.iid}',
-    ),
-    meta: [
-      StatusBadge(_graphWorkItemState(item.state)),
+  Widget _itemRow(WorkItemGraphSummary item) {
+    final summary = item.summary;
+    final prefs = _displayPreferences;
+    final metaChips = <Widget>[];
+
+    metaChips.add(StatusBadge(_graphWorkItemState(item.state)));
+
+    if (prefs.showStatus && summary?.status?.name != null) {
+      metaChips.add(
+        MetaChip(
+          summary!.status!.name!,
+          icon: Icons.flag_outlined,
+        ),
+      );
+    }
+
+    metaChips.add(
       MetaChip(
         relativeDate(item.updatedAt.toIso8601String()),
         icon: Icons.schedule_outlined,
       ),
-    ],
-    onTap: () => _open(item),
-  );
+    );
+
+    if (prefs.showMilestone && summary?.milestone != null) {
+      metaChips.add(
+        MetaChip(
+          summary!.milestone!.title,
+          icon: Icons.flag_circle_outlined,
+        ),
+      );
+    }
+
+    if (prefs.showDates && summary?.dates != null) {
+      final dates = summary!.dates!;
+      String? dateText;
+      if (dates.startDate != null && dates.dueDate != null) {
+        dateText =
+            '${workItemCalendarDate(dates.startDate!)} - ${workItemCalendarDate(dates.dueDate!)}';
+      } else if (dates.startDate != null) {
+        dateText = '開始: ${workItemCalendarDate(dates.startDate!)}';
+      } else if (dates.dueDate != null) {
+        dateText = '截止: ${workItemCalendarDate(dates.dueDate!)}';
+      }
+      if (dateText != null) {
+        metaChips.add(
+          MetaChip(
+            dateText,
+            icon: Icons.event_outlined,
+          ),
+        );
+      }
+    }
+
+    if (prefs.showHierarchy && summary?.hierarchy != null) {
+      final hierarchy = summary!.hierarchy!;
+      if (hierarchy.parent != null) {
+        metaChips.add(
+          MetaChip(
+            '${hierarchy.parent!.type.name} #${hierarchy.parent!.iid}',
+            icon: Icons.account_tree_outlined,
+          ),
+        );
+      } else if (hierarchy.hasParent) {
+        metaChips.add(
+          const MetaChip(
+            '上層不可見',
+            icon: Icons.lock_outline,
+          ),
+        );
+      }
+    }
+
+    if (prefs.showAssignees && summary?.assignees != null) {
+      final assigneesConn = summary!.assignees!;
+      for (final assignee in assigneesConn.items) {
+        metaChips.add(
+          MetaChip(
+            assignee.name,
+            icon: Icons.person_outline,
+          ),
+        );
+      }
+      if (assigneesConn.isPartial) {
+        metaChips.add(
+          Semantics(
+            container: true,
+            label: '還有更多，未載入',
+            excludeSemantics: true,
+            child: const MetaChip('更多', icon: Icons.more_horiz),
+          ),
+        );
+      }
+    }
+
+    if (prefs.showLabels && summary?.labels != null) {
+      final labelsConn = summary!.labels!;
+      for (final label in labelsConn.items) {
+        metaChips.add(
+          LabelPill(
+            label.title,
+            color: parseHexColor(label.color),
+          ),
+        );
+      }
+      if (labelsConn.isPartial) {
+        metaChips.add(
+          Semantics(
+            container: true,
+            label: '還有更多，未載入',
+            excludeSemantics: true,
+            child: const LabelPill('更多'),
+          ),
+        );
+      }
+    }
+
+    return EntityCard(
+      leading: const Icon(Icons.workspaces_outline),
+      title: Text(item.title),
+      subtitle: Text(
+        widget.project == null
+            ? '${_itemNamespace(item)} · ${item.type.name} · #${item.iid}'
+            : '${item.type.name} · #${item.iid}',
+      ),
+      meta: metaChips,
+      onTap: () => _open(item),
+    );
+  }
 
   List<Widget> _footer(BuildContext context) => [
     if (_itemsError != null && _items.isNotEmpty)
@@ -1322,13 +1480,37 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
               padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 0),
               sliver: SliverList.list(
                 children: [
-                  Text(
-                    widget.namespacePath,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+                  if (widget.embedded)
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            widget.namespacePath,
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                        IconButton(
+                          key: const Key(
+                            'graph-work-items-display-options-button',
+                          ),
+                          onPressed: _openDisplayOptions,
+                          tooltip: '顯示設定',
+                          icon: const Icon(Icons.tune),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ],
+                    )
+                  else
+                    Text(
+                      widget.namespacePath,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   if (widget.project == null) ...[
                     const SizedBox(height: 6),
                     _groupFilters(context),
+                  ] else ...[
+                    const SizedBox(height: 6),
+                    _projectFilters(context),
                   ],
                   const SizedBox(height: 10),
                   _capabilities(context),
@@ -1350,6 +1532,140 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
     );
   }
 
+  Widget _projectFilters(BuildContext context) {
+    const stateLabels = {
+      GroupWorkItemState.opened: '開啟中',
+      GroupWorkItemState.closed: '已關閉',
+      GroupWorkItemState.all: '全部狀態',
+    };
+    const sortLabels = {
+      GroupWorkItemSort.createdDesc: '最新建立',
+      GroupWorkItemSort.createdAsc: '最早建立',
+      GroupWorkItemSort.updatedDesc: '最近更新',
+      GroupWorkItemSort.updatedAsc: '最早更新',
+    };
+    return Card(
+      key: const Key('project-work-item-filters'),
+      child: ExpansionTile(
+        key: const PageStorageKey('project-work-item-filters-expansion'),
+        title: const Text('專案篩選與排序'),
+        subtitle: Text(
+          '${stateLabels[_filter.state]} · ${sortLabels[_filter.sort]}'
+          '${_filterNotice == null ? '' : '\n$_filterNotice'}',
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final state in GroupWorkItemState.values)
+                    ChoiceChip(
+                      label: Text(stateLabels[state]!),
+                      selected: _filter.state == state,
+                      onSelected: (selected) {
+                        if (selected) _changeState(state);
+                      },
+                    ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextField(
+                      key: const Key('project-work-item-search'),
+                      controller: _searchController,
+                      scrollController: _searchScrollController,
+                      textInputAction: TextInputAction.search,
+                      maxLength: 256,
+                      decoration: const InputDecoration(
+                        labelText: '搜尋工作項目',
+                        hintText: '標題或關鍵字',
+                        border: OutlineInputBorder(),
+                        counterText: '',
+                      ),
+                      onSubmitted: (_) => _submitSearch(),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  IconButton.filledTonal(
+                    onPressed: _submitSearch,
+                    tooltip: '套用搜尋',
+                    icon: const Icon(Icons.search),
+                  ),
+                  IconButton(
+                    onPressed: () {
+                      _searchController.clear();
+                      _submitSearch();
+                    },
+                    tooltip: '清除搜尋',
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              KeyedSubtree(
+                key: const Key('project-work-item-sort'),
+                child: DropdownButtonFormField<GroupWorkItemSort>(
+                  key: ValueKey('project-work-item-sort-${_filter.sort}'),
+                  initialValue: _filter.sort,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: '排序',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    for (final sort in GroupWorkItemSort.values)
+                      DropdownMenuItem(
+                        value: sort,
+                        child: Text(sortLabels[sort]!),
+                      ),
+                  ],
+                  onChanged: _changeSort,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openDisplayOptions() {
+    if (_displayOptionsRoute?.isActive == true) return;
+    final route = ModalBottomSheetRoute<void>(
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => _WorkItemDisplaySheet(
+          tier: _activePageTier,
+          preferences: _displayPreferences,
+          onChanged: (newPreferences) {
+            if (!mounted) return;
+            setState(() {
+              _displayPreferences = newPreferences;
+            });
+            setSheetState(() {});
+          },
+        ),
+      ),
+      isScrollControlled: true,
+      showDragHandle: true,
+    );
+    _displayOptionsRoute = route;
+    _ownRoute(route);
+    unawaited(
+      Navigator.of(context).push(route).then((_) {
+        if (_displayOptionsRoute == route) {
+          _displayOptionsRoute = null;
+        }
+      }),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_ownerInvalid) {
@@ -1362,6 +1678,12 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         title: const Text('工作項目'),
         actions: [
           IconButton(
+            key: const Key('graph-work-items-display-options-button'),
+            onPressed: _openDisplayOptions,
+            tooltip: '顯示設定',
+            icon: const Icon(Icons.tune),
+          ),
+          IconButton(
             onPressed: _loadingItems || _loadingTypes ? null : _refresh,
             tooltip: '重新整理',
             icon: const Icon(Icons.refresh),
@@ -1369,6 +1691,115 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         ],
       ),
       body: _body(context),
+    );
+  }
+}
+
+class _WorkItemDisplaySheet extends StatelessWidget {
+  const _WorkItemDisplaySheet({
+    required this.tier,
+    required this.preferences,
+    required this.onChanged,
+  });
+
+  final int? tier;
+  final WorkItemDisplayPreferences preferences;
+  final ValueChanged<WorkItemDisplayPreferences> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isUnknown = tier == null;
+    final isTier3 = tier == 3;
+    final isTier2 = tier == 2;
+
+    Widget buildSupportedTile({
+      required String title,
+      required bool value,
+      required bool disabled,
+      required ValueChanged<bool> onToggle,
+    }) {
+      return SwitchListTile(
+        title: Text(title),
+        subtitle: disabled ? const Text('此實例未提供') : null,
+        value: disabled ? false : value,
+        onChanged: disabled ? null : onToggle,
+      );
+    }
+
+    Widget buildUnsupportedTile(String title) {
+      return SwitchListTile(
+        title: Text(title),
+        subtitle: const Text('尚未支援'),
+        value: false,
+        onChanged: null,
+      );
+    }
+
+    return SafeArea(
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              '顯示設定',
+              style: theme.textTheme.titleMedium,
+            ),
+          ),
+          buildSupportedTile(
+            title: '標籤',
+            value: preferences.showLabels,
+            disabled: isUnknown || isTier3,
+            onToggle: (v) => onChanged(preferences.copyWith(showLabels: v)),
+          ),
+          buildSupportedTile(
+            title: '指派對象',
+            value: preferences.showAssignees,
+            disabled: isUnknown || isTier3,
+            onToggle: (v) => onChanged(preferences.copyWith(showAssignees: v)),
+          ),
+          buildSupportedTile(
+            title: '里程碑',
+            value: preferences.showMilestone,
+            disabled: isUnknown || isTier3,
+            onToggle: (v) => onChanged(preferences.copyWith(showMilestone: v)),
+          ),
+          buildSupportedTile(
+            title: '起訖日期',
+            value: preferences.showDates,
+            disabled: isUnknown || isTier3,
+            onToggle: (v) => onChanged(preferences.copyWith(showDates: v)),
+          ),
+          buildSupportedTile(
+            title: '階層關係',
+            value: preferences.showHierarchy,
+            disabled: isUnknown || isTier3,
+            onToggle: (v) => onChanged(preferences.copyWith(showHierarchy: v)),
+          ),
+          buildSupportedTile(
+            title: '工作流程狀態',
+            value: preferences.showStatus,
+            disabled: isUnknown || isTier3 || isTier2,
+            onToggle: (v) => onChanged(preferences.copyWith(showStatus: v)),
+          ),
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Text(
+              '其他選項（尚未支援）',
+              style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+            ),
+          ),
+          buildUnsupportedTile('阻礙項目'),
+          buildUnsupportedTile('留言數'),
+          buildUnsupportedTile('健康狀態'),
+          buildUnsupportedTile('疊代'),
+          buildUnsupportedTile('熱門度'),
+          buildUnsupportedTile('權重'),
+        ],
+      ),
     );
   }
 }
@@ -1455,6 +1886,175 @@ class _DatesWriteRegistry extends ChangeNotifier {
         confirmed: true,
       );
     }
+    notifyListeners();
+  }
+}
+
+DateTime? _maxDateTime(DateTime? a, DateTime? b) {
+  if (a == null) return b;
+  if (b == null) return a;
+  return a.isAfter(b) ? a : b;
+}
+
+final class _HealthPendingEntry {
+  const _HealthPendingEntry({
+    required this.api,
+    required this.id,
+    required this.preWriteRevision,
+    required this.seq,
+  });
+
+  final GitLabApi api;
+  final String id;
+  final DateTime? preWriteRevision;
+  final int seq;
+}
+
+final class _HealthTerminal {
+  const _HealthTerminal({
+    required this.floorRevision,
+    required this.confirmed,
+    required this.knownNotApplied,
+    required this.seq,
+  });
+
+  final DateTime? floorRevision;
+  final bool confirmed;
+  final bool knownNotApplied;
+  final int seq;
+}
+
+final class _HealthWriteOwner {
+  const _HealthWriteOwner({
+    required this.pageGeneration,
+    required this.sessionGeneration,
+    required this.account,
+    required this.api,
+    required this.summary,
+  });
+
+  final int pageGeneration;
+  final int? sessionGeneration;
+  final Account account;
+  final GitLabApi api;
+  final WorkItemGraphSummary summary;
+}
+
+final class _HealthWrite {
+  _HealthWrite(this.token, this.owner);
+
+  final Object token;
+  final _HealthWriteOwner owner;
+}
+
+final class _InertListenable implements Listenable {
+  const _InertListenable();
+
+  @override
+  void addListener(VoidCallback listener) {}
+
+  @override
+  void removeListener(VoidCallback listener) {}
+
+  static const instance = _InertListenable();
+}
+
+class _HealthWriteRegistry extends ChangeNotifier {
+  _HealthWriteRegistry._();
+
+  static final instance = _HealthWriteRegistry._();
+
+  int _seq = 0;
+  final Expando<Map<String, Map<Object, _HealthPendingEntry>>> _active =
+      Expando();
+  final Map<Object, _HealthPendingEntry> _settled = {};
+  final Expando<Map<String, _HealthTerminal>> _terminals = Expando();
+
+  bool isActive(GitLabApi api, String id) =>
+      _active[api]?[id]?.isNotEmpty ?? false;
+
+  _HealthTerminal? terminalFor(GitLabApi api, String id) =>
+      _terminals[api]?[id];
+
+  bool start({
+    required GitLabApi api,
+    required String id,
+    required Object token,
+    required DateTime? floorRevision,
+  }) {
+    final perApi = _active[api] ??= {};
+    final perItem = perApi[id] ??= {};
+    if (perItem.isNotEmpty) {
+      return false;
+    }
+    perItem[token] = _HealthPendingEntry(
+      api: api,
+      id: id,
+      preWriteRevision: floorRevision,
+      seq: ++_seq,
+    );
+    notifyListeners();
+    return true;
+  }
+
+  void settle(GitLabApi api, String id, Object token) {
+    final perApi = _active[api];
+    final perItem = perApi?[id];
+    final entry = perItem?.remove(token);
+    if (perItem != null && perItem.isEmpty) {
+      perApi!.remove(id);
+    }
+    if (entry != null) {
+      _settled[token] = entry;
+      notifyListeners();
+    }
+  }
+
+  void recordOutcome(
+    GitLabApi api,
+    String id,
+    Object token,
+    WorkItemHealthSaveOutcome outcome,
+  ) {
+    final entry = _settled.remove(token);
+    if (entry == null) {
+      return;
+    }
+    final perApi = _terminals[entry.api] ??= {};
+    final current = perApi[entry.id];
+    if (current != null && entry.seq <= current.seq) {
+      return;
+    }
+    final prevFloor = current?.floorRevision;
+    final DateTime? newFloor;
+    final bool confirmed;
+    final bool knownNotApplied;
+
+    switch (outcome) {
+      case WorkItemHealthSaveOutcome.confirmed:
+        newFloor = _maxDateTime(prevFloor, entry.preWriteRevision);
+        confirmed = true;
+        knownNotApplied = false;
+      case WorkItemHealthSaveOutcome.notApplied:
+      case WorkItemHealthSaveOutcome.rejected:
+        newFloor = prevFloor;
+        confirmed = false;
+        knownNotApplied = true;
+      case WorkItemHealthSaveOutcome.notSent:
+      case WorkItemHealthSaveOutcome.unknown:
+        newFloor = prevFloor;
+        confirmed = false;
+        knownNotApplied = false;
+      case WorkItemHealthSaveOutcome.noop:
+        return;
+    }
+
+    perApi[entry.id] = _HealthTerminal(
+      floorRevision: newFloor,
+      confirmed: confirmed,
+      knownNotApplied: knownNotApplied,
+      seq: entry.seq,
+    );
     notifyListeners();
   }
 }
@@ -1558,6 +2158,17 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   bool _datesReloadAfterLoad = false;
   _DatesTerminal? _datesTerminalSeen;
   DateTime? _datesDetailRevision;
+  _HealthWrite? _healthWrite;
+  Object? _healthReservedToken;
+  bool _healthRegistryActive = false;
+  bool _healthReloadAfterLoad = false;
+  _HealthTerminal? _healthTerminalSeen;
+  DateTime? _healthDetailRevision;
+
+  /// Keys the Health control. Advanced when another page's STATUS write on
+  /// this item settles, so an open Health editor closes even when the detail
+  /// read afterwards carries the same `updatedAt`.
+  int _healthControlEpoch = 0;
   late final WorkItemStateLoader _stateLoader = _loadStateGuarded;
   late final WorkItemStateUpdater _stateUpdater = _updateStateGuarded;
 
@@ -1662,6 +2273,81 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         !identical(terminal, _datesTerminalSeen);
   }
 
+  bool get _healthHeld =>
+      _healthWrite != null ||
+      (_detail != null &&
+          _HealthWriteRegistry.instance.isActive(
+            widget.api,
+            _detail!.summary.id,
+          ));
+
+  bool _healthHeldFor(WorkItemGraphSummary expected) =>
+      _healthWrite != null ||
+      _HealthWriteRegistry.instance.isActive(widget.api, expected.id);
+
+  _HealthTerminal? get _healthTerminal => _detail == null
+      ? null
+      : _HealthWriteRegistry.instance.terminalFor(
+          widget.api,
+          _detail!.summary.id,
+        );
+
+  bool get _healthStale {
+    final term = _healthTerminal;
+    if (term == null ||
+        term.floorRevision == null ||
+        _healthDetailRevision == null) {
+      return false;
+    }
+    if (identical(term, _healthTerminalSeen)) return false;
+    return !_healthDetailRevision!.isAfter(term.floorRevision!);
+  }
+
+  bool get _healthUnconfirmed {
+    final term = _healthTerminal;
+    if (term == null || term.confirmed || term.knownNotApplied) return false;
+    return !identical(term, _healthTerminalSeen);
+  }
+
+  bool _healthOwnerMatches(_HealthWriteOwner owner) {
+    final detail = _detail;
+    return mounted &&
+        _current(_generation) &&
+        owner.pageGeneration == _generation &&
+        owner.sessionGeneration == _sessionGeneration &&
+        _sessionCurrent &&
+        owner.account.key == widget.account.key &&
+        identical(owner.api, widget.api) &&
+        detail != null &&
+        _sameWorkItemResource(owner.summary, detail.summary);
+  }
+
+  /// The owner lock for a Health open/save.
+  bool _healthDispatchAllowed() =>
+      _current(_generation) &&
+      _sessionCurrent &&
+      _detail != null &&
+      !_loading &&
+      _stateOperations == 0 &&
+      !_statusHeld &&
+      !_datesHeld &&
+      !_healthHeld &&
+      _labelsWriteToken == null &&
+      !_labelsRefetchPending &&
+      _assigneesWriteToken == null &&
+      !_assigneesRefetchPending &&
+      _milestoneWriteToken == null &&
+      _weightWriteToken == null;
+
+  /// Once this page's write has started, only its owner decides; another
+  /// writer's hold must not cut off the write's own confirmation.
+  bool _healthIsCurrent() {
+    final own = _healthWrite;
+    return own != null
+        ? _healthOwnerMatches(own.owner)
+        : _healthDispatchAllowed();
+  }
+
   bool _datesOwnerMatches(_DatesWriteOwner owner) {
     final detail = _detail;
     return mounted &&
@@ -1684,6 +2370,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       _stateOperations == 0 &&
       !_statusHeld &&
       !_datesHeld &&
+      !_healthHeld &&
       _labelsWriteToken == null &&
       !_labelsRefetchPending &&
       _assigneesWriteToken == null &&
@@ -1710,6 +2397,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       _stateOperations == 0 &&
       !_statusHeld &&
       !_datesHeld &&
+      !_healthHeld &&
       _labelsWriteToken == null &&
       !_labelsRefetchPending &&
       _assigneesWriteToken == null &&
@@ -1724,6 +2412,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     widget.ownerChanges?.addListener(_ownerChanged);
     WorkItemStatusWriteRegistry.instance.addListener(_statusRegistryChanged);
     _DatesWriteRegistry.instance.addListener(_datesRegistryChanged);
+    _HealthWriteRegistry.instance.addListener(_healthRegistryChanged);
     _assigneeOwner = _assigneeOwnerSignals();
     unawaited(_load());
   }
@@ -1758,6 +2447,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       _dismissOwnedRoutes();
       _detail = null;
       _datesDetailRevision = null;
+      _healthDetailRevision = null;
       _resolvedProject = null;
       _projectContextError = null;
       _resolvingProject = false;
@@ -1768,6 +2458,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       _statusReloadAfterLoad = false;
       _datesRegistryActive = false;
       _datesReloadAfterLoad = false;
+      _healthRegistryActive = false;
+      _healthReloadAfterLoad = false;
       unawaited(_load());
     }
   }
@@ -1779,6 +2471,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       _statusRegistryChanged,
     );
     _DatesWriteRegistry.instance.removeListener(_datesRegistryChanged);
+    _HealthWriteRegistry.instance.removeListener(_healthRegistryChanged);
     _generation++;
     _dropAssigneeSession();
     _dropLabelSession();
@@ -1810,6 +2503,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       setState(() {
         _statusConfirmed = null;
         _statusUnconfirmed = false;
+        _healthControlEpoch++;
       });
       if (_current(_generation) &&
           (_sessionCurrent || widget.ownerChanges == null)) {
@@ -1911,6 +2605,135 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     _datesWrite = null;
   }
 
+  void _dropHealthWrite() {
+    _healthWrite = null;
+    _healthReservedToken = null;
+  }
+
+  void _healthRegistryChanged() {
+    if (!mounted) return;
+    final detail = _detail;
+    if (detail == null) {
+      if (_loading) _healthReloadAfterLoad = true;
+      return;
+    }
+    final active = _HealthWriteRegistry.instance.isActive(
+      widget.api,
+      detail.summary.id,
+    );
+    final terminal = _HealthWriteRegistry.instance.terminalFor(
+      widget.api,
+      detail.summary.id,
+    );
+    final wasActive = _healthRegistryActive;
+    final prevTerminal = _healthTerminalSeen;
+    _healthRegistryActive = active;
+    final settled = wasActive && !active;
+    if (settled &&
+        _healthWrite == null &&
+        _current(_generation) &&
+        (_sessionCurrent || widget.ownerChanges == null)) {
+      if (_loading) {
+        _healthReloadAfterLoad = true;
+      } else {
+        unawaited(_load(keepForHealth: true));
+      }
+      return;
+    }
+    if (active != wasActive || terminal != prevTerminal) {
+      setState(() {});
+    }
+  }
+
+  bool _onHealthReserve(_HealthWriteOwner owner, Object token) {
+    if (!_healthOwnerMatches(owner) ||
+        !_healthDispatchAllowed() ||
+        _healthReservedToken != null) {
+      return false;
+    }
+    _healthReservedToken = token;
+    return true;
+  }
+
+  void _onHealthReleaseUnsent(Object token) {
+    if (identical(_healthReservedToken, token) && _healthWrite == null) {
+      _healthReservedToken = null;
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _onHealthPhase(
+    _HealthWriteOwner owner,
+    WorkItemHealthWritePhase phase,
+    Object token,
+  ) {
+    if (phase == WorkItemHealthWritePhase.start) {
+      if (identical(_healthReservedToken, token)) {
+        _healthReservedToken = null;
+      }
+      final floor = _maxDateTime(
+        owner.summary.updatedAt,
+        _maxDateTime(_detail?.summary.updatedAt, _healthDetailRevision),
+      );
+      final started = _HealthWriteRegistry.instance.start(
+        api: owner.api,
+        id: owner.summary.id,
+        token: token,
+        floorRevision: floor,
+      );
+      if (!started) {
+        throw StateError(
+          'Concurrent Health mutation already active for this work item',
+        );
+      }
+      if (!mounted || _healthWrite != null || !_healthOwnerMatches(owner)) {
+        return;
+      }
+      setState(() {
+        _healthWrite = _HealthWrite(token, owner);
+        _healthRegistryActive = true;
+      });
+      return;
+    }
+
+    if (identical(_healthReservedToken, token)) {
+      _healthReservedToken = null;
+    }
+    _HealthWriteRegistry.instance.settle(owner.api, owner.summary.id, token);
+    final own = _healthWrite;
+    final mine = own != null && identical(own.token, token);
+    if (!mounted || !mine) return;
+    final reload = _healthOwnerMatches(owner);
+    setState(() => _healthWrite = null);
+    if (reload) {
+      if (_loading) {
+        _healthReloadAfterLoad = true;
+      } else {
+        unawaited(_load(keepForHealth: true));
+      }
+    }
+  }
+
+  void _onHealthOutcome(
+    _HealthWriteOwner owner,
+    Object token,
+    WorkItemHealthSaveOutcome outcome,
+  ) {
+    _HealthWriteRegistry.instance.recordOutcome(
+      owner.api,
+      owner.summary.id,
+      token,
+      outcome,
+    );
+    final own = _healthWrite;
+    if (own == null ||
+        !identical(own.token, token) ||
+        !_healthOwnerMatches(own.owner)) {
+      return;
+    }
+    setState(() {});
+  }
+
   void _ownerChanged() {
     if (widget.isCurrent?.call() ?? true) return;
     _generation++;
@@ -1922,9 +2745,12 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     _statusReloadAfterLoad = false;
     _datesRegistryActive = false;
     _datesReloadAfterLoad = false;
+    _healthRegistryActive = false;
+    _healthReloadAfterLoad = false;
     setState(() {
       _detail = null;
       _datesDetailRevision = null;
+      _healthDetailRevision = null;
       _resolvedProject = null;
       _projectContextError = null;
       _resolvingProject = false;
@@ -2026,7 +2852,11 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   /// A refresh the user asked for also acknowledges the unconfirmed STATUS
   /// and Dates outcomes shown when it started.
   void _refresh() => unawaited(
-    _load(acknowledge: _statusTerminal, acknowledgeDates: _datesTerminal),
+    _load(
+      acknowledge: _statusTerminal,
+      acknowledgeDates: _datesTerminal,
+      acknowledgeHealth: _healthTerminal,
+    ),
   );
 
   /// `keepForDates` keeps the Dates section and its editor mounted while the
@@ -2034,12 +2864,15 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   Future<void> _load({
     WorkItemStatusTerminal? acknowledge,
     _DatesTerminal? acknowledgeDates,
+    _HealthTerminal? acknowledgeHealth,
     bool keepForDates = false,
+    bool keepForHealth = false,
   }) async {
     if (_loading ||
         _labelsWriteToken != null ||
         _statusHeld ||
         _datesHeld ||
+        _healthHeld ||
         !_current(_generation)) {
       return;
     }
@@ -2050,6 +2883,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     final labelsReadSerial = ++_labelsReadSerial;
     _statusReloadAfterLoad = false;
     _datesReloadAfterLoad = false;
+    _healthReloadAfterLoad = false;
     final keepDetail =
         _assigneesWriteToken != null ||
         _labelsWriteToken != null ||
@@ -2057,6 +2891,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         _weightWriteToken != null ||
         _statusConfirmed != null ||
         keepForDates ||
+        keepForHealth ||
         (_labelsRoute?.isActive ?? false);
     setState(() {
       _loading = true;
@@ -2064,6 +2899,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       if (!keepDetail) {
         _detail = null;
         _datesDetailRevision = null;
+        _healthDetailRevision = null;
       }
       _resolvedProject = null;
       _projectContextError = null;
@@ -2153,6 +2989,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       setState(() {
         _detail = detail;
         _datesDetailRevision = detail.summary.updatedAt;
+        _healthDetailRevision = detail.summary.updatedAt;
         _labelsHidePreview = false;
         _labelsUnconfirmed = false;
         _statusConfirmed = null;
@@ -2176,6 +3013,16 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
             )) {
           _datesTerminalSeen = acknowledgeDates;
         }
+        if (acknowledgeHealth != null &&
+            identical(
+              acknowledgeHealth,
+              _HealthWriteRegistry.instance.terminalFor(
+                owner.api,
+                detail.summary.id,
+              ),
+            )) {
+          _healthTerminalSeen = acknowledgeHealth;
+        }
       });
       _statusRegistryActive = WorkItemStatusWriteRegistry.instance.isActive(
         owner.api,
@@ -2187,6 +3034,11 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         detail.summary.id,
       );
       if (_datesRegistryActive) _datesReloadAfterLoad = false;
+      _healthRegistryActive = _HealthWriteRegistry.instance.isActive(
+        owner.api,
+        detail.summary.id,
+      );
+      if (_healthRegistryActive) _healthReloadAfterLoad = false;
       if (_assigneesWriteToken == null && _assigneesHideStalePreview) {
         unawaited(_refetchAssignees(detail, generation));
       }
@@ -2206,6 +3058,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       }
       _statusReloadAfterLoad = false;
       _datesReloadAfterLoad = false;
+      _healthReloadAfterLoad = false;
       final failure = safeFailure(error);
       if (failure.kind != FailureKind.cancelled) {
         setState(() => _error = failure);
@@ -2217,6 +3070,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           unawaited(_load());
         } else if (_datesReloadAfterLoad) {
           unawaited(_load(keepForDates: true));
+        } else if (_healthReloadAfterLoad) {
+          unawaited(_load(keepForHealth: true));
         }
       }
     }
@@ -2340,6 +3195,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       setState(() {
         _detail = detail;
         _datesDetailRevision = detail.summary.updatedAt;
+        _healthDetailRevision = detail.summary.updatedAt;
         _labelsHidePreview = false;
         _labelsUnconfirmed = false;
         _statusConfirmed = null;
@@ -2383,6 +3239,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     _dropWeightWrite();
     _dropStatusWrite();
     _dropDatesWrite();
+    _dropHealthWrite();
   }
 
   /// Forgets the parent's STATUS hold for an old owner or resource. The
@@ -2565,7 +3422,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           widget.api,
           expected.id,
         ) ||
-        _datesHeldFor(expected)) {
+        _datesHeldFor(expected) ||
+        _healthHeldFor(expected)) {
       throw const ApiFailure(FailureKind.cancelled);
     }
     _stateOperations++;
@@ -2575,6 +3433,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         isCurrent: () =>
             !_statusHeldFor(expected) &&
             !_datesHeldFor(expected) &&
+            !_healthHeldFor(expected) &&
             (isCurrent?.call() ?? true),
       );
     } finally {
@@ -2604,7 +3463,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           widget.api,
           expected.id,
         ) ||
-        _datesHeldFor(expected)) {
+        _datesHeldFor(expected) ||
+        _healthHeldFor(expected)) {
       throw const ApiFailure(FailureKind.cancelled);
     }
     _stateOperations++;
@@ -2616,6 +3476,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         isCurrent: () =>
             !_statusHeldFor(expected) &&
             !_datesHeldFor(expected) &&
+            !_healthHeldFor(expected) &&
             (isCurrent?.call() ?? true),
       );
     } finally {
@@ -2867,7 +3728,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     final generation = _generation;
     final detail = _detail;
     if (detail == null || !_current(generation)) return;
-    if (_statusHeld || _datesHeld) return;
+    if (_statusHeld || _datesHeld || _healthHeld) return;
     final summary = detail.summary;
     if (snapshot.id != summary.id ||
         snapshot.iid != summary.iid ||
@@ -3104,7 +3965,11 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           account: widget.account,
           api: widget.api,
           detail: detail,
-          isCurrent: () => _current(generation) && !_statusHeld && !_datesHeld,
+          isCurrent: () =>
+              _current(generation) &&
+              !_statusHeld &&
+              !_datesHeld &&
+              !_healthHeld,
           ownerChanges: _assigneeOwner,
           onRoute: _ownRoute,
           onAssigneesWrite: _onAssigneesWrite,
@@ -3165,7 +4030,11 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           api: widget.api,
           detail: detail,
           generation: generation,
-          isCurrent: () => _current(generation) && !_statusHeld && !_datesHeld,
+          isCurrent: () =>
+              _current(generation) &&
+              !_statusHeld &&
+              !_datesHeld &&
+              !_healthHeld,
           ownerChanges: widget.ownerChanges,
           onRoute: _ownLabelRoute,
           onLabelWrite: _onLabelWrite,
@@ -3261,6 +4130,79 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     );
   }
 
+  Widget _healthBody(WorkItemGraphDetail detail) {
+    final held = _healthHeld;
+    final stale = !held && _healthStale;
+    final unconfirmed = !held && !stale && _healthUnconfirmed;
+    final sessionGeneration = _sessionGeneration;
+    final owner = _HealthWriteOwner(
+      pageGeneration: _generation,
+      sessionGeneration: sessionGeneration,
+      account: widget.account,
+      api: widget.api,
+      summary: detail.summary,
+    );
+    final hasHealthWidget =
+        detail.widgetsAvailable &&
+        detail.widgetTypes.any((t) => t.toUpperCase() == 'HEALTH_STATUS');
+    final showControl =
+        hasHealthWidget &&
+        sessionGeneration != null &&
+        _current(_generation) &&
+        _sessionCurrent;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (held)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              '健康狀態更新中：完成前不會重新整理、變更開啟狀態或其他欄位。',
+              key: ValueKey('work-item-health-hold'),
+            ),
+          )
+        else if (stale)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              '尚未確認最新健康狀態。請重新整理後再查看。',
+              key: ValueKey('work-item-health-stale'),
+            ),
+          )
+        else if (unconfirmed)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              '尚未確認健康狀態是否已更新。請重新整理後再查看。',
+              key: ValueKey('work-item-health-unconfirmed'),
+            ),
+          ),
+        KeyedSubtree(
+          key: const ValueKey('work-item-health-control-slot'),
+          child: showControl
+              ? WorkItemHealthControl(
+                  key: ValueKey(_healthControlEpoch),
+                  api: widget.api,
+                  account: widget.account,
+                  detail: detail,
+                  generation: sessionGeneration,
+                  isCurrent: _healthIsCurrent,
+                  changes: _InertListenable.instance,
+                  enabled: _healthDispatchAllowed(),
+                  reserveWrite: (token) => _onHealthReserve(owner, token),
+                  releaseUnsentWrite: _onHealthReleaseUnsent,
+                  onWritePhase: (phase, token) =>
+                      _onHealthPhase(owner, phase, token),
+                  onOutcome: (token, outcome) =>
+                      _onHealthOutcome(owner, token, outcome),
+                  onRoute: _ownRoute,
+                )
+              : const SizedBox.shrink(),
+        ),
+      ],
+    );
+  }
+
   Widget _section(BuildContext context, String title, Widget child) => Card(
     child: Padding(
       padding: const EdgeInsets.all(16),
@@ -3281,7 +4223,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     WorkItemStateEvent event,
   ) async {
     final generation = _generation;
-    if (_statusHeld || _datesHeld) return false;
+    if (_statusHeld || _datesHeld || _healthHeld) return false;
     final closing = event == WorkItemStateEvent.close;
     final route = DialogRoute<bool>(
       context: context,
@@ -3398,6 +4340,9 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           statusSessionGeneration: _sessionGeneration,
           statusWriteHeld: _statusHeld,
           datesWriteHeld: _datesHeld,
+          healthWriteHeld: _healthHeld,
+          healthStale: _healthStale,
+          healthUnconfirmed: _healthUnconfirmed,
           statusConfirmed: _statusConfirmed,
           statusUnconfirmed: _statusUnconfirmed || _statusForeignUnconfirmed,
           statusStale: _statusStale,
@@ -3470,6 +4415,16 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
               context,
               '日期',
               _datesBody(detail, dates),
+            ),
+          ),
+        if (detail.widgetsAvailable &&
+            detail.widgetTypes.any((t) => t.toUpperCase() == 'HEALTH_STATUS'))
+          KeyedSubtree(
+            key: const ValueKey('work-item-health-section'),
+            child: _section(
+              context,
+              '健康狀態',
+              _healthBody(detail),
             ),
           ),
         WorkItemActivityPanel(
@@ -3557,7 +4512,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
                 _loading ||
                     _labelsWriteToken != null ||
                     _statusHeld ||
-                    _datesHeld
+                    _datesHeld ||
+                    _healthHeld
                 ? null
                 : _refresh,
             tooltip: '重新整理',

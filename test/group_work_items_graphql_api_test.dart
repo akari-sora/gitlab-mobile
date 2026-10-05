@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
+import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 
 import 'support/fake_adapter.dart';
@@ -12,6 +13,7 @@ const _path = 'gitlab-org';
 const _groupId = 'gid://gitlab/Group/server-group';
 const _groupRef = GraphResourceRef(id: _groupId, fullPath: _path);
 const _typeId = 'gid://gitlab/WorkItems::Type/server-type';
+final _testProject = Project.fromJson(projectJson(42));
 
 Matcher _failure(FailureKind kind) =>
     isA<ApiFailure>().having((error) => error.kind, 'kind', kind);
@@ -89,6 +91,7 @@ void main() {
       expect(query, contains('search: \$search'));
       expect(query, isNot(contains('workItemTypeIds:')));
       expect(query, isNot(contains('webUrl')));
+      expect(query, isNot(contains('widgets')));
       expect(body['variables'], {
         'path': _path,
         'first': 20,
@@ -667,4 +670,140 @@ void main() {
       throwsA(_failure(FailureKind.cancelled)),
     );
   });
+
+  test(
+    'T09: Project cursor with altered filter or tier mismatch throws validation with zero network calls',
+    () async {
+      final adapter = FakeAdapter((_) => fail('must not send request'));
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      const filter1 = GroupWorkItemListFilter(state: GroupWorkItemState.opened);
+      const filter2 = GroupWorkItemListFilter(state: GroupWorkItemState.closed);
+
+      await expectLater(
+        api.groupWorkItems(
+          _path,
+          expectedGroupId: _groupId,
+          after: 'cursor-1',
+          filter: filter1,
+          previousFilter: filter2,
+        ),
+        throwsA(_failure(FailureKind.validation)),
+      );
+
+      await expectLater(
+        api.groupWorkItems(
+          _path,
+          expectedGroupId: _groupId,
+          after: 'cursor-1',
+          filter: filter1,
+          previousFilter: null,
+        ),
+        throwsA(_failure(FailureKind.validation)),
+      );
+
+      await expectLater(
+        api.groupWorkItems(
+          _path,
+          expectedGroupId: _groupId,
+          after: null,
+          summaries: true,
+          previousTier: 2,
+        ),
+        throwsA(_failure(FailureKind.validation)),
+      );
+
+      await expectLater(
+        api.groupWorkItems(
+          _path,
+          expectedGroupId: _groupId,
+          after: 'cursor-1',
+          filter: filter1,
+          previousFilter: filter1,
+          summaries: true,
+          previousTier: null,
+        ),
+        throwsA(_failure(FailureKind.validation)),
+      );
+
+      await expectLater(
+        api.projectWorkItems(
+          _testProject,
+          after: 'cursor-1',
+          filter: filter1,
+          previousFilter: filter2,
+        ),
+        throwsA(_failure(FailureKind.validation)),
+      );
+
+      await expectLater(
+        api.projectWorkItems(
+          _testProject,
+          after: 'cursor-1',
+          filter: filter1,
+          previousFilter: null,
+        ),
+        throwsA(_failure(FailureKind.validation)),
+      );
+
+      await expectLater(
+        api.projectWorkItems(
+          _testProject,
+          after: 'cursor-1',
+          filter: null,
+          previousFilter: filter1,
+        ),
+        throwsA(_failure(FailureKind.validation)),
+      );
+
+      await expectLater(
+        api.projectWorkItems(
+          _testProject,
+          after: 'cursor-1',
+          summaries: true,
+          previousTier: null,
+        ),
+        throwsA(_failure(FailureKind.validation)),
+      );
+
+      expect(adapter.requests, isEmpty);
+    },
+  );
+
+  test(
+    'T10: isCurrent returning false before fallback re-POST cancels without second POST',
+    () async {
+      var callCount = 0;
+      var activeCurrent = true;
+      final adapter = FakeAdapter((request) {
+        callCount++;
+        activeCurrent = false;
+        return jsonResponse({
+          'data': null,
+          'errors': [
+            {
+              'message': 'Type WorkItemWidgetStatus is unknown',
+              'extensions': {
+                'code': 'undefinedType',
+                'typeName': 'WorkItemWidgetStatus',
+              },
+            },
+          ],
+        });
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await expectLater(
+        api.groupWorkItems(
+          _path,
+          summaries: true,
+          isCurrent: () => activeCurrent,
+        ),
+        throwsA(_failure(FailureKind.cancelled)),
+      );
+      expect(callCount, 1);
+    },
+  );
 }

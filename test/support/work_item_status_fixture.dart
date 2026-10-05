@@ -1368,7 +1368,11 @@ class WorkItemStatusFixture {
           'workItems': {
             'nodes': [
               for (final item in items.values)
-                if (item.project?.id == projectRef.id) _summaryNode(item),
+                if (item.project?.id == projectRef.id)
+                  <String, Object?>{
+                    ..._summaryNode(item),
+                    'widgets': const <Object?>[],
+                  },
             ],
             'pageInfo': _emptyPage,
           },
@@ -1405,7 +1409,10 @@ class WorkItemStatusFixture {
                     (state == 'all' ||
                         (state == 'opened' && item.state == 'OPEN') ||
                         (state == 'closed' && item.state == 'CLOSED')))
-                  _summaryNode(item),
+                  <String, Object?>{
+                    ..._summaryNode(item),
+                    'widgets': const <Object?>[],
+                  },
             ],
             'pageInfo': _emptyPage,
           },

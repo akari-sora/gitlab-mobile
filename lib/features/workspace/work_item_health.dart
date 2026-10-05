@@ -223,8 +223,10 @@ class _WorkItemHealthControlState extends State<WorkItemHealthControl> {
       widget.onRoute?.call(route);
       await navigator.push(route);
       if (mounted && identical(_editorRoute, route)) {
-        _editorRoute = null;
-        _editorNavigator = null;
+        setState(() {
+          _editorRoute = null;
+          _editorNavigator = null;
+        });
       }
     } catch (error) {
       if (!_current(epoch) || !identical(fence, _ownerFence)) return;

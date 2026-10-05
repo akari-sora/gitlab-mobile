@@ -73,6 +73,9 @@ class WorkItemAttributesPanel extends StatefulWidget {
     this.statusDispatchAllowed,
     this.statusOperationCurrent,
     this.datesWriteHeld = false,
+    this.healthWriteHeld = false,
+    this.healthStale = false,
+    this.healthUnconfirmed = false,
   });
 
   final Account account;
@@ -112,6 +115,12 @@ class WorkItemAttributesPanel extends StatefulWidget {
   /// cannot dispatch meanwhile.
   final bool datesWriteHeld;
 
+  /// The owner holds a Health write from START to SETTLE; milestone and weight
+  /// cannot dispatch meanwhile.
+  final bool healthWriteHeld;
+  final bool healthStale;
+  final bool healthUnconfirmed;
+
   @override
   State<WorkItemAttributesPanel> createState() =>
       _WorkItemAttributesPanelState();
@@ -139,12 +148,16 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
   WorkItemWeightWriteListener? _weightWriteListener;
   bool _ignoreWeightParentPending = false;
   int _statusSerial = 0;
+  int _healthSerial = 0;
   bool _expanded = false;
 
   bool get _statusBlocksRead =>
       widget.statusWriteHeld ||
       widget.statusStale ||
       widget.statusConfirmed != null;
+
+  bool get _healthBlocksRead =>
+      widget.healthWriteHeld || widget.healthStale || widget.healthUnconfirmed;
 
   List<WorkItemAttributeKind> get _kinds => [
     for (final kind in WorkItemAttributeKind.values)
@@ -198,13 +211,30 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
       _statusSerial++;
       _queue.removeWhere((kind) => kind == WorkItemAttributeKind.status);
     }
+    final healthHeldNow = !oldWidget.healthWriteHeld && widget.healthWriteHeld;
+    final healthStaleNow = !oldWidget.healthStale && widget.healthStale;
+    final healthUnconfirmedNow =
+        !oldWidget.healthUnconfirmed && widget.healthUnconfirmed;
+    final healthSettled =
+        (oldWidget.healthWriteHeld && !widget.healthWriteHeld) ||
+        (oldWidget.healthStale && !widget.healthStale) ||
+        (oldWidget.healthUnconfirmed && !widget.healthUnconfirmed);
+    if (healthHeldNow || healthStaleNow || healthUnconfirmedNow) {
+      _loaded.remove(WorkItemAttributeKind.health);
+      _errors.remove(WorkItemAttributeKind.health);
+      _healthSerial++;
+      _queue.removeWhere((kind) => kind == WorkItemAttributeKind.health);
+    }
     if (identityChanged ||
         !identical(oldWidget.loadAttribute, widget.loadAttribute) ||
         !identical(oldWidget.detail, widget.detail)) {
       _reset();
       if (_expanded) _enqueueMissing();
     } else if (_expanded &&
-        (milestoneSettled || weightSettled || statusSettled) &&
+        (milestoneSettled ||
+            weightSettled ||
+            statusSettled ||
+            healthSettled) &&
         (widget.isCurrent?.call() ?? true)) {
       // A panel recreated while another panel's write was pending skipped
       // that row; the parent's settle is the only signal to read it now.
@@ -244,6 +274,7 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
         continue;
       }
       if (kind == WorkItemAttributeKind.status && _statusBlocksRead) continue;
+      if (kind == WorkItemAttributeKind.health && _healthBlocksRead) continue;
       if (_loaded.containsKey(kind) ||
           _errors.containsKey(kind) ||
           _loading.contains(kind) ||
@@ -264,6 +295,7 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
       return;
     }
     if (kind == WorkItemAttributeKind.status && _statusBlocksRead) return;
+    if (kind == WorkItemAttributeKind.health && _healthBlocksRead) return;
     _errors.remove(kind);
     if (!_queue.contains(kind) && !_loading.contains(kind)) {
       _queue.addFirst(kind);
@@ -292,6 +324,7 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
     final milestoneSerial = _milestoneSerial;
     final weightSerial = _weightSerial;
     final statusSerial = _statusSerial;
+    final healthSerial = _healthSerial;
     try {
       final load = widget.loadAttribute ?? widget.api.workItemAttribute;
       final snapshot = await load(
@@ -314,6 +347,10 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
       }
       if (kind == WorkItemAttributeKind.status &&
           (statusSerial != _statusSerial || _statusBlocksRead)) {
+        return;
+      }
+      if (kind == WorkItemAttributeKind.health &&
+          (healthSerial != _healthSerial || _healthBlocksRead)) {
         return;
       }
       _loaded[kind] = snapshot;
@@ -600,7 +637,8 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
         isCurrent: () =>
             _current(epoch) &&
             !widget.statusWriteHeld &&
-            !widget.datesWriteHeld,
+            !widget.datesWriteHeld &&
+            !widget.healthWriteHeld,
         operationCurrent: operationCurrent,
         ownerChanges: widget.ownerChanges,
         onRoute: widget.onRoute,
@@ -615,7 +653,8 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
         isCurrent: () =>
             _current(epoch) &&
             !widget.statusWriteHeld &&
-            !widget.datesWriteHeld,
+            !widget.datesWriteHeld &&
+            !widget.healthWriteHeld,
         operationCurrent: operationCurrent,
         ownerChanges: widget.ownerChanges,
         onRoute: widget.onRoute,
@@ -652,8 +691,14 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
                 key: ValueKey('work-item-attribute-${kind.name}'),
                 title: _kindTitles[kind]!,
                 loading: _loading.contains(kind) || _queue.contains(kind),
-                snapshot: _loaded[kind],
-                error: _errors[kind],
+                snapshot:
+                    kind == WorkItemAttributeKind.health && _healthBlocksRead
+                    ? null
+                    : _loaded[kind],
+                error:
+                    kind == WorkItemAttributeKind.health && _healthBlocksRead
+                    ? null
+                    : _errors[kind],
                 onRetry: () => _retry(kind),
                 action:
                     kind == WorkItemAttributeKind.status && widget.statusStale
@@ -661,6 +706,19 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
                         '尚未確認最新狀態。請重新整理後再查看。',
                         key: ValueKey('work-item-status-field-stale'),
                       )
+                    : (kind == WorkItemAttributeKind.health &&
+                        _healthBlocksRead)
+                    ? (widget.healthWriteHeld
+                        ? const Text(
+                            '健康狀態更新中：完成前不會重新整理、變更開啟狀態或其他欄位。',
+                          )
+                        : (widget.healthStale
+                            ? const Text(
+                                '尚未確認最新健康狀態。請重新整理後再查看。',
+                              )
+                            : const Text(
+                                '尚未確認健康狀態是否已更新。請重新整理後再查看。',
+                              )))
                     : _attributeAction(kind, epoch),
               ),
         ],

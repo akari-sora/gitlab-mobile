@@ -43,6 +43,7 @@ Map<String, Object?> _summary({
         }
       : null,
   'workItemType': {'id': 'gid://gitlab/WorkItems::Type/99', 'name': typeName},
+  'widgets': const <Object?>[],
 };
 
 Map<String, Object?> _connection(List<Object?> nodes, {bool more = false}) => {
@@ -1220,6 +1221,1029 @@ void main() {
       },
     );
   }
+
+  testWidgets(
+    'T11: 20 list rows render with 1 POST per page and zero individual detail calls',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      var listPostCount = 0;
+      var detailPostCount = 0;
+
+      final items = List.generate(
+        20,
+        (i) => {
+          ..._summary(title: 'Work item row $i', iid: i + 1),
+          'widgets': [
+            {
+              'type': 'LABELS',
+              'labels': {
+                'nodes': [
+                  {
+                    'id': 'gid://gitlab/ProjectLabel/$i',
+                    'title': 'bug-$i',
+                    'color': '#ff0000',
+                  },
+                ],
+                'pageInfo': {'hasNextPage': false},
+              },
+            },
+            {
+              'type': 'START_AND_DUE_DATE',
+              'startDate': '2026-10-01',
+              'dueDate': '2026-10-15',
+            },
+          ],
+        },
+      );
+
+      final adapter = FakeAdapter((request) {
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileProjectWorkItems(')) {
+          listPostCount++;
+          return jsonResponse({
+            'data': {
+              'project': {
+                'id': 'gid://gitlab/Project/42',
+                'fullPath': 'team/example',
+                'workItems': _connection(items),
+              },
+            },
+          });
+        }
+        if (query.contains('MobileProjectWorkItem(')) {
+          detailPostCount++;
+          return _detail();
+        }
+        return jsonResponse({'message': 'unhandled'}, status: 404);
+      });
+
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(_host(_account(api, 7), api));
+      await settleNetworkWidgets(tester);
+
+      expect(listPostCount, 1);
+      expect(detailPostCount, 0);
+      expect(find.text('Work item row 0'), findsOneWidget);
+      expect(find.text('bug-0'), findsOneWidget);
+      expect(find.text('2026/10/01 - 2026/10/15'), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'T12: Account or owner switch mid-flight paints nothing and resets display preferences',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final holdList = Completer<ResponseBody>();
+      final adapter = FakeAdapter((request) {
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileProjectWorkItems(')) return holdList.future;
+        return jsonResponse({'message': 'unhandled'}, status: 404);
+      });
+
+      final api = testApi(adapter);
+      addTearDown(api.close);
+      var current = true;
+      final owner = _OwnerMarker();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GraphWorkItemsPage(
+            account: _account(api, 7),
+            api: api,
+            project: _project,
+            isCurrent: () => current,
+            ownerChanges: owner,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      current = false;
+      owner.changed();
+      await tester.pump();
+
+      holdList.complete(_projectList(title: 'Stale item'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Stale item'), findsNothing);
+      expect(find.text('帳號已切換，工作項目頁面已關閉。'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'T13: Double-tapped load-more deduplicates to 1 request via _loadingItems',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      var listCalls = 0;
+      final holdMore = Completer<ResponseBody>();
+
+      final adapter = FakeAdapter((request) {
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileProjectWorkItems(')) {
+          listCalls++;
+          final vars = body['variables'] as Map;
+          if (vars['after'] == null) {
+            return jsonResponse({
+              'data': {
+                'project': {
+                  'id': 'gid://gitlab/Project/42',
+                  'fullPath': 'team/example',
+                  'workItems': {
+                    'nodes': [
+                      {
+                        ..._summary(title: 'Item 1', iid: 1),
+                        'widgets': const <Object?>[],
+                      },
+                    ],
+                    'pageInfo': {'hasNextPage': true, 'endCursor': 'page-2'},
+                  },
+                },
+              },
+            });
+          }
+          return holdMore.future;
+        }
+        return jsonResponse({'message': 'unhandled'}, status: 404);
+      });
+
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(_host(_account(api, 7), api));
+      await settleNetworkWidgets(tester);
+
+      final loadMoreFinder = find.text('載入更多工作項目');
+      expect(loadMoreFinder, findsOneWidget);
+      expect(listCalls, 1);
+
+      await tester.ensureVisible(loadMoreFinder);
+      await tester.pumpAndSettle();
+      final loadMoreCenter = tester.getCenter(loadMoreFinder);
+      await tester.tap(loadMoreFinder);
+      await tester.pump();
+
+      final disabledButton = tester.widget<OutlinedButton>(
+        find.widgetWithText(OutlinedButton, '載入更多工作項目'),
+      );
+      expect(disabledButton.onPressed, isNull);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      await tester.tapAt(loadMoreCenter);
+      await pumpUntil(
+        tester,
+        () => listCalls == 2,
+        description: 'load-more request started',
+      );
+
+      expect(listCalls, 2);
+
+      holdMore.complete(
+        jsonResponse({
+          'data': {
+            'project': {
+              'id': 'gid://gitlab/Project/42',
+              'fullPath': 'team/example',
+              'workItems': {
+                'nodes': [
+                  {
+                    ..._summary(title: 'Item 2', iid: 2),
+                    'widgets': const <Object?>[],
+                  },
+                ],
+                'pageInfo': {'hasNextPage': false, 'endCursor': null},
+              },
+            },
+          },
+        }),
+      );
+      await settleNetworkWidgets(tester);
+      expect(find.text('Item 2'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'T14: Toggling display switches sends 0 network calls and toggles chips instantly',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      var networkCalls = 0;
+      final adapter = FakeAdapter((request) {
+        networkCalls++;
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileProjectWorkItems(')) {
+          return jsonResponse({
+            'data': {
+              'project': {
+                'id': 'gid://gitlab/Project/42',
+                'fullPath': 'team/example',
+                'workItems': _connection([
+                  {
+                    ..._summary(title: 'Item with label', iid: 10),
+                    'widgets': [
+                      {
+                        'type': 'LABELS',
+                        'labels': {
+                          'nodes': [
+                            {
+                              'id': 'gid://gitlab/ProjectLabel/9',
+                              'title': 'visible-label',
+                              'color': '#123456',
+                            },
+                          ],
+                          'pageInfo': {'hasNextPage': false},
+                        },
+                      },
+                    ],
+                  },
+                ]),
+              },
+            },
+          });
+        }
+        return jsonResponse({'message': 'unhandled'}, status: 404);
+      });
+
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(_host(_account(api, 7), api));
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('visible-label'), findsOneWidget);
+      final callsBeforeSheet = networkCalls;
+
+      await tester.tap(find.byKey(const Key('graph-work-items-display-options-button')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('顯示設定'), findsOneWidget);
+      expect(networkCalls, callsBeforeSheet);
+
+      final labelsSwitch = find.widgetWithText(SwitchListTile, '標籤');
+      expect(labelsSwitch, findsOneWidget);
+      await tester.tap(labelsSwitch);
+      await tester.pump();
+
+      expect(networkCalls, callsBeforeSheet);
+
+      await tester.tapAt(const Offset(20, 20));
+      await tester.pumpAndSettle();
+
+      expect(find.text('visible-label'), findsNothing);
+      expect(networkCalls, callsBeforeSheet);
+    },
+  );
+
+  testWidgets(
+    'T15: T2 disables status, T3 disables all 6, 6 browser options unsupported across all tiers, 3-POST downgrade supported',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      var projectCallCount = 0;
+      final adapter = FakeAdapter((request) {
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileProjectWorkItems(')) {
+          projectCallCount++;
+          if (projectCallCount == 1) {
+            return jsonResponse({
+              'data': null,
+              'errors': [
+                {
+                  'message': 'Type WorkItemWidgetStatus is unknown',
+                  'extensions': {
+                    'code': 'undefinedType',
+                    'typeName': 'WorkItemWidgetStatus',
+                  },
+                },
+              ],
+            });
+          } else if (projectCallCount == 2) {
+            return jsonResponse({
+              'data': null,
+              'errors': [
+                {
+                  'message': 'Field widgets is unknown',
+                  'extensions': {
+                    'code': 'undefinedField',
+                  },
+                },
+              ],
+            });
+          }
+          return jsonResponse({
+            'data': {
+              'project': {
+                'id': 'gid://gitlab/Project/42',
+                'fullPath': 'team/example',
+                'workItems': _connection([_summary()]),
+              },
+            },
+          });
+        }
+        return jsonResponse({'message': 'unhandled'}, status: 404);
+      });
+
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(_host(_account(api, 7), api));
+      await settleNetworkWidgets(tester);
+
+      expect(projectCallCount, 3);
+
+      await tester.tap(find.byKey(const Key('graph-work-items-display-options-button')));
+      await tester.pumpAndSettle();
+
+      final sheetScrollable = find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byType(Scrollable),
+      ).first;
+
+      const supportedTitles = ['標籤', '指派對象', '里程碑', '起訖日期', '階層關係', '工作流程狀態'];
+      for (final title in supportedTitles) {
+        final tileFinder = find.widgetWithText(SwitchListTile, title);
+        await tester.scrollUntilVisible(tileFinder, 50.0, scrollable: sheetScrollable);
+        expect(tileFinder, findsOneWidget);
+        final tile = tester.widget<SwitchListTile>(tileFinder);
+        expect(tile.onChanged, isNull);
+        expect(
+          find.descendant(of: tileFinder, matching: find.text('此實例未提供')),
+          findsOneWidget,
+        );
+      }
+
+      const unsupportedTitles = ['阻礙項目', '留言數', '健康狀態', '疊代', '熱門度', '權重'];
+      for (final title in unsupportedTitles) {
+        final tileFinder = find.widgetWithText(SwitchListTile, title);
+        await tester.scrollUntilVisible(tileFinder, 50.0, scrollable: sheetScrollable);
+        expect(tileFinder, findsOneWidget);
+        final tile = tester.widget<SwitchListTile>(tileFinder);
+        expect(tile.onChanged, isNull);
+        expect(
+          find.descendant(of: tileFinder, matching: find.text('尚未支援')),
+          findsOneWidget,
+        );
+      }
+    },
+  );
+
+  testWidgets(
+    'T16: 320dp 2.0x text scaling has zero overflow and 390x844 viewport operates smoothly',
+    (tester) async {
+      tester.view.devicePixelRatio = 2.0;
+      tester.view.physicalSize = const Size(320 * 2.0, 640 * 2.0);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final adapter = FakeAdapter((request) {
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileProjectWorkItems(')) {
+          return jsonResponse({
+            'data': {
+              'project': {
+                'id': 'gid://gitlab/Project/42',
+                'fullPath': 'team/example',
+                'workItems': _connection([
+                  {
+                    ..._summary(
+                      title:
+                          'Very long title that might overflow narrow screens with large font scale',
+                      iid: 1,
+                    ),
+                    'widgets': [
+                      {
+                        'type': 'STATUS',
+                        'status': {
+                          'id': 'gid://gitlab/WorkItems::Widgets::Status/1',
+                          'name': 'In Development',
+                        },
+                      },
+                      {
+                        'type': 'LABELS',
+                        'labels': {
+                          'nodes': [
+                            {
+                              'id': 'gid://gitlab/ProjectLabel/1',
+                              'title':
+                                  'extremely-long-label-title-that-stretches',
+                              'color': '#ff00aa',
+                            },
+                          ],
+                          'pageInfo': {
+                            'hasNextPage': true,
+                            'endCursor': 'label-cursor',
+                          },
+                        },
+                      },
+                      {
+                        'type': 'ASSIGNEES',
+                        'assignees': {
+                          'nodes': [
+                            {
+                              'id': 'gid://gitlab/User/1',
+                              'name': 'Alice Engineer',
+                              'username': 'alice',
+                              'avatarUrl': null,
+                            },
+                          ],
+                          'pageInfo': {
+                            'hasNextPage': true,
+                            'endCursor': 'assignee-cursor',
+                          },
+                        },
+                      },
+                      {
+                        'type': 'MILESTONE',
+                        'milestone': {
+                          'id': 'gid://gitlab/Milestone/1',
+                          'title': 'Long Milestone Title 2026',
+                        },
+                      },
+                      {
+                        'type': 'START_AND_DUE_DATE',
+                        'startDate': '2026-10-01',
+                        'dueDate': '2026-10-31',
+                      },
+                      {
+                        'type': 'HIERARCHY',
+                        'hasParent': true,
+                        'parent': {
+                          'id': 'gid://gitlab/WorkItem/99',
+                          'iid': '99',
+                          'title': 'Parent epic',
+                          'workItemType': {
+                            'id': 'gid://gitlab/WorkItems::Type/1',
+                            'name': 'Epic',
+                          },
+                        },
+                      },
+                    ],
+                  },
+                ]),
+              },
+            },
+          });
+        }
+        return jsonResponse({'message': 'unhandled'}, status: 404);
+      });
+
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(_host(_account(api, 7), api, scale: 2.0));
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('In Development'), findsOneWidget);
+      expect(
+        find.text('extremely-long-label-title-that-stretches'),
+        findsOneWidget,
+      );
+      expect(find.text('Alice Engineer'), findsOneWidget);
+      expect(find.text('Long Milestone Title 2026'), findsOneWidget);
+      expect(find.text('2026/10/01 - 2026/10/31'), findsOneWidget);
+      expect(find.text('Epic #99'), findsOneWidget);
+      expect(find.bySemanticsLabel('還有更多，未載入'), findsNWidgets(2));
+      expect(find.text('更多'), findsNWidgets(2));
+      expect(tester.takeException(), isNull);
+
+      await tester.tap(
+        find.byKey(const Key('graph-work-items-display-options-button')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('顯示設定'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      final sheetScrollable = find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byType(Scrollable),
+      ).first;
+
+      final supportedToggles = [
+        ('工作流程狀態', 'In Development'),
+        ('標籤', 'extremely-long-label-title-that-stretches'),
+        ('指派對象', 'Alice Engineer'),
+        ('里程碑', 'Long Milestone Title 2026'),
+        ('起訖日期', '2026/10/01 - 2026/10/31'),
+        ('階層關係', 'Epic #99'),
+      ];
+
+      for (var i = 0; i < supportedToggles.length; i++) {
+        final (title, chipText) = supportedToggles[i];
+        final tileFinder = find.widgetWithText(SwitchListTile, title);
+        for (var step = 0; step < 20 && tileFinder.evaluate().isEmpty; step++) {
+          await tester.drag(sheetScrollable, const Offset(0, 100));
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        for (var step = 0; step < 20 && tileFinder.evaluate().isEmpty; step++) {
+          await tester.drag(sheetScrollable, const Offset(0, -100));
+          await tester.pump(const Duration(milliseconds: 50));
+        }
+        await tester.ensureVisible(tileFinder);
+        await tester.tap(tileFinder);
+        await tester.pumpAndSettle();
+        expect(find.text(chipText), findsNothing);
+        if (i == 2) {
+          expect(find.text('更多'), findsNothing);
+          expect(find.bySemanticsLabel('還有更多，未載入'), findsNothing);
+        }
+        expect(tester.takeException(), isNull);
+      }
+
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('顯示設定'), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      tester.view.physicalSize = const Size(390 * 2.0, 844 * 2.0);
+      await tester.pumpWidget(_host(_account(api, 7), api, scale: 1.0));
+      await settleNetworkWidgets(tester);
+
+      await tester.tap(
+        find.byKey(const Key('graph-work-items-display-options-button')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('顯示設定'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'T15_t2: T2 disables only status, 5 summary toggles enabled, 6 unsupported disabled',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      var projectCallCount = 0;
+      final adapter = FakeAdapter((request) {
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileProjectWorkItems(')) {
+          projectCallCount++;
+          if (projectCallCount == 1) {
+            return jsonResponse({
+              'data': null,
+              'errors': [
+                {
+                  'message': 'Type WorkItemWidgetStatus is unknown',
+                  'extensions': {
+                    'code': 'undefinedType',
+                    'typeName': 'WorkItemWidgetStatus',
+                  },
+                },
+              ],
+            });
+          }
+          return jsonResponse({
+            'data': {
+              'project': {
+                'id': 'gid://gitlab/Project/42',
+                'fullPath': 'team/example',
+                'workItems': _connection([_summary()]),
+              },
+            },
+          });
+        }
+        return jsonResponse({'message': 'unhandled'}, status: 404);
+      });
+
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(_host(_account(api, 7), api));
+      await settleNetworkWidgets(tester);
+
+      expect(projectCallCount, 2);
+
+      await tester.tap(
+        find.byKey(const Key('graph-work-items-display-options-button')),
+      );
+      await tester.pumpAndSettle();
+
+      final statusTile =
+          tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, '工作流程狀態'));
+      expect(statusTile.onChanged, isNull);
+
+      final labelsTile =
+          tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, '標籤'));
+      expect(labelsTile.onChanged, isNotNull);
+      final assigneesTile =
+          tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, '指派對象'));
+      expect(assigneesTile.onChanged, isNotNull);
+      final milestoneTile =
+          tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, '里程碑'));
+      expect(milestoneTile.onChanged, isNotNull);
+      final datesTile =
+          tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, '起訖日期'));
+      expect(datesTile.onChanged, isNotNull);
+      final hierarchyTile =
+          tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, '階層關係'));
+      expect(hierarchyTile.onChanged, isNotNull);
+
+      final sheetScrollable = find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byType(Scrollable),
+      ).first;
+      const unsupportedTitles = ['阻礙項目', '留言數', '健康狀態', '疊代', '熱門度', '權重'];
+      for (final title in unsupportedTitles) {
+        final tileFinder = find.widgetWithText(SwitchListTile, title);
+        await tester.scrollUntilVisible(tileFinder, 50.0, scrollable: sheetScrollable);
+        final tile = tester.widget<SwitchListTile>(tileFinder);
+        expect(tile.onChanged, isNull);
+      }
+    },
+  );
+
+  testWidgets(
+    'RQ9: held A response and account B switch while display labels toggled off sheet owned results in B reset, actual tier, no A paint, and dismissed sheet',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      var listCallsA = 0;
+      final holdContinuationA = Completer<ResponseBody>();
+      final adapterA = FakeAdapter((request) {
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileProjectWorkItems(')) {
+          listCallsA++;
+          final vars = body['variables'] as Map;
+          if (vars['after'] == null) {
+            return jsonResponse({
+              'data': {
+                'project': {
+                  'id': 'gid://gitlab/Project/42',
+                  'fullPath': 'team/example',
+                  'workItems': {
+                    'nodes': [
+                      {
+                        ..._summary(title: 'Item A', iid: 1),
+                        'widgets': [
+                          {
+                            'type': 'STATUS',
+                            'status': {
+                              'id': 'gid://gitlab/WorkItems::Widgets::Status/1',
+                              'name': 'In Development',
+                            },
+                          },
+                          {
+                            'type': 'LABELS',
+                            'labels': {
+                              'nodes': [
+                                {
+                                  'id': 'gid://gitlab/ProjectLabel/1',
+                                  'title': 'a-label',
+                                  'color': '#112233',
+                                },
+                              ],
+                              'pageInfo': {'hasNextPage': false},
+                            },
+                          },
+                        ],
+                      },
+                    ],
+                    'pageInfo': {'hasNextPage': true, 'endCursor': 'page-2'},
+                  },
+                },
+              },
+            });
+          }
+          return holdContinuationA.future;
+        }
+        return jsonResponse({'message': 'unhandled'}, status: 404);
+      });
+
+      final adapterB = FakeAdapter((request) {
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileProjectWorkItems(')) {
+          return jsonResponse({
+            'data': {
+              'project': {
+                'id': 'gid://gitlab/Project/42',
+                'fullPath': 'team/example',
+                'workItems': _connection([
+                  {
+                    ..._summary(title: 'Item B', iid: 2),
+                    'widgets': [
+                      {
+                        'type': 'STATUS',
+                        'status': {
+                          'id': 'gid://gitlab/WorkItems::Widgets::Status/2',
+                          'name': 'In Review',
+                        },
+                      },
+                      {
+                        'type': 'LABELS',
+                        'labels': {
+                          'nodes': [
+                            {
+                              'id': 'gid://gitlab/ProjectLabel/2',
+                              'title': 'b-label',
+                              'color': '#334455',
+                            },
+                          ],
+                          'pageInfo': {'hasNextPage': false},
+                        },
+                      },
+                    ],
+                  },
+                ]),
+              },
+            },
+          });
+        }
+        return jsonResponse({'message': 'unhandled'}, status: 404);
+      });
+
+      final apiA = testApi(adapterA);
+      final apiB = testApi(adapterB);
+      addTearDown(apiA.close);
+      addTearDown(apiB.close);
+
+      var current = true;
+      final owner = _OwnerMarker();
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GraphWorkItemsPage(
+            account: _account(apiA, 7),
+            api: apiA,
+            project: _project,
+            isCurrent: () => current,
+            ownerChanges: owner,
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      expect(find.text('Item A'), findsOneWidget);
+      expect(find.text('a-label'), findsOneWidget);
+      expect(listCallsA, 1);
+
+      final loadMoreFinder = find.text('載入更多工作項目');
+      expect(loadMoreFinder, findsOneWidget);
+      await tester.ensureVisible(loadMoreFinder);
+      await tester.pumpAndSettle();
+      await tester.tap(loadMoreFinder);
+      await pumpUntil(
+        tester,
+        () => listCallsA == 2,
+        description: 'held account A second read started',
+      );
+      expect(listCallsA, 2);
+
+      await tester.tap(
+        find.byKey(const Key('graph-work-items-display-options-button')),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('顯示設定'), findsOneWidget);
+
+      final labelsSwitch = find.widgetWithText(SwitchListTile, '標籤');
+      expect(labelsSwitch, findsOneWidget);
+      final switchWidget = tester.widget<SwitchListTile>(labelsSwitch);
+      expect(switchWidget.onChanged, isNotNull);
+      await tester.tap(labelsSwitch);
+      await tester.pump();
+      expect(find.text('a-label'), findsNothing);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GraphWorkItemsPage(
+            account: _account(apiB, 8),
+            api: apiB,
+            project: _project,
+            isCurrent: () => current,
+            ownerChanges: owner,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      holdContinuationA.complete(
+        jsonResponse({
+          'data': {
+            'project': {
+              'id': 'gid://gitlab/Project/42',
+              'fullPath': 'team/example',
+              'workItems': {
+                'nodes': [
+                  {
+                    ..._summary(title: 'Item A2', iid: 11),
+                    'widgets': [
+                      {
+                        'type': 'LABELS',
+                        'labels': {
+                          'nodes': [
+                            {
+                              'id': 'gid://gitlab/ProjectLabel/11',
+                              'title': 'a-label-2',
+                              'color': '#112233',
+                            },
+                          ],
+                          'pageInfo': {'hasNextPage': false},
+                        },
+                      },
+                    ],
+                  },
+                ],
+                'pageInfo': {'hasNextPage': false, 'endCursor': null},
+              },
+            },
+          },
+        }),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Item A'), findsNothing);
+      expect(find.text('Item A2'), findsNothing);
+      expect(find.text('a-label'), findsNothing);
+      expect(find.text('a-label-2'), findsNothing);
+      expect(find.text('Item B'), findsOneWidget);
+      expect(find.text('b-label'), findsOneWidget);
+      expect(find.text('顯示設定'), findsNothing);
+
+      await tester.tap(
+        find.byKey(const Key('graph-work-items-display-options-button')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('顯示設定'), findsOneWidget);
+
+      final statusTile =
+          tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, '工作流程狀態'));
+      expect(statusTile.onChanged, isNotNull);
+    },
+  );
+
+  testWidgets(
+    'A7: unknown tier disables all 12 switches and double tap deduplicates sheet route',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final holdList = Completer<ResponseBody>();
+      final adapter = FakeAdapter((request) {
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileProjectWorkItems(')) return holdList.future;
+        return jsonResponse({'message': 'unhandled'}, status: 404);
+      });
+
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(_host(_account(api, 7), api));
+      await tester.pump();
+
+      final button =
+          find.byKey(const Key('graph-work-items-display-options-button'));
+      expect(button, findsOneWidget);
+      final buttonCenter = tester.getCenter(button);
+      final nav = Navigator.of(tester.element(button));
+      expect(nav.canPop(), isFalse);
+
+      await tester.tap(button);
+      expect(nav.canPop(), isTrue);
+
+      await tester.tapAt(buttonCenter);
+      expect(nav.canPop(), isTrue);
+
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.text('顯示設定'), findsOneWidget);
+
+      final sheetScrollable = find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.byType(Scrollable),
+      ).first;
+
+      const allTitles = [
+        '標籤',
+        '指派對象',
+        '里程碑',
+        '起訖日期',
+        '階層關係',
+        '工作流程狀態',
+        '阻礙項目',
+        '留言數',
+        '健康狀態',
+        '疊代',
+        '熱門度',
+        '權重',
+      ];
+      for (final title in allTitles) {
+        final tileFinder = find.widgetWithText(SwitchListTile, title);
+        await tester.scrollUntilVisible(tileFinder, 50.0, scrollable: sheetScrollable);
+        expect(tileFinder, findsOneWidget);
+        final tile = tester.widget<SwitchListTile>(tileFinder);
+        expect(tile.onChanged, isNull);
+      }
+
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('顯示設定'), findsNothing);
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(nav.canPop(), isFalse);
+
+      holdList.complete(_projectList());
+      await tester.pumpAndSettle();
+    },
+  );
+
+  testWidgets(
+    'A8: closed work item preserves closed StatusBadge and appends workflow status chip',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final adapter = FakeAdapter((request) {
+        final body = request.data as Map;
+        final query = body['query'] as String;
+        if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileProjectWorkItems(')) {
+          return jsonResponse({
+            'data': {
+              'project': {
+                'id': 'gid://gitlab/Project/42',
+                'fullPath': 'team/example',
+                'workItems': _connection([
+                  {
+                    ..._summary(title: 'Closed Item', iid: 55),
+                    'state': 'CLOSED',
+                    'widgets': [
+                      {
+                        'type': 'STATUS',
+                        'status': {
+                          'id': 'gid://gitlab/WorkItems::Widgets::Status/1',
+                          'name': 'Done',
+                        },
+                      },
+                    ],
+                  },
+                ]),
+              },
+            },
+          });
+        }
+        return jsonResponse({'message': 'unhandled'}, status: 404);
+      });
+
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(_host(_account(api, 7), api));
+      await settleNetworkWidgets(tester);
+
+      expect(find.text('Closed Item'), findsOneWidget);
+      expect(find.text('已關閉'), findsOneWidget);
+      expect(find.text('Done'), findsOneWidget);
+    },
+  );
 }
 
 enum _MetadataKind {

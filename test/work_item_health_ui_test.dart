@@ -56,6 +56,7 @@ class _HostState extends State<_Host> {
   String? _tokenAccount;
   GitLabApi? _tokenApi;
   int? _tokenGeneration;
+  int builds = 0;
 
   _Log get log => widget.log;
 
@@ -122,6 +123,7 @@ class _HostState extends State<_Host> {
 
   @override
   Widget build(BuildContext context) {
+    builds++;
     return MaterialApp(
       builder: (context, child) => MediaQuery(
         data: MediaQuery.of(
@@ -900,6 +902,119 @@ void main() {
     tester.view.viewInsets = FakeViewPadding.zero;
     await tester.pump();
     expect(tester.getBottomLeft(_save).dy, greaterThan(logicalHeight - 120));
+    expect(tester.takeException(), isNull);
+    _expectClean(fixture);
+  });
+
+  for (final exit in _EditorExit.values) {
+    testWidgets('${exit.label} without a write re-enables edit with no parent '
+        'rebuild and a second real tap reopens from a fresh read', (
+      tester,
+    ) async {
+      final fixture = WorkItemHealthFixture();
+      final log = await _pumpHost(tester, fixture);
+      final host = _hostKey.currentState!;
+      await _open(tester, fixture);
+      final builds = host.builds;
+
+      await _exitEditor(tester, exit);
+      await tester.pumpAndSettle();
+
+      expect(_save, findsNothing);
+      expect(host.builds, builds, reason: 'no parent rebuild after the exit');
+      expect(tester.widget<TextButton>(_edit).onPressed, isNotNull);
+      expect(find.text('變更健康狀態'), findsOneWidget);
+
+      await _open(tester, fixture);
+      expect(_saveEnabled(tester), isTrue);
+      expect(host.builds, builds);
+      expect(fixture.operations, ['read', 'read']);
+      expect(log.raw, isEmpty);
+      expect(host.token, isNull);
+      expect(tester.takeException(), isNull);
+      _expectClean(fixture);
+    });
+
+    testWidgets('${exit.label} without a write re-enables edit on the detail '
+        'route and a second real tap reopens from a fresh read', (
+      tester,
+    ) async {
+      final fixture = WorkItemHealthFixture();
+      final h = await _pumpDetailRoute(tester, fixture);
+      await _openDetail(tester, fixture, h);
+      final editor = h.editorRoute!;
+
+      await _exitEditor(tester, exit);
+      await tester.pumpAndSettle();
+
+      _expectEditorClosedOverDetail(h, editor);
+      expect(tester.widget<TextButton>(_edit).onPressed, isNotNull);
+
+      await _openDetail(tester, fixture, h);
+      expect(identical(h.editorRoute, editor), isFalse);
+      expect(_saveEnabled(tester), isTrue);
+      expect(fixture.operations, ['read', 'read']);
+      expect(h.token, isNull);
+      expect(h.phases, isEmpty);
+      expect(tester.takeException(), isNull);
+      _expectClean(fixture);
+    });
+  }
+
+  testWidgets('owner loss with the editor open removes it without re-enabling '
+      'the stale binding; a restored owner reopens from a fresh read', (
+    tester,
+  ) async {
+    final fixture = WorkItemHealthFixture();
+    final log = await _pumpHost(tester, fixture);
+    final host = _hostKey.currentState!;
+    await _open(tester, fixture);
+
+    host.current = false;
+    host.owner.ping();
+    await tester.pumpAndSettle();
+
+    expect(_save, findsNothing);
+    expect(tester.widget<TextButton>(_edit).onPressed, isNull);
+    await _frames(tester);
+    expect(tester.widget<TextButton>(_edit).onPressed, isNull);
+    expect(fixture.reads, 1);
+
+    host.current = true;
+    host.owner.ping();
+    await tester.pump();
+    expect(tester.widget<TextButton>(_edit).onPressed, isNotNull);
+
+    await _open(tester, fixture);
+    expect(_saveEnabled(tester), isTrue);
+    expect(fixture.operations, ['read', 'read']);
+    expect(log.raw, isEmpty);
+    expect(tester.takeException(), isNull);
+    _expectClean(fixture);
+  });
+
+  testWidgets('row dispose with the editor open removes it without painting '
+      'the disposed control; a remounted row opens from a fresh read', (
+    tester,
+  ) async {
+    final fixture = WorkItemHealthFixture();
+    final log = await _pumpHost(tester, fixture);
+    final host = _hostKey.currentState!;
+    await _open(tester, fixture);
+
+    host.replace(() => host.showControl = false);
+    await tester.pumpAndSettle();
+
+    expect(_save, findsNothing);
+    expect(_edit, findsNothing);
+    expect(tester.takeException(), isNull);
+
+    host.replace(() => host.showControl = true);
+    await tester.pump();
+    await _open(tester, fixture);
+    expect(_saveEnabled(tester), isTrue);
+    expect(fixture.operations, ['read', 'read']);
+    expect(log.raw, isEmpty);
     expect(tester.takeException(), isNull);
     _expectClean(fixture);
   });

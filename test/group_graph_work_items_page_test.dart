@@ -40,6 +40,7 @@ Map<String, Object?> _summary({
     'id': 'gid://gitlab/WorkItems::Type/99',
     'name': 'Epic renamed by server',
   },
+  'widgets': const <Object?>[],
 };
 
 Map<String, Object?> _connection(List<Object?> nodes, {String? next}) => {
@@ -1590,9 +1591,14 @@ void main() {
 
     await tester.pumpWidget(_host(_account(api), api));
     await settleNetworkWidgets(tester);
-    await tester.tap(find.text('載入更多工作項目'));
+    final loadMoreFinder = find.text('載入更多工作項目');
+    await tester.ensureVisible(loadMoreFinder);
+    await tester.pumpAndSettle();
+    await tester.tap(loadMoreFinder);
     await settleNetworkWidgets(tester);
-    await tester.tap(find.text('載入更多工作項目'));
+    await tester.ensureVisible(loadMoreFinder);
+    await tester.pumpAndSettle();
+    await tester.tap(loadMoreFinder);
     await settleNetworkWidgets(tester);
 
     expect(find.text('Loop item 1'), findsOneWidget);
@@ -1871,6 +1877,108 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets(
+    'T17: Row with 5 labels and 3 assignees shows exactly one "更多" per partial connection with semantics "還有更多，未載入" and no +digit text',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(390, 844);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final itemWithPartials = {
+        ..._summary(iid: 99, title: 'Item with 5 labels and 3 assignees'),
+        'widgets': [
+          {
+            'type': 'LABELS',
+            'labels': {
+              'nodes': List.generate(
+                5,
+                (i) => {
+                  'id': 'gid://gitlab/GroupLabel/$i',
+                  'title': 'label-$i',
+                  'color': '#ff0000',
+                  'description': null,
+                  'textColor': '#ffffff',
+                },
+              ),
+              'pageInfo': {'hasNextPage': true, 'endCursor': 'label-cursor'},
+            },
+          },
+          {
+            'type': 'ASSIGNEES',
+            'assignees': {
+              'nodes': List.generate(
+                3,
+                (i) => {
+                  'id': 'gid://gitlab/User/$i',
+                  'name': 'Assignee $i',
+                  'username': 'user$i',
+                },
+              ),
+              'pageInfo': {'hasNextPage': true, 'endCursor': 'assignee-cursor'},
+            },
+          },
+        ],
+      };
+
+      final adapter = FakeAdapter((request) {
+        final query = _query(request);
+        if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileGroupWorkItems')) {
+          return jsonResponse({
+            'data': {
+              'group': {
+                'id': _groupId,
+                'fullPath': _groupPath,
+                'workItems': _connection([itemWithPartials]),
+              },
+            },
+          });
+        }
+        throw StateError('Unexpected query');
+      });
+
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(_host(_account(api), api));
+      await settleNetworkWidgets(tester);
+
+      expect(find.textContaining(RegExp(r'\+\s*\d')), findsNothing);
+      expect(find.text('更多'), findsNWidgets(2));
+      expect(find.bySemanticsLabel('還有更多，未載入'), findsNWidgets(2));
+    },
+  );
+
+  testWidgets(
+    'A9: embedded group list exposes display options button in header row',
+    (tester) async {
+      final adapter = FakeAdapter((request) {
+        final query = _query(request);
+        if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+        if (query.contains('MobileGroupWorkItems')) {
+          return _groupList([_summary(iid: 1, title: 'Item 1')]);
+        }
+        throw StateError('Unexpected query');
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await tester.pumpWidget(_host(_account(api), api));
+      await settleNetworkWidgets(tester);
+
+      expect(
+        find.byKey(const Key('graph-work-items-display-options-button')),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const Key('graph-work-items-display-options-button')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('顯示設定'), findsOneWidget);
+    },
+  );
 }
 
 final class _OwnerMarker extends ChangeNotifier {

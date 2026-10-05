@@ -99,4 +99,89 @@ void main() {
 
     expect(session.pendingResumeTarget, target);
   });
+
+  testWidgets(
+    'FailureNotice ExpansionTile does not collide with PageStorage double scroll offset',
+    (tester) async {
+      final bucket = PageStorageBucket();
+      const feedKey = PageStorageKey<String>('group-feed-storage-id');
+
+      // 1. Initial build: Scrollable with ancestor PageStorageKey has a large height to allow scrolling
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PageStorage(
+              bucket: bucket,
+              child: CustomScrollView(
+                key: feedKey,
+                slivers: const [
+                  SliverToBoxAdapter(
+                    child: SizedBox(height: 1200),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // 2. Drag the scroll view to establish a non-zero double scroll offset in PageStorage
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -250));
+      await tester.pumpAndSettle();
+
+      // 3. Rebuild with FailureNotice rendered in the scroll view under the same PageStorageKey.
+      // Prior to storage key separation on ExpansionTile, ExpansionTile inherited the
+      // same PageStorage identifier as the ScrollPosition and attempted to cast the stored
+      // double scroll offset (250.0) to bool?, throwing a TypeError.
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PageStorage(
+              bucket: bucket,
+              child: CustomScrollView(
+                key: feedKey,
+                slivers: [
+                  const SliverToBoxAdapter(
+                    child: SizedBox(height: 1200),
+                  ),
+                  SliverToBoxAdapter(
+                    child: FailureNotice(
+                      const ApiFailure(FailureKind.invalidResponse),
+                      account: _account(),
+                      resourceLabel: 'group/project · 工作項目',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      // Verify initial rebuild with restored non-zero scroll offset succeeds without error
+      expect(tester.takeException(), isNull);
+
+      // Scroll the CustomScrollView to bring the offscreen FailureNotice into view
+      await tester.drag(find.byType(CustomScrollView), const Offset(0, -600));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('診斷資訊'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('診斷資訊'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('診斷資訊'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('invalidResponse'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+
+      // Verify collapse behavior
+      await tester.tap(find.text('診斷資訊'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('invalidResponse'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
 }
