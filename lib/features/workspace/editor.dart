@@ -20,11 +20,15 @@ const _draftStorage = FlutterSecureStorage(
 );
 String _draftPrefix(Account account) =>
     'draft.v2.${base64Url.encode(utf8.encode(account.key))}.';
+final _draftClearEpochs = <String, int>{};
+final _draftWrites = <String, Future<void>>{};
 Future<void> clearSecureDrafts(Account account) async {
+  _draftClearEpochs[account.key] = (_draftClearEpochs[account.key] ?? 0) + 1;
+  await (_draftWrites[account.key] ?? Future<void>.value());
   final entries = await _draftStorage.readAll();
   for (final key in entries.keys.where(
     (key) => key.startsWith(_draftPrefix(account)),
-  )) {
+  ).toList(growable: false)) {
     await _draftStorage.delete(key: key);
   }
 }
@@ -39,9 +43,27 @@ class EditField {
     this.hint,
     this.markdown = false,
     this.quickActions = false,
+    this.maxLength,
+    this.validator,
   }) : source = null,
+       choices = const [],
        multi = false,
        toggle = false;
+  const EditField.choice(
+    this.key,
+    this.label, {
+    required this.choices,
+    this.value = '',
+    this.required = false,
+    this.hint,
+  }) : source = null,
+       multi = false,
+       lines = 1,
+       markdown = false,
+       toggle = false,
+       quickActions = false,
+       maxLength = null,
+       validator = null;
   const EditField.picker(
     this.key,
     this.label, {
@@ -51,26 +73,42 @@ class EditField {
     this.required = false,
     this.hint,
   }) : lines = 1,
+       choices = const [],
        markdown = false,
        toggle = false,
-       quickActions = false;
+       quickActions = false,
+       maxLength = null,
+       validator = null;
   const EditField.toggle(
     this.key,
     this.label, {
     this.value = 'false',
     this.hint,
   }) : source = null,
+       choices = const [],
        multi = false,
        required = false,
        lines = 1,
        markdown = false,
        toggle = true,
-       quickActions = false;
+       quickActions = false,
+       maxLength = null,
+       validator = null;
   final String key, label, value;
+  final List<EditChoice> choices;
   final bool required, multi, markdown, toggle, quickActions;
   final int lines;
+  final int? maxLength;
+  final String? Function(String value)? validator;
   final String? hint;
   final PickerSource? source;
+}
+
+final class EditChoice {
+  const EditChoice(this.value, this.label);
+
+  final String value;
+  final String label;
 }
 
 Map<String, dynamic> editorSubmission(List<EditField> fields, Map<String, String> values) {
@@ -113,35 +151,46 @@ Future<bool> openEditor(
   required Account account,
   required String title,
   required String resource,
+  String? resourceLabel,
   required List<EditField> fields,
   required SaveEditor save,
   String? subtitle,
   String? baseRevision,
   bool persistent = true,
+  bool blockRetryOnWriteUncertain = false,
+  bool blockRetryOnSaveFailure = false,
+  bool projectToolsEnabled = true,
+  bool Function()? isCurrent,
   GitLabApi? api,
   int? projectId,
   String? projectPath,
   AttachmentPicker? attachments,
-}) async =>
-    await Navigator.of(context).push<bool>(
-      MaterialPageRoute(
+  ValueChanged<Route<dynamic>>? onRoute,
+}) async {
+    final route = MaterialPageRoute<bool>(
         builder: (_) => ResourceEditor(
           account: account,
           title: title,
           resource: resource,
+          resourceLabel: resourceLabel,
           fields: fields,
           save: save,
           subtitle: subtitle,
           baseRevision: baseRevision,
           persistent: persistent,
+          blockRetryOnWriteUncertain: blockRetryOnWriteUncertain,
+          blockRetryOnSaveFailure: blockRetryOnSaveFailure,
+          projectToolsEnabled: projectToolsEnabled,
+          isCurrent: isCurrent,
           api: api,
           projectId: projectId,
           projectPath: projectPath,
           attachments: attachments,
         ),
-      ),
-    ) ??
-    false;
+      );
+    onRoute?.call(route);
+    return await Navigator.of(context).push<bool>(route) ?? false;
+}
 
 class ResourceEditor extends StatefulWidget {
   const ResourceEditor({
@@ -149,11 +198,16 @@ class ResourceEditor extends StatefulWidget {
     required this.account,
     required this.title,
     required this.resource,
+    this.resourceLabel,
     required this.fields,
     required this.save,
     this.subtitle,
     this.baseRevision,
     this.persistent = true,
+    this.blockRetryOnWriteUncertain = false,
+    this.blockRetryOnSaveFailure = false,
+    this.projectToolsEnabled = true,
+    this.isCurrent,
     this.api,
     this.projectId,
     this.projectPath,
@@ -161,12 +215,20 @@ class ResourceEditor extends StatefulWidget {
   });
   final Account account;
   final String title, resource;
+  /// Human-readable failure target. [resource] remains the secure draft key.
+  final String? resourceLabel;
   final List<EditField> fields;
   final SaveEditor save;
   final String? subtitle;
   /// `updated_at` the fields were built from. Absent for creation editors.
   final String? baseRevision;
   final bool persistent;
+  /// A creation whose result is unknown must be checked before another submit.
+  final bool blockRetryOnWriteUncertain;
+  /// A single-use write target requires a fresh editor after every save error.
+  final bool blockRetryOnSaveFailure;
+  final bool projectToolsEnabled;
+  final bool Function()? isCurrent;
   final GitLabApi? api;
   final int? projectId;
   final String? projectPath;
@@ -181,6 +243,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
   final _focus = <String, FocusNode>{};
   final _picked = <String, List<PickerChoice>>{};
   late final String _key;
+  late final int _draftEpoch;
   Timer? _timer;
   Future<void> _writes = Future<void>.value();
   bool _loading = true, _saving = false, _done = false, _dirty = false, _draftUnavailable = false, _preview = false, _guarding = false;
@@ -190,11 +253,16 @@ class _ResourceEditorState extends State<ResourceEditor> {
   String? _uploadingName;
   TextSelection? _markdownSelection;
   ApiFailure? _error;
-  bool get _locked => _saving || _guarding;
+  bool _saveBlocked = false;
+  bool get _draftCurrent =>
+      _draftEpoch == (_draftClearEpochs[widget.account.key] ?? 0) &&
+      (widget.isCurrent?.call() ?? true);
+  bool get _locked => _saving || _guarding || !_draftCurrent;
 
   @override
   void initState() {
     super.initState();
+    _draftEpoch = _draftClearEpochs[widget.account.key] ?? 0;
     _key = '${_draftPrefix(widget.account)}${base64Url.encode(utf8.encode(widget.resource))}';
     for (final field in widget.fields) {
       if (field.source == null) {
@@ -217,7 +285,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
   Future<void> _restore() async {
     try {
       final raw = widget.persistent ? await _draftStorage.read(key: _key) : null;
-      if (raw != null && mounted) {
+      if (raw != null && mounted && _draftCurrent) {
         final value = jsonDecode(raw);
         if (value is Map<String, dynamic>) {
           final storedBase = value[_draftBaseKey];
@@ -232,6 +300,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
           } else {
             _applyFieldMap(value);
             _dirty = true;
+            _pickerEpoch++;
           }
         }
       }
@@ -303,12 +372,22 @@ class _ResourceEditorState extends State<ResourceEditor> {
   void _persist() {
     // While a stale draft is held, keystrokes, leave, and dispose must not
     // replace the stored copy. Apply persists only after the hold is cleared.
-    if (_done || !widget.persistent || !_dirty || _staleDraft != null) return;
+    if (_done || !widget.persistent || !_dirty || _staleDraft != null || !_draftCurrent) return;
     final data = jsonEncode(_storedDraft());
-    _writes = _writes.then((_) => _draftStorage.write(key: _key, value: data)).catchError((Object _) {
+    final pending = _draftWrites[widget.account.key] ?? Future<void>.value();
+    _writes = Future.wait([_writes, pending]).then((_) async {
+      if (_draftCurrent) await _draftStorage.write(key: _key, value: data);
+    }).catchError((Object _) {
       _draftUnavailable = true;
       if (mounted) setState(() {});
     });
+    final write = _writes;
+    _draftWrites[widget.account.key] = write;
+    unawaited(write.then((_) {
+      if (identical(_draftWrites[widget.account.key], write)) {
+        _draftWrites.remove(widget.account.key);
+      }
+    }));
   }
 
   void _changed(String _) {
@@ -434,7 +513,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
   }
 
   Future<void> _save() async {
-    if (_locked || _loading || _staleDraft != null || _form.currentState?.validate() != true) return;
+    if (_locked || _loading || _saveBlocked || _staleDraft != null || _form.currentState?.validate() != true) return;
     FocusScope.of(context).unfocus();
     _timer?.cancel();
     _persist();
@@ -446,6 +525,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
       await widget.save(_draftValues());
       _done = true;
       await _writes;
+      if (!_draftCurrent) return;
       if (widget.persistent) {
         try {
           await _draftStorage.delete(key: _key);
@@ -455,7 +535,17 @@ class _ResourceEditorState extends State<ResourceEditor> {
       }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
-      if (mounted) setState(() => _error = safeFailure(e));
+      if (mounted && _draftCurrent) {
+        final failure = safeFailure(e);
+        setState(() {
+          _error = failure;
+          if (widget.blockRetryOnSaveFailure ||
+              (widget.blockRetryOnWriteUncertain &&
+                  failure.kind == FailureKind.writeUncertain)) {
+            _saveBlocked = true;
+          }
+        });
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -515,7 +605,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton(
               key: const Key('editorSave'),
-              onPressed: _locked || _loading || _staleDraft != null ? null : _save,
+              onPressed: _locked || _loading || _saveBlocked || _staleDraft != null ? null : _save,
               child: Text(_saving ? '送出中…' : '儲存'),
             ),
           ),
@@ -548,8 +638,16 @@ class _ResourceEditorState extends State<ResourceEditor> {
                             FailureNotice(
                               _error!,
                               account: widget.account,
-                              resourceLabel: widget.resource,
+                              resourceLabel:
+                                  widget.resourceLabel ?? widget.resource,
                               onSwitchAccount: endSessionFrom(context),
+                            ),
+                          if (_saveBlocked)
+                            Padding(
+                              padding: EdgeInsets.only(top: 12),
+                              child: Text(widget.blockRetryOnSaveFailure
+                                  ? '請保留草稿並返回，重新開啟編輯以確認最新內容後再儲存。'
+                                  : '請保留草稿並返回，重新讀取活動確認變更是否已套用，再決定下一步。'),
                             ),
                           for (final field in widget.fields)
                             Padding(
@@ -558,6 +656,8 @@ class _ResourceEditorState extends State<ResourceEditor> {
                                   ? _markdownBlock(field)
                                   : field.toggle
                                   ? _toggleField(field)
+                                  : field.choices.isNotEmpty
+                                  ? _choiceField(field)
                                   : field.source == null
                                   ? _textField(field)
                                   : _pickerField(field),
@@ -604,8 +704,47 @@ class _ResourceEditorState extends State<ResourceEditor> {
     scrollPadding: EdgeInsets.fromLTRB(20, 20, 20, field.markdown ? 80 : 20),
     onChanged: _changed,
     decoration: InputDecoration(labelText: field.label, helperText: field.hint),
-    validator: (value) => field.required && (value == null || value.trim().isEmpty) ? '此欄位必填' : null,
+    validator: (value) {
+      if (field.required && (value == null || value.trim().isEmpty)) return '此欄位必填';
+      final maxLength = field.maxLength;
+      if (maxLength != null && (value?.length ?? 0) > maxLength) return '不可超過 $maxLength 個字元';
+      return field.validator?.call(value ?? '');
+    },
   );
+
+  Widget _choiceField(EditField field) {
+    final controller = _controllers[field.key];
+    final raw = controller?.text ?? '';
+    final supported = field.choices.any((choice) => choice.value == raw);
+    final unsupported = raw.isNotEmpty && !supported
+        ? '目前值「$raw」不受支援，請選擇其他選項。'
+        : null;
+    return KeyedSubtree(
+      key: ValueKey('choice-${field.key}-$_pickerEpoch'),
+      child: DropdownButtonFormField<String>(
+        key: ValueKey('editor-${field.key}'),
+        initialValue: supported ? raw : null,
+        isExpanded: true,
+        decoration: InputDecoration(labelText: field.label, helperText: field.hint, errorText: unsupported),
+        items: [for (final choice in field.choices)
+          DropdownMenuItem(value: choice.value, child: Text(choice.label))],
+        onChanged: _locked ? null : (value) {
+          if (value == null) return;
+          controller?.text = value;
+          _changed(value);
+          setState(() {});
+        },
+        validator: (value) {
+          final current = controller?.text ?? '';
+          if (current.isNotEmpty && !field.choices.any((choice) => choice.value == current)) {
+            return '目前值「$current」不受支援，請選擇其他選項。';
+          }
+          if (field.required && (value == null || value.isEmpty)) return '此欄位必填';
+          return null;
+        },
+      ),
+    );
+  }
 
   Widget _markdownBlock(EditField field) {
     final path = widget.projectPath;
@@ -862,17 +1001,17 @@ class _ResourceEditorState extends State<ResourceEditor> {
               onPressed: _locked ? null : () => _markup(key, tool.$3),
               icon: Icon(tool.$2),
             ),
-          IconButton(
+          if (widget.projectToolsEnabled) IconButton(
             tooltip: '提及',
             onPressed: _locked ? null : () { unawaited(_mention(key)); },
             icon: const Icon(Icons.alternate_email),
           ),
-          IconButton(
+          if (widget.projectToolsEnabled) IconButton(
             tooltip: '附加圖片',
             onPressed: _locked ? null : () { unawaited(_attach(key, image: true)); },
             icon: const Icon(Icons.image_outlined),
           ),
-          IconButton(
+          if (widget.projectToolsEnabled) IconButton(
             tooltip: '附加檔案',
             onPressed: _locked ? null : () { unawaited(_attach(key, image: false)); },
             icon: const Icon(Icons.attach_file),

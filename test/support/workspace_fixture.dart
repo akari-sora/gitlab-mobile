@@ -21,6 +21,10 @@ class WorkspaceFixture {
   static const sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   static const olderSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
   final issues = <int, Json>{};
+  /// Opt-in widgets for GraphQL work item responses. Defaults to empty so base
+  /// request budget is Graph 1 (detail only).
+  List<Json> graphWidgets = <Json>[];
+  String graphStatusName = 'In progress';
   final notes = <int, Json>{};
   /// Award emoji per awardable path, e.g. `projects/42/issues/1`.
   final awards = <String, List<Json>>{};
@@ -235,6 +239,13 @@ class WorkspaceFixture {
     final joined = path.join('/');
     final method = request.method;
     final body = request.data is Json ? request.data as Json : <String, dynamic>{};
+    if (request.method == 'POST' && request.uri == api.instance.graphQL) {
+      final query = body['query'] as String? ?? '';
+      if (query.startsWith('query MobileProjectWorkItem(') ||
+          query.startsWith('query MobileWorkItemStatusAttribute(')) {
+        return _handleGraphQLWorkItemQuery(body);
+      }
+    }
     if (method != 'GET' && method != 'HEAD' && failWrites) { return jsonResponse({'error': 'validation'}, status: 422); }
     if (joined == 'user') { return jsonResponse(account.user.toJson()); }
     if (joined == 'projects') { return jsonResponse([projectRecord]); }
@@ -661,5 +672,105 @@ class WorkspaceFixture {
       for (final item in items)
         if (keys.any((key) => '${item[key] ?? ''}'.contains(needle))) item,
     ];
+  }
+
+  FutureOr<ResponseBody> _handleGraphQLWorkItemQuery(Json body) {
+    final query = body['query'] as String? ?? '';
+    final variables = body['variables'] is Json ? body['variables'] as Json : <String, dynamic>{};
+    if (query.startsWith('query MobileProjectWorkItem(')) {
+      final path = variables['path'] as String? ?? '';
+      final iidStr = variables['iid'] as String? ?? '';
+      final iid = int.tryParse(iidStr);
+      if (path != project.path || iid == null) {
+        return jsonResponse({'data': {'project': null}});
+      }
+      final item = issues[iid];
+      if (item == null) {
+        return jsonResponse({
+          'data': {
+            'project': {
+              'id': 'gid://gitlab/Project/42',
+              'fullPath': project.path,
+              'workItems': {
+                'nodes': <Json>[],
+                'pageInfo': {'hasNextPage': false, 'endCursor': null},
+              },
+            },
+          },
+        });
+      }
+      final workItemId = 'gid://gitlab/WorkItem/${item['id'] ?? (42000 + iid)}';
+      return jsonResponse({
+        'data': {
+          'project': {
+            'id': 'gid://gitlab/Project/42',
+            'fullPath': project.path,
+            'workItems': {
+              'nodes': [
+                {
+                  'id': workItemId,
+                  'iid': '$iid',
+                  'title': item['title'] ?? 'Issue $iid',
+                  'state': item['state'] == 'closed' ? 'CLOSED' : 'OPEN',
+                  'createdAt': item['created_at'] ?? '2026-09-01T01:02:03Z',
+                  'updatedAt': item['updated_at'] ?? '2026-09-01T01:02:03Z',
+                  'project': {'id': 'gid://gitlab/Project/42', 'fullPath': project.path},
+                  'namespace': {'id': 'gid://gitlab/Namespaces::ProjectNamespace/142', 'fullPath': project.path},
+                  'workItemType': {'id': 'gid://gitlab/WorkItems::Type/1', 'name': 'Issue'},
+                  'description': item['description'],
+                  'widgets': graphWidgets,
+                },
+              ],
+              'pageInfo': {'hasNextPage': false, 'endCursor': null},
+            },
+          },
+        },
+      });
+    }
+    if (query.startsWith('query MobileWorkItemStatusAttribute(')) {
+      final id = variables['id'] as String? ?? '';
+      final match = RegExp(r'^gid://gitlab/WorkItem/(\d+)$').firstMatch(id);
+      final rawId = match?.group(1);
+      int? foundIid;
+      if (rawId != null) {
+        final parsed = int.tryParse(rawId);
+        if (parsed != null) {
+          if (issues.containsKey(parsed)) {
+            foundIid = parsed;
+          } else {
+            for (final entry in issues.entries) {
+              if ('${entry.value['id'] ?? (42000 + entry.key)}' == rawId) {
+                foundIid = entry.key;
+                break;
+              }
+            }
+          }
+        }
+      }
+      foundIid ??= issues.keys.firstOrNull ?? 1;
+      return jsonResponse({
+        'data': {
+          'workItem': {
+            'id': id,
+            'iid': '$foundIid',
+            'project': {'id': 'gid://gitlab/Project/42', 'fullPath': project.path},
+            'namespace': {'id': 'gid://gitlab/Namespaces::ProjectNamespace/142', 'fullPath': project.path},
+            'widgets': [
+              {
+                'type': 'STATUS',
+                'status': {
+                  'id': 'gid://gitlab/WorkItems::Widgets::Status/1',
+                  'name': graphStatusName,
+                  'iconName': 'status_scheduled',
+                  'color': '#1f75cb',
+                  'category': 'IN_PROGRESS',
+                },
+              },
+            ],
+          },
+        },
+      });
+    }
+    return jsonResponse({'message': '404 Not Found'}, status: 404);
   }
 }

@@ -13,17 +13,19 @@ class RecordController extends ChangeNotifier {
   bool loading = false, loadingMore = false, failedMore = false;
   bool _disposed = false;
   int _generation = 0;
+  int _loadedPages = 0;
+  bool _failedReconcile = false;
   final Set<String> _seenCursors = {};
   bool _current(int generation) => !_disposed && generation == _generation;
   void _emit() { if (!_disposed) { notifyListeners(); } }
-  Future<void> retry() => failedMore ? more() : refresh();
+  Future<void> retry() => _failedReconcile ? reconcileLoadedWindow() : failedMore ? more() : refresh();
   Future<void> refresh() async {
     final generation = ++_generation;
-    loading = true; loadingMore = false; failedMore = false; error = null; _emit();
+    loading = true; loadingMore = false; failedMore = false; _failedReconcile = false; error = null; _emit();
     try {
       final page = await loader(null);
       if (!_current(generation)) { return; }
-      items = page.items; next = page.next; _seenCursors.clear();
+      items = page.items; next = page.next; _loadedPages = 1; _seenCursors.clear();
     } catch (e) { if (_current(generation)) { error = safeFailure(e); } }
     finally { if (_current(generation)) { loading = false; _emit(); } }
   }
@@ -31,18 +33,60 @@ class RecordController extends ChangeNotifier {
     final cursor = next;
     if (_disposed || loading || loadingMore || cursor == null) { return; }
     final generation = _generation;
-    loadingMore = true; failedMore = false; error = null; _emit();
+    loadingMore = true; failedMore = false; _failedReconcile = false; error = null; _emit();
     try {
       final page = await loader(cursor);
       if (!_current(generation)) { return; }
       final ids = items.map(_identity).toSet();
       items = [...items, ...page.items.where((item) => ids.add(_identity(item)))];
+      _loadedPages++;
       _seenCursors.add(cursor.toString()); next = page.next;
       if (next != null && _seenCursors.contains(next.toString())) {
         next = null; error = const ApiFailure(FailureKind.invalidResponse);
       }
     } catch (e) { if (_current(generation)) { error = safeFailure(e); failedMore = true; } }
     finally { if (_current(generation)) { loadingMore = false; _emit(); } }
+  }
+  Future<void> reconcileLoadedWindow() async {
+    if (_disposed) return;
+    final targetPages = _loadedPages > 0 ? _loadedPages : 1;
+    final generation = ++_generation;
+    loading = true; loadingMore = false; failedMore = false; _failedReconcile = false; error = null; _emit();
+    try {
+      final refreshed = <Json>[];
+      final ids = <String>{};
+      final requestedCursors = <String>{};
+      Uri? cursor;
+      Uri? refreshedNext;
+      var loadedPages = 0;
+      for (var index = 0; index < targetPages; index++) {
+        if (cursor != null) requestedCursors.add(cursor.toString());
+        final page = await loader(cursor);
+        if (!_current(generation)) return;
+        loadedPages++;
+        refreshed.addAll(page.items.where((item) => ids.add(_identity(item))));
+        refreshedNext = page.next;
+        if (refreshedNext != null && requestedCursors.contains(refreshedNext.toString())) {
+          throw const ApiFailure(FailureKind.invalidResponse);
+        }
+        if (refreshedNext == null || index + 1 == targetPages) break;
+        cursor = refreshedNext;
+      }
+      if (!_current(generation)) return;
+      items = refreshed;
+      next = refreshedNext;
+      _loadedPages = loadedPages;
+      _seenCursors
+        ..clear()
+        ..addAll(requestedCursors);
+    } catch (e) {
+      if (_current(generation)) {
+        error = safeFailure(e);
+        _failedReconcile = true;
+      }
+    } finally {
+      if (_current(generation)) { loading = false; _emit(); }
+    }
   }
   void patchItem(Json item) {
     if (_disposed) return;

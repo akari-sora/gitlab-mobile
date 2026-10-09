@@ -10,6 +10,7 @@ import 'features/shell/app_shortcuts.dart';
 import 'features/auth/session_controller.dart';
 import 'features/shell/authenticated_app.dart';
 import 'shared/theme.dart';
+import 'shared/scroll_performance.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -18,7 +19,9 @@ void main() {
     systemUiOverlayStyle(WidgetsBinding.instance.platformDispatcher.platformBrightness),
   );
   unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
-  runApp(const ProviderScope(child: GitLabMobileApp()));
+  runApp(const ProviderScope(child: bool.fromEnvironment('PERF_DIAGNOSTICS')
+      ? ScrollPerformance(child: GitLabMobileApp())
+      : GitLabMobileApp()));
 }
 
 class GitLabMobileApp extends ConsumerStatefulWidget {

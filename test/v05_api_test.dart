@@ -30,7 +30,17 @@ void main() {
       expect((mr.target, mr.number), (LinkTarget.mergeRequest, 7));
       expect(parse('https://example.com/gitlab/group/app/-/pipelines/99').target, LinkTarget.pipeline);
       expect(parse('https://example.com/gitlab/group/app/-/jobs/501').number, 501);
-      expect(parse('https://example.com/gitlab/group/app/-/work_items/3').target, LinkTarget.issue);
+      final workItem = parse('https://example.com/gitlab/group/app/-/work_items/3');
+      expect((workItem.project, workItem.target, workItem.number, workItem.workItemScope),
+        ('group/app', LinkTarget.workItem, 3, WorkItemLinkScope.project));
+    });
+
+    test('group work item links preserve the namespace and never masquerade as projects', () {
+      final workItem = parse('https://example.com/gitlab/groups/group/sub/-/work_items/8');
+      expect((workItem.project, workItem.target, workItem.number, workItem.workItemScope),
+        ('group/sub', LinkTarget.workItem, 8, WorkItemLinkScope.group));
+      expect(() => parse('https://example.com/gitlab/groups/group/sub/-/issues/8'), throwsFormatException);
+      expect(() => parse('https://example.com/gitlab/groups/group/sub/-/work_items/nope'), throwsFormatException);
     });
 
     test('commit and SHA-pinned file links open read-only targets', () {

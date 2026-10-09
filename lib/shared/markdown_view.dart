@@ -49,6 +49,9 @@ class MarkdownView extends StatefulWidget {
 
 class _MarkdownViewState extends State<MarkdownView> {
   AttachmentBudget? _owned;
+  // Markdown's unkeyed horizontal scroll views must not read an ancestor
+  // ExpansionTile's boolean state as a scroll offset.
+  final _scrollStorage = PageStorageBucket();
 
   AttachmentBudget get _budget => widget.budget ?? (_owned ??= AttachmentBudget());
 
@@ -72,11 +75,15 @@ class _MarkdownViewState extends State<MarkdownView> {
     final api = widget.api;
     final projectId = widget.projectId;
     final projectWeb = widget.projectWeb;
+    final tableTextScale = (MediaQuery.textScalerOf(context).scale(14) / 14)
+        .clamp(1.0, 2.0);
     final body = MarkdownBody(data: text, selectable: false,
       styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
         h1: Theme.of(context).textTheme.headlineSmall,
         h2: Theme.of(context).textTheme.titleLarge,
         h3: Theme.of(context).textTheme.titleMedium,
+        tableColumnWidth: FixedColumnWidth(180.0 * tableTextScale),
+        tableScrollbarThumbVisibility: true,
         code: TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: const ['Menlo', 'monospace'], fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
         codeblockDecoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12)),
@@ -137,9 +144,9 @@ class _MarkdownViewState extends State<MarkdownView> {
         await openExternal(context, uri);
       },
     );
-    if (!widget.selectable) {
-      return body;
-    }
-    return SelectionArea(child: body);
+    return PageStorage(
+      bucket: _scrollStorage,
+      child: widget.selectable ? SelectionArea(child: body) : body,
+    );
   }
 }

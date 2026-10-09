@@ -1,0 +1,1684 @@
+part of 'gitlab_api.dart';
+
+const _workItemPageSize = 20;
+const _workItemAssigneeLimit = 20;
+const _workItemLabelLimit = 50;
+const _workItemChildLimit = 20;
+const _workItemWidgetLimit = 32;
+const _workItemCursorLimit = 4096;
+
+const _workItemSummaryFields = r'''
+id
+iid
+title
+state
+createdAt
+updatedAt
+project { id fullPath }
+namespace { id fullPath }
+workItemType { id name }
+''';
+
+const _workItemSummaryTier1Widgets = r'''
+widgets {
+  type
+  ... on WorkItemWidgetLabels {
+    labels(first: 5) {
+      nodes { id title color description textColor }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on WorkItemWidgetAssignees {
+    assignees(first: 3) {
+      nodes { id name username }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on WorkItemWidgetMilestone {
+    milestone {
+      id
+      iid
+      title
+      dueDate
+      startDate
+    }
+  }
+  ... on WorkItemWidgetStartAndDueDate {
+    startDate
+    dueDate
+  }
+  ... on WorkItemWidgetHierarchy {
+    hasParent
+    parent {
+      id
+      iid
+      title
+      workItemType { id name }
+    }
+  }
+  ... on WorkItemWidgetStatus {
+    status {
+      id
+      name
+      iconName
+      color
+    }
+  }
+}
+''';
+
+const _workItemSummaryTier2Widgets = r'''
+widgets {
+  type
+  ... on WorkItemWidgetLabels {
+    labels(first: 5) {
+      nodes { id title color description textColor }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on WorkItemWidgetAssignees {
+    assignees(first: 3) {
+      nodes { id name username }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on WorkItemWidgetMilestone {
+    milestone {
+      id
+      iid
+      title
+      dueDate
+      startDate
+    }
+  }
+  ... on WorkItemWidgetStartAndDueDate {
+    startDate
+    dueDate
+  }
+  ... on WorkItemWidgetHierarchy {
+    hasParent
+    parent {
+      id
+      iid
+      title
+      workItemType { id name }
+    }
+  }
+}
+''';
+
+final _projectWorkItemsQuery =
+    '''
+query MobileProjectWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
+  project(fullPath: \$path) {
+    id
+    fullPath
+    workItems(first: \$first, after: \$after) {
+      nodes { $_workItemSummaryFields }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+
+String _projectWorkItemsFilteredQuery({
+  required bool hasFilter,
+  required int tier,
+  required bool summaries,
+}) {
+  final nodeFields = !summaries || tier == 3
+      ? _workItemSummaryFields
+      : (tier == 1
+          ? '$_workItemSummaryFields\n$_workItemSummaryTier1Widgets'
+          : '$_workItemSummaryFields\n$_workItemSummaryTier2Widgets');
+  if (!hasFilter) {
+    return '''
+query MobileProjectWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
+  project(fullPath: \$path) {
+    id
+    fullPath
+    workItems(first: \$first, after: \$after) {
+      nodes { $nodeFields }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+  }
+  return '''
+query MobileProjectWorkItems(
+  \$path: ID!
+  \$first: Int!
+  \$after: String
+  \$state: IssuableState!
+  \$search: String
+  \$sort: WorkItemSort!
+) {
+  project(fullPath: \$path) {
+    id
+    fullPath
+    workItems(
+      first: \$first
+      after: \$after
+      state: \$state
+      search: \$search
+      sort: \$sort
+    ) {
+      nodes { $nodeFields }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+}
+
+String _groupWorkItemsQuery({
+  required bool withType,
+  int? tier,
+  bool summaries = false,
+}) {
+  final nodeFields = !summaries || tier == null || tier == 3
+      ? _workItemSummaryFields
+      : (tier == 1
+          ? '$_workItemSummaryFields\n$_workItemSummaryTier1Widgets'
+          : '$_workItemSummaryFields\n$_workItemSummaryTier2Widgets');
+  return '''
+query MobileGroupWorkItems(
+  \$path: ID!
+  \$first: Int!
+  \$after: String
+  \$includeDescendants: Boolean!
+  \$state: IssuableState!
+  \$search: String
+  \$sort: WorkItemSort!
+  ${withType ? r'$typeIds: [WorkItemsTypeID!]' : ''}
+) {
+  group(fullPath: \$path) {
+    id
+    fullPath
+    workItems(
+      first: \$first
+      after: \$after
+      includeDescendants: \$includeDescendants
+      state: \$state
+      search: \$search
+      sort: \$sort
+      ${withType ? r'workItemTypeIds: $typeIds' : ''}
+    ) {
+      nodes { $nodeFields }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+}
+
+final _projectWorkItemQuery =
+    '''
+query MobileProjectWorkItem(\$path: ID!, \$iid: String!) {
+  project(fullPath: \$path) {
+    id
+    fullPath
+    workItems(first: 2, iid: \$iid) {
+      nodes { ${_workItemDetailFields()} }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+
+final _namespaceWorkItemQuery =
+    '''
+query MobileNamespaceWorkItem(\$path: ID!, \$iid: String!) {
+  namespace(fullPath: \$path) {
+    id
+    fullPath
+    workItem(iid: \$iid) { ${_workItemDetailFields()} }
+  }
+}
+''';
+
+const _namespaceWorkItemTypesQuery = r'''
+query MobileNamespaceWorkItemTypes($path: ID!, $first: Int!, $after: String) {
+  namespace(fullPath: $path) {
+    id
+    fullPath
+    workItemTypes(first: $first, after: $after) {
+      nodes {
+        id
+        name
+        enabled
+        isGroupWorkItemType
+        widgetDefinitions { type }
+      }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+}
+''';
+
+String _workItemDetailFields() =>
+    '''
+$_workItemSummaryFields
+description
+widgets {
+  type
+  ... on WorkItemWidgetDescription {
+    description
+    edited
+    lastEditedAt
+  }
+  ... on WorkItemWidgetAssignees {
+    assignees(first: $_workItemAssigneeLimit) {
+      nodes { id name username }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on WorkItemWidgetLabels {
+    labels(first: $_workItemLabelLimit) {
+      nodes { id title color description textColor }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on WorkItemWidgetHierarchy {
+    hasParent
+    hasChildren
+    parent { $_workItemSummaryFields }
+    children(first: $_workItemChildLimit) {
+      nodes { $_workItemSummaryFields }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
+  ... on WorkItemWidgetStartAndDueDate {
+    startDate
+    dueDate
+    rollUp
+  }
+}
+''';
+
+const _workItemSchemaErrors = {
+  'undefinedField',
+  'undefinedArgument',
+  'variableRequiresValidType',
+  'argumentLiteralsIncompatible',
+  'missingRequiredArguments',
+  'undefinedType',
+};
+
+extension on GroupWorkItemState {
+  String get graphQlValue => switch (this) {
+    GroupWorkItemState.all => 'all',
+    GroupWorkItemState.opened => 'opened',
+    GroupWorkItemState.closed => 'closed',
+  };
+}
+
+extension on GroupWorkItemSort {
+  String get graphQlValue => switch (this) {
+    GroupWorkItemSort.createdDesc => 'CREATED_DESC',
+    GroupWorkItemSort.createdAsc => 'CREATED_ASC',
+    GroupWorkItemSort.updatedDesc => 'UPDATED_DESC',
+    GroupWorkItemSort.updatedAsc => 'UPDATED_ASC',
+  };
+}
+
+final _apiSupportedListTier = Expando<int>('supportedListTier');
+
+int? _classifyListSchemaError(Map<dynamic, dynamic> envelope, int currentTier) {
+  if (envelope['data'] != null) return null;
+  final rawErrors = envelope['errors'];
+  if (rawErrors is! List || rawErrors.isEmpty) return null;
+  if (currentTier == 1) {
+    for (final error in rawErrors) {
+      if (error is! Map) return null;
+      final extensions = error['extensions'];
+      if (extensions is! Map) return null;
+      final code = extensions['code'] as String?;
+      if (code == null) return null;
+      final typeName = extensions['typeName'] is String
+          ? extensions['typeName'] as String
+          : null;
+      final fieldName = extensions['fieldName'] is String
+          ? extensions['fieldName'] as String
+          : (extensions['field'] is String
+              ? extensions['field'] as String
+              : null);
+      if (code == 'undefinedType') {
+        if (typeName != 'WorkItemWidgetStatus') return null;
+      } else if (code == 'undefinedField') {
+        final matchesStatus = typeName == 'WorkItemWidgetStatus' ||
+            (fieldName == 'status' &&
+                (typeName == null || typeName == 'WorkItemWidgetStatus'));
+        if (!matchesStatus) return null;
+      } else if (code == 'argumentLiteralsIncompatible') {
+        if (typeName != 'WorkItemWidgetStatus' && fieldName != 'status') {
+          return null;
+        }
+      } else {
+        return null;
+      }
+    }
+    return 2;
+  } else if (currentTier == 2) {
+    const t2Whitelist = {
+      'undefinedField',
+      'undefinedArgument',
+      'variableRequiresValidType',
+      'argumentLiteralsIncompatible',
+      'missingRequiredArguments',
+      'undefinedType',
+    };
+    const widgetTokens = {
+      'widgets',
+      'labels',
+      'assignees',
+      'milestone',
+      'startdate',
+      'duedate',
+      'hasparent',
+      'parent',
+    };
+    for (final error in rawErrors) {
+      if (error is! Map) return null;
+      final extensions = error['extensions'];
+      if (extensions is! Map) return null;
+      final code = extensions['code'] as String?;
+      if (code == null || !t2Whitelist.contains(code)) return null;
+
+      final message = (error['message'] is String
+              ? error['message'] as String
+              : '')
+          .toLowerCase();
+      final field = (extensions['field'] is String
+              ? extensions['field'] as String
+              : (extensions['fieldName'] is String
+                  ? extensions['fieldName'] as String
+                  : ''))
+          .toLowerCase();
+      final typeName = (extensions['typeName'] is String
+              ? extensions['typeName'] as String
+              : '')
+          .toLowerCase();
+      final List<Object?> pathList = error['path'] is List
+          ? (error['path'] as List).cast<Object?>()
+          : const <Object?>[];
+      final pathTokens =
+          pathList.map((e) => e.toString().toLowerCase()).toSet();
+
+      final matchesWidget = widgetTokens.any((token) =>
+          field.contains(token) ||
+          typeName.contains(token) ||
+          pathTokens.contains(token) ||
+          message.contains(token));
+      if (!matchesWidget) return null;
+    }
+    return 3;
+  }
+  return null;
+}
+
+extension WorkItemGraphQlApi on GitLabApi {
+  /// Reads one bounded group-owned or descendant page with server-side filters.
+  /// A continuation must carry both the opaque group ID and normalized filter
+  /// returned by its first page.
+  Future<GroupWorkItemGraphPage> groupWorkItems(
+    String fullPath, {
+    String? expectedGroupId,
+    String? after,
+    GroupWorkItemListFilter filter = const GroupWorkItemListFilter(),
+    GroupWorkItemListFilter? previousFilter,
+    bool summaries = false,
+    int? previousTier,
+    bool Function()? isCurrent,
+  }) async {
+    final path = _validatedNamespacePath(fullPath);
+    final requestedExpectedId = _validatedOptionalGroupId(expectedGroupId);
+    final cursor = _validatedWorkItemCursor(after);
+    final normalizedFilter = _validatedGroupWorkItemListFilter(
+      filter,
+      groupPath: path,
+      expectedGroupId: requestedExpectedId,
+    );
+    final expectedId =
+        requestedExpectedId ?? normalizedFilter.typeNamespace?.id;
+    final normalizedPrevious = previousFilter == null
+        ? null
+        : _validatedGroupWorkItemListFilter(
+            previousFilter,
+            groupPath: path,
+            expectedGroupId: expectedId,
+          );
+    if ((cursor != null &&
+            (expectedId == null ||
+                normalizedPrevious == null ||
+                normalizedPrevious != normalizedFilter)) ||
+        (cursor == null && previousFilter != null)) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    if (!summaries && previousTier != null) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    int activeTier = summaries ? (_apiSupportedListTier[this] ?? 1) : 1;
+    if (summaries) {
+      if (cursor != null &&
+          (previousTier == null || previousTier != activeTier)) {
+        throw const ApiFailure(FailureKind.validation);
+      }
+      if (cursor == null && previousTier != null) {
+        throw const ApiFailure(FailureKind.validation);
+      }
+    }
+    _requireCurrentWorkItemRequest(isCurrent);
+    ({Uint8List bytes, Headers headers, int statusCode}) response;
+    while (true) {
+      try {
+        final queryText = !summaries
+            ? _groupWorkItemsQuery(withType: normalizedFilter.typeId != null)
+            : _groupWorkItemsQuery(
+                withType: normalizedFilter.typeId != null,
+                tier: activeTier,
+                summaries: true,
+              );
+        response = await _read(
+          instance.graphQL,
+          method: 'POST',
+          graphQuery: true,
+          data: {
+            'query': queryText,
+            'variables': {
+              'path': path,
+              'first': _workItemPageSize,
+              'after': cursor,
+              'includeDescendants': normalizedFilter.includeDescendants,
+              'state': normalizedFilter.state.graphQlValue,
+              'search': normalizedFilter.search,
+              'sort': normalizedFilter.sort.graphQlValue,
+              if (normalizedFilter.typeId case final typeId?) 'typeIds': [typeId],
+            },
+          },
+        );
+      } catch (error, stackTrace) {
+        _requireCurrentWorkItemRequest(isCurrent);
+        Error.throwWithStackTrace(error, stackTrace);
+      }
+      _requireCurrentWorkItemRequest(isCurrent);
+
+      if (summaries && cursor == null) {
+        int? nextTier;
+        try {
+          final decoded = jsonDecode(utf8.decode(response.bytes));
+          if (decoded is Map &&
+              decoded['data'] == null &&
+              decoded['errors'] != null) {
+            nextTier = _classifyListSchemaError(decoded, activeTier);
+          }
+        } catch (_) {
+          // ignore
+        }
+        if (nextTier != null && nextTier > activeTier) {
+          _requireCurrentWorkItemRequest(isCurrent);
+          activeTier = nextTier;
+          continue;
+        }
+      }
+      break;
+    }
+
+    try {
+      final data = _workItemGraphData(response.bytes);
+      final group = _groupGraphContainer(data, path, expectedId: expectedId);
+      final connection = _requiredWorkItemConnection(
+        group.container,
+        'workItems',
+      );
+      final nodes = _boundedNodes(connection, _workItemPageSize);
+      final seenIds = <String>{};
+      final seenScopedIids = <String>{};
+      final items = <WorkItemGraphSummary>[];
+      for (final raw in nodes) {
+        final item = _parseWorkItemSummary(
+          raw,
+          summaries: summaries,
+          tier: activeTier,
+        );
+        _requireGroupWorkItem(
+          item,
+          group.ref,
+          includeDescendants: normalizedFilter.includeDescendants,
+        );
+        final scope = item.namespace!;
+        if (!seenIds.add(item.id) ||
+            !seenScopedIids.add('${scope.fullPath}#${item.iid}')) {
+          throw const FormatException('Duplicate work item');
+        }
+        items.add(item);
+      }
+      if (summaries) {
+        _apiSupportedListTier[this] = activeTier;
+      }
+      return GroupWorkItemGraphPage(
+        group: group.ref,
+        items: items,
+        nextCursor: _nextWorkItemCursor(connection, previous: cursor),
+        filter: normalizedFilter,
+        summaryTier: summaries ? activeTier : null,
+      );
+    } on FormatException {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+  }
+
+  /// Reads one bounded project page. Type names remain display-only metadata.
+  Future<WorkItemGraphPage> projectWorkItems(
+    Project project, {
+    String? after,
+    GroupWorkItemListFilter? filter,
+    GroupWorkItemListFilter? previousFilter,
+    bool summaries = false,
+    int? previousTier,
+    bool Function()? isCurrent,
+  }) async {
+    _validateWorkItemProject(project);
+    final cursor = _validatedWorkItemCursor(after);
+    GroupWorkItemListFilter? normalizedFilter;
+    if (filter != null) {
+      normalizedFilter = _validatedGroupWorkItemListFilter(
+        filter,
+        groupPath: project.path,
+        expectedGroupId: null,
+      );
+      if (normalizedFilter.typeId != null ||
+          normalizedFilter.includeDescendants) {
+        throw const ApiFailure(FailureKind.validation);
+      }
+    }
+    GroupWorkItemListFilter? normalizedPrevious;
+    if (previousFilter != null) {
+      normalizedPrevious = _validatedGroupWorkItemListFilter(
+        previousFilter,
+        groupPath: project.path,
+        expectedGroupId: null,
+      );
+    }
+    if ((cursor != null && normalizedFilter != normalizedPrevious) ||
+        (cursor == null && previousFilter != null)) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    if (!summaries && previousTier != null) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    int activeTier = summaries ? (_apiSupportedListTier[this] ?? 1) : 1;
+    if (summaries) {
+      if (cursor != null &&
+          (previousTier == null || previousTier != activeTier)) {
+        throw const ApiFailure(FailureKind.validation);
+      }
+      if (cursor == null && previousTier != null) {
+        throw const ApiFailure(FailureKind.validation);
+      }
+    }
+    _requireCurrentWorkItemRequest(isCurrent);
+
+    ({Uint8List bytes, Headers headers, int statusCode}) response;
+    while (true) {
+      try {
+        final String queryText;
+        final Map<String, Object?> variables;
+        if (!summaries && normalizedFilter == null) {
+          queryText = _projectWorkItemsQuery;
+          variables = {
+            'path': project.path,
+            'first': _workItemPageSize,
+            'after': cursor,
+          };
+        } else {
+          queryText = _projectWorkItemsFilteredQuery(
+            hasFilter: normalizedFilter != null,
+            tier: activeTier,
+            summaries: summaries,
+          );
+          variables = {
+            'path': project.path,
+            'first': _workItemPageSize,
+            'after': cursor,
+            if (normalizedFilter != null) ...{
+              'state': normalizedFilter.state.graphQlValue,
+              'search': normalizedFilter.search,
+              'sort': normalizedFilter.sort.graphQlValue,
+            },
+          };
+        }
+        response = await _read(
+          instance.graphQL,
+          method: 'POST',
+          graphQuery: true,
+          data: {
+            'query': queryText,
+            'variables': variables,
+          },
+        );
+      } catch (error, stackTrace) {
+        _requireCurrentWorkItemRequest(isCurrent);
+        Error.throwWithStackTrace(error, stackTrace);
+      }
+      _requireCurrentWorkItemRequest(isCurrent);
+
+      if (summaries && cursor == null) {
+        int? nextTier;
+        try {
+          final decoded = jsonDecode(utf8.decode(response.bytes));
+          if (decoded is Map &&
+              decoded['data'] == null &&
+              decoded['errors'] != null) {
+            nextTier = _classifyListSchemaError(decoded, activeTier);
+          }
+        } catch (_) {
+          // ignore
+        }
+        if (nextTier != null && nextTier > activeTier) {
+          _requireCurrentWorkItemRequest(isCurrent);
+          activeTier = nextTier;
+          continue;
+        }
+      }
+      break;
+    }
+
+    try {
+      final data = _workItemGraphData(response.bytes);
+      final remote = _projectGraphContainer(data, project);
+      final connection = _requiredWorkItemConnection(
+        remote.container,
+        'workItems',
+      );
+      final nodes = _boundedNodes(connection, _workItemPageSize);
+      final seenIds = <String>{};
+      final seenIids = <int>{};
+      final items = <WorkItemGraphSummary>[];
+      for (final raw in nodes) {
+        final item = _parseWorkItemSummary(
+          raw,
+          summaries: summaries,
+          tier: activeTier,
+        );
+        _requireProjectWorkItem(item, remote.ref);
+        if (!seenIds.add(item.id) || !seenIids.add(item.iid)) {
+          throw const FormatException('Duplicate work item');
+        }
+        items.add(item);
+      }
+      if (summaries) {
+        _apiSupportedListTier[this] = activeTier;
+      }
+      return WorkItemGraphPage(
+        items: List.unmodifiable(items),
+        nextCursor: _nextWorkItemCursor(connection, previous: cursor),
+        filter: normalizedFilter,
+        summaryTier: summaries ? activeTier : null,
+      );
+    } on FormatException {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+  }
+
+  /// Reads exactly one project-bound IID using a duplicate-detecting query.
+  Future<WorkItemGraphDetail> projectWorkItem(
+    Project project,
+    int iid, {
+    bool Function()? isCurrent,
+  }) async {
+    _validateWorkItemProject(project);
+    if (iid <= 0) throw const ApiFailure(FailureKind.validation);
+    _requireCurrentWorkItemRequest(isCurrent);
+    final response = await _read(
+      instance.graphQL,
+      method: 'POST',
+      graphQuery: true,
+      data: {
+        'query': _projectWorkItemQuery,
+        'variables': {'path': project.path, 'iid': '$iid'},
+      },
+    );
+    _requireCurrentWorkItemRequest(isCurrent);
+    try {
+      final data = _workItemGraphData(response.bytes);
+      final remote = _projectGraphContainer(data, project);
+      final connection = _requiredWorkItemConnection(
+        remote.container,
+        'workItems',
+      );
+      final nodes = _boundedNodes(connection, 2);
+      final pageInfo = objectJson(connection['pageInfo']);
+      if (pageInfo['hasNextPage'] != false || nodes.length > 1) {
+        throw const FormatException('Ambiguous work item');
+      }
+      if (nodes.isEmpty) throw const ApiFailure(FailureKind.invisible);
+      final detail = _parseWorkItemDetail(nodes.single);
+      _requireProjectWorkItem(detail.summary, remote.ref);
+      if (detail.summary.iid != iid) {
+        throw const FormatException('Wrong work item IID');
+      }
+      return detail;
+    } on FormatException {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+  }
+
+  /// Reads a work item through a verified namespace identity. This supports
+  /// group work-item URLs without pretending that a group is a REST Project.
+  Future<WorkItemGraphDetail> namespaceWorkItem(
+    String fullPath,
+    int iid, {
+    String? expectedNamespaceId,
+    bool Function()? isCurrent,
+  }) async {
+    final path = _validatedNamespacePath(fullPath);
+    final expectedId = _validatedOptionalOpaqueId(expectedNamespaceId);
+    if (iid <= 0) throw const ApiFailure(FailureKind.validation);
+    _requireCurrentWorkItemRequest(isCurrent);
+    final response = await _read(
+      instance.graphQL,
+      method: 'POST',
+      graphQuery: true,
+      data: {
+        'query': _namespaceWorkItemQuery,
+        'variables': {'path': path, 'iid': '$iid'},
+      },
+    );
+    _requireCurrentWorkItemRequest(isCurrent);
+    try {
+      final data = _workItemGraphData(response.bytes);
+      final namespace = _namespaceGraphContainer(
+        data,
+        path,
+        expectedId: expectedId,
+      );
+      if (namespace.container['workItem'] == null) {
+        throw const ApiFailure(FailureKind.invisible);
+      }
+      final detail = _parseWorkItemDetail(namespace.container['workItem']);
+      if (detail.summary.iid != iid) {
+        throw const FormatException('Wrong namespace work item');
+      }
+      _requireNamespaceWorkItem(detail.summary, namespace.ref);
+      return detail;
+    } on FormatException {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+  }
+
+  /// Lists server-defined capabilities without filtering by ID or name.
+  Future<WorkItemTypePage> namespaceWorkItemTypes(
+    String fullPath, {
+    String? expectedNamespaceId,
+    String? after,
+    bool Function()? isCurrent,
+  }) async {
+    final path = _validatedNamespacePath(fullPath);
+    final expectedId = _validatedOptionalOpaqueId(expectedNamespaceId);
+    final cursor = _validatedWorkItemCursor(after);
+    _requireCurrentWorkItemRequest(isCurrent);
+    final response = await _read(
+      instance.graphQL,
+      method: 'POST',
+      graphQuery: true,
+      data: {
+        'query': _namespaceWorkItemTypesQuery,
+        'variables': {
+          'path': path,
+          'first': _workItemPageSize,
+          'after': cursor,
+        },
+      },
+    );
+    _requireCurrentWorkItemRequest(isCurrent);
+    try {
+      final data = _workItemGraphData(response.bytes);
+      final namespace = _namespaceGraphContainer(
+        data,
+        path,
+        expectedId: expectedId,
+      );
+      final connection = _requiredWorkItemConnection(
+        namespace.container,
+        'workItemTypes',
+      );
+      final nodes = _boundedNodes(connection, _workItemPageSize);
+      final ids = <String>{};
+      final capabilities = <WorkItemTypeCapability>[];
+      for (final raw in nodes) {
+        final node = objectJson(raw);
+        final type = _parseWorkItemType(node);
+        final enabled = node['enabled'];
+        final group = node['isGroupWorkItemType'];
+        if (enabled is! bool || group is! bool || !ids.add(type.id)) {
+          throw const FormatException('Invalid work item type');
+        }
+        capabilities.add(
+          WorkItemTypeCapability(
+            type: type,
+            enabled: enabled,
+            isGroupWorkItemType: group,
+            widgetTypes: _parseWidgetDefinitions(node['widgetDefinitions']),
+          ),
+        );
+      }
+      return WorkItemTypePage(
+        namespace: namespace.ref,
+        items: List.unmodifiable(capabilities),
+        nextCursor: _nextWorkItemCursor(connection, previous: cursor),
+      );
+    } on FormatException {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
+  }
+}
+
+Json _workItemGraphData(Uint8List bytes) {
+  try {
+    final envelope = objectJson(jsonDecode(utf8.decode(bytes)));
+    final errors = envelope['errors'];
+    if (errors != null) {
+      if (errors is! List) throw const FormatException('Invalid errors');
+      if (errors.isNotEmpty) {
+        final unsupported = errors.every(
+          (error) =>
+              error is Map &&
+              error['extensions'] is Map &&
+              _workItemSchemaErrors.contains(
+                (error['extensions'] as Map)['code'],
+              ),
+        );
+        throw ApiFailure(
+          unsupported ? FailureKind.unsupported : FailureKind.invalidResponse,
+          title: unsupported ? '實例未提供原生工作項目' : null,
+          detail: unsupported ? '這個 GitLab 版本不支援所需的唯讀欄位。' : null,
+        );
+      }
+    }
+    return objectJson(envelope['data']);
+  } on FormatException {
+    throw const ApiFailure(FailureKind.invalidResponse);
+  }
+}
+
+void _validateWorkItemProject(Project project) {
+  if (project.id <= 0 || _validatedNamespacePathOrNull(project.path) == null) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+}
+
+String _validatedNamespacePath(String value) {
+  final path = _validatedNamespacePathOrNull(value);
+  if (path == null) throw const ApiFailure(FailureKind.validation);
+  return path;
+}
+
+String? _validatedNamespacePathOrNull(String value) {
+  final path = value.trim();
+  if (path.isEmpty ||
+      path.length > 1024 ||
+      !RegExp(r'^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*$').hasMatch(path)) {
+    return null;
+  }
+  return path;
+}
+
+String? _validatedOptionalOpaqueId(String? value) {
+  if (value == null) return null;
+  if (!_validOpaqueGraphId(value)) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  return value;
+}
+
+String? _validatedOptionalGroupId(String? value) {
+  final id = _validatedOptionalOpaqueId(value);
+  if (id != null && !_isGraphResourceType(id, const {'Group'})) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  return id;
+}
+
+String? _validatedWorkItemCursor(String? value) {
+  if (value == null) return null;
+  if (value.isEmpty || value.length > _workItemCursorLimit) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  return value;
+}
+
+GroupWorkItemListFilter _validatedGroupWorkItemListFilter(
+  GroupWorkItemListFilter filter, {
+  required String groupPath,
+  required String? expectedGroupId,
+}) {
+  final search = filter.search.trim();
+  if (search.runes.length > 256) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  final typeId = filter.typeId;
+  if (typeId != null &&
+      (!_validOpaqueGraphId(typeId) ||
+          !_isGraphResourceType(typeId, const {'WorkItems::Type'}))) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  GraphResourceRef? typeNamespace;
+  if (typeId != null) {
+    typeNamespace = filter.typeNamespace;
+    if (typeNamespace == null ||
+        !_validOpaqueGraphId(typeNamespace.id) ||
+        !_isGraphResourceType(typeNamespace.id, const {'Group'}) ||
+        _validatedNamespacePathOrNull(typeNamespace.fullPath) != groupPath ||
+        (expectedGroupId != null && typeNamespace.id != expectedGroupId)) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+  }
+  return GroupWorkItemListFilter(
+    includeDescendants: filter.includeDescendants,
+    state: filter.state,
+    search: search,
+    sort: filter.sort,
+    typeId: typeId,
+    typeNamespace: typeNamespace,
+  );
+}
+
+void _requireCurrentWorkItemRequest(bool Function()? isCurrent) {
+  if (isCurrent != null && !isCurrent()) {
+    throw const ApiFailure(FailureKind.cancelled);
+  }
+}
+
+({Json container, GraphResourceRef ref}) _projectGraphContainer(
+  Json data,
+  Project project,
+) {
+  if (data['project'] == null) throw const ApiFailure(FailureKind.invisible);
+  final remote = objectJson(data['project']);
+  final ref = _parseResourceRef(remote);
+  final match = RegExp(
+    r'^gid://gitlab/Project/([1-9][0-9]*)$',
+  ).firstMatch(ref.id);
+  if (match == null ||
+      int.tryParse(match.group(1)!) != project.id ||
+      ref.fullPath != project.path) {
+    throw const FormatException('Wrong project');
+  }
+  return (container: remote, ref: ref);
+}
+
+({Json container, GraphResourceRef ref}) _namespaceGraphContainer(
+  Json data,
+  String path, {
+  String? expectedId,
+}) {
+  if (data['namespace'] == null) {
+    throw const ApiFailure(FailureKind.invisible);
+  }
+  final remote = objectJson(data['namespace']);
+  final ref = _parseResourceRef(remote);
+  if (ref.fullPath != path || (expectedId != null && ref.id != expectedId)) {
+    throw const FormatException('Wrong namespace');
+  }
+  return (container: remote, ref: ref);
+}
+
+({Json container, GraphResourceRef ref}) _groupGraphContainer(
+  Json data,
+  String path, {
+  String? expectedId,
+}) {
+  if (data['group'] == null) throw const ApiFailure(FailureKind.invisible);
+  final remote = objectJson(data['group']);
+  final ref = _parseResourceRef(remote);
+  if (!_isGraphResourceType(ref.id, const {'Group'}) ||
+      ref.fullPath != path ||
+      (expectedId != null && ref.id != expectedId)) {
+    throw const FormatException('Wrong group');
+  }
+  return (container: remote, ref: ref);
+}
+
+Json _requiredWorkItemConnection(Json parent, String key) {
+  if (parent[key] == null) throw const ApiFailure(FailureKind.forbidden);
+  return objectJson(parent[key]);
+}
+
+List<Object?> _boundedNodes(Json connection, int limit) {
+  final nodes = connection['nodes'];
+  if (nodes is! List || nodes.length > limit) {
+    throw const FormatException('Invalid bounded connection');
+  }
+  return nodes;
+}
+
+String? _nextWorkItemCursor(Json connection, {String? previous}) {
+  final pageInfo = objectJson(connection['pageInfo']);
+  final hasNext = pageInfo['hasNextPage'];
+  final rawCursor = pageInfo['endCursor'];
+  if (hasNext is! bool ||
+      (rawCursor != null &&
+          (rawCursor is! String ||
+              rawCursor.isEmpty ||
+              rawCursor.length > _workItemCursorLimit))) {
+    throw const FormatException('Invalid page info');
+  }
+  if (!hasNext) return null;
+  if (rawCursor is! String || rawCursor == previous) {
+    throw const FormatException('Invalid continuation cursor');
+  }
+  return rawCursor;
+}
+
+WorkItemGraphSummary _parseWorkItemSummary(
+  Object? raw, {
+  bool summaries = false,
+  int? tier,
+}) {
+  final node = objectJson(raw);
+  final id = requiredString(node, 'id');
+  if (!_validOpaqueGraphId(id)) {
+    throw const FormatException('Invalid work item ID');
+  }
+  final iid = _positiveWorkItemInt(node['iid']);
+  final title = _boundedRequiredText(node, 'title', 4096);
+  final state = _boundedRequiredText(node, 'state', 64);
+  final type = _parseWorkItemType(node['workItemType']);
+  final project = _parseOptionalResourceRef(node['project']);
+  final namespace = _parseOptionalResourceRef(node['namespace']);
+  final identities = <String>{id, type.id};
+  if (identities.length != 2 ||
+      (project != null && !identities.add(project.id)) ||
+      (namespace != null && !identities.add(namespace.id))) {
+    throw const FormatException('Confused graph identity');
+  }
+
+  WorkItemSummaryWidgets? widgets;
+  if (summaries) {
+    final effectiveTier = tier ?? 1;
+    if (effectiveTier <= 2) {
+      if (!node.containsKey('widgets')) {
+        throw const FormatException('Missing widgets in summary');
+      }
+      final rawWidgets = node['widgets'];
+      if (rawWidgets == null) {
+        widgets = WorkItemSummaryWidgets.unavailable(tier: effectiveTier);
+      } else {
+        if (rawWidgets is! List || rawWidgets.length > _workItemWidgetLimit) {
+          throw const FormatException('Invalid widgets in summary');
+        }
+        final widgetTypes = <String>{};
+        BoundedGraphConnection<WorkItemGraphLabel>? labels;
+        BoundedGraphConnection<WorkItemGraphAssignee>? assignees;
+        WorkItemMilestoneSummary? milestone;
+        WorkItemDatesSummary? dates;
+        WorkItemHierarchySummary? hierarchy;
+        WorkItemStatusSummary? status;
+
+        for (final rawWidget in rawWidgets) {
+          final widget = objectJson(rawWidget);
+          final widgetType = _boundedRequiredText(widget, 'type', 128);
+          if (!widgetTypes.add(widgetType)) {
+            throw const FormatException('Duplicate widget type in summary');
+          }
+          switch (widgetType) {
+            case 'LABELS':
+              labels = _parseOptionalConnection(
+                widget['labels'],
+                5,
+                _parseWorkItemLabel,
+                identity: (label) => label.id,
+              );
+            case 'ASSIGNEES':
+              assignees = _parseOptionalConnection(
+                widget['assignees'],
+                3,
+                _parseAssignee,
+                identity: (assignee) => assignee.id,
+              );
+            case 'MILESTONE':
+              milestone = _parseWorkItemMilestoneSummary(widget);
+            case 'START_AND_DUE_DATE':
+              dates = _parseWorkItemDatesSummary(widget);
+            case 'HIERARCHY':
+              hierarchy = _parseWorkItemHierarchySummary(widget);
+            case 'STATUS':
+              status = _parseWorkItemStatusSummary(widget);
+          }
+        }
+        widgets = WorkItemSummaryWidgets(
+          tier: effectiveTier,
+          widgetTypes: Set.unmodifiable(widgetTypes),
+          labels: labels,
+          assignees: assignees,
+          milestone: milestone,
+          dates: dates,
+          hierarchy: hierarchy,
+          status: status,
+        );
+      }
+    } else {
+      widgets = const WorkItemSummaryWidgets.unavailable(tier: 3);
+    }
+  }
+
+  return WorkItemGraphSummary(
+    id: id,
+    iid: iid,
+    title: title,
+    state: state,
+    createdAt: _workItemTimestamp(node['createdAt']),
+    updatedAt: _workItemTimestamp(node['updatedAt']),
+    project: project,
+    namespace: namespace,
+    type: type,
+    widgets: widgets,
+  );
+}
+
+WorkItemDatesSummary _parseWorkItemDatesSummary(Json widget) {
+  return WorkItemDatesSummary(
+    startDate: _workItemDate(widget['startDate']),
+    dueDate: _workItemDate(widget['dueDate']),
+  );
+}
+
+WorkItemMilestoneSummary? _parseWorkItemMilestoneSummary(Json widget) {
+  final rawMilestone = widget['milestone'];
+  if (rawMilestone == null) return null;
+  final ms = objectJson(rawMilestone);
+  final id = requiredString(ms, 'id');
+  if (!_validOpaqueGraphId(id)) {
+    throw const FormatException('Invalid milestone ID');
+  }
+  return WorkItemMilestoneSummary(
+    id: id,
+    iid: ms['iid'] == null ? null : _positiveWorkItemInt(ms['iid']),
+    title: _boundedRequiredText(ms, 'title', 512),
+    dueDate: _workItemDate(ms['dueDate']),
+    startDate: _workItemDate(ms['startDate']),
+  );
+}
+
+WorkItemHierarchySummary _parseWorkItemHierarchySummary(Json widget) {
+  final hasParent = widget['hasParent'];
+  if (hasParent != null && hasParent is! bool) {
+    throw const FormatException('Invalid hierarchy hasParent flag');
+  }
+  final parentRaw = widget['parent'];
+  final parent = parentRaw == null ? null : _parseHierarchySummaryParent(parentRaw);
+  if (hasParent == false && parent != null) {
+    throw const FormatException('Contradictory parent');
+  }
+  return WorkItemHierarchySummary(
+    hasParent: hasParent as bool? ?? false,
+    parent: parent,
+  );
+}
+
+WorkItemHierarchyEntry _parseHierarchySummaryParent(Object? raw) {
+  final node = objectJson(raw);
+  final id = requiredString(node, 'id');
+  if (!_validOpaqueGraphId(id)) {
+    throw const FormatException('Invalid hierarchy parent ID');
+  }
+  final iid = _positiveWorkItemInt(node['iid']);
+  final title = _boundedRequiredText(node, 'title', 4096);
+  final type = _parseWorkItemType(node['workItemType']);
+  return WorkItemHierarchyEntry(
+    id: id,
+    iid: iid,
+    title: title,
+    state: node['state'] is String ? node['state'] as String : '',
+    project: node['project'] != null ? _parseOptionalResourceRef(node['project']) : null,
+    namespace: node['namespace'] != null ? _parseOptionalResourceRef(node['namespace']) : null,
+    type: type,
+  );
+}
+
+WorkItemStatusSummary? _parseWorkItemStatusSummary(Json widget) {
+  final rawStatus = widget['status'];
+  if (rawStatus == null) return null;
+  final st = objectJson(rawStatus);
+  final id = st['id'] == null ? null : requiredString(st, 'id');
+  if (id != null && !_validOpaqueGraphId(id)) {
+    throw const FormatException('Invalid status ID');
+  }
+  return WorkItemStatusSummary(
+    id: id,
+    name: st['name'] == null ? null : _boundedRequiredText(st, 'name', 128),
+    iconName: st['iconName'] is String ? st['iconName'] as String : null,
+    color: st['color'] is String ? st['color'] as String : null,
+  );
+}
+
+WorkItemGraphDetail _parseWorkItemDetail(Object? raw) {
+  final node = objectJson(raw);
+  final summary = _parseWorkItemSummary(node);
+  final description = _boundedOptionalDescription(node['description']);
+  final rawWidgets = node['widgets'];
+  if (rawWidgets == null) {
+    return WorkItemGraphDetail(
+      summary: summary,
+      description: description,
+      widgetsAvailable: false,
+      widgetTypes: const {},
+      descriptionWidget: null,
+      assignees: null,
+      labels: null,
+      hierarchy: null,
+      dates: null,
+    );
+  }
+  if (rawWidgets is! List || rawWidgets.length > _workItemWidgetLimit) {
+    throw const FormatException('Invalid widgets');
+  }
+  final widgetTypes = <String>{};
+  WorkItemDescriptionWidget? descriptionWidget;
+  WorkItemAssigneesWidget? assignees;
+  WorkItemLabelsWidget? labels;
+  WorkItemHierarchyWidget? hierarchy;
+  WorkItemDatesWidget? dates;
+  for (final rawWidget in rawWidgets) {
+    final widget = objectJson(rawWidget);
+    final type = _boundedRequiredText(widget, 'type', 128);
+    if (!widgetTypes.add(type)) {
+      throw const FormatException('Duplicate widget');
+    }
+    switch (type) {
+      case 'DESCRIPTION':
+        descriptionWidget = _parseDescriptionWidget(widget);
+      case 'ASSIGNEES':
+        assignees = WorkItemAssigneesWidget(
+          assignees: _parseOptionalConnection(
+            widget['assignees'],
+            _workItemAssigneeLimit,
+            _parseAssignee,
+            identity: (assignee) => assignee.id,
+          ),
+        );
+      case 'LABELS':
+        labels = WorkItemLabelsWidget(
+          labels: _parseOptionalConnection(
+            widget['labels'],
+            _workItemLabelLimit,
+            _parseWorkItemLabel,
+            identity: (label) => label.id,
+          ),
+        );
+      case 'HIERARCHY':
+        hierarchy = _parseHierarchyWidget(widget);
+      case 'START_AND_DUE_DATE':
+        dates = _parseDatesWidget(widget);
+    }
+  }
+  return WorkItemGraphDetail(
+    summary: summary,
+    description: description,
+    widgetsAvailable: true,
+    widgetTypes: Set.unmodifiable(widgetTypes),
+    descriptionWidget: descriptionWidget,
+    assignees: assignees,
+    labels: labels,
+    hierarchy: hierarchy,
+    dates: dates,
+  );
+}
+
+void _requireProjectWorkItem(
+  WorkItemGraphSummary item,
+  GraphResourceRef project,
+) {
+  if (item.project?.id != project.id ||
+      item.project?.fullPath != project.fullPath) {
+    throw const FormatException('Wrong work item project');
+  }
+}
+
+void _requireNamespaceWorkItem(
+  WorkItemGraphSummary item,
+  GraphResourceRef namespace,
+) {
+  final itemNamespace = item.namespace;
+  if (itemNamespace?.id != namespace.id ||
+      itemNamespace?.fullPath != namespace.fullPath) {
+    throw const FormatException('Wrong namespace work item');
+  }
+  final project = item.project;
+  if (project == null) {
+    if (!_isGraphResourceType(namespace.id, const {'Group'})) {
+      throw const FormatException('Wrong work item namespace type');
+    }
+    return;
+  }
+  if (!_isGraphResourceType(project.id, const {'Project'}) ||
+      !_isGraphResourceType(namespace.id, const {
+        'Namespaces::ProjectNamespace',
+      }) ||
+      project.fullPath != namespace.fullPath) {
+    throw const FormatException('Wrong work item project namespace');
+  }
+}
+
+void _requireGroupWorkItem(
+  WorkItemGraphSummary item,
+  GraphResourceRef group, {
+  required bool includeDescendants,
+}) {
+  final namespace = item.namespace;
+  if (namespace == null) {
+    throw const FormatException('Wrong work item group');
+  }
+  if (namespace.fullPath == group.fullPath) {
+    if (namespace.id != group.id || item.project != null) {
+      throw const FormatException('Wrong work item group');
+    }
+    return;
+  }
+  if (!includeDescendants ||
+      !namespace.fullPath.startsWith('${group.fullPath}/')) {
+    throw const FormatException('Wrong work item descendant');
+  }
+  final project = item.project;
+  if (project == null) {
+    if (!_isGraphResourceType(namespace.id, const {'Group'})) {
+      throw const FormatException('Wrong descendant namespace');
+    }
+    return;
+  }
+  if (project.fullPath != namespace.fullPath ||
+      !_isGraphResourceType(project.id, const {'Project'}) ||
+      !_isGraphResourceType(namespace.id, const {
+        'Namespaces::ProjectNamespace',
+      })) {
+    throw const FormatException('Wrong descendant project');
+  }
+}
+
+bool _isGraphResourceType(String id, Set<String> accepted) {
+  final uri = Uri.tryParse(id);
+  return uri != null &&
+      uri.pathSegments.isNotEmpty &&
+      accepted.contains(uri.pathSegments.first);
+}
+
+GraphResourceRef? _parseOptionalResourceRef(Object? raw) =>
+    raw == null ? null : _parseResourceRef(raw);
+
+GraphResourceRef _parseResourceRef(Object? raw) {
+  final node = objectJson(raw);
+  final id = requiredString(node, 'id');
+  final path = requiredString(node, 'fullPath');
+  if (!_validOpaqueGraphId(id) || _validatedNamespacePathOrNull(path) == null) {
+    throw const FormatException('Invalid graph resource');
+  }
+  return GraphResourceRef(id: id, fullPath: path);
+}
+
+WorkItemGraphType _parseWorkItemType(Object? raw) {
+  final node = objectJson(raw);
+  final id = requiredString(node, 'id');
+  final name = _boundedRequiredText(node, 'name', 256);
+  if (!_validOpaqueGraphId(id)) {
+    throw const FormatException('Invalid work item type ID');
+  }
+  return WorkItemGraphType(id: id, name: name);
+}
+
+bool _validOpaqueGraphId(String value) {
+  if (value.length > 512 || RegExp(r'\s').hasMatch(value)) return false;
+  final uri = Uri.tryParse(value);
+  return uri != null &&
+      uri.scheme == 'gid' &&
+      uri.host == 'gitlab' &&
+      uri.userInfo.isEmpty &&
+      !uri.hasQuery &&
+      !uri.hasFragment &&
+      uri.pathSegments.length >= 2 &&
+      uri.pathSegments.every((segment) => segment.isNotEmpty);
+}
+
+int _positiveWorkItemInt(Object? raw) {
+  if (raw is int && raw > 0) return raw;
+  if (raw is String &&
+      raw.length <= 19 &&
+      RegExp(r'^[1-9][0-9]*$').hasMatch(raw)) {
+    return int.parse(raw);
+  }
+  throw const FormatException('Invalid positive integer');
+}
+
+String _boundedRequiredText(Json node, String key, int maxLength) {
+  final value = requiredString(node, key);
+  if (value.length > maxLength || value.contains('\u0000')) {
+    throw FormatException('Invalid $key');
+  }
+  return value;
+}
+
+String? _boundedOptionalDescription(Object? raw) {
+  if (raw == null) return null;
+  if (raw is! String || raw.contains('\u0000')) {
+    throw const FormatException('Invalid description');
+  }
+  if (utf8.encode(raw).length > GitLabApi.maxTextBytes ||
+      '\n'.allMatches(raw).length + 1 > GitLabApi.maxTextLines) {
+    throw const ApiFailure(FailureKind.tooLarge);
+  }
+  return raw;
+}
+
+DateTime _workItemTimestamp(Object? raw) {
+  if (raw is! String || raw.length > 64) {
+    throw const FormatException('Invalid timestamp');
+  }
+  final match = RegExp(
+    r'^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,6}))?(Z|[+-]\d{2}:\d{2})$',
+  ).firstMatch(raw);
+  if (match == null) throw const FormatException('Invalid timestamp');
+  final year = int.parse(match.group(1)!);
+  final month = int.parse(match.group(2)!);
+  final day = int.parse(match.group(3)!);
+  final hour = int.parse(match.group(4)!);
+  final minute = int.parse(match.group(5)!);
+  final second = int.parse(match.group(6)!);
+  final fraction = (match.group(7) ?? '').padRight(6, '0');
+  final microseconds = fraction.isEmpty ? 0 : int.parse(fraction);
+  final local = DateTime.utc(
+    year,
+    month,
+    day,
+    hour,
+    minute,
+    second,
+    microseconds ~/ 1000,
+    microseconds % 1000,
+  );
+  if (local.year != year ||
+      local.month != month ||
+      local.day != day ||
+      local.hour != hour ||
+      local.minute != minute ||
+      local.second != second) {
+    throw const FormatException('Invalid timestamp');
+  }
+  final zone = match.group(8)!;
+  var offsetMinutes = 0;
+  if (zone != 'Z') {
+    final offsetHour = int.parse(zone.substring(1, 3));
+    final offsetMinute = int.parse(zone.substring(4, 6));
+    if (offsetHour > 23 || offsetMinute > 59) {
+      throw const FormatException('Invalid timestamp offset');
+    }
+    offsetMinutes = offsetHour * 60 + offsetMinute;
+    if (zone.startsWith('-')) offsetMinutes = -offsetMinutes;
+  }
+  final expected = local.subtract(Duration(minutes: offsetMinutes));
+  final parsed = DateTime.tryParse(raw)?.toUtc();
+  if (parsed == null || parsed != expected) {
+    throw const FormatException('Invalid timestamp');
+  }
+  return expected;
+}
+
+DateTime? _workItemDate(Object? raw) {
+  if (raw == null) return null;
+  if (raw is! String || !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(raw)) {
+    throw const FormatException('Invalid date');
+  }
+  final value = DateTime.tryParse('${raw}T00:00:00Z');
+  if (value == null || value.toIso8601String().substring(0, 10) != raw) {
+    throw const FormatException('Invalid date');
+  }
+  return value;
+}
+
+WorkItemDescriptionWidget _parseDescriptionWidget(Json widget) {
+  final edited = widget['edited'];
+  if (edited is! bool) {
+    throw const FormatException('Invalid edited state');
+  }
+  return WorkItemDescriptionWidget(
+    description: _boundedOptionalDescription(widget['description']),
+    edited: edited,
+    lastEditedAt: widget['lastEditedAt'] == null
+        ? null
+        : _workItemTimestamp(widget['lastEditedAt']),
+  );
+}
+
+BoundedGraphConnection<T>? _parseOptionalConnection<T>(
+  Object? raw,
+  int limit,
+  T Function(Object?) parse, {
+  String Function(T)? identity,
+  String Function(T)? secondaryIdentity,
+}) {
+  if (raw == null) return null;
+  final connection = objectJson(raw);
+  final nodes = _boundedNodes(connection, limit);
+  final items = List<T>.unmodifiable(nodes.map(parse));
+  if (identity != null) {
+    final seen = <String>{};
+    for (final item in items) {
+      if (!seen.add(identity(item))) {
+        throw const FormatException('Duplicate connection identity');
+      }
+    }
+  }
+  if (secondaryIdentity != null) {
+    final seen = <String>{};
+    for (final item in items) {
+      if (!seen.add(secondaryIdentity(item))) {
+        throw const FormatException('Duplicate scoped connection identity');
+      }
+    }
+  }
+  final cursor = _nextWorkItemCursor(connection);
+  return BoundedGraphConnection(
+    items: items,
+    isPartial: cursor != null,
+    nextCursor: cursor,
+  );
+}
+
+WorkItemGraphAssignee _parseAssignee(Object? raw) {
+  final node = objectJson(raw);
+  final id = requiredString(node, 'id');
+  if (!_validOpaqueGraphId(id)) throw const FormatException('Invalid user ID');
+  return WorkItemGraphAssignee(
+    id: id,
+    name: _boundedRequiredText(node, 'name', 512),
+    username: _boundedRequiredText(node, 'username', 255),
+  );
+}
+
+WorkItemGraphLabel _parseWorkItemLabel(Object? raw) {
+  final node = objectJson(raw);
+  final id = requiredString(node, 'id');
+  if (!_validOpaqueGraphId(id)) throw const FormatException('Invalid label ID');
+  final description = node['description'];
+  final textColor = node['textColor'];
+  if ((description != null && description is! String) ||
+      (textColor != null && textColor is! String)) {
+    throw const FormatException('Invalid label metadata');
+  }
+  return WorkItemGraphLabel(
+    id: id,
+    title: _boundedRequiredText(node, 'title', 512),
+    color: _boundedRequiredText(node, 'color', 64),
+    description: description as String?,
+    textColor: textColor as String?,
+  );
+}
+
+WorkItemHierarchyWidget _parseHierarchyWidget(Json widget) {
+  final hasParent = widget['hasParent'];
+  final hasChildren = widget['hasChildren'];
+  if ((hasParent != null && hasParent is! bool) ||
+      (hasChildren != null && hasChildren is! bool)) {
+    throw const FormatException('Invalid hierarchy flags');
+  }
+  final parent = widget['parent'] == null
+      ? null
+      : _parseHierarchyEntry(widget['parent']);
+  final children = _parseOptionalConnection(
+    widget['children'],
+    _workItemChildLimit,
+    _parseHierarchyEntry,
+    identity: (child) => child.id,
+    secondaryIdentity: (child) =>
+        '${child.namespace?.fullPath ?? child.project?.fullPath ?? 'unknown'}#${child.iid}',
+  );
+  if (hasParent == false && parent != null) {
+    throw const FormatException('Contradictory parent');
+  }
+  return WorkItemHierarchyWidget(
+    hasParent: hasParent as bool?,
+    hasChildren: hasChildren as bool?,
+    parent: parent,
+    children: children,
+  );
+}
+
+WorkItemHierarchyEntry _parseHierarchyEntry(Object? raw) {
+  final summary = _parseWorkItemSummary(raw);
+  return WorkItemHierarchyEntry(
+    id: summary.id,
+    iid: summary.iid,
+    title: summary.title,
+    state: summary.state,
+    project: summary.project,
+    namespace: summary.namespace,
+    type: summary.type,
+  );
+}
+
+WorkItemDatesWidget _parseDatesWidget(Json widget) {
+  final rollUp = widget['rollUp'];
+  if (rollUp is! bool) {
+    throw const FormatException('Invalid roll-up state');
+  }
+  return WorkItemDatesWidget(
+    startDate: _workItemDate(widget['startDate']),
+    dueDate: _workItemDate(widget['dueDate']),
+    rollUp: rollUp,
+  );
+}
+
+Set<String>? _parseWidgetDefinitions(Object? raw) {
+  if (raw == null) return null;
+  if (raw is! List || raw.length > _workItemWidgetLimit) {
+    throw const FormatException('Invalid widget definitions');
+  }
+  final result = <String>{};
+  for (final value in raw) {
+    final type = _boundedRequiredText(objectJson(value), 'type', 128);
+    if (!result.add(type)) {
+      throw const FormatException('Duplicate widget definition');
+    }
+  }
+  return Set.unmodifiable(result);
+}

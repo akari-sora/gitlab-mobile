@@ -5,13 +5,46 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'failure.dart';
+import 'analytics_models.dart';
 import 'instance.dart';
 import 'models.dart';
 import 'oauth.dart';
 import 'pagination.dart';
+import 'registry_models.dart';
+import 'snippet_models.dart';
 import 'upload_names.dart';
+import 'work_item_activity_models.dart';
+import 'work_item_assignee_models.dart';
+import 'work_item_labels_models.dart';
+import 'work_item_attribute_models.dart';
+import 'work_item_graph_models.dart';
+import 'work_item_health_edit_models.dart';
+import 'work_item_milestone_models.dart';
+import 'work_item_status_models.dart';
+import 'work_item_weight_models.dart';
+import 'work_item_state_models.dart';
+import 'work_item_dates_models.dart';
 
 part 'workspace_api.dart';
+part 'incident_api.dart';
+part 'analytics_api.dart';
+part 'package_download_api.dart';
+part 'snippet_graphql_api.dart';
+part 'work_item_graphql_api.dart';
+part 'work_item_attributes_api.dart';
+part 'work_item_health_api.dart';
+part 'work_item_activity_api.dart';
+part 'work_item_note_delete_api.dart';
+part 'work_item_note_reactions_api.dart';
+part 'work_item_notifications_api.dart';
+part 'work_item_content_api.dart';
+part 'work_item_milestone_api.dart';
+part 'work_item_weight_api.dart';
+part 'work_item_assignee_api.dart';
+part 'work_item_labels_api.dart';
+part 'work_item_status_api.dart';
+part 'work_item_state_api.dart';
+part 'work_item_dates_api.dart';
 
 final _artifactCancelled = Object();
 const _artifactRedirects = {301, 302, 303, 307, 308};
@@ -97,10 +130,12 @@ final class GitLabApi {
     HttpClientAdapter? cdnAdapter,
     OAuthTokenClient? oauth,
     Future<void> Function(OAuthCredential rotated)? onOAuthRotated,
+    DateTime Function()? readCacheClock,
   }) : _credential = credential ?? PatCredential(token ?? ''),
        _dio = dio ?? Dio(),
        _cdnAdapter = cdnAdapter,
        _oauth = oauth,
+       _readCacheClock = readCacheClock ?? DateTime.now,
        _onOAuthRotated = onOAuthRotated {
     final access = _credential.accessToken;
     if (access.trim().isEmpty || RegExp(r'\s').hasMatch(access)) {
@@ -122,8 +157,14 @@ final class GitLabApi {
   final Dio _dio;
   final HttpClientAdapter? _cdnAdapter;
   final OAuthTokenClient? _oauth;
+  final DateTime Function() _readCacheClock;
   final Future<void> Function(OAuthCredential rotated)? _onOAuthRotated;
   Future<void>? _refreshing;
+  final _readCache = <String, _CachedRead>{};
+  final _readInFlight = <String, Future<Object>>{};
+  int _readEpoch = 0, _readCacheBytes = 0, _writesInFlight = 0;
+  static const maxCachedReads = 32;
+  static const maxCachedReadBytes = 6 * 1024 * 1024;
   final Set<CancelToken> _requests = {};
   final Set<Dio> _bareClients = {};
   bool _closed = false;
@@ -132,6 +173,106 @@ final class GitLabApi {
   static const maxTextLines = 20000;
   static const maxUploadBytes = 25 * 1024 * 1024;
   static const maxArtifactBytes = 256 * 1024 * 1024;
+
+  /// In-memory only, owned by this account client. Refresh and mutations discard
+  /// both cached values and sharing gates, so older reads cannot refill them.
+  void clearReadCache() {
+    _readEpoch++;
+    _readCache.clear();
+    _readCacheBytes = 0;
+    _readInFlight.clear();
+  }
+
+  Future<T> _cachedRead<T extends Object>(
+    String key,
+    Future<_CacheRead<T>> Function() load, {
+    required int Function(T) cost,
+    bool refresh = false,
+    int invalidationRetries = 0,
+  }) async {
+    if (_closed) throw const ApiFailure(FailureKind.cancelled);
+    if (refresh) clearReadCache();
+    final cached = _readCache.remove(key);
+    if (cached != null) {
+      _readCacheBytes -= cached.cost;
+      if (_readCacheClock().isBefore(cached.expires)) {
+        _readCache[key] = cached;
+        _readCacheBytes += cached.cost;
+        return cached.value as T;
+      }
+    }
+    final pending = _readInFlight[key];
+    if (pending != null) return await pending as T;
+    final epoch = _readEpoch;
+    late final Future<T> request;
+    request = () async {
+      try {
+        final loaded = await load();
+        if (_closed) throw const ApiFailure(FailureKind.cancelled);
+        if (_writesInFlight != 0) throw const ApiFailure(FailureKind.cancelled);
+        if (epoch != _readEpoch) {
+          if (invalidationRetries >= 1) throw const ApiFailure(FailureKind.cancelled);
+          return await _cachedRead(key, load, cost: cost,
+            invalidationRetries: invalidationRetries + 1);
+        }
+        final value = loaded.value;
+        final bytes = 128 + key.length * 2 + cost(value);
+        if (epoch == _readEpoch &&
+            _writesInFlight == 0 &&
+            loaded.ttl > Duration.zero &&
+            bytes <= maxCachedReadBytes) {
+          final previous = _readCache.remove(key);
+          if (previous != null) _readCacheBytes -= previous.cost;
+          _readCache[key] = _CachedRead(
+            value,
+            _readCacheClock().add(loaded.ttl),
+            bytes,
+          );
+          _readCacheBytes += bytes;
+          while (_readCache.length > maxCachedReads ||
+              _readCacheBytes > maxCachedReadBytes) {
+            _readCacheBytes -= _readCache.remove(_readCache.keys.first)!.cost;
+          }
+        }
+        return value;
+      } finally {
+        if (identical(_readInFlight[key], request)) {
+          unawaited(_readInFlight.remove(key));
+        }
+      }
+    }();
+    unawaited(_readInFlight[key] = request);
+    return await request;
+  }
+
+  Duration _cacheTtl(Headers headers, Duration maximum) {
+    final directives = (headers.value('cache-control') ?? '').toLowerCase().split(',').map((v) => v.trim());
+    var ttl = maximum;
+    var mustRevalidate = false, explicitFreshness = false;
+    for (final directive in directives) {
+      final name = directive.split('=').first;
+      if (const {'no-store', 'no-cache'}.contains(name)) return Duration.zero;
+      if (name == 'must-revalidate') mustRevalidate = true;
+      if (name == 'max-age') {
+        explicitFreshness = true;
+        final seconds = int.tryParse(directive.split('=').last.replaceAll('"', ''));
+        if (seconds == null || seconds <= 0) return Duration.zero;
+        final age = int.tryParse(headers.value('age') ?? '') ?? 0;
+        final allowed = Duration(seconds: seconds - age);
+        if (allowed < ttl) ttl = allowed;
+      }
+    }
+    final expires = headers.value('expires');
+    if (expires != null) {
+      explicitFreshness = true;
+      try {
+        final allowed = HttpDate.parse(expires).difference(_readCacheClock());
+        if (allowed < ttl) ttl = allowed;
+      } on FormatException { return Duration.zero; }
+    }
+    if (mustRevalidate && !explicitFreshness) return Duration.zero;
+    return ttl > Duration.zero ? ttl : Duration.zero;
+  }
 
   Map<String, String> get _authHeaders => switch (_credential) {
     PatCredential(:final token) => {
@@ -154,6 +295,7 @@ final class GitLabApi {
     bool retried = false,
     Map<String, String>? headers,
     bool allowRangeNotSatisfiable = false,
+    bool graphQuery = false,
   }) => _send(
     uri,
     method: method,
@@ -162,6 +304,7 @@ final class GitLabApi {
     retried: retried,
     headers: headers,
     allowRangeNotSatisfiable: allowRangeNotSatisfiable,
+    graphQuery: graphQuery,
   );
 
   /// Shared request path for JSON calls and multipart uploads.
@@ -174,9 +317,13 @@ final class GitLabApi {
     bool retried = false,
     Map<String, String>? headers,
     bool allowRangeNotSatisfiable = false,
+    bool graphQuery = false,
+    bool graphMutation = false,
   }) async {
     if (_closed) throw const ApiFailure(FailureKind.cancelled);
-    if (!instance.allowsApi(uri)) {
+    if ((graphQuery && graphMutation) || (graphQuery || graphMutation
+        ? method != 'POST' || !instance.allowsGraphQL(uri)
+        : !instance.allowsApi(uri))) {
       throw const ApiFailure(FailureKind.unsupported);
     }
     final until = _retryAt;
@@ -185,6 +332,13 @@ final class GitLabApi {
     }
     final cancel = CancelToken();
     _requests.add(cancel);
+    // Only private, fixed GraphQL queries use this read path. POST mutations
+    // retain the write fences and are never retried automatically.
+    final writing = method != 'GET' && method != 'HEAD' && !graphQuery;
+    if (writing) {
+      _writesInFlight++;
+      clearReadCache();
+    }
     try {
       final response = await _dio.requestUri<ResponseBody>(
         uri,
@@ -200,7 +354,13 @@ final class GitLabApi {
           maxRedirects: 0,
           validateStatus: (s) => s != null,
           headers: {
-            ..._authHeaders,
+            ...(graphQuery || graphMutation)
+                ? {
+                    'Authorization': 'Bearer ${_credential.accessToken}',
+                    'Accept': 'application/json',
+                    'Cache-Control': 'no-store',
+                  }
+                : _authHeaders,
             ...?headers,
           },
         ),
@@ -210,12 +370,17 @@ final class GitLabApi {
       final body = response.data;
       if (allowRangeNotSatisfiable && status == 416) {
         if (body != null) await body.stream.listen((_) {}).cancel();
-        return (bytes: Uint8List(0), headers: response.headers, statusCode: 416);
+        return (
+          bytes: Uint8List(0),
+          headers: response.headers,
+          statusCode: 416,
+        );
       }
       if (status < 200 || status >= 300) {
+        if (status == 401 || status == 403 || status == 404) clearReadCache();
         if (body != null) await body.stream.listen((_) {}).cancel();
         if (status == 401 && !retried && await _refreshOAuth()) {
-          if (method == 'GET' || method == 'HEAD') {
+          if (method == 'GET' || method == 'HEAD' || graphQuery) {
             return await _read(
               uri,
               method: method,
@@ -224,6 +389,7 @@ final class GitLabApi {
               retried: true,
               headers: headers,
               allowRangeNotSatisfiable: allowRangeNotSatisfiable,
+              graphQuery: graphQuery,
             );
           }
           throw const ApiFailure(FailureKind.writeUncertain);
@@ -245,38 +411,66 @@ final class GitLabApi {
       }
       if (method == 'HEAD' || status == 204) {
         if (body != null) await body.stream.listen((_) {}).cancel();
-        return (bytes: Uint8List(0), headers: response.headers, statusCode: status);
+        return (
+          bytes: Uint8List(0),
+          headers: response.headers,
+          statusCode: status,
+        );
       }
-      if (body == null) throw const ApiFailure(FailureKind.invalidResponse);
+      if (body == null) {
+        throw ApiFailure(writing
+            ? FailureKind.writeUncertain
+            : FailureKind.invalidResponse);
+      }
       final length = int.tryParse(
         response.headers.value('content-length') ?? '',
       );
       if (length != null && length > maxBytes) {
         await body.stream.listen((_) {}).cancel();
-        throw const ApiFailure(FailureKind.tooLarge);
+        throw ApiFailure(writing
+            ? FailureKind.writeUncertain
+            : FailureKind.tooLarge);
       }
       final bytes = BytesBuilder(copy: false);
-      await for (final chunk in body.stream) {
-        if (_closed) throw const ApiFailure(FailureKind.cancelled);
-        if (bytes.length + chunk.length > maxBytes) {
-          cancel.cancel('response budget exceeded');
-          throw const ApiFailure(FailureKind.tooLarge);
+      try {
+        await for (final chunk in body.stream) {
+          if (_closed) throw const ApiFailure(FailureKind.cancelled);
+          if (bytes.length + chunk.length > maxBytes) {
+            cancel.cancel('response budget exceeded');
+            throw ApiFailure(writing
+                ? FailureKind.writeUncertain
+                : FailureKind.tooLarge);
+          }
+          bytes.add(chunk);
         }
-        bytes.add(chunk);
+      } on ApiFailure {
+        rethrow;
+      } catch (_) {
+        throw ApiFailure(writing
+            ? FailureKind.writeUncertain
+            : FailureKind.network);
       }
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
-      return (bytes: bytes.takeBytes(), headers: response.headers, statusCode: status);
+      return (
+        bytes: bytes.takeBytes(),
+        headers: response.headers,
+        statusCode: status,
+      );
     } on DioException catch (error) {
       if (error.type == DioExceptionType.cancel || _closed) {
         throw const ApiFailure(FailureKind.cancelled);
       }
       throw ApiFailure(
-        method == 'GET' || method == 'HEAD'
+        method == 'GET' || method == 'HEAD' || graphQuery
             ? FailureKind.network
             : FailureKind.writeUncertain,
       );
     } finally {
       _requests.remove(cancel);
+      if (writing) {
+        _writesInFlight--;
+        clearReadCache();
+      }
     }
   }
 
@@ -285,9 +479,115 @@ final class GitLabApi {
     String method = 'GET',
     Object? data,
   }) async {
+    final result = await _read(uri, method: method, data: data);
     try {
-      final result = await _read(uri, method: method, data: data);
       return objectJson(jsonDecode(utf8.decode(result.bytes)));
+    } on FormatException {
+      // A successful mutation can have taken effect despite an unreadable
+      // acknowledgement. The editor must keep its pending-write fence.
+      throw ApiFailure(method == 'GET' || method == 'HEAD'
+          ? FailureKind.invalidResponse
+          : FailureKind.writeUncertain);
+    }
+  }
+
+  /// Actual job dependencies, rather than inferred REST stage relationships.
+  /// Fixed query, no mutations, no caching, and no partial GraphQL success.
+  Future<Map<String, dynamic>> pipelineGraphPage(
+    Project project,
+    int pipelineId, {
+    String? after,
+  }) async {
+    if (pipelineId <= 0 ||
+        project.id <= 0 ||
+        project.path.isEmpty ||
+        (after != null && (after.isEmpty || after.length > 4096))) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    const query = r'''
+query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) {
+  project(fullPath: $path) {
+    id
+    pipeline(id: $pipeline) {
+      id iid
+      stages(first: 100) { nodes { name } pageInfo { hasNextPage } }
+      jobs(first: 20, after: $after) {
+        nodes {
+          id name status kind retried schedulingType stage { name }
+          needs(first: 100) {
+            nodes { name }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+    }
+  }
+}
+''';
+    try {
+      final response = await _read(
+        instance.graphQL,
+        method: 'POST',
+        graphQuery: true,
+        data: {
+          'query': query,
+          'variables': {
+            'path': project.path,
+            'pipeline': 'gid://gitlab/Ci::Pipeline/$pipelineId',
+            'after': after,
+          },
+        },
+      );
+      final envelope = objectJson(jsonDecode(utf8.decode(response.bytes)));
+      final errors = envelope['errors'];
+      if (errors != null) {
+        if (errors is! List) {
+          throw const ApiFailure(FailureKind.invalidResponse);
+        }
+        if (errors.isNotEmpty) {
+          final incompatible = errors.every(
+            (error) =>
+                error is Map &&
+                error['extensions'] is Map &&
+                const {
+                  'undefinedField',
+                  'undefinedArgument',
+                  'variableRequiresValidType',
+                  'argumentLiteralsIncompatible',
+                  'missingRequiredArguments',
+                }.contains((error['extensions'] as Map)['code']),
+          );
+          throw ApiFailure(
+            incompatible
+                ? FailureKind.unsupported
+                : FailureKind.invalidResponse,
+            title: incompatible ? '實例未提供工作相依圖' : null,
+            detail: incompatible
+                ? '這個 GitLab 版本未提供所需欄位。仍可從工作分頁查看工作與 Log。'
+                : null,
+          );
+        }
+      }
+      final data = objectJson(envelope['data']);
+      if (data['project'] == null) {
+        throw const ApiFailure(FailureKind.invisible);
+      }
+      final remoteProject = objectJson(data['project']);
+      if (remoteProject['id'] != 'gid://gitlab/Project/${project.id}') {
+        throw const ApiFailure(FailureKind.invalidResponse);
+      }
+      if (remoteProject['pipeline'] == null) {
+        throw const ApiFailure(FailureKind.invisible);
+      }
+      final pipeline = objectJson(remoteProject['pipeline']);
+      if (pipeline['id'] != 'gid://gitlab/Ci::Pipeline/$pipelineId') {
+        throw const ApiFailure(FailureKind.invalidResponse);
+      }
+      if (pipeline['jobs'] == null || pipeline['stages'] == null) {
+        throw const ApiFailure(FailureKind.forbidden);
+      }
+      return pipeline;
     } on FormatException {
       throw const ApiFailure(FailureKind.invalidResponse);
     }
@@ -335,8 +635,28 @@ final class GitLabApi {
     return _page(next ?? first, Project.fromJson);
   }
 
-  Future<Project> project(String idOrFullPath) async =>
-      Project.fromJson(await _object(instance.api(['projects', idOrFullPath])));
+  Future<Project> project(String idOrFullPath, {bool refresh = false}) =>
+      _cachedRead(
+        'project:$idOrFullPath',
+        () async {
+          final result = await _read(instance.api(['projects', idOrFullPath]),
+            headers: {'Cache-Control': 'max-age=0'});
+          try {
+            return _CacheRead(Project.fromJson(objectJson(jsonDecode(utf8.decode(result.bytes)))),
+              _cacheTtl(result.headers, const Duration(seconds: 30)));
+          } on FormatException { throw const ApiFailure(FailureKind.invalidResponse); }
+        },
+        cost: (p) =>
+            256 +
+            2 *
+                (p.name.length +
+                    p.path.length +
+                    (p.description?.length ?? 0) +
+                    (p.visibility?.length ?? 0) +
+                    (p.defaultBranch?.length ?? 0) +
+                    (p.markedForDeletionOn?.length ?? 0)),
+        refresh: refresh,
+      );
 
   Future<String> defaultBranchSha(Project project) async {
     final branch = project.defaultBranch;
@@ -392,7 +712,29 @@ final class GitLabApi {
     }
   }
 
-  Future<String> textFile(int projectId, String sha, String filePath) async {
+  Future<String> textFile(
+    int projectId,
+    String sha,
+    String filePath, {
+    bool refresh = false,
+  }) {
+    if (!RegExp(r'^[0-9a-fA-F]{40,64}$').hasMatch(sha)) {
+      return _readTextFile(projectId, sha, filePath).then((read) => read.value);
+    }
+    return _cachedRead(
+      instance
+          .api(
+            ['projects', '$projectId', 'repository', 'files', filePath],
+            {'ref': sha},
+          )
+          .toString(),
+      () => _readTextFile(projectId, sha, filePath),
+      cost: (text) => text.length * 2,
+      refresh: refresh,
+    );
+  }
+
+  Future<_CacheRead<String>> _readTextFile(int projectId, String sha, String filePath) async {
     final segments = [
       'projects',
       '$projectId',
@@ -403,6 +745,7 @@ final class GitLabApi {
     final meta = await _read(
       instance.api(segments, {'ref': sha}),
       method: 'HEAD',
+      headers: {'Cache-Control': 'max-age=0'},
     );
     final size = int.tryParse(meta.headers.value('x-gitlab-size') ?? '');
     if (size != null && size > maxTextBytes) {
@@ -411,6 +754,7 @@ final class GitLabApi {
     final result = await _read(
       instance.api([...segments, 'raw'], {'ref': sha, 'lfs': 'false'}),
       maxBytes: maxTextBytes,
+      headers: {'Cache-Control': 'max-age=0'},
     );
     if (result.bytes.contains(0)) {
       throw const ApiFailure(FailureKind.unsupported);
@@ -420,7 +764,9 @@ final class GitLabApi {
       if ('\n'.allMatches(text).length + 1 > maxTextLines) {
         throw const ApiFailure(FailureKind.tooLarge);
       }
-      return text;
+      final metaTtl = _cacheTtl(meta.headers, const Duration(minutes: 5));
+      final rawTtl = _cacheTtl(result.headers, const Duration(minutes: 5));
+      return _CacheRead(text, metaTtl < rawTtl ? metaTtl : rawTtl);
     } on FormatException {
       throw const ApiFailure(FailureKind.unsupported);
     }
@@ -439,6 +785,7 @@ final class GitLabApi {
     final gate = () async {
       final rotated = await oauth.refresh(current);
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
+      clearReadCache();
       _credential = current.replacedBy(rotated);
       await _onOAuthRotated?.call(_credential as OAuthCredential);
     }();
@@ -1158,6 +1505,7 @@ final class GitLabApi {
 
   void close() {
     _closed = true;
+    clearReadCache();
     for (final token in _requests.toList()) {
       token.cancel('session ended');
     }
@@ -1168,6 +1516,19 @@ final class GitLabApi {
     }
     _dio.close(force: true);
   }
+}
+
+final class _CacheRead<T> {
+  const _CacheRead(this.value, this.ttl);
+  final T value;
+  final Duration ttl;
+}
+
+final class _CachedRead {
+  const _CachedRead(this.value, this.expires, this.cost);
+  final Object value;
+  final DateTime expires;
+  final int cost;
 }
 
 /// Forwards a test double without closing it when the CDN client is discarded.

@@ -11,6 +11,13 @@
   - 帳號與會話綁定 `session.generation`。切換帳號或登出時 `generation++`，徹底重建 Widget 樹以杜絕過期資料或跨帳號污染。
   - 404/403 錯誤統一由 `FailureNotice` 捕捉，支援攜帶 `ResumeTarget`（專案路徑、資源類型、IID）。切換帳號後以 Path-first 機制向 API 解析新帳號下的專案 ID，並依 `generation` 重導至目標資源。
 
+## Android development signing
+
+- 本機 debug、profile 與 release APK 共用固定開發簽章，以支援跨 build mode 的覆蓋安裝。完整契約與操作方式見 [`docs/ANDROID_SIGNING.md`](docs/ANDROID_SIGNING.md)。
+- 主機上的固定目錄是 `~/.config/gitlab-mobile/android-signing`；私鑰與密碼不屬於 Git、建置產物或驗收台帳。證據只記錄公開憑證 SHA-256。
+- CI 目前仍使用 `ANDROID_DEBUG_KEYSTORE_B64` 或既有臨時 debug key fallback；本機固定簽章不代表 CI、Play 或正式發布簽章已完成。
+- Android 能否覆蓋安裝同時取決於 application ID、相容簽章與非降版 `versionCode`。不得為了通過安裝而自動移除 App 或清除帳號／草稿。
+
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |
 |---|---------|-------------|-----------|--------|

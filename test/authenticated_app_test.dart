@@ -682,26 +682,36 @@ void main() {
     return session;
   }
 
-  testWidgets('the bottom navigation reserves the gesture inset exactly once', (tester) async {
-    tester.view.devicePixelRatio = 1.0;
-    tester.view.physicalSize = const Size(412, 900);
-    tester.view.padding = const FakeViewPadding(bottom: 24);
-    tester.view.viewPadding = const FakeViewPadding(bottom: 24);
-    addTearDown(tester.view.reset);
-    final session = await connectedSession(tester, WorkspaceFixture());
-    await tester.pumpWidget(
-      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
-    );
-    await settleNetworkWidgets(tester);
-    final bar = tester.getRect(find.byType(NavigationBar));
-    final height = Theme.of(tester.element(find.byType(NavigationBar))).navigationBarTheme.height ?? 80;
-    expect(bar.bottom, 900 - 24, reason: 'the inset sits below the bar, reserved once');
-    expect(bar.height, height, reason: 'the bar itself adds no second inset');
-  });
+  for (final (topInset, bottomInset, keyboardInset) in [
+    (36.0, 24.0, 0.0),
+    (48.0, 48.0, 0.0),
+    (36.0, 24.0, 300.0),
+  ]) {
+    testWidgets('bottom navigation has no status inset and reserves $bottomInset dp once with keyboard $keyboardInset', (tester) async {
+      tester.view.devicePixelRatio = 1.0;
+      tester.view.physicalSize = const Size(412, 900);
+      tester.view.padding = FakeViewPadding(top: topInset, bottom: keyboardInset > 0 ? 0 : bottomInset);
+      tester.view.viewPadding = FakeViewPadding(top: topInset, bottom: bottomInset);
+      tester.view.viewInsets = FakeViewPadding(bottom: keyboardInset);
+      addTearDown(tester.view.reset);
+      final session = await connectedSession(tester, WorkspaceFixture());
+      await tester.pumpWidget(
+        AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
+      );
+      await settleNetworkWidgets(tester);
+      final bar = tester.getRect(find.byType(NavigationBar));
+      final height = Theme.of(tester.element(find.byType(NavigationBar))).navigationBarTheme.height ?? 80;
+      expect(bar.bottom, 900 - bottomInset, reason: 'the system inset stays below the bar, including with a keyboard');
+      expect(bar.height, height, reason: 'the status-bar inset must not enlarge the navigation');
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('every destination fits a 320 dp phone at double text size', (tester) async {
     tester.view.devicePixelRatio = 1.0;
     tester.view.physicalSize = const Size(320, 700);
+    tester.view.padding = const FakeViewPadding(top: 36, bottom: 24);
+    tester.view.viewPadding = const FakeViewPadding(top: 36, bottom: 24);
     tester.platformDispatcher.textScaleFactorTestValue = 2;
     addTearDown(tester.view.reset);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);

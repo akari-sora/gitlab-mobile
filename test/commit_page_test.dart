@@ -104,6 +104,9 @@ void main() {
 
     await tester.pumpAndSettle();
 
+    expect(find.byTooltip('分享連結'), findsOneWidget);
+    expect(find.byTooltip('在瀏覽器開啟'), findsOneWidget);
+
     // Verify Title and message
     expect(find.text('Sanitize input to prevent script injection'), findsOneWidget);
     expect(find.text('Detailed explanation of the security fix.'), findsOneWidget);

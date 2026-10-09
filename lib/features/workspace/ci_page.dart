@@ -8,9 +8,11 @@ import '../../core/gitlab_api.dart';
 import '../../core/job_trace.dart';
 import '../../core/models.dart';
 import '../../shared/external_link.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
 import 'records_feed.dart';
+import 'pipeline_graph_page.dart';
 import '../../shared/artifact_storage.dart';
 import '../../shared/theme.dart';
 export '../../shared/artifact_storage.dart';
@@ -550,8 +552,49 @@ class _PipelinePageState extends State<PipelinePage> {
   final _feed = GlobalKey<RecordsFeedState>();
   final _testsKey = GlobalKey<PipelineTestsViewState>();
   final _chrome = ScrollChromeController();
+  int _generation = 0;
+  NavigatorState? _navigator;
+  final Set<Route<dynamic>> _ownedRoutes = {};
+  bool _current(int generation) => mounted && generation == _generation;
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _navigator = Navigator.of(context);
+  }
+  void _ownRoute(Route<dynamic> route) {
+    if (!_ownedRoutes.add(route)) return;
+    unawaited(route.popped.then((_) => _ownedRoutes.remove(route)));
+  }
+  void _dismissRoutes() {
+    final navigator = _navigator, routes = _ownedRoutes.toList(growable: false);
+    _ownedRoutes.clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (navigator == null || !navigator.mounted) return;
+      for (final route in routes) {
+        if (!route.isActive) continue;
+        navigator.popUntil((candidate) => candidate == route || candidate.isFirst);
+        if (route.isActive) navigator.removeRoute(route);
+      }
+    });
+  }
+  @override
+  void didUpdateWidget(covariant PipelinePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.account.key != widget.account.key || oldWidget.project.id != widget.project.id ||
+        oldWidget.id != widget.id || !identical(oldWidget.api, widget.api)) {
+      _generation++;
+      _dismissRoutes();
+      _data = null;
+      _error = null;
+      _busy = false;
+      _loading = false;
+      unawaited(_load());
+    }
+  }
   @override
   void dispose() {
+    _generation++;
+    _dismissRoutes();
     _chrome.dispose();
     super.dispose();
   }
@@ -562,72 +605,98 @@ class _PipelinePageState extends State<PipelinePage> {
   void initState() { super.initState(); unawaited(_load()); }
   Future<void> _load() async {
     if (_loading || !mounted) { return; }
+    final owner = widget, generation = _generation;
     setState(() { _loading = true; _error = null; });
     try {
-      final data = await widget.api.record(['projects', '${widget.project.id}', 'pipelines', '${widget.id}']);
-      if (mounted) { setState(() => _data = data); }
-    } catch (e) { if (mounted) { setState(() => _error = safeFailure(e)); } }
-    finally { if (mounted) { setState(() => _loading = false); } }
+      final data = await owner.api.record(['projects', '${owner.project.id}', 'pipelines', '${owner.id}']);
+      if (_current(generation)) { setState(() => _data = data); }
+    } catch (e) { if (_current(generation)) { setState(() => _error = safeFailure(e)); } }
+    finally { if (_current(generation)) { setState(() => _loading = false); } }
+  }
+  void _openGraph() {
+    final owner = widget;
+    final route = MaterialPageRoute<void>(builder: (_) => PipelineGraphPage(
+      account: owner.account, api: owner.api, project: owner.project, pipelineId: owner.id));
+    _ownRoute(route);
+    unawaited(Navigator.push(context, route));
   }
   Future<void> _openJob(int id) async {
-    await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => JobLogPage(
-      account: widget.account, api: widget.api, project: widget.project, id: id)));
+    final owner = widget, generation = _generation;
+    final route = MaterialPageRoute<void>(builder: (_) => JobLogPage(
+      account: owner.account, api: owner.api, project: owner.project, id: id));
+    _ownRoute(route);
+    await Navigator.push(context, route);
     // The job route stays open across retries and completes only on real back.
-    if (!mounted) { return; }
+    if (!_current(generation)) { return; }
     await _load();
-    if (mounted) {
+    if (_current(generation)) {
       await _feed.currentState?.refresh();
-      await _testsKey.currentState?.refresh();
+      if (_current(generation)) await _testsKey.currentState?.refresh();
     }
   }
   Future<void> _action(String action) async {
     if (_busy) { return; }
+    final owner = widget, generation = _generation;
     final label = action == 'retry' ? '重試失敗工作' : action == 'cancel' ? '取消流程' : '刪除 Pipeline';
-    if (!await confirmAction(context, '$label？', '${widget.project.path}\nPipeline #${widget.id}',
-      requiredText: action == 'delete' ? '${widget.id}' : null)) { return; }
-    if (!mounted) { return; }
+    if (!await confirmAction(context, '$label？', '${owner.project.path}\nPipeline #${owner.id}',
+      requiredText: action == 'delete' ? '${owner.id}' : null, onRoute: _ownRoute)) { return; }
+    if (!_current(generation)) { return; }
     setState(() => _busy = true);
     try {
       if (action == 'delete') {
-        await widget.api.deletePipeline(widget.project.id, widget.id);
-        if (mounted) { Navigator.pop(context); }
+        await owner.api.deletePipeline(owner.project.id, owner.id);
+        if (mounted && _current(generation)) { Navigator.pop(context); }
         return;
       }
-      await widget.api.pipelineAction(widget.project.id, widget.id, action);
+      await owner.api.pipelineAction(owner.project.id, owner.id, action);
+      if (!_current(generation)) return;
       await _load();
-      if (mounted) {
+      if (_current(generation)) {
         await _feed.currentState?.refresh();
-        await _testsKey.currentState?.refresh();
+        if (_current(generation)) await _testsKey.currentState?.refresh();
       }
-    } catch (e) { if (mounted) { showFailure(context, e); } }
-    finally { if (mounted) { setState(() => _busy = false); } }
+    } catch (e) { if (mounted && _current(generation)) { showFailure(context, e); } }
+    finally { if (_current(generation)) { setState(() => _busy = false); } }
   }
   Future<void> _jobAction(int jobId, String action) async {
     if (_busy) { return; }
+    final owner = widget, generation = _generation;
     final label = action == 'retry' ? '重試工作' : action == 'play' ? '啟動手動工作' : '取消工作';
-    if (!await confirmAction(context, '$label？', '${widget.project.path}\nJob #$jobId')) { return; }
-    if (!mounted) { return; }
+    if (!await confirmAction(context, '$label？', '${owner.project.path}\nJob #$jobId', onRoute: _ownRoute)) { return; }
+    if (!_current(generation)) { return; }
     setState(() => _busy = true);
     try {
-      await widget.api.jobAction(widget.project.id, jobId, action);
+      await owner.api.jobAction(owner.project.id, jobId, action);
+      if (!_current(generation)) return;
       await _load();
-      if (mounted) {
+      if (_current(generation)) {
         await _feed.currentState?.refresh();
-        await _testsKey.currentState?.refresh();
+        if (_current(generation)) await _testsKey.currentState?.refresh();
       }
-    } catch (e) { if (mounted) { showFailure(context, e); } }
-    finally { if (mounted) { setState(() => _busy = false); } }
+    } catch (e) { if (mounted && _current(generation)) { showFailure(context, e); } }
+    finally { if (_current(generation)) { setState(() => _busy = false); } }
   }
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final appBar = AppBar(primary: false, titleSpacing: 0, title: Column(crossAxisAlignment: CrossAxisAlignment.start,
+    final generation = _generation;
+    final appBar = AppBar(primary: false,
+      toolbarHeight: (MediaQuery.textScalerOf(context).scale(19) * 1.3 +
+          MediaQuery.textScalerOf(context).scale(12) * 1.5 + 12).clamp(56, double.infinity),
+      titleSpacing: 0, title: Column(crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min, children: [
         Text(_data != null && valueInt(_data!, 'iid') > 0 ? 'Pipeline #${valueInt(_data!, 'iid')}' : 'Pipeline #${widget.id}',
+          maxLines: 1, overflow: TextOverflow.ellipsis,
           style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 19)),
         Text(widget.project.path, maxLines: 1, overflow: TextOverflow.ellipsis,
           style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
       ]), actions: [
+        ResourceShareButton(uri: widget.account.instance.projectWeb('${widget.project.path}/-/pipelines/${widget.id}'),
+          ownerKey: (widget.account.key, widget.api, widget.project.id, widget.id, generation),
+          isCurrent: () => _current(generation) && !widget.api.isClosed),
+        IconButton(tooltip: '工作相依圖',
+          onPressed: _openGraph,
+          icon: const Icon(Icons.account_tree_outlined)),
         IconButton(tooltip: '重新整理', onPressed: _loading || _busy ? null : () async {
           await _load();
           if (mounted) {
@@ -709,7 +778,7 @@ class _PipelinePageState extends State<PipelinePage> {
               children: [
                 RecordsFeed(
                   key: _feed,
-                  identity: 'pipeline/${widget.id}/jobs',
+                  identity: '${widget.account.key}/${widget.project.id}/pipeline/${widget.id}/jobs/$_generation',
                   empty: '尚無工作',
                   emptyIcon: Icons.work_outline,
                   grouped: true,
@@ -1457,6 +1526,7 @@ class JobLogPage extends StatefulWidget {
   State<JobLogPage> createState() => _JobLogPageState();
 }
 class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
+  late final JobLogPage _routeOwner;
   late int _jobId;
   int _loadEpoch = 0;
   Json? _job;
@@ -1480,7 +1550,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   final _chrome = ScrollChromeController();
   @override
   void initState() {
-    super.initState(); _jobId = widget.id;
+    super.initState(); _routeOwner = widget; _jobId = widget.id;
     WidgetsBinding.instance.addObserver(this); unawaited(_load());
   }
   @override
@@ -1970,8 +2040,15 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final rows = _visibleRows();
     final noLog = _trace.lines.isEmpty && _trace.sections.isEmpty;
-    final appBar = AppBar(primary: false, titleSpacing: 0, title: Text(_job == null ? 'Job #$_jobId' : valueText(_job!, 'name')),
-      actions: [IconButton(tooltip: '重新讀取 Log', onPressed: _loading || _busy || _confirming ? null : _load, icon: const Icon(Icons.refresh)),
+    final appBar = AppBar(primary: false, titleSpacing: 0, title: Text(_job == null ? 'Job #$_jobId' : valueText(_job!, 'name'), maxLines: 1, overflow: TextOverflow.ellipsis),
+      actions: [ResourceShareButton(
+        uri: widget.account.instance.projectWeb('${widget.project.path}/-/jobs/$_jobId'),
+        ownerKey: (widget.account.key, widget.api, widget.project.id, _jobId, widget.generation),
+        isCurrent: () => mounted && !widget.api.isClosed &&
+          widget.account.key == _routeOwner.account.key && identical(widget.api, _routeOwner.api) &&
+          widget.project.id == _routeOwner.project.id && widget.id == _routeOwner.id &&
+          widget.generation == _routeOwner.generation),
+        IconButton(tooltip: '重新讀取 Log', onPressed: _loading || _busy || _confirming ? null : _load, icon: const Icon(Icons.refresh)),
         PopupMenuButton<String>(tooltip: '工作操作', enabled: !_busy && !_confirming && !_downloading && _job != null, onSelected: _action, itemBuilder: (_) => [
           const PopupMenuItem(value: 'retry', child: Text('重試工作')),
           if (_job?['status'] == 'manual') const PopupMenuItem(value: 'play', child: Text('啟動手動工作')),

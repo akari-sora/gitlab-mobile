@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
@@ -7,12 +9,104 @@ import '../../core/failure.dart';
 import '../../core/unified_diff.dart';
 import '../../shared/attachment_budget.dart';
 import '../../shared/external_link.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 import '../../shared/theme.dart';
 import '../../core/suggestion.dart';
+import 'draft_review_page.dart';
 import 'suggestion_card.dart';
+
+typedef DiffParser = Future<List<DiffLine>> Function(String source);
+
+const _asyncDiffParseThreshold = 64 * 1024;
+const _maxDiffSourceBytes = 2 * 1024 * 1024;
+const _maxParsedDiffTextBytes = 2 * 1024 * 1024;
+const _maxParsedDiffLines = 20000;
+const _maxDiffCacheEntries = 24;
+const _maxDiffCacheBytes = 8 * 1024 * 1024;
+const _maxDiffCacheLines = 40000;
+const _estimatedDiffLineOverhead = 64;
+
+typedef _DiffCacheScope = ({
+  String accountKey,
+  int projectId,
+  int iid,
+  String headSha,
+  String path,
+});
+
+Future<List<DiffLine>> _defaultDiffParser(String source) {
+  if (utf8.encode(source).length < _asyncDiffParseThreshold) {
+    return SynchronousFuture(parseUnifiedDiff(source));
+  }
+  return compute(parseUnifiedDiff, source);
+}
+
+final class _DiffCacheEntry {
+  const _DiffCacheEntry({
+    required this.scope,
+    required this.source,
+    required this.lines,
+    required this.estimatedBytes,
+  });
+
+  final _DiffCacheScope scope;
+  final String source;
+  final List<DiffLine> lines;
+  final int estimatedBytes;
+}
+
+final class _DiffCache {
+  final Map<_DiffCacheScope, _DiffCacheEntry> _entries = {};
+  int _estimatedBytes = 0;
+  int _parsedLines = 0;
+
+  List<DiffLine>? take(_DiffCacheScope scope, String source) {
+    final entry = _entries[scope];
+    if (entry == null) return null;
+    if (entry.source != source) {
+      _remove(scope);
+      return null;
+    }
+    _remove(scope);
+    _entries[scope] = entry;
+    _estimatedBytes += entry.estimatedBytes;
+    _parsedLines += entry.lines.length;
+    return entry.lines;
+  }
+
+  void put(_DiffCacheEntry entry) {
+    _remove(entry.scope);
+    if (entry.estimatedBytes > _maxDiffCacheBytes ||
+        entry.lines.length > _maxDiffCacheLines) {
+      return;
+    }
+    while (_entries.isNotEmpty &&
+        (_entries.length >= _maxDiffCacheEntries ||
+            _estimatedBytes + entry.estimatedBytes > _maxDiffCacheBytes ||
+            _parsedLines + entry.lines.length > _maxDiffCacheLines)) {
+      _remove(_entries.keys.first);
+    }
+    _entries[entry.scope] = entry;
+    _estimatedBytes += entry.estimatedBytes;
+    _parsedLines += entry.lines.length;
+  }
+
+  void _remove(_DiffCacheScope scope) {
+    final removed = _entries.remove(scope);
+    if (removed == null) return;
+    _estimatedBytes -= removed.estimatedBytes;
+    _parsedLines -= removed.lines.length;
+  }
+}
+
+final _diffCacheExpando = Expando<_DiffCache>('diffCache');
+
+_DiffCache _getDiffCache(GitLabApi api) {
+  return _diffCacheExpando[api] ??= _DiffCache();
+}
 
 const _maxDiscussionPages = 20;
 const _discussionPageBoundNote = '討論已達 20 頁上限，後續討論未載入。';
@@ -172,7 +266,8 @@ bool _positionClaimsFile(Json position, Json file) {
   return true;
 }
 
-String _unplacedReason(Json position, Json version) => _shasMatch(position, version)
+String _unplacedReason(Json position, Json version) =>
+    _shasMatch(position, version)
     ? '目前差異未提供此行（可能已折疊或超出大小上限）'
     : '以較舊版本為準，無法對應目前差異';
 
@@ -238,6 +333,7 @@ class ReviewDiffPage extends StatefulWidget {
     required this.expectedSha,
     this.initialTarget,
     this.onApplied,
+    this.diffParser,
   });
   final Account account;
   final GitLabApi api;
@@ -246,6 +342,7 @@ class ReviewDiffPage extends StatefulWidget {
   final String expectedSha;
   final DiffTarget? initialTarget;
   final VoidCallback? onApplied;
+  final DiffParser? diffParser;
   @override
   State<ReviewDiffPage> createState() => _ReviewDiffPageState();
 }
@@ -348,7 +445,10 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
       }
       setState(() {
         _version = version;
-        final currentPaths = valueObjects(version, 'diffs').map(diffFilePath).toSet();
+        final currentPaths = valueObjects(
+          version,
+          'diffs',
+        ).map(diffFilePath).toSet();
         _viewedFiles.retainAll(currentPaths);
         _loading = false;
       });
@@ -493,6 +593,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
             });
           },
           onApplied: widget.onApplied,
+          diffParser: widget.diffParser,
         ),
       ),
     );
@@ -523,196 +624,304 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
     final missingTarget = target != null && _fileFor(target) == null;
     final unmatched = _unmatchedDiscussions();
     final filePaths = files.map(diffFilePath).toSet();
-    final viewedCount = files.where((f) => _viewedFiles.contains(diffFilePath(f))).length;
+    final viewedCount = files
+        .where((f) => _viewedFiles.contains(diffFilePath(f)))
+        .length;
     final allViewed = files.isNotEmpty && viewedCount == files.length;
     return RefreshIndicator(
       onRefresh: _load,
-      child: ListView(
+      child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(16),
-        children: [
-          Text(
-            '固定版本 ${shortSha(widget.expectedSha)}',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          if (_version?['overflow'] == true)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text('GitLab 限制了部分差異。下列檔案不代表完整變更。'),
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              files.isEmpty && unmatched.isEmpty && !missingTarget ? 16 : 0,
             ),
-          if (_discussionsLoading)
-            const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: Text('正在載入討論'),
-            ),
-          if (_discussionsTruncated)
-            const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: Text(_discussionPageBoundNote),
-            ),
-          if (_discussionsError != null)
-            FailureNotice(
-              _discussionsError!,
-              onRetry: _load,
-              account: widget.account,
-              resourceLabel: '${widget.project.path} · !${widget.iid} 討論',
-              onSwitchAccount: endSessionFrom(context),
-            ),
-          if (files.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 8, bottom: 4),
-              child: Card(
-                elevation: 0,
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            allViewed
-                                ? Icons.check_circle
-                                : Icons.rule_folder_outlined,
-                            size: 18,
-                            color: allViewed
-                                ? Colors.green
-                                : Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              '審查進度 ($viewedCount/${files.length})',
-                              style: Theme.of(context).textTheme.titleSmall,
-                            ),
-                          ),
-                          TextButton(
-                            key: const ValueKey('toggle-all-viewed'),
-                            style: TextButton.styleFrom(
-                              minimumSize: const Size(48, 48),
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                            ),
-                            onPressed: () {
-                              setState(() {
-                                if (allViewed) {
-                                  _viewedFiles.removeAll(filePaths);
-                                } else {
-                                  _viewedFiles.addAll(filePaths);
-                                }
-                              });
-                            },
-                            child: Text(allViewed ? '全部取消' : '全部標記已檢視'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(2),
-                        child: LinearProgressIndicator(
-                          value: files.isEmpty ? 0 : (viewedCount / files.length).clamp(0.0, 1.0),
-                          minHeight: 4,
-                          backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            allViewed ? Colors.green : Theme.of(context).colorScheme.primary,
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    '固定版本 ${shortSha(widget.expectedSha)}',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  if (_version?['overflow'] == true)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text('GitLab 限制了部分差異。下列檔案不代表完整變更。'),
+                    ),
+                  if (_discussionsLoading)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 12),
+                      child: Text('正在載入討論'),
+                    ),
+                  if (_discussionsTruncated)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 12),
+                      child: Text(_discussionPageBoundNote),
+                    ),
+                  if (_discussionsError != null)
+                    FailureNotice(
+                      _discussionsError!,
+                      onRetry: _load,
+                      account: widget.account,
+                      resourceLabel:
+                          '${widget.project.path} · !${widget.iid} 討論',
+                      onSwitchAccount: endSessionFrom(context),
+                    ),
+                  if (files.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, bottom: 4),
+                      child: Card(
+                        elevation: 0,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerLow,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final summary = Row(
+                                    children: [
+                                      Icon(
+                                        allViewed
+                                            ? Icons.check_circle
+                                            : Icons.rule_folder_outlined,
+                                        size: 18,
+                                        color: allViewed
+                                            ? Colors.green
+                                            : Theme.of(
+                                                context,
+                                              ).colorScheme.primary,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          '審查進度 ($viewedCount/${files.length})',
+                                          style: Theme.of(
+                                            context,
+                                          ).textTheme.titleSmall,
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                  final action = TextButton(
+                                    key: const ValueKey('toggle-all-viewed'),
+                                    style: TextButton.styleFrom(
+                                      minimumSize: const Size(48, 48),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                      ),
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        if (allViewed) {
+                                          _viewedFiles.removeAll(filePaths);
+                                        } else {
+                                          _viewedFiles.addAll(filePaths);
+                                        }
+                                      });
+                                    },
+                                    child: Text(allViewed ? '全部取消' : '全部標記已檢視'),
+                                  );
+                                  final compact =
+                                      constraints.maxWidth < 420 ||
+                                      MediaQuery.textScalerOf(
+                                            context,
+                                          ).scale(1) >
+                                          1.3;
+                                  if (compact) {
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        summary,
+                                        Align(
+                                          alignment: Alignment.centerRight,
+                                          child: action,
+                                        ),
+                                      ],
+                                    );
+                                  }
+                                  return Row(
+                                    children: [
+                                      Expanded(child: summary),
+                                      action,
+                                    ],
+                                  );
+                                },
+                              ),
+                              const SizedBox(height: 6),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(2),
+                                child: LinearProgressIndicator(
+                                  value: files.isEmpty
+                                      ? 0
+                                      : (viewedCount / files.length).clamp(
+                                          0.0,
+                                          1.0,
+                                        ),
+                                  minHeight: 4,
+                                  backgroundColor: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    allViewed
+                                        ? Colors.green
+                                        : Theme.of(context).colorScheme.primary,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),
-                    ],
-                  ),
-                ),
+                    ),
+                  if (files.isEmpty)
+                    const EmptyState(
+                      '沒有可顯示的文字差異',
+                      detail: '可能沒有變更，或差異未由伺服器提供。',
+                    ),
+                ],
               ),
             ),
-          if (files.isEmpty)
-            const EmptyState('沒有可顯示的文字差異', detail: '可能沒有變更，或差異未由伺服器提供。'),
-          for (final file in files) ...[
-            () {
-              final filePath = diffFilePath(file);
-              final isViewed = _viewedFiles.contains(filePath);
-              final fileUnresolved = _unresolvedCountForFile(file);
-              return Padding(
-                padding: const EdgeInsets.only(top: 10),
-                child: Card(
-                  child: ListTile(
-                    leading: Icon(
-                      file['new_file'] == true
-                          ? Icons.add_box_outlined
-                          : file['deleted_file'] == true
-                          ? Icons.indeterminate_check_box_outlined
-                          : Icons.code,
-                      color: isViewed ? Theme.of(context).colorScheme.outline : null,
-                    ),
-                    title: Text(
-                      filePath,
-                      style: isViewed
-                          ? TextStyle(
-                              color: Theme.of(context).colorScheme.outline,
-                            )
-                          : null,
-                    ),
-                    subtitle: file['renamed_file'] == true
-                        ? Text('原路徑：${valueText(file, 'old_path')}')
-                        : (isViewed ? const Text('已檢視', style: TextStyle(color: Colors.green, fontSize: 12)) : null),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (fileUnresolved > 0)
-                          Container(
-                            key: ValueKey('file-unresolved-badge-$filePath'),
-                            margin: const EdgeInsets.only(right: 6),
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.errorContainer,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '$fileUnresolved',
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.onErrorContainer,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        IconButton(
-                          key: ValueKey('viewed-toggle-$filePath'),
-                          icon: Icon(
-                            isViewed ? Icons.check_circle : Icons.circle_outlined,
-                            size: 22,
-                            color: isViewed ? Colors.green : Theme.of(context).colorScheme.outline,
-                          ),
-                          tooltip: isViewed ? '標記為未檢視' : '標記為已檢視',
-                          constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-                          onPressed: () {
-                            setState(() {
-                              if (isViewed) {
-                                _viewedFiles.remove(filePath);
-                              } else {
-                                _viewedFiles.add(filePath);
-                              }
-                            });
-                          },
+          ),
+          if (files.isNotEmpty)
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                0,
+                16,
+                unmatched.isEmpty && !missingTarget ? 16 : 0,
+              ),
+              sliver: SliverList.builder(
+                itemCount: files.length,
+                itemBuilder: (context, index) {
+                  final file = files[index];
+                  final filePath = diffFilePath(file);
+                  final isViewed = _viewedFiles.contains(filePath);
+                  final fileUnresolved = _unresolvedCountForFile(file);
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 10),
+                    child: Card(
+                      child: ListTile(
+                        leading: Icon(
+                          file['new_file'] == true
+                              ? Icons.add_box_outlined
+                              : file['deleted_file'] == true
+                              ? Icons.indeterminate_check_box_outlined
+                              : Icons.code,
+                          color: isViewed
+                              ? Theme.of(context).colorScheme.outline
+                              : null,
                         ),
-                        const Icon(Icons.chevron_right, size: 18),
-                      ],
+                        title: Text(
+                          filePath,
+                          style: isViewed
+                              ? TextStyle(
+                                  color: Theme.of(context).colorScheme.outline,
+                                )
+                              : null,
+                        ),
+                        subtitle: file['renamed_file'] == true
+                            ? Text('原路徑：${valueText(file, 'old_path')}')
+                            : (isViewed
+                                  ? const Text(
+                                      '已檢視',
+                                      style: TextStyle(
+                                        color: Colors.green,
+                                        fontSize: 12,
+                                      ),
+                                    )
+                                  : null),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (fileUnresolved > 0)
+                              Container(
+                                key: ValueKey(
+                                  'file-unresolved-badge-$filePath',
+                                ),
+                                margin: const EdgeInsets.only(right: 6),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.errorContainer,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  '$fileUnresolved',
+                                  style: TextStyle(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onErrorContainer,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            IconButton(
+                              key: ValueKey('viewed-toggle-$filePath'),
+                              icon: Icon(
+                                isViewed
+                                    ? Icons.check_circle
+                                    : Icons.circle_outlined,
+                                size: 22,
+                                color: isViewed
+                                    ? Colors.green
+                                    : Theme.of(context).colorScheme.outline,
+                              ),
+                              tooltip: isViewed ? '標記為未檢視' : '標記為已檢視',
+                              constraints: const BoxConstraints(
+                                minWidth: 48,
+                                minHeight: 48,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  if (isViewed) {
+                                    _viewedFiles.remove(filePath);
+                                  } else {
+                                    _viewedFiles.add(filePath);
+                                  }
+                                });
+                              },
+                            ),
+                            const Icon(Icons.chevron_right, size: 18),
+                          ],
+                        ),
+                        onTap: () => _open(file),
+                      ),
                     ),
-                    onTap: () => _open(file),
-                  ),
-                ),
-              );
-            }(),
-          ],
+                  );
+                },
+              ),
+            ),
           if (unmatched.isNotEmpty || missingTarget)
-            _OtherVersionSection(
-              key: _orphanKey,
-              version: _version ?? const <String, dynamic>{},
-              discussions: unmatched,
-              fallbackPath: missingTarget ? target.path : '',
-              fallbackNewLine: missingTarget ? target.newLine : null,
-              fallbackOldLine: missingTarget ? target.oldLine : null,
-              fallbackReason: missingTarget
-                  ? _targetReason(target)
-                  : '以較舊版本為準，無法對應目前差異',
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+              sliver: SliverToBoxAdapter(
+                child: _OtherVersionSection(
+                  key: _orphanKey,
+                  version: _version ?? const <String, dynamic>{},
+                  discussions: unmatched,
+                  fallbackPath: missingTarget ? target.path : '',
+                  fallbackNewLine: missingTarget ? target.newLine : null,
+                  fallbackOldLine: missingTarget ? target.oldLine : null,
+                  fallbackReason: missingTarget
+                      ? _targetReason(target)
+                      : '以較舊版本為準，無法對應目前差異',
+                ),
+              ),
             ),
         ],
       ),
@@ -733,6 +942,7 @@ class _DiffFileScreen extends StatefulWidget {
     this.isViewed = false,
     this.onToggleViewed,
     this.onApplied,
+    this.diffParser,
   });
   final Account account;
   final GitLabApi api;
@@ -745,6 +955,7 @@ class _DiffFileScreen extends StatefulWidget {
   final bool isViewed;
   final VoidCallback? onToggleViewed;
   final VoidCallback? onApplied;
+  final DiffParser? diffParser;
   @override
   State<_DiffFileScreen> createState() => _DiffFileScreenState();
 }
@@ -752,6 +963,8 @@ class _DiffFileScreen extends StatefulWidget {
 class _DiffFileScreenState extends State<_DiffFileScreen> {
   List<DiffLine>? _lines;
   String? _unavailable;
+  ApiFailure? _diffError;
+  bool _diffLoading = false;
   late List<Json> _discussions;
   late bool _truncated;
   late bool _viewed;
@@ -780,26 +993,160 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     '${widget.iid}',
   ];
 
+  _DiffCacheScope get _cacheScope => (
+    accountKey: widget.account.key,
+    projectId: widget.project.id,
+    iid: widget.iid,
+    headSha: valueText(widget.version, 'head_commit_sha'),
+    path: diffFilePath(widget.file),
+  );
+
+  int _parsedTextBytes(List<DiffLine> lines) {
+    var bytes = 0;
+    for (final line in lines) {
+      bytes += utf8.encode(line.text).length;
+      if (bytes > _maxParsedDiffTextBytes) {
+        throw const FormatException('Parsed diff text budget exceeded');
+      }
+    }
+    return bytes;
+  }
+
   @override
   void initState() {
     super.initState();
     _viewed = widget.isViewed;
     _applyFeed(widget.feed.value);
     widget.feed.addListener(_onFeed);
+    _initDiff();
+  }
+
+  void _initDiff() {
+    _lines = null;
+    _diffError = null;
+    _unavailable = null;
+    _seekLow = 0;
+    _seekHigh = -1;
+    _seekStall = 0;
+    _builtLines.clear();
+    _activeDiscussionTargetIndex = null;
+    _navSeekStall = 0;
     final diff = valueText(widget.file, 'diff');
     if (widget.file['too_large'] == true ||
         widget.file['collapsed'] == true ||
         diff.isEmpty) {
       _unavailable = 'GitLab 未提供這份文字差異，或內容為二進位檔案。';
-    } else {
-      try {
-        _lines = parseUnifiedDiff(diff);
-      } on FormatException {
-        _unavailable = '這份差異不完整或超過排版上限，已停用行內留言，避免貼錯位置。';
+      _diffLoading = false;
+      if (widget.initialTarget != null) {
+        _scheduleReveal();
+      }
+      return;
+    }
+
+    final int? sourceBytes = diff.length > _maxDiffSourceBytes
+        ? null
+        : utf8.encode(diff).length;
+    if (sourceBytes == null || sourceBytes > _maxDiffSourceBytes) {
+      _unavailable = '這份差異不完整或超過排版上限，已停用行內留言，避免貼錯位置。';
+      _diffLoading = false;
+      if (widget.initialTarget != null) {
+        _scheduleReveal();
+      }
+      return;
+    }
+
+    final useSharedCache = widget.diffParser == null;
+    final cacheScope = _cacheScope;
+    if (useSharedCache && !widget.api.isClosed) {
+      final cache = _getDiffCache(widget.api);
+      final cached = cache.take(cacheScope, diff);
+      if (cached != null) {
+        _lines = cached;
+        _diffLoading = false;
+        if (widget.initialTarget != null) {
+          _scheduleReveal();
+        }
+        return;
       }
     }
-    if (widget.initialTarget != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _revealTarget());
+
+    _diffLoading = true;
+    unawaited(
+      _parse(
+        diff,
+        cacheScope: cacheScope,
+        sourceBytes: sourceBytes,
+        useSharedCache: useSharedCache,
+      ),
+    );
+  }
+
+  Future<void> _parse(
+    String diff, {
+    required _DiffCacheScope cacheScope,
+    required int sourceBytes,
+    required bool useSharedCache,
+  }) async {
+    final epoch = ++_epoch;
+    try {
+      final parser = widget.diffParser ?? _defaultDiffParser;
+      final parsed = await parser(diff);
+      if (!mounted || _disposed || epoch != _epoch || widget.api.isClosed) {
+        return;
+      }
+      if (parsed.length > _maxParsedDiffLines) {
+        throw const FormatException('Parsed diff line budget exceeded');
+      }
+      final lines = List<DiffLine>.unmodifiable(parsed);
+      final parsedTextBytes = _parsedTextBytes(lines);
+      // This is a conservative retained-heap estimate, not measured RAM:
+      // exact UTF-8 source + parsed UTF-8 text + per-row object/reference cost.
+      final estimatedBytes =
+          sourceBytes +
+          parsedTextBytes +
+          lines.length * _estimatedDiffLineOverhead;
+      if (!mounted || _disposed || epoch != _epoch || widget.api.isClosed) {
+        return;
+      }
+      if (useSharedCache) {
+        _getDiffCache(widget.api).put(
+          _DiffCacheEntry(
+            scope: cacheScope,
+            source: diff,
+            lines: lines,
+            estimatedBytes: estimatedBytes,
+          ),
+        );
+      }
+      setState(() {
+        _lines = lines;
+        _diffLoading = false;
+        _seekLow = 0;
+        _seekHigh = -1;
+        _seekStall = 0;
+      });
+      if (widget.initialTarget != null) {
+        _scheduleReveal();
+      }
+    } on FormatException {
+      if (!mounted || _disposed || epoch != _epoch || widget.api.isClosed) {
+        return;
+      }
+      setState(() {
+        _unavailable = '這份差異不完整或超過排版上限，已停用行內留言，避免貼錯位置。';
+        _diffLoading = false;
+      });
+      if (widget.initialTarget != null) {
+        _scheduleReveal();
+      }
+    } catch (e) {
+      if (!mounted || _disposed || epoch != _epoch || widget.api.isClosed) {
+        return;
+      }
+      setState(() {
+        _diffError = safeFailure(e);
+        _diffLoading = false;
+      });
     }
   }
 
@@ -808,6 +1155,25 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     super.didUpdateWidget(oldWidget);
     if (widget.isViewed != oldWidget.isViewed) {
       _viewed = widget.isViewed;
+    }
+    final oldDiff = valueText(oldWidget.file, 'diff');
+    final newDiff = valueText(widget.file, 'diff');
+    final identityChanged =
+        oldWidget.account.key != widget.account.key ||
+        oldWidget.project.id != widget.project.id ||
+        oldWidget.iid != widget.iid ||
+        !identical(oldWidget.api, widget.api) ||
+        valueText(oldWidget.version, 'head_commit_sha') !=
+            valueText(widget.version, 'head_commit_sha') ||
+        diffFilePath(oldWidget.file) != diffFilePath(widget.file) ||
+        oldDiff != newDiff ||
+        !identical(oldWidget.diffParser, widget.diffParser);
+    if (identityChanged) {
+      _epoch++;
+      _lines = null;
+      _unavailable = null;
+      _diffError = null;
+      _initDiff();
     }
   }
 
@@ -832,6 +1198,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
   @override
   void dispose() {
     _disposed = true;
+    _epoch++;
     widget.feed.removeListener(_onFeed);
     _scroll.dispose();
     super.dispose();
@@ -924,9 +1291,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
 
   bool _showOther(List<DiffLine> lines) {
     final anchored = _anchored(lines);
-    final anchoredSet = <Json>{
-      for (final group in anchored.values) ...group,
-    };
+    final anchoredSet = <Json>{for (final group in anchored.values) ...group};
     return _others(anchoredSet).isNotEmpty ||
         (widget.initialTarget != null && _targetLineIndex(lines) == null);
   }
@@ -944,6 +1309,10 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
 
   void _revealTarget() {
     if (!mounted || _disposed || widget.initialTarget == null) return;
+    if (_diffLoading ||
+        (_lines == null && _unavailable == null && _diffError == null)) {
+      return;
+    }
     final target = _targetKey.currentContext;
     if (target != null) {
       unawaited(Scrollable.ensureVisible(target, alignment: 0.05));
@@ -1066,21 +1435,38 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       if (line.oldLine != null) 'old_line': line.oldLine,
       if (line.newLine != null) 'new_line': line.newLine,
     };
-    await openEditor(
+    var savedAsDraft = false;
+    final saved = await openEditor(
       context,
       account: widget.account,
       title: '對這一行留言',
       resource:
           '${widget.project.id}/mr/${widget.iid}/$sha/$oldPath/$newPath/${line.oldLine}/${line.newLine}',
       subtitle: '$newPath · ${line.newLine ?? line.oldLine} · ${shortSha(sha)}',
-      fields: const [EditField('body', '留言', lines: 8, required: true, markdown: true)],
+      fields: const [
+        EditField('body', '留言', lines: 8, required: true, markdown: true),
+        EditField.toggle('draft', '暫存至審查草稿', hint: '發布前只有你可見，可集中檢查後一次發布。'),
+      ],
       api: widget.api,
       projectId: widget.project.id,
       projectPath: widget.project.path,
       save: (values) async {
         final current = await widget.api.record(_mrPath);
         if (current['sha'] != sha) {
-          throw const ApiFailure(FailureKind.conflict);
+          throw const ApiFailure(
+            FailureKind.conflict,
+            title: '合併請求已有新版本',
+            detail: '請返回變更頁重新載入最新版本，再檢查留言內容。草稿已保留。',
+          );
+        }
+        savedAsDraft = values['draft'] == 'true';
+        if (savedAsDraft) {
+          await widget.api.writeRecord(
+            'POST',
+            [..._mrPath, 'draft_notes'],
+            {'note': values['body']!.trim(), 'position': position},
+          );
+          return;
         }
         await widget.api.writeRecord(
           'POST',
@@ -1088,6 +1474,29 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
           {'body': values['body'], 'position': position},
         );
       },
+    );
+    if (!saved || !mounted) return;
+    if (savedAsDraft) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已暫存，發布前只有你可見')));
+      return;
+    }
+    await _reloadDiscussions();
+  }
+
+  Future<void> _openDraftReview() async {
+    final sha = requiredString(widget.version, 'head_commit_sha');
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => DraftReviewPage(
+          account: widget.account,
+          api: widget.api,
+          project: widget.project,
+          iid: widget.iid,
+          headSha: sha,
+        ),
+      ),
     );
   }
 
@@ -1102,12 +1511,11 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       subtitle: valueText(widget.file, 'new_path'),
       fields: const [EditField('body', '留言內容', required: true, lines: 8)],
       save: (values) async {
-        await widget.api.writeRecord('POST', [
-          ..._mrPath,
-          'discussions',
-          id,
-          'notes',
-        ], {'body': values['body']});
+        await widget.api.writeRecord(
+          'POST',
+          [..._mrPath, 'discussions', id, 'notes'],
+          {'body': values['body']},
+        );
       },
     );
     if (saved && mounted) await _reloadDiscussions();
@@ -1118,11 +1526,11 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     if (id is! String || id.isEmpty || _busy) return;
     setState(() => _busy = true);
     try {
-      await widget.api.writeRecord('PUT', [
-        ..._mrPath,
-        'discussions',
-        id,
-      ], {'resolved': resolved});
+      await widget.api.writeRecord(
+        'PUT',
+        [..._mrPath, 'discussions', id],
+        {'resolved': resolved},
+      );
       if (mounted) await _reloadDiscussions();
     } catch (e) {
       if (mounted) showFailure(context, e);
@@ -1162,12 +1570,14 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
 
       final targetContext = _navTargetKey.currentContext;
       if (targetContext != null) {
-        unawaited(Scrollable.ensureVisible(
-          targetContext,
-          alignment: 0.1,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        ));
+        unawaited(
+          Scrollable.ensureVisible(
+            targetContext,
+            alignment: 0.1,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+          ),
+        );
         return;
       }
 
@@ -1203,16 +1613,20 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       }
 
       _navSeekStall = 0;
-      unawaited(_scroll.animateTo(
-        next,
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeOut,
-      ).then((_) {
-        if (!mounted || _disposed) return;
-        if (targetIndex == _activeDiscussionTargetIndex) {
-          _seekToNavTarget(targetIndex, totalItemCount);
-        }
-      }));
+      unawaited(
+        _scroll
+            .animateTo(
+              next,
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+            )
+            .then((_) {
+              if (!mounted || _disposed) return;
+              if (targetIndex == _activeDiscussionTargetIndex) {
+                _seekToNavTarget(targetIndex, totalItemCount);
+              }
+            }),
+      );
     });
   }
 
@@ -1261,17 +1675,15 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                   ? Icons.check_circle_outline
                   : Icons.mark_chat_unread_outlined,
               size: 20,
-              color: isResolvedAll
-                  ? Colors.green
-                  : colorScheme.primary,
+              color: isResolvedAll ? Colors.green : colorScheme.primary,
             ),
             const SizedBox(width: 8),
             Text(
               isResolvedAll
                   ? '未解決討論 0'
                   : currentPos >= 0
-                      ? '未解決討論 $unresolvedCount (${currentPos + 1}/$totalTargets)'
-                      : '未解決討論 $unresolvedCount',
+                  ? '未解決討論 $unresolvedCount (${currentPos + 1}/$totalTargets)'
+                  : '未解決討論 $unresolvedCount',
               style: theme.textTheme.labelMedium?.copyWith(
                 fontWeight: FontWeight.w600,
                 color: isResolvedAll
@@ -1285,13 +1697,20 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               icon: const Icon(Icons.keyboard_arrow_up, size: 22),
               tooltip: '上一則討論',
-              color: isResolvedAll ? colorScheme.outline : colorScheme.onSurface,
+              color: isResolvedAll
+                  ? colorScheme.outline
+                  : colorScheme.onSurface,
               onPressed: isResolvedAll || unresolvedLineIndices.isEmpty
                   ? null
                   : () {
                       final len = unresolvedLineIndices.length;
-                      final prevPos = currentPos <= 0 ? len - 1 : currentPos - 1;
-                      _scrollToDiscussionLine(unresolvedLineIndices[prevPos], totalItemCount);
+                      final prevPos = currentPos <= 0
+                          ? len - 1
+                          : currentPos - 1;
+                      _scrollToDiscussionLine(
+                        unresolvedLineIndices[prevPos],
+                        totalItemCount,
+                      );
                     },
             ),
             IconButton(
@@ -1299,13 +1718,18 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               icon: const Icon(Icons.keyboard_arrow_down, size: 22),
               tooltip: '下一則討論',
-              color: isResolvedAll ? colorScheme.outline : colorScheme.onSurface,
+              color: isResolvedAll
+                  ? colorScheme.outline
+                  : colorScheme.onSurface,
               onPressed: isResolvedAll || unresolvedLineIndices.isEmpty
                   ? null
                   : () {
                       final len = unresolvedLineIndices.length;
                       final nextPos = (currentPos + 1) % len;
-                      _scrollToDiscussionLine(unresolvedLineIndices[nextPos], totalItemCount);
+                      _scrollToDiscussionLine(
+                        unresolvedLineIndices[nextPos],
+                        totalItemCount,
+                      );
                     },
             ),
           ],
@@ -1318,12 +1742,8 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
   Widget build(BuildContext context) {
     final lines = _lines;
     final scheme = Theme.of(context).colorScheme;
-    final anchored = lines == null
-        ? <int, List<Json>>{}
-        : _anchored(lines);
-    final anchoredSet = <Json>{
-      for (final group in anchored.values) ...group,
-    };
+    final anchored = lines == null ? <int, List<Json>>{} : _anchored(lines);
+    final anchoredSet = <Json>{for (final group in anchored.values) ...group};
     final others = _others(anchoredSet);
     final onLine = lines != null && _targetOnLine(lines);
     final showOther =
@@ -1358,16 +1778,20 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
         unresolvedLineIndices.add(0);
       }
     }
-    final totalItemCount = lines == null ? 1 : lines.length + (showOther ? 1 : 0);
+    final totalItemCount = lines == null
+        ? 1
+        : lines.length + (showOther ? 1 : 0);
 
     return Scaffold(
-      floatingActionButton: _buildDiscussionNavigator(
-        context,
-        unresolvedLineIndices: unresolvedLineIndices,
-        unresolvedCount: unresolvedCount,
-        totalDiscussionsCount: totalDiscussionsCount,
-        totalItemCount: totalItemCount,
-      ),
+      floatingActionButton: _diffLoading || _diffError != null
+          ? null
+          : _buildDiscussionNavigator(
+              context,
+              unresolvedLineIndices: unresolvedLineIndices,
+              unresolvedCount: unresolvedCount,
+              totalDiscussionsCount: totalDiscussionsCount,
+              totalItemCount: totalItemCount,
+            ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
       appBar: AppBar(
         title: Text(
@@ -1376,6 +1800,24 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
+          ResourceShareButton(
+            uri: widget.account.instance.projectWeb(
+              '${widget.project.path}/-/merge_requests/${widget.iid}/diffs',
+            ),
+            ownerKey: (
+              widget.account.key,
+              widget.api,
+              widget.project.id,
+              widget.iid,
+              widget.version['head_commit_sha'],
+            ),
+            isCurrent: () => mounted && !_disposed && !widget.api.isClosed,
+          ),
+          IconButton(
+            tooltip: '審查草稿',
+            icon: const Icon(Icons.rate_review_outlined),
+            onPressed: _openDraftReview,
+          ),
           IconButton(
             key: const ValueKey('diff-file-viewed-toggle'),
             tooltip: _viewed ? '標記為未檢視' : '標記為已檢視',
@@ -1400,94 +1842,285 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
           ),
         ],
       ),
-      body: gestureSafe(lines == null
-          ? ListView(
-              controller: _scroll,
-              children: [
-                EmptyState(
-                  '無法顯示差異',
-                  detail: _unavailable,
-                  icon: Icons.code_off,
+      body: gestureSafe(
+        _diffLoading
+            ? const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(strokeWidth: 2),
+                    SizedBox(height: 12),
+                    Text('正在準備差異…'),
+                  ],
                 ),
-                if (_discussionsLoading)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Text('正在載入討論'),
-                  ),
-                if (_truncated)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(_discussionPageBoundNote),
-                  ),
-                if (_discussionsError != null)
+              )
+            : _diffError != null
+            ? ListView(
+                controller: _scroll,
+                children: [
                   FailureNotice(
-                    _discussionsError!,
-                    onRetry: _reloadDiscussions,
+                    _diffError!,
+                    onRetry: () => setState(() => _initDiff()),
                     account: widget.account,
-                    resourceLabel:
-                        '${widget.project.path} · !${widget.iid} 討論',
+                    resourceLabel: diffFilePath(widget.file),
                     onSwitchAccount: endSessionFrom(context),
                   ),
-                if (showOther)
-                  KeyedSubtree(
-                    key: widget.initialTarget != null ? _targetKey : null,
-                    child: _OtherVersionSection(
-                      discussions: others,
-                      version: widget.version,
-                      fallbackReason: _fallbackReason,
+                ],
+              )
+            : lines == null
+            ? ListView(
+                controller: _scroll,
+                children: [
+                  EmptyState(
+                    '無法顯示差異',
+                    detail: _unavailable,
+                    icon: Icons.code_off,
+                  ),
+                  if (_discussionsLoading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text('正在載入討論'),
+                    ),
+                  if (_truncated)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16),
+                      child: Text(_discussionPageBoundNote),
+                    ),
+                  if (_discussionsError != null)
+                    FailureNotice(
+                      _discussionsError!,
+                      onRetry: _reloadDiscussions,
+                      account: widget.account,
+                      resourceLabel:
+                          '${widget.project.path} · !${widget.iid} 討論',
+                      onSwitchAccount: endSessionFrom(context),
+                    ),
+                  if (showOther)
+                    KeyedSubtree(
+                      key: widget.initialTarget != null ? _targetKey : null,
+                      child: _OtherVersionSection(
+                        discussions: others,
+                        version: widget.version,
+                        fallbackReason: _fallbackReason,
+                      ),
+                    ),
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    child: Text(
+                      '點選程式碼行新增留言 · ${shortSha(valueText(widget.version, 'head_commit_sha'))}',
+                      style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
-              ],
-            )
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  child: Text(
-                    '點選程式碼行新增留言 · ${shortSha(valueText(widget.version, 'head_commit_sha'))}',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ),
-                if (_discussionsLoading)
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: Text('正在載入討論'),
-                  ),
-                if (_truncated)
-                  const Padding(
-                    padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: Text(_discussionPageBoundNote),
-                  ),
-                if (_reloading) const LinearProgressIndicator(minHeight: 2),
-                if (_discussionsError != null)
-                  FailureNotice(
-                    _discussionsError!,
-                    onRetry: _reloadDiscussions,
-                    account: widget.account,
-                    resourceLabel:
-                        '${widget.project.path} · !${widget.iid} 討論',
-                    onSwitchAccount: endSessionFrom(context),
-                  ),
-                Expanded(
-                  child: SelectionArea(
-                    child: ListView.builder(
-                      controller: _scroll,
-                      padding: const EdgeInsets.only(bottom: 72),
-                      itemCount: lines.length + (showOther ? 1 : 0),
-                      itemBuilder: (context, index) {
-                        if (index == lines.length) {
-                          final isNavTarget = _activeDiscussionTargetIndex == index;
-                          final isInitialTarget = !onLine && widget.initialTarget != null;
-                          final section = _OtherVersionSection(
-                            discussions: others,
-                            version: widget.version,
-                            fallbackReason: _fallbackReason,
+                  if (_discussionsLoading)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text('正在載入討論'),
+                    ),
+                  if (_truncated)
+                    const Padding(
+                      padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text(_discussionPageBoundNote),
+                    ),
+                  if (_reloading) const LinearProgressIndicator(minHeight: 2),
+                  if (_discussionsError != null)
+                    FailureNotice(
+                      _discussionsError!,
+                      onRetry: _reloadDiscussions,
+                      account: widget.account,
+                      resourceLabel:
+                          '${widget.project.path} · !${widget.iid} 討論',
+                      onSwitchAccount: endSessionFrom(context),
+                    ),
+                  Expanded(
+                    child: SelectionArea(
+                      child: ListView.builder(
+                        controller: _scroll,
+                        padding: const EdgeInsets.only(bottom: 72),
+                        itemCount: lines.length + (showOther ? 1 : 0),
+                        itemBuilder: (context, index) {
+                          if (index == lines.length) {
+                            final isNavTarget =
+                                _activeDiscussionTargetIndex == index;
+                            final isInitialTarget =
+                                !onLine && widget.initialTarget != null;
+                            final section = _OtherVersionSection(
+                              discussions: others,
+                              version: widget.version,
+                              fallbackReason: _fallbackReason,
+                            );
+                            Widget content = section;
+                            if (isNavTarget) {
+                              content = KeyedSubtree(
+                                key: _navTargetKey,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    border: Border.all(
+                                      color: scheme.tertiary,
+                                      width: 2,
+                                    ),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: content,
+                                ),
+                              );
+                            }
+                            if (isInitialTarget) {
+                              content = KeyedSubtree(
+                                key: _targetKey,
+                                child: content,
+                              );
+                            }
+                            return _builtRow(index, content);
+                          }
+                          final line = lines[index];
+                          final marker = line.kind == 'add'
+                              ? '+'
+                              : line.kind == 'remove'
+                              ? '−'
+                              : ' ';
+                          final background = line.kind == 'add'
+                              ? WorkshopColors.of(
+                                  context,
+                                ).diffAdded.withValues(alpha: .16)
+                              : line.kind == 'remove'
+                              ? WorkshopColors.of(
+                                  context,
+                                ).diffRemoved.withValues(alpha: .16)
+                              : line.kind == 'hunk'
+                              ? scheme.surfaceContainerHighest
+                              : null;
+                          final threads = anchored[index] ?? const <Json>[];
+                          final row = Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Material(
+                                color: background ?? scheme.surface,
+                                child: InkWell(
+                                  key: ValueKey('diff-line-$index'),
+                                  onTap: line.commentable
+                                      ? () => _comment(line)
+                                      : null,
+                                  child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                      minHeight: 48,
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 8,
+                                        vertical: 14,
+                                      ),
+                                      child: Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          SizedBox(
+                                            width: 30,
+                                            child: Text(
+                                              '${line.oldLine ?? ''}',
+                                              textAlign: TextAlign.right,
+                                              textScaler:
+                                                  MediaQuery.textScalerOf(
+                                                    context,
+                                                  ).clamp(maxScaleFactor: 1.3),
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: scheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ),
+                                          SizedBox(
+                                            width: 30,
+                                            child: Text(
+                                              '${line.newLine ?? ''}',
+                                              textAlign: TextAlign.right,
+                                              textScaler:
+                                                  MediaQuery.textScalerOf(
+                                                    context,
+                                                  ).clamp(maxScaleFactor: 1.3),
+                                              style: TextStyle(
+                                                fontSize: 10,
+                                                color: scheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ),
+                                          SizedBox(
+                                            width: 20,
+                                            child: Text(
+                                              marker,
+                                              textAlign: TextAlign.center,
+                                              textScaler:
+                                                  MediaQuery.textScalerOf(
+                                                    context,
+                                                  ).clamp(maxScaleFactor: 1.3),
+                                            ),
+                                          ),
+                                          Expanded(
+                                            child: Text(
+                                              line.text,
+                                              style: const TextStyle(
+                                                fontFamily: codeFontFamily,
+                                                fontFamilyFallback: [
+                                                  'Menlo',
+                                                  'monospace',
+                                                ],
+                                                fontSize: 13,
+                                                height: 1.5,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              for (final discussion in threads)
+                                _DiffThreadCard(
+                                  key: ValueKey(
+                                    'diff-thread-${discussion['id']}',
+                                  ),
+                                  discussion: discussion,
+                                  expanded: _expanded.contains(
+                                    '${discussion['id']}',
+                                  ),
+                                  busy: _busy,
+                                  base: widget.account.instance.projectWeb(
+                                    widget.project.path,
+                                  ),
+                                  api: widget.api,
+                                  projectId: widget.project.id,
+                                  projectPath: widget.project.path,
+                                  budget: _attachments,
+                                  onExpand: () => setState(
+                                    () => _expanded.add('${discussion['id']}'),
+                                  ),
+                                  onReply: () => _reply(discussion),
+                                  onResolve: _resolvable(discussion)
+                                      ? () => _resolve(
+                                          discussion,
+                                          !_resolved(discussion),
+                                        )
+                                      : null,
+                                  onApplied: () async {
+                                    await _reloadDiscussions();
+                                    widget.onApplied?.call();
+                                  },
+                                ),
+                            ],
                           );
-                          Widget content = section;
+                          final isNavTarget =
+                              index == _activeDiscussionTargetIndex;
+                          final isInitialTarget =
+                              onLine && index == targetIndex;
+                          Widget content = row;
                           if (isNavTarget) {
                             content = KeyedSubtree(
                               key: _navTargetKey,
@@ -1510,174 +2143,19 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                             );
                           }
                           return _builtRow(index, content);
-                        }
-                        final line = lines[index];
-                        final marker = line.kind == 'add'
-                            ? '+'
-                            : line.kind == 'remove'
-                            ? '−'
-                            : ' ';
-                        final background = line.kind == 'add'
-                            ? WorkshopColors.of(context).diffAdded.withValues(alpha: .16)
-                            : line.kind == 'remove'
-                            ? WorkshopColors.of(context).diffRemoved.withValues(alpha: .16)
-                            : line.kind == 'hunk'
-                            ? scheme.surfaceContainerHighest
-                            : null;
-                        final threads = anchored[index] ?? const <Json>[];
-                        final row = Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Material(
-                              color: background ?? scheme.surface,
-                              child: InkWell(
-                                key: ValueKey('diff-line-$index'),
-                                onTap: line.commentable
-                                    ? () => _comment(line)
-                                    : null,
-                                child: ConstrainedBox(
-                                  constraints: const BoxConstraints(
-                                    minHeight: 48,
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 14,
-                                    ),
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        SizedBox(
-                                          width: 30,
-                                          child: Text(
-                                            '${line.oldLine ?? ''}',
-                                            textAlign: TextAlign.right,
-                                            textScaler:
-                                                MediaQuery.textScalerOf(
-                                                  context,
-                                                ).clamp(maxScaleFactor: 1.3),
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: scheme.onSurfaceVariant,
-                                            ),
-                                          ),
-                                        ),
-                                        SizedBox(
-                                          width: 30,
-                                          child: Text(
-                                            '${line.newLine ?? ''}',
-                                            textAlign: TextAlign.right,
-                                            textScaler:
-                                                MediaQuery.textScalerOf(
-                                                  context,
-                                                ).clamp(maxScaleFactor: 1.3),
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              color: scheme.onSurfaceVariant,
-                                            ),
-                                          ),
-                                        ),
-                                        SizedBox(
-                                          width: 20,
-                                          child: Text(
-                                            marker,
-                                            textAlign: TextAlign.center,
-                                            textScaler:
-                                                MediaQuery.textScalerOf(
-                                                  context,
-                                                ).clamp(maxScaleFactor: 1.3),
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            line.text,
-                                            style: const TextStyle(
-                                              fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'],
-                                              fontSize: 13,
-                                              height: 1.5,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            for (final discussion in threads)
-                              _DiffThreadCard(
-                                key: ValueKey(
-                                  'diff-thread-${discussion['id']}',
-                                ),
-                                discussion: discussion,
-                                expanded: _expanded.contains(
-                                  '${discussion['id']}',
-                                ),
-                                busy: _busy,
-                                base: widget.account.instance.projectWeb(
-                                  widget.project.path,
-                                ),
-                                api: widget.api,
-                                projectId: widget.project.id,
-                                projectPath: widget.project.path,
-                                budget: _attachments,
-                                onExpand: () => setState(
-                                  () => _expanded.add('${discussion['id']}'),
-                                ),
-                                onReply: () => _reply(discussion),
-                                onResolve: _resolvable(discussion)
-                                    ? () => _resolve(
-                                        discussion,
-                                        !_resolved(discussion),
-                                      )
-                                    : null,
-                                onApplied: () async {
-                                  await _reloadDiscussions();
-                                  widget.onApplied?.call();
-                                },
-                              ),
-                          ],
-                        );
-                        final isNavTarget = index == _activeDiscussionTargetIndex;
-                        final isInitialTarget = onLine && index == targetIndex;
-                        Widget content = row;
-                        if (isNavTarget) {
-                          content = KeyedSubtree(
-                            key: _navTargetKey,
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                border: Border.all(
-                                  color: scheme.tertiary,
-                                  width: 2,
-                                ),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: content,
-                            ),
-                          );
-                        }
-                        if (isInitialTarget) {
-                          content = KeyedSubtree(
-                            key: _targetKey,
-                            child: content,
-                          );
-                        }
-                        return _builtRow(index, content);
-                      },
+                        },
+                      ),
                     ),
                   ),
-                ),
-              ],
-            )),
+                ],
+              ),
+      ),
     );
   }
 }
 
-bool _resolvable(Json discussion) => valueObjects(
-  discussion,
-  'notes',
-).any((note) => note['resolvable'] == true);
+bool _resolvable(Json discussion) =>
+    valueObjects(discussion, 'notes').any((note) => note['resolvable'] == true);
 
 bool _resolved(Json discussion) {
   final notes = valueObjects(
@@ -1823,7 +2301,9 @@ class _DiffThreadCard extends StatelessWidget {
                   projectPath: projectPath,
                   budget: budget,
                 ),
-                for (final suggestion in parseNoteSuggestions(visible[index])) ...[
+                for (final suggestion in parseNoteSuggestions(
+                  visible[index],
+                )) ...[
                   const SizedBox(height: 6),
                   SuggestedChangeCard(
                     suggestion: suggestion,
@@ -1899,10 +2379,7 @@ class _OtherVersionSection extends StatelessWidget {
               reason: fallbackReason,
             ),
           ]
-        : [
-            for (final discussion in discussions)
-              _cardFor(discussion),
-          ];
+        : [for (final discussion in discussions) _cardFor(discussion)];
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 16, 0, 24),
       child: Column(
@@ -1955,7 +2432,13 @@ class _OtherVersionCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (path.isNotEmpty)
-              Text(path, style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'])),
+              Text(
+                path,
+                style: const TextStyle(
+                  fontFamily: codeFontFamily,
+                  fontFamilyFallback: ['Menlo', 'monospace'],
+                ),
+              ),
             if (lines.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: 4),

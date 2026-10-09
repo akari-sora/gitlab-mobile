@@ -5,6 +5,192 @@
 
 A mobile-first Flutter client for Android and iOS. Independent third-party software, not an official GitLab application. The interface is Traditional Chinese and supports light/dark appearance and large text.
 
+## 2026-10-02–03 — mobile parity and performance follow-up
+
+The current development branch adds issue boards and card/list management,
+revision comparison, server-backed MR draft review, selected-ref repository
+graphs, actual pipeline dependency graphs, package/container/Terraform registries,
+native contributor/repository/CI analytics, lazy multi-file Snippets and guarded
+file actions, server-discovered GraphQL Work Item types, bounded project/group and descendant
+lists with server-side scope/state/search/type/order controls, group-list deep links and project/group details with guarded close/reopen actions, native assignee and label replacement, and lazy status, milestone, weight, iteration, health, time-tracking and
+development attributes, a lazy activity timeline with server-side activity/comment/history filters,
+oldest/newest ordering, bounded discussion/reply paging and guarded Markdown comments,
+replies and ordinary note edits,
+collapsed long descriptions, and typed Task/Incident workflows
+with separate incident escalation state. Issue/MR filters use server
+ordering. Phone board columns, vertical graphs and lazy lists retain native
+navigation. The [full-function ledger](docs/MOBILE_WEB_PARITY_LEDGER.md) records
+all 30 observed Web project entries and keeps every remaining workflow open;
+these additions do not establish complete GitLab parity.
+
+Loading and scroll work adds a bounded, account-client in-memory read cache for project resolution and immutable-SHA text, concurrent request sharing, memoized list derivation and a page-owned syntax-span LRU. Server cache directives, explicit refresh, writes, account/client changes and authorization failures invalidate or disable reuse. See the [current parity and performance report](docs/MOBILE_PARITY_PERFORMANCE.md) for the complete Web navigation matrix, safety boundaries, measured results and remaining NOT_RUN lanes.
+
+Current Diff rendering also builds changed-file rows lazily, parses text over
+64 KiB in a background isolate, and reuses bounded parsed rows only for the
+same API owner, account, project, MR, head, path and exact source. Repository
+raw-source search is debounced, keeps line selection distinct from query
+matches, preserves valid same-resource state on refresh, and clears retained
+source/index state when account, API, project, ref or path ownership changes.
+These changes reduce repeated work; they are not a new FPS or smoothness claim.
+
+Resource details expose direct native link sharing. The project header also
+offers Star/Unstar, sharing the same confirmed state with 更多 and refreshing
+the project feed after a successful change. Link sharing sends only a canonical
+instance-aware URL; repository file links retain the immutable commit and any
+selected line. Account changes invalidate pending actions and reaction pickers.
+
+Environment deployment views share the canonical GitLab environment link using
+its numeric ID; the deployment website remains a separate action. Pipeline
+schedule confirmations and results belong to the account/session that opened
+them, and repeated Play taps open one confirmation.
+
+Work Item close/reopen reads the latest lifecycle, identity and update permission,
+confirms the current account and scope, writes once and checks an independent
+readback. Unsupported servers remain readable; uncertain results require a fresh
+read before another action. OPEN/CLOSED remains separate from custom workflow
+status. GitLab exposes no timestamp compare-and-swap for this mutation.
+
+Work Item comments and replies use a fresh permission/identity check, one
+GraphQL mutation and an independent exact-note readback. Reply targets preserve
+the server's opaque `replyId`. Account/resource changes invalidate open editors;
+uncertain writes retain secure drafts and block repeat submission.
+
+Ordinary project/group Work Item Markdown notes expose an on-demand edit action.
+Their action menu also copies and shares validated instance-aware note permalinks,
+including installation subpaths and the exact numeric note fragment.
+The App trusts GitLab's fresh `Note.userPermissions.adminNote` result rather than
+inferring permission from the author, then checks the displayed revision, scope,
+account and API owner again before one `updateNote` mutation. An exact independent
+readback confirms the result. A no-op consumes the target without sending the
+mutation, and edited Markdown preserves leading and trailing whitespace. Uncertain
+writes retain the secure draft and block repeat Save; older servers that reject the
+optional capability query remain readable. GitLab's current
+[`UpdateNoteInput`](https://docs.gitlab.com/api/graphql/reference/#updatenoteinput)
+has no compare-and-swap field, so a race remains between the final preflight and
+the update. This is not atomic conflict protection or authenticated private/iOS
+acceptance. See the [GraphQL guide](https://docs.gitlab.com/api/graphql/) and the
+upstream [`UpdateNote` mutation at the reviewed commit](https://gitlab.com/gitlab-org/gitlab/-/blob/26212baacadb5beea6664f7ef025d753dccfb0d6/app/graphql/mutations/notes/update/base.rb).
+Ordinary public notes also expose guarded deletion and on-demand reactions;
+internal notes and quick actions remain open. These write flows have source,
+synthetic regressions and dedicated-emulator UI evidence; authenticated private
+CRUD and iOS acceptance remain separate.
+
+Project and group Work Items independently load the current user's notification
+subscription when the notification section is expanded. The dedicated
+`workItemSubscribe` mutation accepts an explicit desired state and uses
+`update_subscription`, independently of general Work Item editing. GitLab does
+not expose that permission in `WorkItem.userPermissions`: an authenticated read
+with the notifications widget permits an attempt, and the server authorizes it.
+Each attempt binds the actor and exact Work Item scope, sends once and checks a
+fresh independent readback. Missing widgets and unsupported schemas stay explicit;
+uncertain writes require a manual refresh. Subscription is personal state and is
+not inferred from a Work Item type name or an absent widget. GitLab's input has
+no atomic compare-and-set field. See the reviewed upstream
+[`Subscribe` mutation](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/mutations/work_items/subscribe.rb).
+
+Project/group Work Items also expose an on-demand title and Markdown description
+editor using account-scoped encrypted drafts. Opening reads fresh content and
+`updateWorkItem` permission; a missing DESCRIPTION widget permits title-only
+editing. Saving sends only changed fields, preserves Markdown whitespace, checks
+the actor, exact scope/type and original revision/content, then verifies one
+mutation with an independent readback. Any failed attempt requires reopening
+with fresh server state. GitLab accepts the nested `descriptionWidget` input and
+has no atomic compare-and-swap; this remains distinct from live private/iOS
+acceptance. See the reviewed
+[`Update` mutation](https://gitlab.com/gitlab-org/gitlab/-/blob/a011400989c4b7a5b626752dbfc35941e745bf34/app/graphql/mutations/work_items/update.rb)
+and [current ledger](docs/MOBILE_WEB_PARITY_LEDGER.md).
+
+The existing Work Item milestone row now opens a native selection page. It
+preserves the current assignment, including closed and server-expired milestones,
+and offers explicit removal, submitted name searches and bounded loading of
+active project/group and ancestor milestones. Clearing does not depend on the
+candidate query succeeding. Each save uses fresh `readWorkItem` and
+`setWorkItemMetadata` permission, exact scope/revision checks, one milestone-only
+mutation and an independent readback. A failed save requires closing and
+reopening; the preflight/update interval is not atomic conflict protection.
+
+The existing weight row edits only that item's own weight. Null, zero and the
+read-only rolled-up totals stay distinct. The editor reads fresh `readWorkItem`
+and `adminWorkItem` permission instead of reusing the row that was already on
+screen. One save sends the item ID and `weightWidget.weight`; null clears and
+zero is stored. GitLab's update has no compare-and-swap. A failed or uncertain
+attempt is not replayed and does not replace the row. This describes the local
+source shape. Exact-archive, emulator, CI, live private, iOS and TalkBack runs
+are **NOT_RUN**. They are not G0 acceptance or a performance claim. See the
+[parity ledger](docs/MOBILE_WEB_PARITY_LEDGER.md).
+
+Project and group Work Items replace the whole assignee set from the detail.
+The editor opens after a complete fresh connection (`first: 100`, at most 20
+pages, stop at 2,000). The parent already shows the first 20 names until a
+write starts. Search calls project or group `autocompleteUsers` with the
+submitted text and keeps at most 20 users; it does not page candidates.
+People already assigned stay in the set when search omits them. Save always
+preflights actor, `readWorkItem`, `setWorkItemMetadata`, revision and the full
+current set before a write or a no-op. One `workItemUpdate` input is `id` and
+`assigneesWidget.assigneeIds` only. `[]` clears.
+`allowsMultipleAssignees: false` is one radio choice; `true` is checkboxes.
+`adminWorkItem` and `updateWorkItem` do not grant the metadata permission.
+The target matches actor, scope and revision, is used once, and has no
+compare-and-swap. The mutation does not select `Query.currentUser`; that name
+is a query field, not an input. Success is the acknowledgement plus a
+separate complete read of the requested set. An uncertain result is not
+replayed: close and reopen on fresh server state. Account, API or revision
+changes close the editor and block a late save. Settling one item cannot
+clear another. During the write and the parent refetch, stale names and a
+false 尚未指派 stay hidden behind 更新中. A failed refetch keeps them hidden
+and shows 尚未確認最新負責人. The widget test keeps the 48 dp save control above
+the keyboard at 320 dp and 2× text. A signed-out 390×844 public page showed
+Assignees / None and did not open this editor. The isolated run is 50 passed
+tests (20 API, 20 UI, 10 fixture) and scoped analysis. UI final review is
+APPROVE with zero required changes. Full suite, archive, new commit, APK,
+native, private, iOS, G0, TalkBack and performance for this editor are
+**NOT_RUN**. They are not acceptance.
+
+Project and group Work Items also have a native Labels editor. Opening it reads
+the complete current connection in 100-label pages, bounded to 20 pages / 2,000
+labels; the detail keeps a 50-label preview. Submitted project/group candidate
+search retains completed pages and is bounded to five 20-label pages. The
+server's dynamic `allowsScopedLabels` value controls scoped-conflict guidance;
+conflicting names intentionally use a two-line preview with an ellipsis.
+
+Save preflights the actor, exact scope/revision, `readWorkItem`,
+`setWorkItemMetadata` and the complete current opaque label-ID set. A single-use
+target sends only the disjoint `addLabelIds` / `removeLabelIds` delta and requires
+a separate complete readback. A no-op consumes the target without a mutation;
+an uncertain send is never replayed. The parent retains the actual write token
+until terminal completion, including when the editor or row is removed, and
+manual refresh cannot publish over an active or newer write. GitLab exposes no
+compare-and-swap for this mutation.
+
+The exact eight merged Labels source/test files have a 149-case scoped
+Labels/API/UI/Graph/Assignee-preservation matrix and clean scoped analysis from
+the separate validation worktree. This is not a full-main aggregate run.
+Current-main full analysis/test/build, APK/native, authenticated private CRUD,
+iOS, accessibility, performance and G0 acceptance are **NOT_RUN**.
+
+`9d9ebb0` adds a guarded, synthetic-only combined emulator QA helper for large
+Diff, repository-source, project-list and Labels flows. With the eight Labels
+files copied in as prerequisites, an isolated worktree passed 128 scoped
+synthetic tests with zero failures/errors/skips, and an independent review
+approved it. It is a separate scoped run, not full-main, native or performance
+evidence. Pipeline `2910293827` for `a82892e` was last read running with only
+`python_checks` passed; it is not a CI pass and does not validate `9d9ebb0` or
+`c28bfbe`.
+
+`c28bfbe` integrates the milestone, weight and assignee write fences into
+current main. The detail page owns each metadata write token, checked against
+account, API client, resource, generation and summary, so a write outlives its
+editor and a recreated attributes panel. While the write is pending the affected
+row shows 等待讀取 with editing disabled; after the acknowledgement the
+recreated panel issues exactly one fresh read instead of stalling. Labels write
+gating is unchanged. A scoped 350-test synthetic matrix (metadata API/UI, Labels,
+project/group Graph, attributes and emulator fixtures) passed with zero
+failures/errors/skips and clean scoped analysis, and an independent review
+approved with zero required changes. The 350, 128, 149 and 92 runs are separate
+scoped matrices on their own source cuts; they are not summed and are not full
+acceptance. Current-source full analysis/test/build, APK/native, CI,
+authenticated private CRUD, iOS and G0 remain pending.
+
 ## v0.5 — mobile UX overhaul and GitLab parity
 
 Still a development preview. Evidence is in the [v0.5 ledger](docs/V0_5_VERIFICATION.md); anything it does not list is **NOT_RUN**.
@@ -34,11 +220,11 @@ This revision continues the v0.2 API-backed collaboration screens. It is a **dev
 - Release, project-label and milestone CRUD. Commits are immutable; branches and tags are not presented as having a fictitious update API.
 - Account-scoped encrypted drafts, retained write errors, no automatic retry of uncertain writes, typed confirmation for destructive resource operations.
 
-**Not yet implemented:** OAuth login stays inert. `oauthApplicationIdFor` is empty until a maintainer registers an Application ID per instance. Push delivery, iOS (deferred by the maintainer), a cross-project CI overview, and a two-pane wide layout are not in the tree. Local Git clone/rebase/terminal and complete enterprise policy management are not in the tree. App Store / Play signing, an independent human review, a physical-phone run of !4–!8, and a completed live CI job-control suite are **NOT_RUN**. Device evidence is one physical Android phone and one Android emulator. The live smoke was not re-run after the merges. Anything this README does not tie to the v0.3 ledger stays **NOT_RUN**.
+**Historical v0.3 boundary (at `9183f19`):** OAuth login stayed inert, and push delivery, iOS, a cross-project CI overview and a two-pane wide layout were not in that revision. The current source now contains cross-project CI and retained-state two-pane layouts; see the v0.5 ledger and current parity report for their separate evidence limits. Local Git clone/rebase/terminal and complete enterprise policy management remain outside the tree. App Store / Play signing, an independent human review, a physical-phone run of !4–!8, and a completed live CI job-control suite were **NOT_RUN** for v0.3. Device evidence was one physical Android phone and one Android emulator. The live smoke was not re-run after those merges. Anything this historical section does not tie to the v0.3 ledger stays **NOT_RUN** for that revision.
 
 ## Verification
 
-See [v0.3 verification](docs/V0_3_VERIFICATION.md), [v0.2 verification](docs/V0_2_VERIFICATION.md) and [mobile UX changes](docs/UI_REDESIGN.md). CI executes the actual Dart/Flutter code. Synthetic transport tests, live server checks, emulator runs and physical-device runs stay distinct. On `9183f19`, pipeline `2869335026` reported `509` tests in its JUnit report. That is the observed count for that pipeline.
+See [current mobile parity and performance](docs/MOBILE_PARITY_PERFORMANCE.md), [v0.5 verification](docs/V0_5_VERIFICATION.md), [v0.3 verification](docs/V0_3_VERIFICATION.md), [v0.2 verification](docs/V0_2_VERIFICATION.md) and [mobile UX changes](docs/UI_REDESIGN.md). CI executes the actual Dart/Flutter code. Synthetic transport tests, live server checks, emulator runs and physical-device runs stay distinct. On `9183f19`, pipeline `2869335026` reported `509` tests in its JUnit report. That is the observed count for that pipeline.
 
 A real GitLab `Link` header expanded omitted `false` defaults and caused the original project-list failure. The parser now validates immutable scope, preserves the caller's query, and extracts only a safe pagination cursor. Valid first-page data is no longer rejected because GitLab expanded defaults.
 
@@ -47,14 +233,15 @@ A real GitLab `Link` header expanded omitted `false` defaults and caused the ori
 Pinned Flutter **3.47.2** / Dart **3.13.2**; committed `pubspec.lock`. Normal pipelines enforce the lock, run analysis and unit/widget tests, capture actual Flutter-rendered synthetic-data screenshots, generate/check Android/iOS templates, then build an Android debug APK. Only successful `main` pipelines publish commit-addressed preview packages using `CI_JOB_TOKEN`.
 
 ```sh
-flutter pub get --enforce-lockfile
-flutter analyze --no-pub
-flutter test --no-pub
+./.fvm/flutter_sdk/bin/flutter pub get --enforce-lockfile
+./.fvm/flutter_sdk/bin/flutter analyze --no-pub
+./.fvm/flutter_sdk/bin/flutter test --no-pub
 python3 tool/bootstrap.py
-flutter build apk --debug
+python3 tool/android_signing.py configure android/app/build.gradle.kts
+./.fvm/flutter_sdk/bin/flutter build apk --debug
 ```
 
-Screenshots: `flutter_checks` job artifacts → `ci-output/screenshots/`. They are real Flutter host-rendered screens with synthetic data, not an Android/iOS device run or a generated design mock-up. Android APKs: `android_debug` artifacts; main previews: project Package Registry. Debug signing may differ across clean builds; these are not store-signed releases.
+Screenshots: `flutter_checks` job artifacts → `ci-output/screenshots/`. They are real Flutter host-rendered screens with synthetic data, not an Android/iOS device run or a generated design mock-up. Android APKs: `android_debug` artifacts; main previews: project Package Registry. Local debug, profile and release APKs use the stable development signer described in [Android local signing](docs/ANDROID_SIGNING.md). CI debug signing remains separate and may differ until its protected signing identity is provisioned. Neither path is a store-signed release.
 
 ## Live CRUD smoke
 

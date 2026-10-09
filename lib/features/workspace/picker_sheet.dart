@@ -162,11 +162,17 @@ Future<List<PickerChoice>?> showChoicePicker(
   required bool multi,
   required String title,
   required List<PickerChoice> initial,
+  ValueChanged<Route<dynamic>>? onRoute,
 }) {
-  return showModalBottomSheet<List<PickerChoice>>(
-    context: context,
+  final navigator = Navigator.of(context);
+  final localizations = MaterialLocalizations.of(context);
+  final route = ModalBottomSheetRoute<List<PickerChoice>>(
+    capturedThemes: InheritedTheme.capture(from: context, to: navigator.context),
     isScrollControlled: true,
     useSafeArea: true,
+    barrierLabel: localizations.scrimLabel,
+    barrierOnTapHint: localizations.scrimOnTapHint(localizations.bottomSheetLabel),
+    modalBarrierColor: Theme.of(context).bottomSheetTheme.modalBarrierColor,
     builder: (context) {
       final media = MediaQuery.of(context);
       // useSafeArea leaves the bottom edge open. Keep the larger of the
@@ -193,6 +199,8 @@ Future<List<PickerChoice>?> showChoicePicker(
       );
     },
   );
+  onRoute?.call(route);
+  return navigator.push(route);
 }
 
 class ChoicePickerSheet extends StatefulWidget {

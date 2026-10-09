@@ -2,18 +2,31 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../core/providers.dart';
+import '../../core/work_item_types.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/workspace_ui.dart';
 import 'activity_page.dart';
+import 'boards_page.dart';
 import 'commit_page.dart';
+import 'compare_page.dart';
+import 'repository_graph_page.dart';
+import 'registries_page.dart';
+import 'snippets_page.dart';
 import 'editor.dart';
+import 'graph_work_items_page.dart';
 import 'project_extras.dart';
+import 'project_analytics_page.dart';
 import 'records_feed.dart';
 import 'search_page.dart';
+import 'work_item_page.dart';
 import '../../shared/theme.dart';
+import '../auth/session_controller.dart';
 
 enum MetadataKind { branches, tags, commits, releases, labels, milestones }
 String metadataTitle(MetadataKind kind) => switch (kind) {
@@ -21,13 +34,34 @@ String metadataTitle(MetadataKind kind) => switch (kind) {
   MetadataKind.releases => 'Releases', MetadataKind.labels => '議題標籤', MetadataKind.milestones => '里程碑',
 };
 
+final class ProjectStarControl {
+  const ProjectStarControl({
+    required this.starred,
+    required this.checked,
+    required this.busy,
+    required this.starCount,
+    required this.revision,
+    required this.recheck,
+    required this.setStar,
+  });
+  final bool? starred;
+  final bool checked, busy;
+  final int? starCount;
+  final int revision;
+  final Future<void> Function() recheck;
+  final Future<Json?> Function(bool starred) setStar;
+}
+
 class ProjectMoreTab extends StatefulWidget {
-  const ProjectMoreTab({super.key, required this.account, required this.api, required this.project, required this.onChanged, this.onDeleted});
+  const ProjectMoreTab({super.key, required this.account, required this.api, required this.project, required this.onChanged, this.onDeleted,
+    this.starControl,
+  });
   final Account account;
   final GitLabApi api;
   final Project project;
   final ValueChanged<Project> onChanged;
   final VoidCallback? onDeleted;
+  final ProjectStarControl? starControl;
   @override
   State<ProjectMoreTab> createState() => _ProjectMoreTabState();
 }
@@ -37,6 +71,120 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
   bool? _starred;
   bool _starChecked = false;
   List<(String, double)> _languages = const [];
+  int _generation = 0, _overviewEpoch = 0;
+  NavigatorState? _navigator;
+  final Set<Route<dynamic>> _ownedRoutes = {};
+  SessionController? _session;
+  int? _sessionGeneration;
+
+  bool? get _effectiveStarred =>
+      widget.starControl != null ? widget.starControl!.starred : _starred;
+  bool get _effectiveStarChecked => widget.starControl?.checked ?? _starChecked;
+  bool get _starBusy => _busy || (widget.starControl?.busy ?? false);
+
+  bool _current(int generation) => mounted && generation == _generation;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _navigator = Navigator.of(context);
+    if (_session == null) _bindSession();
+  }
+
+  void _bindSession() {
+    try {
+      final candidate = ProviderScope.containerOf(context, listen: false)
+          .read(sessionProvider);
+      if (candidate.active?.key != widget.account.key ||
+          !identical(candidate.api, widget.api)) {
+        return;
+      }
+      if (!identical(_session, candidate)) {
+        _session?.removeListener(_sessionChanged);
+        _session = candidate;
+        candidate.addListener(_sessionChanged);
+      }
+      _sessionGeneration = candidate.generation;
+    } catch (_) {
+      // Some isolated widget tests intentionally have no ProviderScope.
+    }
+  }
+
+  bool _sessionCurrent() => mounted && (_session == null ||
+      (_session!.active?.key == widget.account.key &&
+       identical(_session!.api, widget.api) &&
+       _session!.generation == _sessionGeneration));
+
+  void _sessionChanged() {
+    if (_sessionCurrent()) return;
+    _generation++;
+    _overviewEpoch++;
+    _dismissRoutes();
+    setState(() {
+      _busy = false;
+      _details = null;
+      _starred = null;
+      _starChecked = false;
+      _languages = const [];
+    });
+  }
+
+  void _ownRoute(Route<dynamic> route) {
+    if (!_ownedRoutes.add(route)) return;
+    unawaited(route.popped.then((_) => _ownedRoutes.remove(route)));
+  }
+
+  void _dismissRoutes() {
+    final navigator = _navigator;
+    final routes = _ownedRoutes.toList(growable: false);
+    _ownedRoutes.clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (navigator == null || !navigator.mounted) return;
+      for (final route in routes) {
+        if (!route.isActive) continue;
+        // A detail/editor opened by this page belongs to the same account
+        // scope as its root. Removing only the root leaves those routes live.
+        navigator.popUntil((candidate) => candidate == route || candidate.isFirst);
+        if (route.isActive) navigator.removeRoute(route);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant ProjectMoreTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.starControl != null &&
+        oldWidget.starControl?.revision != widget.starControl!.revision &&
+        oldWidget.account.key == widget.account.key &&
+        oldWidget.project.id == widget.project.id &&
+        identical(oldWidget.api, widget.api)) {
+      unawaited(_loadOverview());
+    }
+    if (oldWidget.account.key != widget.account.key ||
+        oldWidget.project.id != widget.project.id ||
+        oldWidget.project.path != widget.project.path ||
+        !identical(oldWidget.api, widget.api)) {
+      _generation++;
+      _overviewEpoch++;
+      _dismissRoutes();
+      _busy = false;
+      _details = null;
+      _starred = null;
+      _starChecked = false;
+      _languages = const [];
+      _bindSession();
+      unawaited(_loadOverview());
+    }
+  }
+
+  @override
+  void dispose() {
+    _session?.removeListener(_sessionChanged);
+    _generation++;
+    _overviewEpoch++;
+    _dismissRoutes();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -48,7 +196,9 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
   /// part out. An unknown star state stays unknown instead of reading as
   /// unstarred, so the toggle never sends the wrong direction.
   Future<void> _loadOverview() async {
-    final id = widget.project.id;
+    final owner = widget;
+    final generation = _generation, epoch = ++_overviewEpoch;
+    final id = owner.project.id;
     Future<T?> soft<T>(Future<T> Function() read) async {
       try {
         return await read();
@@ -57,11 +207,13 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
       }
     }
     final results = await Future.wait<Object?>([
-      soft(() => widget.api.record(['projects', '$id'], query: {'license': 'true'})),
-      soft(() => widget.api.hasStarred(id, widget.account.user.username)),
-      soft(() => widget.api.languages(id)),
+      soft(() => owner.api.record(['projects', '$id'], query: {'license': 'true'})),
+      widget.starControl == null
+          ? soft(() => owner.api.hasStarred(id, owner.account.user.username))
+          : Future<Object?>.value(widget.starControl!.starred),
+      soft(() => owner.api.languages(id)),
     ]);
-    if (!mounted) return;
+    if (!_current(generation) || epoch != _overviewEpoch) return;
     setState(() {
       _details = results[0] as Json?;
       _starred = results[1] as bool?;
@@ -71,33 +223,50 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
   }
 
   Future<void> _recheckStar() async {
+    if (_starBusy) return;
+    final shared = widget.starControl;
+    if (shared != null) {
+      final generation = _generation;
+      try {
+        await shared.recheck();
+      } catch (e) {
+        if (mounted && _current(generation) &&
+            (e is! ApiFailure || e.kind != FailureKind.cancelled)) {
+          showFailure(context, e);
+        }
+      }
+      return;
+    }
+    final owner = widget, generation = _generation;
+    ++_overviewEpoch;
     setState(() => _busy = true);
     try {
-      final starred = await widget.api.hasStarred(widget.project.id, widget.account.user.username);
-      if (mounted) setState(() => _starred = starred);
+      final starred = await owner.api.hasStarred(owner.project.id, owner.account.user.username);
+      if (mounted && _current(generation)) setState(() => _starred = starred);
     } catch (e) {
-      if (mounted) showFailure(context, e);
+      if (mounted && _current(generation)) showFailure(context, e);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && _current(generation)) setState(() => _busy = false);
     }
   }
 
   Future<void> _fork() async {
-    if (_busy || !await confirmAction(context, 'Fork 這個專案？', '會在你的個人 namespace 建立 ${widget.project.path} 的副本。')) {
+    final owner = widget, generation = _generation;
+    if (_busy || !await confirmAction(context, 'Fork 這個專案？', '會在你的個人 namespace 建立 ${owner.project.path} 的副本。', onRoute: _ownRoute)) {
       return;
     }
-    if (!mounted) return;
+    if (!mounted || !_current(generation)) return;
     setState(() => _busy = true);
     try {
-      final fork = await widget.api.forkProject(widget.project.id);
-      if (mounted) {
+      final fork = await owner.api.forkProject(owner.project.id);
+      if (mounted && _current(generation)) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('已建立 Fork：${valueText(fork, 'path_with_namespace')}，匯入可能需要幾分鐘。')));
       }
     } catch (e) {
-      if (mounted) showFailure(context, e);
+      if (mounted && _current(generation)) showFailure(context, e);
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted && _current(generation)) setState(() => _busy = false);
     }
   }
 
@@ -106,13 +275,17 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已複製$label')));
   }
 
-  void _push(Widget page) => unawaited(Navigator.push(context, MaterialPageRoute<void>(builder: (_) => page)));
+  void _push(Widget page) {
+    final route = MaterialPageRoute<void>(builder: (_) => page);
+    _ownRoute(route);
+    unawaited(Navigator.push(context, route));
+  }
 
   Widget _overview(BuildContext context) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
     final details = _details ?? const <String, dynamic>{};
-    final stars = valueInt(details, 'star_count'), forks = valueInt(details, 'forks_count');
+    final stars = widget.starControl?.starCount ?? valueInt(details, 'star_count'), forks = valueInt(details, 'forks_count');
     final issues = valueInt(details, 'open_issues_count');
     final https = valueText(details, 'http_url_to_repo'), ssh = valueText(details, 'ssh_url_to_repo');
     final license = valueText(valueObject(details, 'license'), 'nickname',
@@ -131,7 +304,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
             api: widget.api, projectId: widget.project.id, projectWeb: widget.account.instance.projectWeb(widget.project.path),
             projectPath: widget.project.path)),
         if (_details != null) Row(children: [
-          stat(_starred == true ? Icons.star : Icons.star_border, '$stars', '星標'),
+          stat(_effectiveStarred == true ? Icons.star : Icons.star_border, '$stars', '星標'),
           stat(Icons.call_split, '$forks', 'Fork'),
           stat(Icons.adjust, '$issues', '開啟議題'),
           if (license.isNotEmpty) stat(Icons.gavel_outlined, license, '授權'),
@@ -169,19 +342,21 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
         ],
         const SizedBox(height: 8),
         Wrap(spacing: 8, runSpacing: 8, children: [
-          if (_starred == null)
+          if (_effectiveStarred == null)
             FilledButton.tonalIcon(
               key: const ValueKey('project-star-toggle'),
-              onPressed: _busy || !_starChecked ? null : _recheckStar,
+              onPressed: _starBusy || !_effectiveStarChecked
+                        ? null : _recheckStar,
               icon: const Icon(Icons.star_half, size: 18),
-              label: Text(_starChecked ? '重新確認星標' : '確認星標中…'),
+              label: Text(_effectiveStarChecked ? '重新確認星標' : '確認星標中…'),
             )
           else
             FilledButton.tonalIcon(
               key: const ValueKey('project-star-toggle'),
-              onPressed: _busy ? null : () => _star(!_starred!),
-              icon: Icon(_starred! ? Icons.star : Icons.star_border, size: 18),
-              label: Text(_starred! ? '移除星標' : '加入星標'),
+              onPressed: _starBusy
+                        ? null : () => _star(!_effectiveStarred!),
+              icon: Icon(_effectiveStarred! ? Icons.star : Icons.star_border, size: 18),
+              label: Text(_effectiveStarred! ? '移除星標' : '加入星標'),
             ),
           OutlinedButton.icon(
             onPressed: _busy || widget.project.archived == true ? null : _fork,
@@ -211,48 +386,83 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     Color(0xFF4763E4), Color(0xFF1B9E77), Color(0xFFE6A100), Color(0xFFD95F02), Color(0xFF7570B3), Color(0xFF66A61E),
   ][index % 6];
   Future<void> _edit() async {
+    if (_busy) return;
+    final owner = widget, generation = _generation;
     Project? updated;
-    final saved = await openEditor(context, account: widget.account, title: '專案設定',
-      resource: '${widget.project.id}/settings', subtitle: widget.project.path,
-      fields: [EditField('name', '顯示名稱', required: true, value: widget.project.name),
-        EditField('description', '專案說明', lines: 6, value: widget.project.description ?? '')], save: (values) async {
-        updated = await widget.api.editProject(widget.project.id, name: values['name']!.trim(), description: values['description']!);
+    final saved = await openEditor(context, account: owner.account, title: '專案設定',
+      resource: '${owner.project.id}/settings', subtitle: owner.project.path,
+      onRoute: _ownRoute,
+      fields: [EditField('name', '顯示名稱', required: true, value: owner.project.name),
+        EditField('description', '專案說明', lines: 6, value: owner.project.description ?? '')], save: (values) async {
+        if (!_current(generation)) throw const ApiFailure(FailureKind.cancelled);
+        updated = await owner.api.editProject(owner.project.id, name: values['name']!.trim(), description: values['description']!);
       });
-    if (saved && mounted && updated != null) { widget.onChanged(updated!); }
+    if (saved && _current(generation) && updated != null) { owner.onChanged(updated!); }
   }
   Future<void> _star(bool starred) async {
-    if (_busy) return;
+    if (_starBusy) return;
+    final shared = widget.starControl;
+    if (shared != null) {
+      final generation = _generation;
+      try {
+        final updated = await shared.setStar(starred);
+        if (mounted &&
+            _current(generation) &&
+            _details != null &&
+            updated?['star_count'] is int) {
+          setState(
+            () =>
+                _details = {..._details!, 'star_count': updated!['star_count']},
+          );
+        }
+        if (mounted && _current(generation)) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(starred ? '已加入星標' : '已移除星標')));
+        }
+      } catch (e) {
+        if (mounted &&
+            _current(generation) &&
+            (e is! ApiFailure || e.kind != FailureKind.cancelled)) {
+          showFailure(context, e);
+        }
+      }
+      return;
+    }
+    final owner = widget, generation = _generation;
+    ++_overviewEpoch;
     setState(() => _busy = true);
     try {
-      final updated = await widget.api.setStar(widget.project.id, starred);
-      if (mounted) {
+      final updated = await owner.api.setStar(owner.project.id, starred);
+      if (mounted && _current(generation)) {
         setState(() {
           _starred = starred;
           if (_details != null && updated?['star_count'] is int) _details = {..._details!, 'star_count': updated!['star_count']};
         });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(starred ? '已加入星標' : '已移除星標')));
       }
-    } catch (e) { if (mounted) { showFailure(context, e); } }
-    finally { if (mounted) { setState(() => _busy = false); } }
+    } catch (e) { if (mounted && _current(generation)) { showFailure(context, e); } }
+    finally { if (mounted && _current(generation)) { setState(() => _busy = false); } }
   }
   Future<void> _delete() async {
+    final owner = widget, generation = _generation;
     if (_busy || !await confirmAction(context, '刪除整個專案？',
       '包含 repository、議題、MR 及相關資料。部分實例會先排程刪除；App 不會要求立即永久刪除。',
-      requiredText: widget.project.path)) { return; }
-    if (!mounted) { return; }
+      requiredText: owner.project.path, onRoute: _ownRoute)) { return; }
+    if (!mounted || !_current(generation)) { return; }
     setState(() => _busy = true);
     try {
-      await widget.api.deleteProject(widget.project.id);
-      if (mounted) {
+      await owner.api.deleteProject(owner.project.id);
+      if (mounted && _current(generation)) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('GitLab 已接受專案刪除要求。')));
-        if (widget.onDeleted != null) {
-          widget.onDeleted!();
+        if (owner.onDeleted != null) {
+          owner.onDeleted!();
         } else {
           Navigator.pop(context);
         }
       }
-    } catch (e) { if (mounted) { showFailure(context, e); } }
-    finally { if (mounted) { setState(() => _busy = false); } }
+    } catch (e) { if (mounted && _current(generation)) { showFailure(context, e); } }
+    finally { if (mounted && _current(generation)) { setState(() => _busy = false); } }
   }
   @override
   Widget build(BuildContext context) {
@@ -261,12 +471,32 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     return ListView(padding: const EdgeInsets.fromLTRB(16, 14, 16, 24), children: [
       _overview(context),
       _section(context, '程式碼', [
+        (
+          Icons.analytics_outlined,
+          '專案分析',
+          () => _push(
+            ProjectAnalyticsPage(
+              account: account,
+              api: api,
+              project: project,
+            ),
+          ),
+        ),
+        (Icons.compare_arrows, '比較版本', () => _push(ComparePage(account: account, api: api, project: project))),
         (Icons.alt_route, metadataTitle(MetadataKind.branches), () => metadata(MetadataKind.branches)),
         (Icons.sell_outlined, metadataTitle(MetadataKind.tags), () => metadata(MetadataKind.tags)),
         (Icons.history, metadataTitle(MetadataKind.commits), () => metadata(MetadataKind.commits)),
+        (Icons.account_tree_outlined, '儲存庫圖', () => _push(RepositoryGraphPage(account: account, api: api, project: project))),
+        (Icons.code_outlined, 'Snippets', () => _push(SnippetsPage(account: account, api: api, project: project))),
         (Icons.manage_search, '搜尋程式碼與內容', () => _push(SearchPage(account: account, api: api, project: project))),
       ]),
       _section(context, '協作', [
+        (Icons.view_kanban_outlined, '議題看板', () => _push(BoardsPage(account: account, api: api, project: project))),
+        (Icons.workspaces_outline, '工作項目', () => _push(GraphWorkItemsPage(
+          account: account, api: api, project: project,
+          isCurrent: _sessionCurrent, ownerChanges: _session))),
+        (Icons.task_alt, 'Tasks', () => _push(ProjectWorkItemsPage(account: account, api: api, project: project, type: ProjectWorkItemType.task))),
+        (Icons.warning_amber_rounded, 'Incidents', () => _push(ProjectWorkItemsPage(account: account, api: api, project: project, type: ProjectWorkItemType.incident))),
         (Icons.timeline, '專案動態', () => _push(ActivityPage(account: account, api: api, project: project))),
         (Icons.group_outlined, '成員', () => _push(MembersPage(account: account, api: api, project: project))),
         (Icons.menu_book_outlined, 'Wiki', () => _push(WikiPagesPage(account: account, api: api, project: project))),
@@ -275,6 +505,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
         (Icons.inventory_2_outlined, metadataTitle(MetadataKind.releases), () => metadata(MetadataKind.releases)),
       ]),
       _section(context, '部署', [
+        (Icons.layers_outlined, '套件與容器 Registry', () => _push(RegistriesPage(account: account, api: api, project: project))),
         (Icons.dns_outlined, '環境', () => _push(EnvironmentsPage(account: account, api: api, project: project))),
         (Icons.rocket_launch_outlined, '部署紀錄', () => _push(DeploymentsPage(account: account, api: api, project: project))),
         (Icons.event_repeat_outlined, 'Pipeline 排程', () => _push(PipelineSchedulesPage(account: account, api: api, project: project))),
@@ -291,7 +522,6 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     ]);
   }
 }
-
 class MetadataPage extends StatefulWidget {
   const MetadataPage({super.key, required this.account, required this.api, required this.project, required this.kind});
   final Account account;
@@ -304,6 +534,98 @@ class MetadataPage extends StatefulWidget {
 class _MetadataPageState extends State<MetadataPage> {
   final _feed = GlobalKey<RecordsFeedState>();
   bool _busy = false;
+  int _generation = 0;
+  NavigatorState? _navigator;
+  Route<void>? _detailRoute;
+  SessionController? _session;
+  int? _sessionGeneration;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _navigator = Navigator.of(context);
+    _bindSession();
+  }
+
+  void _bindSession() {
+    try {
+      final candidate = ProviderScope.containerOf(context, listen: false)
+          .read(sessionProvider);
+      if (!identical(_session, candidate)) {
+        _session?.removeListener(_sessionChanged);
+        _session = candidate;
+        candidate.addListener(_sessionChanged);
+      }
+      _sessionGeneration = candidate.generation;
+    } on StateError {
+      // Some isolated widget tests intentionally have no ProviderScope.
+    }
+  }
+
+  bool _sessionCurrent() => _session == null ||
+      (_session!.active?.key == widget.account.key &&
+       identical(_session!.api, widget.api) &&
+       _session!.generation == _sessionGeneration);
+
+  bool _ownerCurrent(({
+    String accountKey,
+    GitLabApi api,
+    int projectId,
+    String projectPath,
+    MetadataKind kind,
+    int generation,
+  }) owner) => mounted &&
+      owner.generation == _generation &&
+      !owner.api.isClosed &&
+      widget.account.key == owner.accountKey &&
+      identical(widget.api, owner.api) &&
+      widget.project.id == owner.projectId &&
+      widget.project.path == owner.projectPath &&
+      widget.kind == owner.kind &&
+      _sessionCurrent();
+
+  void _sessionChanged() {
+    if (_sessionCurrent()) return;
+    _generation++;
+    _dismissDetail();
+    if (mounted) setState(() => _busy = false);
+  }
+
+  void _dismissDetail() {
+    final navigator = _navigator;
+    final route = _detailRoute;
+    _detailRoute = null;
+    if (route == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (navigator?.mounted == true && route.isActive) {
+        navigator!.removeRoute(route);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant MetadataPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.account.key != widget.account.key ||
+        !identical(oldWidget.api, widget.api) ||
+        oldWidget.project.id != widget.project.id ||
+        oldWidget.project.path != widget.project.path ||
+        oldWidget.kind != widget.kind ||
+        widget.api.isClosed) {
+      _generation++;
+      _dismissDetail();
+      _bindSession();
+    }
+  }
+
+  @override
+  void dispose() {
+    _session?.removeListener(_sessionChanged);
+    _generation++;
+    _dismissDetail();
+    super.dispose();
+  }
+
   List<String> get path => ['projects', '${widget.project.id}',
     if (const [MetadataKind.branches, MetadataKind.tags, MetadataKind.commits].contains(widget.kind)) 'repository', widget.kind.name];
   String _name(Json value) => valueText(value, widget.kind == MetadataKind.commits ? 'title'
@@ -449,25 +771,85 @@ class _MetadataPageState extends State<MetadataPage> {
       );
       return;
     }
-    await Navigator.push<void>(context, MaterialPageRoute(builder: (_) => Scaffold(
-      appBar: AppBar(title: Text(_name(value))), body: gestureSafe(ListView(padding: const EdgeInsets.all(20), children: [
-        Text(widget.project.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 16),
+    final ownerAccount = widget.account;
+    final ownerApi = widget.api;
+    final ownerProject = widget.project;
+    final ownerKind = widget.kind;
+    final detailOwner = (
+      accountKey: ownerAccount.key,
+      api: ownerApi,
+      projectId: ownerProject.id,
+      projectPath: ownerProject.path,
+      kind: ownerKind,
+      generation: _generation,
+    );
+    if (!_ownerCurrent(detailOwner)) return;
+    final detailTitle = _name(value);
+    final resourceId = switch (ownerKind) {
+      MetadataKind.releases => valueText(value, 'tag_name'),
+      MetadataKind.milestones => valueInt(value, 'iid'),
+      _ => null,
+    };
+    final Uri? shareUri = switch ((ownerKind, resourceId)) {
+      (MetadataKind.releases, final String tag) when tag.trim().isNotEmpty => () {
+        final base = ownerAccount.instance.projectWeb(
+          '${ownerProject.path}/-/releases',
+        );
+        return base.replace(pathSegments: [...base.pathSegments, tag]);
+      }(),
+      (MetadataKind.milestones, final int iid) when iid > 0 =>
+        ownerAccount.instance.projectWeb(
+          '${ownerProject.path}/-/milestones/$iid',
+        ),
+      _ => null,
+    };
+    bool ownerCurrent() => _ownerCurrent(detailOwner);
+    final route = MaterialPageRoute<void>(builder: (_) => Scaffold(
+      appBar: AppBar(title: Text(detailTitle,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            actions: [
+              if (shareUri != null)
+                ResourceShareButton(
+                  uri: shareUri,
+                  ownerKey: (
+                    ownerAccount.key,
+                    ownerApi,
+                    ownerProject.id,
+                    ownerProject.path,
+                    ownerKind,
+                    resourceId,
+                  ),
+                  isCurrent: ownerCurrent,
+                ),
+            ],
+          ), body: gestureSafe(ListView(padding: const EdgeInsets.all(20), children: [
+        Text(ownerProject.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 16),
         if (value['state'] is String) Align(alignment: Alignment.centerLeft, child: StatusBadge(valueText(value, 'state'))),
         MarkdownView(valueText(value, 'description', valueText(value, 'message', '尚未填寫說明。')),
-          base: widget.account.instance.projectWeb(widget.project.path), api: widget.api, projectId: widget.project.id,
-          projectWeb: widget.account.instance.projectWeb(widget.project.path), projectPath: widget.project.path),
+          base: ownerAccount.instance.projectWeb(ownerProject.path), api: ownerApi, projectId: ownerProject.id,
+          projectWeb: ownerAccount.instance.projectWeb(ownerProject.path), projectPath: ownerProject.path),
         if (value['commit'] is Json) ...[const SizedBox(height: 20), Text(valueText(valueObject(value, 'commit'), 'title')),
           SelectableText(valueText(valueObject(value, 'commit'), 'id'), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12))],
-        if (widget.kind == MetadataKind.milestones) ...[const SizedBox(height: 16),
+        if (ownerKind == MetadataKind.milestones) ...[const SizedBox(height: 16),
           Text('開始：${valueText(value, 'start_date', '未設定')}\n到期：${valueText(value, 'due_date', '未設定')}')],
       ])),
-    )));
+    ));
+    _detailRoute = route;
+    try {
+      await (_navigator ?? Navigator.of(context)).push<void>(route);
+    } finally {
+      if (identical(_detailRoute, route)) {
+        _detailRoute = null;
+      }
+    }
   }
   @override
   Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(metadataTitle(widget.kind)), actions: [
-    if (widget.kind != MetadataKind.commits) IconButton(tooltip: '新增${metadataTitle(widget.kind)}',
+    if (!widget.api.isClosed && _sessionCurrent() && widget.kind != MetadataKind.commits) IconButton(tooltip: '新增${metadataTitle(widget.kind)}',
       onPressed: _busy || widget.project.archived == true ? null : _edit, icon: const Icon(Icons.add)),
-  ]), body: gestureSafe(RecordsFeed(key: _feed, identity: '${widget.project.id}/${widget.kind.name}',
+  ]), body: widget.api.isClosed || !_sessionCurrent() ? const SizedBox.shrink() : gestureSafe(RecordsFeed(key: _feed, identity: '${widget.account.key}/${widget.project.id}/${widget.kind.name}/$_generation',
     account: widget.account, resourceLabel: '${widget.project.path} · ${metadataTitle(widget.kind)}',
     onSwitchAccount: endSessionFrom(context),
     empty: '尚無${metadataTitle(widget.kind)}', load: (next) => widget.api.records(path,

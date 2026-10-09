@@ -1,8 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../core/providers.dart';
 import '../../shared/external_link.dart';
+import '../../shared/resource_share.dart';
 import '../../shared/workspace_ui.dart';
+import '../auth/session_controller.dart';
+import 'graph_work_items_page.dart';
 import 'navigation.dart';
 import 'records_feed.dart';
 import 'work_item_page.dart';
@@ -80,17 +88,99 @@ class _GroupsPageState extends State<GroupsPage> {
 
 /// A group: its projects, subgroups, and open issues and merge requests.
 class GroupPage extends StatefulWidget {
-  const GroupPage({super.key, required this.account, required this.api, required this.group});
+  const GroupPage({super.key, required this.account, required this.api, required this.group,
+    this.isCurrent, this.ownerChanges, this.initialTab = 0, this.sessionGeneration})
+    : assert(initialTab >= 0 && initialTab < 5);
   final Account account;
   final GitLabApi api;
   final Json group;
+  final bool Function()? isCurrent;
+  final Listenable? ownerChanges;
+  final int initialTab;
+  /// The `SessionController.generation` captured by an explicit owner.
+  final int? sessionGeneration;
   @override
   State<GroupPage> createState() => _GroupPageState();
 }
 
 class _GroupPageState extends State<GroupPage> {
+  final _tabKeys = List<GlobalKey>.generate(5, (_) => GlobalKey());
+  SessionController? _session;
+  int? _sessionGeneration;
+  Listenable? _listenedOwner;
+  bool _ownerLookupFailed = false;
+
   int get _id => valueInt(widget.group, 'id');
-  ResourceNavigator get _open => ResourceNavigator(widget.account, widget.api);
+  String get _path => valueText(widget.group, 'full_path');
+  Listenable? get _ownerChanges => widget.ownerChanges ?? _session;
+  bool _ownerCurrent() {
+    final explicit = widget.isCurrent;
+    if (explicit != null) return explicit();
+    final session = _session;
+    return session != null &&
+      (session.active?.key == widget.account.key && identical(session.api, widget.api) &&
+       session.generation == _sessionGeneration);
+  }
+  int? get _routeGeneration => widget.sessionGeneration ?? _sessionGeneration;
+  ResourceNavigator get _open => ResourceNavigator(widget.account, widget.api,
+    isCurrent: _ownerCurrent, ownerChanges: _ownerChanges, sessionGeneration: _routeGeneration);
+
+  @override
+  void initState() {
+    super.initState();
+    _listenToOwner(widget.ownerChanges);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (widget.isCurrent != null || _session != null || _ownerLookupFailed) return;
+    try {
+      final candidate = ProviderScope.containerOf(context, listen: false).read(sessionProvider);
+      _session = candidate;
+      _sessionGeneration = candidate.generation;
+      _listenToOwner(candidate);
+    } on StateError {
+      _ownerLookupFailed = true;
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant GroupPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.ownerChanges, widget.ownerChanges)) {
+      _listenToOwner(widget.ownerChanges ?? _session);
+    }
+  }
+
+  @override
+  void dispose() {
+    _listenedOwner?.removeListener(_ownerChanged);
+    super.dispose();
+  }
+
+  void _listenToOwner(Listenable? owner) {
+    if (identical(owner, _listenedOwner)) return;
+    _listenedOwner?.removeListener(_ownerChanged);
+    _listenedOwner = owner;
+    owner?.addListener(_ownerChanged);
+  }
+
+  void _ownerChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _keepSelectedTabVisible(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !context.mounted || !_ownerCurrent()) return;
+      final index = DefaultTabController.of(context).index;
+      if (index < 0 || index >= _tabKeys.length) return;
+      final target = _tabKeys[index].currentContext;
+      if (target == null) return;
+      unawaited(Scrollable.ensureVisible(target, alignment: 0.5,
+        duration: Duration.zero));
+    });
+  }
 
   Widget _projects() => RecordsFeed(
     identity: 'group/$_id/projects',
@@ -145,7 +235,8 @@ class _GroupPageState extends State<GroupPage> {
     grouped: true,
     load: (next) => widget.api.subgroups(_id, next: next),
     itemBuilder: (context, value) => groupRow(context, value, onTap: () => Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => GroupPage(account: widget.account, api: widget.api, group: value)))),
+      MaterialPageRoute<void>(builder: (_) => GroupPage(account: widget.account, api: widget.api, group: value,
+        isCurrent: _ownerCurrent, ownerChanges: _ownerChanges, sessionGeneration: _routeGeneration)))),
   );
 
   Widget _workItems(String resource) => RecordsFeed(
@@ -162,11 +253,30 @@ class _GroupPageState extends State<GroupPage> {
       onTap: () => _open.workItem(context, '${valueInt(value, 'project_id')}', resource, valueInt(value, 'iid'))),
   );
 
+  Widget _graphWorkItems() => GraphWorkItemsPage.group(account: widget.account, api: widget.api,
+    namespacePath: _path, isCurrent: _ownerCurrent, ownerChanges: _ownerChanges,
+    sessionGeneration: _routeGeneration);
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final fullPath = valueText(widget.group, 'full_path');
-    return DefaultTabController(length: 4, child: Scaffold(
+    if (!_ownerCurrent()) {
+      return Scaffold(
+        appBar: AppBar(title: Text(valueText(widget.group, 'name'))),
+        body: gestureSafe(ListView(children: [
+          FailureNotice(const ApiFailure(FailureKind.cancelled),
+            account: widget.account, resourceLabel: '$fullPath · 群組',
+            onSwitchAccount: endSessionFrom(context)),
+        ])),
+      );
+    }
+    return DefaultTabController(length: 5, initialIndex: widget.initialTab, child: Builder(builder: (tabContext) {
+      // Re-run this builder when accessibility text metrics change so the
+      // selected tab is measured again after its label width changes.
+      MediaQuery.textScalerOf(tabContext);
+      _keepSelectedTabVisible(tabContext);
+      return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
@@ -176,13 +286,27 @@ class _GroupPageState extends State<GroupPage> {
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ]),
         actions: [
+          if (fullPath.isNotEmpty) ResourceShareButton(
+            uri: widget.account.instance.projectWeb(fullPath),
+            ownerKey: (widget.account.key, widget.api, _id, fullPath),
+            isCurrent: _ownerCurrent,
+          ),
           if (fullPath.isNotEmpty) IconButton(tooltip: '在 GitLab 開啟', icon: const Icon(Icons.open_in_new, size: 20),
             onPressed: () => openExternal(context, widget.account.instance.projectWeb(fullPath))),
         ],
-        bottom: const TabBar(isScrollable: true, tabAlignment: TabAlignment.start,
-          tabs: [Tab(text: '專案'), Tab(text: '子群組'), Tab(text: '議題'), Tab(text: '合併請求')]),
+        bottom: TabBar(isScrollable: true, tabAlignment: TabAlignment.start,
+          tabs: [
+            Tab(key: _tabKeys[0], text: '專案'),
+            Tab(key: _tabKeys[1], text: '子群組'),
+            Tab(key: _tabKeys[2], text: '議題'),
+            Tab(key: _tabKeys[3], text: '合併請求'),
+            Tab(key: _tabKeys[4], text: '工作項目'),
+          ]),
       ),
-      body: gestureSafe(TabBarView(children: [_projects(), _subgroups(), _workItems('issues'), _workItems('merge_requests')])),
-    ));
+      body: gestureSafe(TabBarView(children: [
+        _projects(), _subgroups(), _workItems('issues'), _workItems('merge_requests'), _graphWorkItems(),
+      ])),
+      );
+    }));
   }
 }

@@ -635,6 +635,7 @@ class FailureNotice extends StatelessWidget {
                 ],
               ),
               ExpansionTile(
+                key: const PageStorageKey<String>('failure-notice-diagnostics'),
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: EdgeInsets.zero,
                 title: const Text('診斷資訊', style: TextStyle(fontSize: 12)),
@@ -642,6 +643,9 @@ class FailureNotice extends StatelessWidget {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: SelectableText(
+                      key: const PageStorageKey<String>(
+                        'failure-notice-diagnostics-detail',
+                      ),
                       '${error.kind.name}${error.status == null ? '' : ' · HTTP ${error.status}'}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
@@ -674,11 +678,15 @@ Future<bool> confirmAction(
   String title,
   String detail, {
   String? requiredText,
+  ValueChanged<Route<dynamic>>? onRoute,
 }) async {
   final input = TextEditingController();
   final answer = await showDialog<bool>(
     context: context,
-    builder: (context) => StatefulBuilder(
+    builder: (context) {
+      final route = ModalRoute.of(context);
+      if (route != null) onRoute?.call(route);
+      return StatefulBuilder(
       builder: (context, setState) => AlertDialog(
         title: Text(title),
         content: SingleChildScrollView(
@@ -714,7 +722,8 @@ Future<bool> confirmAction(
           ),
         ],
       ),
-    ),
+      );
+    },
   );
   // The route may still be animating out; do not dispose its controller early.
   Future<void>.delayed(const Duration(milliseconds: 400), input.dispose);

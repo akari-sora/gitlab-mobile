@@ -78,7 +78,7 @@ final class ApiFailure implements Exception {
     FailureKind.cancelled => '此請求已停止，不影響新的帳號或頁面。',
     FailureKind.validation => '名稱可能重複、分支受保護，或欄位不符合專案規則。草稿已保留。',
     FailureKind.conflict => '請重新讀取最新版本，再檢查並送出。草稿已保留。',
-    FailureKind.writeUncertain => '連線在寫入時中斷。請先回到列表確認，避免重複新增；草稿已保留。',
+    FailureKind.writeUncertain => '連線在寫入時中斷。請先回到列表確認，避免重複送出；草稿已保留。',
   };
   @override
   String toString() => 'ApiFailure(${kind.name}, status: $status)';

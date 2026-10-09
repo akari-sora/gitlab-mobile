@@ -12,6 +12,17 @@ New projects require explicit runner registration and dispatcher onboarding on e
 4. `android_debug`: needs all three checks, reuses their dependency lock and native templates, and builds an Android debug APK.
 5. `publish_preview`: main/default branch only, verifies checksums and uploads APK/metadata/checksums to the same project's Generic Package Registry.
 
+`test/visual_evidence_test.dart` loads `/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc` when `GITLAB_MOBILE_TEST_FONT` is unset. That Linux path stays the CI default. On a Mac, keep `CI=true` and point the variable at an existing system font so the required CJK glyph checks still run. The path contains a space, so quote the assignment:
+
+```sh
+CI=true GITLAB_MOBILE_TEST_FONT='/System/Library/Fonts/STHeiti Medium.ttc' \
+  fvm flutter test --no-pub --timeout=60s test/visual_evidence_test.dart
+```
+
+A missing chosen font still fails that required CI check. The test does not install a font or fall back to a Mac path on its own.
+
+`test/work_item_assignee_api_test.dart`, `test/work_item_assignee_ui_test.dart` and `test/emulator_work_item_assignees_fixture_test.dart` cover project/group assignee replacement. The current isolated run is 50 passed (20 API, 20 UI, 10 fixture), with zero failures, errors and skips, plus scoped analysis of those files. An earlier fixture log passed 39 cases that also include weight and milestone; that is a separate run. API and fixture review approved with zero must-fix items. UI final review is APPROVE with zero required changes (`artifacts/mobile-parity/work-item-assignees/ui-final-review.json`: 50 passed, 20 API / 20 UI / 10 fixture, zero failures, errors and skips). Full suite, archive, new commit, APK, native, private, iOS and G0 checks for assignees are **NOT_RUN**. Run these with the enforced lockfile and `--no-pub` after that resolve. Do not skip the CJK font check and do not treat the targeted run as an APK. [Pipeline 2909579097](https://gitlab.com/aa22396584/gitlab-mobile/-/pipelines/2909579097) was observed running on the previous HEAD. This assignee source has no new commit, so that pipeline is not its result.
+
 No tests or analyzer failures are ignored. A missing/unsuccessful Flutter completion event makes the JUnit conversion fail. Tests emit compact live progress, per-test limits and an overall test-process deadline. CI does not silently fix or reformat the source and claim the changed code was tested.
 
 ## Toolchains and reproducibility
@@ -34,13 +45,83 @@ JUnit, raw test JSON, analyzer output and LCOV remain attached to the check job 
 
 Delivery uses `CI_JOB_TOKEN`, not a personal token. No credentials are committed, printed deliberately, embedded into the APK or sent in URL query strings. CI fixtures contain only synthetic API identities. The pipeline does not enable CI job-token repository pushes.
 
-## Android preview versus production
+## Android signing lanes
 
-The output is a **debug development preview**. The preview records the commit in the app's 我的 tab. Ephemeral debug signing keys differ between runners and from a developer machine; updating between such previews then fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (silently under `adb install -r`) and requires uninstalling the old one, losing its local accounts and drafts. To make previews update in place, set the masked, protected CI variable `ANDROID_DEBUG_KEYSTORE_B64` to the base64 of one debug keystore (alias `androiddebugkey`, passwords `android`); `ci/build_android.sh` restores it to `~/.android/debug.keystore` before the build and records the choice in `build-metadata.json` (`signing`). That is still a debug signature. Production/updatable distribution requires a separately managed stable signing key and release configuration. Neither Play publication nor a production release is configured by this pipeline.
+Local Android debug, profile and release APKs use the same self-managed stable
+development signer. Its canonical configuration and commands are documented in
+[Android local signing](ANDROID_SIGNING.md). This gives local APKs a compatible
+signer across build modes and worktrees; it does not make them Play or
+production releases.
+
+The CI output remains a **debug development preview**. The preview records the
+commit in the app's 我的 tab. CI intentionally retains the existing
+`ANDROID_DEBUG_KEYSTORE_B64` path and ephemeral debug-keystore fallback until a
+stable key and properties file are provisioned as protected CI secrets. No new
+CI signing secret has been uploaded as part of the local-signing work. When the
+variable is set, `ci/build_android.sh` converts the legacy debug keystore to a
+temporary PKCS12 identity under the ignored `.ci-signing/` directory, restricts
+it to the debug build type and records the choice in `build-metadata.json`
+(`signing`). The explicit CI fallback creates an equally temporary debug-only
+PKCS12 identity in that directory.
+
+An Android update requires the same application ID, a compatible signer and a
+`versionCode` at least as high as the installed build. A preview signed by an
+unrelated historical debug key cannot update in place and reports
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`. Do not automatically uninstall it or clear
+its data: doing so loses local accounts and drafts. Preserve the installed app
+until a matching historical signer is available or data loss is explicitly
+accepted.
+
+Neither the local development signer nor the current CI debug-signing lane is
+Play App Signing. Play publication and production signing remain unconfigured.
 
 ## iOS and product acceptance
 
 An iOS binary needs a macOS runner with an appropriate Xcode toolchain. App Store/TestFlight deployment also needs signing and distribution credentials. Neither has been assumed or enabled. G0 acceptance additionally needs actual private-project access, device secure-storage/backup tests, account switching, network failure and accessibility evidence on Android/iOS. These remain separate from green CI.
+
+## Isolated Android emulator UI QA
+
+The content-editor fixture also supplies stateful project/group title/Markdown
+updates, explicit permission revocation and actor expiry, revision conflicts,
+absent description widgets and lost acknowledgements. Controls and logs belong
+only to the synthetic QA entrypoint. Production content editing never falls
+back to these records. API, editor and fixture regressions run in the normal
+Flutter test job; real private content updates remain a separate acceptance lane.
+
+The QA-only target `tool/emulator_ui.dart` renders the production project,
+environment/deployment, schedule and project/group Work Item pages through the existing synthetic
+transport. It requires `EMULATOR_UI_QA=true` and displays a persistent synthetic
+data banner. Its memory-only accounts use test credentials; every API request
+stays in the fixture adapter. Normal `lib/main.dart` has no fixture fallback.
+
+Use a project-owned AVD with an already installed official Android image and
+an explicit `emulator-*` serial. Confirm `ro.kernel.qemu=1` and the AVD name
+before installation or input. Do not use an unqualified `adb` command or copy
+accounts from a physical phone. For the current isolated AVD:
+
+```sh
+.fvm/flutter_sdk/bin/flutter run --profile -d emulator-5580 \
+  -t tool/emulator_ui.dart --dart-define=EMULATOR_UI_QA=true \
+  --dart-define=PERF_LABEL=synthetic-emulator
+```
+
+Observe the actual Android Share chooser, verify its canonical URL and dismiss
+it without selecting a recipient. Cover Star/Unstar, environment navigation,
+schedule confirmation/cancellation, session invalidation and narrow/large-text
+layouts. Group-list QA covers descendant paths, bounded continuation, scope/state/search/type/order controls and root-owned type selection. Inbox QA covers single completion, clear-all cancellation/completion and retained scroll behavior. Work Item QA also covers cancellation, close/reopen with fresh readback,
+and removing a confirmation after session ending. Notification QA covers lazy
+project/group personal reads, explicit subscribe/unsubscribe, backend rejection,
+expired-actor preflight, uncertain one-send, failed-refresh retention with stale
+controls disabled, and session invalidation. Activity QA covers both scopes,
+all six filter/order combinations, continuation, refresh and session invalidation.
+Check the complete above-field activity labels in screenshots at both default
+size and 320dp/2× text; passing geometry tests or a successful tap alone does
+not establish correct label painting. Restore any emulator font/display changes
+after the run. The existing
+scroll sampler emits numeric frame summaries only; emulator fixture timings
+do not establish physical-device performance or live GitLab acceptance.
+Production APK login/cold-start and the anonymous `public_api_smoke` suite are
+recorded separately. This manual lane is not a new CI emulator job.
 
 Official references:
 - <https://docs.gitlab.com/ci/yaml/workflow/>
@@ -48,3 +129,5 @@ Official references:
 - <https://docs.gitlab.com/user/packages/generic_packages/>
 - <https://docs.gitlab.com/ci/jobs/ci_job_token/>
 - <https://developer.android.com/studio>
+- <https://developer.android.com/studio/publish/app-signing>
+- <https://docs.flutter.dev/deployment/android>

@@ -78,7 +78,7 @@ void main() {
     )));
     await settleWorkspace(tester);
 
-    expect(mutatedData, isNotNull);
+    expect(mutatedData, isNull, reason: 'Reading the overview is not a mutation');
     expect(find.byKey(const ValueKey('mr-rebase-btn')), findsOneWidget);
     expect(find.text('Rebase (落後 3)'), findsOneWidget);
 
@@ -99,6 +99,8 @@ void main() {
 
     expect(find.text('已請求 Rebase 分支'), findsOneWidget);
     expect(fixture.mergeFields['rebase_in_progress'], isTrue);
+    expect(mutatedData, isNotNull, reason: 'Successful rebase readback notifies the resident feed');
+    expect(mutatedData!['rebase_in_progress'], isTrue);
 
     await _finish(tester);
   });

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
+import '../../core/instance.dart';
 import '../../core/models.dart';
+import '../../shared/external_link.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
 import 'navigation.dart';
@@ -19,8 +21,35 @@ class InboxPage extends StatefulWidget {
 
 class _InboxPageState extends State<InboxPage> {
   final _chrome = ScrollChromeController();
+  PageStorageBucket _storage = PageStorageBucket();
+  int _ownerEpoch = 0;
+
+  /// Reused across parent rebuilds (tab taps, root destination switches) so
+  /// retained offstage panels are not rebuilt; dropped whenever the account or
+  /// client object changes.
+  Widget? _panels;
   Account get account => widget.account;
   GitLabApi get api => widget.api;
+
+  @override
+  void didUpdateWidget(covariant InboxPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.account.key != widget.account.key ||
+        !identical(oldWidget.api, widget.api)) {
+      _ownerEpoch++;
+      _storage = PageStorageBucket();
+    }
+    if (!identical(oldWidget.account, widget.account) ||
+        !identical(oldWidget.api, widget.api)) {
+      _panels = null;
+    }
+  }
+
+  @override
+  void reassemble() {
+    super.reassemble();
+    _panels = null;
+  }
 
   @override
   void dispose() {
@@ -29,7 +58,10 @@ class _InboxPageState extends State<InboxPage> {
   }
 
   @override
-  Widget build(BuildContext context) => DefaultTabController(length: 4, child: Scaffold(
+  Widget build(BuildContext context) => DefaultTabController(
+    key: ValueKey('inbox-owner-$_ownerEpoch'),
+    length: 4,
+    child: Scaffold(
     body: NotificationListener<ScrollNotification>(onNotification: _chrome.handle, child: StatusBarInset(child: gestureSafe(Column(
       crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       CollapsingChrome(visible: _chrome, child: AppBar(primary: false, title: const Text('收件匣'), actions: [
@@ -39,21 +71,54 @@ class _InboxPageState extends State<InboxPage> {
       ])),
       TabBar(isScrollable: true, tabAlignment: TabAlignment.start, onTap: (_) => _chrome.show(),
         tabs: const [Tab(text: '待辦'), Tab(text: '指派給我'), Tab(text: '待我審查'), Tab(text: '我建立的')]),
-      // Horizontal swipes belong to the todo rows (swipe to complete), so the
-      // tabs change from the tab bar only.
-      Expanded(child: TabBarView(physics: const NeverScrollableScrollPhysics(), children: [
-      _TodoFeed(account: account, api: api),
-      _WorkFeed(account: account, api: api, kind: _WorkKind.assigned),
-      RecordsFeed(identity: 'review-requests', empty: '沒有待審查的合併請求', account: account,
+      Expanded(child: _panels ??= _buildPanels(context)),
+    ])))),
+  ));
+
+  // Horizontal swipes belong to the todo rows (swipe to complete), so the
+  // tabs change from the tab bar only.
+  Widget _buildPanels(BuildContext context) => PageStorage(bucket: _storage, child: TabBarView(
+    physics: const NeverScrollableScrollPhysics(),
+    children: [
+      _InboxPanel(index: 0, child: _TodoFeed(account: account, api: api)),
+      _InboxPanel(index: 1,
+        child: _WorkFeed(account: account, api: api, kind: _WorkKind.assigned)),
+      _InboxPanel(index: 2, child: RecordsFeed(
+        identity: 'review-requests', empty: '沒有待審查的合併請求', account: account,
         emptyIcon: Icons.rate_review_outlined,
         resourceLabel: '待我審查的合併請求', underShell: true, onSwitchAccount: endSessionFrom(context),
         load: (next) => api.records(['merge_requests'], query: {'scope': 'all', 'reviewer_id': '${account.user.id}',
           'state': 'opened', 'with_labels_details': 'true'}, next: next),
-        itemBuilder: (context, data) => inboxWorkItem(context, account, api, data, 'merge_requests')),
-      _WorkFeed(account: account, api: api, kind: _WorkKind.created),
-    ])),
-    ])))),
-  ));
+        itemBuilder: (context, data) => inboxWorkItem(context, account, api, data, 'merge_requests'))),
+      _InboxPanel(index: 3,
+        child: _WorkFeed(account: account, api: api, kind: _WorkKind.created)),
+    ]));
+}
+
+class _InboxPanel extends StatefulWidget {
+  const _InboxPanel({required this.index, required this.child});
+  final int index;
+  final Widget child;
+
+  @override
+  State<_InboxPanel> createState() => _InboxPanelState();
+}
+
+class _InboxPanelState extends State<_InboxPanel>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final tabs = DefaultTabController.of(context);
+    return ListenableBuilder(
+      listenable: tabs,
+      builder: (context, child) => TickerMode(enabled: tabs.index == widget.index, child: child!),
+      child: widget.child,
+    );
+  }
 }
 
 Widget inboxWorkItem(BuildContext context, Account account, GitLabApi api, Json data, String resource) => workItemCard(context, data,
@@ -116,27 +181,44 @@ class _TodoFeed extends StatefulWidget {
 }
 class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin {
   final _feed = GlobalKey<RecordsFeedState>();
-  final _busy = <int>{};
+  final _busy = ValueNotifier<Set<int>>(<int>{});
+  final _clearing = ValueNotifier(false);
 
   /// Swiped rows waiting out the undo window, hidden even if a reload that
   /// started earlier brings them back. The tab stays alive meanwhile, so
   /// switching tabs neither drops the write nor strands the 復原 button.
   final _pending = <int>{};
-  bool _clearing = false;
+
+  /// Replaced only when [_pending] changes, over a snapshot of it, so the feed
+  /// keeps its derived rows across rebuilds that leave the pending set alone.
+  bool Function(Json item) _visible = _visibleExcept(const <int>{});
+
+  static bool Function(Json item) _visibleExcept(Set<int> hidden) =>
+      (item) => !hidden.contains(valueInt(item, 'id'));
 
   @override
   bool get wantKeepAlive => _pending.isNotEmpty;
 
   void _setPending(int id, bool pending) {
-    setState(() => pending ? _pending.add(id) : _pending.remove(id));
+    if (pending == _pending.contains(id)) return;
+    setState(() {
+      pending ? _pending.add(id) : _pending.remove(id);
+      _visible = _visibleExcept(Set<int>.unmodifiable(_pending));
+    });
     updateKeepAlive();
+  }
+
+  void _setBusy(int id, bool busy) {
+    final next = Set<int>.of(_busy.value);
+    final changed = busy ? next.add(id) : next.remove(id);
+    if (changed) _busy.value = next;
   }
 
   /// GitLab pages todos by offset: after a change the list reloads, otherwise
   /// the next page would start one row late and skip a todo.
   Future<void> _done(int id) async {
-    if (_busy.contains(id)) return;
-    setState(() => _busy.add(id));
+    if (_busy.value.contains(id)) return;
+    _setBusy(id, true);
     try {
       await widget.api.markTodoDone(id);
       if (mounted) _feed.currentState?.removeItem('$id');
@@ -144,7 +226,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
       if (mounted) showFailure(context, e);
     } finally {
       if (mounted) {
-        setState(() => _busy.remove(id));
+        _setBusy(id, false);
         _setPending(id, false);
       }
     }
@@ -177,17 +259,53 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
   }
 
   Future<void> _clearAll() async {
-    if (_clearing || !await confirmAction(context, '全部標示為完成？', '所有待辦都會從 GitLab 待辦清單移除。')) return;
+    if (_clearing.value || !await confirmAction(context, '全部標示為完成？', '所有待辦都會從 GitLab 待辦清單移除。')) return;
     if (!mounted) return;
-    setState(() => _clearing = true);
+    _clearing.value = true;
     try {
       await widget.api.markAllTodosDone();
     } catch (e) {
       if (mounted) showFailure(context, e);
     } finally {
-      if (mounted) setState(() => _clearing = false);
+      if (mounted) _clearing.value = false;
     }
     if (mounted) await _feed.currentState?.refresh();
+  }
+
+  /// Native pages open only when the todo names its target unambiguously;
+  /// every other row explains itself and offers the server's own web link.
+  void _openTarget(BuildContext context, _TodoTarget target, String title, String projectPath) {
+    final navigator = ResourceNavigator(widget.account, widget.api);
+    switch (target.route) {
+      case _TodoRoute.workItem:
+        unawaited(navigator.workItem(context, '${target.projectId}', target.resource, target.iid));
+      case _TodoRoute.commit:
+        unawaited(navigator.commit(context, '${target.projectId}', target.sha));
+      case _TodoRoute.explain:
+        unawaited(_explain(context, target, title, projectPath));
+    }
+  }
+
+  Future<void> _explain(BuildContext context, _TodoTarget target, String title, String projectPath) async {
+    final api = widget.api;
+    final accountKey = widget.account.key;
+    bool current() => mounted && !api.isClosed && identical(api, widget.api) &&
+        accountKey == widget.account.key;
+    final refresh = await showModalBottomSheet<bool>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (_) => _TodoTargetSheet(target: target, title: title, projectPath: projectPath,
+        isCurrent: current),
+    );
+    if (refresh == true && current()) await _feed.currentState?.refresh();
+  }
+
+  @override
+  void dispose() {
+    _busy.dispose();
+    _clearing.dispose();
+    super.dispose();
   }
 
   @override
@@ -201,26 +319,28 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
     filteredEmpty: '待辦即將標示為完成',
     account: widget.account, resourceLabel: '待辦', underShell: true,
     onSwitchAccount: endSessionFrom(context),
-    visible: (item) => !_pending.contains(valueInt(item, 'id')),
+    visible: _visible,
     leading: (context, controller) => controller.items.isEmpty ? const SizedBox(height: 4) : Padding(
       padding: EdgeInsets.fromLTRB(feedGutter(context) + 4, 6, feedGutter(context) - 8, 0),
       child: Row(children: [
-        Expanded(child: Text('${controller.items.where((item) => !_pending.contains(valueInt(item, 'id'))).length}'
+        Expanded(child: Text('${controller.items.where(_visible).length}'
           '${controller.next == null ? '' : '+'} 則待辦 · 左右滑動可完成',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
-        TextButton.icon(
-          key: const ValueKey('todos-mark-all-done'),
-          onPressed: _clearing ? null : _clearAll,
-          icon: const Icon(Icons.done_all, size: 18),
-          label: const Text('全部完成'),
+        ValueListenableBuilder<bool>(
+          valueListenable: _clearing,
+          builder: (context, clearing, _) => TextButton.icon(
+            key: const ValueKey('todos-mark-all-done'),
+            onPressed: clearing ? null : _clearAll,
+            icon: const Icon(Icons.done_all, size: 18),
+            label: const Text('全部完成'),
+          ),
         ),
       ]),
     ),
     load: (next) => widget.api.records(['todos'], query: {'state': 'pending'}, next: next), itemBuilder: (context, data) {
       final target = valueObject(data, 'target'), project = valueObject(data, 'project');
       final id = valueInt(data, 'id');
-      final resource = data['target_type'] == 'MergeRequest' ? 'merge_requests' : 'issues';
-      final supported = const ['Issue', 'MergeRequest'].contains(data['target_type']);
+      final todoTarget = _TodoTarget.of(data, widget.account.instance);
       final action = valueText(data, 'action_name');
       final actionLabel = switch (action) {
         'assigned' => '指派給你', 'mentioned' || 'directly_addressed' => '提及你', 'review_requested' => '請你審查',
@@ -233,19 +353,25 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
         titleMaxLines: 3,
         leading: Container(width: 32, height: 32, alignment: Alignment.center,
           decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(10)),
-          child: Icon(resource == 'merge_requests' ? Icons.merge : Icons.adjust, size: 18,
-            color: scheme.onPrimaryContainer)),
+          child: Icon(todoTarget.icon, size: 18, color: scheme.onPrimaryContainer)),
         title: Text(valueText(target, 'title', valueText(data, 'body', 'GitLab 待辦'))),
         subtitle: Text(valueText(project, 'path_with_namespace')),
         meta: [
+          if (todoTarget.route == _TodoRoute.explain)
+            MetaChip('${todoTarget.typeLabel} · ${todoTarget.web == null ? '無法開啟' : '網頁版'}',
+              icon: todoTarget.web == null ? Icons.link_off : Icons.open_in_new),
           if (actionLabel.isNotEmpty) MetaChip(actionLabel, icon: Icons.notifications_none),
           if (valueText(author, 'username').isNotEmpty) MetaChip('@${valueText(author, 'username')}', icon: Icons.person_outline),
           MetaChip(relativeDate(valueText(data, 'updated_at', valueText(data, 'created_at'))), icon: Icons.schedule_outlined),
         ],
-        trailing: IconButton(tooltip: '完成此待辦', icon: const Icon(Icons.check_circle_outline),
-          onPressed: _busy.contains(id) ? null : () => _done(id)),
-        onTap: !supported ? null : () => ResourceNavigator(widget.account, widget.api)
-          .workItem(context, '${valueInt(project, 'id')}', resource, valueInt(target, 'iid')),
+        trailing: ValueListenableBuilder<Set<int>>(
+          valueListenable: _busy,
+          builder: (context, busy, _) => IconButton(tooltip: '完成此待辦', icon: const Icon(Icons.check_circle_outline),
+            onPressed: busy.contains(id) ? null : () => _done(id)),
+        ),
+        onTap: () => _openTarget(context, todoTarget,
+          valueText(target, 'title', valueText(data, 'body', 'GitLab 待辦')),
+          valueText(project, 'path_with_namespace')),
       );
       Widget background(Alignment alignment) => Container(
         alignment: alignment,
@@ -262,10 +388,149 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
         background: background(Alignment.centerLeft),
         secondaryBackground: background(Alignment.centerRight),
         dismissThresholds: const {DismissDirection.startToEnd: .5, DismissDirection.endToStart: .5},
-        confirmDismiss: (_) async => !_busy.contains(id),
+        confirmDismiss: (_) async => !_busy.value.contains(id),
         onDismissed: (_) => _swiped(id),
         child: card,
       );
     },
   );
+}
+
+enum _TodoRoute { workItem, commit, explain }
+
+/// What a todo row opens. Issue and merge request rows need the numeric
+/// project ID and the target IID; commit rows need the project ID and a full
+/// SHA. Anything else, including a known type missing those fields, is never
+/// guessed into a native page.
+final class _TodoTarget {
+  const _TodoTarget._(this.route, this.typeLabel, this.icon,
+    {this.projectId = 0, this.resource = '', this.iid = 0, this.sha = '', this.web, this.nativeType = false});
+
+  factory _TodoTarget.of(Json data, GitLabInstance instance) {
+    final type = data['target_type'];
+    final target = valueObject(data, 'target');
+    final projectId = valueInt(valueObject(data, 'project'), 'id');
+    final label = _todoTypeLabel(type);
+    if (projectId > 0) {
+      final iid = valueInt(target, 'iid');
+      if ((type == 'Issue' || type == 'MergeRequest') && iid > 0) {
+        final mr = type == 'MergeRequest';
+        return _TodoTarget._(_TodoRoute.workItem, label, mr ? Icons.merge : Icons.adjust,
+          projectId: projectId, resource: mr ? 'merge_requests' : 'issues', iid: iid, nativeType: true);
+      }
+      final sha = valueText(target, 'id');
+      if (type == 'Commit' && _fullSha.hasMatch(sha)) {
+        return _TodoTarget._(_TodoRoute.commit, label, Icons.commit,
+          projectId: projectId, sha: sha.toLowerCase(), nativeType: true);
+      }
+    }
+    final web = _todoWebUri(valueText(data, 'target_url'), instance);
+    return _TodoTarget._(_TodoRoute.explain, label, web == null ? Icons.link_off : Icons.open_in_new,
+      web: web, nativeType: const ['Issue', 'MergeRequest', 'Commit'].contains(type));
+  }
+
+  final _TodoRoute route;
+  final String typeLabel;
+  final IconData icon;
+  final int projectId;
+  final String resource;
+  final int iid;
+  final String sha;
+  /// The server's `target_url`, kept only when it lies inside this instance.
+  final Uri? web;
+  final bool nativeType;
+
+  static final _fullSha = RegExp(r'^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$');
+}
+
+String _todoTypeLabel(Object? type) => switch (type) {
+  'Issue' => '議題',
+  'MergeRequest' => '合併請求',
+  'Commit' => '提交',
+  'Epic' => '史詩',
+  'WorkItem' => '工作項目',
+  'DesignManagement::Design' => '設計稿',
+  'AlertManagement::Alert' => '警示',
+  'Namespace' || 'Group' => '群組',
+  'Project' => '專案',
+  'Key' => 'SSH 金鑰',
+  'User' => '使用者',
+  'WikiPage::Meta' => 'Wiki 頁面',
+  _ => '其他 GitLab 項目',
+};
+
+/// Accepts only an HTTPS link on this account's instance (host, port and
+/// installation subpath) with no credentials, relative or encoded separators.
+Uri? _todoWebUri(String text, GitLabInstance instance) {
+  final value = text.trim();
+  final rawPath = RegExp(r'^https://[^/?#]+([^?#]*)', caseSensitive: false).firstMatch(value)?.group(1);
+  if (rawPath == null || rawPath.contains('\\') || rawPath.contains('//') ||
+      RegExp(r'%(2f|5c|2e)', caseSensitive: false).hasMatch(rawPath) ||
+      rawPath.split('/').any((part) => part == '.' || part == '..')) {
+    return null;
+  }
+  final uri = Uri.tryParse(value);
+  if (uri == null || !instance.sameOrigin(uri) || !safeExternalUri(uri)) return null;
+  final base = instance.base.pathSegments.where((part) => part.isNotEmpty).toList();
+  final segments = uri.pathSegments.where((part) => part.isNotEmpty).toList();
+  if (segments.length <= base.length) return null;
+  for (var i = 0; i < base.length; i++) {
+    if (segments[i] != base[i]) return null;
+  }
+  return uri;
+}
+
+class _TodoTargetSheet extends StatelessWidget {
+  const _TodoTargetSheet({required this.target, required this.title, required this.projectPath,
+    required this.isCurrent});
+  final _TodoTarget target;
+  final String title;
+  final String projectPath;
+  final bool Function() isCurrent;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final web = target.web;
+    final reason = target.nativeType
+      ? '這則${target.typeLabel}待辦缺少可辨識目標的資料，無法在 App 內開啟。'
+      : '「${target.typeLabel}」類型的待辦目前沒有 App 內頁面。';
+    return SafeArea(child: SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text(web == null ? '無法開啟此待辦' : '無法在 App 內開啟', style: theme.textTheme.titleMedium),
+        const SizedBox(height: 12),
+        Text(title, style: theme.textTheme.bodyLarge),
+        if (projectPath.isNotEmpty) Text(projectPath, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+        const SizedBox(height: 12),
+        Text(reason),
+        const SizedBox(height: 4),
+        Text(web == null
+          ? '此待辦沒有屬於目前 GitLab 實例的有效連結，無法開啟。可重新整理後再試；完成此待辦仍可在列表中操作。'
+          : '可改在 GitLab 網頁版查看：'),
+        if (web != null) ...[
+          const SizedBox(height: 4),
+          Text(web.toString(), key: const ValueKey('todo-target-web-url'),
+            style: theme.textTheme.bodySmall?.copyWith(color: muted)),
+        ],
+        const SizedBox(height: 16),
+        Wrap(alignment: WrapAlignment.end, spacing: 8, runSpacing: 8, children: [
+          TextButton(key: const ValueKey('todo-target-close'),
+            onPressed: () => Navigator.of(context).pop(false), child: const Text('關閉')),
+          if (web == null)
+            OutlinedButton.icon(key: const ValueKey('todo-target-refresh'),
+              onPressed: () => Navigator.of(context).pop(true),
+              icon: const Icon(Icons.refresh), label: const Text('重新整理')),
+          if (web != null)
+            FilledButton.icon(key: const ValueKey('todo-target-open-web'),
+              onPressed: () async {
+                if (isCurrent()) await openExternal(context, web);
+                if (context.mounted) Navigator.of(context).pop(false);
+              },
+              icon: const Icon(Icons.open_in_new), label: const Text('在 GitLab 開啟')),
+        ]),
+      ]),
+    ));
+  }
 }
