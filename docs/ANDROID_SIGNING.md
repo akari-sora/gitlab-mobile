@@ -13,8 +13,10 @@ Every agent on a host uses the same directory:
 
 ```text
 ~/.config/gitlab-mobile/android-signing/
-├── gitlab-mobile.p12
-└── signing.properties
+├── gitlab-mobile.p12               # current stable signer (a15c11c8...)
+├── signing.properties              # current build configuration
+├── legacy-local-debug.p12          # recovered earlier local signer (64500eef...), bridge only
+└── legacy-local-rotation.lineage   # v3.1 lineage 64500eef... -> a15c11c8...
 ```
 
 On the current macOS host, the absolute directory is:
@@ -23,9 +25,9 @@ On the current macOS host, the absolute directory is:
 /Users/iml1s/.config/gitlab-mobile/android-signing
 ```
 
-The directory must have mode `0700`; `gitlab-mobile.p12` and
-`signing.properties` must have mode `0600`. Both files stay outside the
-repository and outside `artifacts/`.
+The directory must have mode `0700`; all four files must have mode `0600`.
+They stay outside the repository and outside `artifacts/`. The names above are
+locators only; their contents are never printed, logged or copied.
 
 `signing.properties` contains private configuration. Never print it, paste it
 into a prompt, issue, merge request or memory, or copy it into a build artifact.
@@ -164,6 +166,94 @@ data, install the bridge in place, verify that data remains, then install the
 ordinary stable-signed release in place and verify the same data again. No step
 may uninstall the app or clear its data. Until that native sequence has a
 receipt, the bridge remains pending evidence.
+
+## Recovery and lookup
+
+[`ANDROID_RELEASE_INVENTORY.json`](ANDROID_RELEASE_INVENTORY.json) is the
+public, versioned index of known signers, the lineage and retained APKs. It
+holds public certificate and APK SHA-256 digests, source commits, versions,
+local paths and public download URLs only. It is not a private key backup.
+
+### Signer matrix
+
+| Inventory ID | Certificate SHA-256 | Private key locator (current host, 2026-10-09) |
+| --- | --- | --- |
+| `CURRENT_LOCAL` | `a15c11c804bd8b40cebf052747bfea91542568989af0b7a092efcfcb7ebff434` | `gitlab-mobile.p12`, present |
+| `LEGACY_LOCAL` | `64500eefad1aeb8e163c2ceeaa78b39ce013849f1a75596dd1b477fc5d023736` | `legacy-local-debug.p12`, present |
+| `HISTORICAL_CI23` | `23c9890d05dd84772921793313fb2a9ea34a4e03fbabb66027395a4bf10b4241` | not found in the selected scope; elsewhere unknown |
+
+`LEGACY_LOCAL` is a host-generated historical debug key: the Android build
+tools create a separate debug key per host, so its certificate is specific to
+the host that produced it. On the current host, the default
+`~/.android/debug.keystore` copy has the same public certificate fingerprint,
+but the canonical `legacy-local-debug.p12` is authoritative. Key presence was verified
+only on the current host on 2026-10-09; nothing is implied for other hosts.
+The `HISTORICAL_CI23` key was searched in the local key inventory, related
+runner project scopes and the project CI variable (404). That is a scoped
+negative result, not a claim that the key is lost everywhere. The lineage does
+not cover it.
+
+### Known APKs
+
+- Last documented phone install (2026-10-02): local release `ad49850`,
+  `artifacts/gitlab-mobile-ad49850-release.apk`, SHA-256
+  `e637c0192061e56bb65025478a011708b7dcb07250cf8cdbf096dfd89698de3e`, signer
+  `LEGACY_LOCAL`. What the phone has installed now is unknown.
+- Ordinary current release, source `987aa727`, signer `CURRENT_LOCAL` (v2 only):
+  [gitlab-mobile-987aa727-release.apk](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.5.0-dev.987aa727/downloads/gitlab-mobile-987aa727-release.apk).
+- Migration bridge for the same build, payload unchanged, only signatures
+  added. Verified schemes: v2 and v3 `LEGACY_LOCAL` (API 24-32), v3.1
+  `CURRENT_LOCAL` (API 33+). The bridge also carries v1 `META-INF` signature
+  files with the `LEGACY_LOCAL` certificate, but the retained minSdk 24
+  `apksigner --verify` reports v1 as not verified, so v1 verification is not
+  established:
+  [gitlab-mobile-987aa727-legacy-local-bridge.apk](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.5.0-dev.987aa727/downloads/gitlab-mobile-987aa727-legacy-local-bridge.apk).
+- GitLab `v0.5.0` CI debug APK, source `0e1298e3`, signer `HISTORICAL_CI23`.
+  No receipt shows it was installed on the phone.
+
+On Android 13 (API 33) and later, a `LEGACY_LOCAL` install updates in place to
+the bridge and then to the ordinary release. That chain passed natively on an
+owned API 36 emulator (`ad49850` to bridge to ordinary) with the same UID,
+data-directory inodes and synthetic CE/DE data retained
+(`artifacts/key-recovery-20261009/bridge-native-upgrade-and-own-sdk-closure-root-proof.json`).
+It did not test the phone, real accounts or draft decryption. On API 24-32
+the bridge stays on the old signer and cannot continue to the ordinary
+release; a bridge install there has not been run. The bridge does not apply
+to `HISTORICAL_CI23` installs.
+
+### Lookup order
+
+Before concluding that a signer or APK is missing, check in this order:
+
+1. The public inventory and the canonical directory: file names, sizes and
+   modes only. Never open or log private content.
+2. Retained APKs under `artifacts/`: compare their public certificate SHA-256
+   with the inventory.
+3. This project's own worktrees and packaging receipts.
+4. Current-project CI metadata (job, pipeline, release links, variable
+   metadata), recording which scope was searched.
+
+A file missing from one path means "not found at that path", not "lost".
+Private files are never copied between hosts or created by an ordinary build.
+
+The installed signer on a device is unknown until that device is read
+directly; the phone is reserved and stays untouched. A generic "install
+failed" message in a UI does not prove a signer mismatch. Never uninstall,
+clear data or generate a random key to get past a mismatch.
+
+Ordinary local APKs must carry the current stable certificate above. Only a
+special migration artifact may use the legacy key, and only with the existing
+lineage. Migration or data-retention claims need a native install receipt.
+
+### Recording new APKs
+
+Every future packaging or release step adds an entry to the inventory, or a
+receipt that it links to, with: APK SHA-256 and size, certificate SHA-256 per
+signature scheme, application ID, `versionName`/`versionCode`, `debuggable`
+and min/target SDK, source commit, build lane and variant, Dart entrypoint
+(for example `lib/main.dart`), whether QA or benchmark flags were enabled,
+and either a durable download URL or an explicit `local-only`. Private files stay outside
+Git and `artifacts/`.
 
 ## CI boundary
 

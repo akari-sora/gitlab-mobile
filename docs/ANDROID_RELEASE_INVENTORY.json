@@ -1,0 +1,232 @@
+{
+  "schema": "gitlab-mobile-android-release-inventory",
+  "schema_version": 1,
+  "visibility": "PUBLIC_METADATA_ONLY",
+  "contains_secrets": false,
+  "notes": [
+    "Public signing and APK lookup index. It is not a private key backup and holds no key, password, keystore, lineage or signing.properties content.",
+    "Lookup order and rules: docs/ANDROID_SIGNING.md, section 'Recovery and lookup'.",
+    "'unknown' means not retained or not verified in the recorded scope. It is never a claim of global loss.",
+    "Local artifact paths are relative to the repository root, are ignored by Git and may be absent in another clone or on another host. Public download URLs are durable only where listed."
+  ],
+  "verified": {
+    "at_utc_range": ["2026-10-09T04:36:17Z", "2026-10-09T05:17:49Z"],
+    "scope": "Current macOS host; public APK bytes, public certificate digests and public GitLab release readbacks recorded in the evidence files below. Private key presence was verified only on this host on 2026-10-09 (public certificate comparison only). No claim about other hosts.",
+    "evidence": [
+      "artifacts/key-recovery-20261009/key-recovery-bridge-release-final-root-proof.json",
+      "artifacts/key-recovery-20261009/bridge-binary-payload-signing-root-proof.json",
+      "artifacts/key-recovery-20261009/bridge-native-upgrade-and-own-sdk-closure-root-proof.json",
+      "artifacts/key-recovery-20261009/oma-local/inventory.json",
+      "artifacts/key-recovery-20261009/omcu-history/packaging-history.json",
+      "artifacts/key-recovery-20261009/omcu-history/apk-cert-scan.json",
+      "artifacts/key-recovery-20261009/omcu-history/worktree-apk-cert-scan.json",
+      "artifacts/key-recovery-20261009/gitlab-bridge-publication/release-links-and-direct-download-root-proof.json",
+      "artifacts/key-recovery-20261009/gitlab-bridge-publication/release-description-published-readback-root-proof.json",
+      "artifacts/key-recovery-20261009/gitlab-bridge-publication/old-release-and-ci-final-current-readback-root.json"
+    ]
+  },
+  "application": {
+    "application_id": "io.gitlabmobile.gitlab_mobile",
+    "gitlab_project": "https://gitlab.com/aa22396584/gitlab-mobile",
+    "gitlab_project_id": 86648389
+  },
+  "private_signing_directory": {
+    "locator": "~/.config/gitlab-mobile/android-signing",
+    "current_host_absolute": "/Users/iml1s/.config/gitlab-mobile/android-signing",
+    "directory_mode": "0700",
+    "file_mode": "0600",
+    "files": {
+      "gitlab-mobile.p12": "CURRENT_LOCAL private key (signer a15c11c8...)",
+      "signing.properties": "CURRENT_LOCAL build configuration; declares the a15c11c8... certificate digest",
+      "legacy-local-debug.p12": "LEGACY_LOCAL private key (signer 64500eef...); migration-bridge use only",
+      "legacy-local-rotation.lineage": "v3.1 rotation lineage 64500eef... -> a15c11c8..."
+    },
+    "present_on_current_host_2026_10_09": true,
+    "other_hosts": "unknown; files are never copied or created by an ordinary build",
+    "content_in_git_or_artifacts": false
+  },
+  "signers": [
+    {
+      "id": "CURRENT_LOCAL",
+      "cert_sha256": "a15c11c804bd8b40cebf052747bfea91542568989af0b7a092efcfcb7ebff434",
+      "subject": "CN=GitLab Mobile Local Signing",
+      "lane": "local development signer for debug, profile and release",
+      "private_key_locator": "~/.config/gitlab-mobile/android-signing/gitlab-mobile.p12",
+      "private_key_status": "PRESENT_CURRENT_HOST_2026_10_09",
+      "expected_for_ordinary_local_apks": true
+    },
+    {
+      "id": "LEGACY_LOCAL",
+      "cert_sha256": "64500eefad1aeb8e163c2ceeaa78b39ce013849f1a75596dd1b477fc5d023736",
+      "subject": "CN=Android Debug, O=Android, C=US",
+      "lane": "earlier local builds (host default debug key), last documented phone APK ad49850",
+      "private_key_locator": "~/.config/gitlab-mobile/android-signing/legacy-local-debug.p12",
+      "private_key_status": "PRESENT_CURRENT_HOST_2026_10_09",
+      "host_duplicate": "~/.android/debug.keystore has the same public certificate on the current host; the canonical legacy-local-debug.p12 is authoritative",
+      "expected_for_ordinary_local_apks": false,
+      "authorized_use": "special migration bridge signing with the existing lineage only; never rotate or replace"
+    },
+    {
+      "id": "HISTORICAL_CI23",
+      "cert_sha256": "23c9890d05dd84772921793313fb2a9ea34a4e03fbabb66027395a4bf10b4241",
+      "subject": "unknown",
+      "lane": "GitLab CI android_debug default debug key (no ANDROID_DEBUG_KEYSTORE_B64), job 16887534975",
+      "private_key_locator": "unknown",
+      "private_key_status": "NOT_FOUND_IN_SELECTED_SCOPE",
+      "searched_scope": "current-host local key inventory, related runner A/B project scopes, project CI variable ANDROID_DEBUG_KEYSTORE_B64 (404)",
+      "elsewhere": "unknown; external backups and other hosts were not checked",
+      "expected_for_ordinary_local_apks": false,
+      "covered_by_lineage": false
+    }
+  ],
+  "lineages": [
+    {
+      "id": "LEGACY_LOCAL_TO_CURRENT_LOCAL",
+      "locator": "~/.config/gitlab-mobile/android-signing/legacy-local-rotation.lineage",
+      "scheme": "APK Signature Scheme v3.1 proof-of-rotation",
+      "signers": [
+        "64500eefad1aeb8e163c2ceeaa78b39ce013849f1a75596dd1b477fc5d023736",
+        "a15c11c804bd8b40cebf052747bfea91542568989af0b7a092efcfcb7ebff434"
+      ],
+      "capability_flags": 23,
+      "installed_data": true,
+      "rollback": false,
+      "rotation_min_sdk": 33,
+      "covers_historical_ci23": false
+    }
+  ],
+  "apks": [
+    {
+      "id": "LEGACY_LOCAL_AD49850_RELEASE",
+      "role": "last documented physical-phone install (2026-10-02, in place)",
+      "source_commit": "ad49850",
+      "source_commit_note": "short reference; full SHA unknown (not recorded in the evidence)",
+      "build_lane": "local",
+      "variant": "release",
+      "entrypoint": "unknown (not retained)",
+      "qa_benchmark_flags": "unknown (not retained)",
+      "application_id": "io.gitlabmobile.gitlab_mobile",
+      "version_name": "0.5.0",
+      "version_code": 5,
+      "debuggable": false,
+      "min_sdk": 24,
+      "target_sdk": 36,
+      "abis": ["arm64-v8a", "armeabi-v7a", "x86_64"],
+      "signing_schemes": {"v2": ["64500eefad1aeb8e163c2ceeaa78b39ce013849f1a75596dd1b477fc5d023736"]},
+      "signer": "LEGACY_LOCAL",
+      "apk_sha256": "e637c0192061e56bb65025478a011708b7dcb07250cf8cdbf096dfd89698de3e",
+      "bytes": 66342861,
+      "local_path": "artifacts/gitlab-mobile-ad49850-release.apk",
+      "public_download_url": "unknown",
+      "phone_currently_installed": "unknown; the phone is reserved and its installed signer was not read"
+    },
+    {
+      "id": "CURRENT_987AA727_RELEASE",
+      "role": "ordinary current release",
+      "source_commit": "987aa727c4cef84b51f3dfcdfe07fce335c4968a",
+      "build_lane": "local",
+      "variant": "release",
+      "entrypoint": "lib/main.dart",
+      "qa_benchmark_flags": "disabled",
+      "entrypoint_and_flags_evidence": [
+        "artifacts/merge-release-20261009/merged-release-oma/apk-metadata.json",
+        "artifacts/merge-release-20261009/gitlab-release-publication/release-api-final-readback.json"
+      ],
+      "application_id": "io.gitlabmobile.gitlab_mobile",
+      "version_name": "0.5.0",
+      "version_code": 5,
+      "debuggable": false,
+      "min_sdk": 24,
+      "target_sdk": 36,
+      "abis": ["arm64-v8a", "armeabi-v7a", "x86_64"],
+      "signing_schemes": {"v2": ["a15c11c804bd8b40cebf052747bfea91542568989af0b7a092efcfcb7ebff434"]},
+      "signer": "CURRENT_LOCAL",
+      "apk_sha256": "7a86b33dd63986af079c1b0916c24cc2b9293119e15c439d7c30d6a5baf3e51a",
+      "bytes": 70809649,
+      "local_path": "artifacts/merge-release-20261009/merged-release-oma/gitlab-mobile-987aa727-release.apk",
+      "release_tag": "v0.5.0-dev.987aa727",
+      "release_url": "https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.5.0-dev.987aa727",
+      "public_download_url": "https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.5.0-dev.987aa727/downloads/gitlab-mobile-987aa727-release.apk",
+      "updates_in_place_from": ["CURRENT_LOCAL", "LEGACY_LOCAL via the bridge on API 33+ only"]
+    },
+    {
+      "id": "BRIDGE_987AA727_LEGACY_LOCAL",
+      "role": "one-time migration bridge; same unsigned payload as CURRENT_987AA727_RELEASE (all 309 original ZIP entries identical, only 3 new META-INF v1 signature files added, no rebuild)",
+      "source_commit": "987aa727c4cef84b51f3dfcdfe07fce335c4968a",
+      "build_lane": "local re-signing of the ordinary release",
+      "variant": "release",
+      "entrypoint": "lib/main.dart",
+      "qa_benchmark_flags": "disabled",
+      "entrypoint_and_flags_basis": "unchanged payload of CURRENT_987AA727_RELEASE; see its entrypoint_and_flags_evidence",
+      "application_id": "io.gitlabmobile.gitlab_mobile",
+      "version_name": "0.5.0",
+      "version_code": 5,
+      "debuggable": false,
+      "min_sdk": 24,
+      "target_sdk": 36,
+      "abis": ["arm64-v8a", "armeabi-v7a", "x86_64"],
+      "signing_schemes": {
+        "v2": ["64500eefad1aeb8e163c2ceeaa78b39ce013849f1a75596dd1b477fc5d023736"],
+        "v3_sdk_24_32": ["64500eefad1aeb8e163c2ceeaa78b39ce013849f1a75596dd1b477fc5d023736"],
+        "v3_1_sdk_33_plus": ["a15c11c804bd8b40cebf052747bfea91542568989af0b7a092efcfcb7ebff434"]
+      },
+      "v1_presence": {
+        "meta_inf_certificate": "64500eefad1aeb8e163c2ceeaa78b39ce013849f1a75596dd1b477fc5d023736",
+        "verification": "NOT_ESTABLISHED",
+        "detail": "certificate observed in META-INF signature files, but the retained minSdk 24 apksigner verification reports v1 false"
+      },
+      "lineage": "LEGACY_LOCAL_TO_CURRENT_LOCAL",
+      "signer": "LEGACY_LOCAL (API 24-32) / CURRENT_LOCAL (API 33+)",
+      "apk_sha256": "e398f84101a7bea90bcbd02202f809387225ca82b7382bdcd703dc001dc0436b",
+      "bytes": 70836776,
+      "local_path": "artifacts/key-recovery-20261009/oma-merged-bridge-sdk/gitlab-mobile-987aa727-legacy-local-bridge.apk",
+      "release_tag": "v0.5.0-dev.987aa727",
+      "public_download_url": "https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.5.0-dev.987aa727/downloads/gitlab-mobile-987aa727-legacy-local-bridge.apk",
+      "applicability": {
+        "from_signer": "LEGACY_LOCAL",
+        "api_33_plus": "install bridge in place, then CURRENT_987AA727_RELEASE in place",
+        "api_24_32": "bridge stays on the LEGACY_LOCAL signer and CANNOT continue to the CURRENT_LOCAL ordinary release; native bridge install on API 24-32 NOT_RUN",
+        "historical_ci23": "not applicable"
+      },
+      "native_validation": {
+        "status": "PASS_SYNTHETIC_DATA_API36_EMULATOR",
+        "chain": "LEGACY_LOCAL_AD49850_RELEASE -> BRIDGE_987AA727_LEGACY_LOCAL -> CURRENT_987AA727_RELEASE, each adb install in place",
+        "retained": "same UID, CE/DE directory inodes and synthetic CE/DE bytes; probes removed afterwards",
+        "receipt": "artifacts/key-recovery-20261009/bridge-native-upgrade-and-own-sdk-closure-root-proof.json",
+        "not_run": ["physical phone", "real private account or draft decryption", "API 24-32 bridge install", "iOS", "Play"]
+      }
+    },
+    {
+      "id": "HISTORICAL_CI23_0E1298E3_DEBUG",
+      "role": "GitLab v0.5.0 CI preview debug APK",
+      "source_commit": "0e1298e339bb5d23bdf80c31eef5d830d8716fe2",
+      "build_lane": "GitLab CI android_debug, job 16887534975, pipeline 2905530514",
+      "variant": "debug",
+      "entrypoint": "unknown (not retained)",
+      "qa_benchmark_flags": "unknown (not retained)",
+      "application_id": "io.gitlabmobile.gitlab_mobile",
+      "version_name": "0.5.0",
+      "version_code": 5,
+      "debuggable": true,
+      "min_sdk": 24,
+      "target_sdk": 36,
+      "abis": "unknown (not reported by the public scan)",
+      "signing_schemes": {"v2": ["23c9890d05dd84772921793313fb2a9ea34a4e03fbabb66027395a4bf10b4241"]},
+      "signer": "HISTORICAL_CI23",
+      "apk_sha256": "de0a7302ad6f29928680dc2c2702205a646e3eaa828c327912fbdbddb442d2a5",
+      "bytes": 178446806,
+      "local_path": "artifacts/update-failure-20261009/gitlab-mobile-0e1298e3-debug.apk",
+      "release_tag": "v0.5.0",
+      "public_download_url": "https://gitlab.com/api/v4/projects/86648389/packages/generic/gitlab-mobile-preview/0e1298e339bb5d23bdf80c31eef5d830d8716fe2/gitlab-mobile-0e1298e3-debug.apk",
+      "public_download_url_status": "release link read back 2026-10-09; old release unchanged",
+      "installed_on_phone": "unknown; no receipt records an install"
+    }
+  ],
+  "known_gaps": [
+    "Current phone installed signer unknown; phone untouched.",
+    "HISTORICAL_CI23 private key not found in the selected scope; other locations unknown; no lineage covers it.",
+    "API 24-32 bridge install NOT_RUN; API 24-32 cannot reach the CURRENT_LOCAL ordinary release through this bridge.",
+    "Earlier phone builds db12b41, !3, e941a6ac CI preview and v0.5 run 2 have no retained APK in the checked scope; their signers are unknown.",
+    "No real private-account, iOS, Play or G0 acceptance."
+  ]
+}
