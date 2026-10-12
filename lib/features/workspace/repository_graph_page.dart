@@ -379,10 +379,13 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
     double height,
   ) {
     final theme = Theme.of(context);
+    final author = row.commit.authorName;
+    final date = row.commit.committedDate.isEmpty
+        ? ''
+        : relativeDate(row.commit.committedDate);
     final meta = [
-      if (row.commit.authorName.isNotEmpty) row.commit.authorName,
-      if (row.commit.committedDate.isNotEmpty)
-        relativeDate(row.commit.committedDate),
+      if (author.isNotEmpty) author,
+      if (date.isNotEmpty) date,
     ].join(' · ');
     return Semantics(
       button: true,
@@ -425,29 +428,32 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
                             style: theme.textTheme.titleSmall,
                           ),
                           const SizedBox(height: 5),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 3,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              Text(
-                                row.commit.shortId,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  fontFamily: codeFontFamily,
-                                  fontFamilyFallback: const [
-                                    'Menlo',
-                                    'monospace',
-                                  ],
+                          // Rows have a fixed height so the lanes line up;
+                          // a second metadata line would overflow it. The
+                          // variable-length author name goes last so it is
+                          // the part that gets cut.
+                          Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: row.commit.shortId,
+                                  style: const TextStyle(
+                                    fontFamily: codeFontFamily,
+                                    fontFamilyFallback: ['Menlo', 'monospace'],
+                                  ),
                                 ),
-                              ),
-                              if (meta.isNotEmpty)
-                                Text(meta, style: theme.textTheme.bodySmall),
-                              if (row.parents.length > 1)
-                                Text(
-                                  '${row.parents.length} 個父提交',
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                            ],
+                                if (date.isNotEmpty) TextSpan(text: ' · $date'),
+                                if (row.parents.length > 1)
+                                  TextSpan(
+                                    text: ' · ${row.parents.length} 個父提交',
+                                  ),
+                                if (author.isNotEmpty)
+                                  TextSpan(text: ' · $author'),
+                              ],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall,
                           ),
                         ],
                       ),

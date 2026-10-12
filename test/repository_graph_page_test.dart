@@ -232,6 +232,9 @@ void main() {
       );
       final api = testApi(adapter);
       addTearDown(api.close);
+      tester.view.physicalSize = Size(width, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(
         host(
           RepositoryGraphPage(account: account, api: api, project: project),
@@ -250,4 +253,39 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  testWidgets('merge commit metadata stays on one line at 320dp and 2x text', (
+    tester,
+  ) async {
+    final adapter = FakeAdapter(
+      (request) => jsonResponse([
+        graphCommit(
+          mergeSha,
+          'Merge a long branch name that wraps on narrow mobile screens',
+          [firstParent, secondParent],
+        ),
+        graphCommit(firstParent, 'First parent', const []),
+        graphCommit(secondParent, 'Second parent', const []),
+      ]),
+    );
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    // host() only overrides MediaQuery; also narrow the real test surface.
+    tester.view.physicalSize = const Size(320, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      host(
+        RepositoryGraphPage(account: account, api: api, project: project),
+        width: 320,
+        textScale: 2,
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // committed_date is more than seven days old, so the row shows the
+    // widest (absolute) date form next to the short SHA and parent count.
+    expect(find.textContaining('2 個父提交'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }
