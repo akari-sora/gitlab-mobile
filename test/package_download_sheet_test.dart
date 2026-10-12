@@ -158,6 +158,16 @@ Widget _host(Widget child, {double textScale = 1}) => MaterialApp(
   home: Scaffold(body: child),
 );
 
+/// PackageDownloadSheet removes a finished attempt directory without awaiting
+/// it, so teardown can race that removal.
+Future<void> _removeAttempt(Directory attempt) async {
+  try {
+    await attempt.delete(recursive: true);
+  } on PathNotFoundException {
+    // Already removed by the sheet.
+  }
+}
+
 void main() {
   late Directory root;
   late Future<Directory> Function() originalRoot;
@@ -273,7 +283,7 @@ void main() {
       ..writeAsStringSync('payload');
     final downloader = _SequenceDownloader(saved);
     addTearDown(() async {
-      if (attempt.existsSync()) await attempt.delete(recursive: true);
+      await _removeAttempt(attempt);
     });
     await tester.pumpWidget(
       _host(
@@ -360,7 +370,7 @@ void main() {
       ..writeAsStringSync('payload');
     addTearDown(() async {
       owner.dispose();
-      if (attempt.existsSync()) await attempt.delete(recursive: true);
+      await _removeAttempt(attempt);
     });
 
     await tester.pumpWidget(
@@ -418,7 +428,7 @@ void main() {
       addTearDown(() async {
         if (!sharer.release.isCompleted) sharer.release.complete();
         owner.dispose();
-        if (attempt.existsSync()) await attempt.delete(recursive: true);
+        await _removeAttempt(attempt);
       });
       await tester.pumpWidget(
         _host(
