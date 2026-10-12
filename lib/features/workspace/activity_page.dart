@@ -405,6 +405,8 @@ Widget activityRow(BuildContext context, Json event, {required Account account, 
           : valueText(event, 'target_title');
   final sentence = activitySentence(event);
   final when = relativeDate(valueText(event, 'created_at'));
+  Widget whenLine(String project) => Text(project.isEmpty ? when : '$when · $project',
+    maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall?.copyWith(color: muted));
 
   final target = _ActivityTarget.of(event, account.instance);
   final VoidCallback onTap = switch (target.route) {
@@ -453,14 +455,11 @@ Widget activityRow(BuildContext context, Json event, {required Account account, 
           if (detail.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 3), child: Text(detail, maxLines: 2,
             overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurface))),
           const SizedBox(height: 4),
-          Row(children: [
-            Text(when, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
-            if (showProject && projectId > 0) Flexible(child: FutureBuilder<String>(
-              future: activityProjectName(api, projectId),
-              builder: (context, snap) => (snap.data ?? '').isEmpty ? const SizedBox.shrink() : Text(' · ${snap.data}',
-                maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
-            )),
-          ]),
+          // One line: the date keeps priority and the project name is cut first.
+          if (showProject && projectId > 0) FutureBuilder<String>(
+            future: activityProjectName(api, projectId),
+            builder: (context, snap) => whenLine(snap.data ?? ''),
+          ) else whenLine(''),
         ])),
       ]),
     ),

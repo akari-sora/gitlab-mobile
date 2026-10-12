@@ -425,29 +425,28 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
                             style: theme.textTheme.titleSmall,
                           ),
                           const SizedBox(height: 5),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 3,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              Text(
-                                row.commit.shortId,
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  fontFamily: codeFontFamily,
-                                  fontFamilyFallback: const [
-                                    'Menlo',
-                                    'monospace',
-                                  ],
+                          // Rows have a fixed height so the lanes line up;
+                          // a second metadata line would overflow it.
+                          Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: row.commit.shortId,
+                                  style: const TextStyle(
+                                    fontFamily: codeFontFamily,
+                                    fontFamilyFallback: ['Menlo', 'monospace'],
+                                  ),
                                 ),
-                              ),
-                              if (meta.isNotEmpty)
-                                Text(meta, style: theme.textTheme.bodySmall),
-                              if (row.parents.length > 1)
-                                Text(
-                                  '${row.parents.length} 個父提交',
-                                  style: theme.textTheme.bodySmall,
-                                ),
-                            ],
+                                if (meta.isNotEmpty) TextSpan(text: ' · $meta'),
+                                if (row.parents.length > 1)
+                                  TextSpan(
+                                    text: ' · ${row.parents.length} 個父提交',
+                                  ),
+                              ],
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall,
                           ),
                         ],
                       ),
