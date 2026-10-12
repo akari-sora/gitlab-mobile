@@ -77,6 +77,16 @@
       "elsewhere": "unknown; external backups and other hosts were not checked",
       "expected_for_ordinary_local_apks": false,
       "covered_by_lineage": false
+    },
+    {
+      "id": "CI_EPHEMERAL_ADCB7D4D",
+      "cert_sha256": "d933f0e79237d5ce08d9c71c4dcbe214a5d1e75711070379c6d7192ace7e1438",
+      "subject": "CN=GitLab Mobile CI Debug",
+      "lane": "GitLab CI android_debug ephemeral debug identity (GITLAB_MOBILE_ALLOW_EPHEMERAL_DEBUG_SIGNING=1), job 17125541131",
+      "private_key_locator": "none retained (generated inside the CI job and discarded with its workspace)",
+      "private_key_status": "NOT_RETAINED_BY_DESIGN",
+      "expected_for_ordinary_local_apks": false,
+      "covered_by_lineage": false
     }
   ],
   "lineages": [
@@ -220,6 +230,33 @@
       "public_download_url": "https://gitlab.com/api/v4/projects/86648389/packages/generic/gitlab-mobile-preview/0e1298e339bb5d23bdf80c31eef5d830d8716fe2/gitlab-mobile-0e1298e3-debug.apk",
       "public_download_url_status": "release link read back 2026-10-09; old release unchanged",
       "installed_on_phone": "unknown; no receipt records an install"
+    },
+    {
+      "id": "CI_EPHEMERAL_ADCB7D4D_DEBUG",
+      "role": "GitLab v0.5.0-dev.adcb7d4d CI preview debug APK",
+      "source_commit": "adcb7d4d4f8f191fd045e6f0228a4a8f1db5bbd2",
+      "build_lane": "GitLab CI android_debug, job 17125541131, pipeline 2940412212",
+      "variant": "debug",
+      "entrypoint": "lib/main.dart (flutter build apk --debug default target in ci/build_android.sh)",
+      "qa_benchmark_flags": "disabled (ci/build_android.sh passes only --dart-define=GITLAB_MOBILE_COMMIT)",
+      "application_id": "io.gitlabmobile.gitlab_mobile",
+      "version_name": "0.5.0",
+      "version_code": 5,
+      "debuggable": true,
+      "min_sdk": 24,
+      "target_sdk": 36,
+      "abis": ["arm64-v8a", "armeabi-v7a", "x86_64"],
+      "signing_schemes": {"v2": ["d933f0e79237d5ce08d9c71c4dcbe214a5d1e75711070379c6d7192ace7e1438"]},
+      "signer": "CI_EPHEMERAL_ADCB7D4D",
+      "apk_sha256": "124dd9c0b03fdfc9cd1faedf8caf7c81bb37b525bddfc45a42fe0c95a79ca176",
+      "bytes": 179872214,
+      "local_path": "local-only download for verification; not retained",
+      "release_tag": "v0.5.0-dev.adcb7d4d",
+      "release_url": "https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.5.0-dev.adcb7d4d",
+      "public_download_url": "https://gitlab.com/api/v4/projects/86648389/packages/generic/gitlab-mobile-preview/adcb7d4d4f8f191fd045e6f0228a4a8f1db5bbd2/gitlab-mobile-adcb7d4d-debug.apk",
+      "public_download_url_status": "downloaded anonymously on 2026-10-12 UTC before and after the release was published; both SHA-256 values matched the published SHA256SUMS",
+      "updates_in_place_from": [],
+      "installed_on_phone": "unknown; no receipt records an install"
     }
   ],
   "known_gaps": [
@@ -227,6 +264,7 @@
     "HISTORICAL_CI23 private key not found in the selected scope; other locations unknown; no lineage covers it.",
     "API 24-32 bridge install NOT_RUN; API 24-32 cannot reach the CURRENT_LOCAL ordinary release through this bridge.",
     "Earlier phone builds db12b41, !3, e941a6ac CI preview and v0.5 run 2 have no retained APK in the checked scope; their signers are unknown.",
-    "No real private-account, iOS, Play or G0 acceptance."
+    "No real private-account, iOS, Play or G0 acceptance.",
+    "v0.5.0-dev.adcb7d4d CI preview (adcb7d4d) is signed by a discarded ephemeral CI key; it cannot update CURRENT_LOCAL, LEGACY_LOCAL, HISTORICAL_CI23 or any other install, and no later build can update it in place."
   ]
 }

@@ -181,6 +181,7 @@ local paths and public download URLs only. It is not a private key backup.
 | `CURRENT_LOCAL` | `a15c11c804bd8b40cebf052747bfea91542568989af0b7a092efcfcb7ebff434` | `gitlab-mobile.p12`, present |
 | `LEGACY_LOCAL` | `64500eefad1aeb8e163c2ceeaa78b39ce013849f1a75596dd1b477fc5d023736` | `legacy-local-debug.p12`, present |
 | `HISTORICAL_CI23` | `23c9890d05dd84772921793313fb2a9ea34a4e03fbabb66027395a4bf10b4241` | not found in the selected scope; elsewhere unknown |
+| `CI_EPHEMERAL_ADCB7D4D` | `d933f0e79237d5ce08d9c71c4dcbe214a5d1e75711070379c6d7192ace7e1438` | none: generated inside CI job 17125541131 and discarded with it |
 
 `LEGACY_LOCAL` is a host-generated historical debug key: the Android build
 tools create a separate debug key per host, so its certificate is specific to
@@ -210,6 +211,12 @@ not cover it.
   [gitlab-mobile-987aa727-legacy-local-bridge.apk](https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.5.0-dev.987aa727/downloads/gitlab-mobile-987aa727-legacy-local-bridge.apk).
 - GitLab `v0.5.0` CI debug APK, source `0e1298e3`, signer `HISTORICAL_CI23`.
   No receipt shows it was installed on the phone.
+- GitLab `v0.5.0-dev.adcb7d4d` CI debug APK, source `adcb7d4d`, signer
+  `CI_EPHEMERAL_ADCB7D4D` (v2 only), SHA-256
+  `124dd9c0b03fdfc9cd1faedf8caf7c81bb37b525bddfc45a42fe0c95a79ca176`:
+  [gitlab-mobile-adcb7d4d-debug.apk](https://gitlab.com/api/v4/projects/86648389/packages/generic/gitlab-mobile-preview/adcb7d4d4f8f191fd045e6f0228a4a8f1db5bbd2/gitlab-mobile-adcb7d4d-debug.apk).
+  Its key was discarded with the CI job, so it cannot update any other install
+  and nothing can update it in place. No receipt shows it was installed.
 
 On Android 13 (API 33) and later, a `LEGACY_LOCAL` install updates in place to
 the bridge and then to the ordinary release. That chain passed natively on an
