@@ -379,10 +379,13 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
     double height,
   ) {
     final theme = Theme.of(context);
+    final author = row.commit.authorName;
+    final date = row.commit.committedDate.isEmpty
+        ? ''
+        : relativeDate(row.commit.committedDate);
     final meta = [
-      if (row.commit.authorName.isNotEmpty) row.commit.authorName,
-      if (row.commit.committedDate.isNotEmpty)
-        relativeDate(row.commit.committedDate),
+      if (author.isNotEmpty) author,
+      if (date.isNotEmpty) date,
     ].join(' · ');
     return Semantics(
       button: true,
@@ -426,7 +429,9 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
                           ),
                           const SizedBox(height: 5),
                           // Rows have a fixed height so the lanes line up;
-                          // a second metadata line would overflow it.
+                          // a second metadata line would overflow it. The
+                          // variable-length author name goes last so it is
+                          // the part that gets cut.
                           Text.rich(
                             TextSpan(
                               children: [
@@ -437,11 +442,13 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
                                     fontFamilyFallback: ['Menlo', 'monospace'],
                                   ),
                                 ),
-                                if (meta.isNotEmpty) TextSpan(text: ' · $meta'),
+                                if (date.isNotEmpty) TextSpan(text: ' · $date'),
                                 if (row.parents.length > 1)
                                   TextSpan(
                                     text: ' · ${row.parents.length} 個父提交',
                                   ),
+                                if (author.isNotEmpty)
+                                  TextSpan(text: ' · $author'),
                               ],
                             ),
                             maxLines: 1,

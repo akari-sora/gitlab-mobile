@@ -232,6 +232,9 @@ void main() {
       );
       final api = testApi(adapter);
       addTearDown(api.close);
+      tester.view.physicalSize = Size(width, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       await tester.pumpWidget(
         host(
           RepositoryGraphPage(account: account, api: api, project: project),
