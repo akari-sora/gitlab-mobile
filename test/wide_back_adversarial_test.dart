@@ -109,12 +109,12 @@ void main() {
       expect(pop5, isFalse, reason: 'Pop 5 at the home root should consistently return false');
       await settleNetworkWidgets(tester);
 
-      // Pop 5: Rapid consecutive call on root
-      final pop5 = await tester.binding.handlePopRoute();
-      expect(pop5, isFalse, reason: 'Pop 5 at root tab should consistently return false');
+      // Pop 6: Rapid consecutive call on root
+      final pop6 = await tester.binding.handlePopRoute();
+      expect(pop6, isFalse, reason: 'Pop 6 at the home root should consistently return false');
       await settleNetworkWidgets(tester);
 
-      expect(tester.takeException(), isNull, reason: 'No unhandled exception after 5 rapid pops');
+      expect(tester.takeException(), isNull, reason: 'No unhandled exception after 6 rapid pops');
     });
 
     testWidgets('1200 dp rapid selection switching (Issue 1 -> 2 -> 3) and single-pop stack deflation', (tester) async {

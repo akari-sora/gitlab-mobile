@@ -969,10 +969,10 @@ void main() {
       expect(tester.state<ScrollableState>(singleScrollable).position.pixels, closeTo(scrolledOffset, 2.0),
         reason: 'Scroll position must be preserved across resize to 800 dp');
 
-      // Enter detail view in Single-Column mode
+      // Enter detail view in Single-Column mode (the project overview)
       await tester.tap(find.text('Project Beta 4'));
       await settleNetworkWidgets(tester);
-      expect(find.text('檔案'), findsOneWidget);
+      expect(find.byKey(const ValueKey('project-overview-name')), findsOneWidget);
 
       // Pop back from detail view in Single-Column mode
       final handled = await tester.binding.handlePopRoute();
