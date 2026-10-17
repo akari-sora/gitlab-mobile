@@ -21,6 +21,7 @@ final class ActivityEventServer {
   final List<RequestOptions> requests = [];
   int eventGets = 0;
   int projectGets = 0;
+  int projectDetailGets = 0;
   int commitGets = 0;
   int diffGets = 0;
   int issueGets = 0;
@@ -47,6 +48,12 @@ final class ActivityEventServer {
 
     if (request.method != 'GET') {
       return jsonResponse({'message': '404 Not Found'}, status: 404);
+    }
+
+    if (path.endsWith('/projects/10') && request.uri.queryParameters['license'] == 'true') {
+      // The project overview's counts and license: decoration, not the lookup.
+      projectDetailGets++;
+      return jsonResponse(activityProject, headers: projectHeaders);
     }
 
     if (path.endsWith('/projects/10')) {
