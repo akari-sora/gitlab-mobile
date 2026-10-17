@@ -172,15 +172,23 @@ class _CollapsingChromeState extends State<CollapsingChrome> with SingleTickerPr
 
 /// Reserves the status-bar height above [child] and removes it from the
 /// child's padding, so a page nested in place (an issue inside a project)
-/// does not reserve it a second time.
+/// does not reserve it a second time. The strip takes the app bar colour
+/// (or [color]) so it reads as part of the header above a darker canvas.
 class StatusBarInset extends StatelessWidget {
-  const StatusBarInset({super.key, required this.child});
+  const StatusBarInset({super.key, required this.child, this.color});
   final Widget child;
+  final Color? color;
   @override
-  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-    SizedBox(height: MediaQuery.paddingOf(context).top),
-    Expanded(child: MediaQuery.removePadding(context: context, removeTop: true, child: child)),
-  ]);
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      ColoredBox(
+        color: color ?? theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface,
+        child: SizedBox(height: MediaQuery.paddingOf(context).top),
+      ),
+      Expanded(child: MediaQuery.removePadding(context: context, removeTop: true, child: child)),
+    ]);
+  }
 }
 
 /// Bumped by the shell when the active destination is tapped again; feeds

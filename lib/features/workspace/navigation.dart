@@ -96,7 +96,8 @@ class ResourceNavigator {
     return Navigator.of(context).push(route);
   }
 
-  Future<void> project(BuildContext context, String idOrPath, {int initialTab = 0}) async {
+  /// Opens the project overview, or the [initialTab] section when given.
+  Future<void> project(BuildContext context, String idOrPath, {int? initialTab}) async {
     final found = await _project(context, idOrPath);
     if (found == null || !context.mounted || !_active()) return;
     await _push(context, ProjectPage(account: account, api: api, project: found, initialTab: initialTab));

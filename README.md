@@ -7,6 +7,19 @@
 
 A mobile-first Flutter client for Android and iOS. Independent third-party software, not an official GitLab application. The interface is Traditional Chinese and supports light/dark appearance and large text.
 
+## 2026-10-17 — GitHub Mobile–style layout
+
+The app now looks and navigates like GitHub Mobile: a near-black (or soft
+grey) canvas with graphite sections and one blue accent, and four
+destinations — 首頁, 收件匣, 探索, 我的. 首頁 gathers 我的工作 (cross-project
+issues and merge requests, CI/CD, projects, groups, activity, stars) behind
+coloured tiles, plus recently opened and starred projects and shortcuts. A
+project opens on an overview with its description, counts, star/fork/share
+actions, section rows and the README; the 檔案 / 議題 / MR / CI / 更多 tabs are
+one tap away. The inbox uses filter pills and an illustrated empty state.
+Material You colours are now opt-in under 我的 › 外觀. Details are in the v0.6
+section of [the UX notes](docs/UI_REDESIGN.md); device review is `NOT_RUN`.
+
 ## 2026-10-02–03 — mobile parity and performance follow-up
 
 The current development branch adds issue boards and card/list management,

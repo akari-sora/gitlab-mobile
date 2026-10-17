@@ -17,6 +17,31 @@ import 'editor.dart';
 import 'file_history.dart';
 import 'records_feed.dart';
 
+const _readmeCandidateNames = <String>[
+  'readme.md',
+  'readme.markdown',
+  'readme.mdown',
+  'readme.mkdn',
+  'readme',
+  'index.md',
+];
+
+/// The root README among tree [items], by name preference. Symbolic links
+/// and non-blobs are never read as a README.
+String? findReadmePath(Iterable<Json> items) {
+  for (final candidate in _readmeCandidateNames) {
+    for (final item in items) {
+      if (item['type'] == 'blob' && item['mode'] != '120000') {
+        final name = (item['name'] as String? ?? '').toLowerCase();
+        if (name == candidate) {
+          return item['path'] as String? ?? item['name'] as String;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 class RepositoryTab extends StatefulWidget {
   const RepositoryTab({
     super.key,
@@ -46,15 +71,6 @@ class _RepositoryTabState extends State<RepositoryTab> {
   ApiFailure? _readmeError;
   bool _readmeExpanded = true;
   String? _readmeCandidatePath;
-
-  static const _readmeCandidateNames = <String>[
-    'readme.md',
-    'readme.markdown',
-    'readme.mdown',
-    'readme.mkdn',
-    'readme',
-    'index.md',
-  ];
 
   @override
   void initState() {
@@ -179,18 +195,10 @@ class _RepositoryTabState extends State<RepositoryTab> {
     if (_readme != null || _readmeLoading || _readmeCandidatePath != null) {
       return;
     }
-    for (final candidate in _readmeCandidateNames) {
-      for (final item in items) {
-        if (item['type'] == 'blob' && item['mode'] != '120000') {
-          final name = (item['name'] as String? ?? '').toLowerCase();
-          if (name == candidate) {
-            final path = item['path'] as String? ?? item['name'] as String;
-            _readmeCandidatePath = path;
-            unawaited(_fetchReadme(path, sha, _epoch));
-            return;
-          }
-        }
-      }
+    final path = findReadmePath(items);
+    if (path != null) {
+      _readmeCandidatePath = path;
+      unawaited(_fetchReadme(path, sha, _epoch));
     }
   }
 

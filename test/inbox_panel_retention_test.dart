@@ -100,6 +100,10 @@ void main() {
             .descendant(of: todoScroll, matching: find.byType(Scrollable))
             .first,
       );
+      // Let the header finish tucking away before taking the button's position.
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.ensureVisible(find.text('載入更多'));
+      await tester.pump();
       await tester.tap(find.text('載入更多'));
       await settleNetworkWidgets(tester);
       expect(todoPageTwoGets, 1);

@@ -11,6 +11,7 @@ import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'support/fake_adapter.dart';
 import 'support/workspace_fixture.dart';
 import 'workspace_widget_test.dart' show workspaceHost, settleWorkspace;
+import 'support/shell_nav.dart';
 
 /// Synthetic stateful project API. The visible production screens perform all
 /// writes; unknown endpoints fall through to the fixture's explicit 404.
@@ -97,8 +98,7 @@ void main() {
     expect(creates, hasLength(2));
     expect((creates.last.data as Json)['initialize_with_readme'], isTrue);
     expect(find.text('Synthetic project'), findsOneWidget);
-    await tester.ensureVisible(find.widgetWithText(Tab, '更多'));
-    await tester.tap(find.widgetWithText(Tab, '更多')); await settleWorkspace(tester);
+    await openProjectTab(tester, '更多'); await settleWorkspace(tester);
     Future<void> action(String text) async {
       final scroller = find.descendant(of: find.byType(ProjectMoreTab), matching: find.byType(Scrollable)).first;
       // Controls sit both in the overview card at the top and in the list below.
@@ -123,7 +123,7 @@ void main() {
     await tester.tap(find.widgetWithText(ChoiceChip, '星標')); await settleWorkspace(tester);
     expect(find.text('Updated project'), findsOneWidget);
     await tester.tap(find.text('Updated project')); await settleWorkspace(tester);
-    await tester.tap(find.widgetWithText(Tab, '更多')); await settleWorkspace(tester);
+    await openProjectTab(tester, '更多'); await settleWorkspace(tester);
     final readsBeforeUnstar = projectListReads();
     await action('移除星標'); expect(fixture.starred, isFalse);
     expect(projectListReads(), greaterThan(readsBeforeUnstar), reason: 'an unstar mutation reconciles starred/count state');
@@ -132,7 +132,7 @@ void main() {
       reason: 'the reconciled starred feed removes an unstarred project row');
     await tester.tap(find.widgetWithText(ChoiceChip, '我的專案')); await settleWorkspace(tester);
     await tester.tap(find.text('Updated project').last); await settleWorkspace(tester);
-    await tester.tap(find.widgetWithText(Tab, '更多')); await settleWorkspace(tester);
+    await openProjectTab(tester, '更多'); await settleWorkspace(tester);
     await action('刪除專案…');
     expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '確認')).onPressed, isNull);
     await tester.enterText(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), 'studio/project-crud');

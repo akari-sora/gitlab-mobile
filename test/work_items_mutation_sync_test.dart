@@ -15,6 +15,7 @@ import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
 import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
+import 'support/shell_nav.dart';
 
 Future<BuildInfo> _shellBuildInfo() async => const BuildInfo(
   version: '0.4.0',
@@ -66,6 +67,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Select Project -> Issues tab
       await tester.tap(find.text('Mobile Workspace'));
@@ -125,6 +127,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
@@ -187,6 +190,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
@@ -269,6 +273,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
@@ -339,6 +344,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
@@ -405,6 +411,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
@@ -518,6 +525,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Select Project -> Issues tab
       await tester.tap(find.text('Mobile Workspace'));
@@ -686,10 +694,11 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
-      await tester.tap(find.text('MR'));
+      await openProjectTab(tester, 'MR');
       await settleNetworkWidgets(tester);
 
       expect(mrListRequestCount, equals(1));
@@ -809,6 +818,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
@@ -914,6 +924,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Enter project on Account A
       await tester.tap(find.text('Mobile Workspace'));

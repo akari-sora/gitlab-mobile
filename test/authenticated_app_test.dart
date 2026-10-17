@@ -71,18 +71,28 @@ void main() {
     );
     await settleNetworkWidgets(tester);
 
-    // Default destination is Projects (index 1)
-    expect(find.text('專案'), findsWidgets);
+    // Default destination is Home (index 0) with the My Work hub.
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 0);
+    expect(find.text('首頁'), findsWidgets);
+    expect(find.text('我的工作'), findsOneWidget);
+    expect(find.text('Mobile Workspace'), findsOneWidget, reason: 'starred projects come from the account');
 
-    // Switch to Inbox (index 0)
+    // Home › CI/CD opens the CI overview as a pushed page.
+    await tester.tap(find.text('CI/CD'));
+    await settleNetworkWidgets(tester);
+    expect(find.text('選擇專案，查看流程與工作紀錄'), findsOneWidget);
+    await tester.tap(find.byType(BackButton));
+    await settleNetworkWidgets(tester);
+
+    // Switch to Inbox (index 1)
     await tester.tap(find.text('收件匣'));
     await settleNetworkWidgets(tester);
     expect(find.text('待辦'), findsOneWidget);
 
-    // Switch to CI (index 2)
-    await tester.tap(find.text('CI'));
+    // Switch to Explore (index 2)
+    await tester.tap(find.text('探索'));
     await settleNetworkWidgets(tester);
-    expect(find.text('選擇專案，查看流程與工作紀錄'), findsOneWidget);
+    expect(find.byKey(const Key('projectSearch')), findsOneWidget);
 
     // Switch to My (index 3)
     await tester.tap(find.text('我的'));
@@ -172,9 +182,9 @@ void main() {
 
     final MaterialApp app = tester.widget(find.byType(MaterialApp));
     expect(app.themeMode, ThemeMode.dark);
-    // No dynamic scheme: the Android default of on is stored back as off.
+    // The app palette is the default, so a legacy record has nothing to clear.
     expect(appearance.useDynamicColor, isFalse);
-    expect(appearanceStore.writes, [encodeAppearance(ThemeMode.dark, false)]);
+    expect(appearanceStore.writes, isEmpty);
   });
 
   testWidgets('AuthenticatedApp keeps the appearance across an account switch', (
@@ -375,7 +385,7 @@ void main() {
     await settleNetworkWidgets(tester);
     expect(canPop(), isFalse);
 
-    await tester.tap(find.text('CI'));
+    await tester.tap(find.text('探索'));
     await settleNetworkWidgets(tester);
     expect(canPop(), isFalse);
 
@@ -385,7 +395,7 @@ void main() {
 
     await tester.tap(find.descendant(
       of: find.byType(NavigationBar),
-      matching: find.text('專案'),
+      matching: find.text('首頁'),
     ));
     await settleNetworkWidgets(tester);
     expect(canPop(), isTrue);
@@ -395,15 +405,16 @@ void main() {
     expect(canPop(), isFalse);
     tester.widget<PopScope<Object?>>(find.byType(PopScope<Object?>)).onPopInvokedWithResult?.call(false, null);
     await tester.pump();
-    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 0);
     expect(canPop(), isTrue);
-    expect(find.byKey(const Key('projectSearch')), findsOneWidget);
+    expect(find.text('我的工作'), findsOneWidget);
   });
 
   testWidgets('a probe that finishes before load still clears an unsupported dynamic colour', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     try {
-      final store = MemoryAppearanceStore();
+      // The user opted into Material You on a device that cannot provide it.
+      final store = MemoryAppearanceStore()..value = encodeAppearance(ThemeMode.system, true);
       final gate = Completer<void>();
       store.readDelay = gate.future;
       final local = AppearanceController(store);
@@ -427,7 +438,7 @@ void main() {
       ));
       await settleNetworkWidgets(tester);
       expect(local.loaded, isFalse);
-      expect(local.useDynamicColor, isTrue);
+      expect(local.useDynamicColor, isFalse, reason: 'the app palette is the default until the record loads');
       expect(store.writes, isEmpty);
       gate.complete();
       store.readDelay = null;
@@ -444,7 +455,8 @@ void main() {
   testWidgets('a device without a dynamic scheme stores the flag off', (tester) async {
     debugDefaultTargetPlatformOverride = TargetPlatform.android;
     try {
-    final store = MemoryAppearanceStore();
+    // A stored opt-in from a device that cannot build a dynamic scheme.
+    final store = MemoryAppearanceStore()..value = encodeAppearance(ThemeMode.system, true);
     final local = AppearanceController(store);
     addTearDown(local.dispose);
     await local.load();
@@ -514,6 +526,7 @@ void main() {
     expect(primary(), enabled ? dynamicLight.primary : seeded);
 
     await tester.ensureVisible(find.byType(Switch));
+    await tester.pump();
     await tester.tap(find.byType(Switch));
     await tester.pumpAndSettle();
 
@@ -720,8 +733,8 @@ void main() {
       AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
     );
     await settleNetworkWidgets(tester);
-    expect(tester.takeException(), isNull, reason: 'projects');
-    for (final destination in ['收件匣', 'CI', '我的']) {
+    expect(tester.takeException(), isNull, reason: 'home');
+    for (final destination in ['收件匣', '探索', '我的']) {
       await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(destination)));
       await settleNetworkWidgets(tester);
       expect(tester.takeException(), isNull, reason: destination);

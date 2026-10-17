@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
@@ -41,9 +40,10 @@ ThemeMode themeModeFrom(String? value) => switch (value) {
   _ => ThemeMode.system,
 };
 
-/// Android 12+ can build a scheme from the wallpaper. Other platforms, and a
-/// record that predates the flag, keep this default.
-bool dynamicColorDefault() => defaultTargetPlatform == TargetPlatform.android;
+/// The app's own GitHub-style palette is the default everywhere. Android 12+
+/// can still build a scheme from the wallpaper, but only once the user turns
+/// it on in 我的 › 外觀; a record that predates the flag keeps this default.
+bool dynamicColorDefault() => false;
 
 /// Legacy records are a bare [ThemeMode] name. Newer records are `mode|1` or
 /// `mode|0`. Anything else falls back through [themeModeFrom].

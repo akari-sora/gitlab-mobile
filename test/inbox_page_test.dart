@@ -39,7 +39,7 @@ void main() {
     expect(find.text('待辦'), findsOneWidget);
     expect(find.text('指派給我'), findsOneWidget);
     expect(find.text('待我審查'), findsOneWidget);
-    expect(find.text('待辦已清空'), findsOneWidget);
+    expect(find.text('全部處理完畢！'), findsOneWidget);
   });
 
   testWidgets('inbox displays todos and allows marking todo as done', (
@@ -88,7 +88,7 @@ void main() {
 
     expect(markedDone, isTrue);
     expect(find.text('Fix login timeout bug'), findsNothing);
-    expect(find.text('待辦已清空'), findsOneWidget);
+    expect(find.text('全部處理完畢！'), findsOneWidget);
   });
 
   testWidgets('inbox switches to assigned-to-me tab and renders issues', (

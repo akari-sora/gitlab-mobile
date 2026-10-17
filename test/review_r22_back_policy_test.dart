@@ -20,6 +20,7 @@ import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
 import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
+import 'support/shell_nav.dart';
 
 const _rootPopKey = ValueKey<String>('review-root-pop-scope');
 
@@ -227,6 +228,7 @@ void main() {
       ),
     );
     await settleNetworkWidgets(tester);
+    await openExplore(tester);
     await tester.tap(find.text('Mobile Workspace'));
     await settleNetworkWidgets(tester);
     expect(find.byType(ProjectPage), findsOneWidget);
@@ -291,6 +293,7 @@ void main() {
       ),
     );
     await settleNetworkWidgets(tester);
+    await openExplore(tester);
     await tester.tap(find.text('Mobile Workspace'));
     await settleNetworkWidgets(tester);
     expect(find.byType(ProjectPage), findsOneWidget);
@@ -307,13 +310,23 @@ void main() {
     _setViewport(tester, 1000);
     await settleNetworkWidgets(tester);
 
-    // On Tab 0 ('檔案') at 1000 dp, ProjectsPage is Two-Pane without collapsed master.
-    // BackDispatcher has no entries needing back veto, so Shell PopScope allows pop (bubbles from root route).
+    // On the overview at 1000 dp, ProjectsPage is Two-Pane without collapsed master.
+    // BackDispatcher has no entries needing back veto; the shell still keeps the
+    // route because back on 探索 returns to 首頁 first.
+    final dispatcher = DetailBackScope.maybeOf(
+      tester.element(find.byType(ProjectPage)),
+    )!.dispatcher;
     expect(
-      compactRoute.popDisposition,
-      RoutePopDisposition.bubble,
+      dispatcher.canHandleBack,
+      isFalse,
       reason: 'Expanding to two-pane releases the compact detail back veto.',
     );
+    expect(compactRoute.popDisposition, RoutePopDisposition.doNotPop);
+    expect(await tester.binding.handlePopRoute(), isTrue);
+    await settleNetworkWidgets(tester);
+    expect(find.text('我的工作'), findsOneWidget, reason: 'back goes to Home, the selection stays');
+    await openExplore(tester);
+    expect(find.byType(ProjectPage), findsOneWidget);
 
     // Switch to Tab 1 ('議題') where collapseMaster is active
     await tester.tap(find.text('議題'));
@@ -324,6 +337,7 @@ void main() {
       RoutePopDisposition.doNotPop,
       reason: 'Entering Issues dual-pane activates collapsed master back interception.',
     );
+    expect(dispatcher.canHandleBack, isTrue);
 
     // Back button in AppBar returns to projects list
     expect(find.byType(BackButton), findsOneWidget);
@@ -375,6 +389,7 @@ void main() {
       ),
     );
     await settleNetworkWidgets(tester);
+    await openExplore(tester);
     await tester.tap(find.text('Mobile Workspace'));
     await settleNetworkWidgets(tester);
 
@@ -387,7 +402,7 @@ void main() {
     )!.dispatcher;
     expect(dispatcher.canHandleBack, isTrue, reason: 'Active projects tab detail has back veto');
 
-    // Switch to Inbox (tab 0)
+    // Switch to Inbox (tab 1)
     await tester.tap(find.byIcon(Icons.inbox_outlined));
     await settleNetworkWidgets(tester);
 
@@ -395,11 +410,13 @@ void main() {
     // dispatcher.canHandleBack becomes false!
     expect(dispatcher.canHandleBack, isFalse, reason: 'Inactive projects tab detail releases back qualification');
 
-    // System back while on Inbox routes back to Projects tab (via Shell onPopInvokedWithResult)
+    // System back while on Inbox routes to Home (via Shell onPopInvokedWithResult)
     expect(await tester.binding.handlePopRoute(), isTrue);
     await settleNetworkWidgets(tester);
+    expect(dispatcher.canHandleBack, isFalse, reason: 'Explore is still out of sight on Home');
 
-    // Now back on Projects tab, ProjectsPage is active again -> dispatcher.canHandleBack restored!
+    // Back on Explore, ProjectsPage is active again -> dispatcher.canHandleBack restored!
+    await openExplore(tester);
     expect(dispatcher.canHandleBack, isTrue, reason: 'Re-activated projects tab detail restores back qualification');
     expect(route.popDisposition, RoutePopDisposition.doNotPop);
 

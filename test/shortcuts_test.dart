@@ -296,7 +296,7 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 20));
     });
     await tester.pumpAndSettle();
-    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 0);
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
     expect(find.text('待辦'), findsOneWidget);
     expect(host.published, isNotEmpty);
     expect(host.published.last.map((item) => item.title), ['收件匣', '搜尋專案', '上次的專案']);
@@ -313,7 +313,7 @@ void main() {
     await settleNetworkWidgets(tester);
 
     expect(find.byType(ProjectPage), findsNothing);
-    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
+    expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 2);
     expect(tester.widget<TextField>(find.byKey(const Key('projectSearch'))).focusNode?.hasFocus, isTrue);
   }, timeout: const Timeout(Duration(minutes: 1)));
 

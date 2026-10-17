@@ -1,5 +1,8 @@
 # Mobile UX redesign — v0.2
 
+> The v0.6 section at the end supersedes the root destinations and the project
+> landing described here; the rest of this document still applies.
+
 ## Structure
 
 The root has Inbox / Projects / CI / Me. Each root retains its list state. Project, code, review and log screens are full-screen routes: the root navigation is not stacked beneath multiple levels of tabs. Project sections are Files / Issues / MR / CI / More. The CI root explicitly asks the user to choose a project; it does not claim a project feed is an all-account pipeline API.
@@ -42,3 +45,16 @@ CI captures actual Flutter widgets with synthetic data and CJK fonts at 412 × 8
 ## Explicit remaining UX work
 
 Physical-device keyboard/IME and back-gesture checks, screen-reader validation, a full navigation/permission matrix, native attachments/artifact downloads, OAuth, and installed APK upgrade/signing continuity are not claimed complete. The 840-pixel layout currently remains a mobile single-column experience rather than a desktop client.
+
+## v0.6 — GitHub Mobile–style layout
+
+The look and navigation follow GitHub Mobile. Data paths, account binding, request guards and the persistence list are unchanged; nothing new is written to disk.
+
+- **Palette.** `AppPalette` in `lib/shared/theme.dart`: dark is a near-black canvas (`#08090B`) under graphite bars, sections and cards (`#17181C`), hairlines `#2E2F34`, one blue accent (`#58A6FF`, dark text on it) and a deep-blue pill (`#1A2B3F`) for the selected destination; light is white sections on `#F2F4F7` with GitHub blue `#0969DA`. Primary text clears 7:1 and secondary text 4.5:1 on both canvas and surface. Status tints follow Primer (green success, blue running, amber pending) and keep icon plus label. Chips are filled stadium pills, cards and fields use a 12/10 dp radius, and `StatusBarInset` paints the status-bar strip in the header colour. Material You is now opt-in (我的 › 外觀) on every platform; a stored opt-in is honoured and still cleared on devices without a dynamic scheme.
+- **Destinations.** 首頁 / 收件匣 / 探索 / 我的, with labels always shown and a pill indicator. 首頁 is the default and the back gesture from any other root returns to it. 探索 is the former project list (scope chips, sort, search, link/path locator, new project); it stays built so the launcher search shortcut and Home actions reach it. CI no longer has a root: it opens from 首頁 › 我的工作 › CI/CD.
+- **首頁.** A pinned large title with search, refresh, a 新增 sheet (新增專案, 以連結或路徑開啟; both hand over to 探索) and the account avatar. 我的工作 rows carry coloured tiles: 議題 and 合併請求 (cross-project lists with 指派給我 / 我建立的 / 待我審查 pills and a state menu), CI/CD, 專案, 群組, 動態, 星標. Below come the projects opened recently on this device (the existing recent-project record), the account's starred projects (first five by activity, from the server; an empty list offers 瀏覽專案) and round 捷徑 for search, todos, review requests, the locator and project creation. Reads made for one account are dropped if the session moves on.
+- **Project overview.** `ProjectPage` without `initialTab` lands on `ProjectOverview`: owner and namespace, the project name in a large title, description, the web link, star and fork counts with the visibility, then a wide star toggle and square Fork and share buttons. Rows lead to 議題 (open count), 合併請求, CI/CD and an expandable 更多 (成員, 專案動態, Wiki, Releases, 授權, 所有功能), then 目前分支, 檔案 and 提交紀錄, and the root README pinned to the default branch head. The app bar shows the name only after the overview header has scrolled away. A row opens the familiar 檔案 / 議題 / MR / CI / 更多 tabs; the dashboard button at the start of the tab bar returns to the overview. Both halves are kept once visited; the hidden half runs with tickers off, ignores pointers and is excluded from semantics, so its back handling stays inactive. Links, search results and recent projects open the overview; resume targets and CI still open their section directly.
+- **收件匣.** The tab bar became filter pills (待辦, 指派給我, 待我審查, 我建立的) over the same tab controller, and an empty todo list shows a drawn night scene with 全部處理完畢！.
+- **我的.** A profile header with a round avatar, rows for 我的動態, 我的群組 and 全域搜尋, then accounts, appearance and the about block as full-width sections.
+
+People are drawn as round monograms; projects and groups keep rounded squares. The redesign is checked by host-rendered screenshots (`test/visual_evidence_test.dart`: home, inbox, explore, me, repository overview, files and review in light and dark) and widget tests; physical-device review of the new layout is `NOT_RUN`.

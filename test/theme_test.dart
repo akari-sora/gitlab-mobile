@@ -10,14 +10,10 @@ double _contrast(Color a, Color b) {
 }
 
 void main() {
-  test('appTheme without a dynamic scheme keeps the seeded cobalt theme', () {
+  test('appTheme without a dynamic scheme uses the GitHub-style palette', () {
     for (final brightness in Brightness.values) {
       final dark = brightness == Brightness.dark;
-      final seeded = ColorScheme.fromSeed(
-        seedColor: const Color(0xFF4763E4),
-        brightness: brightness,
-        surface: dark ? const Color(0xFF15181F) : const Color(0xFFF7F8FC),
-      );
+      final palette = AppPalette.of(brightness);
       final theme = appTheme(brightness);
       final supplied = ColorScheme.fromSeed(
         seedColor: const Color(0xFF2E7D32),
@@ -28,25 +24,36 @@ void main() {
         dynamicScheme: supplied,
         useDynamicColor: false,
       );
-      expect(theme.colorScheme.primary, seeded.primary);
-      expect(theme.colorScheme.surface, seeded.surface);
+      expect(theme.colorScheme.primary, palette.accent);
+      expect(theme.colorScheme.onPrimary, palette.onAccent);
+      expect(theme.colorScheme.surface, palette.surface);
+      expect(theme.colorScheme.onSurface, palette.text);
+      expect(theme.colorScheme.onSurfaceVariant, palette.muted);
+      expect(theme.colorScheme.primaryContainer, palette.accentContainer);
+      expect(theme.scaffoldBackgroundColor, palette.canvas);
+      expect(theme.appBarTheme.backgroundColor, palette.surface);
+      expect(theme.navigationBarTheme.backgroundColor, palette.surface);
+      expect(theme.navigationBarTheme.indicatorColor, palette.accentContainer);
       expect(ignored.colorScheme.primary, theme.colorScheme.primary);
       expect(ignored.cardTheme.color, theme.cardTheme.color);
-      expect(theme.cardTheme.color, dark ? const Color(0xFF1F2430) : Colors.white);
-      expect(
-        theme.inputDecorationTheme.fillColor,
-        dark ? const Color(0xFF222733) : const Color(0xFFEEF0F6),
-      );
-      final hairline = dark ? const Color(0xFF3A4050) : const Color(0xFFE5E8F0);
-      final control = dark ? const Color(0xFF5E6576) : const Color(0xFFE5E8F0);
+      expect(theme.cardTheme.color, palette.surface);
+      expect(theme.inputDecorationTheme.fillColor, palette.raised);
+      expect(theme.chipTheme.backgroundColor, palette.chip);
+      expect(theme.chipTheme.shape, isA<StadiumBorder>());
       final side = (theme.cardTheme.shape! as RoundedRectangleBorder).side;
-      expect(side.color, hairline);
-      expect(theme.chipTheme.side!.color, control);
-      expect(theme.outlinedButtonTheme.style!.side!.resolve({})!.color, control);
-      expect(theme.segmentedButtonTheme.style!.side!.resolve({})!.color, control);
+      expect(side.color, palette.hairline);
+      expect(theme.outlinedButtonTheme.style!.side!.resolve({})!.color, palette.control);
+      expect(theme.segmentedButtonTheme.style!.side!.resolve({})!.color, palette.control);
+      // Text and the accent stay readable on the raised surface and canvas.
+      for (final background in [palette.surface, palette.canvas]) {
+        expect(_contrast(palette.text, background), greaterThanOrEqualTo(7));
+        expect(_contrast(palette.muted, background), greaterThanOrEqualTo(4.5));
+        expect(_contrast(palette.accent, background), greaterThanOrEqualTo(4.5));
+      }
+      expect(_contrast(palette.onAccent, palette.accent), greaterThanOrEqualTo(4.5));
+      expect(_contrast(palette.onAccentContainer, palette.accentContainer), greaterThanOrEqualTo(4.5));
       if (dark) {
-        expect(theme.colorScheme.surface, const Color(0xFF15181F));
-        expect(_contrast(control, theme.colorScheme.surface), greaterThanOrEqualTo(3));
+        expect(_contrast(palette.control, theme.colorScheme.surface), greaterThanOrEqualTo(3));
       }
       expect(theme.filledButtonTheme.style!.minimumSize!.resolve({}), const Size(48, 48));
       expect(theme.textTheme.titleLarge!.fontSize, 19);

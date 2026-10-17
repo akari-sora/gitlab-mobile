@@ -10,11 +10,16 @@ class ResourceShareButton extends StatefulWidget {
     required this.uri,
     this.ownerKey,
     this.isCurrent,
+    this.builder,
   });
 
   final Uri uri;
   final Object? ownerKey;
   final bool Function()? isCurrent;
+
+  /// Renders the control; receives null while sharing is unavailable or busy.
+  /// Defaults to an icon button.
+  final Widget Function(BuildContext context, VoidCallback? onPressed)? builder;
 
   @override
   State<ResourceShareButton> createState() => _ResourceShareButtonState();
@@ -92,9 +97,12 @@ class _ResourceShareButtonState extends State<ResourceShareButton> {
   }
 
   @override
-  Widget build(BuildContext context) => IconButton(
-    tooltip: '分享連結',
-    onPressed: _busy || !_mayShare ? null : _share,
-    icon: const Icon(Icons.share_outlined),
-  );
+  Widget build(BuildContext context) {
+    final onPressed = _busy || !_mayShare ? null : _share;
+    return widget.builder?.call(context, onPressed) ?? IconButton(
+      tooltip: '分享連結',
+      onPressed: onPressed,
+      icon: const Icon(Icons.share_outlined),
+    );
+  }
 }

@@ -4,11 +4,13 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/project_locator.dart';
 import '../../shared/adaptive_breakpoints.dart';
+import '../../shared/hub_ui.dart';
 import '../../shared/list_detail_scaffold.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/recent_project.dart';
 import '../auth/session_controller.dart';
+import '../shell/account_sheet.dart';
 import '../shell/app_shortcuts.dart';
 import 'editor.dart';
 import 'groups_page.dart';
@@ -25,12 +27,28 @@ class ProjectsPage extends StatefulWidget {
     this.shortcuts,
     this.recentStore,
     this.searchToken = 0,
+    this.locatorToken = 0,
+    this.createToken = 0,
+    this.title,
+    this.initialScope = 0,
   });
   final SessionController session;
   final bool forCi;
   final LauncherShortcuts? shortcuts;
   final RecentProjectStore? recentStore;
   final int searchToken;
+
+  /// Bumped by the shell when Home asks to open a project by link or path.
+  final int locatorToken;
+
+  /// Bumped by the shell when Home asks to create a project.
+  final int createToken;
+
+  /// App bar title; defaults to 探索 (or CI / CD for [forCi]).
+  final String? title;
+
+  /// 0 my projects, 1 starred, 2 all accessible, 3 groups.
+  final int initialScope;
   @override
   State<ProjectsPage> createState() => _ProjectsPageState();
 }
@@ -40,8 +58,10 @@ class _ProjectsPageState extends State<ProjectsPage> {
   final _searchFocus = FocusNode();
   final _feed = GlobalKey<RecordsFeedState>();
   Timer? _debounce;
-  int _scope = 0;
+  late int _scope = widget.initialScope.clamp(0, 3);
   int _seenSearch = 0;
+  late int _seenLocator = widget.locatorToken;
+  late int _seenCreate = widget.createToken;
   String _query = '';
   String _sort = 'activity';
   bool _opening = false;
@@ -167,6 +187,20 @@ class _ProjectsPageState extends State<ProjectsPage> {
     if (oldWidget.shortcuts != widget.shortcuts) {
       oldWidget.shortcuts?.removeListener(_onShortcutsChanged);
       widget.shortcuts?.addListener(_onShortcutsChanged);
+    }
+    if (!widget.forCi && widget.locatorToken != _seenLocator) {
+      _seenLocator = widget.locatorToken;
+      _selection.clear();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_opening) unawaited(_locator());
+      });
+    }
+    if (!widget.forCi && widget.createToken != _seenCreate) {
+      _seenCreate = widget.createToken;
+      _selection.clear();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) unawaited(_create());
+      });
     }
     if (!widget.forCi && widget.searchToken != _seenSearch) {
       _seenSearch = widget.searchToken;
@@ -367,50 +401,11 @@ class _ProjectsPageState extends State<ProjectsPage> {
     'stars': ('星標數', 'star_count', 'desc'),
   };
 
-  Future<void> _openAccounts() async {
-    final session = widget.session;
-    await showModalBottomSheet<void>(context: context, showDragHandle: true, builder: (sheetContext) {
-      final theme = Theme.of(sheetContext);
-      return SafeArea(child: ListView(shrinkWrap: true, padding: const EdgeInsets.fromLTRB(16, 0, 16, 16), children: [
-        Row(children: [
-          Monogram(account.user.name, size: 48),
-          const SizedBox(width: 14),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(account.user.name, style: theme.textTheme.titleMedium),
-            Text('@${account.user.username}', style: theme.textTheme.bodyMedium),
-            Text(account.instance.key, maxLines: 1, overflow: TextOverflow.ellipsis,
-              style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-          ])),
-        ]),
-        const SizedBox(height: 12),
-        for (final saved in session.accounts.where((saved) => saved.key != account.key))
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: Monogram(saved.user.name, size: 32),
-            title: Text('@${saved.user.username}', maxLines: 1, overflow: TextOverflow.ellipsis),
-            subtitle: Text(saved.instance.base.host),
-            trailing: const Icon(Icons.swap_horiz),
-            onTap: session.busy ? null : () {
-              Navigator.pop(sheetContext);
-              unawaited(session.select(saved));
-            },
-          ),
-        ListTile(
-          contentPadding: EdgeInsets.zero,
-          leading: const Icon(Icons.person_add_outlined),
-          title: const Text('新增或切換帳號'),
-          onTap: () {
-            Navigator.pop(sheetContext);
-            unawaited(session.endSession());
-          },
-        ),
-      ]));
-    });
-  }
+  Future<void> _openAccounts() => showAccountSheet(context, widget.session);
 
   Widget _appBar(BuildContext context) => SliverAppBar(
     floating: true, snap: true, primary: false,
-    title: Text(widget.forCi ? 'CI / CD' : '專案'),
+    title: widget.title == null && !widget.forCi ? const LargeTitle('探索') : Text(widget.title ?? 'CI / CD'),
     actions: [
       IconButton(tooltip: '全域搜尋', icon: const Icon(Icons.manage_search),
         onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
@@ -418,7 +413,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
       IconButton(tooltip: '以連結或路徑開啟', onPressed: _opening ? null : _locator, icon: const Icon(Icons.link)),
       if (!widget.forCi) IconButton(tooltip: '新增專案', onPressed: _create, icon: const Icon(Icons.add)),
       IconButton(tooltip: '帳號 @${account.user.username}', onPressed: _openAccounts,
-        icon: Monogram(account.user.name, size: 30)),
+        icon: Monogram(account.user.name, size: 30, circle: true)),
       const SizedBox(width: 4),
     ],
     bottom: PreferredSize(preferredSize: const Size.fromHeight(64), child: Padding(
@@ -580,7 +575,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
       account: account,
       api: api,
       project: item,
-      initialTab: widget.forCi ? 3 : 0,
+      initialTab: widget.forCi ? 3 : null,
       showBackButton: !isTwoPane || isNestedTab,
       onBack: () {
         _projectTabIndex = widget.forCi ? 3 : 0;

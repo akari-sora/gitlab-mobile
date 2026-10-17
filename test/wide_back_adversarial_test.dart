@@ -10,6 +10,7 @@ import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
 import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
+import 'support/shell_nav.dart';
 
 Future<BuildInfo> _adversarialBuildInfo() async => const BuildInfo(
   version: '0.4.0',
@@ -62,6 +63,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Navigate to Project -> Issues -> Select Issue 42
       await tester.tap(find.text('Mobile Workspace'));
@@ -89,16 +91,22 @@ void main() {
       expect(find.byKey(const Key('projectSearch')), findsOneWidget, reason: 'Must be on Projects list');
       expect(find.text('檔案'), findsNothing);
 
-      // Pop 3: At root Projects tab. No routes left on navigator stack.
-      // Must not throw, crash, or enter infinite loop.
+      // Pop 3: Explore is not the home destination; back returns to 首頁.
       final pop3 = await tester.binding.handlePopRoute();
-      expect(pop3, isFalse, reason: 'Pop 3 at root tab should return false (system handles app exit)');
+      expect(pop3, isTrue, reason: 'Pop 3 on Explore should return to Home');
       await settleNetworkWidgets(tester);
-      expect(find.byKey(const Key('projectSearch')), findsOneWidget);
+      expect(find.text('我的工作'), findsOneWidget);
 
-      // Pop 4: Rapid consecutive call on root
+      // Pop 4: At the Home root. No routes left on navigator stack.
+      // Must not throw, crash, or enter infinite loop.
       final pop4 = await tester.binding.handlePopRoute();
-      expect(pop4, isFalse, reason: 'Pop 4 at root tab should consistently return false');
+      expect(pop4, isFalse, reason: 'Pop 4 at the home root should return false (system handles app exit)');
+      await settleNetworkWidgets(tester);
+      expect(find.text('我的工作'), findsOneWidget);
+
+      // Pop 5: Rapid consecutive call on root
+      final pop5 = await tester.binding.handlePopRoute();
+      expect(pop5, isFalse, reason: 'Pop 5 at the home root should consistently return false');
       await settleNetworkWidgets(tester);
 
       // Pop 5: Rapid consecutive call on root
@@ -138,6 +146,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Enter Project -> Issues
       await tester.tap(find.text('Mobile Workspace'));
@@ -194,9 +203,12 @@ void main() {
       expect(find.byKey(const Key('projectSearch')), findsOneWidget, reason: 'Returned to root Projects list');
       expect(find.text('檔案'), findsNothing);
 
-      // Third pop: Root tab does not pop
+      // Third pop: Explore returns to Home; the fourth does not pop
       final popResult3 = await tester.binding.handlePopRoute();
-      expect(popResult3, isFalse);
+      expect(popResult3, isTrue);
+      await settleNetworkWidgets(tester);
+      final popResult4 = await tester.binding.handlePopRoute();
+      expect(popResult4, isFalse);
       expect(tester.takeException(), isNull);
     });
 
@@ -228,6 +240,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Verify side NavigationRail is present (80 dp + 1 dp divider = 81 dp)
       expect(find.byType(NavigationRail), findsOneWidget);
@@ -327,6 +340,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);

@@ -4,6 +4,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/instance.dart';
 import '../../core/models.dart';
 import '../../shared/external_link.dart';
+import '../../shared/hub_ui.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
 import 'navigation.dart';
@@ -64,13 +65,12 @@ class _InboxPageState extends State<InboxPage> {
     child: Scaffold(
     body: NotificationListener<ScrollNotification>(onNotification: _chrome.handle, child: StatusBarInset(child: gestureSafe(Column(
       crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      CollapsingChrome(visible: _chrome, child: AppBar(primary: false, title: const Text('收件匣'), actions: [
+      CollapsingChrome(visible: _chrome, child: AppBar(primary: false, title: const LargeTitle('收件匣'), actions: [
         IconButton(tooltip: '全域搜尋', icon: const Icon(Icons.manage_search),
           onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
             builder: (_) => SearchPage(account: account, api: api)))),
       ])),
-      TabBar(isScrollable: true, tabAlignment: TabAlignment.start, onTap: (_) => _chrome.show(),
-        tabs: const [Tab(text: '待辦'), Tab(text: '指派給我'), Tab(text: '待我審查'), Tab(text: '我建立的')]),
+      _InboxFilters(onSelected: _chrome.show),
       Expanded(child: _panels ??= _buildPanels(context)),
     ])))),
   ));
@@ -93,6 +93,53 @@ class _InboxPageState extends State<InboxPage> {
       _InboxPanel(index: 3,
         child: _WorkFeed(account: account, api: api, kind: _WorkKind.created)),
     ]));
+}
+
+/// GitHub-style pill filters in place of a tab bar. They drive the same
+/// [DefaultTabController], so each panel keeps its list state.
+class _InboxFilters extends StatelessWidget {
+  const _InboxFilters({required this.onSelected});
+  final VoidCallback onSelected;
+  static const _labels = [
+    ('待辦', Icons.notifications_none),
+    ('指派給我', Icons.assignment_ind_outlined),
+    ('待我審查', Icons.rate_review_outlined),
+    ('我建立的', Icons.edit_note),
+  ];
+  @override
+  Widget build(BuildContext context) {
+    final tabs = DefaultTabController.of(context);
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.appBarTheme.backgroundColor ?? theme.colorScheme.surface,
+      child: DecoratedBox(
+        decoration: BoxDecoration(border: Border(bottom: BorderSide(
+          color: theme.dividerTheme.color ?? theme.colorScheme.outlineVariant))),
+        child: ListenableBuilder(
+          listenable: tabs,
+          builder: (context, _) => SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+            child: Row(children: [
+              for (final (index, (label, icon)) in _labels.indexed) Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: FilterPill(
+                  key: ValueKey('inbox-filter-$index'),
+                  label: label,
+                  icon: icon,
+                  selected: tabs.index == index,
+                  onTap: () {
+                    onSelected();
+                    tabs.animateTo(index);
+                  },
+                ),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _InboxPanel extends StatefulWidget {
@@ -315,7 +362,8 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
   }
 
   Widget _feedView(BuildContext context) => RecordsFeed(key: _feed, identity: 'todos',
-    empty: '待辦已清空', emptyDetail: 'GitLab 指派、提及與你建立的待辦會出現在這裡。', emptyIcon: Icons.task_alt,
+    empty: '全部處理完畢！', emptyDetail: '休息一下，寫點程式，做你最擅長的事。\nGitLab 指派、提及與你建立的待辦會出現在這裡。',
+    emptyIcon: Icons.task_alt, emptyArt: const CaughtUpArt(),
     filteredEmpty: '待辦即將標示為完成',
     account: widget.account, resourceLabel: '待辦', underShell: true,
     onSwitchAccount: endSessionFrom(context),
@@ -376,7 +424,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
       Widget background(Alignment alignment) => Container(
         alignment: alignment,
         padding: const EdgeInsets.symmetric(horizontal: 24),
-        decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(16)),
+        decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(12)),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.done, color: scheme.onPrimaryContainer),
           const SizedBox(width: 8),

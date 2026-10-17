@@ -23,6 +23,7 @@ import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
 import 'workspace_widget_test.dart' show workspaceHost;
+import 'support/shell_nav.dart';
 
 void _phone(WidgetTester tester, {Size size = const Size(412, 860)}) {
   tester.view.devicePixelRatio = 1;
@@ -228,7 +229,7 @@ void main() {
     addTearDown(fixture.api.close);
     await tester.pumpWidget(workspaceHost(ProjectPage(account: fixture.account, api: fixture.api, project: fixture.project)));
     await settleNetworkWidgets(tester);
-    await tester.tap(find.widgetWithText(Tab, '議題'));
+    await openProjectTab(tester, '議題');
     await settleNetworkWidgets(tester);
     await tester.tap(find.text('Swipe inside me'));
     await settleNetworkWidgets(tester);
@@ -347,7 +348,7 @@ void main() {
     addTearDown(fixture.api.close);
     await tester.pumpWidget(workspaceHost(ProjectPage(account: fixture.account, api: fixture.api, project: fixture.project)));
     await settleNetworkWidgets(tester);
-    await tester.tap(find.widgetWithText(Tab, '議題'));
+    await openProjectTab(tester, '議題');
     await settleNetworkWidgets(tester);
     await tester.tap(find.text('Phone detail issue'));
     await settleNetworkWidgets(tester);
@@ -473,12 +474,12 @@ void main() {
       await tester.drag(find.text('Swipe me'), const Offset(-500, 0));
       await tester.pumpAndSettle();
       expect(find.text('待辦即將標示為完成'), findsOneWidget, reason: 'not 待辦已清空 while 復原 is still offered');
-      await tester.tap(find.widgetWithText(Tab, '指派給我'));
+      await tester.tap(find.byKey(const ValueKey('inbox-filter-1')));
       await tester.pumpAndSettle();
       await tester.pump(const Duration(seconds: 5));
       await settleNetworkWidgets(tester);
       expect(done, 1);
-      await tester.tap(find.widgetWithText(Tab, '待辦'));
+      await tester.tap(find.byKey(const ValueKey('inbox-filter-0')));
       await settleNetworkWidgets(tester);
       expect(find.text('Swipe me'), findsNothing);
       expect(done, 1);

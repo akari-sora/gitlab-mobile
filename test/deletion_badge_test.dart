@@ -7,6 +7,7 @@ import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'support/fake_adapter.dart';
 import 'support/workspace_fixture.dart';
 import 'workspace_widget_test.dart' show settleWorkspace, workspaceHost;
+import 'support/shell_nav.dart';
 
 void main() {
   test('Project keeps marked_for_deletion_on and treats blank as absent', () {
@@ -44,6 +45,11 @@ void main() {
       account: fixture.account, api: fixture.api, project: fixture.project,
     )));
     await settleWorkspace(tester);
+    expect(find.text('待刪除'), findsOneWidget);
+    final overviewName = find.byKey(const ValueKey('project-overview-name'));
+    expect(tester.widget<Text>(overviewName).style?.color,
+      Theme.of(tester.element(overviewName)).colorScheme.onSurfaceVariant);
+    await openProjectTab(tester, '檔案');
     expect(find.text('待刪除'), findsOneWidget);
     final headerTitle = find.descendant(of: find.byType(AppBar), matching: find.text('Mobile Workspace'));
     final title = tester.widget<Text>(headerTitle);

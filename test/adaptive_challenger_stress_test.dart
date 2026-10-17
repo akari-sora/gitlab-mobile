@@ -13,6 +13,7 @@ import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
 import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
+import 'support/shell_nav.dart';
 
 Widget testAdaptiveHost(Widget child) {
   return MaterialApp(
@@ -67,6 +68,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Verify shell navigation: NavigationRail is visible at 840 dp
       expect(find.byType(NavigationRail), findsOneWidget);
