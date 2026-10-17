@@ -18,7 +18,7 @@ default:
     when: [runner_system_failure, stuck_or_timeout_failure]
 .regular:
   rules:
-    - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $PUBLIC_SMOKE == "1"'
+    - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $PUBLIC_SMOKE == "1" || $GH2GL_SYNC == "1"'
       when: never
     - when: on_success
 .flutter:
@@ -52,6 +52,8 @@ python_checks:
   extends: .regular
   stage: verify
   timeout: 5m
+  before_script:
+    - python3 ci/install_packages.py git
   script:
     - python3 -m unittest discover -s ci/tests -p '*_test.py' -v
     - python3 -m unittest discover -s tool/tests -p 'test_*.py' -v
@@ -124,7 +126,7 @@ publish_preview:
   interruptible: false
   resource_group: preview-delivery
   rules:
-    - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $PUBLIC_SMOKE == "1"'
+    - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $PUBLIC_SMOKE == "1" || $GH2GL_SYNC == "1"'
       when: never
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
   before_script:
@@ -153,7 +155,7 @@ public_api_smoke:
   stage: verify
   timeout: 10m
   rules:
-    - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1"'
+    - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $GH2GL_SYNC == "1"'
       when: never
     - if: '$PUBLIC_SMOKE == "1" && $CI_PIPELINE_SOURCE != "api"'
       when: never
@@ -165,3 +167,24 @@ public_api_smoke:
     when: always
     expire_in: 14 days
     paths: [public-smoke-output/report.json]
+gh2gl_sync:
+  # Scheduled only: brings branches pushed to the GitHub mirror (cloud Claude, claude/*) back here.
+  # See docs/CI.md "GitHub branch sync". Other jobs are skipped when GH2GL_SYNC is 1.
+  stage: verify
+  timeout: 10m
+  interruptible: false
+  retry: 0
+  resource_group: gh2gl-sync
+  environment:
+    name: gh2gl-sync
+    action: access
+  cache: []
+  variables:
+    GH2GL_GITHUB: akari-sora/gitlab-mobile
+    GH2GL_PATTERNS: claude/*
+  rules:
+    - if: '$GH2GL_SYNC == "1" && $CI_PIPELINE_SOURCE == "schedule"'
+  before_script:
+    - python3 ci/install_packages.py git openssh-client ca-certificates
+  script:
+    - bash ci/gh2gl_sync.sh
