@@ -1,6 +1,6 @@
 # GitLab Mobile
 
-> Canonical repository and issues: https://gitlab.com/aa22396584/gitlab-mobile. The GitHub copy at https://github.com/hoshitabi/gitlab-mobile is a read-only mirror.
+> Canonical repository and issues: https://gitlab.com/aa22396584/gitlab-mobile.
 
 > **Development home:** https://gitlab.com/aa22396584/gitlab-mobile  
 > Please open issues and merge requests there.
