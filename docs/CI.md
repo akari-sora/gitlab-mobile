@@ -131,3 +131,20 @@ Official references:
 - <https://developer.android.com/studio>
 - <https://developer.android.com/studio/publish/app-signing>
 - <https://docs.flutter.dev/deployment/android>
+
+## GitHub branch sync
+
+GitLab is canonical. The GitHub repository `akari-sora/gitlab-mobile` is a mirror: the GitLab push mirror sends protected branches (`main`) there, and GitHub Actions is disabled. Cloud Claude sessions work on the GitHub mirror and push `claude/*` branches; nobody commits to GitHub `main`.
+
+A pipeline schedule with variable `GH2GL_SYNC=1` runs only the `gh2gl_sync` job (every other job is skipped for that pipeline). It runs `ci/gh2gl_sync.sh`, which:
+
+- fetches `claude/*` and `main` from the public GitHub mirror and the same refs from GitLab;
+- pushes a GitHub `claude/*` branch to GitLab only as a fast-forward (`--force-with-lease` on the GitLab sha). If GitLab has commits GitHub lacks (review fixes, a rebase) or GitHub rewrote history, the branch is skipped with a warning and stays as it is on GitLab;
+- skips branches already contained in `main` (including squash merges, checked with `git merge-tree`), so a merged branch is not revived;
+- opens a draft MR to `main` for a new branch through push options, and marks the MR draft again when the branch is updated, so a reviewed head does not change silently;
+- saves commits pushed straight to GitHub `main` and missing from GitLab `main` as `rescue/github-main-<sha8>` with a draft MR. This only works when the schedule runs before the next push-mirror update overwrites GitHub `main`;
+- collects per-branch push errors and fails the job at the end; never pushes to a protected branch and never deletes a branch.
+
+It pushes with a project deploy key that has write access to unprotected branches only. The private key is the protected file variable `GH2GL_DEPLOY_KEY`, scoped to the `gh2gl-sync` environment, so only this job receives it; the key is copied into a temporary directory that is removed on exit. A backup is in the owner's password manager. To stop the sync, deactivate the schedule.
+
+Known limits: pipelines for synced branches run the branch's own `.gitlab-ci.yml` with the identity of the deploy key's creator, as any pushed branch would; only push to the GitHub mirror from accounts you trust. After a branch is merged, start new work on a new branch.

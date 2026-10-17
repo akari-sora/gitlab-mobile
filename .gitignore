@@ -39,3 +39,7 @@ ci-output/
 public-smoke-output/
 artifacts/
 .agents/
+
+# local agent state
+.omc/
+.omx/
