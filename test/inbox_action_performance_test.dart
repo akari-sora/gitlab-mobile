@@ -223,7 +223,7 @@ Future<void> _pumpLoadedInbox(
 
 Finder _doneButton(int id) => find.descendant(
   of: find.byKey(ValueKey('todo-$id')),
-  matching: find.byType(IconButton),
+  matching: find.widgetWithIcon(IconButton, Icons.check_circle_outline),
 );
 
 List<_IdProbeMap> _installOffscreenProbes(RecordsFeedState feed) {

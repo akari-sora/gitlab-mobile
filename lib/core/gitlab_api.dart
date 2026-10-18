@@ -31,6 +31,7 @@ part 'incident_api.dart';
 part 'analytics_api.dart';
 part 'package_download_api.dart';
 part 'snippet_graphql_api.dart';
+part 'todo_snooze_api.dart';
 part 'work_item_graphql_api.dart';
 part 'work_item_attributes_api.dart';
 part 'work_item_health_api.dart';
