@@ -256,6 +256,8 @@ python3 tool/android_signing.py configure android/app/build.gradle.kts
 ./.fvm/flutter_sdk/bin/flutter build apk --debug
 ```
 
+Launcher icon: `assets/icon/*.png` are rendered from the vector design in `tool/render_icon.py` (`python3 tool/render_icon.py --chromium <chromium or headless_shell>`); `tool/bootstrap.py` and `ci/build_android.sh` turn them into platform icon sets with `flutter_launcher_icons`. Edit the script, not the PNGs.
+
 Screenshots: `flutter_checks` job artifacts → `ci-output/screenshots/`. They are real Flutter host-rendered screens with synthetic data, not an Android/iOS device run or a generated design mock-up. Android APKs: `android_debug` artifacts; main previews: project Package Registry. Local debug, profile and release APKs use the stable development signer described in [Android local signing](docs/ANDROID_SIGNING.md). Published CI previews from `main` and release tags are signed by a separate stable CI debug identity held in a protected CI variable (see [CI](docs/CI.md#android-signing-lanes)); merge-request builds use a discarded ephemeral key. Neither path is a store-signed release.
 
 ## Live CRUD smoke
