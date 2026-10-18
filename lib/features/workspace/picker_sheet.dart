@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import 'record_controller.dart';
 
@@ -343,7 +344,7 @@ class _ChoicePickerSheetState extends State<ChoicePickerSheet> {
               ),
               for (final choice in pinned) _row(choice),
             ],
-            if (_records.loading && _records.items.isEmpty) const ListSkeleton(),
+            if (_records.loading && _records.items.isEmpty) const RowsSkeleton(),
             if (showCreate) _row(PickerChoice(id: query, name: query), create: true),
             if (empty) const EmptyState('沒有符合的項目'),
             for (final item in items) _row(item),

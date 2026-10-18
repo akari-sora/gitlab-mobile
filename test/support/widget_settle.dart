@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/shared/skeleton.dart';
 
 /// Bounded condition polling helper that interleaves fake clock advancement
 /// with real asynchronous event loop turns, guaranteeing clean settlement
@@ -39,11 +40,12 @@ Future<void> settleNetworkWidgets(
     await tester.runAsync(() => Future<void>.delayed(realDelay));
   }
 
-  // An indeterminate progress indicator runs an infinite repeating animation.
-  // pumpAndSettle() will ALWAYS timeout if an indeterminate indicator is in the tree.
+  // An indeterminate progress indicator or a pulsing skeleton runs an infinite
+  // repeating animation. pumpAndSettle() will ALWAYS timeout while one is in the tree.
   final hasIndeterminateSpinner = find.byWidgetPredicate((widget) {
     if (widget is CircularProgressIndicator && widget.value == null) return true;
     if (widget is LinearProgressIndicator && widget.value == null) return true;
+    if (widget is RowsSkeleton) return true;
     return false;
   }).evaluate().isNotEmpty;
 

@@ -14,6 +14,7 @@ import '../../shared/markdown_view.dart';
 import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/scroll_chrome.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
@@ -558,7 +559,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
         Expanded(
           child: _currentRef == null || _currentRef!.sha.isEmpty
               ? (_loading
-                    ? const ListSkeleton()
+                    ? const RowsSkeleton()
                     : const SingleChildScrollView(
                         child: EmptyState(
                           'Repository 尚未初始化',

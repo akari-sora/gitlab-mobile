@@ -4,6 +4,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/motion.dart';
 import '../../shared/scroll_chrome.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import 'record_controller.dart';
 
@@ -194,7 +195,7 @@ class RecordsFeedState extends State<RecordsFeed> {
       // ends; a pull-to-refresh shows only its own spinner.
       SizedBox(height: 8, child: controller.loading && controller.items.isNotEmpty && !_pulling
           ? const Center(child: LinearProgressIndicator(minHeight: 2)) : null),
-      if (controller.loading && controller.items.isEmpty) const ListSkeleton(),
+      if (controller.loading && controller.items.isEmpty) RowsSkeleton(grouped: widget.grouped),
       if (!controller.loading && shown.isEmpty && controller.error == null && controller.next == null) EmptyState(
         controller.items.isEmpty ? widget.empty : (widget.filteredEmpty ?? widget.empty),
         icon: widget.emptyIcon,
