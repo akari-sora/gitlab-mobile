@@ -131,7 +131,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('Scenario 2: Two-stage system back via handlePopRoute() pops Issue 42 first then Project A', (tester) async {
+    testWidgets('Scenario 2: Staged system back via handlePopRoute() pops Issue 42, then the 議題 section, then Project A', (tester) async {
       tester.view.devicePixelRatio = 1.0;
       tester.view.physicalSize = const Size(412, 900);
       addTearDown(tester.view.resetPhysicalSize);
@@ -182,9 +182,16 @@ void main() {
       expect(find.text('檔案'), findsOneWidget, reason: 'Project A tabs must remain intact');
       expect(find.byKey(const Key('projectSearch')), findsNothing, reason: 'Must NOT have jumped back to Projects list');
 
-      // Second system back: pops Project A
+      // Second system back: 議題 was opened from the overview, so it returns there
       final handledSecond = await tester.binding.handlePopRoute();
-      expect(handledSecond, isTrue, reason: 'Second system back must be handled by Project A detail');
+      expect(handledSecond, isTrue, reason: 'Second system back must return to the Project A overview');
+      await settleNetworkWidgets(tester);
+      expect(find.byKey(const ValueKey('project-overview-name')), findsOneWidget, reason: 'Must be on the overview');
+      expect(find.byKey(const Key('projectSearch')), findsNothing, reason: 'Project A must still be open');
+
+      // Third system back: pops Project A
+      final handledThird = await tester.binding.handlePopRoute();
+      expect(handledThird, isTrue, reason: 'Third system back must be handled by Project A detail');
       await settleNetworkWidgets(tester);
 
       // Verify: Project A is dismissed, back to Projects list

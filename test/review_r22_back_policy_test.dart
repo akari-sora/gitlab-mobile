@@ -339,12 +339,15 @@ void main() {
     );
     expect(dispatcher.canHandleBack, isTrue);
 
-    // Back button in AppBar returns to projects list
+    // Back button in AppBar returns to the overview 議題 was opened from, which
+    // releases the collapsed master: the projects list is beside it again.
     expect(find.byType(BackButton), findsOneWidget);
     await tester.tap(find.byType(BackButton));
     await settleNetworkWidgets(tester);
-    expect(find.byType(ProjectPage), findsNothing);
+    expect(find.byType(ProjectPage), findsOneWidget);
+    expect(find.byKey(const ValueKey('project-overview-name')), findsOneWidget);
     expect(find.byKey(const Key('projectSearch')), findsOneWidget);
+    expect(dispatcher.canHandleBack, isFalse, reason: 'The two-pane overview releases the back veto again.');
     expect(tester.takeException(), isNull);
   });
 

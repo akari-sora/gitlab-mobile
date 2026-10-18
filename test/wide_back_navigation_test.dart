@@ -38,7 +38,7 @@ void main() {
   });
 
   group('P2-BACK: Wide Two-Pane System Back Navigation Suite', () {
-    testWidgets('840 dp two-pane: system back pops Issue 42 first, then Project A on second back', (tester) async {
+    testWidgets('840 dp two-pane: system back pops Issue 42 first, then returns to the Project A overview', (tester) async {
       tester.view.devicePixelRatio = 1.0;
       tester.view.physicalSize = const Size(840, 900);
       addTearDown(tester.view.resetPhysicalSize);
@@ -95,15 +95,22 @@ void main() {
       expect(find.text('檔案'), findsOneWidget, reason: 'Project tabs must remain intact');
       expect(find.byKey(const Key('projectSearch')), findsNothing, reason: 'Must NOT have exited project');
 
-      // Second system back: pops Project
+      // Second system back: 議題 was opened from the overview, so it returns there
       final handledSecond = await tester.binding.handlePopRoute();
-      expect(handledSecond, isTrue, reason: 'Second system back must exit Project');
+      expect(handledSecond, isTrue, reason: 'Second system back must return to the project overview');
       await settleNetworkWidgets(tester);
 
-      // Verify after 2nd back: back to Projects list
-      expect(find.byKey(const Key('projectSearch')), findsOneWidget, reason: 'Must return to Projects list');
+      // Verify after 2nd back: the overview, with the Projects list beside it again
+      expect(find.byKey(const ValueKey('project-overview-name')), findsOneWidget, reason: 'Must be on the overview');
+      expect(find.byKey(const Key('projectSearch')), findsOneWidget, reason: 'Projects list returns beside the overview');
       expect(find.descendant(of: find.byType(SemanticButton), matching: find.text('Mobile Workspace')), findsOneWidget);
-      expect(find.text('檔案'), findsNothing, reason: 'Project must be dismissed');
+      expect(find.widgetWithText(Tab, '檔案'), findsNothing, reason: 'Project tabs step aside for the overview');
+
+      // Third system back: the overview leaves as before; on two panes 探索 returns to 首頁
+      final handledThird = await tester.binding.handlePopRoute();
+      expect(handledThird, isTrue);
+      await settleNetworkWidgets(tester);
+      expect(find.text('我的工作'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 

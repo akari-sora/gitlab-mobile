@@ -688,7 +688,7 @@ void main() {
   });
 
   group('Empirical Challenge 4: Deep Integration Stress Tests (Back Stack & Pagination)', () {
-    testWidgets('Stress test: 2-stage back, tab switching across shell tabs, and background tab isolation', (tester) async {
+    testWidgets('Stress test: staged back, tab switching across shell tabs, and background tab isolation', (tester) async {
       final appearanceStore = MemoryAppearanceStore();
       final appearance = AppearanceController(appearanceStore);
       addTearDown(appearance.dispose);
@@ -800,7 +800,14 @@ void main() {
       await settleNetworkWidgets(tester);
       expect(find.text('Shell Integration Issue 42'), findsOneWidget);
 
-      // Phase 6: Stage 2 Back - pop Project A
+      // Phase 6: Stage 2 Back - the sections were opened from the overview, so back returns there
+      final handledSectionBack = await tester.binding.handlePopRoute();
+      expect(handledSectionBack, isTrue);
+      await settleNetworkWidgets(tester);
+      expect(find.byKey(const ValueKey('project-overview-name')), findsOneWidget);
+      expect(find.byKey(const Key('projectSearch')), findsNothing);
+
+      // Stage 3 Back - pop Project A
       final handledProjectBack = await tester.binding.handlePopRoute();
       expect(handledProjectBack, isTrue);
       await settleNetworkWidgets(tester);
@@ -1071,7 +1078,7 @@ void main() {
           reason: 'Overview must remain rendered at size ${size.width}x${size.height}');
       }
 
-      // Finally at 412 dp, verify two-stage back
+      // Finally at 412 dp, verify staged back
       expect(tester.view.physicalSize.width, 412);
       final handled1 = await tester.binding.handlePopRoute();
       expect(handled1, isTrue);
@@ -1079,8 +1086,14 @@ void main() {
       expect(find.text('Overview'), findsNothing);
       expect(find.text('Shell Integration Issue 42'), findsOneWidget);
 
+      // 議題 was opened from the overview: back returns there before leaving
       final handled2 = await tester.binding.handlePopRoute();
       expect(handled2, isTrue);
+      await settleNetworkWidgets(tester);
+      expect(find.byKey(const ValueKey('project-overview-name')), findsOneWidget);
+
+      final handled3 = await tester.binding.handlePopRoute();
+      expect(handled3, isTrue);
       await settleNetworkWidgets(tester);
       expect(find.byKey(const Key('projectSearch')), findsOneWidget);
       expect(tester.takeException(), isNull);

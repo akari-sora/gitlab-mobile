@@ -84,12 +84,13 @@ void main() {
       expect(find.text('請選擇議題'), findsOneWidget);
       expect(find.text('檔案'), findsOneWidget, reason: 'Still inside project');
 
-      // Pop 2: Must exit ProjectPage route to Projects root
+      // Pop 2: 議題 was opened from the overview, so back returns to it
       final pop2 = await tester.binding.handlePopRoute();
-      expect(pop2, isTrue, reason: 'Pop 2 should pop ProjectPage route');
+      expect(pop2, isTrue, reason: 'Pop 2 should return to the project overview');
       await settleNetworkWidgets(tester);
-      expect(find.byKey(const Key('projectSearch')), findsOneWidget, reason: 'Must be on Projects list');
-      expect(find.text('檔案'), findsNothing);
+      expect(find.byKey(const ValueKey('project-overview-name')), findsOneWidget, reason: 'Must be on the overview');
+      expect(find.byKey(const Key('projectSearch')), findsOneWidget, reason: 'Projects list returns beside the overview');
+      expect(find.widgetWithText(Tab, '檔案'), findsNothing);
 
       // Pop 3: Explore is not the home destination; back returns to 首頁.
       final pop3 = await tester.binding.handlePopRoute();
@@ -195,13 +196,14 @@ void main() {
       expect(find.text('Gamma Issue 3'), findsOneWidget);
       expect(find.text('檔案'), findsOneWidget, reason: 'Project tab remains active');
 
-      // Second handlePopRoute: Immediately exits ProjectPage to Projects list
+      // Second handlePopRoute: returns to the overview 議題 was opened from
       final popResult2 = await tester.binding.handlePopRoute();
-      expect(popResult2, isTrue, reason: 'Second pop exits ProjectPage directly');
+      expect(popResult2, isTrue, reason: 'Second pop returns to the project overview');
       await settleNetworkWidgets(tester);
 
-      expect(find.byKey(const Key('projectSearch')), findsOneWidget, reason: 'Returned to root Projects list');
-      expect(find.text('檔案'), findsNothing);
+      expect(find.byKey(const ValueKey('project-overview-name')), findsOneWidget, reason: 'Must be on the overview');
+      expect(find.byKey(const Key('projectSearch')), findsOneWidget, reason: 'Projects list returns beside the overview');
+      expect(find.widgetWithText(Tab, '檔案'), findsNothing);
 
       // Third pop: Explore returns to Home; the fourth does not pop
       final popResult3 = await tester.binding.handlePopRoute();

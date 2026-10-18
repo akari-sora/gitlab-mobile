@@ -119,6 +119,9 @@ void main() {
     final readsBeforeStar = projectListReads();
     await action('加入星標'); expect(fixture.starred, isTrue);
     expect(projectListReads(), greaterThan(readsBeforeStar), reason: 'a star mutation reconciles the loaded project feed');
+    // 更多 was opened from the overview: the first back returns there, the second leaves.
+    await tester.tap(find.byType(BackButton)); await settleWorkspace(tester);
+    expect(find.byKey(const ValueKey('project-overview-name')), findsOneWidget);
     await tester.tap(find.byType(BackButton)); await settleWorkspace(tester);
     await tester.tap(find.widgetWithText(ChoiceChip, '星標')); await settleWorkspace(tester);
     expect(find.text('Updated project'), findsOneWidget);
@@ -127,6 +130,8 @@ void main() {
     final readsBeforeUnstar = projectListReads();
     await action('移除星標'); expect(fixture.starred, isFalse);
     expect(projectListReads(), greaterThan(readsBeforeUnstar), reason: 'an unstar mutation reconciles starred/count state');
+    await tester.tap(find.byType(BackButton)); await settleWorkspace(tester);
+    expect(find.byKey(const ValueKey('project-overview-name')), findsOneWidget);
     await tester.tap(find.byType(BackButton)); await settleWorkspace(tester);
     expect(find.text('目前沒有專案'), findsOneWidget,
       reason: 'the reconciled starred feed removes an unstarred project row');
