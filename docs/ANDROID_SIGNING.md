@@ -185,6 +185,7 @@ local paths and public download URLs only. It is not a private key backup.
 | `CI_EPHEMERAL_630E20D5` | `2740d039aee0c5d5839ff0f5f532b1cbf76ac0ca4452764239847e5e36d6bdc7` | none: generated inside CI job 17260932740 and discarded with it |
 | `CI_EPHEMERAL_A2EB7BA6` | `0a964b2c8938d9eaddd036d3c051d4c0ced5603ffa55e17b10e7903ba21e917e` | none: generated inside CI job 17264418104 and discarded with it |
 | `CI_EPHEMERAL_4E4D2979` | `21bf28fab5cc8b13fcebe097f4268de34178c5afefb9ac2896afdb5179e30484` | none: generated inside CI job 17265303483 and discarded with it |
+| `STABLE_CI_DEBUG` | `5bec28281b4c1405f9ee47590c40665a24b0f984fc0d6b8854a3458e8db0a71d` | CI variable `ANDROID_DEBUG_KEYSTORE_B64` (protected, masked); `ci-debug.p12`, reported present |
 
 `LEGACY_LOCAL` is a host-generated historical debug key: the Android build
 tools create a separate debug key per host, so its certificate is specific to
@@ -238,6 +239,17 @@ not cover it.
   [gitlab-mobile-4e4d2979-debug.apk](https://gitlab.com/api/v4/projects/86648389/packages/generic/gitlab-mobile-preview/4e4d2979b6f5ae1b5cf2e6fd4718314bec5d18b6/gitlab-mobile-4e4d2979-debug.apk).
   Its key was discarded with the CI job, so it cannot update any other install
   and nothing can update it in place. No receipt shows it was installed.
+- Package registry APK for `main` `1158ca89`, signer `STABLE_CI_DEBUG`, SHA-256
+  `a9d973e00326b9e184a73443550313939d178ff315a2c7fa7b0b3c9b7f996a62`, no GitLab
+  release. The same package also holds an earlier upload with the same file name,
+  signed by an ephemeral key (SHA-256 `a21d2860…7d4a`); the file-name URL serves
+  the newer, stable-signed one.
+- GitLab `v0.5.0-dev.6c1a1033` CI debug APK, source `6c1a1033`, signer
+  `STABLE_CI_DEBUG` (v2 only), SHA-256
+  `116498e2067a91cbdc523a4ad90b6b093316495dce65192dd9b821dac8bd9a49`:
+  [gitlab-mobile-6c1a1033-debug.apk](https://gitlab.com/api/v4/projects/86648389/packages/generic/gitlab-mobile-preview/6c1a103330065b80fb6d93f21eec15512a442a95/gitlab-mobile-6c1a1033-debug.apk).
+  Later `main` previews use the same signer and are expected to update it in
+  place; a device update is NOT_RUN. No receipt shows it was installed.
 
 On Android 13 (API 33) and later, a `LEGACY_LOCAL` install updates in place to
 the bridge and then to the ordinary release. That chain passed natively on an
@@ -285,10 +297,16 @@ Git and `artifacts/`.
 
 ## CI boundary
 
-The current CI debug job keeps its legacy `ANDROID_DEBUG_KEYSTORE_B64` support
-and ephemeral fallback until a stable key and properties file are provisioned as
-protected project CI variables. The local private identity is not copied into CI,
-and this setup does not claim that any CI secret was uploaded.
+Since 2026-10-18, `ANDROID_DEBUG_KEYSTORE_B64` is a protected, masked project
+CI variable, and `v*` tags are protected. Pipelines on protected refs (`main`,
+`v*` tags) sign the debug APK with that stable CI identity (`STABLE_CI_DEBUG`,
+`CN=GitLab Mobile CI Debug`, certificate SHA-256
+`5bec28281b4c1405f9ee47590c40665a24b0f984fc0d6b8854a3458e8db0a71d`). Its
+private keystore is also kept as `ci-debug.p12` in the canonical directory
+(mode `0600`); it is a CI preview key, not used for ordinary local builds.
+Unprotected pipelines keep the ephemeral fallback. The CI identity differs
+from `CURRENT_LOCAL`, `LEGACY_LOCAL` and `HISTORICAL_CI23`, and the local
+private identity is not copied into CI.
 
 CI debug APKs with a different signer cannot update locally signed APKs in place.
 Treat local development signing, CI preview signing and Play production signing

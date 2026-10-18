@@ -38,6 +38,7 @@
     "files": {
       "gitlab-mobile.p12": "CURRENT_LOCAL private key (signer a15c11c8...)",
       "signing.properties": "CURRENT_LOCAL build configuration; declares the a15c11c8... certificate digest",
+      "ci-debug.p12": "STABLE_CI_DEBUG private key (CI preview signer 5bec2828...), uploaded as ANDROID_DEBUG_KEYSTORE_B64; not for ordinary local builds",
       "legacy-local-debug.p12": "LEGACY_LOCAL private key (signer 64500eef...); migration-bridge use only",
       "legacy-local-rotation.lineage": "v3.1 rotation lineage 64500eef... -> a15c11c8..."
     },
@@ -115,6 +116,16 @@
       "lane": "GitLab CI android_debug ephemeral debug identity (GITLAB_MOBILE_ALLOW_EPHEMERAL_DEBUG_SIGNING=1), job 17265303483",
       "private_key_locator": "none retained (generated inside the CI job and discarded with its workspace)",
       "private_key_status": "NOT_RETAINED_BY_DESIGN",
+      "expected_for_ordinary_local_apks": false,
+      "covered_by_lineage": false
+    },
+    {
+      "id": "STABLE_CI_DEBUG",
+      "cert_sha256": "5bec28281b4c1405f9ee47590c40665a24b0f984fc0d6b8854a3458e8db0a71d",
+      "subject": "CN=GitLab Mobile CI Debug",
+      "lane": "GitLab CI android_debug on protected refs (main, v* tags) through the protected, masked project variable ANDROID_DEBUG_KEYSTORE_B64 (ci/build_android.sh stable-legacy-debug); first build job 17265866220",
+      "private_key_locator": "GitLab project 86648389 CI variable ANDROID_DEBUG_KEYSTORE_B64 (protected, masked); owner backup ~/.config/gitlab-mobile/android-signing/ci-debug.p12 (PKCS12, alias androiddebugkey, mode 0600)",
+      "private_key_status": "PRESENT_AS_CI_VARIABLE; local backup reported by the owner's local agent on 2026-10-18, not verified from the cloud session",
       "expected_for_ordinary_local_apks": false,
       "covered_by_lineage": false
     }
@@ -368,6 +379,59 @@
       "public_download_url_status": "downloaded anonymously on 2026-10-18 UTC before and after the release was published; both SHA-256 values matched the published SHA256SUMS",
       "updates_in_place_from": [],
       "installed_on_phone": "unknown; no receipt records an install"
+    },
+    {
+      "id": "STABLE_CI_1158CA89_DEBUG",
+      "role": "First stable-signed CI preview debug APK, published to the package registry for main 1158ca89 and shared directly; no GitLab release",
+      "source_commit": "1158ca898bc0e3f34cc7ea8356fcab8fb5ae2f80",
+      "build_lane": "GitLab CI android_debug retried as job 17265866220 in pipeline 2960335555, published by job 17265920002",
+      "variant": "debug",
+      "entrypoint": "lib/main.dart (flutter build apk --debug default target in ci/build_android.sh)",
+      "qa_benchmark_flags": "disabled (ci/build_android.sh passes only --dart-define=GITLAB_MOBILE_COMMIT)",
+      "application_id": "io.gitlabmobile.gitlab_mobile",
+      "version_name": "0.5.0",
+      "version_code": 5,
+      "debuggable": true,
+      "min_sdk": 24,
+      "target_sdk": 36,
+      "abis": ["arm64-v8a", "armeabi-v7a", "x86_64"],
+      "signing_schemes": {"v2": ["5bec28281b4c1405f9ee47590c40665a24b0f984fc0d6b8854a3458e8db0a71d"]},
+      "signer": "STABLE_CI_DEBUG",
+      "apk_sha256": "a9d973e00326b9e184a73443550313939d178ff315a2c7fa7b0b3c9b7f996a62",
+      "bytes": 180040774,
+      "local_path": "local-only download for verification; not retained",
+      "release_tag": null,
+      "public_download_url": "https://gitlab.com/api/v4/projects/86648389/packages/generic/gitlab-mobile-preview/1158ca898bc0e3f34cc7ea8356fcab8fb5ae2f80/gitlab-mobile-1158ca89-debug.apk",
+      "public_download_url_status": "the same package also holds an earlier upload of the same file name from job 17265485857 (package file 371604269, SHA-256 a21d2860aa26ceff4b13a8771912752bfaba684ad9743cb1b5406860c1ad7d4a, ephemeral CI key); the file-name URL serves the newest upload (package file 371617547), whose SHA-256 matched the current SHA256SUMS on 2026-10-18 UTC",
+      "updates_in_place_from": [],
+      "installed_on_phone": "unknown; no receipt records an install"
+    },
+    {
+      "id": "STABLE_CI_6C1A1033_DEBUG",
+      "role": "GitLab v0.5.0-dev.6c1a1033 CI preview debug APK, the first release signed by STABLE_CI_DEBUG",
+      "source_commit": "6c1a103330065b80fb6d93f21eec15512a442a95",
+      "build_lane": "GitLab CI android_debug, job 17266021362, pipeline 2960430384",
+      "variant": "debug",
+      "entrypoint": "lib/main.dart (flutter build apk --debug default target in ci/build_android.sh)",
+      "qa_benchmark_flags": "disabled (ci/build_android.sh passes only --dart-define=GITLAB_MOBILE_COMMIT)",
+      "application_id": "io.gitlabmobile.gitlab_mobile",
+      "version_name": "0.5.0",
+      "version_code": 5,
+      "debuggable": true,
+      "min_sdk": 24,
+      "target_sdk": 36,
+      "abis": ["arm64-v8a", "armeabi-v7a", "x86_64"],
+      "signing_schemes": {"v2": ["5bec28281b4c1405f9ee47590c40665a24b0f984fc0d6b8854a3458e8db0a71d"]},
+      "signer": "STABLE_CI_DEBUG",
+      "apk_sha256": "116498e2067a91cbdc523a4ad90b6b093316495dce65192dd9b821dac8bd9a49",
+      "bytes": 180040774,
+      "local_path": "local-only download for verification; not retained",
+      "release_tag": "v0.5.0-dev.6c1a1033",
+      "release_url": "https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.5.0-dev.6c1a1033",
+      "public_download_url": "https://gitlab.com/api/v4/projects/86648389/packages/generic/gitlab-mobile-preview/6c1a103330065b80fb6d93f21eec15512a442a95/gitlab-mobile-6c1a1033-debug.apk",
+      "public_download_url_status": "downloaded anonymously on 2026-10-18 UTC before and after the release was published; both SHA-256 values matched the published SHA256SUMS",
+      "updates_in_place_from": ["STABLE_CI_1158CA89_DEBUG (same signer and versionCode; not run on a device)"],
+      "installed_on_phone": "unknown; no receipt records an install"
     }
   ],
   "known_gaps": [
@@ -379,6 +443,8 @@
     "v0.5.0-dev.adcb7d4d CI preview (adcb7d4d) is signed by a discarded ephemeral CI key; it cannot update CURRENT_LOCAL, LEGACY_LOCAL, HISTORICAL_CI23 or any other install, and no later build can update it in place.",
     "v0.5.0-dev.630e20d5 CI preview (630e20d5) is signed by a discarded ephemeral CI key; it cannot update CURRENT_LOCAL, LEGACY_LOCAL, HISTORICAL_CI23, CI_EPHEMERAL_ADCB7D4D or any other install, and no later build can update it in place.",
     "v0.5.0-dev.a2eb7ba6 CI preview (a2eb7ba6) is signed by a discarded ephemeral CI key; it cannot update CURRENT_LOCAL, LEGACY_LOCAL, HISTORICAL_CI23, CI_EPHEMERAL_ADCB7D4D, CI_EPHEMERAL_630E20D5 or any other install, and no later build can update it in place.",
-    "v0.5.0-dev.4e4d2979 CI preview (4e4d2979) is signed by a discarded ephemeral CI key; it cannot update CURRENT_LOCAL, LEGACY_LOCAL, HISTORICAL_CI23, CI_EPHEMERAL_ADCB7D4D, CI_EPHEMERAL_630E20D5, CI_EPHEMERAL_A2EB7BA6 or any other install, and no later build can update it in place."
+    "v0.5.0-dev.4e4d2979 CI preview (4e4d2979) is signed by a discarded ephemeral CI key; it cannot update CURRENT_LOCAL, LEGACY_LOCAL, HISTORICAL_CI23, CI_EPHEMERAL_ADCB7D4D, CI_EPHEMERAL_630E20D5, CI_EPHEMERAL_A2EB7BA6 or any other install, and no later build can update it in place.",
+    "STABLE_CI_DEBUG previews (from 1158ca89 / v0.5.0-dev.6c1a1033) cannot update any earlier preview or local build; moving a phone onto them needs one uninstall, which loses local accounts and drafts. Updates between STABLE_CI_DEBUG previews are expected but NOT_RUN on a device.",
+    "The STABLE_CI_DEBUG local backup (ci-debug.p12) was reported by the owner's local agent; its presence and digest were not checked from the cloud session."
   ]
 }
