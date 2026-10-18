@@ -648,7 +648,8 @@ class WorkspaceFixture {
     }
     if (joined == 'projects/42/fork' && method == 'POST') {
       forks++;
-      return jsonResponse({'id': 4242, 'path_with_namespace': 'developer/mobile-workspace'}, status: 201);
+      return jsonResponse({'id': 4242, 'name': 'Mobile Workspace', 'path_with_namespace': 'developer/mobile-workspace'},
+        status: 201);
     }
     if (path.length == 5 && joined.startsWith('projects/42/pipeline_schedules/') && path[4] == 'play' && method == 'POST') {
       playedSchedules.add(int.tryParse(path[3]) ?? 0);

@@ -11,8 +11,10 @@ import '../../shared/external_link.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
+import 'commit_page.dart';
 import 'records_feed.dart';
 import 'pipeline_graph_page.dart';
+import 'work_item_page.dart';
 import '../../shared/artifact_storage.dart';
 import '../../shared/theme.dart';
 export '../../shared/artifact_storage.dart';
@@ -501,6 +503,15 @@ String pipelineSourceLabel(String source) => switch (source) {
   _ => source,
 };
 
+/// The merge request IID a merge request pipeline ran for, from its
+/// `refs/merge-requests/<iid>/head` ref (`/merge` and `/train` for merged
+/// results and merge trains), or null for a branch or tag.
+int? mergeRequestIidOfRef(String ref) {
+  final match = RegExp(r'^refs/merge-requests/(\d+)/(?:head|merge|train)$').firstMatch(ref);
+  final iid = match == null ? null : int.tryParse(match.group(1)!);
+  return iid != null && iid > 0 ? iid : null;
+}
+
 /// One pipeline as a dense row: status, name or number, ref, commit and age.
 Widget pipelineRow(BuildContext context, Json value, {required VoidCallback onTap, String? project}) {
   final theme = Theme.of(context);
@@ -613,6 +624,13 @@ class _PipelinePageState extends State<PipelinePage> {
     } catch (e) { if (_current(generation)) { setState(() => _error = safeFailure(e)); } }
     finally { if (_current(generation)) { setState(() => _loading = false); } }
   }
+  void _openOwned(int generation, Widget Function(PipelinePage owner) page) {
+    final owner = widget;
+    if (!_current(generation) || owner.api.isClosed) return;
+    final route = MaterialPageRoute<void>(builder: (_) => page(owner));
+    _ownRoute(route);
+    unawaited(Navigator.push(context, route));
+  }
   void _openGraph() {
     final owner = widget;
     final route = MaterialPageRoute<void>(builder: (_) => PipelineGraphPage(
@@ -720,8 +738,18 @@ class _PipelinePageState extends State<PipelinePage> {
           if (_data != null) Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 10), child:
             Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
               StatusBadge(valueText(_data!, 'status')),
-              MetaChip(valueText(_data!, 'ref'), icon: Icons.alt_route, mono: true),
-              MetaChip(shortSha(valueText(_data!, 'sha')), icon: Icons.commit, mono: true),
+              if (mergeRequestIidOfRef(valueText(_data!, 'ref')) case final iid?)
+                MetaChip(valueText(_data!, 'ref'), icon: Icons.alt_route, mono: true,
+                  key: const ValueKey('pipeline-ref-link'), semanticLabel: '開啟合併請求 !$iid',
+                  onTap: () => _openOwned(generation, (owner) => WorkItemPage(account: owner.account, api: owner.api,
+                    project: owner.project, resource: 'merge_requests', iid: iid)))
+              else
+                MetaChip(valueText(_data!, 'ref'), icon: Icons.alt_route, mono: true),
+              if (valueText(_data!, 'sha') case final sha when sha.isNotEmpty)
+                MetaChip(shortSha(sha), icon: Icons.commit, mono: true,
+                  key: const ValueKey('pipeline-sha-link'), semanticLabel: '開啟 commit ${shortSha(sha)}',
+                  onTap: () => _openOwned(generation, (owner) => CommitDetailPage(account: owner.account, api: owner.api,
+                    project: owner.project, sha: sha))),
               // The title shows the project-scoped number; links and the API use this ID.
               if (valueInt(_data!, 'iid') > 0) MetaChip('ID ${widget.id}', icon: Icons.tag, mono: true),
               if (valueText(_data!, 'source').isNotEmpty)
@@ -1665,6 +1693,29 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() { _busy = false; _confirming = false; }); } }
   }
+  bool get _ownerCurrent => mounted && !widget.api.isClosed &&
+      widget.account.key == _routeOwner.account.key && identical(widget.api, _routeOwner.api) &&
+      widget.project.id == _routeOwner.project.id && widget.id == _routeOwner.id &&
+      widget.generation == _routeOwner.generation;
+  /// The job's pipeline chip; a link when the job names a pipeline of this project.
+  Widget? _pipelineChip(Json job) {
+    final pipeline = valueObject(job, 'pipeline');
+    final id = valueInt(pipeline, 'id');
+    if (id <= 0) return null;
+    final iid = valueInt(pipeline, 'iid');
+    final label = 'Pipeline #${iid > 0 ? iid : id}';
+    final projectId = valueInt(pipeline, 'project_id');
+    if (projectId > 0 && projectId != widget.project.id) {
+      return MetaChip(label, icon: Icons.rocket_launch_outlined);
+    }
+    return MetaChip(label, icon: Icons.rocket_launch_outlined, key: const ValueKey('job-pipeline-link'),
+      semanticLabel: '開啟 $label', onTap: () {
+        if (!_ownerCurrent) return;
+        final owner = widget;
+        unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => PipelinePage(
+          account: owner.account, api: owner.api, project: owner.project, id: id))));
+      });
+  }
   String _sectionKey(JobTraceSection section) => '${section.name}:${section.start}';
   void _ensureSectionIndex() {
     if (identical(_indexed, _trace)) return;
@@ -2044,10 +2095,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       actions: [ResourceShareButton(
         uri: widget.account.instance.projectWeb('${widget.project.path}/-/jobs/$_jobId'),
         ownerKey: (widget.account.key, widget.api, widget.project.id, _jobId, widget.generation),
-        isCurrent: () => mounted && !widget.api.isClosed &&
-          widget.account.key == _routeOwner.account.key && identical(widget.api, _routeOwner.api) &&
-          widget.project.id == _routeOwner.project.id && widget.id == _routeOwner.id &&
-          widget.generation == _routeOwner.generation),
+        isCurrent: () => _ownerCurrent),
         IconButton(tooltip: '重新讀取 Log', onPressed: _loading || _busy || _confirming ? null : _load, icon: const Icon(Icons.refresh)),
         PopupMenuButton<String>(tooltip: '工作操作', enabled: !_busy && !_confirming && !_downloading && _job != null, onSelected: _action, itemBuilder: (_) => [
           const PopupMenuItem(value: 'retry', child: Text('重試工作')),
@@ -2067,6 +2115,11 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
             spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
               if (_job != null) StatusBadge(valueText(_job!, 'status')),
               Text('#$_jobId', style: Theme.of(context).textTheme.bodySmall),
+              if (_job != null) ...[
+                ?_pipelineChip(_job!),
+                if (valueText(_job!, 'stage').isNotEmpty) MetaChip(valueText(_job!, 'stage'), icon: Icons.layers_outlined),
+                if (valueText(_job!, 'ref').isNotEmpty) MetaChip(valueText(_job!, 'ref'), icon: Icons.alt_route, mono: true),
+              ],
               FilterChip(label: const Text('10 秒更新'), selected: _auto, onSelected: (value) {
                 setState(() => _auto = value); _schedule();
               }),
