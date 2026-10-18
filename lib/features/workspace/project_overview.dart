@@ -14,6 +14,7 @@ import '../../shared/workspace_ui.dart';
 import 'activity_page.dart';
 import 'project_extras.dart';
 import 'project_more_page.dart';
+import 'project_page.dart';
 import 'repository_page.dart';
 
 /// Sections of [ProjectPage] the overview hands over to, by tab index.
@@ -194,8 +195,14 @@ class _ProjectOverviewState extends State<ProjectOverview> {
     try {
       final fork = await api.forkProject(project.id);
       if (!mounted || !_current(epoch, api)) return;
+      final created = forkedProject(fork);
+      final account = widget.account;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('已建立 Fork：${valueText(fork, 'path_with_namespace')}，匯入可能需要幾分鐘。')));
+        content: Text('已建立 Fork：${valueText(fork, 'path_with_namespace')}，匯入可能需要幾分鐘。'),
+        action: created == null ? null : SnackBarAction(label: '開啟', onPressed: () {
+          if (!mounted || !_current(epoch, api)) return;
+          _push(ProjectPage(account: account, api: api, project: created));
+        })));
     } catch (e) {
       if (!mounted || !_current(epoch, api)) return;
       showFailure(context, e);

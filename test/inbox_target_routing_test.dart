@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/commit_page.dart';
+import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/inbox_page.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
@@ -299,6 +300,59 @@ void main() {
     expect(launcher.launched, isEmpty);
   });
 
+  testWidgets('a WorkItem todo opens the work item page named by its link', (
+    tester,
+  ) async {
+    const url = 'https://example.com/gitlab/team/core/-/work_items/5#note_9';
+    final server = InboxTodoServer([
+      inboxTodo(32, 'WorkItem', 'Work item todo', targetUrl: url),
+    ]);
+    await pumpInbox(tester, server);
+
+    expect(
+      find.text('工作項目 · 網頁版'),
+      findsNothing,
+      reason: 'the row opens in the app, not on the web',
+    );
+    await tester.tap(find.text('Work item todo'));
+    await settleNetworkWidgets(tester);
+
+    expect(find.byType(BottomSheet), findsNothing);
+    final page = tester.widget<GraphWorkItemDetailPage>(
+      find.byType(GraphWorkItemDetailPage),
+    );
+    expect(page.iid, 5);
+    expect(page.project?.id, 10);
+    expect(
+      server.nonTodoRequests.map((r) => r.uri.path),
+      contains(endsWith('/projects/team%2Fcore')),
+    );
+    expect(launcher.launched, isEmpty);
+  });
+
+  testWidgets(
+    'an Epic todo on a group work item link opens the group work item',
+    (tester) async {
+      const url = 'https://example.com/gitlab/groups/team/-/work_items/3';
+      final server = InboxTodoServer([
+        inboxTodo(33, 'Epic', 'Group epic', project: null, targetUrl: url),
+      ]);
+      await pumpInbox(tester, server);
+
+      await tester.tap(find.text('Group epic'));
+      await settleNetworkWidgets(tester);
+
+      expect(find.byType(BottomSheet), findsNothing);
+      final page = tester.widget<GraphWorkItemDetailPage>(
+        find.byType(GraphWorkItemDetailPage),
+      );
+      expect(page.iid, 3);
+      expect(page.namespacePath, 'team');
+      expect(page.project, isNull);
+      expect(launcher.launched, isEmpty);
+    },
+  );
+
   testWidgets('commit todo with a full SHA opens the native commit page', (
     tester,
   ) async {
@@ -465,13 +519,13 @@ void main() {
     'web action hands the exact server link with its query and fragment to the launcher',
     (tester) async {
       const url =
-          'https://example.com/gitlab/team/core/-/work_items/5?show=a%20b&tab=notes#note_9';
+          'https://example.com/gitlab/groups/team/-/epics/5?show=a%20b&tab=notes#note_9';
       final server = InboxTodoServer([
-        inboxTodo(70, 'WorkItem', 'Exact link todo', targetUrl: url),
+        inboxTodo(70, 'Epic', 'Exact link todo', project: null, targetUrl: url),
       ]);
       await pumpInbox(tester, server);
 
-      expect(find.text('工作項目 · 網頁版'), findsOneWidget);
+      expect(find.text('史詩 · 網頁版'), findsOneWidget);
       await tester.tap(find.text('Exact link todo'));
       await settleNetworkWidgets(tester);
       expect(

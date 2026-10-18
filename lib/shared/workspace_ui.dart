@@ -357,20 +357,30 @@ class AppearancePicker extends StatelessWidget {
 
 /// Small icon + text pair for card meta rows (time, ref, SHA, counts).
 class MetaChip extends StatelessWidget {
-  const MetaChip(this.text, {super.key, this.icon, this.mono = false});
+  const MetaChip(this.text, {super.key, this.icon, this.mono = false, this.onTap, this.semanticLabel});
   final String text;
   final IconData? icon;
   final bool mono;
+  /// Makes the chip a link to what it names, drawn in the primary colour.
+  final VoidCallback? onTap;
+  final String? semanticLabel;
   @override
   Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.onSurfaceVariant;
+    final scheme = Theme.of(context).colorScheme;
+    final color = onTap == null ? scheme.onSurfaceVariant : scheme.primary;
     final style = mono
         ? codeTextStyle(context, fontSize: 12, color: color)
         : Theme.of(context).textTheme.bodySmall?.copyWith(color: color);
-    return Row(mainAxisSize: MainAxisSize.min, children: [
+    final chip = Row(mainAxisSize: MainAxisSize.min, children: [
       if (icon != null) ...[Icon(icon, size: 14, color: color), const SizedBox(width: 4)],
       Flexible(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: style)),
     ]);
+    final tap = onTap;
+    if (tap == null) return chip;
+    return SemanticButton(label: semanticLabel ?? text, onTap: tap, child: InkWell(
+      borderRadius: BorderRadius.circular(6), onTap: tap,
+      child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 32),
+        child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: chip))));
   }
 }
 

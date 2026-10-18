@@ -10,9 +10,9 @@ import 'fake_adapter.dart';
 
 /// Synthetic server for activity routing tests.
 ///
-/// Events are served from [events]; only project 10 and configured
-/// resources (issue 42, issue 377, MR 84, 40-hex and 64-hex commits) resolve.
-/// Unknown resources return 404.
+/// Events are served from [events]; only project 10 (also by its path
+/// team/core) and configured resources (issue 42, issue 377, MR 84, 40-hex
+/// and 64-hex commits) resolve. Unknown resources return 404.
 final class ActivityEventServer {
   ActivityEventServer(this.events, {this.projectHeaders = const {}});
 
@@ -56,7 +56,9 @@ final class ActivityEventServer {
       return jsonResponse(activityProject, headers: projectHeaders);
     }
 
-    if (path.endsWith('/projects/10')) {
+    // An event's target_url names the project by path.
+    if (path.endsWith('/projects/10') ||
+        path.endsWith('/projects/team%2Fcore')) {
       projectGets++;
       final gate = projectGate;
       if (gate != null) return await gate();
