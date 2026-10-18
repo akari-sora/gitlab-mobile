@@ -19,6 +19,7 @@ import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
 import 'support/workspace_fixture.dart';
 import 'workspace_widget_test.dart' show settleWorkspace;
+import 'support/shell_nav.dart';
 
 Widget evidenceHost(Widget page, Brightness brightness) => MaterialApp(
   debugShowCheckedModeBanner: false,
@@ -57,6 +58,10 @@ void main() {
     for (final family in ['Roboto', 'Ahem', 'sans-serif', 'monospace']) {
       await (FontLoader(family)..addFont(Future.value(bytes))).load();
     }
+    // The bundled code font, so branch names and SHAs are not test squares.
+    await (FontLoader('JetBrainsMono')
+      ..addFont(rootBundle.load('assets/fonts/JetBrainsMono-Regular.ttf'))
+      ..addFont(rootBundle.load('assets/fonts/JetBrainsMono-Medium.ttf'))).load();
     // Icon glyphs are a separate font; loading a text font does not load them.
     await (FontLoader('MaterialIcons')..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
     fontsAvailable = true;
@@ -87,7 +92,7 @@ void main() {
   });
 
   for (final brightness in Brightness.values) {
-    for (final name in ['login', 'projects', 'repository', 'review']) {
+    for (final name in ['login', 'home', 'inbox', 'projects', 'me', 'repository', 'files', 'review']) {
       testWidgets('capture actual $name ${brightness.name} synthetic-data screen', (tester) async {
         FlutterSecureStorage.setMockInitialValues({});
         final fixture = WorkspaceFixture();
@@ -107,16 +112,26 @@ void main() {
         final Widget screen = switch (name) {
           'login' => evidenceHost(LoginScreen(session: session), brightness),
           // Capture actual production navigation, not just the project body.
-          'projects' => AuthenticatedApp(session: session,
+          'home' || 'inbox' || 'projects' || 'me' => AuthenticatedApp(session: session,
             appearance: AppearanceController(MemoryAppearanceStore()), shortcuts: shortcuts),
           'repository' => evidenceHost(ProjectPage(account: fixture.account, api: fixture.api, project: fixture.project), brightness),
+          'files' => evidenceHost(ProjectPage(account: fixture.account, api: fixture.api, project: fixture.project,
+            initialTab: 0), brightness),
           _ => evidenceHost(WorkItemPage(account: fixture.account, api: fixture.api, project: fixture.project,
             resource: 'merge_requests', iid: 12), brightness),
         };
         await tester.pumpWidget(RepaintBoundary(key: key, child: screen));
         await settleWorkspace(tester);
         expect(tester.takeException(), isNull);
-        if (name == 'projects') { expect(find.byType(NavigationBar), findsOneWidget); }
+        final destination = const {'inbox': '收件匣', 'projects': '探索', 'me': '我的'}[name];
+        if (destination != null) {
+          await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(destination)));
+          await settleWorkspace(tester);
+          expect(tester.takeException(), isNull);
+        }
+        if (const ['home', 'inbox', 'projects', 'me'].contains(name)) {
+          expect(find.byType(NavigationBar), findsOneWidget);
+        }
         final boundary = key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
         await tester.runAsync(() async {
           final directory = Directory('ci-output/screenshots')..createSync(recursive: true);
@@ -131,7 +146,8 @@ void main() {
             'text_fonts': 'host Noto CJK aliases for deterministic text',
             'icon_fonts': 'bundled MaterialIcons',
             'dimensions': [412, 892],
-            'screens': ['login', 'projects with production bottom navigation', 'repository', 'review'],
+            'screens': ['login', 'home, inbox, explore (projects) and me with production bottom navigation',
+              'repository overview', 'repository files', 'review'],
             'themes': ['light', 'dark'],
           }));
         });
@@ -175,6 +191,7 @@ void main() {
           ),
         );
         await settleWorkspace(tester);
+        await openExplore(tester);
         expect(tester.takeException(), isNull);
 
         if (width < 600) {

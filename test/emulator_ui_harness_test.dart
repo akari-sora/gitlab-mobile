@@ -16,7 +16,7 @@ import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_extras.dart';
 import 'package:gitlab_mobile/features/workspace/project_page.dart';
-import 'package:gitlab_mobile/features/workspace/repository_page.dart';
+import 'package:gitlab_mobile/features/workspace/project_overview.dart';
 import 'package:gitlab_mobile/shared/resource_share.dart';
 import 'package:gitlab_mobile/shared/scroll_performance.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
@@ -24,6 +24,7 @@ import 'package:gitlab_mobile/shared/workspace_ui.dart';
 import '../tool/emulator_ui.dart';
 import 'support/widget_settle.dart';
 import 'support/work_item_health_parent_fixture.dart';
+import 'support/shell_nav.dart';
 
 void main() {
   test(
@@ -795,11 +796,12 @@ void main() {
       await settleNetworkWidgets(tester);
 
       expect(find.text('Emulator UI QA'), findsNothing);
+      // The project page lands on its overview, README included.
       expect(find.text('檔案'), findsOneWidget);
-      expect(find.byType(RepositoryTab), findsOneWidget);
+      expect(find.byType(ProjectOverview), findsOneWidget);
       expect(find.text('README.md'), findsWidgets);
 
-      await tester.tap(find.text('MR'));
+      await openProjectTab(tester, 'MR');
       await settleNetworkWidgets(tester);
       await tester.tap(find.text('Improve private-project navigation'));
       await settleNetworkWidgets(tester);
@@ -1039,9 +1041,9 @@ void main() {
       expect(media.textScaler.scale(14), 28);
       expect(find.byType(NavigationBar), findsOneWidget);
       expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
-      expect(tester.takeException(), isNull, reason: '專案');
+      expect(tester.takeException(), isNull, reason: '首頁');
 
-      for (final destination in ['收件匣', 'CI', '我的', '專案']) {
+      for (final destination in ['收件匣', '探索', '我的', '首頁']) {
         await tester.tap(
           find.descendant(
             of: find.byType(NavigationBar),
@@ -2777,6 +2779,7 @@ Widget _projectApp(EmulatorQaFixture fixture, SessionController session) =>
           account: fixture.account,
           api: fixture.api,
           project: fixture.project,
+          initialTab: 0,
         ),
       ),
     );

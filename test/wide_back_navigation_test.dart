@@ -12,6 +12,7 @@ import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
 import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
+import 'support/shell_nav.dart';
 
 Future<BuildInfo> _shellBuildInfo() async => const BuildInfo(
   version: '0.4.0',
@@ -64,6 +65,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Select Project
       expect(find.text('Mobile Workspace'), findsOneWidget);
@@ -132,6 +134,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Select Project
       await tester.tap(find.text('Mobile Workspace'));
@@ -191,13 +194,14 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Select Project
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
 
       // Switch to MR tab (Tab 2)
-      await tester.tap(find.text('MR'));
+      await openProjectTab(tester, 'MR');
       await settleNetworkWidgets(tester);
 
       // Select MR 12
@@ -252,6 +256,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
@@ -299,13 +304,14 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Select Project
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
 
       // Switch to MR tab (Tab 2)
-      await tester.tap(find.text('MR'));
+      await openProjectTab(tester, 'MR');
       await settleNetworkWidgets(tester);
 
       // Select MR 12
@@ -360,6 +366,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
@@ -407,6 +414,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Select Project -> Issues
       await tester.tap(find.text('Mobile Workspace'));
@@ -473,6 +481,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // At 599 dp: NavigationBar is active
       expect(find.byType(NavigationBar), findsOneWidget);
@@ -548,6 +557,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Enter Project -> Issues -> select Issue 42
       await tester.tap(find.text('Mobile Workspace'));
@@ -559,16 +569,16 @@ void main() {
       await settleNetworkWidgets(tester);
       expect(find.text('Overview'), findsOneWidget);
 
-      // Switch to CI tab in NavigationRail (destination index 2)
-      await tester.tap(find.descendant(of: find.byType(NavigationRail), matching: find.text('CI')));
+      // Switch to the Inbox destination in NavigationRail (index 1)
+      await tester.tap(find.descendant(of: find.byType(NavigationRail), matching: find.text('收件匣')));
       await settleNetworkWidgets(tester);
 
-      // Trigger system back while on CI tab
+      // Trigger system back while on the Inbox: it returns to Home
       await tester.binding.handlePopRoute();
       await settleNetworkWidgets(tester);
 
-      // Switch back to Projects tab in NavigationRail
-      await tester.tap(find.descendant(of: find.byType(NavigationRail), matching: find.text('專案')));
+      // Switch back to Explore in NavigationRail
+      await tester.tap(find.descendant(of: find.byType(NavigationRail), matching: find.text('探索')));
       await settleNetworkWidgets(tester);
 
       // Assert: Issue 42 and its overview are STILL intact on the Project tab!
@@ -643,6 +653,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Select Project -> Issues -> Issue 42 on Account 1
       await tester.tap(find.text('Mobile Workspace'));

@@ -11,7 +11,7 @@ class RecordsFeed extends StatefulWidget {
     this.empty = '目前沒有項目', this.emptyDetail, this.filteredEmpty, this.account, this.resourceLabel, this.onSwitchAccount,
     this.underShell = false, this.visible, this.header, this.footer, this.leading, this.topSlivers,
     this.grouped = false, this.itemSpacing = 8, this.emptyIcon = Icons.inbox_outlined, this.storageId,
-    this.arrange, this.sectionOf});
+    this.arrange, this.sectionOf, this.emptyArt});
   final String identity;
 
   /// Reorders the loaded rows before display, e.g. jobs into stage order.
@@ -29,6 +29,9 @@ class RecordsFeed extends StatefulWidget {
   final String empty;
   final String? emptyDetail, filteredEmpty, resourceLabel;
   final IconData emptyIcon;
+
+  /// Illustration for the truly empty state (not the filtered-empty one).
+  final Widget? emptyArt;
   final Account? account;
   final VoidCallback? onSwitchAccount;
   final bool underShell;
@@ -125,7 +128,7 @@ class RecordsFeedState extends State<RecordsFeed> {
 
   Widget _groupedRow(BuildContext context, int index, int count, Widget child) {
     final scheme = Theme.of(context).colorScheme;
-    final radius = const Radius.circular(16);
+    final radius = const Radius.circular(12);
     final first = index == 0, last = index == count - 1;
     final material = Material(type: MaterialType.transparency, child: child);
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
@@ -147,8 +150,8 @@ class RecordsFeedState extends State<RecordsFeed> {
       decoration: BoxDecoration(
         color: theme.cardTheme.color ?? theme.colorScheme.surfaceContainerLow,
         borderRadius: BorderRadius.vertical(
-          top: first ? const Radius.circular(16) : Radius.zero,
-          bottom: last ? const Radius.circular(16) : Radius.zero,
+          top: first ? const Radius.circular(12) : Radius.zero,
+          bottom: last ? const Radius.circular(12) : Radius.zero,
         ),
         border: Border(left: side, top: first ? side : absent,
           right: side, bottom: last ? side : absent),
@@ -177,6 +180,7 @@ class RecordsFeedState extends State<RecordsFeed> {
       if (!controller.loading && shown.isEmpty && controller.error == null && controller.next == null) EmptyState(
         controller.items.isEmpty ? widget.empty : (widget.filteredEmpty ?? widget.empty),
         icon: widget.emptyIcon,
+        art: controller.items.isEmpty ? widget.emptyArt : null,
         detail: controller.items.isEmpty ? widget.emptyDetail : null),
       if (controller.loading && controller.items.isNotEmpty)
         const Padding(padding: EdgeInsets.only(bottom: 12), child: LinearProgressIndicator(minHeight: 2)),

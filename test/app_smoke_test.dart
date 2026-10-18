@@ -78,6 +78,9 @@ void main() {
     }
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.text('我的工作'), findsOneWidget, reason: 'the shell opens on Home');
+    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('探索')));
+    await tester.pumpAndSettle();
     expect(find.text('我的專案'), findsOneWidget);
     await tester.tap(find.byTooltip('以連結或路徑開啟'));
     await tester.pumpAndSettle();

@@ -6,6 +6,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/adaptive_breakpoints.dart';
+import '../../shared/hub_ui.dart';
 import '../../shared/list_detail_scaffold.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/theme.dart';
@@ -19,10 +20,10 @@ import '../workspace/projects_page.dart';
 import '../workspace/inbox_page.dart';
 import '../workspace/search_page.dart';
 import '../workspace/ci_page.dart';
-import '../workspace/ci_overview_page.dart';
 import '../workspace/work_item_page.dart';
 import '../workspace/editor.dart';
 import 'app_shortcuts.dart';
+import 'home_page.dart';
 import 'appearance.dart';
 import 'build_info.dart';
 
@@ -178,10 +179,14 @@ class _MobileShellState extends State<_MobileShell> {
   final _scrollTop = List.generate(4, (_) => ValueNotifier<int>(0));
   final _meScroll = ScrollController();
   bool? _useRail;
-  int _selected = 1;
+  int _selected = _home;
   int _searchToken = 0;
+  int _locatorToken = 0;
+  int _createToken = 0;
   bool _removing = false;
-  final Set<int> _visited = {1};
+  final Set<int> _visited = {_home};
+
+  static const _home = 0, _inbox = 1, _explore = 2, _me = 3;
   ApiFailure? _recentFailure;
   Account? _recentAccount;
   int? _recentProjectId;
@@ -267,21 +272,21 @@ class _MobileShellState extends State<_MobileShell> {
     switch (shortcut.kind) {
       case ShortcutKind.inbox:
         setState(() {
-          _selected = 0;
-          _visited.add(0);
+          _selected = _inbox;
+          _visited.add(_inbox);
         });
       case ShortcutKind.search:
         setState(() {
-          _selected = 1;
-          _visited.add(1);
+          _selected = _explore;
+          _visited.add(_explore);
           _searchToken++;
         });
       case ShortcutKind.recent:
         final id = shortcut.projectId;
         if (id == null) return;
         setState(() {
-          _selected = 1;
-          _visited.add(1);
+          _selected = _explore;
+          _visited.add(_explore);
         });
         await _openRecent(account, api, id);
     }
@@ -477,7 +482,6 @@ class _MobileShellState extends State<_MobileShell> {
             account: account,
             api: api,
             project: project,
-            initialTab: 0,
           );
       }
 
@@ -573,6 +577,25 @@ class _MobileShellState extends State<_MobileShell> {
     _scrollTop[index].value++;
   }
 
+  /// Home's 待辦, 瀏覽專案, 以連結開啟 and 新增專案 hand over to the inbox or
+  /// the explore destination, which own those flows.
+  void _goTo(int index, {bool locate = false, bool create = false}) {
+    _chrome.show();
+    setState(() {
+      _selected = index;
+      _visited.add(index);
+      if (locate) _locatorToken++;
+      if (create) _createToken++;
+    });
+  }
+
+  static const _destinations = <(IconData, IconData, String)>[
+    (Icons.home_outlined, Icons.home, '首頁'),
+    (Icons.inbox_outlined, Icons.inbox, '收件匣'),
+    (Icons.explore_outlined, Icons.explore, '探索'),
+    (Icons.person_outline, Icons.person, '我的'),
+  ];
+
   Widget _bottomNavigation(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
@@ -592,27 +615,9 @@ class _MobileShellState extends State<_MobileShell> {
               child: NavigationBar(
                 selectedIndex: _selected,
                 onDestinationSelected: _select,
-                destinations: const [
-                  NavigationDestination(
-                    icon: Icon(Icons.inbox_outlined),
-                    selectedIcon: Icon(Icons.inbox),
-                    label: '收件匣',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.folder_outlined),
-                    selectedIcon: Icon(Icons.folder),
-                    label: '專案',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.account_tree_outlined),
-                    selectedIcon: Icon(Icons.account_tree),
-                    label: 'CI',
-                  ),
-                  NavigationDestination(
-                    icon: Icon(Icons.person_outline),
-                    selectedIcon: Icon(Icons.person),
-                    label: '我的',
-                  ),
+                destinations: [
+                  for (final (icon, selectedIcon, label) in _destinations)
+                    NavigationDestination(icon: Icon(icon), selectedIcon: Icon(selectedIcon), label: label),
                 ],
               ),
             ),
@@ -624,140 +629,171 @@ class _MobileShellState extends State<_MobileShell> {
       ),
     );
   }
-  Widget _buildMyTab(BuildContext context, Account account, SessionController session) => Scaffold(
-    appBar: AppBar(title: const Text('我的')),
-    body: gestureSafe(ScrollToTopOnSignal(
-      controller: _meScroll,
-      child: ListView(
+  Widget _buildMyTab(BuildContext context, Account account, SessionController session) {
+    final theme = Theme.of(context);
+    final muted = theme.colorScheme.onSurfaceVariant;
+    void push(Widget Function() page) =>
+        Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page()));
+    return Scaffold(
+      appBar: AppBar(title: const LargeTitle('我的')),
+      body: gestureSafe(ScrollToTopOnSignal(
         controller: _meScroll,
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-        children: [
-          Card(child: Padding(padding: const EdgeInsets.all(16), child: Row(
-            children: [
-              Monogram(account.user.name, size: 56),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      account.user.name,
-                      style: Theme.of(context).textTheme.titleLarge,
+        child: ListView(
+          controller: _meScroll,
+          padding: const EdgeInsets.only(bottom: 24),
+          children: [
+            // Profile header, GitHub-style: round avatar, name, handle, instance.
+            Material(
+              color: theme.colorScheme.surface,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+                child: Row(children: [
+                  Monogram(account.user.name, size: 72, circle: true),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          account.user.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.headlineSmall,
+                        ),
+                        Text(
+                          '@${account.user.username}',
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyLarge?.copyWith(color: muted),
+                        ),
+                        const SizedBox(height: 4),
+                        Row(children: [
+                          Icon(Icons.dns_outlined, size: 14, color: muted),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(
+                              account.instance.key,
+                              style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ]),
+                      ],
                     ),
-                    Text(
-                      '@${account.user.username}',
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      account.instance.key,
-                      style: Theme.of(context).textTheme.bodySmall,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ))),
-          const SizedBox(height: 20),
-          Text(
-            '帳號',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 8),
-          Card(child: Column(children: [
-            for (final (index, saved) in session.accounts.indexed) ...[
-              if (index > 0) const Divider(height: 1, indent: 64),
-              ListTile(
-                leading: Monogram(saved.user.name, size: 32),
-                title: Text(
-                  '@${saved.user.username}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(saved.key == account.key ? '${saved.instance.base.host} · 使用中' : saved.instance.base.host),
-                onTap:
-                    session.busy ||
-                            _removing ||
-                            saved.key == account.key
-                        ? null
-                        : () => session.select(saved),
-                trailing: IconButton(
-                  tooltip: '從此裝置移除帳號',
-                  icon: const Icon(Icons.logout, size: 20),
-                  onPressed: session.busy || _removing
-                      ? null
-                      : () => _remove(saved),
-                ),
-              ),
-            ],
-          ])),
-          Align(alignment: Alignment.centerLeft, child: TextButton.icon(
-            onPressed: () {
-              unawaited(session.endSession());
-            },
-            icon: const Icon(Icons.person_add_outlined),
-            label: const Text('新增或重新連接帳號'),
-          )),
-          const SizedBox(height: 4),
-          Row(children: [
-            for (final (icon, label, page) in <(IconData, String, Widget Function())>[
-              (Icons.timeline, '我的動態', () => ActivityPage(account: account, api: session.api!)),
-              (Icons.workspaces_outline, '我的群組', () => GroupsPage(account: account, api: session.api!)),
-              (Icons.manage_search, '全域搜尋', () => SearchPage(account: account, api: session.api!)),
-            ]) Expanded(child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: FilledButton.tonal(
-                style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4)),
-                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page())),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(icon, size: 22),
-                  const SizedBox(height: 4),
-                  Text(label, maxLines: 2, textAlign: TextAlign.center, overflow: TextOverflow.ellipsis),
+                  ),
                 ]),
               ),
-            )),
-          ]),
-          const SizedBox(height: 24),
-          Text(
-            '外觀',
-            style: Theme.of(context).textTheme.titleSmall,
-          ),
-          const SizedBox(height: 12),
-          AppearancePicker(mode: widget.theme, onChanged: widget.changeTheme),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('使用系統配色（Material You）'),
-            subtitle: Text(
-              widget.dynamicColorAvailable
-                  ? 'Android 12 以上會依桌布色調產生配色'
-                  : '此裝置沒有動態配色',
             ),
-            value: widget.dynamicColorAvailable && widget.useDynamicColor,
-            onChanged: widget.dynamicColorAvailable
-                ? widget.changeDynamicColor
-                : null,
-          ),
-          const SizedBox(height: 28),
-          const Text(
-            'GitLab Mobile',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 4),
-          BuildInfoLine(load: widget.buildInfoLoader),
-          const SizedBox(height: 4),
-          const Text(
-            '獨立第三方客戶端 · 非 GitLab 官方產品',
-            style: TextStyle(fontSize: 12),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            '新增與修改需要 Token 的 api 權限；read_api 可用於唯讀。專案角色與實例政策仍會限制操作。',
-            style: TextStyle(fontSize: 12),
-          ),
-        ],
-      ),
-    )),
-  );
+            HubSection(
+              children: [
+                HubRow(
+                  leading: const IconTile(Icons.timeline, color: HubColors.slate),
+                  title: '我的動態',
+                  chevron: true,
+                  onTap: () => push(() => ActivityPage(account: account, api: session.api!)),
+                ),
+                HubRow(
+                  leading: const IconTile(Icons.workspaces_outline, color: HubColors.orange),
+                  title: '我的群組',
+                  chevron: true,
+                  onTap: () => push(() => GroupsPage(account: account, api: session.api!)),
+                ),
+                HubRow(
+                  leading: const IconTile(Icons.manage_search, color: HubColors.blue),
+                  title: '全域搜尋',
+                  chevron: true,
+                  onTap: () => push(() => SearchPage(account: account, api: session.api!)),
+                ),
+              ],
+            ),
+            HubSection(
+              title: '帳號',
+              children: [
+                for (final (index, saved) in session.accounts.indexed) ...[
+                  if (index > 0) const Divider(height: 1, indent: 64),
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    leading: Monogram(saved.user.name, size: 32, circle: true),
+                    title: Text(
+                      '@${saved.user.username}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    subtitle: Text(saved.key == account.key ? '${saved.instance.base.host} · 使用中' : saved.instance.base.host),
+                    onTap:
+                        session.busy ||
+                                _removing ||
+                                saved.key == account.key
+                            ? null
+                            : () => session.select(saved),
+                    trailing: IconButton(
+                      tooltip: '從此裝置移除帳號',
+                      icon: const Icon(Icons.logout, size: 20),
+                      onPressed: session.busy || _removing
+                          ? null
+                          : () => _remove(saved),
+                    ),
+                  ),
+                ],
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Align(alignment: Alignment.centerLeft, child: TextButton.icon(
+                    onPressed: () {
+                      unawaited(session.endSession());
+                    },
+                    icon: const Icon(Icons.person_add_outlined),
+                    label: const Text('新增或重新連接帳號'),
+                  )),
+                ),
+              ],
+            ),
+            HubSection(
+              title: '外觀',
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+                  child: AppearancePicker(mode: widget.theme, onChanged: widget.changeTheme),
+                ),
+                SwitchListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                  title: const Text('使用系統配色（Material You）'),
+                  subtitle: Text(
+                    widget.dynamicColorAvailable
+                        ? 'Android 12 以上會依桌布色調產生配色'
+                        : '此裝置沒有動態配色',
+                  ),
+                  value: widget.dynamicColorAvailable && widget.useDynamicColor,
+                  onChanged: widget.dynamicColorAvailable
+                      ? widget.changeDynamicColor
+                      : null,
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text(
+                  'GitLab Mobile',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                BuildInfoLine(load: widget.buildInfoLoader),
+                const SizedBox(height: 4),
+                const Text(
+                  '獨立第三方客戶端 · 非 GitLab 官方產品',
+                  style: TextStyle(fontSize: 12),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  '新增與修改需要 Token 的 api 權限；read_api 可用於唯讀。專案角色與實例政策仍會限制操作。',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ]),
+            ),
+          ],
+        ),
+      )),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -773,15 +809,15 @@ class _MobileShellState extends State<_MobileShell> {
         listenable: _backDispatcher,
         builder: (context, _) {
           return PopScope<Object?>(
-            canPop: _selected == 1 && !_backDispatcher.canHandleBack,
+            canPop: _selected == _home && !_backDispatcher.canHandleBack,
             onPopInvokedWithResult: (didPop, _) {
               if (didPop) return;
               if (_backDispatcher.handleBack()) {
                 return;
               }
-              if (_selected != 1) {
+              if (_selected != _home) {
                 _chrome.show();
-                setState(() => _selected = 1);
+                setState(() => _selected = _home);
               }
             },
             child: LayoutBuilder(
@@ -808,27 +844,13 @@ class _MobileShellState extends State<_MobileShell> {
                             selectedIndex: _selected,
                             onDestinationSelected: _select,
                             labelType: NavigationRailLabelType.all,
-                            destinations: const [
-                              NavigationRailDestination(
-                                icon: Icon(Icons.inbox_outlined),
-                                selectedIcon: Icon(Icons.inbox),
-                                label: Text('收件匣'),
-                              ),
-                              NavigationRailDestination(
-                                icon: Icon(Icons.folder_outlined),
-                                selectedIcon: Icon(Icons.folder),
-                                label: Text('專案'),
-                              ),
-                              NavigationRailDestination(
-                                icon: Icon(Icons.account_tree_outlined),
-                                selectedIcon: Icon(Icons.account_tree),
-                                label: Text('CI'),
-                              ),
-                              NavigationRailDestination(
-                                icon: Icon(Icons.person_outline),
-                                selectedIcon: Icon(Icons.person),
-                                label: Text('我的'),
-                              ),
+                            destinations: [
+                              for (final (icon, selectedIcon, label) in _destinations)
+                                NavigationRailDestination(
+                                  icon: Icon(icon),
+                                  selectedIcon: Icon(selectedIcon),
+                                  label: Text(label),
+                                ),
                             ],
                           ),
                         ),
@@ -899,28 +921,37 @@ class _MobileShellState extends State<_MobileShell> {
                                       index: _selected,
                                       children: [
                                         _pane(
-                                          0,
-                                          _visited.contains(0)
+                                          _home,
+                                          HomePage(
+                                            session: session,
+                                            shortcuts: widget.shortcuts,
+                                            onOpenInbox: () => _goTo(_inbox),
+                                            onExplore: () => _goTo(_explore),
+                                            onLocate: () => _goTo(_explore, locate: true),
+                                            onCreate: () => _goTo(_explore, create: true),
+                                          ),
+                                        ),
+                                        _pane(
+                                          _inbox,
+                                          _visited.contains(_inbox)
                                               ? InboxPage(account: account, api: session.api!)
                                               : const SizedBox(),
                                         ),
+                                        // Explore stays built from the start so a launcher search
+                                        // or a Home action reaches it through its tokens.
                                         _pane(
-                                          1,
+                                          _explore,
                                           ProjectsPage(
                                             session: session,
                                             shortcuts: widget.shortcuts,
                                             searchToken: _searchToken,
+                                            locatorToken: _locatorToken,
+                                            createToken: _createToken,
                                           ),
                                         ),
                                         _pane(
-                                          2,
-                                          _visited.contains(2)
-                                              ? CiOverviewPage(session: session)
-                                              : const SizedBox(),
-                                        ),
-                                        _pane(
-                                          3,
-                                          _visited.contains(3)
+                                          _me,
+                                          _visited.contains(_me)
                                               ? _buildMyTab(context, account, session)
                                               : const SizedBox(),
                                         ),

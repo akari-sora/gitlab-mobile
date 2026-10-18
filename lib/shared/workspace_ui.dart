@@ -394,7 +394,7 @@ class EntityCard extends StatelessWidget {
     final cardColor = selected ? scheme.secondaryContainer : null;
     final cardShape = selected
         ? RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(12),
             side: BorderSide(color: scheme.primary, width: 2),
           )
         : null;
@@ -451,9 +451,12 @@ class EntityCard extends StatelessWidget {
 }
 
 class Monogram extends StatelessWidget {
-  const Monogram(this.name, {super.key, this.size = 42});
+  const Monogram(this.name, {super.key, this.size = 42, this.circle = false});
   final String name;
   final double size;
+
+  /// People are round, projects and groups are rounded squares.
+  final bool circle;
   /// Eight tonal hues keyed by the name so lists stop looking uniform while
   /// the same name always gets the same colour.
   static const _hues = [222.0, 258.0, 300.0, 340.0, 20.0, 158.0, 190.0, 62.0];
@@ -477,7 +480,7 @@ class Monogram extends StatelessWidget {
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: container,
-        borderRadius: BorderRadius.circular(size * .28),
+        borderRadius: BorderRadius.circular(circle ? size / 2 : size * .28),
       ),
       child: Text(
         name.isEmpty ? 'G' : name.characters.first.toUpperCase(),
@@ -498,28 +501,34 @@ class EmptyState extends StatelessWidget {
     this.detail,
     this.icon = Icons.inbox_outlined,
     this.action,
+    this.art,
   });
   final String title;
   final String? detail;
   final IconData icon;
   final Widget? action;
+
+  /// An illustration shown instead of the icon badge, with a larger title.
+  final Widget? art;
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 40),
+    padding: EdgeInsets.symmetric(horizontal: 28, vertical: art == null ? 40 : 28),
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
+        art ?? Container(
           width: 64, height: 64, alignment: Alignment.center,
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainerHighest, shape: BoxShape.circle),
           child: Icon(icon, size: 30, color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
-        const SizedBox(height: 16),
+        SizedBox(height: art == null ? 16 : 24),
         Text(
           title,
           textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleMedium,
+          style: art == null
+              ? Theme.of(context).textTheme.titleMedium
+              : Theme.of(context).textTheme.headlineSmall,
         ),
         if (detail != null) ...[
           const SizedBox(height: 6),

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -78,6 +79,20 @@ void main() {
     expect(controller.mode, ThemeMode.light);
     expect(store.value, isNull);
     expect(store.writes, [encodeAppearance(ThemeMode.light, dynamicColorDefault())]);
+  });
+
+  test('the GitHub-style palette is the default on every platform', () {
+    for (final platform in TargetPlatform.values) {
+      debugDefaultTargetPlatformOverride = platform;
+      try {
+        expect(dynamicColorDefault(), isFalse, reason: platform.name);
+        final controller = AppearanceController(MemoryAppearanceStore());
+        expect(controller.useDynamicColor, isFalse, reason: platform.name);
+        controller.dispose();
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    }
   });
 
   test('dynamic colour flag round-trips and legacy values keep the default', () async {

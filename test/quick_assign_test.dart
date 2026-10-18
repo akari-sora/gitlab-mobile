@@ -10,6 +10,7 @@ import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
 import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
+import 'support/shell_nav.dart';
 
 Future<BuildInfo> _testBuildInfo() async => const BuildInfo(
   version: '0.4.0',
@@ -64,6 +65,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Navigate to Project -> Issues
       await tester.tap(find.text('Mobile Workspace'));
@@ -158,6 +160,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
@@ -208,10 +211,11 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
-      await tester.tap(find.text('MR'));
+      await openProjectTab(tester, 'MR');
       await settleNetworkWidgets(tester);
 
       // Select MR !12

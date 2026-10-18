@@ -15,6 +15,7 @@ import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
 import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
+import 'support/shell_nav.dart';
 
 Future<BuildInfo> _shellBuildInfo() async => const BuildInfo(
   version: '0.4.0',
@@ -67,6 +68,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // 1. Enter Project A in Compact mode (412 dp)
       expect(find.text('Mobile Workspace'), findsOneWidget);
@@ -156,6 +158,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Navigate to Project A -> Issues -> Issue 42
       await tester.tap(find.text('Mobile Workspace'));
@@ -218,6 +221,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // 1. In Projects tab, navigate to Project A -> Issues -> Issue 42
       await tester.tap(find.text('Mobile Workspace'));
@@ -230,18 +234,19 @@ void main() {
       await settleNetworkWidgets(tester);
       expect(find.text('Overview'), findsOneWidget);
 
-      // 2. Switch to CI tab (index 2)
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('CI')));
+      // 2. Switch to the Inbox (index 1)
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('收件匣')));
       await settleNetworkWidgets(tester);
-      expect(find.text('選擇專案，查看流程與工作紀錄'), findsOneWidget);
+      expect(find.byKey(const ValueKey('inbox-filter-0')), findsOneWidget);
 
-      // 3. Trigger system back while on CI tab
+      // 3. Trigger system back while on the Inbox
       final handled = await tester.binding.handlePopRoute();
-      expect(handled, isTrue, reason: 'System back should switch back to default Projects tab');
+      expect(handled, isTrue, reason: 'System back should switch back to the default Home tab');
       await settleNetworkWidgets(tester);
 
-      // 4. Verify: We are back on Projects tab, AND Issue 42 detail is STILL INTACT!
-      expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
+      // 4. Verify: We are back on Home, AND Issue 42 detail is STILL INTACT in Explore!
+      expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 0);
+      await openExplore(tester);
       expect(find.text('Overview'), findsOneWidget, reason: 'Issue 42 detail must NOT have been cleared while tab was inactive');
       expect(tester.takeException(), isNull);
     });
@@ -290,7 +295,9 @@ void main() {
         final path = segments.skip(start + 1).toList();
         final joined = path.join('/');
 
-        if (joined == 'projects') {
+        // Home's starred-project preview is a separate read; only the Explore
+        // list counts here.
+        if (joined == 'projects' && request.uri.queryParameters['starred'] != 'true') {
           projectsRequestCount++;
           final page = request.uri.queryParameters['page'];
           if (page == '3') {
@@ -351,6 +358,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // 1. Initial page loaded: projectsRequestCount == 1
       expect(projectsRequestCount, equals(1));
@@ -457,6 +465,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // 1. Initial 840 dp: NavigationRail present (81 dp), NavigationBar absent
       expect(find.byType(NavigationRail), findsOneWidget);

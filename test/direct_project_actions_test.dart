@@ -89,6 +89,9 @@ Widget _page(
         account: fixture.account,
         api: fixture.api,
         project: project ?? fixture.project,
+        // These cases cover the section header and the More tab; the
+        // overview's own star control has its own test.
+        initialTab: 0,
         onStarChanged: onStarChanged,
       ),
     );
@@ -314,6 +317,7 @@ void main() {
           account: fixture.account,
           api: fixture.api,
           project: fixture.project,
+          initialTab: 0,
         ),
         scale: 2,
       ),
@@ -802,6 +806,7 @@ void main() {
             account: fixture.account,
             api: fixture.api,
             project: fixture.project,
+            initialTab: 0,
           ),
           scale: 2,
         ),

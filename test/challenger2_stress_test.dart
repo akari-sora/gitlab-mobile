@@ -23,6 +23,7 @@ import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
 import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
+import 'support/shell_nav.dart';
 
 Widget testAdaptiveHost(Widget child) {
   return MaterialApp(
@@ -102,6 +103,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       expect(find.byType(NavigationBar), findsOneWidget, reason: 'At 599 dp, NavigationBar must be present');
       expect(find.byType(NavigationRail), findsNothing, reason: 'At 599 dp, NavigationRail must be absent');
@@ -518,6 +520,7 @@ void main() {
 
       await tester.pumpWidget(buildApp());
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Verify Account A in Two-pane Projects tab
       expect(find.byTooltip('帳號 @developer'), findsWidgets);
@@ -534,6 +537,9 @@ void main() {
       });
       await tester.pump();
       await settleNetworkWidgets(tester);
+      // The rebuilt shell for Account B starts on Home again.
+      expect(find.text('我的工作'), findsOneWidget);
+      await openExplore(tester);
 
       // Assert Account B state
       expect(find.byTooltip('帳號 @reviewer'), findsWidgets);
@@ -590,6 +596,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       expect(find.byType(NavigationRail), findsOneWidget);
       expect(find.byKey(const ValueKey('adaptive-two-pane-row')), findsNothing,
@@ -714,6 +721,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Phase 1: In Projects tab (1), drill down to Project A -> Issues -> Issue 42
       await tester.tap(find.text('Mobile Workspace'));
@@ -728,17 +736,18 @@ void main() {
       await settleNetworkWidgets(tester);
       expect(find.text('Overview'), findsOneWidget);
 
-      // Phase 2: Switch to CI tab (2) -> Issue 42 must be isolated in background
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('CI')));
+      // Phase 2: Switch to the Inbox (1) -> Issue 42 must be isolated in background
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('收件匣')));
       await settleNetworkWidgets(tester);
-      expect(find.text('選擇專案，查看流程與工作紀錄'), findsOneWidget);
+      expect(find.byKey(const ValueKey('inbox-filter-0')), findsOneWidget);
 
-      // System back while on CI tab: switches back to default Projects tab, DOES NOT clear Issue 42!
-      final handledCiBack = await tester.binding.handlePopRoute();
-      expect(handledCiBack, isTrue);
+      // System back while on the Inbox: switches to the default Home tab, DOES NOT clear Issue 42!
+      final handledInboxBack = await tester.binding.handlePopRoute();
+      expect(handledInboxBack, isTrue);
       await settleNetworkWidgets(tester);
 
-      expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
+      expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 0);
+      await openExplore(tester);
       expect(find.text('Overview'), findsOneWidget, reason: 'Issue 42 must NOT have been cleared while tab was inactive');
 
       // Phase 3: Switch to "我的" tab (3) -> Issue 42 must be isolated in background
@@ -746,12 +755,13 @@ void main() {
       await settleNetworkWidgets(tester);
       expect(find.text('外觀'), findsOneWidget);
 
-      // System back while on "我的" tab: switches back to Projects tab, DOES NOT clear Issue 42!
+      // System back while on "我的" tab: switches to Home, DOES NOT clear Issue 42!
       final handledSettingsBack = await tester.binding.handlePopRoute();
       expect(handledSettingsBack, isTrue);
       await settleNetworkWidgets(tester);
 
-      expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
+      expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 0);
+      await openExplore(tester);
       expect(find.text('Overview'), findsOneWidget, reason: 'Issue 42 must NOT have been cleared when popping from Settings');
 
       // Phase 4: While Issue 42 owns the phone screen the project header and tabs step aside.
@@ -768,7 +778,7 @@ void main() {
       expect(find.byKey(const Key('projectSearch')), findsNothing);
 
       // Switch nested tab within Project A to "MR" (Merge Requests)
-      await tester.tap(find.text('MR'));
+      await openProjectTab(tester, 'MR');
       await settleNetworkWidgets(tester);
       expect(find.text('Improve private-project navigation'), findsOneWidget);
 
@@ -799,9 +809,13 @@ void main() {
       expect(find.descendant(of: find.byType(SemanticButton), matching: find.text('Mobile Workspace')), findsOneWidget);
       expect(find.text('檔案'), findsNothing);
 
-      // Phase 7: Back at root Projects list -> cannot handle further back
+      // Phase 7: Back on the Explore list returns to Home, which cannot handle further back
+      final handledExploreBack = await tester.binding.handlePopRoute();
+      expect(handledExploreBack, isTrue, reason: 'Explore is not the home destination');
+      await settleNetworkWidgets(tester);
+      expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 0);
       final handledRootBack = await tester.binding.handlePopRoute();
-      expect(handledRootBack, isFalse, reason: 'At root Projects list, shell should not consume system back');
+      expect(handledRootBack, isFalse, reason: 'At the Home root, shell should not consume system back');
       expect(tester.takeException(), isNull);
     });
 
@@ -844,7 +858,9 @@ void main() {
         final path = segments.skip(start + 1).toList();
         final joined = path.join('/');
 
-        if (joined == 'projects') {
+        // Home's starred-project preview is a separate read; only the Explore
+        // list counts here.
+        if (joined == 'projects' && request.uri.queryParameters['starred'] != 'true') {
           projectsRequestCount++;
           final page = request.uri.queryParameters['page'];
           if (page == '2') {
@@ -900,6 +916,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Initial request count == 1
       expect(projectsRequestCount, equals(1));
@@ -952,10 +969,10 @@ void main() {
       expect(tester.state<ScrollableState>(singleScrollable).position.pixels, closeTo(scrolledOffset, 2.0),
         reason: 'Scroll position must be preserved across resize to 800 dp');
 
-      // Enter detail view in Single-Column mode
+      // Enter detail view in Single-Column mode (the project overview)
       await tester.tap(find.text('Project Beta 4'));
       await settleNetworkWidgets(tester);
-      expect(find.text('檔案'), findsOneWidget);
+      expect(find.byKey(const ValueKey('project-overview-name')), findsOneWidget);
 
       // Pop back from detail view in Single-Column mode
       final handled = await tester.binding.handlePopRoute();
@@ -1021,6 +1038,7 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Navigate to Project A -> Issues -> Issue 42
       await tester.tap(find.text('Mobile Workspace'));

@@ -10,6 +10,7 @@ import 'support/fake_shortcuts.dart';
 import 'support/memory_appearance_store.dart';
 import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
+import 'support/shell_nav.dart';
 
 Future<BuildInfo> _approvalsTestBuildInfo() async => const BuildInfo(
   version: '0.4.0',
@@ -65,11 +66,12 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       // Navigate to Project -> MR
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
-      await tester.tap(find.text('MR'));
+      await openProjectTab(tester, 'MR');
       await settleNetworkWidgets(tester);
 
       // Select MR !12
@@ -136,10 +138,11 @@ void main() {
         ),
       );
       await settleNetworkWidgets(tester);
+      await openExplore(tester);
 
       await tester.tap(find.text('Mobile Workspace'));
       await settleNetworkWidgets(tester);
-      await tester.tap(find.text('MR'));
+      await openProjectTab(tester, 'MR');
       await settleNetworkWidgets(tester);
 
       await tester.tap(find.text('Improve private-project navigation'));

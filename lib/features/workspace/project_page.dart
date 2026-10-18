@@ -17,6 +17,7 @@ import 'repository_page.dart';
 import 'work_item_page.dart';
 import 'ci_page.dart';
 import 'project_more_page.dart';
+import 'project_overview.dart';
 
 class ProjectPage extends StatefulWidget {
   const ProjectPage({
@@ -24,7 +25,7 @@ class ProjectPage extends StatefulWidget {
     required this.account,
     required this.api,
     required this.project,
-    this.initialTab = 0,
+    this.initialTab,
     this.showBackButton = true,
     this.onBack,
     this.onDeleted,
@@ -34,7 +35,10 @@ class ProjectPage extends StatefulWidget {
   final Account account;
   final GitLabApi api;
   final Project project;
-  final int initialTab;
+
+  /// The section to open (0 files, 1 issues, 2 merge requests, 3 CI,
+  /// 4 more). Null lands on the GitHub-style project overview instead.
+  final int? initialTab;
   final bool showBackButton;
   final VoidCallback? onBack;
   final VoidCallback? onDeleted;
@@ -54,6 +58,11 @@ class _ProjectPageState extends State<ProjectPage>
   late final TabController _tabs;
   final _chrome = ScrollChromeController();
   final _focus = DetailFocus();
+  final _overviewScroll = ScrollController();
+  final _overviewTitle = ValueNotifier<bool>(false);
+  late bool _overview = widget.initialTab == null;
+  late bool _overviewVisited = _overview;
+  late bool _sectionsVisited = !_overview;
   late Project _project;
   SessionController? _session;
   int? _sessionGeneration;
@@ -72,14 +81,50 @@ class _ProjectPageState extends State<ProjectPage>
     _tabs = TabController(
       length: 5,
       vsync: this,
-      initialIndex: widget.initialTab,
+      initialIndex: widget.initialTab ?? 0,
     );
     _tabs.addListener(_tabChanged);
-    if (widget.initialTab != 0) {
+    _overviewScroll.addListener(_overviewScrolled);
+    final initialTab = widget.initialTab;
+    if (initialTab != null && initialTab != 0) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) widget.onTabChanged?.call(widget.initialTab);
+        if (mounted) widget.onTabChanged?.call(initialTab);
       });
     }
+  }
+
+  /// The overview's own header shows the name; the app bar takes it over
+  /// once that header has scrolled away.
+  void _overviewScrolled() {
+    _overviewTitle.value = _overviewScroll.hasClients && _overviewScroll.offset > 110;
+  }
+
+  /// Leaves the overview for one section. Selecting the section already
+  /// under the tab bar still reports it, so a list-detail parent can react.
+  void _openSection(int index) {
+    if (!mounted) return;
+    final same = _tabs.index == index;
+    setState(() {
+      _overview = false;
+      _sectionsVisited = true;
+    });
+    _chrome.show();
+    if (same) {
+      widget.onTabChanged?.call(index);
+    } else {
+      _tabs.index = index;
+    }
+  }
+
+  void _openOverview() {
+    if (!mounted || _overview) return;
+    setState(() {
+      _overview = true;
+      _overviewVisited = true;
+    });
+    _chrome.show();
+    // The overview is not a nested list-detail section.
+    widget.onTabChanged?.call(0);
   }
 
   void _bindSession() {
@@ -358,6 +403,9 @@ class _ProjectPageState extends State<ProjectPage>
     _starEpoch++;
     _tabs.removeListener(_tabChanged);
     _tabs.dispose();
+    _overviewScroll.removeListener(_overviewScrolled);
+    _overviewScroll.dispose();
+    _overviewTitle.dispose();
     _focus.removeListener(_focusChanged);
     _focus.dispose();
     _chrome.dispose();
@@ -411,6 +459,35 @@ class _ProjectPageState extends State<ProjectPage>
               _generation,
             ) &&
         _sessionCurrent();
+    final headerMenu = PopupMenuButton<_ProjectHeaderAction>(
+      key: const ValueKey('project-header-actions'),
+      tooltip: '更多動作',
+      icon: const Icon(Icons.more_vert, size: 20),
+      enabled: !widget.api.isClosed && _sessionCurrent(),
+      itemBuilder: (_) {
+        final owner = _copyOwner;
+        final web = widget.account.instance.projectWeb(_project.path);
+        return [
+          if (owner.project > 0)
+            PopupMenuItem(
+              key: const ValueKey('project-header-action-copy-id'),
+              value: _ProjectHeaderAction.copyId,
+              onTap: () => unawaited(_copyProjectId(owner)),
+              child: Text('複製專案 ID：${owner.project}'),
+            ),
+          PopupMenuItem(
+            key: const ValueKey('project-header-action-open-web'),
+            value: _ProjectHeaderAction.openWeb,
+            onTap: () {
+              if (_currentCopy(owner)) {
+                openExternal(context, web);
+              }
+            },
+            child: const Text('在 GitLab 開啟'),
+          ),
+        ];
+      },
+    );
     final appBar = AppBar(
       primary: false,
       toolbarHeight: toolbarHeight,
@@ -498,55 +575,49 @@ class _ProjectPageState extends State<ProjectPage>
           ownerKey: shareOwner,
           isCurrent: shareCurrent,
         ),
-        PopupMenuButton<_ProjectHeaderAction>(
-          key: const ValueKey('project-header-actions'),
-          tooltip: '更多動作',
-          icon: const Icon(Icons.more_vert, size: 20),
-          enabled: !widget.api.isClosed && _sessionCurrent(),
-          itemBuilder: (_) {
-            final owner = _copyOwner;
-            final web = widget.account.instance.projectWeb(_project.path);
-            return [
-              if (owner.project > 0)
-                PopupMenuItem(
-                  key: const ValueKey('project-header-action-copy-id'),
-                  value: _ProjectHeaderAction.copyId,
-                  onTap: () => unawaited(_copyProjectId(owner)),
-                  child: Text('複製專案 ID：${owner.project}'),
-                ),
-              PopupMenuItem(
-                key: const ValueKey('project-header-action-open-web'),
-                value: _ProjectHeaderAction.openWeb,
-                onTap: () {
-                  if (_currentCopy(owner)) {
-                    openExternal(context, web);
-                  }
-                },
-                child: const Text('在 GitLab 開啟'),
-              ),
-            ];
-          },
-        ),
+        headerMenu,
       ],
     );
+    final starControl = ProjectStarControl(
+      starred: _starred,
+      checked: _starChecked,
+      busy: _starBusy,
+      starCount: _starCount,
+      revision: _starRevision,
+      recheck: () => _loadStar(reportFailure: true),
+      setStar: _setStar,
+    );
+    final heroColor = theme.brightness == Brightness.dark
+        ? theme.scaffoldBackgroundColor
+        : theme.colorScheme.surface;
     // An issue or MR opened in place on a phone owns the screen: the project
     // header and tabs step aside and horizontal swipes stay with the detail.
     final focused = _focus.active;
-    return Scaffold(
-      body: NotificationListener<ScrollNotification>(
-        onNotification: _chrome.handle,
-        child: StatusBarInset(
-          child: gestureSafe(
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+    final parentActive = TabActiveScope.of(context);
+    final sections = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!focused) CollapsingChrome(visible: _chrome, child: appBar),
+        if (!focused)
+          DecoratedBox(
+            decoration: BoxDecoration(border: Border(bottom: BorderSide(
+              color: theme.tabBarTheme.dividerColor ?? theme.colorScheme.outlineVariant))),
+            child: Row(
               children: [
-                if (!focused) CollapsingChrome(visible: _chrome, child: appBar),
-                if (!focused)
-                  TabBar(
+                IconButton(
+                  key: const ValueKey('project-open-overview'),
+                  tooltip: '專案總覽',
+                  onPressed: _openOverview,
+                  icon: const Icon(Icons.space_dashboard_outlined, size: 20),
+                ),
+                Expanded(
+                  child: TabBar(
                     controller: _tabs,
-                    indicatorSize: TabBarIndicatorSize.tab,
+                    dividerHeight: 0,
+                    indicatorSize: TabBarIndicatorSize.label,
                     isScrollable: crowded,
                     tabAlignment: crowded ? TabAlignment.start : null,
+                    labelPadding: crowded ? null : const EdgeInsets.symmetric(horizontal: 4),
                     tabs: const [
                       Tab(text: '檔案'),
                       Tab(text: '議題'),
@@ -555,68 +626,148 @@ class _ProjectPageState extends State<ProjectPage>
                       Tab(text: '更多'),
                     ],
                   ),
-                Expanded(
-                  key: const ValueKey('project-tab-body'),
-                  child: DetailFocusScope(
-                    focus: _focus,
-                    child: TabBarView(
-                      controller: _tabs,
-                      physics: focused
-                          ? const NeverScrollableScrollPhysics()
-                          : null,
-                      children: [
-                        RepositoryTab(
-                          account: widget.account,
-                          api: widget.api,
-                          project: _project,
-                          active: _tabs.index == 0,
-                        ),
-                        TabActiveScope(
-                          isActive:
-                              TabActiveScope.of(context) && _tabs.index == 1,
-                          child: WorkItemsTab(
-                            account: widget.account,
-                            api: widget.api,
-                            project: _project,
-                            resource: 'issues',
-                          ),
-                        ),
-                        TabActiveScope(
-                          isActive:
-                              TabActiveScope.of(context) && _tabs.index == 2,
-                          child: WorkItemsTab(
-                            account: widget.account,
-                            api: widget.api,
-                            project: _project,
-                            resource: 'merge_requests',
-                          ),
-                        ),
-                        PipelinesTab(
-                          account: widget.account,
-                          api: widget.api,
-                          project: _project,
-                        ),
-                        ProjectMoreTab(
-                          account: widget.account,
-                          api: widget.api,
-                          project: _project,
-                          onChanged: (value) =>
-                              setState(() => _project = value),
-                          onDeleted: widget.onDeleted,
-                          starControl: ProjectStarControl(
-                            starred: _starred,
-                            checked: _starChecked,
-                            busy: _starBusy,
-                            starCount: _starCount,
-                            revision: _starRevision,
-                            recheck: () => _loadStar(reportFailure: true),
-                            setStar: _setStar,
-                          ),
-                        ),
-                      ],
-                    ),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          key: const ValueKey('project-tab-body'),
+          child: DetailFocusScope(
+            focus: _focus,
+            child: TabBarView(
+              controller: _tabs,
+              physics: focused
+                  ? const NeverScrollableScrollPhysics()
+                  : null,
+              children: [
+                RepositoryTab(
+                  account: widget.account,
+                  api: widget.api,
+                  project: _project,
+                  active: !_overview && _tabs.index == 0,
+                ),
+                TabActiveScope(
+                  isActive:
+                      parentActive && !_overview && _tabs.index == 1,
+                  child: WorkItemsTab(
+                    account: widget.account,
+                    api: widget.api,
+                    project: _project,
+                    resource: 'issues',
                   ),
                 ),
+                TabActiveScope(
+                  isActive:
+                      parentActive && !_overview && _tabs.index == 2,
+                  child: WorkItemsTab(
+                    account: widget.account,
+                    api: widget.api,
+                    project: _project,
+                    resource: 'merge_requests',
+                  ),
+                ),
+                PipelinesTab(
+                  account: widget.account,
+                  api: widget.api,
+                  project: _project,
+                ),
+                ProjectMoreTab(
+                  account: widget.account,
+                  api: widget.api,
+                  project: _project,
+                  onChanged: (value) =>
+                      setState(() => _project = value),
+                  onDeleted: widget.onDeleted,
+                  starControl: starControl,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+    final overviewBar = AppBar(
+      primary: false,
+      backgroundColor: heroColor,
+      automaticallyImplyLeading: false,
+      leading: widget.showBackButton
+          ? BackButton(onPressed: widget.onBack)
+          : null,
+      titleSpacing: widget.showBackButton ? 0 : null,
+      title: ValueListenableBuilder<bool>(
+        valueListenable: _overviewTitle,
+        builder: (context, visible, _) => AnimatedSwitcher(
+          duration: const Duration(milliseconds: 160),
+          child: !visible
+              ? const SizedBox.shrink()
+              : Column(
+                  key: const ValueKey('project-overview-title'),
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _project.path.contains('/')
+                          ? _project.path.substring(0, _project.path.lastIndexOf('/'))
+                          : _project.path,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                    ),
+                    Text(
+                      _project.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 18),
+                    ),
+                  ],
+                ),
+        ),
+      ),
+      actions: [headerMenu],
+    );
+    final overview = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        overviewBar,
+        Expanded(
+          child: ProjectOverview(
+            account: widget.account,
+            api: widget.api,
+            project: _project,
+            starControl: starControl,
+            onSection: _openSection,
+            isCurrent: () =>
+                mounted && !widget.api.isClosed && _sessionCurrent(),
+            controller: _overviewScroll,
+          ),
+        ),
+      ],
+    );
+    Widget pane(bool shown, bool visited, Widget child) => !visited
+        ? const SizedBox.shrink()
+        : TabActiveScope(
+            isActive: parentActive && shown,
+            child: ExcludeSemantics(
+              excluding: !shown,
+              child: TickerMode(
+                enabled: shown,
+                child: IgnorePointer(ignoring: !shown, child: child),
+              ),
+            ),
+          );
+    return Scaffold(
+      body: NotificationListener<ScrollNotification>(
+        onNotification: _chrome.handle,
+        child: StatusBarInset(
+          color: _overview ? heroColor : null,
+          child: gestureSafe(
+            IndexedStack(
+              key: const ValueKey('project-mode-stack'),
+              index: _overview ? 0 : 1,
+              sizing: StackFit.expand,
+              children: [
+                pane(_overview, _overviewVisited, overview),
+                pane(!_overview, _sectionsVisited, sections),
               ],
             ),
           ),
