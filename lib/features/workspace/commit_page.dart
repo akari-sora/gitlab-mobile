@@ -6,6 +6,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/unified_diff.dart';
 import '../../shared/external_link.dart';
+import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
@@ -608,10 +609,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Icon(
-                      isExpanded ? Icons.expand_less : Icons.expand_more,
-                      color: scheme.onSurfaceVariant,
-                    ),
+                    TurnChevron(open: isExpanded, color: scheme.onSurfaceVariant),
                   ],
                 ),
               ),
@@ -619,10 +617,10 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
           ),
 
           // Diff content when expanded
-          if (isExpanded) ...[
+          ExpandSection(expanded: isExpanded, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             const Divider(height: 1),
             _buildDiffViewer(context, file, scheme),
-          ],
+          ])),
         ],
       ),
     );

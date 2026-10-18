@@ -10,6 +10,7 @@ import '../../core/work_item_graph_models.dart';
 import '../../features/auth/session_controller.dart';
 import '../../features/workspace/graph_work_items_page.dart';
 import '../../features/workspace/work_item_attributes.dart';
+import '../../shared/motion.dart';
 import '../../shared/workspace_ui.dart';
 
 /// Standalone metadata bridge widget mounted beneath the REST issue description.
@@ -457,11 +458,7 @@ class _RestIssueGraphBridgeState extends State<RestIssueGraphBridge> {
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Row(
                       children: [
-                        Icon(
-                          _expanded ? Icons.expand_less : Icons.expand_more,
-                          size: 20,
-                          color: theme.colorScheme.primary,
-                        ),
+                        TurnChevron(open: _expanded, size: 20, color: theme.colorScheme.primary),
                         const SizedBox(width: 4),
                         Text(
                           _expanded ? '收起其他欄位' : '展開其他欄位',

@@ -9,6 +9,7 @@ import '../../core/models.dart';
 import '../../core/providers.dart';
 import '../../shared/external_link.dart';
 import '../../shared/list_detail_scaffold.dart';
+import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/reveal_transition.dart';
 import '../../shared/scroll_chrome.dart';
@@ -749,7 +750,7 @@ class _ProjectPageState extends State<ProjectPage>
       title: ValueListenableBuilder<bool>(
         valueListenable: _overviewTitle,
         builder: (context, visible, _) => AnimatedSwitcher(
-          duration: const Duration(milliseconds: 160),
+          duration: motionDuration(context, Durations.short3),
           child: !visible
               ? const SizedBox.shrink()
               : Column(

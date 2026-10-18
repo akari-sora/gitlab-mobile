@@ -8,6 +8,7 @@ import '../../core/repository_ref.dart';
 import '../../shared/external_link.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
@@ -178,6 +179,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
       final desired = !star.starred!;
       await star.setStar(desired);
       if (!mounted || !_current(epoch, api)) return;
+      unawaited(Haptics.success());
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(desired ? '已加入星標' : '已移除星標')));
     } catch (e) {
       if (!mounted || !_current(epoch, api) || e is ApiFailure && e.kind == FailureKind.cancelled) return;
@@ -376,11 +378,10 @@ class _ProjectOverviewState extends State<ProjectOverview> {
           leading: const NeutralTile(Icons.more_horiz),
           title: _moreOpen ? '收合' : '更多',
           semanticLabel: _moreOpen ? '收合更多項目' : '展開更多項目',
-          trailing: Icon(_moreOpen ? Icons.expand_less : Icons.expand_more,
-            color: Theme.of(context).colorScheme.onSurfaceVariant),
+          trailing: TurnChevron(open: _moreOpen, color: Theme.of(context).colorScheme.onSurfaceVariant),
           onTap: () => setState(() => _moreOpen = !_moreOpen),
         ),
-        if (_moreOpen) ...[
+        ExpandSection(expanded: _moreOpen, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           HubRow(
             leading: const IconTile(Icons.group_outlined, color: HubColors.orange),
             title: '成員',
@@ -412,7 +413,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
             chevron: true,
             onTap: () => widget.onSection(ProjectSection.more),
           ),
-        ],
+        ])),
       ],
     );
   }

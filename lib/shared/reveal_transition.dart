@@ -1,4 +1,6 @@
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
+
+import 'motion.dart';
 
 /// How a pane enters when it becomes the visible child of an [IndexedStack].
 enum RevealStyle {
@@ -26,7 +28,7 @@ class RevealOnShow extends StatefulWidget {
     required this.style,
     required this.child,
     this.animateOnInsert = false,
-    this.duration = const Duration(milliseconds: 220),
+    this.duration = Durations.medium1,
   });
 
   final bool shown;
@@ -45,7 +47,7 @@ class _RevealOnShowState extends State<RevealOnShow> with SingleTickerProviderSt
     duration: widget.duration,
     value: 1,
   );
-  late final Animation<double> _curve = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
+  late final Animation<double> _curve = CurvedAnimation(parent: _controller, curve: Easing.emphasizedDecelerate);
   bool _inserted = false;
 
   @override
@@ -67,7 +69,7 @@ class _RevealOnShowState extends State<RevealOnShow> with SingleTickerProviderSt
   }
 
   void _play() {
-    if (MediaQuery.maybeDisableAnimationsOf(context) ?? false) {
+    if (reduceMotion(context)) {
       _controller.value = 1;
       return;
     }

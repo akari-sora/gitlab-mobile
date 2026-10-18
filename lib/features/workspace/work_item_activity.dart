@@ -10,6 +10,7 @@ import '../../core/work_item_activity_models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../shared/attachment_budget.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/workspace_ui.dart' show FailureNotice, endSessionFrom;
 import 'editor.dart';
@@ -1942,7 +1943,7 @@ class _WorkItemNoteActionsDialogState
                       setState(() => _reactionPickerOpen = !_reactionPickerOpen)
                 : null,
           ),
-          if (_reactionPickerOpen) ...[
+          ExpandSection(expanded: _reactionPickerOpen, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -1960,12 +1961,13 @@ class _WorkItemNoteActionsDialogState
                       ),
                       tooltip: entry.key,
                       onPressed: controlsEnabled
-                          ? () => unawaited(
-                              _setReaction(
+                          ? () {
+                              unawaited(Haptics.selection());
+                              unawaited(_setReaction(
                                 entry.key,
                                 awarded: !_hasMyReaction(access, entry.key),
-                              ),
-                            )
+                              ));
+                            }
                           : null,
                       icon: Text(
                         entry.value,
@@ -1975,7 +1977,7 @@ class _WorkItemNoteActionsDialogState
                   ),
               ],
             ),
-          ],
+          ])),
         ],
       ],
     );

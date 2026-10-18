@@ -8,6 +8,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/job_trace.dart';
 import '../../core/models.dart';
 import '../../shared/external_link.dart';
+import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
@@ -686,12 +687,18 @@ class _PipelinePageState extends State<PipelinePage> {
     try {
       await owner.api.jobAction(owner.project.id, jobId, action);
       if (!_current(generation)) return;
+      unawaited(Haptics.success());
       await _load();
       if (_current(generation)) {
         await _feed.currentState?.refresh();
         if (_current(generation)) await _testsKey.currentState?.refresh();
       }
-    } catch (e) { if (mounted && _current(generation)) { showFailure(context, e); } }
+    } catch (e) {
+      if (mounted && _current(generation)) {
+        unawaited(Haptics.failure());
+        showFailure(context, e);
+      }
+    }
     finally { if (_current(generation)) { setState(() => _busy = false); } }
   }
   @override
@@ -1314,7 +1321,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                       constraints: const BoxConstraints(minHeight: 48),
                       child: Row(
                         children: [
-                          Icon(isExpanded ? Icons.expand_less : Icons.expand_more, size: 20),
+                          TurnChevron(open: isExpanded, size: 20),
                           const SizedBox(width: 6),
                           Text(
                             '錯誤追蹤與輸出',
@@ -1324,7 +1331,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                       ),
                     ),
                   ),
-                  if (isExpanded) ...[
+                  ExpandSection(expanded: isExpanded, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     if (item.stackTrace != null && item.stackTrace!.isNotEmpty) ...[
                       const SizedBox(height: 4),
                       Text('錯誤堆疊 (Stacktrace):', style: theme.textTheme.labelSmall),
@@ -1367,7 +1374,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                         ),
                       ),
                     ],
-                  ],
+                  ])),
                 ],
               ],
             );

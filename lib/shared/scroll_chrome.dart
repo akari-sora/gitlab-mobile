@@ -4,6 +4,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 
+import 'motion.dart';
+
 /// Whether chrome that gives way to content is showing: the bottom navigation
 /// and collapsing page headers. It hides while the user drags toward the end
 /// of a list that scrolls far enough, and returns on a scroll back, near the
@@ -228,8 +230,7 @@ class _ScrollToTopOnSignalState extends State<ScrollToTopOnSignal> {
   void _toTop() {
     final controller = widget.controller;
     if (!mounted || !controller.hasClients || !TickerMode.getValuesNotifier(context).value.enabled) return;
-    unawaited(controller.animateTo(controller.position.minScrollExtent,
-      duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic));
+    unawaited(scrollToStart(context, controller));
   }
 
   @override
