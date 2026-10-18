@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/instance.dart';
 import '../../core/models.dart';
+import '../../core/project_locator.dart';
 import '../../shared/external_link.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/scroll_chrome.dart';
@@ -360,6 +361,8 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
         unawaited(navigator.workItem(context, '${target.projectId}', target.resource, target.iid));
       case _TodoRoute.commit:
         unawaited(navigator.commit(context, '${target.projectId}', target.sha));
+      case _TodoRoute.link:
+        unawaited(navigator.link(context, target.link!));
       case _TodoRoute.explain:
         unawaited(_explain(context, target, title, projectPath));
     }
@@ -476,15 +479,26 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
   );
 }
 
-enum _TodoRoute { workItem, commit, explain }
+enum _TodoRoute { workItem, commit, link, explain }
 
 /// What a todo row opens. Issue and merge request rows need the numeric
 /// project ID and the target IID; commit rows need the project ID and a full
-/// SHA. Anything else, including a known type missing those fields, is never
-/// guessed into a native page.
+/// SHA. A known type missing those fields is never guessed into a native page.
+/// Other types (work items, epics) open in the app only when the server's
+/// `target_url` names one concrete resource on this instance.
 final class _TodoTarget {
-  const _TodoTarget._(this.route, this.typeLabel, this.icon,
-    {this.projectId = 0, this.resource = '', this.iid = 0, this.sha = '', this.web, this.nativeType = false});
+  const _TodoTarget._(
+    this.route,
+    this.typeLabel,
+    this.icon, {
+    this.projectId = 0,
+    this.resource = '',
+    this.iid = 0,
+    this.sha = '',
+    this.web,
+    this.link,
+    this.nativeType = false,
+  });
 
   factory _TodoTarget.of(Json data, GitLabInstance instance) {
     final type = data['target_type'];
@@ -505,9 +519,37 @@ final class _TodoTarget {
       }
     }
     final web = _todoWebUri(valueText(data, 'target_url'), instance);
-    return _TodoTarget._(_TodoRoute.explain, label, web == null ? Icons.link_off : Icons.open_in_new,
-      web: web, nativeType: const ['Issue', 'MergeRequest', 'Commit'].contains(type));
+    final nativeType = const ['Issue', 'MergeRequest', 'Commit'].contains(type);
+    final link = web == null || nativeType
+        ? null
+        : GitLabLink.inApp(web, instance);
+    if (link != null) {
+      return _TodoTarget._(
+        _TodoRoute.link,
+        label,
+        _linkIcon(link.target),
+        web: web,
+        link: link,
+      );
+    }
+    return _TodoTarget._(
+      _TodoRoute.explain,
+      label,
+      web == null ? Icons.link_off : Icons.open_in_new,
+      web: web,
+      nativeType: nativeType,
+    );
   }
+
+  static IconData _linkIcon(LinkTarget target) => switch (target) {
+    LinkTarget.issue => Icons.adjust,
+    LinkTarget.mergeRequest => Icons.merge,
+    LinkTarget.pipeline => Icons.rocket_launch_outlined,
+    LinkTarget.job => Icons.play_arrow_outlined,
+    LinkTarget.commit => Icons.commit,
+    LinkTarget.file => Icons.description_outlined,
+    _ => Icons.category_outlined,
+  };
 
   final _TodoRoute route;
   final String typeLabel;
@@ -518,6 +560,9 @@ final class _TodoTarget {
   final String sha;
   /// The server's `target_url`, kept only when it lies inside this instance.
   final Uri? web;
+
+  /// The in-app resource [web] names, for [_TodoRoute.link] rows.
+  final GitLabLink? link;
   final bool nativeType;
 
   static final _fullSha = RegExp(r'^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$');

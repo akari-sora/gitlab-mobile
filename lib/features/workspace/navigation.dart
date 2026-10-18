@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/failure.dart';
@@ -6,6 +8,7 @@ import '../../core/models.dart';
 import '../../core/providers.dart';
 import '../../core/project_locator.dart';
 import '../../core/repository_ref.dart';
+import '../../shared/in_app_links.dart';
 import '../../shared/workspace_ui.dart';
 import 'ci_page.dart';
 import 'commit_page.dart';
@@ -187,6 +190,34 @@ class ResourceNavigator {
     LinkTarget.job => job(context, link.project, link.number!),
     LinkTarget.commit => commit(context, link.project, link.sha!),
     LinkTarget.file => file(context, link.project, link.sha!, link.filePath!, line: link.line),
+  };
+}
+
+/// Opens same-instance links to an issue, merge request, work item, pipeline,
+/// job, commit or SHA-pinned file in the app, for [account] and [api] only.
+/// Once [isCurrent] fails the session has moved on, and every link is left to
+/// the browser rather than opened for another owner.
+InAppLinkHandler inAppLinkHandler(
+  Account account,
+  GitLabApi api, {
+  required bool Function() isCurrent,
+  Listenable? ownerChanges,
+  int? sessionGeneration,
+}) {
+  return (context, uri) async {
+    if (!context.mounted || api.isClosed || !isCurrent()) return false;
+    final link = GitLabLink.inApp(uri, account.instance);
+    if (link == null) return false;
+    unawaited(
+      ResourceNavigator(
+        account,
+        api,
+        isCurrent: isCurrent,
+        ownerChanges: ownerChanges,
+        sessionGeneration: sessionGeneration,
+      ).link(context, link),
+    );
+    return true;
   };
 }
 

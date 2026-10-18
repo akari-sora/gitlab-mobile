@@ -15,15 +15,15 @@ specification numbers have been invented.
 | Web entry | Browser page observation | Current native source | Open functionality/acceptance |
 |---|---|---|---|
 | Manage / Activity | Loaded timeline and eight event filters at phone width | Activity feed | Full event-kind/authenticated parity walk |
-| Manage / Members | Loaded roles/source/search/sort and member rows | Member list/actions | Custom roles, complete administration and live permissions |
+| Manage / Members | Loaded roles/source/search/sort and member rows | Member list (read-only) | Member actions (invite, role change, removal), custom roles, complete administration and live permissions |
 | Manage / Labels | Loaded Active/Archived, search/sort and empty state | List/create/edit/delete | Scoped labels/subscriptions and live CRUD |
 | Plan / Work items | Loaded six issues and mobile detail; additional actual project Issue and group Epic details, mobile Activity timeline and group aggregate list observed | Existing REST Issues/Tasks/Incidents plus fixed-query GraphQL project/group-owned and descendant cursor lists with scope/state/search/type/order controls, server type capabilities, project/group details, collapsible description/assignees/labels/hierarchy/dates, project/group assignee and label replacement, seven lazy attribute kinds, server-filtered/ordered activity paging, guarded Markdown comments/replies, ordinary note editing/deletion, on-demand emoji reactions, lazy personal notification subscription and close/reopen | Remaining widgets, internal-note workflows, custom saved views and remaining list display/sort families, remaining Work Item mutations and authenticated/edition acceptance |
 | Plan / Boards | Development board observed | Phone-width columns, card move, board/list management | Paid scope/list creation, touch drag/drop and live mutation readback |
 | Plan / Milestones | Loaded empty-state explanation | List/detail/create/edit/delete | Full progress/reporting and live CRUD |
-| Plan / Wiki | Loaded empty Wiki explanation | Page list/read/create/edit/delete | History, attachments, tree and live CRUD |
+| Plan / Wiki | Loaded empty Wiki explanation | Page list/read | Page create/edit/delete, history, attachments, tree and live CRUD |
 | Code / Merge requests | List/review public walk | Detail/discussion/diff/approval/merge/server draft review | Multi-line comments, viewed-file sync, review policies and live draft CRUD |
 | Code / Repository | Loaded tree/ref/find-file/actions and README | Tree, fixed-SHA viewer, blame/history/edit/search | Locked files and complete repository administration |
-| Code / Branches | Loaded Overview/Active/Stale/All, search and MR links | List/create/delete/protection controls | Rule completeness and live CRUD |
+| Code / Branches | Loaded Overview/Active/Stale/All, search and MR links | List/create/delete; protected state shown | Protection controls, rule completeness and live CRUD |
 | Code / Commits | Loaded ref/search, date groups, tags and MR badges | List/detail/changes | Full filters/signature/policy parity |
 | Code / Tags | Loaded search/order/direction, release and pipeline links | List/create/delete | Full signature/release policy parity |
 | Code / Repository graph | Loaded mobile timeline and branch/history controls | Selected-ref parent graph, branch/tag picker, bounded pagination | Web full all-branch/simplified history modes and live large graphs |
@@ -31,12 +31,12 @@ specification numbers have been invented.
 | Code / Snippets | Empty project list plus a real three-file public Snippet; README source/preview toggle verified at phone width | Explicit file list, lazy selected blob, source/Markdown preview and guarded metadata/file CRUD | Authenticated/private mutation and installed-build acceptance; current snapshots use change detection because no immutable HEAD is exposed |
 | Build / Pipelines | List/detail/stage controls observed | Lists/actions/tests plus actual paginated needs graph | Downstream/cross-project graph and pipeline editor |
 | Build / Jobs | Loaded kind/state filters, stacked job/pipeline/stage rows and runner tags | Incremental ANSI logs/search/actions/artifacts | Full Web filters, large-log physical profiling |
-| Build / Pipeline schedules | Loaded periodic-run empty state and owner/variable explanation | List/create/edit/run/delete | Inputs, ownership, complete policy and live CRUD |
+| Build / Pipeline schedules | Loaded periodic-run empty state and owner/variable explanation | List/run | Create/edit/delete, inputs, ownership, complete policy and live CRUD |
 | Build / Artifacts | Loaded 53 records, archive/trace expansion, sizes and created dates | Pipeline/job artifacts browse/download | Project-wide inventory, retention and bulk operations |
 | Deploy / Releases | Loaded release cards, order, archives, assets and evidence | List/detail/create/edit/delete | Evidence/assets/milestone workflow parity and live CRUD |
 | Deploy / Package registry | Actual 20-version list and three-asset detail observed; mobile asset expansion exposes SHA-256 | Search/sort/paged list, files, verified numeric file download/open/share, guarded deletion | Older-instance download capability, type-specific installation/publish/policies and live write proof |
 | Deploy / Container registry | Loaded empty state, search/order and cleanup explanation | Repository/tag/digest/detail and guarded deletion | Empty project has no live tag example; publish/policies/bulk cleanup |
-| Operate / Environments | Loaded empty state and review-app controls | List/detail/create/stop/delete | Full metrics/terminal/rollback/protection and live CRUD |
+| Operate / Environments | Loaded empty state and review-app controls | List/detail | Create/stop/delete, full metrics/terminal/rollback/protection and live CRUD |
 | Operate / Terraform modules | Loaded module-registry empty state and documentation | Filtered package list/files/verified numeric download/guarded deletion | Real module download proof, installation/publish and live write proof |
 | Monitor / Incidents | Actual empty Open/Closed/All view observed | Typed list/create/edit/severity; separate issue state and GraphQL escalation lifecycle | Actual Incident fixture CRUD/lifecycle, alerts, timeline, metrics and on-call capabilities |
 | Monitor / Service Desk | Loaded email-support explanation and sign-in requirement | Not implemented | Capability/permissions, confidential Ticket widgets and email-aware replies |

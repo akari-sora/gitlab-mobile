@@ -7,6 +7,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../shared/adaptive_breakpoints.dart';
 import '../../shared/hub_ui.dart';
+import '../../shared/in_app_links.dart';
 import '../../shared/list_detail_scaffold.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/theme.dart';
@@ -18,6 +19,7 @@ import '../workspace/groups_page.dart';
 import '../workspace/project_page.dart';
 import '../workspace/projects_page.dart';
 import '../workspace/inbox_page.dart';
+import '../workspace/navigation.dart';
 import '../workspace/search_page.dart';
 import '../workspace/ci_page.dart';
 import '../workspace/work_item_page.dart';
@@ -61,6 +63,7 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
   bool _dynamicProbeSettled = false;
   bool _probedScheme = false;
   final _pops = _PopObserver();
+  late InAppLinkHandler _links;
 
   @override
   void dispose() {
@@ -68,9 +71,39 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
     super.dispose();
   }
 
+  /// Links tapped anywhere in this tree open for the account this tree was
+  /// built for. Once the session moves on they go to the browser instead.
+  InAppLinkHandler _bindLinks(SessionController session) {
+    final account = session.active;
+    final api = session.api;
+    if (account == null || api == null) return (_, _) async => false;
+    final generation = session.generation;
+    return inAppLinkHandler(
+      account,
+      api,
+      isCurrent: () =>
+          mounted &&
+          !api.isClosed &&
+          session.generation == generation &&
+          session.active?.key == account.key &&
+          identical(session.api, api),
+      ownerChanges: session,
+      sessionGeneration: generation,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant AuthenticatedApp oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.session != widget.session) {
+      _links = _bindLinks(widget.session);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _links = _bindLinks(widget.session);
     if (widget.dynamicLight != null || widget.dynamicDark != null) {
       _dynamicProbeSettled = true;
       _probedScheme = true;
@@ -115,7 +148,11 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
         }
         return MaterialApp(
           debugShowCheckedModeBanner: false,
-          builder: applySystemBars,
+          // Above the navigator, so every pushed route sees the link handler.
+          builder: (context, child) => InAppLinks(
+            handler: _links,
+            child: applySystemBars(context, child),
+          ),
           title: 'GitLab Mobile',
           theme: appTheme(
             Brightness.light,
