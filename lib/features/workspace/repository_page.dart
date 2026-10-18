@@ -51,11 +51,16 @@ class RepositoryTab extends StatefulWidget {
     required this.api,
     required this.project,
     this.active = true,
+    this.initialRef,
   });
   final Account account;
   final GitLabApi api;
   final Project project;
   final bool active;
+
+  /// A resolved branch or tag to open pinned to its commit instead of the
+  /// default branch's current head.
+  final RepositoryRef? initialRef;
   @override
   State<RepositoryTab> createState() => _RepositoryTabState();
 }
@@ -77,8 +82,14 @@ class _RepositoryTabState extends State<RepositoryTab> {
   @override
   void initState() {
     super.initState();
+    final initial = widget.initialRef;
     final defaultBranch = widget.project.defaultBranch;
-    if (defaultBranch != null && defaultBranch.isNotEmpty) {
+    if (initial != null &&
+        initial.sha.isNotEmpty &&
+        initial.kind != RepositoryRefKind.commit) {
+      _currentRef = initial;
+      _loading = false;
+    } else if (defaultBranch != null && defaultBranch.isNotEmpty) {
       _currentRef = RepositoryRef(
         kind: RepositoryRefKind.branch,
         name: defaultBranch,
