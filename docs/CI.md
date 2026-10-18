@@ -127,6 +127,17 @@ project's `CI_PIPELINE_IID`, which only grows, so each CI APK has a higher
 `version_code` next to `signing`. The `play` flavor is not built in CI; its
 store signing and listing are `NOT_RUN`.
 
+### In-app updates
+
+- **`gitlab` builds** look for an update in this project's releases on GitLab.com (project 86648389), anonymously. An interceptor strips every credential header, so no account token ever goes there.
+  - A release counts when it links a `gitlab-mobile-<sha>-release.apk` and its `build-metadata.json` from the same package. The metadata must say `channel: gitlab`, `build_type: release` and a higher `version_code`.
+  - The metadata is fetched within 64 KiB and must match the SHA-256 GitLab records for it.
+  - Debug previews and older releases without these fields are never offered.
+- **Download and install:** the APK goes to the app cache's `updates/`, and its size and SHA-256 are checked against the package file. The generated `gitlab`-flavor `AppUpdateChannel` then hands it to the system installer through `UpdateFileProvider` (cache `updates/` only, `REQUEST_INSTALL_PACKAGES`). Android asks once to allow installs from the app, and the user confirms every install.
+- **`play` builds** call Google Play's in-app update API (flexible) instead and declare no install permission.
+- **What a release needs:** publishing a gitlab-channel release requires its pipeline's release APK and metadata as package links.
+- **Verification:** device and Play verification are `NOT_RUN`.
+
 ## iOS and product acceptance
 
 An iOS binary needs a macOS runner with an appropriate Xcode toolchain. App Store/TestFlight deployment also needs signing and distribution credentials. Neither has been assumed or enabled. G0 acceptance additionally needs actual private-project access, device secure-storage/backup tests, account switching, network failure and accessibility evidence on Android/iOS. These remain separate from green CI.

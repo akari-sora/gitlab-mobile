@@ -177,6 +177,9 @@ class BootstrapTests(unittest.TestCase):
         source = self.root / 'app/src/main'
         source.mkdir(parents=True)
         (source / 'AndroidManifest.xml').write_text('<manifest><application/></manifest>')
+        activity = source / 'kotlin' / bootstrap.KOTLIN_PACKAGE / 'MainActivity.kt'
+        activity.parent.mkdir(parents=True)
+        activity.write_text(bootstrap.TEMPLATE_MAIN_ACTIVITY)
         gradle = self.root / 'app/build.gradle.kts'
         gradle.write_text(
             'plugins { id("com.android.application") }\n'
@@ -188,7 +191,10 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(text.count(android_signing.BEGIN_IMPORTS), 1)
         self.assertEqual(text.count(android_signing.BEGIN_LOADER), 1)
         self.assertEqual(text.count(android_signing.BEGIN_CONFIG), 1)
+        self.assertEqual(text.count(bootstrap.FLAVORS_BEGIN), 1)
+        self.assertEqual(text.count(bootstrap.UPDATE_DEPENDENCIES_BEGIN), 1)
         self.assertNotIn('signingConfigs.getByName("debug")', text)
+        self.assertEqual(activity.read_text(), bootstrap.MAIN_ACTIVITY)
 
     def prepare_ios(self, count):
         (self.root / 'Runner.xcodeproj').mkdir()
@@ -283,6 +289,62 @@ class BootstrapTests(unittest.TestCase):
         android_signing.configure_gradle(gradle)
         with self.assertRaisesRegex(RuntimeError, 'flavors already defined'):
             bootstrap.configure_flavors(gradle)
+
+
+    def _app(self):
+        app = self.root / 'app'
+        activity = app / 'src/main/kotlin' / bootstrap.KOTLIN_PACKAGE / 'MainActivity.kt'
+        activity.parent.mkdir(parents=True)
+        activity.write_text(bootstrap.TEMPLATE_MAIN_ACTIVITY)
+        gradle = app / 'build.gradle.kts'
+        gradle.write_text(self.GRADLE)
+        android_signing.configure_gradle(gradle)
+        bootstrap.configure_flavors(gradle)
+        return app
+
+    def test_update_channels_split_by_flavor(self):
+        app = self._app()
+        bootstrap.configure_update_channels(app)
+        gitlab_manifest = (app / 'src/gitlab/AndroidManifest.xml').read_text()
+        self.assertIn('android.permission.REQUEST_INSTALL_PACKAGES', gitlab_manifest)
+        self.assertIn('android:exported="false"', gitlab_manifest)
+        self.assertIn('${applicationId}.updates', gitlab_manifest)
+        self.assertFalse((app / 'src/play/AndroidManifest.xml').exists(),
+                         'the Play flavor must not request install permission')
+        self.assertIn('<cache-path name="updates" path="updates/" />',
+                      (app / 'src/gitlab/res/xml/update_paths.xml').read_text())
+        gitlab = (app / 'src/gitlab/kotlin' / bootstrap.KOTLIN_PACKAGE / 'AppUpdateChannel.kt').read_text()
+        play = (app / 'src/play/kotlin' / bootstrap.KOTLIN_PACKAGE / 'AppUpdateChannel.kt').read_text()
+        for source in (gitlab, play):
+            self.assertIn('object AppUpdateChannel', source)
+            self.assertIn(f'"{bootstrap.UPDATE_CHANNEL}"', source)
+        self.assertIn('apk.parentFile != updates', gitlab, 'only APKs in cache/updates/ are installed')
+        self.assertIn('canRequestPackageInstalls', gitlab)
+        self.assertNotIn('play.core', gitlab)
+        self.assertIn('AppUpdateType.FLEXIBLE', play)
+        self.assertNotIn('REQUEST_INSTALL_PACKAGES', play)
+        self.assertNotIn('FileProvider', play)
+        self.assertEqual((app / 'src/main/kotlin' / bootstrap.KOTLIN_PACKAGE / 'MainActivity.kt').read_text(),
+                         bootstrap.MAIN_ACTIVITY)
+        gradle = (app / 'build.gradle.kts').read_text()
+        self.assertIn('"gitlabImplementation"("androidx.core:core:', gradle)
+        self.assertIn('"playImplementation"("com.google.android.play:app-update:', gradle)
+        self.assertNotIn('implementation("com.google.android.play', gradle.replace('"playImplementation"', ''))
+        bootstrap.configure_update_channels(app)
+        self.assertEqual((app / 'build.gradle.kts').read_text(), gradle, 'idempotent')
+
+    def test_update_channels_refuse_unknown_activity_or_stale_block(self):
+        app = self._app()
+        activity = app / 'src/main/kotlin' / bootstrap.KOTLIN_PACKAGE / 'MainActivity.kt'
+        activity.write_text(bootstrap.TEMPLATE_MAIN_ACTIVITY.replace('FlutterActivity()', 'FlutterFragmentActivity()'))
+        with self.assertRaisesRegex(RuntimeError, 'Unknown MainActivity template'):
+            bootstrap.configure_update_channels(app)
+        activity.write_text(bootstrap.TEMPLATE_MAIN_ACTIVITY)
+        bootstrap.configure_update_channels(app)
+        gradle = app / 'build.gradle.kts'
+        gradle.write_text(gradle.read_text().replace('app-update:2.1.0', 'app-update:1.0.0'))
+        with self.assertRaisesRegex(RuntimeError, 'Stale managed update dependencies'):
+            bootstrap.configure_update_channels(app)
 
 
 if __name__ == '__main__':
