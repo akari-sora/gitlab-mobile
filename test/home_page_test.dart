@@ -135,6 +135,24 @@ void main() {
     expect(fixture.unhandled, isEmpty);
   });
 
+  testWidgets('the 待我審查 shortcut opens merge requests awaiting review', (tester) async {
+    _phone(tester);
+    final fixture = _HomeFixture();
+    addTearDown(fixture.api.close);
+    final session = await _session(tester, fixture);
+    await tester.pumpWidget(workspaceHost(HomePage(session: session, recentStore: MemoryRecentProjectStore())));
+    await settleNetworkWidgets(tester);
+
+    await tester.scrollUntilVisible(find.text('待我審查'), 200);
+    await tester.tap(find.text('待我審查'));
+    await settleNetworkWidgets(tester);
+    expect(find.byType(MyWorkPage), findsOneWidget);
+    final query = _queries(fixture, 'merge_requests').single;
+    expect(query, containsPair('reviewer_id', '7'));
+    expect(query, containsPair('scope', 'all'));
+    expect(fixture.unhandled, isEmpty);
+  });
+
   testWidgets('an empty starred list offers 瀏覽專案 and Home actions hand over', (tester) async {
     _phone(tester);
     final fixture = _HomeFixture()..noStars = true;

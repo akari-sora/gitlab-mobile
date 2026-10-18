@@ -35,6 +35,12 @@ String metadataTitle(MetadataKind kind) => switch (kind) {
   MetadataKind.branches => '分支', MetadataKind.tags => '標籤版本', MetadataKind.commits => '提交紀錄',
   MetadataKind.releases => 'Releases', MetadataKind.labels => '議題標籤', MetadataKind.milestones => '里程碑',
 };
+/// [verb] followed by the kind's title, with the space Chinese text puts
+/// before a Latin word: 新增里程碑, but 新增 Releases.
+String metadataPhrase(String verb, MetadataKind kind) {
+  final title = metadataTitle(kind);
+  return RegExp(r'^[A-Za-z]').hasMatch(title) ? '$verb $title' : '$verb$title';
+}
 
 final class ProjectStarControl {
   const ProjectStarControl({
@@ -718,7 +724,7 @@ class _MetadataPageState extends State<MetadataPage> {
   Future<void> _edit([Json? value]) async {
     if (_busy) { return; }
     final saved = await openEditor(context, account: widget.account,
-      title: '${value == null ? '新增' : '編輯'}${metadataTitle(widget.kind)}',
+      title: metadataPhrase(value == null ? '新增' : '編輯', widget.kind),
       resource: '${widget.project.id}/${widget.kind.name}/${value == null ? 'new' : _id(value)}',
       subtitle: widget.project.path, fields: _fields(value), save: (values) async {
         final body = <String, dynamic>{...values};
@@ -741,7 +747,7 @@ class _MetadataPageState extends State<MetadataPage> {
     if (saved && mounted) { await _feed.currentState?.refresh(); }
   }
   Future<void> _delete(Json value) async {
-    if (_busy || !await confirmAction(context, '刪除${metadataTitle(widget.kind)}？', _name(value), requiredText: _name(value))) { return; }
+    if (_busy || !await confirmAction(context, '${metadataPhrase('刪除', widget.kind)}？', _name(value), requiredText: _name(value))) { return; }
     if (!mounted) { return; }
     setState(() => _busy = true);
     try {
@@ -865,12 +871,12 @@ class _MetadataPageState extends State<MetadataPage> {
   }
   @override
   Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: Text(metadataTitle(widget.kind)), actions: [
-    if (!widget.api.isClosed && _sessionCurrent() && widget.kind != MetadataKind.commits) IconButton(tooltip: '新增${metadataTitle(widget.kind)}',
+    if (!widget.api.isClosed && _sessionCurrent() && widget.kind != MetadataKind.commits) IconButton(tooltip: metadataPhrase('新增', widget.kind),
       onPressed: _busy || widget.project.archived == true ? null : _edit, icon: const Icon(Icons.add)),
   ]), body: widget.api.isClosed || !_sessionCurrent() ? const SizedBox.shrink() : gestureSafe(RecordsFeed(key: _feed, identity: '${widget.account.key}/${widget.project.id}/${widget.kind.name}/$_generation',
     account: widget.account, resourceLabel: '${widget.project.path} · ${metadataTitle(widget.kind)}',
     onSwitchAccount: endSessionFrom(context),
-    empty: '尚無${metadataTitle(widget.kind)}', load: (next) => widget.api.records(path,
+    empty: metadataPhrase('尚無', widget.kind), load: (next) => widget.api.records(path,
       query: {if (widget.kind == MetadataKind.labels) 'include_ancestor_groups': 'false'}, next: next),
     itemBuilder: (context, value) => EntityCard(
       onTap: () => _view(value),

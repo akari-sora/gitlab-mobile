@@ -183,6 +183,7 @@ class _MobileShellState extends State<_MobileShell> {
   int _searchToken = 0;
   int _locatorToken = 0;
   int _createToken = 0;
+  int _todoToken = 0;
   bool _removing = false;
   final Set<int> _visited = {_home};
 
@@ -579,13 +580,14 @@ class _MobileShellState extends State<_MobileShell> {
 
   /// Home's 待辦, 瀏覽專案, 以連結開啟 and 新增專案 hand over to the inbox or
   /// the explore destination, which own those flows.
-  void _goTo(int index, {bool locate = false, bool create = false}) {
+  void _goTo(int index, {bool locate = false, bool create = false, bool todo = false}) {
     _chrome.show();
     setState(() {
       _selected = index;
       _visited.add(index);
       if (locate) _locatorToken++;
       if (create) _createToken++;
+      if (todo) _todoToken++;
     });
   }
 
@@ -925,7 +927,7 @@ class _MobileShellState extends State<_MobileShell> {
                                           HomePage(
                                             session: session,
                                             shortcuts: widget.shortcuts,
-                                            onOpenInbox: () => _goTo(_inbox),
+                                            onOpenInbox: () => _goTo(_inbox, todo: true),
                                             onExplore: () => _goTo(_explore),
                                             onLocate: () => _goTo(_explore, locate: true),
                                             onCreate: () => _goTo(_explore, create: true),
@@ -934,7 +936,7 @@ class _MobileShellState extends State<_MobileShell> {
                                         _pane(
                                           _inbox,
                                           _visited.contains(_inbox)
-                                              ? InboxPage(account: account, api: session.api!)
+                                              ? InboxPage(account: account, api: session.api!, todoToken: _todoToken)
                                               : const SizedBox(),
                                         ),
                                         // Explore stays built from the start so a launcher search
