@@ -46,6 +46,29 @@ Live writes in run 1, each reversed and checked through the API with `glab api`:
 - `telltale` 更多: licence 「GNU General …」 and 「移除星標」, matching the API (`license` = GNU General Public License v3.0 or later; starred by the signed-in user).
 - Find-file on a 756-file tree: the empty query explains that it lists the first 200; 「README」 reported 27 matches. Blame on `README.md` is titled 逐行作者 with readable commit headers.
 
+## Authenticated live smoke, 2026-10-18
+
+`tool/live_smoke.dart` ran from this container against GitLab.com with the owner's PAT through a 0600 temporary credential file, which was removed after each run. The app code under test is `main` `1158ca89`, which has the same `lib/` as release `v0.5.0-dev.4e4d2979`. The suite creates one private sandbox project and deletes it at the end. The new release-asset check only reads the app's own project.
+
+The final run had 37 PASS, 1 NOT_RUN and 0 FAIL. The new checks are:
+
+- The newest release of `aa22396584/gitlab-mobile` that links `SHA256SUMS` resolves to `gitlab-mobile-preview@4e4d2979…` through `releasePackageFile`. It downloads through `packageFileForDownload` and `downloadPackageFile`, and the bytes match the size and SHA-256 GitLab records.
+- A milestone's issues and a label-filtered issue list contain the fixture issue, with the label's colour. A tag carries its release object.
+- MR, commit, pipeline and job `web_url`s map to their in-app targets. A job's JSON carries `pipeline.id`, `pipeline.project_id`, `stage` and `ref`.
+
+`jobs.read_trace_retry_new_attempt_and_manual_play` is NOT_RUN because the sandbox pipeline hit `ci_quota_exceeded` on GitLab.com shared runners.
+
+The suite also recorded these observations:
+
+- GitLab.com returns `/-/work_items/N` as an issue's `web_url`. Such a link opens the work item page in the app, not the REST issue page.
+- Project events carry no `target_url`. Issue events still have `target_type` `Issue`, so they open through `project_id` and `target_iid`.
+- A stale `last_commit_id` file write was rejected with HTTP 400 and the content was kept.
+
+Three earlier runs each stopped at a single check, and each run created and deleted its own sandbox.
+- **Run 1:** an assertion that expected `/-/issues/N` failed; the assertion was corrected.
+- **Run 2:** the stale-write check failed once with no recorded detail; the check now records its outcome.
+- **Run 3:** a transport error while creating the tag was reported as `writeUncertain`.
+
 ## NOT_RUN
 
 - On the phone: swiping or 全部完成 on real todos (only the two test todos above were written), the MR draft toggle, merge, fork, running a pipeline schedule, wiki page rendering (no project with an enabled wiki was used), linked issues with real links, deployments with data, the unresolved-project page against a real 404, the two-pane layout at ≥840 dp, TalkBack, reduced motion, 2x system font size (covered only by widget tests).
