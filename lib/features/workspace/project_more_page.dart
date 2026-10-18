@@ -8,6 +8,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/providers.dart';
 import '../../core/release_assets.dart';
+import '../../core/repository_ref.dart';
 import '../../core/work_item_types.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/resource_share.dart';
@@ -21,11 +22,13 @@ import 'registries_page.dart';
 import 'snippets_page.dart';
 import 'editor.dart';
 import 'graph_work_items_page.dart';
+import 'navigation.dart';
 import 'project_extras.dart';
 import 'project_analytics_page.dart';
 import 'project_page.dart';
 import 'records_feed.dart';
 import 'release_assets_section.dart';
+import 'repository_page.dart';
 import 'search_page.dart';
 import 'work_item_page.dart';
 import '../../shared/theme.dart';
@@ -622,7 +625,10 @@ class _MetadataPageState extends State<MetadataPage> {
     if (route == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (navigator?.mounted == true && route.isActive) {
-        navigator!.removeRoute(route);
+        // Commits, files, a release and item lists opened from the detail
+        // sit above it and share its owner; they leave with it.
+        navigator!.popUntil((candidate) => candidate == route || candidate.isFirst);
+        if (route.isActive) navigator.removeRoute(route);
       }
     });
   }
@@ -652,8 +658,11 @@ class _MetadataPageState extends State<MetadataPage> {
 
   List<String> get path => ['projects', '${widget.project.id}',
     if (const [MetadataKind.branches, MetadataKind.tags, MetadataKind.commits].contains(widget.kind)) 'repository', widget.kind.name];
-  String _name(Json value) => valueText(value, widget.kind == MetadataKind.commits ? 'title'
-    : widget.kind == MetadataKind.milestones ? 'title' : 'name', valueText(value, 'tag_name'));
+  String _name(Json value, [MetadataKind? as]) {
+    final kind = as ?? widget.kind;
+    return valueText(value, kind == MetadataKind.commits || kind == MetadataKind.milestones ? 'title' : 'name',
+      valueText(value, 'tag_name'));
+  }
   String _detail(Json value) => widget.kind == MetadataKind.commits
     ? valueText(value, 'author_name')
     : valueText(value, 'description', valueText(valueObject(value, 'commit'), 'title'));
@@ -782,8 +791,34 @@ class _MetadataPageState extends State<MetadataPage> {
     finally { if (mounted) { setState(() => _busy = false); } }
   }
   static Widget _inset(Widget child) => Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: child);
-  Future<void> _view(Json value) async {
-    if (widget.kind == MetadataKind.commits) {
+
+  /// The branch or tag pinned to its commit, or null without a valid SHA.
+  static RepositoryRef? _pinnedRef(Json value, MetadataKind kind) {
+    try {
+      return switch (kind) {
+        MetadataKind.branches => RepositoryRef.fromBranch(value),
+        MetadataKind.tags => RepositoryRef.fromTag(value),
+        _ => null,
+      };
+    } on FormatException {
+      return null;
+    } on ApiFailure {
+      return null;
+    }
+  }
+
+  /// Opens [page] above a detail: [_dismissDetail] removes it with that
+  /// detail, and it shows nothing once the detail's owner is stale.
+  void _pushFromDetail(bool Function() ownerCurrent, Widget page) {
+    final navigator = _navigator;
+    if (!ownerCurrent() || navigator == null || !navigator.mounted) return;
+    unawaited(navigator.push(MaterialPageRoute<void>(
+      builder: (_) => _OwnerFence(isCurrent: ownerCurrent, changes: _session, child: page))));
+  }
+
+  Future<void> _view(Json value, [MetadataKind? as]) async {
+    final kind = as ?? widget.kind;
+    if (kind == MetadataKind.commits) {
       await Navigator.push<void>(
         context,
         MaterialPageRoute(
@@ -811,13 +846,13 @@ class _MetadataPageState extends State<MetadataPage> {
       generation: _generation,
     );
     if (!_ownerCurrent(detailOwner)) return;
-    final detailTitle = _name(value);
-    final resourceId = switch (ownerKind) {
+    final detailTitle = _name(value, kind);
+    final resourceId = switch (kind) {
       MetadataKind.releases => valueText(value, 'tag_name'),
       MetadataKind.milestones => valueInt(value, 'iid'),
       _ => null,
     };
-    final Uri? shareUri = switch ((ownerKind, resourceId)) {
+    final Uri? shareUri = switch ((kind, resourceId)) {
       (MetadataKind.releases, final String tag) when tag.trim().isNotEmpty => () {
         final base = ownerAccount.instance.projectWeb(
           '${ownerProject.path}/-/releases',
@@ -831,7 +866,61 @@ class _MetadataPageState extends State<MetadataPage> {
       _ => null,
     };
     bool ownerCurrent() => _ownerCurrent(detailOwner);
-    final assets = ownerKind == MetadataKind.releases ? ReleaseAssets.fromJson(value['assets']) : null;
+    final assets = kind == MetadataKind.releases ? ReleaseAssets.fromJson(value['assets']) : null;
+    final projectSegments = ['projects', '${ownerProject.id}'];
+    final commit = valueObject(value, 'commit');
+    final commitSha = valueText(commit, 'id');
+    final pinned = _pinnedRef(value, kind);
+    final releaseTag = kind == MetadataKind.tags && value['release'] is Json ? valueText(value, 'name') : '';
+    final tagMessage = kind == MetadataKind.tags ? valueText(value, 'message').trim() : '';
+    final milestoneId = kind == MetadataKind.milestones ? valueInt(value, 'id') : 0;
+    final labelName = kind == MetadataKind.labels ? valueText(value, 'name') : '';
+    // A milestone lists everything assigned to it; a label lists what is open.
+    final List<String> Function(String resource)? itemsPath = switch (kind) {
+      MetadataKind.milestones when milestoneId > 0 =>
+        (resource) => [...projectSegments, 'milestones', '$milestoneId', resource],
+      MetadataKind.labels when labelName.isNotEmpty => (resource) => [...projectSegments, resource],
+      _ => null,
+    };
+    Widget row(String key, IconData icon, String label, VoidCallback onTap, {Widget? subtitle}) => ListTile(
+      key: ValueKey('metadata-detail-$key'), leading: Icon(icon),
+      title: Text(label, maxLines: 2, overflow: TextOverflow.ellipsis), subtitle: subtitle,
+      trailing: const Icon(Icons.chevron_right, size: 18), onTap: onTap);
+    Widget rows(List<Widget> children) => _inset(Card(child: Column(children: [
+      for (final (index, child) in children.indexed) ...[
+        if (index > 0) const Divider(height: 1, indent: 56),
+        child,
+      ],
+    ])));
+    final codeRows = <Widget>[
+      if (commitSha.isNotEmpty) row('commit', Icons.commit, valueText(commit, 'title', shortSha(commitSha)),
+        subtitle: Text(shortSha(commitSha), style: codeTextStyle(context, fontSize: 12)),
+        () => _pushFromDetail(ownerCurrent, CommitDetailPage(account: ownerAccount, api: ownerApi,
+          project: ownerProject, sha: commitSha, initialCommit: commit))),
+      if (pinned != null) row('browse', Icons.folder_open_outlined, '瀏覽檔案',
+        subtitle: Text('固定於 ${shortSha(pinned.sha)}'),
+        () => _pushFromDetail(ownerCurrent, Scaffold(
+          appBar: AppBar(title: Text(detailTitle, maxLines: 1, overflow: TextOverflow.ellipsis)),
+          body: gestureSafe(RepositoryTab(account: ownerAccount, api: ownerApi, project: ownerProject,
+            initialRef: pinned))))),
+      if (releaseTag.isNotEmpty) _ReleaseLink(account: ownerAccount, isCurrent: ownerCurrent,
+        target: '${ownerProject.path} · Release $releaseTag',
+        load: () => ownerApi.record([...projectSegments, 'releases', releaseTag]),
+        open: (release) => _view(release, MetadataKind.releases)),
+    ];
+    final itemRows = <Widget>[
+      if (itemsPath != null)
+        for (final (resource, icon, label, empty) in kind == MetadataKind.labels
+            ? const [('issues', Icons.adjust, '議題', '沒有開啟中的議題'),
+                ('merge_requests', Icons.merge, '合併請求', '沒有開啟中的合併請求')]
+            : const [('issues', Icons.adjust, '議題', '這個里程碑沒有議題'),
+                ('merge_requests', Icons.merge, '合併請求', '這個里程碑沒有合併請求')])
+          row(resource, icon, label, () => _pushFromDetail(ownerCurrent, _MetadataWorkItemsPage(
+            account: ownerAccount, api: ownerApi, project: ownerProject, title: '$detailTitle · $label',
+            empty: empty, resource: resource, path: itemsPath(resource),
+            query: {if (kind == MetadataKind.labels) ...{'labels': labelName, 'state': 'opened'}, 'with_labels_details': 'true'},
+            isCurrent: ownerCurrent, ownerChanges: _session))),
+    ];
     final route = MaterialPageRoute<void>(builder: (_) => Scaffold(
       appBar: AppBar(title: Text(detailTitle,
               maxLines: 1,
@@ -846,7 +935,7 @@ class _MetadataPageState extends State<MetadataPage> {
                     ownerApi,
                     ownerProject.id,
                     ownerProject.path,
-                    ownerKind,
+                    kind,
                     resourceId,
                   ),
                   isCurrent: ownerCurrent,
@@ -855,7 +944,14 @@ class _MetadataPageState extends State<MetadataPage> {
           ), body: gestureSafe(ListView(padding: const EdgeInsets.symmetric(vertical: 20), children: [
         _inset(Text(ownerProject.path, style: Theme.of(context).textTheme.bodySmall)), const SizedBox(height: 16),
         if (value['state'] is String) _inset(Align(alignment: Alignment.centerLeft, child: StatusBadge(valueText(value, 'state')))),
-        if (ownerKind == MetadataKind.releases) ...[
+        if (kind == MetadataKind.branches && (value['default'] == true || value['protected'] == true)) ...[
+          _inset(Wrap(spacing: 8, runSpacing: 8, children: [
+            if (value['default'] == true) const MetaChip('預設', icon: Icons.star_outline),
+            if (value['protected'] == true) const MetaChip('受保護', icon: Icons.lock_outline),
+          ])),
+          const SizedBox(height: 16),
+        ],
+        if (kind == MetadataKind.releases) ...[
           _inset(Wrap(spacing: 8, runSpacing: 8, children: [
             MetaChip(valueText(value, 'tag_name'), icon: Icons.sell_outlined, mono: true),
             MetaChip(relativeDate(valueText(value, 'released_at', valueText(value, 'created_at'))), icon: Icons.schedule_outlined),
@@ -867,16 +963,22 @@ class _MetadataPageState extends State<MetadataPage> {
             isCurrent: ownerCurrent, ownerChanges: _session),
           const SizedBox(height: 16),
         ],
-        _inset(MarkdownView(valueText(value, 'description', valueText(value, 'message', '尚未填寫說明。')),
-          base: ownerAccount.instance.projectWeb(ownerProject.path), api: ownerApi, projectId: ownerProject.id,
-          projectWeb: ownerAccount.instance.projectWeb(ownerProject.path), projectPath: ownerProject.path)),
-        if (value['commit'] is Json) ...[const SizedBox(height: 20), _inset(Text(valueText(valueObject(value, 'commit'), 'title'))),
-          _inset(SelectableText(valueText(valueObject(value, 'commit'), 'id'), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12)))],
-        if (ownerKind == MetadataKind.milestones) ...[const SizedBox(height: 16),
+        // A branch has no text of its own; a tag message is plain text.
+        if (kind == MetadataKind.tags) ...[
+          if (tagMessage.isNotEmpty) _inset(SelectableText(tagMessage)),
+        ] else if (kind != MetadataKind.branches)
+          _inset(MarkdownView(valueText(value, 'description', valueText(value, 'message', '尚未填寫說明。')),
+            base: ownerAccount.instance.projectWeb(ownerProject.path), api: ownerApi, projectId: ownerProject.id,
+            projectWeb: ownerAccount.instance.projectWeb(ownerProject.path), projectPath: ownerProject.path)),
+        if (codeRows.isNotEmpty) ...[const SizedBox(height: 20), rows(codeRows)],
+        if (kind == MetadataKind.milestones) ...[const SizedBox(height: 16),
           _inset(Text('開始：${valueText(value, 'start_date', '未設定')}\n到期：${valueText(value, 'due_date', '未設定')}'))],
+        if (itemRows.isNotEmpty) ...[const SizedBox(height: 20), rows(itemRows)],
       ])),
     ));
-    _detailRoute = route;
+    // A release opened from its tag stacks on the tag's detail, which stays
+    // the route that dismissal removes together with everything above it.
+    _detailRoute ??= route;
     try {
       await (_navigator ?? Navigator.of(context)).push<void>(route);
     } finally {
@@ -913,4 +1015,193 @@ class _MetadataPageState extends State<MetadataPage> {
         ]),
     ),
   )));
+}
+
+/// Shows [child] only while the owner that opened it is current, so a page
+/// still being dismissed after an account switch shows nothing of the old one.
+class _OwnerFence extends StatelessWidget {
+  const _OwnerFence({
+    required this.isCurrent,
+    required this.changes,
+    required this.child,
+  });
+  final bool Function() isCurrent;
+  final Listenable? changes;
+  final Widget child;
+
+  Widget _fenced(Widget child) =>
+      isCurrent() ? child : const Scaffold(body: SizedBox.shrink());
+
+  @override
+  Widget build(BuildContext context) {
+    final changes = this.changes;
+    return changes == null
+        ? _fenced(child)
+        : ListenableBuilder(
+            listenable: changes,
+            builder: (context, child) => _fenced(child!),
+            child: child,
+          );
+  }
+}
+
+/// 查看 Release on a tag: reads that tag's release, then opens its detail. A
+/// failure stays on the tag with the account, the target, retry and switch.
+class _ReleaseLink extends StatefulWidget {
+  const _ReleaseLink({
+    required this.account,
+    required this.target,
+    required this.isCurrent,
+    required this.load,
+    required this.open,
+  });
+  final Account account;
+  final String target;
+  final bool Function() isCurrent;
+  final Future<Json> Function() load;
+  final Future<void> Function(Json release) open;
+  @override
+  State<_ReleaseLink> createState() => _ReleaseLinkState();
+}
+
+class _ReleaseLinkState extends State<_ReleaseLink> {
+  bool _loading = false;
+  ApiFailure? _error;
+  int _epoch = 0;
+
+  bool _current(int epoch) => mounted && epoch == _epoch && widget.isCurrent();
+
+  Future<void> _open() async {
+    if (_loading || !widget.isCurrent()) return;
+    final epoch = ++_epoch;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    final Json release;
+    try {
+      release = await widget.load();
+    } catch (e) {
+      if (!_current(epoch)) return;
+      final failure = safeFailure(e);
+      setState(() {
+        _loading = false;
+        _error = failure.kind == FailureKind.cancelled ? null : failure;
+      });
+      return;
+    }
+    if (!_current(epoch)) return;
+    setState(() => _loading = false);
+    await widget.open(release);
+  }
+
+  @override
+  void dispose() {
+    _epoch++;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      ListTile(
+        key: const ValueKey('metadata-detail-release'),
+        leading: const Icon(Icons.inventory_2_outlined),
+        title: const Text('查看 Release'),
+        trailing: _loading
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.chevron_right, size: 18),
+        onTap: _loading ? null : _open,
+      ),
+      if (_error != null)
+        FailureNotice(
+          _error!,
+          account: widget.account,
+          resourceLabel: widget.target,
+          onRetry: _open,
+          onSwitchAccount: endSessionFrom(context),
+        ),
+    ],
+  );
+}
+
+/// Issues or merge requests in one milestone or under one label. Rows open
+/// through [ResourceNavigator] under the owner of the detail they came from.
+class _MetadataWorkItemsPage extends StatelessWidget {
+  const _MetadataWorkItemsPage({
+    required this.account,
+    required this.api,
+    required this.project,
+    required this.title,
+    required this.empty,
+    required this.resource,
+    required this.path,
+    required this.query,
+    required this.isCurrent,
+    this.ownerChanges,
+  });
+  final Account account;
+  final GitLabApi api;
+  final Project project;
+  final String title, empty, resource;
+  final List<String> path;
+  final Map<String, String> query;
+  final bool Function() isCurrent;
+  final Listenable? ownerChanges;
+
+  bool get _mr => resource == 'merge_requests';
+
+  Future<ApiPage<Json>> _load(Uri? next) async {
+    if (!isCurrent()) throw const ApiFailure(FailureKind.cancelled);
+    final page = await api.records(path, query: query, next: next);
+    if (!isCurrent()) throw const ApiFailure(FailureKind.cancelled);
+    return page;
+  }
+
+  void _open(BuildContext context, Json data) {
+    final iid = valueInt(data, 'iid'), projectId = valueInt(data, 'project_id');
+    if (iid <= 0) return;
+    unawaited(
+      ResourceNavigator(
+        account,
+        api,
+        isCurrent: isCurrent,
+        ownerChanges: ownerChanges,
+      ).workItem(
+        context,
+        '${projectId > 0 ? projectId : project.id}',
+        resource,
+        iid,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis),
+    ),
+    body: gestureSafe(
+      RecordsFeed(
+        identity:
+            '${account.key}/${project.id}/${path.join('/')}?${Uri(queryParameters: query).query}',
+        account: account,
+        resourceLabel: '${project.path} · $title',
+        onSwitchAccount: endSessionFrom(context),
+        empty: empty,
+        emptyIcon: _mr ? Icons.merge : Icons.adjust,
+        load: _load,
+        itemBuilder: (context, data) => workItemCard(
+          context,
+          data,
+          mr: _mr,
+          onTap: () => _open(context, data),
+        ),
+      ),
+    ),
+  );
 }
