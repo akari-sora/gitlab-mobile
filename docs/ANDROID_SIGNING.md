@@ -259,6 +259,12 @@ not cover it.
   GitLab release; the inventory lists them. The same signer and higher
   versionCodes mean they are expected to update the debug previews in place; a
   device install or update is NOT_RUN.
+- GitLab `v0.5.0-dev.84c33b20` gitlab-flavor release APK (versionCode 470),
+  source `84c33b20`, signer `STABLE_CI_DEBUG` (v2 only), SHA-256
+  `d65c5c65d039be84015d08b95159e8d1a4094dfbe3f72b07540ae5049701f2af`:
+  [gitlab-mobile-84c33b20-release.apk](https://gitlab.com/api/v4/projects/86648389/packages/generic/gitlab-mobile-preview/84c33b20f12aa90ad86df7ba297e7600782d6441/gitlab-mobile-84c33b20-release.apk).
+  The in-app updater in `v0.5.0-dev.2e08d616` finds it (anonymous check run
+  from the cloud session); the device download and install are NOT_RUN.
 
 On Android 13 (API 33) and later, a `LEGACY_LOCAL` install updates in place to
 the bridge and then to the ordinary release. That chain passed natively on an
