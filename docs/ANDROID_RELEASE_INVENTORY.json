@@ -107,6 +107,16 @@
       "private_key_status": "NOT_RETAINED_BY_DESIGN",
       "expected_for_ordinary_local_apks": false,
       "covered_by_lineage": false
+    },
+    {
+      "id": "CI_EPHEMERAL_4E4D2979",
+      "cert_sha256": "21bf28fab5cc8b13fcebe097f4268de34178c5afefb9ac2896afdb5179e30484",
+      "subject": "CN=GitLab Mobile CI Debug",
+      "lane": "GitLab CI android_debug ephemeral debug identity (GITLAB_MOBILE_ALLOW_EPHEMERAL_DEBUG_SIGNING=1), job 17265303483",
+      "private_key_locator": "none retained (generated inside the CI job and discarded with its workspace)",
+      "private_key_status": "NOT_RETAINED_BY_DESIGN",
+      "expected_for_ordinary_local_apks": false,
+      "covered_by_lineage": false
     }
   ],
   "lineages": [
@@ -331,6 +341,33 @@
       "public_download_url_status": "downloaded anonymously on 2026-10-18 UTC before and after the release was published; both SHA-256 values matched the published SHA256SUMS",
       "updates_in_place_from": [],
       "installed_on_phone": "unknown; no receipt records an install"
+    },
+    {
+      "id": "CI_EPHEMERAL_4E4D2979_DEBUG",
+      "role": "GitLab v0.5.0-dev.4e4d2979 CI preview debug APK",
+      "source_commit": "4e4d2979b6f5ae1b5cf2e6fd4718314bec5d18b6",
+      "build_lane": "GitLab CI android_debug, job 17265303483, pipeline 2960304554",
+      "variant": "debug",
+      "entrypoint": "lib/main.dart (flutter build apk --debug default target in ci/build_android.sh)",
+      "qa_benchmark_flags": "disabled (ci/build_android.sh passes only --dart-define=GITLAB_MOBILE_COMMIT)",
+      "application_id": "io.gitlabmobile.gitlab_mobile",
+      "version_name": "0.5.0",
+      "version_code": 5,
+      "debuggable": true,
+      "min_sdk": 24,
+      "target_sdk": 36,
+      "abis": ["arm64-v8a", "armeabi-v7a", "x86_64"],
+      "signing_schemes": {"v2": ["21bf28fab5cc8b13fcebe097f4268de34178c5afefb9ac2896afdb5179e30484"]},
+      "signer": "CI_EPHEMERAL_4E4D2979",
+      "apk_sha256": "b0a0c1377935be20df6a025ac27e19796c4de31cd686e24b4cf87986712f9417",
+      "bytes": 180040774,
+      "local_path": "local-only download for verification; not retained",
+      "release_tag": "v0.5.0-dev.4e4d2979",
+      "release_url": "https://gitlab.com/aa22396584/gitlab-mobile/-/releases/v0.5.0-dev.4e4d2979",
+      "public_download_url": "https://gitlab.com/api/v4/projects/86648389/packages/generic/gitlab-mobile-preview/4e4d2979b6f5ae1b5cf2e6fd4718314bec5d18b6/gitlab-mobile-4e4d2979-debug.apk",
+      "public_download_url_status": "downloaded anonymously on 2026-10-18 UTC before and after the release was published; both SHA-256 values matched the published SHA256SUMS",
+      "updates_in_place_from": [],
+      "installed_on_phone": "unknown; no receipt records an install"
     }
   ],
   "known_gaps": [
@@ -341,6 +378,7 @@
     "No real private-account, iOS, Play or G0 acceptance.",
     "v0.5.0-dev.adcb7d4d CI preview (adcb7d4d) is signed by a discarded ephemeral CI key; it cannot update CURRENT_LOCAL, LEGACY_LOCAL, HISTORICAL_CI23 or any other install, and no later build can update it in place.",
     "v0.5.0-dev.630e20d5 CI preview (630e20d5) is signed by a discarded ephemeral CI key; it cannot update CURRENT_LOCAL, LEGACY_LOCAL, HISTORICAL_CI23, CI_EPHEMERAL_ADCB7D4D or any other install, and no later build can update it in place.",
-    "v0.5.0-dev.a2eb7ba6 CI preview (a2eb7ba6) is signed by a discarded ephemeral CI key; it cannot update CURRENT_LOCAL, LEGACY_LOCAL, HISTORICAL_CI23, CI_EPHEMERAL_ADCB7D4D, CI_EPHEMERAL_630E20D5 or any other install, and no later build can update it in place."
+    "v0.5.0-dev.a2eb7ba6 CI preview (a2eb7ba6) is signed by a discarded ephemeral CI key; it cannot update CURRENT_LOCAL, LEGACY_LOCAL, HISTORICAL_CI23, CI_EPHEMERAL_ADCB7D4D, CI_EPHEMERAL_630E20D5 or any other install, and no later build can update it in place.",
+    "v0.5.0-dev.4e4d2979 CI preview (4e4d2979) is signed by a discarded ephemeral CI key; it cannot update CURRENT_LOCAL, LEGACY_LOCAL, HISTORICAL_CI23, CI_EPHEMERAL_ADCB7D4D, CI_EPHEMERAL_630E20D5, CI_EPHEMERAL_A2EB7BA6 or any other install, and no later build can update it in place."
   ]
 }
