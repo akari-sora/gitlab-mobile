@@ -9,7 +9,7 @@ New projects require explicit runner registration and dispatcher onboarding on e
 1. `python_checks`: report-converter, local-smoke runner, package-installer and native-bootstrap regressions, Python compilation, shell syntax.
 2. `flutter_checks`: dependency-lock enforcement, Flutter analysis, 68 Flutter unit/widget/smoke tests in the initial CI baseline, JUnit and LCOV. The current test count is read from the job report, not inferred from this document.
 3. `native_templates`: generate/review Android and iOS runner configuration from the pinned SDK. Linux generation is not an iOS build or device test.
-4. `android_debug`: needs all three checks, reuses their dependency lock and native templates, and builds an Android debug APK.
+4. `android_debug`: needs all three checks, reuses their dependency lock and native templates, and builds the `gitlab`-flavor Android APK: a release build on protected refs (`main`, `v*` tags), a debug build everywhere else (the job keeps its historical name).
 5. `publish_preview`: main/default branch only, verifies checksums and uploads APK/metadata/checksums to the same project's Generic Package Registry.
 
 `public_api_smoke` is not part of push, merge-request or tag pipelines; see [Public API smoke](#public-api-smoke).
