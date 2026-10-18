@@ -85,6 +85,11 @@ final class _OwnerHarnessState extends State<_OwnerHarness> {
 }
 
 void main() {
+  test('metadata phrases space a Latin title only', () {
+    expect(metadataPhrase('新增', MetadataKind.milestones), '新增里程碑');
+    expect(metadataPhrase('尚無', MetadataKind.releases), '尚無 Releases');
+  });
+
   testWidgets('milestone detail shares project IID rather than database ID', (
     tester,
   ) async {

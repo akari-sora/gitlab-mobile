@@ -15,19 +15,30 @@ enum MyWorkScope { assigned, created, review }
 /// filtered to the ones assigned to, created by or (for merge requests)
 /// awaiting review from the signed-in user. Opened from Home › 我的工作.
 class MyWorkPage extends StatefulWidget {
-  const MyWorkPage({super.key, required this.account, required this.api, required this.kind});
+  const MyWorkPage({super.key, required this.account, required this.api, required this.kind,
+    this.initialScope = MyWorkScope.assigned});
   final Account account;
   final GitLabApi api;
   final MyWorkKind kind;
+
+  /// The pill selected on open. [MyWorkScope.review] applies to merge
+  /// requests only; issues fall back to [MyWorkScope.assigned].
+  final MyWorkScope initialScope;
   @override
   State<MyWorkPage> createState() => _MyWorkPageState();
 }
 
 class _MyWorkPageState extends State<MyWorkPage> {
-  MyWorkScope _scope = MyWorkScope.assigned;
+  late MyWorkScope _scope;
   String _state = 'opened';
 
   bool get _mr => widget.kind == MyWorkKind.mergeRequests;
+
+  @override
+  void initState() {
+    super.initState();
+    _scope = widget.initialScope == MyWorkScope.review && !_mr ? MyWorkScope.assigned : widget.initialScope;
+  }
   String get _resource => _mr ? 'merge_requests' : 'issues';
 
   static String _scopeLabel(MyWorkScope scope) => switch (scope) {

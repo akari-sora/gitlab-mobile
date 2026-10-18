@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/shared/hub_ui.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/inbox_page.dart';
@@ -251,5 +252,27 @@ void main() {
     await settleNetworkWidgets(tester);
 
     expect(find.text('feat/flow → main'), findsOneWidget);
+  });
+
+  testWidgets('a new todo token brings back the 待辦 pill', (tester) async {
+    final api = testApi(FakeAdapter((_) => jsonResponse([])));
+    addTearDown(api.close);
+    bool selected(int index) => tester.widget<FilterPill>(find.byKey(ValueKey('inbox-filter-$index'))).selected;
+
+    await tester.pumpWidget(MaterialApp(home: InboxPage(account: account, api: api)));
+    await settleNetworkWidgets(tester);
+    await tester.tap(find.text('待我審查'));
+    await settleNetworkWidgets(tester);
+    expect(selected(2), isTrue);
+
+    await tester.pumpWidget(MaterialApp(home: InboxPage(account: account, api: api)));
+    await settleNetworkWidgets(tester);
+    expect(selected(2), isTrue, reason: 'an unrelated rebuild keeps the pill');
+
+    await tester.pumpWidget(MaterialApp(home: InboxPage(account: account, api: api, todoToken: 1)));
+    await settleNetworkWidgets(tester);
+    expect(selected(0), isTrue);
+    expect(selected(2), isFalse);
+    expect(tester.takeException(), isNull);
   });
 }

@@ -24,6 +24,9 @@ final class _OverviewFixture extends WorkspaceFixture {
   bool starred = false;
   int starWrites = 0;
 
+  /// Extra fields merged into the project read, such as feature switches.
+  Map<String, dynamic> features = const {};
+
   @override
   Future<ResponseBody> respond(RequestOptions request) async {
     final path = _apiPath(request);
@@ -34,6 +37,7 @@ final class _OverviewFixture extends WorkspaceFixture {
         'forks_count': 3,
         'open_issues_count': 5,
         'license': {'key': 'gpl-3.0', 'name': 'GNU General Public License v3.0', 'nickname': 'GPL-3.0'},
+        ...features,
       });
     }
     if (path == 'projects/42/starrers') {
@@ -118,6 +122,28 @@ void main() {
     await openProjectTab(tester, '檔案');
     expect(find.byType(RepositoryTab), findsOneWidget);
     expect(find.text('lib'), findsOneWidget);
+    expect(fixture.unhandled, isEmpty);
+  });
+
+  testWidgets('rows for switched-off features are left out', (tester) async {
+    _phone(tester);
+    final fixture = _OverviewFixture()..features = {
+      'merge_requests_access_level': 'disabled',
+      'jobs_enabled': false,
+      'wiki_enabled': true,
+      'wiki_access_level': 'disabled',
+      'releases_access_level': 'enabled',
+    };
+    addTearDown(fixture.api.close);
+    await tester.pumpWidget(workspaceHost(ProjectPage(account: fixture.account, api: fixture.api, project: fixture.project)));
+    await settleNetworkWidgets(tester);
+    expect(find.text('議題'), findsOneWidget);
+    expect(find.text('合併請求'), findsNothing);
+    expect(find.text('CI/CD'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('project-overview-more')));
+    await settleNetworkWidgets(tester);
+    expect(find.text('Wiki'), findsNothing);
+    expect(find.text('Releases'), findsOneWidget);
     expect(fixture.unhandled, isEmpty);
   });
 

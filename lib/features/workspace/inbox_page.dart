@@ -13,9 +13,13 @@ import 'search_page.dart';
 import 'work_item_page.dart';
 
 class InboxPage extends StatefulWidget {
-  const InboxPage({super.key, required this.account, required this.api});
+  const InboxPage({super.key, required this.account, required this.api, this.todoToken = 0});
   final Account account;
   final GitLabApi api;
+
+  /// Bumped by the shell when Home's 待辦 opens the inbox: the 待辦 pill is
+  /// selected again even if another one was left open.
+  final int todoToken;
   @override
   State<InboxPage> createState() => _InboxPageState();
 }
@@ -62,7 +66,7 @@ class _InboxPageState extends State<InboxPage> {
   Widget build(BuildContext context) => DefaultTabController(
     key: ValueKey('inbox-owner-$_ownerEpoch'),
     length: 4,
-    child: Scaffold(
+    child: _TabRequest(token: widget.todoToken, index: 0, onSelected: _chrome.show, child: Scaffold(
     body: NotificationListener<ScrollNotification>(onNotification: _chrome.handle, child: StatusBarInset(child: gestureSafe(Column(
       crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       CollapsingChrome(visible: _chrome, child: AppBar(primary: false, title: const LargeTitle('收件匣'), actions: [
@@ -73,7 +77,7 @@ class _InboxPageState extends State<InboxPage> {
       _InboxFilters(onSelected: _chrome.show),
       Expanded(child: _panels ??= _buildPanels(context)),
     ])))),
-  ));
+  )));
 
   // Horizontal swipes belong to the todo rows (swipe to complete), so the
   // tabs change from the tab bar only.
@@ -93,6 +97,34 @@ class _InboxPageState extends State<InboxPage> {
       _InboxPanel(index: 3,
         child: _WorkFeed(account: account, api: api, kind: _WorkKind.created)),
     ]));
+}
+
+/// Selects [index] of the enclosing [DefaultTabController] whenever [token]
+/// changes. It waits for the frame so the pills and panels rebuild normally.
+class _TabRequest extends StatefulWidget {
+  const _TabRequest({required this.token, required this.index, required this.onSelected, required this.child});
+  final int token;
+  final int index;
+  final VoidCallback onSelected;
+  final Widget child;
+  @override
+  State<_TabRequest> createState() => _TabRequestState();
+}
+
+class _TabRequestState extends State<_TabRequest> {
+  @override
+  void didUpdateWidget(covariant _TabRequest oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.token == widget.token) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      widget.onSelected();
+      DefaultTabController.of(context).index = widget.index;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// GitHub-style pill filters in place of a tab bar. They drive the same

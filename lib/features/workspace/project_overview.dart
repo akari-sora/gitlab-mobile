@@ -336,7 +336,11 @@ class _ProjectOverviewState extends State<ProjectOverview> {
 
   Widget _sections(BuildContext context) {
     final details = _details;
-    final issuesEnabled = details == null || details['issues_enabled'] != false;
+    // GitLab reports a switched-off feature through the legacy flag, the
+    // access level or both. Until the read lands every row stays.
+    bool enabled(String flag, String level) =>
+        details == null || (details[flag] != false && details[level] != 'disabled');
+    final issuesEnabled = enabled('issues_enabled', 'issues_access_level');
     final openIssues = details == null ? null : valueInt(details, 'open_issues_count');
     final license = valueText(valueObject(details ?? const {}, 'license'), 'nickname',
       valueText(valueObject(details ?? const {}, 'license'), 'name'));
@@ -344,18 +348,18 @@ class _ProjectOverviewState extends State<ProjectOverview> {
     return HubSection(
       padding: EdgeInsets.zero,
       children: [
-        HubRow(
+        if (issuesEnabled) HubRow(
           leading: const IconTile(Icons.adjust, color: HubColors.green),
           title: '議題',
-          value: issuesEnabled && openIssues != null ? '$openIssues' : null,
+          value: openIssues != null ? '$openIssues' : null,
           onTap: () => widget.onSection(ProjectSection.issues),
         ),
-        HubRow(
+        if (enabled('merge_requests_enabled', 'merge_requests_access_level')) HubRow(
           leading: const IconTile(Icons.merge, color: HubColors.blue),
           title: '合併請求',
           onTap: () => widget.onSection(ProjectSection.mergeRequests),
         ),
-        HubRow(
+        if (enabled('jobs_enabled', 'builds_access_level')) HubRow(
           leading: const IconTile(Icons.rocket_launch_outlined, color: HubColors.purple),
           title: 'CI/CD',
           onTap: () => widget.onSection(ProjectSection.ci),
@@ -380,12 +384,12 @@ class _ProjectOverviewState extends State<ProjectOverview> {
             title: '專案動態',
             onTap: () => _push(ActivityPage(account: account, api: api, project: project)),
           ),
-          HubRow(
+          if (enabled('wiki_enabled', 'wiki_access_level')) HubRow(
             leading: const IconTile(Icons.menu_book_outlined, color: HubColors.teal),
             title: 'Wiki',
             onTap: () => _push(WikiPagesPage(account: account, api: api, project: project)),
           ),
-          HubRow(
+          if (details == null || details['releases_access_level'] != 'disabled') HubRow(
             leading: const IconTile(Icons.inventory_2_outlined, color: HubColors.pink),
             title: metadataTitle(MetadataKind.releases),
             onTap: () => _push(MetadataPage(account: account, api: api, project: project, kind: MetadataKind.releases)),
