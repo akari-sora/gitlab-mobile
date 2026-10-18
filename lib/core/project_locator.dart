@@ -123,6 +123,58 @@ final class GitLabLink {
 
   static final _sha = RegExp(r'^[0-9a-fA-F]{7,64}$');
 
+  /// Sub-pages that still show the whole resource, so the resource's own
+  /// screen is the right place for them.
+  static const _sameResourceTabs = <LinkTarget, Set<String>>{
+    LinkTarget.mergeRequest: {'diffs', 'commits', 'pipelines'},
+  };
+
+  /// The resource a tapped web link names, when the app has a screen for
+  /// exactly that resource: an issue, merge request, work item, pipeline,
+  /// job, commit, or a file pinned to a commit SHA, on [instance] over HTTPS.
+  /// Everything else returns null and belongs in the browser: another origin,
+  /// project, group and user pages, a file on a branch, and sub-pages such as
+  /// a job's artifact download or an issue's design, which the parent's
+  /// screen would not show.
+  static GitLabLink? inApp(Uri uri, GitLabInstance instance) {
+    if (!instance.sameOrigin(uri)) return null;
+    final GitLabLink link;
+    try {
+      link = GitLabLink.parse(uri.toString(), instance);
+    } catch (_) {
+      return null;
+    }
+    switch (link.target) {
+      case LinkTarget.project || LinkTarget.group || LinkTarget.groupWorkItems:
+        return null;
+      case LinkTarget.file:
+        return link;
+      case LinkTarget.issue ||
+          LinkTarget.mergeRequest ||
+          LinkTarget.workItem ||
+          LinkTarget.pipeline ||
+          LinkTarget.job ||
+          LinkTarget.commit:
+        final segments = uri.pathSegments;
+        final baseLength = instance.base.pathSegments
+            .where((part) => part.isNotEmpty)
+            .length;
+        final dash = segments.indexOf('-', baseLength);
+        final tail = segments
+            .skip(dash + 2)
+            .where((part) => part.isNotEmpty)
+            .skip(1)
+            .toList();
+        if (tail.isEmpty ||
+            tail.length == 1 &&
+                (_sameResourceTabs[link.target]?.contains(tail.single) ??
+                    false)) {
+          return link;
+        }
+        return null;
+    }
+  }
+
   static String _groupPath(Iterable<String> rawParts) {
     final parts = rawParts.toList();
     while (parts.isNotEmpty && parts.last.isEmpty) { parts.removeLast(); }
