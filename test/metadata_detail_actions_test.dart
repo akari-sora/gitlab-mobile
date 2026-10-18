@@ -320,6 +320,7 @@ void main() {
     final issues = fixture.requestsTo('projects/42/milestones/901/issues');
     expect(issues, hasLength(1));
     expect(issues.single.uri.queryParameters.keys, isNot(contains('labels')));
+    expect(issues.single.uri.queryParameters['with_labels_details'], 'true');
     Finder cardOf(String title) =>
         find.ancestor(of: find.text(title), matching: find.byType(EntityCard));
     expect(
@@ -393,6 +394,7 @@ void main() {
     expect(issues, hasLength(1));
     expect(issues.single.uri.queryParameters['labels'], 'bug::critical');
     expect(issues.single.uri.queryParameters['state'], 'opened');
+    expect(issues.single.uri.queryParameters['with_labels_details'], 'true');
     expect(find.text('Labelled issue'), findsOneWidget);
 
     Navigator.of(tester.element(find.text('Labelled issue'))).pop();

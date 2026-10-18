@@ -902,7 +902,7 @@ class _MetadataPageState extends State<MetadataPage> {
           row(resource, icon, label, () => _pushFromDetail(ownerCurrent, _MetadataWorkItemsPage(
             account: ownerAccount, api: ownerApi, project: ownerProject, title: '$detailTitle · $label',
             empty: empty, resource: resource, path: itemsPath(resource),
-            query: kind == MetadataKind.labels ? {'labels': labelName, 'state': 'opened'} : const {},
+            query: {if (kind == MetadataKind.labels) ...{'labels': labelName, 'state': 'opened'}, 'with_labels_details': 'true'},
             isCurrent: ownerCurrent, ownerChanges: _session))),
     ];
     final route = MaterialPageRoute<void>(builder: (_) => Scaffold(
