@@ -253,7 +253,7 @@ Pinned Flutter **3.47.2** / Dart **3.13.2**; committed `pubspec.lock`. Normal pi
 ./.fvm/flutter_sdk/bin/flutter test --no-pub
 python3 tool/bootstrap.py
 python3 tool/android_signing.py configure android/app/build.gradle.kts
-./.fvm/flutter_sdk/bin/flutter build apk --debug
+./.fvm/flutter_sdk/bin/flutter build apk --debug --flavor gitlab
 ```
 
 Launcher icon: `assets/icon/*.png` are rendered from the vector design in `tool/render_icon.py` (`python3 tool/render_icon.py --chromium <chromium or headless_shell>`); `tool/bootstrap.py` and `ci/build_android.sh` turn them into platform icon sets with `flutter_launcher_icons`. Edit the script, not the PNGs.

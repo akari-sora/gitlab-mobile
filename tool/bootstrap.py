@@ -103,9 +103,47 @@ def harden_android(folder: Path) -> None:
     _transparent_system_bars(folder)
 
 
+FLAVORS_BEGIN = '    // GITLAB_MOBILE_FLAVORS_BEGIN'
+FLAVORS_END = '    // GITLAB_MOBILE_FLAVORS_END'
+FLAVORS = f'''{FLAVORS_BEGIN}
+    // Distribution channels (Flutter's appFlavor). Both keep the application
+    // ID; they differ only in how the app is updated. Build with --flavor.
+    flavorDimensions += "distribution"
+    productFlavors {{
+        create("gitlab") {{
+            dimension = "distribution"
+        }}
+        create("play") {{
+            dimension = "distribution"
+        }}
+    }}
+{FLAVORS_END}
+'''
+
+
+def configure_flavors(path: Path) -> bool:
+    """Adds the gitlab and play product flavors after the managed signing block."""
+    text = path.read_text(encoding='utf-8')
+    if text.count(FLAVORS_BEGIN) or text.count(FLAVORS_END):
+        if text.count(FLAVORS_BEGIN) != 1 or text.count(FLAVORS_END) != 1:
+            raise RuntimeError('Incomplete Android flavor markers; review the Gradle file manually.')
+        block = text[text.index(FLAVORS_BEGIN):text.index(FLAVORS_END) + len(FLAVORS_END)]
+        if block != FLAVORS.rstrip('\n'):
+            raise RuntimeError('Stale managed Android flavors; review and refresh the owned block.')
+        return False
+    if 'productFlavors' in text or 'flavorDimensions' in text:
+        raise RuntimeError('Unknown Android Gradle template: flavors already defined.')
+    anchor = android_signing.END_CONFIG + '\n'
+    if text.count(anchor) != 1:
+        raise RuntimeError('Configure Android signing before the flavors.')
+    path.write_text(text.replace(anchor, anchor + FLAVORS, 1), encoding='utf-8')
+    return True
+
+
 def configure_android(folder: Path) -> None:
     harden_android(folder)
     android_signing.configure_gradle(folder / 'app/build.gradle.kts')
+    configure_flavors(folder / 'app/build.gradle.kts')
 
 
 # Edge-to-edge (Android 15) draws behind the system bars. Opaque bar colours in
