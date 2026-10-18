@@ -70,6 +70,62 @@ def register_oauth_android(root: ET.Element) -> None:
     })
 
 
+# Links from other apps go through LinkActivity, a translucent trampoline that
+# forwards one https URL to the launcher activity in the app's own task. Only
+# gitlab.com can be declared ahead of time; Android 12+ hands it over only after
+# the user allows it in the app's "open by default" settings. Flutter's own
+# deep linking stays off: app_links delivers the URL, and the route-name
+# handling would otherwise push a route the app does not define.
+LINK_ACTIVITY_NAME = '.LinkActivity'
+LINK_HOSTS = ('gitlab.com',)
+DEEP_LINKING_META = 'flutter_deeplinking_enabled'
+
+
+def _launcher_activity(application: ET.Element) -> ET.Element | None:
+    for candidate in application.findall('activity'):
+        for intent in candidate.findall('intent-filter'):
+            actions = [node.get(_android_attr('name')) for node in intent.findall('action')]
+            if 'android.intent.action.MAIN' in actions:
+                return candidate
+    return None
+
+
+def register_incoming_links_android(root: ET.Element) -> None:
+    application = root.find('application')
+    if application is None:
+        raise RuntimeError('Unknown Android template: application missing.')
+    launcher = _launcher_activity(application)
+    if launcher is None:
+        return
+    meta = next((node for node in launcher.findall('meta-data')
+                 if node.get(_android_attr('name')) == DEEP_LINKING_META), None)
+    if meta is None:
+        meta = ET.SubElement(launcher, 'meta-data', {_android_attr('name'): DEEP_LINKING_META})
+    meta.set(_android_attr('value'), 'false')
+    for existing in application.findall('activity'):
+        if existing.get(_android_attr('name')) == LINK_ACTIVITY_NAME:
+            application.remove(existing)
+    activity = ET.SubElement(application, 'activity', {
+        _android_attr('name'): LINK_ACTIVITY_NAME,
+        _android_attr('exported'): 'true',
+        _android_attr('excludeFromRecents'): 'true',
+        _android_attr('noHistory'): 'true',
+        _android_attr('taskAffinity'): '',
+        _android_attr('theme'): '@android:style/Theme.Translucent.NoTitleBar',
+    })
+    view = ET.SubElement(activity, 'intent-filter')
+    ET.SubElement(view, 'action', {_android_attr('name'): 'android.intent.action.VIEW'})
+    ET.SubElement(view, 'category', {_android_attr('name'): 'android.intent.category.DEFAULT'})
+    ET.SubElement(view, 'category', {_android_attr('name'): 'android.intent.category.BROWSABLE'})
+    ET.SubElement(view, 'data', {_android_attr('scheme'): 'https'})
+    for host in LINK_HOSTS:
+        ET.SubElement(view, 'data', {_android_attr('host'): host})
+    share = ET.SubElement(activity, 'intent-filter')
+    ET.SubElement(share, 'action', {_android_attr('name'): 'android.intent.action.SEND'})
+    ET.SubElement(share, 'category', {_android_attr('name'): 'android.intent.category.DEFAULT'})
+    ET.SubElement(share, 'data', {_android_attr('mimeType'): 'text/plain'})
+
+
 def harden_android(folder: Path) -> None:
     manifest = folder / 'app/src/main/AndroidManifest.xml'
     tree = ET.parse(manifest)
@@ -90,6 +146,7 @@ def harden_android(folder: Path) -> None:
         if f'{{{ANDROID}}}label' in activity.attrib:
             activity.set(f'{{{ANDROID}}}label', 'GitLab Mobile')
     register_oauth_android(root)
+    register_incoming_links_android(root)
     ET.indent(tree, space='    ')
     tree.write(manifest, encoding='utf-8', xml_declaration=True)
     resource = folder / 'app/src/main/res/xml'
@@ -147,6 +204,19 @@ import io.flutter.embedding.android.FlutterActivity
 
 class MainActivity : FlutterActivity()
 '''
+UPDATE_ONLY_MAIN_ACTIVITY = '''package io.gitlabmobile.gitlab_mobile
+
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+
+class MainActivity : FlutterActivity() {
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        // Each distribution flavor ships its own AppUpdateChannel.
+        AppUpdateChannel.register(flutterEngine, this)
+    }
+}
+'''
 MAIN_ACTIVITY = '''package io.gitlabmobile.gitlab_mobile
 
 import io.flutter.embedding.android.FlutterActivity
@@ -157,6 +227,93 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         // Each distribution flavor ships its own AppUpdateChannel.
         AppUpdateChannel.register(flutterEngine, this)
+        LinkChannel.register(flutterEngine, this)
+    }
+}
+'''
+LINK_CHANNEL = 'io.gitlabmobile/links'
+
+# Both flavors: the trampoline for links from other apps, and the channel that
+# opens the app's "open by default" settings.
+LINK_ACTIVITY = r'''package io.gitlabmobile.gitlab_mobile
+
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.provider.Settings
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+/**
+ * Takes a gitlab.com link tapped in another app, or the first https URL in
+ * text shared to this app, and hands it to MainActivity in the app's own task,
+ * where app_links reports it to Dart. Starting here keeps a second Flutter
+ * engine out of the sending app's task. Nothing but one https URL is passed on.
+ */
+class LinkActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        linkFrom(intent)?.let { link ->
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .setAction(Intent.ACTION_VIEW)
+                    .setData(link)
+                    .addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    )
+            )
+        }
+        finish()
+    }
+
+    companion object {
+        private const val MAX_LENGTH = 2048
+        private val HTTPS = Regex("""https://[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+""")
+
+        fun linkFrom(intent: Intent?): Uri? {
+            val text = when (intent?.action) {
+                Intent.ACTION_VIEW -> intent.dataString
+                Intent.ACTION_SEND -> intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+                else -> null
+            } ?: return null
+            val match = HTTPS.find(text)?.value?.trimEnd('.', ',', ';', ':', '!', '?', ')', ']', '\'')
+                ?: return null
+            if (match.length > MAX_LENGTH) return null
+            val uri = Uri.parse(match)
+            return if (uri.scheme == "https" && !uri.host.isNullOrEmpty()) uri else null
+        }
+    }
+}
+
+object LinkChannel {
+    fun register(engine: FlutterEngine, activity: Activity) {
+        MethodChannel(engine.dartExecutor.binaryMessenger, "io.gitlabmobile/links").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "openByDefaultSettings" -> result.success(openByDefaultSettings(activity))
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    /** Android 12+ lists gitlab.com there for the user to allow; older versions open the app's details. */
+    private fun openByDefaultSettings(activity: Activity): Boolean {
+        val target = Uri.parse("package:${activity.packageName}")
+        val intent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            Intent(Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS, target)
+        } else {
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, target)
+        }
+        return try {
+            activity.startActivity(intent)
+            true
+        } catch (_: ActivityNotFoundException) {
+            false
+        }
     }
 }
 '''
@@ -299,7 +456,7 @@ dependencies {{
 
 
 def configure_update_channels(app: Path) -> None:
-    """Writes each flavor's AppUpdateChannel and the MainActivity that registers it."""
+    """Writes each flavor's AppUpdateChannel, the shared LinkActivity, and the MainActivity that registers both channels."""
     gradle = app / 'build.gradle.kts'
     text = gradle.read_text(encoding='utf-8')
     if text.count(UPDATE_DEPENDENCIES_BEGIN) or text.count(UPDATE_DEPENDENCIES_END):
@@ -312,10 +469,11 @@ def configure_update_channels(app: Path) -> None:
         gradle.write_text(text.rstrip('\n') + '\n\n' + UPDATE_DEPENDENCIES, encoding='utf-8')
     activity = app / 'src/main/kotlin' / KOTLIN_PACKAGE / 'MainActivity.kt'
     current = activity.read_text(encoding='utf-8')
-    if current not in (TEMPLATE_MAIN_ACTIVITY, MAIN_ACTIVITY):
+    if current not in (TEMPLATE_MAIN_ACTIVITY, UPDATE_ONLY_MAIN_ACTIVITY, MAIN_ACTIVITY):
         raise RuntimeError('Unknown MainActivity template; review before registering the update channel.')
     activity.write_text(MAIN_ACTIVITY, encoding='utf-8')
     files = {
+        f'src/main/kotlin/{KOTLIN_PACKAGE}/LinkActivity.kt': LINK_ACTIVITY,
         f'src/gitlab/kotlin/{KOTLIN_PACKAGE}/AppUpdateChannel.kt': GITLAB_UPDATE_CHANNEL,
         'src/gitlab/AndroidManifest.xml': GITLAB_MANIFEST,
         'src/gitlab/res/xml/update_paths.xml': GITLAB_UPDATE_PATHS,

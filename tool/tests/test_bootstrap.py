@@ -47,6 +47,41 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn('android.intent.category.BROWSABLE', xml)
         self.assertIn('/callback', xml)
 
+    def test_android_routes_links_from_other_apps_through_a_trampoline(self):
+        source = self.root / 'app/src/main'
+        source.mkdir(parents=True)
+        (source / 'AndroidManifest.xml').write_text(
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android">'
+            '<application><activity android:name=".MainActivity">'
+            '<meta-data android:name="flutter_deeplinking_enabled" android:value="true" />'
+            '<intent-filter><action android:name="android.intent.action.MAIN" /></intent-filter>'
+            '</activity></application></manifest>'
+        )
+        bootstrap.harden_android(self.root)
+        bootstrap.harden_android(self.root)
+        a = '{' + bootstrap.ANDROID + '}'
+        application = ET.parse(source / 'AndroidManifest.xml').getroot().find('application')
+        activities = {node.get(a + 'name'): node for node in application.findall('activity')}
+        self.assertEqual(len(application.findall('activity')), 2, 'idempotent')
+        self.assertEqual(set(activities), {'.MainActivity', '.LinkActivity'})
+        main = activities['.MainActivity']
+        deep_linking = [node.get(a + 'value') for node in main.findall('meta-data')
+                        if node.get(a + 'name') == 'flutter_deeplinking_enabled']
+        self.assertEqual(deep_linking, ['false'], "Flutter's route deep linking stays off")
+        self.assertEqual(len(main.findall('intent-filter')), 2, 'only the launcher and the OAuth callback')
+        link = activities['.LinkActivity']
+        self.assertEqual(link.get(a + 'exported'), 'true')
+        self.assertEqual(link.get(a + 'taskAffinity'), '')
+        self.assertEqual(link.get(a + 'noHistory'), 'true')
+        view, share = link.findall('intent-filter')
+        self.assertEqual(view.find('action').get(a + 'name'), 'android.intent.action.VIEW')
+        self.assertIn('android.intent.category.BROWSABLE',
+                      [node.get(a + 'name') for node in view.findall('category')])
+        data = [(node.get(a + 'scheme'), node.get(a + 'host')) for node in view.findall('data')]
+        self.assertEqual(data, [('https', None), (None, 'gitlab.com')])
+        self.assertEqual(share.find('action').get(a + 'name'), 'android.intent.action.SEND')
+        self.assertEqual(share.find('data').get(a + 'mimeType'), 'text/plain')
+
     def test_ios_registers_oauth_url_type(self):
         (self.root / 'Runner').mkdir()
         path = self.root / 'Runner/Info.plist'
@@ -326,6 +361,13 @@ class BootstrapTests(unittest.TestCase):
         self.assertNotIn('FileProvider', play)
         self.assertEqual((app / 'src/main/kotlin' / bootstrap.KOTLIN_PACKAGE / 'MainActivity.kt').read_text(),
                          bootstrap.MAIN_ACTIVITY)
+        self.assertIn('LinkChannel.register(flutterEngine, this)', bootstrap.MAIN_ACTIVITY)
+        links = (app / 'src/main/kotlin' / bootstrap.KOTLIN_PACKAGE / 'LinkActivity.kt').read_text()
+        self.assertIn('class LinkActivity : Activity()', links)
+        self.assertIn(f'"{bootstrap.LINK_CHANNEL}"', links)
+        self.assertIn('Intent.FLAG_ACTIVITY_SINGLE_TOP', links)
+        self.assertIn('uri.scheme == "https"', links, 'only an https URL is forwarded')
+        self.assertIn('Settings.ACTION_APP_OPEN_BY_DEFAULT_SETTINGS', links)
         gradle = (app / 'build.gradle.kts').read_text()
         self.assertIn('"gitlabImplementation"("androidx.core:core:', gradle)
         self.assertIn('"playImplementation"("com.google.android.play:app-update:', gradle)
@@ -339,6 +381,9 @@ class BootstrapTests(unittest.TestCase):
         activity.write_text(bootstrap.TEMPLATE_MAIN_ACTIVITY.replace('FlutterActivity()', 'FlutterFragmentActivity()'))
         with self.assertRaisesRegex(RuntimeError, 'Unknown MainActivity template'):
             bootstrap.configure_update_channels(app)
+        activity.write_text(bootstrap.UPDATE_ONLY_MAIN_ACTIVITY)
+        bootstrap.configure_update_channels(app)
+        self.assertEqual(activity.read_text(), bootstrap.MAIN_ACTIVITY, 'an earlier managed activity is upgraded')
         activity.write_text(bootstrap.TEMPLATE_MAIN_ACTIVITY)
         bootstrap.configure_update_channels(app)
         gradle = app / 'build.gradle.kts'

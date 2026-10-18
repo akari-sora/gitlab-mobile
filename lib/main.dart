@@ -9,6 +9,7 @@ import 'features/auth/login_screen.dart';
 import 'features/shell/app_shortcuts.dart';
 import 'features/auth/session_controller.dart';
 import 'features/shell/authenticated_app.dart';
+import 'features/shell/incoming_links.dart';
 import 'shared/theme.dart';
 import 'shared/scroll_performance.dart';
 
@@ -31,12 +32,16 @@ class GitLabMobileApp extends ConsumerStatefulWidget {
 }
 class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
   late final LauncherShortcuts _shortcuts;
+  late final IncomingLinks _links;
   bool _sessionWasActive = false;
   @override
   void initState() {
     super.initState();
     _shortcuts = ref.read(launcherShortcutsProvider);
     unawaited(_shortcuts.start());
+    // Held here, above the account-keyed tree, so a link that arrives while
+    // signed out or during an account switch waits for the next shell.
+    _links = ref.read(incomingLinksProvider)..start();
     unawaited(ref.read(sessionProvider).initialize());
     // The stored appearance is read alongside the accounts and never gates the
     // first frame: the app renders with ThemeMode.system until it arrives.
@@ -61,7 +66,7 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
       if (signedIn) {
         return AuthenticatedApp(
           key: ValueKey(session.generation), session: session, appearance: appearance, shortcuts: _shortcuts,
-          updates: ref.read(appUpdateProvider),
+          updates: ref.read(appUpdateProvider), incoming: _links,
         );
       }
       return DynamicColorBuilder(builder: (light, dark) {
