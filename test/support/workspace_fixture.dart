@@ -21,6 +21,8 @@ class WorkspaceFixture {
   static const sha = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
   static const olderSha = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
   final issues = <int, Json>{};
+  /// Rows for `projects/42/releases`; empty unless a test fills it.
+  List<Json> releases = <Json>[];
   /// Opt-in widgets for GraphQL work item responses. Defaults to empty so base
   /// request budget is Graph 1 (detail only).
   List<Json> graphWidgets = <Json>[];
@@ -599,7 +601,8 @@ class WorkspaceFixture {
         });
       }
     }
-    if (const ['projects/42/milestones', 'projects/42/releases',
+    if (joined == 'projects/42/releases') return jsonResponse(releases);
+    if (const ['projects/42/milestones',
       'projects/42/repository/tags', 'projects/42/repository/commits'].contains(joined)) { return jsonResponse([]); }
     if (path.isNotEmpty && path.last == 'award_emoji' || path.length >= 2 && path[path.length - 2] == 'award_emoji') {
       final awardsAt = path.lastIndexOf('award_emoji');

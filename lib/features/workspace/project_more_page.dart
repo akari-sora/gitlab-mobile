@@ -7,6 +7,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/providers.dart';
+import '../../core/release_assets.dart';
 import '../../core/work_item_types.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/resource_share.dart';
@@ -23,6 +24,7 @@ import 'graph_work_items_page.dart';
 import 'project_extras.dart';
 import 'project_analytics_page.dart';
 import 'records_feed.dart';
+import 'release_assets_section.dart';
 import 'search_page.dart';
 import 'work_item_page.dart';
 import '../../shared/theme.dart';
@@ -670,6 +672,8 @@ class _MetadataPageState extends State<MetadataPage> {
     MetadataKind.releases => [
       MetaChip(valueText(value, 'tag_name'), icon: Icons.sell_outlined, mono: true),
       MetaChip(relativeDate(valueText(value, 'released_at', valueText(value, 'created_at'))), icon: Icons.schedule_outlined),
+      if (ReleaseAssets.fromJson(value['assets']).links case final links when links.isNotEmpty)
+        MetaChip('${links.length} 個附件', icon: Icons.attach_file),
     ],
     MetadataKind.milestones => [
       if (valueText(value, 'state').isNotEmpty) StatusBadge(valueText(value, 'state')),
@@ -755,6 +759,7 @@ class _MetadataPageState extends State<MetadataPage> {
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _busy = false); } }
   }
+  static Widget _inset(Widget child) => Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: child);
   Future<void> _view(Json value) async {
     if (widget.kind == MetadataKind.commits) {
       await Navigator.push<void>(
@@ -804,6 +809,7 @@ class _MetadataPageState extends State<MetadataPage> {
       _ => null,
     };
     bool ownerCurrent() => _ownerCurrent(detailOwner);
+    final assets = ownerKind == MetadataKind.releases ? ReleaseAssets.fromJson(value['assets']) : null;
     final route = MaterialPageRoute<void>(builder: (_) => Scaffold(
       appBar: AppBar(title: Text(detailTitle,
               maxLines: 1,
@@ -824,16 +830,28 @@ class _MetadataPageState extends State<MetadataPage> {
                   isCurrent: ownerCurrent,
                 ),
             ],
-          ), body: gestureSafe(ListView(padding: const EdgeInsets.all(20), children: [
-        Text(ownerProject.path, style: Theme.of(context).textTheme.bodySmall), const SizedBox(height: 16),
-        if (value['state'] is String) Align(alignment: Alignment.centerLeft, child: StatusBadge(valueText(value, 'state'))),
-        MarkdownView(valueText(value, 'description', valueText(value, 'message', '尚未填寫說明。')),
+          ), body: gestureSafe(ListView(padding: const EdgeInsets.symmetric(vertical: 20), children: [
+        _inset(Text(ownerProject.path, style: Theme.of(context).textTheme.bodySmall)), const SizedBox(height: 16),
+        if (value['state'] is String) _inset(Align(alignment: Alignment.centerLeft, child: StatusBadge(valueText(value, 'state')))),
+        if (ownerKind == MetadataKind.releases) ...[
+          _inset(Wrap(spacing: 8, runSpacing: 8, children: [
+            MetaChip(valueText(value, 'tag_name'), icon: Icons.sell_outlined, mono: true),
+            MetaChip(relativeDate(valueText(value, 'released_at', valueText(value, 'created_at'))), icon: Icons.schedule_outlined),
+          ])),
+          const SizedBox(height: 16),
+        ],
+        if (assets != null && !assets.isEmpty) ...[
+          ReleaseAssetsSection(account: ownerAccount, api: ownerApi, project: ownerProject, assets: assets,
+            isCurrent: ownerCurrent, ownerChanges: _session),
+          const SizedBox(height: 16),
+        ],
+        _inset(MarkdownView(valueText(value, 'description', valueText(value, 'message', '尚未填寫說明。')),
           base: ownerAccount.instance.projectWeb(ownerProject.path), api: ownerApi, projectId: ownerProject.id,
-          projectWeb: ownerAccount.instance.projectWeb(ownerProject.path), projectPath: ownerProject.path),
-        if (value['commit'] is Json) ...[const SizedBox(height: 20), Text(valueText(valueObject(value, 'commit'), 'title')),
-          SelectableText(valueText(valueObject(value, 'commit'), 'id'), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12))],
+          projectWeb: ownerAccount.instance.projectWeb(ownerProject.path), projectPath: ownerProject.path)),
+        if (value['commit'] is Json) ...[const SizedBox(height: 20), _inset(Text(valueText(valueObject(value, 'commit'), 'title'))),
+          _inset(SelectableText(valueText(valueObject(value, 'commit'), 'id'), style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace'], fontSize: 12)))],
         if (ownerKind == MetadataKind.milestones) ...[const SizedBox(height: 16),
-          Text('開始：${valueText(value, 'start_date', '未設定')}\n到期：${valueText(value, 'due_date', '未設定')}')],
+          _inset(Text('開始：${valueText(value, 'start_date', '未設定')}\n到期：${valueText(value, 'due_date', '未設定')}'))],
       ])),
     ));
     _detailRoute = route;

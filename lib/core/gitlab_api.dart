@@ -11,6 +11,7 @@ import 'models.dart';
 import 'oauth.dart';
 import 'pagination.dart';
 import 'registry_models.dart';
+import 'release_assets.dart';
 import 'snippet_models.dart';
 import 'upload_names.dart';
 import 'work_item_activity_models.dart';
