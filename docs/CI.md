@@ -12,6 +12,8 @@ New projects require explicit runner registration and dispatcher onboarding on e
 4. `android_debug`: needs all three checks, reuses their dependency lock and native templates, and builds an Android debug APK.
 5. `publish_preview`: main/default branch only, verifies checksums and uploads APK/metadata/checksums to the same project's Generic Package Registry.
 
+`public_api_smoke` is not part of push, merge-request or tag pipelines; see [Public API smoke](#public-api-smoke).
+
 `test/visual_evidence_test.dart` loads `/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc` when `GITLAB_MOBILE_TEST_FONT` is unset. That Linux path stays the CI default. On a Mac, keep `CI=true` and point the variable at an existing system font so the required CJK glyph checks still run. The path contains a space, so quote the assignment:
 
 ```sh
@@ -44,6 +46,23 @@ Flutter jobs append `--no-same-owner` to `TAR_OPTIONS`, keeping extracted SDK fi
 JUnit, raw test JSON, analyzer output and LCOV remain attached to the check job even after failure where available. Android APKs, `SHA256SUMS` and `build-metadata.json` are retained as job artifacts for 14 days. Default-branch delivery creates a registry version named after the full commit SHA, not a mutable `latest` label.
 
 Delivery uses `CI_JOB_TOKEN`, not a personal token. No credentials are committed, printed deliberately, embedded into the APK or sent in URL query strings. CI fixtures contain only synthetic API identities. The pipeline does not enable CI job-token repository pushes.
+
+## Public API smoke
+
+`tool/public_smoke.dart` reads public gitlab.com projects anonymously through the production `GitLabApi`, with zero writes. Its result is *public live read* evidence, separate from the synthetic Flutter tests.
+
+gitlab.com limits unauthenticated API traffic per IP address (`RateLimit-Name: unauthenticated_traffic_per_ip`). Every job on a self-hosted runner host shares that host's address, so the limit is shared too. One run fits in the budget; repeated runs do not. Until 2026-10-12, six runs within one hour passed on `r9700x-docker`. From 2026-10-17 the fourth run within an hour failed with HTTP 429, and the next run failed after a few checks. Once one request gets a 429, the client fails the rest fast with `rateLimited`. Checks that depend on an earlier result then fail their assertions with `FormatException`. These failures say nothing about the change under test.
+
+So the job runs only in a pipeline with `PUBLIC_SMOKE=1` started by the API, a pipeline schedule, or **Run pipeline** in the web UI. All other jobs are skipped in that pipeline. No push, merge-request or tag pipeline runs it, and `android_debug` does not wait for it. A daily schedule on `main` runs it; GitLab notifies the schedule owner when that pipeline fails.
+
+To start a run by hand, use **Build › Pipelines › Run pipeline** on the branch with variable `PUBLIC_SMOKE=1`, or the API:
+
+```sh
+curl --request POST --header "PRIVATE-TOKEN: <token>" \
+  "https://gitlab.com/api/v4/projects/86648389/pipeline?ref=main&variables[][key]=PUBLIC_SMOKE&variables[][value]=1"
+```
+
+Before you tag a release, run it once on the release commit. In the release notes, link that pipeline or report the suite as `NOT_RUN`. A green push or merge-request pipeline does not include this evidence. A 429 is a rate-limit result, not a pass. Wait until the budget recovers and then start one new run. Do not retry the job repeatedly.
 
 ## Android signing lanes
 

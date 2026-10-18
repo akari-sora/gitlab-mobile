@@ -112,6 +112,6 @@ Bottom navigation (首頁 Home / 收件匣 Inbox / 探索 Explore / 我的 Me, G
 ## CI facts that affect contributors
 
 - `.gitlab-ci.yml` runs on project-locked private runners (tags `grok-box`, `ondemand`, `gitlab-mobile`). A branch push with an open MR is suppressed in favour of the MR pipeline. Only successful `main` pipelines publish a preview APK to the package registry.
-- Regular pipelines include `public_api_smoke`, so they need outbound access to gitlab.com. `RESOLVE_LOCK=1`, `LIVE_SMOKE=1` and `PUBLIC_SMOKE=1` are API-triggered pipeline variables, not normal pushes.
+- `public_api_smoke` runs only in a `PUBLIC_SMOKE=1` pipeline: the daily schedule, the API or **Run pipeline**. Push, MR and tag pipelines skip it, and `android_debug` does not need it. gitlab.com rate-limits anonymous reads per IP for every job on the runner host. Run the smoke once on a release commit before tagging, never in a retry loop (see `docs/CI.md`, "Public API smoke"). `RESOLVE_LOCK=1` and `LIVE_SMOKE=1` are API-triggered pipeline variables, not normal pushes.
 - Commit messages follow Conventional Commits (`feat(auth):`, `fix(ui):`, `ci:`, `test:`, `docs:`, `refactor:`, `build:`); `[skip ci]` appears on intermediate commits in the history; the commit you hand off must have run the pipeline.
 - Evidence vocabulary: synthetic tests, public live reads, authenticated connector checks and physical-device runs are distinct. Anything not executed is reported as `NOT_RUN`, never inferred as passing.
