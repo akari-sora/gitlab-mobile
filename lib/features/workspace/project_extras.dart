@@ -13,6 +13,7 @@ import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import 'navigation.dart';
 import 'records_feed.dart';
+import 'search_page.dart';
 
 String accessLevelLabel(int level) => switch (level) {
   >= 50 => '擁有者',
@@ -83,6 +84,11 @@ class MembersPage extends StatelessWidget {
           child: Text(accessLevelLabel(valueInt(value, 'access_level')),
             style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSecondaryContainer)),
         ),
+        onTap: valueInt(value, 'id') <= 0 ? null : () {
+          if (api.isClosed) return;
+          unawaited(Navigator.of(context).push(MaterialPageRoute<void>(
+            builder: (_) => UserPage(account: account, api: api, user: value))));
+        },
       );
     },
   ));

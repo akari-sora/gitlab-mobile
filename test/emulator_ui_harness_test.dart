@@ -871,6 +871,18 @@ void main() {
       await settleNetworkWidgets(tester);
 
       expect(find.byType(JobLogPage), findsOneWidget);
+      // Follow-tail leaves the log at its end; at 2x text the first line can
+      // sit outside the lazily built rows, so scroll back to it.
+      await tester.scrollUntilVisible(
+        find.textContaining('deployment job 5120'),
+        -200,
+        scrollable: find
+            .ancestor(
+              of: find.textContaining('Job completed successfully.'),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      );
       expect(find.textContaining('deployment job 5120'), findsOneWidget);
       expect(find.text('合成資料 QA · 無 GitLab 連線'), findsOneWidget);
       expect(tester.takeException(), isNull);

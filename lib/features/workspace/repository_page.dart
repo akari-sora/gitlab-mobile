@@ -8,6 +8,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/repository_ref.dart';
 import '../../core/syntax_highlighter.dart';
+import '../../shared/external_link.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/scroll_chrome.dart';
@@ -1326,6 +1327,30 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
   bool get _lfs =>
       _text?.startsWith('version https://git-lfs.github.com/spec/v1') ?? false;
 
+  /// GitLab's blob page at the pinned commit, for a file this viewer cannot
+  /// show: binary content such as an image, or text over the preview limit.
+  Uri? get _webFallback {
+    final error = _error, sha = widget.resolvedRef.sha;
+    if (error == null ||
+        sha.isEmpty ||
+        (error.kind != FailureKind.unsupported &&
+            error.kind != FailureKind.tooLarge)) {
+      return null;
+    }
+    try {
+      return repositoryBlobWebUri(
+        instance: widget.account.instance,
+        projectPath: widget.project.path,
+        sha: sha,
+        filePath: widget.filePath,
+      );
+    } on FormatException {
+      return null;
+    } on ApiFailure {
+      return null;
+    }
+  }
+
   Future<void> _checkCurrent() async {
     final current = await widget.api.fileMetadata(
       widget.project.id,
@@ -1612,6 +1637,23 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                     resourceLabel:
                         '${widget.project.path} · ${widget.filePath}',
                     onSwitchAccount: endSessionFrom(context),
+                  ),
+                if (_webFallback case final web?)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: FilledButton.tonalIcon(
+                        key: const ValueKey('repository-file-open-web'),
+                        onPressed: () {
+                          if (mounted && !widget.api.isClosed) {
+                            unawaited(openExternal(context, web));
+                          }
+                        },
+                        icon: const Icon(Icons.open_in_new, size: 18),
+                        label: const Text('在 GitLab 開啟'),
+                      ),
+                    ),
                   ),
                 if (_lfs)
                   const Padding(

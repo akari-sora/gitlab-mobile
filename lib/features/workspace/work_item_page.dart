@@ -18,6 +18,7 @@ import 'picker_sheet.dart';
 import 'reactions.dart';
 import 'records_feed.dart';
 import 'discussions_tab.dart';
+import 'search_page.dart';
 import 'draft_review_page.dart';
 import 'work_item_filters.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1025,6 +1026,18 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     return navigator.push(route);
   }
 
+  /// Opens a person named on this item; [user] is the author, assignee or
+  /// reviewer object from the item's own response.
+  void _openUser(Json user) {
+    final owner = _owner;
+    if (valueInt(user, 'id') <= 0 || !_currentOwner(owner) || owner.api.isClosed) return;
+    final route = MaterialPageRoute<void>(
+      builder: (_) => UserPage(account: owner.account, api: owner.api, user: user),
+    );
+    _ownRoute(route);
+    unawaited(Navigator.of(context).push(route));
+  }
+
   Future<void> _openDraftReview(Json data) async {
     final owner = _owner;
     final headSha = valueText(data, 'sha');
@@ -1314,6 +1327,22 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     return rows;
   }
 
+  /// The author line, tappable when the author carries a user ID.
+  Widget _authorLink(Json author, String label, Widget child) {
+    if (valueInt(author, 'id') <= 0) return child;
+    void open() => _openUser(author);
+    return SemanticButton(
+      label: '作者 $label',
+      onTap: open,
+      child: InkWell(
+        key: const ValueKey('work-item-author'),
+        borderRadius: BorderRadius.circular(6),
+        onTap: open,
+        child: child,
+      ),
+    );
+  }
+
   Widget _buildAssigneesSection(Json data) {
     final assignees = valueObjects(data, 'assignees');
     final myId = widget.account.user.id;
@@ -1348,9 +1377,11 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
             ...assignees.where((u) => valueInt(u, 'id') != myId).map((u) {
               final username = valueText(u, 'username');
               final name = valueText(u, 'name');
-              return Chip(
+              return ActionChip(
+                key: ValueKey('assignee-${valueInt(u, 'id')}'),
                 avatar: CircleAvatar(radius: 12, child: Text((username.isNotEmpty ? username[0] : '?').toUpperCase(), style: const TextStyle(fontSize: 10))),
                 label: Text(name.isNotEmpty ? '$name (@$username)' : '@$username'),
+                onPressed: valueInt(u, 'id') > 0 ? () => _openUser(u) : null,
               );
             }),
             if (assignees.isEmpty && !isAssignedToMe)
@@ -1392,9 +1423,11 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
             ...reviewers.map((u) {
               final username = valueText(u, 'username');
               final name = valueText(u, 'name');
-              return Chip(
+              return ActionChip(
+                key: ValueKey('reviewer-${valueInt(u, 'id')}'),
                 avatar: CircleAvatar(radius: 12, child: Text((username.isNotEmpty ? username[0] : '?').toUpperCase(), style: const TextStyle(fontSize: 10))),
                 label: Text(name.isNotEmpty ? '$name (@$username)' : '@$username'),
+                onPressed: valueInt(u, 'id') > 0 ? () => _openUser(u) : null,
               );
             }),
             if (reviewers.isEmpty)
@@ -1556,20 +1589,24 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                                 if (data['draft'] == true) const MetaChip('草稿', icon: Icons.edit_note),
                                 if (valueBool(data, 'confidential')) const MetaChip('機密', icon: Icons.lock_outline),
                                 if (valueObject(data, 'milestone').isNotEmpty) MetaChip(valueText(valueObject(data, 'milestone'), 'title'), icon: Icons.tour_outlined),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Monogram(authorName, size: 18),
-                                    const SizedBox(width: 6),
-                                    Flexible(
-                                      child: Text(
-                                        '@${valueText(author, 'username')}${created.isEmpty ? '' : ' · $created'}',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                                _authorLink(
+                                  author,
+                                  '@${valueText(author, 'username')}${created.isEmpty ? '' : ' · $created'}',
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Monogram(authorName, size: 18),
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Text(
+                                          '@${valueText(author, 'username')}${created.isEmpty ? '' : ' · $created'}',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                                        ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ],
                             ),
