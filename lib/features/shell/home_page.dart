@@ -403,7 +403,7 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final account = widget.session.active;
     if (account == null) return const Scaffold(body: SizedBox());
-    final width = MediaQuery.sizeOf(context).width;
+    final width = MediaQuery.widthOf(context);
     Widget column(Widget child) => width > 760
         ? Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 720), child: child))
         : child;

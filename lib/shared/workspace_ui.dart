@@ -324,10 +324,10 @@ class PeopleStack extends StatelessWidget {
 
 /// Horizontal inset for feeds and their header rows: 16 dp on phones, a
 /// centred 640 dp column on wider windows so lists and their search rows
-/// share one edge. The width is the viewport (`MediaQuery.sizeOf`), not the
+/// share one edge. The width is the viewport (`MediaQuery.widthOf`), not the
 /// parent constraints, so a nested header and the list agree.
 double feedGutter(BuildContext context, [double? containerWidth]) {
-  final width = containerWidth ?? MediaQuery.sizeOf(context).width;
+  final width = containerWidth ?? MediaQuery.widthOf(context);
   return width > 672 ? (width - 640) / 2 : 16.0;
 }
 
