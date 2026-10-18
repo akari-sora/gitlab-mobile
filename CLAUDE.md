@@ -30,9 +30,9 @@ python3 -m compileall -q ci tool
 Native runners (`android/`, `ios/`, `.metadata`) are **not committed**. `tool/bootstrap.py` generates them with `flutter create` and then hardens them (no cleartext HTTP, no backup, keychain entitlements, OAuth URL scheme `io.gitlabmobile.app://oauth/callback`). It refuses to overwrite existing native directories and rejects any Flutter that is not 3.47.2, so pass the fvm binary:
 
 ```sh
-python3 tool/bootstrap.py --flutter .fvm/flutter_sdk/bin/flutter   # required before flutter run / build apk locally
+python3 tool/bootstrap.py --flutter .fvm/flutter_sdk/bin/flutter   # required before flutter run / build apk locally (Android: --flavor gitlab)
 python3 tool/bootstrap.py --flutter .fvm/flutter_sdk/bin/flutter --check-sdk
-fvm exec bash ci/build_android.sh                                    # debug APK + build-metadata.json + SHA256SUMS
+fvm exec bash ci/build_android.sh                                    # gitlab-flavor debug APK + build-metadata.json + SHA256SUMS
 ```
 
 Smoke tools use the production `GitLabApi`:

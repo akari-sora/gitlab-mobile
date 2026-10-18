@@ -66,16 +66,32 @@ else
 fi
 export GITLAB_MOBILE_SIGNING_PROPERTIES="$signing_properties"
 export PREVIEW_SIGNING
-flutter build apk --debug --no-pub --dart-define=GITLAB_MOBILE_COMMIT="${CI_COMMIT_SHORT_SHA:-local}"
+# The GitLab distribution channel. The project's pipeline IID only grows, so
+# CI builds carry a monotonic versionCode that in-app updates compare.
+export GITLAB_MOBILE_FLAVOR=gitlab
+# (Expanded with +"..." below: macOS bash 3.2 treats an empty array as unset.)
+build_number_args=()
+if [ -n "${CI_PIPELINE_IID:-}" ]; then
+  build_number_args=(--build-number="$CI_PIPELINE_IID")
+fi
+flutter build apk --debug --flavor "$GITLAB_MOBILE_FLAVOR" --no-pub ${build_number_args[@]+"${build_number_args[@]}"} \
+  --dart-define=GITLAB_MOBILE_COMMIT="${CI_COMMIT_SHORT_SHA:-local}"
 mkdir -p artifacts
 short_sha="${CI_COMMIT_SHORT_SHA:-local}"
-cp build/app/outputs/flutter-apk/app-debug.apk "artifacts/gitlab-mobile-${short_sha}-debug.apk"
+cp "build/app/outputs/flutter-apk/app-$GITLAB_MOBILE_FLAVOR-debug.apk" "artifacts/gitlab-mobile-${short_sha}-debug.apk"
 python3 - <<'PY'
-import json, os, pathlib, subprocess
+import json, os, pathlib, re, subprocess
 flutter = json.loads(subprocess.check_output(['flutter', '--version', '--machine'], text=True))
+version = re.search(r'^version:\s*([^+\s]+)\+(\d+)\s*$', pathlib.Path('pubspec.yaml').read_text(), re.M)
+if version is None:
+    raise SystemExit('pubspec.yaml has no name+code version')
 metadata = {
     'kind': 'development-preview',
     'signing': os.environ.get('PREVIEW_SIGNING', 'Android debug key; not a production release'),
+    'channel': os.environ['GITLAB_MOBILE_FLAVOR'],
+    'build_type': 'debug',
+    'version_name': version.group(1),
+    'version_code': int(os.environ.get('CI_PIPELINE_IID') or version.group(2)),
     'commit': os.environ.get('CI_COMMIT_SHA'),
     'pipeline_url': os.environ.get('CI_PIPELINE_URL'),
     'job_url': os.environ.get('CI_JOB_URL'),

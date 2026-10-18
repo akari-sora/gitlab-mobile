@@ -107,9 +107,9 @@ Use the pinned Flutter SDK and committed dependency lock:
 
 ```sh
 ./.fvm/flutter_sdk/bin/flutter pub get --enforce-lockfile
-./.fvm/flutter_sdk/bin/flutter build apk --debug
-./.fvm/flutter_sdk/bin/flutter build apk --profile
-./.fvm/flutter_sdk/bin/flutter build apk --release
+./.fvm/flutter_sdk/bin/flutter build apk --debug --flavor gitlab
+./.fvm/flutter_sdk/bin/flutter build apk --profile --flavor gitlab
+./.fvm/flutter_sdk/bin/flutter build apk --release --flavor gitlab
 ```
 
 Build only the variant required for the current task. A successful release build

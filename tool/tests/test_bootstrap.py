@@ -243,6 +243,47 @@ class BootstrapTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             bootstrap.configure_ios(self.root)
 
+    GRADLE = (
+        'plugins {\n    id("com.android.application")\n}\n\n'
+        'android {\n    namespace = "io.gitlabmobile.gitlab_mobile"\n'
+        '    buildTypes {\n        release {\n'
+        '            signingConfig = signingConfigs.getByName("debug")\n        }\n    }\n}\n'
+    )
+
+    def test_flavors_follow_the_signing_block_once(self):
+        gradle = self.root / 'build.gradle.kts'
+        gradle.write_text(self.GRADLE)
+        android_signing.configure_gradle(gradle)
+        self.assertTrue(bootstrap.configure_flavors(gradle))
+        text = gradle.read_text()
+        self.assertEqual(text.count('productFlavors'), 1)
+        self.assertIn('create("gitlab")', text)
+        self.assertIn('create("play")', text)
+        self.assertNotIn('applicationIdSuffix', text, 'both channels keep the application ID')
+        self.assertLess(text.index(android_signing.END_CONFIG), text.index(bootstrap.FLAVORS_BEGIN))
+        self.assertLess(text.index('android {'), text.index(bootstrap.FLAVORS_BEGIN))
+        self.assertFalse(bootstrap.configure_flavors(gradle))
+        self.assertEqual(gradle.read_text(), text)
+
+    def test_flavors_refuse_stale_partial_or_foreign_blocks(self):
+        gradle = self.root / 'build.gradle.kts'
+        gradle.write_text(self.GRADLE)
+        with self.assertRaisesRegex(RuntimeError, 'signing before'):
+            bootstrap.configure_flavors(gradle)
+        android_signing.configure_gradle(gradle)
+        bootstrap.configure_flavors(gradle)
+        configured = gradle.read_text()
+        gradle.write_text(configured.replace('create("play")', 'create("store")'))
+        with self.assertRaisesRegex(RuntimeError, 'Stale managed Android flavors'):
+            bootstrap.configure_flavors(gradle)
+        gradle.write_text(configured.replace(bootstrap.FLAVORS_END, ''))
+        with self.assertRaisesRegex(RuntimeError, 'Incomplete Android flavor markers'):
+            bootstrap.configure_flavors(gradle)
+        gradle.write_text(self.GRADLE.replace('android {\n', 'android {\n    productFlavors {}\n'))
+        android_signing.configure_gradle(gradle)
+        with self.assertRaisesRegex(RuntimeError, 'flavors already defined'):
+            bootstrap.configure_flavors(gradle)
+
 
 if __name__ == '__main__':
     unittest.main()

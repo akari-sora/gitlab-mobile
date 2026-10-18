@@ -109,6 +109,22 @@ accepted.
 Neither the local development signer nor the current CI debug-signing lane is
 Play App Signing. Play publication and production signing remain unconfigured.
 
+### Distribution channels and versionCode
+
+`tool/bootstrap.py` generates two Android product flavors, `gitlab` and `play`
+(dimension `distribution`). Both keep the application ID
+`io.gitlabmobile.gitlab_mobile`; the flavor reaches Dart as Flutter's
+`appFlavor` and only decides how the app is updated. Every Android build
+therefore names one: `flutter build apk --flavor gitlab`, `flutter run --flavor
+gitlab`. iOS has no flavors and builds as before.
+
+`ci/build_android.sh` builds the `gitlab` flavor with `--build-number` set to the
+project's `CI_PIPELINE_IID`, which only grows, so each CI APK has a higher
+`versionCode` than the last (the pubspec's `+5` is used only for local builds).
+`build-metadata.json` records `channel`, `build_type`, `version_name` and
+`version_code` next to `signing`. The `play` flavor is not built in CI; its
+store signing and listing are `NOT_RUN`.
+
 ## iOS and product acceptance
 
 An iOS binary needs a macOS runner with an appropriate Xcode toolchain. App Store/TestFlight deployment also needs signing and distribution credentials. Neither has been assumed or enabled. G0 acceptance additionally needs actual private-project access, device secure-storage/backup tests, account switching, network failure and accessibility evidence on Android/iOS. These remain separate from green CI.
@@ -134,7 +150,7 @@ before installation or input. Do not use an unqualified `adb` command or copy
 accounts from a physical phone. For the current isolated AVD:
 
 ```sh
-.fvm/flutter_sdk/bin/flutter run --profile -d emulator-5580 \
+.fvm/flutter_sdk/bin/flutter run --profile --flavor gitlab -d emulator-5580 \
   -t tool/emulator_ui.dart --dart-define=EMULATOR_UI_QA=true \
   --dart-define=PERF_LABEL=synthetic-emulator
 ```
