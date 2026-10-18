@@ -8,6 +8,7 @@ import '../../shared/external_link.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/list_detail_scaffold.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/motion.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
 import 'ci_page.dart';
@@ -977,10 +978,12 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                 ? '已排程自動合併，等待流水線完成。'
                 : 'GitLab 已接受操作，請查看最新合併狀態。');
         if (!mounted) return;
+        if (merged) unawaited(Haptics.success());
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
     } catch (e) {
       if (!mounted || !_currentOwner(owner)) return;
+      if (action == 'merge') unawaited(Haptics.failure());
       showFailure(context, e);
     } finally {
       if (_currentOwner(owner)) { setState(() => _busy = false); }
@@ -1859,24 +1862,31 @@ class _RestDescriptionState extends State<_RestDescription>
           ),
         ),
         const SizedBox(height: 4),
-        if (_expanded)
-          _markdown()
-        else ...[
-          Text(
-            _preview,
-            key: const ValueKey('work-item-description-preview'),
-            maxLines: 6,
-            overflow: TextOverflow.ellipsis,
-            style: theme.textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '說明較長（共 $_runes 字元），目前僅顯示開頭摘要。',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
+        // The body grows from the summary to the full text (and back) instead
+        // of jumping to its new height.
+        AnimatedSize(
+          duration: motionDuration(context, Durations.medium2),
+          curve: Easing.standard,
+          alignment: Alignment.topCenter,
+          child: _expanded
+              ? _markdown()
+              : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(
+                    _preview,
+                    key: const ValueKey('work-item-description-preview'),
+                    maxLines: 6,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '說明較長（共 $_runes 字元），目前僅顯示開頭摘要。',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ]),
+        ),
       ],
     );
   }

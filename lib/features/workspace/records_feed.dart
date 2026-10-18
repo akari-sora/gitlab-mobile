@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
+import '../../shared/motion.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/workspace_ui.dart';
 import 'record_controller.dart';
@@ -99,7 +100,7 @@ class RecordsFeedState extends State<RecordsFeed> {
   /// Scrolls the feed back to its first row.
   Future<void> scrollToTop() async {
     if (!_scroll.hasClients) return;
-    await _scroll.animateTo(0, duration: const Duration(milliseconds: 320), curve: Curves.easeOutCubic);
+    await scrollToStart(context, _scroll);
   }
 
   @override

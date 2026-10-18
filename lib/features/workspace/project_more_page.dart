@@ -11,6 +11,7 @@ import '../../core/release_assets.dart';
 import '../../core/repository_ref.dart';
 import '../../core/work_item_types.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/workspace_ui.dart';
 import 'activity_page.dart';
@@ -443,6 +444,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
           );
         }
         if (mounted && _current(generation)) {
+          unawaited(Haptics.success());
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(SnackBar(content: Text(starred ? '已加入星標' : '已移除星標')));

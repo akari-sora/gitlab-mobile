@@ -11,6 +11,7 @@ import '../../core/syntax_highlighter.dart';
 import '../../shared/external_link.dart';
 import '../../shared/list_detail_scaffold.dart';
 import '../../shared/markdown_view.dart';
+import '../../shared/motion.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/theme.dart';
@@ -716,16 +717,14 @@ class RepositoryReadmeCard extends StatelessWidget {
                     IconButton(
                       tooltip: expanded ? '收合 README' : '展開 README',
                       onPressed: onToggle,
-                      icon: Icon(
-                        expanded ? Icons.expand_less : Icons.expand_more,
-                      ),
+                      icon: TurnChevron(open: expanded),
                     ),
                   ],
                 ),
               ),
             ),
           ),
-          if (expanded) ...[
+          ExpandSection(expanded: expanded, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             const Divider(height: 1),
             if (loading)
               const Padding(
@@ -758,7 +757,7 @@ class RepositoryReadmeCard extends StatelessWidget {
                   account: account,
                 ),
               ),
-          ],
+          ])),
         ],
       ),
     );
