@@ -183,6 +183,7 @@ local paths and public download URLs only. It is not a private key backup.
 | `HISTORICAL_CI23` | `23c9890d05dd84772921793313fb2a9ea34a4e03fbabb66027395a4bf10b4241` | not found in the selected scope; elsewhere unknown |
 | `CI_EPHEMERAL_ADCB7D4D` | `d933f0e79237d5ce08d9c71c4dcbe214a5d1e75711070379c6d7192ace7e1438` | none: generated inside CI job 17125541131 and discarded with it |
 | `CI_EPHEMERAL_630E20D5` | `2740d039aee0c5d5839ff0f5f532b1cbf76ac0ca4452764239847e5e36d6bdc7` | none: generated inside CI job 17260932740 and discarded with it |
+| `CI_EPHEMERAL_A2EB7BA6` | `0a964b2c8938d9eaddd036d3c051d4c0ced5603ffa55e17b10e7903ba21e917e` | none: generated inside CI job 17264418104 and discarded with it |
 
 `LEGACY_LOCAL` is a host-generated historical debug key: the Android build
 tools create a separate debug key per host, so its certificate is specific to
@@ -222,6 +223,12 @@ not cover it.
   `CI_EPHEMERAL_630E20D5` (v2 only), SHA-256
   `9ab1b198f7bf638c4a8ebb40f8aca7ae7171bfeab879a7ea0aecbfee1f3ed782`:
   [gitlab-mobile-630e20d5-debug.apk](https://gitlab.com/api/v4/projects/86648389/packages/generic/gitlab-mobile-preview/630e20d5566a6fd48ef100cec999e724741cf256/gitlab-mobile-630e20d5-debug.apk).
+  Its key was discarded with the CI job, so it cannot update any other install
+  and nothing can update it in place. No receipt shows it was installed.
+- GitLab `v0.5.0-dev.a2eb7ba6` CI debug APK, source `a2eb7ba6`, signer
+  `CI_EPHEMERAL_A2EB7BA6` (v2 only), SHA-256
+  `b2a5edbb09897821f2395bdb6c5ae4208cc43b51e0622889e1aaae38e38b99fa`:
+  [gitlab-mobile-a2eb7ba6-debug.apk](https://gitlab.com/api/v4/projects/86648389/packages/generic/gitlab-mobile-preview/a2eb7ba689d9bdcdf67adc5f5efaf6ed063723fd/gitlab-mobile-a2eb7ba6-debug.apk).
   Its key was discarded with the CI job, so it cannot update any other install
   and nothing can update it in place. No receipt shows it was installed.
 
