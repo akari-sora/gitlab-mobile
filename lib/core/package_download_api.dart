@@ -106,6 +106,92 @@ extension PackageDownloadApi on GitLabApi {
     return file;
   }
 
+  /// Finds the generic package file a release link names. GitLab serves the
+  /// newest package and file when a name was published more than once, so the
+  /// highest IDs win. The download then re-reads both through
+  /// [packageFileForDownload] and checks the file's SHA-256.
+  Future<(RegistryPackage, RegistryPackageFile)> releasePackageFile(
+    int project,
+    ReleasePackageLink link, {
+    required bool Function() isCurrent,
+  }) async {
+    if (project <= 0) throw const ApiFailure(FailureKind.validation);
+    RegistryPackage? package;
+    await _boundedPackagePages(
+      ['projects', '$project', 'packages'],
+      {
+        'package_type': 'generic',
+        'package_name': link.packageName,
+        'package_version': link.packageVersion,
+      },
+      isCurrent,
+      (value) {
+        final candidate = _parseDownloadPackage(value);
+        if (candidate.type == 'generic' &&
+            candidate.name == link.packageName &&
+            candidate.version == link.packageVersion &&
+            candidate.id > (package?.id ?? 0)) {
+          package = candidate;
+        }
+      },
+    );
+    final found = package;
+    if (found == null) throw const ApiFailure(FailureKind.invisible);
+    RegistryPackageFile? file;
+    await _boundedPackagePages(
+      ['projects', '$project', 'packages', '${found.id}', 'package_files'],
+      const {},
+      isCurrent,
+      (value) {
+        final candidate = _parseDownloadFile(value);
+        if (candidate.name == link.fileName && candidate.id > (file?.id ?? 0)) {
+          file = candidate;
+        }
+      },
+    );
+    final selected = file;
+    if (selected == null) throw const ApiFailure(FailureKind.invisible);
+    _requirePackageDownloadOwner(isCurrent);
+    return (found, selected);
+  }
+
+  Future<void> _boundedPackagePages(
+    List<String> path,
+    Map<String, String> query,
+    bool Function() isCurrent,
+    void Function(Map<String, dynamic> value) visit,
+  ) async {
+    final issued = <String>{};
+    Uri? next;
+    var inspected = 0, pages = 0;
+    while (true) {
+      if (++pages > _packageDownloadMaximumPages) {
+        throw const ApiFailure(FailureKind.unsupported);
+      }
+      _requirePackageDownloadOwner(isCurrent);
+      final page = await records(
+        path,
+        query: {...query, 'per_page': '$_packageDownloadPageSize'},
+        next: next,
+      );
+      _requirePackageDownloadOwner(isCurrent);
+      if (page.items.length > _packageDownloadPageSize) {
+        throw const ApiFailure(FailureKind.invalidResponse);
+      }
+      for (final value in page.items) {
+        if (++inspected > _packageDownloadMaximumRows) {
+          throw const ApiFailure(FailureKind.unsupported);
+        }
+        visit(value);
+      }
+      next = page.next;
+      if (next == null) return;
+      if (!issued.add(next.toString())) {
+        throw const ApiFailure(FailureKind.invalidResponse);
+      }
+    }
+  }
+
   Future<ArtifactDownload> downloadPackageFile(
     int project,
     int package,

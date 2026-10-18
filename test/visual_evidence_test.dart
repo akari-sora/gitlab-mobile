@@ -11,6 +11,7 @@ import 'package:gitlab_mobile/features/auth/login_screen.dart';
 import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
+import 'package:gitlab_mobile/features/workspace/project_more_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_page.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
@@ -43,6 +44,25 @@ File visualEvidenceCjkFont() {
   }
   return font;
 }
+
+/// A release whose links cover each asset action the detail offers.
+const _evidenceRelease = <String, dynamic>{
+  'tag_name': 'v0.6.0', 'name': 'v0.6.0 預覽版', 'released_at': '2026-10-18T02:00:00Z',
+  'description': '### 這一版有什麼\n\n- 首頁、收件匣、探索與我的\n- Release 附件可在 App 內下載',
+  'commit': {'id': WorkspaceFixture.sha, 'title': 'feat(ui): GitHub Mobile-style redesign'},
+  'assets': {
+    'count': 4,
+    'links': [
+      {'id': 1, 'name': 'gitlab-mobile-debug.apk', 'link_type': 'package',
+        'url': 'https://example.com/gitlab/api/v4/projects/42/packages/generic/mobile-preview/0.6.0/gitlab-mobile-debug.apk'},
+      {'id': 2, 'name': '更新說明', 'link_type': 'other', 'url': 'https://docs.example.org/changelog'},
+    ],
+    'sources': [
+      {'format': 'zip', 'url': 'https://example.com/gitlab/studio/mobile-workspace/-/archive/v0.6.0/mobile-workspace-v0.6.0.zip'},
+      {'format': 'tar.gz', 'url': 'https://example.com/gitlab/studio/mobile-workspace/-/archive/v0.6.0/mobile-workspace-v0.6.0.tar.gz'},
+    ],
+  },
+};
 
 void main() {
   var fontsAvailable = false;
@@ -92,7 +112,7 @@ void main() {
   });
 
   for (final brightness in Brightness.values) {
-    for (final name in ['login', 'home', 'inbox', 'projects', 'me', 'repository', 'files', 'review']) {
+    for (final name in ['login', 'home', 'inbox', 'projects', 'me', 'repository', 'files', 'review', 'release']) {
       testWidgets('capture actual $name ${brightness.name} synthetic-data screen', (tester) async {
         FlutterSecureStorage.setMockInitialValues({});
         final fixture = WorkspaceFixture();
@@ -107,6 +127,7 @@ void main() {
         addTearDown(tester.view.resetPhysicalSize); addTearDown(tester.view.resetDevicePixelRatio);
         addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
         final key = GlobalKey();
+        if (name == 'release') fixture.releases = [_evidenceRelease];
         final shortcuts = LauncherShortcuts(FakeAppShortcutHost(), MemoryRecentProjectStore());
         addTearDown(shortcuts.dispose);
         final Widget screen = switch (name) {
@@ -117,6 +138,8 @@ void main() {
           'repository' => evidenceHost(ProjectPage(account: fixture.account, api: fixture.api, project: fixture.project), brightness),
           'files' => evidenceHost(ProjectPage(account: fixture.account, api: fixture.api, project: fixture.project,
             initialTab: 0), brightness),
+          'release' => evidenceHost(MetadataPage(account: fixture.account, api: fixture.api, project: fixture.project,
+            kind: MetadataKind.releases), brightness),
           _ => evidenceHost(WorkItemPage(account: fixture.account, api: fixture.api, project: fixture.project,
             resource: 'merge_requests', iid: 12), brightness),
         };
@@ -131,6 +154,12 @@ void main() {
         }
         if (const ['home', 'inbox', 'projects', 'me'].contains(name)) {
           expect(find.byType(NavigationBar), findsOneWidget);
+        }
+        if (name == 'release') {
+          await tester.tap(find.text('v0.6.0 預覽版'));
+          await settleWorkspace(tester);
+          expect(find.text('附件'), findsOneWidget);
+          expect(tester.takeException(), isNull);
         }
         final boundary = key.currentContext!.findRenderObject()! as RenderRepaintBoundary;
         await tester.runAsync(() async {
@@ -147,7 +176,7 @@ void main() {
             'icon_fonts': 'bundled MaterialIcons',
             'dimensions': [412, 892],
             'screens': ['login', 'home, inbox, explore (projects) and me with production bottom navigation',
-              'repository overview', 'repository files', 'review'],
+              'repository overview', 'repository files', 'review', 'release detail with assets'],
             'themes': ['light', 'dark'],
           }));
         });
