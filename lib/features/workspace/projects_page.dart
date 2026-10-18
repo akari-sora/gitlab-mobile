@@ -60,8 +60,8 @@ class _ProjectsPageState extends State<ProjectsPage> {
   Timer? _debounce;
   late int _scope = widget.initialScope.clamp(0, 3);
   int _seenSearch = 0;
-  late int _seenLocator = widget.locatorToken;
-  late int _seenCreate = widget.createToken;
+  late int _seenLocator;
+  late int _seenCreate;
   String _query = '';
   String _sort = 'activity';
   bool _opening = false;
@@ -87,6 +87,10 @@ class _ProjectsPageState extends State<ProjectsPage> {
   @override
   void initState() {
     super.initState();
+    // Read the tokens now: a lazy initializer first runs in didUpdateWidget,
+    // already holding the bumped token, and would swallow that request.
+    _seenLocator = widget.locatorToken;
+    _seenCreate = widget.createToken;
     _activeAccountKey = widget.session.active?.key;
     _activeGeneration = widget.session.generation;
     _activeApi = widget.session.api;

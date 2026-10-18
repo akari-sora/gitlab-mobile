@@ -12,11 +12,45 @@ import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
 
 import 'session_test.dart' show MemoryAccountStore;
 import 'support/fake_adapter.dart';
+import 'support/fake_shortcuts.dart';
 import 'support/widget_settle.dart';
 import 'workspace_widget_test.dart' show workspaceHost;
 
 void main() {
   setUp(() => FlutterSecureStorage.setMockInitialValues({}));
+
+  for (final request in ['locator', 'create']) {
+    testWidgets('the first rebuild with a bumped $request token opens it', (tester) async {
+      final api = testApi(FakeAdapter((_) => jsonResponse([])));
+      final session = SessionController(MemoryAccountStore())
+        ..active = Account(
+          instance: api.instance,
+          user: const GitLabUser(id: 7, username: 'first', name: 'First'),
+          token: 'synthetic-first',
+        )
+        ..api = api;
+      addTearDown(api.close);
+      addTearDown(session.dispose);
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(412, 1000);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final store = MemoryRecentProjectStore();
+
+      await tester.pumpWidget(workspaceHost(ProjectsPage(session: session, recentStore: store)));
+      await settleNetworkWidgets(tester);
+      await tester.pumpWidget(workspaceHost(ProjectsPage(
+        session: session,
+        recentStore: store,
+        locatorToken: request == 'locator' ? 1 : 0,
+        createToken: request == 'create' ? 1 : 0,
+      )));
+      await settleNetworkWidgets(tester);
+
+      expect(find.text(request == 'locator' ? '開啟專案' : '新增私有專案'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   for (final replacement in ['account', 'generation', 'api']) {
     for (final target in ['issue', 'project', 'recent']) {

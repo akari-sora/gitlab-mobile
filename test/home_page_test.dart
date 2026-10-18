@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -8,6 +10,7 @@ import 'package:gitlab_mobile/features/shell/home_page.dart';
 import 'package:gitlab_mobile/features/workspace/my_work_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_overview.dart';
 import 'package:gitlab_mobile/features/workspace/project_page.dart';
+import 'package:gitlab_mobile/shared/hub_ui.dart';
 
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'support/fake_adapter.dart';
@@ -16,9 +19,12 @@ import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
 import 'workspace_widget_test.dart' show workspaceHost;
 
-/// The workspace fixture with an empty starred list on request.
+/// The workspace fixture with an empty starred list or a held project lookup on request.
 final class _HomeFixture extends WorkspaceFixture {
   bool noStars = false;
+
+  /// Holds the project lookup until completed.
+  Completer<void>? projectGate;
 
   @override
   Future<ResponseBody> respond(RequestOptions request) async {
@@ -27,6 +33,7 @@ final class _HomeFixture extends WorkspaceFixture {
     if (noStars && path == 'projects' && request.uri.queryParameters['starred'] == 'true') {
       return jsonResponse(<Object>[]);
     }
+    if (path == 'projects/42') await projectGate?.future;
     return super.respond(request);
   }
 }
@@ -182,6 +189,33 @@ void main() {
     await settleNetworkWidgets(tester);
     expect(find.byType(ProjectOverview), findsOneWidget);
     expect((await store.readList(key)).map((project) => project.id), [42]);
+    expect(fixture.unhandled, isEmpty);
+  });
+
+  testWidgets('a refresh during a recent-project lookup still opens it and frees the rows', (tester) async {
+    _phone(tester);
+    final fixture = _HomeFixture()..projectGate = Completer<void>();
+    addTearDown(fixture.api.close);
+    final session = await _session(tester, fixture);
+    final store = MemoryRecentProjectStore();
+    await store.touch(session.active!.key,
+        const RecentProject(id: 42, name: 'Mobile Workspace', path: 'studio/mobile-workspace'));
+    await tester.pumpWidget(workspaceHost(HomePage(session: session, recentStore: store)));
+    await settleNetworkWidgets(tester);
+
+    await tester.tap(find.byKey(const ValueKey('home-recent-42')));
+    await settleNetworkWidgets(tester);
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    await tester.tap(find.byTooltip('重新整理'));
+    await settleNetworkWidgets(tester);
+    fixture.projectGate!.complete();
+    await settleNetworkWidgets(tester);
+
+    expect(find.byType(ProjectOverview), findsOneWidget);
+    await tester.tap(find.byType(BackButton));
+    await settleNetworkWidgets(tester);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(tester.widget<HubRow>(find.byKey(const ValueKey('home-recent-42'))).onTap, isNotNull);
     expect(fixture.unhandled, isEmpty);
   });
 

@@ -64,8 +64,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   bool _current(({String account, GitLabApi api, int generation}) owner, int epoch) =>
+      epoch == _epoch && _sameOwner(owner);
+
+  /// Ignores [_epoch]: a refresh must not drop or wedge an open in flight.
+  bool _sameOwner(({String account, GitLabApi api, int generation}) owner) =>
       mounted &&
-      epoch == _epoch &&
       !owner.api.isClosed &&
       widget.session.active?.key == owner.account &&
       identical(widget.session.api, owner.api) &&
@@ -200,17 +203,16 @@ class _HomePageState extends State<HomePage> {
   Future<void> _openRecent(RecentProject recent) async {
     final owner = _owner;
     if (owner == null || _opening) return;
-    final epoch = _epoch;
     setState(() => _opening = true);
     try {
       final project = await owner.api.project('${recent.id}');
-      if (!_current(owner, epoch)) return;
+      if (!_sameOwner(owner)) return;
       _openProject(project);
     } catch (e) {
-      if (!mounted || !_current(owner, epoch)) return;
+      if (!mounted || !_sameOwner(owner)) return;
       showFailure(context, e);
     } finally {
-      if (_current(owner, epoch)) setState(() => _opening = false);
+      if (_sameOwner(owner)) setState(() => _opening = false);
     }
   }
 
