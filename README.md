@@ -14,6 +14,7 @@ A mobile-first Flutter client for Android and iOS. Independent third-party softw
   - **`play`**, for Google Play (not yet listed): uses Google Play's in-app updates and has no install permission.
 - **Release builds.** GitLab previews built from `main` and release tags are now release builds (AOT, R8), about 70 MB instead of 180 MB, and versionCodes now increase with every pipeline.
 - **Smoother lists.** Rows no longer rebuild on every frame while the bottom bar slides away; that was 140 row rebuilds per hide on 探索.
+- **Skeleton rows.** Lists show placeholder rows in the shape of their content while they first load, instead of a lone spinner; they hold still under reduced motion.
 - **Motion.** Destination and overview switches animate (fade through, shared axis), as does opening an item from a list. Sections fold open, and writes are confirmed with haptics. Reduced motion is honoured, including iOS Reduce Motion.
 - **Inbox triage.** Filter chips (審查, 提及, 指派, Pipeline 失敗, 合併請求, 議題) and todo snooze with an 已延後 list (GitLab 17.9+).
 - **New launcher icon.** It is rendered from `tool/render_icon.py`.

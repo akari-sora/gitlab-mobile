@@ -13,6 +13,7 @@ import '../../core/work_item_state_models.dart';
 import '../../core/work_item_status_models.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/resource_share.dart';
+import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
 import 'work_item_activity.dart';
@@ -1439,7 +1440,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
     final gutter = feedGutter(context);
     final Widget itemSliver;
     if (_loadingItems && _items.isEmpty) {
-      itemSliver = const SliverToBoxAdapter(child: ListSkeleton());
+      itemSliver = const SliverToBoxAdapter(child: RowsSkeleton());
     } else if (_itemsError != null && _items.isEmpty) {
       itemSliver = SliverToBoxAdapter(
         child: FailureNotice(
