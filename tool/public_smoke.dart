@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:gitlab_mobile/core/analytics_models.dart';
+import 'package:gitlab_mobile/core/app_release.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
@@ -666,6 +667,8 @@ Future<void> main() async {
     }
   }
 
+  AppRelease? latestRelease;
+
   Future<void> check(String name, Future<void> Function() run) async {
     final clock = Stopwatch()..start();
     try {
@@ -927,7 +930,17 @@ Future<void> main() async {
           .toList(growable: false);
       require(detail.id == listed.id && detail.name == 'gitlab-mobile-preview');
       require(files.any((file) => file.name == 'SHA256SUMS'));
-      require(files.any((file) => file.name.endsWith('-debug.apk')));
+      // main builds a release APK since !65; other previews were debug builds.
+      require(files.any((file) => RegExp(r'^gitlab-mobile-[0-9a-f]+-(debug|release)\.apk$').hasMatch(file.name)));
+    });
+    // The gitlab flavor's own update check, against this project's releases.
+    await check('public.update.latest_release_build', () async {
+      latestRelease = await latestAppRelease(api);
+      final release = latestRelease;
+      if (release == null) return;
+      require(release.versionCode > 0 && release.versionName.isNotEmpty);
+      require(release.file.name == 'gitlab-mobile-${release.commit.substring(0, 8)}-release.apk');
+      require(release.file.size > 0 && RegExp(r'^[0-9a-f]{64}$').hasMatch(release.file.sha256));
     });
     await check('public.registry.numeric_file_download_integrity', () async {
       const packageId = 71215360;
@@ -1470,6 +1483,8 @@ Future<void> main() async {
         'work_item_activity_continuation_count': activityContinuationCount,
         'work_item_group_newest_continuation_exercised':
             groupNewestContinuationExercised,
+        'update_latest_release_tag': latestRelease?.tag,
+        'update_latest_version_code': latestRelease?.versionCode,
       },
       'gaps': [
         'Issue boards return HTTP 401 to anonymous public reads',
@@ -1477,6 +1492,8 @@ Future<void> main() async {
           'Public Work Item fixtures did not issue a nested note continuation',
         if (!groupNewestContinuationExercised)
           'Public group Work Item newest-first page did not issue an outer continuation',
+        if (latestRelease == null)
+          'No gitlab-channel release build is published as a release yet, so the in-app update has nothing to offer',
       ],
       'not_run': [
         'PAT authentication',
