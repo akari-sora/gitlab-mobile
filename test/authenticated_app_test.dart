@@ -13,6 +13,7 @@ import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
 import 'package:gitlab_mobile/features/shell/build_info.dart';
+import 'package:gitlab_mobile/shared/reveal_transition.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
@@ -61,9 +62,14 @@ void main() {
       AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
     );
     await settleNetworkWidgets(tester);
-    double opacity() => tester.widget<FadeTransition>(find.ancestor(
+    // The destination's own fade-through, not a transition nested inside it
+    // (the list behind a detail has one too).
+    final pane = find.ancestor(
       of: find.byKey(const Key('projectSearch'), skipOffstage: false),
-      matching: find.byType(FadeTransition, skipOffstage: false)).first).opacity.value;
+      matching: find.byWidgetPredicate(
+        (widget) => widget is RevealOnShow && widget.style == RevealStyle.fadeThrough, skipOffstage: false));
+    double opacity() => tester.widget<FadeTransition>(find.descendant(
+      of: pane, matching: find.byType(FadeTransition, skipOffstage: false)).first).opacity.value;
     expect(opacity(), 1, reason: 'the hidden destination rests fully opaque');
 
     await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('探索')));
