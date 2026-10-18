@@ -17,6 +17,7 @@ A mobile-first Flutter client for Android and iOS. Independent third-party softw
 - **Skeleton rows.** Lists show placeholder rows in the shape of their content while they first load, instead of a lone spinner; they hold still under reduced motion.
 - **Motion.** Destination and overview switches animate (fade through, shared axis), as does opening an item from a list. Sections fold open, and writes are confirmed with haptics. Reduced motion is honoured, including iOS Reduce Motion.
 - **Inbox triage.** Filter chips (審查, 提及, 指派, Pipeline 失敗, 合併請求, 議題) and todo snooze with an 已延後 list (GitLab 17.9+).
+- **Links from other apps (Android).** Share a GitLab link to GitLab Mobile from any app, or let it open gitlab.com links (Android 12 and later ask once: 我的 › 連結 opens that system setting). The link opens from 探索 for the active account; a link for another instance is explained, not opened.
 - **New launcher icon.** It is rendered from `tool/render_icon.py`.
 
 Device review is `NOT_RUN`.

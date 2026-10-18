@@ -29,6 +29,7 @@ class ProjectsPage extends StatefulWidget {
     this.searchToken = 0,
     this.locatorToken = 0,
     this.createToken = 0,
+    this.openLink,
     this.title,
     this.initialScope = 0,
   });
@@ -43,6 +44,10 @@ class ProjectsPage extends StatefulWidget {
 
   /// Bumped by the shell when Home asks to create a project.
   final int createToken;
+
+  /// A link another app handed over, with a number the shell bumps for each
+  /// one. It opens through the same resolution as a pasted link.
+  final (int, String)? openLink;
 
   /// App bar title; defaults to 探索 (or CI / CD for [forCi]).
   final String? title;
@@ -62,6 +67,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
   int _seenSearch = 0;
   late int _seenLocator;
   late int _seenCreate;
+  int? _seenLink;
   String _query = '';
   String _sort = 'activity';
   bool _opening = false;
@@ -99,6 +105,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
     widget.shortcuts?.addListener(_onShortcutsChanged);
     widget.session.addListener(_onSessionChanged);
     unawaited(_loadRecentProjects());
+    _takeLink();
   }
 
   void _onSessionChanged() {
@@ -199,6 +206,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
         if (mounted && !_opening) unawaited(_locator());
       });
     }
+    _takeLink();
     if (!widget.forCi && widget.createToken != _seenCreate) {
       _seenCreate = widget.createToken;
       _selection.clear();
@@ -336,7 +344,34 @@ class _ProjectsPageState extends State<ProjectsPage> {
         FilledButton(onPressed: () => Navigator.pop(context, input.text), child: const Text('開啟'))],
     ));
     unawaited(Future<void>.delayed(const Duration(milliseconds: 400), input.dispose));
-    if (locator == null || !mounted || _opening) return;
+    if (locator == null || !mounted) return;
+    await _openLocator(locator);
+  }
+
+  void _takeLink() {
+    final link = widget.openLink;
+    if (widget.forCi || link == null || link.$1 == _seenLink) return;
+    _seenLink = link.$1;
+    _selection.clear();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final uri = Uri.tryParse(link.$2);
+      final instance = account.instance;
+      if (uri != null && !instance.sameOrigin(uri)) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('這個連結屬於 ${uri.host}，目前的帳號在 ${instance.base.host}。'),
+        ));
+        return;
+      }
+      unawaited(_openLocator(link.$2));
+    });
+  }
+
+  /// Opens a project path, ID or link for the active account: a project link
+  /// opens the project, a resource link opens that resource, and anything
+  /// else (another instance, a token in the URL) is explained.
+  Future<void> _openLocator(String locator) async {
+    if (_opening) return;
     final targetAccount = widget.session.active;
     if (targetAccount == null) return;
     final targetAccountKey = targetAccount.key;

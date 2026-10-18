@@ -29,6 +29,7 @@ import 'app_shortcuts.dart';
 import 'home_page.dart';
 import 'appearance.dart';
 import 'build_info.dart';
+import 'incoming_links.dart';
 import '../update/update_controller.dart';
 import '../update/update_section.dart';
 
@@ -42,9 +43,13 @@ class AuthenticatedApp extends StatefulWidget {
     this.dynamicDark,
     this.buildInfoLoader = loadBuildInfo,
     this.updates,
+    this.incoming,
   });
   final SessionController session;
   final AppearanceController appearance;
+
+  /// Links handed over by other apps; null where none can arrive.
+  final IncomingLinks? incoming;
 
   /// The app's update flow; null (and nothing shown) when this build has no
   /// update channel.
@@ -187,6 +192,7 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
                 unawaited(widget.appearance.setUseDynamicColor(value)),
             buildInfoLoader: widget.buildInfoLoader,
             updates: widget.updates,
+            incoming: widget.incoming,
           ),
         );
       },
@@ -206,10 +212,12 @@ class _MobileShell extends StatefulWidget {
     required this.changeDynamicColor,
     required this.buildInfoLoader,
     this.updates,
+    this.incoming,
   });
   final SessionController session;
   final LauncherShortcuts shortcuts;
   final AppUpdateController? updates;
+  final IncomingLinks? incoming;
   final Listenable pops;
   final ThemeMode theme;
   final ValueChanged<ThemeMode> changeTheme;
@@ -232,6 +240,7 @@ class _MobileShellState extends State<_MobileShell> {
   int _locatorToken = 0;
   int _createToken = 0;
   int _todoToken = 0;
+  (int, String)? _incomingLink;
   bool _removing = false;
   final Set<int> _visited = {_home};
 
@@ -251,6 +260,7 @@ class _MobileShellState extends State<_MobileShell> {
     widget.shortcuts.addListener(_onShortcut);
     widget.pops.addListener(_chrome.show);
     widget.updates?.addListener(_onUpdates);
+    widget.incoming?.addListener(_onIncoming);
     final account = widget.session.active;
     if (account != null) {
       unawaited(widget.shortcuts.publish(account.key));
@@ -259,6 +269,8 @@ class _MobileShellState extends State<_MobileShell> {
       if (mounted) {
         unawaited(_consumeResumeTarget());
         unawaited(_consumeShortcut());
+        // A link may have arrived before sign-in or while the tree was rebuilt.
+        unawaited(_consumeIncoming());
         // The start-up check may have finished before this shell existed.
         if (widget.updates?.unannounced ?? false) _onUpdates();
       }
@@ -279,6 +291,10 @@ class _MobileShellState extends State<_MobileShell> {
     if (oldWidget.updates != widget.updates) {
       oldWidget.updates?.removeListener(_onUpdates);
       widget.updates?.addListener(_onUpdates);
+    }
+    if (oldWidget.incoming != widget.incoming) {
+      oldWidget.incoming?.removeListener(_onIncoming);
+      widget.incoming?.addListener(_onIncoming);
     }
   }
 
@@ -321,6 +337,7 @@ class _MobileShellState extends State<_MobileShell> {
     widget.session.removeListener(_onSession);
     widget.shortcuts.removeListener(_onShortcut);
     widget.updates?.removeListener(_onUpdates);
+    widget.incoming?.removeListener(_onIncoming);
     super.dispose();
   }
 
@@ -365,6 +382,40 @@ class _MobileShellState extends State<_MobileShell> {
         });
         await _openRecent(account, api, id);
     }
+  }
+
+  Future<void> _openLinkSettings(IncomingLinks incoming) async {
+    if (await incoming.openSettings() || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('無法開啟系統設定')));
+  }
+
+  void _onIncoming() {
+    if (widget.incoming?.pending != null) unawaited(_consumeIncoming());
+  }
+
+  /// Opens a link another app handed over. The shell comes forward and
+  /// 探索's locator resolves the link for the active account; a link for
+  /// another instance is explained there, never opened for this account.
+  Future<void> _consumeIncoming() async {
+    final account = widget.session.active;
+    if (account == null || widget.session.api == null || !mounted) return;
+    final link = widget.incoming?.take();
+    if (link == null) return;
+    if (!await _bringShellForward() || !mounted) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('請先完成或關閉目前的編輯，再開啟分享的連結'),
+        ));
+      }
+      return;
+    }
+    if (widget.session.active?.key != account.key) return;
+    _chrome.show();
+    setState(() {
+      _selected = _explore;
+      _visited.add(_explore);
+      _incomingLink = ((_incomingLink?.$1 ?? 0) + 1, link.toString());
+    });
   }
 
   /// Pops pushed routes so the shell is the visible page. A route that refuses
@@ -859,6 +910,19 @@ class _MobileShellState extends State<_MobileShell> {
                 ),
               ],
             ),
+            if (widget.incoming case final incoming? when incoming.canOpenSettings)
+              HubSection(
+                title: '連結',
+                children: [
+                  HubRow(
+                    leading: const IconTile(Icons.link, color: HubColors.blue),
+                    title: '用 App 開啟 GitLab.com 連結',
+                    subtitle: '在系統設定中允許開啟 gitlab.com 的連結',
+                    chevron: true,
+                    onTap: () => unawaited(_openLinkSettings(incoming)),
+                  ),
+                ],
+              ),
             if (widget.updates case final updates? when updates.enabled)
               UpdateSection(controller: updates),
             Padding(
@@ -1040,6 +1104,7 @@ class _MobileShellState extends State<_MobileShell> {
                                             searchToken: _searchToken,
                                             locatorToken: _locatorToken,
                                             createToken: _createToken,
+                                            openLink: _incomingLink,
                                           ),
                                         ),
                                         _pane(
