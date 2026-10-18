@@ -296,6 +296,22 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
   DetailFocus? _focus;
   bool _focused = false;
 
+  /// Pane widgets from earlier builds, reused while nothing their builders
+  /// receive has changed. Chrome sliding in or out above or below this
+  /// scaffold changes only its height, which re-runs the [LayoutBuilder] on
+  /// every animation frame; handing back the same widgets lets the list and
+  /// the detail skip rebuilding (they still lay out, and inherited changes
+  /// still reach them through their own dependencies).
+  final Map<Symbol, (Object?, Widget)> _panes = {};
+
+  Widget _pane(Symbol slot, Object? inputs, Widget Function() build) {
+    final cached = _panes[slot];
+    if (cached != null && cached.$1 == inputs) return cached.$2;
+    final built = build();
+    _panes[slot] = (inputs, built);
+    return built;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -322,6 +338,7 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _panes.clear();
     final focus = DetailFocusScope.maybeOf(context);
     if (!identical(focus, _focus)) {
       final previous = _focus;
@@ -356,6 +373,7 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
   @override
   void didUpdateWidget(covariant ListDetailScaffold<T> oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _panes.clear();
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onControllerChanged);
       widget.controller.addListener(_onControllerChanged);
@@ -382,6 +400,7 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
   }
 
   void _onControllerChanged() {
+    _panes.clear();
     _registeredDispatcher?.notifyChanged();
     if (mounted) _reportFocus(!_isTwoPane && widget.controller.selected != null && (widget.active ?? _isActive));
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -457,8 +476,9 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
 
             // 建立具有穩定 GlobalKey 的 detail 節點，透過 Builder 注入接收到局部 MediaQuery 的子 context
             // 並將 DetailBackScope 包覆在 detail 周圍，深度為 _depth，讓內層 scaffold 繼承並將深度累加
+            final isTwoPane = _isTwoPane;
             final Widget? stableDetail = selected != null
-                ? KeyedSubtree(
+                ? _pane(#detail, (selected, isTwoPane, _depth, _registeredDispatcher), () => KeyedSubtree(
                     key: effectiveDetailKey,
                     child: DetailBackScope(
                       dispatcher: _registeredDispatcher!,
@@ -467,13 +487,25 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
                         builder: (paneContext) => widget.detailBuilder(
                           paneContext,
                           selected,
-                          _isTwoPane,
+                          isTwoPane,
                           widget.controller.clear,
                         ),
                       ),
                     ),
-                  )
+                  ))
                 : null;
+            Widget listPane(bool twoPane) => _pane(#list, (twoPane, selected), () => KeyedSubtree(
+                  key: effectiveListKey,
+                  child: Builder(
+                    builder: (paneContext) => widget.listBuilder(paneContext, twoPane, selected),
+                  ),
+                ));
+            Widget emptyPane() => _pane(#empty, null, () => KeyedSubtree(
+                  key: const ValueKey('adaptive-empty-pane'),
+                  child: Builder(
+                    builder: (paneContext) => widget.emptyBuilder(paneContext),
+                  ),
+                ));
 
             Widget content;
             if (!_isTwoPane) {
@@ -492,16 +524,7 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
                           enabled: selected == null,
                           child: MediaQuery(
                             data: compactMediaQuery,
-                            child: KeyedSubtree(
-                              key: effectiveListKey,
-                              child: Builder(
-                                builder: (paneContext) => widget.listBuilder(
-                                  paneContext,
-                                  false,
-                                  selected,
-                                ),
-                              ),
-                            ),
+                            child: listPane(false),
                           ),
                         ),
                       ),
@@ -530,12 +553,7 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
                   child: stableDetail!,
                 );
               } else {
-                rawDetailPane = KeyedSubtree(
-                  key: const ValueKey('adaptive-empty-pane'),
-                  child: Builder(
-                    builder: (paneContext) => widget.emptyBuilder(paneContext),
-                  ),
-                );
+                rawDetailPane = emptyPane();
               }
 
               final detailPane = AdaptiveScope(
@@ -559,16 +577,7 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
                           enabled: false,
                           child: MediaQuery(
                             data: listMediaQuery,
-                            child: KeyedSubtree(
-                              key: effectiveListKey,
-                              child: Builder(
-                                builder: (paneContext) => widget.listBuilder(
-                                  paneContext,
-                                  true,
-                                  selected,
-                                ),
-                              ),
-                            ),
+                            child: listPane(true),
                           ),
                         ),
                       ),
@@ -591,12 +600,7 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
                   child: stableDetail!,
                 );
               } else {
-                rawDetailPane = KeyedSubtree(
-                  key: const ValueKey('adaptive-empty-pane'),
-                  child: Builder(
-                    builder: (paneContext) => widget.emptyBuilder(paneContext),
-                  ),
-                );
+                rawDetailPane = emptyPane();
               }
 
               final detailPane = AdaptiveScope(
@@ -627,16 +631,7 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
                     width: widget.listWidth,
                     child: MediaQuery(
                       data: listMediaQuery,
-                      child: KeyedSubtree(
-                        key: effectiveListKey,
-                        child: Builder(
-                          builder: (paneContext) => widget.listBuilder(
-                            paneContext,
-                            true,
-                            selected,
-                          ),
-                        ),
-                      ),
+                      child: listPane(true),
                     ),
                   ),
                   VerticalDivider(

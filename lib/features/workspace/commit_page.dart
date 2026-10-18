@@ -670,7 +670,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
       scrollDirection: Axis.horizontal,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          minWidth: MediaQuery.sizeOf(context).width - 32,
+          minWidth: MediaQuery.widthOf(context) - 32,
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

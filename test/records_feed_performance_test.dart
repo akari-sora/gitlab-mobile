@@ -480,6 +480,38 @@ void main() {
     expect(taps, 1, reason: 'the row Material still paints InkWell feedback');
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('a reload over loaded rows keeps them in place; a pull shows only its spinner', (tester) async {
+    final feed = GlobalKey<RecordsFeedState>();
+    var pending = Completer<ApiPage<Json>>()..complete(const ApiPage<Json>([{'id': 1, 'title': 'Row 1'}]));
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: RecordsFeed(key: feed, identity: 'rows',
+      load: (next) => pending.future,
+      itemBuilder: (context, item) => SizedBox(height: 56, child: Text(item['title']! as String))))));
+    await tester.pump();
+    await tester.pump();
+    final top = tester.getTopLeft(find.text('Row 1')).dy;
+
+    pending = Completer<ApiPage<Json>>();
+    final reload = feed.currentState!.refresh();
+    await tester.pump();
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(tester.getTopLeft(find.text('Row 1')).dy, top, reason: 'the bar takes no layout');
+    expect(tester.getRect(find.byType(LinearProgressIndicator)).bottom, lessThanOrEqualTo(top));
+    pending.complete(const ApiPage<Json>([{'id': 1, 'title': 'Row 1'}]));
+    await reload;
+    await tester.pump();
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(tester.getTopLeft(find.text('Row 1')).dy, top);
+
+    pending = Completer<ApiPage<Json>>();
+    await tester.fling(find.text('Row 1'), const Offset(0, 300), 1000);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.byType(RefreshProgressIndicator), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing, reason: 'the pull spinner is the only indicator');
+    pending.complete(const ApiPage<Json>([{'id': 1, 'title': 'Row 1'}]));
+    await tester.pumpAndSettle();
+  });
 }
 
 final class _ProbeList extends ListBase<Json> {
