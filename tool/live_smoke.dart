@@ -1,10 +1,13 @@
 // Run only in the dedicated, inspected LIVE_SMOKE pipeline. Never compile a PAT into an App.
 import 'dart:convert';
 import 'dart:io';
+import 'package:crypto/crypto.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/project_locator.dart';
+import 'package:gitlab_mobile/core/release_assets.dart';
 
 Future<void> main() async {
   final tokenFile = Platform.environment['SMOKE_TOKEN_FILE'];
@@ -15,6 +18,7 @@ Future<void> main() async {
   final suffix = DateTime.now().toUtc().microsecondsSinceEpoch.toString();
   final name = 'gitlab-mobile-smoke-$suffix';
   final checks = <Map<String, Object?>>[];
+  final observations = <String, Object?>{};
   Project? sandbox;
   var failed = false;
   void require(bool valid) { if (!valid) throw const FormatException('Contract assertion failed'); }
@@ -35,6 +39,14 @@ Future<void> main() async {
     try { await api.record(path, query: query); }
     on ApiFailure catch (e) { if (e.status == 404) return; rethrow; }
     throw const FormatException('Deleted resource still readable');
+  }
+  /// The in-app target the app derives from a web URL the API returned.
+  LinkTarget inApp(Object? webUrl, Set<LinkTarget> targets, {int? number, String? sha}) {
+    final link = webUrl is String ? GitLabLink.inApp(Uri.parse(webUrl), api.instance) : null;
+    require(link != null && targets.contains(link.target));
+    if (number != null) require(link!.number == number);
+    if (sha != null) require(link!.sha == sha.toLowerCase());
+    return link!.target;
   }
   Future<Json> waitPipeline(int project, int id) async {
     for (var i = 0; i < 60; i++) {
@@ -105,10 +117,17 @@ Future<void> main() async {
     });
     await check('files.stale_write_rejected_without_overwriting', () async {
       var rejected = false;
+      Object? outcome = 'accepted';
       try {
         await api.saveFile(p, file, branch: scratch, content: 'must not overwrite', message: 'stale [skip ci]', lastCommit: oldCommit);
-      } on ApiFailure catch (e) { rejected = const [400, 409, 412, 422].contains(e.status); }
-      require(rejected && await api.textFile(p, scratch, file) == 'updated\n');
+      } on ApiFailure catch (e) {
+        outcome = e.status ?? e.kind.name;
+        rejected = const [400, 409, 412, 422].contains(e.status);
+      }
+      final after = await api.textFile(p, scratch, file);
+      observations['stale_write'] = {'outcome': outcome, 'content_kept': after == 'updated\n',
+        'content_overwritten': after == 'must not overwrite'};
+      require(rejected && after == 'updated\n');
     });
     await check('files.delete_and_verify_404', () async {
       final last = (await api.fileMetadata(p, file, scratch))['last_commit_id'] as String;
@@ -122,7 +141,18 @@ Future<void> main() async {
     var issue = 0;
     await check('issues.create_and_read', () async {
       issue = requiredInt(await api.createIssue(p, {'title': 'Smoke issue', 'description': 'Synthetic description'}), 'iid');
-      require((await api.record([...root, 'issues', '$issue']))['title'] == 'Smoke issue');
+      final read = await api.record([...root, 'issues', '$issue']);
+      require(read['title'] == 'Smoke issue');
+      // GitLab.com now returns /-/work_items/N for issues; older instances /-/issues/N.
+      observations['issue_web_url_target'] =
+          inApp(read['web_url'], {LinkTarget.issue, LinkTarget.workItem}, number: issue).name;
+    });
+    await check('events.project_feed_read', () async {
+      final page = await api.events(projectId: p);
+      require(page.items.isNotEmpty);
+      // Whether rows carry target_url decides if activity rows without their own route open in the app.
+      observations['events_target_url_present'] = page.items.any((event) => event['target_url'] is String);
+      observations['event_target_types'] = {for (final event in page.items) '${event['target_type']}'}.toList()..sort();
     });
     await check('issues.update_close_reopen', () async {
       await api.updateIssue(p, issue, {'title': 'Smoke updated', 'description': 'Changed'});
@@ -155,6 +185,23 @@ Future<void> main() async {
       require((await api.record(path))['state'] == 'closed');
       await api.removeRecord(path); await absent(path);
     });
+    await check('milestone_and_label.item_lists', () async {
+      final label = await api.writeRecord('POST', [...root, 'labels'], {'name': 'smoke-list-label', 'color': '#2da44e'});
+      final milestone = await api.writeRecord('POST', [...root, 'milestones'], {'title': 'Smoke list milestone'});
+      final milestoneId = requiredInt(milestone, 'id');
+      await api.updateIssue(p, issue, {'labels': 'smoke-list-label', 'milestone_id': milestoneId});
+      const details = {'with_labels_details': 'true'};
+      final byMilestone = await api.records([...root, 'milestones', '$milestoneId', 'issues'], query: details);
+      require(byMilestone.items.any((x) => x['iid'] == issue));
+      await api.records([...root, 'milestones', '$milestoneId', 'merge_requests'], query: details);
+      final byLabel = await api.records([...root, 'issues'],
+          query: {'labels': 'smoke-list-label', 'state': 'opened', ...details});
+      final labels = byLabel.items.singleWhere((x) => x['iid'] == issue)['labels'];
+      require(labels is List && labels.any((x) => x is Map && x['name'] == 'smoke-list-label' && x['color'] == '#2da44e'));
+      await api.updateIssue(p, issue, {'labels': '', 'milestone_id': 0});
+      await api.removeRecord([...root, 'milestones', '$milestoneId']);
+      await api.removeRecord([...root, 'labels', '${requiredInt(label, 'id')}']);
+    });
     await check('todos.create_on_fixture_and_complete_only_fixture', () async {
       final todo = await api.writeRecord('POST', [...root, 'issues', '$issue', 'todo'], {});
       final id = requiredInt(todo, 'id');
@@ -174,12 +221,47 @@ Future<void> main() async {
       await api.createRelease(p, {'tag_name': tag, 'name': 'Smoke release', 'description': 'Synthetic release'});
       final path = [...root, 'releases', tag];
       require((await api.record(path))['name'] == 'Smoke release');
+      // The tag detail offers 查看 Release from the tag's own release object.
+      final tagged = (await api.record([...root, 'repository', 'tags', tag]))['release'];
+      require(tagged is Map && tagged['tag_name'] == tag);
       await api.updateRelease(p, tag, {'name': 'Updated release', 'description': 'Changed'});
       require((await api.record(path))['name'] == 'Updated release');
       await api.deleteRelease(p, tag); await absent(path);
     });
     await check('tags.delete_and_verify_404', () async {
       await api.deleteTag(p, tag); await absent([...root, 'repository', 'tags', tag]);
+    });
+    await check('releases.package_asset_download_matches_sha256', () async {
+      // Read-only: the newest release of the app's own project that links a
+      // generic package file, fetched the way the release detail does.
+      final owner = await api.project('86648389');
+      final releases = await api.records(['projects', '${owner.id}', 'releases'], query: {'per_page': '10'});
+      ReleaseAssetLink? sums;
+      for (final release in releases.items) {
+        for (final link in ReleaseAssets.fromJson(release['assets']).links) {
+          if (sums == null && link.name == 'SHA256SUMS') sums = link;
+        }
+      }
+      require(sums != null);
+      final target = parseReleasePackageLink(sums!.url,
+          instance: api.instance, projectId: owner.id, projectPath: owner.path);
+      require(target != null);
+      final (package, file) = await api.releasePackageFile(owner.id, target!, isCurrent: () => true);
+      final fresh = await api.packageFileForDownload(owner.id, package, file, isCurrent: () => true);
+      final directory = await Directory.systemTemp.createTemp('gitlab-mobile-release-asset-');
+      try {
+        final out = File('${directory.path}/SHA256SUMS');
+        final sink = out.openWrite();
+        final result = await api.downloadPackageFile(owner.id, package.id, fresh.id, sink: sink, fileName: 'SHA256SUMS');
+        await sink.close();
+        final bytes = await out.readAsBytes();
+        require(result.bytesWritten == fresh.size && bytes.length == fresh.size);
+        require(sha256.convert(bytes).toString() == fresh.sha256);
+        require(utf8.decode(bytes).contains('-debug.apk'));
+        observations['release_asset_package'] = package.identity;
+      } finally {
+        await directory.delete(recursive: true);
+      }
     });
     final source = 'smoke/review-$suffix';
     var mr = 0;
@@ -189,7 +271,11 @@ Future<void> main() async {
       mr = requiredInt(await api.createMergeRequest(p, {
         'source_branch': source, 'target_branch': branch, 'title': 'Smoke MR', 'description': 'Synthetic review',
       }), 'iid');
-      require((await api.record([...root, 'merge_requests', '$mr']))['source_branch'] == source);
+      final read = await api.record([...root, 'merge_requests', '$mr']);
+      require(read['source_branch'] == source);
+      inApp(read['web_url'], {LinkTarget.mergeRequest}, number: mr);
+      final head = await api.record([...root, 'repository', 'commits', source]);
+      inApp(head['web_url'], {LinkTarget.commit}, sha: head['id'] as String);
     });
     await check('merge_requests.update_close_reopen', () async {
       await api.updateMergeRequest(p, mr, {'title': 'Smoke updated MR'});
@@ -263,7 +349,16 @@ retry_probe:
       pipeline = requiredInt(await api.createPipeline(p, branch), 'id');
       require((await api.record([...root, 'pipelines', '$pipeline']))['id'] == pipeline);
       await waitPipeline(p, pipeline);
-      require((await api.records([...root, 'pipelines', '$pipeline', 'jobs'])).items.isNotEmpty);
+      final read = await api.record([...root, 'pipelines', '$pipeline']);
+      inApp(read['web_url'], {LinkTarget.pipeline}, number: pipeline);
+      final jobs = (await api.records([...root, 'pipelines', '$pipeline', 'jobs'])).items;
+      require(jobs.isNotEmpty);
+      // The job header links its pipeline and shows stage and ref from these fields.
+      final job = jobs.first;
+      final owning = job['pipeline'];
+      require(owning is Map && owning['id'] == pipeline && owning['project_id'] == p);
+      require(job['stage'] is String && (job['stage'] as String).isNotEmpty && job['ref'] == branch);
+      inApp(job['web_url'], {LinkTarget.job}, number: requiredInt(job, 'id'));
     });
     try {
       final pipelineRecord = await api.record([...root, 'pipelines', '$pipeline']);
@@ -347,7 +442,7 @@ retry_probe:
       'finished_at': DateTime.now().toUtc().toIso8601String(),
       'credential_embedded': false,
       'suite': 'production-Dart-client / GitLab.com / isolated-private-sandbox',
-      'status': failed ? 'FAIL' : 'PASS', 'checks': checks,
+      'status': failed ? 'FAIL' : 'PASS', 'checks': checks, 'observations': observations,
       'not_run': ['independent-reviewer approval', 'Android device UI', 'iOS device UI'],
     };
     Directory('smoke-output').createSync(recursive: true);
