@@ -72,13 +72,15 @@ development signer. Its canonical configuration and commands are documented in
 signer across build modes and worktrees; it does not make them Play or
 production releases.
 
-The CI output remains a **debug development preview**. The preview records the
-commit in the app's 我的 tab. When `ANDROID_DEBUG_KEYSTORE_B64` is set,
-`ci/build_android.sh` converts that debug keystore to a temporary PKCS12
-identity under the ignored `.ci-signing/` directory, restricts it to the debug
-build type and records the choice in `build-metadata.json` (`signing`). Without
-it, the explicit CI fallback creates a temporary debug-only PKCS12 identity in
-the same directory, and that key is discarded with the job.
+The preview records the commit in the app's 我的 tab. When
+`ANDROID_DEBUG_KEYSTORE_B64` is set (protected refs only, see below),
+`ci/build_android.sh` converts that keystore to a temporary PKCS12 identity
+under the ignored `.ci-signing/` directory and builds a **release** APK
+(`gitlab-mobile-<sha>-release.apk`, mode `stable-legacy-release`, refused unless
+`CI_COMMIT_REF_PROTECTED=true`). Without it, the explicit CI fallback creates a
+temporary PKCS12 identity restricted to the debug build type and builds a
+**debug** APK (`-debug.apk`); that key is discarded with the job. Both record
+the choice in `build-metadata.json` (`signing`, `build_type`).
 
 Since 2026-10-18 the variable is set as a **protected, masked** project CI
 variable, and `v*` tags are protected so release tag pipelines receive it too.

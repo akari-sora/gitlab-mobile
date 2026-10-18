@@ -12,12 +12,17 @@ flutter pub get --enforce-lockfile
 dart run flutter_launcher_icons
 python3 tool/android_signing.py configure android/app/build.gradle.kts
 
-# Normal local builds require the shared external PKCS12 identity. CI may use
-# the historical stable debug key, or an explicitly enabled ephemeral key, for
-# this debug-only preview job. Both CI paths are converted/generated as PKCS12
-# and restricted to the debug build type by signing.properties.
+# Normal local builds require the shared external PKCS12 identity and build
+# GITLAB_MOBILE_BUILD_TYPE (debug by default). In CI, protected refs receive the
+# historical stable key and build release; other pipelines use an explicitly
+# enabled ephemeral key that signing.properties restricts to debug builds.
 signing_properties="${GITLAB_MOBILE_SIGNING_PROPERTIES:-$HOME/.config/gitlab-mobile/android-signing/signing.properties}"
-PREVIEW_SIGNING='Managed GitLab Mobile PKCS12 identity (debug build)'
+BUILD_TYPE="${GITLAB_MOBILE_BUILD_TYPE:-debug}"
+case "$BUILD_TYPE" in
+  debug|profile|release) ;;
+  *) printf '%s\n' "Unknown GITLAB_MOBILE_BUILD_TYPE: $BUILD_TYPE" >&2; exit 1 ;;
+esac
+PREVIEW_SIGNING="Managed GitLab Mobile PKCS12 identity ($BUILD_TYPE build)"
 if [ -f "$signing_properties" ]; then
   python3 tool/android_signing.py verify --properties "$signing_properties"
 elif [ -n "${GITLAB_MOBILE_SIGNING_PROPERTIES:-}" ]; then
@@ -38,11 +43,11 @@ elif [ "${CI:-}" = 'true' ] && [ -n "${ANDROID_DEBUG_KEYSTORE_B64:-}" ]; then
     -deststorepass:env GITLAB_MOBILE_CI_KEYSTORE_PASSWORD \
     -destkeypass:env GITLAB_MOBILE_CI_KEYSTORE_PASSWORD
   signing_properties="$signing_dir/signing.properties"
-  export GITLAB_MOBILE_ALLOW_DEBUG_ONLY_SIGNING='1'
   python3 tool/android_signing.py write-ci-properties \
     --properties "$signing_properties" --keystore "$signing_dir/gitlab-mobile-ci.p12" \
-    --mode stable-legacy-debug
-  PREVIEW_SIGNING='Stable legacy CI debug identity (debug build only); not a production release'
+    --mode stable-legacy-release
+  BUILD_TYPE=release
+  PREVIEW_SIGNING='Stable legacy CI identity (Android debug certificate), GitLab channel release build; not a Play or production release'
 elif [ "${CI:-}" = 'true' ] && [ "${GITLAB_MOBILE_ALLOW_EPHEMERAL_DEBUG_SIGNING:-}" = '1' ]; then
   signing_dir="${CI_PROJECT_DIR:-$(pwd)}/.ci-signing"
   mkdir -p "$signing_dir"
@@ -58,6 +63,7 @@ elif [ "${CI:-}" = 'true' ] && [ "${GITLAB_MOBILE_ALLOW_EPHEMERAL_DEBUG_SIGNING:
   python3 tool/android_signing.py write-ci-properties \
     --properties "$signing_properties" --keystore "$signing_dir/gitlab-mobile-ci.p12" \
     --mode ephemeral-debug
+  BUILD_TYPE=debug
   PREVIEW_SIGNING='Ephemeral CI debug identity (debug build only); not update-compatible or a production release'
 else
   printf '%s\n' "Stable Android signing identity is missing: $signing_properties" >&2
@@ -74,11 +80,21 @@ build_number_args=()
 if [ -n "${CI_PIPELINE_IID:-}" ]; then
   build_number_args=(--build-number="$CI_PIPELINE_IID")
 fi
-flutter build apk --debug --flavor "$GITLAB_MOBILE_FLAVOR" --no-pub ${build_number_args[@]+"${build_number_args[@]}"} \
+export BUILD_TYPE
+# No --no-pub: that also skips regenerating GeneratedPluginRegistrant, and the
+# one `pub get` wrote above lists dev-only plugins (integration_test) that a
+# release build does not link. The lockfile is already resolved, so the build's
+# own pub step must leave it byte-for-byte unchanged.
+lock_before="$(sha256sum pubspec.lock)"
+flutter build apk "--$BUILD_TYPE" --flavor "$GITLAB_MOBILE_FLAVOR" ${build_number_args[@]+"${build_number_args[@]}"} \
   --dart-define=GITLAB_MOBILE_COMMIT="${CI_COMMIT_SHORT_SHA:-local}"
+if [ "$(sha256sum pubspec.lock)" != "$lock_before" ]; then
+  printf '%s\n' 'flutter build changed pubspec.lock; the committed lockfile is enforced.' >&2
+  exit 1
+fi
 mkdir -p artifacts
 short_sha="${CI_COMMIT_SHORT_SHA:-local}"
-cp "build/app/outputs/flutter-apk/app-$GITLAB_MOBILE_FLAVOR-debug.apk" "artifacts/gitlab-mobile-${short_sha}-debug.apk"
+cp "build/app/outputs/flutter-apk/app-$GITLAB_MOBILE_FLAVOR-$BUILD_TYPE.apk" "artifacts/gitlab-mobile-${short_sha}-$BUILD_TYPE.apk"
 python3 - <<'PY'
 import json, os, pathlib, re, subprocess
 flutter = json.loads(subprocess.check_output(['flutter', '--version', '--machine'], text=True))
@@ -89,7 +105,7 @@ metadata = {
     'kind': 'development-preview',
     'signing': os.environ.get('PREVIEW_SIGNING', 'Android debug key; not a production release'),
     'channel': os.environ['GITLAB_MOBILE_FLAVOR'],
-    'build_type': 'debug',
+    'build_type': os.environ['BUILD_TYPE'],
     'version_name': version.group(1),
     'version_code': int(os.environ.get('CI_PIPELINE_IID') or version.group(2)),
     'commit': os.environ.get('CI_COMMIT_SHA'),
