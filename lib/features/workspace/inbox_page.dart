@@ -252,6 +252,26 @@ class _WorkFeedState extends State<_WorkFeed> {
   }
 }
 
+/// Inbox filters, each one `GET /todos` filter GitLab applies server-side.
+enum _TodoFilter {
+  all('全部', null),
+  review('請你審查', ('action', 'review_requested')),
+  mentioned('提及你', ('action', 'mentioned')),
+  assigned('指派給你', ('action', 'assigned')),
+  failed('Pipeline 失敗', ('action', 'build_failed')),
+  mergeRequests('合併請求', ('type', 'MergeRequest')),
+  issues('議題', ('type', 'Issue'));
+
+  const _TodoFilter(this.label, this.parameter);
+  final String label;
+  final (String, String)? parameter;
+
+  Map<String, String> get query => {
+    'state': 'pending',
+    if (parameter case (final name, final value)) name: value,
+  };
+}
+
 class _TodoFeed extends StatefulWidget {
   const _TodoFeed({required this.account, required this.api});
   final Account account;
@@ -263,6 +283,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
   final _feed = GlobalKey<RecordsFeedState>();
   final _busy = ValueNotifier<Set<int>>(<int>{});
   final _clearing = ValueNotifier(false);
+  _TodoFilter _filter = _TodoFilter.all;
 
   /// Swiped rows waiting out the undo window, hidden even if a reload that
   /// started earlier brings them back. The tab stays alive meanwhile, so
@@ -396,31 +417,60 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
     return _feedView(context);
   }
 
-  Widget _feedView(BuildContext context) => RecordsFeed(key: _feed, identity: 'todos',
-    empty: '全部處理完畢！', emptyDetail: '休息一下，寫點程式，做你最擅長的事。\nGitLab 指派、提及與你建立的待辦會出現在這裡。',
-    emptyIcon: Icons.task_alt, emptyArt: const CaughtUpArt(),
+  Widget _filters(BuildContext context) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    padding: EdgeInsets.fromLTRB(feedGutter(context), 6, feedGutter(context), 0),
+    child: Row(children: [
+      for (final filter in _TodoFilter.values) Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: ChoiceChip(
+          key: ValueKey('todo-filter-${filter.name}'),
+          label: Text(filter.label),
+          selected: _filter == filter,
+          showCheckmark: false,
+          onSelected: (_) => setState(() => _filter = filter),
+        ),
+      ),
+    ]),
+  );
+
+  Widget _feedView(BuildContext context) {
+    final filtered = _filter != _TodoFilter.all;
+    return RecordsFeed(key: _feed, identity: filtered ? 'todos/${_filter.name}' : 'todos', storageId: 'todos',
+    empty: filtered ? '沒有「${_filter.label}」的待辦' : '全部處理完畢！',
+    emptyDetail: filtered ? '切換到「全部」可看到其他待辦。' : '休息一下，寫點程式，做你最擅長的事。\nGitLab 指派、提及與你建立的待辦會出現在這裡。',
+    emptyIcon: filtered ? Icons.filter_list_off : Icons.task_alt, emptyArt: filtered ? null : const CaughtUpArt(),
     filteredEmpty: '待辦即將標示為完成',
     account: widget.account, resourceLabel: '待辦', underShell: true,
     onSwitchAccount: endSessionFrom(context),
     visible: _visible,
-    leading: (context, controller) => controller.items.isEmpty ? const SizedBox(height: 4) : Padding(
-      padding: EdgeInsets.fromLTRB(feedGutter(context) + 4, 6, feedGutter(context) - 8, 0),
-      child: Row(children: [
-        Expanded(child: Text('${controller.items.where(_visible).length}'
-          '${controller.next == null ? '' : '+'} 則待辦 · 左右滑動可完成',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
-        ValueListenableBuilder<bool>(
-          valueListenable: _clearing,
-          builder: (context, clearing, _) => TextButton.icon(
-            key: const ValueKey('todos-mark-all-done'),
-            onPressed: clearing ? null : _clearAll,
-            icon: const Icon(Icons.done_all, size: 18),
-            label: const Text('全部完成'),
-          ),
-        ),
-      ]),
-    ),
-    load: (next) => widget.api.records(['todos'], query: {'state': 'pending'}, next: next), itemBuilder: (context, data) {
+    // The chips stay while a filter is on, so an empty filter can be left;
+    // a truly empty inbox shows only the caught-up art.
+    leading: (context, controller) => controller.items.isEmpty && !filtered
+        ? const SizedBox(height: 4)
+        : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _filters(context),
+            if (controller.items.isNotEmpty) Padding(
+              padding: EdgeInsets.fromLTRB(feedGutter(context) + 4, 6, feedGutter(context) - 8, 0),
+              child: Row(children: [
+                Expanded(child: Text('${controller.items.where(_visible).length}'
+                  '${controller.next == null ? '' : '+'} 則待辦 · 左右滑動可完成',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
+                // Marks every pending todo, not just the filtered ones, so it
+                // is offered only on the unfiltered list.
+                if (!filtered) ValueListenableBuilder<bool>(
+                  valueListenable: _clearing,
+                  builder: (context, clearing, _) => TextButton.icon(
+                    key: const ValueKey('todos-mark-all-done'),
+                    onPressed: clearing ? null : _clearAll,
+                    icon: const Icon(Icons.done_all, size: 18),
+                    label: const Text('全部完成'),
+                  ),
+                ),
+              ]),
+            ),
+          ]),
+    load: (next) => widget.api.records(['todos'], query: _filter.query, next: next), itemBuilder: (context, data) {
       final target = valueObject(data, 'target'), project = valueObject(data, 'project');
       final id = valueInt(data, 'id');
       final todoTarget = _TodoTarget.of(data, widget.account.instance);
@@ -477,6 +527,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
       );
     },
   );
+  }
 }
 
 enum _TodoRoute { workItem, commit, link, explain }
