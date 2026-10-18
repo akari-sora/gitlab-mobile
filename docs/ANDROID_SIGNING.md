@@ -299,12 +299,19 @@ Git and `artifacts/`.
 
 Since 2026-10-18, `ANDROID_DEBUG_KEYSTORE_B64` is a protected, masked project
 CI variable, and `v*` tags are protected. Pipelines on protected refs (`main`,
-`v*` tags) sign the debug APK with that stable CI identity (`STABLE_CI_DEBUG`,
+`v*` tags) sign with that stable CI identity (`STABLE_CI_DEBUG`,
 `CN=GitLab Mobile CI Debug`, certificate SHA-256
 `5bec28281b4c1405f9ee47590c40665a24b0f984fc0d6b8854a3458e8db0a71d`). Its
 private keystore is also kept as `ci-debug.p12` in the canonical directory
 (mode `0600`); it is a CI preview key, not used for ordinary local builds.
-Unprotected pipelines keep the ephemeral fallback. The CI identity differs
+Since the GitLab release channel (`ci/build_android.sh`, mode
+`stable-legacy-release`), those protected-ref pipelines build the `gitlab`
+flavor as a **release** build: `tool/android_signing.py` lets this identity
+sign release only when `CI_COMMIT_REF_PROTECTED=true`. The certificate is
+unchanged, so an installed debug preview signed by it updates in place to a
+release build with a higher `versionCode`. It is still the historical Android
+debug certificate, which Google Play rejects; it is not a Play upload key.
+Unprotected pipelines keep the ephemeral fallback, which stays debug-only. The CI identity differs
 from `CURRENT_LOCAL`, `LEGACY_LOCAL` and `HISTORICAL_CI23`, and the local
 private identity is not copied into CI.
 

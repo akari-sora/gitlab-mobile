@@ -170,12 +170,24 @@ def verify_identity(path: Path, *, keytool: str = 'keytool') -> dict[str, str]:
     return values
 
 
+# CI signing lanes and the build types each may sign. Only the stable identity,
+# held in a protected variable, signs release builds, and only on a protected
+# ref; a key generated for one pipeline stays debug-only.
+CI_MODES = {
+    'stable-legacy-release': 'debug,profile,release',
+    'stable-legacy-debug': 'debug',
+    'ephemeral-debug': 'debug',
+}
+
+
 def write_ci_properties(path: Path, keystore: Path, mode: str,
                         *, keytool: str = 'keytool') -> None:
     if os.environ.get('CI', '').lower() != 'true':
         raise RuntimeError('CI signing properties may only be created when CI=true.')
-    if mode not in {'stable-legacy-debug', 'ephemeral-debug'}:
+    if mode not in CI_MODES:
         raise RuntimeError('Unknown CI signing mode.')
+    if mode == 'stable-legacy-release' and os.environ.get('CI_COMMIT_REF_PROTECTED') != 'true':
+        raise RuntimeError('CI release signing is restricted to protected refs.')
     password = os.environ.get('GITLAB_MOBILE_CI_KEYSTORE_PASSWORD')
     if not password:
         raise RuntimeError('CI keystore password environment is missing.')
@@ -183,7 +195,7 @@ def write_ci_properties(path: Path, keystore: Path, mode: str,
         keytool, keystore.resolve(), 'androiddebugkey', 'PKCS12', password)
     path.parent.mkdir(parents=True, exist_ok=True)
     _write_properties(
-        path, keystore, password, 'androiddebugkey', fingerprint, 'debug')
+        path, keystore, password, 'androiddebugkey', fingerprint, CI_MODES[mode])
 
 
 IMPORTS = f'''{BEGIN_IMPORTS}
@@ -328,8 +340,7 @@ def main() -> int:
     ci = subparsers.add_parser('write-ci-properties')
     ci.add_argument('--properties', required=True, type=Path)
     ci.add_argument('--keystore', required=True, type=Path)
-    ci.add_argument('--mode', required=True,
-                    choices=('stable-legacy-debug', 'ephemeral-debug'))
+    ci.add_argument('--mode', required=True, choices=tuple(CI_MODES))
     ci.add_argument('--keytool', default='keytool')
     args = parser.parse_args()
     try:
@@ -347,7 +358,7 @@ def main() -> int:
         else:
             write_ci_properties(
                 args.properties, args.keystore, args.mode, keytool=args.keytool)
-            print(f'CI debug signing properties created for {args.mode}.')
+            print(f'CI signing properties created for {args.mode}.')
         return 0
     except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
         parser.exit(1, f'Android signing stopped: {exc}\n')

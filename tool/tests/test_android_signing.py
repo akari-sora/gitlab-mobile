@@ -220,6 +220,25 @@ class AndroidSigningTests(unittest.TestCase):
                 android_signing.write_ci_properties(
                     self.root / 'nope', keystore, 'ephemeral-debug')
 
+    def test_only_the_stable_key_on_a_protected_ref_signs_release(self):
+        keystore = self.root / 'ci.p12'
+        keystore.write_bytes(b'pkcs12')
+        properties = self.root / 'ci/signing.properties'
+        environment = {'CI': 'true', 'GITLAB_MOBILE_CI_KEYSTORE_PASSWORD': 'android'}
+        with mock.patch.dict(os.environ, environment, clear=True), \
+                mock.patch.object(subprocess, 'run', side_effect=self._keytool([])):
+            with self.assertRaisesRegex(RuntimeError, 'protected refs'):
+                android_signing.write_ci_properties(properties, keystore, 'stable-legacy-release')
+        self.assertFalse(properties.exists())
+        protected = {**environment, 'CI_COMMIT_REF_PROTECTED': 'true'}
+        with mock.patch.dict(os.environ, protected, clear=True), \
+                mock.patch.object(subprocess, 'run', side_effect=self._keytool([])):
+            android_signing.write_ci_properties(properties, keystore, 'stable-legacy-release')
+            self.assertIn('allowedBuildTypes=debug,profile,release\n', properties.read_text())
+            android_signing.write_ci_properties(properties, keystore, 'ephemeral-debug')
+            self.assertIn('allowedBuildTypes=debug\n', properties.read_text(),
+                          'a key made for one pipeline stays debug-only even on a protected ref')
+
     def test_debug_only_identity_is_rejected_outside_explicit_ci_path(self):
         keystore = self.root / 'ci.p12'
         keystore.write_bytes(b'pkcs12')
