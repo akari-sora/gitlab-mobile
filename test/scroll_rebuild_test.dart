@@ -153,6 +153,34 @@ void main() {
       expect(resized, 3);
     });
 
+    testWidgets('on a phone an opened item slides in and the list slides back', (tester) async {
+      final controller = ListDetailController<String>();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(MaterialApp(home: SizedBox(width: 400, height: 600, child: ListDetailScaffold<String>(
+        controller: controller,
+        listBuilder: (context, twoPane, selected) => const Text('list'),
+        detailBuilder: (context, item, twoPane, onBack) => Text('detail $item'),
+        emptyBuilder: (context) => const SizedBox(),
+      ))));
+      double dx(String text) => tester.widget<SlideTransition>(find.ancestor(
+        of: find.text(text, skipOffstage: false), matching: find.byType(SlideTransition, skipOffstage: false)).first,
+      ).position.value.dx;
+
+      controller.select('a');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 30));
+      expect(dx('detail a'), greaterThan(0), reason: 'the detail enters from the trailing edge');
+      await tester.pumpAndSettle();
+      expect(dx('detail a'), 0);
+
+      controller.clear();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 30));
+      expect(dx('list'), lessThan(0), reason: 'the list comes back from the leading edge');
+      await tester.pumpAndSettle();
+      expect(dx('list'), 0);
+    });
+
     testWidgets('a width change across the breakpoint rebuilds both panes', (tester) async {
       tester.view.devicePixelRatio = 1.0;
       tester.view.physicalSize = const Size(1400, 800);

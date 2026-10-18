@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'adaptive_breakpoints.dart';
+import 'reveal_transition.dart';
 import 'scroll_chrome.dart';
 
 /// 狀態驅動的清單/詳情控制器
@@ -522,9 +523,16 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
                         excluding: selected != null,
                         child: TickerMode(
                           enabled: selected == null,
-                          child: MediaQuery(
-                            data: compactMediaQuery,
-                            child: listPane(false),
+                          // Shared axis: an opened item slides in from the
+                          // trailing edge, and the list comes back from the
+                          // leading edge when it closes.
+                          child: RevealOnShow(
+                            shown: selected == null,
+                            style: RevealStyle.backward,
+                            child: MediaQuery(
+                              data: compactMediaQuery,
+                              child: listPane(false),
+                            ),
                           ),
                         ),
                       ),
@@ -534,9 +542,14 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
                     Positioned.fill(
                       child: KeyedSubtree(
                         key: const ValueKey('adaptive-compact-detail'),
-                        child: MediaQuery(
-                          data: compactMediaQuery,
-                          child: stableDetail!,
+                        child: RevealOnShow(
+                          shown: true,
+                          style: RevealStyle.forward,
+                          animateOnInsert: true,
+                          child: MediaQuery(
+                            data: compactMediaQuery,
+                            child: stableDetail!,
+                          ),
                         ),
                       ),
                     ),
