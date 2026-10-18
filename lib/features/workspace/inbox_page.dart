@@ -252,6 +252,54 @@ class _WorkFeedState extends State<_WorkFeed> {
   }
 }
 
+/// Inbox filters, each one `GET /todos` filter GitLab applies server-side.
+enum _TodoFilter {
+  all('全部', null),
+  review('請你審查', ('action', 'review_requested')),
+  mentioned('提及你', ('action', 'mentioned')),
+  assigned('指派給你', ('action', 'assigned')),
+  failed('Pipeline 失敗', ('action', 'build_failed')),
+  mergeRequests('合併請求', ('type', 'MergeRequest')),
+  issues('議題', ('type', 'Issue')),
+  // REST leaves snoozed todos out; this list comes from GraphQL.
+  snoozed('已延後', null);
+
+  const _TodoFilter(this.label, this.parameter);
+  final String label;
+  final (String, String)? parameter;
+
+  Map<String, String> get query => {
+    'state': 'pending',
+    if (parameter case (final name, final value)) name: value,
+  };
+}
+
+/// When a snoozed todo comes back, picked from presets in local time.
+List<(String, DateTime)> todoSnoozePresets(DateTime now) {
+  DateTime at9(DateTime day) => DateTime(day.year, day.month, day.day, 9);
+  final tomorrow = now.add(const Duration(days: 1));
+  final daysToMonday = (DateTime.monday - now.weekday + 7) % 7;
+  final monday = now.add(Duration(days: daysToMonday == 0 ? 7 : daysToMonday));
+  return [
+    ('1 小時後', now.add(const Duration(hours: 1))),
+    ('3 小時後', now.add(const Duration(hours: 3))),
+    ('明天上午 9:00', at9(tomorrow)),
+    ('下週一上午 9:00', at9(monday)),
+  ];
+}
+
+/// A local wall-clock time relative to [now]: 今天 14:05, 明天 09:00 or 10/26 09:00.
+String todoUntilLabel(DateTime until, DateTime now) {
+  final local = until.toLocal();
+  final time = '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+  final day = DateTime(local.year, local.month, local.day);
+  final today = DateTime(now.year, now.month, now.day);
+  final days = day.difference(today).inDays;
+  if (days == 0) return '今天 $time';
+  if (days == 1) return '明天 $time';
+  return '${local.month}/${local.day} $time';
+}
+
 class _TodoFeed extends StatefulWidget {
   const _TodoFeed({required this.account, required this.api});
   final Account account;
@@ -263,6 +311,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
   final _feed = GlobalKey<RecordsFeedState>();
   final _busy = ValueNotifier<Set<int>>(<int>{});
   final _clearing = ValueNotifier(false);
+  _TodoFilter _filter = _TodoFilter.all;
 
   /// Swiped rows waiting out the undo window, hidden even if a reload that
   /// started earlier brings them back. The tab stays alive meanwhile, so
@@ -309,6 +358,63 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
         _setBusy(id, false);
         _setPending(id, false);
       }
+    }
+    if (mounted) await _feed.currentState?.refresh();
+  }
+
+  Future<void> _snooze(int id) async {
+    if (_busy.value.contains(id)) return;
+    final now = DateTime.now();
+    final until = await showModalBottomSheet<DateTime>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        ListTile(title: Text('延後這則待辦', style: Theme.of(sheetContext).textTheme.titleMedium),
+          subtitle: const Text('時間到時會回到收件匣。')),
+        for (final (label, at) in todoSnoozePresets(now)) ListTile(
+          key: ValueKey('todo-snooze-$label'),
+          leading: const Icon(Icons.snooze),
+          title: Text(label),
+          trailing: Text(todoUntilLabel(at, now)),
+          onTap: () => Navigator.pop(sheetContext, at),
+        ),
+      ])),
+    );
+    if (until == null || !mounted) return;
+    _setBusy(id, true);
+    try {
+      final acknowledged = await widget.api.snoozeTodo(id, until);
+      if (!mounted) return;
+      _feed.currentState?.removeItem('$id');
+      final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+      messenger.showSnackBar(SnackBar(
+        content: Text('已延後至 ${todoUntilLabel(acknowledged, DateTime.now())}'),
+        action: SnackBarAction(label: '復原', onPressed: () => unawaited(_unsnooze(id, undo: true))),
+      ));
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    } finally {
+      if (mounted) _setBusy(id, false);
+    }
+    if (mounted) await _feed.currentState?.refresh();
+  }
+
+  /// Brings a snoozed todo back now: from the 已延後 list, or as the undo of
+  /// a snooze just made.
+  Future<void> _unsnooze(int id, {bool undo = false}) async {
+    if (_busy.value.contains(id)) return;
+    _setBusy(id, true);
+    try {
+      await widget.api.unsnoozeTodo(id);
+      if (!mounted) return;
+      if (!undo) {
+        _feed.currentState?.removeItem('$id');
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已移回收件匣')));
+      }
+    } catch (e) {
+      if (mounted) showFailure(context, e);
+    } finally {
+      if (mounted) _setBusy(id, false);
     }
     if (mounted) await _feed.currentState?.refresh();
   }
@@ -396,31 +502,70 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
     return _feedView(context);
   }
 
-  Widget _feedView(BuildContext context) => RecordsFeed(key: _feed, identity: 'todos',
-    empty: '全部處理完畢！', emptyDetail: '休息一下，寫點程式，做你最擅長的事。\nGitLab 指派、提及與你建立的待辦會出現在這裡。',
-    emptyIcon: Icons.task_alt, emptyArt: const CaughtUpArt(),
+  Widget _filters(BuildContext context) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    padding: EdgeInsets.fromLTRB(feedGutter(context), 6, feedGutter(context), 0),
+    child: Row(children: [
+      for (final filter in _TodoFilter.values) Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: ChoiceChip(
+          key: ValueKey('todo-filter-${filter.name}'),
+          label: Text(filter.label),
+          selected: _filter == filter,
+          showCheckmark: false,
+          onSelected: (_) => setState(() => _filter = filter),
+        ),
+      ),
+    ]),
+  );
+
+  Widget _feedView(BuildContext context) {
+    final filtered = _filter != _TodoFilter.all;
+    return RecordsFeed(key: _feed, identity: filtered ? 'todos/${_filter.name}' : 'todos', storageId: 'todos',
+    empty: filtered ? '沒有「${_filter.label}」的待辦' : '全部處理完畢！',
+    emptyDetail: _filter == _TodoFilter.snoozed
+        ? '延後的待辦會在時間到時回到收件匣。'
+        : filtered ? '切換到「全部」可看到其他待辦。' : '休息一下，寫點程式，做你最擅長的事。\nGitLab 指派、提及與你建立的待辦會出現在這裡。',
+    emptyIcon: filtered ? Icons.filter_list_off : Icons.task_alt, emptyArt: filtered ? null : const CaughtUpArt(),
     filteredEmpty: '待辦即將標示為完成',
     account: widget.account, resourceLabel: '待辦', underShell: true,
     onSwitchAccount: endSessionFrom(context),
     visible: _visible,
-    leading: (context, controller) => controller.items.isEmpty ? const SizedBox(height: 4) : Padding(
-      padding: EdgeInsets.fromLTRB(feedGutter(context) + 4, 6, feedGutter(context) - 8, 0),
-      child: Row(children: [
-        Expanded(child: Text('${controller.items.where(_visible).length}'
-          '${controller.next == null ? '' : '+'} 則待辦 · 左右滑動可完成',
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
-        ValueListenableBuilder<bool>(
-          valueListenable: _clearing,
-          builder: (context, clearing, _) => TextButton.icon(
-            key: const ValueKey('todos-mark-all-done'),
-            onPressed: clearing ? null : _clearAll,
-            icon: const Icon(Icons.done_all, size: 18),
-            label: const Text('全部完成'),
-          ),
-        ),
-      ]),
-    ),
-    load: (next) => widget.api.records(['todos'], query: {'state': 'pending'}, next: next), itemBuilder: (context, data) {
+    // The chips always show: an empty filter can be left, and an inbox with
+    // nothing pending can still open 已延後.
+    leading: (context, controller) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            _filters(context),
+            if (controller.items.isNotEmpty) Padding(
+              padding: EdgeInsets.fromLTRB(feedGutter(context) + 4, 6, feedGutter(context) - 8, 0),
+              child: Row(children: [
+                Expanded(child: Text('${controller.items.where(_visible).length}'
+                  '${controller.next == null ? '' : '+'} 則待辦 · 左右滑動可完成',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
+                // Marks every pending todo, not just the filtered ones, so it
+                // is offered only on the unfiltered list.
+                if (!filtered) ValueListenableBuilder<bool>(
+                  valueListenable: _clearing,
+                  builder: (context, clearing, _) => TextButton.icon(
+                    key: const ValueKey('todos-mark-all-done'),
+                    onPressed: clearing ? null : _clearAll,
+                    icon: const Icon(Icons.done_all, size: 18),
+                    label: const Text('全部完成'),
+                  ),
+                ),
+              ]),
+            ),
+          ]),
+    load: _filter == _TodoFilter.snoozed
+        ? (next) async {
+            final snoozed = await widget.api.snoozedTodos();
+            return ApiPage<Json>(snoozed.items);
+          }
+        : (next) => widget.api.records(['todos'], query: _filter.query, next: next),
+    footer: _filter != _TodoFilter.snoozed ? null : (context, controller) => controller.items.length < todoSnoozedLimit
+        ? const SizedBox.shrink()
+        : Padding(padding: const EdgeInsets.only(top: 8), child: Text('只列出最近 $todoSnoozedLimit 則延後的待辦。',
+            style: Theme.of(context).textTheme.bodySmall)),
+    itemBuilder: (context, data) {
       final target = valueObject(data, 'target'), project = valueObject(data, 'project');
       final id = valueInt(data, 'id');
       final todoTarget = _TodoTarget.of(data, widget.account.instance);
@@ -445,12 +590,23 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
               icon: todoTarget.web == null ? Icons.link_off : Icons.open_in_new),
           if (actionLabel.isNotEmpty) MetaChip(actionLabel, icon: Icons.notifications_none),
           if (valueText(author, 'username').isNotEmpty) MetaChip('@${valueText(author, 'username')}', icon: Icons.person_outline),
-          MetaChip(relativeDate(valueText(data, 'updated_at', valueText(data, 'created_at'))), icon: Icons.schedule_outlined),
+          if (DateTime.tryParse(valueText(data, 'snoozed_until')) case final until?)
+            MetaChip('延後至 ${todoUntilLabel(until, DateTime.now())}', icon: Icons.snooze)
+          else
+            MetaChip(relativeDate(valueText(data, 'updated_at', valueText(data, 'created_at'))), icon: Icons.schedule_outlined),
         ],
         trailing: ValueListenableBuilder<Set<int>>(
           valueListenable: _busy,
-          builder: (context, busy, _) => IconButton(tooltip: '完成此待辦', icon: const Icon(Icons.check_circle_outline),
-            onPressed: busy.contains(id) ? null : () => _done(id)),
+          builder: (context, busy, _) => Row(mainAxisSize: MainAxisSize.min, children: [
+            if (_filter == _TodoFilter.snoozed)
+              IconButton(tooltip: '取消延後', icon: const Icon(Icons.notifications_active_outlined),
+                onPressed: busy.contains(id) ? null : () => unawaited(_unsnooze(id)))
+            else
+              IconButton(tooltip: '延後此待辦', icon: const Icon(Icons.snooze),
+                onPressed: busy.contains(id) ? null : () => unawaited(_snooze(id))),
+            IconButton(tooltip: '完成此待辦', icon: const Icon(Icons.check_circle_outline),
+              onPressed: busy.contains(id) ? null : () => _done(id)),
+          ]),
         ),
         onTap: () => _openTarget(context, todoTarget,
           valueText(target, 'title', valueText(data, 'body', 'GitLab 待辦')),
@@ -477,6 +633,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
       );
     },
   );
+  }
 }
 
 enum _TodoRoute { workItem, commit, link, explain }
