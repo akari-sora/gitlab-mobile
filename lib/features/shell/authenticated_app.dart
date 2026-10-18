@@ -29,6 +29,8 @@ import 'app_shortcuts.dart';
 import 'home_page.dart';
 import 'appearance.dart';
 import 'build_info.dart';
+import '../update/update_controller.dart';
+import '../update/update_section.dart';
 
 class AuthenticatedApp extends StatefulWidget {
   const AuthenticatedApp({
@@ -39,9 +41,14 @@ class AuthenticatedApp extends StatefulWidget {
     this.dynamicLight,
     this.dynamicDark,
     this.buildInfoLoader = loadBuildInfo,
+    this.updates,
   });
   final SessionController session;
   final AppearanceController appearance;
+
+  /// The app's update flow; null (and nothing shown) when this build has no
+  /// update channel.
+  final AppUpdateController? updates;
   final LauncherShortcuts shortcuts;
   final ColorScheme? dynamicLight;
   final ColorScheme? dynamicDark;
@@ -179,6 +186,7 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
             changeDynamicColor: (value) =>
                 unawaited(widget.appearance.setUseDynamicColor(value)),
             buildInfoLoader: widget.buildInfoLoader,
+            updates: widget.updates,
           ),
         );
       },
@@ -197,9 +205,11 @@ class _MobileShell extends StatefulWidget {
     required this.dynamicColorAvailable,
     required this.changeDynamicColor,
     required this.buildInfoLoader,
+    this.updates,
   });
   final SessionController session;
   final LauncherShortcuts shortcuts;
+  final AppUpdateController? updates;
   final Listenable pops;
   final ThemeMode theme;
   final ValueChanged<ThemeMode> changeTheme;
@@ -240,6 +250,7 @@ class _MobileShellState extends State<_MobileShell> {
     widget.session.addListener(_onSession);
     widget.shortcuts.addListener(_onShortcut);
     widget.pops.addListener(_chrome.show);
+    widget.updates?.addListener(_onUpdates);
     final account = widget.session.active;
     if (account != null) {
       unawaited(widget.shortcuts.publish(account.key));
@@ -248,6 +259,8 @@ class _MobileShellState extends State<_MobileShell> {
       if (mounted) {
         unawaited(_consumeResumeTarget());
         unawaited(_consumeShortcut());
+        // The start-up check may have finished before this shell existed.
+        if (widget.updates?.unannounced ?? false) _onUpdates();
       }
     });
   }
@@ -263,6 +276,28 @@ class _MobileShellState extends State<_MobileShell> {
       oldWidget.pops.removeListener(_chrome.show);
       widget.pops.addListener(_chrome.show);
     }
+    if (oldWidget.updates != widget.updates) {
+      oldWidget.updates?.removeListener(_onUpdates);
+      widget.updates?.addListener(_onUpdates);
+    }
+  }
+
+  /// Keeps the 我的 badge current, and points out once an update the start-up
+  /// check found.
+  void _onUpdates() {
+    if (!mounted) return;
+    final updates = widget.updates!;
+    if (updates.unannounced) {
+      updates.markAnnounced();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('有新版本可以更新'),
+          action: SnackBarAction(label: '查看', onPressed: () => _goTo(_me)),
+        ));
+      });
+    }
+    setState(() {});
   }
 
   void _onSession() {
@@ -285,6 +320,7 @@ class _MobileShellState extends State<_MobileShell> {
     }
     widget.session.removeListener(_onSession);
     widget.shortcuts.removeListener(_onShortcut);
+    widget.updates?.removeListener(_onUpdates);
     super.dispose();
   }
 
@@ -640,6 +676,13 @@ class _MobileShellState extends State<_MobileShell> {
     (Icons.person_outline, Icons.person, '我的'),
   ];
 
+  /// A dot on 我的 while an update waits there.
+  Widget _updateBadge(int destination, Widget icon) {
+    final stage = widget.updates?.stage;
+    final waiting = stage == UpdateStage.available || stage == UpdateStage.downloaded;
+    return destination == _me && waiting ? Badge(child: icon) : icon;
+  }
+
   Widget _bottomNavigation(BuildContext context) {
     final theme = Theme.of(context);
     return Material(
@@ -660,8 +703,12 @@ class _MobileShellState extends State<_MobileShell> {
                 selectedIndex: _selected,
                 onDestinationSelected: _select,
                 destinations: [
-                  for (final (icon, selectedIcon, label) in _destinations)
-                    NavigationDestination(icon: Icon(icon), selectedIcon: Icon(selectedIcon), label: label),
+                  for (final (index, (icon, selectedIcon, label)) in _destinations.indexed)
+                    NavigationDestination(
+                      icon: _updateBadge(index, Icon(icon)),
+                      selectedIcon: _updateBadge(index, Icon(selectedIcon)),
+                      label: label,
+                    ),
                 ],
               ),
             ),
@@ -812,6 +859,8 @@ class _MobileShellState extends State<_MobileShell> {
                 ),
               ],
             ),
+            if (widget.updates case final updates? when updates.enabled)
+              UpdateSection(controller: updates),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

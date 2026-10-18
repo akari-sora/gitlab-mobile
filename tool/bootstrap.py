@@ -140,10 +140,198 @@ def configure_flavors(path: Path) -> bool:
     return True
 
 
+KOTLIN_PACKAGE = 'io/gitlabmobile/gitlab_mobile'
+TEMPLATE_MAIN_ACTIVITY = '''package io.gitlabmobile.gitlab_mobile
+
+import io.flutter.embedding.android.FlutterActivity
+
+class MainActivity : FlutterActivity()
+'''
+MAIN_ACTIVITY = '''package io.gitlabmobile.gitlab_mobile
+
+import io.flutter.embedding.android.FlutterActivity
+import io.flutter.embedding.engine.FlutterEngine
+
+class MainActivity : FlutterActivity() {
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        // Each distribution flavor ships its own AppUpdateChannel.
+        AppUpdateChannel.register(flutterEngine, this)
+    }
+}
+'''
+UPDATE_CHANNEL = 'io.gitlabmobile/app_update'
+
+# GitLab channel: hands an APK the app downloaded and verified into
+# cache/updates/ to the system package installer. The user confirms the install
+# in the system UI; Android first asks them to allow installs from this app.
+GITLAB_UPDATE_CHANNEL = f'''package io.gitlabmobile.gitlab_mobile
+
+import android.app.Activity
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.provider.Settings
+import androidx.core.content.FileProvider
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+import java.io.File
+
+/** Serves only cache/updates/ (res/xml/update_paths.xml). */
+class UpdateFileProvider : FileProvider()
+
+object AppUpdateChannel {{
+    fun register(engine: FlutterEngine, activity: Activity) {{
+        MethodChannel(engine.dartExecutor.binaryMessenger, "{UPDATE_CHANNEL}").setMethodCallHandler {{ call, result ->
+            when (call.method) {{
+                "installApk" -> result.success(install(activity, call.argument<String>("path")))
+                else -> result.notImplemented()
+            }}
+        }}
+    }}
+
+    private fun install(activity: Activity, path: String?): String {{
+        val updates = File(activity.cacheDir, "updates").canonicalFile
+        val apk = path?.let {{ File(it).canonicalFile }} ?: return "invalid"
+        if (apk.parentFile != updates || !apk.isFile || !apk.name.endsWith(".apk")) return "invalid"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !activity.packageManager.canRequestPackageInstalls()) {{
+            activity.startActivity(
+                Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${{activity.packageName}}")))
+            return "needsPermission"
+        }}
+        val uri = FileProvider.getUriForFile(activity, "${{activity.packageName}}.updates", apk)
+        val intent = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        return try {{
+            activity.startActivity(intent)
+            "started"
+        }} catch (_: ActivityNotFoundException) {{
+            "unavailable"
+        }}
+    }}
+}}
+'''
+
+GITLAB_MANIFEST = '''<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- GitLab channel only: hands a verified update APK to the system installer. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <application>
+        <provider
+            android:name=".UpdateFileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_paths" />
+        </provider>
+    </application>
+</manifest>
+'''
+
+GITLAB_UPDATE_PATHS = '''<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="updates" path="updates/" />
+</paths>
+'''
+
+# Play channel: Google Play's in-app updates (flexible). No install permission:
+# Play policy forbids an app from updating itself any other way.
+PLAY_UPDATE_CHANNEL = f'''package io.gitlabmobile.gitlab_mobile
+
+import android.app.Activity
+import com.google.android.play.core.appupdate.AppUpdateManagerFactory
+import com.google.android.play.core.appupdate.AppUpdateOptions
+import com.google.android.play.core.install.model.AppUpdateType
+import com.google.android.play.core.install.model.InstallStatus
+import com.google.android.play.core.install.model.UpdateAvailability
+import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
+
+object AppUpdateChannel {{
+    private const val REQUEST_CODE = 4317
+
+    fun register(engine: FlutterEngine, activity: Activity) {{
+        val manager = AppUpdateManagerFactory.create(activity)
+        MethodChannel(engine.dartExecutor.binaryMessenger, "{UPDATE_CHANNEL}").setMethodCallHandler {{ call, result ->
+            when (call.method) {{
+                "checkPlay" -> manager.appUpdateInfo
+                    .addOnSuccessListener {{ info ->
+                        result.success(mapOf(
+                            "available" to (info.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE &&
+                                info.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE)),
+                            "versionCode" to info.availableVersionCode(),
+                            "downloaded" to (info.installStatus() == InstallStatus.DOWNLOADED),
+                        ))
+                    }}
+                    .addOnFailureListener {{ result.error("play", it.message, null) }}
+                "startPlayUpdate" -> manager.appUpdateInfo
+                    .addOnSuccessListener {{ info ->
+                        val ready = info.updateAvailability() == UpdateAvailability.UPDATE_AVAILABLE &&
+                            info.isUpdateTypeAllowed(AppUpdateType.FLEXIBLE)
+                        result.success(ready && manager.startUpdateFlowForResult(
+                            info, activity, AppUpdateOptions.defaultOptions(AppUpdateType.FLEXIBLE), REQUEST_CODE))
+                    }}
+                    .addOnFailureListener {{ result.error("play", it.message, null) }}
+                "completePlayUpdate" -> manager.completeUpdate()
+                    .addOnSuccessListener {{ result.success(true) }}
+                    .addOnFailureListener {{ result.error("play", it.message, null) }}
+                else -> result.notImplemented()
+            }}
+        }}
+    }}
+}}
+'''
+
+UPDATE_DEPENDENCIES_BEGIN = '// GITLAB_MOBILE_UPDATE_DEPENDENCIES_BEGIN'
+UPDATE_DEPENDENCIES_END = '// GITLAB_MOBILE_UPDATE_DEPENDENCIES_END'
+UPDATE_DEPENDENCIES = f'''{UPDATE_DEPENDENCIES_BEGIN}
+dependencies {{
+    "gitlabImplementation"("androidx.core:core:1.13.1")
+    "playImplementation"("com.google.android.play:app-update:2.1.0")
+}}
+{UPDATE_DEPENDENCIES_END}
+'''
+
+
+def configure_update_channels(app: Path) -> None:
+    """Writes each flavor's AppUpdateChannel and the MainActivity that registers it."""
+    gradle = app / 'build.gradle.kts'
+    text = gradle.read_text(encoding='utf-8')
+    if text.count(UPDATE_DEPENDENCIES_BEGIN) or text.count(UPDATE_DEPENDENCIES_END):
+        block = text[text.index(UPDATE_DEPENDENCIES_BEGIN):text.index(UPDATE_DEPENDENCIES_END) + len(UPDATE_DEPENDENCIES_END)]
+        if text.count(UPDATE_DEPENDENCIES_BEGIN) != 1 or block != UPDATE_DEPENDENCIES.rstrip('\n'):
+            raise RuntimeError('Stale managed update dependencies; review and refresh the owned block.')
+    else:
+        if FLAVORS_BEGIN not in text:
+            raise RuntimeError('Configure the flavors before the update channels.')
+        gradle.write_text(text.rstrip('\n') + '\n\n' + UPDATE_DEPENDENCIES, encoding='utf-8')
+    activity = app / 'src/main/kotlin' / KOTLIN_PACKAGE / 'MainActivity.kt'
+    current = activity.read_text(encoding='utf-8')
+    if current not in (TEMPLATE_MAIN_ACTIVITY, MAIN_ACTIVITY):
+        raise RuntimeError('Unknown MainActivity template; review before registering the update channel.')
+    activity.write_text(MAIN_ACTIVITY, encoding='utf-8')
+    files = {
+        f'src/gitlab/kotlin/{KOTLIN_PACKAGE}/AppUpdateChannel.kt': GITLAB_UPDATE_CHANNEL,
+        'src/gitlab/AndroidManifest.xml': GITLAB_MANIFEST,
+        'src/gitlab/res/xml/update_paths.xml': GITLAB_UPDATE_PATHS,
+        f'src/play/kotlin/{KOTLIN_PACKAGE}/AppUpdateChannel.kt': PLAY_UPDATE_CHANNEL,
+    }
+    for name, content in files.items():
+        path = app / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding='utf-8')
+
+
 def configure_android(folder: Path) -> None:
     harden_android(folder)
     android_signing.configure_gradle(folder / 'app/build.gradle.kts')
     configure_flavors(folder / 'app/build.gradle.kts')
+    configure_update_channels(folder / 'app')
 
 
 # Edge-to-edge (Android 15) draws behind the system bars. Opaque bar colours in

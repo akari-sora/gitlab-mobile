@@ -41,6 +41,8 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
     // The stored appearance is read alongside the accounts and never gates the
     // first frame: the app renders with ThemeMode.system until it arrives.
     unawaited(ref.read(appearanceProvider).load());
+    // Looks for an update once per launch (when allowed); never gates a frame.
+    unawaited(ref.read(appUpdateProvider).start());
   }
   void _syncShortcuts(bool signedIn, String? accountKey) {
     _shortcuts.bind(signedIn ? accountKey : null);
@@ -59,6 +61,7 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
       if (signedIn) {
         return AuthenticatedApp(
           key: ValueKey(session.generation), session: session, appearance: appearance, shortcuts: _shortcuts,
+          updates: ref.read(appUpdateProvider),
         );
       }
       return DynamicColorBuilder(builder: (light, dark) {
