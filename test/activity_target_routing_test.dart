@@ -10,6 +10,7 @@ import 'package:gitlab_mobile/core/providers.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
 import 'package:gitlab_mobile/features/workspace/activity_page.dart';
 import 'package:gitlab_mobile/features/workspace/commit_page.dart';
+import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/project_page.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
 import 'package:url_launcher_platform_interface/url_launcher_platform_interface.dart';
@@ -1121,5 +1122,33 @@ void main() {
     expect(launcher.launched, [targetUri],
         reason: 'Exact URI query and fragment must be preserved byte-for-byte');
     expect(find.byType(BottomSheet), findsNothing);
+  });
+
+  testWidgets('a WorkItem event opens the work item page named by its link', (
+    tester,
+  ) async {
+    final server = ActivityEventServer([
+      activityEvent(
+        id: 32,
+        projectId: 10,
+        actionName: 'opened',
+        targetType: 'WorkItem',
+        targetIid: 5,
+        targetTitle: 'Work item target',
+        targetUrl: 'https://example.com/gitlab/team/core/-/work_items/5',
+      ),
+    ]);
+    await pumpActivity(tester, server);
+
+    await tester.tap(find.text('Work item target'));
+    await settleNetworkWidgets(tester);
+
+    expect(find.byType(BottomSheet), findsNothing);
+    final page = tester.widget<GraphWorkItemDetailPage>(
+      find.byType(GraphWorkItemDetailPage),
+    );
+    expect(page.iid, 5);
+    expect(page.project?.id, 10);
+    expect(launcher.launched, isEmpty);
   });
 }
