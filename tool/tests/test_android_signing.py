@@ -124,6 +124,25 @@ class AndroidSigningTests(unittest.TestCase):
             self.assertNotIn(password, stdout.getvalue())
             self.assertNotIn(password, stderr.getvalue())
 
+    def test_init_names_a_play_upload_identity_and_rejects_dn_injection(self):
+        commands = []
+        def run(command, **kwargs):
+            commands.append(command)
+            if '-genkeypair' in command:
+                Path(command[command.index('-keystore') + 1]).write_bytes(b'pkcs12')
+            return subprocess.CompletedProcess(command, 0, b'public certificate', b'')
+        destination = self.root / 'play-upload'
+        with mock.patch.object(subprocess, 'run', side_effect=run):
+            android_signing.init_identity(destination, common_name='GitLab Mobile Play Upload')
+        generate = next(command for command in commands if '-genkeypair' in command)
+        self.assertEqual(generate[generate.index('-dname') + 1], 'CN=GitLab Mobile Play Upload')
+        self.assertIn('allowedBuildTypes=debug,profile,release',
+                      (destination / 'signing.properties').read_text())
+        for name in ('', 'X, O=Evil', 'CN=Other', 'x' * 65):
+            with self.assertRaisesRegex(RuntimeError, 'common name'):
+                android_signing.init_identity(self.root / 'other', common_name=name)
+        self.assertFalse((self.root / 'other').exists())
+
     def test_cli_verify_keytool_failure_does_not_echo_secret_output(self):
         secret = 'synthetic-password-must-stay-private'
         keystore = self.root / 'identity.p12'

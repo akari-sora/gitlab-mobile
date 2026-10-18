@@ -123,8 +123,8 @@
       "id": "STABLE_CI_DEBUG",
       "cert_sha256": "5bec28281b4c1405f9ee47590c40665a24b0f984fc0d6b8854a3458e8db0a71d",
       "subject": "CN=GitLab Mobile CI Debug",
-      "lane": "GitLab CI android_debug on protected refs (main, v* tags) through the protected, masked project variable ANDROID_DEBUG_KEYSTORE_B64 (ci/build_android.sh stable-legacy-debug); first build job 17265866220",
-      "private_key_locator": "GitLab project 86648389 CI variable ANDROID_DEBUG_KEYSTORE_B64 (protected, masked); owner backup ~/.config/gitlab-mobile/android-signing/ci-debug.p12 (PKCS12, alias androiddebugkey, mode 0600)",
+      "lane": "GitLab CI android_debug on protected refs (main, v* tags) through the protected, masked project variable ANDROID_DEBUG_KEYSTORE_B64: debug builds (stable-legacy-debug) from job 17265866220, gitlab-flavor release builds (stable-legacy-release) from main e2cc1411 job 17267033283",
+      "private_key_locator": "GitLab project 86648389 CI variable ANDROID_DEBUG_KEYSTORE_B64 (protected, masked, not hidden, verified 2026-10-18 without reading the value); owner backup ~/.config/gitlab-mobile/android-signing/ci-debug.p12 (PKCS12, alias androiddebugkey, mode 0600)",
       "private_key_status": "PRESENT_AS_CI_VARIABLE; local backup reported by the owner's local agent on 2026-10-18, not verified from the cloud session",
       "expected_for_ordinary_local_apks": false,
       "covered_by_lineage": false
