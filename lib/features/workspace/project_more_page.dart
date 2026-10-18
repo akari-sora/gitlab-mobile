@@ -25,6 +25,7 @@ import 'graph_work_items_page.dart';
 import 'navigation.dart';
 import 'project_extras.dart';
 import 'project_analytics_page.dart';
+import 'project_page.dart';
 import 'records_feed.dart';
 import 'release_assets_section.dart';
 import 'repository_page.dart';
@@ -43,6 +44,16 @@ String metadataTitle(MetadataKind kind) => switch (kind) {
 String metadataPhrase(String verb, MetadataKind kind) {
   final title = metadataTitle(kind);
   return RegExp(r'^[A-Za-z]').hasMatch(title) ? '$verb $title' : '$verb$title';
+}
+
+/// The new project in a fork response, or null when the response does not
+/// describe one this client can open.
+Project? forkedProject(Json fork) {
+  try {
+    return Project.fromJson(fork);
+  } on FormatException {
+    return null;
+  }
 }
 
 final class ProjectStarControl {
@@ -271,8 +282,13 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     try {
       final fork = await owner.api.forkProject(owner.project.id);
       if (mounted && _current(generation)) {
+        final created = forkedProject(fork);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('已建立 Fork：${valueText(fork, 'path_with_namespace')}，匯入可能需要幾分鐘。')));
+          content: Text('已建立 Fork：${valueText(fork, 'path_with_namespace')}，匯入可能需要幾分鐘。'),
+          action: created == null ? null : SnackBarAction(label: '開啟', onPressed: () {
+            if (!mounted || !_current(generation) || owner.api.isClosed) return;
+            _push(ProjectPage(account: owner.account, api: owner.api, project: created));
+          })));
       }
     } catch (e) {
       if (mounted && _current(generation)) showFailure(context, e);

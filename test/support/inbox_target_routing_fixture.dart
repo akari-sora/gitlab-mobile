@@ -9,8 +9,9 @@ import 'package:url_launcher_platform_interface/url_launcher_platform_interface.
 import 'fake_adapter.dart';
 
 /// Synthetic todo server for the inbox routing tests. Pending todos are
-/// served from [todos]; completion removes a row; only project 10 and its
-/// issue 42 / commit [inboxCommitSha] resolve, every other project is a 404.
+/// served from [todos]; completion removes a row; only project 10 (also by
+/// its path team/core) and its issue 42 / commit [inboxCommitSha] resolve,
+/// every other project is a 404.
 final class InboxTodoServer {
   InboxTodoServer(this.todos);
 
@@ -48,7 +49,9 @@ final class InboxTodoServer {
         path.endsWith('/api/v4/merge_requests')) {
       return jsonResponse(<Json>[]);
     }
-    if (path.endsWith('/projects/10')) {
+    // A todo's target_url names the project by path.
+    if (path.endsWith('/projects/10') ||
+        path.endsWith('/projects/team%2Fcore')) {
       final gate = projectGate;
       if (gate != null) return gate();
       return jsonResponse(inboxProject);

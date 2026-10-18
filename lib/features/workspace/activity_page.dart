@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/instance.dart';
 import '../../core/models.dart';
+import '../../core/project_locator.dart';
 import '../../core/providers.dart';
 import '../../shared/external_link.dart';
 import '../../shared/workspace_ui.dart';
@@ -75,7 +76,7 @@ Uri? _activityWebUri(String text, GitLabInstance instance) {
   return uri;
 }
 
-enum _ActivityRoute { workItem, commit, explain }
+enum _ActivityRoute { workItem, commit, link, explain }
 
 final class _ActivityTarget {
   const _ActivityTarget._(
@@ -86,8 +87,32 @@ final class _ActivityTarget {
     this.iid = 0,
     this.sha = '',
     this.web,
+    this.link,
     this.nativeType = false,
   });
+
+  /// An event type without its own fields-based route (a work item, an epic)
+  /// opens in the app when its link names one concrete resource; otherwise it
+  /// explains itself.
+  factory _ActivityTarget._fallback(
+    String typeLabel,
+    int projectId,
+    Uri? web,
+    GitLabInstance instance, {
+    required bool nativeType,
+  }) {
+    final link = web == null || nativeType
+        ? null
+        : GitLabLink.inApp(web, instance);
+    return _ActivityTarget._(
+      link == null ? _ActivityRoute.explain : _ActivityRoute.link,
+      typeLabel,
+      projectId: projectId,
+      web: web,
+      link: link,
+      nativeType: nativeType,
+    );
+  }
 
   factory _ActivityTarget.of(Json event, GitLabInstance instance) {
     final push = valueObject(event, 'push_data');
@@ -134,11 +159,11 @@ final class _ActivityTarget {
         );
       }
       final isNative = isWorkItem || noteableType == 'Commit';
-      return _ActivityTarget._(
-        _ActivityRoute.explain,
+      return _ActivityTarget._fallback(
         _activitySheetLabel(noteableType),
-        projectId: projectId,
-        web: web,
+        projectId,
+        web,
+        instance,
         nativeType: isNative,
       );
     }
@@ -157,11 +182,11 @@ final class _ActivityTarget {
       );
     }
 
-    return _ActivityTarget._(
-      _ActivityRoute.explain,
+    return _ActivityTarget._fallback(
       _activitySheetLabel(targetType),
-      projectId: projectId,
-      web: web,
+      projectId,
+      web,
+      instance,
       nativeType: isWorkItem,
     );
   }
@@ -173,6 +198,7 @@ final class _ActivityTarget {
   final int iid;
   final String sha;
   final Uri? web;
+  final GitLabLink? link;
   final bool nativeType;
 
   static final _fullSha = RegExp(r'^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$');
@@ -414,6 +440,10 @@ Widget activityRow(BuildContext context, Json event, {required Account account, 
         .workItem(context, '${target.projectId}', target.resource, target.iid),
     _ActivityRoute.commit => () => ResourceNavigator(account, api)
         .commit(context, '${target.projectId}', target.sha),
+    _ActivityRoute.link => () => ResourceNavigator(
+      account,
+      api,
+    ).link(context, target.link!),
     _ActivityRoute.explain => () {
         final isCurrent = _captureSheetFence(context, account, api);
         showModalBottomSheet<void>(

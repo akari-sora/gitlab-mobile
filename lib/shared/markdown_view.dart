@@ -11,6 +11,7 @@ import 'attachment_download.dart';
 import 'attachment_image.dart';
 import 'attachment_ref.dart';
 import 'external_link.dart';
+import 'in_app_links.dart';
 import 'theme.dart';
 
 class MarkdownView extends StatefulWidget {
@@ -140,6 +141,10 @@ class _MarkdownViewState extends State<MarkdownView> {
             );
             return;
           }
+        }
+        final inApp = InAppLinks.maybeOf(context);
+        if (inApp != null && (await inApp(context, uri) || !context.mounted)) {
+          return;
         }
         await openExternal(context, uri);
       },
