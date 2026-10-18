@@ -44,6 +44,37 @@ void main() {
     shortcuts.dispose();
   });
 
+  testWidgets('switching destinations fades the new one in', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final fixture = WorkspaceFixture();
+    final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+    addTearDown(session.dispose);
+    addTearDown(fixture.api.close);
+    await tester.runAsync(() async {
+      await session.initialize();
+      await session.connect('https://example.com/gitlab', 'synthetic-test-token');
+    });
+    await tester.pumpWidget(
+      AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
+    );
+    await settleNetworkWidgets(tester);
+    double opacity() => tester.widget<FadeTransition>(find.ancestor(
+      of: find.byKey(const Key('projectSearch'), skipOffstage: false),
+      matching: find.byType(FadeTransition, skipOffstage: false)).first).opacity.value;
+    expect(opacity(), 1, reason: 'the hidden destination rests fully opaque');
+
+    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('探索')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(opacity(), inExclusiveRange(0, 1));
+    await settleNetworkWidgets(tester);
+    expect(opacity(), 1);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('AuthenticatedApp navigates between shell destinations', (
     tester,
   ) async {
