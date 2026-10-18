@@ -95,8 +95,6 @@ android_debug:
       artifacts: true
     - job: native_templates
       artifacts: true
-    - job: public_api_smoke
-      artifacts: false
   cache:
     - key: flutter-linux-3.47.2
       paths: [.ci-cache/]
@@ -157,9 +155,9 @@ public_api_smoke:
   rules:
     - if: '$LIVE_SMOKE == "1" || $RESOLVE_LOCK == "1" || $GH2GL_SYNC == "1"'
       when: never
-    - if: '$PUBLIC_SMOKE == "1" && $CI_PIPELINE_SOURCE != "api"'
-      when: never
-    - when: on_success
+    # Anonymous reads share gitlab.com's per-IP budget with every job on the runner host, so the
+    # suite runs on its schedule or on demand, never on pushes. See docs/CI.md "Public API smoke".
+    - if: '$PUBLIC_SMOKE == "1" && $CI_PIPELINE_SOURCE =~ /^(api|schedule|web)$/'
   script:
     - flutter pub get --enforce-lockfile
     - dart run tool/public_smoke.dart
