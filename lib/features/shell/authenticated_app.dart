@@ -9,6 +9,7 @@ import '../../shared/adaptive_breakpoints.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/in_app_links.dart';
 import '../../shared/list_detail_scaffold.dart';
+import '../../shared/reveal_transition.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
@@ -587,15 +588,19 @@ class _MobileShellState extends State<_MobileShell> {
     }
   }
 
-  Widget _pane(int index, Widget child) => TabActiveScope(
-    isActive: _selected == index,
-    child: ScrollTopSignal(
-      notifier: _scrollTop[index],
-      child: ExcludeSemantics(
-        excluding: _selected != index,
-        child: TickerMode(
-          enabled: _selected == index,
-          child: IgnorePointer(ignoring: _selected != index, child: child),
+  Widget _pane(int index, Widget child) => RevealOnShow(
+    shown: _selected == index,
+    style: RevealStyle.fadeThrough,
+    child: TabActiveScope(
+      isActive: _selected == index,
+      child: ScrollTopSignal(
+        notifier: _scrollTop[index],
+        child: ExcludeSemantics(
+          excluding: _selected != index,
+          child: TickerMode(
+            enabled: _selected == index,
+            child: IgnorePointer(ignoring: _selected != index, child: child),
+          ),
         ),
       ),
     ),
