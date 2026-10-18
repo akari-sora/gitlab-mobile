@@ -326,7 +326,7 @@ void main() {
 
     expect(find.text('Denied private release title'), findsNothing);
     expect(find.text('Denied private release body'), findsNothing);
-    expect(find.byTooltip('新增Releases'), findsNothing);
+    expect(find.byTooltip(metadataPhrase('新增', MetadataKind.releases)), findsNothing);
     expect(fixture.adapter.requests, isEmpty);
   });
 }
