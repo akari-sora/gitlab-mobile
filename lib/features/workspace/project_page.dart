@@ -63,6 +63,20 @@ class _ProjectPageState extends State<ProjectPage>
   late bool _overview = widget.initialTab == null;
   late bool _overviewVisited = _overview;
   late bool _sectionsVisited = !_overview;
+  // Back from a section returns to the overview. That return is the shallowest
+  // entry of this page's back chain: an open issue or MR, a folder level and
+  // anything else registered below [DetailBackScope] here outranks it. Inside
+  // a list-detail parent (探索) the entry joins the parent's dispatcher, one
+  // level below the parent's own entry; a pushed page owns the dispatcher and
+  // the route veto.
+  DetailBackDispatcher? _ownBack, _back;
+  int _backDepth = 1;
+  bool _backActive = true;
+  late final _overviewReturn = DetailBackEntry(
+    depth: _backDepth,
+    canHandle: () => mounted && _backActive && _returnsToOverview,
+    onBack: _openOverview,
+  );
   late Project _project;
   SessionController? _session;
   int? _sessionGeneration;
@@ -99,6 +113,37 @@ class _ProjectPageState extends State<ProjectPage>
     _overviewTitle.value = _overviewScroll.hasClients && _overviewScroll.offset > 110;
   }
 
+  /// A section opened from this page's overview goes back to it; resume
+  /// targets, CI and links that open a section directly have none to return to.
+  bool get _returnsToOverview => widget.initialTab == null && !_overview;
+
+  void _bindBack() {
+    final parent = DetailBackScope.maybeOf(context);
+    final dispatcher =
+        parent?.dispatcher ?? (_ownBack ??= DetailBackDispatcher());
+    _backDepth = (parent?.depth ?? 0) + 1;
+    _backActive = TabActiveScope.of(context);
+    _overviewReturn.depth = _backDepth;
+    if (!identical(dispatcher, _back)) {
+      _back?.unregister(_overviewReturn);
+      _back = dispatcher;
+      dispatcher.register(_overviewReturn);
+    } else {
+      dispatcher.notifyChanged();
+    }
+  }
+
+  /// The section app bar's back inside a list-detail parent, which otherwise
+  /// closes the project at once. A pushed page keeps the default back button,
+  /// which pops through the route and so through the same chain as system back.
+  void _sectionsBack() {
+    if (_returnsToOverview) {
+      _openOverview();
+    } else {
+      widget.onBack?.call();
+    }
+  }
+
   /// Leaves the overview for one section. Selecting the section already
   /// under the tab bar still reports it, so a list-detail parent can react.
   void _openSection(int index) {
@@ -108,6 +153,7 @@ class _ProjectPageState extends State<ProjectPage>
       _overview = false;
       _sectionsVisited = true;
     });
+    _back?.notifyChanged();
     _chrome.show();
     if (same) {
       widget.onTabChanged?.call(index);
@@ -122,6 +168,7 @@ class _ProjectPageState extends State<ProjectPage>
       _overview = true;
       _overviewVisited = true;
     });
+    _back?.notifyChanged();
     _chrome.show();
     // The overview is not a nested list-detail section.
     widget.onTabChanged?.call(0);
@@ -351,6 +398,7 @@ class _ProjectPageState extends State<ProjectPage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     _bindSession();
+    _bindBack();
     if (!_starStarted && _sessionCurrent()) {
       _starStarted = true;
       unawaited(_loadStar());
@@ -377,6 +425,7 @@ class _ProjectPageState extends State<ProjectPage>
     if (oldWidget.project != widget.project) {
       _project = widget.project;
     }
+    _back?.notifyChanged();
     if (ownerChanged) {
       _generation++;
       _starEpoch++;
@@ -409,6 +458,8 @@ class _ProjectPageState extends State<ProjectPage>
     _focus.removeListener(_focusChanged);
     _focus.dispose();
     _chrome.dispose();
+    _back?.unregister(_overviewReturn);
+    _ownBack?.dispose();
     super.dispose();
   }
 
@@ -493,7 +544,7 @@ class _ProjectPageState extends State<ProjectPage>
       toolbarHeight: toolbarHeight,
       automaticallyImplyLeading: false,
       leading: widget.showBackButton
-          ? BackButton(onPressed: widget.onBack)
+          ? BackButton(onPressed: widget.onBack == null ? null : _sectionsBack)
           : null,
       titleSpacing: widget.showBackButton ? 0 : null,
       title: Column(
@@ -755,7 +806,7 @@ class _ProjectPageState extends State<ProjectPage>
               ),
             ),
           );
-    return Scaffold(
+    final page = Scaffold(
       body: NotificationListener<ScrollNotification>(
         onNotification: _chrome.handle,
         child: StatusBarInset(
@@ -771,6 +822,25 @@ class _ProjectPageState extends State<ProjectPage>
               ],
             ),
           ),
+        ),
+      ),
+    );
+    // The route veto is published only when this page owns the chain; inside
+    // a list-detail parent the parent's scope already vetoes and dispatches.
+    final back = _back!;
+    final owned = identical(back, _ownBack);
+    return DetailBackScope(
+      dispatcher: back,
+      depth: _backDepth,
+      child: ListenableBuilder(
+        listenable: back,
+        child: page,
+        builder: (context, child) => PopScope<Object?>(
+          canPop: !owned || !back.canHandleBack,
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop && owned) back.handleBack();
+          },
+          child: child!,
         ),
       ),
     );

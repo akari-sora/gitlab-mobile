@@ -135,6 +135,66 @@ class DetailBackScope extends InheritedWidget {
       dispatcher != oldWidget.dispatcher || depth != oldWidget.depth;
 }
 
+/// Places a [PopScope] that handles back on its own, such as a file tree going
+/// one folder up, in the enclosing [DetailBackDispatcher] chain. While
+/// [holding] is true and the subtree is active, it registers an entry one
+/// level below the enclosing [DetailBackScope] whose back does nothing: the
+/// wrapped scope's callback, run by the same pop, does the work, and shallower
+/// entries (the project overview, closing the project, the shell) stay put.
+///
+/// [holding] is read as last built, so a handler that changes it during the
+/// pop does not change which entry the dispatcher picks for that pop.
+class DetailBackHold extends StatefulWidget {
+  const DetailBackHold({super.key, required this.holding, required this.child});
+
+  final bool holding;
+  final Widget child;
+
+  @override
+  State<DetailBackHold> createState() => _DetailBackHoldState();
+}
+
+class _DetailBackHoldState extends State<DetailBackHold> {
+  DetailBackDispatcher? _dispatcher;
+  bool _active = true;
+  late final DetailBackEntry _entry = DetailBackEntry(
+    depth: 1,
+    canHandle: () => mounted && _active && widget.holding,
+    onBack: () {},
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _active = TabActiveScope.of(context);
+    final scope = DetailBackScope.maybeOf(context);
+    _entry.depth = (scope?.depth ?? 0) + 1;
+    final dispatcher = scope?.dispatcher;
+    if (!identical(dispatcher, _dispatcher)) {
+      _dispatcher?.unregister(_entry);
+      _dispatcher = dispatcher;
+      dispatcher?.register(_entry);
+    } else {
+      dispatcher?.notifyChanged();
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant DetailBackHold oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.holding != widget.holding) _dispatcher?.notifyChanged();
+  }
+
+  @override
+  void dispose() {
+    _dispatcher?.unregister(_entry);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 /// 標記當前 Tab 或 Subtree 是否處於活躍狀態（非活躍時不響應系統返回）
 class TabActiveScope extends InheritedWidget {
   const TabActiveScope({

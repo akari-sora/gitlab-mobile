@@ -8,6 +8,7 @@ import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../core/repository_ref.dart';
 import '../../core/syntax_highlighter.dart';
+import '../../shared/list_detail_scaffold.dart';
 import '../../shared/markdown_view.dart';
 import '../../shared/resource_share.dart';
 import '../../shared/scroll_chrome.dart';
@@ -512,8 +513,15 @@ class _RepositoryTabState extends State<RepositoryTab> {
     );
   }
 
+  /// Going up a folder also outranks the project overview and the shell,
+  /// which take back from the dispatcher chain rather than from this scope.
   @override
-  Widget build(BuildContext context) => PopScope(
+  Widget build(BuildContext context) => DetailBackHold(
+    holding: widget.active && _folder.isNotEmpty,
+    child: _folderScope(context),
+  );
+
+  Widget _folderScope(BuildContext context) => PopScope(
     canPop: !widget.active || _folder.isEmpty,
     onPopInvokedWithResult: (didPop, _) {
       if (!didPop && widget.active && _folder.isNotEmpty) {
