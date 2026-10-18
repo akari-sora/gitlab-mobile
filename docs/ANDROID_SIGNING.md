@@ -285,10 +285,16 @@ Git and `artifacts/`.
 
 ## CI boundary
 
-The current CI debug job keeps its legacy `ANDROID_DEBUG_KEYSTORE_B64` support
-and ephemeral fallback until a stable key and properties file are provisioned as
-protected project CI variables. The local private identity is not copied into CI,
-and this setup does not claim that any CI secret was uploaded.
+Since 2026-10-18, `ANDROID_DEBUG_KEYSTORE_B64` is a protected, masked project
+CI variable, and `v*` tags are protected. Pipelines on protected refs (`main`,
+`v*` tags) sign the debug APK with that stable CI identity (`STABLE_CI_DEBUG`,
+`CN=GitLab Mobile CI Debug`, certificate SHA-256
+`5bec28281b4c1405f9ee47590c40665a24b0f984fc0d6b8854a3458e8db0a71d`). Its
+private keystore is also kept as `ci-debug.p12` in the canonical directory
+(mode `0600`); it is a CI preview key, not used for ordinary local builds.
+Unprotected pipelines keep the ephemeral fallback. The CI identity differs
+from `CURRENT_LOCAL`, `LEGACY_LOCAL` and `HISTORICAL_CI23`, and the local
+private identity is not copied into CI.
 
 CI debug APKs with a different signer cannot update locally signed APKs in place.
 Treat local development signing, CI preview signing and Play production signing

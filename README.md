@@ -256,7 +256,7 @@ python3 tool/android_signing.py configure android/app/build.gradle.kts
 ./.fvm/flutter_sdk/bin/flutter build apk --debug
 ```
 
-Screenshots: `flutter_checks` job artifacts → `ci-output/screenshots/`. They are real Flutter host-rendered screens with synthetic data, not an Android/iOS device run or a generated design mock-up. Android APKs: `android_debug` artifacts; main previews: project Package Registry. Local debug, profile and release APKs use the stable development signer described in [Android local signing](docs/ANDROID_SIGNING.md). CI debug signing remains separate and may differ until its protected signing identity is provisioned. Neither path is a store-signed release.
+Screenshots: `flutter_checks` job artifacts → `ci-output/screenshots/`. They are real Flutter host-rendered screens with synthetic data, not an Android/iOS device run or a generated design mock-up. Android APKs: `android_debug` artifacts; main previews: project Package Registry. Local debug, profile and release APKs use the stable development signer described in [Android local signing](docs/ANDROID_SIGNING.md). Published CI previews from `main` and release tags are signed by a separate stable CI debug identity held in a protected CI variable (see [CI](docs/CI.md#android-signing-lanes)); merge-request builds use a discarded ephemeral key. Neither path is a store-signed release.
 
 ## Live CRUD smoke
 

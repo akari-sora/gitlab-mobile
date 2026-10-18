@@ -73,15 +73,30 @@ signer across build modes and worktrees; it does not make them Play or
 production releases.
 
 The CI output remains a **debug development preview**. The preview records the
-commit in the app's 我的 tab. CI intentionally retains the existing
-`ANDROID_DEBUG_KEYSTORE_B64` path and ephemeral debug-keystore fallback until a
-stable key and properties file are provisioned as protected CI secrets. No new
-CI signing secret has been uploaded as part of the local-signing work. When the
-variable is set, `ci/build_android.sh` converts the legacy debug keystore to a
-temporary PKCS12 identity under the ignored `.ci-signing/` directory, restricts
-it to the debug build type and records the choice in `build-metadata.json`
-(`signing`). The explicit CI fallback creates an equally temporary debug-only
-PKCS12 identity in that directory.
+commit in the app's 我的 tab. When `ANDROID_DEBUG_KEYSTORE_B64` is set,
+`ci/build_android.sh` converts that debug keystore to a temporary PKCS12
+identity under the ignored `.ci-signing/` directory, restricts it to the debug
+build type and records the choice in `build-metadata.json` (`signing`). Without
+it, the explicit CI fallback creates a temporary debug-only PKCS12 identity in
+the same directory, and that key is discarded with the job.
+
+Since 2026-10-18 the variable is set as a **protected, masked** project CI
+variable, and `v*` tags are protected so release tag pipelines receive it too.
+Only pipelines on protected refs (`main` and `v*` tags) receive it, so their
+APKs, including every published preview, are signed by one stable CI debug
+identity:
+- `build-metadata.json` `signing`: "Stable legacy CI debug identity";
+- certificate SHA-256 `5bec28281b4c1405f9ee47590c40665a24b0f984fc0d6b8854a3458e8db0a71d`
+  (`STABLE_CI_DEBUG` in [the release inventory](ANDROID_RELEASE_INVENTORY.json)).
+
+Merge-request and other unprotected pipelines do not receive the variable and
+still sign with a discarded ephemeral key, so their job-artifact APKs cannot
+update a preview in place. Previews published before the variable was set
+(through `v0.5.0-dev.4e4d2979`) were signed by ephemeral keys and cannot be
+updated in place either. Besides the CI variable, the private keystore is kept as
+`ci-debug.p12` (PKCS12, alias `androiddebugkey`, mode `0600`) in the owner's
+canonical signing directory `~/.config/gitlab-mobile/android-signing`. Never
+copy it into the repository, artifacts or prompts.
 
 An Android update requires the same application ID, a compatible signer and a
 `versionCode` at least as high as the installed build. A preview signed by an
