@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import os
+import re
 from pathlib import Path
 import secrets
 import shutil
@@ -64,7 +65,16 @@ def _write_properties(path: Path, keystore: Path, password: str, alias: str,
     path.chmod(0o600)
 
 
-def init_identity(destination: Path, *, keytool: str = 'keytool') -> None:
+DEFAULT_COMMON_NAME = 'GitLab Mobile Local Signing'
+_COMMON_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$')
+
+
+def init_identity(destination: Path, *, keytool: str = 'keytool',
+                  common_name: str = DEFAULT_COMMON_NAME) -> None:
+    """Creates a new PKCS12 identity. [common_name] tells identities apart
+    (the local development signer, a Play upload key); it is never a secret."""
+    if not _COMMON_NAME.fullmatch(common_name):
+        raise RuntimeError('The certificate common name may use letters, digits, space, ".", "_" and "-".')
     destination = destination.expanduser().resolve()
     if destination.exists():
         raise RuntimeError(
@@ -92,7 +102,7 @@ def init_identity(destination: Path, *, keytool: str = 'keytool') -> None:
                 '-storepass:env', 'GITLAB_MOBILE_KEYSTORE_PASSWORD',
                 '-keypass:env', 'GITLAB_MOBILE_KEYSTORE_PASSWORD',
                 '-alias', KEY_ALIAS, '-keyalg', 'RSA', '-keysize', '4096',
-                '-validity', '36500', '-dname', 'CN=GitLab Mobile Local Signing',
+                '-validity', '36500', '-dname', f'CN={common_name}',
             ], password)
             if not keystore.is_file():
                 raise RuntimeError('keytool did not create the requested PKCS12 keystore.')
@@ -332,6 +342,8 @@ def main() -> int:
     init = subparsers.add_parser('init')
     init.add_argument('--properties')
     init.add_argument('--keytool', default='keytool')
+    init.add_argument('--common-name', default=DEFAULT_COMMON_NAME,
+                      help='certificate CN, e.g. "GitLab Mobile Play Upload" for a Play upload key')
     configure = subparsers.add_parser('configure')
     configure.add_argument('gradle_file', type=Path)
     verify = subparsers.add_parser('verify')
@@ -346,7 +358,7 @@ def main() -> int:
     try:
         if args.command == 'init':
             target = properties_path(args.properties).parent
-            init_identity(target, keytool=args.keytool)
+            init_identity(target, keytool=args.keytool, common_name=args.common_name)
             print(f'Stable Android signing identity created at {target}.')
         elif args.command == 'configure':
             changed = configure_gradle(args.gradle_file)

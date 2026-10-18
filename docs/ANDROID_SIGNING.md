@@ -309,8 +309,10 @@ Since the GitLab release channel (`ci/build_android.sh`, mode
 flavor as a **release** build: `tool/android_signing.py` lets this identity
 sign release only when `CI_COMMIT_REF_PROTECTED=true`. The certificate is
 unchanged, so an installed debug preview signed by it updates in place to a
-release build with a higher `versionCode`. It is still the historical Android
-debug certificate, which Google Play rejects; it is not a Play upload key.
+release build with a higher `versionCode`. It must never become a Play key:
+its store password is the public `android` and project maintainers can read
+the keystore from the CI variable, so it is not protected well enough to be an
+app signing or upload key for a store listing.
 Unprotected pipelines keep the ephemeral fallback, which stays debug-only. The CI identity differs
 from `CURRENT_LOCAL`, `LEGACY_LOCAL` and `HISTORICAL_CI23`, and the local
 private identity is not copied into CI.
@@ -318,6 +320,84 @@ private identity is not copied into CI.
 CI debug APKs with a different signer cannot update locally signed APKs in place.
 Treat local development signing, CI preview signing and Play production signing
 as separate evidence lanes.
+
+## Restoring the stable CI key on another computer
+
+The `STABLE_CI_DEBUG` keystore exists in two places: the project CI variable
+`ANDROID_DEBUG_KEYSTORE_B64` (protected and masked, **not hidden**, so the
+owner can reveal it) and the owner's `ci-debug.p12` in the canonical directory.
+Losing both means previews signed by it can never be updated in place again:
+users would have to uninstall and lose local accounts and drafts.
+
+1. Copy it from one of the two places:
+   - **GitLab:** sign in as the owner. Open `aa22396584/gitlab-mobile` ›
+     Settings › CI/CD › Variables › `ANDROID_DEBUG_KEYSTORE_B64` › Reveal value,
+     and save the value to a file.
+   - **The owner's machine:** move `ci-debug.p12` over an encrypted channel,
+     such as a password manager or an encrypted drive. Never use chat or e-mail.
+2. If you copied the GitLab value, decode it:
+   `base64 -d < value.txt > ci-debug.p12`. Then delete the text file.
+3. Put the keystore in the canonical directory (`0700`) as `ci-debug.p12`, mode
+   `0600`. Never put it in the repository, artifacts, prompts, MRs or memory.
+4. Check the certificate before using it:
+
+   ```sh
+   keytool -list -v -storetype PKCS12 -keystore ~/.config/gitlab-mobile/android-signing/ci-debug.p12 \
+     -alias androiddebugkey -storepass android | grep 'SHA256:'
+   # SHA256: 5B:EC:28:28:1B:4C:14:05:F9:EE:47:59:0C:40:66:5A:24:B0:F9:84:FC:0F:6B:88:54:A3:45:8E:8D:B0:A7:1D
+   ```
+
+   Any other value is a different key: stop, and do not upload it to CI.
+
+Keep a third, offline copy, for example a password-manager attachment or an
+encrypted drive. Record only *where* it is, never its content.
+
+Do not mark the variable hidden while it is one of the copies, since a hidden
+variable cannot be revealed again. Do not rotate this key: a new key cannot
+update anything the old one signed.
+
+## Play upload key (planned, `NOT_RUN`)
+
+The `play` flavor is meant for Google Play App Signing. Google generates and
+keeps the **app signing key**; the owner signs each upload with an **upload
+key**. If an upload key is lost or leaked, Play Console support can reset it;
+an app signing key cannot be replaced.
+
+### Create the upload key
+
+Create it once, on the owner's machine:
+
+```sh
+python3 tool/android_signing.py init --common-name "GitLab Mobile Play Upload" \
+  --properties ~/.config/gitlab-mobile/play-upload/signing.properties
+```
+
+This writes a new PKCS12 key with a random password (`0700`/`0600`, refusing to
+overwrite). It is separate from the development signer and from
+`STABLE_CI_DEBUG`. Then:
+- Back the directory up to the password manager.
+- Record the certificate SHA-256 as `PLAY_UPLOAD` in
+  `ANDROID_RELEASE_INVENTORY.json`. Never record the key or its password.
+
+### Build the bundle
+
+```sh
+GITLAB_MOBILE_SIGNING_PROPERTIES=~/.config/gitlab-mobile/play-upload/signing.properties \
+  fvm flutter build appbundle --release --flavor play --build-number <versionCode>
+```
+
+Take `<versionCode>` above every published build: Play needs it to grow.
+
+### Before the first upload
+
+- **Package name:** both flavors share the application ID
+  `io.gitlabmobile.gitlab_mobile`, and Play makes it permanent. A phone holds
+  either the GitLab build or the Play build, and moving between them needs an
+  uninstall, because their signers differ.
+- **App signing:** choose Google-generated app signing. Record the app signing
+  and upload certificates that Play Console shows.
+- **CI:** keep the upload key out of CI until a Play publishing job is designed,
+  and then only as a protected, hidden variable.
 
 ## References
 
