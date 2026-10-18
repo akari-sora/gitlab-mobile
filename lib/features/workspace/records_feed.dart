@@ -66,6 +66,18 @@ class RecordsFeedState extends State<RecordsFeed> {
   List<Json> _shown = const [];
   List<String>? _sections;
   List<bool>? _derivedSections;
+
+  /// A pull-to-refresh shows its own spinner, so the bar stays hidden.
+  bool _pulling = false;
+
+  Future<void> _pullToRefresh() async {
+    _pulling = true;
+    try {
+      await controller.refresh();
+    } finally {
+      _pulling = false;
+    }
+  }
   @override
   void initState() { super.initState(); controller = RecordController(widget.load); unawaited(controller.refresh()); }
   @override
@@ -176,14 +188,17 @@ class RecordsFeedState extends State<RecordsFeed> {
     }
     final gutter = feedGutter(context);
     final before = <Widget>[
+      // The gap above the rows. A reload over loaded rows draws its bar inside
+      // it instead of taking layout, so the rows do not jump as it starts and
+      // ends; a pull-to-refresh shows only its own spinner.
+      SizedBox(height: 8, child: controller.loading && controller.items.isNotEmpty && !_pulling
+          ? const Center(child: LinearProgressIndicator(minHeight: 2)) : null),
       if (controller.loading && controller.items.isEmpty) const ListSkeleton(),
       if (!controller.loading && shown.isEmpty && controller.error == null && controller.next == null) EmptyState(
         controller.items.isEmpty ? widget.empty : (widget.filteredEmpty ?? widget.empty),
         icon: widget.emptyIcon,
         art: controller.items.isEmpty ? widget.emptyArt : null,
         detail: controller.items.isEmpty ? widget.emptyDetail : null),
-      if (controller.loading && controller.items.isNotEmpty)
-        const Padding(padding: EdgeInsets.only(bottom: 12), child: LinearProgressIndicator(minHeight: 2)),
     ];
     final after = <Widget>[
       if (widget.grouped && shown.isNotEmpty) const SizedBox(height: 12),
@@ -203,12 +218,12 @@ class RecordsFeedState extends State<RecordsFeed> {
             itemBuilder: (context, index) => withSection(context, index, Padding(
               padding: EdgeInsets.only(bottom: widget.itemSpacing), child: widget.itemBuilder(context, shown[index]))));
     final bottom = 16 + (widget.underShell ? 8 : 12) + MediaQuery.paddingOf(context).bottom;
-    final list = RefreshIndicator(onRefresh: controller.refresh, child: ScrollToTopOnSignal(controller: _scroll, child: CustomScrollView(
+    final list = RefreshIndicator(onRefresh: _pullToRefresh, child: ScrollToTopOnSignal(controller: _scroll, child: CustomScrollView(
       key: PageStorageKey(widget.storageId ?? widget.identity), controller: _scroll, physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         if (widget.topSlivers != null) ...widget.topSlivers!(context, controller),
         if (widget.leading != null) SliverToBoxAdapter(child: widget.leading!(context, controller)),
-        SliverPadding(padding: EdgeInsets.fromLTRB(gutter, 8, gutter, 0), sliver: SliverList.list(children: before)),
+        SliverPadding(padding: EdgeInsets.symmetric(horizontal: gutter), sliver: SliverList.list(children: before)),
         SliverPadding(padding: EdgeInsets.symmetric(horizontal: gutter), sliver: items),
         SliverPadding(padding: EdgeInsets.fromLTRB(gutter, 0, gutter, bottom), sliver: SliverList.list(children: after)),
       ],

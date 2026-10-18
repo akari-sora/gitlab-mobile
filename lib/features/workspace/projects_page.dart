@@ -479,22 +479,29 @@ class _ProjectsPageState extends State<ProjectsPage> {
     ]);
   }
 
+  /// Rows are rebuilt as they scroll back into view; a row's map is never
+  /// changed in place (patches replace it), so its parsed project is kept.
+  static final _parsed = Expando<Project>('project row');
+
   Widget _projectRow(BuildContext context, Json data, bool isTwoPane) {
-    final project = Project.fromJson(data);
+    final project = _parsed[data] ??= Project.fromJson(data);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final marked = project.markedForDeletionOn != null;
     final muted = marked ? scheme.onSurfaceVariant : null;
     final isSelected = isTwoPane && _selection.isSelected(project);
-    final namespace = project.path.split('/').take(project.path.split('/').length - 1).join('/');
+    final slash = project.path.lastIndexOf('/');
+    final namespace = slash < 0 ? '' : project.path.substring(0, slash);
     final stars = valueInt(data, 'star_count');
     final (visibilityLabel, visibilityIcon) = statusStyle(project.visibility ?? '');
     final secondary = theme.textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant);
     return SemanticButton(
       label: projectCardLabel(project, valueText(data, 'last_activity_at')),
       onTap: () => _open(project),
-      child: Material(
-        color: isSelected ? scheme.secondaryContainer : Colors.transparent,
+      // The feed's grouped surface provides the Material; a row only paints
+      // the selection.
+      child: Ink(
+        color: isSelected ? scheme.secondaryContainer : null,
         child: InkWell(onTap: () => _open(project), child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [

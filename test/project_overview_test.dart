@@ -125,6 +125,31 @@ void main() {
     expect(fixture.unhandled, isEmpty);
   });
 
+  testWidgets('a section slides in from the trailing edge and the overview from the leading edge', (tester) async {
+    _phone(tester);
+    final fixture = _OverviewFixture();
+    addTearDown(fixture.api.close);
+    await tester.pumpWidget(workspaceHost(ProjectPage(account: fixture.account, api: fixture.api, project: fixture.project)));
+    await settleNetworkWidgets(tester);
+    Offset slide(Finder inside) => tester.widget<SlideTransition>(find.ancestor(
+      of: inside, matching: find.byType(SlideTransition, skipOffstage: false)).first).position.value;
+
+    await tester.tap(find.text('議題'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 30));
+    expect(slide(find.byKey(const ValueKey('project-tab-body'))).dx, greaterThan(0));
+    await settleNetworkWidgets(tester);
+    expect(slide(find.byKey(const ValueKey('project-tab-body'))), Offset.zero);
+
+    await tester.tap(find.byKey(const ValueKey('project-open-overview')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 30));
+    expect(slide(find.byKey(const ValueKey('project-overview-name'))).dx, lessThan(0));
+    await settleNetworkWidgets(tester);
+    expect(slide(find.byKey(const ValueKey('project-overview-name'))), Offset.zero);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('rows for switched-off features are left out', (tester) async {
     _phone(tester);
     final fixture = _OverviewFixture()..features = {
