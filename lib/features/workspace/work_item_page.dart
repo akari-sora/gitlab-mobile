@@ -1576,7 +1576,8 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                     children: [
                       appBar,
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 2, 20, 10),
+                        // Aligned with the content below, clear of the app bar.
+                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [

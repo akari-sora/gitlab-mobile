@@ -742,7 +742,7 @@ class _PipelinePageState extends State<PipelinePage> {
         StatusBarInset(child: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         CollapsingChrome(visible: _chrome, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           appBar,
-          if (_data != null) Padding(padding: const EdgeInsets.fromLTRB(20, 0, 20, 10), child:
+          if (_data != null) Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 12), child:
             Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
               StatusBadge(valueText(_data!, 'status')),
               if (mergeRequestIidOfRef(valueText(_data!, 'ref')) case final iid?)
