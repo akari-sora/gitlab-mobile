@@ -474,22 +474,35 @@ class _ProjectsPageState extends State<ProjectsPage> {
     final gutter = feedGutter(context);
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (_opening) const LinearProgressIndicator(minHeight: 2),
-      SingleChildScrollView(scrollDirection: Axis.horizontal, padding: EdgeInsets.fromLTRB(gutter, 4, gutter, 0),
-        child: Row(children: [
-          for (var i = 0; i < 4; i++) Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(
-            label: Text(const ['我的專案', '星標', '所有可存取', '群組'][i]), selected: _scope == i,
-            showCheckmark: false, onSelected: (_) => setState(() => _scope = i))),
-          if (_scope != 3) PopupMenuButton<String>(
-            tooltip: '排序方式',
-            initialValue: _sort,
-            onSelected: (value) => setState(() => _sort = value),
-            itemBuilder: (_) => [
-              for (final entry in _sorts.entries)
-                CheckedPopupMenuItem(value: entry.key, checked: _sort == entry.key, child: Text(entry.value.$1)),
-            ],
-            child: Chip(avatar: const Icon(Icons.sort, size: 18), label: Text(_sorts[_sort]!.$1)),
-          ),
-        ])),
+      // The scopes scroll; the sort stays pinned at the end, where a narrow
+      // phone would otherwise push it off the edge.
+      Row(children: [
+        // Chips running under the sort fade out instead of being cut off.
+        Expanded(child: ShaderMask(
+          blendMode: BlendMode.dstIn,
+          shaderCallback: (rect) => LinearGradient(
+            stops: [0, (1 - 24 / rect.width).clamp(0, 1), 1],
+            colors: const [Color(0xFF000000), Color(0xFF000000), Color(0x00000000)],
+          ).createShader(rect),
+          child: SingleChildScrollView(scrollDirection: Axis.horizontal,
+            padding: EdgeInsets.fromLTRB(gutter, 4, _scope == 3 ? gutter : 24, 0),
+            child: Row(children: [
+              for (var i = 0; i < 4; i++) Padding(padding: EdgeInsets.only(right: i == 3 ? 0 : 8), child: ChoiceChip(
+                label: Text(const ['我的專案', '星標', '所有可存取', '群組'][i]), selected: _scope == i,
+                showCheckmark: false, onSelected: (_) => setState(() => _scope = i))),
+            ])),
+        )),
+        if (_scope != 3) Padding(padding: EdgeInsets.fromLTRB(0, 4, gutter, 0), child: PopupMenuButton<String>(
+          tooltip: '排序方式',
+          initialValue: _sort,
+          onSelected: (value) => setState(() => _sort = value),
+          itemBuilder: (_) => [
+            for (final entry in _sorts.entries)
+              CheckedPopupMenuItem(value: entry.key, checked: _sort == entry.key, child: Text(entry.value.$1)),
+          ],
+          child: Chip(avatar: const Icon(Icons.sort, size: 18), label: Text(_sorts[_sort]!.$1)),
+        )),
+      ]),
       if (_query.isEmpty && _recentProjects.isNotEmpty) ...[
         Padding(padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 6), child: Text('最近開啟',
           style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant))),

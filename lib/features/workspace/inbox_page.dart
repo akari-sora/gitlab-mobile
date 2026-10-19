@@ -502,22 +502,35 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
     return _feedView(context);
   }
 
-  Widget _filters(BuildContext context) => SingleChildScrollView(
-    scrollDirection: Axis.horizontal,
-    padding: EdgeInsets.fromLTRB(feedGutter(context), 6, feedGutter(context), 0),
-    child: Row(children: [
-      for (final filter in _TodoFilter.values) Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: ChoiceChip(
-          key: ValueKey('todo-filter-${filter.name}'),
-          label: Text(filter.label),
-          selected: _filter == filter,
-          showCheckmark: false,
-          onSelected: (_) => setState(() => _filter = filter),
+  /// Smaller, outlined chips, so they read as a refinement of the filled
+  /// 待辦 pill above rather than a second row of destinations.
+  Widget _filters(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: EdgeInsets.fromLTRB(feedGutter(context), 6, feedGutter(context), 0),
+      child: Row(children: [
+        for (final filter in _TodoFilter.values) Padding(
+          padding: const EdgeInsets.only(right: 6),
+          child: ChoiceChip(
+            key: ValueKey('todo-filter-${filter.name}'),
+            label: Text(filter.label),
+            selected: _filter == filter,
+            showCheckmark: false,
+            visualDensity: VisualDensity.compact,
+            materialTapTargetSize: MaterialTapTargetSize.padded,
+            labelStyle: theme.textTheme.labelLarge?.copyWith(
+              color: _filter == filter ? scheme.onSecondaryContainer : scheme.onSurfaceVariant),
+            backgroundColor: Colors.transparent,
+            selectedColor: scheme.secondaryContainer,
+            side: BorderSide(color: _filter == filter ? Colors.transparent : scheme.outlineVariant),
+            onSelected: (_) => setState(() => _filter = filter),
+          ),
         ),
-      ),
-    ]),
-  );
+      ]),
+    );
+  }
 
   Widget _feedView(BuildContext context) {
     final filtered = _filter != _TodoFilter.all;

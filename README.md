@@ -7,6 +7,11 @@
 
 A mobile-first Flutter client for Android and iOS. Independent third-party software, not an official GitLab application. The interface is Traditional Chinese and supports light/dark appearance and large text.
 
+## 2026-10-19 — smoother switches and polish
+
+- **No more flashing switches.** Changing destination, opening a section or an item and going back no longer blanks the screen for a frame; see the Motion note below.
+- **Polish.** Issue, merge request and pipeline headers line up with the content under them and no longer crowd the app bar. The inbox's reason filters are smaller outlined chips under the filled scope pills, and 探索 keeps its sort control on screen on narrow phones, with the scopes fading out beneath it.
+
 ## 2026-10-18 — updates, release builds, motion and inbox triage
 
 - **In-app updates.** Android builds come in two flavors.
