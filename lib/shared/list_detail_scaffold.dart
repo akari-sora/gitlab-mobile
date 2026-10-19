@@ -297,6 +297,10 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
   DetailFocus? _focus;
   bool _focused = false;
 
+  /// On a phone, the detail that was open, kept painted while it slides away
+  /// after the selection clears.
+  Widget? _leavingDetail;
+
   /// Pane widgets from earlier builds, reused while nothing their builders
   /// receive has changed. Chrome sliding in or out above or below this
   /// scaffold changes only its height, which re-runs the [LayoutBuilder] on
@@ -378,6 +382,7 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
     if (oldWidget.controller != widget.controller) {
       oldWidget.controller.removeListener(_onControllerChanged);
       widget.controller.addListener(_onControllerChanged);
+      _leavingDetail = null;
     }
     if (oldWidget.active != widget.active) {
       _isActive = widget.active ?? _isActive;
@@ -509,47 +514,49 @@ class _ListDetailScaffoldState<T> extends State<ListDetailScaffold<T>> {
                 ));
 
             Widget content;
+            // Only the phone layout slides a closed detail away.
+            if (_isTwoPane) _leavingDetail = null;
             if (!_isTwoPane) {
               // Compact 模式 (< 840 dp)：單欄切換
-              // 透過 Stack + Offstage 保留清單 subtree，避免 RecordsFeedState 與 RecordController 銷毀
-              content = Stack(
-                fit: StackFit.expand,
+              // 清單一直留在 subtree 中，避免 RecordsFeedState 與 RecordController 銷毀
+              // An opened item slides in over the list, and slides away again
+              // to uncover it; the list stays painted underneath meanwhile.
+              if (stableDetail != null) _leavingDetail = stableDetail;
+              final detail = stableDetail ?? _leavingDetail;
+              content = AnimatedIndexedStack(
+                key: const ValueKey('adaptive-compact-stack'),
+                index: selected == null ? 0 : 1,
+                sizing: StackFit.expand,
+                motion: (from, to) => to == 1 ? StackMotion.push : StackMotion.pop,
+                onSettled: () {
+                  if (mounted && widget.controller.selected == null && _leavingDetail != null) {
+                    setState(() => _leavingDetail = null);
+                  }
+                },
                 children: [
-                  Offstage(
-                    offstage: selected != null,
-                    child: ExcludeFocus(
+                  ExcludeFocus(
+                    excluding: selected != null,
+                    child: ExcludeSemantics(
                       excluding: selected != null,
-                      child: ExcludeSemantics(
-                        excluding: selected != null,
-                        child: TickerMode(
-                          enabled: selected == null,
-                          // Shared axis: an opened item slides in from the
-                          // trailing edge, and the list comes back from the
-                          // leading edge when it closes.
-                          child: RevealOnShow(
-                            shown: selected == null,
-                            style: RevealStyle.backward,
-                            child: MediaQuery(
-                              data: compactMediaQuery,
-                              child: listPane(false),
-                            ),
-                          ),
+                      child: TickerMode(
+                        enabled: selected == null,
+                        child: MediaQuery(
+                          data: compactMediaQuery,
+                          child: listPane(false),
                         ),
                       ),
                     ),
                   ),
-                  if (selected != null)
-                    Positioned.fill(
-                      child: KeyedSubtree(
-                        key: const ValueKey('adaptive-compact-detail'),
-                        child: RevealOnShow(
-                          shown: true,
-                          style: RevealStyle.forward,
-                          animateOnInsert: true,
-                          child: MediaQuery(
-                            data: compactMediaQuery,
-                            child: stableDetail!,
-                          ),
+                  if (detail == null)
+                    const SizedBox.shrink()
+                  else
+                    KeyedSubtree(
+                      key: const ValueKey('adaptive-compact-detail'),
+                      child: ExcludeFocus(
+                        excluding: selected == null,
+                        child: MediaQuery(
+                          data: compactMediaQuery,
+                          child: detail,
                         ),
                       ),
                     ),

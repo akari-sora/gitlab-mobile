@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -284,6 +285,16 @@ ThemeData appTheme(Brightness brightness, {ColorScheme? dynamicScheme, bool useD
     useMaterial3: true, brightness: brightness, colorScheme: scheme,
     extensions: [workshop],
     scaffoldBackgroundColor: canvas,
+    // Android's page transition fades the old page out over a backdrop that
+    // defaults to the surface colour, which flashes lighter (dark mode) or
+    // white (light mode) between two canvas-coloured pages. Use the canvas.
+    pageTransitionsTheme: PageTransitionsTheme(builders: {
+      TargetPlatform.android: PredictiveBackPageTransitionsBuilder(fallbackColor: canvas),
+      TargetPlatform.iOS: const CupertinoPageTransitionsBuilder(),
+      TargetPlatform.macOS: const CupertinoPageTransitionsBuilder(),
+      TargetPlatform.windows: const ZoomPageTransitionsBuilder(),
+      TargetPlatform.linux: const ZoomPageTransitionsBuilder(),
+    }),
     visualDensity: VisualDensity.standard,
     materialTapTargetSize: MaterialTapTargetSize.padded,
     splashFactory: InkSparkle.splashFactory,

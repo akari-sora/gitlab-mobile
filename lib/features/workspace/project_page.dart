@@ -796,37 +796,34 @@ class _ProjectPageState extends State<ProjectPage>
         ),
       ],
     );
-    // The overview comes back from the leading edge and a section enters from
-    // the trailing edge, the way a pushed page would.
-    Widget pane(bool shown, bool visited, Widget child, RevealStyle style) => RevealOnShow(
-          shown: shown,
-          style: style,
-          child: !visited
-              ? const SizedBox.shrink()
-              : TabActiveScope(
-                  isActive: parentActive && shown,
-                  child: ExcludeSemantics(
-                    excluding: !shown,
-                    child: TickerMode(
-                      enabled: shown,
-                      child: IgnorePointer(ignoring: !shown, child: child),
-                    ),
-                  ),
-                ),
-        );
+    Widget pane(bool shown, bool visited, Widget child) => !visited
+        ? const SizedBox.shrink()
+        : TabActiveScope(
+            isActive: parentActive && shown,
+            child: ExcludeSemantics(
+              excluding: !shown,
+              child: TickerMode(
+                enabled: shown,
+                child: IgnorePointer(ignoring: !shown, child: child),
+              ),
+            ),
+          );
     final page = Scaffold(
       body: NotificationListener<ScrollNotification>(
         onNotification: _chrome.handle,
         child: StatusBarInset(
           color: _overview ? heroColor : null,
           child: gestureSafe(
-            IndexedStack(
+            // A section slides in over the overview like a pushed page, and
+            // slides away again to uncover it.
+            AnimatedIndexedStack(
               key: const ValueKey('project-mode-stack'),
               index: _overview ? 0 : 1,
               sizing: StackFit.expand,
+              motion: (from, to) => to == 1 ? StackMotion.push : StackMotion.pop,
               children: [
-                pane(_overview, _overviewVisited, overview, RevealStyle.backward),
-                pane(!_overview, _sectionsVisited, sections, RevealStyle.forward),
+                pane(_overview, _overviewVisited, overview),
+                pane(!_overview, _sectionsVisited, sections),
               ],
             ),
           ),

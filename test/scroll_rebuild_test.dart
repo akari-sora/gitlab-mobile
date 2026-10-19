@@ -153,7 +153,7 @@ void main() {
       expect(resized, 3);
     });
 
-    testWidgets('on a phone an opened item slides in and the list slides back', (tester) async {
+    testWidgets('on a phone an opened item slides in over the list and slides away again', (tester) async {
       final controller = ListDetailController<String>();
       addTearDown(controller.dispose);
       await tester.pumpWidget(MaterialApp(home: SizedBox(width: 400, height: 600, child: ListDetailScaffold<String>(
@@ -162,23 +162,31 @@ void main() {
         detailBuilder: (context, item, twoPane, onBack) => Text('detail $item'),
         emptyBuilder: (context) => const SizedBox(),
       ))));
-      double dx(String text) => tester.widget<SlideTransition>(find.ancestor(
-        of: find.text(text, skipOffstage: false), matching: find.byType(SlideTransition, skipOffstage: false)).first,
+      Finder layer(String text) => find.ancestor(
+        of: find.text(text, skipOffstage: false), matching: find.byType(Offstage, skipOffstage: false)).first;
+      double dx(String text) => tester.widget<SlideTransition>(find.descendant(
+        of: layer(text), matching: find.byType(SlideTransition, skipOffstage: false), skipOffstage: false).first,
       ).position.value.dx;
+      bool painted(String text) => !tester.widget<Offstage>(layer(text)).offstage;
 
       controller.select('a');
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 30));
       expect(dx('detail a'), greaterThan(0), reason: 'the detail enters from the trailing edge');
+      expect(painted('list'), isTrue, reason: 'the list stays painted underneath');
+      expect(dx('list'), 0);
       await tester.pumpAndSettle();
       expect(dx('detail a'), 0);
+      expect(painted('list'), isFalse);
 
       controller.clear();
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 30));
-      expect(dx('list'), lessThan(0), reason: 'the list comes back from the leading edge');
-      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 60));
+      expect(painted('list'), isTrue, reason: 'the list is back in place at once');
       expect(dx('list'), 0);
+      expect(dx('detail a'), greaterThan(0), reason: 'the detail slides away over it');
+      await tester.pumpAndSettle();
+      expect(find.text('detail a', skipOffstage: false), findsNothing, reason: 'the closed detail leaves the tree');
     });
 
     testWidgets('a width change across the breakpoint rebuilds both panes', (tester) async {

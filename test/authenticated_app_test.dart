@@ -13,7 +13,6 @@ import 'package:gitlab_mobile/features/shell/app_shortcuts.dart';
 import 'package:gitlab_mobile/features/shell/appearance.dart';
 import 'package:gitlab_mobile/features/shell/authenticated_app.dart';
 import 'package:gitlab_mobile/features/shell/build_info.dart';
-import 'package:gitlab_mobile/shared/reveal_transition.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 import 'package:gitlab_mobile/features/workspace/ci_page.dart';
 import 'session_test.dart' show MemoryAccountStore, controllerFor;
@@ -45,7 +44,7 @@ void main() {
     shortcuts.dispose();
   });
 
-  testWidgets('switching destinations fades the new one in', (tester) async {
+  testWidgets('switching destinations fades the new one in over the old one', (tester) async {
     tester.view.devicePixelRatio = 1.0;
     tester.view.physicalSize = const Size(412, 900);
     addTearDown(tester.view.resetPhysicalSize);
@@ -62,22 +61,28 @@ void main() {
       AuthenticatedApp(session: session, appearance: appearance, shortcuts: shortcuts, buildInfoLoader: _shellBuildInfo),
     );
     await settleNetworkWidgets(tester);
-    // The destination's own fade-through, not a transition nested inside it
-    // (the list behind a detail has one too).
-    final pane = find.ancestor(
-      of: find.byKey(const Key('projectSearch'), skipOffstage: false),
-      matching: find.byWidgetPredicate(
-        (widget) => widget is RevealOnShow && widget.style == RevealStyle.fadeThrough, skipOffstage: false));
-    double opacity() => tester.widget<FadeTransition>(find.descendant(
-      of: pane, matching: find.byType(FadeTransition, skipOffstage: false)).first).opacity.value;
-    expect(opacity(), 1, reason: 'the hidden destination rests fully opaque');
+    // The shell's own layers, not the stacks nested inside a destination.
+    final shell = find.byKey(const ValueKey('shell-indexed-stack'));
+    // Looked up afresh each time: every rebuild makes new layer widgets.
+    Finder layer(int index) => find.byWidget(skipOffstage: false,
+      (tester.widget<Stack>(find.descendant(of: shell, matching: find.byType(Stack, skipOffstage: false),
+        skipOffstage: false).first).children.firstWhere((child) => child.key == ValueKey<int>(index))
+        as KeyedSubtree).child);
+    const home = 0, explore = 2;
+    double opacity(int pane) => tester.widget<FadeTransition>(find.descendant(
+      of: layer(pane), matching: find.byType(FadeTransition, skipOffstage: false), skipOffstage: false).first).opacity.value;
+    bool painted(int pane) => !tester.widget<Offstage>(layer(pane)).offstage;
+    expect(painted(explore), isFalse);
 
     await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('探索')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
-    expect(opacity(), inExclusiveRange(0, 1));
+    expect(opacity(explore), inExclusiveRange(0, 1));
+    expect(painted(home), isTrue, reason: 'Home stays painted underneath, so the background never shows');
+    expect(opacity(home), 1);
     await settleNetworkWidgets(tester);
-    expect(opacity(), 1);
+    expect(opacity(explore), 1);
+    expect(painted(home), isFalse);
     expect(tester.takeException(), isNull);
   });
 

@@ -98,6 +98,16 @@ void main() {
     expect(darkTheme.scaffoldBackgroundColor, dynamicDark.surface);
   });
 
+  test('page transitions fade over the canvas, not a lighter surface', () {
+    final dynamic = ColorScheme.fromSeed(seedColor: const Color(0xFF2E7D32));
+    for (final theme in [appTheme(Brightness.light), appTheme(Brightness.dark), appTheme(Brightness.light, dynamicScheme: dynamic)]) {
+      final android = theme.pageTransitionsTheme.builders[TargetPlatform.android];
+      expect(android, isA<PredictiveBackPageTransitionsBuilder>());
+      expect((android! as PredictiveBackPageTransitionsBuilder).fallbackColor, theme.scaffoldBackgroundColor);
+      expect(theme.pageTransitionsTheme.builders[TargetPlatform.iOS], isNotNull);
+    }
+  });
+
   test('registerBundledLicenses yields the JetBrains Mono OFL', () async {
     TestWidgetsFlutterBinding.ensureInitialized();
     registerBundledLicenses();
