@@ -675,19 +675,15 @@ class _MobileShellState extends State<_MobileShell> {
     }
   }
 
-  Widget _pane(int index, Widget child) => RevealOnShow(
-    shown: _selected == index,
-    style: RevealStyle.fadeThrough,
-    child: TabActiveScope(
-      isActive: _selected == index,
-      child: ScrollTopSignal(
-        notifier: _scrollTop[index],
-        child: ExcludeSemantics(
-          excluding: _selected != index,
-          child: TickerMode(
-            enabled: _selected == index,
-            child: IgnorePointer(ignoring: _selected != index, child: child),
-          ),
+  Widget _pane(int index, Widget child) => TabActiveScope(
+    isActive: _selected == index,
+    child: ScrollTopSignal(
+      notifier: _scrollTop[index],
+      child: ExcludeSemantics(
+        excluding: _selected != index,
+        child: TickerMode(
+          enabled: _selected == index,
+          child: IgnorePointer(ignoring: _selected != index, child: child),
         ),
       ),
     ),
@@ -1073,7 +1069,7 @@ class _MobileShellState extends State<_MobileShell> {
                                       },
                                       child: NotificationListener<ScrollNotification>(
                                       onNotification: useRail ? null : _chrome.handle,
-                                      child: IndexedStack(
+                                      child: AnimatedIndexedStack(
                                       key: const ValueKey('shell-indexed-stack'),
                                       index: _selected,
                                       children: [

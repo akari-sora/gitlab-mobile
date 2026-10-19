@@ -125,7 +125,7 @@ void main() {
     expect(fixture.unhandled, isEmpty);
   });
 
-  testWidgets('a section slides in from the trailing edge and the overview from the leading edge', (tester) async {
+  testWidgets('a section slides in over the overview and slides away to uncover it', (tester) async {
     _phone(tester);
     final fixture = _OverviewFixture();
     addTearDown(fixture.api.close);
@@ -144,7 +144,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('project-open-overview')));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 30));
-    expect(slide(find.byKey(const ValueKey('project-overview-name'))).dx, lessThan(0));
+    expect(slide(find.byKey(const ValueKey('project-tab-body'))).dx, greaterThan(0),
+      reason: 'the section leaves towards the trailing edge');
+    expect(slide(find.byKey(const ValueKey('project-overview-name'))), Offset.zero,
+      reason: 'the overview is already in place underneath');
     await settleNetworkWidgets(tester);
     expect(slide(find.byKey(const ValueKey('project-overview-name'))), Offset.zero);
     expect(tester.takeException(), isNull);
