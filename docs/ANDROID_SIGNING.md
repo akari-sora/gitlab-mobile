@@ -185,7 +185,8 @@ local paths and public download URLs only. It is not a private key backup.
 | `CI_EPHEMERAL_630E20D5` | `2740d039aee0c5d5839ff0f5f532b1cbf76ac0ca4452764239847e5e36d6bdc7` | none: generated inside CI job 17260932740 and discarded with it |
 | `CI_EPHEMERAL_A2EB7BA6` | `0a964b2c8938d9eaddd036d3c051d4c0ced5603ffa55e17b10e7903ba21e917e` | none: generated inside CI job 17264418104 and discarded with it |
 | `CI_EPHEMERAL_4E4D2979` | `21bf28fab5cc8b13fcebe097f4268de34178c5afefb9ac2896afdb5179e30484` | none: generated inside CI job 17265303483 and discarded with it |
-| `STABLE_CI_DEBUG` | `5bec28281b4c1405f9ee47590c40665a24b0f984fc0d6b8854a3458e8db0a71d` | CI variable `ANDROID_DEBUG_KEYSTORE_B64` (protected, masked); `ci-debug.p12`, reported present |
+| `STABLE_CI_DEBUG` | `5bec28281b4c1405f9ee47590c40665a24b0f984fc0d6b8854a3458e8db0a71d` | CI variable `ANDROID_DEBUG_KEYSTORE_B64` (protected, masked); `ci-debug.p12` and a 1Password copy, both reported present on 2026-10-19 |
+| `PLAY_UPLOAD` | `989e6da99b938cf071cd7d84fe86d7c002910ee7ba0281b9abeefd3ed7c0c7c4` | `~/.config/gitlab-mobile/play-upload/gitlab-mobile.p12` and two 1Password copies, reported present on 2026-10-19; never in CI |
 
 `LEGACY_LOCAL` is a host-generated historical debug key: the Android build
 tools create a separate debug key per host, so its certificate is specific to
@@ -338,16 +339,23 @@ as separate evidence lanes.
 
 ## Restoring the stable CI key on another computer
 
-The `STABLE_CI_DEBUG` keystore exists in two places: the project CI variable
-`ANDROID_DEBUG_KEYSTORE_B64` (protected and masked, **not hidden**, so the
-owner can reveal it) and the owner's `ci-debug.p12` in the canonical directory.
-Losing both means previews signed by it can never be updated in place again:
-users would have to uninstall and lose local accounts and drafts.
+The `STABLE_CI_DEBUG` keystore exists in three places:
+- the project CI variable `ANDROID_DEBUG_KEYSTORE_B64` (protected and masked,
+  **not hidden**, so the owner can reveal it);
+- the owner's `ci-debug.p12` in the canonical directory;
+- the owner's 1Password, vault `Agent`, Document item
+  "gitlab-mobile - CI Debug Keystore (ci-debug.p12)".
 
-1. Copy it from one of the two places:
+The owner's local agent reported the last two on 2026-10-19 with the
+certificate below; the cloud session cannot check them. Losing all three
+means previews signed by it can never be updated in place again: users would
+have to uninstall and lose local accounts and drafts.
+
+1. Copy it from one of the three places:
    - **GitLab:** sign in as the owner. Open `aa22396584/gitlab-mobile` ›
      Settings › CI/CD › Variables › `ANDROID_DEBUG_KEYSTORE_B64` › Reveal value,
      and save the value to a file.
+   - **1Password:** download the Document item named above.
    - **The owner's machine:** move `ci-debug.p12` over an encrypted channel,
      such as a password manager or an encrypted drive. Never use chat or e-mail.
 2. If you copied the GitLab value, decode it:
@@ -359,19 +367,18 @@ users would have to uninstall and lose local accounts and drafts.
    ```sh
    keytool -list -v -storetype PKCS12 -keystore ~/.config/gitlab-mobile/android-signing/ci-debug.p12 \
      -alias androiddebugkey -storepass android | grep 'SHA256:'
-   # SHA256: 5B:EC:28:28:1B:4C:14:05:F9:EE:47:59:0C:40:66:5A:24:B0:F9:84:FC:0F:6B:88:54:A3:45:8E:8D:B0:A7:1D
+   # SHA256: 5B:EC:28:28:1B:4C:14:05:F9:EE:47:59:0C:40:66:5A:24:B0:F9:84:FC:0D:6B:88:54:A3:45:8E:8D:B0:A7:1D
    ```
 
    Any other value is a different key: stop, and do not upload it to CI.
 
-Keep a third, offline copy, for example a password-manager attachment or an
-encrypted drive. Record only *where* it is, never its content.
+Record only *where* each copy is, never its content.
 
 Do not mark the variable hidden while it is one of the copies, since a hidden
 variable cannot be revealed again. Do not rotate this key: a new key cannot
 update anything the old one signed.
 
-## Play upload key (planned, `NOT_RUN`)
+## Play upload key
 
 The `play` flavor is meant for Google Play App Signing. Google generates and
 keeps the **app signing key**; the owner signs each upload with an **upload
@@ -393,6 +400,19 @@ overwrite). It is separate from the development signer and from
 - Back the directory up to the password manager.
 - Record the certificate SHA-256 as `PLAY_UPLOAD` in
   `ANDROID_RELEASE_INVENTORY.json`. Never record the key or its password.
+
+Done on 2026-10-19 by the owner's local agent (reported; the cloud session
+cannot check it):
+- `PLAY_UPLOAD`, `CN=GitLab Mobile Play Upload`, certificate SHA-256
+  `989e6da99b938cf071cd7d84fe86d7c002910ee7ba0281b9abeefd3ed7c0c7c4`
+  (`98:9E:6D:A9:9B:93:8C:F0:71:CD:7D:84:FE:86:D7:C0:02:91:0E:E7:BA:02:81:B9:AB:EE:FD:3E:D7:C0:C7:C4`).
+- `~/.config/gitlab-mobile/play-upload/gitlab-mobile.p12` and
+  `signing.properties` (directory `0700`, files `0600`).
+- Copies in the owner's 1Password, vault `Agent`, as Document items
+  "gitlab-mobile - Play Upload Keystore (play-upload/gitlab-mobile.p12)" and
+  "gitlab-mobile - Play Upload Signing Properties (play-upload/signing.properties)".
+
+Registering it in Play Console and the first bundle upload are `NOT_RUN`.
 
 ### Build the bundle
 
