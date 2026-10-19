@@ -124,8 +124,18 @@
       "cert_sha256": "5bec28281b4c1405f9ee47590c40665a24b0f984fc0d6b8854a3458e8db0a71d",
       "subject": "CN=GitLab Mobile CI Debug",
       "lane": "GitLab CI android_debug on protected refs (main, v* tags) through the protected, masked project variable ANDROID_DEBUG_KEYSTORE_B64: debug builds (stable-legacy-debug) from job 17265866220, gitlab-flavor release builds (stable-legacy-release) from main e2cc1411 job 17267033283",
-      "private_key_locator": "GitLab project 86648389 CI variable ANDROID_DEBUG_KEYSTORE_B64 (protected, masked, not hidden, verified 2026-10-18 without reading the value); owner backup ~/.config/gitlab-mobile/android-signing/ci-debug.p12 (PKCS12, alias androiddebugkey, mode 0600)",
-      "private_key_status": "PRESENT_AS_CI_VARIABLE; local backup reported by the owner's local agent on 2026-10-18, not verified from the cloud session",
+      "private_key_locator": "GitLab project 86648389 CI variable ANDROID_DEBUG_KEYSTORE_B64 (protected, masked, not hidden, verified 2026-10-18 without reading the value); owner backup ~/.config/gitlab-mobile/android-signing/ci-debug.p12 (PKCS12, alias androiddebugkey, directory 0700, file 0600); offline copy in the owner's 1Password vault Agent, Document item \"gitlab-mobile - CI Debug Keystore (ci-debug.p12)\"",
+      "private_key_status": "PRESENT_AS_CI_VARIABLE; the owner's local agent reported on 2026-10-19 that ci-debug.p12 has this certificate digest and that the 1Password copy exists; neither was checked from the cloud session",
+      "expected_for_ordinary_local_apks": false,
+      "covered_by_lineage": false
+    },
+    {
+      "id": "PLAY_UPLOAD",
+      "cert_sha256": "989e6da99b938cf071cd7d84fe86d7c002910ee7ba0281b9abeefd3ed7c0c7c4",
+      "subject": "CN=GitLab Mobile Play Upload",
+      "lane": "planned Google Play upload key for the play flavor (Play App Signing keeps the app signing key); not registered in Play Console and has signed nothing yet",
+      "private_key_locator": "~/.config/gitlab-mobile/play-upload/gitlab-mobile.p12 with signing.properties (directory 0700, files 0600), created with tool/android_signing.py init --common-name; copies in the owner's 1Password vault Agent, Document items \"gitlab-mobile - Play Upload Keystore (play-upload/gitlab-mobile.p12)\" and \"gitlab-mobile - Play Upload Signing Properties (play-upload/signing.properties)\"",
+      "private_key_status": "PRESENT_OWNER_HOST; reported by the owner's local agent on 2026-10-19 with this certificate digest, not checked from the cloud session; never in CI",
       "expected_for_ordinary_local_apks": false,
       "covered_by_lineage": false
     }
@@ -561,7 +571,8 @@
     "v0.5.0-dev.a2eb7ba6 CI preview (a2eb7ba6) is signed by a discarded ephemeral CI key; it cannot update CURRENT_LOCAL, LEGACY_LOCAL, HISTORICAL_CI23, CI_EPHEMERAL_ADCB7D4D, CI_EPHEMERAL_630E20D5 or any other install, and no later build can update it in place.",
     "v0.5.0-dev.4e4d2979 CI preview (4e4d2979) is signed by a discarded ephemeral CI key; it cannot update CURRENT_LOCAL, LEGACY_LOCAL, HISTORICAL_CI23, CI_EPHEMERAL_ADCB7D4D, CI_EPHEMERAL_630E20D5, CI_EPHEMERAL_A2EB7BA6 or any other install, and no later build can update it in place.",
     "STABLE_CI_DEBUG previews (from 1158ca89 / v0.5.0-dev.6c1a1033) cannot update any earlier preview or local build; moving a phone onto them needs one uninstall, which loses local accounts and drafts. Updates between STABLE_CI_DEBUG previews are expected but NOT_RUN on a device.",
-    "The STABLE_CI_DEBUG local backup (ci-debug.p12) was reported by the owner's local agent; its presence and digest were not checked from the cloud session.",
+    "The STABLE_CI_DEBUG local backup (ci-debug.p12) and its 1Password copy, and the PLAY_UPLOAD keystore and its 1Password copies, were reported by the owner's local agent on 2026-10-19 with the recorded certificate digests; the cloud session did not check them.",
+    "PLAY_UPLOAD is not registered in Play Console and has signed no bundle; the Play app signing certificate does not exist yet. Play listing and upload are NOT_RUN.",
     "STABLE_CI_DEBUG release builds (from e2cc1411; GitLab release v0.5.0-dev.2e08d616) use the same key as the STABLE_CI_DEBUG debug previews with higher versionCodes, so they are expected to update those in place. A device install, an in-place update from a debug preview, and an in-app download and install are all NOT_RUN."
   ]
 }
