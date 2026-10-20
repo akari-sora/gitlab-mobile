@@ -35,7 +35,16 @@ final class JobTrace {
     r'section_(start|end):(\d+):([A-Za-z0-9_.-]+)(?:\[collapsed=(true|false)\])?\r?',
   );
 
-  factory JobTrace.parse(String raw, {int maxLines = GitLabApi.maxTextLines}) {
+  /// GitLab Runner's line header: UTC time, stream number, `E`/`O`, then `+`
+  /// when the line continues the previous one. Like GitLab, a trace has
+  /// headers only when its first line does.
+  static final _timestampHeader = RegExp(
+    r'\d{4}-[01]\d-[0-3]\dT[0-2]\d:[0-5]\d:[0-5]\d\.\d{6}Z [0-9a-f]{2}[EO][+ ]',
+  );
+  static const _timestampHeaderLength = 32;
+
+  factory JobTrace.parse(String trace, {int maxLines = GitLabApi.maxTextLines}) {
+    final raw = _withoutTimestamps(trace);
     final plain = raw.replaceAll(_ansi, '');
     if (plain.isEmpty) return JobTrace.empty;
     // Newlines are a fast lower bound. Inline section markers can still split
@@ -67,6 +76,28 @@ final class JobTrace {
       sections: List.unmodifiable(sections),
     );
   }
+}
+
+/// [trace] without the runner's timestamp headers, with continued lines joined
+/// back, as GitLab's own log view shows it.
+String _withoutTimestamps(String trace) {
+  if (JobTrace._timestampHeader.matchAsPrefix(trace) == null) return trace;
+  final out = StringBuffer();
+  var start = 0;
+  var newlinePending = false;
+  while (start < trace.length) {
+    final newline = trace.indexOf('\n', start);
+    final end = newline < 0 ? trace.length : newline;
+    final header = JobTrace._timestampHeader.matchAsPrefix(trace, start) != null;
+    final continued = header &&
+        trace.codeUnitAt(start + JobTrace._timestampHeaderLength - 1) == 0x2B;
+    if (newlinePending && !continued) out.writeCharCode(0x0A);
+    out.write(trace.substring(header ? start + JobTrace._timestampHeaderLength : start, end));
+    newlinePending = newline >= 0;
+    start = end + 1;
+  }
+  if (newlinePending) out.writeCharCode(0x0A);
+  return out.toString();
 }
 
 final class JobTraceLine {
