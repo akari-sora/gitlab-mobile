@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -12,6 +13,7 @@ import 'package:video_player/video_player.dart';
 import '../core/failure.dart';
 import '../core/models.dart';
 import '../core/providers.dart';
+import '../features/auth/session_controller.dart';
 import '../l10n/l10n.dart';
 import 'artifact_storage.dart';
 import 'attachment_budget.dart';
@@ -46,7 +48,8 @@ String markdownMediaFailure(
 }
 
 bool markdownMediaNeedsDetails(Object error, MarkdownMediaSource source) =>
-    source.kind == MarkdownMediaSourceKind.repository &&
+    (source.kind == MarkdownMediaSourceKind.repository ||
+        source.kind == MarkdownMediaSourceKind.upload) &&
     error is ApiFailure &&
     const {
       FailureKind.invisible,
@@ -61,6 +64,7 @@ void openMarkdownMediaFailure(
   required VoidCallback onRetry,
   Account? account,
 }) {
+  account ??= _sessionAccount(context);
   unawaited(
     showModalBottomSheet<void>(
       context: context,
@@ -70,7 +74,11 @@ void openMarkdownMediaFailure(
           child: FailureNotice(
             failure,
             account: account,
-            resourceLabel: '${source.project}/${source.ref}/${source.path}',
+            resourceLabel: [
+              source.project,
+              source.ref,
+              source.path,
+            ].whereType<String>().join('/'),
             onRetry: () {
               Navigator.of(sheetContext).pop();
               onRetry();
@@ -83,6 +91,17 @@ void openMarkdownMediaFailure(
   );
 }
 
+Account? _sessionAccount(BuildContext context) {
+  try {
+    return ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(sessionProvider).active;
+  } catch (_) {
+    return null;
+  }
+}
+
 class MarkdownMediaImage extends StatefulWidget {
   const MarkdownMediaImage({
     super.key,
@@ -93,6 +112,7 @@ class MarkdownMediaImage extends StatefulWidget {
     this.width,
     this.height,
     this.account,
+    this.budgetScope,
   });
   final MarkdownMediaSource source;
   final MarkdownMediaLoader loader;
@@ -101,6 +121,7 @@ class MarkdownMediaImage extends StatefulWidget {
   final double? width;
   final double? height;
   final Account? account;
+  final Object? budgetScope;
 
   @override
   State<MarkdownMediaImage> createState() => _MarkdownMediaImageState();
@@ -112,7 +133,14 @@ class _MarkdownMediaImageState extends State<MarkdownMediaImage> {
   bool _capped = false;
   Object? _error;
   int _epoch = 0;
-  Object get _key => (widget.loader, widget.source.cacheKey);
+  Object get _key => (
+    widget.budgetScope ?? widget.loader,
+    widget.account?.key,
+    widget.account == null
+        ? null
+        : markdownMediaAccountGeneration(widget.account!),
+    widget.source.cacheKey,
+  );
 
   @override
   void initState() {
@@ -125,7 +153,9 @@ class _MarkdownMediaImageState extends State<MarkdownMediaImage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.source.uri != widget.source.uri ||
         oldWidget.loader != widget.loader ||
-        oldWidget.budget != widget.budget) {
+        oldWidget.budget != widget.budget ||
+        oldWidget.budgetScope != widget.budgetScope ||
+        oldWidget.account?.key != widget.account?.key) {
       _bytes = null;
       _error = null;
       unawaited(_load());
@@ -250,7 +280,7 @@ class _MarkdownMediaImageState extends State<MarkdownMediaImage> {
             : 320.0;
         final ratio = MediaQuery.devicePixelRatioOf(context);
         final decodeWidth =
-            ((widget.width ?? layoutWidth).clamp(1.0, layoutWidth) * ratio)
+            (math.min(widget.width ?? layoutWidth, layoutWidth) * ratio)
                 .round()
                 .clamp(64, 2048);
         final decodeHeight = (480 * ratio).round().clamp(64, 2048);
@@ -313,25 +343,63 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
   int _received = 0;
   int? _total;
   int _accountGeneration = 0;
+  String? _generationAccountKey;
+  SessionController? _session;
 
   @override
   void initState() {
     super.initState();
-    final account = widget.account;
+    final account = widget.account ?? _sessionAccount(context);
     if (account != null) {
+      _generationAccountKey = account.key;
       _accountGeneration = markdownMediaAccountGeneration(account);
     }
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _bindSession();
+  }
+
+  void _bindSession() {
+    SessionController? session;
+    if (widget.account == null) {
+      try {
+        session = ProviderScope.containerOf(
+          context,
+          listen: false,
+        ).read(sessionProvider);
+      } catch (_) {}
+    }
+    if (identical(session, _session)) return;
+    _session?.removeListener(_sessionChanged);
+    _session = session;
+    session?.addListener(_sessionChanged);
+  }
+
+  void _sessionChanged() {
+    final account = _session?.active;
+    if (widget.account != null || account?.key == _generationAccountKey) return;
+    unawaited(_release());
+    _generationAccountKey = account?.key;
+    _accountGeneration = account == null
+        ? 0
+        : markdownMediaAccountGeneration(account);
+    if (mounted) setState(() => _error = null);
+  }
+
+  @override
   void didUpdateWidget(MarkdownMediaCard oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _bindSession();
     if (oldWidget.source.uri != widget.source.uri ||
         oldWidget.loader != widget.loader ||
         oldWidget.account?.key != widget.account?.key) {
       unawaited(_release());
       _error = null;
-      final account = widget.account;
+      final account = widget.account ?? _sessionAccount(context);
+      _generationAccountKey = account?.key;
       if (account != null) {
         _accountGeneration = markdownMediaAccountGeneration(account);
       }
@@ -371,16 +439,14 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
       setState(() => _error = const ApiFailure(FailureKind.redirectBlocked));
       return;
     }
-    Account? account = widget.account;
-    if (account == null) {
-      try {
-        account = ProviderScope.containerOf(context, listen: false)
-            .read(sessionProvider).active;
-      } catch (_) {}
-    }
+    final account = widget.account ?? _sessionAccount(context);
     if (account == null) {
       setState(() => _error = const ApiFailure(FailureKind.invalidResponse));
       return;
+    }
+    if (_generationAccountKey != account.key) {
+      _generationAccountKey = account.key;
+      _accountGeneration = markdownMediaAccountGeneration(account);
     }
     final epoch = ++_epoch;
     final cancel = CancelToken();
@@ -555,6 +621,7 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
 
   @override
   void dispose() {
+    _session?.removeListener(_sessionChanged);
     unawaited(_release());
     super.dispose();
   }

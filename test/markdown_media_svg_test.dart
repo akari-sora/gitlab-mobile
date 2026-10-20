@@ -4,6 +4,8 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/shared/markdown_media_svg.dart';
+// ignore: depend_on_referenced_packages
+import 'package:vector_graphics_compiler/vector_graphics_compiler.dart';
 
 void main() {
   Uint8List bytes(String value) => Uint8List.fromList(utf8.encode(value));
@@ -17,6 +19,28 @@ void main() {
     view.setUint32(20, height);
     return base64Encode(data);
   }
+
+  String jpegData(int width, int height) => base64Encode(
+    Uint8List.fromList([
+      0xff,
+      0xd8,
+      0xff,
+      0xc0,
+      0x00,
+      0x0b,
+      0x08,
+      height >> 8,
+      height & 0xff,
+      width >> 8,
+      width & 0xff,
+      0x01,
+      0x01,
+      0x11,
+      0x00,
+      0xff,
+      0xd9,
+    ]),
+  );
 
   test('sanitises common Inkscape and Illustrator SVG exports', () async {
     final fixtures = [
@@ -149,6 +173,59 @@ void main() {
     },
   );
 
+  test('accepts renderer-compatible base64 whitespace and image/jpg', () async {
+    final png = pngData(10, 10);
+    final wrappedPng = '${png.substring(0, 8)}\n  ${png.substring(8)}';
+    final jpg = jpegData(10, 10);
+
+    expect(
+      await sanitizeMarkdownSvg(
+        bytes('<svg><image href="data:image/png;base64,$wrappedPng"/></svg>'),
+      ),
+      isNotNull,
+    );
+    expect(
+      await sanitizeMarkdownSvg(
+        bytes('<svg><image href="data:image/jpg;base64,$jpg"/></svg>'),
+      ),
+      isNotNull,
+    );
+  });
+
+  test('strips inert external anchor links but keeps badge contents', () async {
+    final result = await sanitizeMarkdownSvg(
+      bytes(
+        '<svg xmlns="http://www.w3.org/2000/svg"><a xlink:href="https://github.com/org/repo"><rect width="10" height="10" fill="red"/></a></svg>',
+      ),
+    );
+
+    final text = utf8.decode(result!);
+    expect(text, contains('<a'));
+    expect(text, contains('<rect'));
+    expect(text, isNot(contains('href=')));
+    expect(text, isNot(contains('https://')));
+  });
+
+  test(
+    'normalises quoted local paint references into compiled drawing commands',
+    () async {
+      final result = await sanitizeMarkdownSvg(
+        bytes('''
+<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 10 10">
+  <defs>
+    <linearGradient id="g"><stop stop-color="#ff0000"/><stop offset="1" stop-color="#0000ff"/></linearGradient>
+  </defs>
+  <rect width="10" height="10" fill="url(&quot;#g&quot;)"/>
+</svg>
+'''),
+      );
+      final sanitised = utf8.decode(result!);
+      expect(sanitised, contains('fill="url(#g)"'));
+      final instructions = parseWithoutOptimizers(sanitised);
+      expect(instructions.commands, isNotEmpty);
+    },
+  );
+
   test('validates references in every attribute and inline style', () async {
     final result = await sanitizeMarkdownSvg(
       bytes(
@@ -210,4 +287,15 @@ void main() {
       );
     },
   );
+
+  test('removes a large flat comment list within the bounded budget', () async {
+    final fixture = bytes('<svg>${'<!--x-->' * 99997}<rect/></svg>');
+    final watch = Stopwatch()..start();
+    final result = await sanitizeMarkdownSvg(fixture);
+    watch.stop();
+
+    expect(result, isNotNull);
+    expect(utf8.decode(result!), isNot(contains('<!--')));
+    expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+  });
 }

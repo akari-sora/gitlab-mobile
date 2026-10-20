@@ -53,23 +53,18 @@ final _rawStreamCancelled = Object();
 
 bool _safeRawFileCoordinate(String value) {
   if (value.isEmpty || value.contains(r'\')) return false;
-  try {
-    final decoded = Uri.decodeComponent(value);
-    return decoded.split('/').every(
-      (segment) =>
-          segment.isNotEmpty &&
-          segment != '.' &&
-          segment != '..' &&
-          !segment.contains(r'\') &&
-          !segment.runes.any(
-            (rune) => rune <= 0x1f || (rune >= 0x7f && rune <= 0x9f),
-          ),
-    );
-  } on FormatException {
-    return false;
-  } on ArgumentError {
-    return false;
-  }
+  return value
+      .split('/')
+      .every(
+        (segment) =>
+            segment.isNotEmpty &&
+            segment != '.' &&
+            segment != '..' &&
+            !segment.contains(r'\') &&
+            !segment.runes.any(
+              (rune) => rune <= 0x1f || (rune >= 0x7f && rune <= 0x9f),
+            ),
+      );
 }
 
 final _artifactCancelled = Object();

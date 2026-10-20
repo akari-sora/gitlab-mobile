@@ -535,6 +535,8 @@ void main() {
         description: 'account media cleanup',
       );
       await cleanup;
+      // File cleanup precedes the successful secure-store removal boundary.
+      markMarkdownMediaAccountRemoved(fixture.account);
       gate.complete(
         ResponseBody.fromBytes(
           [1],

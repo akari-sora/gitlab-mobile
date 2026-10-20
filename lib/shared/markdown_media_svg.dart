@@ -57,10 +57,12 @@ Uint8List? _sanitizeSvgBytes(Uint8List bytes, String contentType) {
     throw const ApiFailure(FailureKind.redirectBlocked);
   }
 
-  final removable = <XmlNode>[];
+  final removable = Set<XmlNode>.identity();
+  final removableParents = Set<XmlNode>.identity();
   for (final node in document.descendants) {
     if (node is XmlComment || node is XmlDoctype) {
       removable.add(node);
+      if (node.parent case final parent?) removableParents.add(parent);
       continue;
     }
     if (node is XmlProcessing) {
@@ -73,8 +75,10 @@ Uint8List? _sanitizeSvgBytes(Uint8List bytes, String contentType) {
     }
     if (name == 'style') {
       removable.add(node);
+      if (node.parent case final parent?) removableParents.add(parent);
       continue;
     }
+    final removableAttributes = Set<XmlAttribute>.identity();
     for (final attribute in node.attributes) {
       final attributeName = attribute.name.local.toLowerCase();
       final value = attribute.value.trim();
@@ -82,7 +86,10 @@ Uint8List? _sanitizeSvgBytes(Uint8List bytes, String contentType) {
         throw const ApiFailure(FailureKind.redirectBlocked);
       }
       if (attributeName == 'href') {
-        if (value.startsWith('data:') && name == 'image') {
+        if (name == 'a') {
+          removableAttributes.add(attribute);
+          continue;
+        } else if (value.startsWith('data:') && name == 'image') {
           _validateEmbeddedRaster(value);
         } else if (!value.startsWith('#')) {
           throw const ApiFailure(FailureKind.redirectBlocked);
@@ -92,10 +99,12 @@ Uint8List? _sanitizeSvgBytes(Uint8List bytes, String contentType) {
           (attributeName == 'style' && !_styleReferencesAreLocal(value))) {
         throw const ApiFailure(FailureKind.redirectBlocked);
       }
+      attribute.value = _normaliseLocalUrls(attribute.value);
     }
+    node.attributes.removeWhere(removableAttributes.contains);
   }
-  for (final node in removable.reversed) {
-    node.parent?.children.remove(node);
+  for (final parent in removableParents) {
+    parent.children.removeWhere(removable.contains);
   }
   return Uint8List.fromList(utf8.encode(document.toXmlString()));
 }
@@ -123,13 +132,16 @@ void _validateEmbeddedRaster(String uri) {
   final mediaType = metadata.substring(0, metadata.length - 7);
   if (mediaType != 'image/png' &&
       mediaType != 'image/jpeg' &&
+      mediaType != 'image/jpg' &&
       mediaType != 'image/gif' &&
       mediaType != 'image/webp') {
     throw const ApiFailure(FailureKind.redirectBlocked);
   }
   late final Uint8List data;
   try {
-    data = base64Decode(uri.substring(separator + 1));
+    data = base64Decode(
+      uri.substring(separator + 1).replaceAll(RegExp(r'\s'), ''),
+    );
   } on FormatException {
     throw const ApiFailure(FailureKind.invalidResponse);
   }
@@ -150,6 +162,7 @@ void _validateEmbeddedRaster(String uri) {
       'image/png' => _pngDimensions(data),
       'image/gif' => _gifDimensions(data),
       'image/jpeg' => _jpegDimensions(data),
+      'image/jpg' => _jpegDimensions(data),
       'image/webp' => _webpDimensions(data),
       _ => null,
     };
@@ -280,6 +293,42 @@ bool _urlsAreLocal(String text) {
     if (!value.startsWith('#')) return false;
     i = end + 1;
   }
+}
+
+String _normaliseLocalUrls(String text) {
+  StringBuffer? output;
+  var copiedUntil = 0;
+  var searchFrom = 0;
+  while (true) {
+    final start = _indexOfAsciiCaseInsensitive(text, 'url', searchFrom);
+    if (start < 0) break;
+    var cursor = _skipWhitespace(text, start + 3);
+    if (cursor >= text.length || text.codeUnitAt(cursor) != 0x28) {
+      searchFrom = start + 3;
+      continue;
+    }
+    final end = text.indexOf(')', cursor + 1);
+    if (end < 0) break;
+    var value = text.substring(cursor + 1, end).trim();
+    if (value.length >= 2 &&
+        ((value.startsWith('"') && value.endsWith('"')) ||
+            (value.startsWith("'") && value.endsWith("'")))) {
+      value = value.substring(1, value.length - 1).trim();
+    }
+    if (value.startsWith('#')) {
+      output ??= StringBuffer();
+      output
+        ..write(text.substring(copiedUntil, start))
+        ..write('url(')
+        ..write(value)
+        ..write(')');
+      copiedUntil = end + 1;
+    }
+    searchFrom = end + 1;
+  }
+  if (output == null) return text;
+  output.write(text.substring(copiedUntil));
+  return output.toString();
 }
 
 int _skipWhitespace(String text, int start) {

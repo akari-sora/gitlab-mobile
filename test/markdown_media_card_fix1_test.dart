@@ -4,6 +4,10 @@ import 'dart:io';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:gitlab_mobile/core/providers.dart';
+
+import 'session_test.dart' show MemoryAccountStore, controllerFor;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
@@ -115,6 +119,407 @@ void main() {
     resetMarkdownMediaStartup();
     VideoPlayerPlatform.instance = previousPlatform;
     if (root.existsSync()) root.deleteSync(recursive: true);
+  });
+
+  test('fix3 stale unregister cannot remove a new registration set', () async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    final old = registerMarkdownMediaCleanup(fixture.account, () async {});
+    old();
+    var cleaned = false;
+    registerMarkdownMediaCleanup(fixture.account, () async => cleaned = true);
+    old();
+    expect(markdownMediaCleanupCount(fixture.account), 1);
+    await clearAccountArtifacts(fixture.account);
+    expect(cleaned, isTrue);
+  });
+
+  test(
+    'fix3 registrations own independent callbacks even for the same method',
+    () {
+      final fixture = WorkspaceFixture();
+      addTearDown(fixture.api.close);
+      Future<void> cleanup() async {}
+      final first = registerMarkdownMediaCleanup(fixture.account, cleanup);
+      final second = registerMarkdownMediaCleanup(fixture.account, cleanup);
+      expect(markdownMediaCleanupCount(fixture.account), 2);
+      first();
+      first();
+      expect(markdownMediaCleanupCount(fixture.account), 1);
+      second();
+      expect(markdownMediaCleanupCount(fixture.account), 0);
+    },
+  );
+
+  for (final useActive in [false, true]) {
+    testWidgets(
+      'fix3 retained card retries after secure-store removal failure active=$useActive',
+      (tester) async {
+        final fixture = WorkspaceFixture();
+        addTearDown(fixture.api.close);
+        final store = MemoryAccountStore();
+        final session = controllerFor(
+          store,
+          FakeAdapter((_) => jsonResponse({'id': 7, 'username': 'developer'})),
+        );
+        addTearDown(session.dispose);
+        await session.initialize();
+        await tester.runAsync(
+          () => session.connect('https://example.com', 'synthetic-test-token'),
+        );
+        final account = session.active!;
+        if (useActive) await clearAccountArtifacts(account);
+        final adapter = FakeAdapter(
+          (_) => ResponseBody.fromBytes(
+            [1],
+            200,
+            headers: {
+              'content-type': ['video/mp4'],
+            },
+          ),
+        );
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [sessionProvider.overrideWithValue(session)],
+            child: _host(
+              MarkdownMediaCard(
+                source: MarkdownMediaSource(
+                  kind: MarkdownMediaSourceKind.external,
+                  uri: Uri.parse('https://media.example/video.mp4'),
+                  filename: 'video.mp4',
+                ),
+                loader: MarkdownMediaLoader(
+                  external: Dio()..httpClientAdapter = adapter,
+                ),
+                account: useActive ? null : account,
+              ),
+            ),
+          ),
+        );
+        await clearAccountArtifacts(account);
+        store.rejectWrite = true;
+        await session.remove(account);
+        expect(session.accounts.single.key, account.key);
+        expect(session.active?.key, account.key);
+        store.rejectWrite = false;
+        await tester.tap(find.byTooltip(l10n.markdownMediaPlay));
+        await settleNetworkWidgets(tester);
+        expect(adapter.requests, hasLength(1));
+        expect(platform.calls, contains('play:0'));
+      },
+    );
+  }
+
+  testWidgets('fix3 account-null card starts at active account generation', (
+    tester,
+  ) async {
+    final store = MemoryAccountStore();
+    final session = controllerFor(
+      store,
+      FakeAdapter((_) => jsonResponse({'id': 7, 'username': 'developer'})),
+    );
+    addTearDown(session.dispose);
+    await session.initialize();
+    await tester.runAsync(
+      () => session.connect('https://example.com', 'synthetic-test-token'),
+    );
+    final account = session.active!;
+    await clearAccountArtifacts(account);
+    await session.remove(account);
+    await tester.runAsync(
+      () => session.connect('https://example.com', 'synthetic-test-token'),
+    );
+    final adapter = FakeAdapter(
+      (_) => ResponseBody.fromBytes(
+        [1],
+        200,
+        headers: {
+          'content-type': ['video/mp4'],
+        },
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sessionProvider.overrideWithValue(session)],
+        child: _host(
+          MarkdownMediaCard(
+            source: MarkdownMediaSource(
+              kind: MarkdownMediaSourceKind.external,
+              uri: Uri.parse('https://media.example/video.mp4'),
+              filename: 'video.mp4',
+            ),
+            loader: MarkdownMediaLoader(
+              external: Dio()..httpClientAdapter = adapter,
+            ),
+            account: null,
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byTooltip(l10n.markdownMediaPlay));
+    await settleNetworkWidgets(tester);
+    expect(adapter.requests, hasLength(1));
+    expect(platform.calls, contains('play:0'));
+  });
+
+  testWidgets('fix3 old delayed attempt cannot unregister the new player', (
+    tester,
+  ) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    await clearStaleMarkdownMedia();
+    final gate = Completer<Directory>();
+    var lookups = 0;
+    artifactStorageRoot = () =>
+        ++lookups == 1 ? gate.future : Future.value(root);
+    final adapter = FakeAdapter(
+      (_) => ResponseBody.fromBytes(
+        [1],
+        200,
+        headers: {
+          'content-type': ['video/mp4'],
+        },
+      ),
+    );
+    final loader = MarkdownMediaLoader(
+      external: Dio()..httpClientAdapter = adapter,
+    );
+    Future<void> mount(String name) => tester.pumpWidget(
+      _host(
+        MarkdownMediaCard(
+          source: MarkdownMediaSource(
+            kind: MarkdownMediaSourceKind.external,
+            uri: Uri.parse('https://media.example/$name.mp4'),
+            filename: '$name.mp4',
+          ),
+          loader: loader,
+          account: fixture.account,
+        ),
+      ),
+    );
+    await mount('old');
+    await tester.tap(find.byTooltip(l10n.markdownMediaPlay));
+    await tester.pump();
+    await mount('new');
+    await tester.tap(find.byTooltip(l10n.markdownMediaPlay));
+    await settleNetworkWidgets(tester);
+    expect(platform.calls, contains('play:0'));
+    gate.complete(root);
+    await settleNetworkWidgets(tester);
+    expect(markdownMediaCleanupCount(fixture.account), 1);
+    var cleaned = false;
+    final cleanup = clearAccountArtifacts(fixture.account)
+        .then((_) => cleaned = true);
+    await pumpUntil(tester, () => cleaned);
+    await cleanup;
+    expect(platform.calls, contains('dispose:0'));
+    expect(root.listSync(recursive: true).whereType<File>(), isEmpty);
+  });
+
+  testWidgets(
+    'fix3 committed removal cleans a player started after initial cleanup',
+    (tester) async {
+      final store = MemoryAccountStore();
+      final session = controllerFor(
+        store,
+        FakeAdapter((_) => jsonResponse({'id': 7, 'username': 'developer'})),
+      );
+      addTearDown(session.dispose);
+      await session.initialize();
+      await tester.runAsync(
+        () => session.connect('https://example.com', 'synthetic-test-token'),
+      );
+      final account = session.active!;
+      await clearAccountArtifacts(account);
+      final adapter = FakeAdapter(
+        (_) => ResponseBody.fromBytes(
+          [1],
+          200,
+          headers: {
+            'content-type': ['video/mp4'],
+          },
+        ),
+      );
+      await tester.pumpWidget(
+        _host(
+          MarkdownMediaCard(
+            source: MarkdownMediaSource(
+              kind: MarkdownMediaSourceKind.external,
+              uri: Uri.parse('https://media.example/video.mp4'),
+              filename: 'video.mp4',
+            ),
+            loader: MarkdownMediaLoader(
+              external: Dio()..httpClientAdapter = adapter,
+            ),
+            account: account,
+          ),
+        ),
+      );
+      await tester.tap(find.byTooltip(l10n.markdownMediaPlay));
+      await settleNetworkWidgets(tester);
+      expect(platform.calls, contains('play:0'));
+      var removed = false;
+      final removal = session.remove(account).then((_) => removed = true);
+      await pumpUntil(tester, () => removed);
+      await removal;
+      expect(session.accounts, isEmpty);
+      expect(platform.calls, contains('dispose:0'));
+      expect(root.listSync(recursive: true).whereType<File>(), isEmpty);
+      await tester.tap(find.byTooltip(l10n.markdownMediaPlay));
+      await settleNetworkWidgets(tester);
+      expect(adapter.requests, hasLength(1));
+    },
+  );
+
+  testWidgets('fix3 account-null player releases when active account changes', (
+    tester,
+  ) async {
+    final store = MemoryAccountStore();
+    var user = 7;
+    final session = controllerFor(
+      store,
+      FakeAdapter((_) => jsonResponse({'id': user, 'username': 'developer'})),
+    );
+    addTearDown(session.dispose);
+    await session.initialize();
+    await tester.runAsync(
+      () => session.connect('https://example.com', 'synthetic-test-token'),
+    );
+    final adapter = FakeAdapter(
+      (_) => ResponseBody.fromBytes(
+        [1],
+        200,
+        headers: {
+          'content-type': ['video/mp4'],
+        },
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [sessionProvider.overrideWithValue(session)],
+        child: _host(
+          MarkdownMediaCard(
+            source: MarkdownMediaSource(
+              kind: MarkdownMediaSourceKind.external,
+              uri: Uri.parse('https://media.example/video.mp4'),
+              filename: 'video.mp4',
+            ),
+            loader: MarkdownMediaLoader(
+              external: Dio()..httpClientAdapter = adapter,
+            ),
+            account: null,
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byTooltip(l10n.markdownMediaPlay));
+    await settleNetworkWidgets(tester);
+    expect(platform.calls, contains('play:0'));
+    user = 8;
+    await tester.runAsync(
+      () => session.connect('https://example.com', 'synthetic-other-token'),
+    );
+    await settleNetworkWidgets(tester);
+    expect(session.active?.user.id, 8);
+    expect(platform.calls, contains('dispose:0'));
+    expect(root.listSync(recursive: true).whereType<File>(), isEmpty);
+    expect(
+      markdownMediaCleanupCount(
+        store.accounts.firstWhere((a) => a.user.id == 7),
+      ),
+      0,
+    );
+  });
+
+  for (final superseded in [false, true]) {
+    testWidgets(
+      'fix3 cards mounted during held removal stay fenced superseded=$superseded',
+      (tester) async {
+        final store = MemoryAccountStore();
+        final session = controllerFor(
+          store,
+          FakeAdapter((_) => jsonResponse({'id': 7, 'username': 'developer'})),
+        );
+        addTearDown(session.dispose);
+        await session.initialize();
+        await tester.runAsync(
+          () => session.connect('https://example.com', 'synthetic-test-token'),
+        );
+        final account = session.active!;
+        final gate = Completer<void>();
+        final saves = store.accountSaves;
+        store.holdAccountSave = gate;
+        var removed = false;
+        final removal = session.remove(account).then((_) => removed = true);
+        await pumpUntil(tester, () => store.accountSaves > saves);
+        final adapter = FakeAdapter(
+          (_) => ResponseBody.fromBytes(
+            [1],
+            200,
+            headers: {
+              'content-type': ['video/mp4'],
+            },
+          ),
+        );
+        await tester.pumpWidget(
+          _host(
+            MarkdownMediaCard(
+              source: MarkdownMediaSource(
+                kind: MarkdownMediaSourceKind.external,
+                uri: Uri.parse('https://media.example/video.mp4'),
+                filename: 'video.mp4',
+              ),
+              loader: MarkdownMediaLoader(
+                external: Dio()..httpClientAdapter = adapter,
+              ),
+              account: account,
+            ),
+          ),
+        );
+        await tester.tap(find.byTooltip(l10n.markdownMediaPlay));
+        await settleNetworkWidgets(tester);
+        expect(adapter.requests, isEmpty);
+        if (superseded) await session.endSession();
+        gate.complete();
+        await pumpUntil(tester, () => removed);
+        await removal;
+        expect(store.accounts, isEmpty);
+        await tester.tap(find.byTooltip(l10n.markdownMediaPlay));
+        await settleNetworkWidgets(tester);
+        expect(adapter.requests, isEmpty);
+        expect(platform.sources, isEmpty);
+        expect(root.listSync(recursive: true).whereType<File>(), isEmpty);
+      },
+    );
+  }
+
+  testWidgets('fix3 upload failure label omits absent ref', (tester) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    await tester.pumpWidget(
+      _host(
+        Builder(
+          builder: (context) => TextButton(
+            onPressed: () => openMarkdownMediaFailure(
+              context,
+              const ApiFailure(FailureKind.invisible),
+              source: const MarkdownMediaSource(
+                kind: MarkdownMediaSourceKind.upload,
+                project: '42',
+                path: 'secret/clip.mp4',
+              ),
+              onRetry: () {},
+              account: fixture.account,
+            ),
+            child: const Text('open'),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    final notice = tester.widget<FailureNotice>(find.byType(FailureNotice));
+    expect(notice.resourceLabel, '42/secret/clip.mp4');
   });
 
   testWidgets('failed account cleanup lets the retained card retry', (

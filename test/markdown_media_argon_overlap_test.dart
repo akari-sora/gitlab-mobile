@@ -2,12 +2,10 @@ import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/attachment_budget.dart';
 import 'package:gitlab_mobile/shared/markdown_media.dart';
-import 'package:gitlab_mobile/shared/markdown_media_html.dart';
 import 'package:gitlab_mobile/shared/markdown_media_source.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
 
@@ -41,16 +39,6 @@ String _renderedText(WidgetTester tester) => tester
     .widgetList<RichText>(find.byType(RichText))
     .map((widget) => widget.text.toPlainText())
     .join('\n');
-
-final class _CodeCounter extends SyntaxHighlighter {
-  var count = 0;
-
-  @override
-  TextSpan format(String source) {
-    count++;
-    return TextSpan(text: source);
-  }
-}
 
 void main() {
   testWidgets('Argon 1 exact absolute media inputs render once', (
@@ -147,16 +135,7 @@ void main() {
           findsOneWidget,
         );
 
-        final highlighter = _CodeCounter();
-        await tester.pumpWidget(
-          _host(
-            MarkdownBody(
-              data: preprocessMarkdownMedia(markdown),
-              syntaxHighlighter: highlighter,
-            ),
-          ),
-        );
-        expect(highlighter.count, 0);
+        expect(_renderedText(tester), isNot(contains('<$media')));
       });
     }
   }

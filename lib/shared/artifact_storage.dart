@@ -63,7 +63,7 @@ Future<Directory> attachmentAttemptDirectory(Account account, int projectId) asy
 Future<void>? _mediaStartup;
 int _mediaAttempt = 0;
 final _mediaAccountGenerations = <String, int>{};
-final _mediaRemovingAccounts = <String>{};
+final _mediaRemovingAccounts = <String, int>{};
 final _mediaRemovedGenerations = <String, int>{};
 final _mediaCleanups = <String, Set<Future<void> Function()>>{};
 
@@ -77,7 +77,7 @@ int markdownMediaAccountGeneration(Account account) => _mediaAccountGenerations[
 /// account that was kept.
 int usableMarkdownMediaAccountGeneration(Account account, {required int generation}) {
   final removedGeneration = _mediaRemovedGenerations[account.key];
-  if (_mediaRemovingAccounts.contains(account.key) ||
+  if (_mediaRemovingAccounts.containsKey(account.key) ||
       (removedGeneration != null && generation < removedGeneration)) {
     throw const ApiFailure(FailureKind.cancelled);
   }
@@ -87,10 +87,18 @@ int usableMarkdownMediaAccountGeneration(Account account, {required int generati
 /// Account removal first cancels/disposes live players, then removes their files.
 void Function() registerMarkdownMediaCleanup(Account account, Future<void> Function() cleanup) {
   final callbacks = _mediaCleanups.putIfAbsent(account.key, () => {});
-  callbacks.add(cleanup);
+  // One registration owns one wrapper, even when attempts share a method.
+  Future<void> ownedCleanup() => cleanup();
+  callbacks.add(ownedCleanup);
+  var registered = true;
   return () {
-    callbacks.remove(cleanup);
-    if (callbacks.isEmpty) _mediaCleanups.remove(account.key);
+    if (!registered) return;
+    registered = false;
+    callbacks.remove(ownedCleanup);
+    if (callbacks.isEmpty &&
+        identical(_mediaCleanups[account.key], callbacks)) {
+      _mediaCleanups.remove(account.key);
+    }
   };
 }
 
@@ -110,7 +118,7 @@ Future<Directory> markdownMediaDirectory(Account account, {int? generation}) asy
   final expected = generation ?? markdownMediaAccountGeneration(account);
   await clearStaleMarkdownMedia();
   final root = await artifactStorageRoot();
-  if (_mediaRemovingAccounts.contains(account.key) ||
+  if (_mediaRemovingAccounts.containsKey(account.key) ||
       expected != markdownMediaAccountGeneration(account)) {
     throw const ApiFailure(FailureKind.cancelled);
   }
@@ -153,13 +161,38 @@ String attachmentDownloadFileName(String name, {String fallback = 'attachment.bi
 /// is removed best-effort and cannot abort removal.
 Future<void> clearAccountArtifacts(Account account) async {
   _mediaAccountGenerations[account.key] = markdownMediaAccountGeneration(account) + 1;
-  _mediaRemovingAccounts.add(account.key);
+  final release = suspendMarkdownMediaAccount(account);
   try {
     await _clearAccountArtifacts(account);
-    _mediaRemovedGenerations[account.key] = markdownMediaAccountGeneration(account);
   } finally {
-    _mediaRemovingAccounts.remove(account.key);
+    release();
   }
+}
+
+/// Holds the removal fence across file cleanup and secure-store commit/rollback.
+/// Nested cleanup owns a separate lease and cannot release the caller's fence.
+void Function() suspendMarkdownMediaAccount(Account account) {
+  final key = account.key;
+  _mediaRemovingAccounts[key] = (_mediaRemovingAccounts[key] ?? 0) + 1;
+  var held = true;
+  return () {
+    if (!held) return;
+    held = false;
+    final remaining = (_mediaRemovingAccounts[key] ?? 1) - 1;
+    if (remaining == 0) {
+      _mediaRemovingAccounts.remove(key);
+    } else {
+      _mediaRemovingAccounts[key] = remaining;
+    }
+  };
+}
+
+/// Permanently fences retained cards only once secure account removal commits.
+void markMarkdownMediaAccountRemoved(Account account) {
+  // Cards mounted during the removal lease also belong to the removed epoch.
+  final next = markdownMediaAccountGeneration(account) + 1;
+  _mediaAccountGenerations[account.key] = next;
+  _mediaRemovedGenerations[account.key] = next;
 }
 
 Future<void> _clearAccountArtifacts(Account account) async {

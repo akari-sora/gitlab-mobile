@@ -34,6 +34,51 @@ FakeAdapter _images() => FakeAdapter(
 );
 
 void main() {
+  testWidgets('fix3 remount three times preserves two-slot image budget', (
+    tester,
+  ) async {
+    final adapter = _images();
+    final client = Dio()..httpClientAdapter = adapter;
+    final budget = AttachmentBudget(maxImages: 2);
+    for (var mount = 0; mount < 3; mount++) {
+      await tester.pumpWidget(
+        _host(
+          MarkdownView(
+            '![logo](https://images.example/logo.png)',
+            budget: budget,
+            externalMediaClient: client,
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      expect(find.byType(Image), findsOneWidget, reason: 'mount $mount');
+      expect(adapter.requests, hasLength(1), reason: 'mount $mount');
+      await tester.pumpWidget(const SizedBox());
+    }
+  });
+
+  for (final width in [0.0, 0.5]) {
+    testWidgets('fix3 image decode accepts layout width $width', (
+      tester,
+    ) async {
+      final adapter = _images();
+      await tester.pumpWidget(
+        _host(
+          SizedBox(
+            width: width,
+            child: MarkdownView(
+              '![tiny](https://images.example/tiny.png)',
+              externalMediaClient: Dio()..httpClientAdapter = adapter,
+            ),
+          ),
+        ),
+      );
+      await settleNetworkWidgets(tester);
+      expect(tester.takeException(), isNull);
+      expect(find.byType(Image), findsOneWidget);
+    });
+  }
+
   testWidgets('text revisions reuse loader cache and two image slots', (
     tester,
   ) async {

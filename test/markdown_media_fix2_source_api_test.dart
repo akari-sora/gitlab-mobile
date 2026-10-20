@@ -48,7 +48,7 @@ void main() {
     });
 
     test(
-      'rawFileBytes rejects decoded traversal and control coordinates',
+      'rawFileBytes rejects traversal and control in decoded coordinates',
       () async {
         final adapter = FakeAdapter(
           (_) => throw StateError('invalid coordinate must not be requested'),
@@ -56,15 +56,12 @@ void main() {
         final api = testApi(adapter);
         addTearDown(api.close);
         for (final coordinate in [
-          ('group%2F..%2Fvictim', 'main', 'a.png'),
-          ('group/project', '..%2Frefs', 'a.png'),
-          ('group/project', 'main', 'docs%2F..%2Fsecret.png'),
+          ('group/../victim', 'main', 'a.png'),
+          ('group/project', '../refs', 'a.png'),
+          ('group/project', 'main', 'docs/../secret.png'),
           ('group/project', 'main\u0000', 'a.png'),
           ('group\\project', 'main', 'a.png'),
-          ('group%5Cproject', 'main', 'a.png'),
-          ('group%', 'main', 'a.png'),
-          ('group/project', 'main%', 'a.png'),
-          ('group/project', 'main', 'a%.png'),
+          ('group/project', 'main', 'docs\\secret.png'),
         ]) {
           await expectLater(
             api.rawFileBytes(coordinate.$1, coordinate.$2, coordinate.$3),

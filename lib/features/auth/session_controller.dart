@@ -7,6 +7,7 @@ import '../../core/models.dart';
 import '../../core/oauth.dart';
 import 'account_store.dart';
 import '../../shared/resume_target.dart';
+import '../../shared/artifact_storage.dart';
 
 import '../../l10n/l10n.dart';
 typedef ApiFactory =
@@ -403,6 +404,10 @@ final class SessionController extends ChangeNotifier {
       source = null;
     }
     if (source == null || source.credential is! OAuthCredential) return;
+    // A pending removal has already staged this identity out of the list.
+    // A late credential refresh must not reintroduce it before the save.
+    final sourceKey = source.key;
+    if (!_accounts.any((account) => account.key == sourceKey)) return;
     final updated = Account(
       instance: source.instance,
       user: source.user,
@@ -442,12 +447,13 @@ final class SessionController extends ChangeNotifier {
   /// Account-list writes run one at a time. Each write snapshots [_accounts]
   /// when it actually starts, so a stale pre-activation rotation cannot
   /// overwrite a newer list that landed while an older save was in flight.
-  /// A later call skips an earlier write that has not started.
-  Future<void> _enqueueAccountSave() {
+  /// A later call skips an earlier write that has not started, except removal
+  /// writes that need a confirmed snapshot before releasing their cleanup fence.
+  Future<void> _enqueueAccountSave({void Function(List<Account>)? onSaved}) {
     final serial = ++_accountsSerial;
     final result = _accountsIdle
-        ? _writeAccounts(serial)
-        : _accountsTail.then((_) => _writeAccounts(serial));
+        ? _writeAccounts(serial, onSaved: onSaved)
+        : _accountsTail.then((_) => _writeAccounts(serial, onSaved: onSaved));
     _accountsIdle = false;
     final tail = result.catchError((Object _) => Future<void>.value());
     _accountsTail = tail;
@@ -459,10 +465,14 @@ final class SessionController extends ChangeNotifier {
     return result;
   }
 
-  Future<void> _writeAccounts(int serial) async {
-    if (serial != _accountsSerial) return;
+  Future<void> _writeAccounts(
+    int serial, {
+    void Function(List<Account>)? onSaved,
+  }) async {
+    if (serial != _accountsSerial && onSaved == null) return;
     final snapshot = List<Account>.of(_accounts);
     await store.save(snapshot);
+    onSaved?.call(snapshot);
   }
 
   void _releaseCandidate(GitLabApi? candidate, int ticket) {
@@ -639,8 +649,19 @@ final class SessionController extends ChangeNotifier {
     final previous = List<Account>.of(_accounts);
     final staged = _accounts.where((item) => item.key != account.key).toList();
     _accounts = staged;
+    final releaseMedia = suspendMarkdownMediaAccount(account);
     try {
-      await _enqueueAccountSave();
+      // Cleanup again inside the commit fence: a retained card may have started
+      // after the shell's earlier file cleanup while other stores were cleared.
+      await clearAccountArtifacts(account);
+      await _enqueueAccountSave(
+        onSaved: (saved) {
+          // A superseding sign-out changes UI ownership, not a confirmed save.
+          if (!saved.any((item) => item.key == account.key)) {
+            markMarkdownMediaAccountRemoved(account);
+          }
+        },
+      );
       if (!_current(ticket)) return;
       if (active?.key == account.key) {
         _pendingResumeTarget = null;
@@ -655,6 +676,7 @@ final class SessionController extends ChangeNotifier {
       }
       if (_current(ticket)) message = l10n.removeSecureStorageFailed;
     } finally {
+      releaseMedia();
       if (_current(ticket)) busy = false;
       _emit();
     }

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 
 import '../core/failure.dart';
 import '../core/gitlab_api.dart';
@@ -267,12 +268,7 @@ bool _safePathSegment(String segment) =>
     !segment.runes.any(_controlCharacter);
 
 bool _safeRef(String ref) {
-  try {
-    final decoded = Uri.decodeComponent(ref);
-    return decoded.split('/').every(_safePathSegment);
-  } on FormatException {
-    return false;
-  }
+  return ref.split('/').every(_safePathSegment);
 }
 
 bool _controlCharacter(int value) =>
@@ -322,24 +318,34 @@ bool _safeExternal(Uri uri) {
   if (host == 'localhost' || host.endsWith('.localhost')) return false;
   final labels = host.split('.');
   if (labels.isNotEmpty && labels.every(_numericHostLabel)) return false;
-  final ipv4 = InternetAddress.tryParse(host);
-  if (ipv4 == null) return true;
-  if (ipv4.type == InternetAddressType.IPv4) {
-    return _safeIpv4(ipv4.rawAddress);
+  final address = InternetAddress.tryParse(host);
+  return address == null || _safeAddress(address);
+}
+
+bool _safeAddress(InternetAddress address, {bool allowLoopback = false}) {
+  if (address.type == InternetAddressType.IPv4) {
+    return _safeIpv4(address.rawAddress, allowLoopback: allowLoopback);
   }
-  final b = ipv4.rawAddress;
+  if (address.type != InternetAddressType.IPv6) return false;
+  final b = address.rawAddress;
   final mappedIpv4 =
       b.take(10).every((value) => value == 0) && b[10] == 0xff && b[11] == 0xff;
-  if (mappedIpv4) return _safeIpv4(b.sublist(12));
+  if (mappedIpv4) {
+    return _safeIpv4(b.sublist(12), allowLoopback: allowLoopback);
+  }
   final translatedIpv4 =
       b.take(8).every((value) => value == 0) &&
       b[8] == 0xff &&
       b[9] == 0xff &&
       b[10] == 0 &&
       b[11] == 0;
-  if (translatedIpv4) return _safeIpv4(b.sublist(12));
+  if (translatedIpv4) {
+    return _safeIpv4(b.sublist(12), allowLoopback: allowLoopback);
+  }
   final compatibleIpv4 = b.take(12).every((value) => value == 0);
-  if (compatibleIpv4) return _safeIpv4(b.sublist(12));
+  if (compatibleIpv4) {
+    return _safeIpv4(b.sublist(12), allowLoopback: allowLoopback);
+  }
   final unspecified = b.every((value) => value == 0);
   final loopback = b.take(15).every((value) => value == 0) && b[15] == 1;
   final linkLocal = b[0] == 0xfe && (b[1] & 0xc0) == 0x80;
@@ -352,11 +358,30 @@ bool _safeExternal(Uri uri) {
       b[2] == 0xff &&
       b[3] == 0x9b &&
       b.sublist(4, 12).every((value) => value == 0);
-  if (nat64 && !_safeIpv4(b.sublist(12))) return false;
+  if (nat64 && !_safeIpv4(b.sublist(12), allowLoopback: allowLoopback)) {
+    return false;
+  }
+  final localUseNat64 =
+      b[0] == 0x00 &&
+      b[1] == 0x64 &&
+      b[2] == 0xff &&
+      b[3] == 0x9b &&
+      b[4] == 0x00 &&
+      b[5] == 0x01;
+  if (localUseNat64) {
+    final rfc6052 = <int>[b[6], b[7], b[9], b[10]];
+    final trailing = b.sublist(12);
+    final embedded = rfc6052.any((value) => value != 0) ? rfc6052 : trailing;
+    if (!_safeIpv4(embedded, allowLoopback: allowLoopback)) {
+      return false;
+    }
+  }
   final sixToFour = b[0] == 0x20 && b[1] == 0x02;
-  if (sixToFour && !_safeIpv4(b.sublist(2, 6))) return false;
+  if (sixToFour && !_safeIpv4(b.sublist(2, 6), allowLoopback: allowLoopback)) {
+    return false;
+  }
   return !(unspecified ||
-      loopback ||
+      (!allowLoopback && loopback) ||
       linkLocal ||
       siteLocal ||
       uniqueLocal ||
@@ -378,10 +403,10 @@ bool _numericHostLabel(String label) {
   return label.codeUnits.every((value) => value >= 0x30 && value <= 0x39);
 }
 
-bool _safeIpv4(List<int> b) =>
+bool _safeIpv4(List<int> b, {bool allowLoopback = false}) =>
     !(b[0] == 0 ||
         b[0] == 10 ||
-        b[0] == 127 ||
+        (!allowLoopback && b[0] == 127) ||
         (b[0] == 100 && b[1] >= 64 && b[1] <= 127) ||
         (b[0] == 169 && b[1] == 254) ||
         (b[0] == 172 && b[1] >= 16 && b[1] <= 31) ||
@@ -413,8 +438,16 @@ final class MarkdownMediaLoader {
     GitLabApi? api,
     Dio? external,
     Duration externalImageTimeout = const Duration(seconds: 30),
+    Future<List<InternetAddress>> Function(String host)? externalResolver,
+    bool allowLoopbackAddressesForTesting = false,
+    SecurityContext? externalSecurityContextForTesting,
   }) : _api = api,
-       _external = _bareExternal(external),
+       _external = _bareExternal(
+         external,
+         resolver: externalResolver ?? InternetAddress.lookup,
+         allowLoopback: allowLoopbackAddressesForTesting,
+         securityContext: externalSecurityContextForTesting,
+       ),
        _externalImageTimeout = externalImageTimeout;
 
   final GitLabApi? _api;
@@ -561,6 +594,7 @@ final class MarkdownMediaLoader {
     final token = cancelToken ?? CancelToken();
     _requests.add(token);
     final maxBytes = image ? _externalImageBytes : _mediaBytes;
+    var redirectHop = false;
     try {
       for (var redirects = 0; redirects <= 3; redirects++) {
         if (!_safeExternal(uri)) {
@@ -574,6 +608,7 @@ final class MarkdownMediaLoader {
             responseType: ResponseType.stream,
             followRedirects: false,
             maxRedirects: 0,
+            persistentConnection: false,
             validateStatus: (status) => status != null,
             sendTimeout: const Duration(seconds: 15),
             receiveTimeout: const Duration(seconds: 25),
@@ -596,6 +631,7 @@ final class MarkdownMediaLoader {
             throw ApiFailure(FailureKind.redirectBlocked, status: status);
           }
           uri = next;
+          redirectHop = true;
           continue;
         }
         if (status < 200 || status >= 300) {
@@ -632,6 +668,11 @@ final class MarkdownMediaLoader {
     } on FileSystemException {
       throw ApiFailure.artifactStorage;
     } on DioException catch (error) {
+      if (_addressBlocked(error)) {
+        throw ApiFailure(
+          redirectHop ? FailureKind.redirectBlocked : FailureKind.unsupported,
+        );
+      }
       if (error.type == DioExceptionType.cancel ||
           token.isCancelled ||
           _closed) {
@@ -751,7 +792,12 @@ final class _BytesConsumer implements StreamConsumer<List<int>> {
   Future<void> close() async {}
 }
 
-Dio _bareExternal(Dio? supplied) {
+Dio _bareExternal(
+  Dio? supplied, {
+  required Future<List<InternetAddress>> Function(String host) resolver,
+  required bool allowLoopback,
+  required SecurityContext? securityContext,
+}) {
   final dio = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 15),
@@ -759,6 +805,55 @@ Dio _bareExternal(Dio? supplied) {
       receiveTimeout: const Duration(seconds: 25),
     ),
   );
-  if (supplied != null) dio.httpClientAdapter = supplied.httpClientAdapter;
+  if (supplied != null) {
+    dio.httpClientAdapter = supplied.httpClientAdapter;
+  } else {
+    dio.httpClientAdapter = IOHttpClientAdapter(
+      createHttpClient: () {
+        final client = HttpClient(context: securityContext)
+          ..findProxy = (_) => 'DIRECT';
+        client.connectionFactory = (uri, proxyHost, proxyPort) async {
+          if (proxyHost != null || proxyPort != null || uri.scheme != 'https') {
+            throw const _ExternalAddressBlocked();
+          }
+          final addresses = await resolver(uri.host);
+          if (addresses.isEmpty ||
+              addresses.any(
+                (address) =>
+                    !_safeAddress(address, allowLoopback: allowLoopback),
+              )) {
+            throw const _ExternalAddressBlocked();
+          }
+          final connection = await Socket.startConnect(
+            addresses.first,
+            uri.port,
+          );
+          return ConnectionTask.fromSocket<Socket>(
+            connection.socket.then(
+              (socket) => SecureSocket.secure(
+                socket,
+                host: uri.host,
+                context: securityContext,
+              ),
+            ),
+            connection.cancel,
+          );
+        };
+        return client;
+      },
+    );
+  }
   return dio;
+}
+
+bool _addressBlocked(Object error) {
+  Object? current = error;
+  while (current is DioException) {
+    current = current.error;
+  }
+  return current is _ExternalAddressBlocked;
+}
+
+final class _ExternalAddressBlocked implements Exception {
+  const _ExternalAddressBlocked();
 }

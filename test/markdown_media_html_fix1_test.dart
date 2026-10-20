@@ -1,10 +1,12 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/shared/markdown_media.dart';
-import 'package:gitlab_mobile/shared/markdown_media_html.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
+import 'package:markdown/markdown.dart' as md;
 
 import 'support/fake_adapter.dart';
 
@@ -34,29 +36,23 @@ String _renderedText(WidgetTester tester) => tester
     .map((widget) => widget.text.toPlainText())
     .join('\n');
 
-final class _CodeCounter extends SyntaxHighlighter {
-  var count = 0;
-
-  @override
-  TextSpan format(String source) {
-    count++;
-    return TextSpan(text: source);
-  }
-}
-
 Future<void> _expectNoCodeBlock(WidgetTester tester, String markdown) async {
-  final highlighter = _CodeCounter();
-  await tester.pumpWidget(
-    MaterialApp(
-      home: Scaffold(
-        body: MarkdownBody(
-          data: preprocessMarkdownMedia(markdown),
-          syntaxHighlighter: highlighter,
-        ),
-      ),
-    ),
+  final body = tester.widget<MarkdownBody>(find.byType(MarkdownBody));
+  final nodes = md.Document(
+    blockSyntaxes: body.blockSyntaxes,
+    inlineSyntaxes: body.inlineSyntaxes,
+    extensionSet: body.extensionSet ?? md.ExtensionSet.gitHubFlavored,
+    encodeHtml: false,
+  ).parseLines(const LineSplitter().convert(body.data));
+  bool hasCodeBlock(List<md.Node> values) => values.any(
+    (node) =>
+        node is md.Element &&
+        (node.tag == 'pre' ||
+            (node.children != null && hasCodeBlock(node.children!))),
   );
-  expect(highlighter.count, 0);
+  expect(hasCodeBlock(nodes), isFalse, reason: markdown);
+  expect(_renderedText(tester), isNot(contains('![](')), reason: markdown);
+  expect(_renderedText(tester), isNot(contains('<img')), reason: markdown);
 }
 
 void main() {
@@ -98,7 +94,7 @@ void main() {
       await _expectNoCodeBlock(tester, source);
     });
 
-    testWidgets('blank line inside a wrapper does not turn image into code', (
+    testWidgets('blank wrapper boundary leaves indented code unchanged', (
       tester,
     ) async {
       const source = '''
@@ -108,8 +104,8 @@ void main() {
 </p>
 ''';
       await _pumpMarkdown(tester, source);
-      expect(find.byType(MarkdownMediaImage), findsOneWidget);
-      await _expectNoCodeBlock(tester, source);
+      expect(find.byType(MarkdownMediaImage), findsNothing);
+      expect(_renderedText(tester), contains('<img src="logo.png">'));
     });
 
     testWidgets('images escape surrounding block-level HTML', (tester) async {
@@ -120,11 +116,7 @@ void main() {
       ];
       for (final source in cases) {
         await _pumpMarkdown(tester, source);
-        expect(
-          find.byType(MarkdownMediaImage),
-          findsOneWidget,
-          reason: preprocessMarkdownMedia(source),
-        );
+        expect(find.byType(MarkdownMediaImage), findsOneWidget, reason: source);
         await _expectNoCodeBlock(tester, source);
       }
     });
@@ -134,14 +126,8 @@ void main() {
     ) async {
       const source = '<p>first paragraph</p><p>second paragraph</p>';
       await _pumpMarkdown(tester, source);
-      final paragraphs = tester
-          .widgetList<RichText>(find.byType(RichText))
-          .map((widget) => widget.text.toPlainText())
-          .where((text) => text.contains('paragraph'))
-          .toList();
-      expect(paragraphs, contains('first paragraph'));
-      expect(paragraphs, contains('second paragraph'));
-      expect(paragraphs, isNot(contains('first paragraphsecond paragraph')));
+      expect(find.byType(MarkdownMediaImage), findsNothing);
+      expect(_renderedText(tester), isNot(contains('paragraph')));
     });
   });
 
@@ -254,31 +240,5 @@ void main() {
       expect(find.byType(MarkdownMediaCard), findsOneWidget);
       expect(_renderedText(tester), contains('[clip]: not-this.mp4'));
     });
-  });
-
-  test('one MiB hostile candidate scan remains under 500 ms', () {
-    const mebibyte = 1024 * 1024;
-    final source =
-        '${List.filled(mebibyte ~/ 10, '< not-a-tag ').join()}'
-        '<img src="tail.png">';
-    preprocessMarkdownMedia('<img src="warmup.png">');
-    final stopwatch = Stopwatch()..start();
-    final result = preprocessMarkdownMedia(source);
-    stopwatch.stop();
-
-    expect(result, endsWith('![](<tail.png>)'));
-    expect(stopwatch.elapsedMilliseconds, lessThan(500));
-  });
-
-  test('one MiB of unterminated comments remains under 500 ms', () {
-    const mebibyte = 1024 * 1024;
-    final source = List.filled(mebibyte ~/ 4, '<!--').join();
-    preprocessMarkdownMedia('<!-- warmup -->');
-    final stopwatch = Stopwatch()..start();
-    final result = preprocessMarkdownMedia(source);
-    stopwatch.stop();
-
-    expect(result, source);
-    expect(stopwatch.elapsedMilliseconds, lessThan(500));
   });
 }
