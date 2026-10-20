@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "Perbualan ini dialih keluar daripada sejarah tersimpan untuk mengosongkan storan.",
   "aiHistoryReadFailed": "Sejarah tidak dapat dibaca. Cuba lagi.",
   "aiHistoryTemporaryFilesRemoved": "Fail sejarah sementara yang lapuk telah dialih keluar.",
-  "aiHistoryClearUnsupported": "Kosongkan sejarah yang tidak disokong"
+  "aiHistoryClearUnsupported": "Kosongkan sejarah yang tidak disokong",
+  "markdownMediaTooLarge": "Media melebihi had saiz",
+  "markdownMediaNotImage": "Ini bukan imej",
+  "markdownMediaBlocked": "Alamat media yang tidak selamat telah disekat",
+  "markdownMediaNetwork": "Media tidak dapat dimuatkan",
+  "markdownMediaPlay": "Main",
+  "markdownMediaPause": "Jeda",
+  "markdownMediaMute": "Senyapkan",
+  "markdownMediaUnmute": "Hidupkan bunyi",
+  "markdownMediaCancel": "Batalkan muat turun",
+  "markdownMediaRetry": "Cuba lagi",
+  "markdownMediaLoading": "Memuat turun media",
+  "markdownMediaCannotPlay": "Tidak dapat memainkan media"
 }

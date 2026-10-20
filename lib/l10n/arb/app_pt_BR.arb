@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "Esta conversa foi removida do histórico salvo para liberar armazenamento.",
   "aiHistoryReadFailed": "Não foi possível ler o histórico. Tente novamente.",
   "aiHistoryTemporaryFilesRemoved": "Os arquivos temporários obsoletos do histórico foram removidos.",
-  "aiHistoryClearUnsupported": "Limpar histórico não compatível"
+  "aiHistoryClearUnsupported": "Limpar histórico não compatível",
+  "markdownMediaTooLarge": "A mídia excede o limite de tamanho",
+  "markdownMediaNotImage": "Isto não é uma imagem",
+  "markdownMediaBlocked": "Endereço de mídia inseguro bloqueado",
+  "markdownMediaNetwork": "Não foi possível carregar a mídia",
+  "markdownMediaPlay": "Reproduzir",
+  "markdownMediaPause": "Pausar",
+  "markdownMediaMute": "Silenciar",
+  "markdownMediaUnmute": "Ativar som",
+  "markdownMediaCancel": "Cancelar download",
+  "markdownMediaRetry": "Tentar novamente",
+  "markdownMediaLoading": "Baixando mídia",
+  "markdownMediaCannotPlay": "Não foi possível reproduzir a mídia"
 }

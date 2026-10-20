@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "Цю розмову видалено зі збереженої історії, щоб звільнити місце.",
   "aiHistoryReadFailed": "Не вдалося прочитати історію. Повторіть спробу.",
   "aiHistoryTemporaryFilesRemoved": "Застарілі тимчасові файли історії видалено.",
-  "aiHistoryClearUnsupported": "Очистити непідтримувану історію"
+  "aiHistoryClearUnsupported": "Очистити непідтримувану історію",
+  "markdownMediaTooLarge": "Медіафайл перевищує обмеження розміру",
+  "markdownMediaNotImage": "Це не зображення",
+  "markdownMediaBlocked": "Небезпечну адресу медіафайлу заблоковано",
+  "markdownMediaNetwork": "Не вдалося завантажити медіафайл",
+  "markdownMediaPlay": "Відтворити",
+  "markdownMediaPause": "Призупинити",
+  "markdownMediaMute": "Вимкнути звук",
+  "markdownMediaUnmute": "Увімкнути звук",
+  "markdownMediaCancel": "Скасувати завантаження",
+  "markdownMediaRetry": "Повторити",
+  "markdownMediaLoading": "Завантаження медіафайлу",
+  "markdownMediaCannotPlay": "Не вдалося відтворити медіафайл"
 }

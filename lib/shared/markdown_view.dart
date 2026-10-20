@@ -1,6 +1,8 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:markdown/markdown.dart' as md;
 
 import '../core/gitlab_api.dart';
 import '../core/models.dart';
@@ -12,6 +14,9 @@ import 'attachment_image.dart';
 import 'attachment_ref.dart';
 import 'external_link.dart';
 import 'in_app_links.dart';
+import 'markdown_media.dart';
+import 'markdown_media_source.dart';
+import 'markdown_media_syntax.dart';
 import 'theme.dart';
 
 import '../l10n/l10n.dart';
@@ -267,6 +272,7 @@ class MarkdownView extends StatefulWidget {
     this.sharer = const SystemArtifactSharer(),
     this.downloader,
     this.selectable = true,
+    this.externalMediaClient,
   });
   final String text;
   final Uri? base;
@@ -283,17 +289,80 @@ class MarkdownView extends StatefulWidget {
   final AttachmentDownloader? downloader;
   final bool selectable;
 
+  /// A separate bare client; tests inject a FakeAdapter here.
+  final Dio? externalMediaClient;
+
   @override
   State<MarkdownView> createState() => _MarkdownViewState();
 }
 
+typedef _MediaElementWidgetBuilder =
+    Widget Function(
+      Uri source,
+      String kind,
+      String? alt,
+      String? width,
+      String? height,
+    );
+
+final class _MarkdownMediaElementBuilder extends MarkdownElementBuilder {
+  _MarkdownMediaElementBuilder({
+    required this.buildMedia,
+    required this.openLink,
+  });
+
+  final _MediaElementWidgetBuilder buildMedia;
+  final Future<void> Function(String href) openLink;
+
+  @override
+  Widget? visitElementAfterWithContext(
+    BuildContext context,
+    md.Element element,
+    TextStyle? preferredStyle,
+    TextStyle? parentStyle,
+  ) {
+    final source = Uri.tryParse(element.attributes['src'] ?? '');
+    if (source == null) return null;
+    final child = buildMedia(
+      source,
+      element.attributes['kind'] ?? 'image',
+      element.attributes['alt'],
+      element.attributes['width'],
+      element.attributes['height'],
+    );
+    final href = element.attributes['href'];
+    if (href == null) return child;
+    return GestureDetector(onTap: () => openLink(href), child: child);
+  }
+}
+
+final class _MarkdownHtmlBlockBuilder extends MarkdownElementBuilder {
+  @override
+  bool isBlockElement() => true;
+}
+
 class _MarkdownViewState extends State<MarkdownView> {
   AttachmentBudget? _owned;
+  MarkdownMediaLoader? _media;
+  int _contentEpoch = 0;
+
+  MarkdownMediaLoader get _loader => _media ??= MarkdownMediaLoader(
+    api: widget.api,
+    external: widget.externalMediaClient,
+  );
+
+  @override
+  void dispose() {
+    _media?.close();
+    super.dispose();
+  }
+
   // Markdown's unkeyed horizontal scroll views must not read an ancestor
   // ExpansionTile's boolean state as a scroll offset.
   final _scrollStorage = PageStorageBucket();
 
-  AttachmentBudget get _budget => widget.budget ?? (_owned ??= AttachmentBudget());
+  AttachmentBudget get _budget =>
+      widget.budget ?? (_owned ??= AttachmentBudget());
 
   // In a right-to-left interface a body that starts in a left-to-right script
   // reads left to right, like dir="auto": an English README in Arabic. A
@@ -313,10 +382,64 @@ class _MarkdownViewState extends State<MarkdownView> {
   @override
   void didUpdateWidget(MarkdownView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.budget != null) return;
-    if (oldWidget.text != widget.text || oldWidget.projectId != widget.projectId) {
+    if (oldWidget.projectId != widget.projectId ||
+        oldWidget.api != widget.api ||
+        oldWidget.base != widget.base ||
+        oldWidget.projectWeb != widget.projectWeb ||
+        oldWidget.account?.key != widget.account?.key ||
+        oldWidget.externalMediaClient != widget.externalMediaClient) {
+      _contentEpoch++;
+      _media?.close();
+      _media = null;
       _owned = AttachmentBudget();
     }
+  }
+
+  Future<void> _openLink(BuildContext context, String href) async {
+    final parsed = Uri.tryParse(href);
+    if (parsed == null) return;
+    final base = widget.base;
+    final uri = parsed.hasScheme ? parsed : base?.resolveUri(parsed);
+    if (uri == null || !safeExternalUri(uri)) return;
+    final api = widget.api;
+    final projectId = widget.projectId;
+    final uploadRef = parseProjectUpload(
+      uri,
+      base: base,
+      projectId: projectId,
+      projectWeb: widget.projectWeb,
+    );
+    if (uploadRef != null && api != null && projectId != null) {
+      Account? activeAccount = widget.account;
+      if (activeAccount == null) {
+        try {
+          activeAccount = ProviderScope.containerOf(
+            context,
+            listen: false,
+          ).read(sessionProvider).active;
+        } catch (_) {}
+      }
+      if (activeAccount != null) {
+        await showAttachmentDownloadSheet(
+          context,
+          api: api,
+          projectId: projectId,
+          secret: uploadRef.secret,
+          filename: uploadRef.filename,
+          account: activeAccount,
+          projectPath: widget.projectPath,
+          webUri: uri,
+          sharer: widget.sharer,
+          downloader: widget.downloader,
+        );
+        return;
+      }
+    }
+    final inApp = InAppLinks.maybeOf(context);
+    if (inApp != null && (await inApp(context, uri) || !context.mounted)) {
+      return;
+    }
+    await openExternal(context, uri);
   }
 
   @override
@@ -332,26 +455,76 @@ class _MarkdownViewState extends State<MarkdownView> {
     final projectWeb = widget.projectWeb;
     final tableTextScale = (MediaQuery.textScalerOf(context).scale(14) / 14)
         .clamp(1.0, 2.0);
-    final body = MarkdownBody(data: text, selectable: false,
-      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-        h1: Theme.of(context).textTheme.headlineSmall,
-        h2: Theme.of(context).textTheme.titleLarge,
-        h3: Theme.of(context).textTheme.titleMedium,
-        tableColumnWidth: FixedColumnWidth(180.0 * tableTextScale),
-        tableScrollbarThumbVisibility: true,
-        code: TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: const ['Menlo', 'monospace'], fontSize: 13, color: Theme.of(context).colorScheme.onSurface),
-        codeblockDecoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12)),
-        blockquoteDecoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(12)),
-      ),
-      // Only this project's upload API is fetched. Other images stay icon-only.
-      imageBuilder: (uri, title, alt) {
-        final ref = parseProjectUpload(uri, base: base, projectId: projectId, projectWeb: projectWeb);
+    final budgetScope = (
+      account: widget.account?.key,
+      api: widget.api,
+      external: widget.externalMediaClient,
+      base: widget.base,
+      projectId: widget.projectId,
+      projectWeb: widget.projectWeb,
+    );
+    Widget buildMedia(
+      Uri uri,
+      String kind,
+      String? alt,
+      String? width,
+      String? height,
+    ) {
+      final source = resolveMarkdownMedia(
+        uri,
+        base: base,
+        instance: api?.instance ?? widget.account?.instance,
+        projectId: projectId,
+        projectWeb: projectWeb,
+      );
+        final extension = (source.filename ?? '').split('.').last.toLowerCase();
+      final explicitMedia =
+          kind == 'media' || kind == 'video' || kind == 'audio';
+      final isMedia =
+          explicitMedia ||
+          const {
+            'mp4',
+            'webm',
+            'mov',
+            'm4v',
+            'mp3',
+            'm4a',
+            'ogg',
+            'wav',
+          }.contains(extension);
+        if (isMedia) {
+        return MarkdownMediaCard(
+          source: source,
+          loader: _loader,
+          account: widget.account,
+          audio:
+              kind == 'audio' ||
+              (kind != 'video' &&
+                  const {'mp3', 'm4a', 'ogg', 'wav'}.contains(extension)),
+        );
+        }
+      double? dimension(String? value) {
+        final parsed = value == null ? null : double.tryParse(value);
+        return parsed != null && parsed.isFinite && parsed > 0
+            ? parsed.clamp(1, 4096)
+            : null;
+        }
+
+      final imageWidth = dimension(width);
+      final imageHeight = dimension(height);
+      final ref = parseProjectUpload(
+        uri,
+        base: base,
+        projectId: projectId,
+        projectWeb: projectWeb,
+      );
         final client = api;
         final id = projectId;
-        if (ref != null && client != null && id != null) {
-          return AttachmentImage(
+      if (ref != null &&
+          client != null &&
+          id != null &&
+            !ref.filename.toLowerCase().endsWith('.svg')) {
+          final upload = AttachmentImage(
             api: client,
             budget: budget,
             projectId: id,
@@ -361,50 +534,72 @@ class _MarkdownViewState extends State<MarkdownView> {
             projectWeb: projectWeb,
             projectPath: widget.projectPath,
           );
+        return imageWidth == null && imageHeight == null
+            ? upload
+            : SizedBox(width: imageWidth, height: imageHeight, child: upload);
         }
-        return attachmentImageFallback(alt);
+      return MarkdownMediaImage(
+        source: source,
+        loader: _loader,
+        budget: budget,
+        budgetScope: budgetScope,
+        account: widget.account,
+        alt: alt,
+        width: imageWidth,
+        height: imageHeight,
+            );
+        }
+
+    final body = MarkdownBody(
+      key: ValueKey(_contentEpoch),
+      data: text,
+      selectable: false,
+      blockSyntaxes: [MarkdownMediaBlockSyntax()],
+      inlineSyntaxes: [
+        MarkdownMediaImageSyntax(),
+        MarkdownMediaInlineSyntax(),
+        MarkdownMediaAutolinkSyntax(),
+        MarkdownLiteralLessThanSyntax(),
+        MarkdownMediaLinkSyntax(),
+      ],
+      builders: {
+        markdownMediaElement: _MarkdownMediaElementBuilder(
+          buildMedia: buildMedia,
+          openLink: (href) => _openLink(context, href),
+        ),
+        markdownHtmlBlockElement: _MarkdownHtmlBlockBuilder(),
+      },
+      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+        h1: Theme.of(context).textTheme.headlineSmall,
+        h2: Theme.of(context).textTheme.titleLarge,
+        h3: Theme.of(context).textTheme.titleMedium,
+        tableColumnWidth: FixedColumnWidth(180.0 * tableTextScale),
+        tableScrollbarThumbVisibility: true,
+        code: TextStyle(
+          fontFamily: codeFontFamily,
+          fontFamilyFallback: const ['Menlo', 'monospace'],
+          fontSize: 13,
+          color: Theme.of(context).colorScheme.onSurface,
+        ),
+        codeblockDecoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        blockquoteDecoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      imageBuilder: (uri, title, alt) {
+        return buildMedia(uri, 'image', alt, null, null);
       },
       onTapLink: (_, href, _) async {
-        if (href == null) { return; }
-        final parsed = Uri.tryParse(href);
-        if (parsed == null) { return; }
-        final uri = parsed.hasScheme ? parsed : base?.resolveUri(parsed);
-        if (uri == null || !safeExternalUri(uri)) {
-          return;
-        }
-        final uploadRef = parseProjectUpload(uri, base: base, projectId: projectId, projectWeb: projectWeb);
-        if (uploadRef != null && api != null && projectId != null) {
-          Account? activeAccount = widget.account;
-          if (activeAccount == null) {
-            try {
-              activeAccount = ProviderScope.containerOf(context, listen: false).read(sessionProvider).active;
-            } catch (_) {}
-          }
-          if (activeAccount != null) {
-            await showAttachmentDownloadSheet(
-              context,
-              api: api,
-              projectId: projectId,
-              secret: uploadRef.secret,
-              filename: uploadRef.filename,
-              account: activeAccount,
-              projectPath: widget.projectPath,
-              webUri: uri,
-              sharer: widget.sharer,
-              downloader: widget.downloader,
-            );
-            return;
-          }
-        }
-        final inApp = InAppLinks.maybeOf(context);
-        if (inApp != null && (await inApp(context, uri) || !context.mounted)) {
-          return;
-        }
-        await openExternal(context, uri);
+        if (href != null) await _openLink(context, href);
       },
     );
     final ambient = Directionality.of(context);
-    final direction = ambient == TextDirection.rtl && _directionOf(text) == TextDirection.ltr
+    final direction =
+        ambient == TextDirection.rtl && _directionOf(text) == TextDirection.ltr
         ? TextDirection.ltr
         : ambient;
     return PageStorage(

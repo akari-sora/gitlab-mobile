@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "Diese Unterhaltung wurde aus dem gespeicherten Verlauf entfernt, um Speicherplatz freizugeben.",
   "aiHistoryReadFailed": "Der Verlauf konnte nicht gelesen werden. Versuchen Sie es erneut.",
   "aiHistoryTemporaryFilesRemoved": "Veraltete temporäre Verlaufsdateien wurden entfernt.",
-  "aiHistoryClearUnsupported": "Nicht unterstützten Verlauf löschen"
+  "aiHistoryClearUnsupported": "Nicht unterstützten Verlauf löschen",
+  "markdownMediaTooLarge": "Medium überschreitet die Größenbeschränkung",
+  "markdownMediaNotImage": "Dies ist kein Bild",
+  "markdownMediaBlocked": "Unsichere Medienadresse blockiert",
+  "markdownMediaNetwork": "Medium kann nicht geladen werden",
+  "markdownMediaPlay": "Wiedergeben",
+  "markdownMediaPause": "Pausieren",
+  "markdownMediaMute": "Stummschalten",
+  "markdownMediaUnmute": "Ton einschalten",
+  "markdownMediaCancel": "Download abbrechen",
+  "markdownMediaRetry": "Erneut versuchen",
+  "markdownMediaLoading": "Medium wird heruntergeladen",
+  "markdownMediaCannotPlay": "Medium kann nicht abgespielt werden"
 }

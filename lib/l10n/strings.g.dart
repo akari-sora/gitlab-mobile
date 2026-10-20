@@ -6336,4 +6336,40 @@ final class AppStrings {
 
   /// 清除不受支援的紀錄
   String get aiHistoryClearUnsupported => language._messages[2080];
+
+  /// 媒體超過大小限制
+  String get markdownMediaTooLarge => language._messages[2081];
+
+  /// 這不是圖片
+  String get markdownMediaNotImage => language._messages[2082];
+
+  /// 已封鎖不安全的媒體網址
+  String get markdownMediaBlocked => language._messages[2083];
+
+  /// 無法載入媒體
+  String get markdownMediaNetwork => language._messages[2084];
+
+  /// 播放
+  String get markdownMediaPlay => language._messages[2085];
+
+  /// 暫停
+  String get markdownMediaPause => language._messages[2086];
+
+  /// 靜音
+  String get markdownMediaMute => language._messages[2087];
+
+  /// 取消靜音
+  String get markdownMediaUnmute => language._messages[2088];
+
+  /// 取消下載
+  String get markdownMediaCancel => language._messages[2089];
+
+  /// 重試
+  String get markdownMediaRetry => language._messages[2090];
+
+  /// 正在下載媒體
+  String get markdownMediaLoading => language._messages[2091];
+
+  /// 無法播放媒體
+  String get markdownMediaCannotPlay => language._messages[2092];
 }

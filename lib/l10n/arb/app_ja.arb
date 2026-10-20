@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "保存領域を空けるため、この会話を保存済み履歴から削除しました。",
   "aiHistoryReadFailed": "履歴を読み取れませんでした。もう一度お試しください。",
   "aiHistoryTemporaryFilesRemoved": "古い一時履歴ファイルを削除しました。",
-  "aiHistoryClearUnsupported": "未対応の履歴を消去"
+  "aiHistoryClearUnsupported": "未対応の履歴を消去",
+  "markdownMediaTooLarge": "メディアがサイズ制限を超えています",
+  "markdownMediaNotImage": "これは画像ではありません",
+  "markdownMediaBlocked": "安全でないメディアのアドレスをブロックしました",
+  "markdownMediaNetwork": "メディアを読み込めません",
+  "markdownMediaPlay": "再生",
+  "markdownMediaPause": "一時停止",
+  "markdownMediaMute": "ミュート",
+  "markdownMediaUnmute": "ミュート解除",
+  "markdownMediaCancel": "ダウンロードをキャンセル",
+  "markdownMediaRetry": "再試行",
+  "markdownMediaLoading": "メディアをダウンロード中",
+  "markdownMediaCannotPlay": "メディアを再生できません"
 }

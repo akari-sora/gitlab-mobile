@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "Questa conversazione è stata rimossa dalla cronologia salvata per liberare spazio.",
   "aiHistoryReadFailed": "Impossibile leggere la cronologia. Riprova.",
   "aiHistoryTemporaryFilesRemoved": "I file temporanei obsoleti della cronologia sono stati rimossi.",
-  "aiHistoryClearUnsupported": "Cancella cronologia non supportata"
+  "aiHistoryClearUnsupported": "Cancella cronologia non supportata",
+  "markdownMediaTooLarge": "Il contenuto multimediale supera il limite di dimensione",
+  "markdownMediaNotImage": "Questo contenuto non è un’immagine",
+  "markdownMediaBlocked": "Indirizzo multimediale non sicuro bloccato",
+  "markdownMediaNetwork": "Impossibile caricare il contenuto multimediale",
+  "markdownMediaPlay": "Riproduci",
+  "markdownMediaPause": "Pausa",
+  "markdownMediaMute": "Disattiva audio",
+  "markdownMediaUnmute": "Attiva audio",
+  "markdownMediaCancel": "Annulla download",
+  "markdownMediaRetry": "Riprova",
+  "markdownMediaLoading": "Download del contenuto multimediale",
+  "markdownMediaCannotPlay": "Impossibile riprodurre il contenuto multimediale"
 }

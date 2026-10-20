@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "Cuộc trò chuyện này đã bị xóa khỏi lịch sử đã lưu để giải phóng dung lượng.",
   "aiHistoryReadFailed": "Không thể đọc lịch sử. Hãy thử lại.",
   "aiHistoryTemporaryFilesRemoved": "Các tệp lịch sử tạm thời cũ đã được xóa.",
-  "aiHistoryClearUnsupported": "Xóa lịch sử không được hỗ trợ"
+  "aiHistoryClearUnsupported": "Xóa lịch sử không được hỗ trợ",
+  "markdownMediaTooLarge": "Nội dung đa phương tiện vượt quá giới hạn kích thước",
+  "markdownMediaNotImage": "Đây không phải là hình ảnh",
+  "markdownMediaBlocked": "Đã chặn địa chỉ nội dung đa phương tiện không an toàn",
+  "markdownMediaNetwork": "Không thể tải nội dung đa phương tiện",
+  "markdownMediaPlay": "Phát",
+  "markdownMediaPause": "Tạm dừng",
+  "markdownMediaMute": "Tắt tiếng",
+  "markdownMediaUnmute": "Bật tiếng",
+  "markdownMediaCancel": "Hủy tải xuống",
+  "markdownMediaRetry": "Thử lại",
+  "markdownMediaLoading": "Đang tải nội dung đa phương tiện",
+  "markdownMediaCannotPlay": "Không thể phát nội dung đa phương tiện"
 }

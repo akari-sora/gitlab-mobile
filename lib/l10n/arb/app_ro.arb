@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "Această conversație a fost eliminată din istoricul salvat pentru a elibera spațiu.",
   "aiHistoryReadFailed": "Istoricul nu a putut fi citit. Încercați din nou.",
   "aiHistoryTemporaryFilesRemoved": "Fișierele temporare învechite ale istoricului au fost eliminate.",
-  "aiHistoryClearUnsupported": "Șterge istoricul neacceptat"
+  "aiHistoryClearUnsupported": "Șterge istoricul neacceptat",
+  "markdownMediaTooLarge": "Conținutul media depășește limita de dimensiune",
+  "markdownMediaNotImage": "Acesta nu este o imagine",
+  "markdownMediaBlocked": "Adresa media nesigură a fost blocată",
+  "markdownMediaNetwork": "Conținutul media nu poate fi încărcat",
+  "markdownMediaPlay": "Redă",
+  "markdownMediaPause": "Pauză",
+  "markdownMediaMute": "Dezactivează sunetul",
+  "markdownMediaUnmute": "Activează sunetul",
+  "markdownMediaCancel": "Anulează descărcarea",
+  "markdownMediaRetry": "Încearcă din nou",
+  "markdownMediaLoading": "Se descarcă conținutul media",
+  "markdownMediaCannotPlay": "Fișierul media nu poate fi redat"
 }

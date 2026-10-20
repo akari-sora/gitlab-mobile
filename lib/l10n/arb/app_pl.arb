@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "Ta rozmowa została usunięta z zapisanej historii, aby zwolnić miejsce.",
   "aiHistoryReadFailed": "Nie udało się odczytać historii. Spróbuj ponownie.",
   "aiHistoryTemporaryFilesRemoved": "Usunięto nieaktualne tymczasowe pliki historii.",
-  "aiHistoryClearUnsupported": "Wyczyść nieobsługiwaną historię"
+  "aiHistoryClearUnsupported": "Wyczyść nieobsługiwaną historię",
+  "markdownMediaTooLarge": "Multimedia przekraczają limit rozmiaru",
+  "markdownMediaNotImage": "To nie jest obraz",
+  "markdownMediaBlocked": "Zablokowano niebezpieczny adres multimediów",
+  "markdownMediaNetwork": "Nie można wczytać multimediów",
+  "markdownMediaPlay": "Odtwórz",
+  "markdownMediaPause": "Wstrzymaj",
+  "markdownMediaMute": "Wycisz",
+  "markdownMediaUnmute": "Włącz dźwięk",
+  "markdownMediaCancel": "Anuluj pobieranie",
+  "markdownMediaRetry": "Spróbuj ponownie",
+  "markdownMediaLoading": "Pobieranie multimediów",
+  "markdownMediaCannotPlay": "Nie można odtworzyć multimediów"
 }

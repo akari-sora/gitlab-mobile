@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "Tato konverzace byla odstraněna z uložené historie, aby se uvolnilo místo.",
   "aiHistoryReadFailed": "Historii se nepodařilo přečíst. Zkuste to znovu.",
   "aiHistoryTemporaryFilesRemoved": "Zastaralé dočasné soubory historie byly odstraněny.",
-  "aiHistoryClearUnsupported": "Vymazat nepodporovanou historii"
+  "aiHistoryClearUnsupported": "Vymazat nepodporovanou historii",
+  "markdownMediaTooLarge": "Médium překračuje limit velikosti",
+  "markdownMediaNotImage": "Toto není obrázek",
+  "markdownMediaBlocked": "Nebezpečná adresa média byla zablokována",
+  "markdownMediaNetwork": "Médium nelze načíst",
+  "markdownMediaPlay": "Přehrát",
+  "markdownMediaPause": "Pozastavit",
+  "markdownMediaMute": "Ztlumit",
+  "markdownMediaUnmute": "Zapnout zvuk",
+  "markdownMediaCancel": "Zrušit stahování",
+  "markdownMediaRetry": "Zkusit znovu",
+  "markdownMediaLoading": "Stahování média",
+  "markdownMediaCannotPlay": "Médium nelze přehrát"
 }

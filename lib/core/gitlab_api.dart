@@ -49,6 +49,24 @@ part 'work_item_status_api.dart';
 part 'work_item_state_api.dart';
 part 'work_item_dates_api.dart';
 
+final _rawStreamCancelled = Object();
+
+bool _safeRawFileCoordinate(String value) {
+  if (value.isEmpty || value.contains(r'\')) return false;
+  return value
+      .split('/')
+      .every(
+        (segment) =>
+            segment.isNotEmpty &&
+            segment != '.' &&
+            segment != '..' &&
+            !segment.contains(r'\') &&
+            !segment.runes.any(
+              (rune) => rune <= 0x1f || (rune >= 0x7f && rune <= 0x9f),
+            ),
+      );
+}
+
 final _artifactCancelled = Object();
 const _artifactRedirects = {301, 302, 303, 307, 308};
 
@@ -773,6 +791,189 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     } on FormatException {
       throw const ApiFailure(FailureKind.unsupported);
     }
+  }
+
+  /// Reads one repository file as bounded bytes. The request stays on this
+  /// instance's API origin, never follows redirects, and carries cancellation
+  /// through to the response stream.
+  Future<Uint8List> rawFileBytes(
+    String project,
+    String ref,
+    String filePath, {
+    int maxBytes = 10 * 1024 * 1024,
+    CancelToken? cancelToken,
+    void Function(int received, int? total)? onProgress,
+    void Function(String contentType)? onContentType,
+    IOSink? sink,
+  }) async {
+    if (_closed || cancelToken?.isCancelled == true) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    if (!_safeRawFileCoordinate(project) ||
+        !_safeRawFileCoordinate(ref) ||
+        !_safeRawFileCoordinate(filePath) ||
+        maxBytes <= 0 ||
+        maxBytes > 100 * 1024 * 1024) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    final until = _retryAt;
+    if (until != null && DateTime.now().isBefore(until)) {
+      throw ApiFailure(FailureKind.rateLimited, status: 429, retryAt: until);
+    }
+    final uri = instance.api(
+      ['projects', project, 'repository', 'files', filePath, 'raw'],
+      {'ref': ref, 'lfs': 'false'},
+    );
+    if (!instance.allowsApi(uri)) {
+      throw const ApiFailure(FailureKind.unsupported);
+    }
+    final token = CancelToken();
+    _requests.add(token);
+    if (cancelToken != null) {
+      unawaited(cancelToken.whenCancel.then((_) {
+        if (!token.isCancelled) token.cancel('repository media aborted');
+      }));
+    }
+    try {
+      return await _rawFileBytes(
+        uri,
+        token: token,
+        maxBytes: maxBytes,
+        onProgress: onProgress,
+        onContentType: onContentType,
+        sink: sink,
+        allowRefresh: true,
+      );
+    } on DioException catch (error) {
+      if (error.type == DioExceptionType.cancel || _closed || token.isCancelled) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      throw const ApiFailure(FailureKind.network);
+    } finally {
+      _requests.remove(token);
+    }
+  }
+
+  Future<Uint8List> _rawFileBytes(
+    Uri uri, {
+    required CancelToken token,
+    required int maxBytes,
+    required void Function(int received, int? total)? onProgress,
+    required void Function(String contentType)? onContentType,
+    required IOSink? sink,
+    required bool allowRefresh,
+  }) async {
+    if (_closed || token.isCancelled) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    final response = await _dio.requestUri<ResponseBody>(
+      uri,
+      cancelToken: token,
+      options: Options(
+        method: 'GET',
+        responseType: ResponseType.stream,
+        followRedirects: false,
+        maxRedirects: 0,
+        validateStatus: (status) => status != null,
+        headers: {..._authHeaders, 'Accept': 'application/octet-stream'},
+      ),
+    );
+    final status = response.statusCode ?? 0;
+    if (status < 200 || status >= 300) {
+      if (status == 401 || status == 403 || status == 404) clearReadCache();
+      await _releaseBody(response.data);
+      if (_closed || token.isCancelled) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      if (status == 401 && allowRefresh && await _refreshOAuth()) {
+        return await _rawFileBytes(
+          uri,
+          token: token,
+          maxBytes: maxBytes,
+          onProgress: onProgress,
+          onContentType: onContentType,
+          sink: sink,
+          allowRefresh: false,
+        );
+      }
+      if (status == 429) {
+        _rememberRetryAfter(response.headers.value('retry-after'));
+      }
+      throw ApiFailure.fromStatus(status, retryAt: _retryAt);
+    }
+    final total = int.tryParse(
+      response.headers.value(Headers.contentLengthHeader) ?? '',
+    );
+    onContentType?.call(
+      (response.headers.value(Headers.contentTypeHeader) ?? '')
+          .split(';')
+          .first
+          .trim()
+          .toLowerCase(),
+    );
+    if (total != null && total > maxBytes) {
+      _cancelTransport(token);
+      await _releaseBody(response.data);
+      throw const ApiFailure(FailureKind.tooLarge);
+    }
+    final body = response.data;
+    if (body == null) throw const ApiFailure(FailureKind.invalidResponse);
+    final bytes = sink == null ? BytesBuilder(copy: false) : null;
+    var received = 0;
+    Stream<Uint8List> checkedBody() async* {
+      final iterator = StreamIterator<Uint8List>(body.stream);
+      try {
+        while (true) {
+          final moved = await Future.any<Object>([
+            iterator.moveNext(),
+            token.whenCancel.then<Object>((_) => _rawStreamCancelled),
+          ]);
+          if (identical(moved, _rawStreamCancelled) || _closed) {
+            throw const ApiFailure(FailureKind.cancelled);
+          }
+          if (moved != true) break;
+          final chunk = iterator.current;
+          if (received + chunk.length > maxBytes) {
+            _cancelTransport(token);
+            throw const ApiFailure(FailureKind.tooLarge);
+          }
+          received += chunk.length;
+          onProgress?.call(received, total);
+          yield chunk;
+        }
+      } finally {
+        unawaited(
+          iterator.cancel().then<void>(
+            (_) {},
+            onError: (Object _, StackTrace _) {},
+          ),
+        );
+      }
+    }
+    try {
+      if (sink == null) {
+        await for (final chunk in checkedBody()) {
+          bytes!.add(chunk);
+        }
+      } else {
+        await sink.addStream(checkedBody());
+        await sink.flush();
+      }
+    } on ApiFailure {
+      rethrow;
+    } on FileSystemException {
+      throw ApiFailure.artifactStorage;
+    } on Object {
+      if (_closed || token.isCancelled) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      throw const ApiFailure(FailureKind.network);
+    }
+    if (_closed || token.isCancelled) {
+      throw const ApiFailure(FailureKind.cancelled);
+    }
+    if (received == 0) onProgress?.call(0, total);
+    return bytes?.takeBytes() ?? Uint8List(0);
   }
 
   Future<bool> _refreshOAuth() async {

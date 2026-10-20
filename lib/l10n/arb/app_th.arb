@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "นำการสนทนานี้ออกจากประวัติที่บันทึกไว้เพื่อเพิ่มพื้นที่จัดเก็บ",
   "aiHistoryReadFailed": "ไม่สามารถอ่านประวัติได้ โปรดลองอีกครั้ง",
   "aiHistoryTemporaryFilesRemoved": "นำไฟล์ประวัติชั่วคราวที่ล้าสมัยออกแล้ว",
-  "aiHistoryClearUnsupported": "ล้างประวัติที่ไม่รองรับ"
+  "aiHistoryClearUnsupported": "ล้างประวัติที่ไม่รองรับ",
+  "markdownMediaTooLarge": "สื่อมีขนาดเกินขีดจำกัด",
+  "markdownMediaNotImage": "นี่ไม่ใช่รูปภาพ",
+  "markdownMediaBlocked": "ปิดกั้นที่อยู่สื่อที่ไม่ปลอดภัยแล้ว",
+  "markdownMediaNetwork": "ไม่สามารถโหลดสื่อได้",
+  "markdownMediaPlay": "เล่น",
+  "markdownMediaPause": "หยุดชั่วคราว",
+  "markdownMediaMute": "ปิดเสียง",
+  "markdownMediaUnmute": "เปิดเสียง",
+  "markdownMediaCancel": "ยกเลิกการดาวน์โหลด",
+  "markdownMediaRetry": "ลองอีกครั้ง",
+  "markdownMediaLoading": "กำลังดาวน์โหลดสื่อ",
+  "markdownMediaCannotPlay": "ไม่สามารถเล่นสื่อได้"
 }

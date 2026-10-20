@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "Эта беседа удалена из сохранённой истории, чтобы освободить место.",
   "aiHistoryReadFailed": "Не удалось прочитать историю. Повторите попытку.",
   "aiHistoryTemporaryFilesRemoved": "Устаревшие временные файлы истории удалены.",
-  "aiHistoryClearUnsupported": "Очистить неподдерживаемую историю"
+  "aiHistoryClearUnsupported": "Очистить неподдерживаемую историю",
+  "markdownMediaTooLarge": "Медиафайл превышает ограничение размера",
+  "markdownMediaNotImage": "Это не изображение",
+  "markdownMediaBlocked": "Небезопасный адрес медиафайла заблокирован",
+  "markdownMediaNetwork": "Не удалось загрузить медиафайл",
+  "markdownMediaPlay": "Воспроизвести",
+  "markdownMediaPause": "Приостановить",
+  "markdownMediaMute": "Выключить звук",
+  "markdownMediaUnmute": "Включить звук",
+  "markdownMediaCancel": "Отменить загрузку",
+  "markdownMediaRetry": "Повторить",
+  "markdownMediaLoading": "Загрузка медиафайла",
+  "markdownMediaCannotPlay": "Не удалось воспроизвести медиафайл"
 }

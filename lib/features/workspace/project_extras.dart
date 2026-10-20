@@ -202,7 +202,7 @@ class _WikiPageViewState extends State<WikiPageView> {
           account: widget.account, resourceLabel: '${widget.project.path} · Wiki ${widget.slug}')))
       : RefreshIndicator(onRefresh: _load, child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 32), children: [
           if (valueText(page, 'format') == 'markdown' || valueText(page, 'format').isEmpty)
-            MarkdownView(valueText(page, 'content'), base: web, api: widget.api, projectId: widget.project.id,
+            MarkdownView(valueText(page, 'content'), account: widget.account, base: web, api: widget.api, projectId: widget.project.id,
               projectWeb: widget.account.instance.projectWeb(widget.project.path), projectPath: widget.project.path)
           else
             SelectableText(valueText(page, 'content'), style: codeTextStyle(context)),

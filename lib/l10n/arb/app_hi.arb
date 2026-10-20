@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "जगह खाली करने के लिए यह बातचीत सहेजे गए इतिहास से हटा दी गई।",
   "aiHistoryReadFailed": "इतिहास पढ़ा नहीं जा सका। फिर से कोशिश करें।",
   "aiHistoryTemporaryFilesRemoved": "पुरानी अस्थायी इतिहास फ़ाइलें हटा दी गईं।",
-  "aiHistoryClearUnsupported": "असमर्थित इतिहास साफ़ करें"
+  "aiHistoryClearUnsupported": "असमर्थित इतिहास साफ़ करें",
+  "markdownMediaTooLarge": "मीडिया आकार सीमा से बड़ा है",
+  "markdownMediaNotImage": "यह चित्र नहीं है",
+  "markdownMediaBlocked": "असुरक्षित मीडिया पता अवरुद्ध किया गया",
+  "markdownMediaNetwork": "मीडिया लोड नहीं हो सका",
+  "markdownMediaPlay": "चलाएँ",
+  "markdownMediaPause": "रोकें",
+  "markdownMediaMute": "ध्वनि बंद करें",
+  "markdownMediaUnmute": "ध्वनि चालू करें",
+  "markdownMediaCancel": "डाउनलोड रद्द करें",
+  "markdownMediaRetry": "फिर प्रयास करें",
+  "markdownMediaLoading": "मीडिया डाउनलोड हो रहा है",
+  "markdownMediaCannotPlay": "मीडिया नहीं चलाया जा सका"
 }

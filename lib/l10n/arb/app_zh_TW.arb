@@ -10465,5 +10465,53 @@
   "@aiHistoryClearUnsupported": {
     "description": "Action label for clearing retained history that uses an unsupported format",
     "placeholders": {}
+  },
+  "markdownMediaTooLarge": "媒體超過大小限制",
+  "@markdownMediaTooLarge": {
+    "description": "Markdown 媒體超過下載大小限制時顯示的錯誤"
+  },
+  "markdownMediaNotImage": "這不是圖片",
+  "@markdownMediaNotImage": {
+    "description": "Markdown 圖片網址傳回非圖片內容時顯示的錯誤"
+  },
+  "markdownMediaBlocked": "已封鎖不安全的媒體網址",
+  "@markdownMediaBlocked": {
+    "description": "Markdown 媒體網址因安全規則遭封鎖時顯示的錯誤"
+  },
+  "markdownMediaNetwork": "無法載入媒體",
+  "@markdownMediaNetwork": {
+    "description": "Markdown 媒體因網路錯誤無法載入時顯示的錯誤"
+  },
+  "markdownMediaPlay": "播放",
+  "@markdownMediaPlay": {
+    "description": "播放 Markdown 媒體的按鈕標籤"
+  },
+  "markdownMediaPause": "暫停",
+  "@markdownMediaPause": {
+    "description": "暫停 Markdown 媒體的按鈕標籤"
+  },
+  "markdownMediaMute": "靜音",
+  "@markdownMediaMute": {
+    "description": "將 Markdown 媒體設為靜音的按鈕標籤"
+  },
+  "markdownMediaUnmute": "取消靜音",
+  "@markdownMediaUnmute": {
+    "description": "取消 Markdown 媒體靜音的按鈕標籤"
+  },
+  "markdownMediaCancel": "取消下載",
+  "@markdownMediaCancel": {
+    "description": "取消 Markdown 媒體下載的按鈕標籤"
+  },
+  "markdownMediaRetry": "重試",
+  "@markdownMediaRetry": {
+    "description": "重新嘗試載入 Markdown 媒體的按鈕標籤"
+  },
+  "markdownMediaLoading": "正在下載媒體",
+  "@markdownMediaLoading": {
+    "description": "Markdown 媒體下載中的狀態標籤"
+  },
+  "markdownMediaCannotPlay": "無法播放媒體",
+  "@markdownMediaCannotPlay": {
+    "description": "影音播放器初始化或解碼失敗時的提示"
   }
 }

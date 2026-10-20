@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "This conversation was removed from saved history to free storage.",
   "aiHistoryReadFailed": "History could not be read. Retry.",
   "aiHistoryTemporaryFilesRemoved": "Stale temporary history files were removed.",
-  "aiHistoryClearUnsupported": "Clear unsupported history"
+  "aiHistoryClearUnsupported": "Clear unsupported history",
+  "markdownMediaTooLarge": "Media exceeds the size limit",
+  "markdownMediaNotImage": "This is not an image",
+  "markdownMediaBlocked": "Unsafe media URL blocked",
+  "markdownMediaNetwork": "Unable to load media",
+  "markdownMediaPlay": "Play",
+  "markdownMediaPause": "Pause",
+  "markdownMediaMute": "Mute",
+  "markdownMediaUnmute": "Unmute",
+  "markdownMediaCancel": "Cancel download",
+  "markdownMediaRetry": "Retry",
+  "markdownMediaLoading": "Downloading media",
+  "markdownMediaCannotPlay": "Cannot play media"
 }

@@ -2080,5 +2080,17 @@
   "aiHistoryEvicted": "此对话已从保存的记录中移除，以释放存储空间。",
   "aiHistoryReadFailed": "无法读取记录。请重试。",
   "aiHistoryTemporaryFilesRemoved": "已移除过期的临时记录文件。",
-  "aiHistoryClearUnsupported": "清除不受支持的记录"
+  "aiHistoryClearUnsupported": "清除不受支持的记录",
+  "markdownMediaTooLarge": "媒体超过大小限制",
+  "markdownMediaNotImage": "这不是图片",
+  "markdownMediaBlocked": "已阻止不安全的媒体网址",
+  "markdownMediaNetwork": "无法加载媒体",
+  "markdownMediaPlay": "播放",
+  "markdownMediaPause": "暂停",
+  "markdownMediaMute": "静音",
+  "markdownMediaUnmute": "取消静音",
+  "markdownMediaCancel": "取消下载",
+  "markdownMediaRetry": "重试",
+  "markdownMediaLoading": "正在下载媒体",
+  "markdownMediaCannotPlay": "无法播放媒体"
 }

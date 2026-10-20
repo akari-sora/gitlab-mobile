@@ -60,6 +60,85 @@ Future<Directory> attachmentAttemptDirectory(Account account, int projectId) asy
   return directory;
 }
 
+Future<void>? _mediaStartup;
+int _mediaAttempt = 0;
+final _mediaAccountGenerations = <String, int>{};
+final _mediaRemovingAccounts = <String, int>{};
+final _mediaRemovedGenerations = <String, int>{};
+final _mediaCleanups = <String, Set<Future<void> Function()>>{};
+
+@visibleForTesting
+int markdownMediaCleanupCount(Account account) => _mediaCleanups[account.key]?.length ?? 0;
+
+int markdownMediaAccountGeneration(Account account) => _mediaAccountGenerations[account.key] ?? 0;
+
+/// Refreshes a retained card after a failed account-removal cleanup. Work from
+/// the old generation remains fenced, while a new user retry can use the
+/// account that was kept.
+int usableMarkdownMediaAccountGeneration(Account account, {required int generation}) {
+  final removedGeneration = _mediaRemovedGenerations[account.key];
+  if (_mediaRemovingAccounts.containsKey(account.key) ||
+      (removedGeneration != null && generation < removedGeneration)) {
+    throw const ApiFailure(FailureKind.cancelled);
+  }
+  return markdownMediaAccountGeneration(account);
+}
+
+/// Account removal first cancels/disposes live players, then removes their files.
+void Function() registerMarkdownMediaCleanup(Account account, Future<void> Function() cleanup) {
+  final callbacks = _mediaCleanups.putIfAbsent(account.key, () => {});
+  // One registration owns one wrapper, even when attempts share a method.
+  Future<void> ownedCleanup() => cleanup();
+  callbacks.add(ownedCleanup);
+  var registered = true;
+  return () {
+    if (!registered) return;
+    registered = false;
+    callbacks.remove(ownedCleanup);
+    if (callbacks.isEmpty &&
+        identical(_mediaCleanups[account.key], callbacks)) {
+      _mediaCleanups.remove(account.key);
+    }
+  };
+}
+
+/// Runs once at launch, before any view can create a new playback file.
+/// A failed cleanup is retried before a download, so old media is never reused.
+Future<void> clearStaleMarkdownMedia() => _mediaStartup ??= () async {
+  final root = await artifactStorageRoot();
+  final directory = Directory('${root.path}/media');
+  if (directory.existsSync()) removeArtifactDirectory(directory);
+}().catchError((Object error, StackTrace stack) {
+  _mediaStartup = null;
+  Error.throwWithStackTrace(error, stack);
+});
+
+/// Each card owns a separate attempt; disposing it cannot delete another card.
+Future<Directory> markdownMediaDirectory(Account account, {int? generation}) async {
+  final expected = generation ?? markdownMediaAccountGeneration(account);
+  await clearStaleMarkdownMedia();
+  final root = await artifactStorageRoot();
+  if (_mediaRemovingAccounts.containsKey(account.key) ||
+      expected != markdownMediaAccountGeneration(account)) {
+    throw const ApiFailure(FailureKind.cancelled);
+  }
+  final stamp = DateTime.now().microsecondsSinceEpoch.toRadixString(16);
+  final directory = Directory(
+    '${root.path}/media/${artifactAccountSegment(account)}/$stamp-${++_mediaAttempt}',
+  );
+  directory.createSync(recursive: true);
+  return directory;
+}
+
+@visibleForTesting
+void resetMarkdownMediaStartup() {
+  _mediaStartup = null;
+  _mediaAccountGenerations.clear();
+  _mediaRemovingAccounts.clear();
+  _mediaRemovedGenerations.clear();
+  _mediaCleanups.clear();
+}
+
 /// Sanitizes an attachment filename, preventing path traversal and reserved names.
 String attachmentDownloadFileName(String name, {String fallback = 'attachment.bin'}) {
   final base = name.split(RegExp(r'[\\/]')).last.trim();
@@ -81,6 +160,45 @@ String attachmentDownloadFileName(String name, {String fallback = 'attachment.bi
 /// account is not removed while its archives remain. The `share_plus` cache
 /// is removed best-effort and cannot abort removal.
 Future<void> clearAccountArtifacts(Account account) async {
+  _mediaAccountGenerations[account.key] = markdownMediaAccountGeneration(account) + 1;
+  final release = suspendMarkdownMediaAccount(account);
+  try {
+    await _clearAccountArtifacts(account);
+  } finally {
+    release();
+  }
+}
+
+/// Holds the removal fence across file cleanup and secure-store commit/rollback.
+/// Nested cleanup owns a separate lease and cannot release the caller's fence.
+void Function() suspendMarkdownMediaAccount(Account account) {
+  final key = account.key;
+  _mediaRemovingAccounts[key] = (_mediaRemovingAccounts[key] ?? 0) + 1;
+  var held = true;
+  return () {
+    if (!held) return;
+    held = false;
+    final remaining = (_mediaRemovingAccounts[key] ?? 1) - 1;
+    if (remaining == 0) {
+      _mediaRemovingAccounts.remove(key);
+    } else {
+      _mediaRemovingAccounts[key] = remaining;
+    }
+  };
+}
+
+/// Permanently fences retained cards only once secure account removal commits.
+void markMarkdownMediaAccountRemoved(Account account) {
+  // Cards mounted during the removal lease also belong to the removed epoch.
+  final next = markdownMediaAccountGeneration(account) + 1;
+  _mediaAccountGenerations[account.key] = next;
+  _mediaRemovedGenerations[account.key] = next;
+}
+
+Future<void> _clearAccountArtifacts(Account account) async {
+  for (final cleanup in [...?_mediaCleanups[account.key]]) {
+    await cleanup();
+  }
   final Directory root;
   try {
     root = await artifactStorageRoot();
@@ -99,6 +217,14 @@ Future<void> clearAccountArtifacts(Account account) async {
   if (attachmentsDir.existsSync()) {
     try {
       removeArtifactDirectory(attachmentsDir);
+    } on FileSystemException {
+      throw ApiFailure.artifactCleanup;
+    }
+  }
+  final mediaDir = Directory('${root.path}/media/${artifactAccountSegment(account)}');
+  if (mediaDir.existsSync()) {
+    try {
+      removeArtifactDirectory(mediaDir);
     } on FileSystemException {
       throw ApiFailure.artifactCleanup;
     }
