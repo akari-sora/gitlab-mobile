@@ -80,8 +80,8 @@ bool _containsImage(List<md.Node> nodes) => nodes.any(
 );
 
 /// Parses supported inline HTML media before package:markdown's raw HTML
-/// syntax. Code spans and every code block have already been claimed by the
-/// Markdown parser before this syntax is considered.
+/// syntax. Inert regions containing backticks fall back to the default parser
+/// so they cannot swallow a later code span's opening delimiter.
 final class MarkdownMediaInlineSyntax extends md.InlineSyntax {
   MarkdownMediaInlineSyntax() : super(r'<', startCharacter: 0x3C);
 
@@ -295,7 +295,7 @@ bool _containsMedia(List<md.Node> nodes) => nodes.any(
 }
 
 List<md.Node> _htmlBlockChildren(String source) {
-  final scanner = _HtmlMediaScanner(source);
+  final scanner = _HtmlMediaScanner(source, htmlBlock: true);
   final blocks = <md.Node>[];
   final inlines = <md.Node>[];
   var blockTag = 'p';
@@ -339,7 +339,21 @@ List<md.Node> _htmlBlockChildren(String source) {
       index = end ?? source.length;
       continue;
     }
-    final tag = _scanTag(source, next);
+    final literalEnd = source.startsWith('<![CDATA[', next)
+        ? ']]>'
+        : source.startsWith('<?', next)
+        ? '?>'
+        : source.startsWith('<!', next) &&
+              next + 2 < source.length &&
+              _isAsciiLetter(source.codeUnitAt(next + 2))
+        ? '>'
+        : null;
+    if (literalEnd != null) {
+      final end = source.indexOf(literalEnd, next + 2);
+      index = end < 0 ? source.length : end + literalEnd.length;
+      continue;
+    }
+    final tag = _scanTag(source, next, htmlBlock: true);
     if (tag == null) {
       addText('<');
       index = next + 1;
@@ -399,14 +413,14 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
   final source = scanner.source;
   if (source.startsWith('<!--', start)) {
     final end = scanner.commentEnd(start);
-    if (end == null) return null;
+    if (end == null || scanner.hasBacktick(start, end)) return null;
     return (element: md.Text(source.substring(start, end)), end: end);
   }
   final first = _scanTag(source, start);
   if (first == null || first.closing) return null;
   if (_textOnlyTags.contains(first.name)) {
     final end = scanner.closingTag(first.name, first.end)?.end;
-    if (end == null) return null;
+    if (end == null || scanner.hasBacktick(start, end)) return null;
     return (element: md.Text(source.substring(start, end)), end: end);
   }
   if (first.name == 'img') {
@@ -415,6 +429,7 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
   }
   if (first.name == 'video' || first.name == 'audio') {
     final close = scanner.closingTag(first.name, first.end)?.end;
+    if (scanner.hasBacktick(start, close ?? first.end)) return null;
     final src =
         first.attributes['src'] ?? scanner.sourceInside(first.end, first.name);
     final element = _mediaElement({
@@ -486,13 +501,29 @@ md.Element? _mediaElement(
 /// Searches forward in one source without allocating suffixes or repeatedly
 /// scanning a tail already known to contain no matching closing/source tag.
 final class _HtmlMediaScanner {
-  _HtmlMediaScanner(this.source);
+  _HtmlMediaScanner(this.source, {this.htmlBlock = false});
 
   final String source;
+  final bool htmlBlock;
   final _closing = <String, ({int from, RegExpMatch? match})>{};
   ({int from, int? end})? _comment;
+  ({int from, int at})? _backtick;
   final _sources = <String, ({int from, int end, int? at, String? src})>{};
-  static final _closingPatterns = <String, RegExp>{};
+  static final _closingPatterns = <(String, bool), RegExp>{};
+
+  // Failed inert-region probes may share a long suffix. Reuse the next
+  // backtick position so leaving code spans to Markdown stays linear.
+  bool hasBacktick(int start, int end) {
+    final previous = _backtick;
+    final at =
+        previous != null &&
+            start >= previous.from &&
+            (previous.at < 0 || start <= previous.at)
+        ? previous.at
+        : source.indexOf('`', start);
+    _backtick = (from: start, at: at);
+    return at >= 0 && at < end;
+  }
 
   int? commentEnd(int start) {
     if (source.startsWith('<!-->', start)) return start + 5;
@@ -517,8 +548,11 @@ final class _HtmlMediaScanner {
       return previous.match;
     }
     final pattern = _closingPatterns.putIfAbsent(
-      name,
-      () => RegExp('</$name\\s*>', caseSensitive: false),
+      (name, htmlBlock),
+      () => RegExp(
+        htmlBlock ? '</$name[\\t\\n\\f\\r ]*>' : '</$name\\s*>',
+        caseSensitive: false,
+      ),
     );
     final matches = pattern.allMatches(source, start).iterator;
     final match = matches.moveNext() ? matches.current : null;
@@ -544,7 +578,7 @@ final class _HtmlMediaScanner {
         cursor = commentEnd;
         continue;
       }
-      final tag = _scanTag(source, next);
+      final tag = _scanTag(source, next, htmlBlock: htmlBlock);
       if (tag == null) {
         cursor = next + 1;
         continue;
@@ -585,7 +619,8 @@ final class _HtmlTag {
 
 final _inlineHtmlPattern = md.InlineHtmlSyntax().pattern;
 
-_HtmlTag? _scanTag(String source, int start) {
+_HtmlTag? _scanTag(String source, int start, {bool htmlBlock = false}) {
+  final isWhitespace = htmlBlock ? _isHtmlWhitespace : _isWhitespace;
   if (start >= source.length || source.codeUnitAt(start) != 0x3C) return null;
   var cursor = start + 1;
   var closing = false;
@@ -605,7 +640,7 @@ _HtmlTag? _scanTag(String source, int start) {
   final attributes = <String, String>{};
   while (cursor < source.length) {
     final beforeWhitespace = cursor;
-    while (cursor < source.length && _isWhitespace(source.codeUnitAt(cursor))) {
+    while (cursor < source.length && isWhitespace(source.codeUnitAt(cursor))) {
       cursor++;
     }
     if (cursor >= source.length) return null;
@@ -636,14 +671,14 @@ _HtmlTag? _scanTag(String source, int start) {
     }
     final attribute = source.substring(attributeStart, cursor).toLowerCase();
     final attributeEnd = cursor;
-    while (cursor < source.length && _isWhitespace(source.codeUnitAt(cursor))) {
+    while (cursor < source.length && isWhitespace(source.codeUnitAt(cursor))) {
       cursor++;
     }
     var value = '';
     if (cursor < source.length && source.codeUnitAt(cursor) == 0x3D) {
       cursor++;
       while (cursor < source.length &&
-          _isWhitespace(source.codeUnitAt(cursor))) {
+          isWhitespace(source.codeUnitAt(cursor))) {
         cursor++;
       }
       if (cursor >= source.length) return null;
@@ -660,7 +695,7 @@ _HtmlTag? _scanTag(String source, int start) {
       } else {
         final valueStart = cursor;
         while (cursor < source.length &&
-            !_isWhitespace(source.codeUnitAt(cursor)) &&
+            !isWhitespace(source.codeUnitAt(cursor)) &&
             source.codeUnitAt(cursor) != 0x3E) {
           final unit = source.codeUnitAt(cursor);
           if (unit == 0x22 ||
@@ -695,6 +730,13 @@ bool _isAttributeStart(int unit) =>
 
 bool _isAttributeName(int unit) =>
     _isName(unit) || unit == 0x5F || unit == 0x3A || unit == 0x2E;
+
+bool _isHtmlWhitespace(int unit) =>
+    unit == 0x20 ||
+    unit == 0x09 ||
+    unit == 0x0A ||
+    unit == 0x0C ||
+    unit == 0x0D;
 
 // ECMAScript \s, as used by package:markdown's named-tag pattern. The ASCII
 // range includes both form feed and line tabulation.

@@ -356,9 +356,10 @@ void main() {
     });
   }
 
-  test('FIX7 block scanner accepts package-valid Unicode whitespace', () {
+  test('FIX8 Unicode whitespace is accepted only by the inline grammar', () {
     const source = '<div><img\u00A0src="https://cdn.example/one.svg"></div>';
-    expect(_media(source).map((element) => element.attributes['src']), [
+    expect(_media(source), isEmpty);
+    expect(_media('v $source').map((element) => element.attributes['src']), [
       'https://cdn.example/one.svg',
     ]);
   });
