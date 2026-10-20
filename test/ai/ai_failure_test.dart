@@ -42,6 +42,30 @@ void main() {
     expect(AiFailure.fromStatus(503, retryAfter: '12').retryAt, isNull);
   });
 
+  test('server 413 does not claim the request was never sent', () {
+    final server = AiFailure.fromStatus(413);
+    const local = AiFailure(AiFailureKind.requestTooLarge);
+    for (final language in appLanguages) {
+      useLanguage(language);
+      expect(server.detail, l10n.aiContextTooLongDetail);
+      expect(local.detail, l10n.aiRequestTooLargeDetail);
+      expect(server.detail, isNot(local.detail));
+    }
+    useLanguage(sourceLanguage);
+  });
+
+  test('Retry-After is capped at one hour for seconds and HTTP dates', () {
+    final now = DateTime.utc(2026, 10, 20);
+    final cap = now.add(const Duration(hours: 1));
+    for (final value in [
+      '99999999999',
+      '9223372036854775807',
+      'Wed, 21 Oct 2026 00:00:00 GMT',
+    ]) {
+      expect(AiFailure.parseRetryAfter(value, now: now), cap);
+    }
+  });
+
   test(
     'failure text follows current locale without including raw exceptions',
     () {

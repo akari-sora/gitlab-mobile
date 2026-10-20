@@ -28,6 +28,15 @@ final class AiEndpoint {
   static final RegExp _dnsHost = RegExp(
     r'^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$',
   );
+  static final RegExp _numericHostPart = RegExp(
+    r'^(?:[0-9]+|0x[0-9a-f]+)$',
+    caseSensitive: false,
+  );
+  static final RegExp _invalidPercentEscape = RegExp(
+    r'%(?![0-9a-f]{2})',
+    caseSensitive: false,
+  );
+  static final RegExp _controlOrSpace = RegExp(r'[\x00-\x20\x7f]');
 
   factory AiEndpoint.parse(
     String input, {
@@ -35,25 +44,34 @@ final class AiEndpoint {
     String? modelsUrlOverride,
     bool allowKeyEndpoint = false,
   }) {
-    final parsed = _parseRaw(input, allowLanCleartext: allowLanCleartext);
-    Uri? models;
-    if (modelsUrlOverride != null && modelsUrlOverride.trim().isNotEmpty) {
-      final override = _parseRaw(
-        modelsUrlOverride,
-        allowLanCleartext: allowLanCleartext,
-      );
-      if (!_sameOrigin(parsed.uri, override.uri)) {
-        throw const AiFailure(AiFailureKind.policyBlocked);
+    try {
+      final parsed = _parseRaw(input, allowLanCleartext: allowLanCleartext);
+      Uri? models;
+      if (modelsUrlOverride != null && modelsUrlOverride.trim().isNotEmpty) {
+        final override = _parseRaw(
+          modelsUrlOverride,
+          allowLanCleartext: allowLanCleartext,
+        );
+        final overridePath = override.uri.pathSegments
+            .where((segment) => segment.isNotEmpty)
+            .toList();
+        if (!_sameOrigin(parsed.uri, override.uri) ||
+            overridePath.isEmpty ||
+            overridePath.last != 'models') {
+          throw const AiFailure(AiFailureKind.policyBlocked);
+        }
+        models = override.uri;
       }
-      models = override.uri;
+      return AiEndpoint._(
+        base: parsed.uri,
+        cleartext: parsed.uri.scheme == 'http',
+        displayHost: parsed.displayHost,
+        modelsOverride: models,
+        allowKeyEndpoint: allowKeyEndpoint,
+      );
+    } on FormatException {
+      throw const AiFailure(AiFailureKind.policyBlocked);
     }
-    return AiEndpoint._(
-      base: parsed.uri,
-      cleartext: parsed.uri.scheme == 'http',
-      displayHost: parsed.displayHost,
-      modelsOverride: models,
-      allowKeyEndpoint: allowKeyEndpoint,
-    );
   }
 
   String get key => base.toString().replaceFirst(RegExp(r'/$'), '');
@@ -63,41 +81,45 @@ final class AiEndpoint {
     host: base.host,
     port: base.hasPort ? base.port : null,
     pathSegments: [..._basePath, ...suffix],
-    queryParameters: query,
+    queryParameters: query == null || query.isEmpty ? null : query,
   );
 
   bool allows(Uri uri, {String method = 'GET'}) {
-    final verb = method.toUpperCase();
-    if (verb != 'GET' && verb != 'POST') return false;
-    if (!_safeOutgoingSpelling(uri) ||
-        !_sameOrigin(base, uri) ||
-        uri.userInfo.isNotEmpty ||
-        uri.hasFragment) {
+    try {
+      final verb = method.toUpperCase();
+      if (verb != 'GET' && verb != 'POST') return false;
+      if (!_safeOutgoingSpelling(uri) ||
+          !_sameOrigin(base, uri) ||
+          uri.userInfo.isNotEmpty ||
+          uri.hasFragment) {
+        return false;
+      }
+      if (uri.queryParameters.keys.any(
+        (key) => key != 'after_id' && key != 'limit',
+      )) {
+        return false;
+      }
+      final override = modelsOverride;
+      if (override != null && verb == 'GET' && _samePath(override, uri)) {
+        return true;
+      }
+      final path = uri.pathSegments
+          .where((segment) => segment.isNotEmpty)
+          .toList();
+      final prefix = _basePath;
+      if (path.length <= prefix.length || !_startsWith(path, prefix)) {
+        return false;
+      }
+      final suffix = path.sublist(prefix.length).join('/');
+      return switch (suffix) {
+        'chat/completions' || 'responses' || 'messages' => verb == 'POST',
+        'models' => verb == 'GET',
+        'key' => allowKeyEndpoint && verb == 'GET',
+        _ => false,
+      };
+    } on FormatException {
       return false;
     }
-    if (uri.queryParameters.keys.any(
-      (key) => key != 'after_id' && key != 'limit',
-    )) {
-      return false;
-    }
-    final override = modelsOverride;
-    if (override != null && verb == 'GET' && _samePath(override, uri)) {
-      return true;
-    }
-    final path = uri.pathSegments
-        .where((segment) => segment.isNotEmpty)
-        .toList();
-    final prefix = _basePath;
-    if (path.length <= prefix.length || !_startsWith(path, prefix)) {
-      return false;
-    }
-    final suffix = path.sublist(prefix.length).join('/');
-    return switch (suffix) {
-      'chat/completions' || 'responses' || 'messages' => verb == 'POST',
-      'models' => verb == 'GET',
-      'key' => allowKeyEndpoint && verb == 'GET',
-      _ => false,
-    };
   }
 
   List<String> get _basePath =>
@@ -151,7 +173,9 @@ final class AiEndpoint {
     final rawHost = match.group(2)!;
     final rawPort = match.group(3);
     final rawPath = match.group(4) ?? '';
-    if (rawPath.contains('//') ||
+    if (_controlOrSpace.hasMatch(rawPath) ||
+        _invalidPercentEscape.hasMatch(rawPath) ||
+        rawPath.contains('//') ||
         rawPath
             .split('/')
             .any((segment) => segment == '.' || segment == '..')) {
@@ -180,7 +204,9 @@ final class AiEndpoint {
     } else if (host == 'localhost') {
       host = '127.0.0.1';
       displayHost = 'localhost (127.0.0.1)';
-    } else if (host.endsWith('.') || !_dnsHost.hasMatch(host)) {
+    } else if (_looksLikeNonCanonicalIpv4(host) ||
+        host.endsWith('.') ||
+        !_dnsHost.hasMatch(host)) {
       throw const AiFailure(AiFailureKind.policyBlocked);
     }
 
@@ -202,11 +228,17 @@ final class AiEndpoint {
       '$scheme://$authorityHost'
       '${normalizedPort == null ? '' : ':$normalizedPort'}$normalizedPath',
     );
+    if (uri.pathSegments.any(_controlOrSpace.hasMatch)) {
+      throw const AiFailure(AiFailureKind.policyBlocked);
+    }
     return (uri: uri, displayHost: displayHost);
   }
 
   static bool _validIpv4(String host) =>
       host.split('.').every((part) => int.parse(part) <= 255);
+
+  static bool _looksLikeNonCanonicalIpv4(String host) =>
+      host.split('.').every(_numericHostPart.hasMatch);
 
   static bool _privateCleartextHost(String host, {required bool bracketed}) {
     if (!bracketed && _strictIpv4.hasMatch(host) && _validIpv4(host)) {

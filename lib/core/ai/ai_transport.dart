@@ -167,10 +167,17 @@ final class AiTransport {
       }
       final status = response.statusCode ?? 0;
       if (status < 200 || status >= 300) {
-        await _discard(response.data, maxErrorBytes, token);
+        final discardCancelled = await _discard(
+          response.data,
+          maxErrorBytes,
+          token,
+        );
         timer.cancel();
         if (wallTimedOut) throw const AiFailure(AiFailureKind.timeout);
-        final retryAfter = response.headers.value('retry-after');
+        if (_closed || (token.isCancelled && !discardCancelled)) {
+          throw const AiFailure(AiFailureKind.cancelled);
+        }
+        final retryAfter = _singleHeader(response.headers, 'retry-after');
         final failure = AiFailure.fromStatus(
           status,
           retryAfter: retryAfter,
@@ -186,9 +193,28 @@ final class AiTransport {
         timer.cancel();
         throw const AiFailure(AiFailureKind.invalidResponse);
       }
-      final contentLength = int.tryParse(
-        response.headers.value(Headers.contentLengthHeader) ?? '',
-      );
+      String? contentLengthValue;
+      try {
+        contentLengthValue = _singleHeader(
+          response.headers,
+          Headers.contentLengthHeader,
+        );
+      } on AiFailure {
+        timer.cancel();
+        if (!token.isCancelled) token.cancel('Invalid AI content length');
+        await _release(body);
+        rethrow;
+      }
+      final contentLength = contentLengthValue == null
+          ? null
+          : int.tryParse(contentLengthValue);
+      if (contentLengthValue != null &&
+          (contentLength == null || contentLength < 0)) {
+        timer.cancel();
+        if (!token.isCancelled) token.cancel('Invalid AI content length');
+        await _release(body);
+        throw const AiFailure(AiFailureKind.invalidResponse);
+      }
       if (contentLength != null && contentLength > responseLimit) {
         timer.cancel();
         if (!token.isCancelled) token.cancel('AI response exceeds byte limit');
@@ -226,6 +252,7 @@ final class AiTransport {
       rethrow;
     } on IOException {
       timer.cancel();
+      if (_closed) throw const AiFailure(AiFailureKind.cancelled);
       throw const AiFailure(AiFailureKind.network);
     } finally {
       if (!handedOff) timer.cancel();
@@ -285,10 +312,23 @@ final class AiTransport {
 
   static Map<String, String> _providerHeaders(Map<String, String> headers) {
     const allowed = {'anthropic-version', 'anthropic-beta'};
-    if (headers.keys.any((name) => !allowed.contains(name.toLowerCase()))) {
-      throw const AiFailure(AiFailureKind.policyBlocked);
+    final names = <String>{};
+    for (final name in headers.keys) {
+      final normalized = name.toLowerCase();
+      if (!allowed.contains(normalized) || !names.add(normalized)) {
+        throw const AiFailure(AiFailureKind.policyBlocked);
+      }
     }
     return Map.unmodifiable(headers);
+  }
+
+  static String? _singleHeader(Headers headers, String name) {
+    final values = headers[name];
+    if (values == null || values.isEmpty) return null;
+    if (values.length != 1) {
+      throw const AiFailure(AiFailureKind.invalidResponse);
+    }
+    return values.single;
   }
 
   Stream<Uint8List> _bounded(
@@ -393,7 +433,10 @@ final class AiTransport {
     if (error is AiFailure) return error;
     if (timedOut) return const AiFailure(AiFailureKind.timeout);
     if (closed || cancelled) return const AiFailure(AiFailureKind.cancelled);
-    return const AiFailure(AiFailureKind.network);
+    if (error is DioException && _isTimeout(error)) {
+      return const AiFailure(AiFailureKind.timeout);
+    }
+    return const AiFailure(AiFailureKind.interrupted);
   }
 
   static bool _isTimeout(DioException error) =>
@@ -401,28 +444,37 @@ final class AiTransport {
       error.type == DioExceptionType.sendTimeout ||
       error.type == DioExceptionType.receiveTimeout;
 
-  static Future<void> _discard(
+  static Future<bool> _discard(
     ResponseBody? body,
     int maxBytes,
     CancelToken token,
   ) async {
-    if (body == null) return;
+    if (body == null) return false;
     var read = 0;
+    var limitReached = maxBytes == 0;
     final iterator = StreamIterator<Uint8List>(body.stream);
     try {
-      while (read <= maxBytes) {
+      while (read < maxBytes) {
         final step = await Future.any<Object?>([
           iterator.moveNext(),
           token.whenCancel.then<Object?>((_) => null),
         ]);
         if (step != true) break;
         read += iterator.current.length;
+        if (read >= maxBytes) {
+          limitReached = true;
+          break;
+        }
       }
     } on Object {
-      return;
+      // The bounded status mapping remains authoritative if discard fails.
     } finally {
       await iterator.cancel();
     }
+    if (limitReached && !token.isCancelled) {
+      token.cancel('AI error response exceeds byte limit');
+    }
+    return limitReached;
   }
 
   static Future<void> _release(ResponseBody body) async {

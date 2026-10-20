@@ -65,25 +65,27 @@ final class Redactor {
     RedactionPattern('docker', r'\bdckr_pat_[A-Za-z0-9_\-]{27,}'),
     RedactionPattern(
       'jwt',
-      r'\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}',
+      r'(?<![A-Za-z0-9_\-])eyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}',
     ),
   ];
 
+  // Match only the scheme; scan each authority once, bounded by /, ? or #.
   static const RedactionPattern urlCredentialsPattern = RedactionPattern(
     'url-credentials',
-    r'\b((?:https?|ftp|ssh|git|postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqps?)://)[^/\s:@]+:[^/\s@]+@',
+    r'\b((?:https?|ftp|ssh|git|postgres(?:ql)?|mysql|mongodb(?:\+srv)?|redis|amqps?)://)',
     caseSensitive: false,
   );
 
+  // Applied to whole identifiers, never at every suffix of a long identifier.
   static const List<RedactionPattern> assignmentPatterns = [
     RedactionPattern(
       'header',
-      r'''\b(authorization|private-token|job-token|x-api-key|api-key|x-goog-api-key)\b\s*[:=]\s*(?:bearer\s+|basic\s+)?[^\s"']+''',
+      r'^(?:authorization|private-token|job-token|x-api-key|api-key|x-goog-api-key)$',
       caseSensitive: false,
     ),
     RedactionPattern(
       'generic',
-      r'''\b(password|passwd|pwd|secret|client_secret|token|api[_-]?key|access[_-]?key|private[_-]?key)\b\s*[:=]\s*["']?[^\s"']{8,}''',
+      r'(?:^|[_.\-])(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key)(?:$|[_.\-])',
       caseSensitive: false,
     ),
   ];
@@ -99,34 +101,35 @@ final class Redactor {
     try {
       _refreshSecrets();
       _compilePatterns();
-      var text = input;
-      var count = 0;
-
-      final secrets = _knownSecrets.toList()
-        ..sort((left, right) => right.length.compareTo(left.length));
-      for (final secret in secrets) {
-        final occurrences = _literalOccurrences(text, secret);
-        if (occurrences == 0) continue;
-        text = text.replaceAll(secret, _redacted);
-        count += occurrences;
+      // No detector sees another detector's replacement text.
+      final ranges = <_RedactionRange>[];
+      for (final secret in _knownSecrets) {
+        if (_redacted.contains(secret)) {
+          throw const AiFailure(AiFailureKind.policyBlocked);
+        }
+        var offset = 0;
+        while (offset < input.length) {
+          final start = input.indexOf(secret, offset);
+          if (start < 0) break;
+          ranges.add((start: start, end: start + secret.length));
+          offset = start + 1; // Include overlapping exact matches.
+        }
       }
-
-      (text, count) = _replacePatterns(text, count, _patterns!);
-
-      final pem = _redactPemBlocks(text);
-      text = pem.text;
-      count += pem.redactions;
-
-      final urlMatches = _urlCredentials!.allMatches(text).toList();
-      if (urlMatches.isNotEmpty) {
-        text = text.replaceAllMapped(
-          _urlCredentials!,
-          (match) => '${match.group(1)}[REDACTED:url_credentials]@',
-        );
-        count += urlMatches.length;
+      for (final pattern in _patterns!) {
+        for (final match in pattern.allMatches(input)) {
+          ranges.add((start: match.start, end: match.end));
+        }
       }
-      (text, count) = _replacePatterns(text, count, _assignments!);
-      return RedactionResult(text, count);
+      ranges
+        ..addAll(_pemRanges(input))
+        ..addAll(_urlRanges(input, _urlCredentials!))
+        ..addAll(_assignmentRanges(input, _assignments!));
+      final result = _replaceRanges(input, ranges);
+      // A replacement must not introduce a known secret across its boundaries.
+      if (_knownSecrets.any(result.text.contains)) {
+        throw const AiFailure(AiFailureKind.policyBlocked);
+      }
+      return result;
     } on AiFailure {
       rethrow;
     } catch (_) {
@@ -157,67 +160,166 @@ final class Redactor {
   }
 }
 
-(String, int) _replacePatterns(String text, int count, List<RegExp> patterns) {
-  for (final pattern in patterns) {
-    final matches = pattern.allMatches(text).length;
-    if (matches == 0) continue;
-    text = text.replaceAll(pattern, _redacted);
-    count += matches;
-  }
-  return (text, count);
-}
+typedef _RedactionRange = ({int start, int end});
 
-int _literalOccurrences(String text, String needle) {
-  var count = 0;
-  var offset = 0;
-  while (true) {
-    final match = text.indexOf(needle, offset);
-    if (match < 0) return count;
-    count += 1;
-    offset = match + needle.length;
-  }
-}
-
-RedactionResult _redactPemBlocks(String input) {
-  final begin = RegExp(r'-----BEGIN ([A-Z0-9 ]*PRIVATE KEY)-----');
-  var offset = 0;
-  var count = 0;
-  final output = StringBuffer();
-  while (true) {
-    final match = begin.firstMatch(input.substring(offset));
-    if (match == null) {
-      output.write(input.substring(offset));
-      break;
+RedactionResult _replaceRanges(String input, List<_RedactionRange> ranges) {
+  if (ranges.isEmpty) return RedactionResult(input, 0);
+  ranges.sort(
+    (a, b) => a.start != b.start
+        ? a.start.compareTo(b.start)
+        : b.end.compareTo(a.end),
+  );
+  final merged = <_RedactionRange>[];
+  for (final range in ranges) {
+    if (merged.isNotEmpty && range.start < merged.last.end) {
+      final previous = merged.removeLast();
+      merged.add((
+        start: previous.start,
+        end: range.end > previous.end ? range.end : previous.end,
+      ));
+    } else {
+      merged.add(range);
     }
-    final start = offset + match.start;
-    final contentStart = offset + match.end;
-    output.write(input.substring(offset, start));
+  }
+  final output = StringBuffer();
+  var offset = 0;
+  for (final range in merged) {
+    output
+      ..write(input.substring(offset, range.start))
+      ..write(_redacted);
+    offset = range.end;
+  }
+  output.write(input.substring(offset));
+  return RedactionResult(output.toString(), merged.length);
+}
 
+Iterable<_RedactionRange> _urlRanges(String input, RegExp scheme) sync* {
+  var scannedThrough = 0;
+  for (final match in scheme.allMatches(input)) {
+    if (match.start < scannedThrough) continue;
+    var end = match.end;
+    var separator = -1;
+    while (end < input.length) {
+      final unit = input.codeUnitAt(end);
+      if (unit <= 0x20 ||
+          unit == 0x2f ||
+          unit == 0x3f ||
+          unit == 0x23 ||
+          unit == 0x22 ||
+          unit == 0x27 ||
+          unit == 0x3c ||
+          unit == 0x3e) {
+        break;
+      }
+      if (unit == 0x40) separator = end;
+      end += 1;
+    }
+    scannedThrough = end;
+    if (separator > match.end &&
+        input.substring(match.end, separator) != _redacted) {
+      yield (start: match.end, end: separator);
+    }
+  }
+}
+
+final _identifier = RegExp(r'[A-Za-z0-9_.\-]+');
+
+Iterable<_RedactionRange> _assignmentRanges(
+  String input,
+  List<RegExp> names,
+) sync* {
+  var scannedThrough = 0;
+  for (final match in _identifier.allMatches(input)) {
+    if (match.start < scannedThrough) continue;
+    final name = match.group(0)!;
+    final header = names[0].hasMatch(name);
+    if (!header && !names[1].hasMatch(name)) continue;
+    var cursor = match.end;
+    if (cursor < input.length && _isQuote(input.codeUnitAt(cursor))) cursor++;
+    cursor = _skipHorizontalSpace(input, cursor);
+    if (cursor == input.length ||
+        (input.codeUnitAt(cursor) != 0x3a &&
+            input.codeUnitAt(cursor) != 0x3d)) {
+      continue;
+    }
+    cursor = _skipHorizontalSpace(input, cursor + 1);
+    final quoted = cursor < input.length && _isQuote(input.codeUnitAt(cursor));
+    final quote = quoted ? input.codeUnitAt(cursor++) : 0;
+    final valueStart = cursor;
+    while (cursor < input.length) {
+      final unit = input.codeUnitAt(cursor);
+      if (unit == 0x0a ||
+          unit == 0x0d ||
+          (quoted
+              ? unit == quote
+              : _isQuote(unit) || (!header && unit <= 0x20))) {
+        break;
+      }
+      cursor++;
+    }
+    scannedThrough = cursor;
+    final value = input.substring(valueStart, cursor);
+    if (value.isEmpty || value == _redacted || (!header && value.length < 8)) {
+      continue;
+    }
+    final start = match.start > 0 && _isQuote(input.codeUnitAt(match.start - 1))
+        ? match.start - 1
+        : match.start;
+    if (quoted && cursor < input.length && input.codeUnitAt(cursor) == quote) {
+      cursor++;
+    }
+    yield (start: start, end: cursor);
+  }
+}
+
+bool _isQuote(int unit) => unit == 0x22 || unit == 0x27;
+
+int _skipHorizontalSpace(String input, int cursor) {
+  while (cursor < input.length &&
+      (input.codeUnitAt(cursor) == 0x20 || input.codeUnitAt(cursor) == 0x09)) {
+    cursor++;
+  }
+  return cursor;
+}
+
+Iterable<_RedactionRange> _pemRanges(String input) sync* {
+  final begin = RegExp(r'-----BEGIN ([A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?)-----');
+  var offset = 0;
+  for (final match in begin.allMatches(input)) {
+    if (match.start < offset) continue;
     final endMarker = '-----END ${match.group(1)}-----';
-    final firstLineEnd = _lineEnd(input, contentStart);
+    final firstLineEnd = _lineEnd(input, match.end);
+    final firstLine = input.substring(match.end, firstLineEnd.contentEnd);
+    final inlineEnd = firstLine.indexOf(endMarker);
+    if (inlineEnd >= 0) {
+      final end = match.end + inlineEnd + endMarker.length;
+      offset = end == firstLineEnd.contentEnd ? firstLineEnd.nextOffset : end;
+      yield (start: match.start, end: offset);
+      continue;
+    }
     var cursor = firstLineEnd.nextOffset;
     var redactionEnd = cursor;
+    int? firstBlank;
+    var matchedEnd = false;
     var lines = 0;
     while (cursor < input.length && lines < 100) {
       final lineEnd = _lineEnd(input, cursor);
       final line = input.substring(cursor, lineEnd.contentEnd);
-      lines += 1;
+      // Never rescan the body of another private-key block.
+      if (line.contains('-----BEGIN ')) break;
+      lines++;
       if (line == endMarker) {
         redactionEnd = lineEnd.nextOffset;
+        matchedEnd = true;
         break;
       }
-      if (line.isEmpty) {
-        redactionEnd = cursor;
-        break;
-      }
+      if (line.isEmpty) firstBlank ??= cursor;
       redactionEnd = lineEnd.nextOffset;
       cursor = lineEnd.nextOffset;
     }
-    output.write(_redacted);
-    count += 1;
-    offset = redactionEnd;
+    offset = !matchedEnd && firstBlank != null ? firstBlank : redactionEnd;
+    yield (start: match.start, end: offset);
   }
-  return RedactionResult(output.toString(), count);
 }
 
 ({int contentEnd, int nextOffset}) _lineEnd(String text, int start) {

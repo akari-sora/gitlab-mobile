@@ -207,12 +207,183 @@ void main() {
         secrets: _Secrets(),
       ).redact('POSTGRES://user:password@database.internal:5432/db');
 
-      expect(
-        result.text,
-        'POSTGRES://[REDACTED:url_credentials]@database.internal:5432/db',
-      );
+      expect(result.text, 'POSTGRES://[REDACTED]@database.internal:5432/db');
     },
   );
+
+  for (final (label, secret, input, hidden)
+      in <(String, String, String, String)>[
+        ('PAT prefix', 'glpat', 'glpat-${'A' * 20}', 'A' * 20),
+        (
+          'header name',
+          'Authorization',
+          'Authorization: Bearer SYNTHETIC-HEADER-SECRET',
+          'SYNTHETIC-HEADER-SECRET',
+        ),
+        (
+          'PEM BEGIN',
+          '-----BEGIN PRIVATE KEY-----',
+          '-----BEGIN PRIVATE KEY-----\nSYNTHETIC-PRIVATE-MATERIAL\n'
+              '-----END PRIVATE KEY-----',
+          'SYNTHETIC-PRIVATE-MATERIAL',
+        ),
+      ]) {
+    test('known secret $label cannot disable structural detection', () {
+      final redactor = Redactor(secrets: _Secrets()..values = [secret]);
+      final result = redactor.redact(input);
+      expect(result.text, isNot(contains(hidden)), reason: label);
+      expect(result.redactions, 1);
+    });
+  }
+
+  test('marker collisions fail closed instead of retaining a known secret', () {
+    for (final secret in ['REDACTED', 'EDAC', '[REDACTED]']) {
+      final redactor = Redactor(secrets: _Secrets()..values = [secret]);
+      expect(
+        () => redactor.redact(secret),
+        throwsA(
+          isA<AiFailure>().having(
+            (f) => f.kind,
+            'kind',
+            AiFailureKind.policyBlocked,
+          ),
+        ),
+      );
+    }
+  });
+
+  test('overlapping literal matches leave no suffix of another secret', () {
+    final result = Redactor(
+      secrets: _Secrets()..values = ['abcd', 'cdef'],
+      patterns: const [],
+    ).redact('abcdef');
+    expect(result.text, '[REDACTED]');
+    expect(result.redactions, 1);
+  });
+
+  test('headers hide arbitrary schemes and JSON credential values', () {
+    for (final input in [
+      'Authorization: Token SYNTHETIC-CREDENTIAL',
+      'Authorization: Bot SYNTHETIC-CREDENTIAL',
+      '"Authorization": "Bearer SYNTHETIC-CREDENTIAL"',
+      "'x-api-key': 'SYNTHETIC-CREDENTIAL'",
+    ]) {
+      final result = Redactor(secrets: _Secrets()).redact(input);
+      expect(result.text, isNot(contains('SYNTHETIC-CREDENTIAL')));
+      expect(result.redactions, 1);
+    }
+  });
+
+  test('environment and JSON secret assignments hide complete values', () {
+    for (final input in [
+      'DB_PASSWORD=SYNTHETIC-CREDENTIAL',
+      'POSTGRES_PASSWORD: SYNTHETIC-CREDENTIAL',
+      'export GITLAB_TOKEN=SYNTHETIC-CREDENTIAL',
+      'SECRET_KEY_BASE=SYNTHETIC-CREDENTIAL',
+      '{"password": "SYNTHETIC-CREDENTIAL"}',
+      '{"client_secret":"SYNTHETIC-CREDENTIAL"}',
+    ]) {
+      final result = Redactor(secrets: _Secrets()).redact(input);
+      expect(result.text, isNot(contains('SYNTHETIC-CREDENTIAL')));
+      expect(result.redactions, 1);
+    }
+    expect(
+      Redactor(
+        secrets: _Secrets(),
+      ).redact('{"max_tokens": 1024, "tokens": 123456789}').redactions,
+      0,
+    );
+  });
+
+  test('encrypted and PGP private keys redact through matching END', () {
+    for (final label in ['RSA PRIVATE KEY', 'PGP PRIVATE KEY BLOCK']) {
+      final result = Redactor(secrets: _Secrets()).redact(
+        '-----BEGIN $label-----\nProc-Type: 4,ENCRYPTED\n'
+        'DEK-Info: AES-128-CBC,ABCDEF\n\nSYNTHETIC-KEY-BODY\n'
+        '-----END $label-----\nafter',
+      );
+      expect(result.text, '[REDACTED]after');
+      expect(result.redactions, 1);
+    }
+  });
+
+  test('single-line PEM preserves the following ordinary lines', () {
+    final result = Redactor(secrets: _Secrets()).redact(
+      '-----BEGIN PRIVATE KEY----- inline-key -----END PRIVATE KEY-----\n'
+      'normal line 1\nnormal line 2\n\nafter blank line',
+    );
+    expect(
+      result.text,
+      '[REDACTED]normal line 1\nnormal line 2\n\nafter blank line',
+    );
+  });
+
+  test('URL authority stops before query and fragment delimiters', () {
+    for (final delimiter in ['?', '#']) {
+      final input = 'https://example.com:8443${delimiter}user=alice@corp.com';
+      expect(Redactor(secrets: _Secrets()).redact(input).text, input);
+    }
+  });
+
+  test('URL userinfo handles opaque tokens and the final at separator', () {
+    for (final userinfo in ['opaquetoken0123456789', 'user:p@ss0123456']) {
+      final result = Redactor(
+        secrets: _Secrets(),
+      ).redact('https://$userinfo@host.example/repo.git');
+      expect(result.text, 'https://[REDACTED]@host.example/repo.git');
+    }
+  });
+
+  test('redaction is idempotent with distinct-span counts', () {
+    final redactor = Redactor(secrets: _Secrets());
+    final first = redactor.redact(
+      'https://user:pass@host.example/x\n'
+      'Authorization: Bearer glpat-${'A' * 20}\n'
+      'token = glpat-${'B' * 20}',
+    );
+    expect(first.redactions, 3);
+    final second = redactor.redact(first.text);
+    expect(second.text, first.text);
+    expect(second.redactions, 0);
+  });
+
+  test('hostile JWT runs remain under three seconds at 2 MiB', () {
+    final redactor = Redactor(secrets: _Secrets());
+    redactor.redact('eyJ-' * 100);
+    // Reject quadratic implementations at 32 KiB before attempting 2 MiB.
+    final probe = Stopwatch()..start();
+    redactor.redact('eyJ-' * 8192);
+    probe.stop();
+    expect(probe.elapsed, lessThan(const Duration(seconds: 1)));
+    final input = 'eyJ-' * (2 * 1024 * 1024 ~/ 4);
+    final watch = Stopwatch()..start();
+    final result = redactor.redact(input);
+    watch.stop();
+    expect(result.text, input);
+    expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
+  });
+
+  test('hostile PEM blocks remain under three seconds at 2 MiB', () {
+    final redactor = Redactor(secrets: _Secrets());
+    redactor.redact('-----BEGIN PRIVATE KEY-----\n\n' * 10);
+    final input = '-----BEGIN PRIVATE KEY-----\n\n' * 72316;
+    final watch = Stopwatch()..start();
+    final result = redactor.redact(input);
+    watch.stop();
+    expect(result.redactions, 72316);
+    expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
+  });
+
+  test('hostile assignment runs remain under three seconds at 2 MiB', () {
+    final redactor = Redactor(secrets: _Secrets());
+    redactor.redact('TOKEN_' * 10);
+    final input = 'TOKEN_' * 349526;
+    final watch = Stopwatch()..start();
+    final result = redactor.redact(input);
+    watch.stop();
+    expect(result.text, input);
+    expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
+  });
 
   test('invalid injected pattern fails closed as policyBlocked', () {
     final redactor = Redactor(

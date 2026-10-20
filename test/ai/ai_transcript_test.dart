@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 
@@ -9,8 +10,15 @@ void main() {
     final differentBoundary = SecretSetId.fromSecrets(const ['alphabeta']);
 
     expect(first, second);
-    expect(first.value, matches(RegExp(r'^[0-9a-f]{64}$')));
     expect(first, isNot(differentBoundary));
+    expect(first.toString(), isNot(matches(RegExp(r'^[0-9a-f]{64}$'))));
+  });
+
+  test('SecretSetId ignores empty values that are not redactable secrets', () {
+    expect(
+      SecretSetId.fromSecrets(const ['', 'alpha']),
+      SecretSetId.fromSecrets(const ['alpha']),
+    );
   });
 
   test('provider output recursively freezes a defensive JSON copy', () {
@@ -33,6 +41,24 @@ void main() {
     expect(
       () => (list.single! as Map<String, Object?>)['text'] = 'mutation',
       throwsUnsupportedError,
+    );
+  });
+
+  test('deep JSON is rejected with a typed invalid-response failure', () {
+    Object? nested = const <Object?>[];
+    for (var depth = 0; depth < 129; depth += 1) {
+      nested = <Object?>[nested];
+    }
+
+    expect(
+      () => deepFreezeJson(nested),
+      throwsA(
+        isA<AiFailure>().having(
+          (failure) => failure.kind,
+          'kind',
+          AiFailureKind.invalidResponse,
+        ),
+      ),
     );
   });
 
@@ -124,7 +150,8 @@ void main() {
       expect(clipped.results.map((result) => result.content), ['abcdef', 'gh']);
 
       segment.addFollowUp('next');
-      segment.addFollowUp(aiFinalAnswerNote);
+      segment.addFinalAnswerNote();
+      segment.addFinalAnswerNote();
       segment.removeFinalAnswerNote();
       expect((segment.tail! as AppToolResultsEntry).followUpText, 'next');
 
@@ -143,9 +170,89 @@ void main() {
     );
     const userText = 'keep $aiFinalAnswerNoteMarker inside  ';
     segment.setTail(AppToolResultsEntry(const [], followUpText: userText));
-    segment.addFollowUp(aiFinalAnswerNote);
+    segment.addFinalAnswerNote();
     segment.removeFinalAnswerNote();
 
     expect((segment.tail! as AppToolResultsEntry).followUpText, userText);
+  });
+
+  test('tool-result clipping preserves UTF-16 surrogate pairs', () {
+    final segment = AiSegment(
+      providerId: 'provider',
+      recipientRevision: 1,
+      format: AiFormat.chatCompletions,
+      model: 'model',
+      secretSetAtStart: SecretSetId.fromSecrets(const []),
+    );
+    segment.setTail(
+      AppToolResultsEntry(const [
+        AiToolResult(callId: '1', name: 'read', content: 'a😀b'),
+      ]),
+    );
+
+    segment.clipTailToolResults(2);
+
+    final result = (segment.tail! as AppToolResultsEntry).results.single;
+    expect(result.content, 'a');
+    expect(result.content.runes, [0x61]);
+  });
+
+  test('user-entry tail accepts a follow-up', () {
+    final segment = AiSegment(
+      providerId: 'provider',
+      recipientRevision: 1,
+      format: AiFormat.chatCompletions,
+      model: 'model',
+      secretSetAtStart: SecretSetId.fromSecrets(const []),
+    );
+    segment.setTail(
+      AppUserEntry(
+        text: 'question',
+        context: const [AiContextBlock(source: 'file', text: 'context')],
+      ),
+    );
+
+    segment.addFollowUp('more context');
+
+    expect((segment.tail! as AppUserEntry).text, 'question\n\nmore context');
+    expect((segment.tail! as AppUserEntry).context, hasLength(1));
+  });
+
+  test('note removal preserves an exact user-text suffix collision', () {
+    final segment = AiSegment(
+      providerId: 'provider',
+      recipientRevision: 1,
+      format: AiFormat.chatCompletions,
+      model: 'model',
+      secretSetAtStart: SecretSetId.fromSecrets(const []),
+    );
+    const userText = 'user text\n\n$aiFinalAnswerNote';
+    segment.setTail(AppToolResultsEntry(const [], followUpText: 'user text'));
+    segment.addFollowUp(aiFinalAnswerNote);
+
+    segment.removeFinalAnswerNote();
+
+    expect((segment.tail! as AppToolResultsEntry).followUpText, userText);
+  });
+
+  test('user-entry final-answer note is idempotent and removable', () {
+    final segment = AiSegment(
+      providerId: 'provider',
+      recipientRevision: 1,
+      format: AiFormat.chatCompletions,
+      model: 'model',
+      secretSetAtStart: SecretSetId.fromSecrets(const []),
+    );
+    segment.setTail(AppUserEntry(text: 'question'));
+
+    segment.addFinalAnswerNote();
+    segment.addFinalAnswerNote();
+    expect(
+      (segment.tail! as AppUserEntry).text,
+      'question\n\n$aiFinalAnswerNote',
+    );
+
+    segment.removeFinalAnswerNote();
+    expect((segment.tail! as AppUserEntry).text, 'question');
   });
 }

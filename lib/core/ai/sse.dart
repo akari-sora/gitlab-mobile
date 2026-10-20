@@ -47,7 +47,10 @@ final class SseDecoder {
       final value = _decodeUtf8(line);
       line.clear();
       if (value.isEmpty) {
-        if (data.isEmpty) return null;
+        if (data.isEmpty) {
+          event = '';
+          return null;
+        }
         final emitted = SseEvent(
           data: data.join('\n'),
           event: event.isEmpty ? 'message' : event,

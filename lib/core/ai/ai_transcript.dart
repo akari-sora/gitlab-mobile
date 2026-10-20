@@ -1,8 +1,10 @@
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 
+import 'ai_failure.dart';
 import 'ai_provider.dart';
 
 const aiFinalAnswerNoteMarker = '<mergeline_final_answer>';
@@ -11,14 +13,11 @@ const aiFinalAnswerNote =
     'Answer now using only the information above; do not call tools.';
 
 final class SecretSetId {
-  SecretSetId(String value) : value = value.toLowerCase() {
-    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(this.value)) {
-      throw ArgumentError.value(value, 'value', 'Expected a SHA-256 digest.');
-    }
-  }
+  SecretSetId._(this._value);
 
   factory SecretSetId.fromSecrets(Iterable<String> secrets) {
-    final canonical = secrets.toSet().toList()..sort();
+    final canonical =
+        secrets.where((secret) => secret.isNotEmpty).toSet().toList()..sort();
     final bytes = <int>[];
     for (final secret in canonical) {
       final encoded = utf8.encode(secret);
@@ -27,20 +26,21 @@ final class SecretSetId {
         ..addAll(encoded)
         ..add(0);
     }
-    return SecretSetId(sha256.convert(bytes).toString());
+    return SecretSetId._(
+      Hmac(sha256, _secretSetIdKey).convert(bytes).toString(),
+    );
   }
 
-  final String value;
+  static final List<int> _secretSetIdKey = _newSecretSetIdKey();
+
+  final String _value;
 
   @override
   bool operator ==(Object other) =>
-      other is SecretSetId && other.value == value;
+      other is SecretSetId && other._value == _value;
 
   @override
-  int get hashCode => value.hashCode;
-
-  @override
-  String toString() => value;
+  int get hashCode => _value.hashCode;
 }
 
 final class AiContextBlock {
@@ -86,10 +86,27 @@ sealed class AiEntry {
 
 final class AppUserEntry extends AiEntry {
   AppUserEntry({required this.text, List<AiContextBlock> context = const []})
-    : context = List.unmodifiable(context);
+    : context = List.unmodifiable(context),
+      _finalAnswerNoteInjected = false;
+
+  AppUserEntry._({
+    required this.text,
+    required this.context,
+    required bool finalAnswerNoteInjected,
+  }) : _finalAnswerNoteInjected = finalAnswerNoteInjected;
 
   final String text;
   final List<AiContextBlock> context;
+  final bool _finalAnswerNoteInjected;
+
+  AppUserEntry _withText(
+    String text, {
+    required bool finalAnswerNoteInjected,
+  }) => AppUserEntry._(
+    text: text,
+    context: context,
+    finalAnswerNoteInjected: finalAnswerNoteInjected,
+  );
 }
 
 final class ProviderOutputEntry extends AiEntry {
@@ -107,18 +124,38 @@ final class ProviderOutputEntry extends AiEntry {
 
 final class AppToolResultsEntry extends AiEntry {
   AppToolResultsEntry(List<AiToolResult> results, {this.followUpText})
-    : results = List.unmodifiable(results);
+    : results = List.unmodifiable(results),
+      _finalAnswerNoteInjected = false;
+
+  AppToolResultsEntry._(
+    List<AiToolResult> results, {
+    required this.followUpText,
+    required bool finalAnswerNoteInjected,
+  }) : results = List.unmodifiable(results),
+       _finalAnswerNoteInjected = finalAnswerNoteInjected;
 
   final List<AiToolResult> results;
   final String? followUpText;
+  final bool _finalAnswerNoteInjected;
 
   AppToolResultsEntry copyWith({
     List<AiToolResult>? results,
     String? followUpText,
     bool clearFollowUpText = false,
-  }) => AppToolResultsEntry(
+  }) => AppToolResultsEntry._(
     results ?? this.results,
     followUpText: clearFollowUpText ? null : followUpText ?? this.followUpText,
+    finalAnswerNoteInjected:
+        followUpText == null && !clearFollowUpText && _finalAnswerNoteInjected,
+  );
+
+  AppToolResultsEntry _withFollowUp(
+    String? followUpText, {
+    required bool finalAnswerNoteInjected,
+  }) => AppToolResultsEntry._(
+    results,
+    followUpText: followUpText,
+    finalAnswerNoteInjected: finalAnswerNoteInjected,
   );
 }
 
@@ -162,16 +199,37 @@ final class AiSegment {
   }
 
   void addFollowUp(String redactedText) {
+    _addFollowUp(redactedText, finalAnswerNote: false);
+  }
+
+  void addFinalAnswerNote() {
+    _addFollowUp(aiFinalAnswerNote, finalAnswerNote: true);
+  }
+
+  void _addFollowUp(String redactedText, {required bool finalAnswerNote}) {
     final current = _tail;
-    if (current is! AppToolResultsEntry) {
-      throw StateError('A follow-up requires a tool-results tail.');
+    if (current is AppToolResultsEntry) {
+      if (finalAnswerNote && current._finalAnswerNoteInjected) return;
+      final previous = current.followUpText;
+      _tail = current._withFollowUp(
+        previous == null || previous.isEmpty
+            ? redactedText
+            : '$previous\n\n$redactedText',
+        finalAnswerNoteInjected: finalAnswerNote,
+      );
+      return;
     }
-    final previous = current.followUpText;
-    _tail = current.copyWith(
-      followUpText: previous == null || previous.isEmpty
-          ? redactedText
-          : '$previous\n\n$redactedText',
-    );
+    if (current is AppUserEntry) {
+      if (finalAnswerNote && current._finalAnswerNoteInjected) return;
+      _tail = current._withText(
+        current.text.isEmpty
+            ? redactedText
+            : '${current.text}\n\n$redactedText',
+        finalAnswerNoteInjected: finalAnswerNote,
+      );
+      return;
+    }
+    throw StateError('A follow-up requires an app tail.');
   }
 
   void clipTailToolResults(int maxChars) {
@@ -185,7 +243,7 @@ final class AiSegment {
     for (final result in current.results) {
       final keep = result.content.length <= remaining
           ? result.content
-          : result.content.substring(0, remaining);
+          : _clipAtRuneBoundary(result.content, remaining);
       clipped.add(result.copyWith(content: keep));
       remaining -= keep.length;
     }
@@ -201,17 +259,19 @@ final class AiSegment {
 
   void removeFinalAnswerNote() {
     final current = _tail;
-    if (current is! AppToolResultsEntry) return;
-    final text = current.followUpText;
-    if (text == null) return;
-    if (text == aiFinalAnswerNote) {
-      _tail = current.copyWith(clearFollowUpText: true);
+    if (current is AppToolResultsEntry && current._finalAnswerNoteInjected) {
+      _tail = current._withFollowUp(
+        _removeFinalAnswerNote(current.followUpText!),
+        finalAnswerNoteInjected: false,
+      );
       return;
     }
-    const suffix = '\n\n$aiFinalAnswerNote';
-    if (!text.endsWith(suffix)) return;
-    final restored = text.substring(0, text.length - suffix.length);
-    _tail = current.copyWith(followUpText: restored);
+    if (current is AppUserEntry && current._finalAnswerNoteInjected) {
+      _tail = current._withText(
+        _removeFinalAnswerNote(current.text) ?? '',
+        finalAnswerNoteInjected: false,
+      );
+    }
   }
 
   void freezeWith(
@@ -235,23 +295,72 @@ final class AiSegment {
   }
 }
 
-Object? deepFreezeJson(Object? value) => switch (value) {
-  Map<Object?, Object?> map => _freezeJsonMap(map),
-  List<Object?> list => UnmodifiableListView<Object?>(
-    list.map<Object?>(deepFreezeJson).toList(growable: false),
-  ),
+List<int> _newSecretSetIdKey() {
+  final random = Random.secure();
+  return List<int>.unmodifiable(
+    List<int>.generate(32, (_) => random.nextInt(256)),
+  );
+}
+
+String? _removeFinalAnswerNote(String text) {
+  if (text == aiFinalAnswerNote) return null;
+  const suffix = '\n\n$aiFinalAnswerNote';
+  if (!text.endsWith(suffix)) {
+    throw StateError('Injected final-answer note is missing from the tail.');
+  }
+  return text.substring(0, text.length - suffix.length);
+}
+
+String _clipAtRuneBoundary(String value, int maxChars) {
+  var end = maxChars;
+  if (end > 0 &&
+      end < value.length &&
+      _isHighSurrogate(value.codeUnitAt(end - 1)) &&
+      _isLowSurrogate(value.codeUnitAt(end))) {
+    end -= 1;
+  }
+  return value.substring(0, end);
+}
+
+bool _isHighSurrogate(int codeUnit) => codeUnit >= 0xd800 && codeUnit <= 0xdbff;
+
+bool _isLowSurrogate(int codeUnit) => codeUnit >= 0xdc00 && codeUnit <= 0xdfff;
+
+const _maxJsonDepth = 128;
+
+Object? deepFreezeJson(Object? value) => _deepFreezeJson(value, 0);
+
+Object? _deepFreezeJson(Object? value, int depth) => switch (value) {
+  Map<Object?, Object?> map => _freezeJsonMap(map, depth),
+  List<Object?> list => _freezeJsonList(list, depth),
   String() || num() || bool() || null => value,
   _ => throw ArgumentError.value(value, 'value', 'Expected a JSON value.'),
 };
 
-Map<String, Object?> _freezeJsonMap(Map<Object?, Object?> value) {
+List<Object?> _freezeJsonList(List<Object?> value, int depth) {
+  _checkJsonDepth(depth);
+  return UnmodifiableListView<Object?>(
+    value
+        .map<Object?>((entry) => _deepFreezeJson(entry, depth + 1))
+        .toList(growable: false),
+  );
+}
+
+Map<String, Object?> _freezeJsonMap(Map<Object?, Object?> value, int depth) {
+  _checkJsonDepth(depth);
   final frozen = <String, Object?>{};
   for (final entry in value.entries) {
     final key = entry.key;
     if (key is! String) {
       throw ArgumentError.value(key, 'key', 'JSON keys must be strings.');
     }
-    frozen[key] = deepFreezeJson(entry.value);
+    frozen[key] = _deepFreezeJson(entry.value, depth + 1);
   }
   return UnmodifiableMapView(frozen);
+}
+
+void _checkJsonDepth(int depth) {
+  if (depth >= _maxJsonDepth) {
+    throw const AiFailure(AiFailureKind.invalidResponse);
+  }
 }

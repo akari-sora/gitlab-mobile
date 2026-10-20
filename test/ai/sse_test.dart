@@ -103,12 +103,21 @@ void main() {
     expect(events.single.retry, isNull);
   });
 
-  test('retains event type across an empty dispatch with no data', () async {
+  test('resets event type across an empty dispatch with no data', () async {
     final events = await const SseDecoder()
         .decode(Stream.value(utf8.encode('event: delta\n\ndata: value\n\n')))
         .toList();
 
+    expect(events.single.event, 'message');
+  });
+
+  test('dispatches an explicit empty data field with its event type', () async {
+    final events = await const SseDecoder()
+        .decode(Stream.value(utf8.encode('event: delta\ndata:\n\n')))
+        .toList();
+
     expect(events.single.event, 'delta');
+    expect(events.single.data, isEmpty);
   });
 
   test('cancelling the decoded stream cancels its byte source', () async {

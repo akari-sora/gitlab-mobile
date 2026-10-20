@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -8,6 +9,7 @@ import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
 import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/ai_transport.dart';
+import 'package:gitlab_mobile/core/ai/sse.dart';
 
 import '../support/fake_adapter.dart';
 
@@ -76,6 +78,49 @@ void main() {
     await _collect((await transport.request(responses)).stream);
     expect(adapter.requests.single.headers['api-key'], 'azure-secret');
     expect(adapter.requests.single.headers['Authorization'], isNull);
+    transport.close();
+  });
+
+  test('allows only the provider header allowlist', () async {
+    final adapter = FakeAdapter((_) => _bytes('ok'));
+    final transport = AiTransport(
+      endpoint: endpoint,
+      apiKey: 'key',
+      adapter: adapter,
+    );
+
+    await _collect(
+      (await transport.request(
+        responses,
+        providerHeaders: const {
+          'Anthropic-Version': '2023-06-01',
+          'anthropic-beta': 'synthetic-feature',
+        },
+      )).stream,
+    );
+    expect(adapter.requests.single.headers['Anthropic-Version'], '2023-06-01');
+    expect(
+      adapter.requests.single.headers['anthropic-beta'],
+      'synthetic-feature',
+    );
+    await expectLater(
+      transport.request(
+        responses,
+        providerHeaders: const {'Private-Token': 'gitlab-secret'},
+      ),
+      throwsA(_failure(AiFailureKind.policyBlocked)),
+    );
+    await expectLater(
+      transport.request(
+        responses,
+        providerHeaders: const {
+          'Anthropic-Version': '2023-06-01',
+          'anthropic-version': '2023-06-01',
+        },
+      ),
+      throwsA(_failure(AiFailureKind.policyBlocked)),
+    );
+    expect(adapter.requests, hasLength(1));
     transport.close();
   });
 
@@ -212,6 +257,49 @@ void main() {
     transport.close();
   });
 
+  test('idle timeout after headers maps to timeout', () async {
+    final source = StreamController<Uint8List>();
+    final adapter = FakeAdapter((_) => ResponseBody(source.stream, 200));
+    final transport = AiTransport(
+      endpoint: endpoint,
+      apiKey: 'key',
+      adapter: adapter,
+    );
+    final response = await transport.request(responses);
+    final result = response.stream.toList();
+    source.addError(
+      DioException(
+        requestOptions: RequestOptions(path: responses.toString()),
+        type: DioExceptionType.receiveTimeout,
+      ),
+    );
+    await source.close();
+
+    await expectLater(result, throwsA(_failure(AiFailureKind.timeout)));
+    transport.close();
+  });
+
+  test(
+    'transport and SSE map a mid-stream disconnect to interrupted',
+    () async {
+      final source = StreamController<Uint8List>();
+      final adapter = FakeAdapter((_) => ResponseBody(source.stream, 200));
+      final transport = AiTransport(
+        endpoint: endpoint,
+        apiKey: 'key',
+        adapter: adapter,
+      );
+      final response = await transport.request(responses);
+      final result = const SseDecoder().decode(response.stream).toList();
+      source.add(Uint8List.fromList(utf8.encode('data: partial\n\n')));
+      source.addError(const SocketException('synthetic disconnect'));
+      await source.close();
+
+      await expectLater(result, throwsA(_failure(AiFailureKind.interrupted)));
+      transport.close();
+    },
+  );
+
   test('redirects are blocked without following them', () async {
     final adapter = FakeAdapter(
       (_) => _bytes(
@@ -272,6 +360,121 @@ void main() {
     transport.close();
   });
 
+  for (final status in [401, 429]) {
+    test('close during a stalled $status discard returns cancelled', () async {
+      final listened = Completer<void>();
+      final source = StreamController<Uint8List>(onListen: listened.complete);
+      final registry = AiRateLimitRegistry();
+      final adapter = FakeAdapter(
+        (_) => ResponseBody(
+          source.stream,
+          status,
+          headers: status == 429
+              ? {
+                  'retry-after': ['60'],
+                }
+              : const {},
+        ),
+      );
+      final transport = AiTransport(
+        endpoint: endpoint,
+        apiKey: 'key',
+        adapter: adapter,
+        rateLimits: registry,
+      );
+      final request = transport.request(responses);
+      await listened.future;
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      transport.close();
+
+      await expectLater(request, throwsA(_failure(AiFailureKind.cancelled)));
+      expect(registry.retryAt(endpoint), isNull);
+      await source.close();
+    });
+  }
+
+  for (final status in [401, 429]) {
+    test(
+      'request cancellation during stalled $status discard stays cancelled',
+      () async {
+        final listened = Completer<void>();
+        final source = StreamController<Uint8List>(onListen: listened.complete);
+        final registry = AiRateLimitRegistry();
+        final adapter = FakeAdapter(
+          (_) => ResponseBody(
+            source.stream,
+            status,
+            headers: {
+              'retry-after': ['60'],
+            },
+          ),
+        );
+        final transport = AiTransport(
+          endpoint: endpoint,
+          apiKey: 'key',
+          adapter: adapter,
+          rateLimits: registry,
+        );
+        final request = transport.request(responses);
+        await listened.future;
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        adapter.requests.single.cancelToken!.cancel('synthetic cancellation');
+        await expectLater(request, throwsA(_failure(AiFailureKind.cancelled)));
+        expect(registry.retryAt(endpoint), isNull);
+        await source.close();
+        transport.close();
+      },
+    );
+  }
+
+  test('duplicate Retry-After is contained as invalidResponse', () async {
+    final adapter = FakeAdapter(
+      (_) => _bytes(
+        '',
+        status: 429,
+        headers: {
+          'retry-after': ['1', '2'],
+        },
+      ),
+    );
+    final transport = AiTransport(
+      endpoint: endpoint,
+      apiKey: 'key',
+      adapter: adapter,
+    );
+
+    await expectLater(
+      transport.request(responses),
+      throwsA(_failure(AiFailureKind.invalidResponse)),
+    );
+    transport.close();
+  });
+
+  test('budget-sized discarded error body cancels the request token', () async {
+    final adapter = FakeAdapter(
+      (_) => ResponseBody(
+        Stream.fromIterable([Uint8List(AiTransport.maxErrorBytes)]),
+        500,
+      ),
+    );
+    final transport = AiTransport(
+      endpoint: endpoint,
+      apiKey: 'key',
+      adapter: adapter,
+    );
+
+    await expectLater(
+      transport.request(responses),
+      throwsA(_failure(AiFailureKind.server)),
+    );
+    await expectLater(
+      adapter.cancelFutures.single!.timeout(const Duration(seconds: 1)),
+      completes,
+    );
+    transport.close();
+  });
+
   test(
     '429 without Retry-After is quota exhaustion and is not cached',
     () async {
@@ -316,6 +519,86 @@ void main() {
     });
     expect(adapter.requests.single.method, 'GET');
     transport.close();
+  });
+
+  test('Content-Length rejects oversized responses before streaming', () async {
+    final source = StreamController<Uint8List>();
+    final adapter = FakeAdapter(
+      (_) => ResponseBody(
+        source.stream,
+        200,
+        headers: {
+          Headers.contentLengthHeader: ['4'],
+        },
+      ),
+    );
+    final transport = AiTransport(
+      endpoint: endpoint,
+      apiKey: 'key',
+      adapter: adapter,
+    );
+
+    await expectLater(
+      transport.request(responses, maxResponseBytes: 3),
+      throwsA(_failure(AiFailureKind.responseTooLarge)),
+    );
+    await expectLater(adapter.cancelFutures.single, completes);
+    await source.close();
+    transport.close();
+  });
+
+  test('duplicate Content-Length is contained as invalidResponse', () async {
+    final adapter = FakeAdapter(
+      (_) => _bytes(
+        'ok',
+        headers: {
+          Headers.contentLengthHeader: ['2', '3'],
+        },
+      ),
+    );
+    final transport = AiTransport(
+      endpoint: endpoint,
+      apiKey: 'key',
+      adapter: adapter,
+    );
+
+    await expectLater(
+      transport.request(responses),
+      throwsA(_failure(AiFailureKind.invalidResponse)),
+    );
+    transport.close();
+  });
+
+  for (final length in ['invalid', '-1']) {
+    test(
+      'malformed Content-Length $length is contained as invalidResponse',
+      () async {
+        final adapter = FakeAdapter(
+          (_) => _bytes(
+            'ok',
+            headers: {
+              Headers.contentLengthHeader: [length],
+            },
+          ),
+        );
+        final transport = AiTransport(
+          endpoint: endpoint,
+          apiKey: 'key',
+          adapter: adapter,
+        );
+        addTearDown(transport.close);
+        await expectLater(
+          transport.request(responses),
+          throwsA(_failure(AiFailureKind.invalidResponse)),
+        );
+      },
+    );
+  }
+
+  test('stream budget clamps to the fixed minimum and maximum', () {
+    expect(AiTransport.streamBudget(0), AiTransport.minStreamBytes);
+    expect(AiTransport.streamBudget(8193), 8193 * 512);
+    expect(AiTransport.streamBudget(1000000), AiTransport.maxStreamBytes);
   });
 
   test('GET JSON cannot raise the fixed models budget', () async {

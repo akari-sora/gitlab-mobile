@@ -63,13 +63,15 @@ final class AiFailure implements Exception, UserFacingFailure {
     if (seconds != null) {
       if (seconds < 0) return null;
       try {
-        return clock.add(Duration(seconds: seconds));
+        return clock.add(Duration(seconds: seconds > 3600 ? 3600 : seconds));
       } on ArgumentError {
         return null;
       }
     }
     try {
-      return HttpDate.parse(text);
+      final parsed = HttpDate.parse(text);
+      final cap = clock.add(const Duration(hours: 1));
+      return parsed.isAfter(cap) ? cap : parsed;
     } on HttpException {
       return null;
     } on FormatException {
@@ -109,7 +111,10 @@ final class AiFailure implements Exception, UserFacingFailure {
     AiFailureKind.quotaExhausted => l10n.aiQuotaExhaustedDetail,
     AiFailureKind.network => l10n.aiNetworkDetail,
     AiFailureKind.server => l10n.aiServerDetail,
-    AiFailureKind.requestTooLarge => l10n.aiRequestTooLargeDetail,
+    AiFailureKind.requestTooLarge =>
+      status == 413
+          ? l10n.aiContextTooLongDetail
+          : l10n.aiRequestTooLargeDetail,
     AiFailureKind.responseTooLarge => l10n.aiResponseTooLargeDetail,
     AiFailureKind.invalidResponse => l10n.aiInvalidResponseDetail,
     AiFailureKind.unsupported => l10n.aiUnsupportedDetail,

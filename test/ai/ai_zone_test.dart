@@ -37,6 +37,44 @@ void main() {
       transport.close();
     },
   );
+
+  test('the true allow-http zone encloses a LAN adapter request', () async {
+    final adapter = _RecordingZoneAdapter();
+    final endpoint = AiEndpoint.parse(
+      'http://127.0.0.1:11434/v1',
+      allowLanCleartext: true,
+    );
+    final transport = AiTransport(
+      endpoint: endpoint,
+      apiKey: '',
+      adapter: adapter,
+    );
+
+    final response = await transport.request(
+      Uri.parse('http://127.0.0.1:11434/v1/responses'),
+    );
+    await response.stream.drain<void>();
+
+    expect(adapter.zoneValue, isTrue);
+    transport.close();
+  });
+}
+
+final class _RecordingZoneAdapter implements HttpClientAdapter {
+  Object? zoneValue;
+
+  @override
+  Future<ResponseBody> fetch(
+    RequestOptions options,
+    Stream<Uint8List>? requestStream,
+    Future<void>? cancelFuture,
+  ) async {
+    zoneValue = Zone.current[#flutter.io.allow_http];
+    return ResponseBody.fromBytes(Uint8List(0), 200);
+  }
+
+  @override
+  void close({bool force = false}) {}
 }
 
 final class _ZoneProbeAdapter implements HttpClientAdapter {

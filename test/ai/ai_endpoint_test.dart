@@ -86,6 +86,53 @@ void main() {
       );
     });
 
+    test('maps malformed IPv4-mapped IPv6 spellings to policy failure', () {
+      for (final scheme in ['http', 'https']) {
+        expect(
+          () => AiEndpoint.parse(
+            '$scheme://[::ffff:192.168.001.1]/v1',
+            allowLanCleartext: true,
+          ),
+          throwsA(_policyBlocked),
+        );
+      }
+    });
+
+    test('rejects non-canonical IPv4 spellings over HTTPS', () {
+      for (final host in [
+        '192.168.001.1',
+        '0177.0.0.1',
+        '2130706433',
+        '127.1',
+        '0x7f.0.0.1',
+        '0x7f000001',
+      ]) {
+        expect(
+          () => AiEndpoint.parse('https://$host/v1', allowLanCleartext: false),
+          throwsA(_policyBlocked),
+          reason: host,
+        );
+      }
+    });
+
+    test('rejects invalid UTF-8 and malformed raw path escapes', () {
+      for (final path in [
+        '/v1/%ff',
+        '/v1/%c3%28',
+        '/v1/%zz',
+        '/v1/line\nbreak',
+      ]) {
+        expect(
+          () => AiEndpoint.parse(
+            'https://example.com$path',
+            allowLanCleartext: false,
+          ),
+          throwsA(_policyBlocked),
+          reason: path,
+        );
+      }
+    });
+
     const invalid = [
       'https://user@example.com/v1',
       'https://example.com/v1?x=1',
@@ -192,6 +239,19 @@ void main() {
       );
     });
 
+    test('rejects invalid UTF-8 query and path without escaping failure', () {
+      expect(
+        endpoint.allows(
+          Uri.parse('https://api.example.com/v1/models?after_id=%ff'),
+        ),
+        isFalse,
+      );
+      expect(
+        endpoint.allows(Uri.parse('https://api.example.com/v1/%ff/models')),
+        isFalse,
+      );
+    });
+
     test('models override and key endpoint are GET-only', () {
       final models = Uri.parse('https://api.example.com/catalog/models');
       final key = Uri.parse('https://api.example.com/v1/key');
@@ -241,6 +301,28 @@ void main() {
           modelsUrlOverride: 'https://api.example.com/a/../models',
         ),
         throwsA(_policyBlocked),
+      );
+      expect(
+        () => AiEndpoint.parse(
+          'https://api.example.com/v1',
+          allowLanCleartext: false,
+          modelsUrlOverride: 'https://api.example.com/catalog/files',
+        ),
+        throwsA(_policyBlocked),
+      );
+    });
+  });
+
+  group('AiEndpoint.resolve', () {
+    final endpoint = AiEndpoint.parse(
+      'https://api.example.com/v1',
+      allowLanCleartext: false,
+    );
+
+    test('omits an empty query delimiter', () {
+      expect(
+        endpoint.resolve(const ['models'], const {}).toString(),
+        'https://api.example.com/v1/models',
       );
     });
   });
