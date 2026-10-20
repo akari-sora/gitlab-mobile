@@ -2075,5 +2075,9 @@ const _messagesVi = <String>[
   'Lịch sử được mã hóa hiện không khả dụng. Hệ thống sẽ thử lại sau.',
   'Thiếu khóa mã hóa của tài khoản này; không thể giải mã lịch sử.',
   'Dữ liệu lịch sử AI bị hỏng hoặc dùng định dạng không được hỗ trợ.',
+  'Chỉ mục lịch sử AI đã được sửa và các cuộc trò chuyện đã được khôi phục.',
+  'Một phần lịch sử AI dùng định dạng không được hỗ trợ và được giữ lại trên thiết bị này.',
+  'Không thể lưu cuộc trò chuyện này. Hãy thử lại.',
+  'Cuộc trò chuyện này đã bị xóa khỏi lịch sử đã lưu để giải phóng dung lượng.',
   'Khóa API phải có ít nhất 4 ký tự.',
 ];

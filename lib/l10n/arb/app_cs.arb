@@ -2073,5 +2073,9 @@
   "aiHistoryUnavailable": "Šifrovaná historie nyní není dostupná. Pokus se zopakuje později.",
   "aiHistoryKeyMissing": "Šifrovací klíč tohoto účtu chybí; historii nelze dešifrovat.",
   "aiHistoryInvalidData": "Data historie AI jsou poškozená nebo používají nepodporovaný formát.",
+  "aiHistoryIndexRepaired": "Index historie AI byl opraven a konverzace byly obnoveny.",
+  "aiHistoryUnsupported": "Část historie AI používá nepodporovaný formát a byla v tomto zařízení zachována.",
+  "aiHistoryNotSaved": "Tuto konverzaci se nepodařilo uložit. Zkuste to znovu.",
+  "aiHistoryEvicted": "Tato konverzace byla odstraněna z uložené historie, aby se uvolnilo místo.",
   "aiKeyTooShort": "Klíč API musí mít alespoň 4 znaky."
 }

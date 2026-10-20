@@ -2073,5 +2073,9 @@
   "aiHistoryUnavailable": "Şifrelenmiş geçmiş şu anda kullanılamıyor. Daha sonra yeniden denenecek.",
   "aiHistoryKeyMissing": "Bu hesabın şifreleme anahtarı eksik; geçmişin şifresi çözülemiyor.",
   "aiHistoryInvalidData": "AI geçmiş verileri bozuk veya desteklenmeyen bir biçim kullanıyor.",
+  "aiHistoryIndexRepaired": "AI geçmişi dizini onarıldı ve konuşmalar kurtarıldı.",
+  "aiHistoryUnsupported": "AI geçmişinin bir bölümü desteklenmeyen bir biçim kullanıyor ve bu cihazda tutuldu.",
+  "aiHistoryNotSaved": "Bu konuşma kaydedilemedi. Tekrar deneyin.",
+  "aiHistoryEvicted": "Bu konuşma, depolama alanı açmak için kayıtlı geçmişten kaldırıldı.",
   "aiKeyTooShort": "API anahtarı en az 4 karakter olmalıdır."
 }

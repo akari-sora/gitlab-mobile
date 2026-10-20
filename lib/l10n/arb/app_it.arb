@@ -2073,5 +2073,9 @@
   "aiHistoryUnavailable": "La cronologia crittografata non è disponibile al momento. Verrà riprovato più tardi.",
   "aiHistoryKeyMissing": "Manca la chiave di crittografia per questo account; la cronologia non può essere decifrata.",
   "aiHistoryInvalidData": "I dati della cronologia AI sono danneggiati o usano un formato non supportato.",
+  "aiHistoryIndexRepaired": "L’indice della cronologia AI è stato riparato e le conversazioni sono state recuperate.",
+  "aiHistoryUnsupported": "Parte della cronologia AI usa un formato non supportato ed è stata conservata su questo dispositivo.",
+  "aiHistoryNotSaved": "Impossibile salvare questa conversazione. Riprova.",
+  "aiHistoryEvicted": "Questa conversazione è stata rimossa dalla cronologia salvata per liberare spazio.",
   "aiKeyTooShort": "La chiave API deve contenere almeno 4 caratteri."
 }

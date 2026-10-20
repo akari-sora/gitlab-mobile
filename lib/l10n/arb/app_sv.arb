@@ -2073,5 +2073,9 @@
   "aiHistoryUnavailable": "Den krypterade historiken är inte tillgänglig just nu. Ett nytt försök görs senare.",
   "aiHistoryKeyMissing": "Krypteringsnyckeln för det här kontot saknas; historiken kan inte dekrypteras.",
   "aiHistoryInvalidData": "AI-historikens data är skadade eller använder ett format som inte stöds.",
+  "aiHistoryIndexRepaired": "Indexet för AI-historiken reparerades och konversationer återställdes.",
+  "aiHistoryUnsupported": "En del av AI-historiken använder ett format som inte stöds och behölls på den här enheten.",
+  "aiHistoryNotSaved": "Konversationen kunde inte sparas. Försök igen.",
+  "aiHistoryEvicted": "Konversationen togs bort från sparad historik för att frigöra lagringsutrymme.",
   "aiKeyTooShort": "API-nyckeln måste vara minst 4 tecken."
 }

@@ -33,7 +33,11 @@ final class _AccountHistory {
   int attempts = 0;
   DateTime? retryAt;
   final Set<String> fullConversations = {};
+  final Set<String> failedConversations = {};
+  final Set<String> evictedConversations = {};
   bool removedUnreadable = false;
+  bool repairedIndex = false;
+  bool unsupported = false;
   AiStoreFailure? failure;
 }
 
@@ -86,9 +90,17 @@ final class AiHistoryCoordinator extends ChangeNotifier
   final DateTime Function() _clock;
   final Map<String, _AccountHistory> _accounts = {};
   final Map<SessionController, VoidCallback> _sessionListeners = {};
+  final Map<SessionController, VoidCallback> _accountLifecycleListeners = {};
   final Set<Completer<void>> _waitingRecovery = {};
   bool _disposed = false;
   bool _watchingLifecycle = false;
+  bool _recoveryInvalidData = false;
+  bool get recoveryInvalidData => _recoveryInvalidData;
+
+  void acknowledgeRecoveryNotice() {
+    _recoveryInvalidData = false;
+    _emit();
+  }
 
   _AccountHistory _entry(String account) =>
       _accounts.putIfAbsent(account, _AccountHistory.new);
@@ -97,6 +109,25 @@ final class AiHistoryCoordinator extends ChangeNotifier
       _entry(account).fullConversations.contains(id);
   AiStoreFailure? failure(String account) => _entry(account).failure;
   bool removedUnreadable(String account) => _entry(account).removedUnreadable;
+  bool saveFailed(String account, String id) =>
+      _entry(account).failedConversations.contains(id);
+  bool evicted(String account, String id) =>
+      _entry(account).evictedConversations.contains(id);
+
+  void acknowledgeNotices(String account) {
+    final entry = _entry(account);
+    entry.removedUnreadable = false;
+    entry.repairedIndex = false;
+    entry.unsupported = false;
+    _emit();
+  }
+
+  void _accumulateRecovery(_AccountHistory entry, AiHistoryRecovery result) {
+    entry.removedUnreadable |= result.removedUnreadable;
+    entry.repairedIndex |= result.repairedIndex;
+    entry.unsupported |= result.unsupported;
+  }
+
   String? notice(String account, {String? conversationId}) {
     final entry = _entry(account);
     if (entry.failure?.kind == AiStoreFailureKind.malformed) {
@@ -106,7 +137,17 @@ final class AiHistoryCoordinator extends ChangeNotifier
         entry.fullConversations.contains(conversationId)) {
       return l10n.aiHistoryStorageLimit;
     }
+    if (conversationId != null &&
+        entry.failedConversations.contains(conversationId)) {
+      return l10n.aiHistoryNotSaved;
+    }
+    if (conversationId != null &&
+        entry.evictedConversations.contains(conversationId)) {
+      return l10n.aiHistoryEvicted;
+    }
     if (entry.removedUnreadable) return l10n.aiHistoryRemovedUnreadable;
+    if (entry.unsupported) return l10n.aiHistoryUnsupported;
+    if (entry.repairedIndex) return l10n.aiHistoryIndexRepaired;
     return switch (entry.state) {
       AiHistoryState.unavailable => l10n.aiHistoryUnavailable,
       AiHistoryState.keyMissing => l10n.aiHistoryKeyMissing,
@@ -155,6 +196,9 @@ final class AiHistoryCoordinator extends ChangeNotifier
     bool force = false,
   }) async {
     if (_disposed || entry.state == AiHistoryState.cleaning) return;
+    // Invalid stored data needs an explicit repair/clear, never a timed retry
+    // which would turn a disabled record into a successful load.
+    if (entry.failure?.kind == AiStoreFailureKind.malformed) return;
     if (!force && entry.state != AiHistoryState.unknown) {
       if (entry.state != AiHistoryState.unavailable ||
           entry.attempts > 3 ||
@@ -208,7 +252,7 @@ final class AiHistoryCoordinator extends ChangeNotifier
           entry.key = null;
           entry.state = AiHistoryState.keyMissing;
         case AiStoreReadStatus.unavailable:
-          _unavailable(account, entry);
+          _unavailable(account, entry, failure: key.failure);
           return;
       }
       _emit();
@@ -263,14 +307,17 @@ final class AiHistoryCoordinator extends ChangeNotifier
 
   Future<AiHistoryState> enable(String account) => _run(account, (entry) async {
     await _load(account, entry);
-    if (entry.state != AiHistoryState.disabled) return entry.state;
+    if (entry.state != AiHistoryState.disabled ||
+        AiAccountMutationCoordinator.forStore(store).isCleaning(account)) {
+      return entry.state;
+    }
     final epoch = entry.epoch;
     try {
       final result = await store.readHistoryKey(account);
       if (!_current(entry, epoch)) return entry.state;
       if (result.failure != null ||
           result.status == AiStoreReadStatus.unavailable) {
-        _unavailable(account, entry);
+        _unavailable(account, entry, failure: result.failure);
         return entry.state;
       }
       final key = result.value ?? Uint8List.fromList(AiHistoryCipher.newKey());
@@ -278,17 +325,10 @@ final class AiHistoryCoordinator extends ChangeNotifier
         await store.writeHistoryKey(account, key);
         if (!_current(entry, epoch)) return entry.state;
       }
-      final latest = await store.loadAccount(account);
-      if (!_current(entry, epoch)) return entry.state;
-      if (latest.failure != null) {
-        _unavailable(account, entry, failure: latest.failure);
-        return entry.state;
-      }
-      final record = (latest.value ?? AiAccountRecord()).copyWith(
-        historyEnabled: true,
-      );
-      await store.saveAccount(account, record);
-      if (!_current(entry, epoch)) return entry.state;
+      final record = await AiAccountMutationCoordinator.forStore(
+        store,
+      ).mutate(account, (latest) => latest.copyWith(historyEnabled: true));
+      if (!_current(entry, epoch) || record == null) return entry.state;
       entry.key = Uint8List.fromList(key);
       entry.record = record;
       entry.state = AiHistoryState.ready;
@@ -311,7 +351,7 @@ final class AiHistoryCoordinator extends ChangeNotifier
             entry.record!.retentionDays,
           );
           if (!_current(entry, epoch)) return null;
-          entry.removedUnreadable = result.removedUnreadable;
+          _accumulateRecovery(entry, result);
           _emit();
           return result;
         } catch (_) {
@@ -354,25 +394,30 @@ final class AiHistoryCoordinator extends ChangeNotifier
           conversation,
           entry.record!.retentionDays,
           isCurrent: () => _current(entry, epoch),
+          onRecovery: (recovery) {
+            if (_current(entry, epoch)) _accumulateRecovery(entry, recovery);
+          },
         );
         if (!_current(entry, epoch)) return AiHistorySaveResult.cancelled;
         if (result == AiHistorySaveResult.storageLimit) {
           entry.fullConversations.add(conversation.id);
         }
+        if (result == AiHistorySaveResult.failed) {
+          entry.failedConversations.add(conversation.id);
+        } else if (result == AiHistorySaveResult.saved) {
+          entry.failedConversations.remove(conversation.id);
+          entry.evictedConversations.remove(conversation.id);
+        } else if (result == AiHistorySaveResult.evicted) {
+          entry.evictedConversations.add(conversation.id);
+        }
         _emit();
         return result;
       } catch (_) {
         if (_current(entry, epoch)) {
-          _unavailable(
-            account,
-            entry,
-            failure: const AiStoreFailure(
-              AiStoreFailureKind.unavailable,
-              'saveHistory',
-            ),
-          );
+          entry.failedConversations.add(conversation.id);
+          _emit();
         }
-        return AiHistorySaveResult.cancelled;
+        return AiHistorySaveResult.failed;
       }
     });
   }
@@ -407,17 +452,26 @@ final class AiHistoryCoordinator extends ChangeNotifier
     entry.key = null;
     entry.record = null;
     entry.fullConversations.clear();
+    entry.failedConversations.clear();
+    entry.evictedConversations.clear();
+    entry.repairedIndex = false;
+    entry.unsupported = false;
     entry.removedUnreadable = false;
     entry.failure = null;
     final pending = entry.tail;
+    final cleaning = AiAccountMutationCoordinator.forStore(
+      store,
+    ).beginCleaning(account);
     _emit();
     try {
       await store.setTombstone(account);
       if (pending != null) await pending;
-      await store.deleteHistoryKey(account);
-      await files.deleteAccount(account);
-      await store.deleteAccount(account);
-      await store.clearTombstone(account);
+      await cleaning.run(() async {
+        await store.deleteHistoryKey(account);
+        await files.deleteAccount(account);
+        await store.deleteAccount(account);
+        await store.clearTombstone(account);
+      });
       entry.state = AiHistoryState.disabled;
       _emit();
     } catch (_) {
@@ -432,9 +486,38 @@ final class AiHistoryCoordinator extends ChangeNotifier
     }
   }
 
+  void _trackAccountLifecycle(SessionController session) {
+    if (_accountLifecycleListeners.containsKey(session)) return;
+    var previous = session.accountsLoaded
+        ? session.accounts.map((account) => account.key).toSet()
+        : <String>{};
+    void listener() {
+      if (_disposed || !session.accountsLoaded) return;
+      final live = session.accounts.map((account) => account.key).toSet();
+      final owner = AiAccountMutationCoordinator.forStore(store);
+      for (final account in live.difference(previous)) {
+        final entry = _entry(account);
+        // A fresh membership transition may reopen a completed cleanup. A
+        // retained account with a failed cleanup remains fenced for retry.
+        if (entry.state == AiHistoryState.disabled &&
+            owner.isCleaning(account)) {
+          owner.reopen(account);
+          entry.epoch++;
+          entry.state = AiHistoryState.unknown;
+          entry.failure = null;
+        }
+      }
+      previous = live;
+    }
+
+    _accountLifecycleListeners[session] = listener;
+    session.addListener(listener);
+  }
+
   Future<void> startRecovery(SessionController session) async {
     _watchLifecycle();
     if (_disposed) return;
+    _trackAccountLifecycle(session);
     if (!session.accountsLoaded) {
       final loaded = Completer<void>();
       void listener() {
@@ -465,9 +548,13 @@ final class AiHistoryCoordinator extends ChangeNotifier
           session.accounts.map((account) => account.key).toSet(),
         );
     try {
-      final tombstones = await store.listTombstones();
+      final inventory = await readAiTombstoneInventory(store);
       if (!current()) return;
-      for (final account in tombstones) {
+      if (inventory.malformedCount > 0) {
+        _recoveryInvalidData = true;
+        _emit();
+      }
+      for (final account in inventory.accountKeys) {
         try {
           await clearAccount(account);
         } on ApiFailure {
@@ -475,7 +562,41 @@ final class AiHistoryCoordinator extends ChangeNotifier
         }
         if (!current()) return;
       }
+      if (!current()) return;
+      final secureCleanup = await cleanupOrphanAiSecureData(
+        store,
+        accounts,
+        isCurrent: current,
+      );
+      if (!current()) return;
+      for (final account in {
+        ...secureCleanup.deletedAccountRecords,
+        ...secureCleanup.deletedHistoryKeys,
+      }) {
+        final entry = _entry(account);
+        if (entry.state != AiHistoryState.cleaning) {
+          entry.state = AiHistoryState.disabled;
+        }
+      }
       await files.deleteOrphans(accounts, isCurrent: current);
+      if (!current()) return;
+      for (final account in accounts) {
+        await _run(account, (entry) async {
+          await _load(account, entry);
+          if (!current() || entry.state != AiHistoryState.ready) return;
+          final epoch = entry.epoch;
+          final recovery = await files.maintain(
+            account,
+            Uint8List.fromList(entry.key!),
+            entry.record!.retentionDays,
+          );
+          if (current() && _current(entry, epoch)) {
+            _accumulateRecovery(entry, recovery);
+            _emit();
+          }
+        });
+        if (!current()) return;
+      }
     } catch (_) {
       // A failed secure-store enumeration cannot authorize orphan deletion.
       // Recovery will retry on the next explicit start/launch.
@@ -492,6 +613,10 @@ final class AiHistoryCoordinator extends ChangeNotifier
       entry.key?.fillRange(0, entry.key!.length, 0);
       entry.key = null;
     }
+    for (final item in _accountLifecycleListeners.entries) {
+      item.key.removeListener(item.value);
+    }
+    _accountLifecycleListeners.clear();
     for (final waiting in _waitingRecovery) {
       if (!waiting.isCompleted) waiting.complete();
     }

@@ -15,8 +15,26 @@ Map<String, Object?> aiDisplayJson(AiConversation conversation) => {
   'items': conversation.items.map(_itemJson).toList(),
 };
 
-String _chars(String value, int limit) =>
-    value.length <= limit ? value : value.substring(0, limit);
+final class AiHistoryUnsupportedFormat implements Exception {
+  const AiHistoryUnsupportedFormat([
+    this.message = 'Unsupported AI history format',
+  ]);
+
+  final String message;
+
+  @override
+  String toString() => 'AiHistoryUnsupportedFormat: $message';
+}
+
+String _chars(String value, int limit, {bool markTruncated = false}) {
+  if (value.length <= limit) return value;
+  const marker = '…';
+  var end = limit - (markTruncated ? marker.length : 0);
+  if (end > 0 && _isHighSurrogate(value.codeUnitAt(end - 1))) end--;
+  return '${value.substring(0, end)}${markTruncated ? marker : ''}';
+}
+
+bool _isHighSurrogate(int value) => value >= 0xd800 && value <= 0xdbff;
 
 String _excerpt(String value) {
   // At most 8 KiB, including multi-byte Unicode characters.
@@ -53,8 +71,8 @@ Map<String, Object?> _itemJson(AiChatItem item) => switch (item) {
   },
   AiAssistantItem(:final text, :final state, :final usage) => {
     'kind': 'assistant',
-    'text': _chars(text, 64000),
-    'state': state.name,
+    'text': _chars(text, 64000, markTruncated: true),
+    'state': _assistantStateCode(state),
     'usage': usage == null
         ? null
         : <String, Object?>{
@@ -68,7 +86,7 @@ Map<String, Object?> _itemJson(AiChatItem item) => switch (item) {
     'kind': 'tool',
     'name': _chars(item.name, 256),
     'argsPreview': _excerpt(item.argsPreview),
-    'status': item.status.name,
+    'status': _toolStatusCode(item.status),
     'sizeChars': item.sizeChars,
     'provenance': _chars(item.provenance, 2048),
     'truncated': item.truncated,
@@ -77,30 +95,43 @@ Map<String, Object?> _itemJson(AiChatItem item) => switch (item) {
   },
   AiNoticeItem(:final kind, :final count) => {
     'kind': 'notice',
-    'notice': kind.name,
+    'notice': _noticeKindCode(kind),
     'count': count,
   },
 };
 
 /// Throws on corrupt/unknown fields instead of projecting malformed records.
 AiConversation aiDisplayFromJson(Map<String, Object?> json) {
+  _rejectUnknownKeys(json, const {'items'});
   final items = json['items'];
-  if (items is! List<Object?>) throw const FormatException();
+  if (items is! List<Object?>) throw const AiHistoryUnsupportedFormat();
   return AiConversation(
     items: items.map((value) {
       final item = historyObject(value);
       final text = item['text'];
       switch (item['kind']) {
         case 'user':
+          _rejectUnknownKeys(item, const {'kind', 'text', 'chips'});
           if (text is! String || text.length > 16000) {
-            throw const FormatException();
+            throw const AiHistoryUnsupportedFormat();
           }
           final chips = item['chips'];
-          if (chips is! List<Object?>) throw const FormatException();
+          if (chips is! List<Object?>) {
+            throw const AiHistoryUnsupportedFormat();
+          }
           return AiUserItem(
             text: text,
             chips: chips.map((value) {
               final chip = historyObject(value);
+              _rejectUnknownKeys(chip, const {
+                'source',
+                'preview',
+                'sizeChars',
+                'blocked',
+                'type',
+                'resource',
+                'pinnedSha',
+              });
               return AiContextChip(
                 source: _string(chip, 'source', 1024),
                 preview: _string(chip, 'preview', 8192, bytes: true),
@@ -113,21 +144,30 @@ AiConversation aiDisplayFromJson(Map<String, Object?> json) {
             }).toList(),
           );
         case 'assistant':
+          _rejectUnknownKeys(item, const {'kind', 'text', 'state', 'usage'});
           if (text is! String || text.length > 64000) {
-            throw const FormatException();
+            throw const AiHistoryUnsupportedFormat();
           }
           final rawUsage = item['usage'];
           final usage = rawUsage == null ? null : historyObject(rawUsage);
+          if (usage != null) {
+            _rejectUnknownKeys(usage, const {
+              'inputTokens',
+              'outputTokens',
+              'cacheCreationInputTokens',
+              'cacheReadInputTokens',
+            });
+          }
           int? token(String name) {
             final value = usage?[name];
             if (value != null && (value is! int || value < 0)) {
-              throw const FormatException();
+              throw const AiHistoryUnsupportedFormat();
             }
             return value as int?;
           }
           return AiAssistantItem(
             text: text,
-            state: AiAssistantState.values.byName(_string(item, 'state', 32)),
+            state: _assistantState(_string(item, 'state', 32)),
             usage: usage == null
                 ? null
                 : AiUsage(
@@ -138,10 +178,21 @@ AiConversation aiDisplayFromJson(Map<String, Object?> json) {
                   ),
           );
         case 'tool':
+          _rejectUnknownKeys(item, const {
+            'kind',
+            'name',
+            'argsPreview',
+            'status',
+            'sizeChars',
+            'provenance',
+            'truncated',
+            'blocked',
+            'resultExcerpt',
+          });
           return AiToolRunItem(
             name: _string(item, 'name', 256),
             argsPreview: _string(item, 'argsPreview', 8192, bytes: true),
-            status: AiToolRunStatus.values.byName(_string(item, 'status', 32)),
+            status: _toolStatus(_string(item, 'status', 32)),
             sizeChars: _integer(item, 'sizeChars'),
             provenance: _string(item, 'provenance', 2048),
             truncated: _boolean(item, 'truncated'),
@@ -149,24 +200,33 @@ AiConversation aiDisplayFromJson(Map<String, Object?> json) {
             resultExcerpt: _string(item, 'resultExcerpt', 8192, bytes: true),
           );
         case 'notice':
+          _rejectUnknownKeys(item, const {'kind', 'notice', 'count'});
           final count = item['count'];
           if (count != null && (count is! int || count < 0)) {
-            throw const FormatException();
+            throw const AiHistoryUnsupportedFormat();
           }
           return AiNoticeItem(
-            AiNoticeKind.values.byName(_string(item, 'notice', 32)),
+            _noticeKind(_string(item, 'notice', 32)),
             count: count as int?,
           );
         default:
-          throw const FormatException();
+          throw const AiHistoryUnsupportedFormat();
       }
     }).toList(),
   );
 }
 
 Map<String, Object?> historyObject(Object? value) {
-  if (value is! Map<String, Object?>) throw const FormatException();
+  if (value is! Map<String, Object?>) {
+    throw const AiHistoryUnsupportedFormat();
+  }
   return value;
+}
+
+void _rejectUnknownKeys(Map<String, Object?> value, Set<String> allowed) {
+  if (value.keys.any((key) => !allowed.contains(key))) {
+    throw const AiHistoryUnsupportedFormat();
+  }
 }
 
 String _string(
@@ -178,7 +238,7 @@ String _string(
   final value = map[name];
   if (value is! String ||
       (bytes ? utf8.encode(value).length : value.length) > cap) {
-    throw const FormatException();
+    throw const AiHistoryUnsupportedFormat();
   }
   return value;
 }
@@ -187,15 +247,72 @@ String? _optionalString(Map<String, Object?> map, String name, int cap) =>
     map[name] == null ? null : _string(map, name, cap);
 int _integer(Map<String, Object?> map, String name) {
   final value = map[name];
-  if (value is! int || value < 0) throw const FormatException();
+  if (value is! int || value < 0) {
+    throw const AiHistoryUnsupportedFormat();
+  }
   return value;
 }
 
 bool _boolean(Map<String, Object?> map, String name) {
   final value = map[name];
-  if (value is! bool) throw const FormatException();
+  if (value is! bool) throw const AiHistoryUnsupportedFormat();
   return value;
 }
+
+String _assistantStateCode(AiAssistantState value) => switch (value) {
+  AiAssistantState.streaming => 'streaming',
+  AiAssistantState.done => 'done',
+  AiAssistantState.interrupted => 'interrupted',
+  AiAssistantState.refused => 'refused',
+  AiAssistantState.truncated => 'truncated',
+  AiAssistantState.hidden => 'hidden',
+};
+
+AiAssistantState _assistantState(String value) => switch (value) {
+  'streaming' => AiAssistantState.streaming,
+  'done' => AiAssistantState.done,
+  'interrupted' => AiAssistantState.interrupted,
+  'refused' => AiAssistantState.refused,
+  'truncated' => AiAssistantState.truncated,
+  'hidden' => AiAssistantState.hidden,
+  _ => throw const AiHistoryUnsupportedFormat(),
+};
+
+String _toolStatusCode(AiToolRunStatus value) => switch (value) {
+  AiToolRunStatus.pending => 'pending',
+  AiToolRunStatus.running => 'running',
+  AiToolRunStatus.completed => 'completed',
+  AiToolRunStatus.failed => 'failed',
+  AiToolRunStatus.skipped => 'skipped',
+};
+
+AiToolRunStatus _toolStatus(String value) => switch (value) {
+  'pending' => AiToolRunStatus.pending,
+  'running' => AiToolRunStatus.running,
+  'completed' => AiToolRunStatus.completed,
+  'failed' => AiToolRunStatus.failed,
+  'skipped' => AiToolRunStatus.skipped,
+  _ => throw const AiHistoryUnsupportedFormat(),
+};
+
+String _noticeKindCode(AiNoticeKind value) => switch (value) {
+  AiNoticeKind.redacted => 'redacted',
+  AiNoticeKind.settingsChanged => 'settings_changed',
+  AiNoticeKind.segmentSummary => 'segment_summary',
+  AiNoticeKind.historyLimit => 'history_limit',
+  AiNoticeKind.stopped => 'stopped',
+  AiNoticeKind.notSent => 'not_sent',
+};
+
+AiNoticeKind _noticeKind(String value) => switch (value) {
+  'redacted' => AiNoticeKind.redacted,
+  'settings_changed' => AiNoticeKind.settingsChanged,
+  'segment_summary' => AiNoticeKind.segmentSummary,
+  'history_limit' => AiNoticeKind.historyLimit,
+  'stopped' => AiNoticeKind.stopped,
+  'not_sent' => AiNoticeKind.notSent,
+  _ => throw const AiHistoryUnsupportedFormat(),
+};
 
 /// Pure Dart AES-256-GCM; version || nonce || ciphertext || tag. AAD is
 /// unambiguous JSON, so account/file pairs cannot collide by concatenation.
@@ -227,7 +344,13 @@ final class AiHistoryCipher {
     if (maxPlaintextBytes != null && plain.length > maxPlaintextBytes) {
       throw const FormatException();
     }
-    return historyObject(jsonDecode(utf8.decode(plain)));
+    try {
+      return historyObject(jsonDecode(utf8.decode(plain)));
+    } on AiHistoryUnsupportedFormat {
+      rethrow;
+    } on FormatException {
+      throw const AiHistoryUnsupportedFormat();
+    }
   });
 
   static Future<Uint8List> encryptBytes(
@@ -238,13 +361,14 @@ final class AiHistoryCipher {
     List<int>? nonce,
   }) async {
     if (key.length != 32) throw const FormatException();
+    const version = 1;
     final box = await seal(
       plain,
       key,
       nonce ?? _randomBytes(12),
-      utf8.encode(jsonEncode([account, file])),
+      _aad(version, account, file),
     );
-    return Uint8List.fromList([1, ...box.concatenation()]);
+    return Uint8List.fromList([version, ...box.concatenation()]);
   }
 
   /// Shared AES primitive, exposed for NIST known-answer verification.
@@ -267,18 +391,24 @@ final class AiHistoryCipher {
     String account,
     String file,
   ) async {
-    if (key.length != 32 || encrypted.length < 29 || encrypted.first != 1) {
+    if (key.length != 32 || encrypted.length < 29) {
       throw const FormatException();
     }
+    final version = encrypted.first;
     final box = SecretBox.fromConcatenation(
       encrypted.sublist(1),
       nonceLength: 12,
       macLength: 16,
     );
-    return DartAesGcm(secretKeyLength: 32).decrypt(
+    final plain = await DartAesGcm(secretKeyLength: 32).decrypt(
       box,
       secretKey: SecretKey(key),
-      aad: utf8.encode(jsonEncode([account, file])),
+      aad: _aad(version, account, file),
     );
+    if (version != 1) throw const AiHistoryUnsupportedFormat();
+    return plain;
   }
+
+  static List<int> _aad(int version, String account, String file) =>
+      utf8.encode(jsonEncode([version, account, file]));
 }

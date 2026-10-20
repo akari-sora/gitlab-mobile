@@ -2075,5 +2075,9 @@ const _messagesMs = <String>[
   'Sejarah disulitkan tidak tersedia sekarang. Percubaan akan dibuat lagi kemudian.',
   'Kunci penyulitan untuk akaun ini tiada; sejarahnya tidak dapat dinyahsulit.',
   'Data sejarah AI rosak atau menggunakan format yang tidak disokong.',
+  'Indeks sejarah AI telah dibaiki dan perbualan dipulihkan.',
+  'Sebahagian sejarah AI menggunakan format yang tidak disokong dan dikekalkan pada peranti ini.',
+  'Perbualan ini tidak dapat disimpan. Cuba lagi.',
+  'Perbualan ini dialih keluar daripada sejarah tersimpan untuk mengosongkan storan.',
   'Kunci API mestilah sekurang-kurangnya 4 aksara.',
 ];

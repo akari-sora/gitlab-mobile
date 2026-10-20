@@ -2073,5 +2073,9 @@
   "aiHistoryUnavailable": "Riwayat terenkripsi sedang tidak tersedia. Sistem akan mencoba lagi nanti.",
   "aiHistoryKeyMissing": "Kunci enkripsi untuk akun ini tidak ada; riwayatnya tidak dapat didekripsi.",
   "aiHistoryInvalidData": "Data riwayat AI rusak atau menggunakan format yang tidak didukung.",
+  "aiHistoryIndexRepaired": "Indeks riwayat AI diperbaiki dan percakapan dipulihkan.",
+  "aiHistoryUnsupported": "Sebagian riwayat AI menggunakan format yang tidak didukung dan dipertahankan di perangkat ini.",
+  "aiHistoryNotSaved": "Percakapan ini tidak dapat disimpan. Coba lagi.",
+  "aiHistoryEvicted": "Percakapan ini dihapus dari riwayat tersimpan untuk mengosongkan ruang.",
   "aiKeyTooShort": "Kunci API harus terdiri dari setidaknya 4 karakter."
 }

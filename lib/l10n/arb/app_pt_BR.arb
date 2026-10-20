@@ -2073,5 +2073,9 @@
   "aiHistoryUnavailable": "O histórico criptografado está indisponível agora. Uma nova tentativa será feita mais tarde.",
   "aiHistoryKeyMissing": "A chave de criptografia desta conta está ausente; o histórico não pode ser descriptografado.",
   "aiHistoryInvalidData": "Os dados do histórico de AI estão danificados ou usam um formato incompatível.",
+  "aiHistoryIndexRepaired": "O índice do histórico de AI foi reparado e as conversas foram recuperadas.",
+  "aiHistoryUnsupported": "Parte do histórico de AI usa um formato incompatível e foi mantida neste dispositivo.",
+  "aiHistoryNotSaved": "Não foi possível salvar esta conversa. Tente novamente.",
+  "aiHistoryEvicted": "Esta conversa foi removida do histórico salvo para liberar armazenamento.",
   "aiKeyTooShort": "A chave da API deve ter pelo menos 4 caracteres."
 }

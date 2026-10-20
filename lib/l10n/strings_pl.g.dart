@@ -2075,5 +2075,9 @@ const _messagesPl = <String>[
   'Zaszyfrowana historia jest teraz niedostępna. Próba zostanie ponowiona później.',
   'Brakuje klucza szyfrowania tego konta; historii nie można odszyfrować.',
   'Dane historii AI są uszkodzone lub mają nieobsługiwany format.',
+  'Indeks historii AI został naprawiony, a rozmowy odzyskane.',
+  'Część historii AI używa nieobsługiwanego formatu i została zachowana na tym urządzeniu.',
+  'Nie udało się zapisać tej rozmowy. Spróbuj ponownie.',
+  'Ta rozmowa została usunięta z zapisanej historii, aby zwolnić miejsce.',
   'Klucz API musi mieć co najmniej 4 znaki.',
 ];

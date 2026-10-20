@@ -2075,5 +2075,9 @@ const _messagesEn = <String>[
   'Encrypted history is unavailable right now. It will be retried later.',
   'The encryption key for this account is missing; its history cannot be decrypted.',
   'AI history data is damaged or uses an unsupported format.',
+  'The AI history index was repaired and conversations were recovered.',
+  'Some AI history uses an unsupported format and was kept on this device.',
+  'This conversation could not be saved. Try again.',
+  'This conversation was removed from saved history to free storage.',
   'The API key must be at least 4 characters.',
 ];

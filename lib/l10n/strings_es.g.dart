@@ -2075,5 +2075,9 @@ const _messagesEs = <String>[
   'El historial cifrado no está disponible ahora. Se volverá a intentar más tarde.',
   'Falta la clave de cifrado de esta cuenta; no se puede descifrar su historial.',
   'Los datos del historial de AI están dañados o usan un formato no compatible.',
+  'Se reparó el índice del historial de AI y se recuperaron las conversaciones.',
+  'Parte del historial de AI usa un formato no compatible y se conservó en este dispositivo.',
+  'No se pudo guardar esta conversación. Inténtalo de nuevo.',
+  'Esta conversación se eliminó del historial guardado para liberar almacenamiento.',
   'La clave de API debe tener al menos 4 caracteres.',
 ];

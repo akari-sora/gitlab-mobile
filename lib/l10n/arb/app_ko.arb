@@ -2066,12 +2066,16 @@
   "aiPolicyBlockedTitle": "AI 보안 검사를 통과하지 못했습니다",
   "aiPolicyBlockedDetail": "엔드포인트, 마스킹 필터 또는 설정이 보안 검사를 통과하지 못해 이 요청을 보내지 않았습니다.",
   "aiCustomProvider": "사용자 지정 AI 제공업체",
-  "aiHistoryCleanupTitle": "인공지능 기록을 지울 수 없습니다",
-  "aiHistoryCleanupDetail": "인공지능 기록이 완전히 지워지지 않았습니다. 계정은 유지되었습니다. 다시 삭제해 보세요.",
+  "aiHistoryCleanupTitle": "AI 기록을 지울 수 없습니다",
+  "aiHistoryCleanupDetail": "AI 기록이 완전히 지워지지 않았습니다. 계정은 유지되었습니다. 다시 삭제해 보세요.",
   "aiHistoryRemovedUnreadable": "일부 기록을 읽을 수 없어 삭제했습니다.",
   "aiHistoryStorageLimit": "이 대화가 저장 한도에 도달했습니다. 이후 내용은 저장되지 않습니다.",
   "aiHistoryUnavailable": "현재 암호화된 기록에 접근할 수 없습니다. 나중에 다시 시도합니다.",
   "aiHistoryKeyMissing": "이 계정의 암호화 키가 없습니다. 기록을 복호화할 수 없습니다.",
-  "aiHistoryInvalidData": "인공지능 기록 데이터가 손상되었거나 지원하지 않는 형식입니다.",
-  "aiKeyTooShort": "접속 키는 4자 이상이어야 합니다."
+  "aiHistoryInvalidData": "AI 기록 데이터가 손상되었거나 지원하지 않는 형식입니다.",
+  "aiHistoryIndexRepaired": "AI 기록 색인을 복구하고 대화를 복원했습니다.",
+  "aiHistoryUnsupported": "일부 AI 기록이 지원하지 않는 형식이어서 이 기기에 유지되었습니다.",
+  "aiHistoryNotSaved": "이 대화를 저장할 수 없습니다. 다시 시도하세요.",
+  "aiHistoryEvicted": "저장 공간을 확보하기 위해 이 대화를 저장된 기록에서 삭제했습니다.",
+  "aiKeyTooShort": "API 키는 4자 이상이어야 합니다."
 }

@@ -2073,5 +2073,9 @@
   "aiHistoryUnavailable": "El historial cifrado no está disponible ahora. Se volverá a intentar más tarde.",
   "aiHistoryKeyMissing": "Falta la clave de cifrado de esta cuenta; no se puede descifrar su historial.",
   "aiHistoryInvalidData": "Los datos del historial de AI están dañados o usan un formato no compatible.",
+  "aiHistoryIndexRepaired": "Se reparó el índice del historial de AI y se recuperaron las conversaciones.",
+  "aiHistoryUnsupported": "Parte del historial de AI usa un formato no compatible y se conservó en este dispositivo.",
+  "aiHistoryNotSaved": "No se pudo guardar esta conversación. Inténtalo de nuevo.",
+  "aiHistoryEvicted": "Esta conversación se eliminó del historial guardado para liberar almacenamiento.",
   "aiKeyTooShort": "La clave de API debe tener al menos 4 caracteres."
 }

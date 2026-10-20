@@ -37,6 +37,14 @@ Future<void> main() async {
   ));
 }
 
+// initialize resets accountsLoaded synchronously. Recovery can then listen for
+// the secure account list without waiting for network identity revalidation.
+Future<void> initializeSessionWithAiRecovery(SessionController session) {
+  final initialization = session.initialize();
+  unawaited(AiHistoryCoordinator.instance.startRecovery(session));
+  return initialization;
+}
+
 class GitLabMobileApp extends ConsumerStatefulWidget {
   const GitLabMobileApp({super.key});
   @override
@@ -57,7 +65,7 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
     // signed out or during an account switch waits for the next shell.
     _links = ref.read(incomingLinksProvider)..start();
     final session = ref.read(sessionProvider);
-    unawaited(_initializeSession(session));
+    unawaited(initializeSessionWithAiRecovery(session));
     // The stored appearance is read alongside the accounts and never gates the
     // first frame: the app renders with ThemeMode.system until it arrives.
     unawaited(ref.read(appearanceProvider).load());
@@ -66,13 +74,6 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
     // Started before the first frame's app exists, so its back handling runs
     // before the navigator's while the app is locked.
     unawaited(ref.read(appLockProvider).start());
-  }
-  Future<void> _initializeSession(SessionController session) async {
-    try {
-      await session.initialize();
-    } finally {
-      unawaited(AiHistoryCoordinator.instance.startRecovery(session));
-    }
   }
   @override
   void dispose() {

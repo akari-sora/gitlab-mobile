@@ -2075,5 +2075,9 @@ const _messagesRo = <String>[
   'Istoricul criptat nu este disponibil acum. Se va reîncerca mai târziu.',
   'Cheia de criptare pentru acest cont lipsește; istoricul nu poate fi decriptat.',
   'Datele istoricului AI sunt deteriorate sau folosesc un format neacceptat.',
+  'Indexul istoricului AI a fost reparat, iar conversațiile au fost recuperate.',
+  'O parte din istoricul AI folosește un format neacceptat și a fost păstrată pe acest dispozitiv.',
+  'Această conversație nu a putut fi salvată. Încearcă din nou.',
+  'Această conversație a fost eliminată din istoricul salvat pentru a elibera spațiu.',
   'Cheia API trebuie să aibă cel puțin 4 caractere.',
 ];

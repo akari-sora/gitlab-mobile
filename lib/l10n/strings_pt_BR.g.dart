@@ -2075,5 +2075,9 @@ const _messagesPtBr = <String>[
   'O histórico criptografado está indisponível agora. Uma nova tentativa será feita mais tarde.',
   'A chave de criptografia desta conta está ausente; o histórico não pode ser descriptografado.',
   'Os dados do histórico de AI estão danificados ou usam um formato incompatível.',
+  'O índice do histórico de AI foi reparado e as conversas foram recuperadas.',
+  'Parte do histórico de AI usa um formato incompatível e foi mantida neste dispositivo.',
+  'Não foi possível salvar esta conversa. Tente novamente.',
+  'Esta conversa foi removida do histórico salvo para liberar armazenamento.',
   'A chave da API deve ter pelo menos 4 caracteres.',
 ];

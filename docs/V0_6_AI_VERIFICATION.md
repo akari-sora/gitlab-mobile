@@ -432,67 +432,125 @@ malformed later chunk cannot erase earlier usage.
 
 ## AI assistant verification: MR3
 
-MR3 adds device-scoped provider settings and keys, per-account consent/history
-settings, encrypted per-account chat history, coordinator recovery and
-account-removal cleanup. The compile-time assistant gate remains false, while
-start-up recovery and account-removal cleanup run unconditionally. The base commit is `93c164eca8d5498f8d19d38c2d892521a7f727f3` on
-`feat/ai-mr3-stores`; MR3 is intentionally uncommitted. Pipeline and job evidence
-are `NOT_RUN` because this packet prohibits committing and pushing. Local
-acceptance receipts are recorded in root `RESULT.md`.
+MR3 round 0 is commit `22d5aaa530df7d3460c528522e4967ac7620cb45`, based on
+`93c164eca8d5498f8d19d38c2d892521a7f727f3`. Round 1 (FIX1) is pending the
+orchestrator's commit. No commit or push was performed. Pipeline/job evidence
+is **NOT_RUN**; no pipeline was queried or triggered.
 
-### Persistence and security contract
+MR3 adds device-scoped provider settings/keys, account-scoped consent/history
+settings, encrypted display-only history, startup recovery and unconditional
+account-removal cleanup. FIX1 serializes account mutations across settings and
+history, fences cleanup across both owners, invalidates caches and cleans orphan
+secure records/keys after successful account loading. Fresh account membership
+can reopen a completed cleanup without releasing queued old mutations.
 
-- Provider settings use `gitlab_mobile_ai_providers_v1` without keys; provider
-  keys use `ai_key.v1.<base64url(providerId)>` and reject values shorter than
-  four characters. Account records use
-  `ai_account.v1.<base64url(account.key)>`; the per-account history key and
-  cleanup tombstone use `ai_history_key.v1.*` and
-  `ai_history_tombstone.v1.*` respectively.
-- History stores only redacted display models, never provider replay output.
-  AES-256-GCM uses a fresh 12-byte nonce per write and AAD bound to both the
-  account and file name. Encoding/encryption and decryption/decoding occur off
-  the UI isolate. Reads reject oversized ciphertext before loading it.
-- Limits are 512 KiB plaintext per conversation, 50 conversations and 16 MiB
-  per account, 64 MiB per device, with 7/30/90-day retention and 30 days by
-  default. Capacity includes index metadata, conservatively reserving a 256 KiB
-  replacement index envelope. Old tool excerpts degrade to metadata before further content stops
-  saving, and that stopped state is explicit rather than silent.
-- Conversation files are committed before their index; eviction deletes the
-  file before updating the index. Recovery rebuilds a missing or undecryptable
-  index, drops missing-file entries, restores unexpired orphan files, removes
-  stale temporary files and individually unreadable conversations, then
-  reapplies retention and capacity. Device-wide eviction skips accounts whose
-  keys are already known to be unavailable, missing or being cleaned, and invalidates a foreign
-  account index after deleting one of its files. Device order uses file
-  modification time. Transient read errors preserve data; only malformed or
-  unauthenticated data is classified as corrupt. If capacity eviction removes
-  the conversation being saved, the save reports the explicit stopped state.
-- The process-wide coordinator distinguishes `unavailable` secure storage from
-  an absent history key. Neither condition authorizes data deletion or silent
-  key replacement. Orphan-account directories are considered only after a
-  current successful account-list load.
-- Account removal writes a tombstone before invalidating pending work and
-  deleting the history key, account directory and account settings. It deletes
-  the tombstone last. Deletion-step failures retain/reassert the marker and keep
-  the account. If the initial marker write cannot succeed, the account stays and
-  explicit retry is required; no durable marker can be promised before a
-  successful write.
+Provider deletion immediately invalidates the provider and persists the reserved
+`gitlab-mobile:deleting-provider` preset marker. It revokes account consents,
+then deletes the key, then removes the provider. Each successful account write
+updates memory; failures resume at initialization/next access. Same-ID recreation
+finishes deletion first. A failed initial marker write is only locally pending
+until it can be persisted; no durable-marker claim is made on write failure.
 
-### MR3 verification matrix
+History validates root/base/account path types, uses random exclusive temp files,
+and requires regular final files. AES-256-GCM binds envelope version, account and
+filename in AAD. JSON/crypto and bounded reads/atomic writes run off the UI
+isolate. Index metadata includes updatedAt, size and modification time. Normal
+saves decrypt only the index plus changed/unindexed conversations, preserve
+conversation-before-index and file-before-index eviction order, and enforce
+512 KiB/50 conversations/16 MiB per account/64 MiB per device limits. Startup
+applies 7/30/90-day retention by index metadata. Key unavailable/missing states
+preserve data; authenticated unsupported schema remains on disk, skipped with a
+notice. Removed-file, repaired-index and unsupported notices remain until UI
+acknowledgement; I/O save failure, oversize and capacity eviction are distinct.
 
-| Claim | Required evidence | Current status |
+On a full iOS restore, both the account list and history key are ThisDeviceOnly:
+a successful empty account list authorizes orphan cleanup of restored files.
+`keyMissing` describes partial Keychain loss with a surviving account list.
+Malformed individual tombstones are skipped and reported, without blocking
+valid recovery. This corrects the design's §5.7.6 restore expectation.
+
+FIX1 regression evidence and acceptance commands/counts/output tails follow
+inline. Results are local synthetic evidence only; Android emulator, physical
+iOS restore, provider/private-project, accessibility, release/store and G0
+acceptance are **NOT_RUN**. No real credentials, network calls, devices or new
+dependencies were used. Existing login/authenticated-app tests remain unchanged.
+
+The first full-suite attempt passed 3,580 tests and failed two: the unchanged
+one-second Anthropic benchmark took 1.466845 seconds, and the unchanged
+account-removal test exposed a completed shared-queue future retained across
+widget-test zones. A new two-zone regression reproduces the second failure
+before the idle tail is released. The repaired queue passes both zones and a
+54-test focused run including the entire unchanged authenticated-app and
+Anthropic test files. Neither assertions nor timeouts were relaxed. The final
+full-suite run below passes both. Before logs distinguish runtime failures from
+new-API compilation evidence; documentation and pre-existing-correct behavior
+coverage are not assigned invented behavioral failures. All review requests
+were accepted; none were rejected. Terminal trailing padding is omitted below.
+
+Every command below ran synchronously in a foreground `subprocess.run`; the tool session was awaited to completion. Flutter source and tests remained unchanged during this final sequence. Only this receipt and the inline ledger were finalized afterward.
+
+| Command | Exit | Result |
 | --- | --- | --- |
-| NIST AES-GCM known-answer, fresh nonces, account/file-name AAD, bit-flip rejection and pre-read size bounds | Focused unit tests over the submitted history store | PASS — local synthetic tests; see RESULT.md |
-| Missing/undecryptable index, missing file, orphan restore, expired orphan removal, stale `.tmp`, and both crash-order windows recover deterministically | Recovery tests with isolated temporary roots | PASS — local synthetic tests; see RESULT.md |
-| Delayed or failed account loading protects orphan data; unavailable keys retry without deletion; absent keys enter `keyMissing` | Coordinator/session tests with injected stores | PASS — local synthetic tests; see RESULT.md |
-| Cleanup blocks late writes, preserves account+tombstone for every injected failure, and resumes after restart | Cleanup and removal widget regressions | PASS — local synthetic tests; see RESULT.md |
-| History enablement writes the key before `enabled=true`; malformed versioned records fail safely | Store crash-order and strict-decoding tests | PASS — local synthetic tests; see RESULT.md |
-| All 24 catalogs carry the eight MR3 messages and generated Dart is current | `python3 tool/l10n.py --check` and Python l10n tests | PASS — local synthetic tests; see RESULT.md |
-| Analyzer, full Flutter suite and Python CI/tool suites | Packet acceptance commands in the foreground | PASS — foreground local checks; full suite ran last; see RESULT.md |
-| Android emulator behavior | Project-owned emulator evidence | NOT_RUN |
-| iOS backup restore without the `ThisDeviceOnly` key (A10) | Physical iOS backup/restore evidence | NOT_RUN |
-| Accessibility, release/store and live private-project acceptance | Device and release lanes | NOT_RUN |
+| `/Users/iml1s/fvm/versions/3.47.2/bin/flutter analyze --no-pub` | 0 | strict analysis clean |
+| `python3 tool/l10n.py --check` | 0 | 2,078 messages / 24 languages current |
+| `python3 -m unittest discover -s tool/tests -p 'test_*.py'` | 0 | 68 tests passed |
+| `git diff --check` | 0 | no whitespace errors |
+| `/Users/iml1s/fvm/versions/3.47.2/bin/flutter test --no-pub` | 0 | 3,584 tests passed; full suite last |
 
-No provider was contacted and no credential was read for MR3. Synthetic local
-tests can establish persistence behavior but cannot upgrade device, store,
-private-project, pipeline or G0 acceptance.
+Exact output tails:
+
+`/Users/iml1s/fvm/versions/3.47.2/bin/flutter analyze --no-pub` — exit 0, 6.635 seconds
+
+```text
+Analyzing gitlab-mobile-wt-ai-mr3...
+No issues found! (ran in 4.8s)
+```
+
+`python3 tool/l10n.py --check` — exit 0, 0.148 seconds
+
+```text
+2078 messages in 24 languages; generated files current.
+```
+
+`python3 -m unittest discover -s tool/tests -p 'test_*.py'` — exit 0, 0.863 seconds
+
+```text
+...Could not start 1Password CLI.
+.Pinned Dart executable not found: /var/folders/9w/6m1x9qr10zv2p2sztxyyxyq00000gn/T/tmpe4bummkb/missing-dart
+.Credential lookup failed for anthropic-direct.
+...............................................................
+----------------------------------------------------------------------
+Ran 68 tests in 0.746s
+
+OK
+2078 messages in 24 languages; generated files current.
+```
+
+`git diff --check` — exit 0, 0.144 seconds
+
+```text
+(no output)
+```
+
+`/Users/iml1s/fvm/versions/3.47.2/bin/flutter test --no-pub` — exit 0, 252.499 seconds
+
+```text
+03:47 +3577: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
+03:47 +3577: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/wide_back_navigation_test.dart: P2-BACK: Wide Two-Pane System Back Navigation Suite Account switch cleanup in wide mode clears active selection and resets navigation hierarchy
+dynamic_color: Dynamic color not detected on this device.
+03:47 +3578: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
+03:47 +3579: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
+03:48 +3580: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
+03:48 +3581: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
+03:48 +3581: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/wide_back_navigation_test.dart: P2-BACK: Wide Two-Pane System Back Navigation Suite Account switch cleanup in wide mode clears active selection and resets navigation hierarchy
+dynamic_color: Dynamic color not detected on this device.
+03:49 +3582: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
+03:55 +3583: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (group) without overflow
+04:09 +3584: All tests passed!
+```
+
+Python error strings above are deliberate mocked failure fixtures; they do not indicate real 1Password access or provider requests.
+
+Final full-suite incremental-save measurement: `reads=1 one=0:00:00.002838 conversations26=0:00:00.005589`. Both sizes decrypt only the index during an unchanged small save.
+
+The final full run passes the unchanged decoder performance assertion and protected account-removal tests. The first failure is retained as evidence, not silently discarded; the benchmark was not modified and its host-load sensitivity remains visible in the earlier run.

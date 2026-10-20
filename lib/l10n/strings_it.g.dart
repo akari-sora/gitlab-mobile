@@ -2075,5 +2075,9 @@ const _messagesIt = <String>[
   'La cronologia crittografata non è disponibile al momento. Verrà riprovato più tardi.',
   'Manca la chiave di crittografia per questo account; la cronologia non può essere decifrata.',
   'I dati della cronologia AI sono danneggiati o usano un formato non supportato.',
+  'L’indice della cronologia AI è stato riparato e le conversazioni sono state recuperate.',
+  'Parte della cronologia AI usa un formato non supportato ed è stata conservata su questo dispositivo.',
+  'Impossibile salvare questa conversazione. Riprova.',
+  'Questa conversazione è stata rimossa dalla cronologia salvata per liberare spazio.',
   'La chiave API deve contenere almeno 4 caratteri.',
 ];

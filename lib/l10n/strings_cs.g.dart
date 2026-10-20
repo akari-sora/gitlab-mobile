@@ -2075,5 +2075,9 @@ const _messagesCs = <String>[
   'Šifrovaná historie nyní není dostupná. Pokus se zopakuje později.',
   'Šifrovací klíč tohoto účtu chybí; historii nelze dešifrovat.',
   'Data historie AI jsou poškozená nebo používají nepodporovaný formát.',
+  'Index historie AI byl opraven a konverzace byly obnoveny.',
+  'Část historie AI používá nepodporovaný formát a byla v tomto zařízení zachována.',
+  'Tuto konverzaci se nepodařilo uložit. Zkuste to znovu.',
+  'Tato konverzace byla odstraněna z uložené historie, aby se uvolnilo místo.',
   'Klíč API musí mít alespoň 4 znaky.',
 ];

@@ -10391,12 +10391,12 @@
     "description": "Name of the custom AI provider preset.",
     "placeholders": {}
   },
-  "aiHistoryCleanupTitle": "無法清除人工智慧紀錄",
+  "aiHistoryCleanupTitle": "無法清除 AI 紀錄",
   "@aiHistoryCleanupTitle": {
     "description": "Title shown when encrypted AI account data could not be removed",
     "placeholders": {}
   },
-  "aiHistoryCleanupDetail": "人工智慧紀錄尚未完全清除。帳號已保留，請重試移除。",
+  "aiHistoryCleanupDetail": "AI 紀錄尚未完全清除。帳號已保留，請重試移除。",
   "@aiHistoryCleanupDetail": {
     "description": "Detail shown when encrypted AI account-data cleanup fails and the account is retained",
     "placeholders": {}
@@ -10421,12 +10421,32 @@
     "description": "State shown when history is enabled but its encryption key is absent",
     "placeholders": {}
   },
-  "aiHistoryInvalidData": "人工智慧紀錄資料已損壞或格式不受支援。",
+  "aiHistoryInvalidData": "AI 紀錄資料已損壞或格式不受支援。",
   "@aiHistoryInvalidData": {
     "description": "Failure shown when a versioned AI history record is malformed or unsupported",
     "placeholders": {}
   },
-  "aiKeyTooShort": "服務金鑰至少需要 4 個字元。",
+  "aiHistoryIndexRepaired": "AI 紀錄索引已修復，並已復原對話。",
+  "@aiHistoryIndexRepaired": {
+    "description": "Notice shown after a damaged AI history index is repaired without removing conversations",
+    "placeholders": {}
+  },
+  "aiHistoryUnsupported": "部分 AI 紀錄使用不受支援的格式，已保留在此裝置上。",
+  "@aiHistoryUnsupported": {
+    "description": "Notice shown when authenticated AI history uses an unsupported schema and is retained",
+    "placeholders": {}
+  },
+  "aiHistoryNotSaved": "無法保存此對話，請重試。",
+  "@aiHistoryNotSaved": {
+    "description": "Notice shown when a conversation could not be saved because of a file error",
+    "placeholders": {}
+  },
+  "aiHistoryEvicted": "此對話已從已保存的紀錄中移除，以釋出儲存空間。",
+  "@aiHistoryEvicted": {
+    "description": "Notice shown when a conversation is evicted to satisfy a storage capacity limit",
+    "placeholders": {}
+  },
+  "aiKeyTooShort": "API 金鑰至少需要 4 個字元。",
   "@aiKeyTooShort": {
     "description": "Validation error for an AI provider API key shorter than four characters",
     "placeholders": {}

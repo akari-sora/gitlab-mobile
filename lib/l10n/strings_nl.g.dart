@@ -2075,5 +2075,9 @@ const _messagesNl = <String>[
   'De versleutelde geschiedenis is nu niet beschikbaar. Later wordt het opnieuw geprobeerd.',
   'De versleutelingssleutel voor dit account ontbreekt; de geschiedenis kan niet worden ontsleuteld.',
   'De AI-geschiedenis is beschadigd of gebruikt een niet-ondersteunde indeling.',
+  'De index van de AI-geschiedenis is hersteld en gesprekken zijn teruggezet.',
+  'Een deel van de AI-geschiedenis gebruikt een niet-ondersteunde indeling en is op dit apparaat behouden.',
+  'Dit gesprek kon niet worden opgeslagen. Probeer het opnieuw.',
+  'Dit gesprek is uit de opgeslagen geschiedenis verwijderd om opslagruimte vrij te maken.',
   'De API-sleutel moet minimaal 4 tekens bevatten.',
 ];

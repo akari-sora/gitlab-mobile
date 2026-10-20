@@ -2075,5 +2075,9 @@ const _messagesTr = <String>[
   'Şifrelenmiş geçmiş şu anda kullanılamıyor. Daha sonra yeniden denenecek.',
   'Bu hesabın şifreleme anahtarı eksik; geçmişin şifresi çözülemiyor.',
   'AI geçmiş verileri bozuk veya desteklenmeyen bir biçim kullanıyor.',
+  'AI geçmişi dizini onarıldı ve konuşmalar kurtarıldı.',
+  'AI geçmişinin bir bölümü desteklenmeyen bir biçim kullanıyor ve bu cihazda tutuldu.',
+  'Bu konuşma kaydedilemedi. Tekrar deneyin.',
+  'Bu konuşma, depolama alanı açmak için kayıtlı geçmişten kaldırıldı.',
   'API anahtarı en az 4 karakter olmalıdır.',
 ];

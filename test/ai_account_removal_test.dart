@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -51,9 +52,9 @@ void main() {
       final directory = await coordinator.files.directory(saved.key);
       directory.createSync(recursive: true);
     });
-    var removalAttempted = false;
+    final removalAttempted = Completer<void>();
     removeAiHistoryDirectory = (_) {
-      removalAttempted = true;
+      removalAttempted.complete();
       throw const FileSystemException('synthetic AI history cleanup failure');
     };
 
@@ -67,16 +68,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('確認'));
     await tester.pump();
-    await tester.runAsync(() async {
-      final deadline = DateTime.now().add(const Duration(seconds: 2));
-      while (!removalAttempted) {
-        if (DateTime.now().isAfter(deadline)) {
-          throw StateError('AI history removal was not attempted');
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 1));
-      }
-    });
-    await tester.pump();
+    await tester.runAsync(() => removalAttempted.future);
+    await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 500));
 
     expect(accountStore.accounts, [saved]);

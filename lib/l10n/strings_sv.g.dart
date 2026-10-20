@@ -2075,5 +2075,9 @@ const _messagesSv = <String>[
   'Den krypterade historiken är inte tillgänglig just nu. Ett nytt försök görs senare.',
   'Krypteringsnyckeln för det här kontot saknas; historiken kan inte dekrypteras.',
   'AI-historikens data är skadade eller använder ett format som inte stöds.',
+  'Indexet för AI-historiken reparerades och konversationer återställdes.',
+  'En del av AI-historiken använder ett format som inte stöds och behölls på den här enheten.',
+  'Konversationen kunde inte sparas. Försök igen.',
+  'Konversationen togs bort från sparad historik för att frigöra lagringsutrymme.',
   'API-nyckeln måste vara minst 4 tecken.',
 ];

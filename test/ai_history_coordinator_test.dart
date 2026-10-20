@@ -555,6 +555,12 @@ class _FaultStore implements AiStore {
   }
 
   @override
+  Future<List<String>> listAccountKeys() async {
+    check('listAccountKeys');
+    return memory.listAccountKeys();
+  }
+
+  @override
   Future<void> deleteAccount(String accountKey) async {
     check('deleteAccount');
     return memory.deleteAccount(accountKey);

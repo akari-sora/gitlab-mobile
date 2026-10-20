@@ -2075,5 +2075,9 @@ const _messagesId = <String>[
   'Riwayat terenkripsi sedang tidak tersedia. Sistem akan mencoba lagi nanti.',
   'Kunci enkripsi untuk akun ini tidak ada; riwayatnya tidak dapat didekripsi.',
   'Data riwayat AI rusak atau menggunakan format yang tidak didukung.',
+  'Indeks riwayat AI diperbaiki dan percakapan dipulihkan.',
+  'Sebagian riwayat AI menggunakan format yang tidak didukung dan dipertahankan di perangkat ini.',
+  'Percakapan ini tidak dapat disimpan. Coba lagi.',
+  'Percakapan ini dihapus dari riwayat tersimpan untuk mengosongkan ruang.',
   'Kunci API harus terdiri dari setidaknya 4 karakter.',
 ];

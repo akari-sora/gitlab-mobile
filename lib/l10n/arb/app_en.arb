@@ -2073,5 +2073,9 @@
   "aiHistoryUnavailable": "Encrypted history is unavailable right now. It will be retried later.",
   "aiHistoryKeyMissing": "The encryption key for this account is missing; its history cannot be decrypted.",
   "aiHistoryInvalidData": "AI history data is damaged or uses an unsupported format.",
+  "aiHistoryIndexRepaired": "The AI history index was repaired and conversations were recovered.",
+  "aiHistoryUnsupported": "Some AI history uses an unsupported format and was kept on this device.",
+  "aiHistoryNotSaved": "This conversation could not be saved. Try again.",
+  "aiHistoryEvicted": "This conversation was removed from saved history to free storage.",
   "aiKeyTooShort": "The API key must be at least 4 characters."
 }

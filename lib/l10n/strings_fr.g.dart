@@ -2075,5 +2075,9 @@ const _messagesFr = <String>[
   'L’historique chiffré est actuellement indisponible. Une nouvelle tentative aura lieu plus tard.',
   'La clé de chiffrement de ce compte est absente ; son historique ne peut pas être déchiffré.',
   'Les données de l’historique AI sont endommagées ou utilisent un format non pris en charge.',
+  'L’index de l’historique AI a été réparé et les conversations ont été récupérées.',
+  'Une partie de l’historique AI utilise un format non pris en charge et a été conservée sur cet appareil.',
+  'Cette conversation n’a pas pu être enregistrée. Réessayez.',
+  'Cette conversation a été supprimée de l’historique enregistré pour libérer de l’espace.',
   'La clé API doit comporter au moins 4 caractères.',
 ];

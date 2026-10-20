@@ -44,7 +44,7 @@ void main() {
         _hex(encrypted),
         '01000000000000000000000000'
         'cea7403d4d606b6e074ec5d3baf39d18'
-        '5af0c1f31dea6b03401a662491ef9be6',
+        '5b90c743ce6b30cecd0b97c10c66993b',
       );
       expect(
         await AiHistoryCipher.decryptBytes(
@@ -164,7 +164,8 @@ void main() {
       final result = await store().recover(account, key, 30);
 
       expect(result.conversations, hasLength(1));
-      expect(result.removedUnreadable, isTrue);
+      expect(result.removedUnreadable, isFalse);
+      expect(result.repairedIndex, isTrue);
       expect(await _index(root, account, key), hasLength(1));
     });
 
@@ -186,7 +187,8 @@ void main() {
       expect(indexRead, isFalse);
 
       expect(result.conversations.map((value) => value.id), <String>[_id(1)]);
-      expect(result.removedUnreadable, isTrue);
+      expect(result.removedUnreadable, isFalse);
+      expect(result.repairedIndex, isTrue);
       expect(
         index.lengthSync(),
         lessThanOrEqualTo(AiHistoryFileStore.indexFileLimit),
@@ -194,7 +196,7 @@ void main() {
       expect(await _index(root, account, key), hasLength(1));
     });
 
-    test('rebuilds a decryptable index with malformed entries', () async {
+    test('retains an authenticated index with unsupported entries', () async {
       await _writeConversation(root, account, key, _saved(1, now));
       final dir = await store().directory(account);
       await _writeRawIndex(dir, account, key, <Object?>[
@@ -207,7 +209,9 @@ void main() {
       final result = await store().recover(account, key, 30);
 
       expect(result.conversations.map((value) => value.id), <String>[_id(1)]);
-      expect(result.removedUnreadable, isTrue);
+      expect(result.removedUnreadable, isFalse);
+      expect(result.repairedIndex, isFalse);
+      expect(result.unsupported, isTrue);
       expect(await _index(root, account, key), hasLength(1));
     });
 
@@ -676,7 +680,7 @@ void main() {
 
         final result = await protectedStore.save(account, key, saved, 30);
 
-        expect(result, AiHistorySaveResult.storageLimit);
+        expect(result, AiHistorySaveResult.evicted);
         expect(
           protectedFiles,
           everyElement(predicate<File>((f) => f.existsSync())),
