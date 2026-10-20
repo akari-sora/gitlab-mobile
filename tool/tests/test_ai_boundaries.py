@@ -18,7 +18,7 @@ class AiBoundaryTest(unittest.TestCase):
 
     def test_read_port_calls_only_whitelisted_members(self):
         source = PORT.read_text(encoding="utf-8")
-        members = set(re.findall(r"\b_api\.(\w+)\s*\(", source))
+        members = self._api_members(source)
         self.assertTrue(members)
         self.assertLessEqual(
             members,
@@ -33,6 +33,10 @@ class AiBoundaryTest(unittest.TestCase):
                 "search",
             },
         )
+
+    def test_read_port_guard_catches_method_tear_offs(self):
+        source = "final write = _api.writeRecord; await write();"
+        self.assertEqual(self._api_members(source), {"writeRecord"})
 
     def test_generic_reads_start_at_the_bound_project(self):
         source = PORT.read_text(encoding="utf-8")
@@ -62,6 +66,10 @@ class AiBoundaryTest(unittest.TestCase):
                 if forbidden.search(code):
                     findings.append(f"{path.relative_to(ROOT)}:{number}:{line}")
         self.assertEqual(findings, [])
+
+    @staticmethod
+    def _api_members(source):
+        return set(re.findall(r"\b_api\.(\w+)\b", source))
 
 
 if __name__ == "__main__":

@@ -596,19 +596,21 @@ Evidence vocabulary: the new tests are **synthetic**, using in-memory settings,
 `FakeAdapter` / `WorkspaceFixture`, synthetic OAuth rotation and recorded SSE
 fixtures. **RECORDED** means decoding the retained P0a fixture and replaying its
 provider object through the real encoder; it is not a fresh provider call.
-Acceptance command tails, exact changed-file inventory and reversible mutation
-results are in the local root `RESULT.md` (remove that receipt before a future
-commit). No commit or pipeline was created for MR4.
+The submitted MR4 base is commit `77f2be5`. Repeatable reversible mutation
+scripts are retained outside the repository in the review workspace under
+`mutation-scripts/`; their FIX1 rerun evidence and acceptance-command tails are
+pending the root agent's external `RESULT-fix1.md`. No pipeline was created by
+this local FIX1 pass.
 
 | Contract | Current evidence |
 | --- | --- |
 | Scope, provenance, schemas, GET/HEAD-only adapter, field projection, sensitive read/diff/search, newest notes, full SHA and HTTP/search/output budgets | `test/ai/ai_tools_test.dart`, context tests, Python boundary guard; synthetic |
 | Prefix replay across runs, newly saved keys and provider-readable output, OAuth refresh during tool reads, key-only rollover | `runner_test.dart`, `runner_lifecycle_test.dart`; synthetic |
-| Six model calls, four tools per batch, twelve per send, bounded UTF-16 output, fresh budgets, soft timeout with one pending source read | runner/catalogue tests; synthetic |
-| Tools retained in all three closing formats; synthetic results for calls left by stop/refusal/budget; empty final answer | runner and offline live-smoke tests; synthetic |
+| Six model calls, four tools per batch, twelve per send, bounded UTF-16 output, fresh budgets including exhausted-read finishing, soft timeout with one pending source read | runner/catalogue tests; synthetic |
+| Tools retained in all three closing formats; safe result metadata and every synthetic terminal result reach display callbacks; empty final answer | runner and offline live-smoke tests; synthetic |
 | Context once, budgeted/escaped/nonce-labelled projection, first-call tail restoration, finishing on truncation, final note redaction | runner tests; synthetic |
-| Every stream/await/send checkpoint; consent, recipient revision, session generation and exact API ownership; immediate stalled-stream stop | runner/lifecycle tests using the production binding; synthetic |
-| Actual vs estimated input usage, partial interrupted output excluded from replay, provider-byte replay | runner tests plus MR2 wire/recorded suites; synthetic / RECORDED |
+| Every stream/await/send checkpoint; consent, recipient revision, session generation and exact API ownership; active-request cancellation keeps the transport reusable after stop/timeout | runner/lifecycle tests using the production binding; synthetic |
+| Actual vs estimated input usage, throttled cumulative redacted display snapshots, partial interrupted output recovered within the tool deadline but excluded from replay, provider-byte replay | runner tests plus MR2 wire/recorded suites; synthetic / RECORDED |
 | Link-local enumeration and unknown/missing interface confirmation | network and runner tests; synthetic |
 | Live runner matrix (`runner-tool-loop`, `runner-closing-call`) | Harness extended; authenticated P0b **NOT_RUN** |
 

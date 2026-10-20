@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 
 import 'ai_failure.dart';
 import 'ai_provider.dart';
+import 'prompts.dart';
 
 const aiFinalAnswerNoteMarker = '<mergeline_final_answer>';
 const aiFinalAnswerNote =
@@ -65,18 +66,27 @@ final class AiToolResult {
     required this.name,
     required this.content,
     this.isError = false,
+    this.withheldPrivateKeyContext = false,
+    this.truncated = false,
+    this.blockedSensitive = false,
   });
 
   final String callId;
   final String name;
   final String content;
   final bool isError;
+  final bool withheldPrivateKeyContext;
+  final bool truncated;
+  final bool blockedSensitive;
 
   AiToolResult copyWith({String? content}) => AiToolResult(
     callId: callId,
     name: name,
     content: content ?? this.content,
     isError: isError,
+    withheldPrivateKeyContext: withheldPrivateKeyContext,
+    truncated: truncated,
+    blockedSensitive: blockedSensitive,
   );
 }
 
@@ -106,6 +116,15 @@ final class AppUserEntry extends AiEntry {
     text: text,
     context: context,
     finalAnswerNoteInjected: finalAnswerNoteInjected,
+  );
+
+  AppUserEntry redactedCopy({
+    required String text,
+    required List<AiContextBlock> context,
+  }) => AppUserEntry._(
+    text: text,
+    context: List.unmodifiable(context),
+    finalAnswerNoteInjected: _finalAnswerNoteInjected,
   );
 }
 
@@ -142,11 +161,14 @@ final class AppToolResultsEntry extends AiEntry {
     List<AiToolResult>? results,
     String? followUpText,
     bool clearFollowUpText = false,
+    bool preserveFinalAnswerNote = false,
   }) => AppToolResultsEntry._(
     results ?? this.results,
     followUpText: clearFollowUpText ? null : followUpText ?? this.followUpText,
     finalAnswerNoteInjected:
-        followUpText == null && !clearFollowUpText && _finalAnswerNoteInjected,
+        (preserveFinalAnswerNote || followUpText == null) &&
+        !clearFollowUpText &&
+        _finalAnswerNoteInjected,
   );
 
   AppToolResultsEntry _withFollowUp(
@@ -260,7 +282,7 @@ final class AiSegment {
     for (final result in current.results) {
       final keep = result.content.length <= remaining
           ? result.content
-          : _clipAtRuneBoundary(result.content, remaining);
+          : clipWrappedUntrustedGitLabData(result.content, remaining);
       clipped.add(result.copyWith(content: keep));
       remaining -= keep.length;
     }
@@ -336,21 +358,6 @@ String? _removeFinalAnswerNote(String text) {
   }
   return text.substring(0, text.length - suffix.length);
 }
-
-String _clipAtRuneBoundary(String value, int maxChars) {
-  var end = maxChars;
-  if (end > 0 &&
-      end < value.length &&
-      _isHighSurrogate(value.codeUnitAt(end - 1)) &&
-      _isLowSurrogate(value.codeUnitAt(end))) {
-    end -= 1;
-  }
-  return value.substring(0, end);
-}
-
-bool _isHighSurrogate(int codeUnit) => codeUnit >= 0xd800 && codeUnit <= 0xdbff;
-
-bool _isLowSurrogate(int codeUnit) => codeUnit >= 0xdc00 && codeUnit <= 0xdfff;
 
 const _maxJsonDepth = 128;
 

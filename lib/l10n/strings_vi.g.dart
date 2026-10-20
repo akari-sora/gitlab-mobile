@@ -2102,5 +2102,6 @@ const _messagesVi = <String>[
   'Mức sử dụng là ước tính',
   'Ngữ cảnh đính kèm chỉ được gửi cùng tin nhắn đầu tiên',
   'Các lượt cũ đã bị xóa khỏi bản tóm tắt',
-  'Câu trả lời đã dừng để bảo vệ nội dung đã gửi trước đó',
+  'Đã phát hiện bí mật mới trong nội dung đã gửi. Câu trả lời đã dừng vì không thể thu hồi nội dung đã gửi',
+  'Cuộc trò chuyện đã đạt giới hạn sử dụng. Hãy bắt đầu cuộc trò chuyện mới',
 ];

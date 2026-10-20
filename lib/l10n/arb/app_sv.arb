@@ -2100,5 +2100,6 @@
   "aiUsageEstimated": "Användningen är uppskattad",
   "aiContextAttachedOnce": "Bifogad kontext skickas bara med det första meddelandet",
   "aiProjectionOlderTurnsRemoved": "Äldre turer har tagits bort från sammanfattningen",
-  "aiReplayProtectionStopped": "Svaret stoppades för att skydda tidigare skickat innehåll"
+  "aiReplayProtectionStopped": "En ny hemlighet upptäcktes i redan skickat innehåll. Svaret stoppades eftersom skickat innehåll inte kan återkallas",
+  "aiEndTokenBudget": "Konversationen har nått användningsgränsen. Starta en ny konversation"
 }

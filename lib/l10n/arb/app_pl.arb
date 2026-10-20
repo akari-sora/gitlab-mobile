@@ -2100,5 +2100,6 @@
   "aiUsageEstimated": "Użycie jest oszacowane",
   "aiContextAttachedOnce": "Dołączony kontekst jest wysyłany tylko z pierwszą wiadomością",
   "aiProjectionOlderTurnsRemoved": "Starsze wypowiedzi usunięto z podsumowania",
-  "aiReplayProtectionStopped": "Odpowiedź zatrzymano, aby chronić wcześniej wysłaną treść"
+  "aiReplayProtectionStopped": "W już wysłanej treści wykryto nowy sekret. Odpowiedź zatrzymano, ponieważ wysłanej treści nie można wycofać",
+  "aiEndTokenBudget": "Rozmowa osiągnęła limit użycia. Rozpocznij nową rozmowę"
 }

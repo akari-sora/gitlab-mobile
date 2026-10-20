@@ -2102,5 +2102,6 @@ const _messagesIt = <String>[
   'L’utilizzo è stimato',
   'Il contesto allegato viene inviato solo con il primo messaggio',
   'I turni precedenti sono stati rimossi dal riepilogo',
-  'La risposta è stata interrotta per proteggere il contenuto già inviato',
+  'È stato rilevato un nuovo segreto nei contenuti già inviati. La risposta è stata interrotta perché i contenuti inviati non possono essere ritirati',
+  'La conversazione ha raggiunto il limite di utilizzo. Avvia una nuova conversazione',
 ];

@@ -2102,5 +2102,6 @@ const _messagesNl = <String>[
   'Gebruik is geschat',
   'Bijgevoegde context wordt alleen met het eerste bericht verzonden',
   'Oudere beurten zijn uit de samenvatting verwijderd',
-  'Antwoord gestopt om eerder verzonden inhoud te beschermen',
+  'Er is een nieuw geheim gevonden in al verzonden inhoud. Het antwoord is gestopt omdat verzonden inhoud niet kan worden ingetrokken',
+  'Deze conversatie heeft de gebruikslimiet bereikt. Start een nieuwe conversatie',
 ];

@@ -2100,5 +2100,6 @@
   "aiUsageEstimated": "Penggunaan ialah anggaran",
   "aiContextAttachedOnce": "Konteks yang dilampirkan hanya dihantar bersama mesej pertama",
   "aiProjectionOlderTurnsRemoved": "Giliran lama telah dibuang daripada ringkasan",
-  "aiReplayProtectionStopped": "Jawapan dihentikan untuk melindungi kandungan yang telah dihantar"
+  "aiReplayProtectionStopped": "Rahsia baharu dikesan dalam kandungan yang telah dihantar. Jawapan dihentikan kerana kandungan yang dihantar tidak boleh ditarik balik",
+  "aiEndTokenBudget": "Perbualan ini mencapai had penggunaan. Mulakan perbualan baharu"
 }

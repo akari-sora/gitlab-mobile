@@ -2102,5 +2102,6 @@ const _messagesTr = <String>[
   'Kullanım tahminidir',
   'Eklenen bağlam yalnızca ilk iletiyle gönderilir',
   'Eski konuşmalar özetten kaldırıldı',
-  'Daha önce gönderilen içeriği korumak için yanıt durduruldu',
+  'Daha önce gönderilmiş içerikte yeni bir gizli bilgi algılandı. Gönderilen içerik geri alınamayacağı için yanıt durduruldu',
+  'Bu konuşma kullanım sınırına ulaştı. Yeni bir konuşma başlatın',
 ];

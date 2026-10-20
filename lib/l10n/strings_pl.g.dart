@@ -2102,5 +2102,6 @@ const _messagesPl = <String>[
   'Użycie jest oszacowane',
   'Dołączony kontekst jest wysyłany tylko z pierwszą wiadomością',
   'Starsze wypowiedzi usunięto z podsumowania',
-  'Odpowiedź zatrzymano, aby chronić wcześniej wysłaną treść',
+  'W już wysłanej treści wykryto nowy sekret. Odpowiedź zatrzymano, ponieważ wysłanej treści nie można wycofać',
+  'Rozmowa osiągnęła limit użycia. Rozpocznij nową rozmowę',
 ];

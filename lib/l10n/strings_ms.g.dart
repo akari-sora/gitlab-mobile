@@ -2102,5 +2102,6 @@ const _messagesMs = <String>[
   'Penggunaan ialah anggaran',
   'Konteks yang dilampirkan hanya dihantar bersama mesej pertama',
   'Giliran lama telah dibuang daripada ringkasan',
-  'Jawapan dihentikan untuk melindungi kandungan yang telah dihantar',
+  'Rahsia baharu dikesan dalam kandungan yang telah dihantar. Jawapan dihentikan kerana kandungan yang dihantar tidak boleh ditarik balik',
+  'Perbualan ini mencapai had penggunaan. Mulakan perbualan baharu',
 ];

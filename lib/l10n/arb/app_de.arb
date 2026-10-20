@@ -2100,5 +2100,6 @@
   "aiUsageEstimated": "Nutzung ist geschätzt",
   "aiContextAttachedOnce": "Angehängter Kontext wird nur mit der ersten Nachricht gesendet",
   "aiProjectionOlderTurnsRemoved": "Ältere Gesprächsteile wurden aus der Zusammenfassung entfernt",
-  "aiReplayProtectionStopped": "Antwort zum Schutz bereits gesendeter Inhalte gestoppt"
+  "aiReplayProtectionStopped": "In bereits gesendeten Inhalten wurde ein neues Geheimnis erkannt. Die Antwort wurde gestoppt, weil gesendete Inhalte nicht zurückgezogen werden können",
+  "aiEndTokenBudget": "Das Nutzungslimit der Unterhaltung ist erreicht. Beginnen Sie eine neue Unterhaltung"
 }

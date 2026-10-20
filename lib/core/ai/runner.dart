@@ -10,6 +10,7 @@ import 'ai_failure.dart';
 import 'ai_provider.dart';
 import 'ai_transcript.dart';
 import 'redaction.dart';
+import 'prompts.dart';
 import 'wire/wire_format.dart';
 
 /// The owner supplies live getters; no account or API secret enters the core.
@@ -89,10 +90,16 @@ final class AiRunner {
     required this.guard,
     required this.system,
     required void Function() close,
+    void Function()? cancelActive,
     List<AiToolSpec> tools = const [],
     this.executeTool,
     this.resetToolBudget,
     this.beginToolTurn,
+    this.toolBudgetExhausted,
+    this.onEvent,
+    this.onTextChanged,
+    this.onToolStarted,
+    this.onToolResult,
     this.confirmCleartext,
     this.listInterfaceAddresses = listAiInterfaceAddresses,
     List<AiContextBlock> context = const [],
@@ -101,9 +108,11 @@ final class AiRunner {
     this.maxOutputTokens = 4096,
     this.toolDeadline = const Duration(seconds: 20),
     this.runDeadline = const Duration(minutes: 12),
+    this.modelDeadline = const Duration(minutes: 5),
   }) : _config = config,
        _complete = complete,
        _close = close,
+       _cancelActive = cancelActive ?? close,
        tools = List.unmodifiable(config.toolsEnabled ? tools : <AiToolSpec>[]),
        context = List.unmodifiable(context),
        _redactor = Redactor(secrets: secrets),
@@ -112,7 +121,8 @@ final class AiRunner {
         conversationTokenCap <= 0 ||
         maxOutputTokens < 2048 ||
         toolDeadline <= Duration.zero ||
-        runDeadline <= Duration.zero) {
+        runDeadline <= Duration.zero ||
+        modelDeadline <= Duration.zero) {
       throw ArgumentError('Invalid runner configuration.');
     }
   }
@@ -126,10 +136,18 @@ final class AiRunner {
   final AiRunGuard guard;
   final String system;
   void Function() _close;
+  void Function() _cancelActive;
   final List<AiToolSpec> tools;
   final Future<AiToolResult> Function(AiToolCall)? executeTool;
   final void Function()? resetToolBudget;
   final void Function()? beginToolTurn;
+  final bool Function()? toolBudgetExhausted;
+  final void Function(AiEvent)? onEvent;
+
+  /// Redacted cumulative display text; the UI replaces its pending text.
+  final void Function(String text)? onTextChanged;
+  final void Function(AiToolCall call)? onToolStarted;
+  final void Function(AiToolResult result)? onToolResult;
   final Future<bool> Function()? confirmCleartext;
   final AiInterfaceAddressLister listInterfaceAddresses;
   final List<AiContextBlock> context;
@@ -137,6 +155,7 @@ final class AiRunner {
   final int maxOutputTokens;
   final Duration toolDeadline;
   final Duration runDeadline;
+  final Duration modelDeadline;
   final Redactor _redactor;
 
   List<AiChatItem> _displayHistory = const [];
@@ -158,6 +177,14 @@ final class AiRunner {
   int estimatedInputTokens = 0;
   int lateRedactions = 0;
 
+  void _notifyToolResult(AiToolResult result) {
+    try {
+      onToolResult?.call(result);
+    } on Object {
+      // Display observers cannot prevent pairing a completed provider call.
+    }
+  }
+
   /// Called by the settings/session listener as well as at every checkpoint.
   /// A changed recipient or revoked consent immediately closes the transport.
   void checkNow() {
@@ -172,7 +199,11 @@ final class AiRunner {
     if (_stopSignal case final signal? when !signal.isCompleted) {
       signal.complete();
     }
-    _close();
+    if (reason == AiRunEnd.stoppedBySettings) {
+      _close();
+    } else {
+      _cancelActive();
+    }
   }
 
   /// Only a key/revision change may preserve this conversation. A different
@@ -181,6 +212,7 @@ final class AiRunner {
     required AiProviderConfig config,
     required AiComplete complete,
     required void Function() close,
+    void Function()? cancelActive,
   }) {
     final old = _config;
     if (_running ||
@@ -199,6 +231,7 @@ final class AiRunner {
     _config = config;
     _complete = complete;
     _close = close;
+    _cancelActive = cancelActive ?? close;
     _needsProjection = true;
   }
 
@@ -228,16 +261,21 @@ final class AiRunner {
     var finishing = false;
     var answer = '';
     var partial = StringBuffer();
+    var nextProgressChars = 256;
     final segmentBeforeSend = _segment;
-    AiEntry? previousTail;
+    AiEntry? previousTail = segmentBeforeSend?.tail;
     var froze = false;
     AiEntry? beforeFinishingNote;
 
     AiToolResult synthetic(AiToolCall call, String reason) {
-      final content = clipAiText(
-        _redact(_synthetic(call, reason).content),
-        math.min(20000, 120000 - outputChars),
-      );
+      String safe;
+      try {
+        safe = _redact(_synthetic(call, reason).content);
+      } on Object {
+        // Pairing must survive a redactor refusing even its own placeholders.
+        safe = '';
+      }
+      final content = clipAiText(safe, math.min(20000, 120000 - outputChars));
       outputChars += content.length;
       return AiToolResult(
         callId: call.id,
@@ -251,15 +289,23 @@ final class AiRunner {
       AiRunEnd reason, {
       AiFailure? failure,
       bool offer = false,
-    }) => AiRunResult(
-      reason: reason,
-      text: answer,
-      modelCalls: modelCalls,
-      toolCalls: toolCalls,
-      failure: failure,
-      offerRollover: offer,
-      withheldPrivateKeyContext: _withheld,
-    );
+    }) {
+      String display;
+      try {
+        display = _redact(answer);
+      } on Object {
+        display = '';
+      }
+      return AiRunResult(
+        reason: reason,
+        text: display,
+        modelCalls: modelCalls,
+        toolCalls: toolCalls,
+        failure: failure,
+        offerRollover: offer,
+        withheldPrivateKeyContext: _withheld,
+      );
+    }
 
     try {
       _check(epoch);
@@ -310,7 +356,11 @@ final class AiRunner {
         if (actualInputTokens + estimatedInputTokens >= conversationTokenCap) {
           return result(AiRunEnd.tokenBudget);
         }
-        finishing |= call == 6 || toolCalls >= 12 || outputChars >= 120000;
+        finishing |=
+            call == 6 ||
+            toolCalls >= 12 ||
+            outputChars >= 120000 ||
+            (toolBudgetExhausted?.call() ?? false);
         // Reserve the complete encoded closing note before deciding the plan.
         final reserve = jsonEncode(aiFinalAnswerNote).length + 100;
         final size = _requestSize(seg);
@@ -329,6 +379,12 @@ final class AiRunner {
         beforeFinishingNote = seg.tail;
         if (finishing && !config.caps.toolChoice) seg.addFinalAnswerNote();
         await _redactTail(seg, epoch);
+        // _redactTail performs the last asynchronous secret refresh. Verify
+        // the frozen prefix against that same snapshot immediately before send.
+        if (!_verify(seg)) {
+          _needsProjection = true;
+          throw const _RunStopped(AiRunEnd.newSecret);
+        }
         final plan = _plan(seg, finishing: finishing);
         // This is the final redacted payload, including the finishing note.
         final encoded = wire.encodeJson(plan, config.caps);
@@ -344,6 +400,7 @@ final class AiRunner {
         _check(epoch);
         modelCalls++;
         partial = StringBuffer();
+        nextProgressChars = 256;
         AiDecodedTurn turn;
         AiUsage? latestUsage;
         try {
@@ -359,6 +416,14 @@ final class AiRunner {
                     throw const AiFailure(AiFailureKind.responseTooLarge);
                   }
                   partial.write(text);
+                  if (onTextChanged != null &&
+                      partial.length >= nextProgressChars) {
+                    onTextChanged!(_redact(partial.toString()));
+                    nextProgressChars = partial.length * 2;
+                  }
+                }
+                if (event is AiUsageUpdated || event is AiFinished) {
+                  onEvent?.call(event);
                 }
                 if (event is AiUsageUpdated) latestUsage = event.usage;
                 if (event is AiFinished && event.usage != null) {
@@ -366,15 +431,18 @@ final class AiRunner {
                 }
               },
             ).timeout(
-              const Duration(minutes: 5),
+              modelDeadline,
               onTimeout: () {
-                if (_running && epoch == _epoch) _close();
+                if (_running && epoch == _epoch) _cancelActive();
                 throw const AiFailure(AiFailureKind.timeout);
               },
             ),
             epoch,
           );
           latestUsage = turn.usage ?? latestUsage;
+          if (onTextChanged != null && partial.isNotEmpty) {
+            onTextChanged!(_redact(partial.toString()));
+          }
         } finally {
           _recordUsage(latestUsage, encoded.length);
         }
@@ -426,17 +494,22 @@ final class AiRunner {
           for (var index = 0; index < calls.length; index++) {
             _check(epoch);
             final tc = calls[index];
+            onToolStarted?.call(
+              AiToolCall(id: tc.id, name: _redact(tc.name), arguments: null),
+            );
             if (index >= 4 || toolCalls >= 12 || outputChars >= 120000) {
               results.add(synthetic(tc, 'budget'));
+              _notifyToolResult(results.last);
               continue;
             }
-            toolCalls++;
             if (_pendingRead || executeTool == null || tools.isEmpty) {
               results.add(
                 synthetic(tc, _pendingRead ? 'read_pending' : 'unavailable'),
               );
+              _notifyToolResult(results.last);
               continue;
             }
+            toolCalls++;
             _pendingRead = true;
             // Keep the underlying read owned until it settles. A soft timeout
             // or stop never grants permission to start a second read.
@@ -464,35 +537,42 @@ final class AiRunner {
             }
             _check(epoch);
             await _refresh(epoch);
+            _withheld |= toolResult.withheldPrivateKeyContext;
             // Whole tool content is redacted before any output truncation.
             final content = _redact(toolResult.content);
-            final clipped = clipAiText(
+            final clipped = clipWrappedUntrustedGitLabData(
               content,
               math.min(20000, 120000 - outputChars),
             );
             outputChars += clipped.length;
             _check(epoch);
-            results.add(
-              AiToolResult(
-                callId: tc.id,
-                name: tc.name,
-                content: clipped,
-                isError: toolResult.isError,
-              ),
+            final safeResult = AiToolResult(
+              callId: tc.id,
+              name: tc.name,
+              content: clipped,
+              isError: toolResult.isError,
+              withheldPrivateKeyContext: toolResult.withheldPrivateKeyContext,
+              truncated:
+                  toolResult.truncated || clipped.length < content.length,
+              blockedSensitive: toolResult.blockedSensitive,
             );
+            results.add(safeResult);
+            _notifyToolResult(safeResult);
           }
         } on _RunStopped catch (stopped) {
           exitReason = stopped.reason;
           rethrow;
         } finally {
           // Pair by position, not ID: hostile duplicate IDs cannot hide a call.
-          seg.setTail(
-            AppToolResultsEntry([
-              ...results,
-              for (final tc in calls.skip(results.length))
-                synthetic(tc, exitReason.name),
-            ]),
-          );
+          final paired = AppToolResultsEntry([
+            ...results,
+            for (final tc in calls.skip(results.length))
+              synthetic(tc, exitReason.name),
+          ]);
+          seg.setTail(paired);
+          for (final result in paired.results.skip(results.length)) {
+            _notifyToolResult(result);
+          }
         }
       }
       return result(AiRunEnd.toolBudget);
@@ -501,7 +581,12 @@ final class AiRunner {
         froze ? beforeFinishingNote ?? _segment?.tail : previousTail,
       );
       answer = await _partialAnswer(answer, partial.toString(), epoch);
-      return result(stopped.reason);
+      return result(
+        stopped.reason,
+        failure: stopped.reason == AiRunEnd.failed
+            ? const AiFailure(AiFailureKind.timeout)
+            : null,
+      );
     } on AiFailure catch (failure) {
       _segment?.restoreTail(
         froze ? beforeFinishingNote ?? _segment?.tail : previousTail,
@@ -536,7 +621,15 @@ final class AiRunner {
   ) async {
     if (partial.isEmpty) return previous;
     try {
-      await _refresh(epoch);
+      if (epoch == _epoch) {
+        await _refresh(epoch);
+      } else {
+        if (!guard.valid(config.recipientRevision)) return previous;
+        // A stopped send cannot use its completed interruption signal. Refresh
+        // directly with a bounded wait before exposing any partial display text.
+        await refreshSecrets().timeout(toolDeadline);
+        if (!guard.valid(config.recipientRevision)) return previous;
+      }
       return clipAiText(
         [if (previous.isNotEmpty) previous, _redact(partial)].join('\n'),
         64000,
@@ -658,7 +751,7 @@ final class AiRunner {
     final tail = seg.tail;
     if (tail is AppUserEntry) {
       seg.setTail(
-        AppUserEntry(
+        tail.redactedCopy(
           text: _redact(tail.text, late: true),
           context: [
             for (final block in tail.context)
@@ -679,6 +772,7 @@ final class AiRunner {
           followUpText: tail.followUpText == null
               ? null
               : _redact(tail.followUpText!, late: true),
+          preserveFinalAnswerNote: true,
         ),
       );
     }
@@ -699,7 +793,7 @@ final class AiRunner {
       for (final entry in seg.frozen) ...readableAiEntry(entry),
     ];
     for (final text in values) {
-      if (needles.any(text.contains)) return false;
+      if (containsKnownAiSecret(text, needles)) return false;
     }
     _verifiedSecrets = id;
     _verifiedLength = seg.frozenLength;
@@ -888,15 +982,19 @@ String buildAiProjection({
       .replaceAll('&', '&amp;')
       .replaceAll('<', '&lt;')
       .replaceAll('>', '&gt;');
-  final contextText = context
+  final hasPriorSummary = entries.whereType<AppUserEntry>().any(
+    (entry) =>
+        entry.context.any((block) => block.source == 'conversation_summary'),
+  );
+  final contextText = (hasPriorSummary ? const <AiContextBlock>[] : context)
       .map((block) => escape(redact(block.text)))
       .join('\n');
   final head = clipAiText(contextText, (available * .4).floor());
   var remaining = available - head.length;
   final recent = <String>[];
-  var dropped = false;
+  var dropped = head.length < contextText.length;
   final texts = <String>[
-    for (final item in history)
+    for (final item in hasPriorSummary ? const <AiChatItem>[] : history)
       switch (item) {
         AiUserItem() => 'User: ${item.text}',
         AiAssistantItem() => 'Assistant (${item.state.name}): ${item.text}',
@@ -904,7 +1002,10 @@ String buildAiProjection({
           '[tool ${item.name}: ${item.provenance}; ${item.sizeChars} chars; ${item.status.name}]',
         AiNoticeItem() => '[notice: ${item.kind.name}]',
       },
-    for (final entry in entries)
+    for (final entry in entries) ...[
+      if (entry is AppUserEntry)
+        for (final block in entry.context)
+          if (block.source == 'conversation_summary') block.text,
       switch (entry) {
         AppUserEntry() => 'User: ${entry.text}',
         ProviderOutputEntry() => 'Assistant: ${providerAnswerText(entry)}',
@@ -919,6 +1020,9 @@ String buildAiProjection({
               })
               .join('\n'),
       },
+      if (entry is AppToolResultsEntry && entry.followUpText != null)
+        'User: ${entry.followUpText}',
+    ],
   ];
   for (final text in texts.reversed) {
     final safe = escape(redact(text));

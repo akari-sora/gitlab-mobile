@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import '../ai_transcript.dart';
 import '../prompts.dart';
@@ -38,6 +39,11 @@ final class AiToolBudget {
   int get outputChars => _outputChars;
   int get gitLabRequests => _gitLabRequests;
   int get searches => _searches;
+  bool get exhausted =>
+      _runCalls >= maxCallsPerRun ||
+      _outputChars >= maxOutputChars ||
+      _gitLabRequests >= maxGitLabRequests ||
+      _searches >= maxSearches;
 
   void beginTurn() => _turnCalls = 0;
 
@@ -108,7 +114,7 @@ final class AiToolCatalogue {
   final Redactor redactor;
   final Future<void> Function()? refreshSecrets;
   final DateTime Function() _now;
-  int _nonceSerial = 0;
+  final Random _nonceRandom = Random.secure();
 
   static final List<AiToolSpec> _specs = List.unmodifiable([
     _spec(
@@ -188,7 +194,18 @@ final class AiToolCatalogue {
   Future<AiToolResult> executeResult(
     AiToolCall call, {
     required AiToolBudget budget,
-  }) async => (await execute(call, budget: budget)).result;
+  }) async {
+    final execution = await execute(call, budget: budget);
+    return AiToolResult(
+      callId: execution.result.callId,
+      name: execution.result.name,
+      content: execution.result.content,
+      isError: execution.result.isError,
+      withheldPrivateKeyContext: execution.withheldPrivateKeyContext,
+      truncated: execution.truncated,
+      blockedSensitive: execution.blocked,
+    );
+  }
 
   Future<AiToolExecution> execute(
     AiToolCall call, {
@@ -227,21 +244,24 @@ final class AiToolCatalogue {
       }
       await refreshSecrets?.call();
       final provenance = raw.provenance;
-      final cleanText = _stripAnsi(raw.text);
+      final cleanValue = _sanitizeJson(raw.value);
+      final cleanText = raw.json
+          ? jsonEncode(cleanValue)
+          : cleanValue as String;
       if (utf8.encode(cleanText).length > 2 * 1024 * 1024) {
         throw _ToolValidation(
           'tool source exceeds the redaction limit',
           requestCount: completedRequests,
         );
       }
-      final redacted = raw.fragment
-          ? redactor.redactFragment(cleanText)
+      final redacted = raw.json
+          ? _redactStructured(cleanValue, raw.fragmentFields)
           : redactor.redactSource(cleanText);
       final redactedProvenance = redactor.redactSource(provenance.label);
       final redactedText = raw.tailLines == null
           ? redacted.text
           : _lastLines(redacted.text, raw.tailLines!);
-      final prefix = '${redactedProvenance.text}\n';
+      final prefix = '${escapeUntrustedGitLabText(redactedProvenance.text)}\n';
       final wrapped = wrapUntrustedGitLabData(
         source: call.name,
         nonce: _nextNonce(),
@@ -249,7 +269,10 @@ final class AiToolCatalogue {
       );
       final available = budget.availableOutput(prefix.length + wrapped.length);
       final completeContent = '$prefix$wrapped';
-      final content = _clipAtRuneBoundary(completeContent, available);
+      final content = clipWrappedUntrustedGitLabData(
+        completeContent,
+        available,
+      );
       final truncated = content.length != completeContent.length;
       budget.recordOutput(content.length);
       return AiToolExecution(
@@ -337,8 +360,8 @@ final class AiToolCatalogue {
       for (final item in read.value)
         {'name': item.name, 'path': item.path, 'type': item.type},
     ];
-    return _RawToolResult(
-      _encodeSanitized(projected),
+    return _RawToolResult.json(
+      {'items': projected, 'incomplete': read.incomplete},
       _pinned('directory ${path.isEmpty ? '/' : path}', revision),
       requestCount: read.requestCount,
     );
@@ -348,8 +371,8 @@ final class AiToolCatalogue {
     _exactKeys(args, required: const {'iid'});
     final iid = _positiveInt(args['iid'], 'iid');
     final read = await port.issue(iid);
-    return _RawToolResult(
-      _encodeSanitized(_projectDiscussion(read.value)),
+    return _RawToolResult.json(
+      _projectDiscussion(read.value),
       _live('issue #$iid'),
       requestCount: read.requestCount,
     );
@@ -359,8 +382,8 @@ final class AiToolCatalogue {
     _exactKeys(args, required: const {'iid'});
     final iid = _positiveInt(args['iid'], 'iid');
     final read = await port.mergeRequest(iid);
-    return _RawToolResult(
-      _encodeSanitized(_projectDiscussion(read.value)),
+    return _RawToolResult.json(
+      _projectDiscussion(read.value),
       _live('merge request !$iid'),
       requestCount: read.requestCount,
     );
@@ -403,6 +426,7 @@ final class AiToolCatalogue {
       ],
       _pinned('merge request !${scope.current.id} diff', _headRevision()),
       requestCount: read.requestCount,
+      incomplete: read.incomplete,
     );
   }
 
@@ -410,22 +434,25 @@ final class AiToolCatalogue {
     final pipelineId = scope.pipelineId;
     if (pipelineId == null) throw const _ToolValidation('no current pipeline');
     final read = await port.pipelineJobs(pipelineId);
-    return _RawToolResult(
-      _encodeSanitized([
-        for (final row in read.value)
-          _pick(row, const [
-            'id',
-            'name',
-            'stage',
-            'status',
-            'failure_reason',
-            'ref',
-            'created_at',
-            'started_at',
-            'finished_at',
-            'duration',
-          ]),
-      ]),
+    return _RawToolResult.json(
+      {
+        'items': [
+          for (final row in read.value)
+            _pick(row, const [
+              'id',
+              'name',
+              'stage',
+              'status',
+              'failure_reason',
+              'ref',
+              'created_at',
+              'started_at',
+              'finished_at',
+              'duration',
+            ]),
+        ],
+        'incomplete': read.incomplete,
+      },
       _live('pipeline #$pipelineId jobs'),
       requestCount: read.requestCount,
     );
@@ -455,21 +482,19 @@ final class AiToolCatalogue {
     _exactKeys(args, required: const {'sha'});
     final sha = _sha(args['sha']);
     final read = await port.commit(sha);
-    return _RawToolResult(
-      _encodeSanitized(
-        _pick(read.value, const [
-          'id',
-          'short_id',
-          'title',
-          'message',
-          'author_name',
-          'authored_date',
-          'committer_name',
-          'committed_date',
-          'parent_ids',
-          'web_url',
-        ]),
-      ),
+    return _RawToolResult.json(
+      _pick(read.value, const [
+        'id',
+        'short_id',
+        'title',
+        'message',
+        'author_name',
+        'authored_date',
+        'committer_name',
+        'committed_date',
+        'parent_ids',
+        'web_url',
+      ]),
       _live('commit ${_short(sha)}'),
       requestCount: read.requestCount,
     );
@@ -483,6 +508,7 @@ final class AiToolCatalogue {
       read.value,
       _live('commit ${_short(sha)} diff'),
       requestCount: read.requestCount,
+      incomplete: read.incomplete,
     );
   }
 
@@ -524,12 +550,12 @@ final class AiToolCatalogue {
         );
       }
     }
-    return _RawToolResult(
-      _encodeSanitized(rows),
+    return _RawToolResult.json(
+      {'items': rows, 'incomplete': read.incomplete},
       _live(
         'search $searchScope on ${scope.defaultBranch ?? 'default branch'}',
       ),
-      fragment: searchScope == 'blobs',
+      fragmentFields: searchScope == 'blobs' ? const {'data'} : const {},
       requestCount: read.requestCount,
     );
   }
@@ -538,6 +564,7 @@ final class AiToolCatalogue {
     List<AiJson> rows,
     AiToolProvenance provenance, {
     required int requestCount,
+    required bool incomplete,
   }) {
     var blocked = false;
     final projected = <AiJson>[];
@@ -559,11 +586,11 @@ final class AiToolCatalogue {
         'diff': sensitive ? aiSensitivePathBlocked : _sanitizeJson(row['diff']),
       });
     }
-    return _RawToolResult(
-      _encodeSanitized(projected),
+    return _RawToolResult.json(
+      {'items': projected, 'incomplete': incomplete},
       provenance,
       blocked: blocked,
-      fragment: true,
+      fragmentFields: const {'diff'},
       requestCount: requestCount,
     );
   }
@@ -584,7 +611,8 @@ final class AiToolCatalogue {
     final redactedProvenance = redactor.redactSource(provenance.label);
     final redactedMessage = redactor.redactSource(message);
     final completeContent =
-        '${redactedProvenance.text}\nerror: ${redactedMessage.text}';
+        '${escapeUntrustedGitLabText(redactedProvenance.text)}\n'
+        'error: ${escapeUntrustedGitLabText(redactedMessage.text)}';
     final available = budget.availableOutput(completeContent.length);
     final content = _clipAtRuneBoundary(completeContent, available);
     budget.recordOutput(content.length);
@@ -607,7 +635,8 @@ final class AiToolCatalogue {
   }
 
   String _nextNonce() =>
-      'tool-${_now().microsecondsSinceEpoch}-${_nonceSerial++}';
+      'tool-${_nonceRandom.nextInt(0x7fffffff).toRadixString(16)}'
+      '${_nonceRandom.nextInt(0x7fffffff).toRadixString(16)}';
 
   AiToolProvenance _live(String resource) => AiToolProvenance(
     resource: resource,
@@ -621,6 +650,32 @@ final class AiToolCatalogue {
         freshness: revision.freshness,
         revision: revision.sha,
       );
+
+  RedactionResult _redactStructured(Object? value, Set<String> fragmentFields) {
+    var redactions = 0;
+    var withheld = false;
+    Object? visit(Object? current, {String? field}) => switch (current) {
+      String text => () {
+        final result = fragmentFields.contains(field)
+            ? redactor.redactFragment(text)
+            : redactor.redactSource(text);
+        redactions += result.redactions;
+        withheld |= result.withheldPrivateKeyContext;
+        return result.text;
+      }(),
+      List<Object?> values => [for (final item in values) visit(item)],
+      Map<String, Object?> values => {
+        for (final entry in values.entries)
+          entry.key: visit(entry.value, field: entry.key),
+      },
+      _ => current,
+    };
+    return RedactionResult(
+      jsonEncode(visit(value)),
+      redactions,
+      withheldPrivateKeyContext: withheld,
+    );
+  }
 
   _Revision _headRevision() {
     final sha = scope.headSha;
@@ -647,18 +702,28 @@ final class AiToolCatalogue {
 
 final class _RawToolResult {
   const _RawToolResult(
-    this.text,
+    String this.value,
     this.provenance, {
     this.blocked = false,
-    this.fragment = false,
     this.requestCount = 0,
     this.tailLines,
-  });
+  }) : json = false,
+       fragmentFields = const {};
 
-  final String text;
+  const _RawToolResult.json(
+    this.value,
+    this.provenance, {
+    this.blocked = false,
+    this.requestCount = 0,
+    this.fragmentFields = const {},
+  }) : json = true,
+       tailLines = null;
+
+  final Object? value;
   final AiToolProvenance provenance;
   final bool blocked;
-  final bool fragment;
+  final bool json;
+  final Set<String> fragmentFields;
   final int requestCount;
   final int? tailLines;
 }
@@ -770,6 +835,7 @@ int _requestCost(String name) => switch (name) {
   'list_directory' => 4,
   'get_issue' || 'get_merge_request' => 2,
   'get_merge_request_diff' => 2,
+  'get_job_log' => 4,
   _ => 1,
 };
 
@@ -784,18 +850,18 @@ AiJson _projectDiscussion(AiJson source) {
   if (notes is List<Object?>) {
     for (final value in notes.reversed) {
       if (value is! Map<String, Object?> || value['system'] == true) continue;
-      projectedNotes.add(
-        _pick(value, const [
-          'id',
-          'body',
-          'created_at',
-          'updated_at',
-          'author',
-        ]),
-      );
+      final note = _pick(value, const [
+        'id',
+        'body',
+        'created_at',
+        'updated_at',
+      ]);
+      final author = _projectAuthor(value['author']);
+      if (author != null) note['author'] = author;
+      projectedNotes.add(note);
     }
   }
-  return {
+  final projected = {
     ..._pick(source, const [
       'id',
       'iid',
@@ -803,7 +869,6 @@ AiJson _projectDiscussion(AiJson source) {
       'description',
       'state',
       'labels',
-      'author',
       'created_at',
       'updated_at',
       'closed_at',
@@ -812,7 +877,14 @@ AiJson _projectDiscussion(AiJson source) {
     ]),
     'notes': projectedNotes,
   };
+  final author = _projectAuthor(source['author']);
+  if (author != null) projected['author'] = author;
+  return projected;
 }
+
+AiJson? _projectAuthor(Object? value) => value is AiJson
+    ? _pick(value, const ['id', 'username', 'name', 'state', 'web_url'])
+    : null;
 
 String _stripTrace(String text) {
   final marker = RegExp(
@@ -843,8 +915,6 @@ Object? _sanitizeJson(Object? value) => switch (value) {
   },
   _ => value,
 };
-
-String _encodeSanitized(Object? value) => jsonEncode(_sanitizeJson(value));
 
 String _lastLines(String value, int count) {
   final lines = value.split('\n');

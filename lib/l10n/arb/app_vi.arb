@@ -2100,5 +2100,6 @@
   "aiUsageEstimated": "Mức sử dụng là ước tính",
   "aiContextAttachedOnce": "Ngữ cảnh đính kèm chỉ được gửi cùng tin nhắn đầu tiên",
   "aiProjectionOlderTurnsRemoved": "Các lượt cũ đã bị xóa khỏi bản tóm tắt",
-  "aiReplayProtectionStopped": "Câu trả lời đã dừng để bảo vệ nội dung đã gửi trước đó"
+  "aiReplayProtectionStopped": "Đã phát hiện bí mật mới trong nội dung đã gửi. Câu trả lời đã dừng vì không thể thu hồi nội dung đã gửi",
+  "aiEndTokenBudget": "Cuộc trò chuyện đã đạt giới hạn sử dụng. Hãy bắt đầu cuộc trò chuyện mới"
 }

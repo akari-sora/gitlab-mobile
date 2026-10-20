@@ -2095,10 +2095,11 @@
   "aiEndSettingsChanged": "تغيرت الإعدادات فتوقفت الإجابة",
   "aiBudgetModelCalls": "نفدت حصة استدعاءات النموذج",
   "aiBudgetToolCalls": "نفدت حصة استدعاءات الأدوات",
-  "aiBudgetGitLabReads": "نفدت حصة قراءة المستودع",
+  "aiBudgetGitLabReads": "نفدت حصة قراءات GitLab",
   "aiBudgetToolOutput": "نفدت حصة مخرجات الأدوات",
   "aiUsageEstimated": "الاستخدام تقديري",
   "aiContextAttachedOnce": "يُرسل السياق المرفق مع الرسالة الأولى فقط",
   "aiProjectionOlderTurnsRemoved": "أزيلت الجولات الأقدم من الملخص",
-  "aiReplayProtectionStopped": "توقفت الإجابة لحماية المحتوى المرسل سابقًا"
+  "aiReplayProtectionStopped": "اكتُشف سر جديد في محتوى سبق إرساله. توقفت الإجابة لأنه لا يمكن سحب المحتوى المرسل",
+  "aiEndTokenBudget": "بلغت المحادثة حد الاستخدام. ابدأ محادثة جديدة"
 }

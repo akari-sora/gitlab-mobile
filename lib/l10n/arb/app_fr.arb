@@ -2100,5 +2100,6 @@
   "aiUsageEstimated": "L’utilisation est estimée",
   "aiContextAttachedOnce": "Le contexte joint est envoyé uniquement avec le premier message",
   "aiProjectionOlderTurnsRemoved": "Les anciens échanges ont été retirés du résumé",
-  "aiReplayProtectionStopped": "La réponse a été arrêtée pour protéger le contenu déjà envoyé"
+  "aiReplayProtectionStopped": "Un nouveau secret a été détecté dans du contenu déjà envoyé. La réponse a été arrêtée, car le contenu envoyé ne peut pas être retiré",
+  "aiEndTokenBudget": "La conversation a atteint sa limite d’utilisation. Démarrez une nouvelle conversation"
 }

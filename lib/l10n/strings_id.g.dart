@@ -2102,5 +2102,6 @@ const _messagesId = <String>[
   'Penggunaan merupakan perkiraan',
   'Konteks terlampir hanya dikirim bersama pesan pertama',
   'Percakapan lama dihapus dari ringkasan',
-  'Jawaban dihentikan untuk melindungi konten yang sudah dikirim',
+  'Rahasia baru terdeteksi dalam konten yang sudah dikirim. Jawaban dihentikan karena konten terkirim tidak dapat ditarik kembali',
+  'Percakapan ini mencapai batas penggunaan. Mulai percakapan baru',
 ];

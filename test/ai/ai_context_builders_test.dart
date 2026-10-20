@@ -169,6 +169,50 @@ void main() {
     expect(allowed.blocks, hasLength(1));
   });
 
+  test('MR context releases only explicitly selected sensitive files', () {
+    final builder = AiContextBuilders(redactor: Redactor(secrets: _Secrets()));
+    final context = builder.mergeRequest(
+      const AiMergeRequestContextInput(
+        iid: 7,
+        title: 'change',
+        description: 'body',
+        state: 'opened',
+        headSha: _head,
+        baseSha: _base,
+        allowedSensitivePaths: {'.env.allowed'},
+        diffs: [
+          AiDiffFileInput(
+            oldPath: '.env.allowed',
+            newPath: '.env.allowed',
+            diff: '+RELEASED=value',
+          ),
+          AiDiffFileInput(
+            oldPath: '.env.blocked',
+            newPath: '.env.blocked',
+            diff: '+BLOCKED=value',
+          ),
+        ],
+      ),
+      nonce: 'nonce-release',
+    );
+    expect(context.blockedSensitivePaths, ['.env.blocked']);
+    expect(context.blocks.single.text, contains('RELEASED=value'));
+    expect(context.blocks.single.text, isNot(contains('BLOCKED=value')));
+  });
+
+  test('file context accepts repository paths longer than a data label', () {
+    final path =
+        'src/main/java/${'very_long_package_segment/' * 7}Example.java';
+    expect(path.length, greaterThan(160));
+    final context = AiContextBuilders(redactor: Redactor(secrets: _Secrets()))
+        .file(
+          AiFileContextInput(path: path, sha: _head, text: 'safe'),
+          nonce: 'nonce-long-path',
+        );
+    expect(context.blocks.single.source, 'file');
+    expect(context.blocks.single.text, contains(path));
+  });
+
   test(
     'discussion selects newest twenty non-system notes then orders oldest first',
     () {
@@ -224,6 +268,30 @@ void main() {
     expect(context.blocks.single.text, contains('[REDACTED]'));
   });
 
+  test('structured context redacts secrets before JSON and XML escaping', () {
+    const secret = 'abc\\def"\n&<>SYNTHETIC123';
+    final context =
+        AiContextBuilders(
+          redactor: Redactor(secrets: _Secrets(const [secret])),
+        ).discussion(
+          const AiDiscussionContextInput(
+            kind: 'issue',
+            iid: 3,
+            title: secret,
+            description: 'safe',
+            state: 'opened',
+            pinnedSha: _head,
+            notes: [],
+          ),
+          nonce: 'nonce-encoded-secret',
+        );
+    final text = context.blocks.single.text;
+    expect(text, contains('[REDACTED]'));
+    expect(text, isNot(contains('abc')));
+    expect(text, isNot(contains(r'\\def')));
+    expect(text, isNot(contains('&amp;&lt;&gt;SYNTHETIC123')));
+  });
+
   test('untrusted data labels escape attempted closing tags', () {
     final wrapped = wrapUntrustedGitLabData(
       source: 'file lib/a.dart',
@@ -239,6 +307,14 @@ void main() {
       text: 'safe',
     );
     expect(unicode, contains('中文&quot;name.dart'));
+  });
+
+  test('wrapped-data clipping retains the closing label', () {
+    final wrapped =
+        'provenance\n${wrapUntrustedGitLabData(source: 'read_file', nonce: 'nonce-clip', text: 'x' * 1000)}';
+    final clipped = clipWrappedUntrustedGitLabData(wrapped, 120);
+    expect(clipped.length, lessThanOrEqualTo(120));
+    expect(clipped, endsWith('</gitlab_data>'));
   });
 
   test('context rejects inputs above the redaction boundary', () {

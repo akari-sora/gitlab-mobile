@@ -273,8 +273,139 @@ void main() {
     expect(evidence['modelCalls'], 6);
     expect(evidence['syntheticTailCompleted'], isTrue);
     expect(evidence['toolsKeptOnClosingRequest'], isTrue);
+    expect(evidence['finishingChoiceOrNote'], isTrue);
     expect(adapter.requests, hasLength(6));
     expect(adapter.requests.last.data, contains('"tool_choice":"none"'));
+  });
+
+  test('closing verdict requires top-level tools and the finishing choice', () {
+    const caps = AiCaps(
+      tokenLimitField: AiTokenLimitField.maxOutputTokens,
+      toolChoice: true,
+    );
+    final evidence = smoke.aiLiveAssessClosingRequestBodies(<String>[
+      '{"tools":[{"name":"synthetic_lookup"}],"input":[]}',
+      '{"input":[{"type":"function_call","name":"synthetic_lookup"}],"tool_choice":"none"}',
+    ], caps: caps);
+
+    expect(evidence['toolsKeptOnClosingRequest'], isFalse);
+    expect(evidence['finishingChoiceOrNote'], isTrue);
+
+    final wrongChoice = smoke.aiLiveAssessClosingRequestBodies(<String>[
+      '{"tools":[{"name":"synthetic_lookup"}],"input":[]}',
+      '{"tools":[{"name":"synthetic_lookup"}],"input":[],"tool_choice":"auto"}',
+    ], caps: caps);
+    expect(wrongChoice['toolsKeptOnClosingRequest'], isTrue);
+    expect(wrongChoice['finishingChoiceOrNote'], isFalse);
+
+    const fallbackCaps = AiCaps(tokenLimitField: AiTokenLimitField.maxTokens);
+    final fallback = smoke.aiLiveAssessClosingRequestBodies(<String>[
+      '{"tools":[{"name":"synthetic_lookup"}],"messages":[]}',
+      '{"tools":[{"name":"synthetic_lookup"}],"messages":[{"role":"user","content":"<mergeline_final_answer>finish</mergeline_final_answer>"}]}',
+    ], caps: fallbackCaps);
+    expect(fallback['toolsKeptOnClosingRequest'], isTrue);
+    expect(fallback['finishingChoiceOrNote'], isTrue);
+  });
+
+  test('runner smoke resumes from restored display history', () async {
+    final adapter = FakeAdapter(
+      (_) => _responses(_messageOutput('SYNTHETIC_HISTORY_RESUME')),
+    );
+
+    final result = await smoke.aiLiveRunnerHistoryResumeScenarioForTest(
+      targetId: 'opencode-responses',
+      adapter: adapter,
+    );
+
+    expect(result['status'], 'PASS');
+    final evidence = result['evidence']! as Map<String, Object?>;
+    expect(evidence['projectionPresent'], isTrue);
+    expect(evidence['answerExact'], isTrue);
+    expect(adapter.requests, hasLength(1));
+    expect(adapter.requests.single.data, contains('conversation_summary'));
+    expect(adapter.requests.single.data, contains('SYNTHETIC_RESTORED_USER'));
+  });
+
+  test(
+    'Anthropic runner smoke resumes from restored display history',
+    () async {
+      final adapter = FakeAdapter(
+        (_) => _anthropic('SYNTHETIC_HISTORY_RESUME'),
+      );
+
+      final result = await smoke.aiLiveRunnerHistoryResumeScenarioForTest(
+        targetId: 'anthropic-direct',
+        adapter: adapter,
+      );
+
+      expect(result['status'], 'PASS');
+      final evidence = result['evidence']! as Map<String, Object?>;
+      expect(evidence['projectionPresent'], isTrue);
+      expect(evidence['answerExact'], isTrue);
+      expect(adapter.requests.single.data, contains('conversation_summary'));
+    },
+  );
+
+  test(
+    'runner smoke switches Responses models through a fresh segment',
+    () async {
+      var request = 0;
+      final adapter = FakeAdapter((_) {
+        request++;
+        return _responses(
+          _messageOutput(
+            request == 1
+                ? 'SYNTHETIC_BEFORE_MODEL_SWITCH'
+                : 'SYNTHETIC_AFTER_MODEL_SWITCH',
+          ),
+        );
+      });
+
+      final result = await smoke.aiLiveRunnerModelSwitchScenarioForTest(
+        targetId: 'opencode-responses',
+        adapter: adapter,
+      );
+
+      expect(result['status'], 'PASS');
+      final evidence = result['evidence']! as Map<String, Object?>;
+      expect(evidence['fromModel'], 'gpt-6-luna');
+      expect(evidence['toModel'], 'gpt-5.6-luna');
+      expect(evidence['projectionPresent'], isTrue);
+      expect(evidence['freshSegment'], isTrue);
+      expect(adapter.requests, hasLength(2));
+      final switched =
+          jsonDecode(adapter.requests.last.data! as String)
+              as Map<String, Object?>;
+      expect(switched['model'], 'gpt-5.6-luna');
+    },
+  );
+
+  test('runner smoke switches Chat models through a fresh segment', () async {
+    var request = 0;
+    final adapter = FakeAdapter((_) {
+      request++;
+      return _chat(
+        request == 1
+            ? 'SYNTHETIC_BEFORE_MODEL_SWITCH'
+            : 'SYNTHETIC_AFTER_MODEL_SWITCH',
+      );
+    });
+
+    final result = await smoke.aiLiveRunnerModelSwitchScenarioForTest(
+      targetId: 'opencode-chat',
+      adapter: adapter,
+    );
+
+    expect(result['status'], 'PASS');
+    final evidence = result['evidence']! as Map<String, Object?>;
+    expect(evidence['fromModel'], 'glm-5.3-flash');
+    expect(evidence['toModel'], 'deepseek-v4.1-flash');
+    expect(evidence['projectionPresent'], isTrue);
+    expect(evidence['freshSegment'], isTrue);
+    final switched =
+        jsonDecode(adapter.requests.last.data! as String)
+            as Map<String, Object?>;
+    expect(switched['model'], 'deepseek-v4.1-flash');
   });
 }
 
@@ -340,6 +471,61 @@ ResponseBody _responses(
   });
   return ResponseBody.fromString(
     '${streamedText == null ? '' : 'data: ${jsonEncode(<String, Object?>{'type': 'response.output_text.delta', 'delta': streamedText})}\n\n'}data: $event\n\n',
+    200,
+    headers: const <String, List<String>>{
+      'content-type': <String>['text/event-stream'],
+    },
+  );
+}
+
+ResponseBody _chat(String text) {
+  String event(Map<String, Object?> delta, {String? finishReason}) =>
+      'data: ${jsonEncode(<String, Object?>{
+        'id': 'synthetic-chat',
+        'object': 'chat.completion.chunk',
+        'choices': <Object?>[
+          <String, Object?>{'index': 0, 'finish_reason': finishReason, 'delta': delta},
+        ],
+      })}\n\n';
+  return ResponseBody.fromString(
+    '${event(<String, Object?>{'role': 'assistant'})}'
+    '${event(<String, Object?>{'content': text})}'
+    '${event(const <String, Object?>{}, finishReason: 'stop')}'
+    'data: [DONE]\n\n',
+    200,
+    headers: const <String, List<String>>{
+      'content-type': <String>['text/event-stream'],
+    },
+  );
+}
+
+ResponseBody _anthropic(String text) {
+  String event(Map<String, Object?> value) => 'data: ${jsonEncode(value)}\n\n';
+  return ResponseBody.fromString(
+    '${event(<String, Object?>{
+      'type': 'message_start',
+      'message': <String, Object?>{
+        'id': 'synthetic-message',
+        'usage': <String, Object?>{'input_tokens': 1},
+      },
+    })}'
+    '${event(<String, Object?>{
+      'type': 'content_block_start',
+      'index': 0,
+      'content_block': <String, Object?>{'type': 'text', 'text': ''},
+    })}'
+    '${event(<String, Object?>{
+      'type': 'content_block_delta',
+      'index': 0,
+      'delta': <String, Object?>{'type': 'text_delta', 'text': text},
+    })}'
+    '${event(<String, Object?>{'type': 'content_block_stop', 'index': 0})}'
+    '${event(<String, Object?>{
+      'type': 'message_delta',
+      'delta': <String, Object?>{'stop_reason': 'end_turn'},
+      'usage': <String, Object?>{'output_tokens': 1},
+    })}'
+    '${event(<String, Object?>{'type': 'message_stop'})}',
     200,
     headers: const <String, List<String>>{
       'content-type': <String>['text/event-stream'],

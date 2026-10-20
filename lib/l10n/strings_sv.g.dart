@@ -2102,5 +2102,6 @@ const _messagesSv = <String>[
   'Användningen är uppskattad',
   'Bifogad kontext skickas bara med det första meddelandet',
   'Äldre turer har tagits bort från sammanfattningen',
-  'Svaret stoppades för att skydda tidigare skickat innehåll',
+  'En ny hemlighet upptäcktes i redan skickat innehåll. Svaret stoppades eftersom skickat innehåll inte kan återkallas',
+  'Konversationen har nått användningsgränsen. Starta en ny konversation',
 ];

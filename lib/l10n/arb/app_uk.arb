@@ -2095,10 +2095,11 @@
   "aiEndSettingsChanged": "Налаштування змінилися, відповідь зупинено",
   "aiBudgetModelCalls": "Ліміт звернень до моделі вичерпано",
   "aiBudgetToolCalls": "Ліміт викликів інструментів вичерпано",
-  "aiBudgetGitLabReads": "Ліміт читання сховища вичерпано",
+  "aiBudgetGitLabReads": "Ліміт читань GitLab вичерпано",
   "aiBudgetToolOutput": "Ліміт виводу інструментів вичерпано",
   "aiUsageEstimated": "Використання оцінено приблизно",
   "aiContextAttachedOnce": "Доданий контекст надсилається лише з першим повідомленням",
   "aiProjectionOlderTurnsRemoved": "Старі репліки вилучено з підсумку",
-  "aiReplayProtectionStopped": "Відповідь зупинено для захисту раніше надісланих даних"
+  "aiReplayProtectionStopped": "У вже надісланих даних виявлено новий секрет. Відповідь зупинено, бо надіслані дані неможливо відкликати",
+  "aiEndTokenBudget": "Розмова досягла ліміту використання. Почніть нову розмову"
 }

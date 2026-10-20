@@ -6394,6 +6394,9 @@ final class AppStrings {
   /// 較早的回合已從摘要中移除
   String get aiProjectionOlderTurnsRemoved => language._messages[2099];
 
-  /// 為保護已送出的內容，回答已停止
+  /// 已送出的內容中偵測到新的秘密。因為已送出的內容無法撤回，回答已停止
   String get aiReplayProtectionStopped => language._messages[2100];
+
+  /// 此對話已達用量上限，請開始新的對話
+  String get aiEndTokenBudget => language._messages[2101];
 }

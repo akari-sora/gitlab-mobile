@@ -296,9 +296,8 @@ final class AiTransport {
     }
   }
 
-  void close() {
-    if (_closed) return;
-    _closed = true;
+  /// Cancel in-flight requests while keeping this conversation transport usable.
+  void cancelActive() {
     for (final token in _requests.toList()) {
       if (!token.isCancelled) token.cancel('AI transport closed');
     }
@@ -307,6 +306,12 @@ final class AiTransport {
     }
     _requests.clear();
     _timers.clear();
+  }
+
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    cancelActive();
     _dio.close(force: true);
   }
 

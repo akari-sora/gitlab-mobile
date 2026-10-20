@@ -418,7 +418,7 @@ void main() {
       );
 
       expect(saved.recipientRevision, 6);
-      expect(controller.secretSetId, 1);
+      expect(controller.secretSetId, 2);
       expect(controller.knownProviderKeys, isEmpty);
       expect(
         (await store.readProviderKey('provider/one')).status,
@@ -561,7 +561,7 @@ void main() {
 
         expect(controller.providers, isEmpty);
         expect(controller.knownProviderKeys, isEmpty);
-        expect(controller.secretSetId, 1);
+        expect(controller.secretSetId, 2);
         for (final accountKey in <String>['account-a', 'account-b']) {
           final account = (await store.loadAccount(accountKey)).value!;
           expect(account.consents, isNot(contains('provider/one')));

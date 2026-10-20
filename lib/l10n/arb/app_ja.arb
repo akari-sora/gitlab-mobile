@@ -2095,10 +2095,11 @@
   "aiEndSettingsChanged": "設定が変更されたため回答を停止しました",
   "aiBudgetModelCalls": "モデル呼び出し上限に達しました",
   "aiBudgetToolCalls": "ツール呼び出し上限に達しました",
-  "aiBudgetGitLabReads": "リポジトリ読み取り上限に達しました",
+  "aiBudgetGitLabReads": "GitLabの読み取り上限に達しました",
   "aiBudgetToolOutput": "ツール出力上限に達しました",
   "aiUsageEstimated": "使用量は推定値です",
   "aiContextAttachedOnce": "添付内容は最初のメッセージでのみ送信されます",
   "aiProjectionOlderTurnsRemoved": "古い会話を要約から除外しました",
-  "aiReplayProtectionStopped": "送信済み内容を保護するため回答を停止しました"
+  "aiReplayProtectionStopped": "送信済みの内容から新しい秘密情報が検出されました。送信済みの内容は取り消せないため、回答を停止しました",
+  "aiEndTokenBudget": "この会話は使用量の上限に達しました。新しい会話を開始してください"
 }

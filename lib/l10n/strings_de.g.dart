@@ -2102,5 +2102,6 @@ const _messagesDe = <String>[
   'Nutzung ist geschätzt',
   'Angehängter Kontext wird nur mit der ersten Nachricht gesendet',
   'Ältere Gesprächsteile wurden aus der Zusammenfassung entfernt',
-  'Antwort zum Schutz bereits gesendeter Inhalte gestoppt',
+  'In bereits gesendeten Inhalten wurde ein neues Geheimnis erkannt. Die Antwort wurde gestoppt, weil gesendete Inhalte nicht zurückgezogen werden können',
+  'Das Nutzungslimit der Unterhaltung ist erreicht. Beginnen Sie eine neue Unterhaltung',
 ];

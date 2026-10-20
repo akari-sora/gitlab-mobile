@@ -2102,5 +2102,6 @@ const _messagesFr = <String>[
   'L’utilisation est estimée',
   'Le contexte joint est envoyé uniquement avec le premier message',
   'Les anciens échanges ont été retirés du résumé',
-  'La réponse a été arrêtée pour protéger le contenu déjà envoyé',
+  'Un nouveau secret a été détecté dans du contenu déjà envoyé. La réponse a été arrêtée, car le contenu envoyé ne peut pas être retiré',
+  'La conversation a atteint sa limite d’utilisation. Démarrez une nouvelle conversation',
 ];

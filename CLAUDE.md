@@ -150,19 +150,31 @@ recover that notice.
 Use one `KnownSecretsLive` for the conversation and pass its `refresh` to both
 the runner and catalogue. It reads keys from the process-wide settings owner and
 rereads the current GitLab access/refresh values before redaction, retaining the
-union until the conversation is discarded. Construct `AiRunGuard` from the
-current session generation, exact API identity, provider recipient revision and
+union until the conversation is discarded. Settings initialization increments
+`secretSetId` whenever loading changes the provider-key set, so a live-secret
+reader that refreshed before initialization will refresh again afterward.
+Construct `AiRunGuard` from the current session generation, exact API identity,
+provider recipient revision and
 `AiSettingsController.isValid(accountKey, contract)`. `AiRunnerBinding` listens
 to that settings owner and session so a stalled stream also stops immediately;
-dispose the binding with its conversation. Each catalogue send gets a fresh
-`AiToolBudget`; call `beginTurn` before each tool batch. Do not share a budget
-between sends. The catalogue reserves twice each logical read cost to cover
-GitLabApi's single OAuth retry; the HTTP counter is a conservative allowance.
-Tool results retain provenance and escaped, nonce-labelled untrusted-data blocks.
+dispose the binding with its conversation. Production wiring passes
+`AiTransport.cancelActive` separately from terminal `close`: user stop and
+model/run timeouts cancel only active requests so the same wire client remains
+usable for a follow-up, while disposal, recipient replacement and
+`stoppedBySettings` close the transport. Each catalogue send gets a fresh
+`AiToolBudget`; wire `resetToolBudget`, `beginToolTurn` and
+`toolBudgetExhausted: () => budget.exhausted`, and call `beginTurn` before each
+tool batch. Do not share a budget between sends. The catalogue reserves twice
+each logical read cost to cover GitLabApi's single OAuth retry; the HTTP counter
+is a conservative allowance. `executeResult` propagates provenance plus
+withheld-private-key, truncated and blocked-sensitive metadata in
+`AiToolResult`; tool results retain escaped, nonce-labelled untrusted-data
+blocks.
 
-Frozen wire fragments are append-only and never rewritten. New readable secrets
-in frozen app/provider text stop the current send; the next send starts from a
-freshly redacted projection. Key replacement uses `replaceKeyRecipient` and a
+Frozen wire fragments are append-only and never rewritten. A newly known secret
+in app/provider text that was already sent stops the current send because sent
+content cannot be retracted; the next send starts from a freshly redacted
+projection. Key replacement uses `replaceKeyRecipient` and a
 new wire client/transport, preserving consent only when the recipient contract
 is otherwise identical. Other recipient changes require a new conversation.
 A binding failure also requires a new segment. `restoreFromDisplay` initializes
@@ -170,6 +182,14 @@ an idle conversation from redacted history models via a new projection; it never
 restores provider replay output. Every frozen tool call has a
 result, including stopped and exhausted calls. A soft timeout keeps the source
 read owned until it settles, preventing overlapping GitLab reads across sends.
+For display wiring, `onTextChanged` receives cumulative redacted snapshots at
+exponentially increasing character thresholds so repeated redaction remains a
+linear scan overall. `onToolStarted` receives an `AiToolCall` with its redacted
+name and `arguments: null`; `onToolResult` receives every safe result, including
+synthetic terminal results used to pair unfinished calls. `onEvent` receives
+usage and finished events. Partial output recovered after stop is display-only:
+refresh secrets and recheck the guard within `toolDeadline`, then redact it; it
+is never frozen or replayed.
 Cleartext requests check interfaces with `includeLinkLocal: true`; missing or
 unavailable interfaces require per-send confirmation. These checks do not prove
 same-subnet reachability. Settings/chat/entry-point UI remains MR5/MR6 work;

@@ -2102,5 +2102,6 @@ const _messagesEn = <String>[
   'Usage is estimated',
   'Attached context is sent only with the first message',
   'Older turns were removed from the summary',
-  'The answer stopped to protect previously sent content',
+  'A new secret was detected in content already sent. The answer stopped because sent content cannot be retracted',
+  'This conversation reached its usage limit. Start a new conversation',
 ];

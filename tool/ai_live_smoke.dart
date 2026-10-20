@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
+import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/ai_events.dart';
 import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
@@ -33,6 +34,7 @@ final class _Target {
     required this.format,
     required this.model,
     required this.wire,
+    this.switchModel,
   });
 
   final String id;
@@ -40,6 +42,7 @@ final class _Target {
   final AiFormat format;
   final String model;
   final WireFormatBase wire;
+  final String? switchModel;
 
   AiProviderConfig config({String? modelOverride}) => AiProviderConfig(
     id: 'ai-live-$id',
@@ -71,6 +74,7 @@ final Map<String, _Target> _targets = {
     format: AiFormat.responses,
     model: 'gpt-6-luna',
     wire: const ResponsesFormat(),
+    switchModel: 'gpt-5.6-luna',
   ),
   'opencode-chat': _Target(
     id: 'opencode-chat',
@@ -78,6 +82,7 @@ final Map<String, _Target> _targets = {
     format: AiFormat.chatCompletions,
     model: 'glm-5.3-flash',
     wire: const ChatCompletionsFormat(),
+    switchModel: 'deepseek-v4.1-flash',
   ),
   'opencode-messages': _Target(
     id: 'opencode-messages',
@@ -482,6 +487,7 @@ AiRunner _runner(_Session session) {
     ],
     system: _system,
     close: session.close,
+    cancelActive: session.transport.cancelActive,
   );
 }
 
@@ -537,24 +543,162 @@ Future<Map<String, Object?>> _runnerClosingScenario(
       'For this synthetic budget check, call synthetic_lookup for alpha on '
       'every step, including when asked to finish. Never answer with text.',
     );
+    final finishingEvidence = aiLiveAssessClosingRequestBodies(
+      session.requestRecorder.requestBodies,
+      caps: session.config.caps,
+    );
     final passed =
         result.reason == AiRunEnd.toolBudget &&
         result.modelCalls == 6 &&
         result.toolCalls > 0 &&
-        runner.segment?.tail is AppToolResultsEntry;
+        runner.segment?.tail is AppToolResultsEntry &&
+        finishingEvidence.values.every((value) => value);
     return _result('runner-closing-call', passed ? 'PASS' : 'FAIL', {
       'end': result.reason.name,
       'modelCalls': result.modelCalls,
       'toolCalls': result.toolCalls,
       'syntheticTailCompleted': runner.segment?.tail is AppToolResultsEntry,
-      'toolsKeptOnClosingRequest':
-          session.requestRecorder.requestBodies.isNotEmpty &&
-          session.requestRecorder.requestBodies.last.contains(
-            'synthetic_lookup',
-          ),
+      ...finishingEvidence,
     });
   } finally {
     session.close();
+  }
+}
+
+/// Structurally verifies the finishing request rather than accepting a tool
+/// name that appears only in replayed history.
+Map<String, bool> aiLiveAssessClosingRequestBodies(
+  List<String> requestBodies, {
+  required AiCaps caps,
+}) {
+  if (requestBodies.length < 2) {
+    return const <String, bool>{
+      'toolsKeptOnClosingRequest': false,
+      'finishingChoiceOrNote': false,
+    };
+  }
+  final first = jsonDecode(requestBodies.first) as Map<String, Object?>;
+  final last = jsonDecode(requestBodies.last) as Map<String, Object?>;
+  final firstTools = first['tools'];
+  final lastTools = last['tools'];
+  final toolsKept =
+      firstTools is List<Object?> &&
+      firstTools.isNotEmpty &&
+      jsonEncode(lastTools) == jsonEncode(firstTools);
+  final choiceOrNote = caps.toolChoice
+      ? switch (last['tool_choice']) {
+          'none' => true,
+          {'type': 'none'} => true,
+          _ => false,
+        }
+      : !last.containsKey('tool_choice') &&
+            requestBodies.last.contains(aiFinalAnswerNoteMarker);
+  return <String, bool>{
+    'toolsKeptOnClosingRequest': toolsKept,
+    'finishingChoiceOrNote': choiceOrNote,
+  };
+}
+
+Future<Map<String, Object?>> _runnerHistoryResumeScenario(
+  _Target target,
+  String credential, {
+  HttpClientAdapter? adapter,
+}) async {
+  final session = _Session(target, credential, adapter: adapter);
+  final runner = _runner(session);
+  try {
+    runner.restoreFromDisplay(<AiChatItem>[
+      AiUserItem(text: 'SYNTHETIC_RESTORED_USER'),
+      const AiAssistantItem(
+        text: 'SYNTHETIC_RESTORED_ASSISTANT',
+        state: AiAssistantState.done,
+      ),
+    ]);
+    final result = await runner.run(
+      'Use the restored synthetic conversation and reply with exactly '
+      'SYNTHETIC_HISTORY_RESUME.',
+    );
+    final request = session.requestRecorder.requestBodies.single;
+    final projected =
+        request.contains('conversation_summary') &&
+        request.contains('SYNTHETIC_RESTORED_USER') &&
+        request.contains('SYNTHETIC_RESTORED_ASSISTANT');
+    final passed =
+        result.reason == AiRunEnd.done &&
+        result.text.trim() == 'SYNTHETIC_HISTORY_RESUME' &&
+        projected &&
+        runner.segment?.model == session.config.model;
+    return _result('runner-history-resume', passed ? 'PASS' : 'FAIL', {
+      'end': result.reason.name,
+      'answerExact': result.text.trim() == 'SYNTHETIC_HISTORY_RESUME',
+      'projectionPresent': projected,
+      'freshSegmentModel': runner.segment?.model,
+    });
+  } finally {
+    session.close();
+  }
+}
+
+Future<Map<String, Object?>> _runnerModelSwitchScenario(
+  _Target target,
+  String credential, {
+  HttpClientAdapter? adapter,
+}) async {
+  final switchModel = target.switchModel;
+  if (switchModel == null) {
+    return _result('runner-model-switch', 'NOT_RUN', const {
+      'reason': 'target_not_in_matrix',
+    });
+  }
+  final firstSession = _Session(target, credential, adapter: adapter);
+  final firstRunner = _runner(firstSession);
+  _Session? secondSession;
+  try {
+    final first = await firstRunner.run(
+      'Reply with exactly SYNTHETIC_BEFORE_MODEL_SWITCH.',
+    );
+    final firstSegment = firstRunner.segment;
+    secondSession = _Session(
+      target,
+      credential,
+      model: switchModel,
+      adapter: adapter,
+    );
+    final secondRunner = _runner(secondSession);
+    secondRunner.restoreFromDisplay(<AiChatItem>[
+      AiUserItem(text: 'Reply with exactly SYNTHETIC_BEFORE_MODEL_SWITCH.'),
+      AiAssistantItem(text: first.text, state: AiAssistantState.done),
+    ]);
+    final second = await secondRunner.run(
+      'After the model switch, reply with exactly SYNTHETIC_AFTER_MODEL_SWITCH.',
+    );
+    final request = secondSession.requestRecorder.requestBodies.single;
+    final body = jsonDecode(request) as Map<String, Object?>;
+    final projected =
+        request.contains('conversation_summary') &&
+        request.contains('SYNTHETIC_BEFORE_MODEL_SWITCH');
+    final freshSegment =
+        !identical(firstSegment, secondRunner.segment) &&
+        secondRunner.segment?.model == switchModel &&
+        body['model'] == switchModel;
+    final passed =
+        first.reason == AiRunEnd.done &&
+        first.text.trim() == 'SYNTHETIC_BEFORE_MODEL_SWITCH' &&
+        second.reason == AiRunEnd.done &&
+        second.text.trim() == 'SYNTHETIC_AFTER_MODEL_SWITCH' &&
+        projected &&
+        freshSegment;
+    return _result('runner-model-switch', passed ? 'PASS' : 'FAIL', {
+      'fromModel': target.model,
+      'toModel': switchModel,
+      'firstAnswerExact': first.text.trim() == 'SYNTHETIC_BEFORE_MODEL_SWITCH',
+      'secondAnswerExact': second.text.trim() == 'SYNTHETIC_AFTER_MODEL_SWITCH',
+      'projectionPresent': projected,
+      'freshSegment': freshSegment,
+    });
+  } finally {
+    secondSession?.close();
+    firstSession.close();
   }
 }
 
@@ -871,6 +1015,34 @@ Future<Map<String, Object?>> aiLiveRunnerClosingScenarioForTest({
   );
 }
 
+/// Runs the recorded-display projection path without provider access.
+Future<Map<String, Object?>> aiLiveRunnerHistoryResumeScenarioForTest({
+  required String targetId,
+  required HttpClientAdapter adapter,
+}) {
+  final target = _targets[targetId];
+  if (target == null) throw ArgumentError.value(targetId, 'targetId');
+  return _runnerHistoryResumeScenario(
+    target,
+    'synthetic-test-credential',
+    adapter: adapter,
+  );
+}
+
+/// Runs a same-format model switch through two fresh runner segments.
+Future<Map<String, Object?>> aiLiveRunnerModelSwitchScenarioForTest({
+  required String targetId,
+  required HttpClientAdapter adapter,
+}) {
+  final target = _targets[targetId];
+  if (target == null) throw ArgumentError.value(targetId, 'targetId');
+  return _runnerModelSwitchScenario(
+    target,
+    'synthetic-test-credential',
+    adapter: adapter,
+  );
+}
+
 Future<Map<String, Object?>> _capture(
   String scenario,
   Future<Map<String, Object?>> Function() body,
@@ -976,6 +1148,17 @@ Future<void> main(List<String> arguments) async {
       'runner-closing-call',
       () => _runnerClosingScenario(target, credential),
     ),
+    if (target.id
+        case 'anthropic-direct' || 'opencode-responses' || 'opencode-chat')
+      await _capture(
+        'runner-history-resume',
+        () => _runnerHistoryResumeScenario(target, credential),
+      ),
+    if (target.switchModel != null)
+      await _capture(
+        'runner-model-switch',
+        () => _runnerModelSwitchScenario(target, credential),
+      ),
   ];
   await _writeReport(target, credential, scenarios);
   if (scenarios.any((scenario) => scenario['status'] != 'PASS')) exitCode = 1;

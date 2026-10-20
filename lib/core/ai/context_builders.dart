@@ -70,6 +70,7 @@ final class AiMergeRequestContextInput {
     required this.baseSha,
     required this.diffs,
     this.labels = const [],
+    this.allowedSensitivePaths = const {},
   });
 
   final int iid;
@@ -80,6 +81,7 @@ final class AiMergeRequestContextInput {
   final String baseSha;
   final List<String> labels;
   final List<AiDiffFileInput> diffs;
+  final Set<String> allowedSensitivePaths;
 }
 
 final class AiFileContextInput {
@@ -144,16 +146,14 @@ final class AiContextBuilders {
     final tail = lines.length > 300
         ? lines.sublist(lines.length - 300).join('\n')
         : traceResult.text;
-    final metadata = _redactSource(
-      _encodeSanitized({
-        'name': input.name,
-        'stage': input.stage,
-        'status': input.status,
-        'failure_reason': input.failureReason,
-        'ref': input.ref,
-        'pipeline_id': input.pipelineId,
-      }),
-    );
+    final metadata = _redactJson({
+      'name': input.name,
+      'stage': input.stage,
+      'status': input.status,
+      'failure_reason': input.failureReason,
+      'ref': input.ref,
+      'pipeline_id': input.pipelineId,
+    });
     return AiBuiltContext(
       blocks: [
         AiContextBlock(
@@ -188,29 +188,36 @@ final class AiContextBuilders {
       final sensitive =
           isSensitiveRepositoryPath(file.oldPath) ||
           isSensitiveRepositoryPath(file.newPath);
-      if (sensitive) blocked.add(file.newPath);
-      final result = sensitive
+      final released =
+          input.allowedSensitivePaths.contains(file.oldPath) ||
+          input.allowedSensitivePaths.contains(file.newPath);
+      if (sensitive && !released) blocked.add(file.newPath);
+      final result = sensitive && !released
           ? const RedactionResult('[blocked by policy: sensitive file]', 0)
           : _redactFragment(file.diff);
       redactions += result.redactions;
       withheld |= result.withheldPrivateKeyContext;
+      final oldPath = _redactSource(file.oldPath);
+      final newPath = _redactSource(file.newPath);
+      redactions += oldPath.redactions + newPath.redactions;
+      withheld |=
+          oldPath.withheldPrivateKeyContext ||
+          newPath.withheldPrivateKeyContext;
       diffs.add({
-        'old_path': file.oldPath,
-        'new_path': file.newPath,
+        'old_path': oldPath.text,
+        'new_path': newPath.text,
         'diff': result.text,
       });
     }
-    final metadata = _redactSource(
-      _encodeSanitized({
-        'iid': input.iid,
-        'title': input.title,
-        'description': input.description,
-        'state': input.state,
-        'labels': input.labels,
-        'head_sha': input.headSha,
-        'base_sha': input.baseSha,
-      }),
-    );
+    final metadata = _redactJson({
+      'iid': input.iid,
+      'title': input.title,
+      'description': input.description,
+      'state': input.state,
+      'labels': input.labels,
+      'head_sha': input.headSha,
+      'base_sha': input.baseSha,
+    });
     redactions += metadata.redactions;
     withheld |= metadata.withheldPrivateKeyContext;
     final text = '${metadata.text}\n${_encodeSanitized(diffs)}';
@@ -245,8 +252,8 @@ final class AiContextBuilders {
       );
     }
     return _sourceContext(
-      source: 'file ${input.path}',
-      text: input.text,
+      source: 'file',
+      text: 'path: ${input.path}\n${input.text}',
       nonce: nonce,
       pinnedSha: input.sha,
     );
@@ -260,22 +267,23 @@ final class AiContextBuilders {
     final latest = input.notes.where((note) => !note.system).toList()
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
     final selected = latest.take(20).toList().reversed;
-    return _sourceContext(
+    final content = _redactJson({
+      'title': input.title,
+      'description': input.description,
+      'state': input.state,
+      'labels': input.labels,
+      'notes': [
+        for (final note in selected)
+          {
+            'author': note.author,
+            'created_at': note.createdAt.toUtc().toIso8601String(),
+            'body': note.body,
+          },
+      ],
+    });
+    return _builtSourceContext(
       source: '${input.kind} #${input.iid}',
-      text: _encodeSanitized({
-        'title': input.title,
-        'description': input.description,
-        'state': input.state,
-        'labels': input.labels,
-        'notes': [
-          for (final note in selected)
-            {
-              'author': note.author,
-              'created_at': note.createdAt.toUtc().toIso8601String(),
-              'body': note.body,
-            },
-        ],
-      }),
+      result: content,
       nonce: nonce,
       pinnedSha: input.pinnedSha,
     );
@@ -289,12 +297,26 @@ final class AiContextBuilders {
   }) {
     final cleanSource = _stripAnsi(source);
     final result = _redactSource(text);
+    return _builtSourceContext(
+      source: cleanSource,
+      result: result,
+      nonce: nonce,
+      pinnedSha: pinnedSha,
+    );
+  }
+
+  AiBuiltContext _builtSourceContext({
+    required String source,
+    required RedactionResult result,
+    required String nonce,
+    required String? pinnedSha,
+  }) {
     return AiBuiltContext(
       blocks: [
         AiContextBlock(
-          source: cleanSource,
+          source: source,
           text: wrapUntrustedGitLabData(
-            source: cleanSource,
+            source: source,
             nonce: nonce,
             text: result.text,
           ),
@@ -317,6 +339,31 @@ final class AiContextBuilders {
     final clean = _stripAnsi(value);
     _checkSize(clean);
     return redactor.redactFragment(clean);
+  }
+
+  RedactionResult _redactJson(Object? value) {
+    var redactions = 0;
+    var withheld = false;
+    Object? visit(Object? current) => switch (current) {
+      String text => () {
+        final result = _redactSource(text);
+        redactions += result.redactions;
+        withheld |= result.withheldPrivateKeyContext;
+        return result.text;
+      }(),
+      List<Object?> values => [for (final item in values) visit(item)],
+      Map<String, Object?> values => {
+        for (final entry in values.entries) entry.key: visit(entry.value),
+      },
+      _ => current,
+    };
+    final encoded = _encodeSanitized(visit(value));
+    _checkSize(encoded);
+    return RedactionResult(
+      encoded,
+      redactions,
+      withheldPrivateKeyContext: withheld,
+    );
   }
 }
 

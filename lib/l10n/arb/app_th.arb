@@ -2095,10 +2095,11 @@
   "aiEndSettingsChanged": "การตั้งค่าเปลี่ยนจึงหยุดคำตอบ",
   "aiBudgetModelCalls": "ใช้ขีดจำกัดการเรียกแบบจำลองหมดแล้ว",
   "aiBudgetToolCalls": "ใช้ขีดจำกัดการเรียกเครื่องมือหมดแล้ว",
-  "aiBudgetGitLabReads": "ใช้ขีดจำกัดการอ่านคลังหมดแล้ว",
+  "aiBudgetGitLabReads": "ใช้ขีดจำกัดการอ่าน GitLab หมดแล้ว",
   "aiBudgetToolOutput": "ใช้ขีดจำกัดผลลัพธ์เครื่องมือหมดแล้ว",
   "aiUsageEstimated": "ปริมาณการใช้เป็นค่าประมาณ",
   "aiContextAttachedOnce": "ส่งบริบทที่แนบเฉพาะกับข้อความแรก",
   "aiProjectionOlderTurnsRemoved": "นำช่วงสนทนาเก่าออกจากสรุปแล้ว",
-  "aiReplayProtectionStopped": "หยุดคำตอบเพื่อปกป้องเนื้อหาที่ส่งไปแล้ว"
+  "aiReplayProtectionStopped": "ตรวจพบความลับใหม่ในเนื้อหาที่ส่งไปแล้ว จึงหยุดคำตอบเพราะไม่สามารถเรียกคืนเนื้อหาที่ส่งไปแล้วได้",
+  "aiEndTokenBudget": "การสนทนานี้ถึงขีดจำกัดการใช้งานแล้ว โปรดเริ่มการสนทนาใหม่"
 }

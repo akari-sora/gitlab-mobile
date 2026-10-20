@@ -5,10 +5,15 @@ import '../../gitlab_api.dart';
 typedef AiJson = Map<String, Object?>;
 
 final class AiPortRead<T> {
-  const AiPortRead(this.value, {required this.requestCount});
+  const AiPortRead(
+    this.value, {
+    required this.requestCount,
+    this.incomplete = false,
+  });
 
   final T value;
   final int requestCount;
+  final bool incomplete;
 }
 
 final class AiTreeItem {
@@ -69,7 +74,11 @@ final class GitLabAiReadPort implements AiGitLabReadPort {
       );
       next = page.next;
     } while (next != null && requests < 4);
-    return AiPortRead(List.unmodifiable(items), requestCount: requests);
+    return AiPortRead(
+      List.unmodifiable(items),
+      requestCount: requests,
+      incomplete: next != null,
+    );
   }
 
   @override
@@ -143,19 +152,62 @@ final class GitLabAiReadPort implements AiGitLabReadPort {
       ['projects', '$projectId', 'pipelines', '$pipelineId', 'jobs'],
       query: const {'per_page': '100'},
     );
-    return AiPortRead(page.items, requestCount: 1);
+    return AiPortRead(
+      page.items,
+      requestCount: 1,
+      incomplete: page.next != null,
+    );
   }
 
   @override
   Future<AiPortRead<String>> jobLog(int jobId) async {
-    final chunk = await _api.jobTraceChunk(
-      projectId,
-      jobId,
-      maxBytes: GitLabApi.maxTextBytes,
-    );
+    final bytes = <int>[];
+    int? declaredTotal;
+    var offset = 0;
+    var requests = 0;
+    while (true) {
+      final chunk = await _api.jobTraceChunk(
+        projectId,
+        jobId,
+        offset: offset,
+        maxBytes: GitLabApi.maxTextBytes,
+      );
+      requests += chunk.requestCount;
+      if (chunk.startOffset != offset) {
+        throw const FormatException('Job trace chunks are not contiguous.');
+      }
+      if (chunk.totalBytes != null) {
+        if (declaredTotal != null && declaredTotal != chunk.totalBytes) {
+          throw const FormatException('Job trace total changed while reading.');
+        }
+        declaredTotal = chunk.totalBytes;
+      }
+      if ((declaredTotal ?? 0) > GitLabApi.maxTextBytes ||
+          bytes.length + chunk.bytes.length > GitLabApi.maxTextBytes) {
+        throw const FormatException('Job trace exceeds the redaction limit.');
+      }
+      if (declaredTotal != null &&
+          bytes.length + chunk.bytes.length > declaredTotal) {
+        throw const FormatException('Job trace exceeds its declared total.');
+      }
+      bytes.addAll(chunk.bytes);
+      final nextOffset = chunk.nextOffset ?? offset;
+      if (chunk.isEof || chunk.bytes.isEmpty || nextOffset <= offset) {
+        if (declaredTotal != null && bytes.length < declaredTotal) {
+          throw const FormatException(
+            'Job trace ended before its declared total.',
+          );
+        }
+        break;
+      }
+      if (requests >= 4) {
+        throw const FormatException('Job trace is incomplete.');
+      }
+      offset = nextOffset;
+    }
     return AiPortRead(
-      utf8.decode(chunk.bytes, allowMalformed: true),
-      requestCount: 1,
+      utf8.decode(bytes, allowMalformed: true),
+      requestCount: requests,
     );
   }
 
@@ -170,12 +222,20 @@ final class GitLabAiReadPort implements AiGitLabReadPort {
       sha,
       query: const {'per_page': '100'},
     );
-    return AiPortRead(page.items, requestCount: 1);
+    return AiPortRead(
+      page.items,
+      requestCount: 1,
+      incomplete: page.next != null,
+    );
   }
 
   @override
   Future<AiPortRead<List<AiJson>>> search(String scope, String query) async {
     final page = await _api.search(scope, query, projectId: projectId);
-    return AiPortRead(page.items, requestCount: 1);
+    return AiPortRead(
+      page.items,
+      requestCount: 1,
+      incomplete: page.next != null,
+    );
   }
 }

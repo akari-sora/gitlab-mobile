@@ -158,6 +158,46 @@ class CatalogTest(unittest.TestCase):
                         words = set(re.findall(r'[A-Za-z]+', catalog[key]))
                         self.assertEqual(words - product_words, set(), 'unexpected Latin text')
 
+    def test_ai_runner_notices_keep_security_and_budget_semantics(self):
+        # Each replay notice must say both why the run stopped and why already
+        # sent content cannot be retracted. These are reviewed glossary phrases,
+        # not whole-message snapshots, so translators can still improve prose.
+        replay_markers = {
+            'ar': ('سر جديد', 'لا يمكن سحب'),
+            'cs': ('nový tajný údaj', 'nelze vzít zpět'),
+            'de': ('neues Geheimnis', 'nicht zurückgezogen'),
+            'en': ('new secret', 'cannot be retracted'),
+            'es': ('secreto nuevo', 'no se puede retirar'),
+            'fr': ('nouveau secret', 'ne peut pas être retiré'),
+            'hi': ('नया रहस्य', 'वापस नहीं ली जा सकती'),
+            'id': ('Rahasia baru', 'tidak dapat ditarik kembali'),
+            'it': ('nuovo segreto', 'non possono essere ritirati'),
+            'ja': ('新しい秘密情報', '取り消せない'),
+            'ko': ('새로운 비밀 정보', '취소할 수 없어'),
+            'ms': ('Rahsia baharu', 'tidak boleh ditarik balik'),
+            'nl': ('nieuw geheim', 'niet kan worden ingetrokken'),
+            'pl': ('nowy sekret', 'nie można wycofać'),
+            'pt-BR': ('novo segredo', 'não pode ser retirado'),
+            'ro': ('secret nou', 'nu poate fi retras'),
+            'ru': ('новый секрет', 'нельзя отозвать'),
+            'sv': ('ny hemlighet', 'inte kan återkallas'),
+            'th': ('ความลับใหม่', 'ไม่สามารถเรียกคืน'),
+            'tr': ('yeni bir gizli bilgi', 'geri alınamayacağı'),
+            'uk': ('новий секрет', 'неможливо відкликати'),
+            'vi': ('bí mật mới', 'không thể thu hồi'),
+            'zh-CN': ('新的秘密', '无法撤回'),
+            'zh-TW': ('新的秘密', '無法撤回'),
+        }
+        _, catalogs = l10n.load()
+        self.assertEqual(set(replay_markers), set(catalogs))
+        for tag, catalog in catalogs.items():
+            with self.subTest(tag=tag):
+                self.assertIn('GitLab', catalog['aiBudgetGitLabReads'])
+                replay = catalog['aiReplayProtectionStopped']
+                for marker in replay_markers[tag]:
+                    self.assertIn(marker, replay)
+                self.assertTrue(catalog['aiEndTokenBudget'].strip())
+
     def test_ai_history_uses_stable_ai_and_api_terms(self):
         _, catalogs = l10n.load()
         history_keys = [

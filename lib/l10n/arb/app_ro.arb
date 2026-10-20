@@ -2100,5 +2100,6 @@
   "aiUsageEstimated": "Utilizarea este estimată",
   "aiContextAttachedOnce": "Contextul atașat este trimis doar cu primul mesaj",
   "aiProjectionOlderTurnsRemoved": "Replicile vechi au fost eliminate din rezumat",
-  "aiReplayProtectionStopped": "Răspunsul a fost oprit pentru a proteja conținutul trimis anterior"
+  "aiReplayProtectionStopped": "A fost detectat un secret nou în conținut deja trimis. Răspunsul a fost oprit deoarece conținutul trimis nu poate fi retras",
+  "aiEndTokenBudget": "Conversația a atins limita de utilizare. Începeți o conversație nouă"
 }

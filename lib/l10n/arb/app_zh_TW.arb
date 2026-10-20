@@ -10504,6 +10504,8 @@
   "@aiContextAttachedOnce": {"description": "AI notice that initial context is attached once", "placeholders": {}},
   "aiProjectionOlderTurnsRemoved": "較早的回合已從摘要中移除",
   "@aiProjectionOlderTurnsRemoved": {"description": "AI projection notice after older turns are dropped", "placeholders": {}},
-  "aiReplayProtectionStopped": "為保護已送出的內容，回答已停止",
-  "@aiReplayProtectionStopped": {"description": "AI notice when replay protection stops a run", "placeholders": {}}
+  "aiReplayProtectionStopped": "已送出的內容中偵測到新的秘密。因為已送出的內容無法撤回，回答已停止",
+  "@aiReplayProtectionStopped": {"description": "AI notice when a new secret is detected in content already sent", "placeholders": {}},
+  "aiEndTokenBudget": "此對話已達用量上限，請開始新的對話",
+  "@aiEndTokenBudget": {"description": "AI run end notice when the conversation token budget is exhausted", "placeholders": {}}
 }

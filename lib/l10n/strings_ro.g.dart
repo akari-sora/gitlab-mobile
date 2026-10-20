@@ -2102,5 +2102,6 @@ const _messagesRo = <String>[
   'Utilizarea este estimată',
   'Contextul atașat este trimis doar cu primul mesaj',
   'Replicile vechi au fost eliminate din rezumat',
-  'Răspunsul a fost oprit pentru a proteja conținutul trimis anterior',
+  'A fost detectat un secret nou în conținut deja trimis. Răspunsul a fost oprit deoarece conținutul trimis nu poate fi retras',
+  'Conversația a atins limita de utilizare. Începeți o conversație nouă',
 ];

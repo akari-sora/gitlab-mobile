@@ -2102,5 +2102,6 @@ const _messagesEs = <String>[
   'El uso es estimado',
   'El contexto adjunto se envía solo con el primer mensaje',
   'Los turnos anteriores se eliminaron del resumen',
-  'La respuesta se detuvo para proteger el contenido ya enviado',
+  'Se detectó un secreto nuevo en contenido ya enviado. La respuesta se detuvo porque el contenido enviado no se puede retirar',
+  'La conversación alcanzó el límite de uso. Inicia una conversación nueva',
 ];

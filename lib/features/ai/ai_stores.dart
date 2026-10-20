@@ -1194,6 +1194,7 @@ final class AiSettingsController extends ChangeNotifier {
     for (final provider in deleting) {
       _markProviderDeleting(provider);
     }
+    if (!mapEquals(_providerKeys, keys)) _secretSetId += 1;
     _providerKeys
       ..clear()
       ..addAll(keys);

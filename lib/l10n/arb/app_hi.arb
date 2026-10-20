@@ -2095,10 +2095,11 @@
   "aiEndSettingsChanged": "सेटिंग बदली और उत्तर रुक गया",
   "aiBudgetModelCalls": "मॉडल अनुरोध सीमा समाप्त हुई",
   "aiBudgetToolCalls": "उपकरण अनुरोध सीमा समाप्त हुई",
-  "aiBudgetGitLabReads": "भंडार पढ़ने की सीमा समाप्त हुई",
+  "aiBudgetGitLabReads": "GitLab पढ़ने की सीमा समाप्त हुई",
   "aiBudgetToolOutput": "उपकरण निर्गम सीमा समाप्त हुई",
   "aiUsageEstimated": "उपयोग अनुमानित है",
   "aiContextAttachedOnce": "संलग्न संदर्भ केवल पहले संदेश के साथ भेजा जाता है",
   "aiProjectionOlderTurnsRemoved": "पुराने संवाद सारांश से हटाए गए",
-  "aiReplayProtectionStopped": "पहले भेजी सामग्री की रक्षा के लिए उत्तर रोका गया"
+  "aiReplayProtectionStopped": "पहले भेजी गई सामग्री में नया रहस्य मिला। भेजी गई सामग्री वापस नहीं ली जा सकती, इसलिए उत्तर रोक दिया गया",
+  "aiEndTokenBudget": "इस बातचीत की उपयोग सीमा पूरी हो गई। नई बातचीत शुरू करें"
 }

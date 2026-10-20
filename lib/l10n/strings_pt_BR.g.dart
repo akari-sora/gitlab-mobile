@@ -2102,5 +2102,6 @@ const _messagesPtBr = <String>[
   'O uso é estimado',
   'O contexto anexado é enviado apenas com a primeira mensagem',
   'Turnos antigos foram removidos do resumo',
-  'A resposta foi interrompida para proteger o conteúdo já enviado',
+  'Um novo segredo foi detectado em conteúdo já enviado. A resposta foi interrompida porque o conteúdo enviado não pode ser retirado',
+  'A conversa atingiu o limite de uso. Inicie uma nova conversa',
 ];

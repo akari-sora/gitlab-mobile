@@ -2100,5 +2100,6 @@
   "aiUsageEstimated": "Kullanım tahminidir",
   "aiContextAttachedOnce": "Eklenen bağlam yalnızca ilk iletiyle gönderilir",
   "aiProjectionOlderTurnsRemoved": "Eski konuşmalar özetten kaldırıldı",
-  "aiReplayProtectionStopped": "Daha önce gönderilen içeriği korumak için yanıt durduruldu"
+  "aiReplayProtectionStopped": "Daha önce gönderilmiş içerikte yeni bir gizli bilgi algılandı. Gönderilen içerik geri alınamayacağı için yanıt durduruldu",
+  "aiEndTokenBudget": "Bu konuşma kullanım sınırına ulaştı. Yeni bir konuşma başlatın"
 }

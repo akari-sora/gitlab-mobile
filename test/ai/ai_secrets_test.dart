@@ -8,6 +8,28 @@ import 'package:gitlab_mobile/features/auth/session_controller.dart';
 
 void main() {
   test(
+    'refresh observes provider keys loaded after an early refresh',
+    () async {
+      final store = MemoryAiStore();
+      await store.saveProviders(<AiProviderConfig>[_provider()]);
+      await store.saveProviderKey('provider', 'stored-secret-value');
+      final settings = AiSettingsController(store);
+      final session = SessionController(_EmptyAccountStore());
+      final secrets = KnownSecretsLive(session, settings);
+      addTearDown(settings.dispose);
+      addTearDown(session.dispose);
+
+      await secrets.refresh();
+      expect(secrets.current, isNot(contains('stored-secret-value')));
+
+      await settings.initialize();
+      await secrets.refresh();
+
+      expect(secrets.current, contains('stored-secret-value'));
+    },
+  );
+
+  test(
     'refresh keeps the conversation-lifetime union of provider keys',
     () async {
       final store = MemoryAiStore();

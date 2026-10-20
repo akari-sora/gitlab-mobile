@@ -1425,7 +1425,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     }
   }
 
-  Future<({List<int> bytes, bool isEof, int? nextOffset})> jobTraceChunk(
+  Future<({List<int> bytes, bool isEof, int? nextOffset, int? startOffset, int? totalBytes, int requestCount})> jobTraceChunk(
     int project,
     int job, {
     int offset = 0,
@@ -1452,16 +1452,21 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       var isEof = eofHeader == 'true' || eofHeader == '1';
 
       if (result.statusCode == 416) {
-        return (bytes: const <int>[], isEof: isEof, nextOffset: offset);
+        return (bytes: const <int>[], isEof: isEof, nextOffset: offset,
+          startOffset: offset, totalBytes: null, requestCount: 1);
       }
 
       final contentRange = result.headers.value('content-range');
+      int? startOffset = result.statusCode == 206 ? null : offset;
+      int? totalBytes;
       if (contentRange != null) {
-        final match = RegExp(r'bytes\s+\d+-(\d+)/(\d+)', caseSensitive: false)
+        final match = RegExp(r'bytes\s+(\d+)-(\d+)/(\d+)', caseSensitive: false)
             .firstMatch(contentRange);
         if (match != null) {
-          final end = int.tryParse(match.group(1) ?? '');
-          final total = int.tryParse(match.group(2) ?? '');
+          startOffset = int.tryParse(match.group(1) ?? '');
+          final end = int.tryParse(match.group(2) ?? '');
+          final total = int.tryParse(match.group(3) ?? '');
+          totalBytes = total;
           if (end != null && total != null && end + 1 >= total) {
             isEof = true;
           }
@@ -1484,7 +1489,8 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       }
 
       final nextOffset = offset + chunkBytes.length;
-      return (bytes: chunkBytes, isEof: isEof, nextOffset: nextOffset);
+      return (bytes: chunkBytes, isEof: isEof, nextOffset: nextOffset,
+        startOffset: startOffset, totalBytes: totalBytes, requestCount: 1);
     } on ApiFailure catch (failure) {
       if (failure.status != 404) rethrow;
       final current = await _object(
@@ -1498,7 +1504,8 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         'preparing',
         'waiting_for_resource',
       ].contains(current['status'])) {
-        return (bytes: const <int>[], isEof: false, nextOffset: offset);
+        return (bytes: const <int>[], isEof: false, nextOffset: offset,
+          startOffset: offset, totalBytes: null, requestCount: 2);
       }
       rethrow;
     }

@@ -2102,5 +2102,6 @@ const _messagesCs = <String>[
   'Využití je odhadované',
   'Přiložený kontext se odešle jen s první zprávou',
   'Starší části konverzace byly ze souhrnu odebrány',
-  'Odpověď byla zastavena kvůli ochraně dříve odeslaného obsahu',
+  'V již odeslaném obsahu byl zjištěn nový tajný údaj. Odpověď byla zastavena, protože odeslaný obsah nelze vzít zpět',
+  'Konverzace dosáhla limitu využití. Zahajte novou konverzaci',
 ];
