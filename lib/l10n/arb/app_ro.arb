@@ -2077,5 +2077,7 @@
   "aiHistoryUnsupported": "O parte din istoricul AI folosește un format neacceptat și a fost păstrată pe acest dispozitiv.",
   "aiHistoryNotSaved": "Această conversație nu a putut fi salvată. Încearcă din nou.",
   "aiHistoryEvicted": "Această conversație a fost eliminată din istoricul salvat pentru a elibera spațiu.",
-  "aiKeyTooShort": "Cheia API trebuie să aibă cel puțin 4 caractere."
+  "aiHistoryReadFailed": "Istoricul nu a putut fi citit. Încercați din nou.",
+  "aiHistoryTemporaryFilesRemoved": "Fișierele temporare învechite ale istoricului au fost eliminate.",
+  "aiHistoryClearUnsupported": "Șterge istoricul neacceptat"
 }

@@ -2079,5 +2079,7 @@ const _messagesSv = <String>[
   'En del av AI-historiken använder ett format som inte stöds och behölls på den här enheten.',
   'Konversationen kunde inte sparas. Försök igen.',
   'Konversationen togs bort från sparad historik för att frigöra lagringsutrymme.',
-  'API-nyckeln måste vara minst 4 tecken.',
+  'Historiken kunde inte läsas. Försök igen.',
+  'Inaktuella tillfälliga historikfiler togs bort.',
+  'Rensa historik som inte stöds',
 ];

@@ -2079,5 +2079,7 @@ const _messagesId = <String>[
   'Sebagian riwayat AI menggunakan format yang tidak didukung dan dipertahankan di perangkat ini.',
   'Percakapan ini tidak dapat disimpan. Coba lagi.',
   'Percakapan ini dihapus dari riwayat tersimpan untuk mengosongkan ruang.',
-  'Kunci API harus terdiri dari setidaknya 4 karakter.',
+  'Riwayat tidak dapat dibaca. Coba lagi.',
+  'Berkas riwayat sementara yang usang telah dihapus.',
+  'Hapus riwayat yang tidak didukung',
 ];

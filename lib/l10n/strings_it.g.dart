@@ -2079,5 +2079,7 @@ const _messagesIt = <String>[
   'Parte della cronologia AI usa un formato non supportato ed è stata conservata su questo dispositivo.',
   'Impossibile salvare questa conversazione. Riprova.',
   'Questa conversazione è stata rimossa dalla cronologia salvata per liberare spazio.',
-  'La chiave API deve contenere almeno 4 caratteri.',
+  'Impossibile leggere la cronologia. Riprova.',
+  'I file temporanei obsoleti della cronologia sono stati rimossi.',
+  'Cancella cronologia non supportata',
 ];

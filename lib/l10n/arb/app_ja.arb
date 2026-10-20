@@ -2077,5 +2077,7 @@
   "aiHistoryUnsupported": "一部のAI履歴は対応していない形式のため、このデバイスに保持されました。",
   "aiHistoryNotSaved": "この会話を保存できませんでした。もう一度お試しください。",
   "aiHistoryEvicted": "保存領域を空けるため、この会話を保存済み履歴から削除しました。",
-  "aiKeyTooShort": "APIキーは4文字以上必要です。"
+  "aiHistoryReadFailed": "履歴を読み取れませんでした。もう一度お試しください。",
+  "aiHistoryTemporaryFilesRemoved": "古い一時履歴ファイルを削除しました。",
+  "aiHistoryClearUnsupported": "未対応の履歴を消去"
 }

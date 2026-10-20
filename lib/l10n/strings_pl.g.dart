@@ -2079,5 +2079,7 @@ const _messagesPl = <String>[
   'Część historii AI używa nieobsługiwanego formatu i została zachowana na tym urządzeniu.',
   'Nie udało się zapisać tej rozmowy. Spróbuj ponownie.',
   'Ta rozmowa została usunięta z zapisanej historii, aby zwolnić miejsce.',
-  'Klucz API musi mieć co najmniej 4 znaki.',
+  'Nie udało się odczytać historii. Spróbuj ponownie.',
+  'Usunięto nieaktualne tymczasowe pliki historii.',
+  'Wyczyść nieobsługiwaną historię',
 ];

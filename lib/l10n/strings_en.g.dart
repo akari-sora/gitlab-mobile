@@ -2079,5 +2079,7 @@ const _messagesEn = <String>[
   'Some AI history uses an unsupported format and was kept on this device.',
   'This conversation could not be saved. Try again.',
   'This conversation was removed from saved history to free storage.',
-  'The API key must be at least 4 characters.',
+  'History could not be read. Retry.',
+  'Stale temporary history files were removed.',
+  'Clear unsupported history',
 ];

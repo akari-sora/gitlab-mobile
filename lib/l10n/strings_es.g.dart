@@ -2079,5 +2079,7 @@ const _messagesEs = <String>[
   'Parte del historial de AI usa un formato no compatible y se conservó en este dispositivo.',
   'No se pudo guardar esta conversación. Inténtalo de nuevo.',
   'Esta conversación se eliminó del historial guardado para liberar almacenamiento.',
-  'La clave de API debe tener al menos 4 caracteres.',
+  'No se pudo leer el historial. Inténtalo de nuevo.',
+  'Se eliminaron los archivos temporales obsoletos del historial.',
+  'Borrar historial no compatible',
 ];

@@ -6325,6 +6325,12 @@ final class AppStrings {
   /// 此對話已從已保存的紀錄中移除，以釋出儲存空間。
   String get aiHistoryEvicted => language._messages[2076];
 
-  /// API 金鑰至少需要 4 個字元。
-  String get aiKeyTooShort => language._messages[2077];
+  /// 無法讀取紀錄。請重試。
+  String get aiHistoryReadFailed => language._messages[2077];
+
+  /// 已移除過期的暫存紀錄檔。
+  String get aiHistoryTemporaryFilesRemoved => language._messages[2078];
+
+  /// 清除不受支援的紀錄
+  String get aiHistoryClearUnsupported => language._messages[2079];
 }

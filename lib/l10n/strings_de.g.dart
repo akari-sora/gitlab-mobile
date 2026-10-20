@@ -2079,5 +2079,7 @@ const _messagesDe = <String>[
   'Ein Teil des AI-Verlaufs verwendet ein nicht unterstütztes Format und wurde auf diesem Gerät behalten.',
   'Diese Unterhaltung konnte nicht gespeichert werden. Versuchen Sie es erneut.',
   'Diese Unterhaltung wurde aus dem gespeicherten Verlauf entfernt, um Speicherplatz freizugeben.',
-  'Der API-Schlüssel muss mindestens 4 Zeichen lang sein.',
+  'Der Verlauf konnte nicht gelesen werden. Versuchen Sie es erneut.',
+  'Veraltete temporäre Verlaufsdateien wurden entfernt.',
+  'Nicht unterstützten Verlauf löschen',
 ];

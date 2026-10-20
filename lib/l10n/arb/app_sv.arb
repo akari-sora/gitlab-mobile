@@ -2077,5 +2077,7 @@
   "aiHistoryUnsupported": "En del av AI-historiken använder ett format som inte stöds och behölls på den här enheten.",
   "aiHistoryNotSaved": "Konversationen kunde inte sparas. Försök igen.",
   "aiHistoryEvicted": "Konversationen togs bort från sparad historik för att frigöra lagringsutrymme.",
-  "aiKeyTooShort": "API-nyckeln måste vara minst 4 tecken."
+  "aiHistoryReadFailed": "Historiken kunde inte läsas. Försök igen.",
+  "aiHistoryTemporaryFilesRemoved": "Inaktuella tillfälliga historikfiler togs bort.",
+  "aiHistoryClearUnsupported": "Rensa historik som inte stöds"
 }

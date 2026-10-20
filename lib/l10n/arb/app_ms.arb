@@ -2077,5 +2077,7 @@
   "aiHistoryUnsupported": "Sebahagian sejarah AI menggunakan format yang tidak disokong dan dikekalkan pada peranti ini.",
   "aiHistoryNotSaved": "Perbualan ini tidak dapat disimpan. Cuba lagi.",
   "aiHistoryEvicted": "Perbualan ini dialih keluar daripada sejarah tersimpan untuk mengosongkan storan.",
-  "aiKeyTooShort": "Kunci API mestilah sekurang-kurangnya 4 aksara."
+  "aiHistoryReadFailed": "Sejarah tidak dapat dibaca. Cuba lagi.",
+  "aiHistoryTemporaryFilesRemoved": "Fail sejarah sementara yang lapuk telah dialih keluar.",
+  "aiHistoryClearUnsupported": "Kosongkan sejarah yang tidak disokong"
 }

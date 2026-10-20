@@ -2079,5 +2079,7 @@ const _messagesFr = <String>[
   'Une partie de l’historique AI utilise un format non pris en charge et a été conservée sur cet appareil.',
   'Cette conversation n’a pas pu être enregistrée. Réessayez.',
   'Cette conversation a été supprimée de l’historique enregistré pour libérer de l’espace.',
-  'La clé API doit comporter au moins 4 caractères.',
+  'Impossible de lire l’historique. Réessayez.',
+  'Les fichiers temporaires obsolètes de l’historique ont été supprimés.',
+  'Effacer l’historique non pris en charge',
 ];

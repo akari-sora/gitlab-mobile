@@ -2077,5 +2077,7 @@
   "aiHistoryUnsupported": "部分 AI 记录使用不受支持的格式，已保留在此设备上。",
   "aiHistoryNotSaved": "无法保存此对话，请重试。",
   "aiHistoryEvicted": "此对话已从保存的记录中移除，以释放存储空间。",
-  "aiKeyTooShort": "API 密钥至少需要 4 个字符。"
+  "aiHistoryReadFailed": "无法读取记录。请重试。",
+  "aiHistoryTemporaryFilesRemoved": "已移除过期的临时记录文件。",
+  "aiHistoryClearUnsupported": "清除不受支持的记录"
 }

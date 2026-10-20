@@ -2077,5 +2077,7 @@
   "aiHistoryUnsupported": "Une partie de l’historique AI utilise un format non pris en charge et a été conservée sur cet appareil.",
   "aiHistoryNotSaved": "Cette conversation n’a pas pu être enregistrée. Réessayez.",
   "aiHistoryEvicted": "Cette conversation a été supprimée de l’historique enregistré pour libérer de l’espace.",
-  "aiKeyTooShort": "La clé API doit comporter au moins 4 caractères."
+  "aiHistoryReadFailed": "Impossible de lire l’historique. Réessayez.",
+  "aiHistoryTemporaryFilesRemoved": "Les fichiers temporaires obsolètes de l’historique ont été supprimés.",
+  "aiHistoryClearUnsupported": "Effacer l’historique non pris en charge"
 }

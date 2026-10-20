@@ -2077,5 +2077,7 @@
   "aiHistoryUnsupported": "AI geçmişinin bir bölümü desteklenmeyen bir biçim kullanıyor ve bu cihazda tutuldu.",
   "aiHistoryNotSaved": "Bu konuşma kaydedilemedi. Tekrar deneyin.",
   "aiHistoryEvicted": "Bu konuşma, depolama alanı açmak için kayıtlı geçmişten kaldırıldı.",
-  "aiKeyTooShort": "API anahtarı en az 4 karakter olmalıdır."
+  "aiHistoryReadFailed": "Geçmiş okunamadı. Tekrar deneyin.",
+  "aiHistoryTemporaryFilesRemoved": "Eski geçici geçmiş dosyaları kaldırıldı.",
+  "aiHistoryClearUnsupported": "Desteklenmeyen geçmişi temizle"
 }

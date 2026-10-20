@@ -2079,5 +2079,7 @@ const _messagesRo = <String>[
   'O parte din istoricul AI folosește un format neacceptat și a fost păstrată pe acest dispozitiv.',
   'Această conversație nu a putut fi salvată. Încearcă din nou.',
   'Această conversație a fost eliminată din istoricul salvat pentru a elibera spațiu.',
-  'Cheia API trebuie să aibă cel puțin 4 caractere.',
+  'Istoricul nu a putut fi citit. Încercați din nou.',
+  'Fișierele temporare învechite ale istoricului au fost eliminate.',
+  'Șterge istoricul neacceptat',
 ];

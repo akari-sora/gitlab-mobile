@@ -2079,5 +2079,7 @@ const _messagesVi = <String>[
   'Một phần lịch sử AI dùng định dạng không được hỗ trợ và được giữ lại trên thiết bị này.',
   'Không thể lưu cuộc trò chuyện này. Hãy thử lại.',
   'Cuộc trò chuyện này đã bị xóa khỏi lịch sử đã lưu để giải phóng dung lượng.',
-  'Khóa API phải có ít nhất 4 ký tự.',
+  'Không thể đọc lịch sử. Hãy thử lại.',
+  'Các tệp lịch sử tạm thời cũ đã được xóa.',
+  'Xóa lịch sử không được hỗ trợ',
 ];

@@ -2077,5 +2077,7 @@
   "aiHistoryUnsupported": "يستخدم جزء من سجل AI تنسيقًا غير مدعوم، وقد تم الاحتفاظ به على هذا الجهاز.",
   "aiHistoryNotSaved": "تعذر حفظ هذه المحادثة. حاول مرة أخرى.",
   "aiHistoryEvicted": "أُزيلت هذه المحادثة من السجل المحفوظ لتوفير مساحة تخزين.",
-  "aiKeyTooShort": "يجب ألا يقل مفتاح API عن 4 أحرف."
+  "aiHistoryReadFailed": "تعذرت قراءة السجل. أعد المحاولة.",
+  "aiHistoryTemporaryFilesRemoved": "أُزيلت ملفات السجل المؤقتة القديمة.",
+  "aiHistoryClearUnsupported": "مسح السجل غير المدعوم"
 }

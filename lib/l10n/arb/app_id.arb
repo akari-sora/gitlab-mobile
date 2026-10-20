@@ -2077,5 +2077,7 @@
   "aiHistoryUnsupported": "Sebagian riwayat AI menggunakan format yang tidak didukung dan dipertahankan di perangkat ini.",
   "aiHistoryNotSaved": "Percakapan ini tidak dapat disimpan. Coba lagi.",
   "aiHistoryEvicted": "Percakapan ini dihapus dari riwayat tersimpan untuk mengosongkan ruang.",
-  "aiKeyTooShort": "Kunci API harus terdiri dari setidaknya 4 karakter."
+  "aiHistoryReadFailed": "Riwayat tidak dapat dibaca. Coba lagi.",
+  "aiHistoryTemporaryFilesRemoved": "Berkas riwayat sementara yang usang telah dihapus.",
+  "aiHistoryClearUnsupported": "Hapus riwayat yang tidak didukung"
 }

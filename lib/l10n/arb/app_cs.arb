@@ -2077,5 +2077,7 @@
   "aiHistoryUnsupported": "Část historie AI používá nepodporovaný formát a byla v tomto zařízení zachována.",
   "aiHistoryNotSaved": "Tuto konverzaci se nepodařilo uložit. Zkuste to znovu.",
   "aiHistoryEvicted": "Tato konverzace byla odstraněna z uložené historie, aby se uvolnilo místo.",
-  "aiKeyTooShort": "Klíč API musí mít alespoň 4 znaky."
+  "aiHistoryReadFailed": "Historii se nepodařilo přečíst. Zkuste to znovu.",
+  "aiHistoryTemporaryFilesRemoved": "Zastaralé dočasné soubory historie byly odstraněny.",
+  "aiHistoryClearUnsupported": "Vymazat nepodporovanou historii"
 }

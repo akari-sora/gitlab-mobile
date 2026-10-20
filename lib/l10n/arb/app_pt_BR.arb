@@ -2077,5 +2077,7 @@
   "aiHistoryUnsupported": "Parte do histórico de AI usa um formato incompatível e foi mantida neste dispositivo.",
   "aiHistoryNotSaved": "Não foi possível salvar esta conversa. Tente novamente.",
   "aiHistoryEvicted": "Esta conversa foi removida do histórico salvo para liberar armazenamento.",
-  "aiKeyTooShort": "A chave da API deve ter pelo menos 4 caracteres."
+  "aiHistoryReadFailed": "Não foi possível ler o histórico. Tente novamente.",
+  "aiHistoryTemporaryFilesRemoved": "Os arquivos temporários obsoletos do histórico foram removidos.",
+  "aiHistoryClearUnsupported": "Limpar histórico não compatível"
 }

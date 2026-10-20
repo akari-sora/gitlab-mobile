@@ -152,8 +152,18 @@ void main() {
       final revoke = settings.revokeConsent('account', 'p');
       await store.accountLoadStarted.future;
       final clear = history.clearAccount('account');
+      final rejected = expectLater(
+        revoke,
+        throwsA(
+          isA<AiStoreException>().having(
+            (error) => error.failure.kind,
+            'kind',
+            AiStoreFailureKind.cleaning,
+          ),
+        ),
+      );
       store.releaseAccountLoad();
-      await revoke;
+      await rejected;
       await clear;
 
       expect(settings.accountRecord('account'), isNull);

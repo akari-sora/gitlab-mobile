@@ -2079,5 +2079,7 @@ const _messagesTr = <String>[
   'AI geçmişinin bir bölümü desteklenmeyen bir biçim kullanıyor ve bu cihazda tutuldu.',
   'Bu konuşma kaydedilemedi. Tekrar deneyin.',
   'Bu konuşma, depolama alanı açmak için kayıtlı geçmişten kaldırıldı.',
-  'API anahtarı en az 4 karakter olmalıdır.',
+  'Geçmiş okunamadı. Tekrar deneyin.',
+  'Eski geçici geçmiş dosyaları kaldırıldı.',
+  'Desteklenmeyen geçmişi temizle',
 ];

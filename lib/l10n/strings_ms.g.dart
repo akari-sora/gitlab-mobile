@@ -2079,5 +2079,7 @@ const _messagesMs = <String>[
   'Sebahagian sejarah AI menggunakan format yang tidak disokong dan dikekalkan pada peranti ini.',
   'Perbualan ini tidak dapat disimpan. Cuba lagi.',
   'Perbualan ini dialih keluar daripada sejarah tersimpan untuk mengosongkan storan.',
-  'Kunci API mestilah sekurang-kurangnya 4 aksara.',
+  'Sejarah tidak dapat dibaca. Cuba lagi.',
+  'Fail sejarah sementara yang lapuk telah dialih keluar.',
+  'Kosongkan sejarah yang tidak disokong',
 ];

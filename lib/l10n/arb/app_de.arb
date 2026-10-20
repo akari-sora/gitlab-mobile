@@ -2077,5 +2077,7 @@
   "aiHistoryUnsupported": "Ein Teil des AI-Verlaufs verwendet ein nicht unterstütztes Format und wurde auf diesem Gerät behalten.",
   "aiHistoryNotSaved": "Diese Unterhaltung konnte nicht gespeichert werden. Versuchen Sie es erneut.",
   "aiHistoryEvicted": "Diese Unterhaltung wurde aus dem gespeicherten Verlauf entfernt, um Speicherplatz freizugeben.",
-  "aiKeyTooShort": "Der API-Schlüssel muss mindestens 4 Zeichen lang sein."
+  "aiHistoryReadFailed": "Der Verlauf konnte nicht gelesen werden. Versuchen Sie es erneut.",
+  "aiHistoryTemporaryFilesRemoved": "Veraltete temporäre Verlaufsdateien wurden entfernt.",
+  "aiHistoryClearUnsupported": "Nicht unterstützten Verlauf löschen"
 }

@@ -2077,5 +2077,7 @@
   "aiHistoryUnsupported": "Parte della cronologia AI usa un formato non supportato ed è stata conservata su questo dispositivo.",
   "aiHistoryNotSaved": "Impossibile salvare questa conversazione. Riprova.",
   "aiHistoryEvicted": "Questa conversazione è stata rimossa dalla cronologia salvata per liberare spazio.",
-  "aiKeyTooShort": "La chiave API deve contenere almeno 4 caratteri."
+  "aiHistoryReadFailed": "Impossibile leggere la cronologia. Riprova.",
+  "aiHistoryTemporaryFilesRemoved": "I file temporanei obsoleti della cronologia sono stati rimossi.",
+  "aiHistoryClearUnsupported": "Cancella cronologia non supportata"
 }

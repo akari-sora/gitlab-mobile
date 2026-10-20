@@ -433,9 +433,10 @@ malformed later chunk cannot erase earlier usage.
 ## AI assistant verification: MR3
 
 MR3 round 0 is commit `22d5aaa530df7d3460c528522e4967ac7620cb45`, based on
-`93c164eca8d5498f8d19d38c2d892521a7f727f3`. Round 1 (FIX1) is pending the
-orchestrator's commit. No commit or push was performed. Pipeline/job evidence
-is **NOT_RUN**; no pipeline was queried or triggered.
+`93c164eca8d5498f8d19d38c2d892521a7f727f3`. Round 1 (FIX1) is commit
+`2c033a16d335bec9d4582462114925412049ddf1`. Round 2 (FIX2) is the commit
+containing this section. Pipeline/job evidence is **NOT_RUN**; no pipeline was
+queried or triggered.
 
 MR3 adds device-scoped provider settings/keys, account-scoped consent/history
 settings, encrypted display-only history, startup recovery and unconditional
@@ -468,6 +469,18 @@ a successful empty account list authorizes orphan cleanup of restored files.
 `keyMissing` describes partial Keychain loss with a surviving account list.
 Malformed individual tombstones are skipped and reported, without blocking
 valid recovery. This corrects the design's §5.7.6 restore expectation.
+
+FIX2 keeps provider-deletion markers across every provider-list write, removes
+orphan provider keys at startup and invalidates peer settings controllers while
+deletion is pending. Authenticated unsupported conversations are quarantined
+from overwrite, stale-index deletion and eviction; they count toward capacity
+and an unsupported index exposes an explicit clear action. Cleanup leases reopen retained or newly
+signed-in accounts after completion or cancellation, and fenced writes return a
+typed result. Read failures, stale temporary-file removal and later index-write
+failures have distinct sticky notices. Malformed account/key inventory entries
+and per-account startup failures are isolated and reported. The unused provider
+key-length message was removed; all 24 catalogs include the new history recovery
+messages.
 
 FIX1 regression evidence and acceptance commands/counts/output tails follow
 inline. Results are local synthetic evidence only; Android emulator, physical

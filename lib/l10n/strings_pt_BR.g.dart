@@ -2079,5 +2079,7 @@ const _messagesPtBr = <String>[
   'Parte do histórico de AI usa um formato incompatível e foi mantida neste dispositivo.',
   'Não foi possível salvar esta conversa. Tente novamente.',
   'Esta conversa foi removida do histórico salvo para liberar armazenamento.',
-  'A chave da API deve ter pelo menos 4 caracteres.',
+  'Não foi possível ler o histórico. Tente novamente.',
+  'Os arquivos temporários obsoletos do histórico foram removidos.',
+  'Limpar histórico não compatível',
 ];

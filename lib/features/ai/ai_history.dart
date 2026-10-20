@@ -17,6 +17,7 @@ enum AiHistoryState {
   unknown,
   disabled,
   ready,
+  readFailed,
   unavailable,
   keyMissing,
   cleaning,
@@ -38,6 +39,8 @@ final class _AccountHistory {
   bool removedUnreadable = false;
   bool repairedIndex = false;
   bool unsupported = false;
+  bool unsupportedIndex = false;
+  bool removedStaleTemporary = false;
   AiStoreFailure? failure;
 }
 
@@ -55,6 +58,7 @@ final class AiHistoryCoordinator extends ChangeNotifier
       for (final entry in _accounts.entries) {
         if (aiHistoryAccountSegment(entry.key) == segment &&
             const {
+              AiHistoryState.readFailed,
               AiHistoryState.unavailable,
               AiHistoryState.keyMissing,
               AiHistoryState.cleaning,
@@ -108,6 +112,8 @@ final class AiHistoryCoordinator extends ChangeNotifier
   bool storageLimitReached(String account, String id) =>
       _entry(account).fullConversations.contains(id);
   AiStoreFailure? failure(String account) => _entry(account).failure;
+  bool canClearUnsupportedIndex(String account) =>
+      _entry(account).unsupportedIndex;
   bool removedUnreadable(String account) => _entry(account).removedUnreadable;
   bool saveFailed(String account, String id) =>
       _entry(account).failedConversations.contains(id);
@@ -119,6 +125,7 @@ final class AiHistoryCoordinator extends ChangeNotifier
     entry.removedUnreadable = false;
     entry.repairedIndex = false;
     entry.unsupported = false;
+    entry.removedStaleTemporary = false;
     _emit();
   }
 
@@ -126,6 +133,8 @@ final class AiHistoryCoordinator extends ChangeNotifier
     entry.removedUnreadable |= result.removedUnreadable;
     entry.repairedIndex |= result.repairedIndex;
     entry.unsupported |= result.unsupported;
+    entry.unsupportedIndex |= result.unsupportedIndex;
+    entry.removedStaleTemporary |= result.removedStaleTemporary;
   }
 
   String? notice(String account, {String? conversationId}) {
@@ -147,8 +156,10 @@ final class AiHistoryCoordinator extends ChangeNotifier
     }
     if (entry.removedUnreadable) return l10n.aiHistoryRemovedUnreadable;
     if (entry.unsupported) return l10n.aiHistoryUnsupported;
+    if (entry.removedStaleTemporary) return l10n.aiHistoryTemporaryFilesRemoved;
     if (entry.repairedIndex) return l10n.aiHistoryIndexRepaired;
     return switch (entry.state) {
+      AiHistoryState.readFailed => l10n.aiHistoryReadFailed,
       AiHistoryState.unavailable => l10n.aiHistoryUnavailable,
       AiHistoryState.keyMissing => l10n.aiHistoryKeyMissing,
       _ => null,
@@ -342,28 +353,34 @@ final class AiHistoryCoordinator extends ChangeNotifier
   Future<AiHistoryRecovery?> read(String account) =>
       _run(account, (entry) async {
         await _load(account, entry);
-        if (entry.state != AiHistoryState.ready) return null;
+        if (entry.state != AiHistoryState.ready &&
+            entry.state != AiHistoryState.readFailed) {
+          return null;
+        }
         final epoch = entry.epoch;
         try {
           final result = await files.recover(
             account,
             Uint8List.fromList(entry.key!),
             entry.record!.retentionDays,
+            onRecovery: (recovery) {
+              if (_current(entry, epoch)) _accumulateRecovery(entry, recovery);
+            },
           );
           if (!_current(entry, epoch)) return null;
           _accumulateRecovery(entry, result);
+          entry.state = AiHistoryState.ready;
+          entry.failure = null;
           _emit();
           return result;
         } catch (_) {
           if (_current(entry, epoch)) {
-            _unavailable(
-              account,
-              entry,
-              failure: const AiStoreFailure(
-                AiStoreFailureKind.unavailable,
-                'readHistory',
-              ),
+            entry.state = AiHistoryState.readFailed;
+            entry.failure = const AiStoreFailure(
+              AiStoreFailureKind.unavailable,
+              'readHistory',
             );
+            _emit();
           }
           return null;
         }
@@ -381,7 +398,9 @@ final class AiHistoryCoordinator extends ChangeNotifier
     return _run(account, (entry) async {
       if (!_current(entry, epoch)) return AiHistorySaveResult.cancelled;
       await _load(account, entry);
-      if (!_current(entry, epoch) || entry.state != AiHistoryState.ready) {
+      if (!_current(entry, epoch) ||
+          (entry.state != AiHistoryState.ready &&
+              entry.state != AiHistoryState.readFailed)) {
         return AiHistorySaveResult.cancelled;
       }
       if (entry.fullConversations.contains(conversation.id)) {
@@ -401,6 +420,9 @@ final class AiHistoryCoordinator extends ChangeNotifier
         if (!_current(entry, epoch)) return AiHistorySaveResult.cancelled;
         if (result == AiHistorySaveResult.storageLimit) {
           entry.fullConversations.add(conversation.id);
+        }
+        if (result == AiHistorySaveResult.unsupported) {
+          entry.unsupported = true;
         }
         if (result == AiHistorySaveResult.failed) {
           entry.failedConversations.add(conversation.id);
@@ -456,6 +478,8 @@ final class AiHistoryCoordinator extends ChangeNotifier
     entry.evictedConversations.clear();
     entry.repairedIndex = false;
     entry.unsupported = false;
+    entry.unsupportedIndex = false;
+    entry.removedStaleTemporary = false;
     entry.removedUnreadable = false;
     entry.failure = null;
     final pending = entry.tail;
@@ -486,6 +510,47 @@ final class AiHistoryCoordinator extends ChangeNotifier
     }
   }
 
+  void _reopenRetainedAccount(SessionController session, String account) {
+    final entry = _entry(account);
+    if (!session.accountsLoaded ||
+        !session.accounts.any((value) => value.key == account) ||
+        entry.state != AiHistoryState.disabled) {
+      return;
+    }
+    AiAccountMutationCoordinator.forStore(store).reopen(account);
+    entry.epoch++;
+    entry.state = AiHistoryState.unknown;
+    entry.failure = null;
+  }
+
+  /// Explicit destructive action for the later history UI. Unsupported
+  /// authenticated content is otherwise preserved indefinitely.
+  Future<AiHistoryClearUnsupportedIndexResult> clearUnsupportedIndex(
+    String account,
+  ) => _run(account, (entry) async {
+    await _load(account, entry);
+    if (entry.key == null || entry.state == AiHistoryState.cleaning) {
+      return AiHistoryClearUnsupportedIndexResult.failed;
+    }
+    final epoch = entry.epoch;
+    try {
+      final result = await files.clearUnsupportedIndex(
+        account,
+        Uint8List.fromList(entry.key!),
+      );
+      if (!_current(entry, epoch)) {
+        return AiHistoryClearUnsupportedIndexResult.failed;
+      }
+      if (result == AiHistoryClearUnsupportedIndexResult.cleared) {
+        entry.unsupportedIndex = false;
+        _emit();
+      }
+      return result;
+    } catch (_) {
+      return AiHistoryClearUnsupportedIndexResult.failed;
+    }
+  });
+
   void _trackAccountLifecycle(SessionController session) {
     if (_accountLifecycleListeners.containsKey(session)) return;
     var previous = session.accountsLoaded
@@ -495,12 +560,13 @@ final class AiHistoryCoordinator extends ChangeNotifier
       if (_disposed || !session.accountsLoaded) return;
       final live = session.accounts.map((account) => account.key).toSet();
       final owner = AiAccountMutationCoordinator.forStore(store);
-      for (final account in live.difference(previous)) {
+      for (final account in live) {
         final entry = _entry(account);
-        // A fresh membership transition may reopen a completed cleanup. A
-        // retained account with a failed cleanup remains fenced for retry.
+        // Session removal can fail and restore the same membership. Only a
+        // completed cleanup may reopen; a durable tombstone stays fenced.
         if (entry.state == AiHistoryState.disabled &&
-            owner.isCleaning(account)) {
+            owner.isCleaning(account) &&
+            (!previous.contains(account) || !session.busy)) {
           owner.reopen(account);
           entry.epoch++;
           entry.state = AiHistoryState.unknown;
@@ -557,6 +623,7 @@ final class AiHistoryCoordinator extends ChangeNotifier
       for (final account in inventory.accountKeys) {
         try {
           await clearAccount(account);
+          _reopenRetainedAccount(session, account);
         } on ApiFailure {
           /* Marker remains for retry. */
         }
@@ -569,6 +636,11 @@ final class AiHistoryCoordinator extends ChangeNotifier
         isCurrent: current,
       );
       if (!current()) return;
+      if (secureCleanup.malformedAccountKeyCount > 0 ||
+          secureCleanup.malformedHistoryKeyCount > 0) {
+        _recoveryInvalidData = true;
+        _emit();
+      }
       for (final account in {
         ...secureCleanup.deletedAccountRecords,
         ...secureCleanup.deletedHistoryKeys,
@@ -581,20 +653,37 @@ final class AiHistoryCoordinator extends ChangeNotifier
       await files.deleteOrphans(accounts, isCurrent: current);
       if (!current()) return;
       for (final account in accounts) {
-        await _run(account, (entry) async {
-          await _load(account, entry);
-          if (!current() || entry.state != AiHistoryState.ready) return;
-          final epoch = entry.epoch;
-          final recovery = await files.maintain(
-            account,
-            Uint8List.fromList(entry.key!),
-            entry.record!.retentionDays,
-          );
-          if (current() && _current(entry, epoch)) {
-            _accumulateRecovery(entry, recovery);
+        try {
+          await _run(account, (entry) async {
+            await _load(account, entry);
+            if (!current() || entry.state != AiHistoryState.ready) return;
+            final epoch = entry.epoch;
+            final recovery = await files.maintain(
+              account,
+              Uint8List.fromList(entry.key!),
+              entry.record!.retentionDays,
+              onRecovery: (recovery) {
+                if (current() && _current(entry, epoch)) {
+                  _accumulateRecovery(entry, recovery);
+                }
+              },
+            );
+            if (current() && _current(entry, epoch)) {
+              _accumulateRecovery(entry, recovery);
+              _emit();
+            }
+          });
+        } catch (_) {
+          final entry = _entry(account);
+          if (entry.state == AiHistoryState.ready) {
+            entry.state = AiHistoryState.readFailed;
+            entry.failure = const AiStoreFailure(
+              AiStoreFailureKind.unavailable,
+              'maintainHistory',
+            );
             _emit();
           }
-        });
+        }
         if (!current()) return;
       }
     } catch (_) {

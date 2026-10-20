@@ -10446,9 +10446,19 @@
     "description": "Notice shown when a conversation is evicted to satisfy a storage capacity limit",
     "placeholders": {}
   },
-  "aiKeyTooShort": "API 金鑰至少需要 4 個字元。",
-  "@aiKeyTooShort": {
-    "description": "Validation error for an AI provider API key shorter than four characters",
+  "aiHistoryReadFailed": "無法讀取紀錄。請重試。",
+  "@aiHistoryReadFailed": {
+    "description": "Failure shown when history files could not be read",
+    "placeholders": {}
+  },
+  "aiHistoryTemporaryFilesRemoved": "已移除過期的暫存紀錄檔。",
+  "@aiHistoryTemporaryFilesRemoved": {
+    "description": "Notice shown after stale temporary history files are removed",
+    "placeholders": {}
+  },
+  "aiHistoryClearUnsupported": "清除不受支援的紀錄",
+  "@aiHistoryClearUnsupported": {
+    "description": "Action label for clearing retained history that uses an unsupported format",
     "placeholders": {}
   }
 }

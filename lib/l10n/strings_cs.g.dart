@@ -2079,5 +2079,7 @@ const _messagesCs = <String>[
   'Část historie AI používá nepodporovaný formát a byla v tomto zařízení zachována.',
   'Tuto konverzaci se nepodařilo uložit. Zkuste to znovu.',
   'Tato konverzace byla odstraněna z uložené historie, aby se uvolnilo místo.',
-  'Klíč API musí mít alespoň 4 znaky.',
+  'Historii se nepodařilo přečíst. Zkuste to znovu.',
+  'Zastaralé dočasné soubory historie byly odstraněny.',
+  'Vymazat nepodporovanou historii',
 ];

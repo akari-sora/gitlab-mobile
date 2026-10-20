@@ -479,7 +479,7 @@ void main() {
   );
 
   test(
-    'coordinator exposes temporary file errors as unavailable without deleting history',
+    'coordinator exposes temporary file read failure without deleting history',
     () async {
       await enabled();
       expect(
@@ -498,7 +498,7 @@ void main() {
         ),
       );
       expect(await coordinator.read(account), isNull);
-      expect(coordinator.state(account), AiHistoryState.unavailable);
+      expect(coordinator.state(account), AiHistoryState.readFailed);
       expect(
         coordinator.failure(account)?.kind,
         AiStoreFailureKind.unavailable,

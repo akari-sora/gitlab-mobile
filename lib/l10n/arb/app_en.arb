@@ -2077,5 +2077,7 @@
   "aiHistoryUnsupported": "Some AI history uses an unsupported format and was kept on this device.",
   "aiHistoryNotSaved": "This conversation could not be saved. Try again.",
   "aiHistoryEvicted": "This conversation was removed from saved history to free storage.",
-  "aiKeyTooShort": "The API key must be at least 4 characters."
+  "aiHistoryReadFailed": "History could not be read. Retry.",
+  "aiHistoryTemporaryFilesRemoved": "Stale temporary history files were removed.",
+  "aiHistoryClearUnsupported": "Clear unsupported history"
 }
