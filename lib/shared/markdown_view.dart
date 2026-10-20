@@ -16,55 +16,80 @@ import 'theme.dart';
 
 import '../l10n/l10n.dart';
 
-// CommonMark 0.31: `<!-->` and `<!--->` are complete comments.
-final _comment = RegExp(r'<!--(?:-?>|.*?-->)');
 final _openingFence = RegExp(r'^[ \t]{0,3}(?:(`{3,})[^`]*|(~{3,}).*)$');
 final _closingFence = RegExp(r'^[ \t]{0,3}(`{3,}|~{3,})[ \t]*$');
 final _ruleOrUnderline = RegExp(r'^[ \t]{0,3}(?:(?:[-*_][ \t]*){3,}|=+[ \t]*)$');
 final _blockPrefix = RegExp(r'^[ \t]{0,3}(?:>[ \t]?)*[ \t]*(?:#{1,6}(?:[ \t]+|$))?');
+// Every pattern stops at the next bracket, underscore or angle bracket, so
+// a line of thousands of `[` or `__x` is scanned in linear time.
 final _htmlTag = RegExp(r'</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>');
 // A destination may hold one level of parentheses: `(…/Foo_(bar))`.
-final _image = RegExp(r'!\[[^\]]*\]\((?:[^()]|\([^()]*\))*\)');
-final _link = RegExp(r'\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)');
+final _image = RegExp(r'!\[[^\[\]]*\]\((?:[^()]|\([^()]*\))*\)');
+final _link = RegExp(r'\[([^\[\]]*)\]\((?:[^()]|\([^()]*\))*\)');
 final _strongOrStrike = RegExp(r'\*\*|~~');
-final _underscoreStrong = RegExp(r'(?<![A-Za-z0-9_])__(?=\S)(.+?)(?<=\S)__(?![A-Za-z0-9_])');
+final _underscoreStrong = RegExp(r'(?<![A-Za-z0-9_])__(?=[^\s_])([^_]*[^\s_])__(?![A-Za-z0-9_])');
+final _escaped = RegExp(r'\\([!-/:-@\[-`{-~])');
 
-/// How much of a long description is scanned for its summary.
-const _summaryScanLimit = 65536;
+/// Code spans stand in as Unicode noncharacters U+FDD0… while a line's
+/// links and tags are removed, so code inside a link label survives.
+const _codeMark = 0xFDD0, _codeMarks = 32;
+
+/// How much of a description is scanned for its summary, in UTF-16 units.
+const _summaryScanLimit = 32768;
 
 /// The readable start of Markdown [source], for a one-paragraph summary.
 /// Code keeps its text; HTML comments and tags, images, heading, quote,
 /// fence and rule markers, bold and strike markers, code ticks and link
 /// targets are dropped. `text` holds at most [limit] characters; `more`
-/// tells whether readable text goes on past it.
+/// tells whether readable text goes on past it. The work is bounded: at
+/// most [_summaryScanLimit] units of [source] are read.
 ({String text, bool more}) markdownSummary(String source, int limit) {
   final out = StringBuffer();
+  final lastClose = source.lastIndexOf('-->');
   String? fence;
   var inComment = false;
   var more = false;
   var start = 0;
+  var budget = _summaryScanLimit;
+  void write(String line) {
+    if (out.isNotEmpty) out.write('\n');
+    out.write(line);
+  }
   while (start < source.length) {
-    if (start > _summaryScanLimit) {
-      more = !inComment || source.contains('-->', start);
+    if (budget <= 0) {
+      more = !inComment || lastClose >= start;
       break;
     }
     final newline = source.indexOf('\n', start);
-    final end = newline < 0 ? source.length : newline;
+    var end = newline < 0 ? source.length : newline;
+    var cut = false;
+    if (end - start > budget) {
+      end = start + budget;
+      // Never split a surrogate pair.
+      if (end > start && (source.codeUnitAt(end - 1) & 0xFC00) == 0xD800) end--;
+      cut = true;
+    }
     var line = source.substring(start, end);
-    start = end + 1;
+    var lineStart = start;
+    budget -= end - start + 1;
+    start = cut ? source.length : end + 1;
     final open = fence;
     if (open != null) {
       final close = _closingFence.firstMatch(line)?[1];
       if (close != null && close[0] == open[0] && close.length >= open.length) {
         fence = null;
       } else {
-        out.writeln(line);
+        write(line);
       }
     } else {
       if (inComment) {
         final close = line.indexOf('-->');
-        if (close < 0) continue;
+        if (close < 0) {
+          if (cut) more = lastClose >= end;
+          continue;
+        }
         line = line.substring(close + 3);
+        lineStart += close + 3;
         inComment = false;
       }
       final opening = _openingFence.firstMatch(line);
@@ -73,9 +98,18 @@ const _summaryScanLimit = 65536;
         continue;
       }
       if (_ruleOrUnderline.hasMatch(line)) continue;
-      final readable = _readableLine(line.replaceFirst(_blockPrefix, ''));
+      // Like an HTML block, a comment that starts the line runs until `-->`.
+      final blockComment = line.trimLeft().startsWith('<!--');
+      final body = line.replaceFirst(_blockPrefix, '');
+      final bodyStart = lineStart + line.length - body.length;
+      final readable = _readableLine(body,
+          commentMayClose: (offset) => blockComment || lastClose >= bodyStart + offset + 4);
       inComment = readable.inComment;
-      out.writeln(readable.text);
+      write(readable.text);
+    }
+    if (cut) {
+      more = true;
+      break;
     }
     if (out.length > limit && out.toString().characters.length > limit) {
       more = true;
@@ -87,64 +121,116 @@ const _summaryScanLimit = 65536;
 }
 
 /// One line's readable text, scanning code spans and comments left to right
-/// as CommonMark does. `inComment` is set when a comment runs past the line.
-({String text, bool inComment}) _readableLine(String line) {
+/// as CommonMark does. A comment not closed on the line hides the rest only
+/// if [commentMayClose] says a `-->` follows; otherwise it is plain text.
+/// `inComment` is set when a comment runs past the line.
+({String text, bool inComment}) _readableLine(String line, {required bool Function(int offset) commentMayClose}) {
+  // Backtick runs, so each span finds its closing run without rescanning.
+  final runs = <(int, int)>[];
+  for (var i = 0; i < line.length;) {
+    if (line.codeUnitAt(i) == 0x5C && i + 1 < line.length) {
+      i += 2;
+      continue;
+    }
+    if (line.codeUnitAt(i) != 0x60) {
+      i++;
+      continue;
+    }
+    var end = i;
+    while (end < line.length && line.codeUnitAt(end) == 0x60) {
+      end++;
+    }
+    runs.add((i, end - i));
+    i = end;
+  }
+  final nextOfLength = <int, List<int>>{};
+  for (var k = runs.length - 1; k >= 0; k--) {
+    (nextOfLength[runs[k].$2] ??= <int>[]).add(k);
+  }
+  int? closingRun(int k) {
+    final candidates = nextOfLength[runs[k].$2]!;
+    while (candidates.isNotEmpty && candidates.last <= k) {
+      candidates.removeLast();
+    }
+    return candidates.isEmpty ? null : candidates.last;
+  }
+
+  final lastCloseInLine = line.lastIndexOf('-->');
   final out = StringBuffer();
+  final codes = <String>[];
   var plainStart = 0;
   var i = 0;
-  void flush(int to) => out.write(_inlineText(line.substring(plainStart, to)));
+  var run = 0;
+  var inComment = false;
   while (i < line.length) {
-    if (line.codeUnitAt(i) == 0x60) {
-      var run = i;
-      while (run < line.length && line.codeUnitAt(run) == 0x60) {
+    while (run < runs.length && runs[run].$1 < i) {
+      run++;
+    }
+    if (run < runs.length && runs[run].$1 == i) {
+      final ticks = runs[run].$2;
+      final close = closingRun(run);
+      if (close == null) {
+        i += ticks;
         run++;
-      }
-      final ticks = run - i;
-      var close = run;
-      while (true) {
-        close = line.indexOf('`', close);
-        if (close < 0) break;
-        var closeEnd = close;
-        while (closeEnd < line.length && line.codeUnitAt(closeEnd) == 0x60) {
-          closeEnd++;
-        }
-        if (closeEnd - close == ticks) break;
-        close = closeEnd;
-      }
-      if (close < 0) {
-        i = run;
         continue;
       }
-      flush(i);
-      var code = line.substring(run, close);
+      out.write(line.substring(plainStart, i));
+      var code = line.substring(i + ticks, runs[close].$1);
       if (code.length > 1 && code.startsWith(' ') && code.endsWith(' ') && code.trim().isNotEmpty) {
         code = code.substring(1, code.length - 1);
       }
-      out.write(code);
-      i = close + ticks;
+      if (codes.length < _codeMarks) {
+        out.writeCharCode(_codeMark + codes.length);
+        codes.add(code);
+      } else {
+        out.write(code);
+      }
+      i = runs[close].$1 + ticks;
+      run = close + 1;
       plainStart = i;
       continue;
     }
     if (line.startsWith('<!--', i)) {
-      flush(i);
-      final comment = _comment.matchAsPrefix(line, i);
-      if (comment == null) return (text: out.toString(), inComment: true);
-      i = comment.end;
-      plainStart = i;
-      continue;
+      // CommonMark 0.31: `<!-->` and `<!--->` are complete comments.
+      final end = line.startsWith('>', i + 4)
+          ? i + 5
+          : line.startsWith('->', i + 4)
+          ? i + 6
+          : lastCloseInLine >= i + 4
+          ? line.indexOf('-->', i + 4) + 3
+          : null;
+      if (end != null) {
+        out.write(line.substring(plainStart, i));
+        i = end;
+        plainStart = i;
+        continue;
+      }
+      if (commentMayClose(i)) {
+        out.write(line.substring(plainStart, i));
+        plainStart = line.length;
+        inComment = true;
+        break;
+      }
     }
     i++;
   }
-  flush(line.length);
-  return (text: out.toString(), inComment: false);
+  if (!inComment) out.write(line.substring(plainStart));
+  var text = out
+      .toString()
+      .replaceAll(_htmlTag, '')
+      .replaceAll(_image, '')
+      .replaceAllMapped(_link, (match) => match[1]!)
+      .replaceAllMapped(_underscoreStrong, (match) => match[1]!)
+      .replaceAll(_strongOrStrike, '')
+      .replaceAllMapped(_escaped, (match) => match[1]!);
+  if (codes.isNotEmpty) {
+    text = String.fromCharCodes(text.runes.expand((rune) {
+      final index = rune - _codeMark;
+      return index >= 0 && index < codes.length ? codes[index].runes : [rune];
+    }));
+  }
+  return (text: text, inComment: inComment);
 }
-
-String _inlineText(String text) => text
-    .replaceAll(_htmlTag, '')
-    .replaceAll(_image, '')
-    .replaceAllMapped(_link, (match) => match[1]!)
-    .replaceAllMapped(_underscoreStrong, (match) => match[1]!)
-    .replaceAll(_strongOrStrike, '');
 
 // The first strong character: a letter, or an explicit LRM, RLM or ALM mark.
 final _strong = RegExp(r'[\p{L}\u200E\u200F\u061C]', unicode: true);

@@ -125,7 +125,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
     final saved = await openEditor(context, account: widget.account,
       title: note != null ? l10n.editComment : discussion != null ? l10n.replyToThread : thread ? l10n.newThread : l10n.newComment,
       resource: '${path.join('/')}/${discussion ?? 'root'}/${note?['id'] ?? (thread ? 'thread-new' : 'new')}',
-      subtitle: isolated('${widget.project.path} · ${widget.resource == 'issues' ? '#' : '!'}${widget.iid}'), fields: [
+      subtitle: '${widget.project.path} · ${widget.resource == 'issues' ? '#' : '!'}${widget.iid}', fields: [
         EditField('body', l10n.commentBody, required: true, lines: 9, markdown: true, quickActions: true,
           value: note == null ? '' : valueText(note, 'body'),
           hint: l10n.markdownQuickActionsHint),

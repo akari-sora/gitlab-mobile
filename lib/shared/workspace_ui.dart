@@ -303,7 +303,7 @@ class PeopleStack extends StatelessWidget {
   Widget build(BuildContext context) {
     if (people.isEmpty) return const SizedBox.shrink();
     final shown = people.take(max).toList();
-    final names = people.map((p) => isolated('@${valueText(p, 'username')}')).join(l10n.listSeparator);
+    final names = people.map((p) => '@${valueText(p, 'username')}').join(l10n.listSeparator);
     final surface = Theme.of(context).colorScheme.surface;
     return Semantics(label: names, excludeSemantics: true, child: Row(mainAxisSize: MainAxisSize.min, children: [
       SizedBox(

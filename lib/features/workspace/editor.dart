@@ -627,7 +627,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
-                            widget.subtitle ?? isolated('@${widget.account.user.username} · ${widget.account.instance.base.host}'),
+                            isolated(widget.subtitle ?? '@${widget.account.user.username} · ${widget.account.instance.base.host}'),
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                           if (_draftUnavailable)

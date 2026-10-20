@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart' show MarkdownBody;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/features/workspace/editor.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
+
+import 'support/workspace_fixture.dart';
 
 const _fsi = '\u2068', _pdi = '\u2069';
 
@@ -67,6 +71,30 @@ void main() {
       expect(_readsLeftToRight('${isolated('محمد')} · ${isolated('@user')}', '@user'), isTrue);
       // Without isolation the same text is reordered, so the check can fail.
       expect(_readsLeftToRight('فتح !44', '!44'), isFalse);
+    });
+
+    testWidgets('an editor subtitle such as a dotfile path keeps its order in Arabic', (tester) async {
+      useLanguage(languageForTag('ar')!);
+      FlutterSecureStorage.setMockInitialValues({});
+      final fixture = WorkspaceFixture();
+      addTearDown(fixture.api.close);
+      await tester.pumpWidget(MaterialApp(home: Directionality(
+        textDirection: TextDirection.rtl,
+        child: ResourceEditor(
+          account: fixture.account,
+          title: 'edit',
+          subtitle: '.gitlab-ci.yml · main',
+          resource: 'bidi-editor-subtitle',
+          fields: const [EditField('body', 'body')],
+          save: (_) async {},
+        ),
+      )));
+      await tester.pumpAndSettle();
+      final shown = find.textContaining('gitlab-ci.yml');
+      expect(shown, findsOneWidget);
+      final text = tester.widget<Text>(shown).data!;
+      expect(text, '$_fsi.gitlab-ci.yml · main$_pdi');
+      expect(_readsLeftToRight(text, '.gitlab-ci.yml'), isTrue);
     });
 
     testWidgets('a meta chip keeps a reference in its own direction in Arabic', (tester) async {
@@ -163,6 +191,42 @@ void main() {
       final result = markdownSummary('Intro\n<!-- draft\nnotes', 100);
       expect(result.text.trim(), 'Intro');
       expect(result.more, isFalse);
+    });
+
+    test('a link whose label holds code or a comment still loses its target', () {
+      expect(summary('[Use `foo`](https://example.com/docs) after'), 'Use foo after');
+      expect(summary('[Read <!-- hidden -->docs](https://example.com/docs) after'), 'Read docs after');
+      expect(summary('Code `[a](b)` stays'), 'Code [a](b) stays');
+    });
+
+    test('escapes, inline comments and the exact limit', () {
+      expect(summary('\\`x \\` stays and \\*not bold\\*'), '`x ` stays and *not bold*');
+      // A comment opened mid-line and never closed is plain text, as in CommonMark.
+      expect(summary('a <!-- b \nc'), 'a <!-- b c');
+      expect(summary('a <!-- b \nc --> d'), 'a d');
+      expect(markdownSummary('a' * 400, 400).more, isFalse);
+      expect(markdownSummary('a' * 401, 400).more, isTrue);
+    });
+
+    test('hostile long lines are summarised in bounded time', () {
+      // Every one of these took seconds to minutes when the patterns could
+      // rescan the rest of the line from each start.
+      final widths = List.generate(250, (i) => '`' * (i + 1)).join('a');
+      for (final input in [
+        '[' * 65536,
+        '![' * 32768,
+        '__x ' * 16384,
+        '<!--' * 16384,
+        '<a ' * 20000,
+        widths,
+        '[a](${'(' * 30000}',
+      ]) {
+        final watch = Stopwatch()..start();
+        final result = markdownSummary(input, 560);
+        watch.stop();
+        expect(watch.elapsedMilliseconds, lessThan(1500), reason: input.substring(0, 12));
+        expect(result.text.characters.length, lessThanOrEqualTo(560));
+      }
     });
 
     test('reports more text past the limit without splitting a grapheme', () {
