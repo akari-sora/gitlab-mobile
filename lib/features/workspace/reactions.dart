@@ -304,7 +304,7 @@ class _ReactionsBarState extends State<ReactionsBar> {
     final error = _error;
     if (error != null && _awards.isEmpty) {
       return FailureNotice(error, account: widget.account, onRetry: ownerCurrent ? _load : null, onSwitchAccount: endSessionFrom(context),
-        resourceLabel: l10n.resourceReactions(widget.project.path, widget.resource == 'merge_requests' ? '!' : '#', widget.iid));
+        resourceLabel: l10n.resourceReactions(widget.project.path, '${widget.resource == 'merge_requests' ? '!' : '#'}${widget.iid}'));
     }
     return Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
       for (final entry in counts.entries)

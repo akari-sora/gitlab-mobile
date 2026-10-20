@@ -1380,8 +1380,8 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       title: Text(item.title),
       subtitle: Text(
         widget.project == null
-            ? '${_itemNamespace(item)} · ${item.type.name} · #${item.iid}'
-            : '${item.type.name} · #${item.iid}',
+            ? '${isolated(_itemNamespace(item))} · ${item.type.name} · ${isolated('#${item.iid}')}'
+            : '${item.type.name} · ${isolated('#${item.iid}')}',
       ),
       meta: metaChips,
       onTap: () => _open(item),
@@ -3928,8 +3928,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
                   ),
                   label: Text(
                     person.name.isEmpty
-                        ? '@${person.username}'
-                        : '${person.name} · @${person.username}',
+                        ? isolated('@${person.username}')
+                        : '${isolated(person.name)} · ${isolated('@${person.username}')}',
                   ),
                 ),
             ],
@@ -4581,11 +4581,12 @@ class _WorkItemDescriptionCardState extends State<_WorkItemDescriptionCard> {
 
   void _cacheDescriptionSummary() {
     _characterCount = widget.description.runes.length;
-    final normalized = widget.description.trim().replaceAll(
+    // Readable text only, cut on a character boundary.
+    final normalized = markdownSummary(widget.description, 160).text.trim().replaceAll(
       RegExp(r'\s+'),
       ' ',
     );
-    _preview = String.fromCharCodes(normalized.runes.take(80));
+    _preview = normalized.characters.take(80).toString();
   }
 
   @override
@@ -4635,8 +4636,8 @@ class _HierarchyTile extends StatelessWidget {
   Widget build(BuildContext context) => ListTile(
     contentPadding: EdgeInsets.zero,
     leading: const Icon(Icons.workspaces_outline),
-    title: Text(item.title, maxLines: 2, overflow: TextOverflow.ellipsis),
-    subtitle: Text('${item.type.name} · #${item.iid}'),
+    title: Text(isolated(item.title), maxLines: 2, overflow: TextOverflow.ellipsis),
+    subtitle: Text('${item.type.name} · ${isolated('#${item.iid}')}'),
     trailing: const Icon(Icons.chevron_right),
     onTap: onTap,
   );

@@ -1234,7 +1234,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
         ? l10n.authorUnavailable
         : author.name.trim().isEmpty
         ? isolated('@${author.username}')
-        : isolated('${author.name} · @${author.username}');
+        : '${isolated(author.name)} · ${isolated('@${author.username}')}';
     final local = note.createdAt.toLocal();
     final date =
         '${local.year}/${local.month.toString().padLeft(2, '0')}/'

@@ -573,8 +573,8 @@ class _AssigneeEditorState extends State<_AssigneeEditor> {
   Widget _personRow(_AssigneeRow row, bool multiple) {
     final user = row.user;
     final label = user.name.isEmpty
-        ? isolated('@${user.username}')
-        : isolated('${user.name} · @${user.username}');
+        ? '@${user.username}'
+        : '${user.name} · @${user.username}';
     return Semantics(
       key: ValueKey('work-item-assignee-row-${user.id}'),
       button: true,
@@ -589,7 +589,9 @@ class _AssigneeEditorState extends State<_AssigneeEditor> {
         onTap: !_canChange || _writing || _locked
             ? null
             : () => _toggle(user.id, !row.selected),
-        title: Text(label),
+        title: Text(user.name.isEmpty
+            ? isolated('@${user.username}')
+            : '${isolated(user.name)} · ${isolated('@${user.username}')}'),
         subtitle: Text(row.candidate ? l10n.searchResults : l10n.currentAssignees),
         trailing: Icon(
           multiple

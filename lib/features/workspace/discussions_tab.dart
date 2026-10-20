@@ -125,7 +125,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
     final saved = await openEditor(context, account: widget.account,
       title: note != null ? l10n.editComment : discussion != null ? l10n.replyToThread : thread ? l10n.newThread : l10n.newComment,
       resource: '${path.join('/')}/${discussion ?? 'root'}/${note?['id'] ?? (thread ? 'thread-new' : 'new')}',
-      subtitle: '${widget.project.path} · ${widget.resource == 'issues' ? '#' : '!'}${widget.iid}', fields: [
+      subtitle: isolated('${widget.project.path} · ${widget.resource == 'issues' ? '#' : '!'}${widget.iid}'), fields: [
         EditField('body', l10n.commentBody, required: true, lines: 9, markdown: true, quickActions: true,
           value: note == null ? '' : valueText(note, 'body'),
           hint: l10n.markdownQuickActionsHint),
@@ -190,7 +190,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              Expanded(child: Text(author, maxLines: 1, overflow: TextOverflow.ellipsis,
+              Expanded(child: Text(isolated(author), maxLines: 1, overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.titleSmall)),
               const SizedBox(width: 8),
               Text(relativeDate(valueText(first, 'created_at')), maxLines: 1,
@@ -224,7 +224,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
           Monogram(valueText(valueObject(notes[index], 'author'), 'name',
             valueText(valueObject(notes[index], 'author'), 'username')), size: 26),
           const SizedBox(width: 8),
-          Flexible(child: Text('@${valueText(valueObject(notes[index], 'author'), 'username')}',
+          Flexible(child: Text(isolated('@${valueText(valueObject(notes[index], 'author'), 'username')}'),
             maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.titleSmall)),
           const SizedBox(width: 6),
           Expanded(child: Text(relativeDate(valueText(notes[index], 'created_at')), maxLines: 1,
@@ -408,7 +408,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
           Padding(padding: const EdgeInsets.only(top: 2), child: Icon(_systemIcon(body), size: 16, color: muted)),
           const SizedBox(width: 10),
           Expanded(child: Text.rich(TextSpan(children: [
-            TextSpan(text: '@${valueText(valueObject(note, 'author'), 'username')}',
+            TextSpan(text: isolated('@${valueText(valueObject(note, 'author'), 'username')}'),
               style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600, color: theme.colorScheme.onSurface)),
             TextSpan(text: ' $body · ${relativeDate(valueText(note, 'created_at'))}'),
           ]), style: theme.textTheme.bodySmall?.copyWith(color: muted, height: 1.4))),

@@ -5,7 +5,27 @@ import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
-const _fsi = '⁨', _pdi = '⁩';
+const _fsi = '\u2068', _pdi = '\u2069';
+
+/// Whether [token] inside [text] is laid out left to right, character by
+/// character, in a right-to-left paragraph: `!44` must not read `44!`.
+bool _readsLeftToRight(String text, String token) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: const TextStyle(fontSize: 14)),
+    textDirection: TextDirection.rtl,
+  )..layout();
+  addTearDown(painter.dispose);
+  double left(int index) => painter
+      .getBoxesForSelection(TextSelection(baseOffset: index, extentOffset: index + 1))
+      .first
+      .left;
+  final start = text.indexOf(token);
+  expect(start, isNonNegative, reason: 'token "$token" in "$text"');
+  for (var i = start; i < start + token.length - 1; i++) {
+    if (left(i) >= left(i + 1)) return false;
+  }
+  return true;
+}
 
 void main() {
   group('right-to-left isolation', () {
@@ -21,6 +41,7 @@ void main() {
         useLanguage(languageForTag(tag)!);
         expect(l10n.language.rtl, isFalse, reason: tag);
         expect(l10n.daysAgo(6), isNot(contains(_fsi)), reason: tag);
+        expect(l10n.openMergeRequest(44), isNot(contains(_fsi)), reason: tag);
         expect(isolated('!44'), '!44', reason: tag);
       }
     });
@@ -30,6 +51,22 @@ void main() {
       expect(isolated('!44'), '$_fsi!44$_pdi');
       expect(isolated('@user · gitlab.com\nsecond'), '$_fsi@user · gitlab.com$_pdi\n${_fsi}second$_pdi');
       expect(isolated(''), '');
+    });
+
+    testWidgets('references and usernames read left to right in Arabic text', (tester) async {
+      useLanguage(languageForTag('ar')!);
+      // A sigil written in the message joins the value's isolate.
+      expect(_readsLeftToRight(l10n.openMergeRequest(44), '!44'), isTrue);
+      expect(_readsLeftToRight(l10n.workItemIid(12), '#12'), isTrue);
+      expect(_readsLeftToRight(l10n.accountAtUsername('user'), '@user'), isTrue);
+      expect(_readsLeftToRight(l10n.mergeRequestCommits(44), '!44'), isTrue);
+      // A reference passed whole.
+      expect(_readsLeftToRight(l10n.editItemReference('!44'), '!44'), isTrue);
+      expect(_readsLeftToRight(isolated('!44'), '!44'), isTrue);
+      // An Arabic name next to a Latin username: each is isolated on its own.
+      expect(_readsLeftToRight('${isolated('محمد')} · ${isolated('@user')}', '@user'), isTrue);
+      // Without isolation the same text is reordered, so the check can fail.
+      expect(_readsLeftToRight('فتح !44', '!44'), isFalse);
     });
 
     testWidgets('a meta chip keeps a reference in its own direction in Arabic', (tester) async {
@@ -43,11 +80,13 @@ void main() {
   });
 
   group('first strong direction', () {
-    test('follows the first letter and skips neutral characters', () {
+    test('follows the first letter or direction mark and skips neutral characters', () {
       expect(firstStrongDirection('Hello, world.'), TextDirection.ltr);
       expect(firstStrongDirection('مرحبا'), TextDirection.rtl);
       expect(firstStrongDirection('42 — שלום'), TextDirection.rtl);
       expect(firstStrongDirection('中文說明'), TextDirection.ltr);
+      expect(firstStrongDirection('\u200FEnglish.'), TextDirection.rtl);
+      expect(firstStrongDirection('\u200Eمرحبا'), TextDirection.ltr);
       expect(firstStrongDirection('!44 · #12'), isNull);
       expect(firstStrongDirection(''), isNull);
     });
@@ -57,21 +96,28 @@ void main() {
         textDirection: ambient,
         child: Material(child: MarkdownView(markdown, selectable: false)),
       )));
-      final body = find.byType(MarkdownBody);
-      return Directionality.of(tester.element(body));
+      return Directionality.of(tester.element(find.byType(MarkdownBody)));
     }
 
-    testWidgets('a Markdown body reads in its own direction, like dir="auto"', (tester) async {
+    testWidgets('in a right-to-left interface a left-to-right body reads left to right', (tester) async {
       expect(await bodyDirection(tester, '<!-- مرحبا -->\n## Release notes\nFixed.', TextDirection.rtl), TextDirection.ltr);
-      expect(await bodyDirection(tester, '[![badge](https://example.com/b.svg)](https://example.com) مرحبا بكم', TextDirection.ltr), TextDirection.rtl);
-      expect(await bodyDirection(tester, '中文說明', TextDirection.ltr), TextDirection.ltr);
+      expect(await bodyDirection(tester, '[![badge](https://example.com/b.svg)](https://example.com) مرحبا بكم', TextDirection.rtl), TextDirection.rtl);
       expect(await bodyDirection(tester, '```\n42\n```', TextDirection.rtl), TextDirection.rtl);
+    });
+
+    testWidgets('a left-to-right interface is never flipped', (tester) async {
+      // Code blocks follow the body's direction, so an Arabic body stays LTR here.
+      expect(await bodyDirection(tester, 'مرحبا بكم', TextDirection.ltr), TextDirection.ltr);
+      expect(await bodyDirection(tester, '中文說明', TextDirection.ltr), TextDirection.ltr);
     });
   });
 
   group('Markdown summary', () {
+    String summary(String source, [int limit = 400]) =>
+        markdownSummary(source, limit).text.replaceAll(RegExp(r'\s+'), ' ').trim();
+
     test('drops comments, tags, markers and link targets but keeps the words', () {
-      final summary = markdownSummary(
+      final result = markdownSummary(
         '<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n'
         '## What I found\n'
         '> Job artifact saves in `lib/ci_page.dart` kept a **private** ~~copy~~.\n'
@@ -82,20 +128,47 @@ void main() {
         '- [ ] still a task',
         400,
       );
-      expect(summary.more, isFalse);
-      expect(summary.text.replaceAll(RegExp(r'\s+'), ' ').trim(),
+      expect(result.more, isFalse);
+      expect(result.text.replaceAll(RegExp(r'\s+'), ' ').trim(),
         'What I found Job artifact saves in lib/ci_page.dart kept a private copy. Log '
         'final x = 1; See the docs and . - [ ] still a task');
     });
 
+    test('code keeps its text, comments and tags included', () {
+      expect(summary('Use `<!-- keep this -->` in the template.'), 'Use <!-- keep this --> in the template.');
+      expect(summary('```html\n<!-- keep --><b>x</b>\n```\nafter'), '<!-- keep --><b>x</b> after');
+      expect(summary('Use ``a ` b`` here.'), 'Use a ` b here.');
+      expect(summary('Returns `List<String>`.'), 'Returns List<String>.');
+      expect(summary('```foo``` is used for bar'), 'foo is used for bar');
+      expect(summary('Unclosed ` tick'), 'Unclosed ` tick');
+    });
+
+    test('long and nested link syntax never leaks', () {
+      final long = '[Read the docs](https://example.com/${'a' * 1300}) after';
+      expect(summary(long, 560), 'Read the docs after');
+      final badges = '${'[![badge](https://example.com/b.svg)](https://example.com) ' * 40}\nVisible introduction';
+      expect(summary(badges, 200), 'Visible introduction');
+      expect(summary('[wiki](https://example.com/Foo_(bar)) end'), 'wiki end');
+    });
+
+    test('block markers, comments and emphasis follow CommonMark', () {
+      expect(summary('<!--> visible'), 'visible');
+      expect(summary('> ## Quoted heading\n>> nested'), 'Quoted heading nested');
+      expect(summary('Title\n====='), 'Title');
+      expect(summary('__init__ and __Important__ but snake__case__name'), 'init and Important but snake__case__name');
+      expect(summary('A\n<!-- x\ny -->B'), 'A B');
+    });
+
     test('an unclosed comment hides the rest, as GitLab renders it', () {
-      expect(markdownSummary('Intro\n<!-- draft notes', 100).text.trim(), 'Intro');
+      final result = markdownSummary('Intro\n<!-- draft\nnotes', 100);
+      expect(result.text.trim(), 'Intro');
+      expect(result.more, isFalse);
     });
 
     test('reports more text past the limit without splitting a grapheme', () {
-      final summary = markdownSummary('${'👨‍👩‍👧‍👦' * 30}<!-- hidden -->', 10);
-      expect(summary.more, isTrue);
-      expect(summary.text, '👨‍👩‍👧‍👦' * 10);
+      final result = markdownSummary('${'👨‍👩‍👧‍👦' * 30}<!-- hidden -->', 10);
+      expect(result.more, isTrue);
+      expect(result.text, '👨‍👩‍👧‍👦' * 10);
     });
   });
 }

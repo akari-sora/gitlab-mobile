@@ -108,7 +108,7 @@ class _SearchPageState extends State<SearchPage> {
       case 'milestones':
         return EntityCard(
           leading: Icon(Icons.flag_outlined, color: muted),
-          title: Text(valueText(value, 'title')),
+          title: Text(isolated(valueText(value, 'title'))),
           body: valueText(value, 'description').trim().isEmpty ? null : Text(valueText(value, 'description').trim(),
             maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall),
           meta: [
@@ -120,7 +120,7 @@ class _SearchPageState extends State<SearchPage> {
         return EntityCard(
           leading: Monogram(valueText(value, 'name', valueText(value, 'username')), size: 36),
           title: Text(valueText(value, 'name', valueText(value, 'username'))),
-          subtitle: Text('@${valueText(value, 'username')}'),
+          subtitle: Text(isolated('@${valueText(value, 'username')}')),
           meta: [if (valueText(value, 'state').isNotEmpty && valueText(value, 'state') != 'active')
             MetaChip(userStateLabel(valueText(value, 'state')), icon: Icons.block)],
           onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => UserPage(
@@ -152,8 +152,8 @@ class _SearchPageState extends State<SearchPage> {
       case 'commits':
         return EntityCard(
           leading: Icon(Icons.commit, color: muted),
-          title: Text(valueText(value, 'title')),
-          subtitle: Text(valueText(value, 'author_name')),
+          title: Text(isolated(valueText(value, 'title'))),
+          subtitle: Text(isolated(valueText(value, 'author_name'))),
           meta: [
             MetaChip(valueText(value, 'short_id', shortSha(valueText(value, 'id'))), mono: true),
             MetaChip(relativeDate(valueText(value, 'committed_date', valueText(value, 'created_at'))), icon: Icons.schedule_outlined),
@@ -167,7 +167,7 @@ class _SearchPageState extends State<SearchPage> {
         return EntityCard(
           leading: Monogram(valueText(valueObject(value, 'author'), 'name', '?'), size: 32),
           title: Text(valueText(value, 'body').trim(), maxLines: 4),
-          subtitle: Text('@${valueText(valueObject(value, 'author'), 'username')}'),
+          subtitle: Text(isolated('@${valueText(valueObject(value, 'author'), 'username')}')),
           meta: [
             if (resource.isNotEmpty && iid > 0) MetaChip('${resource == 'issues' ? '#' : '!'}$iid', mono: true),
             MetaChip(relativeDate(valueText(value, 'created_at')), icon: Icons.schedule_outlined),
@@ -247,7 +247,7 @@ class UserPage extends StatelessWidget {
     final name = valueText(user, 'name', valueText(user, 'username'));
     final id = valueInt(user, 'id');
     return Scaffold(
-      appBar: AppBar(title: Text('@${valueText(user, 'username')}')),
+      appBar: AppBar(title: Text(isolated('@${valueText(user, 'username')}'))),
       body: gestureSafe(RecordsFeed(
         identity: 'user/$id/events',
         account: account,
@@ -262,7 +262,7 @@ class UserPage extends StatelessWidget {
             const SizedBox(width: 16),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(name, style: theme.textTheme.titleLarge),
-              Text('@${valueText(user, 'username')}', style: theme.textTheme.bodyMedium),
+              Text(isolated('@${valueText(user, 'username')}'), style: theme.textTheme.bodyMedium),
               if (valueText(user, 'web_url').isNotEmpty)
                 Text(Uri.tryParse(valueText(user, 'web_url'))?.host ?? '', style: theme.textTheme.bodySmall),
             ])),

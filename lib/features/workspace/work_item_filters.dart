@@ -506,7 +506,7 @@ class _WorkItemFilterSheetState extends State<WorkItemFilterSheet> {
                 .map(
                   (choice) => choice.username == null
                       ? choice.name
-                      : '@${choice.username}',
+                      : isolated('@${choice.username}'),
                 )
                 .join(l10n.listSeparator),
       maxLines: 2,

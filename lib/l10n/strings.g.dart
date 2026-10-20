@@ -74,14 +74,19 @@ const appLanguages = <AppLanguage>[
 
 final _placeholder = RegExp(r'\{([A-Za-z][A-Za-z0-9]*)\}');
 
+/// In right-to-left messages a reference keeps its sigil: `!{iid}` and
+/// `@{username}` become one isolate each, `!44` and `@user`.
+final _rtlPlaceholder = RegExp(r'([!#@]?)\{([A-Za-z][A-Za-z0-9]*)\}');
+
 /// [text] with each line wrapped in Unicode first-strong isolates, so it keeps
 /// its own direction inside right-to-left text: `!44` stays `!44`.
 String bidiIsolated(String text) => text.split('\n').map((line) => line.isEmpty ? line : '\u2068$line\u2069').join('\n');
 
-String _format(AppLanguage language, String message, Map<String, Object?> values) => message.replaceAllMapped(
-    _placeholder, (match) => values.containsKey(match[1])
-        ? (language.rtl ? bidiIsolated('${values[match[1]]}') : '${values[match[1]]}')
-        : match[0]!);
+String _format(AppLanguage language, String message, Map<String, Object?> values) => language.rtl
+    ? message.replaceAllMapped(_rtlPlaceholder, (match) => values.containsKey(match[2])
+        ? bidiIsolated('${match[1]}${values[match[2]]}')
+        : match[0]!)
+    : message.replaceAllMapped(_placeholder, (match) => values.containsKey(match[1]) ? '${values[match[1]]}' : match[0]!);
 
 /// The app's messages in one language. Each accessor's doc shows the
 /// Traditional Chinese source text.
@@ -3848,8 +3853,8 @@ final class AppStrings {
   /// 新增表情回應
   String get addReaction => language._messages[1252];
 
-  /// {path} · {value}{iid} 回應
-  String resourceReactions(Object? path, Object? value, Object? iid) => _format(language, language._messages[1253], {'path': path, 'value': value, 'iid': iid});
+  /// {path} · {reference} 回應
+  String resourceReactions(Object? path, Object? reference) => _format(language, language._messages[1253], {'path': path, 'reference': reference});
 
   /// 、
   String get listSeparator => language._messages[1254];
@@ -5240,8 +5245,8 @@ final class AppStrings {
   /// 留白會移除里程碑
   String get blankRemovesMilestone => language._messages[1716];
 
-  /// 編輯 {value}{iid}
-  String editItemReference(Object? value, Object? iid) => _format(language, language._messages[1717], {'value': value, 'iid': iid});
+  /// 編輯 {reference}
+  String editItemReference(Object? reference) => _format(language, language._messages[1717], {'reference': reference});
 
   /// 指派成員
   String get assigneeMembers => language._messages[1718];
@@ -5249,8 +5254,8 @@ final class AppStrings {
   /// 留白會移除所有指派成員
   String get blankRemovesAssignees => language._messages[1719];
 
-  /// 修改指派 · {value}{iid}
-  String editAssigneesReference(Object? value, Object? iid) => _format(language, language._messages[1720], {'value': value, 'iid': iid});
+  /// 修改指派 · {reference}
+  String editAssigneesReference(Object? reference) => _format(language, language._messages[1720], {'reference': reference});
 
   /// 審查者名單
   String get reviewerList => language._messages[1721];

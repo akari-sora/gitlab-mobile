@@ -647,7 +647,7 @@ class _WorkItemStatusEditorState extends State<_WorkItemStatusEditor> {
             sliver: SliverList.list(
               children: [
                 Text(
-                  '@${widget.account.user.username} · ${widget.account.instance.key}',
+                  isolated('@${widget.account.user.username} · ${widget.account.instance.key}'),
                 ),
                 const SizedBox(height: 4),
                 Text(_statusResourceLabel(widget.detail.summary)),
