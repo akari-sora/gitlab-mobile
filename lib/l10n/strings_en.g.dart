@@ -2068,4 +2068,12 @@ const _messagesEn = <String>[
   'AI security check failed',
   'The endpoint, redactor, or settings failed a security check; this request was not sent.',
   'Custom AI provider',
+  'Could not clear AI history',
+  'AI history was not completely cleared. The account was kept; try removing it again.',
+  'Some history could not be read and was removed.',
+  'This conversation reached the storage limit. New content will not be saved.',
+  'Encrypted history is unavailable right now. It will be retried later.',
+  'The encryption key for this account is missing; its history cannot be decrypted.',
+  'AI history data is damaged or uses an unsupported format.',
+  'The API key must be at least 4 characters.',
 ];

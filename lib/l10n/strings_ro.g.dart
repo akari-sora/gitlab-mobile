@@ -2068,4 +2068,12 @@ const _messagesRo = <String>[
   'Verificarea de securitate AI a eșuat',
   'Punctul final, filtrul de mascare sau setările nu au trecut o verificare de securitate; această cerere nu a fost trimisă.',
   'Furnizor AI personalizat',
+  'Istoricul AI nu a putut fi șters',
+  'Istoricul AI nu a fost șters complet. Contul a fost păstrat; încearcă să îl elimini din nou.',
+  'O parte din istoric nu a putut fi citită și a fost eliminată.',
+  'Această conversație a atins limita de stocare. Conținutul nou nu va fi salvat.',
+  'Istoricul criptat nu este disponibil acum. Se va reîncerca mai târziu.',
+  'Cheia de criptare pentru acest cont lipsește; istoricul nu poate fi decriptat.',
+  'Datele istoricului AI sunt deteriorate sau folosesc un format neacceptat.',
+  'Cheia API trebuie să aibă cel puțin 4 caractere.',
 ];

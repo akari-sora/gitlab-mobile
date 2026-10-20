@@ -10390,5 +10390,45 @@
   "@aiCustomProvider": {
     "description": "Name of the custom AI provider preset.",
     "placeholders": {}
+  },
+  "aiHistoryCleanupTitle": "無法清除人工智慧紀錄",
+  "@aiHistoryCleanupTitle": {
+    "description": "Title shown when encrypted AI account data could not be removed",
+    "placeholders": {}
+  },
+  "aiHistoryCleanupDetail": "人工智慧紀錄尚未完全清除。帳號已保留，請重試移除。",
+  "@aiHistoryCleanupDetail": {
+    "description": "Detail shown when encrypted AI account-data cleanup fails and the account is retained",
+    "placeholders": {}
+  },
+  "aiHistoryRemovedUnreadable": "部分紀錄無法讀取，已移除。",
+  "@aiHistoryRemovedUnreadable": {
+    "description": "Notice after unreadable encrypted AI history files are removed during recovery",
+    "placeholders": {}
+  },
+  "aiHistoryStorageLimit": "此對話已達保存上限，之後的內容不會保存。",
+  "@aiHistoryStorageLimit": {
+    "description": "Banner shown when a conversation reaches its plaintext storage limit",
+    "placeholders": {}
+  },
+  "aiHistoryUnavailable": "目前無法存取加密紀錄，稍後會重試。",
+  "@aiHistoryUnavailable": {
+    "description": "State shown when secure storage is temporarily unavailable",
+    "placeholders": {}
+  },
+  "aiHistoryKeyMissing": "找不到此帳號的加密金鑰；紀錄無法解密。",
+  "@aiHistoryKeyMissing": {
+    "description": "State shown when history is enabled but its encryption key is absent",
+    "placeholders": {}
+  },
+  "aiHistoryInvalidData": "人工智慧紀錄資料已損壞或格式不受支援。",
+  "@aiHistoryInvalidData": {
+    "description": "Failure shown when a versioned AI history record is malformed or unsupported",
+    "placeholders": {}
+  },
+  "aiKeyTooShort": "服務金鑰至少需要 4 個字元。",
+  "@aiKeyTooShort": {
+    "description": "Validation error for an AI provider API key shorter than four characters",
+    "placeholders": {}
   }
 }

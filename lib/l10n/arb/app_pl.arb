@@ -2065,5 +2065,13 @@
   "aiRefusalDetail": "Zmień pytanie; wywołania narzędzi w tej odpowiedzi nie zostaną wykonane.",
   "aiPolicyBlockedTitle": "Kontrola bezpieczeństwa AI nie powiodła się",
   "aiPolicyBlockedDetail": "Punkt końcowy, filtr maskowania lub ustawienia nie przeszły kontroli bezpieczeństwa; to żądanie nie zostało wysłane.",
-  "aiCustomProvider": "Własny dostawca AI"
+  "aiCustomProvider": "Własny dostawca AI",
+  "aiHistoryCleanupTitle": "Nie udało się wyczyścić historii AI",
+  "aiHistoryCleanupDetail": "Historia AI nie została całkowicie wyczyszczona. Konto zachowano; spróbuj usunąć je ponownie.",
+  "aiHistoryRemovedUnreadable": "Części historii nie można było odczytać i została usunięta.",
+  "aiHistoryStorageLimit": "Ta rozmowa osiągnęła limit pamięci. Nowa treść nie będzie zapisywana.",
+  "aiHistoryUnavailable": "Zaszyfrowana historia jest teraz niedostępna. Próba zostanie ponowiona później.",
+  "aiHistoryKeyMissing": "Brakuje klucza szyfrowania tego konta; historii nie można odszyfrować.",
+  "aiHistoryInvalidData": "Dane historii AI są uszkodzone lub mają nieobsługiwany format.",
+  "aiKeyTooShort": "Klucz API musi mieć co najmniej 4 znaki."
 }

@@ -2068,4 +2068,12 @@ const _messagesPl = <String>[
   'Kontrola bezpieczeństwa AI nie powiodła się',
   'Punkt końcowy, filtr maskowania lub ustawienia nie przeszły kontroli bezpieczeństwa; to żądanie nie zostało wysłane.',
   'Własny dostawca AI',
+  'Nie udało się wyczyścić historii AI',
+  'Historia AI nie została całkowicie wyczyszczona. Konto zachowano; spróbuj usunąć je ponownie.',
+  'Części historii nie można było odczytać i została usunięta.',
+  'Ta rozmowa osiągnęła limit pamięci. Nowa treść nie będzie zapisywana.',
+  'Zaszyfrowana historia jest teraz niedostępna. Próba zostanie ponowiona później.',
+  'Brakuje klucza szyfrowania tego konta; historii nie można odszyfrować.',
+  'Dane historii AI są uszkodzone lub mają nieobsługiwany format.',
+  'Klucz API musi mieć co najmniej 4 znaki.',
 ];

@@ -2068,4 +2068,12 @@ const _messagesVi = <String>[
   'Kiểm tra bảo mật AI không đạt',
   'Điểm cuối, bộ che dữ liệu hoặc cài đặt không vượt qua kiểm tra bảo mật; yêu cầu này chưa được gửi.',
   'Nhà cung cấp AI tùy chỉnh',
+  'Không thể xóa lịch sử AI',
+  'Lịch sử AI chưa được xóa hoàn toàn. Tài khoản được giữ lại; hãy thử xóa lại.',
+  'Không thể đọc một phần lịch sử nên phần đó đã bị xóa.',
+  'Cuộc trò chuyện này đã đạt giới hạn lưu trữ. Nội dung mới sẽ không được lưu.',
+  'Lịch sử được mã hóa hiện không khả dụng. Hệ thống sẽ thử lại sau.',
+  'Thiếu khóa mã hóa của tài khoản này; không thể giải mã lịch sử.',
+  'Dữ liệu lịch sử AI bị hỏng hoặc dùng định dạng không được hỗ trợ.',
+  'Khóa API phải có ít nhất 4 ký tự.',
 ];

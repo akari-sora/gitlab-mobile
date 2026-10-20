@@ -2068,4 +2068,12 @@ const _messagesIt = <String>[
   'Controllo di sicurezza AI non superato',
   'Il punto di accesso, il filtro di oscuramento o le impostazioni non hanno superato un controllo di sicurezza; questa richiesta non è stata inviata.',
   'Fornitore AI personalizzato',
+  'Impossibile cancellare la cronologia AI',
+  'La cronologia AI non è stata cancellata completamente. L’account è stato mantenuto; prova a rimuoverlo di nuovo.',
+  'Parte della cronologia non era leggibile ed è stata rimossa.',
+  'Questa conversazione ha raggiunto il limite di archiviazione. I nuovi contenuti non verranno salvati.',
+  'La cronologia crittografata non è disponibile al momento. Verrà riprovato più tardi.',
+  'Manca la chiave di crittografia per questo account; la cronologia non può essere decifrata.',
+  'I dati della cronologia AI sono danneggiati o usano un formato non supportato.',
+  'La chiave API deve contenere almeno 4 caratteri.',
 ];

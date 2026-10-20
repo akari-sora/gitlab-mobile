@@ -2068,4 +2068,12 @@ const _messagesNl = <String>[
   'AI-beveiligingscontrole mislukt',
   'Het eindpunt, het maskeerfilter of de instellingen zijn niet door een beveiligingscontrole gekomen; dit verzoek is niet verzonden.',
   'Aangepaste AI-aanbieder',
+  'AI-geschiedenis kon niet worden gewist',
+  'De AI-geschiedenis is niet volledig gewist. Het account is behouden; probeer het opnieuw te verwijderen.',
+  'Een deel van de geschiedenis kon niet worden gelezen en is verwijderd.',
+  'Dit gesprek heeft de opslaglimiet bereikt. Nieuwe inhoud wordt niet opgeslagen.',
+  'De versleutelde geschiedenis is nu niet beschikbaar. Later wordt het opnieuw geprobeerd.',
+  'De versleutelingssleutel voor dit account ontbreekt; de geschiedenis kan niet worden ontsleuteld.',
+  'De AI-geschiedenis is beschadigd of gebruikt een niet-ondersteunde indeling.',
+  'De API-sleutel moet minimaal 4 tekens bevatten.',
 ];

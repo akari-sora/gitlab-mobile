@@ -2068,4 +2068,12 @@ const _messagesMs = <String>[
   'Semakan keselamatan AI gagal',
   'Titik akhir, penapis penyamaran atau tetapan tidak lulus semakan keselamatan; permintaan ini tidak dihantar.',
   'Penyedia AI tersuai',
+  'Sejarah AI tidak dapat dikosongkan',
+  'Sejarah AI tidak dikosongkan sepenuhnya. Akaun dikekalkan; cuba alih keluarnya sekali lagi.',
+  'Sebahagian sejarah tidak dapat dibaca lalu dialih keluar.',
+  'Perbualan ini telah mencapai had storan. Kandungan baharu tidak akan disimpan.',
+  'Sejarah disulitkan tidak tersedia sekarang. Percubaan akan dibuat lagi kemudian.',
+  'Kunci penyulitan untuk akaun ini tiada; sejarahnya tidak dapat dinyahsulit.',
+  'Data sejarah AI rosak atau menggunakan format yang tidak disokong.',
+  'Kunci API mestilah sekurang-kurangnya 4 aksara.',
 ];

@@ -2065,5 +2065,13 @@
   "aiRefusalDetail": "Herformuleer de vraag; de aanroepen van hulpmiddelen in dit antwoord worden niet uitgevoerd.",
   "aiPolicyBlockedTitle": "AI-beveiligingscontrole mislukt",
   "aiPolicyBlockedDetail": "Het eindpunt, het maskeerfilter of de instellingen zijn niet door een beveiligingscontrole gekomen; dit verzoek is niet verzonden.",
-  "aiCustomProvider": "Aangepaste AI-aanbieder"
+  "aiCustomProvider": "Aangepaste AI-aanbieder",
+  "aiHistoryCleanupTitle": "AI-geschiedenis kon niet worden gewist",
+  "aiHistoryCleanupDetail": "De AI-geschiedenis is niet volledig gewist. Het account is behouden; probeer het opnieuw te verwijderen.",
+  "aiHistoryRemovedUnreadable": "Een deel van de geschiedenis kon niet worden gelezen en is verwijderd.",
+  "aiHistoryStorageLimit": "Dit gesprek heeft de opslaglimiet bereikt. Nieuwe inhoud wordt niet opgeslagen.",
+  "aiHistoryUnavailable": "De versleutelde geschiedenis is nu niet beschikbaar. Later wordt het opnieuw geprobeerd.",
+  "aiHistoryKeyMissing": "De versleutelingssleutel voor dit account ontbreekt; de geschiedenis kan niet worden ontsleuteld.",
+  "aiHistoryInvalidData": "De AI-geschiedenis is beschadigd of gebruikt een niet-ondersteunde indeling.",
+  "aiKeyTooShort": "De API-sleutel moet minimaal 4 tekens bevatten."
 }

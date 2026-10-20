@@ -2065,5 +2065,13 @@
   "aiRefusalDetail": "Revise the question; tool calls in this response will not run.",
   "aiPolicyBlockedTitle": "AI security check failed",
   "aiPolicyBlockedDetail": "The endpoint, redactor, or settings failed a security check; this request was not sent.",
-  "aiCustomProvider": "Custom AI provider"
+  "aiCustomProvider": "Custom AI provider",
+  "aiHistoryCleanupTitle": "Could not clear AI history",
+  "aiHistoryCleanupDetail": "AI history was not completely cleared. The account was kept; try removing it again.",
+  "aiHistoryRemovedUnreadable": "Some history could not be read and was removed.",
+  "aiHistoryStorageLimit": "This conversation reached the storage limit. New content will not be saved.",
+  "aiHistoryUnavailable": "Encrypted history is unavailable right now. It will be retried later.",
+  "aiHistoryKeyMissing": "The encryption key for this account is missing; its history cannot be decrypted.",
+  "aiHistoryInvalidData": "AI history data is damaged or uses an unsupported format.",
+  "aiKeyTooShort": "The API key must be at least 4 characters."
 }

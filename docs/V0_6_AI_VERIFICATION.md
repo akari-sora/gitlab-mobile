@@ -429,3 +429,70 @@ neither a credential reference nor secret bytes. Fresh FIX2 acceptance commands,
 output tails and mutation evidence stayed in the local round handoff. A later
 round made Chat and Responses ignore a usage object with no usable count, so a
 malformed later chunk cannot erase earlier usage.
+
+## AI assistant verification: MR3
+
+MR3 adds device-scoped provider settings and keys, per-account consent/history
+settings, encrypted per-account chat history, coordinator recovery and
+account-removal cleanup. The compile-time assistant gate remains false, while
+start-up recovery and account-removal cleanup run unconditionally. The base commit is `93c164eca8d5498f8d19d38c2d892521a7f727f3` on
+`feat/ai-mr3-stores`; MR3 is intentionally uncommitted. Pipeline and job evidence
+are `NOT_RUN` because this packet prohibits committing and pushing. Local
+acceptance receipts are recorded in root `RESULT.md`.
+
+### Persistence and security contract
+
+- Provider settings use `gitlab_mobile_ai_providers_v1` without keys; provider
+  keys use `ai_key.v1.<base64url(providerId)>` and reject values shorter than
+  four characters. Account records use
+  `ai_account.v1.<base64url(account.key)>`; the per-account history key and
+  cleanup tombstone use `ai_history_key.v1.*` and
+  `ai_history_tombstone.v1.*` respectively.
+- History stores only redacted display models, never provider replay output.
+  AES-256-GCM uses a fresh 12-byte nonce per write and AAD bound to both the
+  account and file name. Encoding/encryption and decryption/decoding occur off
+  the UI isolate. Reads reject oversized ciphertext before loading it.
+- Limits are 512 KiB plaintext per conversation, 50 conversations and 16 MiB
+  per account, 64 MiB per device, with 7/30/90-day retention and 30 days by
+  default. Capacity includes index metadata, conservatively reserving a 256 KiB
+  replacement index envelope. Old tool excerpts degrade to metadata before further content stops
+  saving, and that stopped state is explicit rather than silent.
+- Conversation files are committed before their index; eviction deletes the
+  file before updating the index. Recovery rebuilds a missing or undecryptable
+  index, drops missing-file entries, restores unexpired orphan files, removes
+  stale temporary files and individually unreadable conversations, then
+  reapplies retention and capacity. Device-wide eviction skips accounts whose
+  keys are already known to be unavailable, missing or being cleaned, and invalidates a foreign
+  account index after deleting one of its files. Device order uses file
+  modification time. Transient read errors preserve data; only malformed or
+  unauthenticated data is classified as corrupt. If capacity eviction removes
+  the conversation being saved, the save reports the explicit stopped state.
+- The process-wide coordinator distinguishes `unavailable` secure storage from
+  an absent history key. Neither condition authorizes data deletion or silent
+  key replacement. Orphan-account directories are considered only after a
+  current successful account-list load.
+- Account removal writes a tombstone before invalidating pending work and
+  deleting the history key, account directory and account settings. It deletes
+  the tombstone last. Deletion-step failures retain/reassert the marker and keep
+  the account. If the initial marker write cannot succeed, the account stays and
+  explicit retry is required; no durable marker can be promised before a
+  successful write.
+
+### MR3 verification matrix
+
+| Claim | Required evidence | Current status |
+| --- | --- | --- |
+| NIST AES-GCM known-answer, fresh nonces, account/file-name AAD, bit-flip rejection and pre-read size bounds | Focused unit tests over the submitted history store | PASS — local synthetic tests; see RESULT.md |
+| Missing/undecryptable index, missing file, orphan restore, expired orphan removal, stale `.tmp`, and both crash-order windows recover deterministically | Recovery tests with isolated temporary roots | PASS — local synthetic tests; see RESULT.md |
+| Delayed or failed account loading protects orphan data; unavailable keys retry without deletion; absent keys enter `keyMissing` | Coordinator/session tests with injected stores | PASS — local synthetic tests; see RESULT.md |
+| Cleanup blocks late writes, preserves account+tombstone for every injected failure, and resumes after restart | Cleanup and removal widget regressions | PASS — local synthetic tests; see RESULT.md |
+| History enablement writes the key before `enabled=true`; malformed versioned records fail safely | Store crash-order and strict-decoding tests | PASS — local synthetic tests; see RESULT.md |
+| All 24 catalogs carry the eight MR3 messages and generated Dart is current | `python3 tool/l10n.py --check` and Python l10n tests | PASS — local synthetic tests; see RESULT.md |
+| Analyzer, full Flutter suite and Python CI/tool suites | Packet acceptance commands in the foreground | PASS — foreground local checks; full suite ran last; see RESULT.md |
+| Android emulator behavior | Project-owned emulator evidence | NOT_RUN |
+| iOS backup restore without the `ThisDeviceOnly` key (A10) | Physical iOS backup/restore evidence | NOT_RUN |
+| Accessibility, release/store and live private-project acceptance | Device and release lanes | NOT_RUN |
+
+No provider was contacted and no credential was read for MR3. Synthetic local
+tests can establish persistence behavior but cannot upgrade device, store,
+private-project, pipeline or G0 acceptance.

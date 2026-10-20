@@ -2065,5 +2065,13 @@
   "aiRefusalDetail": "Hãy điều chỉnh câu hỏi; các lệnh gọi công cụ trong phản hồi này sẽ không được thực thi.",
   "aiPolicyBlockedTitle": "Kiểm tra bảo mật AI không đạt",
   "aiPolicyBlockedDetail": "Điểm cuối, bộ che dữ liệu hoặc cài đặt không vượt qua kiểm tra bảo mật; yêu cầu này chưa được gửi.",
-  "aiCustomProvider": "Nhà cung cấp AI tùy chỉnh"
+  "aiCustomProvider": "Nhà cung cấp AI tùy chỉnh",
+  "aiHistoryCleanupTitle": "Không thể xóa lịch sử AI",
+  "aiHistoryCleanupDetail": "Lịch sử AI chưa được xóa hoàn toàn. Tài khoản được giữ lại; hãy thử xóa lại.",
+  "aiHistoryRemovedUnreadable": "Không thể đọc một phần lịch sử nên phần đó đã bị xóa.",
+  "aiHistoryStorageLimit": "Cuộc trò chuyện này đã đạt giới hạn lưu trữ. Nội dung mới sẽ không được lưu.",
+  "aiHistoryUnavailable": "Lịch sử được mã hóa hiện không khả dụng. Hệ thống sẽ thử lại sau.",
+  "aiHistoryKeyMissing": "Thiếu khóa mã hóa của tài khoản này; không thể giải mã lịch sử.",
+  "aiHistoryInvalidData": "Dữ liệu lịch sử AI bị hỏng hoặc dùng định dạng không được hỗ trợ.",
+  "aiKeyTooShort": "Khóa API phải có ít nhất 4 ký tự."
 }

@@ -2068,4 +2068,12 @@ const _messagesTr = <String>[
   'AI güvenlik denetimi başarısız oldu',
   'Uç nokta, maskeleme filtresi veya ayarlar güvenlik denetiminden geçemedi; bu istek gönderilmedi.',
   'Özel AI sağlayıcısı',
+  'AI geçmişi temizlenemedi',
+  'AI geçmişi tamamen temizlenmedi. Hesap korundu; yeniden kaldırmayı deneyin.',
+  'Geçmişin bir bölümü okunamadı ve kaldırıldı.',
+  'Bu konuşma depolama sınırına ulaştı. Yeni içerik kaydedilmeyecek.',
+  'Şifrelenmiş geçmiş şu anda kullanılamıyor. Daha sonra yeniden denenecek.',
+  'Bu hesabın şifreleme anahtarı eksik; geçmişin şifresi çözülemiyor.',
+  'AI geçmiş verileri bozuk veya desteklenmeyen bir biçim kullanıyor.',
+  'API anahtarı en az 4 karakter olmalıdır.',
 ];

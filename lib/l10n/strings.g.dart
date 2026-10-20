@@ -6291,4 +6291,28 @@ final class AppStrings {
 
   /// 自訂 AI 供應商
   String get aiCustomProvider => language._messages[2065];
+
+  /// 無法清除人工智慧紀錄
+  String get aiHistoryCleanupTitle => language._messages[2066];
+
+  /// 人工智慧紀錄尚未完全清除。帳號已保留，請重試移除。
+  String get aiHistoryCleanupDetail => language._messages[2067];
+
+  /// 部分紀錄無法讀取，已移除。
+  String get aiHistoryRemovedUnreadable => language._messages[2068];
+
+  /// 此對話已達保存上限，之後的內容不會保存。
+  String get aiHistoryStorageLimit => language._messages[2069];
+
+  /// 目前無法存取加密紀錄，稍後會重試。
+  String get aiHistoryUnavailable => language._messages[2070];
+
+  /// 找不到此帳號的加密金鑰；紀錄無法解密。
+  String get aiHistoryKeyMissing => language._messages[2071];
+
+  /// 人工智慧紀錄資料已損壞或格式不受支援。
+  String get aiHistoryInvalidData => language._messages[2072];
+
+  /// 服務金鑰至少需要 4 個字元。
+  String get aiKeyTooShort => language._messages[2073];
 }

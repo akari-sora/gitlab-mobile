@@ -7,12 +7,18 @@ final class AiContextChip {
     required this.preview,
     required this.sizeChars,
     this.blocked = false,
+    this.type,
+    this.resource,
+    this.pinnedSha,
   });
 
   final String source;
   final String preview;
   final int sizeChars;
   final bool blocked;
+  final String? type;
+  final String? resource;
+  final String? pinnedSha;
 }
 
 enum AiAssistantState {
@@ -64,6 +70,7 @@ final class AiToolRunItem extends AiChatItem {
     required this.provenance,
     this.truncated = false,
     this.blocked = false,
+    this.resultExcerpt = '',
   });
 
   final String name;
@@ -73,6 +80,7 @@ final class AiToolRunItem extends AiChatItem {
   final bool truncated;
   final bool blocked;
   final String provenance;
+  final String resultExcerpt;
 }
 
 final class AiNoticeItem extends AiChatItem {

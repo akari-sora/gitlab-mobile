@@ -2065,5 +2065,13 @@
   "aiRefusalDetail": "Reformulez la question ; les appels d'outils de cette réponse ne seront pas exécutés.",
   "aiPolicyBlockedTitle": "Échec du contrôle de sécurité AI",
   "aiPolicyBlockedDetail": "Le point de terminaison, le filtre de masquage ou les paramètres n'ont pas passé un contrôle de sécurité ; cette requête n'a pas été envoyée.",
-  "aiCustomProvider": "Fournisseur AI personnalisé"
+  "aiCustomProvider": "Fournisseur AI personnalisé",
+  "aiHistoryCleanupTitle": "Impossible d’effacer l’historique AI",
+  "aiHistoryCleanupDetail": "L’historique AI n’a pas été entièrement effacé. Le compte a été conservé ; essayez à nouveau de le supprimer.",
+  "aiHistoryRemovedUnreadable": "Une partie de l’historique était illisible et a été supprimée.",
+  "aiHistoryStorageLimit": "Cette conversation a atteint la limite de stockage. Le nouveau contenu ne sera plus enregistré.",
+  "aiHistoryUnavailable": "L’historique chiffré est actuellement indisponible. Une nouvelle tentative aura lieu plus tard.",
+  "aiHistoryKeyMissing": "La clé de chiffrement de ce compte est absente ; son historique ne peut pas être déchiffré.",
+  "aiHistoryInvalidData": "Les données de l’historique AI sont endommagées ou utilisent un format non pris en charge.",
+  "aiKeyTooShort": "La clé API doit comporter au moins 4 caractères."
 }

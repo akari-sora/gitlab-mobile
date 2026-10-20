@@ -2068,4 +2068,12 @@ const _messagesPtBr = <String>[
   'A verificação de segurança de AI falhou',
   'O ponto de extremidade, o filtro de mascaramento ou as configurações não passaram em uma verificação de segurança; esta solicitação não foi enviada.',
   'Provedor de AI personalizado',
+  'Não foi possível limpar o histórico de AI',
+  'O histórico de AI não foi totalmente limpo. A conta foi mantida; tente removê-la novamente.',
+  'Parte do histórico não pôde ser lida e foi removida.',
+  'Esta conversa atingiu o limite de armazenamento. O novo conteúdo não será salvo.',
+  'O histórico criptografado está indisponível agora. Uma nova tentativa será feita mais tarde.',
+  'A chave de criptografia desta conta está ausente; o histórico não pode ser descriptografado.',
+  'Os dados do histórico de AI estão danificados ou usam um formato incompatível.',
+  'A chave da API deve ter pelo menos 4 caracteres.',
 ];

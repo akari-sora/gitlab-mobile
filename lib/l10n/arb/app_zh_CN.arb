@@ -2065,5 +2065,13 @@
   "aiRefusalDetail": "请调整问题；不会执行此响应中的工具调用。",
   "aiPolicyBlockedTitle": "AI 安全检查未通过",
   "aiPolicyBlockedDetail": "端点、脱敏器或设置未通过安全检查，此请求未发送。",
-  "aiCustomProvider": "自定义 AI 服务商"
+  "aiCustomProvider": "自定义 AI 服务商",
+  "aiHistoryCleanupTitle": "无法清除人工智能记录",
+  "aiHistoryCleanupDetail": "人工智能记录尚未完全清除。账号已保留，请重试移除。",
+  "aiHistoryRemovedUnreadable": "部分记录无法读取，已移除。",
+  "aiHistoryStorageLimit": "此对话已达到保存上限，之后的内容不会保存。",
+  "aiHistoryUnavailable": "目前无法访问加密记录，稍后会重试。",
+  "aiHistoryKeyMissing": "找不到此账号的加密密钥；记录无法解密。",
+  "aiHistoryInvalidData": "人工智能记录数据已损坏或格式不受支持。",
+  "aiKeyTooShort": "服务密钥至少需要 4 个字符。"
 }

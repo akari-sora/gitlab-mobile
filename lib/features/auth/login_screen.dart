@@ -4,6 +4,7 @@ import '../../core/instance.dart';
 import '../../shared/workspace_ui.dart';
 import '../workspace/ci_page.dart';
 import '../workspace/editor.dart';
+import '../ai/ai_account_cleanup.dart';
 import 'recent_project.dart';
 import 'session_controller.dart';
 
@@ -160,6 +161,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                                 account,
                                               );
                                               await clearRecentProject(account);
+                                              await clearAiAccountData(account);
                                               await session.remove(account);
                                             } catch (error) {
                                               if (context.mounted) {

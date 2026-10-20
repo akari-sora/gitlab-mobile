@@ -2065,5 +2065,13 @@
   "aiRefusalDetail": "Reformulează întrebarea; apelurile de instrumente din acest răspuns nu vor fi executate.",
   "aiPolicyBlockedTitle": "Verificarea de securitate AI a eșuat",
   "aiPolicyBlockedDetail": "Punctul final, filtrul de mascare sau setările nu au trecut o verificare de securitate; această cerere nu a fost trimisă.",
-  "aiCustomProvider": "Furnizor AI personalizat"
+  "aiCustomProvider": "Furnizor AI personalizat",
+  "aiHistoryCleanupTitle": "Istoricul AI nu a putut fi șters",
+  "aiHistoryCleanupDetail": "Istoricul AI nu a fost șters complet. Contul a fost păstrat; încearcă să îl elimini din nou.",
+  "aiHistoryRemovedUnreadable": "O parte din istoric nu a putut fi citită și a fost eliminată.",
+  "aiHistoryStorageLimit": "Această conversație a atins limita de stocare. Conținutul nou nu va fi salvat.",
+  "aiHistoryUnavailable": "Istoricul criptat nu este disponibil acum. Se va reîncerca mai târziu.",
+  "aiHistoryKeyMissing": "Cheia de criptare pentru acest cont lipsește; istoricul nu poate fi decriptat.",
+  "aiHistoryInvalidData": "Datele istoricului AI sunt deteriorate sau folosesc un format neacceptat.",
+  "aiKeyTooShort": "Cheia API trebuie să aibă cel puțin 4 caractere."
 }

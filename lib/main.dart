@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/providers.dart';
 import 'features/auth/login_screen.dart';
+import 'features/ai/ai_history.dart';
 import 'features/shell/app_shortcuts.dart';
 import 'features/auth/session_controller.dart';
 import 'features/shell/authenticated_app.dart';
@@ -55,7 +56,8 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
     // Held here, above the account-keyed tree, so a link that arrives while
     // signed out or during an account switch waits for the next shell.
     _links = ref.read(incomingLinksProvider)..start();
-    unawaited(ref.read(sessionProvider).initialize());
+    final session = ref.read(sessionProvider);
+    unawaited(_initializeSession(session));
     // The stored appearance is read alongside the accounts and never gates the
     // first frame: the app renders with ThemeMode.system until it arrives.
     unawaited(ref.read(appearanceProvider).load());
@@ -64,6 +66,13 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
     // Started before the first frame's app exists, so its back handling runs
     // before the navigator's while the app is locked.
     unawaited(ref.read(appLockProvider).start());
+  }
+  Future<void> _initializeSession(SessionController session) async {
+    try {
+      await session.initialize();
+    } finally {
+      unawaited(AiHistoryCoordinator.instance.startRecovery(session));
+    }
   }
   @override
   void dispose() {

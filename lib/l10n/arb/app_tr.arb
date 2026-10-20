@@ -2065,5 +2065,13 @@
   "aiRefusalDetail": "Soruyu değiştirin; bu yanıttaki araç çağrıları çalıştırılmayacak.",
   "aiPolicyBlockedTitle": "AI güvenlik denetimi başarısız oldu",
   "aiPolicyBlockedDetail": "Uç nokta, maskeleme filtresi veya ayarlar güvenlik denetiminden geçemedi; bu istek gönderilmedi.",
-  "aiCustomProvider": "Özel AI sağlayıcısı"
+  "aiCustomProvider": "Özel AI sağlayıcısı",
+  "aiHistoryCleanupTitle": "AI geçmişi temizlenemedi",
+  "aiHistoryCleanupDetail": "AI geçmişi tamamen temizlenmedi. Hesap korundu; yeniden kaldırmayı deneyin.",
+  "aiHistoryRemovedUnreadable": "Geçmişin bir bölümü okunamadı ve kaldırıldı.",
+  "aiHistoryStorageLimit": "Bu konuşma depolama sınırına ulaştı. Yeni içerik kaydedilmeyecek.",
+  "aiHistoryUnavailable": "Şifrelenmiş geçmiş şu anda kullanılamıyor. Daha sonra yeniden denenecek.",
+  "aiHistoryKeyMissing": "Bu hesabın şifreleme anahtarı eksik; geçmişin şifresi çözülemiyor.",
+  "aiHistoryInvalidData": "AI geçmiş verileri bozuk veya desteklenmeyen bir biçim kullanıyor.",
+  "aiKeyTooShort": "API anahtarı en az 4 karakter olmalıdır."
 }

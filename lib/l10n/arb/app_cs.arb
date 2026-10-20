@@ -2065,5 +2065,13 @@
   "aiRefusalDetail": "Upravte otázku; volání nástrojů v této odpovědi se neprovedou.",
   "aiPolicyBlockedTitle": "Bezpečnostní kontrola AI neprošla",
   "aiPolicyBlockedDetail": "Koncový bod, maskovací filtr nebo nastavení neprošly bezpečnostní kontrolou; tento požadavek nebyl odeslán.",
-  "aiCustomProvider": "Vlastní poskytovatel AI"
+  "aiCustomProvider": "Vlastní poskytovatel AI",
+  "aiHistoryCleanupTitle": "Historii AI se nepodařilo vymazat",
+  "aiHistoryCleanupDetail": "Historie AI nebyla zcela vymazána. Účet zůstal zachován; zkuste jej odebrat znovu.",
+  "aiHistoryRemovedUnreadable": "Část historie nebylo možné přečíst a byla odstraněna.",
+  "aiHistoryStorageLimit": "Tato konverzace dosáhla limitu úložiště. Nový obsah se nebude ukládat.",
+  "aiHistoryUnavailable": "Šifrovaná historie nyní není dostupná. Pokus se zopakuje později.",
+  "aiHistoryKeyMissing": "Šifrovací klíč tohoto účtu chybí; historii nelze dešifrovat.",
+  "aiHistoryInvalidData": "Data historie AI jsou poškozená nebo používají nepodporovaný formát.",
+  "aiKeyTooShort": "Klíč API musí mít alespoň 4 znaky."
 }

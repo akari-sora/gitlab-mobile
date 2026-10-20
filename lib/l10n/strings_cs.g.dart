@@ -2068,4 +2068,12 @@ const _messagesCs = <String>[
   'Bezpečnostní kontrola AI neprošla',
   'Koncový bod, maskovací filtr nebo nastavení neprošly bezpečnostní kontrolou; tento požadavek nebyl odeslán.',
   'Vlastní poskytovatel AI',
+  'Historii AI se nepodařilo vymazat',
+  'Historie AI nebyla zcela vymazána. Účet zůstal zachován; zkuste jej odebrat znovu.',
+  'Část historie nebylo možné přečíst a byla odstraněna.',
+  'Tato konverzace dosáhla limitu úložiště. Nový obsah se nebude ukládat.',
+  'Šifrovaná historie nyní není dostupná. Pokus se zopakuje později.',
+  'Šifrovací klíč tohoto účtu chybí; historii nelze dešifrovat.',
+  'Data historie AI jsou poškozená nebo používají nepodporovaný formát.',
+  'Klíč API musí mít alespoň 4 znaky.',
 ];

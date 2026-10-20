@@ -2068,4 +2068,12 @@ const _messagesEs = <String>[
   'No se superó la comprobación de seguridad de AI',
   'El punto de conexión, el filtro de enmascaramiento o la configuración no superaron una comprobación de seguridad; esta solicitud no se envió.',
   'Proveedor de AI personalizado',
+  'No se pudo borrar el historial de AI',
+  'El historial de AI no se borró por completo. Se conservó la cuenta; intenta eliminarla de nuevo.',
+  'Parte del historial no se pudo leer y se eliminó.',
+  'Esta conversación alcanzó el límite de almacenamiento. El contenido nuevo no se guardará.',
+  'El historial cifrado no está disponible ahora. Se volverá a intentar más tarde.',
+  'Falta la clave de cifrado de esta cuenta; no se puede descifrar su historial.',
+  'Los datos del historial de AI están dañados o usan un formato no compatible.',
+  'La clave de API debe tener al menos 4 caracteres.',
 ];
