@@ -31,6 +31,14 @@ def check_sdk(flutter: str) -> None:
         raise RuntimeError(f'Expected Flutter {SDK}; found {version}. Do not silently change the SDK baseline.')
 
 
+# The store name (lib/core/brand.dart). "GitLab" stays out of it: GitLab's
+# trademark guidelines and Play's impersonation policy expect an independent
+# client to carry its own name.
+APP_NAME = 'Mergeline'
+# Play gets its own application ID without the trademark. The GitLab channel
+# keeps the original ID so installed previews keep updating in place.
+PLAY_APPLICATION_ID = 'app.mergeline'
+
 OAUTH_SCHEME = 'io.gitlabmobile.app'
 OAUTH_HOST = 'oauth'
 OAUTH_PATH = '/callback'
@@ -140,11 +148,11 @@ def harden_android(folder: Path) -> None:
                        'fullBackupContent': '@xml/backup_rules',
                        'dataExtractionRules': '@xml/data_extraction_rules',
                        'enableOnBackInvokedCallback': 'true',
-                       'label': 'GitLab Mobile'}.items():
+                       'label': APP_NAME}.items():
         application.set(f'{{{ANDROID}}}{key}', value)
     for activity in application.findall('activity'):
         if f'{{{ANDROID}}}label' in activity.attrib:
-            activity.set(f'{{{ANDROID}}}label', 'GitLab Mobile')
+            activity.set(f'{{{ANDROID}}}label', APP_NAME)
     register_oauth_android(root)
     register_incoming_links_android(root)
     ET.indent(tree, space='    ')
@@ -163,8 +171,9 @@ def harden_android(folder: Path) -> None:
 FLAVORS_BEGIN = '    // GITLAB_MOBILE_FLAVORS_BEGIN'
 FLAVORS_END = '    // GITLAB_MOBILE_FLAVORS_END'
 FLAVORS = f'''{FLAVORS_BEGIN}
-    // Distribution channels (Flutter's appFlavor). Both keep the application
-    // ID; they differ only in how the app is updated. Build with --flavor.
+    // Distribution channels (Flutter's appFlavor), updated differently. The
+    // GitLab channel keeps the original application ID so installed previews
+    // update in place; Play has its own. Build with --flavor.
     flavorDimensions += "distribution"
     productFlavors {{
         create("gitlab") {{
@@ -172,6 +181,7 @@ FLAVORS = f'''{FLAVORS_BEGIN}
         }}
         create("play") {{
             dimension = "distribution"
+            applicationId = "{PLAY_APPLICATION_ID}"
         }}
     }}
 {FLAVORS_END}
@@ -573,15 +583,15 @@ def configure_ios_app_name(folder: Path) -> None:
     children = list(plist)
     keys = {node.text: children[i + 1] for i, node in enumerate(children[:-1]) if node.tag == 'key'}
     if 'CFBundleDisplayName' in keys:
-        keys['CFBundleDisplayName'].text = 'GitLab Mobile'
+        keys['CFBundleDisplayName'].text = APP_NAME
     else:
         plist.append(_plist_key('CFBundleDisplayName'))
-        ET.SubElement(plist, 'string').text = 'GitLab Mobile'
+        ET.SubElement(plist, 'string').text = APP_NAME
     if 'CFBundleName' in keys:
-        keys['CFBundleName'].text = 'GitLab Mobile'
+        keys['CFBundleName'].text = APP_NAME
     else:
         plist.append(_plist_key('CFBundleName'))
-        ET.SubElement(plist, 'string').text = 'GitLab Mobile'
+        ET.SubElement(plist, 'string').text = APP_NAME
     ET.indent(tree, space='\t')
     tree.write(path, encoding='utf-8', xml_declaration=True)
 

@@ -6,6 +6,7 @@ import '../../shared/artifact_storage.dart' show formatByteCount;
 import '../../shared/hub_ui.dart';
 import 'app_update.dart';
 import 'update_controller.dart';
+import '../../core/brand.dart';
 
 /// 我的 › 應用程式更新: where this build gets its updates, the current
 /// state, the one action that moves it forward, and the start-up check.
@@ -78,7 +79,7 @@ class UpdateSection extends StatelessWidget {
       UpdateStage.downloading => ('正在下載 ${release?.label ?? ''}', _percent()),
       UpdateStage.downloaded when play => ('更新已下載', '重新啟動 App 即可完成更新。'),
       UpdateStage.downloaded => ('已下載並驗證 ${release?.label ?? ''}', controller.needsPermission
-          ? '請在系統設定允許 GitLab Mobile 安裝應用程式，返回後再點「安裝」。'
+          ? '請在系統設定允許 $appName 安裝應用程式，返回後再點「安裝」。'
           : '點「安裝」後由 Android 安裝程式確認。'),
       UpdateStage.installing => ('正在開啟安裝程式…', null),
       UpdateStage.failed => (controller.failure?.title ?? '更新失敗', controller.failure?.detail),

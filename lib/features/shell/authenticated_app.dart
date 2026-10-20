@@ -32,6 +32,7 @@ import 'build_info.dart';
 import 'incoming_links.dart';
 import '../update/update_controller.dart';
 import '../update/update_section.dart';
+import '../../core/brand.dart';
 
 class AuthenticatedApp extends StatefulWidget {
   const AuthenticatedApp({
@@ -166,7 +167,7 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
             handler: _links,
             child: applySystemBars(context, child),
           ),
-          title: 'GitLab Mobile',
+          title: appName,
           theme: appTheme(
             Brightness.light,
             dynamicScheme: enabled ? resolvedLight : null,
@@ -925,14 +926,14 @@ class _MobileShellState extends State<_MobileShell> {
               padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 const Text(
-                  'GitLab Mobile',
+                  appName,
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 4),
                 BuildInfoLine(load: widget.buildInfoLoader),
                 const SizedBox(height: 4),
                 const Text(
-                  '獨立第三方客戶端 · 非 GitLab 官方產品',
+                  appIndependence,
                   style: TextStyle(fontSize: 12),
                 ),
                 const SizedBox(height: 12),

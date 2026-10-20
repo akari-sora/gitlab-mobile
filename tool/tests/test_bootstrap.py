@@ -23,7 +23,7 @@ class BootstrapTests(unittest.TestCase):
         manifest = ET.parse(source / 'AndroidManifest.xml').getroot()
         attribute = '{' + bootstrap.ANDROID + '}'
         app = manifest.find('application')
-        self.assertEqual(app.get(attribute + 'label'), 'GitLab Mobile')
+        self.assertEqual(app.get(attribute + 'label'), bootstrap.APP_NAME)
         self.assertEqual(app.get(attribute + 'allowBackup'), 'false')
         self.assertEqual(app.get(attribute + 'usesCleartextTraffic'), 'false')
         self.assertEqual(manifest.find('uses-permission').get(attribute + 'name'), 'android.permission.INTERNET')
@@ -109,8 +109,8 @@ class BootstrapTests(unittest.TestCase):
         bootstrap.configure_ios_app_name(self.root)
         bootstrap.configure_ios_app_name(self.root)
         text = path.read_text()
-        self.assertIn('<key>CFBundleDisplayName</key>\n\t\t<string>GitLab Mobile</string>', text)
-        self.assertIn('<key>CFBundleName</key>\n\t\t<string>GitLab Mobile</string>', text)
+        self.assertIn('<key>CFBundleDisplayName</key>\n\t\t<string>' + bootstrap.APP_NAME + '</string>', text)
+        self.assertIn('<key>CFBundleName</key>\n\t\t<string>' + bootstrap.APP_NAME + '</string>', text)
         self.assertNotIn('gitlab_mobile', text)
 
     def test_ios_adds_display_name_and_bundle_name_when_absent(self):
@@ -121,8 +121,8 @@ class BootstrapTests(unittest.TestCase):
         path.write_text('<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict></dict></plist>')
         bootstrap.configure_ios_app_name(folder)
         text = path.read_text()
-        self.assertIn('<key>CFBundleDisplayName</key>\n\t\t<string>GitLab Mobile</string>', text)
-        self.assertIn('<key>CFBundleName</key>\n\t\t<string>GitLab Mobile</string>', text)
+        self.assertIn('<key>CFBundleDisplayName</key>\n\t\t<string>' + bootstrap.APP_NAME + '</string>', text)
+        self.assertIn('<key>CFBundleName</key>\n\t\t<string>' + bootstrap.APP_NAME + '</string>', text)
 
     def test_android_updates_activity_label_if_present(self):
         source = self.root / 'app/src/main'
@@ -134,8 +134,8 @@ class BootstrapTests(unittest.TestCase):
         bootstrap.harden_android(self.root)
         manifest = ET.parse(source / 'AndroidManifest.xml').getroot()
         attribute = '{' + bootstrap.ANDROID + '}'
-        self.assertEqual(manifest.find('application').get(attribute + 'label'), 'GitLab Mobile')
-        self.assertEqual(manifest.find('application/activity').get(attribute + 'label'), 'GitLab Mobile')
+        self.assertEqual(manifest.find('application').get(attribute + 'label'), bootstrap.APP_NAME)
+        self.assertEqual(manifest.find('application/activity').get(attribute + 'label'), bootstrap.APP_NAME)
 
     def test_android_enables_predictive_back(self):
         source = self.root / 'app/src/main'
@@ -300,7 +300,12 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(text.count('productFlavors'), 1)
         self.assertIn('create("gitlab")', text)
         self.assertIn('create("play")', text)
-        self.assertNotIn('applicationIdSuffix', text, 'both channels keep the application ID')
+        self.assertNotIn('applicationIdSuffix', text)
+        gitlab = text[text.index('create("gitlab")'):text.index('create("play")')]
+        play = text[text.index('create("play")'):text.index(bootstrap.FLAVORS_END)]
+        self.assertNotIn('applicationId', gitlab, 'installed GitLab-channel previews keep updating in place')
+        self.assertIn(f'applicationId = "{bootstrap.PLAY_APPLICATION_ID}"', play)
+        self.assertNotIn('gitlab', bootstrap.PLAY_APPLICATION_ID, 'no trademark in the store package name')
         self.assertLess(text.index(android_signing.END_CONFIG), text.index(bootstrap.FLAVORS_BEGIN))
         self.assertLess(text.index('android {'), text.index(bootstrap.FLAVORS_BEGIN))
         self.assertFalse(bootstrap.configure_flavors(gradle))

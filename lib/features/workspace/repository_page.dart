@@ -20,6 +20,7 @@ import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 import 'file_history.dart';
 import 'records_feed.dart';
+import '../../core/brand.dart';
 
 const _readmeCandidateNames = <String>[
   'readme.md',
@@ -266,7 +267,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
           'message',
           'Commit 訊息',
           required: true,
-          value: 'Add file from GitLab Mobile',
+          value: 'Add file from $appName',
         ),
       ],
       save: (values) async {
@@ -1399,7 +1400,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
           'message',
           'Commit 訊息',
           required: true,
-          value: 'Update file from GitLab Mobile',
+          value: 'Update file from $appName',
         ),
       ],
       save: (values) async {
@@ -1442,7 +1443,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
         widget.project.id,
         widget.filePath,
         branch: branch,
-        message: 'Delete ${widget.filePath} from GitLab Mobile',
+        message: 'Delete ${widget.filePath} from $appName',
         lastCommit: _lastCommit!,
       );
       if (mounted) {

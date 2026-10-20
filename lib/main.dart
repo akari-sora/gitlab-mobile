@@ -12,6 +12,7 @@ import 'features/shell/authenticated_app.dart';
 import 'features/shell/incoming_links.dart';
 import 'shared/theme.dart';
 import 'shared/scroll_performance.dart';
+import 'core/brand.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -72,7 +73,7 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
       return DynamicColorBuilder(builder: (light, dark) {
         final enabled = appearance.useDynamicColor;
         return MaterialApp(
-          title: 'GitLab Mobile', debugShowCheckedModeBanner: false,
+          title: appName, debugShowCheckedModeBanner: false,
           builder: applySystemBars,
           theme: appTheme(Brightness.light, dynamicScheme: enabled ? flutterScheme(light) : null),
           darkTheme: appTheme(Brightness.dark, dynamicScheme: enabled ? flutterScheme(dark) : null),

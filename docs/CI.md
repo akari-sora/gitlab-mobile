@@ -114,9 +114,11 @@ Play App Signing. Play publication and production signing remain unconfigured.
 ### Distribution channels and versionCode
 
 `tool/bootstrap.py` generates two Android product flavors, `gitlab` and `play`
-(dimension `distribution`). Both keep the application ID
-`io.gitlabmobile.gitlab_mobile`; the flavor reaches Dart as Flutter's
-`appFlavor` and only decides how the app is updated. Every Android build
+(dimension `distribution`). The `gitlab` flavor keeps the application ID
+`io.gitlabmobile.gitlab_mobile`, so installed previews keep updating in place;
+the `play` flavor uses `app.mergeline` (see `docs/STORE_LISTING.md`). The
+flavor reaches Dart as Flutter's `appFlavor` and decides how the app is
+updated. Every Android build
 therefore names one: `flutter build apk --flavor gitlab`, `flutter run --flavor
 gitlab`. iOS has no flavors and builds as before.
 
