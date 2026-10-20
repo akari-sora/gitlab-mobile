@@ -1,0 +1,136 @@
+: RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+: P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+: date: 2026-10-20 (UTC); column: R; case: text; call: 01-text; D.4 items: 1
+: path: POST https://opencode.ai/inference/go/openai/v1/responses (via OpenCode Go)
+: model: gpt-6-luna; HTTP status: 200; cancelled by client: false
+: content: synthetic fake repository only; header values are not recorded
+: request headers sent: authorization: Bearer <key>; x-opencode-session: <random per conversation>; user-agent: mergeline-p0a-spike/0.1
+: Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+: (lines starting with ":" are SSE comments and are ignored by a conforming decoder)
+
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_79594h8covtajo76417md6359b194514h273dm4kc901946018","object":"response","created_at":1792496748,"completed_at":null,"status":"in_progress","parallel_tool_calls":true,"temperature":1,"top_p":0.98,"max_output_tokens":512,"previous_response_id":null,"background":false,"truncation":"disabled","top_logprobs":0,"max_tool_calls":null,"prompt_cache_retention":"24h","model":"gpt-6-luna","error":null,"incomplete_details":null,"output":[],"usage":null,"instructions":"You are a code assistant for a small Dart repository. Use the tools to read files; never guess file contents. Paths are relative to the repository root.","tool_choice":"auto","tools":[],"reasoning":{"context":"all_turns","effort":"medium","mode":"standard","summary":null},"text":{"verbosity":"medium","format":{"type":"text"}},"moderation":null}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_79594h8covtajo76417md6359b194514h273dm4kc901946018","object":"response","created_at":1792496748,"completed_at":null,"status":"in_progress","parallel_tool_calls":true,"temperature":1,"top_p":0.98,"max_output_tokens":512,"previous_response_id":null,"background":false,"truncation":"disabled","top_logprobs":0,"max_tool_calls":null,"prompt_cache_retention":"24h","model":"gpt-6-luna","error":null,"incomplete_details":null,"output":[],"usage":null,"instructions":"You are a code assistant for a small Dart repository. Use the tools to read files; never guess file contents. Paths are relative to the repository root.","tool_choice":"auto","tools":[],"reasoning":{"context":"all_turns","effort":"medium","mode":"standard","summary":null},"text":{"verbosity":"medium","format":{"type":"text"}},"moderation":null}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":2,"output_index":0,"item":{"id":"rs_75695u1ptsaczo07937ir6483k560s86w3625r37l39dpb73w9","type":"reasoning","encrypted_content":"bWVSWZDz51XiONtStRKRGK2y1q20pJAZAFBEHH1vRC_yJ_9Mh2h7VlTMSkGVoeHSgvLBw9pWMCLT6RmqdhjvFAKHciwy1TmygsL46XH7LxdgIJ2nMXzklq22QwA6v8mSaNYpZomT80gv25ZePW-EPfULwBOsYfl3VvP2DkT83ioBhBJqXWx0ODlrN7_F6gOAAvO58nsPXboB-FdeaU7JDl0saGHNNc44TrASLTBYzf-qlUrR7TRh_as4-LxKAZwX05Lly2WygVUVmMJKKmEvtlaxCQirFOPeTVNgEQHHORNcQuXBwjzzfOCaQQbFVDfs5M23kHZj9GzJdPI483StAH3e5JttcNwOK6y2kZrSo31dVnJsddWLa1v5A1rcqlUj0RXB4rUplpxhPCb8JC82Re39Dom1LPogty1d9LTTJWN0oLFdd2coDXfAojN-OpxG8gonVYIhi9gDjvE2YS37c9HipDjOkAi0y3pgL1xylAP-8fwbKxtzPVzqKFSgcZjW_C82GJ7VcU3gRv8OQ1FNvvCqjL-BIc94b85CLOFdBUvEchRBEVPOSpW3KURcNjg3kpVzO8hIAPFBVs1W3I0DIefJMs0kpJmcRwaiYWC9FMQZEaYsLNte0NUSQ8kXsovyghHphb6k6FGLL73ilbXX21BVjmKOtqoNIzXpq-oOAYzxTR3kd0Y_tWyaPqXcr5rW1fxnbkap68-D-4nZsSgNZ0siBjLPm4O6z-amiDMxYZ4ogO-oK3AeoJ2PmGXCePhWlMUDP58h3wk7ayqVZ1Ush6RVz1mr74Ngkj2zG8dge9I1MPgFcSO1pxl--0OEv_N1WROfN8LdxfWCKrqQYGK1wTc9kSde1zi5_FxAmjTy2Aemb7YXL2vjKjMROeatNX2IAY2BNr3HTastwU6FEaw1tWOh4HvnWoS4AQS4SuTu_vlSRHZt4ouiZqA2t_KlunpSH1trjbjqRG_jY9ZIyvTetZCoTH2X-o39mPIKZH1tup39kMmba9F3tBsq1lTYQGolfgdO1EdDGu2CuaaA2hBLjyoD7E9YdGjOEiV0QxByj_TNXIVPDlexEk6T6Eifflrkh6s4HDBZeeYvTWJhLTWrpcYQZEfKUBT9S25ZDSm_Ij_1JcD6R9GZpWwt-xaVU_iQN9Dr7WmvVmd_IDO2XLiJUX4Yto00yD_iqWjSFxJatTwAul9QglZDvAtZ9rZIDM_nMBWN8e5EQW5Y-jmmvoGtApPLe5-sQ5eftcpreTkqSaT_tPzk7XvdlTi=","content":[],"summary":[]}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":3,"output_index":0,"item":{"id":"rs_75695u1ptsaczo07937ir6483k560s86w3625r37l39dpb73w9","type":"reasoning","encrypted_content":"vAYGEAWh08Rt5vy5lAQBnHhu4zyBClxvK0-MK4NFJpLOzZbcAWj8e1K9IxzZI9aSSxhMT87VRvt1rrd-XRf5ps_--CabHkuZjzJZLbLiQKgre0Hrp_Qmd1sXSF91RyatK15yuX1lYpyVC_1rgOKWxExyVuB0B3Er_aWNpLI8MJi3x9Zz7DVj19W35wNbxzkaSBww81idEbkE0qzu3aa2xBu1BhR7xuy1R_VOY8kSl2kLaiOekLuNlouKOoVgusU2AxvFiS9tur2RztdqA7EMLWK-X9zPPPSQaoqTqAE0d00UYzP_dJBdwWwCwWPpalfibeQxwu3g5OSsHVDS99y1e52C0rZUklI0pLUicntWSj-NI_CDNkcGVvShn9CUWaKIuckNm4LagpG-lvBRs5Mp2NZqNY9dC3_C5hlnz4yxAMFP812C1-mvCpB_KEt-6jvPkRMKCirF0j4-vQYWevT3pPHSF8BKQjrQ4Z2VSkJchrhpPUXGcmyUNXxGWbDQ3nqvJxQLiTbv9xvgJAm-426IpT6fUNJDhObebYfxZ45Mjl4buCt4kKwqruRY9ZifZVXjmICD7mfvaot_m9ycfyDTc2MXplL5ib3z4NgFql_H0NyZAW8aBWdly8DaitIP3xMj2PpK8qOpqBK0U0DitPlqkEPW-TIW0TEtuyylg5DMYaQp6u98lP0Umn3a25_9r-MiyZA53VAcIB44uxiuNpu0CP2SduzU0TqWJiLG1Sxd09d9Ue-Wc1Vhn9aLiiAT0XzHUrpWUavZn_2-KJdJTgMfUfXweqGF0-BepZTlm-7Tshyrd4Qzmj1tSrj4Xpc3TjYoGzZU1TyVv6jATEX3w53kvuoBJSQW7p42X4aFelp099cOJ85okO-rCUVAVYyjpDr5of4fkxIkYuQ3GDho4XC95YYYj71xQ0K_vDiHWexCy_idA-_JqgeDOahIHH7KxirP6S4v7G8VFYFtKsTZQJu99IbPntmJ2GZHAUdV3hH9OA96hjqfE9bcfLRn0oE8dzGtfRhehiKGhEtIaVHRLlMcC8WUcyh_fG-Qh_ojkDpxfvx7Z9ReYj-cGaLDvDdaFMc4aAwMo_ZdzoDpjRDZPszDYrek6TLE9LiukU9nYBmjmL76bi8N8zfg9eU9TIQyDMRj9AwcAYEomQMg-wVeSQFAlrQSa-ax-8YzSer_tleI71z3fcfFPgNPpcHS684RGj9aJ9fB2gg3D-_vR52hX45jSEPvmcHDdIeuvFeAxz53eusQ3dHUoEZmCCFbMfQkycUysuoWzLJFHdc1zate-bzhOKB73f-W7cfLHz6lK4z5DpHorsQOawTrfBJsHqSsSIkT9IEdLkJCtn_PsjL40I4uKZsU5VvlCc2ZZM5S4rSEA9EoF6qgqaQXhBebeu2oiZh85XzUK-r5xyDG2IO2U4DZ4_DK9T3lM1wTCbGB8VfIy5w9IJQDc0Nvy-VUXJBsK2FbaiPz9yr9LjgAyDbz3fH3G2d0smaDxULJMfgS97_hOtJ5osbrHdwORWPUBr6mKvQBNh12o09_gJrhn4yv8VSQannYfuFsjLvnQrZqLH3ej0lr4F2flMhkNsAzpTck_pHg36R--Bq113oPDEq1O5SlmJ7-U0frteZ-4-6Ia9tcemMtN_VM1rVcW0_APu7kISXEpLGDqKOwQomIifDiBUxUkr2stH598_JMljeaxvf1W4gGLaInxx7vtsqbfNvHtBQSpc1ZA5_eqAin5Hq_C4olH2ahoUk91YOQILdl_06fpkTQg5U0zs0YqpZ9qkcxB-I8T_Q9MmI2KulSFDQ2IFg5QqOorVTC6tfmFvjUL6Wz1lp5WwTLxEbuJ3w7gQSDDg0a9nematNFW-aEGtSNeJS3_TeU6eSTFiPHIPfEmebvfDolph9XY490F3idSghDF5CTHBo7DWGi6a7ssIoj52dHBIfq8HHKyZTq60b5_86XlyAmjZC-93sUn94NjsrxjNS-c2k4BTNb525q7TiVnF8KVUCGASFVWvsX4fNt42WVShyF4Oho4iZGBGigGox6xxKbvIJADlFZvCbkKPRBpYJJMRbt2KknPX19EbRpRz0uaXR-s5gFVynX_gbW_VfHqEsTP7NUzw3rAzrU5Fy3_XO_ElfV7qTJnp-lddCLAf8st289XdsxKduqfbnVD2GlRPuEtPC8kIN8cPDzQSCmmb7yBIXKPFmDAGoXA5AenP6iFSuVb6MCfcS5KWQXCRvXk-3-NqHfz15RId7vCP2rf3sf2hFFCsne23NqLF==","content":[],"summary":[]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":4,"output_index":1,"item":{"id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","type":"message","status":"in_progress","role":"assistant","phase":"final_answer","content":[]}}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","sequence_number":5,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","part":{"type":"output_text","text":"","annotations":[],"logprobs":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":6,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":"Retry","obfuscation":"luZDfyLqfFd","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":7,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" policies","obfuscation":"gwXdCgJ","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":8,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" cap","obfuscation":"NgiIiAIC3Q0U","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":9,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" each","obfuscation":"RxG5vWmCYiD","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":10,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" delay","obfuscation":"CvDkbp0sDC","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":11,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" so","obfuscation":"pACOFHtm37IsN","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":12,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" exponential","obfuscation":"4kr0","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":13,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" back","obfuscation":"91p6rmdvJ6T","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":14,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":"off","obfuscation":"4yIGF3B5eSoN9","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":15,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" does","obfuscation":"EQG9KJbZhfm","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":16,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" not","obfuscation":"gOrN8frMM46K","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":17,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" make","obfuscation":"orXpx6thVrt","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":18,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" later","obfuscation":"b5Y7XvR5BS","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":19,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" retries","obfuscation":"G99F0oEB","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":20,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" take","obfuscation":"axoVfC8Vp0M","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":21,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" impr","obfuscation":"9xP2Wz0T8Dm","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":22,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":"act","obfuscation":"rO5cNDVHNno5Q","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":23,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":"ically","obfuscation":"v8vC6LAwBQ","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":24,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" long","obfuscation":"nu07Y9EivJY","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":25,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":".","obfuscation":"XB3K8eYytcmy8af","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":26,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" The","obfuscation":"mGOL615lP6Zx","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":27,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" cap","obfuscation":"S8OlgH3aWNtS","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":28,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" also","obfuscation":"1GewEksKttP","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":29,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" bounds","obfuscation":"QlFLcsOyx","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":30,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" recovery","obfuscation":"Zrqq0kb","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":31,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" time","obfuscation":"TE1JCCXHHsl","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":32,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" and","obfuscation":"nmctk5fwBa5p","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":33,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" keeps","obfuscation":"Ik92Zg7RF4","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":34,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" service","obfuscation":"Fh8IJbVi","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":35,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" responsiveness","obfuscation":"K","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":36,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":" predictable","obfuscation":"fz6i","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":37,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","delta":".","obfuscation":"MpfSQJDWwoGSacs","logprobs":[]}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","sequence_number":38,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","text":"Retry policies cap each delay so exponential backoff does not make later retries take impractically long. The cap also bounds recovery time and keeps service responsiveness predictable.","logprobs":[]}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","sequence_number":39,"output_index":1,"content_index":0,"item_id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","part":{"type":"output_text","text":"Retry policies cap each delay so exponential backoff does not make later retries take impractically long. The cap also bounds recovery time and keeps service responsiveness predictable.","annotations":[],"logprobs":[]}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":40,"output_index":1,"item":{"id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","type":"message","status":"completed","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Retry policies cap each delay so exponential backoff does not make later retries take impractically long. The cap also bounds recovery time and keeps service responsiveness predictable.","annotations":[],"logprobs":[]}]}}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":41,"response":{"id":"resp_79594h8covtajo76417md6359b194514h273dm4kc901946018","object":"response","created_at":1792496748,"completed_at":1792496749,"status":"completed","parallel_tool_calls":true,"temperature":1,"top_p":0.98,"max_output_tokens":512,"previous_response_id":null,"background":false,"truncation":"disabled","top_logprobs":0,"max_tool_calls":null,"prompt_cache_retention":"24h","model":"gpt-6-luna","error":null,"incomplete_details":null,"output":[{"id":"rs_75695u1ptsaczo07937ir6483k560s86w3625r37l39dpb73w9","type":"reasoning","encrypted_content":"ePZPQSJt81RuJUtU27sctu3DppfXtqq652wIEThW_RAJsym5kbcE_goXK0Viwol8bXqjptwjQi29BcZwlineI4MumREwPdiV5IhFDar73ECMtD6YPW9alQuKrV_y8Vdqhp6tHRCe0pWiApvvKJf8YNw85OfsjindiBX1oejJXiNj195u-ZWiZNI-AuY_-q7H8Gs3ofyIJDlSPOotFuUiBEQw9VPxakIayhMWRBQlSXESrgsx2YmP2TDhynAQ3tx7jDeR9Czktc52g5dp31q4Gon6Mkc5LU2NRh3YDSQ9rFtnDJNAjqse5kozsEqDBaHMRbcbbxpZRGE6u5EAI88uk7JzfuGP8z9jLlAACffwQWHaFu_Pc5Gy7lYmaE3rL1-AMx64Mq8MovHjWGpVlrpis1kiRXlIeWm9OghhAyVzpAz11ugplFatQ09iWfY2AqfvBWlKH2VvL2Oc1Yaes75Q9nD8J9jKO054r9cSLCwvOfdGu9pbbP2ihwWt7faoPwBe-_wUGcfF-XJ8D1wj92yS-6rzNlVv3WsSGnMdpgTTNs81fRR2xeU_k6qXwlZ-ILlmG89wFSCn3cSu7Zk-exLd-KHOddbAJfpxmnoHMQM5H0bG51oF-NmarnafkyobH1EAo0MTuLEJY4qBZa17dRpKZW8WWAO7GZzSnZC4Y8jmDjaZ4WHifJVIRL3Fd2YfUwCqKcj3ysAVl8PxpnrpfvLrz0k495681iVv4vdZFqkBZ4ZAMRDV3U8uI8EmR64fGjDdYohcu_uqQWYZ_8ms1IYjphMD0VqZiK1QgRQ-W4QpJtEHPqz38Pvce2T91BC4sKpAGtmCOn3vChfqBbmJSZDm803etgcgBlHejBaFzcTuaPzlQws6Nyr7H_1ZMmy7Zn-JuzlyLP23rKQhobnfxRtxGEBDrBV7ykIp22GvElORIp4f0fXNjF6mSXaWkQmfyT0fiGg4_f3EMECyxkMpRSaxxQVbXWdlLxiKIbOmlyFBn-87i23KTRFAi39l59Xvpe6fllXRbiQb8M832kW8QwESvy3N1e9Xihg_sjRjgjXw_ajAk4k8-Wtwyk-rrAJVakqDCv1mvSWUTWFP7XDYT_Bp-ZNoMrzlNLuMFjE42yosrj_vb1rb-enGrR-lIFI-6fG15pANH1UDQ-tC6jzoT_q1LmeKNc4Ep8MSHXkLIeEEGDXo-CAQsDTb_0GcOzp39q9i6QuHUU0_IcVuAD7ha01ZbAN-Rn9u7p4Chcwr6ceAafEyhCb7YTniAg5_IjH55MlQ_juSd-_d-yEI9-x_BsMkurpNYVophB1zUwMFGQpKkqRcuFf0FNcRF2pva9n2NjMbNusR6z4Dwg18kHoUmWWnNumNvZQZi-zS5Wcjlk6sNJw5m84Dbz71EWzFdwNrYV-weHkluHG3EFN8lKckOzAlnASLq3ED7W71HoDmQanDqwBh0GgFwo41--27ztnfcJ5A6HNNOkB7gFGsLHsGhGvPRA4I-jSGPUnslnxDRXTPgobDQkZPnY23LOleADnQ25gYeBiEPq7A4upTPAjzrRl6XoMbfYt10okvu8Je-l2Ls1PqUnJa9nlE5Xfe_82h8fxIvDhGYBai5y9ObNdx7j_rkVW-dJJzyq9UfPXRVyB6gLBfurutGHs_JsPEJWqAv-iRF-sjc068vydhpvDWPAhm-vZNOO36cKpPkC98iyi7WtNIamDA_RliyBwYJUbN7E8EEwBOeVTu2wo3EmkPv_EZ3hqrnMzCUQfniihGtuuJ_RLLQLN7xVB30Q6L5AnAIuWIO-UZYihdNMpfav8NgD57ugVYdzaRUL06ZkuuBn61WCWE1NxBuslOIT7KzvE5v04rU1sIq7J48sLIlZBJJcc4xBnePC-B6Xuy9cXvxp8tqKwbginQp7pYXwUgVD_BnERVQ7_Xmp8NF9hqIR1RRQ9uHHon_KrENSdw8K9aR9-CjYp5aUIB9oQf_q4xCuNutXbEXTCYxFo3LzkR1tDaUrwS43sxc0avAIyA3pkbx8GpmHAt8NJn7xX0n7HbspWRx0LHhasnRoVLLrTPnHT0kLoIMJV0_NjhRdXHbup2BWIrjtL1W6YHWEF13p9DjmphdKom8iTwFTMNKc2bu1wejq2T2lq045QRpmHzFbJa6ot-bG-UU0EHczgKjBgWp-oEzrbmyfnWwj6mQz_w7OlMu7CLx-e1LMGcomiD05GiIw325A05ydoUr_gO4cpa3G0WokCDGmN_yQGQgkINDW8HgzOUt4c6MEh-4u-HqE==","content":[],"summary":[]},{"id":"msg_54024y5ihbftsk99618xr0943p67ov30r1ognkq7p17y29i439","type":"message","status":"completed","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Retry policies cap each delay so exponential backoff does not make later retries take impractically long. The cap also bounds recovery time and keeps service responsiveness predictable.","annotations":[],"logprobs":[]}]}],"usage":{"input_tokens":57,"output_tokens":95,"total_tokens":152,"input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0},"output_tokens_details":{"reasoning_tokens":57}},"instructions":"You are a code assistant for a small Dart repository. Use the tools to read files; never guess file contents. Paths are relative to the repository root.","tool_choice":"auto","tools":[],"reasoning":{"context":"all_turns","effort":"medium","mode":"standard","summary":null},"text":{"verbosity":"medium","format":{"type":"text"}},"moderation":null}}
+

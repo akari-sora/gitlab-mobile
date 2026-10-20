@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/providers.dart';
 import 'features/auth/login_screen.dart';
+import 'features/ai/ai_history.dart';
 import 'features/shell/app_shortcuts.dart';
 import 'features/auth/session_controller.dart';
 import 'features/shell/authenticated_app.dart';
@@ -36,6 +37,14 @@ Future<void> main() async {
   ));
 }
 
+// initialize resets accountsLoaded synchronously. Recovery can then listen for
+// the secure account list without waiting for network identity revalidation.
+Future<void> initializeSessionWithAiRecovery(SessionController session) {
+  final initialization = session.initialize();
+  unawaited(AiHistoryCoordinator.instance.startRecovery(session));
+  return initialization;
+}
+
 class GitLabMobileApp extends ConsumerStatefulWidget {
   const GitLabMobileApp({super.key});
   @override
@@ -55,7 +64,8 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
     // Held here, above the account-keyed tree, so a link that arrives while
     // signed out or during an account switch waits for the next shell.
     _links = ref.read(incomingLinksProvider)..start();
-    unawaited(ref.read(sessionProvider).initialize());
+    final session = ref.read(sessionProvider);
+    unawaited(initializeSessionWithAiRecovery(session));
     // The stored appearance is read alongside the accounts and never gates the
     // first frame: the app renders with ThemeMode.system until it arrives.
     unawaited(ref.read(appearanceProvider).load());

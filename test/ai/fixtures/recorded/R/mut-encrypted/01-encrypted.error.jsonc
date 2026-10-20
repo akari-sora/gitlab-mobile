@@ -1,0 +1,9 @@
+// RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+// P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+// date: 2026-10-20 (UTC); column: R; case: mut-encrypted; call: 01-encrypted; D.4 items: 8 (positive control: tampered encrypted_content)
+// path: POST https://opencode.ai/inference/go/openai/v1/responses (via OpenCode Go)
+// model: gpt-6-luna; HTTP status: 400; cancelled by client: false
+// content: synthetic fake repository only; header values are not recorded
+// request headers sent: authorization: Bearer <key>; x-opencode-session: <random per conversation>; user-agent: mergeline-p0a-spike/0.1
+// Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+{"model":"gpt-6-luna","error":{"message":"The encrypted content for item rs_9j1573816156a6g2714ym3595l141o27b6393fy4acxruegjq8 could not be verified. Reason: Encrypted content could not be decrypted or parsed.","type":"invalid_request_error","param":null,"code":"invalid_encrypted_content"}}

@@ -14,8 +14,9 @@ abstract interface class AccountStore {
   Future<void> saveSignOutPending(bool pending);
 }
 
-/// Only credentials and minimum identity metadata persist in this milestone.
-/// No repository data, logs, code, drafts, or private search history on disk.
+/// Persists credentials and minimum identity metadata.
+/// See CLAUDE.md's Persistence section for the complete disk-write contract,
+/// including the separate opt-in encrypted AI chat history.
 final class SecureAccountStore implements AccountStore {
   SecureAccountStore([FlutterSecureStorage? storage])
     : _storage =

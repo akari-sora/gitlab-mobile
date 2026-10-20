@@ -1,0 +1,10 @@
+// RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+// P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+// date: 2026-10-20 (UTC); column: A; case: text; call: 01-text; D.4 items: 1
+// path: POST https://api.anthropic.com/v1/messages (direct)
+// model: claude-haiku-5-5; HTTP status: 200; cancelled by client: false
+// content: synthetic fake repository only; header values are not recorded
+// request headers sent: x-api-key: <key>; anthropic-version: 2023-06-01; anthropic-beta: thinking-binding-controls-2026-08-01; user-agent: mergeline-p0a-spike/0.1
+// Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+// body follows byte-for-byte as sent (strip the leading // lines before decoding)
+{"model":"claude-haiku-5-5","max_tokens":1024,"stream":true,"system":"You are a code assistant for a small Dart repository. Use the tools to read files; never guess file contents. Paths are relative to the repository root.","thinking":{"type":"adaptive","block_binding":{"prefix_mismatch_behavior":"error"}},"messages":[{"role":"user","content":[{"type":"text","text":"In two sentences: why do retry policies usually cap the delay of each attempt?"}]}]}

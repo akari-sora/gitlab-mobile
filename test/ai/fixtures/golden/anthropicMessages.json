@@ -1,0 +1,74 @@
+{
+  "model": "synthetic-model",
+  "system": "Synthetic system",
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Read both"
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "tool_use",
+          "id": "call_a",
+          "name": "read_file",
+          "input": {
+            "path": "a.dart"
+          }
+        },
+        {
+          "type": "tool_use",
+          "id": "call_b",
+          "name": "read_file",
+          "input": {
+            "path": "b.dart"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_a",
+          "content": "A"
+        },
+        {
+          "type": "tool_result",
+          "tool_use_id": "call_b",
+          "content": "B"
+        },
+        {
+          "type": "text",
+          "text": "Explain more"
+        }
+      ]
+    }
+  ],
+  "stream": true,
+  "max_tokens": 4096,
+  "tools": [
+    {
+      "name": "read_file",
+      "description": "Read synthetic file",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ],
+  "tool_choice": {
+    "type": "auto"
+  }
+}

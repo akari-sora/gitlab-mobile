@@ -1,0 +1,142 @@
+: RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+: P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+: date: 2026-10-20 (UTC); column: A; case: loop; call: 04-followup; D.4 items: 3, 8
+: path: POST https://api.anthropic.com/v1/messages (direct)
+: model: claude-haiku-5-5; HTTP status: 200; cancelled by client: false
+: content: synthetic fake repository only; header values are not recorded
+: request headers sent: x-api-key: <key>; anthropic-version: 2023-06-01; anthropic-beta: thinking-binding-controls-2026-08-01; user-agent: mergeline-p0a-spike/0.1
+: Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+: (lines starting with ":" are SSE comments and are ignored by a conforming decoder)
+
+event: message_start
+data: {"type":"message_start","message":{"model":"claude-haiku-5-5","id":"msg_357UzBMQxRzhS35kYyS7S7oV","type":"message","role":"assistant","content":[],"container":null,"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":1851,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":2,"service_tier":"standard","inference_geo":"global","speed":"standard"},"input_transformations":[],"diagnostics":null}          }
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}             }
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"CQLV8xACXIeZTWP6XPQZgTsnxrxmjaqTKSp3CTw0rKhdlvG5HbeF+tCPzqWjWxJCxQo0SqCDg7zcKdSb03+L5IB8cnfxA5fsLaMHhK7PSGBZWPYpxQ0OUUzwPnWdq/LP9BQt7W1wdSo+SmqTl9FHLfe1THN1ohOKMfUCMPr3d7YzMIsOtgix9/UDRTxY2XaPM5ye26+BJE+4ftAUvLWklfKd+W7Y7zqqctbWxxaq9Cak/uXa2i+MYio82toa4Cbm1WRuLqcf9fD8wN6MgKoQ8Y96Xk9AJ81TXiS3AjV8X7P94Dxzv7HnjrnLQoLoHPResGIsxYVXH8Q8oz+7F54mp87rkaCDuC0xMSvd/DyfGDVBby6rxTHmIXaVUrIHzRqpwJvTI5HRSO1w0ff+rIXBl2k5eqbUGrHrizhEgkB/hkrZyHL5U6k7LaNtbzi7T09g2i9NoLVLSLeG0kzf34CDQEhOxhG+5f2PE/6nta3YB5btZT/jIIzn+Ui/1L6902YQu9YZez0cel/6lhPsp3+RcsFmztBFdwqzlsG/ef1vXhIKcJC6GvjCIpuqrWawERmAwFq5kpTjlvA4JHx7e//+Ll2IdHrhhXcHDIiIrnsFV61lNOe42SAN5rdsKdTQmqTcJZj4jOfM9UblAI9f7Y053yO8bD8GJZYguJeVghit0TmUn7Pjc/y9R3kdeNsLpRVr7wzHrn7/rdqMRk4lUWVvQatNkMk2CbptDh3uJ4/XKk055dHrxcfhBMzMeLEaUv1946rppwFgb42I/D7KnM/fDB29FQhT+yUWafUWvXH+U7BYfMIbfNZFywEcX95+tnqibvO+WeRk3Vx7sjfnpWvgPSEuwN1iTEU44zV0DC5D5nYNSmP3l6THkAfHn4ZhX6fNSK/M9fL09LX4LwxrrgbYdQGbvBEkncTD65aQ9Zu948MLSInwpvWYogx+oSMlrBAgFX+TnfRV+cJZ29R8zZ6tYtIy90U8t8fcwnD8YPxRo35iuoRlVh2xnfM8owrpSdeUmY6FuSfrUNYGYn8OgQYbbsvTMJA9ONGYk4JIsJEXRXVxDxCF7nOzTc45luIHvTNaDswPtAKldHcwqvBpQ8TqNnFNK06Dki4zDGwOY3ZuAos0kNjRyYYG+Ya3OIVU24hkiVokm/mboBS6+pdfn8d/UqVs3i1FIR=="}          }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0            }
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"With"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" ret"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ryCount ="}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 8 and maxDel"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ay = 30, the total"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" wait is **165 secon"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ds**.\n\n| n | "}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"3 × 2^n |"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" capped at 30 |"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\n|---|---|---|"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\n| 0 | 3 "}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"| 3 |\n| "}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"1 | 6 | "}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"6 |\n| 2 "}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"| 12 | 12 "}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"|\n| 3 | "}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"24 | 24 |"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\n| 4 | 48 "}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"| 30 |\n| "}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"5 | 96 | "}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"30 |\n| 6 "}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"| 192 | 30 "}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"|\n| 7 | "}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"384 | 30 |"}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\n\nSum: 3 +"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 6 + 12 +"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 24 = 45, pl"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"us four"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" cap"}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ped wa"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"its of 30 ="}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 120, for "}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"165"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"."}    }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1            }
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null,"container":null},"usage":{"input_tokens":1851,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":329,"output_tokens_details":{"thinking_tokens":112}}        }
+
+event: message_stop
+data: {"type":"message_stop"               }
+

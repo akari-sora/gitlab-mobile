@@ -1,0 +1,34 @@
+: RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+: P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+: date: 2026-10-20 (UTC); column: M; case: loop; call: 07-final-branch; D.4 items: 9
+: path: POST https://opencode.ai/inference/go/anthropic/v1/messages (via OpenCode Go)
+: model: claude-haiku-5-5; HTTP status: 200; cancelled by client: false
+: content: synthetic fake repository only; header values are not recorded
+: request headers sent: authorization: Bearer <key>; anthropic-version: 2023-06-01; anthropic-beta: thinking-binding-controls-2026-08-01; x-opencode-session: <random per conversation>; user-agent: mergeline-p0a-spike/0.1
+: Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+: (lines starting with ":" are SSE comments and are ignored by a conforming decoder)
+
+event: message_start
+data: {"type":"message_start","message":{"id":"msg_820VnRISoa0qDdPo8gTFMgea","type":"message","role":"assistant","stop_reason":null,"stop_sequence":null,"stop_details":null,"model":"claude-haiku-5-5","content":[],"usage":{"input_tokens":887,"output_tokens":8,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":0}}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}
+
+event: ping
+data: {"type":"ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"IIQP0GQYCBjKXYY0FVQSmHkrzxhfvdvMXMiyqSea/3K7pTdiWPyIGrThGJvPnK0xyYGYRjGaBw1RCfkMmQeJgY0FQV16bLnmVH5sJvMYd5kkotNsGtvPZvS7zMcAbnXSWtr343Bv/CA34jgKqeBf0p38HtiSK13zC6QuFJ6TvdIuPEKKwf3A6MRyeo6b3uYoufvOfwou4KZgsxm1Pueea1oInocqCNKFWNpPn9/lFPd9Ljc1KTZ3ztHPteAchdxvbSflAcYx8OGRUplvuVIYeqzgS36QXftzp4DEmYnSPSSwTGH5qjtsrhrEnykN/ewtHA5oBjc1ypmD1Zyy6lHOqYjicfhr1TKJSw41+27kdI7wkXAdks91S8P5DCBFHDICMdkna2mPJ0AzsAmysh5xqgPnddUJa6IRQ7q7Tp1AH8ovd+YL5Jgxc2vZpDf6i1o5Sa8l6kSNwXumS5AJCgnutR1Eo03KYLsbj4JXcbanVYZAdK7JOAAlxPXVFRe98gVCyikVeuzryl6780L8kDzO87GuXOkhy0pL5mfINFRidNwKNjUkt2hfinO7HRgI4xur467ErSsr6STVZ7VPKFHDQG/j7cDuZhkBYX4YBPzoTkMbPPj5FWA1EwXhM3RreZUZ6NozQORFpO7dOFQ1MQcenzZu6SVzJQRKaroNL3w21UhWa6X9Z3NR46qGhZHAJED7awg+2j/4qHwQRxZJplKJffoNw10oc/R67VPi4LvAY1fVdf8kUVggxVsZZd8O0s+Uwhx6Gs5fynnkuvURnJ5XIexC3G5NepqlCQu1AAkVUrD9njFs+iCznXx3OU0FMsjsr0ddcb4fQjYmTLmIjwoCNm0GiFhIEQ80j5BMbSKw/ecJsvNmK4PkttTwMUTEN79CUvlp709wB8Qaqiq1HRO3wj9dx0ervQpn1q1swLnZb8E8FetetRjU8e7bpiWnALYRY2sHk6Ri+Mo2at3TnIg4q9cNbVgfRCC="}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null,"container":null},"usage":{"input_tokens":887,"output_tokens":41,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens_details":{"thinking_tokens":39}}}
+
+event: message_stop
+data: {"type":"message_stop"}
+

@@ -6175,39 +6175,201 @@ final class AppStrings {
   /// 分支
   String get branchesTitle => language._messages[2026];
 
+  /// AI 金鑰無效
+  String get aiUnauthenticatedTitle => language._messages[2027];
+
+  /// 請在 AI 設定中更新供應商金鑰，再手動重試。
+  String get aiUnauthenticatedDetail => language._messages[2028];
+
+  /// AI 供應商拒絕存取
+  String get aiForbiddenTitle => language._messages[2029];
+
+  /// 請檢查金鑰權限、模型存取權與供應商政策。
+  String get aiForbiddenDetail => language._messages[2030];
+
+  /// 找不到 AI 端點或模型
+  String get aiNotFoundTitle => language._messages[2031];
+
+  /// 請檢查供應商網址、線路格式與模型名稱。
+  String get aiNotFoundDetail => language._messages[2032];
+
+  /// AI 請求暫時受限
+  String get aiRateLimitedTitle => language._messages[2033];
+
+  /// 請等候供應商指定的重試時間，再手動重試。
+  String get aiRateLimitedDetail => language._messages[2034];
+
+  /// AI 額度已用盡
+  String get aiQuotaExhaustedTitle => language._messages[2035];
+
+  /// 請檢查供應商的額度與花費上限；不會自動重試。
+  String get aiQuotaExhaustedDetail => language._messages[2036];
+
+  /// 無法連線至 AI 供應商
+  String get aiNetworkTitle => language._messages[2037];
+
+  /// 請檢查網路與供應商網址。已送出的請求可能已計費。
+  String get aiNetworkDetail => language._messages[2038];
+
+  /// AI 供應商暫時無法回應
+  String get aiServerTitle => language._messages[2039];
+
+  /// 已保留收到的內容；請稍後手動重試，先前請求可能已計費。
+  String get aiServerDetail => language._messages[2040];
+
+  /// AI 請求超過大小上限
+  String get aiRequestTooLargeTitle => language._messages[2041];
+
+  /// 請減少附加內容或開始新對話；未送出此請求。
+  String get aiRequestTooLargeDetail => language._messages[2042];
+
+  /// AI 回應超過大小上限
+  String get aiResponseTooLargeTitle => language._messages[2043];
+
+  /// 已停止接收，部分回應不會用於續聊；此請求可能已計費。
+  String get aiResponseTooLargeDetail => language._messages[2044];
+
+  /// 無法讀取 AI 回應
+  String get aiInvalidResponseTitle => language._messages[2045];
+
+  /// 供應商回應的格式無法安全解析；不會自動重試。
+  String get aiInvalidResponseDetail => language._messages[2046];
+
+  /// 不支援此 AI 請求
+  String get aiUnsupportedTitle => language._messages[2047];
+
+  /// 請檢查供應商是否支援所選的線路格式與功能。
+  String get aiUnsupportedDetail => language._messages[2048];
+
+  /// 已阻擋 AI 重新導向
+  String get aiRedirectBlockedTitle => language._messages[2049];
+
+  /// 為避免金鑰傳至其他網址，請在設定中確認正確的端點。
+  String get aiRedirectBlockedDetail => language._messages[2050];
+
+  /// AI 請求已停止
+  String get aiCancelledTitle => language._messages[2051];
+
+  /// 已送出的內容無法撤回，此請求可能已計費。
+  String get aiCancelledDetail => language._messages[2052];
+
+  /// AI 回應已中斷
+  String get aiInterruptedTitle => language._messages[2053];
+
+  /// 已保留部分回應供查看，但不會用於續聊；此請求可能已計費。
+  String get aiInterruptedDetail => language._messages[2054];
+
+  /// AI 請求逾時
+  String get aiTimeoutTitle => language._messages[2055];
+
+  /// 已停止等候；請手動重試，此請求可能已計費。
+  String get aiTimeoutDetail => language._messages[2056];
+
+  /// AI 對話內容過長
+  String get aiContextTooLongTitle => language._messages[2057];
+
+  /// 請減少附加內容，或以摘要開始新對話。
+  String get aiContextTooLongDetail => language._messages[2058];
+
+  /// AI 回應受到內容政策限制
+  String get aiContentFilterTitle => language._messages[2059];
+
+  /// 供應商已限制此回應，不會執行其中的工具呼叫。
+  String get aiContentFilterDetail => language._messages[2060];
+
+  /// AI 供應商拒絕回答
+  String get aiRefusalTitle => language._messages[2061];
+
+  /// 請調整問題；不會執行此回應中的工具呼叫。
+  String get aiRefusalDetail => language._messages[2062];
+
+  /// AI 安全檢查未通過
+  String get aiPolicyBlockedTitle => language._messages[2063];
+
+  /// 端點、遮蔽器或設定未通過安全檢查，未送出此請求。
+  String get aiPolicyBlockedDetail => language._messages[2064];
+
+  /// 自訂 AI 供應商
+  String get aiCustomProvider => language._messages[2065];
+
+  /// 無法清除 AI 紀錄
+  String get aiHistoryCleanupTitle => language._messages[2066];
+
+  /// AI 紀錄尚未完全清除。帳號已保留，請重試移除。
+  String get aiHistoryCleanupDetail => language._messages[2067];
+
+  /// 部分紀錄無法讀取，已移除。
+  String get aiHistoryRemovedUnreadable => language._messages[2068];
+
+  /// 此對話已達保存上限，之後的內容不會保存。
+  String get aiHistoryStorageLimit => language._messages[2069];
+
+  /// 儲存空間目前已滿。釋出空間後會繼續保存。
+  String get aiHistoryCapacityLimit => language._messages[2070];
+
+  /// 目前無法存取加密紀錄，稍後會重試。
+  String get aiHistoryUnavailable => language._messages[2071];
+
+  /// 找不到此帳號的加密金鑰；紀錄無法解密。
+  String get aiHistoryKeyMissing => language._messages[2072];
+
+  /// AI 紀錄資料已損壞或格式不受支援。
+  String get aiHistoryInvalidData => language._messages[2073];
+
+  /// AI 紀錄索引已修復，並已復原對話。
+  String get aiHistoryIndexRepaired => language._messages[2074];
+
+  /// 部分 AI 紀錄使用不受支援的格式，已保留在此裝置上。
+  String get aiHistoryUnsupported => language._messages[2075];
+
+  /// 無法保存此對話，請重試。
+  String get aiHistoryNotSaved => language._messages[2076];
+
+  /// 此對話已從已保存的紀錄中移除，以釋出儲存空間。
+  String get aiHistoryEvicted => language._messages[2077];
+
+  /// 無法讀取紀錄。請重試。
+  String get aiHistoryReadFailed => language._messages[2078];
+
+  /// 已移除過期的暫存紀錄檔。
+  String get aiHistoryTemporaryFilesRemoved => language._messages[2079];
+
+  /// 清除不受支援的紀錄
+  String get aiHistoryClearUnsupported => language._messages[2080];
+
   /// 媒體超過大小限制
-  String get markdownMediaTooLarge => language._messages[2027];
+  String get markdownMediaTooLarge => language._messages[2081];
 
   /// 這不是圖片
-  String get markdownMediaNotImage => language._messages[2028];
+  String get markdownMediaNotImage => language._messages[2082];
 
   /// 已封鎖不安全的媒體網址
-  String get markdownMediaBlocked => language._messages[2029];
+  String get markdownMediaBlocked => language._messages[2083];
 
   /// 無法載入媒體
-  String get markdownMediaNetwork => language._messages[2030];
+  String get markdownMediaNetwork => language._messages[2084];
 
   /// 播放
-  String get markdownMediaPlay => language._messages[2031];
+  String get markdownMediaPlay => language._messages[2085];
 
   /// 暫停
-  String get markdownMediaPause => language._messages[2032];
+  String get markdownMediaPause => language._messages[2086];
 
   /// 靜音
-  String get markdownMediaMute => language._messages[2033];
+  String get markdownMediaMute => language._messages[2087];
 
   /// 取消靜音
-  String get markdownMediaUnmute => language._messages[2034];
+  String get markdownMediaUnmute => language._messages[2088];
 
   /// 取消下載
-  String get markdownMediaCancel => language._messages[2035];
+  String get markdownMediaCancel => language._messages[2089];
 
   /// 重試
-  String get markdownMediaRetry => language._messages[2036];
+  String get markdownMediaRetry => language._messages[2090];
 
   /// 正在下載媒體
-  String get markdownMediaLoading => language._messages[2037];
+  String get markdownMediaLoading => language._messages[2091];
 
   /// 無法播放媒體
-  String get markdownMediaCannotPlay => language._messages[2038];
+  String get markdownMediaCannotPlay => language._messages[2092];
 }

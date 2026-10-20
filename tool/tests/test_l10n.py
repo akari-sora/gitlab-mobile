@@ -135,6 +135,59 @@ class CatalogTest(unittest.TestCase):
                     latin = [key for key in screens if re.search(r'[A-Za-z]', catalog[key].replace('App', ''))]
                     self.assertEqual(latin, [], f'{tag} mixes Latin script into these screen names')
 
+    def test_ai_strings_are_translated(self):
+        # AI messages are translated in every catalog; scripts other than
+        # Latin keep only product and protocol names in Latin letters.
+        product_words = {
+            'AI', 'API', 'URL', 'HTTP', 'HTTPS', 'JSON', 'Mergeline',
+            'GitLab', 'OpenAI', 'Anthropic', 'OpenRouter', 'OpenCode', 'Azure',
+            'Gemini', 'DeepSeek', 'xAI', 'Ollama', 'LM', 'Studio',
+        }
+        non_latin = {'ar', 'hi', 'th', 'ru', 'uk', 'ko', 'ja', 'zh-CN', 'zh-TW'}
+        keys, catalogs = l10n.load()
+        ai_keys = [key for key in keys if key.startswith('ai')]
+        self.assertTrue(ai_keys)
+        english = catalogs['en']
+        for tag, catalog in catalogs.items():
+            if tag == 'en':
+                continue
+            for key in ai_keys:
+                with self.subTest(tag=tag, key=key):
+                    self.assertNotEqual(catalog[key], english[key], 'AI text needs translation')
+                    if tag in non_latin:
+                        words = set(re.findall(r'[A-Za-z]+', catalog[key]))
+                        self.assertEqual(words - product_words, set(), 'unexpected Latin text')
+
+    def test_ai_history_uses_stable_ai_and_api_terms(self):
+        _, catalogs = l10n.load()
+        history_keys = [
+            'aiHistoryCleanupTitle',
+            'aiHistoryCleanupDetail',
+            'aiHistoryInvalidData',
+            'aiHistoryIndexRepaired',
+            'aiHistoryUnsupported',
+        ]
+        for tag, catalog in catalogs.items():
+            for key in history_keys:
+                with self.subTest(tag=tag, key=key):
+                    self.assertIn('AI', catalog[key])
+
+        self.assertNotIn('المساعد الذكي', catalogs['ar']['aiHistoryCleanupTitle'])
+        self.assertIn('Sie', catalogs['de']['aiHistoryCleanupDetail'])
+
+    def test_ai_history_recovery_messages_are_complete(self):
+        required = {
+            'aiHistoryReadFailed',
+            'aiHistoryTemporaryFilesRemoved',
+            'aiHistoryClearUnsupported',
+        }
+        keys, catalogs = l10n.load()
+        self.assertTrue(required.issubset(keys))
+        self.assertNotIn('aiKeyTooShort', keys)
+        for tag, catalog in catalogs.items():
+            with self.subTest(tag=tag):
+                self.assertTrue(required.issubset(catalog))
+
     def test_no_chinese_string_literals_outside_the_catalogs(self):
         found = []
         for path in sorted(LIB.rglob('*.dart')):

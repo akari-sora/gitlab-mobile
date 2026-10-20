@@ -1,0 +1,274 @@
+: RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+: P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+: date: 2026-10-20 (UTC); column: M; case: loop; call: 03-loop3; D.4 items: 2, 8
+: path: POST https://opencode.ai/inference/go/anthropic/v1/messages (via OpenCode Go)
+: model: claude-haiku-5-5; HTTP status: 200; cancelled by client: false
+: content: synthetic fake repository only; header values are not recorded
+: request headers sent: authorization: Bearer <key>; anthropic-version: 2023-06-01; anthropic-beta: thinking-binding-controls-2026-08-01; x-opencode-session: <random per conversation>; user-agent: mergeline-p0a-spike/0.1
+: Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+: (lines starting with ":" are SSE comments and are ignored by a conforming decoder)
+
+event: message_start
+data: {"type":"message_start","message":{"id":"msg_790VcPLTVOAybsT0f337FwiW","type":"message","role":"assistant","stop_reason":null,"stop_sequence":null,"stop_details":null,"model":"claude-haiku-5-5","content":[],"usage":{"input_tokens":1105,"output_tokens":3,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":0}}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}
+
+event: ping
+data: {"type":"ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"APQN1CdSZFqSYED7IISYuMhbxkxacyfNWMQ16JT9wdEhbUV+UloEXrzatvOxf87DR5pvYsLiOARMqEhZOqwRsl86If16cfhlO3luRM9jW04fAv6OslDgAg2RsvoRBFBNLzGZg5Xx4sw0M71aa+Wl5DVq438H2+XiJxPN0DEzXNyAzdpoYNMj873oMZVNLH8PXB4mIlve6WeP51hxHktBYWBy/eIgZUdELDmXvP1tydAuVDhWJhrCF8WkvpHSsqrIPtnh6fje7CaZT3mY4Zv4OZ/mHdNzFHrQhlIawi0+t8ZLTXk2JFPOPYkunt/hQOHkqbfhDkqN0J1O6OyckqfcLdj/XI72mM9S4aCoq+zJcW1d528aCDeWX/UgY5d2IXeiVuJnNQMb9/6KRZ0O54w63icw5wxhNJakLhjPnKb15lcqbJZBDqVTMFcbGbtzbB3XBhWnBopyw2ZmXCKeyc1SRlugw6FHumdSeVrXgnH1td9pIukl8aEFogLeA41AtsHG1L+ccb3F23r6npjnLOKL7b/fU4ReGXxYE1CEDU6WiyZJD2br6fIwAceVUvwutDOnxwRzUT0+yvIfWF53lwJyWQpeG1mCfcid+W4dWiHt4xpeppubEz5DM8BZDzjVBHzfH+uaQPqmtijnnL/LdfyufBS5+591s/lGeyydT6VmPlndNlt96Gf+ogWaCJ7affaqmjNtyfA6FZXzsVTJzQuXjvNKjhNOmppzKmkRClmTTs/lDGpIpzZrNZVuXwXWzWGN6k8ImhmFSiY2FYCrrguxXuXm4sVmv0mRKJmQXXpRV0oGTtC4K3RtHHPqqsJRHWn9uGpq5eU+Wb/iN6UKPTWj8YxMwksF7dmZ2+BVMZGkLPUu6xDY50BBznG4WHzp/YlCihQFtmvOAz3PxgvSCfa1KpU79OqULhxWXUbbTIFp/OFRbHzakQ9hk+BgjxDHWck0fdm4gDsqUfM0B/2xn7jY9CGnvu6jBy1AFR4j1LzZOdHkTujTf2aHCKrogc7N8SeaW8OQRSwurnVX49cWbivIL6Lo51NVNC/wVlxhij8FENzZI4P37epfcSvJ7n2unfdo8KaWXz4PfnoaooBZhU0ge8NvHqr0cfVJHKRhPqnUlYP8GLlhsQUdr5lz+P0sg86/TlsD+Vp1ObS7L3iffXLlbHuDHD4s+xZ2Zg+1GVPoQZV61che2X7bXmC3I5NetPbmZOE7NM0RvmwTJDxsIZD/cW9R/xq1Yjgmxx3yHK6dH15Nocoh33VPLNmWjlH43rkjksnP8MshRVbZ62wKU66uBPBxTDgwPK/n/VXSz6qjC4NDuVNCxbasGHbHrGb1dfc4bWkpRxk3zKV+V57SZoKJMJWhwnYnAO1j6vp5fZddi4/IXK2ck8yRuvjU2fUxxUv/yojqTFzdDW6B15v4ouz5JamRtf9Txxe5aqtk2n+rJ00qrhT917g6w5cMOlLvk+x9Gga36oIYrOoqTFVwQl7Z7MxUVZLoEBGpynJwuE49wgZ3eMeZ1wQYPduzTSVoDOv9rURsfr6h72+aUoLISBC9+C6EE7rwcI08od+SxoNEXCluIW2M/NREMjdUK1EXIzwaXYP17f3ieTuS+PA5YLDzKu5d2IsKeVKYDgMXBQGyJZaXQGdFiGfW4Ur3BEC="}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"The"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" s"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ync client waits **61 "}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"seconds** in"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" total across its "}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"5 retries.\n\nThe"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" three"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" files"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" contribute as"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" follows:"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\n- **lib/a.d"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"art:"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"** `retryBase = "}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"3` se"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"conds,"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" and it imports `c.d"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"art`.\n- **lib"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"/b.dart:** `"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"retryCount = 5`"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" retries after the first failure."}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\n- **lib/c."}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"dart:** `multipl"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ier = 2`"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" and `maxDelay ="}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 20` seconds."}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" Its comment gives the form"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ula `delay(n) ="}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" min(retryBase * mult"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"iplier^n, max"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"Delay)` for n"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" = 0 to"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" ret"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ryCount −"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 1.\n\nPer-att"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"empt delays:"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\n\n|"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" Retry ("}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"n) | U"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ncapped ("}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"3 × 2"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ⁿ) | Del"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ay after cap |\n|---"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"|---|---|\n| "}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"0 | 3 | "}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"3 |"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\n| 1 | 6"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" | 6 |\n|"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 2 | 12 |"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 12 |\n| 3"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" | 24 | 20"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" |\n| 4 |"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 48 | 20 |"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\n\nS"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"um: 3 + 6"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" + 12 + 20"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" + 20 = **61"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" "}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"seconds**.\n\nOne th"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ing to be aware of: l"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ib/a.dart im"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ports only `c.dart`"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":", not `b.dart`"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"."}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" Nothing in `"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"a.dart` references `ret"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ryCount`, so the link"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" to"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" `b.dart` ex"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ists only through the com"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ment in `c.dart`"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":". I"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" used `"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ret"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ryCount = 5` from"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" `b.dart` because that"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" is the value"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" the formula's"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" comment refers to."}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null,"container":null},"usage":{"input_tokens":1105,"output_tokens":696,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens_details":{"thinking_tokens":240}}}
+
+event: message_stop
+data: {"type":"message_stop"}
+

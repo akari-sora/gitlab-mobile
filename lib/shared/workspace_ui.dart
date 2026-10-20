@@ -751,7 +751,7 @@ Future<bool> confirmAction(
 }
 
 void showFailure(BuildContext context, Object error) {
-  final failure = safeFailure(error);
+  final failure = error is UserFacingFailure ? error : safeFailure(error);
   ScaffoldMessenger.of(
     context,
   ).showSnackBar(SnackBar(content: Text(l10n.titleThenDetail(failure.title, failure.detail))));
