@@ -77,9 +77,11 @@ Worked: sign-in, Home (starred projects), 我的工作 merge requests with the �
 
 Found, all invisible to the fixtures:
 
-- The job log showed the runner's per-line header (`2026-10-20T06:56:59.174912Z 01O`), which GitLab ≥ 17.1 writes and its own log view hides. `JobTrace.parse` now removes it and joins `+` continuation lines, following GitLab's `Gitlab::Ci::Ansi2json::Converter`.
-- A long description's summary showed HTML comments and Markdown markers (`<!-- CURSOR_AGENT_PR_BODY_BEGIN --> ## What I found`). The summary now shows the readable text.
-- In Arabic, `!44` read `44!`, `@aa22396584` read `aa22396584@` and an English description's full stop moved to its start; 「منذ 6 يوم」 used the singular after 6. Values in Arabic messages and GitLab names, references and labels are now isolated (U+2068…U+2069), Markdown bodies follow their first letter like `dir="auto"`, and the day count uses the abbreviation 「ي」 like minutes 「د」 and hours 「س」.
+- The job log showed the runner's per-line header (`2026-10-20T06:56:59.174912Z 01O`), which runners write when timestamps are on (`FF_TIMESTAMPS`, GitLab ≥ 17.1, as on gitlab.com) and GitLab's own log view hides.
+- A long description's summary showed HTML comments and Markdown markers (`<!-- CURSOR_AGENT_PR_BODY_BEGIN --> ## What I found`).
+- In Arabic, `!44` read `44!`, `@<owner>` read `<owner>@` and an English description's full stop moved to its start; 「منذ 6 يوم」 used the singular after 6.
+
+Fixed in merge request !84, covered by synthetic tests (`test/bidi_test.dart` checks the laid-out order of `!44` and `@user` in Arabic text, `test/job_sections_test.dart` and `test/rest_work_item_description_test.dart` the rest): `JobTrace.parse` removes the headers and joins `+` continuation lines as GitLab's `Gitlab::Ci::Ansi2json::Converter` does; summaries come from `markdownSummary`, which keeps code and drops comments, tags and markers; Arabic messages isolate each value with its sigil and GitLab text shown on its own is isolated piece by piece; the day count uses 「ي」 like minutes 「د」 and hours 「س」. The emulator walkthrough of the fixed build is recorded below once it has run.
 
 ## NOT_RUN
 
