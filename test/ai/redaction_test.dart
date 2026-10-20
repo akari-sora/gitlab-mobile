@@ -57,11 +57,11 @@ String _keyShape(String shape, List<String> lines, String newline) {
 
 // Median removes isolated scheduler pauses; each size gets the same warm-up.
 int _redactionMicros(Redactor redactor, String input) {
-  redactor.redact(input);
+  redactor.redactSource(input);
   final samples = <int>[];
   for (var i = 0; i < 3; i++) {
     final watch = Stopwatch()..start();
-    redactor.redact(input);
+    redactor.redactSource(input);
     watch.stop();
     samples.add(watch.elapsedMicroseconds);
   }
@@ -123,7 +123,7 @@ void main() {
                   ? ''
                   : '.' * (boundary - split - prefix.length - 1);
               final input = '$prefix$padding\n$key${newline}after';
-              final result = Redactor(secrets: _Secrets()).redact(input);
+              final result = Redactor(secrets: _Secrets()).redactSource(input);
               final leaked = body.where(result.text.contains).length;
               leaks += leaked;
               // A prefix holding a BEGIN without its END withholds the rest.
@@ -161,45 +161,50 @@ void main() {
     // An END before any BEGIN may close a key whose start is not in the text
     // (a log read from an offset), so everything up to it is withheld.
     expect(
-      redactor.redact('doc $end\nbefore $begin body $end\nafter').text,
+      redactor.redactSource('doc $end\nbefore $begin body $end\nafter').text,
       '[REDACTED:private_key_unopened]before [REDACTED]after',
     );
     expect(
-      redactor.redact('KEYTAIL1\nKEYTAIL2\n$end\nlog continues').text,
+      redactor.redactSource('KEYTAIL1\nKEYTAIL2\n$end\nlog continues').text,
       '[REDACTED:private_key_unopened]log continues',
     );
     expect(
       redactor
-          .redact('doc $begin example $end\nbetween\n$begin body $end\nafter')
+          .redactSource(
+            'doc $begin example $end\nbetween\n$begin body $end\nafter',
+          )
           .text,
       'doc [REDACTED]between\n[REDACTED]after',
     );
     expect(
-      redactor.redact('before $begin body -----END PRIVATE KEY----').text,
+      redactor.redactSource('before $begin body -----END PRIVATE KEY----').text,
       'before $unterminated',
     );
     for (final ending in ['\r', '\n', '\r\n']) {
       expect(
-        redactor.redact('$begin body $end${ending}after').text,
+        redactor.redactSource('$begin body $end${ending}after').text,
         '[REDACTED]after',
       );
     }
     const certificate =
         '-----BEGIN CERTIFICATE-----\nPUBLIC\n-----END CERTIFICATE-----\n';
     expect(
-      redactor.redact('$certificate$begin body $end\n$certificate').text,
+      redactor.redactSource('$certificate$begin body $end\n$certificate').text,
       '$certificate[REDACTED]$certificate',
     );
     expect(
-      redactor.redact('before $begin arbitrary ! text\nafter').text,
+      redactor.redactSource('before $begin arbitrary ! text\nafter').text,
       'before $unterminated',
     );
     expect(
-      redactor.redact('before $end after').text,
+      redactor.redactSource('before $end after').text,
       '[REDACTED:private_key_unopened] after',
     );
     // Non-private ENDs must not close a private range.
-    expect(redactor.redact('$begin$certificate after').text, unterminated);
+    expect(
+      redactor.redactSource('$begin$certificate after').text,
+      unterminated,
+    );
     for (final label in [
       'PRIVATE KEY',
       'RSA PRIVATE KEY',
@@ -212,32 +217,36 @@ void main() {
     ]) {
       expect(
         redactor
-            .redact('-----BEGIN $label----- body -----END $label----- after')
+            .redactSource(
+              '-----BEGIN $label----- body -----END $label----- after',
+            )
             .text,
         '[REDACTED] after',
       );
       // Only an END with the same label closes a BEGIN.
       if (label != 'PRIVATE KEY') {
         expect(
-          redactor.redact('-----BEGIN $label----- body $end after').text,
+          redactor.redactSource('-----BEGIN $label----- body $end after').text,
           unterminated,
         );
       }
     }
     const other = '-----BEGIN PUBLIC KEY-----pub-----END PUBLIC KEY-----';
-    expect(redactor.redact(other).text, other);
+    expect(redactor.redactSource(other).text, other);
     // Two BEGINs need two ENDs.
-    final result = redactor.redact('$begin nested $begin body $end\nafter');
+    final result = redactor.redactSource(
+      '$begin nested $begin body $end\nafter',
+    );
     expect(result.text, unterminated);
     expect(result.redactions, 1);
     expect(
-      redactor.redact('$begin nested $begin body $end\n$end\nafter').text,
+      redactor.redactSource('$begin nested $begin body $end\n$end\nafter').text,
       '[REDACTED]after',
     );
-    expect(redactor.redact(result.text).redactions, 0);
-    final missing = redactor.redact('$begin body');
-    expect(redactor.redact(missing.text).text, unterminated);
-    expect(redactor.redact(missing.text).redactions, 0);
+    expect(redactor.redactSource(result.text).redactions, 0);
+    final missing = redactor.redactSource('$begin body');
+    expect(redactor.redactSource(missing.text).text, unterminated);
+    expect(redactor.redactSource(missing.text).redactions, 0);
   });
 
   test('FIX4 shared delimiters do not hide a BEGIN', () {
@@ -247,31 +256,33 @@ void main() {
     final prefix = end.substring(0, end.length - 5);
     // The prefix is itself an END with no BEGIN before it (see below).
     expect(
-      redactor.redact('$prefix$begin body $end\nafter').text,
+      redactor.redactSource('$prefix$begin body $end\nafter').text,
       '[REDACTED:private_key_unopened]after',
     );
     expect(
-      redactor.redact('$prefix$begin body').text,
+      redactor.redactSource('$prefix$begin body').text,
       '[REDACTED:private_key_unterminated]',
     );
     // A closed key whose END shares its last five hyphens with the next
     // BEGIN: the second key is redacted too, with or without its own END.
     expect(
-      redactor.redact('$begin doc $prefix$begin BODY $end after').text,
+      redactor.redactSource('$begin doc $prefix$begin BODY $end after').text,
       '[REDACTED] after',
     );
     expect(
-      redactor.redact('$begin doc $prefix$begin BODY').text,
+      redactor.redactSource('$begin doc $prefix$begin BODY').text,
       '[REDACTED:private_key_unterminated]',
     );
     expect(
-      redactor.redact('$begin a $prefix$begin b $prefix$begin c $end\nz').text,
+      redactor
+          .redactSource('$begin a $prefix$begin b $prefix$begin c $end\nz')
+          .text,
       '[REDACTED]z',
     );
     // This END starts inside the BEGIN marker and cannot close that range.
     final overlappingEnd = end.substring(5);
     expect(
-      redactor.redact('$begin$overlappingEnd body').text,
+      redactor.redactSource('$begin$overlappingEnd body').text,
       '[REDACTED:private_key_unterminated]',
     );
   });
@@ -282,7 +293,7 @@ void main() {
       final redactor = Redactor(
         secrets: _Secrets()..values = ['before -----BEGIN'],
       );
-      final result = redactor.redact(
+      final result = redactor.redactSource(
         'password="before -----BEGIN PRIVATE KEY----- body',
       );
       expect(result.text, '[REDACTED:private_key_unterminated]');
@@ -291,7 +302,7 @@ void main() {
         secrets: _Secrets()..values = ['private_key_unterminated'],
       );
       expect(
-        () => collision.redact('-----BEGIN PRIVATE KEY----- body'),
+        () => collision.redactSource('-----BEGIN PRIVATE KEY----- body'),
         throwsA(
           isA<AiFailure>().having(
             (f) => f.kind,
@@ -423,7 +434,7 @@ void main() {
       'CLIENT_SECRET=${'r' * 12}',
     ];
 
-    final result = redactor.redact(values.join('\n'));
+    final result = redactor.redactSource(values.join('\n'));
 
     for (final value in values) {
       expect(
@@ -476,7 +487,7 @@ void main() {
     final tokens = [...gitLab, ...gitHub, ...sk, ...aws, ...slack, ...stripe];
     final redactor = Redactor(secrets: _Secrets());
 
-    final result = redactor.redact(tokens.join('\n'));
+    final result = redactor.redactSource(tokens.join('\n'));
 
     for (final token in tokens) {
       expect(
@@ -485,7 +496,10 @@ void main() {
         reason: token.substring(0, 4),
       );
     }
-    expect(redactor.redact('akia${'D' * 16} GHP_${'b' * 36}').redactions, 0);
+    expect(
+      redactor.redactSource('akia${'D' * 16} GHP_${'b' * 36}').redactions,
+      0,
+    );
   });
 
   test(
@@ -494,11 +508,14 @@ void main() {
       final source = _Secrets()..values = ['abcd', 'abcdefgh'];
       final redactor = Redactor(secrets: source, patterns: const []);
 
-      expect(redactor.redact('abcdefgh abcd').text, '[REDACTED] [REDACTED]');
+      expect(
+        redactor.redactSource('abcdefgh abcd').text,
+        '[REDACTED] [REDACTED]',
+      );
       source.values = ['new-token'];
 
       expect(
-        redactor.redact('abcdefgh old abcd new-token').text,
+        redactor.redactSource('abcdefgh old abcd new-token').text,
         '[REDACTED] old [REDACTED] [REDACTED]',
       );
     },
@@ -511,7 +528,7 @@ void main() {
       final text = ['before rotated-', 'secret after'].join();
 
       expect(
-        Redactor(secrets: source, patterns: const []).redact(text).text,
+        Redactor(secrets: source, patterns: const []).redactSource(text).text,
         'before [REDACTED] after',
       );
     },
@@ -522,30 +539,31 @@ void main() {
     final redacted = Redactor(
       secrets: source,
       patterns: const [],
-    ).redact('prefix rotated-secret suffix').text;
+    ).redactSource('prefix rotated-secret suffix').text;
 
     expect(redacted.substring(0, 18), isNot(contains('rotated')));
   });
 
   test('unterminated PEM withholds all remaining input without a cap', () {
     final redactor = Redactor(secrets: _Secrets(), patterns: const []);
-    final blankBounded = redactor.redact(
+    final blankBounded = redactor.redactSource(
       'x\n-----BEGIN PRIVATE KEY-----\nsecret\n\nvisible',
     );
     const begin = '-----BEGIN RSA PRIVATE KEY-----';
     const windowChars = 32 * 1024; // At most 64 KiB of UTF-16 text.
     final window = begin + 'A' * (windowChars - begin.length);
-    final windowBounded = redactor.redact('$window!after-window');
+    final windowBounded = redactor.redactSource('$window!after-window');
 
     expect(blankBounded.text, 'x\n[REDACTED:private_key_unterminated]');
     expect(windowBounded.text, '[REDACTED:private_key_unterminated]');
   });
 
   test('redacts matching PEM end marker and preserves following content', () {
-    final result = Redactor(secrets: _Secrets(), patterns: const []).redact(
-      '-----BEGIN EC PRIVATE KEY-----\nabc\n'
-      '-----END EC PRIVATE KEY-----\nafter',
-    );
+    final result = Redactor(secrets: _Secrets(), patterns: const [])
+        .redactSource(
+          '-----BEGIN EC PRIVATE KEY-----\nabc\n'
+          '-----END EC PRIVATE KEY-----\nafter',
+        );
 
     expect(result.text, '[REDACTED]after');
   });
@@ -555,7 +573,7 @@ void main() {
 
     expect(
       redactor
-          .redact(
+          .redactSource(
             '-----BEGIN PRIVATE KEY-----\r\nabc\r\n'
             '-----END PRIVATE KEY-----\r\nafter',
           )
@@ -563,7 +581,7 @@ void main() {
       '[REDACTED]after',
     );
     expect(
-      redactor.redact('-----BEGIN PRIVATE KEY-----abc').text,
+      redactor.redactSource('-----BEGIN PRIVATE KEY-----abc').text,
       '[REDACTED:private_key_unterminated]',
     );
   });
@@ -573,7 +591,7 @@ void main() {
     () {
       final result = Redactor(
         secrets: _Secrets(),
-      ).redact('POSTGRES://user:password@database.internal:5432/db');
+      ).redactSource('POSTGRES://user:password@database.internal:5432/db');
 
       expect(result.text, 'POSTGRES://[REDACTED]@database.internal:5432/db');
     },
@@ -598,7 +616,7 @@ void main() {
       ]) {
     test('known secret $label cannot disable structural detection', () {
       final redactor = Redactor(secrets: _Secrets()..values = [secret]);
-      final result = redactor.redact(input);
+      final result = redactor.redactSource(input);
       expect(result.text, isNot(contains(hidden)), reason: label);
       expect(result.redactions, 1);
     });
@@ -608,7 +626,7 @@ void main() {
     for (final secret in ['REDACTED', 'EDAC', '[REDACTED]']) {
       final redactor = Redactor(secrets: _Secrets()..values = [secret]);
       expect(
-        () => redactor.redact(secret),
+        () => redactor.redactSource(secret),
         throwsA(
           isA<AiFailure>().having(
             (f) => f.kind,
@@ -624,7 +642,7 @@ void main() {
     final result = Redactor(
       secrets: _Secrets()..values = ['abcd', 'cdef'],
       patterns: const [],
-    ).redact('abcdef');
+    ).redactSource('abcdef');
     expect(result.text, '[REDACTED]');
     expect(result.redactions, 1);
   });
@@ -636,7 +654,7 @@ void main() {
       '"Authorization": "Bearer SYNTHETIC-CREDENTIAL"',
       "'x-api-key': 'SYNTHETIC-CREDENTIAL'",
     ]) {
-      final result = Redactor(secrets: _Secrets()).redact(input);
+      final result = Redactor(secrets: _Secrets()).redactSource(input);
       expect(result.text, isNot(contains('SYNTHETIC-CREDENTIAL')));
       expect(result.redactions, 1);
     }
@@ -661,12 +679,12 @@ void main() {
       ])
         ('headers.$header: Bot SYNTHETIC-CREDENTIAL', '[REDACTED]'),
     ]) {
-      final result = Redactor(secrets: _Secrets()).redact(input);
+      final result = Redactor(secrets: _Secrets()).redactSource(input);
       expect(result.text, expected, reason: input.split(RegExp('[:=]')).first);
       expect(result.redactions, 1);
     }
     const ordinary = 'NotAuthorization: visible\nmax_tokens: 1024';
-    expect(Redactor(secrets: _Secrets()).redact(ordinary).text, ordinary);
+    expect(Redactor(secrets: _Secrets()).redactSource(ordinary).text, ordinary);
   });
 
   test('environment and JSON secret assignments hide complete values', () {
@@ -678,21 +696,21 @@ void main() {
       '{"password": "SYNTHETIC-CREDENTIAL"}',
       '{"client_secret":"SYNTHETIC-CREDENTIAL"}',
     ]) {
-      final result = Redactor(secrets: _Secrets()).redact(input);
+      final result = Redactor(secrets: _Secrets()).redactSource(input);
       expect(result.text, isNot(contains('SYNTHETIC-CREDENTIAL')));
       expect(result.redactions, 1);
     }
     expect(
       Redactor(
         secrets: _Secrets(),
-      ).redact('{"max_tokens": 1024, "tokens": 123456789}').redactions,
+      ).redactSource('{"max_tokens": 1024, "tokens": 123456789}').redactions,
       0,
     );
   });
 
   test('encrypted and PGP private keys redact through matching END', () {
     for (final label in ['RSA PRIVATE KEY', 'PGP PRIVATE KEY BLOCK']) {
-      final result = Redactor(secrets: _Secrets()).redact(
+      final result = Redactor(secrets: _Secrets()).redactSource(
         '-----BEGIN $label-----\nProc-Type: 4,ENCRYPTED\n'
         'DEK-Info: AES-128-CBC,ABCDEF\n\nSYNTHETIC-KEY-BODY\n'
         '-----END $label-----\nafter',
@@ -714,7 +732,7 @@ void main() {
       final input =
           'before\n-----BEGIN $label-----\n$headers$body$checksum\n'
           '-----END $label-----\r\nafter';
-      final result = Redactor(secrets: _Secrets()).redact(input);
+      final result = Redactor(secrets: _Secrets()).redactSource(input);
       expect(result.text, 'before\n[REDACTED]after');
       expect(result.redactions, 1);
     });
@@ -728,9 +746,12 @@ void main() {
       const cap = 32 * 1024;
       final redactor = Redactor(secrets: _Secrets());
       final fitting = begin + 'A' * (cap - begin.length - end.length) + end;
-      expect(redactor.redact('$fitting\nafter').text, '[REDACTED]after');
+      expect(redactor.redactSource('$fitting\nafter').text, '[REDACTED]after');
       final outside = begin + 'A' * (cap - begin.length);
-      expect(redactor.redact('$outside$end\nafter').text, '[REDACTED]after');
+      expect(
+        redactor.redactSource('$outside$end\nafter').text,
+        '[REDACTED]after',
+      );
     },
   );
 
@@ -763,7 +784,7 @@ void main() {
         for (final split in [key.length ~/ 2, 12, key.length - 12]) {
           final padding = '.' * (boundary - split - prefix.length - 1);
           final input = '$prefix$padding\n${key}after';
-          final result = Redactor(secrets: _Secrets()).redact(input);
+          final result = Redactor(secrets: _Secrets()).redactSource(input);
           // The prefix's BEGIN never meets its own END.
           expect(
             result.text,
@@ -793,7 +814,7 @@ void main() {
         'after',
       ].join(lineEnding);
       expect(input.length, greaterThan(64 * 1024));
-      final result = Redactor(secrets: _Secrets()).redact(input);
+      final result = Redactor(secrets: _Secrets()).redactSource(input);
       expect(result.text, 'before$lineEnding[REDACTED]after');
       expect(result.redactions, 1);
     });
@@ -808,7 +829,7 @@ void main() {
           '$begin$padding\n$header${'B' * 64}\n=AAAA\n'
           '-----END PGP PRIVATE KEY BLOCK-----\nafter';
       expect(
-        Redactor(secrets: _Secrets()).redact(input).text,
+        Redactor(secrets: _Secrets()).redactSource(input).text,
         '[REDACTED]after',
       );
     }
@@ -818,7 +839,10 @@ void main() {
     final input =
         '-----BEGIN PRIVATE KEY-----\n${'A' * (2 * 1024 * 1024)}\n'
         '-----END PRIVATE KEY-----\nafter';
-    expect(Redactor(secrets: _Secrets()).redact(input).text, '[REDACTED]after');
+    expect(
+      Redactor(secrets: _Secrets()).redactSource(input).text,
+      '[REDACTED]after',
+    );
   });
 
   test('PEM nested BEGIN beyond 1 MiB stays withheld without its own END', () {
@@ -828,7 +852,7 @@ void main() {
         '$begin$padding\n-----BEGIN RSA PRIVATE KEY-----\n${'B' * 64}\n'
         '-----END RSA PRIVATE KEY-----\nafter';
     expect(
-      Redactor(secrets: _Secrets()).redact(input).text,
+      Redactor(secrets: _Secrets()).redactSource(input).text,
       '[REDACTED:private_key_unterminated]',
     );
   });
@@ -840,13 +864,13 @@ void main() {
     final input =
         '$first$padding$second\n${'A' * 100}\n'
         '-----END RSA PRIVATE KEY-----\nafter';
-    final result = Redactor(secrets: _Secrets()).redact(input);
+    final result = Redactor(secrets: _Secrets()).redactSource(input);
     expect(result.text, '[REDACTED]$padding[REDACTED]after');
     expect(result.redactions, 2);
   });
 
   test('PEM foreign END inside a key withholds from the start', () {
-    final result = Redactor(secrets: _Secrets()).redact(
+    final result = Redactor(secrets: _Secrets()).redactSource(
       'intro\n-----BEGIN PGP PRIVATE KEY BLOCK-----\n\n'
       '-----END RSA PRIVATE KEY-----\nSYNTHETIC-KEY-BODY\n'
       '-----END PGP PRIVATE KEY BLOCK-----\nafter',
@@ -863,29 +887,28 @@ void main() {
     const begin = '-----BEGIN RSA PRIVATE KEY-----';
     const end = '-----END RSA PRIVATE KEY-----';
     const cut = 'A_TAIL\n$begin\nB_HEAD\n$end\nB_TAIL\n';
-    final fragment = redactor.redact(cut, fragment: true);
+    final fragment = redactor.redactFragment(cut);
     expect(fragment.text, '[REDACTED:private_key_fragment]');
     expect(fragment.withheldPrivateKeyContext, isTrue);
     for (final marker in [begin, end, '-----BEGIN PRIVATE KEY-----']) {
       expect(
-        redactor.redact('log\n$marker\nmore', fragment: true).text,
+        redactor.redactFragment('log\n$marker\nmore').text,
         '[REDACTED:private_key_fragment]',
       );
     }
     // Fragments without a private-key marker use the ordinary rules.
-    final plain = redactor.redact(
+    final plain = redactor.redactFragment(
       'a glpat-${'x' * 20} line\n-----BEGIN CERTIFICATE-----',
-      fragment: true,
     );
     expect(plain.text, 'a [REDACTED] line\n-----BEGIN CERTIFICATE-----');
     expect(plain.withheldPrivateKeyContext, isFalse);
     // A complete source is not a fragment: the same text keeps its context.
-    expect(redactor.redact(cut).text, 'A_TAIL\n[REDACTED]B_TAIL\n');
+    expect(redactor.redactSource(cut).text, 'A_TAIL\n[REDACTED]B_TAIL\n');
     final collision = Redactor(
       secrets: _Secrets()..values = ['private_key_fragment'],
     );
     expect(
-      () => collision.redact('$begin x', fragment: true),
+      () => collision.redactFragment('$begin x'),
       throwsA(
         isA<AiFailure>().having(
           (f) => f.kind,
@@ -896,12 +919,68 @@ void main() {
     );
   });
 
+  test('FIX8 fragments with a cut marker are withheld whole', () {
+    final redactor = Redactor(secrets: _Secrets());
+    const withheld = '[REDACTED:private_key_fragment]';
+    for (final cut in [
+      // Both delimiters cut by one hyphen; the label survives.
+      '----BEGIN RSA PRIVATE KEY-----\nBODY\n-----END RSA PRIVATE KEY----',
+      // The end of a BEGIN marker starts the fragment.
+      'IVATE KEY-----\nBODY1\nBODY2',
+      'Y-----\nBODY1',
+      '--\r\nBODY1',
+      'ATE KEY BLOCK-----\nBODY1',
+      // The start of an END marker ends the fragment.
+      'BODY1\nBODY2\n-----EN',
+      'BODY1\n-----END RSA PRIV',
+      'BODY1\n---',
+    ]) {
+      final result = redactor.redactFragment(cut);
+      expect(result.text, withheld, reason: cut);
+      expect(result.withheldPrivateKeyContext, isTrue);
+    }
+    // Ordinary fragments are not withheld.
+    for (final plain in [
+      'log line\nnext line',
+      'a - b\nc -- d',
+      '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----',
+    ]) {
+      expect(redactor.redactFragment(plain).text, plain);
+    }
+  });
+
+  test('FIX8 many distinct labels grow linearly from N to 8N', () {
+    String labels(int n) {
+      final buffer = StringBuffer();
+      for (var i = 0; buffer.length < n; i++) {
+        buffer.write(
+          '-----BEGIN L$i PRIVATE KEY-----x-----END L$i PRIVATE KEY-----',
+        );
+      }
+      return buffer.toString().substring(0, n);
+    }
+
+    final redactor = Redactor(secrets: _Secrets());
+    final small = labels(512 * 1024);
+    final large = labels(4 * 1024 * 1024);
+    final smallMicros = _redactionMicros(redactor, small);
+    final largeMicros = _redactionMicros(redactor, large);
+    // ignore: avoid_print
+    print(
+      'FIX8 label growth: N=${small.length} $smallMicros us; '
+      '8N=${large.length} $largeMicros us; ratio=${largeMicros / smallMicros}',
+    );
+    // Linear is 8x; per-END work over all labels grows about 64x.
+    expect(largeMicros, lessThan(smallMicros * 14));
+    expect(largeMicros, lessThan(10000000));
+  }, timeout: const Timeout(Duration(minutes: 2)));
+
   test('FIX6 interleaved keys stay redacted until every label closes', () {
     final redactor = Redactor(secrets: _Secrets());
     String key(String label, String part) =>
         '-----$part $label PRIVATE KEY-----\n';
     // Three keys printed interleaved (round-6 review).
-    final three = redactor.redact(
+    final three = redactor.redactSource(
       '${key('EC', 'BEGIN')}A_HEAD\n${key('RSA', 'BEGIN')}B_HEAD\n'
       '${key('EC', 'END')}B_TAIL\n${key('OPENSSH', 'BEGIN')}C_BODY\n'
       '${key('OPENSSH', 'END')}${key('RSA', 'END')}after',
@@ -909,7 +988,7 @@ void main() {
     expect(three.text, '[REDACTED]after');
     expect(three.withheldPrivateKeyContext, isFalse);
     // The second key of the same label is cut off before its END.
-    final cut = redactor.redact(
+    final cut = redactor.redactSource(
       'x\n${key('RSA', 'BEGIN')}A\n${key('RSA', 'BEGIN')}B\n'
       '${key('RSA', 'END')}B_TAIL',
     );
@@ -917,7 +996,7 @@ void main() {
     // A log read from an offset inside interleaved keys, same and
     // different labels: the tail before the first BEGIN is withheld.
     for (final (first, second) in [('RSA', 'RSA'), ('RSA', 'EC')]) {
-      final midRead = redactor.redact(
+      final midRead = redactor.redactSource(
         'A_TAIL\n${key(second, 'BEGIN')}B1\n${key(first, 'END')}B2\n'
         '${key(second, 'END')}after',
       );
@@ -927,7 +1006,7 @@ void main() {
   });
 
   test('single-line PEM preserves the following ordinary lines', () {
-    final result = Redactor(secrets: _Secrets()).redact(
+    final result = Redactor(secrets: _Secrets()).redactSource(
       '-----BEGIN PRIVATE KEY----- inline-key -----END PRIVATE KEY-----\n'
       'normal line 1\nnormal line 2\n\nafter blank line',
     );
@@ -940,7 +1019,7 @@ void main() {
   test('URL authority stops before query and fragment delimiters', () {
     for (final delimiter in ['?', '#']) {
       final input = 'https://example.com:8443${delimiter}user=alice@corp.com';
-      expect(Redactor(secrets: _Secrets()).redact(input).text, input);
+      expect(Redactor(secrets: _Secrets()).redactSource(input).text, input);
     }
   });
 
@@ -948,7 +1027,7 @@ void main() {
     for (final userinfo in ['opaquetoken0123456789', 'user:p@ss0123456']) {
       final result = Redactor(
         secrets: _Secrets(),
-      ).redact('https://$userinfo@host.example/repo.git');
+      ).redactSource('https://$userinfo@host.example/repo.git');
       expect(result.text, 'https://[REDACTED]@host.example/repo.git');
     }
   });
@@ -957,48 +1036,50 @@ void main() {
     final redactor = Redactor(secrets: _Secrets());
     for (final scheme in ['ssh', 'SSH']) {
       final remote = '$scheme://git@host.example/group/repo.git';
-      expect(redactor.redact(remote).text, remote);
-      expect(redactor.redact(remote).redactions, 0);
+      expect(redactor.redactSource(remote).text, remote);
+      expect(redactor.redactSource(remote).redactions, 0);
       expect(
-        redactor.redact('$scheme://git:pw@host.example/repo.git').text,
+        redactor.redactSource('$scheme://git:pw@host.example/repo.git').text,
         '$scheme://[REDACTED]@host.example/repo.git',
       );
       expect(
-        redactor.redact('$scheme://opaque-token@host.example/repo.git').text,
+        redactor
+            .redactSource('$scheme://opaque-token@host.example/repo.git')
+            .text,
         '$scheme://[REDACTED]@host.example/repo.git',
       );
     }
     final known = Redactor(secrets: _Secrets()..values = ['git']);
     expect(
-      known.redact('ssh://git@host.example/repo').text,
+      known.redactSource('ssh://git@host.example/repo').text,
       'ssh://[REDACTED]@host.example/repo',
     );
   });
 
   test('redaction is idempotent with distinct-span counts', () {
     final redactor = Redactor(secrets: _Secrets());
-    final first = redactor.redact(
+    final first = redactor.redactSource(
       'https://user:pass@host.example/x\n'
       'Authorization: Bearer glpat-${'A' * 20}\n'
       'token = glpat-${'B' * 20}',
     );
     expect(first.redactions, 3);
-    final second = redactor.redact(first.text);
+    final second = redactor.redactSource(first.text);
     expect(second.text, first.text);
     expect(second.redactions, 0);
   });
 
   test('hostile JWT runs remain under three seconds at 2 MiB', () {
     final redactor = Redactor(secrets: _Secrets());
-    redactor.redact('eyJ-' * 100);
+    redactor.redactSource('eyJ-' * 100);
     // Reject quadratic implementations at 32 KiB before attempting 2 MiB.
     final probe = Stopwatch()..start();
-    redactor.redact('eyJ-' * 8192);
+    redactor.redactSource('eyJ-' * 8192);
     probe.stop();
     expect(probe.elapsed, lessThan(const Duration(seconds: 1)));
     final input = 'eyJ-' * (2 * 1024 * 1024 ~/ 4);
     final watch = Stopwatch()..start();
-    final result = redactor.redact(input);
+    final result = redactor.redactSource(input);
     watch.stop();
     expect(result.text, input);
     expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
@@ -1006,10 +1087,10 @@ void main() {
 
   test('hostile unterminated PEM blocks remain under five seconds at 2 MiB', () {
     final redactor = Redactor(secrets: _Secrets());
-    redactor.redact('-----BEGIN PRIVATE KEY-----\n\n' * 10);
+    redactor.redactSource('-----BEGIN PRIVATE KEY-----\n\n' * 10);
     final input = '-----BEGIN PRIVATE KEY-----\n\n' * 72316;
     final watch = Stopwatch()..start();
-    final result = redactor.redact(input);
+    final result = redactor.redactSource(input);
     watch.stop();
     // No END: one reason-bearing span withholds every nested BEGIN.
     expect(result.text, '[REDACTED:private_key_unterminated]');
@@ -1028,9 +1109,9 @@ void main() {
       final repeated = body * ((size - begin.length) ~/ body.length + 1);
       final input = begin + repeated.substring(0, size - begin.length);
       final redactor = Redactor(secrets: _Secrets());
-      redactor.redact('$begin$body');
+      redactor.redactSource('$begin$body');
       final watch = Stopwatch()..start();
-      final result = redactor.redact(input);
+      final result = redactor.redactSource(input);
       watch.stop();
       expect(result.text, '[REDACTED:private_key_unterminated]');
       // ignore: avoid_print
@@ -1049,9 +1130,9 @@ void main() {
         final padding = ' ' * (2 * 1024 * 1024 - count * repeated.length);
         final input = repeated * count + padding;
         final redactor = Redactor(secrets: _Secrets());
-        redactor.redact(repeated * 100);
+        redactor.redactSource(repeated * 100);
         final watch = Stopwatch()..start();
-        final result = redactor.redact(input);
+        final result = redactor.redactSource(input);
         watch.stop();
         expect(result.redactions, count);
         expect(result.text, '[REDACTED]$suffix' * count + padding);
@@ -1068,10 +1149,10 @@ void main() {
 
   test('hostile assignment runs remain under three seconds at 2 MiB', () {
     final redactor = Redactor(secrets: _Secrets());
-    redactor.redact('TOKEN_' * 10);
+    redactor.redactSource('TOKEN_' * 10);
     final input = 'TOKEN_' * 349526;
     final watch = Stopwatch()..start();
-    final result = redactor.redact(input);
+    final result = redactor.redactSource(input);
     watch.stop();
     expect(result.text, input);
     expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
@@ -1085,7 +1166,7 @@ void main() {
 
     for (var attempt = 0; attempt < 2; attempt += 1) {
       expect(
-        () => redactor.redact('content'),
+        () => redactor.redactSource('content'),
         throwsA(
           isA<AiFailure>().having(
             (failure) => failure.kind,
@@ -1101,7 +1182,7 @@ void main() {
     final redactor = Redactor(secrets: _ThrowingSecrets());
 
     expect(
-      () => redactor.redact('content'),
+      () => redactor.redactSource('content'),
       throwsA(
         isA<AiFailure>().having(
           (failure) => failure.kind,

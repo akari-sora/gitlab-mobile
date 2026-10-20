@@ -27,8 +27,9 @@ final class RedactionResult {
   final String text;
   final int redactions;
 
-  /// Whether text around a private-key marker was withheld because the
-  /// marker had no partner (a BEGIN without END, or an END without BEGIN).
+  /// Whether text around a private-key marker was withheld: the marker had
+  /// no partner (a BEGIN without END, or an END without BEGIN), or a fragment
+  /// held a private-key marker or a cut piece of one.
   final bool withheldPrivateKeyContext;
 }
 
@@ -108,16 +109,22 @@ final class Redactor {
   List<RegExp>? _assignments;
   RegExp? _urlCredentials;
 
-  /// Redacts [input]. Pass [fragment] when [input] is part of a larger
-  /// source cut at either end (a log read from an offset, a diff hunk, a
-  /// line range): markers alone cannot tell which key a cut BEGIN or END
-  /// belongs to, so a fragment holding any private-key marker is withheld
-  /// whole. A complete source should be redacted before it is cut.
-  RedactionResult redact(String input, {bool fragment = false}) {
+  /// Redacts a complete source (a whole file, a finished job's whole trace).
+  /// Redact a source before cutting excerpts from it.
+  RedactionResult redactSource(String input) => _redact(input, false);
+
+  /// Redacts text cut from a larger source at either end (a trace read from
+  /// an offset, a diff hunk, a line range). Markers alone cannot tell which
+  /// key a cut BEGIN or END belongs to, so a fragment holding a private-key
+  /// label, or a first or last line that looks like a cut marker, is
+  /// withheld whole.
+  RedactionResult redactFragment(String input) => _redact(input, true);
+
+  RedactionResult _redact(String input, bool fragment) {
     try {
       _refreshSecrets();
       _compilePatterns();
-      if (fragment && _privateKeyMarker.hasMatch(input)) {
+      if (fragment && _looksLikeKeyFragment(input)) {
         if (_knownSecrets.any(_privateKeyFragment.contains)) {
           throw const AiFailure(AiFailureKind.policyBlocked);
         }
@@ -352,6 +359,21 @@ int _skipHorizontalSpace(String input, int cursor) {
 final _privateKeyMarker = RegExp(
   r'-----(BEGIN|END) ([A-Z0-9 ]*PRIVATE KEY|PGP PRIVATE KEY BLOCK)(?=-----)',
 );
+
+final _privateKeyLabel = RegExp(r'PRIVATE KEY');
+// The end of a marker cut at the start of a fragment ("IVATE KEY-----",
+// "Y-----", "--") and the start of one cut at its end ("-----BEGIN RSA PRIV").
+final _cutMarkerHead = RegExp(r'^[A-Z0-9 ]*-{1,5}\r?$');
+final _cutMarkerTail = RegExp(r'^-{1,5}[A-Z0-9 ]*\r?$');
+
+bool _looksLikeKeyFragment(String input) {
+  if (_privateKeyLabel.hasMatch(input)) return true;
+  final firstBreak = input.indexOf('\n');
+  final first = firstBreak < 0 ? input : input.substring(0, firstBreak);
+  final lastBreak = input.lastIndexOf('\n');
+  final last = lastBreak < 0 ? input : input.substring(lastBreak + 1);
+  return _cutMarkerHead.hasMatch(first) || _cutMarkerTail.hasMatch(last);
+}
 
 Iterable<_RedactionRange> _pemRanges(String input) sync* {
   // Consume only an immediately following CR, LF or CRLF.
