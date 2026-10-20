@@ -18,7 +18,39 @@ void main() {
     'Opus Q3 text and code':
         '<a href=x>t `<img src="https://cdn.example/a.png">` ',
   };
+  const hostile = {
+    'Opus M1 quoted anchor close': (
+      prefix: 'x <a href=u>t ',
+      repeated: '<img src=y t="</a>"c=<a href=x>',
+      suffix: ' t',
+    ),
+    'Opus M1 quoted picture close': (
+      prefix: 'x <picture>t ',
+      repeated: '<img t="</picture>"c=<picture>',
+      suffix: ' t',
+    ),
+    'Opus N2 incomplete anchor': (prefix: 'v ', repeated: '<a b=', suffix: ''),
+    'Opus N2b incomplete image': (
+      prefix: 'v ',
+      repeated: '<img src=',
+      suffix: '',
+    ),
+    'Opus N3 block incomplete anchor': (
+      prefix: '<div><img src="https://cdn.example/real.svg">\n',
+      repeated: '<a b=',
+      suffix: '',
+    ),
+  };
+  String hostileSource(String key, int cap) {
+    final shape = hostile[key]!;
+    final count =
+        (cap - shape.prefix.length - shape.suffix.length) ~/
+        shape.repeated.length;
+    return '${shape.prefix}${shape.repeated * count}${shape.suffix}';
+  }
+
   final shapes = <String, String>{
+    for (final key in hostile.keys) key: hostileSource(key, 65536),
     'paragraph unknown tags': 'a\n${'<x>\n' * 16384}',
     'paragraph anchors': 'a\n${'<a href="x">\n' * 5462}',
     'inline unclosed video': 'v ${'<video>' * 9363}',
@@ -52,7 +84,9 @@ void main() {
         await tester.pumpWidget(const SizedBox.shrink());
         final closing = shape.key.contains('pictures') ? '</picture>' : '</a>';
         final repeated = repeatedRegions[shape.key];
-        final source = repeated == null
+        final source = hostile.containsKey(shape.key)
+            ? hostileSource(shape.key, length)
+            : repeated == null
             ? shape.value.substring(0, length)
             : 'v ${repeated * ((length - 2 - closing.length) ~/ repeated.length)}$closing';
         final watch = Stopwatch()..start();
@@ -67,6 +101,9 @@ void main() {
         );
         await tester.pump();
         watch.stop();
+        // The block hostile shape contains a real image. Drain its fake
+        // transport timers after measuring parsing and initial layout.
+        await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         return watch.elapsedMicroseconds;
       }
@@ -96,10 +133,14 @@ void main() {
     });
   }
 
-  for (final shape in neutralised.entries) {
+  for (final shape in {
+    ...neutralised,
+    for (final entry in hostile.entries) entry.key: entry.value.repeated,
+  }.entries) {
     test('FIX6 parser cap growth: ${shape.key}', () {
-      String source(int cap) =>
-          'v ${shape.value * ((cap - 6) ~/ shape.value.length)}</a>';
+      String source(int cap) => hostile.containsKey(shape.key)
+          ? hostileSource(shape.key, cap)
+          : 'v ${shape.value * ((cap - 6) ~/ shape.value.length)}</a>';
       List<md.Node> parse(String text, {bool media = true}) => md.Document(
         blockSyntaxes: media ? [MarkdownMediaBlockSyntax()] : null,
         inlineSyntaxes: media
@@ -136,10 +177,12 @@ void main() {
         if (mainN < mainQuarter) mainQuarter = mainN;
         if (mainFourN < mainCap) mainCap = mainFourN;
       }
-      expect(
-        md.HtmlRenderer().render(parse(source(65536))),
-        md.HtmlRenderer().render(parse(source(65536), media: false)),
-      );
+      if (!hostile.containsKey(shape.key)) {
+        expect(
+          md.HtmlRenderer().render(parse(source(65536))),
+          md.HtmlRenderer().render(parse(source(65536), media: false)),
+        );
+      }
       debugPrint(
         'FIX6 parser ${shape.key}: N=${quarter}us 4N=${cap}us mainN=${mainQuarter}us main4N=${mainCap}us',
       );

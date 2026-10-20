@@ -118,7 +118,7 @@ void main() {
     }
   });
 
-  testWidgets('picture with comment and script children follows main', (
+  testWidgets('picture keeps reached image while inert children stay hidden', (
     tester,
   ) async {
     final client = _client();
@@ -126,19 +126,16 @@ void main() {
     const source =
         '<picture><!-- <img src="hidden.png"> -->'
         '<script>"<img src=\'also-hidden.png\'>"</script>'
-        '<img src="actual.png"></picture>';
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(body: MarkdownBody(data: source)),
-      ),
-    );
-    await tester.pump();
-    final baseline = _renderedText(tester);
+        '<img src="https://cdn.example/actual.png"></picture>';
     await tester.pumpWidget(_host(source, client));
     await tester.pumpAndSettle();
-    expect(find.byType(MarkdownMediaImage), findsNothing);
-    expect(_renderedText(tester), baseline);
-    expect((client.httpClientAdapter as FakeAdapter).requests, isEmpty);
+    expect(find.byType(MarkdownMediaImage), findsOneWidget);
+    expect(
+      (client.httpClientAdapter as FakeAdapter).requests.map(
+        (request) => request.uri.toString(),
+      ),
+      ['https://cdn.example/actual.png'],
+    );
   });
 
   testWidgets('HTML video and audio keep explicit media kinds', (tester) async {

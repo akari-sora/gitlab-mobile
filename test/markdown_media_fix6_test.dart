@@ -1,10 +1,8 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:gitlab_mobile/shared/in_app_links.dart';
 import 'package:gitlab_mobile/shared/markdown_media.dart';
 import 'package:gitlab_mobile/shared/markdown_media_syntax.dart';
@@ -65,106 +63,205 @@ Iterable<md.Element> _elements(Iterable<md.Node> nodes) sync* {
   }
 }
 
-String _renderedText(WidgetTester tester) => tester
-    .widgetList<RichText>(find.byType(RichText))
-    .map((widget) => widget.text.toPlainText())
-    .join('\n');
-
-TapGestureRecognizer? _tapRecognizer(InlineSpan span, String text) {
-  if (span case final TextSpan value) {
-    final recognizer = value.recognizer;
-    if ((value.text ?? '').contains(text) &&
-        recognizer is TapGestureRecognizer) {
-      return recognizer;
-    }
-    for (final child in value.children ?? const <InlineSpan>[]) {
-      final found = _tapRecognizer(child, text);
-      if (found != null) return found;
-    }
-  }
-  return null;
-}
-
 void main() {
-  const rejected = {
-    'badge then text': 'v <a href="u"><img src="real.svg">caption</a> tail',
-    'text then badge': 'v <a href="u">caption<img src="real.svg"></a> tail',
-    'text between badges':
-        'v <a href="u"><img src="one.svg">and<img src="two.svg"></a>',
-    'backtick': 'v <a href="u"><img src="real.svg">`</a>',
-    'code': 'v <a href="u"><img src="real.svg">`<img src="code.svg">`</a>',
-    'closing tag in code': 'v <a href="u">`<img src="code.svg"></a>` tail',
-    'escape': r'v <a href="u"><img src="real.svg">\<img src="escape.svg"></a>',
-    'entity': 'v <a href="u"><img src="real.svg">&amp;</a>',
-    'comment': 'v <a href="u"><img src="real.svg"><!-- comment --></a>',
-    'span': 'v <a href="u"><img src="real.svg"><span>hello</span></a>',
-    'kbd': 'v <a href="u"><img src="real.svg"><kbd>K</kbd></a>',
-    'sub bold': 'v <a href="u"><img src="real.svg"><sub><b>Name</b></sub></a>',
-    'br caption': 'v <a href="u"><img src="real.svg"><br>Caption</a>',
-    'nested anchor':
-        'v <a href="outer"><img src="one.svg"> one <a href="inner">two</a> three<img src="two.svg"></a>',
-    'nested badge anchor':
-        'v <a href="outer"><a href="inner"><img src="inner.svg"></a><img src="outer.svg"></a>',
-    'picture inside anchor':
-        'v <a href="u"><picture><img src="real.svg"></picture></a>',
-    'malformed closing attributes':
-        'v <a href="u"><img src="one.svg"></a title="bad"><img src="two.svg"></a>',
-    'malformed closing slash':
-        'v <a href="u"><img src="one.svg"></a/><img src="two.svg"></a>',
-    'missing image source': 'v <a href="u"><img><img src="real.svg"></a>',
-    'empty image source': 'v <a href="u"><img src=""><img src="real.svg"></a>',
-    'no href': 'v <a><img src="real.svg"></a>',
-    'empty href': 'v <a href=""><img src="real.svg"></a>',
-    'picture code':
-        'Logo <picture><img src="real.png"> `<img src="code.png">`</picture> end',
-    'picture escape':
-        r'Logo <picture><img src="real.png"> \<img src="code.png"></picture> end',
-    'picture text': 'v <picture><img src="real.svg">caption</picture>',
-    'picture entity': 'v <picture><img src="real.svg">&amp;</picture>',
-    'picture br': 'v <picture><img src="real.svg"><br></picture>',
-    'picture comment': 'v <picture><!-- c --><img src="real.svg"></picture>',
-    'picture other tag':
-        'v <picture><span><img src="real.svg"></span></picture>',
-    'nested picture':
-        'v <picture><picture><img src="one.svg"></picture><img src="two.svg"></picture>',
-    'Markdown inside rejected anchor':
-        'v <a href="u"><img src="real.svg">**bold** `code` [docs](https://docs.example) [ref][r]</a> tail\n\n[r]: https://ref.example',
+  const formerlyRejected = {
+    'badge then text': (
+      source: 'v <a href="u"><img src="real.svg">caption</a> tail',
+      images: ['real.svg'],
+    ),
+    'text then badge': (
+      source: 'v <a href="u">caption<img src="real.svg"></a> tail',
+      images: ['real.svg'],
+    ),
+    'text between badges': (
+      source: 'v <a href="u"><img src="one.svg">and<img src="two.svg"></a>',
+      images: ['one.svg', 'two.svg'],
+    ),
+    'backtick': (
+      source: 'v <a href="u"><img src="real.svg">`</a>',
+      images: ['real.svg'],
+    ),
+    'code': (
+      source: 'v <a href="u"><img src="real.svg">`<img src="code.svg">`</a>',
+      images: ['real.svg'],
+    ),
+    'closing tag in code': (
+      source: 'v <a href="u">`<img src="code.svg"></a>` tail',
+      images: <String>[],
+    ),
+    'escape': (
+      source: r'v <a href="u"><img src="real.svg">\<img src="escape.svg"></a>',
+      images: ['real.svg'],
+    ),
+    'entity': (
+      source: 'v <a href="u"><img src="real.svg">&amp;</a>',
+      images: ['real.svg'],
+    ),
+    'comment': (
+      source: 'v <a href="u"><img src="real.svg"><!-- comment --></a>',
+      images: ['real.svg'],
+    ),
+    'span': (
+      source: 'v <a href="u"><img src="real.svg"><span>hello</span></a>',
+      images: ['real.svg'],
+    ),
+    'kbd': (
+      source: 'v <a href="u"><img src="real.svg"><kbd>K</kbd></a>',
+      images: ['real.svg'],
+    ),
+    'sub bold': (
+      source: 'v <a href="u"><img src="real.svg"><sub><b>Name</b></sub></a>',
+      images: ['real.svg'],
+    ),
+    'br caption': (
+      source: 'v <a href="u"><img src="real.svg"><br>Caption</a>',
+      images: ['real.svg'],
+    ),
+    'nested anchor': (
+      source:
+          'v <a href="outer"><img src="one.svg"> one <a href="inner">two</a> three<img src="two.svg"></a>',
+      images: ['one.svg', 'two.svg'],
+    ),
+    'nested badge anchor': (
+      source:
+          'v <a href="outer"><a href="inner"><img src="inner.svg"></a><img src="outer.svg"></a>',
+      images: ['inner.svg', 'outer.svg'],
+    ),
+    'picture inside anchor': (
+      source: 'v <a href="u"><picture><img src="real.svg"></picture></a>',
+      images: ['real.svg'],
+    ),
+    'malformed closing attributes': (
+      source:
+          'v <a href="u"><img src="one.svg"></a title="bad"><img src="two.svg"></a>',
+      images: ['one.svg', 'two.svg'],
+    ),
+    'malformed closing slash': (
+      source: 'v <a href="u"><img src="one.svg"></a/><img src="two.svg"></a>',
+      images: ['one.svg', 'two.svg'],
+    ),
+    'missing image source': (
+      source: 'v <a href="u"><img><img src="real.svg"></a>',
+      images: ['real.svg'],
+    ),
+    'empty image source': (
+      source: 'v <a href="u"><img src=""><img src="real.svg"></a>',
+      images: ['real.svg'],
+    ),
+    'no href': (source: 'v <a><img src="real.svg"></a>', images: ['real.svg']),
+    'empty href': (
+      source: 'v <a href=""><img src="real.svg"></a>',
+      images: ['real.svg'],
+    ),
+    'picture code': (
+      source:
+          'Logo <picture><img src="real.png"> `<img src="code.png">`</picture> end',
+      images: ['real.png'],
+    ),
+    'picture escape': (
+      source:
+          r'Logo <picture><img src="real.png"> \<img src="code.png"></picture> end',
+      images: ['real.png'],
+    ),
+    'picture text': (
+      source: 'v <picture><img src="real.svg">caption</picture>',
+      images: ['real.svg'],
+    ),
+    'picture entity': (
+      source: 'v <picture><img src="real.svg">&amp;</picture>',
+      images: ['real.svg'],
+    ),
+    'picture br': (
+      source: 'v <picture><img src="real.svg"><br></picture>',
+      images: ['real.svg'],
+    ),
+    'picture comment': (
+      source: 'v <picture><!-- c --><img src="real.svg"></picture>',
+      images: ['real.svg'],
+    ),
+    'picture other tag': (
+      source: 'v <picture><span><img src="real.svg"></span></picture>',
+      images: ['real.svg'],
+    ),
+    'nested picture': (
+      source:
+          'v <picture><picture><img src="one.svg"></picture><img src="two.svg"></picture>',
+      images: ['one.svg', 'two.svg'],
+    ),
+    'Markdown inside rejected anchor': (
+      source:
+          'v <a href="u"><img src="real.svg">**bold** `code` [docs](https://docs.example) [ref][r]</a> tail\n\n[r]: https://ref.example',
+      images: ['real.svg'],
+    ),
   };
-  for (final value in rejected.entries) {
-    testWidgets('FIX6 main parity: ${value.key}', (tester) async {
-      final nodes = _parse(value.value);
+  for (final value in formerlyRejected.entries) {
+    testWidgets('FIX7 formerly rejected wrapper: ${value.key}', (tester) async {
+      final media = _elements(
+        _parse(value.value.source),
+      ).where((element) => element.tag == markdownMediaElement).toList();
       expect(
-        md.HtmlRenderer().render(nodes),
-        md.HtmlRenderer().render(_parse(value.value, media: false)),
-        reason: value.value,
+        media.map((element) => element.attributes['src']),
+        value.value.images,
+        reason: value.value.source,
       );
+      if (value.key != 'nested badge anchor') {
+        expect(
+          media.map((element) => element.attributes['href']),
+          everyElement(isNull),
+          reason: value.value.source,
+        );
+      }
       final fixture = _client();
       addTearDown(fixture.client.close);
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(body: MarkdownBody(data: value.value)),
-        ),
-      );
-      final baseline = _renderedText(tester);
-      final taps = <Uri>[];
-      await tester.pumpWidget(_host(value.value, fixture.client, taps: taps));
+      await tester.pumpWidget(_host(value.value.source, fixture.client));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(_renderedText(tester), baseline);
-      expect(find.byType(MarkdownMediaImage), findsNothing);
+      expect(find.byType(MarkdownMediaImage), findsNWidgets(media.length));
       expect(fixture.adapter.requests, isEmpty);
-      for (final link in _elements(nodes).where((e) => e.tag == 'a')) {
-        final recognizer = tester
-            .widgetList<RichText>(find.byType(RichText))
-            .map((w) => _tapRecognizer(w.text, link.textContent))
-            .whereType<TapGestureRecognizer>()
-            .single;
-        recognizer.onTap!();
-        await tester.pump();
-        expect(taps.last, Uri.parse(link.attributes['href']!));
-      }
     });
   }
+
+  test('FIX7 nested image badge keeps only its own anchor destination', () {
+    const source =
+        'v <a href="outer"><a href="inner"><img src="inner.svg"></a><img src="outer.svg"></a>';
+    final media = _elements(
+      _parse(source),
+    ).where((element) => element.tag == markdownMediaElement).toList();
+    expect(media.map((element) => element.attributes['src']), [
+      'inner.svg',
+      'outer.svg',
+    ]);
+    expect(media.map((element) => element.attributes['href']), ['inner', null]);
+  });
+
+  test('FIX7 rejected wrapper stays raw while Markdown children parse', () {
+    const source =
+        'v <a href="u"><img src="real.svg"> **bold** `code` [docs](https://docs.example)</a> tail';
+    final nodes = _parse(source);
+    final rendered = md.HtmlRenderer().render(nodes);
+    final elements = _elements(nodes).toList();
+    expect(rendered, contains('<a href="u">'));
+    expect(rendered, contains('</a>'));
+    expect(
+      elements
+          .where((element) => element.tag == markdownMediaElement)
+          .single
+          .attributes['href'],
+      isNull,
+    );
+    expect(
+      elements.where((element) => element.tag == 'strong').single.textContent,
+      'bold',
+    );
+    expect(
+      elements.where((element) => element.tag == 'code').single.textContent,
+      'code',
+    );
+    expect(
+      elements.where((element) => element.tag == 'a').single.attributes['href'],
+      'https://docs.example',
+    );
+  });
 
   for (final content in [
     '[^1] `<img src="code.svg">`',
@@ -187,21 +284,27 @@ void main() {
       expect(actual.footnoteReferences, baseline.footnoteReferences);
       expect(actual.footnoteLabels, baseline.footnoteLabels);
       expect(actual.footnoteReferences, {'1': 1});
-      expect(
-        md.HtmlRenderer().render(nodes),
-        md.HtmlRenderer().render(expected),
-      );
+      expect(_elements(nodes).where((e) => e.tag == 'sup').length, 1);
+      expect(_elements(expected).where((e) => e.tag == 'sup').length, 1);
       expect(md.HtmlRenderer().render(nodes), isNot(contains('fnref-1-2')));
     });
   }
 
-  test('FIX6 rejected surrogate entity content keeps main AST', () {
-    const source = 'x <a href="u"><img src="real.svg">&#xDC00;</a>';
-    expect(
-      md.HtmlRenderer().render(_parse(source)),
-      md.HtmlRenderer().render(_parse(source, media: false)),
-    );
-  });
+  test(
+    'FIX7 formerly rejected surrogate entity keeps media and replacement',
+    () {
+      const source = 'x <a href="u"><img src="real.svg">&#xDC00;</a>';
+      final nodes = _parse(source);
+      expect(
+        _elements(nodes)
+            .where((element) => element.tag == markdownMediaElement)
+            .single
+            .attributes['src'],
+        'real.svg',
+      );
+      expect(md.HtmlRenderer().render(nodes), isNot(contains('&#xDC00;')));
+    },
+  );
 
   for (final content in [
     '<img src="https://cdn.example/one.svg">',
@@ -275,7 +378,7 @@ void main() {
     });
   }
 
-  testWidgets('FIX6 rejection ends at its own close before a valid sibling', (
+  testWidgets('FIX7 nested wrappers do not suppress parser-reached images', (
     tester,
   ) async {
     const source =
@@ -284,6 +387,12 @@ void main() {
     addTearDown(fixture.client.close);
     await tester.pumpWidget(_host(source, fixture.client));
     await tester.pumpAndSettle();
+    expect(
+      _elements(_parse(source))
+          .where((e) => e.tag == markdownMediaElement)
+          .map((e) => e.attributes['src']),
+      ['hidden.svg', 'also-hidden.svg', 'https://cdn.example/real.svg'],
+    );
     expect(fixture.adapter.requests.map((r) => r.uri.toString()), [
       'https://cdn.example/real.svg',
     ]);

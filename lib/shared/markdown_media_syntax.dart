@@ -357,7 +357,9 @@ List<md.Node> _htmlBlockChildren(String source) {
       continue;
     }
     if (tag.name == 'a') {
-      link = tag.closing ? null : tag.attributes['href'];
+      if (!tag.selfClosing) {
+        link = tag.closing ? null : tag.attributes['href'];
+      }
       continue;
     }
     if (!tag.closing && tag.name == 'img') {
@@ -395,21 +397,6 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
   int start,
 ) {
   final source = scanner.source;
-  if (scanner.rawInlineParent != null) {
-    // Let the default parser see every tag and Markdown delimiter in a
-    // rejected wrapper. Track only its own tags as the outer parser advances;
-    // code spans, escapes and comments are consumed by the default syntaxes.
-    final tag = _scanTag(source, start);
-    if (tag != null &&
-        tag.name == scanner.rawInlineParent &&
-        (!tag.closing ||
-            (tag.attributes.isEmpty &&
-                source.codeUnitAt(tag.end - 2) != 0x2F))) {
-      scanner.rawInlineDepth += tag.closing ? -1 : 1;
-      if (scanner.rawInlineDepth == 0) scanner.rawInlineParent = null;
-    }
-    return null;
-  }
   if (source.startsWith('<!--', start)) {
     final end = scanner.commentEnd(start);
     if (end == null) return null;
@@ -437,7 +424,9 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
     if (element == null) return null;
     return (element: element, end: close ?? first.end);
   }
-  if (first.name != 'a' && first.name != 'picture') return null;
+  if (first.selfClosing || (first.name != 'a' && first.name != 'picture')) {
+    return null;
+  }
   final href = first.name == 'a' ? first.attributes['href'] : null;
   final children = <md.Node>[];
   var cursor = first.end;
@@ -451,11 +440,7 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
     final tag = _scanTag(source, cursor);
     if (tag == null) break;
     if (tag.closing) {
-      if (tag.name == first.name &&
-          tag.attributes.isEmpty &&
-          source.codeUnitAt(tag.end - 2) != 0x2F &&
-          _containsMedia(children) &&
-          (first.name == 'picture' || (href != null && href.isNotEmpty))) {
+      if (tag.name == first.name && _containsMedia(children)) {
         return (element: md.Element('span', children), end: tag.end);
       }
       break;
@@ -474,9 +459,6 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
     }
     cursor = tag.end;
   }
-  scanner
-    ..rawInlineParent = first.name
-    ..rawInlineDepth = 1;
   return null;
 }
 
@@ -507,8 +489,6 @@ final class _HtmlMediaScanner {
   _HtmlMediaScanner(this.source);
 
   final String source;
-  String? rawInlineParent;
-  var rawInlineDepth = 0;
   final _closing = <String, ({int from, RegExpMatch? match})>{};
   ({int from, int? end})? _comment;
   final _sources = <String, ({int from, int end, int? at, String? src})>{};
@@ -588,13 +568,22 @@ final class _HtmlMediaScanner {
 }
 
 final class _HtmlTag {
-  const _HtmlTag(this.name, this.attributes, this.closing, this.end);
+  const _HtmlTag(
+    this.name,
+    this.attributes,
+    this.closing,
+    this.selfClosing,
+    this.end,
+  );
 
   final String name;
   final Map<String, String> attributes;
   final bool closing;
+  final bool selfClosing;
   final int end;
 }
+
+final _inlineHtmlPattern = md.InlineHtmlSyntax().pattern;
 
 _HtmlTag? _scanTag(String source, int start) {
   if (start >= source.length || source.codeUnitAt(start) != 0x3C) return null;
@@ -605,32 +594,48 @@ _HtmlTag? _scanTag(String source, int start) {
     cursor++;
   }
   final nameStart = cursor;
+  if (cursor >= source.length || !_isAsciiLetter(source.codeUnitAt(cursor))) {
+    return null;
+  }
+  cursor++;
   while (cursor < source.length && _isName(source.codeUnitAt(cursor))) {
     cursor++;
   }
-  if (cursor == nameStart) return null;
   final name = source.substring(nameStart, cursor).toLowerCase();
   final attributes = <String, String>{};
   while (cursor < source.length) {
+    final beforeWhitespace = cursor;
     while (cursor < source.length && _isWhitespace(source.codeUnitAt(cursor))) {
       cursor++;
     }
     if (cursor >= source.length) return null;
-    if (source.codeUnitAt(cursor) == 0x3E) {
-      return _HtmlTag(name, attributes, closing, cursor + 1);
+    final unit = source.codeUnitAt(cursor);
+    final selfClosing = !closing && unit == 0x2F;
+    if (unit == 0x3E ||
+        (selfClosing &&
+            cursor + 1 < source.length &&
+            source.codeUnitAt(cursor + 1) == 0x3E)) {
+      final end = cursor + (selfClosing ? 2 : 1);
+      // Reuse the package's grammar only on this bounded, lexically valid
+      // candidate. Never let its backtracking expression search a malformed
+      // suffix at every less-than sign.
+      final candidate = source.substring(start, end);
+      if (_inlineHtmlPattern.matchAsPrefix(candidate)?.end !=
+          candidate.length) {
+        return null;
+      }
+      return _HtmlTag(name, attributes, closing, selfClosing, end);
     }
-    if (source.codeUnitAt(cursor) == 0x2F &&
-        cursor + 1 < source.length &&
-        source.codeUnitAt(cursor + 1) == 0x3E) {
-      return _HtmlTag(name, attributes, closing, cursor + 2);
+    if (closing || cursor == beforeWhitespace || !_isAttributeStart(unit)) {
+      return null;
     }
-    final attributeStart = cursor;
+    final attributeStart = cursor++;
     while (cursor < source.length &&
         _isAttributeName(source.codeUnitAt(cursor))) {
       cursor++;
     }
-    if (cursor == attributeStart) return null;
     final attribute = source.substring(attributeStart, cursor).toLowerCase();
+    final attributeEnd = cursor;
     while (cursor < source.length && _isWhitespace(source.codeUnitAt(cursor))) {
       cursor++;
     }
@@ -657,27 +662,54 @@ _HtmlTag? _scanTag(String source, int start) {
         while (cursor < source.length &&
             !_isWhitespace(source.codeUnitAt(cursor)) &&
             source.codeUnitAt(cursor) != 0x3E) {
+          final unit = source.codeUnitAt(cursor);
+          if (unit == 0x22 ||
+              unit == 0x27 ||
+              unit == 0x3D ||
+              unit == 0x3C ||
+              unit == 0x60) {
+            return null;
+          }
           cursor++;
         }
+        if (cursor == valueStart) return null;
         value = source.substring(valueStart, cursor);
       }
+    } else {
+      // Leave the separator for the next attribute (or tag end) to consume.
+      cursor = attributeEnd;
     }
     attributes.putIfAbsent(attribute, () => value);
   }
   return null;
 }
 
+bool _isAsciiLetter(int unit) =>
+    (unit >= 0x41 && unit <= 0x5A) || (unit >= 0x61 && unit <= 0x7A);
+
 bool _isName(int unit) =>
-    (unit >= 0x41 && unit <= 0x5A) ||
-    (unit >= 0x61 && unit <= 0x7A) ||
-    (unit >= 0x30 && unit <= 0x39) ||
-    unit == 0x2D;
+    _isAsciiLetter(unit) || (unit >= 0x30 && unit <= 0x39) || unit == 0x2D;
+
+bool _isAttributeStart(int unit) =>
+    _isAsciiLetter(unit) || unit == 0x5F || unit == 0x3A;
 
 bool _isAttributeName(int unit) =>
     _isName(unit) || unit == 0x5F || unit == 0x3A || unit == 0x2E;
 
+// ECMAScript \s, as used by package:markdown's named-tag pattern. The ASCII
+// range includes both form feed and line tabulation.
 bool _isWhitespace(int unit) =>
-    unit == 0x20 || unit == 0x09 || unit == 0x0A || unit == 0x0D;
+    unit == 0x20 ||
+    (unit >= 0x09 && unit <= 0x0D) ||
+    unit == 0xA0 ||
+    unit == 0x1680 ||
+    (unit >= 0x2000 && unit <= 0x200A) ||
+    unit == 0x2028 ||
+    unit == 0x2029 ||
+    unit == 0x202F ||
+    unit == 0x205F ||
+    unit == 0x3000 ||
+    unit == 0xFEFF;
 
 final _entityDocument = md.Document(
   inlineSyntaxes: [md.DecodeHtmlSyntax()],

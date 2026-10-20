@@ -69,6 +69,10 @@ String _renderedText(WidgetTester tester) => tester
     .map((widget) => widget.text.toPlainText())
     .join('\n');
 
+String _normalizedRenderedText(WidgetTester tester) => _renderedText(
+  tester,
+).replaceAll(RegExp(r'\s+'), ' ').replaceAll(RegExp(r'>\s+'), '>').trim();
+
 void main() {
   for (final value
       in const <
@@ -213,51 +217,73 @@ void main() {
       name: 'Discord badge then text',
       source:
           '<a href="https://discord.example/x"><img src="https://cdn.example/d.svg" height="20"> Join our Discord</a>',
+      count: 1,
+      linked: false,
     ),
     (
       name: 'inline Flutter badge and text',
       source:
           'Made with <a href="https://f.example"><img src="https://cdn.example/f.svg" height="14"/>Flutter</a>.',
+      count: 1,
+      linked: false,
     ),
     (
       name: 'sponsor badge and company',
       source:
           'Sponsors: <a href="https://a.example"><img src="https://cdn.example/a.svg" width="16"> Acme Corp</a>, …',
+      count: 1,
+      linked: false,
     ),
     (
       name: 'guide text before badge',
       source:
           'See <a href="https://x.example">the guide <img src="https://cdn.example/x.svg"></a> now',
+      count: 1,
+      linked: false,
     ),
     (
       name: 'Codex prose around badge',
       source:
           'Read <a href="https://docs.example/">Docs <img src="https://images.example/logo.svg"> now</a> tail',
+      count: 1,
+      linked: false,
     ),
     (
       name: 'Codex two-image anchor',
       source:
           'Read <a href="https://docs.example/">Docs <img src="https://images.example/one.svg"> and <img src="https://images.example/two.svg"> now</a> tail',
+      count: 2,
+      linked: false,
     ),
   ]) {
-    testWidgets('HTML anchor main parity: ${value.name}', (tester) async {
+    testWidgets('HTML anchor keeps reached images: ${value.name}', (
+      tester,
+    ) async {
+      final media = _elements(
+        _parse(value.source),
+      ).where((element) => element.tag == markdownMediaElement).toList();
+      expect(media, hasLength(value.count));
       expect(
-        md.HtmlRenderer().render(_parse(value.source)),
-        md.HtmlRenderer().render(_parse(value.source, media: false)),
+        media.map((element) => element.attributes.containsKey('href')),
+        everyElement(value.linked),
       );
       final fixture = _client();
       addTearDown(fixture.client.close);
       await tester.pumpWidget(
         MaterialApp(
-          home: Scaffold(body: MarkdownBody(data: value.source)),
+          home: Scaffold(
+            body: MarkdownBody(
+              data: value.source.replaceAll(RegExp(r'<img\b[^>]*>'), ''),
+            ),
+          ),
         ),
       );
-      final baseline = _renderedText(tester);
+      final baseline = _normalizedRenderedText(tester);
       await tester.pumpWidget(_host(value.source, fixture.client));
       await tester.pumpAndSettle();
-      expect(_renderedText(tester), baseline);
-      expect(find.byType(MarkdownMediaImage), findsNothing);
-      expect(fixture.adapter.requests, isEmpty);
+      expect(_normalizedRenderedText(tester), baseline);
+      expect(find.byType(MarkdownMediaImage), findsNWidgets(value.count));
+      expect(fixture.adapter.requests, hasLength(value.count));
     });
   }
 
@@ -273,15 +299,19 @@ void main() {
     final taps = <Uri>[];
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(body: MarkdownBody(data: source)),
+        home: Scaffold(
+          body: MarkdownBody(
+            data: source.replaceAll(RegExp(r'<img\b[^>]*>'), ''),
+          ),
+        ),
       ),
     );
-    final baseline = _renderedText(tester);
+    final baseline = _normalizedRenderedText(tester);
     await tester.pumpWidget(_host(source, fixture.client, taps: taps));
     await tester.pumpAndSettle();
-    expect(_renderedText(tester), baseline);
-    expect(find.byType(MarkdownMediaImage), findsNothing);
-    expect(fixture.adapter.requests, isEmpty);
+    expect(_normalizedRenderedText(tester), baseline);
+    expect(find.byType(MarkdownMediaImage), findsNWidgets(2));
+    expect(fixture.adapter.requests, hasLength(2));
     expect(taps, isEmpty);
     expect(_elements(_parse(source)).where((e) => e.tag == 'a'), isEmpty);
   });

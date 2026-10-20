@@ -70,6 +70,9 @@ String _renderedText(WidgetTester tester) => tester
     .map((widget) => widget.text.toPlainText())
     .join('\n');
 
+String _normalizedRenderedText(WidgetTester tester) =>
+    _renderedText(tester).replaceAll(RegExp(r'\s+'), ' ').trim();
+
 TapGestureRecognizer? _tapRecognizer(InlineSpan span, String text) {
   if (span case final TextSpan value) {
     final recognizer = value.recognizer;
@@ -108,8 +111,10 @@ void main() {
         );
       }
       expect(
-        md.HtmlRenderer().render(nodes),
-        md.HtmlRenderer().render(_parse(value.value, media: false)),
+        elements
+            .where((element) => element.tag == markdownMediaElement)
+            .map((element) => element.attributes['src']),
+        hasLength(1),
       );
       if (value.key == 'Markdown links and reference') {
         expect(
@@ -119,18 +124,39 @@ void main() {
       }
       final fixture = _client();
       addTearDown(fixture.client.close);
+      final taps = <Uri>[];
       await tester.pumpWidget(
         MaterialApp(
-          home: Scaffold(body: MarkdownBody(data: value.value)),
+          home: Scaffold(
+            body: MarkdownBody(
+              data: value.value.replaceFirst(RegExp(r'<img\b[^>]*>'), ''),
+            ),
+          ),
         ),
       );
-      final baselineText = _renderedText(tester);
-      await tester.pumpWidget(_host(value.value, fixture.client));
+      final baselineText = _normalizedRenderedText(tester);
+      await tester.pumpWidget(_host(value.value, fixture.client, taps: taps));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(_renderedText(tester), baselineText);
-      expect(find.byType(MarkdownMediaImage), findsNothing);
-      expect(fixture.adapter.requests, isEmpty);
+      expect(_normalizedRenderedText(tester), baselineText);
+      expect(find.byType(MarkdownMediaImage), findsOneWidget);
+      expect(fixture.adapter.requests, hasLength(1));
+      if (value.key == 'Markdown links and reference') {
+        for (final link in elements.where(
+          (element) =>
+              element.tag == 'a' &&
+              element.attributes['href'] != 'https://x.example',
+        )) {
+          final recognizer = tester
+              .widgetList<RichText>(find.byType(RichText))
+              .map((widget) => _tapRecognizer(widget.text, link.textContent))
+              .whereType<TapGestureRecognizer>()
+              .single;
+          recognizer.onTap!();
+          await tester.pump();
+          expect(taps.last, Uri.parse(link.attributes['href']!));
+        }
+      }
     });
   }
 
