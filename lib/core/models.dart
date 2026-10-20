@@ -1,5 +1,7 @@
 import 'instance.dart';
 
+import 'failure.dart';
+import '../l10n/l10n.dart';
 export 'test_report.dart';
 
 
@@ -105,7 +107,7 @@ final class OAuthCredential implements AccountCredential {
 
 void _rejectBlankToken(String value) {
   if (value.trim().isEmpty || RegExp(r'\s').hasMatch(value)) {
-    throw const FormatException('Token 不可空白或包含空白字元。');
+    throw InputFormatException(l10n.tokenCannotBeBlank);
   }
 }
 
@@ -212,11 +214,11 @@ final class Project {
   final bool? archived;
   final String? markedForDeletionOn;
   String get visibilityLabel => switch (visibility) {
-    'private' => '私有',
-    'internal' => '內部',
-    'public' => '公開',
-    null => '可見性未知',
-    _ => '其他可見性',
+    'private' => l10n.visibilityPrivate,
+    'internal' => l10n.visibilityInternal,
+    'public' => l10n.visibilityPublic,
+    null => l10n.visibilityUnknown,
+    _ => l10n.visibilityOther,
   };
 }
 

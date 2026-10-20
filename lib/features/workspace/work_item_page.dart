@@ -28,6 +28,7 @@ import '../auth/session_controller.dart';
 import 'graph_work_items_page.dart';
 import 'rest_issue_graph_bridge.dart';
 import '../../shared/theme.dart';
+import '../../l10n/l10n.dart';
 export 'discussions_tab.dart';
 
 class ProjectWorkItemsPage extends StatefulWidget {
@@ -124,7 +125,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
   int _generation = 0;
   bool get mr => widget.resource == 'merge_requests';
   ProjectWorkItemType get type => mr ? ProjectWorkItemType.issue : widget.type;
-  String get itemTitle => mr ? '合併請求' : type.title;
+  String get itemTitle => mr ? l10n.mergeRequestLabel : type.title;
 
   @override
   void didChangeDependencies() {
@@ -206,15 +207,15 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
     var writePending = false;
     final branch = project.defaultBranch ?? 'main';
     final fields = <EditField>[
-      const EditField('title', '標題', required: true),
-      if (mr) ...[const EditField.picker('source_branch', '來源分支', source: PickerSource.branches, required: true), EditField.picker('target_branch', '目標分支', source: PickerSource.branches, required: true, value: _branchValue(branch))],
-      const EditField('description', '說明', lines: 7, hint: '支援 Markdown', markdown: true),
-      if (!mr && ownerType == ProjectWorkItemType.incident) const EditField.choice('severity', '嚴重度', required: true, value: 'unknown', choices: [EditChoice('unknown', '未分級'), EditChoice('low', '低'), EditChoice('medium', '中'), EditChoice('high', '高'), EditChoice('critical', '嚴重')]),
-      const EditField.picker('labels', '標籤', source: PickerSource.labels, multi: true, hint: '不存在的名稱會在儲存時建立'),
-      const EditField.picker('assignee_ids', '指派', source: PickerSource.members, multi: true),
-      if (mr) const EditField.picker('reviewer_ids', '審查者', source: PickerSource.members, multi: true),
-      const EditField.picker('milestone_id', '里程碑', source: PickerSource.milestones, multi: false, hint: '可選里程碑'),
-      if (!mr) const EditField.toggle('confidential', '機密議題', hint: '僅專案成員與被指派者可見此議題'),
+      EditField('title', l10n.title, required: true),
+      if (mr) ...[EditField.picker('source_branch', l10n.sourceBranch, source: PickerSource.branches, required: true), EditField.picker('target_branch', l10n.targetBranch, source: PickerSource.branches, required: true, value: _branchValue(branch))],
+      EditField('description', l10n.descriptionLabel, lines: 7, hint: l10n.markdownSupported, markdown: true),
+      if (!mr && ownerType == ProjectWorkItemType.incident) EditField.choice('severity', l10n.severity, required: true, value: 'unknown', choices: [EditChoice('unknown', l10n.severityUnclassified), EditChoice('low', l10n.severityLow), EditChoice('medium', l10n.severityMedium), EditChoice('high', l10n.severityHigh), EditChoice('critical', l10n.severityCritical)]),
+      EditField.picker('labels', l10n.labelNoun, source: PickerSource.labels, multi: true, hint: l10n.namesCreatedOnSave),
+      EditField.picker('assignee_ids', l10n.assignee, source: PickerSource.members, multi: true),
+      if (mr) EditField.picker('reviewer_ids', l10n.reviewers, source: PickerSource.members, multi: true),
+      EditField.picker('milestone_id', l10n.milestoneLabel, source: PickerSource.milestones, multi: false, hint: l10n.optionalMilestone),
+      if (!mr) EditField.toggle('confidential', l10n.confidentialIssue, hint: l10n.confidentialIssueVisibility),
     ];
     final saved = await openEditor(
       context,
@@ -222,7 +223,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
       api: api,
       projectId: project.id,
       projectPath: project.path,
-      title: mr ? '新增合併請求' : ownerType.createTitle,
+      title: mr ? l10n.newMergeRequest : ownerType.createTitle,
       resource: mr || ownerType == ProjectWorkItemType.issue
           ? '${project.id}/$resource/new'
           : '${project.id}/$resource/${ownerType.apiValue}/new',
@@ -292,7 +293,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
       account: widget.account,
       resourceLabel: '${widget.project.path} · $itemTitle',
       onSwitchAccount: endSessionFrom(context),
-      empty: mr ? '沒有符合的合併請求' : type.emptyLabel,
+      empty: mr ? l10n.noMatchingMergeRequests : type.emptyLabel,
       emptyIcon: mr
           ? Icons.merge
           : switch (type) {
@@ -343,7 +344,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
                 controller: _search,
                 textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
-                  hintText: mr ? '搜尋合併請求' : type.searchHint,
+                  hintText: mr ? l10n.searchMergeRequests : type.searchHint,
                   prefixIcon: const Icon(Icons.search),
                   suffixIcon: ValueListenableBuilder<TextEditingValue>(
                     valueListenable: _search,
@@ -368,7 +369,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
             ),
             const SizedBox(width: 4),
             IconButton(
-              tooltip: '篩選與排序',
+              tooltip: l10n.filterAndSort,
               onPressed: _openFilters,
               icon: _filters.activeCount(mergeRequest: mr) == 0
                   ? const Icon(Icons.tune)
@@ -377,7 +378,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
                       child: const Icon(Icons.tune),
                     ),
             ),
-            IconButton(tooltip: mr ? '新增合併請求' : type.createTitle, onPressed: widget.project.archived == true ? null : _create, icon: const Icon(Icons.add_circle_outline)),
+            IconButton(tooltip: mr ? l10n.newMergeRequest : type.createTitle, onPressed: widget.project.archived == true ? null : _create, icon: const Icon(Icons.add_circle_outline)),
           ],
         ),
       ),
@@ -389,7 +390,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
             spacing: 8,
             runSpacing: 4,
             children: [
-              for (final e in const {'opened': '開啟中', 'closed': '已關閉', 'all': '全部'}.entries) ChoiceChip(label: Text(e.value), selected: _state == e.key, showCheckmark: false, onSelected: (_) => setState(() => _state = e.key)),
+              for (final e in {'opened': l10n.statusOpen, 'closed': l10n.statusClosed, 'all': l10n.filterAll}.entries) ChoiceChip(label: Text(e.value), selected: _state == e.key, showCheckmark: false, onSelected: (_) => setState(() => _state = e.key)),
             ],
           ),
         ),
@@ -417,7 +418,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
 
   Widget _buildEmpty(BuildContext context) => Center(
     child: EmptyState(
-      mr ? '請選擇合併請求' : '請選擇${type.title}',
+      mr ? l10n.selectMergeRequest : l10n.selectTypedItem(type.title),
       icon: mr
           ? Icons.merge
           : switch (type) {
@@ -425,7 +426,7 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
               ProjectWorkItemType.task => Icons.task_alt,
               ProjectWorkItemType.incident => Icons.warning_amber_rounded,
             },
-      detail: mr ? '從左側清單選擇合併請求以查看變更與審查狀態。' : type.selectionHint,
+      detail: mr ? l10n.selectMergeRequestHint : type.selectionHint,
     ),
   );
 
@@ -477,18 +478,18 @@ Widget workItemCard(
     ]),
     meta: [
       StatusBadge(state),
-      if (mr && value['draft'] == true) const MetaChip('草稿', icon: Icons.edit_note),
+      if (mr && value['draft'] == true) MetaChip(l10n.draft, icon: Icons.edit_note),
       if (isConfidential)
-        const MetaChip('機密', icon: Icons.lock_outline),
+        MetaChip(l10n.confidential, icon: Icons.lock_outline),
       if (milestoneTitle.isNotEmpty)
         MetaChip(milestoneTitle, icon: Icons.tour_outlined),
       if (mr && pipeline.isNotEmpty) StatusBadge(pipeline),
       if (mr && isAutoMergeEnabled(value))
-        const MetaChip('自動合併', icon: Icons.schedule_send),
-      if (mr && value['has_conflicts'] == true) const MetaChip('衝突', icon: Icons.warning_amber_rounded),
+        MetaChip(l10n.autoMerge, icon: Icons.schedule_send),
+      if (mr && value['has_conflicts'] == true) MetaChip(l10n.conflict, icon: Icons.warning_amber_rounded),
       MetaChip(iid, mono: true),
       if (taskCount > 0) MetaChip('${valueInt(tasks, 'completed_count')}/$taskCount', icon: Icons.checklist),
-      if (due.isNotEmpty) MetaChip('到期 $due', icon: Icons.event_outlined),
+      if (due.isNotEmpty) MetaChip(l10n.dueOn2(due), icon: Icons.event_outlined),
       if (notes > 0) MetaChip('$notes', icon: Icons.chat_bubble_outline),
       if (upvotes > 0) MetaChip('$upvotes', icon: Icons.thumb_up_outlined),
       MetaChip(relativeDate(valueText(value, 'updated_at')), icon: Icons.schedule_outlined),
@@ -699,14 +700,14 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     final owner = _owner;
     final ownerPath = _ownerPath(owner);
     final fields = <EditField>[
-      EditField('title', '標題', required: true, value: valueText(data, 'title')),
-      EditField('description', '說明', lines: 8, markdown: true, value: valueText(data, 'description')),
-      if (owner.type == ProjectWorkItemType.incident) EditField.choice('severity', '嚴重度', required: true, value: incidentSeverityFromJson(data)?.apiValue ?? valueText(data, 'severity'), choices: const [EditChoice('unknown', '未分級'), EditChoice('low', '低'), EditChoice('medium', '中'), EditChoice('high', '高'), EditChoice('critical', '嚴重')]),
-      EditField.picker('labels', '標籤', source: PickerSource.labels, multi: true, value: _labelsValue(data), hint: '留白會移除所有標籤'),
-      EditField.picker('assignee_ids', '指派', source: PickerSource.members, multi: true, value: _peopleValue(valueObjects(data, 'assignees'))),
-      if (mr) EditField.picker('reviewer_ids', '審查者', source: PickerSource.members, multi: true, value: _peopleValue(valueObjects(data, 'reviewers'))),
-      EditField.picker('milestone_id', '里程碑', source: PickerSource.milestones, multi: false, value: _milestoneValue(data), hint: '留白會移除里程碑'),
-      if (!mr) EditField.toggle('confidential', '機密議題', value: valueBool(data, 'confidential') ? 'true' : 'false', hint: '僅專案成員與被指派者可見此議題'),
+      EditField('title', l10n.title, required: true, value: valueText(data, 'title')),
+      EditField('description', l10n.descriptionLabel, lines: 8, markdown: true, value: valueText(data, 'description')),
+      if (owner.type == ProjectWorkItemType.incident) EditField.choice('severity', l10n.severity, required: true, value: incidentSeverityFromJson(data)?.apiValue ?? valueText(data, 'severity'), choices: [EditChoice('unknown', l10n.severityUnclassified), EditChoice('low', l10n.severityLow), EditChoice('medium', l10n.severityMedium), EditChoice('high', l10n.severityHigh), EditChoice('critical', l10n.severityCritical)]),
+      EditField.picker('labels', l10n.labelNoun, source: PickerSource.labels, multi: true, value: _labelsValue(data), hint: l10n.blankRemovesLabels),
+      EditField.picker('assignee_ids', l10n.assignee, source: PickerSource.members, multi: true, value: _peopleValue(valueObjects(data, 'assignees'))),
+      if (mr) EditField.picker('reviewer_ids', l10n.reviewers, source: PickerSource.members, multi: true, value: _peopleValue(valueObjects(data, 'reviewers'))),
+      EditField.picker('milestone_id', l10n.milestoneLabel, source: PickerSource.milestones, multi: false, value: _milestoneValue(data), hint: l10n.blankRemovesMilestone),
+      if (!mr) EditField.toggle('confidential', l10n.confidentialIssue, value: valueBool(data, 'confidential') ? 'true' : 'false', hint: l10n.confidentialIssueVisibility),
     ];
     final saved = await openEditor(
       context,
@@ -714,7 +715,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
       api: owner.api,
       projectId: owner.project.id,
       projectPath: owner.project.path,
-      title: '編輯 ${owner.resource == 'merge_requests' ? '!' : '#'}${owner.iid}',
+      title: l10n.editItemReference(owner.resource == 'merge_requests' ? '!' : '#', owner.iid),
       resource: owner.resource == 'merge_requests' || owner.type == ProjectWorkItemType.issue
           ? '${owner.project.id}/${owner.resource}/${owner.iid}/edit'
           : '${owner.project.id}/${owner.resource}/${owner.type.apiValue}/${owner.iid}/edit',
@@ -747,14 +748,14 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     if (data == null || _busy) { return; }
     final owner = _owner;
     final ownerPath = _ownerPath(owner);
-    final field = EditField.picker('assignee_ids', '指派成員', source: PickerSource.members, multi: true, value: _peopleValue(valueObjects(data, 'assignees')), hint: '留白會移除所有指派成員');
+    final field = EditField.picker('assignee_ids', l10n.assigneeMembers, source: PickerSource.members, multi: true, value: _peopleValue(valueObjects(data, 'assignees')), hint: l10n.blankRemovesAssignees);
     final saved = await openEditor(
       context,
       account: owner.account,
       api: owner.api,
       projectId: owner.project.id,
       projectPath: owner.project.path,
-      title: '修改指派 · ${owner.resource == 'merge_requests' ? '!' : '#'}${owner.iid}',
+      title: l10n.editAssigneesReference(owner.resource == 'merge_requests' ? '!' : '#', owner.iid),
       resource: owner.resource == 'merge_requests' || owner.type == ProjectWorkItemType.issue
           ? '${owner.project.id}/${owner.resource}/${owner.iid}/assignees'
           : '${owner.project.id}/${owner.resource}/${owner.type.apiValue}/${owner.iid}/assignees',
@@ -783,14 +784,14 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     if (data == null || _busy || !mr) { return; }
     final owner = _owner;
     final ownerPath = _ownerPath(owner);
-    final field = EditField.picker('reviewer_ids', '審查者名單', source: PickerSource.members, multi: true, value: _peopleValue(valueObjects(data, 'reviewers')), hint: '留白會移除所有審查者');
+    final field = EditField.picker('reviewer_ids', l10n.reviewerList, source: PickerSource.members, multi: true, value: _peopleValue(valueObjects(data, 'reviewers')), hint: l10n.blankRemovesReviewers);
     final saved = await openEditor(
       context,
       account: owner.account,
       api: owner.api,
       projectId: owner.project.id,
       projectPath: owner.project.path,
-      title: '修改審查者 · !${owner.iid}',
+      title: l10n.editReviewersReference(owner.iid),
       resource: '${owner.project.id}/${owner.resource}/${owner.iid}/reviewers',
       subtitle: owner.project.path,
       baseRevision: valueText(data, 'updated_at'),
@@ -818,7 +819,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     final owner = _owner;
     final ownerPath = _ownerPath(owner);
     final initialChoices = decodeChoices(_labelsValue(data), source: PickerSource.labels);
-    final picked = await showChoicePicker(context, api: owner.api, account: owner.account, projectId: owner.project.id, source: PickerSource.labels, multi: true, title: '選擇標籤 · $label', initial: initialChoices, onRoute: _ownRoute);
+    final picked = await showChoicePicker(context, api: owner.api, account: owner.account, projectId: owner.project.id, source: PickerSource.labels, multi: true, title: l10n.selectLabelsReference(label), initial: initialChoices, onRoute: _ownRoute);
     if (picked == null || !_currentOwner(owner)) return;
     setState(() => _busy = true);
     try {
@@ -830,7 +831,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
       final newLabels = picked.map((c) => c.name).join(', ');
       await owner.api.writeRecord('PUT', ownerPath, {'labels': newLabels});
       if (!mounted || !_currentOwner(owner)) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('標籤已更新')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.labelsUpdated)));
       await _loadAfterMutation();
     } catch (e) {
       if (!mounted || !_currentOwner(owner)) return;
@@ -856,7 +857,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
       final remaining = labels.where((l) => l != labelToRemove).join(', ');
       await owner.api.writeRecord('PUT', ownerPath, {'labels': remaining});
       if (!mounted || !_currentOwner(owner)) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('已移除標籤「$labelToRemove」')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.labelRemovedNamed(labelToRemove))));
       await _loadAfterMutation();
     } catch (e) {
       if (!mounted || !_currentOwner(owner)) return;
@@ -874,9 +875,9 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     if (action == 'edit') { await _edit(); return; }
     if (action == 'web') { await openExternal(context, web); return; }
     final confirmation = switch (action) {
-      'delete' => ('刪除 $label？', '將刪除此項目與相關討論，無法復原。', label),
-      'approve' => ('批准目前版本？', '$label · ${shortSha(valueText(data, 'sha'))}\n仍受專案批准與重新認證政策限制。', null),
-      'rebase' => ('Rebase 分支？', '將此合併請求來源分支 Rebase 至目標分支。', null),
+      'delete' => (l10n.deleteNamedItem(label), l10n.deleteItemAndThreads, label),
+      'approve' => (l10n.approveCurrentVersionPrompt, l10n.approveVersionPolicyNote(label, shortSha(valueText(data, 'sha'))), null),
+      'rebase' => (l10n.rebaseBranchPrompt, l10n.rebaseOntoTargetBranch, null),
       _ => null,
     };
     var squash = false;
@@ -884,7 +885,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     var autoMerge = false;
     var stillDraft = false;
     if (action == 'cancel_auto_merge') {
-      if (!await confirmAction(context, '取消自動合併？', '取消後將不再於流水線通過時自動合併此變更。', onRoute: _ownRoute)) { return; }
+      if (!await confirmAction(context, l10n.cancelAutoMergePrompt, l10n.cancelAutoMergeExplanation, onRoute: _ownRoute)) { return; }
       if (!_currentOwner(owner)) {
         return;
       }
@@ -894,7 +895,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         if (!_currentOwner(owner)) return;
         await _loadAfterMutation();
         if (!mounted || !_currentOwner(owner)) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已取消自動合併')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.autoMergeCanceled)));
       } catch (e) {
         if (!mounted || !_currentOwner(owner)) return;
         showFailure(context, e);
@@ -962,21 +963,21 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
       await _loadAfterMutation();
       if (_currentOwner(owner) && action == 'rebase') {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已請求 Rebase 分支')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.rebaseBranchRequested)));
       }
       if (_currentOwner(owner) && stillDraft) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('GitLab 仍將此合併請求視為草稿：標題沒有可移除的草稿標記，請編輯標題或在 GitLab 網頁標示為可審查。')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(l10n.draftMarkerCannotBeRemoved)));
       }
       if (_currentOwner(owner) && action == 'merge') {
         final merged = _data?['state'] == 'merged';
         final autoScheduled = isAutoMergeEnabled(_data ?? {});
         final message = merged
-            ? '已合併'
+            ? l10n.merged
             : (autoScheduled
-                ? '已排程自動合併，等待流水線完成。'
-                : 'GitLab 已接受操作，請查看最新合併狀態。');
+                ? l10n.autoMergeWaitingForPipeline
+                : l10n.gitlabAcceptedMergeAction);
         if (!mounted) return;
         if (merged) unawaited(Haptics.success());
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -1001,26 +1002,25 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setDialog) => AlertDialog(
-          title: Text(autoMerge ? '排程自動合併 $label？' : '合併 $label？'),
+          title: Text(autoMerge ? l10n.scheduleAutoMergePrompt(label) : l10n.mergeItemPrompt(label)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}\n'
-                  '版本 ${shortSha(valueText(data, 'sha'))}\n若版本變動會停止，不會自動改用新版本。',
+                  l10n.mergeVersionWarning(valueText(data, 'source_branch'), valueText(data, 'target_branch'), shortSha(valueText(data, 'sha'))),
                 ),
                 const SizedBox(height: 8),
-                if (autoCandidate) SwitchListTile(key: const ValueKey('merge-auto'), contentPadding: EdgeInsets.zero, minTileHeight: 48, title: const Text('流水線成功時自動合併 (MWPS)'), subtitle: const Text('當所有檢查與 CI 通過後自動合併'), value: autoMerge, onChanged: (value) => setDialog(() => autoMerge = value)),
-                SwitchListTile(key: const ValueKey('merge-squash'), contentPadding: EdgeInsets.zero, minTileHeight: 48, title: const Text('Squash 提交'), subtitle: squashLocked ? const Text('專案設定強制此選項') : null, value: squash, onChanged: squashLocked ? null : (value) => setDialog(() => squash = value)),
-                SwitchListTile(key: const ValueKey('merge-remove-branch'), contentPadding: EdgeInsets.zero, minTileHeight: 48, title: const Text('合併後刪除來源分支'), value: removeSourceBranch, onChanged: (value) => setDialog(() => removeSourceBranch = value)),
+                if (autoCandidate) SwitchListTile(key: const ValueKey('merge-auto'), contentPadding: EdgeInsets.zero, minTileHeight: 48, title: Text(l10n.autoMergeWhenPipelineSucceeds), subtitle: Text(l10n.autoMergeWhenChecksPass), value: autoMerge, onChanged: (value) => setDialog(() => autoMerge = value)),
+                SwitchListTile(key: const ValueKey('merge-squash'), contentPadding: EdgeInsets.zero, minTileHeight: 48, title: Text(l10n.squashCommits), subtitle: squashLocked ? Text(l10n.optionRequiredByProject) : null, value: squash, onChanged: squashLocked ? null : (value) => setDialog(() => squash = value)),
+                SwitchListTile(key: const ValueKey('merge-remove-branch'), contentPadding: EdgeInsets.zero, minTileHeight: 48, title: Text(l10n.deleteSourceBranchAfterMerge), value: removeSourceBranch, onChanged: (value) => setDialog(() => removeSourceBranch = value)),
               ],
             ),
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-            FilledButton(onPressed: () => Navigator.pop(context, (squash: squash, removeSourceBranch: removeSourceBranch, autoMerge: autoMerge)), child: Text(autoMerge ? '排程自動合併' : '確認')),
+            TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.cancelAction)),
+            FilledButton(onPressed: () => Navigator.pop(context, (squash: squash, removeSourceBranch: removeSourceBranch, autoMerge: autoMerge)), child: Text(autoMerge ? l10n.scheduleAutoMerge : l10n.confirmAction)),
           ],
         ),
       ),
@@ -1060,7 +1060,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     if (state != 'opened') {
       if (state != 'merged' && state != 'closed') { return const SizedBox.shrink(); }
       final at = relativeDate(valueText(data, state == 'merged' ? 'merged_at' : 'closed_at'));
-      final label = state == 'merged' ? '已合併' : '已關閉';
+      final label = state == 'merged' ? l10n.merged : l10n.statusClosed;
       return Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Text(at.isEmpty ? label : '$label · $at', style: Theme.of(context).textTheme.titleSmall),
@@ -1096,7 +1096,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                   if (autoScheduled) const Padding(padding: EdgeInsets.only(left: 8), child: Icon(Icons.schedule_send, size: 20)),
                 ],
               ),
-              if (autoScheduled) ...[const SizedBox(height: 6), const Text('流水線通過後將自動執行合併。', style: TextStyle(fontSize: 12))],
+              if (autoScheduled) ...[const SizedBox(height: 6), Text(l10n.mergeRunsAfterPipeline, style: TextStyle(fontSize: 12))],
               if (hasUnresolvedDiscussions) ...[
                 const SizedBox(height: 10),
                 Container(
@@ -1109,7 +1109,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '尚有未解決的討論，解決後方可合併',
+                          l10n.unresolvedThreadsBlockMerge,
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.error, fontWeight: FontWeight.w600),
                         ),
                       ),
@@ -1130,11 +1130,11 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                           Icon(isThresholdReached ? Icons.check_circle_outline : Icons.rule_outlined, size: 16, color: isThresholdReached ? WorkshopColors.of(context).onSuccessContainer : null),
                           const SizedBox(width: 6),
                           Expanded(
-                            child: Text(isThresholdReached ? '已達核准門檻（${approvedBy.length} 人已批准）' : '審查核准進度：已批准 ${approvedBy.length} 人${approvalsRequired > 0 ? ' · 尚需 $approvalsLeft 人' : ''}', style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
+                            child: Text(isThresholdReached ? l10n.approvalThresholdReached(approvedBy.length) : l10n.approvalProgress(approvedBy.length, approvalsRequired > 0 ? l10n.approvalsLeftSuffix(approvalsLeft) : ''), style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600)),
                           ),
                         ],
                       ),
-                      if (approvedBy.isNotEmpty) ...[const SizedBox(height: 4), Text('已核准：${approvedBy.map((v) => '@${valueText(valueObject(v, 'user'), 'username')}').join('、')}', style: Theme.of(context).textTheme.bodySmall)],
+                      if (approvedBy.isNotEmpty) ...[const SizedBox(height: 4), Text(l10n.approvedByList(approvedBy.map((v) => '@${valueText(valueObject(v, 'user'), 'username')}').join(l10n.listSeparator)), style: Theme.of(context).textTheme.bodySmall)],
                     ],
                   ),
                 ),
@@ -1144,24 +1144,24 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  OutlinedButton.icon(key: const ValueKey('mr-draft-review-btn'), onPressed: _busy ? null : () => _openDraftReview(data), icon: const Icon(Icons.rate_review_outlined, size: 18), label: const Text('審查草稿')),
+                  OutlinedButton.icon(key: const ValueKey('mr-draft-review-btn'), onPressed: _busy ? null : () => _openDraftReview(data), icon: const Icon(Icons.rate_review_outlined, size: 18), label: Text(l10n.reviewDrafts)),
                   if (hasApproved)
-                    OutlinedButton.icon(key: const ValueKey('mr-unapprove-btn'), onPressed: _busy ? null : () => _action('unapprove'), icon: const Icon(Icons.undo, size: 18), label: const Text('撤回我的批准'))
+                    OutlinedButton.icon(key: const ValueKey('mr-unapprove-btn'), onPressed: _busy ? null : () => _action('unapprove'), icon: const Icon(Icons.undo, size: 18), label: Text(l10n.revokeMyApproval))
                   else
-                    OutlinedButton.icon(key: const ValueKey('mr-approve-btn'), onPressed: _busy ? null : () => _action('approve'), icon: const Icon(Icons.verified_outlined, size: 18), label: const Text('批准')),
+                    OutlinedButton.icon(key: const ValueKey('mr-approve-btn'), onPressed: _busy ? null : () => _action('approve'), icon: const Icon(Icons.verified_outlined, size: 18), label: Text(l10n.approve2)),
                   if (rebaseInProgress)
                     OutlinedButton.icon(
                       key: const ValueKey('mr-rebase-progress-btn'),
                       onPressed: null,
                       icon: const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-                      label: const Text('Rebase 進行中…'),
+                      label: Text(l10n.rebaseInProgress),
                     )
                   else if (canRebase)
-                    OutlinedButton.icon(key: const ValueKey('mr-rebase-btn'), onPressed: _busy ? null : () => _action('rebase'), icon: const Icon(Icons.fork_right, size: 18), label: Text(divergedCommits > 0 ? 'Rebase (落後 $divergedCommits)' : 'Rebase')),
+                    OutlinedButton.icon(key: const ValueKey('mr-rebase-btn'), onPressed: _busy ? null : () => _action('rebase'), icon: const Icon(Icons.fork_right, size: 18), label: Text(divergedCommits > 0 ? l10n.rebaseBehindCount(divergedCommits) : 'Rebase')),
                   if (autoScheduled)
-                    OutlinedButton.icon(key: const ValueKey('cancel-auto-merge'), onPressed: _busy ? null : () => _action('cancel_auto_merge'), icon: const Icon(Icons.close, size: 18), label: const Text('取消自動合併'))
+                    OutlinedButton.icon(key: const ValueKey('cancel-auto-merge'), onPressed: _busy ? null : () => _action('cancel_auto_merge'), icon: const Icon(Icons.close, size: 18), label: Text(l10n.cancelAutoMerge))
                   else
-                    FilledButton.icon(onPressed: _busy ? null : () => _action('merge'), icon: Icon(autoCandidate ? Icons.schedule_send : Icons.merge, size: 18), label: Text(autoCandidate ? '自動合併…' : '合併')),
+                    FilledButton.icon(onPressed: _busy ? null : () => _action('merge'), icon: Icon(autoCandidate ? Icons.schedule_send : Icons.merge, size: 18), label: Text(autoCandidate ? l10n.autoMergeEllipsis : l10n.merge)),
                 ],
               ),
             ],
@@ -1188,9 +1188,8 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     if (!mounted) return;
     final confirmed = await confirmAction(
       context,
-      '變更事件處理狀態？',
-      '事件處理狀態：${fresh.lifecycle.label} → ${next.label}\n'
-          '議題狀態仍為${statusLabel(fresh.issueState)}，兩者彼此獨立。',
+      l10n.changeIncidentStatusPrompt,
+      l10n.incidentStatusIndependent(fresh.lifecycle.label, next.label, statusLabel(fresh.issueState)),
       onRoute: _ownRoute,
     );
     if (!confirmed || !_currentOwner(owner)) return;
@@ -1228,24 +1227,24 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Incident 狀態', style: Theme.of(context).textTheme.titleSmall),
+              Text(l10n.incidentStatus, style: Theme.of(context).textTheme.titleSmall),
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  MetaChip('議題狀態：${statusLabel(valueText(data, 'state'))}', icon: Icons.adjust),
-                  if (severity != null) MetaChip('嚴重度：${severity.label}', icon: Icons.priority_high),
-                  if (status != null) MetaChip('事件處理狀態：${status.lifecycle.label}', icon: Icons.crisis_alert_outlined),
+                  MetaChip(l10n.issueStateLabel(statusLabel(valueText(data, 'state'))), icon: Icons.adjust),
+                  if (severity != null) MetaChip(l10n.severityLabel(severity.label), icon: Icons.priority_high),
+                  if (status != null) MetaChip(l10n.incidentStatusLabel(status.lifecycle.label), icon: Icons.crisis_alert_outlined),
                 ],
               ),
               if (status == null) ...[
                 const SizedBox(height: 10),
-                Text(error?.kind == FailureKind.unsupported ? '此 GitLab 實例未提供可用的事件處理狀態。議題內容仍可正常查看與編輯。' : '事件處理狀態暫時無法取得。議題內容仍可正常查看與編輯。', key: const ValueKey('incident-lifecycle-unavailable'), style: Theme.of(context).textTheme.bodySmall),
-                TextButton.icon(onPressed: _loading || _busy ? null : _load, icon: const Icon(Icons.refresh, size: 18), label: const Text('重試事件狀態')),
+                Text(error?.kind == FailureKind.unsupported ? l10n.incidentStatusUnavailable : l10n.incidentStatusTemporarilyUnavailable, key: const ValueKey('incident-lifecycle-unavailable'), style: Theme.of(context).textTheme.bodySmall),
+                TextButton.icon(onPressed: _loading || _busy ? null : _load, icon: const Icon(Icons.refresh, size: 18), label: Text(l10n.retryIncidentStatus)),
               ] else ...[
                 const SizedBox(height: 10),
-                Text('事件處理狀態不會自動關閉或重新開啟議題。', style: Theme.of(context).textTheme.bodySmall),
+                Text(l10n.incidentStatusDoesNotCloseIssue, style: Theme.of(context).textTheme.bodySmall),
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 8,
@@ -1268,7 +1267,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
       await owner.api.setSubscribed(owner.project.id, owner.resource, owner.iid, subscribed);
       if (!mounted || !_currentOwner(owner)) return;
       setState(() => _data = {...?_data, 'subscribed': subscribed});
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(subscribed ? '已開啟通知' : '已關閉通知')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(subscribed ? l10n.notificationsOn : l10n.notificationsOff)));
       // A failed refresh must not erase a confirmed subscription write.
       await _load();
     } catch (e) {
@@ -1302,14 +1301,14 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     }
 
     final due = valueText(data, 'due_date');
-    if (due.isNotEmpty) add(Icons.event_outlined, '到期日', due);
+    if (due.isNotEmpty) add(Icons.event_outlined, l10n.dueDate2, due);
     final time = valueObject(data, 'time_stats');
     final estimate = valueText(time, 'human_time_estimate'), spent = valueText(time, 'human_total_time_spent');
     if (estimate.isNotEmpty || spent.isNotEmpty) {
-      add(Icons.timer_outlined, '工時', '已花費 ${spent.isEmpty ? '0' : spent} · 預估 ${estimate.isEmpty ? '未設定' : estimate}');
+      add(Icons.timer_outlined, l10n.timeTrackingRow, l10n.spentAndEstimate(spent.isEmpty ? '0' : spent, estimate.isEmpty ? l10n.notSet : estimate));
     }
-    if (data['weight'] is int) add(Icons.fitness_center, '權重', '${data['weight']}');
-    if (data['discussion_locked'] == true) add(Icons.lock_outline, '討論', '已鎖定，只有成員可留言');
+    if (data['weight'] is int) add(Icons.fitness_center, l10n.weight, '${data['weight']}');
+    if (data['discussion_locked'] == true) add(Icons.lock_outline, l10n.thread, l10n.lockedMembersCanComment);
     final subscribed = data['subscribed'];
     if (subscribed is bool) {
       rows
@@ -1320,8 +1319,8 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
             contentPadding: EdgeInsets.zero,
             minTileHeight: 48,
             secondary: Icon(subscribed ? Icons.notifications_active_outlined : Icons.notifications_off_outlined, color: muted),
-            title: const Text('通知'),
-            subtitle: Text(subscribed ? '有新動態時通知我' : '不接收此項目的通知'),
+            title: Text(l10n.notifications),
+            subtitle: Text(subscribed ? l10n.notifyOnNewActivity : l10n.muteItemNotifications),
             value: subscribed,
             onChanged: _busy ? null : _subscribe,
           ),
@@ -1335,7 +1334,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     if (valueInt(author, 'id') <= 0) return child;
     void open() => _openUser(author);
     return SemanticButton(
-      label: '作者 $label',
+      label: l10n.authorLabel(label),
       onTap: open,
       child: InkWell(
         key: const ValueKey('work-item-author'),
@@ -1357,12 +1356,12 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('指派', style: Theme.of(context).textTheme.titleSmall),
+            Text(l10n.assignee, style: Theme.of(context).textTheme.titleSmall),
             TextButton.icon(
               key: const ValueKey('quick-edit-assignees'),
               onPressed: _busy ? null : _editAssignees,
               icon: const Icon(Icons.group_add_outlined, size: 16),
-              label: const Text('修改名單'),
+              label: Text(l10n.editList),
               style: TextButton.styleFrom(visualDensity: VisualDensity.compact, minimumSize: const Size(48, 48)),
             ),
           ],
@@ -1374,9 +1373,9 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             if (isAssignedToMe)
-              InputChip(key: const ValueKey('quick-unassign-me'), avatar: const Icon(Icons.check_circle, size: 16), label: const Text('已指派給我'), selected: true, showCheckmark: false, onDeleted: _busy ? null : () => _action('assign'), deleteIcon: const Icon(Icons.close, size: 14), deleteButtonTooltipMessage: '取消指派給我', onPressed: _busy ? null : () => _action('assign'))
+              InputChip(key: const ValueKey('quick-unassign-me'), avatar: const Icon(Icons.check_circle, size: 16), label: Text(l10n.assignedToMe2), selected: true, showCheckmark: false, onDeleted: _busy ? null : () => _action('assign'), deleteIcon: const Icon(Icons.close, size: 14), deleteButtonTooltipMessage: l10n.unassignMe, onPressed: _busy ? null : () => _action('assign'))
             else
-              ActionChip(key: const ValueKey('quick-assign-me'), avatar: const Icon(Icons.person_add_alt_1, size: 16), label: const Text('指派給我'), onPressed: _busy ? null : () => _action('assign')),
+              ActionChip(key: const ValueKey('quick-assign-me'), avatar: const Icon(Icons.person_add_alt_1, size: 16), label: Text(l10n.assignToMe), onPressed: _busy ? null : () => _action('assign')),
             ...assignees.where((u) => valueInt(u, 'id') != myId).map((u) {
               final username = valueText(u, 'username');
               final name = valueText(u, 'name');
@@ -1390,7 +1389,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
             if (assignees.isEmpty && !isAssignedToMe)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text('尚未指派成員', style: Theme.of(context).textTheme.bodySmall),
+                child: Text(l10n.noAssigneesYet, style: Theme.of(context).textTheme.bodySmall),
               ),
           ],
         ),
@@ -1407,12 +1406,12 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('審查者', style: Theme.of(context).textTheme.titleSmall),
+            Text(l10n.reviewers, style: Theme.of(context).textTheme.titleSmall),
             TextButton.icon(
               key: const ValueKey('quick-edit-reviewers'),
               onPressed: _busy ? null : _editReviewers,
               icon: const Icon(Icons.person_search_outlined, size: 16),
-              label: const Text('修改審查者'),
+              label: Text(l10n.editReviewers),
               style: TextButton.styleFrom(visualDensity: VisualDensity.compact, minimumSize: const Size(48, 48)),
             ),
           ],
@@ -1436,7 +1435,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
             if (reviewers.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text('尚未指定審查者', style: Theme.of(context).textTheme.bodySmall),
+                child: Text(l10n.noReviewersYet, style: Theme.of(context).textTheme.bodySmall),
               ),
           ],
         ),
@@ -1453,12 +1452,12 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text('標籤', style: Theme.of(context).textTheme.titleSmall),
+            Text(l10n.labelNoun, style: Theme.of(context).textTheme.titleSmall),
             TextButton.icon(
               key: const ValueKey('quick-edit-labels'),
               onPressed: _busy ? null : _editLabelsQuick,
               icon: const Icon(Icons.label_outline, size: 16),
-              label: const Text('管理標籤'),
+              label: Text(l10n.manageLabels),
               style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
             ),
           ],
@@ -1469,12 +1468,12 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
           runSpacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            for (final label in labels) InputChip(key: ValueKey('label-chip-$label'), label: Text(label), onPressed: _busy ? null : _editLabelsQuick, onDeleted: _busy ? null : () => _removeLabelQuick(label), deleteIcon: const Icon(Icons.close, size: 14), deleteButtonTooltipMessage: '移除標籤 $label'),
-            ActionChip(key: const ValueKey('quick-add-label'), avatar: const Icon(Icons.add, size: 16), label: const Text('新增標籤'), onPressed: _busy ? null : _editLabelsQuick),
+            for (final label in labels) InputChip(key: ValueKey('label-chip-$label'), label: Text(label), onPressed: _busy ? null : _editLabelsQuick, onDeleted: _busy ? null : () => _removeLabelQuick(label), deleteIcon: const Icon(Icons.close, size: 14), deleteButtonTooltipMessage: l10n.removeLabelNamed(label)),
+            ActionChip(key: const ValueKey('quick-add-label'), avatar: const Icon(Icons.add, size: 16), label: Text(l10n.addLabel2), onPressed: _busy ? null : _editLabelsQuick),
             if (labels.isEmpty)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text('尚未設定標籤', style: Theme.of(context).textTheme.bodySmall),
+                child: Text(l10n.noLabelsYet, style: Theme.of(context).textTheme.bodySmall),
               ),
           ],
         ),
@@ -1512,20 +1511,20 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         ResourceShareButton(uri: web,
           ownerKey: (owner.account.key, owner.api, owner.project.id, owner.resource, owner.iid, owner.generation),
           isCurrent: () => _currentOwner(owner) && !owner.api.isClosed),
-        IconButton(tooltip: '重新整理', onPressed: _loading || _busy ? null : _load, icon: const Icon(Icons.refresh)),
+        IconButton(tooltip: l10n.refreshAction, onPressed: _loading || _busy ? null : _load, icon: const Icon(Icons.refresh)),
         PopupMenuButton<String>(
-          tooltip: '更多操作',
+          tooltip: l10n.moreOptions,
           enabled: !_busy && data != null,
           onSelected: _action,
           itemBuilder: (_) => [
-            const PopupMenuItem(value: 'edit', child: Text('編輯')),
-            if (data?['state'] == 'opened') PopupMenuItem(value: 'close', child: Text(type == ProjectWorkItemType.incident ? '關閉議題狀態' : '關閉')),
-            if (mr && data?['state'] == 'opened') PopupMenuItem(value: 'draft', child: Text(data?['draft'] == true ? '標示為可審查' : '標示為草稿')),
-            if (data?['state'] == 'closed') PopupMenuItem(value: 'reopen', child: Text(type == ProjectWorkItemType.incident ? '重新開啟議題狀態' : '重新開啟')),
-            PopupMenuItem(value: 'assign', child: Text(valueObjects(data ?? {}, 'assignees').any((v) => v['id'] == widget.account.user.id) ? '取消指派給我' : '指派給我')),
-            const PopupMenuItem(value: 'todo', child: Text('加入我的待辦')),
-            const PopupMenuItem(value: 'web', child: Text('在 GitLab 開啟')),
-            const PopupMenuItem(value: 'delete', child: Text('刪除')),
+            PopupMenuItem(value: 'edit', child: Text(l10n.editAction)),
+            if (data?['state'] == 'opened') PopupMenuItem(value: 'close', child: Text(type == ProjectWorkItemType.incident ? l10n.closeIssueState : l10n.closeAction)),
+            if (mr && data?['state'] == 'opened') PopupMenuItem(value: 'draft', child: Text(data?['draft'] == true ? l10n.markAsReady2 : l10n.markAsDraft2)),
+            if (data?['state'] == 'closed') PopupMenuItem(value: 'reopen', child: Text(type == ProjectWorkItemType.incident ? l10n.reopenIssueState : l10n.reopen)),
+            PopupMenuItem(value: 'assign', child: Text(valueObjects(data ?? {}, 'assignees').any((v) => v['id'] == widget.account.user.id) ? l10n.unassignMe : l10n.assignToMe)),
+            PopupMenuItem(value: 'todo', child: Text(l10n.addToMyTodo)),
+            PopupMenuItem(value: 'web', child: Text(l10n.openInGitlab)),
+            PopupMenuItem(value: 'delete', child: Text(l10n.delete)),
           ],
         ),
       ],
@@ -1590,8 +1589,8 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                               children: [
                                 StatusBadge(valueText(data, 'state')),
                                 if (!mr && type != ProjectWorkItemType.issue) MetaChip(type.title, icon: type == ProjectWorkItemType.task ? Icons.task_alt : Icons.warning_amber_rounded),
-                                if (data['draft'] == true) const MetaChip('草稿', icon: Icons.edit_note),
-                                if (valueBool(data, 'confidential')) const MetaChip('機密', icon: Icons.lock_outline),
+                                if (data['draft'] == true) MetaChip(l10n.draft, icon: Icons.edit_note),
+                                if (valueBool(data, 'confidential')) MetaChip(l10n.confidential, icon: Icons.lock_outline),
                                 if (valueObject(data, 'milestone').isNotEmpty) MetaChip(valueText(valueObject(data, 'milestone'), 'title'), icon: Icons.tour_outlined),
                                 _authorLink(
                                   author,
@@ -1627,10 +1626,10 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                   isScrollable: crowded,
                   tabAlignment: crowded ? TabAlignment.start : null,
                   tabs: [
-                    const Tab(text: '摘要'),
-                    if (mr) const Tab(text: '變更'),
-                    const Tab(text: '討論'),
-                    if (mr) const Tab(text: '檢查'),
+                    Tab(text: l10n.summary),
+                    if (mr) Tab(text: l10n.changes),
+                    Tab(text: l10n.thread),
+                    if (mr) Tab(text: l10n.checks),
                   ],
                 ),
                 Expanded(
@@ -1659,12 +1658,12 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                                 crossAxisAlignment: WrapCrossAlignment.center,
                                 children: [
                                   MetaChip('${valueText(data, 'source_branch')} → ${valueText(data, 'target_branch')}', icon: Icons.alt_route, mono: true),
-                                  if (valueText(data, 'changes_count').isNotEmpty) MetaChip('${valueText(data, 'changes_count')} 個檔案', icon: Icons.difference_outlined),
+                                  if (valueText(data, 'changes_count').isNotEmpty) MetaChip(l10n.fileCount2(valueText(data, 'changes_count')), icon: Icons.difference_outlined),
                                 ],
                               ),
                             ),
                           _RestDescription(
-                            valueText(data, 'description').isEmpty ? '尚未填寫說明。' : valueText(data, 'description'),
+                            valueText(data, 'description').isEmpty ? l10n.noDescriptionYet : valueText(data, 'description'),
                             key: ValueKey('rest-description/${owner.account.key}/${owner.project.id}/${owner.resource}/${owner.iid}/${owner.generation}'),
                             base: web, api: widget.api, projectId: widget.project.id, projectWeb: widget.account.instance.projectWeb(widget.project.path), projectPath: widget.project.path,
                           ),
@@ -1701,7 +1700,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                                   _buildLabelsSection(data),
                                   if (valueObject(data, 'milestone').isNotEmpty) ...[
                                     const Divider(height: 20),
-                                    Text('里程碑', style: Theme.of(context).textTheme.titleSmall),
+                                    Text(l10n.milestoneLabel, style: Theme.of(context).textTheme.titleSmall),
                                     const SizedBox(height: 8),
                                     Wrap(
                                       spacing: 8,
@@ -1716,7 +1715,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                                             Flexible(child: Text(valueText(valueObject(data, 'milestone'), 'title'))),
                                           ],
                                         ),
-                                        if (valueText(valueObject(data, 'milestone'), 'due_date').isNotEmpty) Text('（到期日：${valueText(valueObject(data, 'milestone'), 'due_date')}）', style: Theme.of(context).textTheme.bodySmall),
+                                        if (valueText(valueObject(data, 'milestone'), 'due_date').isNotEmpty) Text(l10n.dueDateParen(valueText(valueObject(data, 'milestone'), 'due_date')), style: Theme.of(context).textTheme.bodySmall),
                                       ],
                                     ),
                                   ],
@@ -1732,7 +1731,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                             ),
                           if (mr) _MergeRequestHistory(account: widget.account, api: widget.api, project: widget.project, iid: widget.iid),
                           const SizedBox(height: 12),
-                          Text([if (valueText(data, 'created_at').isNotEmpty) '建立於 ${relativeDate(valueText(data, 'created_at'))}', '更新於 ${relativeDate(valueText(data, 'updated_at'))}'].join(' · '), style: Theme.of(context).textTheme.bodySmall),
+                          Text([if (valueText(data, 'created_at').isNotEmpty) l10n.createdRelative(relativeDate(valueText(data, 'created_at'))), l10n.updatedRelative(relativeDate(valueText(data, 'updated_at')))].join(' · '), style: Theme.of(context).textTheme.bodySmall),
                         ],
                       ),
                       if (mr) ReviewDiffPage(key: ValueKey(valueText(data, 'sha')), account: widget.account, api: widget.api, project: widget.project, iid: widget.iid, expectedSha: valueText(data, 'sha'), onApplied: _loadAfterMutation),
@@ -1859,7 +1858,7 @@ class _RestDescriptionState extends State<_RestDescription>
           ),
           label: Semantics(
             expanded: _expanded,
-            child: Text(_expanded ? '收合說明' : '展開完整說明'),
+            child: Text(_expanded ? l10n.collapseDescription : l10n.expandFullDescription),
           ),
         ),
         const SizedBox(height: 4),
@@ -1881,7 +1880,7 @@ class _RestDescriptionState extends State<_RestDescription>
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    '說明較長（共 $_runes 字元），目前僅顯示開頭摘要。',
+                    l10n.descriptionTruncated(_runes),
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -1944,17 +1943,17 @@ class _MergeChecksState extends State<_MergeChecks> {
   Widget build(BuildContext context) => ListView(
     padding: const EdgeInsets.all(20),
     children: [
-      Text('合併條件', style: Theme.of(context).textTheme.titleMedium),
+      Text(l10n.mergeConditions, style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 10),
       Text(mergeStatusLabel(widget.data)),
       const SizedBox(height: 12),
       Text(
-        '版本 ${shortSha(valueText(widget.data, 'sha'))}',
+        l10n.versionShortSha(shortSha(valueText(widget.data, 'sha'))),
         style: const TextStyle(fontFamily: codeFontFamily, fontFamilyFallback: ['Menlo', 'monospace']),
       ),
       if (widget.data['head_pipeline'] is Json) Padding(padding: const EdgeInsets.symmetric(vertical: 16), child: StatusBadge(valueText(valueObject(widget.data, 'head_pipeline'), 'status'))),
       const Divider(height: 32),
-      Text('審查', style: Theme.of(context).textTheme.titleMedium),
+      Text(l10n.review, style: Theme.of(context).textTheme.titleMedium),
       FutureBuilder<Json>(
         future: _approvals,
         builder: (context, snap) {
@@ -1962,7 +1961,7 @@ class _MergeChecksState extends State<_MergeChecks> {
             return FailureNotice(
               safeFailure(snap.error!),
               account: widget.account,
-              resourceLabel: '合併檢查',
+              resourceLabel: l10n.mergeChecks,
               onSwitchAccount: endSessionFrom(context),
               onRetry: () => setState(() {
         _approvals = widget.api.record([...widget.path, 'approvals']);
@@ -1971,20 +1970,20 @@ class _MergeChecksState extends State<_MergeChecks> {
           }
           if (!snap.hasData) { return const ListSkeleton(); }
           final approved = valueObjects(snap.data!, 'approved_by');
-          return Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(approved.isEmpty ? '尚無批准者'
-        : approved.map((v) => '@${valueText(valueObject(v, 'user'), 'username')}').join('、')));
+          return Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(approved.isEmpty ? l10n.noApproversYet
+        : approved.map((v) => '@${valueText(valueObject(v, 'user'), 'username')}').join(l10n.listSeparator)));
         },
       ),
       if (widget.data['state'] == 'opened') ...[
-        OutlinedButton.icon(onPressed: widget.busy ? null : () => widget.act('approve'), icon: const Icon(Icons.verified_outlined), label: const Text('批准目前版本')),
-        TextButton(onPressed: widget.busy ? null : () => widget.act('unapprove'), child: const Text('撤回我的批准')),
+        OutlinedButton.icon(onPressed: widget.busy ? null : () => widget.act('approve'), icon: const Icon(Icons.verified_outlined), label: Text(l10n.approveCurrentVersion)),
+        TextButton(onPressed: widget.busy ? null : () => widget.act('unapprove'), child: Text(l10n.revokeMyApproval)),
         const SizedBox(height: 16),
         if (isAutoMergeEnabled(widget.data))
-          OutlinedButton.icon(key: const ValueKey('cancel-auto-merge-checks'), onPressed: widget.busy ? null : () => widget.act('cancel_auto_merge'), icon: const Icon(Icons.close), label: const Text('取消自動合併'))
+          OutlinedButton.icon(key: const ValueKey('cancel-auto-merge-checks'), onPressed: widget.busy ? null : () => widget.act('cancel_auto_merge'), icon: const Icon(Icons.close), label: Text(l10n.cancelAutoMerge))
         else
-          FilledButton.icon(onPressed: widget.busy ? null : () => widget.act('merge'), icon: Icon(canAutoMerge(widget.data) ? Icons.schedule_send : Icons.merge), label: Text(canAutoMerge(widget.data) ? '自動合併…' : '合併…')),
+          FilledButton.icon(onPressed: widget.busy ? null : () => widget.act('merge'), icon: Icon(canAutoMerge(widget.data) ? Icons.schedule_send : Icons.merge), label: Text(canAutoMerge(widget.data) ? l10n.autoMergeEllipsis : l10n.mergeEllipsis)),
         const SizedBox(height: 12),
-        const Text('GitLab 會再次檢查 SHA、權限、保護分支及所有合併條件。', style: TextStyle(fontSize: 12)),
+        Text(l10n.gitlabRechecksMergeConditions, style: TextStyle(fontSize: 12)),
       ],
     ],
   );
@@ -2042,7 +2041,7 @@ class _RelatedIssueItemsState extends State<_RelatedIssueItems> {
     final error = _error;
     if (error != null) {
       return FailureNotice(error, account: widget.account, onRetry: _load, onSwitchAccount: endSessionFrom(context),
-        resourceLabel: '${widget.project.path} · #${widget.iid} 相關合併請求與關聯議題');
+        resourceLabel: l10n.relatedMergeRequestsAndIssues(widget.project.path, widget.iid));
     }
     if (_mergeRequests.isEmpty && _links.isEmpty) return const SizedBox.shrink();
     final open = ResourceNavigator(widget.account, widget.api);
@@ -2050,7 +2049,7 @@ class _RelatedIssueItemsState extends State<_RelatedIssueItems> {
     Widget row(Json item, {required bool mr}) {
       final linkType = valueText(item, 'link_type');
       final relation = switch (linkType) {
-        'blocks' => '阻擋', 'is_blocked_by' => '被阻擋', 'relates_to' => '相關', _ => '',
+        'blocks' => l10n.blocks, 'is_blocked_by' => l10n.blockedBy, 'relates_to' => l10n.related, _ => '',
       };
       return ListTile(
         contentPadding: EdgeInsets.zero,
@@ -2070,8 +2069,8 @@ class _RelatedIssueItemsState extends State<_RelatedIssueItems> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              if (_mergeRequests.isNotEmpty) ...[Text('相關合併請求', style: theme.textTheme.titleSmall), for (final item in _mergeRequests) row(item, mr: true)],
-              if (_links.isNotEmpty) ...[if (_mergeRequests.isNotEmpty) const Divider(height: 16), Text('關聯議題', style: theme.textTheme.titleSmall), for (final item in _links) row(item, mr: false)],
+              if (_mergeRequests.isNotEmpty) ...[Text(l10n.relatedMergeRequests, style: theme.textTheme.titleSmall), for (final item in _mergeRequests) row(item, mr: true)],
+              if (_links.isNotEmpty) ...[if (_mergeRequests.isNotEmpty) const Divider(height: 16), Text(l10n.linkedIssues, style: theme.textTheme.titleSmall), for (final item in _links) row(item, mr: false)],
             ],
           ),
         ),
@@ -2098,14 +2097,14 @@ class _MergeRequestHistory extends StatelessWidget {
       ListTile(
         key: const ValueKey('mr-commits-entry'),
         leading: const Icon(Icons.commit),
-        title: const Text('提交紀錄'),
+        title: Text(l10n.commitHistory),
         trailing: const Icon(Icons.chevron_right, size: 18),
-        onTap: () => push('!$iid 提交紀錄', RecordsFeed(
+        onTap: () => push(l10n.mergeRequestCommits(iid), RecordsFeed(
           identity: '${base.join('/')}/commits',
           account: account,
-          resourceLabel: '${project.path} · !$iid 提交',
+          resourceLabel: l10n.mergeRequestCommitsPath(project.path, iid),
           onSwitchAccount: endSessionFrom(context),
-          empty: '沒有提交',
+          empty: l10n.noCommits,
           grouped: true,
           load: (next) => api.records([...base, 'commits'], next: next),
           itemBuilder: (context, value) => ListTile(
@@ -2122,14 +2121,14 @@ class _MergeRequestHistory extends StatelessWidget {
       ListTile(
         key: const ValueKey('mr-pipelines-entry'),
         leading: const Icon(Icons.account_tree_outlined),
-        title: const Text('流程'),
+        title: Text(l10n.pipelines),
         trailing: const Icon(Icons.chevron_right, size: 18),
-        onTap: () => push('!$iid 流程', RecordsFeed(
+        onTap: () => push(l10n.mergeRequestPipelines(iid), RecordsFeed(
           identity: '${base.join('/')}/pipelines',
           account: account,
-          resourceLabel: '${project.path} · !$iid 流程',
+          resourceLabel: l10n.mergeRequestPipelinesPath(project.path, iid),
           onSwitchAccount: endSessionFrom(context),
-          empty: '沒有 Pipeline',
+          empty: l10n.noPipelines2,
           grouped: true,
           load: (next) => api.records([...base, 'pipelines'], next: next),
           itemBuilder: (context, value) => pipelineRow(context, value,
@@ -2231,27 +2230,27 @@ bool mergeRemoveSourceBranchDefault(Json data) =>
 String mergeStatusLabel(Json data) {
   if (isAutoMergeEnabled(data)) {
     final user = valueText(valueObject(data, 'merge_user'), 'username');
-    return user.isNotEmpty ? '已由 @$user 排程自動合併' : '已排程自動合併';
+    return user.isNotEmpty ? l10n.autoMergeScheduledByUser(user) : l10n.autoMergeScheduled;
   }
   final token = valueText(data, 'detailed_merge_status');
   return switch (token) {
-    'mergeable' => '可以合併',
-    'checking' || 'unchecked' || 'preparing' || 'approvals_syncing' || 'commits_status' => '正在檢查',
-    'ci_must_pass' => '等待 CI 通過',
-    'ci_still_running' => 'CI 執行中',
-    'conflict' => '有合併衝突',
-    'need_rebase' => '需要 rebase',
-    'not_approved' => '等待批准',
-    'discussions_not_resolved' => '尚有未解決討論',
-    'draft_status' => '草稿狀態',
-    'blocked_status' => '被其他 MR 阻擋',
-    'broken_status' => '來源分支異常',
-    'external_status_checks' => '等待外部檢查',
-    'policies_denied' => '政策不允許',
-    'jira_association_missing' => '缺少 Jira 關聯',
-    'requested_changes' => '有變更請求',
-    'not_open' => '已關閉',
-    '' => '等待 GitLab 檢查',
-    _ => '狀態：$token',
+    'mergeable' => l10n.canBeMerged,
+    'checking' || 'unchecked' || 'preparing' || 'approvals_syncing' || 'commits_status' => l10n.checkingMergeStatus,
+    'ci_must_pass' => l10n.waitingForCi,
+    'ci_still_running' => l10n.ciRunning,
+    'conflict' => l10n.hasMergeConflicts,
+    'need_rebase' => l10n.needsRebase,
+    'not_approved' => l10n.waitingForApproval,
+    'discussions_not_resolved' => l10n.unresolvedThreads,
+    'draft_status' => l10n.draftStatus,
+    'blocked_status' => l10n.blockedByAnotherMr,
+    'broken_status' => l10n.sourceBranchProblem,
+    'external_status_checks' => l10n.waitingForExternalChecks,
+    'policies_denied' => l10n.policyNotAllowed,
+    'jira_association_missing' => l10n.missingJiraLink,
+    'requested_changes' => l10n.changesRequested,
+    'not_open' => l10n.statusClosed,
+    '' => l10n.waitingForGitlabChecks,
+    _ => l10n.statusToken(token),
   };
 }

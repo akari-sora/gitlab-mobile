@@ -232,7 +232,7 @@ void main() {
     testWidgets('${kind.name} visible create/read/update-if-supported/delete', (tester) async {
       final f = CrudFixture();
       await host(tester, f, MetadataPage(account: f.account, api: f.api, project: f.project, kind: kind));
-      await tester.tap(find.byTooltip(metadataPhrase('新增', kind))); await settleWorkspace(tester);
+      await tester.tap(find.byTooltip(metadataAddTitle(kind))); await settleWorkspace(tester);
       var name = 'Smoke ${kind.name}';
       if (kind == MetadataKind.branches) { name = 'smoke/branch'; await input(tester, 'branch', name); }
       else if (kind == MetadataKind.tags) { name = 'smoke-v1'; await input(tester, 'tag_name', name); }

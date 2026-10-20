@@ -1,6 +1,7 @@
 import 'board_queries.dart';
 import 'failure.dart';
 
+import '../l10n/l10n.dart';
 final class BoardMovePlan {
   const BoardMovePlan({required this.payload, required this.target});
 
@@ -22,19 +23,19 @@ BoardMovePlan planBoardIssueMove({
   if (!boardColumnAcceptsDirectMove(source) ||
       !boardColumnAcceptsDirectMove(target) ||
       source.key == target.key) {
-    throw const ApiFailure(
+    throw ApiFailure(
       FailureKind.unsupported,
-      title: '無法直接移動到這個欄位',
-      detail: '目前只支援 Open、Closed 與標籤欄位之間的直接移動。',
+      title: l10n.cannotMoveToThisList,
+      detail: l10n.directMoveOpenClosedLabelOnly,
     );
   }
   final sourceQuery = boardIssueQuery(board, source);
   if (!sourceQuery.supported ||
       !boardColumnIssueMatches(board, source, sourceQuery, issue)) {
-    throw const ApiFailure(
+    throw ApiFailure(
       FailureKind.conflict,
-      title: '議題已不在原本欄位',
-      detail: 'GitLab 上的議題已經變更。請重新整理看板後再移動。',
+      title: l10n.issueLeftOriginalList,
+      detail: l10n.issueChangedRefreshBoard,
     );
   }
   final labels = issueLabelNames(issue).toList(growable: true);
@@ -59,10 +60,10 @@ BoardMovePlan planBoardIssueMove({
           column.kind == BoardColumnKind.unsupported) {
         final query = boardIssueQuery(board, column);
         if (!query.supported || boardIssueMatches(issue, query)) {
-          throw const ApiFailure(
+          throw ApiFailure(
             FailureKind.unsupported,
-            title: '無法直接移動到 Open',
-            detail: '此議題仍符合無法由直接移動安全修改的看板欄位。請在議題頁調整指派或里程碑。',
+            title: l10n.cannotMoveDirectlyToOpen,
+            detail: l10n.issueMatchesUnsafeBoardLists,
           );
         }
       }

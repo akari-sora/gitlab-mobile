@@ -18,6 +18,7 @@ import '../../core/suggestion.dart';
 import 'draft_review_page.dart';
 import 'suggestion_card.dart';
 
+import '../../l10n/l10n.dart';
 typedef DiffParser = Future<List<DiffLine>> Function(String source);
 
 const _asyncDiffParseThreshold = 64 * 1024;
@@ -109,7 +110,7 @@ _DiffCache _getDiffCache(GitLabApi api) {
 }
 
 const _maxDiscussionPages = 20;
-String get _discussionPageBoundNote => '討論已達 20 頁上限，後續討論未載入。';
+String get _discussionPageBoundNote => l10n.discussionsPageLimit;
 
 /// A file and line taken from a real discussion position. Never invented.
 class DiffTarget {
@@ -268,8 +269,8 @@ bool _positionClaimsFile(Json position, Json file) {
 
 String _unplacedReason(Json position, Json version) =>
     _shasMatch(position, version)
-    ? '目前差異未提供此行（可能已折疊或超出大小上限）'
-    : '以較舊版本為準，無法對應目前差異';
+    ? l10n.diffLineUnavailable
+    : l10n.discussionOnOlderDiff;
 
 Json _targetPosition(DiffTarget target) {
   final position = <String, dynamic>{};
@@ -305,15 +306,15 @@ String diffFilePath(Json file) {
   if (newPath.isNotEmpty) return newPath;
   final oldPath = valueText(file, 'old_path');
   if (oldPath.isNotEmpty) return oldPath;
-  return '未命名檔案';
+  return l10n.unnamedFile;
 }
 
 String _positionLines(Json position) {
   final parts = <String>[];
   final newLine = position['new_line'];
   final oldLine = position['old_line'];
-  if (newLine is int) parts.add('新行 $newLine');
-  if (oldLine is int) parts.add('舊行 $oldLine');
+  if (newLine is int) parts.add(l10n.newDiffLine(newLine));
+  if (oldLine is int) parts.add(l10n.oldDiffLine(oldLine));
   return parts.join(' · ');
 }
 
@@ -558,7 +559,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
 
   String _targetReason(DiffTarget target) {
     final version = _version;
-    if (version == null) return '以較舊版本為準，無法對應目前差異';
+    if (version == null) return l10n.discussionOnOlderDiff;
     return _unplacedReason({
       'base_sha': target.baseSha,
       'start_sha': target.startSha,
@@ -613,7 +614,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
             _error!,
             onRetry: _load,
             account: widget.account,
-            resourceLabel: '${widget.project.path} · !${widget.iid} 差異',
+            resourceLabel: l10n.mergeRequestDiffTitle(widget.project.path, widget.iid),
             onSwitchAccount: endSessionFrom(context),
           ),
         ],
@@ -645,18 +646,18 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    '固定版本 ${shortSha(widget.expectedSha)}',
+                    l10n.pinnedDiffVersion(shortSha(widget.expectedSha)),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   if (_version?['overflow'] == true)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.symmetric(vertical: 12),
-                      child: Text('GitLab 限制了部分差異。下列檔案不代表完整變更。'),
+                      child: Text(l10n.partialDiffNotComplete),
                     ),
                   if (_discussionsLoading)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(top: 12),
-                      child: Text('正在載入討論'),
+                      child: Text(l10n.loadingDiscussions),
                     ),
                   if (_discussionsTruncated)
                     Padding(
@@ -669,7 +670,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                       onRetry: _load,
                       account: widget.account,
                       resourceLabel:
-                          '${widget.project.path} · !${widget.iid} 討論',
+                          l10n.mergeRequestThreadsTitle(widget.project.path, widget.iid),
                       onSwitchAccount: endSessionFrom(context),
                     ),
                   if (files.isNotEmpty)
@@ -703,7 +704,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                                       const SizedBox(width: 8),
                                       Expanded(
                                         child: Text(
-                                          '審查進度 ($viewedCount/${files.length})',
+                                          l10n.reviewProgress(viewedCount, files.length),
                                           style: Theme.of(
                                             context,
                                           ).textTheme.titleSmall,
@@ -728,7 +729,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                                         }
                                       });
                                     },
-                                    child: Text(allViewed ? '全部取消' : '全部標記已檢視'),
+                                    child: Text(allViewed ? l10n.unmarkAllViewed : l10n.markAllAsViewed),
                                   );
                                   final compact =
                                       constraints.maxWidth < 420 ||
@@ -784,9 +785,9 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                       ),
                     ),
                   if (files.isEmpty)
-                    const EmptyState(
-                      '沒有可顯示的文字差異',
-                      detail: '可能沒有變更，或差異未由伺服器提供。',
+                    EmptyState(
+                      l10n.noTextDiffToDisplay,
+                      detail: l10n.diffMissingOrNoChanges,
                     ),
                 ],
               ),
@@ -830,10 +831,10 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                               : null,
                         ),
                         subtitle: file['renamed_file'] == true
-                            ? Text('原路徑：${valueText(file, 'old_path')}')
+                            ? Text(l10n.originalFilePath(valueText(file, 'old_path')))
                             : (isViewed
-                                  ? const Text(
-                                      '已檢視',
+                                  ? Text(
+                                      l10n.fileViewed,
                                       style: TextStyle(
                                         color: Colors.green,
                                         fontSize: 12,
@@ -881,7 +882,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                                     ? Colors.green
                                     : Theme.of(context).colorScheme.outline,
                               ),
-                              tooltip: isViewed ? '標記為未檢視' : '標記為已檢視',
+                              tooltip: isViewed ? l10n.markAsNotViewed : l10n.markAsViewed,
                               constraints: const BoxConstraints(
                                 minWidth: 48,
                                 minHeight: 48,
@@ -919,7 +920,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                   fallbackOldLine: missingTarget ? target.oldLine : null,
                   fallbackReason: missingTarget
                       ? _targetReason(target)
-                      : '以較舊版本為準，無法對應目前差異',
+                      : l10n.discussionOnOlderDiff,
                 ),
               ),
             ),
@@ -1035,7 +1036,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     if (widget.file['too_large'] == true ||
         widget.file['collapsed'] == true ||
         diff.isEmpty) {
-      _unavailable = 'GitLab 未提供這份文字差異，或內容為二進位檔案。';
+      _unavailable = l10n.textDiffUnavailableOrBinary;
       _diffLoading = false;
       if (widget.initialTarget != null) {
         _scheduleReveal();
@@ -1047,7 +1048,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
         ? null
         : utf8.encode(diff).length;
     if (sourceBytes == null || sourceBytes > _maxDiffSourceBytes) {
-      _unavailable = '這份差異不完整或超過排版上限，已停用行內留言，避免貼錯位置。';
+      _unavailable = l10n.inlineCommentsDisabled;
       _diffLoading = false;
       if (widget.initialTarget != null) {
         _scheduleReveal();
@@ -1133,7 +1134,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
         return;
       }
       setState(() {
-        _unavailable = '這份差異不完整或超過排版上限，已停用行內留言，避免貼錯位置。';
+        _unavailable = l10n.inlineCommentsDisabled;
         _diffLoading = false;
       });
       if (widget.initialTarget != null) {
@@ -1258,7 +1259,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
 
   String get _fallbackReason {
     final target = widget.initialTarget;
-    if (target == null) return '以較舊版本為準，無法對應目前差異';
+    if (target == null) return l10n.discussionOnOlderDiff;
     return _unplacedReason({
       'base_sha': target.baseSha,
       'start_sha': target.startSha,
@@ -1439,13 +1440,13 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     final saved = await openEditor(
       context,
       account: widget.account,
-      title: '對這一行留言',
+      title: l10n.commentOnThisLine,
       resource:
           '${widget.project.id}/mr/${widget.iid}/$sha/$oldPath/$newPath/${line.oldLine}/${line.newLine}',
       subtitle: '$newPath · ${line.newLine ?? line.oldLine} · ${shortSha(sha)}',
-      fields: const [
-        EditField('body', '留言', lines: 8, required: true, markdown: true),
-        EditField.toggle('draft', '暫存至審查草稿', hint: '發布前只有你可見，可集中檢查後一次發布。'),
+      fields: [
+        EditField('body', l10n.addComment, lines: 8, required: true, markdown: true),
+        EditField.toggle('draft', l10n.saveToReviewDraft, hint: l10n.reviewDraftVisibilityHint),
       ],
       api: widget.api,
       projectId: widget.project.id,
@@ -1453,10 +1454,10 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       save: (values) async {
         final current = await widget.api.record(_mrPath);
         if (current['sha'] != sha) {
-          throw const ApiFailure(
+          throw ApiFailure(
             FailureKind.conflict,
-            title: '合併請求已有新版本',
-            detail: '請返回變更頁重新載入最新版本，再檢查留言內容。草稿已保留。',
+            title: l10n.mergeRequestNewVersion,
+            detail: l10n.reloadChangesBeforeComment,
           );
         }
         savedAsDraft = values['draft'] == 'true';
@@ -1479,7 +1480,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     if (savedAsDraft) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('已暫存，發布前只有你可見')));
+      ).showSnackBar(SnackBar(content: Text(l10n.draftSavedPrivate)));
       return;
     }
     await _reloadDiscussions();
@@ -1506,10 +1507,10 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     final saved = await openEditor(
       context,
       account: widget.account,
-      title: '回覆討論',
+      title: l10n.replyToThread,
       resource: '${widget.project.id}/mr/${widget.iid}/discussion/$id/reply',
       subtitle: valueText(widget.file, 'new_path'),
-      fields: const [EditField('body', '留言內容', required: true, lines: 8)],
+      fields: [EditField('body', l10n.commentBody, required: true, lines: 8)],
       save: (values) async {
         await widget.api.writeRecord(
           'POST',
@@ -1680,10 +1681,10 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
             const SizedBox(width: 8),
             Text(
               isResolvedAll
-                  ? '未解決討論 0'
+                  ? l10n.unresolvedThreadsZero
                   : currentPos >= 0
-                  ? '未解決討論 $unresolvedCount (${currentPos + 1}/$totalTargets)'
-                  : '未解決討論 $unresolvedCount',
+                  ? l10n.unresolvedThreadsProgress(unresolvedCount, currentPos + 1, totalTargets)
+                  : l10n.unresolvedThreadsCount(unresolvedCount),
               style: theme.textTheme.labelMedium?.copyWith(
                 fontWeight: FontWeight.w600,
                 color: isResolvedAll
@@ -1696,7 +1697,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
               key: const ValueKey('diff-nav-prev'),
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               icon: const Icon(Icons.keyboard_arrow_up, size: 22),
-              tooltip: '上一則討論',
+              tooltip: l10n.previousThread,
               color: isResolvedAll
                   ? colorScheme.outline
                   : colorScheme.onSurface,
@@ -1717,7 +1718,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
               key: const ValueKey('diff-nav-next'),
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               icon: const Icon(Icons.keyboard_arrow_down, size: 22),
-              tooltip: '下一則討論',
+              tooltip: l10n.nextThread,
               color: isResolvedAll
                   ? colorScheme.outline
                   : colorScheme.onSurface,
@@ -1814,13 +1815,13 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
             isCurrent: () => mounted && !_disposed && !widget.api.isClosed,
           ),
           IconButton(
-            tooltip: '審查草稿',
+            tooltip: l10n.reviewDrafts,
             icon: const Icon(Icons.rate_review_outlined),
             onPressed: _openDraftReview,
           ),
           IconButton(
             key: const ValueKey('diff-file-viewed-toggle'),
-            tooltip: _viewed ? '標記為未檢視' : '標記為已檢視',
+            tooltip: _viewed ? l10n.markAsNotViewed : l10n.markAsViewed,
             icon: Icon(
               _viewed ? Icons.check_circle : Icons.circle_outlined,
               color: _viewed ? Colors.green : null,
@@ -1831,7 +1832,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
             },
           ),
           IconButton(
-            tooltip: '在 GitLab 開啟',
+            tooltip: l10n.openInGitlab,
             icon: const Icon(Icons.open_in_new),
             onPressed: () => openExternal(
               context,
@@ -1844,13 +1845,13 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       ),
       body: gestureSafe(
         _diffLoading
-            ? const Center(
+            ? Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     CircularProgressIndicator(strokeWidth: 2),
                     SizedBox(height: 12),
-                    Text('正在準備差異…'),
+                    Text(l10n.preparingDiff),
                   ],
                 ),
               )
@@ -1872,14 +1873,14 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                 controller: _scroll,
                 children: [
                   EmptyState(
-                    '無法顯示差異',
+                    l10n.cannotDisplayDiff,
                     detail: _unavailable,
                     icon: Icons.code_off,
                   ),
                   if (_discussionsLoading)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.symmetric(horizontal: 16),
-                      child: Text('正在載入討論'),
+                      child: Text(l10n.loadingDiscussions),
                     ),
                   if (_truncated)
                     Padding(
@@ -1892,7 +1893,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                       onRetry: _reloadDiscussions,
                       account: widget.account,
                       resourceLabel:
-                          '${widget.project.path} · !${widget.iid} 討論',
+                          l10n.mergeRequestThreadsTitle(widget.project.path, widget.iid),
                       onSwitchAccount: endSessionFrom(context),
                     ),
                   if (showOther)
@@ -1915,14 +1916,14 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                       vertical: 8,
                     ),
                     child: Text(
-                      '點選程式碼行新增留言 · ${shortSha(valueText(widget.version, 'head_commit_sha'))}',
+                      l10n.tapLineToComment(shortSha(valueText(widget.version, 'head_commit_sha'))),
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
                   if (_discussionsLoading)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
-                      child: Text('正在載入討論'),
+                      child: Text(l10n.loadingDiscussions),
                     ),
                   if (_truncated)
                     Padding(
@@ -1936,7 +1937,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                       onRetry: _reloadDiscussions,
                       account: widget.account,
                       resourceLabel:
-                          '${widget.project.path} · !${widget.iid} 討論',
+                          l10n.mergeRequestThreadsTitle(widget.project.path, widget.iid),
                       onSwitchAccount: endSessionFrom(context),
                     ),
                   Expanded(
@@ -2017,7 +2018,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                                         horizontal: 8,
                                         vertical: 14,
                                       ),
-                                      child: Row(
+                                      child: Directionality(textDirection: TextDirection.ltr, child: Row(
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
@@ -2077,7 +2078,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                                             ),
                                           ),
                                         ],
-                                      ),
+                                      )),
                                     ),
                                   ),
                                 ),
@@ -2281,7 +2282,7 @@ class _DiffThreadCard extends StatelessWidget {
                               color: theme.colorScheme.onSurfaceVariant,
                             ),
                             const SizedBox(width: 4),
-                            Text('已解決', style: theme.textTheme.labelMedium),
+                            Text(l10n.resolvedLabel, style: theme.textTheme.labelMedium),
                           ],
                         ),
                       ),
@@ -2316,26 +2317,26 @@ class _DiffThreadCard extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Text(
-                    '另 ${notes.length - visible.length} 則',
+                    l10n.moreNotesCount(notes.length - visible.length),
                     style: theme.textTheme.bodySmall,
                   ),
                 ),
               if (!expanded && notes.length > 2)
                 TextButton(
                   onPressed: onExpand,
-                  child: Text('顯示全部 ${notes.length} 則'),
+                  child: Text(l10n.showAllNotes(notes.length)),
                 ),
               Wrap(
                 spacing: 8,
                 children: [
                   TextButton(
                     onPressed: busy ? null : onReply,
-                    child: const Text('回覆'),
+                    child: Text(l10n.replyAction),
                   ),
                   if (onResolve != null)
                     TextButton(
                       onPressed: busy ? null : onResolve,
-                      child: Text(resolved ? '重新開啟討論' : '解決討論'),
+                      child: Text(resolved ? l10n.reopenThread : l10n.resolveThread),
                     ),
                 ],
               ),
@@ -2363,7 +2364,7 @@ class _OtherVersionSection extends StatelessWidget {
   final int? fallbackNewLine;
   final int? fallbackOldLine;
   final String? _fallbackReasonArg;
-  String get fallbackReason => _fallbackReasonArg ?? '以較舊版本為準，無法對應目前差異';
+  String get fallbackReason => _fallbackReasonArg ?? l10n.discussionOnOlderDiff;
 
   @override
   Widget build(BuildContext context) {
@@ -2373,8 +2374,8 @@ class _OtherVersionSection extends StatelessWidget {
             _OtherVersionCard(
               path: fallbackPath,
               lines: [
-                if (fallbackNewLine != null) '新行 $fallbackNewLine',
-                if (fallbackOldLine != null) '舊行 $fallbackOldLine',
+                if (fallbackNewLine != null) l10n.fallbackNewDiffLine(fallbackNewLine),
+                if (fallbackOldLine != null) l10n.fallbackOldDiffLine(fallbackOldLine),
               ].join(' · '),
               excerpt: '',
               reason: fallbackReason,
@@ -2387,7 +2388,7 @@ class _OtherVersionSection extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '其他版本的討論',
+            l10n.threadsOnOtherVersions,
             key: const ValueKey('diff-other-section'),
             style: theme.textTheme.titleMedium,
           ),

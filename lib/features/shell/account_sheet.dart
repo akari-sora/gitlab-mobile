@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
 
+import '../../l10n/l10n.dart';
 /// The avatar menu: the signed-in identity, the other saved accounts and an
 /// entry to add or reconnect one. Switching re-validates through
 /// [SessionController.select]; nothing here rotates accounts on its own.
@@ -38,7 +39,7 @@ Future<void> showAccountSheet(BuildContext context, SessionController session) {
       ListTile(
         contentPadding: EdgeInsets.zero,
         leading: const Icon(Icons.person_add_outlined),
-        title: const Text('新增或切換帳號'),
+        title: Text(l10n.addOrSwitchAccount),
         onTap: () {
           Navigator.pop(sheetContext);
           unawaited(session.endSession());
@@ -57,7 +58,7 @@ class AccountAvatarButton extends StatelessWidget {
     final account = session.active;
     if (account == null) return const SizedBox.shrink();
     return IconButton(
-      tooltip: '帳號 @${account.user.username}',
+      tooltip: l10n.accountAtUsername(account.user.username),
       onPressed: () => showAccountSheet(context, session),
       icon: Monogram(account.user.name, size: 30, circle: true),
     );

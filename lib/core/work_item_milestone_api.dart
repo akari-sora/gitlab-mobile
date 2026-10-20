@@ -445,10 +445,10 @@ extension WorkItemMilestoneApi on GitLabApi {
       throw const ApiFailure(FailureKind.conflict);
     }
     if (!before.canSetMilestone || before.target == null) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.forbidden,
-        title: '無法變更里程碑',
-        detail: '目前帳號沒有設定這個工作項目里程碑的權限。',
+        title: l10n.cannotChangeMilestone,
+        detail: l10n.noPermissionSetMilestone,
       );
     }
     final desired = selection.milestone;
@@ -487,10 +487,10 @@ extension WorkItemMilestoneApi on GitLabApi {
         throw const FormatException('Invalid milestone errors');
       }
       if (errors.isNotEmpty) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.validation,
-          title: 'GitLab 未接受里程碑更新',
-          detail: '請重新讀取工作項目，並確認里程碑與權限仍然有效。',
+          title: l10n.gitlabRejectedMilestoneUpdate,
+          detail: l10n.reloadConfirmMilestone,
         );
       }
       final acknowledged = _parseMilestoneWorkItem(
@@ -760,10 +760,10 @@ String _parseRequiredMilestoneActor(Json data, String? expectedActorId) {
   }
   final actor = _parseNotificationActor(data['currentUser']);
   if (actor == null) {
-    throw const ApiFailure(
+    throw ApiFailure(
       FailureKind.unauthenticated,
-      title: '登入已失效',
-      detail: '請重新連接目前帳號，再讀取工作項目里程碑。',
+      title: l10n.signInNoLongerValid,
+      detail: l10n.reconnectThenReadMilestone,
     );
   }
   if (expectedActorId != null && actor != expectedActorId) {
@@ -871,10 +871,10 @@ Json _milestoneGraphData(Uint8List bytes, {required bool mutation}) {
               ),
         );
         if (unsupported) {
-          throw const ApiFailure(
+          throw ApiFailure(
             FailureKind.unsupported,
-            title: '實例未提供工作項目里程碑編輯',
-            detail: '仍可查看工作項目；這個 GitLab 版本不支援安全的里程碑更新流程。',
+            title: l10n.instanceNoMilestoneEdit,
+            detail: l10n.noSafeMilestoneUpdateFlow,
           );
         }
         throw ApiFailure(

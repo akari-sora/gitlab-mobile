@@ -22,6 +22,7 @@ import 'file_history.dart';
 import 'records_feed.dart';
 import '../../core/brand.dart';
 
+import '../../l10n/l10n.dart';
 const _readmeCandidateNames = <String>[
   'readme.md',
   'readme.markdown',
@@ -252,20 +253,20 @@ class _RepositoryTabState extends State<RepositoryTab> {
     final saved = await openEditor(
       context,
       account: widget.account,
-      title: '新增檔案',
+      title: l10n.addFile,
       resource: '${widget.project.id}/files/new/$branch/$_folder',
       subtitle: '${widget.project.path} · $branch',
       fields: [
         EditField(
           'path',
-          '完整檔案路徑',
+          l10n.fullFilePath,
           required: true,
           value: _folder.isEmpty ? '' : '$_folder/',
         ),
-        const EditField('content', '內容', lines: 10),
-        const EditField(
+        EditField('content', l10n.content, lines: 10),
+        EditField(
           'message',
-          'Commit 訊息',
+          l10n.commitMessage,
           required: true,
           value: 'Add file from $appName',
         ),
@@ -295,7 +296,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
     if (type != 'blob' || data['mode'] == '120000') {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Submodule 與符號連結不會當成一般檔案開啟。')),
+          SnackBar(content: Text(l10n.submoduleSymlinkNote)),
         );
       }
       return;
@@ -351,7 +352,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
                         const SizedBox(width: 6),
                         Flexible(
                           child: Text(
-                            ref?.name ?? '選擇版本',
+                            ref?.name ?? l10n.selectRevision,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -364,7 +365,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
                 if (ref != null && ref.sha.isNotEmpty)
                   Flexible(
                     child: Tooltip(
-                      message: '固定版本 ${ref.sha}',
+                      message: l10n.pinnedRevision(ref.sha),
                       child: Text(
                         RepositoryRef.shortSha(ref.sha),
                         maxLines: 1,
@@ -382,7 +383,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
           ),
           if (ref != null && ref.sha.isNotEmpty)
             IconButton(
-              tooltip: '尋找檔案',
+              tooltip: l10n.findFile,
               onPressed: () => Navigator.of(context).push(
                 MaterialPageRoute<void>(
                   builder: (_) => FindFilePage(
@@ -396,13 +397,13 @@ class _RepositoryTabState extends State<RepositoryTab> {
               icon: const Icon(Icons.search, size: 20),
             ),
           IconButton(
-            tooltip: '重新讀取最新版本',
+            tooltip: l10n.reloadLatestRevision,
             onPressed: _loading ? null : _resolve,
             icon: const Icon(Icons.refresh, size: 20),
           ),
           if (ref?.writable == true)
             IconButton(
-              tooltip: '新增檔案',
+              tooltip: l10n.addFile,
               onPressed: widget.project.archived == true || _loading
                   ? null
                   : _newFile,
@@ -435,7 +436,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
             child: Row(
               children: [
                 IconButton(
-                  tooltip: '上一層目錄',
+                  tooltip: l10n.parentDirectory,
                   visualDensity: VisualDensity.compact,
                   onPressed: _up,
                   icon: const Icon(Icons.arrow_upward, size: 18),
@@ -446,7 +447,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                   ),
                   onPressed: () => setState(() => _folder = ''),
-                  child: const Text('根目錄'),
+                  child: Text(l10n.rootDirectory),
                 ),
                 for (var i = 0; i < segments.length; i++) ...[
                   Icon(
@@ -561,17 +562,17 @@ class _RepositoryTabState extends State<RepositoryTab> {
           child: _currentRef == null || _currentRef!.sha.isEmpty
               ? (_loading
                     ? const RowsSkeleton()
-                    : const SingleChildScrollView(
+                    : SingleChildScrollView(
                         child: EmptyState(
-                          'Repository 尚未初始化',
-                          detail: '新增第一個檔案後就會顯示內容。',
+                          l10n.repositoryNotInitialized,
+                          detail: l10n.contentAfterFirstFile,
                           icon: Icons.create_new_folder_outlined,
                         ),
                       ))
               : RecordsFeed(
                   key: _feed,
                   identity: '${widget.project.id}/${_currentRef!.sha}/$_folder',
-                  empty: '此目錄沒有檔案',
+                  empty: l10n.directoryEmpty,
                   emptyIcon: Icons.folder_open_outlined,
                   grouped: true,
                   account: widget.account,
@@ -710,14 +711,14 @@ class RepositoryReadmeCard extends StatelessWidget {
                           ),
                           if (readme != null)
                             Text(
-                              '固定版本 ${RepositoryRef.shortSha(readme!.sha)}',
+                              l10n.pinnedDiffVersion(RepositoryRef.shortSha(readme!.sha)),
                               style: theme.textTheme.bodySmall,
                             ),
                         ],
                       ),
                     ),
                     IconButton(
-                      tooltip: expanded ? '收合 README' : '展開 README',
+                      tooltip: expanded ? l10n.collapseReadme : l10n.expandReadme,
                       onPressed: onToggle,
                       icon: TurnChevron(open: expanded),
                     ),
@@ -819,7 +820,7 @@ class _RepositoryRefPickerPageState extends State<RepositoryRefPickerPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('選擇版本'),
+        title: Text(l10n.selectRevision),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(110),
           child: Column(
@@ -830,15 +831,15 @@ class _RepositoryRefPickerPageState extends State<RepositoryRefPickerPage> {
                   vertical: 4,
                 ),
                 child: SegmentedButton<RepositoryRefPickerMode>(
-                  segments: const [
+                  segments: [
                     ButtonSegment(
                       value: RepositoryRefPickerMode.branches,
-                      label: Text('分支'),
+                      label: Text(l10n.branchNoun),
                       icon: Icon(Icons.alt_route),
                     ),
                     ButtonSegment(
                       value: RepositoryRefPickerMode.tags,
-                      label: Text('標籤'),
+                      label: Text(l10n.gitTags),
                       icon: Icon(Icons.label_outline),
                     ),
                   ],
@@ -859,8 +860,8 @@ class _RepositoryRefPickerPageState extends State<RepositoryRefPickerPage> {
                   onChanged: _onSearchChanged,
                   decoration: InputDecoration(
                     hintText: _mode == RepositoryRefPickerMode.branches
-                        ? '搜尋分支...'
-                        : '搜尋標籤...',
+                        ? l10n.searchBranches
+                        : l10n.searchTags,
                     prefixIcon: const Icon(Icons.search),
                     suffixIcon: _search.text.isNotEmpty
                         ? IconButton(
@@ -885,7 +886,7 @@ class _RepositoryRefPickerPageState extends State<RepositoryRefPickerPage> {
         identity: 'ref-picker-${widget.project.id}-${_mode.name}-$_query',
         account: widget.account,
         resourceLabel:
-            '${widget.project.path} · ${_mode == RepositoryRefPickerMode.branches ? "分支" : "標籤"}',
+            '${widget.project.path} · ${_mode == RepositoryRefPickerMode.branches ? l10n.branchNoun : l10n.gitTags}',
         onSwitchAccount: endSessionFrom(context),
         load: (next) => widget.api.records(
           [
@@ -943,7 +944,7 @@ class _RepositoryRefPickerPageState extends State<RepositoryRefPickerPage> {
                         ).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(4),
                       ),
-                      child: const Text('預設', style: TextStyle(fontSize: 11)),
+                      child: Text(l10n.defaultLabel, style: TextStyle(fontSize: 11)),
                     ),
                   if (ref.protected)
                     Container(
@@ -957,7 +958,7 @@ class _RepositoryRefPickerPageState extends State<RepositoryRefPickerPage> {
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        '受保護',
+                        l10n.protected,
                         style: TextStyle(
                           fontSize: 11,
                           color: Theme.of(context).colorScheme.onErrorContainer,
@@ -967,7 +968,7 @@ class _RepositoryRefPickerPageState extends State<RepositoryRefPickerPage> {
                 ],
               ),
               subtitle: Text(
-                '固定版本 ${RepositoryRef.shortSha(ref.sha)}',
+                l10n.pinnedDiffVersion(RepositoryRef.shortSha(ref.sha)),
                 style: const TextStyle(
                   fontSize: 11,
                   fontFamily: codeFontFamily,
@@ -1337,7 +1338,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('已複製第 $lineNumber 行永久連結'),
+          content: Text(l10n.copiedLinePermalink(lineNumber)),
           duration: const Duration(seconds: 2),
         ),
       );
@@ -1390,15 +1391,15 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
     final saved = await openEditor(
       context,
       account: widget.account,
-      title: '編輯檔案',
+      title: l10n.editFile,
       resource:
           '${widget.project.id}/files/$branch/${widget.filePath}/${widget.resolvedRef.sha}',
       subtitle: '${widget.filePath} · $branch',
       fields: [
-        EditField('content', '內容', lines: 12, value: _text!),
-        const EditField(
+        EditField('content', l10n.content, lines: 12, value: _text!),
+        EditField(
           'message',
-          'Commit 訊息',
+          l10n.commitMessage,
           required: true,
           value: 'Update file from $appName',
         ),
@@ -1427,8 +1428,8 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
     final branch = widget.resolvedRef.name;
     if (!await confirmAction(
       context,
-      '刪除檔案？',
-      '${widget.filePath}\n分支 $branch\n會建立刪除檔案的 commit。',
+      l10n.deleteFileQuestion,
+      l10n.deleteFileCommitWarning(widget.filePath, branch),
       requiredText: widget.filePath,
     )) {
       return;
@@ -1521,7 +1522,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
           ),
         if (_markdown)
           IconButton(
-            tooltip: _preview ? '顯示原始文字' : 'Markdown 預覽',
+            tooltip: _preview ? l10n.showRawText : l10n.markdownPreview,
             onPressed: () {
               setState(() => _preview = !_preview);
               if (!_preview && _selectedLine != null) {
@@ -1533,7 +1534,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
             icon: Icon(_preview ? Icons.code : Icons.preview_outlined),
           ),
         PopupMenuButton<String>(
-          tooltip: '檔案操作',
+          tooltip: l10n.fileActions,
           onSelected: (action) {
             if (action == 'refresh') {
               unawaited(_load(refresh: true));
@@ -1584,22 +1585,22 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
             PopupMenuItem(
               value: 'refresh',
               enabled: !_loading && !_busy,
-              child: const Text('重新載入'),
+              child: Text(l10n.reload),
             ),
             PopupMenuItem(
               value: 'wrap',
-              child: Text(_wrap ? '關閉自動換行' : '開啟自動換行'),
+              child: Text(_wrap ? l10n.wordWrapOff : l10n.wordWrapOn),
             ),
-            const PopupMenuItem(value: 'history', child: Text('檔案歷史')),
+            PopupMenuItem(value: 'history', child: Text(l10n.fileHistory)),
             if (resolvedRef.sha.isNotEmpty)
-              const PopupMenuItem(value: 'blame', child: Text('Blame（逐行作者）')),
+              PopupMenuItem(value: 'blame', child: Text(l10n.blame)),
             if (resolvedRef.writable &&
                 text != null &&
                 !_lfs &&
                 widget.project.archived != true &&
                 !_busy) ...[
-              const PopupMenuItem(value: 'edit', child: Text('編輯檔案')),
-              const PopupMenuItem(value: 'delete', child: Text('刪除檔案')),
+              PopupMenuItem(value: 'edit', child: Text(l10n.editFile)),
+              PopupMenuItem(value: 'delete', child: Text(l10n.deleteFile)),
             ],
           ],
         ),
@@ -1627,8 +1628,8 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                             controller: _searchController,
                             focusNode: _searchFocus,
                             textInputAction: TextInputAction.search,
-                            decoration: const InputDecoration(
-                              hintText: '搜尋目前檔案',
+                            decoration: InputDecoration(
+                              hintText: l10n.searchCurrentFile,
                               prefixIcon: Icon(Icons.search),
                               contentPadding: EdgeInsets.symmetric(
                                 horizontal: 16,
@@ -1671,14 +1672,14 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                           }
                         },
                         icon: const Icon(Icons.open_in_new, size: 18),
-                        label: const Text('在 GitLab 開啟'),
+                        label: Text(l10n.openInGitlab),
                       ),
                     ),
                   ),
                 if (_lfs)
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.all(16),
-                    child: Text('這是 Git LFS pointer，不是原始檔案。此版本不會自動下載大型物件。'),
+                    child: Text(l10n.gitLfsPointer),
                   ),
                 Expanded(
                   child: text == null
@@ -1762,8 +1763,8 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                                                 Semantics(
                                                   button: true,
                                                   selected: isSelected,
-                                                  label: '第 $lineNumber 行',
-                                                  hint: '點擊複製此行永久連結',
+                                                  label: l10n.lineNumber(lineNumber),
+                                                  hint: l10n.tapCopyLinePermalink,
                                                   excludeSemantics: true,
                                                   onTap: () =>
                                                       _copyLinePermalink(

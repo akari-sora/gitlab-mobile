@@ -11,6 +11,7 @@ import '../../core/work_item_state_models.dart';
 import '../../core/work_item_status_models.dart';
 import '../../shared/workspace_ui.dart';
 
+import '../../l10n/l10n.dart';
 final _hexColor = RegExp(r'^#[0-9A-Fa-f]{6}$');
 
 /// Human label for a known GitLab status category. Unknown, blank and
@@ -21,10 +22,10 @@ String? workItemStatusCategoryLabel(String? raw) {
     return null;
   }
   return switch (value.toUpperCase()) {
-    'TO_DO' => '待辦',
-    'IN_PROGRESS' => '進行中',
-    'DONE' => '已完成',
-    'CANCELED' => '已取消',
+    'TO_DO' => l10n.toDo,
+    'IN_PROGRESS' => l10n.inProgress,
+    'DONE' => l10n.done2,
+    'CANCELED' => l10n.canceled,
     _ => null,
   };
 }
@@ -387,10 +388,10 @@ class _WorkItemStatusControlState extends State<WorkItemStatusControl> {
                 : const Icon(Icons.flag_outlined),
             label: Text(
               _writePending
-                  ? '變更中…'
+                  ? l10n.changingInProgress
                   : _opening
-                  ? '讀取狀態權限…'
-                  : '變更狀態',
+                  ? l10n.loadingStatusPermission
+                  : l10n.changeStatus,
             ),
           ),
         ),
@@ -568,7 +569,7 @@ class _WorkItemStatusEditorState extends State<_WorkItemStatusEditor> {
       // The target stays unused, so Save can be pressed again later.
       ScaffoldMessenger.maybeOf(
         context,
-      )?.showSnackBar(const SnackBar(content: Text('工作項目正在讀取或更新，請稍後再儲存。')));
+      )?.showSnackBar(SnackBar(content: Text(l10n.workItemBusySaveLater)));
       return;
     }
     final api = widget.api;
@@ -636,7 +637,7 @@ class _WorkItemStatusEditorState extends State<_WorkItemStatusEditor> {
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     return Scaffold(
       resizeToAvoidBottomInset: true,
-      appBar: AppBar(title: const Text('變更狀態')),
+      appBar: AppBar(title: Text(l10n.changeStatus)),
       body: CustomScrollView(
         key: const ValueKey('work-item-status-scroll'),
         controller: _scroll,
@@ -653,9 +654,9 @@ class _WorkItemStatusEditorState extends State<_WorkItemStatusEditor> {
                 const SizedBox(height: 4),
                 Text(widget.detail.summary.title),
                 const SizedBox(height: 12),
-                Text('目前生命週期：${_lifecycleLabel(snapshot.state)}'),
+                Text(l10n.currentLifecycle(_lifecycleLabel(snapshot.state))),
                 const SizedBox(height: 4),
-                Text('目前狀態：${_assignmentLabel(snapshot.assignment)}'),
+                Text(l10n.currentStatusAssignment(_assignmentLabel(snapshot.assignment))),
                 if (blocked != null) ...[
                   const SizedBox(height: 12),
                   Text(
@@ -665,8 +666,8 @@ class _WorkItemStatusEditorState extends State<_WorkItemStatusEditor> {
                 ],
                 if (_saveAttempted && error != null) ...[
                   const SizedBox(height: 12),
-                  const Text(
-                    '請關閉並重新開啟，讀取最新狀態後再變更。',
+                  Text(
+                    l10n.reopenBeforeChange,
                     key: ValueKey('work-item-status-reopen-hint'),
                   ),
                   FailureNotice(
@@ -686,10 +687,9 @@ class _WorkItemStatusEditorState extends State<_WorkItemStatusEditor> {
                       children: [
                         const Icon(Icons.info_outline, size: 20),
                         const SizedBox(width: 8),
-                        const Expanded(
+                        Expanded(
                           child: Text(
-                            '套用狀態時，GitLab 可能會關閉或重新開啟這個工作項目。'
-                            '最終狀態與開啟／關閉以儲存後重新讀取的伺服器結果為準。',
+                            l10n.statusMayCloseOrReopen,
                           ),
                         ),
                       ],
@@ -739,7 +739,7 @@ class _WorkItemStatusEditorState extends State<_WorkItemStatusEditor> {
                           dimension: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('儲存'),
+                      : Text(l10n.saveAction),
                 ),
               ],
             ),
@@ -758,15 +758,15 @@ class _WorkItemStatusEditorState extends State<_WorkItemStatusEditor> {
         assignment.kind == WorkItemStatusAssignmentKind.identified &&
         assignment.id == id;
     final name = _statusName(status.name);
-    final label = isAssigned ? '$name（目前）' : name;
+    final label = isAssigned ? l10n.statusNameCurrent(name) : name;
     final category =
-        '分類：${workItemStatusCategoryText(status.category) ?? '未提供'}';
+        l10n.statusCategoryValue(workItemStatusCategoryText(status.category) ?? l10n.notProvided);
     final description = status.description;
     final scheme = Theme.of(context).colorScheme;
     return Semantics(
       key: ValueKey('work-item-status-choice-$id'),
       excludeSemantics: true,
-      label: '$label，$category',
+      label: l10n.statusLabelCategory(label, category),
       button: true,
       enabled: editable,
       checked: selected,
@@ -807,12 +807,12 @@ class _WorkItemStatusEditorState extends State<_WorkItemStatusEditor> {
     if (_capable) return null;
     if (_snapshot.assignment.kind ==
         WorkItemStatusAssignmentKind.unidentified) {
-      return '目前狀態沒有可識別的伺服器 ID，無法安全變更。';
+      return l10n.statusMissingServerId;
     }
     if (!widget.access.canWrite || widget.access.target == null) {
-      return '目前帳號沒有變更狀態的權限。';
+      return l10n.statusPermissionDenied;
     }
-    return '這個工作項目沒有可選擇的狀態。';
+    return l10n.noSelectableStatuses;
   }
 
   String? _pendingLabel() {
@@ -821,12 +821,12 @@ class _WorkItemStatusEditorState extends State<_WorkItemStatusEditor> {
     final assignment = _snapshot.assignment;
     if (assignment.kind == WorkItemStatusAssignmentKind.identified &&
         assignment.id == id) {
-      return '已是目前狀態，儲存不會送出變更。';
+      return l10n.statusAlreadyCurrent;
     }
     final record = _snapshot.allowedStatuses.firstWhere(
       (status) => status.id == id,
     );
-    return '將套用：${_statusName(record.name)}';
+    return l10n.statusWillApply(_statusName(record.name));
   }
 }
 
@@ -835,10 +835,10 @@ ApiFailure _writeFailure(WorkItemStatusWriteFailure failure) {
   if (error.kind == FailureKind.cancelled && !failure.mutationSent) {
     return ApiFailure(
       FailureKind.cancelled,
-      title: '狀態沒有送出',
+      title: l10n.statusNotSubmitted,
       detail: failure.handoff == WorkItemStatusHandoff.started
-          ? '變更在送出前停止，GitLab 沒有收到這次變更。'
-          : '帳號、工作項目或讀取狀態已改變，這次變更沒有送出。',
+          ? l10n.statusChangeStopped
+          : l10n.statusContextChanged,
     );
   }
   if (error.kind == FailureKind.validation && failure.mutationSent) {
@@ -847,28 +847,28 @@ ApiFailure _writeFailure(WorkItemStatusWriteFailure failure) {
       status: error.status,
       retryAt: error.retryAt,
       title: error.title,
-      detail: 'GitLab 已回覆錯誤，這次變更已用完，沒有重送。',
+      detail: l10n.statusChangeErrorConsumed,
     );
   }
   return error;
 }
 
 String _statusName(String? name) =>
-    name == null || name.trim().isEmpty ? '未命名狀態' : name;
+    name == null || name.trim().isEmpty ? l10n.unnamedStatus : name;
 
 String _assignmentLabel(WorkItemStatusAssignment assignment) =>
     switch (assignment.kind) {
-      WorkItemStatusAssignmentKind.unassigned => '未設定',
+      WorkItemStatusAssignmentKind.unassigned => l10n.notSet,
       WorkItemStatusAssignmentKind.identified => _statusName(
         assignment.record?.name,
       ),
       WorkItemStatusAssignmentKind.unidentified =>
-        '識別未知（${_statusName(assignment.record?.name)}）',
+        l10n.unknownStatusIdentifier(_statusName(assignment.record?.name)),
     };
 
 String _lifecycleLabel(WorkItemState state) => switch (state) {
-  WorkItemState.open => '開啟中',
-  WorkItemState.closed => '已關閉',
+  WorkItemState.open => l10n.statusOpen,
+  WorkItemState.closed => l10n.statusClosed,
 };
 
 String _resultLabel(WorkItemStatusSaveResult result) {
@@ -876,16 +876,16 @@ String _resultLabel(WorkItemStatusSaveResult result) {
       '${_assignmentLabel(result.snapshot.assignment)} · '
       '${_lifecycleLabel(result.snapshot.state)}';
   return switch (result.status) {
-    WorkItemStatusSaveStatus.success => '已確認狀態：$current',
-    WorkItemStatusSaveStatus.noop => '狀態未變更：$current',
-    WorkItemStatusSaveStatus.notApplied => 'GitLab 未套用這次變更，目前狀態：$current',
+    WorkItemStatusSaveStatus.success => l10n.confirmedStatus(current),
+    WorkItemStatusSaveStatus.noop => l10n.statusUnchanged(current),
+    WorkItemStatusSaveStatus.notApplied => l10n.statusChangeNotApplied(current),
   };
 }
 
 String _statusResourceLabel(WorkItemGraphSummary summary) {
   final scope =
-      summary.project?.fullPath ?? summary.namespace?.fullPath ?? '未知範圍';
-  return '$scope · 工作項目 #${summary.iid}';
+      summary.project?.fullPath ?? summary.namespace?.fullPath ?? l10n.unknownScope;
+  return l10n.workItemScopeLine(scope, summary.iid);
 }
 
 Color _dotColor(String? raw, ColorScheme scheme) {
@@ -952,7 +952,7 @@ class WorkItemStatusField extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (writeHeld)
-          const Row(
+          Row(
             key: ValueKey('work-item-status-field-pending'),
             children: [
               SizedBox.square(
@@ -960,12 +960,12 @@ class WorkItemStatusField extends StatelessWidget {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
               SizedBox(width: 8),
-              Flexible(child: Text('正在更新狀態，完成前不會重新讀取')),
+              Flexible(child: Text(l10n.updatingStatusNoReload)),
             ],
           )
         else if (stale && confirmed == null)
-          const Text(
-            '尚未確認最新狀態。請重新整理後再查看。',
+          Text(
+            l10n.latestStateUnconfirmed,
             key: ValueKey('work-item-status-field-stale'),
           )
         else if (confirmed == null && loading)
@@ -978,7 +978,7 @@ class WorkItemStatusField extends StatelessWidget {
             children: [
               Text(failure.title),
               if (onRetry != null)
-                TextButton(onPressed: onRetry, child: const Text('重試')),
+                TextButton(onPressed: onRetry, child: Text(l10n.retryAction)),
             ],
           )
         else
@@ -987,10 +987,10 @@ class WorkItemStatusField extends StatelessWidget {
             child: _value(context),
           ),
         if (unconfirmed && !writeHeld)
-          const Padding(
+          Padding(
             key: ValueKey('work-item-status-field-unconfirmed'),
             padding: EdgeInsets.only(top: 4),
-            child: Text('上次狀態變更的結果未確認，已重新讀取，不會自動重送。'),
+            child: Text(l10n.statusResultReloaded),
           ),
         WorkItemStatusControl(
           account: account,
@@ -1020,29 +1020,29 @@ class WorkItemStatusField extends StatelessWidget {
     if (confirmed != null) {
       final assignment = confirmed.assignment;
       if (assignment.kind == WorkItemStatusAssignmentKind.unassigned) {
-        return const Text('未設定');
+        return Text(l10n.notSet);
       }
       label = _assignmentLabel(assignment);
       category = assignment.record?.category;
       color = assignment.record?.color;
     } else {
       final snapshot = attribute;
-      if (snapshot == null) return const Text('等待讀取');
+      if (snapshot == null) return Text(l10n.waitingToLoad);
       if (snapshot.availability == WorkItemAttributeAvailability.absent) {
-        return const Text('未設定');
+        return Text(l10n.notSet);
       }
       if (snapshot.availability ==
           WorkItemAttributeAvailability.widgetsUnavailable) {
-        return const Text('伺服器未回傳 widgets，無法判定');
+        return Text(l10n.widgetsMissing);
       }
       final value = snapshot.value;
       if (value is! WorkItemStatusAttribute) {
-        return const Text('伺服器未回傳欄位值');
+        return Text(l10n.fieldValueMissing);
       }
       final status = value.status;
-      if (status == null) return const Text('未設定');
+      if (status == null) return Text(l10n.notSet);
       final name = status.name?.trim();
-      label = name == null || name.isEmpty ? '名稱未知' : name;
+      label = name == null || name.isEmpty ? l10n.unknownName : name;
       category = status.category;
       color = status.color;
     }
@@ -1058,7 +1058,7 @@ class WorkItemStatusField extends StatelessWidget {
           color: _dotColor(color, Theme.of(context).colorScheme),
         ),
         MetaChip(label, icon: Icons.flag_outlined),
-        if (categoryLabel != null) MetaChip('分類：$categoryLabel'),
+        if (categoryLabel != null) MetaChip(l10n.statusCategoryLabel(categoryLabel)),
       ],
     );
   }

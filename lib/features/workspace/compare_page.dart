@@ -12,6 +12,7 @@ import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import 'picker_sheet.dart';
 
+import '../../l10n/l10n.dart';
 class ComparePage extends StatefulWidget {
   const ComparePage({
     super.key,
@@ -218,7 +219,7 @@ class _ComparePageState extends State<ComparePage> {
     );
     if (spec.from.isEmpty || spec.to.isEmpty) {
       setState(() {
-        _validation = '請輸入基準版本與比較版本。';
+        _validation = l10n.enterCompareVersions;
         _error = null;
       });
       return;
@@ -273,7 +274,7 @@ class _ComparePageState extends State<ComparePage> {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('比較版本')),
+    appBar: AppBar(title: Text(l10n.compareVersionsTitle)),
     body: gestureSafe(
       Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -295,20 +296,20 @@ class _ComparePageState extends State<ComparePage> {
       _refField(
         _from,
         key: const Key('compare-from'),
-        label: '基準版本（from）',
-        pickerTitle: '選擇基準分支',
+        label: l10n.baseVersionFrom,
+        pickerTitle: l10n.selectBaseBranch,
         textInputAction: TextInputAction.next,
       ),
       const SizedBox(height: 10),
       _refField(
         _to,
         key: const Key('compare-to'),
-        label: '比較版本（to）',
-        pickerTitle: '選擇比較分支',
+        label: l10n.compareVersionTo,
+        pickerTitle: l10n.selectCompareBranch,
         textInputAction: TextInputAction.done,
       ),
       const SizedBox(height: 12),
-      Text('比較方式', style: Theme.of(context).textTheme.labelLarge),
+      Text(l10n.comparisonMethod, style: Theme.of(context).textTheme.labelLarge),
       const SizedBox(height: 6),
       Wrap(
         spacing: 8,
@@ -316,13 +317,13 @@ class _ComparePageState extends State<ComparePage> {
         children: [
           ChoiceChip(
             key: const Key('compare-mode-merge-base'),
-            label: const Text('從共同基準比較'),
+            label: Text(l10n.compareFromMergeBase),
             selected: !_straight,
             onSelected: (_) => _setStraight(false),
           ),
           ChoiceChip(
             key: const Key('compare-mode-direct'),
-            label: const Text('直接比較 from..to'),
+            label: Text(l10n.compareDirectFromTo),
             selected: _straight,
             onSelected: (_) => _setStraight(true),
           ),
@@ -340,7 +341,7 @@ class _ComparePageState extends State<ComparePage> {
         key: const Key('compare-submit'),
         onPressed: _loading ? null : _compare,
         icon: const Icon(Icons.compare_arrows),
-        label: const Text('比較'),
+        label: Text(l10n.compareAction),
       ),
     ],
   );
@@ -371,7 +372,7 @@ class _ComparePageState extends State<ComparePage> {
 
   Widget _content(BuildContext context) {
     if (_loading) {
-      return const Center(child: Text('正在比較版本…'));
+      return Center(child: Text(l10n.comparingVersions));
     }
     if (_error != null) {
       final spec = _errorSpec;
@@ -390,10 +391,10 @@ class _ComparePageState extends State<ComparePage> {
     }
     final result = _result;
     if (result == null) {
-      return const EmptyState('選擇兩個版本後執行比較', icon: Icons.compare_arrows);
+      return EmptyState(l10n.selectTwoVersionsToCompare, icon: Icons.compare_arrows);
     }
     if (result.sameRef) {
-      return const EmptyState('兩個版本相同，沒有差異', icon: Icons.done_all);
+      return EmptyState(l10n.versionsIdenticalNoDiff, icon: Icons.done_all);
     }
     final spec = _resultSpec!;
     return DefaultTabController(
@@ -404,8 +405,8 @@ class _ComparePageState extends State<ComparePage> {
           if (result.timeout) _timeoutNotice(context),
           TabBar(
             tabs: [
-              Tab(child: _tabLabel('提交', result.commits.length)),
-              Tab(child: _tabLabel('檔案', result.diffs.length)),
+              Tab(child: _tabLabel(l10n.commits, result.commits.length)),
+              Tab(child: _tabLabel(l10n.compareFilesSection, result.diffs.length)),
             ],
           ),
           Expanded(
@@ -424,12 +425,12 @@ class _ComparePageState extends State<ComparePage> {
   Widget _timeoutNotice(BuildContext context) => Container(
     color: Theme.of(context).colorScheme.tertiaryContainer,
     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-    child: const Row(
+    child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Icon(Icons.timer_off_outlined, size: 20),
         SizedBox(width: 10),
-        Expanded(child: Text('GitLab 比較逾時；提交清單完整，但檔案差異可能不完整。')),
+        Expanded(child: Text(l10n.compareTimeoutCommitsComplete)),
       ],
     ),
   );
@@ -442,7 +443,7 @@ class _ComparePageState extends State<ComparePage> {
   Widget _commitList(List<Json> commits, _CompareSpec spec) {
     if (commits.isEmpty) {
       return ListView(
-        children: const [EmptyState('這個比較沒有提交', icon: Icons.commit)],
+        children: [EmptyState(l10n.compareNoCommits, icon: Icons.commit)],
       );
     }
     return ListView.builder(
@@ -458,7 +459,7 @@ class _ComparePageState extends State<ComparePage> {
         final title = valueText(
           commit,
           'title',
-          valueText(commit, 'message', '無提交標題'),
+          valueText(commit, 'message', l10n.noCommitTitle),
         );
         final author = valueText(commit, 'author_name');
         return ListTile(
@@ -481,8 +482,8 @@ class _ComparePageState extends State<ComparePage> {
         children: [
           EmptyState(
             result.timeout
-                ? 'GitLab 比較逾時，沒有回傳檔案差異；這不代表沒有變更。'
-                : '沒有可顯示的文字差異；檔案可能是二進位、過大，或實例不支援完整差異。',
+                ? l10n.compareTimeoutNoFileDiffs
+                : l10n.noDisplayableTextDiffInstance,
             icon: result.timeout
                 ? Icons.timer_off_outlined
                 : Icons.difference_outlined,
@@ -603,18 +604,18 @@ String _fileTitle(Json file) {
   if (file['deleted_file'] == true && oldPath.isNotEmpty) return oldPath;
   if (newPath.isNotEmpty) return newPath;
   if (oldPath.isNotEmpty) return oldPath;
-  return '未命名檔案';
+  return l10n.unnamedFile;
 }
 
 String _fileDetail(Json file) {
   final labels = <String>[];
-  if (file['new_file'] == true) labels.add('新增');
-  if (file['renamed_file'] == true) labels.add('重新命名');
-  if (file['deleted_file'] == true) labels.add('刪除');
-  if (file['too_large'] == true) labels.add('差異過大');
-  if (file['collapsed'] == true) labels.add('GitLab 已折疊');
+  if (file['new_file'] == true) labels.add(l10n.added);
+  if (file['renamed_file'] == true) labels.add(l10n.renamed);
+  if (file['deleted_file'] == true) labels.add(l10n.diffStatusDeleted);
+  if (file['too_large'] == true) labels.add(l10n.diffTooLarge);
+  if (file['collapsed'] == true) labels.add(l10n.collapsedByGitlab);
   if (labels.isEmpty && valueText(file, 'diff').isEmpty) {
-    labels.add('沒有文字差異');
+    labels.add(l10n.noTextDiff);
   }
   return labels.join(' · ');
 }
@@ -650,16 +651,16 @@ class _CompareDiffPageState extends State<_CompareDiffPage> {
   void initState() {
     super.initState();
     if (widget.file['too_large'] == true) {
-      _notice = 'GitLab 標記這個檔案差異過大，無法在 App 內顯示。';
+      _notice = l10n.fileDiffTooLargeForApp;
       return;
     }
     if (widget.file['collapsed'] == true) {
-      _notice = 'GitLab 已折疊這個檔案差異，回應未包含可顯示內容。';
+      _notice = l10n.fileDiffCollapsedNoContent;
       return;
     }
     final source = valueText(widget.file, 'diff');
     if (source.isEmpty) {
-      _notice = '沒有可顯示的文字差異；檔案可能是二進位、過大，或實例未回傳內容。';
+      _notice = l10n.noDisplayableTextDiffNoContent;
       return;
     }
     _loading = true;
@@ -701,13 +702,13 @@ class _CompareDiffPageState extends State<_CompareDiffPage> {
 
   Widget _body(BuildContext context) {
     if (_loading) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             CircularProgressIndicator(strokeWidth: 2),
             SizedBox(height: 12),
-            Text('正在準備差異…'),
+            Text(l10n.preparingDiff),
           ],
         ),
       );
@@ -729,7 +730,7 @@ class _CompareDiffPageState extends State<_CompareDiffPage> {
     }
     final lines = _lines ?? const <DiffLine>[];
     if (lines.isEmpty) {
-      return const EmptyState('沒有可顯示的差異行', icon: Icons.difference);
+      return EmptyState(l10n.noDiffLinesToDisplay, icon: Icons.difference);
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -739,7 +740,7 @@ class _CompareDiffPageState extends State<_CompareDiffPage> {
             key: const ValueKey('compare-line-truncated-notice'),
             color: Theme.of(context).colorScheme.tertiaryContainer,
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            child: const Text('部分差異行過長，畫面僅顯示每行前 2000 個字元。'),
+            child: Text(l10n.diffLineTruncated),
           ),
         Expanded(
           child: LayoutBuilder(
@@ -803,7 +804,9 @@ class _CompareDiffPageState extends State<_CompareDiffPage> {
     return Container(
       color: background,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      child: Row(
+      child: Directionality(
+        textDirection: TextDirection.ltr,
+        child: Row(
         children: [
           SizedBox(
             width: 44,
@@ -830,6 +833,7 @@ class _CompareDiffPageState extends State<_CompareDiffPage> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

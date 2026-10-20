@@ -9,6 +9,7 @@ import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../shared/package_download.dart' show hashPackageFile;
 
+import '../../l10n/l10n.dart';
 export '../../core/app_release.dart';
 
 /// Where this build came from, which decides how it updates: from this
@@ -55,12 +56,12 @@ Future<File> downloadAppRelease(
       await sink.close();
     }
     if (await partial.length() != fresh.size) {
-      throw const ApiFailure(FailureKind.invalidResponse, title: '更新檔驗證失敗',
-        detail: '下載內容的大小與 GitLab 記錄不一致，檔案已刪除。');
+      throw ApiFailure(FailureKind.invalidResponse, title: l10n.updateFileVerifyFailed,
+        detail: l10n.downloadSizeMismatchDeleted);
     }
     if ((await hash(partial)).toLowerCase() != fresh.sha256.toLowerCase()) {
-      throw const ApiFailure(FailureKind.invalidResponse, title: '更新檔驗證失敗',
-        detail: '下載內容的 SHA-256 與 GitLab 記錄不一致，檔案已刪除。');
+      throw ApiFailure(FailureKind.invalidResponse, title: l10n.updateFileVerifyFailed,
+        detail: l10n.downloadSha256MismatchDeleted);
     }
     return await partial.rename(target.path);
   } catch (error) {

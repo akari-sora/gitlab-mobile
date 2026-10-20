@@ -115,10 +115,10 @@ extension WorkItemActivityDeleteApi on GitLabApi {
       isCurrent: isCurrent,
     );
     if (!preflight.canEditNote) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.forbidden,
-        title: '無法刪除這則留言',
-        detail: '目前帳號沒有刪除這則留言的權限。',
+        title: l10n.cannotDeleteThisComment,
+        detail: l10n.noPermissionDeleteComment,
       );
     }
     if (preflight.actorId != target._actorId) {

@@ -148,10 +148,10 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
       isCurrent: isCurrent,
     );
     if (!preflight.canAward) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.forbidden,
-        title: '無法對這則留言做出反應',
-        detail: '目前帳號沒有新增或移除表情反應的權限。',
+        title: l10n.cannotReactToComment,
+        detail: l10n.noPermissionEmojiReaction,
       );
     }
     if (preflight.actorId != target._actorId) {
@@ -169,10 +169,10 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
       name: normalizedName,
     );
     if (fresh != before) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.conflict,
-        title: '表情反應已變更',
-        detail: '請重新載入最新留言再操作。',
+        title: l10n.emojiReactionChanged,
+        detail: l10n.reloadCommentBeforeAction,
       );
     }
     _requireCurrentWorkItemRequest(isCurrent);

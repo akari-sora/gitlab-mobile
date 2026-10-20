@@ -2,23 +2,23 @@ part of 'gitlab_api.dart';
 
 ApiFailure get _datesReadForbidden => ApiFailure(
   FailureKind.forbidden,
-  title: '無法讀取工作項目日期',
-  detail: '目前帳號沒有讀取這個工作項目的權限。',
+  title: l10n.cannotReadWorkItemDates,
+  detail: l10n.noPermissionReadWorkItem,
 );
 ApiFailure get _datesInvalidResponse => ApiFailure(
   FailureKind.invalidResponse,
-  title: '無法確認工作項目日期',
-  detail: 'GitLab 回傳的日期、身分或欄位形狀不完整。',
+  title: l10n.cannotConfirmWorkItemDates,
+  detail: l10n.workItemDatesShapeIncomplete,
 );
 ApiFailure get _datesSpent => ApiFailure(
   FailureKind.writeUncertain,
-  title: '無法再次送出日期',
-  detail: '這次日期編輯已經使用過。請重新開啟後再試。',
+  title: l10n.cannotResubmitDates,
+  detail: l10n.dateEditAlreadyUsed,
 );
 ApiFailure get _datesUncertain => ApiFailure(
   FailureKind.writeUncertain,
-  title: '尚未確認日期是否已更新',
-  detail: '請重新整理後再查看，不要重複送出同一次變更。',
+  title: l10n.dateUpdateUnconfirmed,
+  detail: l10n.refreshDoNotResubmit,
 );
 const _datesCancelled = ApiFailure(FailureKind.cancelled);
 
@@ -301,7 +301,7 @@ extension WorkItemDatesApi on GitLabApi {
         outcome: WorkItemDatesWriteOutcome.notApplied,
         snapshot: before,
         mutationSent: false,
-        message: '目前帳號不能變更日期',
+        message: l10n.accountCannotChangeDates,
       );
     }
     _requireDatesCurrent(target._openingIsCurrent);
@@ -387,7 +387,7 @@ extension WorkItemDatesApi on GitLabApi {
         outcome: WorkItemDatesWriteOutcome.notApplied,
         snapshot: readback,
         mutationSent: true,
-        message: '伺服器未套用變更，請確認權限或重新整理',
+        message: l10n.serverDidNotApplyChange,
       );
     }
     if (!_datesSnapshotMatchesRequest(readback, mode, startDate, dueDate)) {
@@ -521,7 +521,7 @@ extension WorkItemDatesApi on GitLabApi {
 WorkItemDatesWriteResult get _datesUncertainResult => WorkItemDatesWriteResult(
   outcome: WorkItemDatesWriteOutcome.writeUncertain,
   mutationSent: true,
-  message: '連線在寫入時中斷。尚未確認是否更新，請重新整理後再查看。',
+  message: l10n.writeDroppedDatesUnconfirmed,
 );
 
 typedef _DatesEnvelope = ({Json? data, List<Object?> errors});
@@ -552,27 +552,27 @@ WorkItemDatesWriteResult? _validateDatesWrite(
   if (mode == WorkItemDatesMode.unknown ||
       (edition == WorkItemDatesEdition.ceFixed &&
           mode != WorkItemDatesMode.manual)) {
-    return const WorkItemDatesWriteResult(
+    return WorkItemDatesWriteResult(
       outcome: WorkItemDatesWriteOutcome.notApplied,
       mutationSent: false,
-      message: '日期模式不明',
+      message: l10n.dateModeUnknown,
     );
   }
   if (mode == WorkItemDatesMode.inherited) return null;
   if (!_validDatesInput(startDate) || !_validDatesInput(dueDate)) {
-    return const WorkItemDatesWriteResult(
+    return WorkItemDatesWriteResult(
       outcome: WorkItemDatesWriteOutcome.notApplied,
       mutationSent: false,
-      message: '請輸入完整日期，例如 2026-10-04',
+      message: l10n.enterCompleteDateExample,
     );
   }
   if (startDate != null &&
       dueDate != null &&
       startDate.compareTo(dueDate) > 0) {
-    return const WorkItemDatesWriteResult(
+    return WorkItemDatesWriteResult(
       outcome: WorkItemDatesWriteOutcome.notApplied,
       mutationSent: false,
-      message: '開始日期必須早於或等於到期日期',
+      message: l10n.startOnOrBeforeDueDate,
     );
   }
   return null;
@@ -713,10 +713,10 @@ _ParsedDatesNode _parseDatesReadNode(
     }
     final actorId = _parseNotificationActor(data['currentUser']);
     if (actorId == null) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.unauthenticated,
-        title: '登入已失效',
-        detail: '請重新連接目前帳號，再讀取工作項目日期。',
+        title: l10n.signInNoLongerValid,
+        detail: l10n.reconnectThenReadDates,
       );
     }
     if (_notificationActorNumber(actorId) != expectedUserId) {

@@ -358,8 +358,8 @@ extension WorkspaceApi on GitLabApi {
       next = page.next;
       if (next == null) return false;
     }
-    throw const ApiFailure(FailureKind.unsupported, title: '無法確認星標狀態',
-      detail: '符合這個使用者名稱的加星者太多，請在 GitLab 網頁確認。');
+    throw ApiFailure(FailureKind.unsupported, title: l10n.cannotConfirmStarState,
+      detail: l10n.tooManyStarrersConfirmWeb);
   }
 
   Future<Json> uploadProjectFile(
@@ -405,7 +405,7 @@ extension WorkspaceApi on GitLabApi {
       return result.bytes;
     } on ApiFailure catch (failure) {
       if (failure.kind != FailureKind.tooLarge) rethrow;
-      throw const ApiFailure(FailureKind.tooLarge, title: '超過大小上限', detail: '這張圖片超過附件預覽上限。');
+      throw ApiFailure(FailureKind.tooLarge, title: l10n.exceedsSizeLimit, detail: l10n.imageExceedsPreviewLimit);
     }
   }
 }

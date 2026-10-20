@@ -11,6 +11,7 @@ import '../../shared/workspace_ui.dart';
 import 'records_feed.dart';
 import 'work_item_page.dart';
 
+import '../../l10n/l10n.dart';
 class BoardsPage extends StatefulWidget {
   const BoardsPage({
     super.key,
@@ -122,10 +123,10 @@ class _BoardsPageState extends State<BoardsPage> {
         throw const ApiFailure(FailureKind.invalidResponse);
       }
       if (page == maxPages - 1) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.tooLarge,
-          title: '看板定義超過載入上限',
-          detail: '最多載入 4 頁看板或欄位定義；未顯示不完整的看板。',
+          title: l10n.boardDefinitionsOverLimit,
+          detail: l10n.boardDefinitionsPageCap,
         );
       }
     }
@@ -283,10 +284,10 @@ class _BoardsPageState extends State<BoardsPage> {
     if (!boardColumnAcceptsDirectMove(source) || targets.isEmpty) {
       showFailure(
         context,
-        const ApiFailure(
+        ApiFailure(
           FailureKind.unsupported,
-          title: '沒有可直接移動的欄位',
-          detail: '目前只支援 Open、Closed 與標籤欄位之間的直接移動。',
+          title: l10n.noDirectMoveDestination,
+          detail: l10n.directMoveOpenClosedLabelOnly,
         ),
       );
       return;
@@ -301,9 +302,9 @@ class _BoardsPageState extends State<BoardsPage> {
           child: ListView(
             shrinkWrap: true,
             children: [
-              const ListTile(
-                title: Text('移動議題'),
-                subtitle: Text('會保留不屬於此看板欄位的標籤。'),
+              ListTile(
+                title: Text(l10n.moveIssue),
+                subtitle: Text(l10n.keepLabelsOutsideBoardLists),
               ),
               for (final column in targets)
                 ListTile(
@@ -353,10 +354,10 @@ class _BoardsPageState extends State<BoardsPage> {
       final source = _columnWithKey(freshBoard, sourceKey);
       final target = _columnWithKey(freshBoard, targetKey);
       if (source == null || target == null) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.conflict,
-          title: '看板欄位已變更',
-          detail: '請重新整理看板後再移動議題。',
+          title: l10n.boardListsHaveChanged,
+          detail: l10n.refreshBoardBeforeMove,
         );
       }
       final issuePath = ['projects', '$projectId', 'issues', '$iid'];
@@ -384,17 +385,17 @@ class _BoardsPageState extends State<BoardsPage> {
             refreshedTarget,
             readback,
           )) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.writeUncertain,
-          title: '尚未確認議題移動結果',
-          detail: 'GitLab 的重新讀取結果與目標欄位不一致。請重新整理後確認，避免重複操作。',
+          title: l10n.issueMoveResultUnconfirmed,
+          detail: l10n.reloadMismatchTargetList,
         );
       }
       if (!mounted || generation != _generation) return;
       await _loadBoard(boardId);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('已移動到「${refreshedTarget.title}」')),
+          SnackBar(content: Text(l10n.movedToNamedList(refreshedTarget.title))),
         );
       }
     } catch (error) {
@@ -418,7 +419,7 @@ class _BoardsPageState extends State<BoardsPage> {
             initialValue: initial,
             autofocus: true,
             textInputAction: TextInputAction.done,
-            decoration: const InputDecoration(labelText: '名稱'),
+            decoration: InputDecoration(labelText: l10n.nameLabel),
             onChanged: (next) => value = next,
             onFieldSubmitted: (next) {
               if (next.trim().isNotEmpty) Navigator.pop(context, next.trim());
@@ -427,14 +428,14 @@ class _BoardsPageState extends State<BoardsPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
+              child: Text(l10n.cancelAction),
             ),
             FilledButton(
               onPressed: () {
                 final trimmed = value.trim();
                 if (trimmed.isNotEmpty) Navigator.pop(context, trimmed);
               },
-              child: const Text('儲存'),
+              child: Text(l10n.saveAction),
             ),
           ],
         );
@@ -454,11 +455,11 @@ class _BoardsPageState extends State<BoardsPage> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(context, false),
-                child: const Text('取消'),
+                child: Text(l10n.cancelAction),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(context, true),
-                child: const Text('確認'),
+                child: Text(l10n.confirmAction),
               ),
             ],
           );
@@ -483,7 +484,7 @@ class _BoardsPageState extends State<BoardsPage> {
     final ownerGeneration = _generation;
     final api = widget.api;
     final projectId = widget.project.id;
-    final name = await _askName('新增看板');
+    final name = await _askName(l10n.newBoard);
     if (name == null ||
         !mounted ||
         ownerGeneration != _generation ||
@@ -510,7 +511,7 @@ class _BoardsPageState extends State<BoardsPage> {
     final ownerGeneration = _generation;
     final api = widget.api;
     final projectId = widget.project.id;
-    final name = await _askName('重新命名看板', initial: board.name);
+    final name = await _askName(l10n.renameBoard, initial: board.name);
     if (name == null ||
         name == board.name ||
         !mounted ||
@@ -580,10 +581,10 @@ class _BoardsPageState extends State<BoardsPage> {
     if (available.isEmpty) {
       showFailure(
         context,
-        const ApiFailure(
+        ApiFailure(
           FailureKind.unsupported,
-          title: '沒有可新增的標籤欄位',
-          detail: '專案中的標籤都已經出現在這個看板。',
+          title: l10n.noLabelListToAdd,
+          detail: l10n.allProjectLabelsOnBoard,
         ),
       );
       return null;
@@ -594,7 +595,7 @@ class _BoardsPageState extends State<BoardsPage> {
         final route = ModalRoute.of(context);
         if (route != null) _ownRoute(route);
         return SimpleDialog(
-          title: const Text('新增標籤欄位'),
+          title: Text(l10n.addLabelList),
           children: [
             for (final label in available)
               SimpleDialogOption(
@@ -653,7 +654,7 @@ class _BoardsPageState extends State<BoardsPage> {
     final projectId = widget.project.id;
     final listId = column.listId;
     if (listId == null ||
-        !await _confirm('刪除「${column.title}」欄位？', '議題本身不會被刪除。')) {
+        !await _confirm(l10n.deleteNamedListQuestion(column.title), l10n.issuesNotDeletedWithList)) {
       return;
     }
     if (!mounted ||
@@ -725,7 +726,7 @@ class _BoardsPageState extends State<BoardsPage> {
     final ownerGeneration = _generation;
     final api = widget.api;
     final projectId = widget.project.id;
-    if (!await _confirm('刪除「${board.name}」？', '看板欄位設定會被刪除，議題不會被刪除。')) {
+    if (!await _confirm(l10n.deleteNamedBoardQuestion(board.name), l10n.deleteBoardKeepsIssues)) {
       return;
     }
     if (!mounted ||
@@ -760,12 +761,12 @@ class _BoardsPageState extends State<BoardsPage> {
             children: [
               ListTile(
                 title: Text(board.name),
-                subtitle: const Text('看板與欄位管理'),
+                subtitle: Text(l10n.boardsAndLists),
               ),
               ListTile(
                 key: const ValueKey('rename-board'),
                 leading: const Icon(Icons.edit_outlined),
-                title: const Text('重新命名'),
+                title: Text(l10n.renameAction),
                 onTap: () {
                   Navigator.pop(sheetContext);
                   unawaited(_renameBoard(board));
@@ -773,7 +774,7 @@ class _BoardsPageState extends State<BoardsPage> {
               ),
               SwitchListTile(
                 key: const ValueKey('show-open-column'),
-                title: const Text('顯示 Open 欄位'),
+                title: Text(l10n.showOpenList),
                 value: !board.hideBacklogList,
                 onChanged: (value) {
                   Navigator.pop(sheetContext);
@@ -788,7 +789,7 @@ class _BoardsPageState extends State<BoardsPage> {
               ),
               SwitchListTile(
                 key: const ValueKey('show-closed-column'),
-                title: const Text('顯示 Closed 欄位'),
+                title: Text(l10n.showClosedList),
                 value: !board.hideClosedList,
                 onChanged: (value) {
                   Navigator.pop(sheetContext);
@@ -804,7 +805,7 @@ class _BoardsPageState extends State<BoardsPage> {
               ListTile(
                 key: const ValueKey('add-label-list'),
                 leading: const Icon(Icons.add),
-                title: const Text('新增標籤欄位'),
+                title: Text(l10n.addLabelList),
                 onTap: () {
                   Navigator.pop(sheetContext);
                   unawaited(_addLabelList(board));
@@ -820,7 +821,7 @@ class _BoardsPageState extends State<BoardsPage> {
                   leading: Icon(_columnIcon(column.kind)),
                   title: Text(column.title),
                   trailing: PopupMenuButton<String>(
-                    tooltip: '欄位操作',
+                    tooltip: l10n.listActions,
                     onSelected: (value) {
                       Navigator.pop(sheetContext);
                       if (value == 'left') {
@@ -835,7 +836,7 @@ class _BoardsPageState extends State<BoardsPage> {
                       PopupMenuItem(
                         value: 'left',
                         enabled: index > 0,
-                        child: const Text('向左移'),
+                        child: Text(l10n.moveLeft),
                       ),
                       PopupMenuItem(
                         value: 'right',
@@ -845,9 +846,9 @@ class _BoardsPageState extends State<BoardsPage> {
                                     .where((value) => value.listId != null)
                                     .length -
                                 1,
-                        child: const Text('向右移'),
+                        child: Text(l10n.moveRight),
                       ),
-                      const PopupMenuItem(value: 'delete', child: Text('刪除欄位')),
+                      PopupMenuItem(value: 'delete', child: Text(l10n.deleteList)),
                     ],
                   ),
                 ),
@@ -855,7 +856,7 @@ class _BoardsPageState extends State<BoardsPage> {
               ListTile(
                 key: const ValueKey('delete-board'),
                 leading: const Icon(Icons.delete_outline),
-                title: const Text('刪除看板'),
+                title: Text(l10n.deleteBoard),
                 onTap: () {
                   Navigator.pop(sheetContext);
                   unawaited(_deleteBoard(board));
@@ -901,8 +902,8 @@ class _BoardsPageState extends State<BoardsPage> {
               key: const ValueKey('board-selector'),
               initialValue: board.id,
               isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: '看板',
+              decoration: InputDecoration(
+                labelText: l10n.boardLabel,
                 prefixIcon: Icon(Icons.view_kanban_outlined),
               ),
               items: [
@@ -910,7 +911,7 @@ class _BoardsPageState extends State<BoardsPage> {
                   DropdownMenuItem(
                     value: requiredInt(value, 'id'),
                     child: Text(
-                      valueText(value, 'name', '看板 ${valueInt(value, 'id')}'),
+                      valueText(value, 'name', l10n.boardWithValueInt(valueInt(value, 'id'))),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -929,14 +930,14 @@ class _BoardsPageState extends State<BoardsPage> {
               controller: _search,
               textInputAction: TextInputAction.search,
               decoration: InputDecoration(
-                hintText: '搜尋看板議題',
+                hintText: l10n.searchBoardIssues,
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: ValueListenableBuilder<TextEditingValue>(
                   valueListenable: _search,
                   builder: (context, value, _) => value.text.isEmpty
                       ? const SizedBox.shrink()
                       : IconButton(
-                          tooltip: '清除搜尋',
+                          tooltip: l10n.clearSearch,
                           onPressed: () {
                             _search.clear();
                             _submitSearch('');
@@ -989,7 +990,7 @@ class _BoardsPageState extends State<BoardsPage> {
         ),
         children: [
           EmptyState(
-            '無法載入「${column.title}」',
+            l10n.cannotLoadNamedList(column.title),
             icon: Icons.do_not_disturb_alt_outlined,
             detail: query.reason,
           ),
@@ -1007,9 +1008,9 @@ class _BoardsPageState extends State<BoardsPage> {
       resourceLabel: '${widget.project.path} · ${board.name} · ${column.title}',
       onSwitchAccount: endSessionFrom(context),
       empty: _query.isEmpty
-          ? '「${column.title}」目前沒有議題'
-          : '「${column.title}」沒有符合「$_query」的議題',
-      emptyDetail: _query.isEmpty ? '下拉即可重新整理此欄。' : '搜尋只會在送出後套用，請調整關鍵字再試一次。',
+          ? l10n.namedListHasNoIssues(column.title)
+          : l10n.namedListNoQueryMatch(column.title, _query),
+      emptyDetail: _query.isEmpty ? l10n.pullToRefreshThisList : l10n.searchAppliesAfterSubmit,
       emptyIcon: _columnIcon(column.kind),
       grouped: true,
       visible: column.kind == BoardColumnKind.open
@@ -1022,7 +1023,7 @@ class _BoardsPageState extends State<BoardsPage> {
       ),
       itemBuilder: (context, issue) => Semantics(
         button: true,
-        onLongPressHint: '移動到其他欄位',
+        onLongPressHint: l10n.moveToAnotherList,
         child: GestureDetector(
           onLongPress: _writing
               ? null
@@ -1048,7 +1049,7 @@ class _BoardsPageState extends State<BoardsPage> {
           FailureNotice(
             error,
             account: widget.account,
-            resourceLabel: '${widget.project.path} · 議題看板',
+            resourceLabel: l10n.pathIssueBoard(widget.project.path),
             onSwitchAccount: endSessionFrom(context),
             onRetry: _loadBoards,
           ),
@@ -1061,13 +1062,13 @@ class _BoardsPageState extends State<BoardsPage> {
         onRefresh: _loadBoards,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          children: const [
+          children: [
             Padding(
               padding: EdgeInsets.only(top: 48),
               child: EmptyState(
-                '這個專案沒有議題看板',
+                l10n.projectHasNoIssueBoard,
                 icon: Icons.view_kanban_outlined,
-                detail: '建立看板後，下拉即可重新載入。',
+                detail: l10n.pullToReloadAfterNewBoard,
               ),
             ),
           ],
@@ -1078,11 +1079,11 @@ class _BoardsPageState extends State<BoardsPage> {
       return Column(
         children: [
           _controls(board),
-          const Expanded(
+          Expanded(
             child: EmptyState(
-              '這個看板沒有可見欄位',
+              l10n.boardHasNoVisibleLists,
               icon: Icons.view_column_outlined,
-              detail: 'Open 與 Closed 已隱藏，且 GitLab 沒有回傳其他清單。',
+              detail: l10n.openClosedHiddenNoLists,
             ),
           ),
         ],
@@ -1107,10 +1108,10 @@ class _BoardsPageState extends State<BoardsPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('議題看板'),
+      title: Text(l10n.issueBoardLabel),
       actions: [
         PopupMenuButton<String>(
-          tooltip: '管理看板',
+          tooltip: l10n.manageBoards,
           enabled: !_loading && !_writing,
           onSelected: (value) {
             if (value == 'create') unawaited(_createBoard());
@@ -1119,22 +1120,22 @@ class _BoardsPageState extends State<BoardsPage> {
             }
           },
           itemBuilder: (context) => [
-            const PopupMenuItem(
+            PopupMenuItem(
               value: 'create',
-              child: ListTile(leading: Icon(Icons.add), title: Text('新增看板')),
+              child: ListTile(leading: Icon(Icons.add), title: Text(l10n.newBoard)),
             ),
             if (_board != null)
-              const PopupMenuItem(
+              PopupMenuItem(
                 value: 'manage',
                 child: ListTile(
                   leading: Icon(Icons.settings_outlined),
-                  title: Text('管理目前看板'),
+                  title: Text(l10n.manageCurrentBoard),
                 ),
               ),
           ],
         ),
         IconButton(
-          tooltip: '重新整理看板',
+          tooltip: l10n.refreshBoard,
           onPressed: _loading
               ? null
               : () => unawaited(_loadBoards(preferredId: _board?.id)),

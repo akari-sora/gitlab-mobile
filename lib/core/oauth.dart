@@ -6,6 +6,7 @@ import 'failure.dart';
 import 'instance.dart';
 import 'models.dart';
 
+import '../l10n/l10n.dart';
 // RFC 3986 schemes cannot contain '_'; the Android applicationId still uses gitlab_mobile.
 const oauthRedirectUri = 'io.gitlabmobile.app://oauth/callback';
 
@@ -84,7 +85,7 @@ String authorizationCodeFromCallback(
 }) {
   final expected = Uri.parse(oauthRedirectUri);
   if (callback.scheme != expected.scheme || callback.host != expected.host) {
-    throw const FormatException('授權回呼網址不符合這個應用。');
+    throw InputFormatException(l10n.oauthCallbackUrlMismatch);
   }
   final params = callback.queryParameters;
   if (params.keys.any(
@@ -94,22 +95,22 @@ String authorizationCodeFromCallback(
       'token',
     ].contains(key.toLowerCase()),
   )) {
-    throw const FormatException('授權回呼不可包含權杖。');
+    throw InputFormatException(l10n.oauthCallbackNoToken);
   }
   if ((params['error'] ?? '').isNotEmpty) {
-    throw FormatException(
-      params['error'] == 'access_denied' ? '已取消授權。' : 'GitLab 拒絕這次授權。',
+    throw InputFormatException(
+      params['error'] == 'access_denied' ? l10n.authorizationCanceled : l10n.gitlabDeniedAuthorization,
     );
   }
   if (!params.keys.every((key) => const ['code', 'state'].contains(key))) {
-    throw const FormatException('授權回呼只能包含 code 與 state。');
+    throw InputFormatException(l10n.oauthCallbackCodeStateOnly);
   }
   if (params['state'] != expectedState) {
-    throw const FormatException('授權狀態不符，已中止。');
+    throw InputFormatException(l10n.oauthStateMismatchAborted);
   }
   final code = params['code'];
   if (code == null || code.isEmpty) {
-    throw const FormatException('授權回呼缺少授權碼。');
+    throw InputFormatException(l10n.oauthCallbackMissingCode);
   }
   return code;
 }

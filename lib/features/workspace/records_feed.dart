@@ -8,6 +8,7 @@ import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import 'record_controller.dart';
 
+import '../../l10n/l10n.dart';
 class RecordsFeed extends StatefulWidget {
   const RecordsFeed({super.key, required this.identity, required this.load, required this.itemBuilder,
     String? empty, this.emptyDetail, this.filteredEmpty, this.account, this.resourceLabel, this.onSwitchAccount,
@@ -29,7 +30,7 @@ class RecordsFeed extends StatefulWidget {
   final RecordLoader load;
   final Widget Function(BuildContext, Json) itemBuilder;
   final String? _emptyArg;
-  String get empty => _emptyArg ?? '目前沒有項目';
+  String get empty => _emptyArg ?? l10n.noItems;
   final String? emptyDetail, filteredEmpty, resourceLabel;
   final IconData emptyIcon;
 
@@ -209,7 +210,7 @@ class RecordsFeedState extends State<RecordsFeed> {
         resourceLabel: widget.resourceLabel, onSwitchAccount: widget.onSwitchAccount,
         onRetry: () { unawaited(controller.retry()); }),
       if (controller.next != null) TextButton.icon(onPressed: controller.loadingMore || controller.loading ? null : () { unawaited(controller.more()); },
-        icon: const Icon(Icons.expand_more), label: Text(controller.loadingMore ? '載入中…' : '載入更多')),
+        icon: const Icon(Icons.expand_more), label: Text(controller.loadingMore ? l10n.loading : l10n.loadMore)),
       if (widget.footer != null) widget.footer!(context, controller),
     ];
     final items = widget.grouped

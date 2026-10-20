@@ -8,32 +8,33 @@ import 'navigation.dart';
 import 'records_feed.dart';
 import 'work_item_page.dart';
 
+import '../../l10n/l10n.dart';
 /// Search scopes GitLab offers without advanced search. Code, commits,
 /// comments and wiki are only searchable inside one project.
 Map<String, String> get instanceSearchScopes => {
-  'projects': '專案',
-  'issues': '議題',
-  'merge_requests': '合併請求',
-  'milestones': '里程碑',
-  'users': '使用者',
+  'projects': l10n.projects,
+  'issues': l10n.issues,
+  'merge_requests': l10n.mergeRequests,
+  'milestones': l10n.milestones,
+  'users': l10n.users,
 };
 Map<String, String> get projectSearchScopes => {
-  'blobs': '程式碼',
-  'issues': '議題',
-  'merge_requests': '合併請求',
-  'commits': '提交',
-  'notes': '留言',
+  'blobs': l10n.code,
+  'issues': l10n.issues,
+  'merge_requests': l10n.mergeRequests,
+  'commits': l10n.commits,
+  'notes': l10n.comments,
   'wiki_blobs': 'Wiki',
-  'milestones': '里程碑',
-  'users': '成員',
+  'milestones': l10n.milestones,
+  'users': l10n.members,
 };
 
 String userStateLabel(String state) => switch (state) {
-  'blocked' || 'blocked_pending_approval' => '已封鎖',
-  'deactivated' => '已停用',
-  'banned' => '已停權',
-  'ldap_blocked' => 'LDAP 封鎖',
-  'active' => '啟用中',
+  'blocked' || 'blocked_pending_approval' => l10n.userBlocked,
+  'deactivated' => l10n.deactivated,
+  'banned' => l10n.userBanned,
+  'ldap_blocked' => l10n.ldapBlocked,
+  'active' => l10n.userActive,
   _ => state,
 };
 
@@ -112,7 +113,7 @@ class _SearchPageState extends State<SearchPage> {
             maxLines: 2, overflow: TextOverflow.ellipsis, style: theme.textTheme.bodySmall),
           meta: [
             if (valueText(value, 'state').isNotEmpty) StatusBadge(valueText(value, 'state')),
-            if (valueText(value, 'due_date').isNotEmpty) MetaChip('到期 ${valueText(value, 'due_date')}', icon: Icons.event_outlined),
+            if (valueText(value, 'due_date').isNotEmpty) MetaChip(l10n.dueOn(valueText(value, 'due_date')), icon: Icons.event_outlined),
           ],
         );
       case 'users':
@@ -142,7 +143,7 @@ class _SearchPageState extends State<SearchPage> {
           ),
           meta: [
             if (valueText(value, 'ref').isNotEmpty) MetaChip(valueText(value, 'ref'), icon: Icons.alt_route, mono: true),
-            if (start > 0) MetaChip('第 $start 行', icon: Icons.format_list_numbered),
+            if (start > 0) MetaChip(l10n.lineStart(start), icon: Icons.format_list_numbered),
           ],
           onTap: _scope == 'blobs' && valueText(value, 'ref').isNotEmpty
               ? () => _open.file(context, projectRef, valueText(value, 'ref'), path, line: start > 0 ? start : null)
@@ -191,11 +192,11 @@ class _SearchPageState extends State<SearchPage> {
           textInputAction: TextInputAction.search,
           onSubmitted: (value) => setState(() => _query = value.trim()),
           decoration: InputDecoration(
-            hintText: project == null ? '搜尋 ${widget.account.instance.base.host}' : '在 ${project.name} 中搜尋',
+            hintText: project == null ? l10n.searchHost(widget.account.instance.base.host) : l10n.searchInName(project.name),
             filled: false,
             border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none,
             suffixIcon: ValueListenableBuilder<TextEditingValue>(valueListenable: _input, builder: (context, value, _) =>
-              value.text.isEmpty ? const SizedBox.shrink() : IconButton(tooltip: '清除搜尋', icon: const Icon(Icons.close),
+              value.text.isEmpty ? const SizedBox.shrink() : IconButton(tooltip: l10n.clearSearch, icon: const Icon(Icons.close),
                 onPressed: () { _input.clear(); setState(() => _query = ''); _focus.requestFocus(); })),
           ),
         ),
@@ -213,18 +214,18 @@ class _SearchPageState extends State<SearchPage> {
         const Divider(height: 1),
         Expanded(child: _query.isEmpty
           ? SingleChildScrollView(child: EmptyState(
-              project == null ? '搜尋專案、議題、合併請求與使用者' : '搜尋程式碼、議題、提交與留言',
+              project == null ? l10n.searchProjectsIssuesMrsUsers : l10n.searchCodeIssuesCommits,
               icon: Icons.manage_search,
               detail: project == null
-                ? '輸入後按鍵盤上的搜尋。程式碼、提交與留言請在專案內搜尋。'
-                : '輸入後按鍵盤上的搜尋。程式碼搜尋使用 GitLab 預設分支。'))
+                ? l10n.searchKeyboardGlobalHint
+                : l10n.searchKeyboardCodeHint))
           : RecordsFeed(
               identity: 'search/${project?.id ?? 'all'}/$_scope/$_query',
               account: widget.account,
-              resourceLabel: '搜尋「$_query」',
+              resourceLabel: l10n.searchQuery(_query),
               onSwitchAccount: endSessionFrom(context),
-              empty: '找不到「$_query」',
-              emptyDetail: '換個關鍵字或切換搜尋類型。',
+              empty: l10n.queryNotFound(_query),
+              emptyDetail: l10n.tryAnotherQuery,
               emptyIcon: Icons.search_off,
               load: (next) => widget.api.search(_scope, _query, projectId: project?.id, next: next),
               itemBuilder: _item,
@@ -250,9 +251,9 @@ class UserPage extends StatelessWidget {
       body: gestureSafe(RecordsFeed(
         identity: 'user/$id/events',
         account: account,
-        resourceLabel: '@${valueText(user, 'username')} 的動態',
+        resourceLabel: l10n.userActivity(valueText(user, 'username')),
         onSwitchAccount: endSessionFrom(context),
-        empty: '沒有公開動態',
+        empty: l10n.noPublicActivity,
         emptyIcon: Icons.timeline,
         leading: (context, _) => Padding(
           padding: EdgeInsets.fromLTRB(feedGutter(context), 8, feedGutter(context), 8),

@@ -8,6 +8,7 @@ import '../../core/models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_state_models.dart';
 
+import '../../l10n/l10n.dart';
 typedef WorkItemStateLoader =
     Future<WorkItemStateSnapshot> Function(
       WorkItemGraphSummary expected, {
@@ -264,23 +265,23 @@ class _WorkItemStateControlState extends State<WorkItemStateControl> {
     final location =
         widget.summary.namespace?.fullPath ??
         widget.summary.project?.fullPath ??
-        '位置未知';
+        l10n.unknownLocation;
     return AlertDialog(
       scrollable: true,
-      title: Text(closing ? '關閉工作項目？' : '重新開啟工作項目？'),
+      title: Text(closing ? l10n.closeWorkItemConfirm : l10n.reopenWorkItemConfirm),
       content: Text(
-        '@${widget.account.user.username} · ${widget.account.instance.key}\n'
-        '$location · #${widget.summary.iid}\n\n'
-        '${closing ? '關閉' : '重新開啟'}「${widget.summary.title}」？',
+        closing
+            ? l10n.confirmCloseNamed(widget.account.user.username, widget.account.instance.key, location, widget.summary.iid, widget.summary.title)
+            : l10n.confirmReopenNamed(widget.account.user.username, widget.account.instance.key, location, widget.summary.iid, widget.summary.title),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('取消'),
+          child: Text(l10n.cancelAction),
         ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(true),
-          child: Text(closing ? '確認關閉' : '確認重開'),
+          child: Text(closing ? l10n.confirmClose : l10n.confirmReopen),
         ),
       ],
     );
@@ -292,7 +293,7 @@ class _WorkItemStateControlState extends State<WorkItemStateControl> {
     final event = snapshot?.state == WorkItemState.closed
         ? WorkItemStateEvent.reopen
         : WorkItemStateEvent.close;
-    final buttonLabel = event == WorkItemStateEvent.close ? '關閉工作項目' : '重新開啟';
+    final buttonLabel = event == WorkItemStateEvent.close ? l10n.closeWorkItem : l10n.reopen;
     return Card(
       key: const ValueKey('work-item-state-control'),
       child: Padding(
@@ -300,10 +301,10 @@ class _WorkItemStateControlState extends State<WorkItemStateControl> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('工作項目狀態', style: Theme.of(context).textTheme.titleMedium),
+            Text(l10n.workItemState, style: Theme.of(context).textTheme.titleMedium),
             const SizedBox(height: 8),
             if (_loading)
-              const Row(
+              Row(
                 children: [
                   SizedBox(
                     width: 18,
@@ -311,27 +312,27 @@ class _WorkItemStateControlState extends State<WorkItemStateControl> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                   SizedBox(width: 12),
-                  Expanded(child: Text('確認最新狀態與更新權限…')),
+                  Expanded(child: Text(l10n.confirmingStateAndPermission)),
                 ],
               )
             else if (_error != null) ...[
-              Text(_uncertain ? '操作結果尚未確認，已停用再次寫入。' : _error!.title),
+              Text(_uncertain ? l10n.writeDisabledUntilConfirmed : _error!.title),
               const SizedBox(height: 4),
               Text(
-                _uncertain ? '請先重新讀取伺服器狀態，再決定是否重試。' : _error!.detail,
+                _uncertain ? l10n.reloadStateBeforeRetry : _error!.detail,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
                 onPressed: _writing ? null : _read,
                 icon: const Icon(Icons.refresh),
-                label: const Text('重新讀取狀態'),
+                label: Text(l10n.reloadState),
               ),
             ] else if (snapshot != null) ...[
-              Text(snapshot.state == WorkItemState.open ? '目前為開啟' : '目前為已關閉'),
+              Text(snapshot.state == WorkItemState.open ? l10n.currentlyOpen : l10n.currentlyClosed),
               const SizedBox(height: 8),
               if (!snapshot.canUpdate)
-                const Text('目前帳號沒有更新這個工作項目的權限。')
+                Text(l10n.noPermissionUpdateWorkItem)
               else
                 SizedBox(
                   width: double.infinity,
@@ -352,9 +353,9 @@ class _WorkItemStateControlState extends State<WorkItemStateControl> {
                           ),
                     label: Text(
                       _writing
-                          ? '更新中…'
+                          ? l10n.updatingState
                           : _confirming
-                          ? '等待確認…'
+                          ? l10n.waitingForConfirmation
                           : buttonLabel,
                     ),
                   ),
@@ -363,7 +364,7 @@ class _WorkItemStateControlState extends State<WorkItemStateControl> {
               OutlinedButton.icon(
                 onPressed: _read,
                 icon: const Icon(Icons.refresh),
-                label: const Text('讀取狀態'),
+                label: Text(l10n.loadState),
               ),
           ],
         ),

@@ -9,6 +9,7 @@ import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_health_edit_models.dart';
 import '../../shared/workspace_ui.dart';
 
+import '../../l10n/l10n.dart';
 /// `start` is emitted only inside the API `onMutationSent` callback; `settle`
 /// only after the exact `updateWorkItemHealthStatus` Future has completed.
 enum WorkItemHealthWritePhase { start, settle }
@@ -254,7 +255,7 @@ class _WorkItemHealthControlState extends State<WorkItemHealthControl> {
         key: const ValueKey('work-item-health-edit'),
         style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
         onPressed: available ? () => unawaited(_open()) : null,
-        child: Text(_openingEpoch != null ? '讀取健康狀態…' : '變更健康狀態'),
+        child: Text(_openingEpoch != null ? l10n.loadingHealthStatus : l10n.changeHealthStatus),
       ),
     );
   }
@@ -311,10 +312,10 @@ WorkItemHealthEditValue? _valueFor(_HealthChoice choice) => switch (choice) {
 };
 
 String _healthLabel(WorkItemHealthEditValue? value) => switch (value) {
-  null => '未設定',
-  WorkItemHealthEditValue.onTrack => '正常',
-  WorkItemHealthEditValue.needsAttention => '需關注',
-  WorkItemHealthEditValue.atRisk => '有風險',
+  null => l10n.notSet,
+  WorkItemHealthEditValue.onTrack => l10n.healthOnTrack,
+  WorkItemHealthEditValue.needsAttention => l10n.healthNeedsAttention,
+  WorkItemHealthEditValue.atRisk => l10n.healthAtRisk,
 };
 
 IconData _healthIcon(WorkItemHealthEditValue? value) => switch (value) {
@@ -414,7 +415,7 @@ class _WorkItemHealthEditorState extends State<_WorkItemHealthEditor> {
     _targetUsed = true;
     if (!operation.reserve()) {
       setState(() {
-        _feedback = '目前有其他變更進行中，沒有送出健康狀態變更。';
+        _feedback = l10n.healthChangeBlocked;
         _feedbackIsError = true;
       });
       return;
@@ -451,11 +452,11 @@ class _WorkItemHealthEditorState extends State<_WorkItemHealthEditor> {
   String? _readOnlyMessage() {
     switch (_snapshot.availability) {
       case WorkItemHealthEditAvailability.widgetsUnavailable:
-        return '實例沒有提供這個工作項目的元件資訊，健康狀態僅供檢視。';
+        return l10n.healthStatusViewOnlyWidgets;
       case WorkItemHealthEditAvailability.absent:
-        return '這個工作項目類型沒有健康狀態欄位。';
+        return l10n.healthStatusFieldMissing;
       case WorkItemHealthEditAvailability.present:
-        if (!_writable) return '目前帳號沒有管理這個工作項目健康狀態的權限，僅供檢視。';
+        if (!_writable) return l10n.healthStatusPermissionViewOnly;
         return null;
     }
   }
@@ -474,7 +475,7 @@ class _WorkItemHealthEditorState extends State<_WorkItemHealthEditor> {
       },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
-        appBar: AppBar(title: const Text('編輯健康狀態')),
+        appBar: AppBar(title: Text(l10n.editHealthStatus)),
         body: SafeArea(
           bottom: false,
           child: ListView(
@@ -494,14 +495,14 @@ class _WorkItemHealthEditorState extends State<_WorkItemHealthEditor> {
                     Icon(_healthIcon(_snapshot.value)),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text('讀取時：${_healthLabel(_snapshot.value)}'),
+                      child: Text(l10n.healthStatusWhenLoaded(_healthLabel(_snapshot.value))),
                     ),
                   ],
                 ),
               if (rollup != null && rollup.isNotEmpty) ...[
                 const SizedBox(height: 4),
                 Text(
-                  '子項目彙整：${rollup.map((item) => '${_healthLabel(item.value)} ${item.count}').join('、')}',
+                  l10n.childHealthRollup(rollup.map((item) => '${_healthLabel(item.value)} ${item.count}').join(l10n.listSeparator)),
                 ),
               ],
               if (readOnly != null) ...[
@@ -533,7 +534,7 @@ class _WorkItemHealthEditorState extends State<_WorkItemHealthEditor> {
                           secondary: Icon(_healthIcon(_valueFor(choice))),
                           title: Text(
                             choice == _HealthChoice.clear
-                                ? '未設定（清除健康狀態）'
+                                ? l10n.clearHealthStatus
                                 : _healthLabel(_valueFor(choice)),
                           ),
                         ),
@@ -543,7 +544,7 @@ class _WorkItemHealthEditorState extends State<_WorkItemHealthEditor> {
               ],
               if (_writing) ...[
                 const SizedBox(height: 16),
-                const Row(
+                Row(
                   key: ValueKey('work-item-health-writing'),
                   children: [
                     SizedBox.square(
@@ -551,7 +552,7 @@ class _WorkItemHealthEditorState extends State<_WorkItemHealthEditor> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     ),
                     SizedBox(width: 12),
-                    Expanded(child: Text('正在更新健康狀態…')),
+                    Expanded(child: Text(l10n.updatingHealthStatus)),
                   ],
                 ),
               ],
@@ -570,13 +571,13 @@ class _WorkItemHealthEditorState extends State<_WorkItemHealthEditor> {
                       Icon(_healthIcon(_confirmedValue)),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text('伺服器回讀：${_healthLabel(_confirmedValue)}'),
+                        child: Text(l10n.healthStatusReadBack(_healthLabel(_confirmedValue))),
                       ),
                     ],
                   ),
                 ],
                 const SizedBox(height: 8),
-                const Text('請關閉並重新開啟，讀取最新健康狀態後再變更。'),
+                Text(l10n.reopenBeforeHealthChange),
               ],
             ],
           ),
@@ -596,7 +597,7 @@ class _WorkItemHealthEditorState extends State<_WorkItemHealthEditor> {
                         minimumSize: const Size.fromHeight(48),
                       ),
                       onPressed: _leave,
-                      child: Text(_targetUsed ? '關閉' : '取消'),
+                      child: Text(_targetUsed ? l10n.closeAction : l10n.cancelAction),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -607,7 +608,7 @@ class _WorkItemHealthEditorState extends State<_WorkItemHealthEditor> {
                         minimumSize: const Size.fromHeight(48),
                       ),
                       onPressed: _canSave ? () => unawaited(_save()) : null,
-                      child: Text(_writing ? '正在儲存…' : '儲存'),
+                      child: Text(_writing ? l10n.savingInProgress : l10n.saveAction),
                     ),
                   ),
                 ],
@@ -730,19 +731,19 @@ final class _HealthWriteOperation {
           outcome: WorkItemHealthSaveOutcome.confirmed,
           value: result.snapshot.value,
           message: result.snapshot.value == null
-              ? 'GitLab 已確認清除健康狀態。'
-              : 'GitLab 已確認健康狀態為「${_healthLabel(result.snapshot.value)}」。',
+              ? l10n.healthStatusClearedConfirmed
+              : l10n.healthStatusConfirmed(_healthLabel(result.snapshot.value)),
         ),
         WorkItemHealthEditSaveStatus.noop => (
           outcome: WorkItemHealthSaveOutcome.noop,
           value: result.snapshot.value,
-          message: '健康狀態已是「${_healthLabel(result.snapshot.value)}」，沒有送出變更。',
+          message: l10n.healthStatusAlreadySet(_healthLabel(result.snapshot.value)),
         ),
         WorkItemHealthEditSaveStatus.notApplied => (
           outcome: WorkItemHealthSaveOutcome.notApplied,
           value: result.snapshot.value,
           message:
-              'GitLab 沒有套用這次變更，健康狀態仍為「${_healthLabel(result.snapshot.value)}」。',
+              l10n.healthStatusNotApplied(_healthLabel(result.snapshot.value)),
         ),
       };
 
@@ -751,26 +752,26 @@ final class _HealthWriteOperation {
       return (
         outcome: WorkItemHealthSaveOutcome.notSent,
         value: null,
-        message: '沒有送出健康狀態變更。${failure.detail}',
+        message: l10n.healthChangeNotSubmitted(failure.detail),
       );
     }
     if (failure.kind == FailureKind.validation) {
       return (
         outcome: WorkItemHealthSaveOutcome.rejected,
         value: null,
-        message: '${failure.title}。${failure.detail}',
+        message: l10n.titleThenDetail(failure.title, failure.detail),
       );
     }
     return (
       outcome: WorkItemHealthSaveOutcome.unknown,
       value: null,
-      message: '尚未確認健康狀態是否已更新。請關閉並重新開啟讀取最新狀態，不要重複送出同一次變更。',
+      message: l10n.healthUpdateUnconfirmed2,
     );
   }
 }
 
 String _resourceLabel(WorkItemGraphSummary summary) {
   final scope =
-      summary.project?.fullPath ?? summary.namespace?.fullPath ?? '未知範圍';
-  return '$scope · 工作項目 #${summary.iid}';
+      summary.project?.fullPath ?? summary.namespace?.fullPath ?? l10n.unknownScope;
+  return l10n.workItemScopeLine(scope, summary.iid);
 }

@@ -15,6 +15,7 @@ import 'navigation.dart';
 import 'records_feed.dart';
 import 'work_item_page.dart';
 
+import '../../l10n/l10n.dart';
 /// One group as a dense row with its namespace path.
 Widget groupRow(BuildContext context, Json value, {required VoidCallback onTap}) {
   final theme = Theme.of(context);
@@ -62,20 +63,20 @@ class _GroupsPageState extends State<GroupsPage> {
   String _query = '';
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('我的群組')),
+    appBar: AppBar(title: Text(l10n.myGroups)),
     body: gestureSafe(RecordsFeed(
       identity: 'groups/mine/$_query', storageId: 'groups/mine',
       account: widget.account,
-      resourceLabel: '群組列表',
+      resourceLabel: l10n.groupList,
       onSwitchAccount: endSessionFrom(context),
-      empty: _query.isEmpty ? '你還沒有加入群組' : '找不到符合的群組',
+      empty: _query.isEmpty ? l10n.noGroupsJoined : l10n.noMatchingGroups,
       emptyIcon: Icons.workspaces_outline,
       grouped: true,
       leading: (context, _) => Padding(
         padding: EdgeInsets.fromLTRB(feedGutter(context), 8, feedGutter(context), 4),
         child: TextField(
           textInputAction: TextInputAction.search,
-          decoration: const InputDecoration(hintText: '搜尋群組', prefixIcon: Icon(Icons.search)),
+          decoration: InputDecoration(hintText: l10n.searchGroups, prefixIcon: Icon(Icons.search)),
           onSubmitted: (value) => setState(() => _query = value.trim()),
         ),
       ),
@@ -185,9 +186,9 @@ class _GroupPageState extends State<GroupPage> {
   Widget _projects() => RecordsFeed(
     identity: 'group/$_id/projects',
     account: widget.account,
-    resourceLabel: '${valueText(widget.group, 'full_path')} · 專案',
+    resourceLabel: l10n.groupProjectsTitle(valueText(widget.group, 'full_path')),
     onSwitchAccount: endSessionFrom(context),
-    empty: '這個群組沒有專案',
+    empty: l10n.groupHasNoProjects,
     emptyIcon: Icons.folder_off_outlined,
     grouped: true,
     load: (next) => widget.api.groupProjects(_id, next: next),
@@ -228,9 +229,9 @@ class _GroupPageState extends State<GroupPage> {
   Widget _subgroups() => RecordsFeed(
     identity: 'group/$_id/subgroups',
     account: widget.account,
-    resourceLabel: '${valueText(widget.group, 'full_path')} · 子群組',
+    resourceLabel: l10n.groupSubgroupsTitle(valueText(widget.group, 'full_path')),
     onSwitchAccount: endSessionFrom(context),
-    empty: '沒有子群組',
+    empty: l10n.noSubgroups,
     emptyIcon: Icons.workspaces_outline,
     grouped: true,
     load: (next) => widget.api.subgroups(_id, next: next),
@@ -242,9 +243,9 @@ class _GroupPageState extends State<GroupPage> {
   Widget _workItems(String resource) => RecordsFeed(
     identity: 'group/$_id/$resource',
     account: widget.account,
-    resourceLabel: '${valueText(widget.group, 'full_path')} · ${resource == 'issues' ? '議題' : '合併請求'}',
+    resourceLabel: '${valueText(widget.group, 'full_path')} · ${resource == 'issues' ? l10n.issues : l10n.mergeRequests}',
     onSwitchAccount: endSessionFrom(context),
-    empty: resource == 'issues' ? '沒有開啟中的議題' : '沒有開啟中的合併請求',
+    empty: resource == 'issues' ? l10n.noOpenIssues : l10n.noOpenMergeRequests,
     emptyIcon: resource == 'issues' ? Icons.adjust : Icons.merge,
     load: (next) => widget.api.records(['groups', '$_id', resource],
       query: {'state': 'opened', 'order_by': 'updated_at', 'sort': 'desc', 'with_labels_details': 'true'}, next: next),
@@ -266,7 +267,7 @@ class _GroupPageState extends State<GroupPage> {
         appBar: AppBar(title: Text(valueText(widget.group, 'name'))),
         body: gestureSafe(ListView(children: [
           FailureNotice(const ApiFailure(FailureKind.cancelled),
-            account: widget.account, resourceLabel: '$fullPath · 群組',
+            account: widget.account, resourceLabel: l10n.groupPageTitle(fullPath),
             onSwitchAccount: endSessionFrom(context)),
         ])),
       );
@@ -291,16 +292,16 @@ class _GroupPageState extends State<GroupPage> {
             ownerKey: (widget.account.key, widget.api, _id, fullPath),
             isCurrent: _ownerCurrent,
           ),
-          if (fullPath.isNotEmpty) IconButton(tooltip: '在 GitLab 開啟', icon: const Icon(Icons.open_in_new, size: 20),
+          if (fullPath.isNotEmpty) IconButton(tooltip: l10n.openInGitlab, icon: const Icon(Icons.open_in_new, size: 20),
             onPressed: () => openExternal(context, widget.account.instance.projectWeb(fullPath))),
         ],
         bottom: TabBar(isScrollable: true, tabAlignment: TabAlignment.start,
           tabs: [
-            Tab(key: _tabKeys[0], text: '專案'),
-            Tab(key: _tabKeys[1], text: '子群組'),
-            Tab(key: _tabKeys[2], text: '議題'),
-            Tab(key: _tabKeys[3], text: '合併請求'),
-            Tab(key: _tabKeys[4], text: '工作項目'),
+            Tab(key: _tabKeys[0], text: l10n.projects),
+            Tab(key: _tabKeys[1], text: l10n.subgroupsSection),
+            Tab(key: _tabKeys[2], text: l10n.issues),
+            Tab(key: _tabKeys[3], text: l10n.mergeRequests),
+            Tab(key: _tabKeys[4], text: l10n.workItemsLabel),
           ]),
       ),
       body: gestureSafe(TabBarView(children: [

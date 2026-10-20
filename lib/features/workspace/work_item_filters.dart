@@ -5,6 +5,7 @@ import '../../core/models.dart';
 import '../../shared/workspace_ui.dart';
 import 'picker_sheet.dart';
 
+import '../../l10n/l10n.dart';
 enum WorkItemOrderBy { createdAt, updatedAt, dueDate }
 
 enum WorkItemSort { asc, desc }
@@ -19,15 +20,15 @@ extension on WorkItemOrderBy {
   };
 
   String get label => switch (this) {
-    WorkItemOrderBy.createdAt => '建立日期',
-    WorkItemOrderBy.updatedAt => '更新日期',
-    WorkItemOrderBy.dueDate => '到期日',
+    WorkItemOrderBy.createdAt => l10n.createdDate2,
+    WorkItemOrderBy.updatedAt => l10n.updatedDate,
+    WorkItemOrderBy.dueDate => l10n.dueDate2,
   };
 }
 
 extension on WorkItemSort {
   String get api => name;
-  String get label => this == WorkItemSort.asc ? '由舊到新' : '由新到舊';
+  String get label => this == WorkItemSort.asc ? l10n.oldestFirst2 : l10n.newestFirst2;
 }
 
 extension on WorkItemScope {
@@ -39,10 +40,10 @@ extension on WorkItemScope {
   };
 
   String get label => switch (this) {
-    WorkItemScope.all => '所有人',
-    WorkItemScope.assignedToMe => '指派給我',
-    WorkItemScope.createdByMe => '我建立的',
-    WorkItemScope.reviewsForMe => '需要我審查',
+    WorkItemScope.all => l10n.everyone,
+    WorkItemScope.assignedToMe => l10n.assignedToMe,
+    WorkItemScope.createdByMe => l10n.createdByMe,
+    WorkItemScope.reviewsForMe => l10n.needsMyReview,
   };
 }
 
@@ -292,12 +293,13 @@ class _WorkItemFilterSheetState extends State<WorkItemFilterSheet> {
     PickerSource source, {
     required String title,
     required bool multi,
+    _MemberFilter? member,
   }) async {
     final initial = switch (source) {
       PickerSource.labels => _labels,
       PickerSource.milestones => [?_milestone],
-      PickerSource.members when title == '指派對象' => [?_assignee],
-      PickerSource.members when title == '建立者' => [?_author],
+      PickerSource.members when member == _MemberFilter.assignee => [?_assignee],
+      PickerSource.members when member == _MemberFilter.author => [?_author],
       PickerSource.members => [?_reviewer],
       PickerSource.branches => const <PickerChoice>[],
     };
@@ -318,9 +320,9 @@ class _WorkItemFilterSheetState extends State<WorkItemFilterSheet> {
           _labels = selected;
         case PickerSource.milestones:
           _milestone = selected.firstOrNull;
-        case PickerSource.members when title == '指派對象':
+        case PickerSource.members when member == _MemberFilter.assignee:
           _assignee = selected.firstOrNull;
-        case PickerSource.members when title == '建立者':
+        case PickerSource.members when member == _MemberFilter.author:
           _author = selected.firstOrNull;
         case PickerSource.members:
           _reviewer = selected.firstOrNull;
@@ -340,12 +342,12 @@ class _WorkItemFilterSheetState extends State<WorkItemFilterSheet> {
           children: [
             Expanded(
               child: Text(
-                '篩選與排序',
+                l10n.filterAndSort,
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ),
             IconButton(
-              tooltip: '關閉',
+              tooltip: l10n.closeAction,
               onPressed: () => Navigator.pop(context),
               icon: const Icon(Icons.close),
             ),
@@ -359,8 +361,8 @@ class _WorkItemFilterSheetState extends State<WorkItemFilterSheet> {
             DropdownButtonFormField<WorkItemOrderBy>(
               key: const Key('filter-order-by'),
               initialValue: _orderBy,
-              decoration: const InputDecoration(
-                labelText: '排序依據',
+              decoration: InputDecoration(
+                labelText: l10n.sortBy2,
                 prefixIcon: Icon(Icons.sort),
               ),
               items:
@@ -381,7 +383,7 @@ class _WorkItemFilterSheetState extends State<WorkItemFilterSheet> {
               },
             ),
             const SizedBox(height: 12),
-            Text('排序方向', style: Theme.of(context).textTheme.labelLarge),
+            Text(l10n.sortDirection2, style: Theme.of(context).textTheme.labelLarge),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -396,7 +398,7 @@ class _WorkItemFilterSheetState extends State<WorkItemFilterSheet> {
               ],
             ),
             const SizedBox(height: 16),
-            Text('快速篩選', style: Theme.of(context).textTheme.labelLarge),
+            Text(l10n.quickFilters, style: Theme.of(context).textTheme.labelLarge),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -424,38 +426,38 @@ class _WorkItemFilterSheetState extends State<WorkItemFilterSheet> {
             _pickerTile(
               const Key('filter-labels'),
               Icons.label_outline,
-              '標籤',
+              l10n.labelNoun,
               _labels,
-              () => _pick(PickerSource.labels, title: '標籤', multi: true),
+              () => _pick(PickerSource.labels, title: l10n.labelNoun, multi: true),
             ),
             _pickerTile(
               const Key('filter-milestone'),
               Icons.tour_outlined,
-              '里程碑',
+              l10n.milestoneLabel,
               [?_milestone],
-              () => _pick(PickerSource.milestones, title: '里程碑', multi: false),
+              () => _pick(PickerSource.milestones, title: l10n.milestoneLabel, multi: false),
             ),
             _pickerTile(
               const Key('filter-assignee'),
               Icons.assignment_ind_outlined,
-              '指派對象',
+              l10n.assigneeFilter,
               [?_assignee],
-              () => _pick(PickerSource.members, title: '指派對象', multi: false),
+              () => _pick(PickerSource.members, title: l10n.assigneeFilter, multi: false, member: _MemberFilter.assignee),
             ),
             _pickerTile(
               const Key('filter-author'),
               Icons.person_outline,
-              '建立者',
+              l10n.author,
               [?_author],
-              () => _pick(PickerSource.members, title: '建立者', multi: false),
+              () => _pick(PickerSource.members, title: l10n.author, multi: false, member: _MemberFilter.author),
             ),
             if (widget.mergeRequest)
               _pickerTile(
                 const Key('filter-reviewer'),
                 Icons.rate_review_outlined,
-                '審查者',
+                l10n.reviewer,
                 [?_reviewer],
-                () => _pick(PickerSource.members, title: '審查者', multi: false),
+                () => _pick(PickerSource.members, title: l10n.reviewer, multi: false, member: _MemberFilter.reviewer),
               ),
           ],
         ),
@@ -467,18 +469,18 @@ class _WorkItemFilterSheetState extends State<WorkItemFilterSheet> {
             TextButton(
               key: const Key('filter-cancel'),
               onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
+              child: Text(l10n.cancelAction),
             ),
             TextButton(
               key: const Key('filter-reset'),
               onPressed: () => setState(() => _load(const WorkItemFilters())),
-              child: const Text('重設'),
+              child: Text(l10n.reset),
             ),
             const Spacer(),
             FilledButton(
               key: const Key('filter-apply'),
               onPressed: () => Navigator.pop(context, _value),
-              child: const Text('套用'),
+              child: Text(l10n.apply),
             ),
           ],
         ),
@@ -499,14 +501,14 @@ class _WorkItemFilterSheetState extends State<WorkItemFilterSheet> {
     title: Text(title),
     subtitle: Text(
       selected.isEmpty
-          ? '不限'
+          ? l10n.anyFilter
           : selected
                 .map(
                   (choice) => choice.username == null
                       ? choice.name
                       : '@${choice.username}',
                 )
-                .join('、'),
+                .join(l10n.listSeparator),
       maxLines: 2,
       overflow: TextOverflow.ellipsis,
     ),
@@ -514,3 +516,6 @@ class _WorkItemFilterSheetState extends State<WorkItemFilterSheet> {
     onTap: onTap,
   );
 }
+
+/// Which member filter a picker fills; the title is only for display.
+enum _MemberFilter { assignee, author, reviewer }

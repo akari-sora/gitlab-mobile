@@ -10,6 +10,7 @@ import '../auth/session_controller.dart';
 import 'ci_page.dart';
 import 'project_page.dart';
 
+import '../../l10n/l10n.dart';
 final class ProjectCiItem {
   const ProjectCiItem({
     required this.project,
@@ -323,7 +324,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         title: const Text('CI / CD'),
         actions: [
           IconButton(
-            tooltip: '重新整理',
+            tooltip: l10n.refreshAction,
             onPressed: _loading ? null : _load,
             icon: const Icon(Icons.refresh),
           ),
@@ -355,7 +356,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
             Padding(
               padding: EdgeInsets.fromLTRB(gutter + 4, 0, gutter, 8),
               child: Text(
-                '選擇專案，查看流程與工作紀錄',
+                l10n.selectProjectForCi,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -368,11 +369,11 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                 controller: _searchController,
                 onChanged: (value) => setState(() => _search = value.trim()),
                 decoration: InputDecoration(
-                  hintText: '搜尋成員專案',
+                  hintText: l10n.searchMemberProjects,
                   prefixIcon: const Icon(Icons.search),
                   suffixIcon: _search.isNotEmpty
                       ? IconButton(
-                          tooltip: '清除搜尋',
+                          tooltip: l10n.clearSearch,
                           icon: const Icon(Icons.close, size: 18),
                           onPressed: () {
                             _searchController.clear();
@@ -389,10 +390,10 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
               padding: EdgeInsets.symmetric(horizontal: gutter),
               child: Row(
                 children: [
-                  for (final entry in const {
-                    '': '全部',
-                    'running': '執行中',
-                    'failed': '失敗',
+                  for (final entry in {
+                    '': l10n.filterAll,
+                    'running': l10n.statusRunning,
+                    'failed': l10n.statusFailed,
                   }.entries)
                     Padding(
                       padding: const EdgeInsets.only(right: 8),
@@ -423,8 +424,8 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
     }
     if (displayed.isEmpty) {
       final msg = _filter.isNotEmpty || _search.isNotEmpty
-          ? '沒有符合條件的 Pipeline'
-          : '沒有成員專案';
+          ? l10n.noPipelinesMatchFilters
+          : l10n.noMemberProjects;
       return [SliverToBoxAdapter(child: EmptyState(msg, icon: Icons.account_tree_outlined))];
     }
 
@@ -447,7 +448,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                   : OutlinedButton.icon(
                       key: const ValueKey('ci-overview-load-more'),
                       icon: const Icon(Icons.expand_more, size: 18),
-                      label: const Text('載入更多成員專案'),
+                      label: Text(l10n.loadMoreMemberProjects),
                       onPressed: _loadMore,
                     ),
             ),
@@ -518,10 +519,10 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                   else if (item.error != null)
                     Tooltip(
                       message: item.error!.status == 404
-                          ? '目前無法取得 CI 資源，可能不存在或目前帳號無權存取'
+                          ? l10n.ciResourcesUnavailable
                           : item.error!.status == 403
-                              ? '目前帳號沒有此專案的 CI/CD 檢視權限'
-                              : '無法取得 CI 狀態',
+                              ? l10n.noProjectCicdViewPermission
+                              : l10n.ciStatusLoadFailed,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
@@ -530,10 +531,10 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                         ),
                         child: Text(
                           item.error!.status == 403
-                              ? '沒有 CI 權限'
+                              ? l10n.noCiPermission
                               : item.error!.status == 404
-                                  ? '無法存取或無 CI 資源'
-                                  : '無法取得 CI 狀態',
+                                  ? l10n.ciInaccessibleOrMissing
+                                  : l10n.ciStatusLoadFailed,
                           style: Theme.of(context).textTheme.labelMedium?.copyWith(
                                 color: scheme.onErrorContainer,
                               ),
@@ -542,7 +543,7 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
                     )
                     else
                       Text(
-                        '無 Pipeline',
+                        l10n.noPipelines,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: scheme.onSurfaceVariant,
                             ),

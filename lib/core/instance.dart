@@ -1,3 +1,6 @@
+import 'failure.dart';
+import '../l10n/l10n.dart';
+
 /// An instance includes its installation subpath, not only its hostname.
 final class GitLabInstance {
   GitLabInstance._(this.base);
@@ -12,7 +15,7 @@ final class GitLabInstance {
         uri.userInfo.isNotEmpty ||
         uri.hasQuery ||
         uri.hasFragment) {
-      throw const FormatException('請輸入 HTTPS GitLab 網址，不含帳密、查詢或片段。');
+      throw InputFormatException(l10n.enterHttpsGitlabUrl);
     }
     // Reject ambiguous paths before Uri normalization can hide traversal.
     final rawPath =
@@ -25,7 +28,7 @@ final class GitLabInstance {
         RegExp(r'%(2f|5c|2e)', caseSensitive: false).hasMatch(rawPath) ||
         rawPath.split('/').any((s) => s == '.' || s == '..') ||
         rawPath.contains('//')) {
-      throw const FormatException('實例路徑不可包含相對路徑或編碼分隔符。');
+      throw InputFormatException(l10n.instancePathNoRelativeEncoded);
     }
     final segments = uri.pathSegments.where((s) => s.isNotEmpty).toList();
     return GitLabInstance._(

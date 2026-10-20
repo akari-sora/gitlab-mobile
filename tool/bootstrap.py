@@ -16,6 +16,7 @@ import tempfile
 import xml.etree.ElementTree as ET
 
 import android_signing
+import l10n
 
 ROOT = Path(__file__).resolve().parents[1]
 SDK = '3.47.2'
@@ -134,6 +135,42 @@ def register_incoming_links_android(root: ET.Element) -> None:
     ET.SubElement(share, 'data', {_android_attr('mimeType'): 'text/plain'})
 
 
+def locales_config() -> str:
+    """Android 13+ lists these in Settings › Apps › Mergeline › Language."""
+    locales = ''.join(f'    <locale android:name="{tag}" />\n' for tag, *_ in l10n.LANGUAGES)
+    return ('<?xml version="1.0" encoding="utf-8"?>\n'
+            f'<locale-config xmlns:android="{ANDROID}">\n{locales}</locale-config>\n')
+
+
+def ios_localizations() -> list[str]:
+    """The app's languages as iOS localization names, for CFBundleLocalizations."""
+    names = {'zh-TW': 'zh-Hant', 'zh-CN': 'zh-Hans'}
+    return [names.get(tag, tag) for tag, *_ in l10n.LANGUAGES]
+
+
+def register_localizations_ios(folder: Path) -> None:
+    """Lets iOS offer the app's languages (Settings › Mergeline › Language)."""
+    path = folder / 'Runner/Info.plist'
+    if not path.is_file():
+        return
+    tree = ET.parse(path)
+    plist = tree.getroot().find('dict')
+    if plist is None:
+        raise RuntimeError('Unknown iOS template: Info.plist dict missing.')
+    children = list(plist)
+    for index, node in enumerate(children[:-1]):
+        if node.tag == 'key' and node.text == 'CFBundleLocalizations':
+            plist.remove(children[index + 1])
+            plist.remove(node)
+            break
+    plist.append(_plist_key('CFBundleLocalizations'))
+    array = ET.SubElement(plist, 'array')
+    for name in ios_localizations():
+        ET.SubElement(array, 'string').text = name
+    ET.indent(tree, space='\t')
+    tree.write(path, encoding='utf-8', xml_declaration=True)
+
+
 def harden_android(folder: Path) -> None:
     manifest = folder / 'app/src/main/AndroidManifest.xml'
     tree = ET.parse(manifest)
@@ -148,6 +185,7 @@ def harden_android(folder: Path) -> None:
                        'fullBackupContent': '@xml/backup_rules',
                        'dataExtractionRules': '@xml/data_extraction_rules',
                        'enableOnBackInvokedCallback': 'true',
+                       'localeConfig': '@xml/locales_config',
                        'label': APP_NAME}.items():
         application.set(f'{{{ANDROID}}}{key}', value)
     for activity in application.findall('activity'):
@@ -161,6 +199,7 @@ def harden_android(folder: Path) -> None:
     resource.mkdir(parents=True, exist_ok=True)
     excludes = ''.join(f'<exclude domain="{domain}" path="." />' for domain in
                        ('root', 'file', 'database', 'sharedpref', 'external'))
+    (resource / 'locales_config.xml').write_text(locales_config())
     (resource / 'backup_rules.xml').write_text(f'<full-backup-content>{excludes}</full-backup-content>\n')
     (resource / 'data_extraction_rules.xml').write_text(
         '<data-extraction-rules><cloud-backup disableIfNoEncryptionCapabilities="true">'
@@ -593,6 +632,7 @@ def configure_ios(folder: Path) -> None:
     register_oauth_ios(folder)
     register_photo_library_ios(folder)
     register_face_id_ios(folder)
+    register_localizations_ios(folder)
     configure_ios_app_name(folder)
 
 

@@ -892,8 +892,8 @@ Json _workItemGraphData(Uint8List bytes) {
         );
         throw ApiFailure(
           unsupported ? FailureKind.unsupported : FailureKind.invalidResponse,
-          title: unsupported ? '實例未提供原生工作項目' : null,
-          detail: unsupported ? '這個 GitLab 版本不支援所需的唯讀欄位。' : null,
+          title: unsupported ? l10n.instanceNoNativeWorkItems : null,
+          detail: unsupported ? l10n.versionMissingReadOnlyFields : null,
         );
       }
     }

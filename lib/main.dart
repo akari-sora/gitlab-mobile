@@ -11,20 +11,29 @@ import 'features/auth/session_controller.dart';
 import 'features/shell/authenticated_app.dart';
 import 'features/shell/incoming_links.dart';
 import 'features/security/app_lock.dart';
+import 'features/shell/language.dart';
 import 'shared/theme.dart';
 import 'shared/scroll_performance.dart';
 import 'core/brand.dart';
 
-void main() {
+import 'l10n/l10n.dart';
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   registerBundledLicenses();
   SystemChrome.setSystemUIOverlayStyle(
     systemUiOverlayStyle(WidgetsBinding.instance.platformDispatcher.platformBrightness),
   );
   unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
-  runApp(const ProviderScope(child: bool.fromEnvironment('PERF_DIAGNOSTICS')
-      ? ScrollPerformance(child: GitLabMobileApp())
-      : GitLabMobileApp()));
+  // The stored language is applied before the first frame (the launch screen
+  // stays up meanwhile), so no text shows up in one language and then flips.
+  final language = LanguageController(SecureLanguageStore());
+  await language.load().timeout(const Duration(seconds: 2), onTimeout: () {});
+  runApp(ProviderScope(
+    overrides: [languageProvider.overrideWithValue(language)],
+    child: const bool.fromEnvironment('PERF_DIAGNOSTICS')
+        ? ScrollPerformance(child: GitLabMobileApp())
+        : GitLabMobileApp(),
+  ));
 }
 
 class GitLabMobileApp extends ConsumerStatefulWidget {
@@ -35,10 +44,12 @@ class GitLabMobileApp extends ConsumerStatefulWidget {
 class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
   late final LauncherShortcuts _shortcuts;
   late final IncomingLinks _links;
+  late final LanguageController _language;
   bool _sessionWasActive = false;
   @override
   void initState() {
     super.initState();
+    _language = ref.read(languageProvider)..addListener(_languageChanged);
     _shortcuts = ref.read(launcherShortcutsProvider);
     unawaited(_shortcuts.start());
     // Held here, above the account-keyed tree, so a link that arrives while
@@ -54,6 +65,22 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
     // before the navigator's while the app is locked.
     unawaited(ref.read(appLockProvider).start());
   }
+  @override
+  void dispose() {
+    _language.removeListener(_languageChanged);
+    super.dispose();
+  }
+
+  // Text comes from l10n during build, so a new language rebuilds everything
+  // below; routes, scroll positions and drafts stay as they are.
+  void _languageChanged() {
+    if (!mounted) return;
+    rebuildForLanguage(context);
+    // Launcher shortcut labels live outside the widget tree.
+    final account = ref.read(sessionProvider).active?.key;
+    if (account != null) unawaited(_shortcuts.publish(account));
+  }
+
   void _syncShortcuts(bool signedIn, String? accountKey) {
     _shortcuts.bind(signedIn ? accountKey : null);
     if (!signedIn && _sessionWasActive) {
@@ -65,13 +92,14 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider);
     final appearance = ref.watch(appearanceProvider);
-    return ListenableBuilder(listenable: Listenable.merge([session, appearance]), builder: (context, _) {
+    return ListenableBuilder(listenable: Listenable.merge([session, appearance, _language]), builder: (context, _) {
       final signedIn = session.active != null && session.api != null;
       _syncShortcuts(signedIn, session.active?.key);
       if (signedIn) {
         return AuthenticatedApp(
           key: ValueKey(session.generation), session: session, appearance: appearance, shortcuts: _shortcuts,
           updates: ref.read(appUpdateProvider), incoming: _links, lock: ref.read(appLockProvider),
+          language: _language,
         );
       }
       return DynamicColorBuilder(builder: (light, dark) {
@@ -83,9 +111,9 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
           theme: appTheme(Brightness.light, dynamicScheme: enabled ? flutterScheme(light) : null),
           darkTheme: appTheme(Brightness.dark, dynamicScheme: enabled ? flutterScheme(dark) : null),
           themeMode: appearance.mode,
-          locale: const Locale('zh', 'TW'),
+          locale: _language.locale,
           localizationsDelegates: const [GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
-          supportedLocales: const [Locale('zh', 'TW'), Locale('en')],
+          supportedLocales: appLocales,
           home: session.resuming
             ? _ResumeScreen(session: session)
             : session.initializing
@@ -119,11 +147,11 @@ class _ResumeScreen extends StatelessWidget {
           const SizedBox(height: 24),
           Semantics(
             liveRegion: true,
-            child: Text('正在恢復 @$username', style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
+            child: Text(l10n.restoringAccount(username), style: theme.textTheme.titleMedium, textAlign: TextAlign.center),
           ),
           const SizedBox(height: 16),
           const CircularProgressIndicator(),
-          TextButton(onPressed: () { unawaited(session.endSession()); }, child: const Text('改用其他帳號')),
+          TextButton(onPressed: () { unawaited(session.endSession()); }, child: Text(l10n.useAnotherAccount)),
         ]),
       ))),
     );

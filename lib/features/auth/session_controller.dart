@@ -8,6 +8,7 @@ import '../../core/oauth.dart';
 import 'account_store.dart';
 import '../../shared/resume_target.dart';
 
+import '../../l10n/l10n.dart';
 typedef ApiFactory =
     GitLabApi Function(
       GitLabInstance instance,
@@ -103,7 +104,7 @@ final class SessionController extends ChangeNotifier {
         _accounts = loaded;
       } catch (_) {
         if (_current(ticket)) {
-          message = '無法讀取安全儲存；不會退回明文保存。請重新加入帳號。';
+          message = l10n.secureStorageUnreadable;
         }
         return;
       }
@@ -149,7 +150,7 @@ final class SessionController extends ChangeNotifier {
         candidate = null;
       } on ApiFailure catch (error) {
         if (_current(ticket)) {
-          message = '${error.title}。${error.detail}';
+          message = l10n.titleThenDetail(error.title, error.detail);
           // Drop the remembered key only when the credential itself is dead.
           // Transient failures keep it so the next launch can retry.
           if (error.kind == FailureKind.unauthenticated) {
@@ -160,7 +161,7 @@ final class SessionController extends ChangeNotifier {
         }
       } catch (_) {
         if (_current(ticket)) {
-          message = '帳號重新驗證失敗；未切換至此帳號。';
+          message = l10n.accountReverifyNoSwitch;
         }
       } finally {
         if (candidate != null) {
@@ -226,20 +227,18 @@ final class SessionController extends ChangeNotifier {
     } on FormatException catch (error) {
       if (_current(ticket)) {
         message =
-            error.message.contains('Token') ||
-                error.message.contains('實例') ||
-                error.message.contains('HTTPS')
+            error is InputFormatException
             ? error.message
-            : '回應格式無法辨識；未啟用此帳號。';
+            : l10n.responseUnrecognizedNotEnabled;
       }
     } on ApiFailure catch (error) {
       if (_current(ticket)) {
         message = error.kind == FailureKind.unauthenticated
-            ? '無法驗證這個 Token。請確認 Token 未過期，並具備 api 或 read_api 權限。'
-            : '${error.title}。${error.detail}';
+            ? l10n.cannotVerifyTokenScopes
+            : l10n.titleThenDetail(error.title, error.detail);
       }
     } catch (_) {
-      if (_current(ticket)) message = '無法安全保存帳號；未啟用此連線。';
+      if (_current(ticket)) message = l10n.cannotStoreAccountSecurely;
     } finally {
       _releaseCandidate(candidate, ticket);
     }
@@ -256,7 +255,7 @@ final class SessionController extends ChangeNotifier {
       final cleared = await _commitSignOut();
       if (!_current(ticket)) return;
       if (!cleared) {
-        message = '無法清除自動登入記錄；請重試登出。';
+        message = l10n.cannotClearAutoSignIn;
         _emit();
         return;
       }
@@ -274,9 +273,9 @@ final class SessionController extends ChangeNotifier {
       );
       candidate = null;
     } on ApiFailure catch (error) {
-      if (_current(ticket)) message = '${error.title}。${error.detail}';
+      if (_current(ticket)) message = l10n.titleThenDetail(error.title, error.detail);
     } catch (_) {
-      if (_current(ticket)) message = '帳號重新驗證失敗；未切換至此帳號。';
+      if (_current(ticket)) message = l10n.accountReverifyNoSwitch;
     } finally {
       _releaseCandidate(candidate, ticket);
     }
@@ -294,11 +293,11 @@ final class SessionController extends ChangeNotifier {
       final clientId = applicationIdFor(instance);
       final browser = _browser;
       if (clientId == null || clientId.isEmpty) {
-        message = '這個實例尚未設定 OAuth 應用。請使用 Personal Access Token。';
+        message = l10n.noOauthAppUsePat;
         return;
       }
       if (browser == null) {
-        message = '無法開啟系統瀏覽器完成授權。';
+        message = l10n.cannotOpenBrowserForAuth;
         return;
       }
       final pkce = PkceSession.generate(clientId: clientId);
@@ -344,20 +343,18 @@ final class SessionController extends ChangeNotifier {
     } on FormatException catch (error) {
       if (_current(ticket)) {
         message =
-            error.message.contains('授權') ||
-                error.message.contains('實例') ||
-                error.message.contains('HTTPS')
+            error is InputFormatException
             ? error.message
-            : '授權回應無法辨識；未啟用此帳號。';
+            : l10n.authResponseUnrecognized;
       }
     } on ApiFailure catch (error) {
       if (_current(ticket)) {
         message = error.kind == FailureKind.unauthenticated
-            ? '無法完成 GitLab 授權。請確認應用設定與權限後重試。'
-            : '${error.title}。${error.detail}';
+            ? l10n.cannotCompleteGitlabAuth
+            : l10n.titleThenDetail(error.title, error.detail);
       }
     } catch (_) {
-      if (_current(ticket)) message = '無法完成授權或安全保存帳號；未啟用此連線。';
+      if (_current(ticket)) message = l10n.authOrSecureStoreFailed;
     } finally {
       _releaseCandidate(candidate, ticket);
     }
@@ -629,7 +626,7 @@ final class SessionController extends ChangeNotifier {
     busy = false;
     final cleared = await _commitSignOut();
     if (!_current(ticket) || cleared) return;
-    message = '無法清除自動登入記錄；請重試登出。';
+    message = l10n.cannotClearAutoSignIn;
     _emit();
   }
 
@@ -649,14 +646,14 @@ final class SessionController extends ChangeNotifier {
         _pendingResumeTarget = null;
         final cleared = await _commitSignOut();
         if (_current(ticket) && !cleared) {
-          message = '無法清除自動登入記錄；請重試登出。';
+          message = l10n.cannotClearAutoSignIn;
         }
       }
     } catch (_) {
       if (_current(ticket) && identical(_accounts, staged)) {
         _accounts = previous;
       }
-      if (_current(ticket)) message = '移除安全儲存失敗；請重試。';
+      if (_current(ticket)) message = l10n.removeSecureStorageFailed;
     } finally {
       if (_current(ticket)) busy = false;
       _emit();

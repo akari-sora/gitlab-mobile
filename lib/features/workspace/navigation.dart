@@ -18,6 +18,7 @@ import 'project_page.dart';
 import 'repository_page.dart';
 import 'work_item_page.dart';
 
+import '../../l10n/l10n.dart';
 /// Opens resources named by numeric project ID from feeds that span projects
 /// (search, activity, groups, the inbox, pasted links). The project is
 /// resolved with the active account first. An ambiguous 404 or a 403 opens a
@@ -85,10 +86,10 @@ class ResourceNavigator {
   }
 
   Future<Project?> _project(BuildContext context, String idOrPath) =>
-      _resolve(context, '專案 $idOrPath', () => api.project(idOrPath));
+      _resolve(context, l10n.projectIdOrPath(idOrPath), () => api.project(idOrPath));
 
   Future<Json?> _group(BuildContext context, String fullPath, _NavigationOwner owner) =>
-      _resolve(context, '群組 $fullPath',
+      _resolve(context, l10n.groupFullPath(fullPath),
         () => api.groupByPath(fullPath, isCurrent: owner.current), owner: owner);
 
   Future<void> _push(BuildContext context, Widget page) {
@@ -134,7 +135,7 @@ class ResourceNavigator {
         sessionGeneration: owner.generation));
       return;
     }
-    final found = await _resolve(context, '專案 ${link.project}',
+    final found = await _resolve(context, l10n.projectNamed(link.project),
       () => api.project(link.project), owner: owner);
     if (found == null || !context.mounted || !owner.current()) return;
     await _push(context, GraphWorkItemDetailPage.project(
@@ -306,9 +307,9 @@ class _UnresolvedPageState<T> extends State<_UnresolvedPage<T>> {
 
   @override
   Widget build(BuildContext context) => _ownerInvalid
-    ? const Scaffold(body: SafeArea(child: Center(child: Text('帳號已切換，這個頁面已關閉。'))))
+    ? Scaffold(body: SafeArea(child: Center(child: Text(l10n.accountSwitchedPageClosed))))
     : Scaffold(
-    appBar: AppBar(title: const Text('無法開啟')),
+    appBar: AppBar(title: Text(l10n.cannotOpen)),
     body: gestureSafe(ListView(children: [
       if (_loading) const LinearProgressIndicator(minHeight: 2),
       FailureNotice(_error, account: widget.account, resourceLabel: widget.target,

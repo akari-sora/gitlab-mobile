@@ -19,6 +19,8 @@ import 'project_page.dart';
 import 'records_feed.dart';
 import 'search_page.dart';
 
+import '../../core/failure.dart';
+import '../../l10n/l10n.dart';
 class ProjectsPage extends StatefulWidget {
   const ProjectsPage({
     super.key,
@@ -336,12 +338,12 @@ class _ProjectsPageState extends State<ProjectsPage> {
   Future<void> _locator() async {
     final input = TextEditingController();
     final locator = await showDialog<String>(context: context, builder: (context) => AlertDialog(
-      title: const Text('開啟專案'), content: TextField(controller: input, autofocus: true,
-        autocorrect: false, decoration: const InputDecoration(labelText: '專案網址、完整路徑或 ID',
-          hintText: 'group/project', helperText: '也可貼上議題、MR、Pipeline、Job 或提交連結', helperMaxLines: 2),
+      title: Text(l10n.openProject), content: TextField(controller: input, autofocus: true,
+        autocorrect: false, decoration: InputDecoration(labelText: l10n.projectUrlPathOrId,
+          hintText: 'group/project', helperText: l10n.pasteResourceLink, helperMaxLines: 2),
         onSubmitted: (value) => Navigator.pop(context, value)),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(context, input.text), child: const Text('開啟'))],
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: Text(l10n.cancelAction)),
+        FilledButton(onPressed: () => Navigator.pop(context, input.text), child: Text(l10n.open))],
     ));
     unawaited(Future<void>.delayed(const Duration(milliseconds: 400), input.dispose));
     if (locator == null || !mounted) return;
@@ -359,7 +361,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
       final instance = account.instance;
       if (uri != null && !instance.sameOrigin(uri)) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('這個連結屬於 ${uri.host}，目前的帳號在 ${instance.base.host}。'),
+          content: Text(l10n.linkHostMismatch(uri.host, instance.base.host)),
         ));
         return;
       }
@@ -409,7 +411,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
           !identical(widget.session.api, targetApi)) {
         return;
       }
-      if (e is FormatException) {
+      if (e is InputFormatException) {
         // The locator explains why a pasted link was refused (other instance, token, relative path).
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.message)));
       } else {
@@ -421,11 +423,11 @@ class _ProjectsPageState extends State<ProjectsPage> {
   }
   Future<void> _create() async {
     Project? created;
-    final saved = await openEditor(context, account: account, title: '新增私有專案',
-      resource: 'projects/new', subtitle: '新專案預設為私有，並建立 README。', fields: const [
-        EditField('name', '專案名稱', required: true),
-        EditField('path', '網址路徑', hint: '可留白，由 GitLab 依名稱產生'),
-        EditField('description', '專案說明', lines: 4),
+    final saved = await openEditor(context, account: account, title: l10n.newPrivateProject,
+      resource: 'projects/new', subtitle: l10n.newProjectPrivateReadme, fields: [
+        EditField('name', l10n.projectName, required: true),
+        EditField('path', l10n.urlPath, hint: l10n.urlPathOptional),
+        EditField('description', l10n.projectDescription, lines: 4),
       ], save: (values) async {
         created = await api.createProject(name: values['name']!.trim(),
           path: values['path']!.trim().isEmpty ? null : values['path']!.trim(), description: values['description']!);
@@ -434,24 +436,24 @@ class _ProjectsPageState extends State<ProjectsPage> {
     if (saved && created != null) _open(created!);
   }
   static Map<String, (String, String, String)> get _sorts => {
-    'activity': ('最近活動', 'last_activity_at', 'desc'),
-    'name': ('名稱', 'name', 'asc'),
-    'created': ('建立時間', 'created_at', 'desc'),
-    'stars': ('星標數', 'star_count', 'desc'),
+    'activity': (l10n.lastActivity, 'last_activity_at', 'desc'),
+    'name': (l10n.nameLabel, 'name', 'asc'),
+    'created': (l10n.createdDate, 'created_at', 'desc'),
+    'stars': (l10n.stars, 'star_count', 'desc'),
   };
 
   Future<void> _openAccounts() => showAccountSheet(context, widget.session);
 
   Widget _appBar(BuildContext context) => SliverAppBar(
     floating: true, snap: true, primary: false,
-    title: widget.title == null && !widget.forCi ? const LargeTitle('探索') : Text(widget.title ?? 'CI / CD'),
+    title: widget.title == null && !widget.forCi ? LargeTitle(l10n.exploreTab) : Text(widget.title ?? 'CI / CD'),
     actions: [
-      IconButton(tooltip: '全域搜尋', icon: const Icon(Icons.manage_search),
+      IconButton(tooltip: l10n.globalSearch, icon: const Icon(Icons.manage_search),
         onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
           builder: (_) => SearchPage(account: account, api: api)))),
-      IconButton(tooltip: '以連結或路徑開啟', onPressed: _opening ? null : _locator, icon: const Icon(Icons.link)),
-      if (!widget.forCi) IconButton(tooltip: '新增專案', onPressed: _create, icon: const Icon(Icons.add)),
-      IconButton(tooltip: '帳號 @${account.user.username}', onPressed: _openAccounts,
+      IconButton(tooltip: l10n.openByLinkOrPath, onPressed: _opening ? null : _locator, icon: const Icon(Icons.link)),
+      if (!widget.forCi) IconButton(tooltip: l10n.newProject, onPressed: _create, icon: const Icon(Icons.add)),
+      IconButton(tooltip: l10n.accountAtUsername(account.user.username), onPressed: _openAccounts,
         icon: Monogram(account.user.name, size: 30, circle: true)),
       const SizedBox(width: 4),
     ],
@@ -461,9 +463,9 @@ class _ProjectsPageState extends State<ProjectsPage> {
         key: const Key('projectSearch'), focusNode: _searchFocus, controller: _search, onChanged: _searchChanged,
         textInputAction: TextInputAction.search,
         onSubmitted: (value) { _debounce?.cancel(); setState(() => _query = value.trim()); },
-        decoration: InputDecoration(hintText: '搜尋專案', prefixIcon: const Icon(Icons.search),
+        decoration: InputDecoration(hintText: l10n.searchProjects, prefixIcon: const Icon(Icons.search),
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          suffixIcon: IconButton(tooltip: '清除搜尋', icon: const Icon(Icons.close, size: 18),
+          suffixIcon: IconButton(tooltip: l10n.clearSearch, icon: const Icon(Icons.close, size: 18),
             onPressed: () { _search.clear(); _debounce?.cancel(); setState(() => _query = ''); })),
       ),
     )),
@@ -488,12 +490,12 @@ class _ProjectsPageState extends State<ProjectsPage> {
             padding: EdgeInsets.fromLTRB(gutter, 4, _scope == 3 ? gutter : 24, 0),
             child: Row(children: [
               for (var i = 0; i < 4; i++) Padding(padding: EdgeInsets.only(right: i == 3 ? 0 : 8), child: ChoiceChip(
-                label: Text(const ['我的專案', '星標', '所有可存取', '群組'][i]), selected: _scope == i,
+                label: Text([l10n.myProjects, l10n.starred, l10n.allAccessible, l10n.groups][i]), selected: _scope == i,
                 showCheckmark: false, onSelected: (_) => setState(() => _scope = i))),
             ])),
         )),
         if (_scope != 3) Padding(padding: EdgeInsets.fromLTRB(0, 4, gutter, 0), child: PopupMenuButton<String>(
-          tooltip: '排序方式',
+          tooltip: l10n.sortBy,
           initialValue: _sort,
           onSelected: (value) => setState(() => _sort = value),
           itemBuilder: (_) => [
@@ -504,7 +506,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
         )),
       ]),
       if (_query.isEmpty && _recentProjects.isNotEmpty) ...[
-        Padding(padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 6), child: Text('最近開啟',
+        Padding(padding: EdgeInsets.fromLTRB(gutter, 12, gutter, 6), child: Text(l10n.recentlyOpened,
           style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant))),
         SingleChildScrollView(
           scrollDirection: Axis.horizontal,
@@ -574,7 +576,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
               if (marked || project.archived == true) Padding(padding: const EdgeInsets.only(top: 6),
                 child: Wrap(spacing: 6, runSpacing: 4, children: [
                   if (marked) const StatusBadge('marked_for_deletion'),
-                  if (project.archived == true) const MetaChip('已封存', icon: Icons.inventory_2_outlined),
+                  if (project.archived == true) MetaChip(l10n.archived, icon: Icons.inventory_2_outlined),
                 ])),
             ])),
             const SizedBox(width: 6),
@@ -600,16 +602,16 @@ class _ProjectsPageState extends State<ProjectsPage> {
     return Scaffold(
       body: StatusBarInset(child: SafeArea(top: false, child: RecordsFeed(key: _feed,
         identity: groups ? 'groups/$_query' : 'projects/$_scope/$_sort/$_query', storageId: 'projects',
-        account: account, resourceLabel: groups ? '群組列表' : '專案列表', underShell: true, grouped: true,
+        account: account, resourceLabel: groups ? l10n.groupList : l10n.projectList, underShell: true, grouped: true,
         onSwitchAccount: () { unawaited(widget.session.endSession()); },
         topSlivers: (context, _) => [_appBar(context)],
         leading: (context, _) => _controls(context),
         empty: groups
-            ? (_query.isEmpty ? '你還沒有加入群組' : '找不到符合的群組')
-            : idleAllScope ? '搜尋所有可存取的專案' : _query.isEmpty ? '目前沒有專案' : '找不到符合的專案',
+            ? (_query.isEmpty ? l10n.noGroupsJoined : l10n.noMatchingGroups)
+            : idleAllScope ? l10n.searchAccessibleProjects : _query.isEmpty ? l10n.noProjects : l10n.noMatchingProjects,
         emptyDetail: groups
             ? null
-            : idleAllScope ? '輸入名稱查找公開與私有專案，不限目前的成員專案。' : '可使用右上角連結，以完整路徑或 ID 開啟。',
+            : idleAllScope ? l10n.searchBeyondMembership : l10n.openByPathHint,
         emptyIcon: groups ? Icons.workspaces_outline : idleAllScope ? Icons.search : Icons.folder_off_outlined,
         load: groups
             ? (next) => api.groups(search: _query, next: next)
@@ -654,11 +656,11 @@ class _ProjectsPageState extends State<ProjectsPage> {
     );
   }
 
-  Widget _buildEmpty(BuildContext context) => const Center(
+  Widget _buildEmpty(BuildContext context) => Center(
     child: EmptyState(
-      '請選擇專案',
+      l10n.selectProject,
       icon: Icons.folder_open_outlined,
-      detail: '從左側清單選擇專案以查看詳情、檔案與流程。',
+      detail: l10n.selectProjectFromList,
     ),
   );
 

@@ -1,5 +1,6 @@
 import 'failure.dart';
 
+import '../l10n/l10n.dart';
 typedef WorkItemJson = Map<String, dynamic>;
 
 String _text(WorkItemJson value, String key) =>
@@ -18,23 +19,23 @@ extension ProjectWorkItemTypeInfo on ProjectWorkItemType {
   };
 
   String get title => switch (this) {
-    ProjectWorkItemType.issue => '議題',
+    ProjectWorkItemType.issue => l10n.issueTypeName,
     ProjectWorkItemType.task => 'Task',
     ProjectWorkItemType.incident => 'Incident',
   };
 
   String get listTitle => switch (this) {
-    ProjectWorkItemType.issue => '議題',
+    ProjectWorkItemType.issue => l10n.issues,
     ProjectWorkItemType.task => 'Tasks',
     ProjectWorkItemType.incident => 'Incidents',
   };
 
   String get createTitle =>
-      this == ProjectWorkItemType.issue ? '新增議題' : '新增 $title';
+      this == ProjectWorkItemType.issue ? l10n.newIssue : l10n.newItemWithTitle(title);
   String get searchHint =>
-      this == ProjectWorkItemType.issue ? '搜尋議題' : '搜尋 $title';
-  String get emptyLabel => '沒有符合的$title';
-  String get selectionHint => '從左側清單選擇$title以查看內容與討論。';
+      this == ProjectWorkItemType.issue ? l10n.searchIssues : l10n.searchItemWithTitle(title);
+  String get emptyLabel => l10n.noMatchingTitle(title);
+  String get selectionHint => l10n.selectTitleFromLeftList(title);
 }
 
 ProjectWorkItemType workItemTypeFromJson(WorkItemJson value) {
@@ -68,11 +69,11 @@ enum IncidentSeverity { unknown, low, medium, high, critical }
 extension IncidentSeverityInfo on IncidentSeverity {
   String get apiValue => name;
   String get label => switch (this) {
-    IncidentSeverity.unknown => '未分級',
-    IncidentSeverity.low => '低',
-    IncidentSeverity.medium => '中',
-    IncidentSeverity.high => '高',
-    IncidentSeverity.critical => '嚴重',
+    IncidentSeverity.unknown => l10n.severityUnclassified,
+    IncidentSeverity.low => l10n.severityLow,
+    IncidentSeverity.medium => l10n.severityMedium,
+    IncidentSeverity.high => l10n.severityHigh,
+    IncidentSeverity.critical => l10n.severityCritical,
   };
 }
 
@@ -89,10 +90,10 @@ enum IncidentLifecycle { triggered, acknowledged, resolved, ignored }
 extension IncidentLifecycleInfo on IncidentLifecycle {
   String get apiValue => name.toUpperCase();
   String get label => switch (this) {
-    IncidentLifecycle.triggered => '已觸發',
-    IncidentLifecycle.acknowledged => '已確認',
-    IncidentLifecycle.resolved => '已解決',
-    IncidentLifecycle.ignored => '已忽略',
+    IncidentLifecycle.triggered => l10n.incidentTriggered,
+    IncidentLifecycle.acknowledged => l10n.incidentAcknowledged,
+    IncidentLifecycle.resolved => l10n.resolvedLabel,
+    IncidentLifecycle.ignored => l10n.incidentIgnored,
   };
 
   bool get canSet => this != IncidentLifecycle.ignored;

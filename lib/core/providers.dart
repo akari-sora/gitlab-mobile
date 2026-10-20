@@ -9,6 +9,7 @@ import '../features/security/app_lock.dart';
 import '../features/shell/app_shortcuts.dart';
 import '../features/shell/appearance.dart';
 import '../features/shell/incoming_links.dart';
+import '../features/shell/language.dart';
 import '../features/update/app_update.dart';
 import '../features/update/update_controller.dart';
 import 'anonymous_api.dart';
@@ -26,6 +27,15 @@ final appearanceProvider = Provider<AppearanceController>((ref) {
   final appearance = AppearanceController(SecureAppearanceStore());
   ref.onDispose(appearance.dispose);
   return appearance;
+});
+
+/// Device-wide like the appearance. `main` overrides it with a controller
+/// whose stored choice is already applied, so the first frame is in the
+/// right language.
+final languageProvider = Provider<LanguageController>((ref) {
+  final language = LanguageController(SecureLanguageStore());
+  ref.onDispose(language.dispose);
+  return language;
 });
 
 /// Device-wide and above the account-keyed tree, so switching accounts

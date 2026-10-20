@@ -10,6 +10,7 @@ import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_milestone_models.dart';
 import '../../shared/workspace_ui.dart';
 
+import '../../l10n/l10n.dart';
 enum WorkItemMilestoneWritePhase { start, settle }
 
 typedef WorkItemMilestoneWriteListener =
@@ -250,10 +251,10 @@ class _WorkItemMilestoneControlState extends State<WorkItemMilestoneControl> {
             : const Icon(Icons.edit_outlined, size: 18),
         label: Text(
           _writePending
-              ? '變更中…'
+              ? l10n.changingInProgress
               : _opening
-              ? '讀取里程碑權限…'
-              : '變更里程碑',
+              ? l10n.loadingMilestonePermission
+              : l10n.changeMilestone,
         ),
       ),
       if (_error != null)
@@ -268,8 +269,7 @@ class _WorkItemMilestoneControlState extends State<WorkItemMilestoneControl> {
 }
 
 String _milestoneResourceLabel(WorkItemGraphSummary summary) =>
-    '${summary.project?.fullPath ?? summary.namespace?.fullPath ?? '位置未知'}'
-    ' · 工作項目 #${summary.iid}';
+    l10n.milestoneWorkItemHeading(summary.project?.fullPath ?? summary.namespace?.fullPath ?? l10n.unknownLocation, summary.iid);
 
 /// A staged selection with an explicit save. Failed candidate reads do not
 /// prevent clearing the current assignment; writes require fresh preflight.
@@ -418,9 +418,9 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
       final failure = safeFailure(error);
       // This selection lives only on this page. Closing it does not save a draft.
       final detail = switch (failure.kind) {
-        FailureKind.validation => '里程碑設定未被接受。重新開啟後，請重新選擇里程碑。',
-        FailureKind.conflict => '工作項目已變更，請重新開啟確認最新的里程碑設定。',
-        FailureKind.writeUncertain => '連線在寫入時中斷。請重新開啟確認目前設定，避免重複送出。',
+        FailureKind.validation => l10n.milestoneSettingRejected,
+        FailureKind.conflict => l10n.milestoneWorkItemChanged,
+        FailureKind.writeUncertain => l10n.milestoneWriteInterrupted,
         _ => failure.detail,
       };
       setState(() {
@@ -488,7 +488,7 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
         .where((item) => item.milestone.id != currentId)
         .toList();
     return Scaffold(
-      appBar: AppBar(title: const Text('變更里程碑')),
+      appBar: AppBar(title: Text(l10n.changeMilestone)),
       body: CustomScrollView(
         slivers: [
           SliverToBoxAdapter(
@@ -504,14 +504,14 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
                 ),
                 if (target != null) ...[
                   _choice(
-                    title: current == null ? '目前未設定' : '目前：${current.title}',
+                    title: current == null ? l10n.currentlyNotSet : l10n.currentMilestoneTitle(current.title),
                     selection: target.currentSelection,
                     expired: snapshot.milestoneExpired,
                     key: const ValueKey('work-item-milestone-current'),
                   ),
                   if (current != null)
                     _choice(
-                      title: '移除里程碑',
+                      title: l10n.removeMilestone,
                       selection: target.clearSelection,
                       key: const ValueKey('work-item-milestone-clear'),
                     ),
@@ -520,9 +520,8 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
                       padding: const EdgeInsets.all(16),
                       child: Text(
                         selected == null
-                            ? '將移除目前里程碑'
-                            : '將更新為：${selected.title}\n'
-                                  '所屬：${selected.group?.fullPath ?? selected.project?.fullPath ?? '未知'}',
+                            ? l10n.milestoneWillBeRemoved
+                            : l10n.milestoneWillUpdate(selected.title, selected.group?.fullPath ?? selected.project?.fullPath ?? l10n.unknownLabel),
                         key: const ValueKey('work-item-milestone-pending'),
                       ),
                     ),
@@ -534,9 +533,9 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
                       textInputAction: TextInputAction.search,
                       onSubmitted: (_) => _readChoices(),
                       decoration: InputDecoration(
-                        labelText: '搜尋啟用中的里程碑',
+                        labelText: l10n.searchActiveMilestones,
                         suffixIcon: IconButton(
-                          tooltip: '搜尋里程碑',
+                          tooltip: l10n.searchMilestones,
                           onPressed: _editable ? () => _readChoices() : null,
                           icon: const Icon(Icons.search),
                         ),
@@ -554,13 +553,13 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
                       onRetry: _editable ? () => _readChoices() : null,
                     ),
                   if (!_loading && _choiceError == null && _items.isEmpty)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.all(16),
-                      child: Text('沒有符合搜尋的啟用中里程碑'),
+                      child: Text(l10n.noActiveMilestoneMatches),
                     ),
                 ] else ...[
                   ListTile(
-                    title: Text(current?.title ?? '未設定'),
+                    title: Text(current?.title ?? l10n.notSet),
                     subtitle: current == null
                         ? null
                         : _MilestoneDetails(
@@ -572,17 +571,17 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
                     padding: EdgeInsets.all(16),
                     child: Text(switch (snapshot.availability) {
                       WorkItemMilestoneAvailability.present =>
-                        '目前帳號沒有變更里程碑的權限。',
-                      WorkItemMilestoneAvailability.absent => '這個工作項目沒有里程碑欄位。',
+                        l10n.milestonePermissionDenied,
+                      WorkItemMilestoneAvailability.absent => l10n.milestoneFieldMissing,
                       WorkItemMilestoneAvailability.widgetsUnavailable =>
-                        '伺服器未提供這個工作項目的欄位資訊。',
+                        l10n.workItemFieldsMissing,
                     }),
                   ),
                 ],
                 if (_bindingInvalid || (_saveAttempted && !_writing))
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.all(16),
-                    child: Text('請關閉並重新開啟，讀取最新狀態後再變更。'),
+                    child: Text(l10n.reopenBeforeChange),
                   ),
                 if (_saveError != null)
                   FailureNotice(
@@ -615,12 +614,12 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
                     onPressed: _editable && !_loading
                         ? () => _readChoices(more: true)
                         : null,
-                    child: const Text('載入更多里程碑'),
+                    child: Text(l10n.loadMoreMilestones),
                   ),
                 if (_truncated)
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.all(16),
-                    child: Text('已讀取 200 個候選，請用名稱縮小搜尋。'),
+                    child: Text(l10n.milestoneCandidateLimit),
                   ),
                 const SizedBox(height: 24),
               ],
@@ -642,7 +641,7 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.check),
-            label: Text(_writing ? '儲存中…' : '儲存'),
+            label: Text(_writing ? l10n.savingNow : l10n.saveAction),
           ),
         ),
       ),
@@ -663,13 +662,13 @@ class _MilestoneDetails extends StatelessWidget {
 
 String _milestoneDetailsText(WorkItemMilestoneValue milestone, bool? expired) =>
     [
-      '所屬：${milestone.group?.fullPath ?? milestone.project?.fullPath ?? '未知'}',
-      if (milestone.state.toLowerCase() == 'closed') '已關閉',
-      if (expired == true) '已到期',
+      l10n.milestoneBelongsTo(milestone.group?.fullPath ?? milestone.project?.fullPath ?? l10n.unknownLabel),
+      if (milestone.state.toLowerCase() == 'closed') l10n.statusClosed,
+      if (expired == true) l10n.milestoneExpired,
       if (milestone.startDate != null)
-        '開始：${_milestoneCalendarDate(milestone.startDate!)}',
+        l10n.milestoneStartDate(_milestoneCalendarDate(milestone.startDate!)),
       if (milestone.dueDate != null)
-        '到期：${_milestoneCalendarDate(milestone.dueDate!)}',
+        l10n.milestoneDueDate(_milestoneCalendarDate(milestone.dueDate!)),
     ].join('\n');
 
 String _milestoneCalendarDate(DateTime value) =>

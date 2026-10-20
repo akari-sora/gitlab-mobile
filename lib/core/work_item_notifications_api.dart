@@ -149,10 +149,10 @@ extension WorkItemNotificationsApi on GitLabApi {
         throw const FormatException('Invalid subscription errors');
       }
       if (errors.isNotEmpty) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.validation,
-          title: 'GitLab 未接受通知設定',
-          detail: '請重新讀取工作項目，並確認目前帳號仍可變更通知設定。',
+          title: l10n.gitlabRejectedNotifications,
+          detail: l10n.reloadConfirmNotifications,
         );
       }
       final acknowledged = _parseNotificationWorkItem(
@@ -220,10 +220,10 @@ extension WorkItemNotificationsApi on GitLabApi {
       final actorId = _parseNotificationActor(data['currentUser']);
       if (expectedUserId != null) {
         if (actorId == null) {
-          throw const ApiFailure(
+          throw ApiFailure(
             FailureKind.unauthenticated,
-            title: '登入已失效',
-            detail: '請重新連接目前帳號，再讀取工作項目通知設定。',
+            title: l10n.signInNoLongerValid,
+            detail: l10n.reconnectThenReadNotifications,
           );
         }
         if (_notificationActorNumber(actorId) != expectedUserId) {
@@ -354,10 +354,10 @@ Json _notificationGraphData(Uint8List bytes, {required bool mutation}) {
               ),
         );
         if (unsupported) {
-          throw const ApiFailure(
+          throw ApiFailure(
             FailureKind.unsupported,
-            title: '實例未提供工作項目通知設定',
-            detail: '仍可查看工作項目；這個 GitLab 版本不支援安全的通知訂閱流程。',
+            title: l10n.instanceNoNotificationSettings,
+            detail: l10n.noSafeNotificationSubscribe,
           );
         }
         throw ApiFailure(

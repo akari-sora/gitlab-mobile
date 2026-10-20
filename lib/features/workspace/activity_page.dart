@@ -10,6 +10,7 @@ import '../../shared/workspace_ui.dart';
 import 'navigation.dart';
 import 'records_feed.dart';
 
+import '../../l10n/l10n.dart';
 /// Project names for activity rows that span projects, fetched once per
 /// project and client. Bound to the [GitLabApi] instance, so an account switch
 /// (which closes the client) never reuses another account's answers. A failed
@@ -25,26 +26,26 @@ Future<String> activityProjectName(GitLabApi api, int id) {
 }
 
 String _targetLabel(String type) => switch (type) {
-  'Issue' => '議題',
-  'MergeRequest' => '合併請求',
-  'Milestone' => '里程碑',
-  'WikiPage::Meta' || 'WikiPage' => 'Wiki 頁面',
-  'Project' => '專案',
-  'Snippet' || 'ProjectSnippet' => '程式碼片段',
-  'DesignManagement::Design' => '設計',
+  'Issue' => l10n.issueTypeName,
+  'MergeRequest' => l10n.mergeRequestLabel,
+  'Milestone' => l10n.milestoneLabel,
+  'WikiPage::Meta' || 'WikiPage' => l10n.wikiPageLabel,
+  'Project' => l10n.projectLabel,
+  'Snippet' || 'ProjectSnippet' => l10n.snippetLabel,
+  'DesignManagement::Design' => l10n.designLabel,
   _ => '',
 };
 
 String _activitySheetLabel(String type) => switch (type) {
-  'Issue' => '議題',
-  'MergeRequest' => '合併請求',
-  'Commit' => '提交',
-  'Milestone' => '里程碑',
-  'WikiPage::Meta' || 'WikiPage' => 'Wiki 頁面',
-  'Project' => '專案',
-  'Snippet' || 'ProjectSnippet' => '程式碼片段',
-  'DesignManagement::Design' => '設計',
-  _ => '其他 GitLab 動態',
+  'Issue' => l10n.issueTypeName,
+  'MergeRequest' => l10n.mergeRequestLabel,
+  'Commit' => l10n.commitLabel,
+  'Milestone' => l10n.milestoneLabel,
+  'WikiPage::Meta' || 'WikiPage' => l10n.wikiPageLabel,
+  'Project' => l10n.projectLabel,
+  'Snippet' || 'ProjectSnippet' => l10n.snippetLabel,
+  'DesignManagement::Design' => l10n.designLabel,
+  _ => l10n.otherGitlabActivity,
 };
 
 /// Accepts only an HTTPS link on this account's instance (host, port and
@@ -128,7 +129,7 @@ final class _ActivityTarget {
       if (projectId > 0 && action != 'removed' && isFullSha) {
         return _ActivityTarget._(
           _ActivityRoute.commit,
-          '提交',
+          l10n.commitLabel,
           projectId: projectId,
           sha: commitTo.toLowerCase(),
           nativeType: true,
@@ -136,7 +137,7 @@ final class _ActivityTarget {
       }
       return _ActivityTarget._(
         _ActivityRoute.explain,
-        '提交',
+        l10n.commitLabel,
         projectId: projectId,
         web: web,
         nativeType: true,
@@ -271,8 +272,8 @@ class _ActivityTargetSheet extends StatelessWidget {
     final muted = theme.colorScheme.onSurfaceVariant;
     final web = target.web;
     final reason = target.nativeType
-        ? '這則${target.typeLabel}動態缺少可辨識目標的資料，無法在 App 內開啟。'
-        : '「${target.typeLabel}」類型的動態目前沒有 App 內頁面。';
+        ? l10n.activityMissingTargetData(target.typeLabel)
+        : l10n.activityTypeNoInAppPage(target.typeLabel);
 
     return SafeArea(
       child: SingleChildScrollView(
@@ -282,7 +283,7 @@ class _ActivityTargetSheet extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              web == null ? '無法開啟此動態' : '無法在 App 內開啟',
+              web == null ? l10n.cannotOpenThisActivity : l10n.cannotOpenInApp,
               style: theme.textTheme.titleMedium,
             ),
             const SizedBox(height: 12),
@@ -295,8 +296,8 @@ class _ActivityTargetSheet extends StatelessWidget {
             Text(reason),
             const SizedBox(height: 4),
             Text(web == null
-                ? '此動態沒有屬於目前 GitLab 實例的有效連結，無法開啟。'
-                : '可改在 GitLab 網頁版查看：'),
+                ? l10n.activityLinkNotOnInstance
+                : l10n.viewOnGitlabWebsiteInstead),
             if (web != null) ...[
               const SizedBox(height: 4),
               Text(
@@ -316,7 +317,7 @@ class _ActivityTargetSheet extends StatelessWidget {
                   style:
                       TextButton.styleFrom(minimumSize: const Size(48, 48)),
                   onPressed: () => _closeExactRoute(context),
-                  child: const Text('關閉'),
+                  child: Text(l10n.closeAction),
                 ),
                 if (target.projectId > 0)
                   OutlinedButton.icon(
@@ -331,7 +332,7 @@ class _ActivityTargetSheet extends StatelessWidget {
                           .project(pageContext, '${target.projectId}');
                     },
                     icon: const Icon(Icons.folder_outlined),
-                    label: const Text('查看專案'),
+                    label: Text(l10n.viewProject),
                   ),
                 if (web != null)
                   FilledButton.icon(
@@ -345,7 +346,7 @@ class _ActivityTargetSheet extends StatelessWidget {
                       await openExternal(pageContext, web);
                     },
                     icon: const Icon(Icons.open_in_new),
-                    label: const Text('在 GitLab 開啟'),
+                    label: Text(l10n.openInGitlab),
                   ),
               ],
             ),
@@ -362,13 +363,13 @@ String activitySentence(Json event) {
   final push = valueObject(event, 'push_data');
   final note = valueObject(event, 'note');
   if (push.isNotEmpty) {
-    final refKind = valueText(push, 'ref_type') == 'tag' ? '標籤' : '分支';
+    final refKind = valueText(push, 'ref_type') == 'tag' ? l10n.gitTagInSentence : l10n.branchInSentence;
     final ref = valueText(push, 'ref');
     final count = valueInt(push, 'commit_count');
     return switch (valueText(push, 'action')) {
-      'removed' => '刪除了$refKind $ref',
-      'created' => '建立了$refKind $ref${count > 0 ? '（$count 個提交）' : ''}',
-      _ => '推送到$refKind $ref${count > 1 ? '（$count 個提交）' : ''}',
+      'removed' => l10n.deletedRefKind(refKind, ref),
+      'created' => l10n.createdRefKind(refKind, ref, count > 0 ? l10n.commitCountSuffix(count) : ''),
+      _ => l10n.pushedToRefKind(refKind, ref, count > 1 ? l10n.commitCountSuffix(count) : ''),
     };
   }
   final targetType = note.isNotEmpty ? valueText(note, 'noteable_type') : valueText(event, 'target_type');
@@ -376,20 +377,20 @@ String activitySentence(Json event) {
   final iid = note.isNotEmpty ? valueInt(note, 'noteable_iid') : valueInt(event, 'target_iid');
   final reference = iid > 0 ? ' ${targetType == 'MergeRequest' ? '!' : '#'}$iid' : '';
   final verb = switch (action) {
-    'opened' => '開啟了',
-    'closed' => '關閉了',
-    'reopened' => '重新開啟了',
-    'accepted' => '合併了',
-    'merged' => '合併了',
-    'commented on' => '留言於',
-    'created' => '建立了',
-    'updated' => '更新了',
-    'approved' => '批准了',
-    'destroyed' || 'deleted' => '刪除了',
-    'joined' => '加入了專案',
-    'left' => '離開了專案',
-    'imported' => '匯入了專案',
-    'expired' => '成員資格到期',
+    'opened' => l10n.activityOpened,
+    'closed' => l10n.activityClosed,
+    'reopened' => l10n.activityReopened,
+    'accepted' => l10n.activityMerged,
+    'merged' => l10n.activityMerged,
+    'commented on' => l10n.activityCommentedOn,
+    'created' => l10n.activityCreated,
+    'updated' => l10n.activityUpdated,
+    'approved' => l10n.activityApproved,
+    'destroyed' || 'deleted' => l10n.activityDeleted,
+    'joined' => l10n.activityJoinedProject,
+    'left' => l10n.activityLeftProject,
+    'imported' => l10n.activityImportedProject,
+    'expired' => l10n.membershipExpired,
     _ => action,
   };
   if (action == 'joined' || action == 'left' || action == 'imported' || action == 'expired') return verb;
@@ -505,7 +506,7 @@ class ActivityPage extends StatelessWidget {
   final String? title;
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(title ?? (project == null ? '我的動態' : '專案動態'))),
+    appBar: AppBar(title: Text(title ?? (project == null ? l10n.myActivity : l10n.projectActivity))),
     body: gestureSafe(ActivityFeed(account: account, api: api, project: project)),
   );
 }
@@ -520,9 +521,9 @@ class ActivityFeed extends StatelessWidget {
   Widget build(BuildContext context) => RecordsFeed(
     identity: 'events/${project?.id ?? 'me'}',
     account: account,
-    resourceLabel: project == null ? '我的動態' : '${project!.path} · 動態',
+    resourceLabel: project == null ? l10n.myActivity : l10n.pathWithActivity(project!.path),
     onSwitchAccount: endSessionFrom(context),
-    empty: '還沒有動態',
+    empty: l10n.noActivityYet,
     emptyIcon: Icons.timeline,
     grouped: true,
     underShell: underShell,

@@ -11,6 +11,7 @@ import '../../core/gitlab_api.dart';
 import '../shell/build_info.dart';
 import 'app_update.dart';
 
+import '../../l10n/l10n.dart';
 /// What the installer did with a downloaded APK.
 enum InstallStart { started, needsPermission, invalid, unavailable }
 
@@ -259,8 +260,8 @@ class AppUpdateController extends ChangeNotifier {
         needsPermission = result == InstallStart.needsPermission;
         stage = UpdateStage.downloaded;
         if (result == InstallStart.invalid || result == InstallStart.unavailable) {
-          failure = const ApiFailure(FailureKind.unsupported, title: '無法開啟安裝程式',
-            detail: '這台裝置沒有可以安裝 APK 的程式，或更新檔已被清除。請重新下載。');
+          failure = ApiFailure(FailureKind.unsupported, title: l10n.cannotOpenInstaller,
+            detail: l10n.noApkInstallerOrCleared);
           stage = UpdateStage.failed;
         }
       });

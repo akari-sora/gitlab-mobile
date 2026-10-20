@@ -2,32 +2,32 @@ part of 'gitlab_api.dart';
 
 ApiFailure get _healthReadForbidden => ApiFailure(
   FailureKind.forbidden,
-  title: '無法讀取工作項目健康狀態',
-  detail: '目前帳號沒有讀取這個工作項目的權限。',
+  title: l10n.cannotReadWorkItemHealth,
+  detail: l10n.noPermissionReadWorkItem,
 );
 
 ApiFailure get _healthWriteForbidden => ApiFailure(
   FailureKind.forbidden,
-  title: '無法變更健康狀態',
-  detail: '目前帳號沒有管理這個工作項目健康狀態的權限。',
+  title: l10n.cannotChangeHealthStatus,
+  detail: l10n.noPermissionManageHealth,
 );
 
 ApiFailure get _healthUnsupported => ApiFailure(
   FailureKind.unsupported,
-  title: '實例未提供工作項目健康狀態編輯',
-  detail: '仍可查看工作項目；這個項目沒有可安全更新的健康狀態元件。',
+  title: l10n.instanceNoHealthStatusEdit,
+  detail: l10n.noSafeHealthStatusWidget,
 );
 
 ApiFailure get _healthConflict => ApiFailure(
   FailureKind.conflict,
-  title: '健康狀態已經變更',
-  detail: '請重新讀取最新版本後再設定。',
+  title: l10n.healthStatusHasChanged,
+  detail: l10n.reloadLatestBeforeSetting,
 );
 
 ApiFailure get _healthUncertain => ApiFailure(
   FailureKind.writeUncertain,
-  title: '尚未確認健康狀態是否已更新',
-  detail: '請重新讀取工作項目，不要重複送出同一次變更。',
+  title: l10n.healthUpdateUnconfirmed,
+  detail: l10n.reloadItemDoNotResubmit,
 );
 
 const _healthInvalid = ApiFailure(FailureKind.invalidResponse);
@@ -314,11 +314,11 @@ extension WorkItemHealthEditApi on GitLabApi {
     } on WorkItemHealthEditFailure {
       rethrow;
     } on _HealthPayloadValidation {
-      throw const WorkItemHealthEditFailure(
+      throw WorkItemHealthEditFailure(
         ApiFailure(
           FailureKind.validation,
-          title: 'GitLab 未接受健康狀態更新',
-          detail: '請重新讀取工作項目，並確認健康狀態與權限仍然有效。',
+          title: l10n.gitlabRejectedHealthUpdate,
+          detail: l10n.reloadConfirmHealthStatus,
         ),
         true,
       );
@@ -354,10 +354,10 @@ extension WorkItemHealthEditApi on GitLabApi {
       }
       final actorId = _parseNotificationActor(data['currentUser']);
       if (actorId == null) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.unauthenticated,
-          title: '登入已失效',
-          detail: '請重新連接目前帳號，再讀取工作項目健康狀態。',
+          title: l10n.signInNoLongerValid,
+          detail: l10n.reconnectThenReadHealth,
         );
       }
       if (_notificationActorNumber(actorId) != expectedUserId) {

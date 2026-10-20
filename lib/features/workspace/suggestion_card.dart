@@ -4,6 +4,7 @@ import '../../core/suggestion.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 
+import '../../l10n/l10n.dart';
 /// Renders a GitLab code suggestion with diff styling and one-tap apply button.
 class SuggestedChangeCard extends StatefulWidget {
   const SuggestedChangeCard({
@@ -56,7 +57,7 @@ class _SuggestedChangeCardState extends State<SuggestedChangeCard> {
           _current = _current.copyWith(applied: true);
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('建議修改已成功套用')),
+          SnackBar(content: Text(l10n.suggestionApplied)),
         );
         widget.onApplied?.call();
       }
@@ -111,7 +112,7 @@ class _SuggestedChangeCardState extends State<SuggestedChangeCard> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    '建議修改 (Suggested Change)',
+                    l10n.suggestedChange,
                     style: theme.textTheme.labelMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: theme.colorScheme.onSurfaceVariant,
@@ -131,7 +132,7 @@ class _SuggestedChangeCardState extends State<SuggestedChangeCard> {
                         const Icon(Icons.check_circle, size: 12, color: Colors.green),
                         const SizedBox(width: 4),
                         Text(
-                          '已套用',
+                          l10n.applied,
                           style: theme.textTheme.labelSmall?.copyWith(
                             color: Colors.green.shade700,
                             fontWeight: FontWeight.w600,
@@ -142,7 +143,7 @@ class _SuggestedChangeCardState extends State<SuggestedChangeCard> {
                   )
                 else if (!_current.appliable)
                   Text(
-                    '無法自動套用',
+                    l10n.cannotAutoApply,
                     style: theme.textTheme.labelSmall?.copyWith(
                       color: theme.colorScheme.onSurfaceVariant,
                     ),
@@ -165,7 +166,7 @@ class _SuggestedChangeCardState extends State<SuggestedChangeCard> {
                           : const Color(0xFFFFEBEE),
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: Column(
+                    child: Directionality(textDirection: TextDirection.ltr, child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         for (final line in fromLines)
@@ -179,7 +180,7 @@ class _SuggestedChangeCardState extends State<SuggestedChangeCard> {
                             ),
                           ),
                       ],
-                    ),
+                    )),
                   ),
                 if (toLines.isNotEmpty)
                   Container(
@@ -190,7 +191,7 @@ class _SuggestedChangeCardState extends State<SuggestedChangeCard> {
                           : const Color(0xFFE8F5E9),
                       borderRadius: BorderRadius.circular(4),
                     ),
-                    child: Column(
+                    child: Directionality(textDirection: TextDirection.ltr, child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         for (final line in toLines)
@@ -204,13 +205,13 @@ class _SuggestedChangeCardState extends State<SuggestedChangeCard> {
                             ),
                           ),
                       ],
-                    ),
+                    )),
                   ),
                 if (fromLines.isEmpty && toLines.isEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 4),
                     child: Text(
-                      '（無變更內容）',
+                      l10n.noChangeContent,
                       style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
                     ),
                   ),
@@ -235,7 +236,7 @@ class _SuggestedChangeCardState extends State<SuggestedChangeCard> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.check, size: 16),
-                  label: const Text('套用建議'),
+                  label: Text(l10n.applySuggestion),
                 ),
               ),
             ),
@@ -264,17 +265,17 @@ class _ApplySuggestionDialogState extends State<_ApplySuggestionDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('套用建議修改'),
+      title: Text(l10n.applySuggestedChange),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('這將在當前分支產生一個新提交以套用此修改。'),
+          Text(l10n.suggestionCreatesCommit),
           const SizedBox(height: 16),
           TextField(
             controller: _controller,
-            decoration: const InputDecoration(
-              labelText: '提交訊息 (Commit message)',
+            decoration: InputDecoration(
+              labelText: l10n.suggestionCommitMessage,
               border: OutlineInputBorder(),
             ),
             maxLines: 2,
@@ -287,14 +288,14 @@ class _ApplySuggestionDialogState extends State<_ApplySuggestionDialog> {
             minimumSize: const Size(48, 48),
           ),
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(l10n.cancelAction),
         ),
         FilledButton(
           style: FilledButton.styleFrom(
             minimumSize: const Size(48, 48),
           ),
           onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
-          child: const Text('確認套用'),
+          child: Text(l10n.confirmApply),
         ),
       ],
     );

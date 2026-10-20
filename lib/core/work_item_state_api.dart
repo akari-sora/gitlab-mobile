@@ -85,10 +85,10 @@ extension WorkItemStateApi on GitLabApi {
       throw const ApiFailure(FailureKind.conflict);
     }
     if (!before.canUpdate) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.forbidden,
-        title: '無法變更工作項目狀態',
-        detail: '目前帳號沒有更新這個工作項目的權限。',
+        title: l10n.cannotChangeWorkItemState,
+        detail: l10n.noPermissionUpdateWorkItem,
       );
     }
     if (before.state == event.result) return before;
@@ -124,10 +124,10 @@ extension WorkItemStateApi on GitLabApi {
         throw const FormatException('Invalid work item mutation errors');
       }
       if (errors.isNotEmpty) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.validation,
-          title: 'GitLab 未接受狀態變更',
-          detail: '請重新讀取工作項目，並確認目前帳號仍有更新權限。',
+          title: l10n.gitlabRejectedStateChange,
+          detail: l10n.reloadConfirmCanUpdate,
         );
       }
       if (payload['workItem'] == null) {
@@ -181,10 +181,10 @@ Json _workItemStateGraphData(Uint8List bytes, {required bool mutation}) {
               ),
         );
         if (unsupported) {
-          throw const ApiFailure(
+          throw ApiFailure(
             FailureKind.unsupported,
-            title: '實例未提供工作項目狀態操作',
-            detail: '仍可查看工作項目；這個 GitLab 版本不支援安全的關閉／重開流程。',
+            title: l10n.instanceNoWorkItemStateActions,
+            detail: l10n.noSafeCloseReopenFlow,
           );
         }
         throw ApiFailure(

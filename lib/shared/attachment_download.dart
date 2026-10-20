@@ -10,6 +10,7 @@ import 'artifact_storage.dart';
 import 'external_link.dart';
 import 'workspace_ui.dart';
 
+import '../l10n/l10n.dart';
 abstract interface class AttachmentDownloader {
   Future<File> downloadUpload({
     required int projectId,
@@ -265,30 +266,30 @@ class _AttachmentDownloadSheetState extends State<AttachmentDownloadSheet> {
                 _error!,
                 onRetry: () => unawaited(_retry()),
                 account: widget.account,
-                resourceLabel: '${widget.projectPath ?? '專案'} · ${widget.filename} 附件',
+                resourceLabel: l10n.attachmentFileHeading(widget.projectPath ?? l10n.projectLabel, widget.filename),
                 onSwitchAccount: endSessionFrom(context),
               ),
               if (widget.webUri != null) ...[
                 const SizedBox(height: 8),
                 TextButton(
                   onPressed: () => unawaited(openExternal(context, widget.webUri!)),
-                  child: const Text('在 GitLab 開啟'),
+                  child: Text(l10n.openInGitlab),
                 ),
               ],
             ],
             if (_done) ...[
-              Text('已下載 ${_savedName ?? widget.filename} · ${formatByteCount(_savedBytes)}'),
+              Text(l10n.artifactDownloadedSummary(_savedName ?? widget.filename, formatByteCount(_savedBytes))),
               const SizedBox(height: 12),
               Builder(
                 builder: (buttonContext) => FilledButton(
                   onPressed: _sharing ? null : () => unawaited(_share(buttonContext)),
-                  child: const Text('開啟／分享'),
+                  child: Text(l10n.openOrShare),
                 ),
               ),
               if (widget.webUri != null)
                 TextButton(
                   onPressed: () => unawaited(openExternal(context, widget.webUri!)),
-                  child: const Text('在 GitLab 開啟'),
+                  child: Text(l10n.openInGitlab),
                 ),
             ],
             if (_error == null && !_done) ...[
@@ -307,8 +308,8 @@ class _AttachmentDownloadSheetState extends State<AttachmentDownloadSheet> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       Semantics(
-                        label: '附件下載進度',
-                        value: progress != null ? '${(progress * 100).toInt()}%' : '下載中',
+                        label: l10n.attachmentDownloadProgress,
+                        value: progress != null ? '${(progress * 100).toInt()}%' : l10n.downloading,
                         child: LinearProgressIndicator(
                           key: const Key('attachment-progress'),
                           minHeight: 4,
@@ -323,7 +324,7 @@ class _AttachmentDownloadSheetState extends State<AttachmentDownloadSheet> {
               ),
               Align(
                 alignment: Alignment.centerRight,
-                child: TextButton(onPressed: _cancel, child: const Text('取消')),
+                child: TextButton(onPressed: _cancel, child: Text(l10n.cancelAction)),
               ),
             ],
           ],

@@ -46,8 +46,8 @@ Json _incidentGraphData(Uint8List bytes) {
         );
         throw ApiFailure(
           unsupported ? FailureKind.unsupported : FailureKind.invalidResponse,
-          title: unsupported ? '實例未提供事件處理狀態' : null,
-          detail: unsupported ? '仍可查看與編輯事件內容、嚴重程度及議題狀態。' : null,
+          title: unsupported ? l10n.instanceNoIncidentStatus : null,
+          detail: unsupported ? l10n.stillEditIncidentContent : null,
         );
       }
     }
@@ -74,10 +74,10 @@ Json _validatedIncidentStatus(Object? raw, Project project, int iid) {
       throw const ApiFailure(FailureKind.invalidResponse);
     }
     if (issue['escalationStatus'] == null) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.unsupported,
-        title: '無法讀取事件處理狀態',
-        detail: '仍可查看與編輯事件內容、嚴重程度及議題狀態。',
+        title: l10n.cannotReadIncidentStatus,
+        detail: l10n.stillEditIncidentContent,
       );
     }
     if (!_incidentStatuses.contains(issue['escalationStatus'])) {
@@ -189,10 +189,10 @@ extension IncidentApi on GitLabApi {
         throw const ApiFailure(FailureKind.invalidResponse);
       }
       if (errors.isNotEmpty) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.validation,
-          title: 'GitLab 未接受事件狀態變更',
-          detail: '請確認帳號角色與事件的最新狀態後再試。',
+          title: l10n.gitlabRejectedIncidentStatus,
+          detail: l10n.checkRoleThenIncidentStatus,
         );
       }
       final changed = _validatedIncidentStatus(payload['issue'], project, iid);

@@ -31,9 +31,11 @@ import 'appearance.dart';
 import 'build_info.dart';
 import 'incoming_links.dart';
 import '../security/app_lock.dart';
+import 'language.dart';
 import '../update/update_controller.dart';
 import '../update/update_section.dart';
 import '../../core/brand.dart';
+import '../../l10n/l10n.dart';
 
 class AuthenticatedApp extends StatefulWidget {
   const AuthenticatedApp({
@@ -47,9 +49,13 @@ class AuthenticatedApp extends StatefulWidget {
     this.updates,
     this.incoming,
     this.lock,
+    this.language,
   });
   final SessionController session;
   final AppearanceController appearance;
+
+  /// The app's language; null where the build does not switch it (tests).
+  final LanguageController? language;
 
   /// The opt-in app lock; null where the build has none (tests).
   final AppLockController? lock;
@@ -86,8 +92,15 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
 
   @override
   void dispose() {
+    widget.language?.removeListener(_languageChanged);
     _pops.dispose();
     super.dispose();
+  }
+
+  // Text is read from l10n during build, so a new language rebuilds the whole
+  // tree in place; routes, scroll positions and drafts are kept.
+  void _languageChanged() {
+    if (mounted) rebuildForLanguage(context);
   }
 
   /// Links tapped anywhere in this tree open for the account this tree was
@@ -117,12 +130,17 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
     if (oldWidget.session != widget.session) {
       _links = _bindLinks(widget.session);
     }
+    if (oldWidget.language != widget.language) {
+      oldWidget.language?.removeListener(_languageChanged);
+      widget.language?.addListener(_languageChanged);
+    }
   }
 
   @override
   void initState() {
     super.initState();
     _links = _bindLinks(widget.session);
+    widget.language?.addListener(_languageChanged);
     if (widget.dynamicLight != null || widget.dynamicDark != null) {
       _dynamicProbeSettled = true;
       _probedScheme = true;
@@ -185,8 +203,8 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
             dynamicScheme: enabled ? resolvedDark : null,
           ),
           themeMode: widget.appearance.mode,
-          locale: const Locale('zh', 'TW'),
-          supportedLocales: const [Locale('zh', 'TW'), Locale('en')],
+          locale: widget.language?.locale ?? localeOf(sourceLanguage),
+          supportedLocales: appLocales,
           localizationsDelegates: GlobalMaterialLocalizations.delegates,
           navigatorObservers: [_pops],
           home: _MobileShell(
@@ -203,6 +221,7 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
             updates: widget.updates,
             incoming: widget.incoming,
             lock: widget.lock,
+            language: widget.language,
           ),
         );
       },
@@ -224,12 +243,14 @@ class _MobileShell extends StatefulWidget {
     this.updates,
     this.incoming,
     this.lock,
+    this.language,
   });
   final SessionController session;
   final LauncherShortcuts shortcuts;
   final AppUpdateController? updates;
   final IncomingLinks? incoming;
   final AppLockController? lock;
+  final LanguageController? language;
   final Listenable pops;
   final ThemeMode theme;
   final ValueChanged<ThemeMode> changeTheme;
@@ -320,8 +341,8 @@ class _MobileShellState extends State<_MobileShell> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('有新版本可以更新'),
-          action: SnackBarAction(label: '查看', onPressed: () => _goTo(_me)),
+          content: Text(l10n.newVersionAvailable),
+          action: SnackBarAction(label: l10n.viewAction, onPressed: () => _goTo(_me)),
         ));
       });
     }
@@ -396,16 +417,46 @@ class _MobileShellState extends State<_MobileShell> {
     }
   }
 
+  Future<void> _pickLanguage(LanguageController language) async {
+    final picked = await showModalBottomSheet<(String?,)>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (context) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.75),
+          child: ListView(shrinkWrap: true, children: [
+            ListTile(
+              key: const ValueKey('language-system'),
+              title: Text(l10n.systemDefault),
+              trailing: language.choice == null ? const Icon(Icons.check) : null,
+              onTap: () => Navigator.pop(context, (null,)),
+            ),
+            for (final option in appLanguages)
+              ListTile(
+                key: ValueKey('language-${option.tag}'),
+                title: Text(option.name, locale: localeOf(option)),
+                trailing: language.choice == option.tag ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.pop(context, (option.tag,)),
+              ),
+          ]),
+        ),
+      ),
+    );
+    if (picked == null) return;
+    await language.select(picked.$1);
+  }
+
   Future<void> _setLock(AppLockController lock, bool value) async {
     if (await lock.setEnabled(value) || !mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(value ? '沒有通過驗證，App 鎖定維持關閉' : '無法關閉 App 鎖定，請再試一次'),
+      content: Text(value ? l10n.appLockStaysOffUnverified : l10n.cannotTurnOffAppLock),
     ));
   }
 
   Future<void> _openLinkSettings(IncomingLinks incoming) async {
     if (await incoming.openSettings() || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('無法開啟系統設定')));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.cannotOpenSystemSettings)));
   }
 
   void _onIncoming() {
@@ -422,8 +473,8 @@ class _MobileShellState extends State<_MobileShell> {
     if (link == null) return;
     if (!await _bringShellForward() || !mounted) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('請先完成或關閉目前的編輯，再開啟分享的連結'),
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(l10n.finishEditBeforeSharedLink),
         ));
       }
       return;
@@ -669,8 +720,8 @@ class _MobileShellState extends State<_MobileShell> {
     if (_removing ||
         !await confirmAction(
           context,
-          '移除此帳號？',
-          '會清除這個帳號在此裝置的登入與草稿，不會撤銷 GitLab 上的 Token。',
+          l10n.removeThisAccountQuestion,
+          l10n.removeAccountKeepsRemoteToken,
         )) {
       return;
     }
@@ -736,10 +787,10 @@ class _MobileShellState extends State<_MobileShell> {
   }
 
   static List<(IconData, IconData, String)> get _destinations => [
-    (Icons.home_outlined, Icons.home, '首頁'),
-    (Icons.inbox_outlined, Icons.inbox, '收件匣'),
-    (Icons.explore_outlined, Icons.explore, '探索'),
-    (Icons.person_outline, Icons.person, '我的'),
+    (Icons.home_outlined, Icons.home, l10n.homeTab),
+    (Icons.inbox_outlined, Icons.inbox, l10n.inboxTab),
+    (Icons.explore_outlined, Icons.explore, l10n.exploreTab),
+    (Icons.person_outline, Icons.person, l10n.meTab),
   ];
 
   /// A dot on 我的 while an update waits there.
@@ -792,7 +843,7 @@ class _MobileShellState extends State<_MobileShell> {
     void push(Widget Function() page) =>
         Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page()));
     return Scaffold(
-      appBar: AppBar(title: const LargeTitle('我的')),
+      appBar: AppBar(title: LargeTitle(l10n.meTab)),
       body: gestureSafe(ScrollToTopOnSignal(
         controller: _meScroll,
         child: ListView(
@@ -844,26 +895,26 @@ class _MobileShellState extends State<_MobileShell> {
               children: [
                 HubRow(
                   leading: const IconTile(Icons.timeline, color: HubColors.slate),
-                  title: '我的動態',
+                  title: l10n.myActivity,
                   chevron: true,
                   onTap: () => push(() => ActivityPage(account: account, api: session.api!)),
                 ),
                 HubRow(
                   leading: const IconTile(Icons.workspaces_outline, color: HubColors.orange),
-                  title: '我的群組',
+                  title: l10n.myGroups,
                   chevron: true,
                   onTap: () => push(() => GroupsPage(account: account, api: session.api!)),
                 ),
                 HubRow(
                   leading: const IconTile(Icons.manage_search, color: HubColors.blue),
-                  title: '全域搜尋',
+                  title: l10n.globalSearch,
                   chevron: true,
                   onTap: () => push(() => SearchPage(account: account, api: session.api!)),
                 ),
               ],
             ),
             HubSection(
-              title: '帳號',
+              title: l10n.accountLabel,
               children: [
                 for (final (index, saved) in session.accounts.indexed) ...[
                   if (index > 0) const Divider(height: 1, indent: 64),
@@ -875,7 +926,7 @@ class _MobileShellState extends State<_MobileShell> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    subtitle: Text(saved.key == account.key ? '${saved.instance.base.host} · 使用中' : saved.instance.base.host),
+                    subtitle: Text(saved.key == account.key ? l10n.hostInUse(saved.instance.base.host) : saved.instance.base.host),
                     onTap:
                         session.busy ||
                                 _removing ||
@@ -883,7 +934,7 @@ class _MobileShellState extends State<_MobileShell> {
                             ? null
                             : () => session.select(saved),
                     trailing: IconButton(
-                      tooltip: '從此裝置移除帳號',
+                      tooltip: l10n.removeAccountFromDevice,
                       icon: const Icon(Icons.logout, size: 20),
                       onPressed: session.busy || _removing
                           ? null
@@ -898,13 +949,13 @@ class _MobileShellState extends State<_MobileShell> {
                       unawaited(session.endSession());
                     },
                     icon: const Icon(Icons.person_add_outlined),
-                    label: const Text('新增或重新連接帳號'),
+                    label: Text(l10n.addOrReconnectAccount),
                   )),
                 ),
               ],
             ),
             HubSection(
-              title: '外觀',
+              title: l10n.appearanceLabel,
               children: [
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
@@ -912,33 +963,45 @@ class _MobileShellState extends State<_MobileShell> {
                 ),
                 SwitchListTile(
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                  title: const Text('使用系統配色（Material You）'),
+                  title: Text(l10n.useSystemColorsMaterialYou),
                   subtitle: Text(
                     widget.dynamicColorAvailable
-                        ? 'Android 12 以上會依桌布色調產生配色'
-                        : '此裝置沒有動態配色',
+                        ? l10n.android12WallpaperColors
+                        : l10n.deviceNoDynamicColor,
                   ),
                   value: widget.dynamicColorAvailable && widget.useDynamicColor,
                   onChanged: widget.dynamicColorAvailable
                       ? widget.changeDynamicColor
                       : null,
                 ),
+                if (widget.language case final language?)
+                  ListTile(
+                    key: const ValueKey('language-row'),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                    leading: const Icon(Icons.translate),
+                    title: Text(l10n.appLanguage),
+                    subtitle: Text(language.choice == null
+                        ? l10n.languageFollowsSystem(language.language.name)
+                        : language.language.name),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => unawaited(_pickLanguage(language)),
+                  ),
               ],
             ),
             if (widget.lock case final lock?)
               ListenableBuilder(
                 listenable: lock,
                 builder: (context, _) => HubSection(
-                  title: '安全性',
+                  title: l10n.securityLabel,
                   children: [
                     SwitchListTile(
                       key: const ValueKey('app-lock-switch'),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                       secondary: const Icon(Icons.lock_outline),
-                      title: const Text('App 鎖定'),
+                      title: Text(l10n.appLockLabel),
                       subtitle: Text(lock.available || lock.enabled
-                          ? '開啟 App 或離開超過 1 分鐘後，需用指紋、臉部或螢幕鎖解鎖'
-                          : '此裝置沒有設定螢幕鎖'),
+                          ? l10n.appLockAfterOpenOrLeave
+                          : l10n.deviceNoScreenLock),
                       value: lock.enabled,
                       onChanged: lock.authenticating || !(lock.available || lock.enabled)
                           ? null
@@ -949,12 +1012,12 @@ class _MobileShellState extends State<_MobileShell> {
               ),
             if (widget.incoming case final incoming? when incoming.canOpenSettings)
               HubSection(
-                title: '連結',
+                title: l10n.linksLabel,
                 children: [
                   HubRow(
                     leading: const IconTile(Icons.link, color: HubColors.blue),
-                    title: '用 App 開啟 GitLab.com 連結',
-                    subtitle: '在系統設定中允許開啟 gitlab.com 的連結',
+                    title: l10n.openGitlabComLinksInApp,
+                    subtitle: l10n.allowGitlabComLinksSetting,
                     chevron: true,
                     onTap: () => unawaited(_openLinkSettings(incoming)),
                   ),
@@ -977,8 +1040,8 @@ class _MobileShellState extends State<_MobileShell> {
                   style: TextStyle(fontSize: 12),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  '新增與修改需要 Token 的 api 權限；read_api 可用於唯讀。專案角色與實例政策仍會限制操作。',
+                Text(
+                  l10n.tokenScopeLimitsHint,
                   style: TextStyle(fontSize: 12),
                 ),
               ]),
@@ -1029,10 +1092,11 @@ class _MobileShellState extends State<_MobileShell> {
                     children: [
                       if (useRail) ...[
                         SafeArea(
-                          left: true,
+                          // The rail sits on the leading edge: the right in RTL.
+                          left: Directionality.of(context) == TextDirection.ltr,
                           top: true,
                           bottom: true,
-                          right: false,
+                          right: Directionality.of(context) == TextDirection.rtl,
                           child: NavigationRail(
                             minWidth: AdaptiveBreakpoints.navigationRailWidth,
                             selectedIndex: _selected,

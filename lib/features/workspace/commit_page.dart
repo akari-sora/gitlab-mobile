@@ -11,6 +11,7 @@ import '../../shared/resource_share.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 
+import '../../l10n/l10n.dart';
 /// Displays the details and unified diff of a specific Git commit.
 class CommitDetailPage extends StatefulWidget {
   const CommitDetailPage({
@@ -162,7 +163,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
     await Clipboard.setData(ClipboardData(text: sha));
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('已複製 Commit SHA')),
+        SnackBar(content: Text(l10n.commitShaCopied)),
       );
     }
   }
@@ -192,7 +193,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          '提交 ${shortSha(widget.sha)}',
+          l10n.commitShortSha(shortSha(widget.sha)),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
@@ -220,7 +221,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
                 widget.sha == owner.sha,
           ),
           IconButton(
-            tooltip: '在瀏覽器開啟',
+            tooltip: l10n.openInBrowser,
             icon: const Icon(Icons.open_in_browser),
             onPressed: () => openExternal(context, webUri),
           ),
@@ -242,7 +243,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
             _error!,
             onRetry: _load,
             account: widget.account,
-            resourceLabel: '${widget.project.path} · 提交 ${shortSha(widget.sha)}',
+            resourceLabel: l10n.commitPageTitle(widget.project.path, shortSha(widget.sha)),
             onSwitchAccount: endSessionFrom(context),
           ),
         ],
@@ -255,7 +256,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
     final deletions = stats['deletions'] is int ? stats['deletions'] as int : null;
     final totalChanges = stats['total'] is int ? stats['total'] as int : null;
 
-    final title = valueText(commit, 'title', valueText(commit, 'message', '無提交標題'));
+    final title = valueText(commit, 'title', valueText(commit, 'message', l10n.noCommitTitle));
     final fullMessage = valueText(commit, 'message');
     final authorName = valueText(commit, 'author_name');
     final authorEmail = valueText(commit, 'author_email');
@@ -321,7 +322,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
                       ),
                       const SizedBox(width: 4),
                       IconButton(
-                        tooltip: '複製 Commit SHA',
+                        tooltip: l10n.copyCommitSha,
                         constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                         icon: const Icon(Icons.copy, size: 18),
                         onPressed: () => _copySha(widget.sha),
@@ -341,7 +342,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
                               ? '$authorName <$authorEmail>'
                               : authorName.isNotEmpty
                                   ? authorName
-                                  : '未知作者',
+                                  : l10n.unknownAuthor,
                           style: Theme.of(context).textTheme.bodySmall,
                         ),
                       ),
@@ -363,7 +364,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
-                          '父提交：',
+                          l10n.parentCommitsLabel,
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 fontWeight: FontWeight.bold,
                               ),
@@ -437,7 +438,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
-                              '共 $totalChanges 行變更',
+                              l10n.commitLinesChanged(totalChanges),
                               style: TextStyle(
                                 color: scheme.onSurfaceVariant,
                                 fontSize: 12,
@@ -457,7 +458,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
           Row(
             children: [
               Text(
-                '變更檔案 (${_diffs.length})',
+                l10n.changedFilesCount(_diffs.length),
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.bold,
                     ),
@@ -467,7 +468,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
                 TextButton.icon(
                   onPressed: _expandAll,
                   icon: const Icon(Icons.unfold_more, size: 16),
-                  label: const Text('全部展開'),
+                  label: Text(l10n.expandAll),
                   style: TextButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     minimumSize: const Size(48, 48),
@@ -476,7 +477,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
                 TextButton.icon(
                   onPressed: _collapseAll,
                   icon: const Icon(Icons.unfold_less, size: 16),
-                  label: const Text('全部折疊'),
+                  label: Text(l10n.collapseAll),
                   style: TextButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     minimumSize: const Size(48, 48),
@@ -488,11 +489,11 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
           const SizedBox(height: 8),
 
           if (_diffs.isEmpty && !_loading)
-            const Card(
+            Card(
               child: Padding(
                 padding: EdgeInsets.all(24),
                 child: Center(
-                  child: Text('此提交無檔案變更或無文字差異。'),
+                  child: Text(l10n.commitNoTextDiff),
                 ),
               ),
             ),
@@ -515,7 +516,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
                     : OutlinedButton.icon(
                         onPressed: _loadMoreDiffs,
                         icon: const Icon(Icons.arrow_downward, size: 18),
-                        label: const Text('載入更多檔案變更'),
+                        label: Text(l10n.loadMoreFileChanges),
                         style: OutlinedButton.styleFrom(
                           minimumSize: const Size(200, 48),
                         ),
@@ -599,7 +600,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
                             Padding(
                               padding: const EdgeInsets.only(top: 2),
                               child: Text(
-                                '模式變更：$aMode → $bMode',
+                                l10n.fileModeChange(aMode, bMode),
                                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                       color: scheme.onSurfaceVariant,
                                     ),
@@ -628,10 +629,10 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
 
   Widget _buildDiffViewer(BuildContext context, Json file, ColorScheme scheme) {
     if (file['too_large'] == true || file['collapsed'] == true) {
-      return const Padding(
+      return Padding(
         padding: EdgeInsets.all(16),
         child: Text(
-          'GitLab 限制了此差異（檔案過大或已折疊）。',
+          l10n.diffLimitedByGitlab,
           style: TextStyle(fontStyle: FontStyle.italic),
         ),
       );
@@ -639,10 +640,10 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
 
     final diff = valueText(file, 'diff');
     if (diff.isEmpty) {
-      return const Padding(
+      return Padding(
         padding: EdgeInsets.all(16),
         child: Text(
-          '二進位檔案或無文字差異。',
+          l10n.binaryOrNoTextDiff,
           style: TextStyle(fontStyle: FontStyle.italic),
         ),
       );
@@ -652,10 +653,10 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
     try {
       lines = parseUnifiedDiff(diff);
     } on FormatException {
-      return const Padding(
+      return Padding(
         padding: EdgeInsets.all(16),
         child: Text(
-          '此差異不完整或超過排版上限。',
+          l10n.diffExceedsLayoutLimit,
           style: TextStyle(color: Colors.red),
         ),
       );
@@ -664,7 +665,10 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
     final diffAdded = WorkshopColors.of(context).diffAdded;
     final diffRemoved = WorkshopColors.of(context).diffRemoved;
 
-    return SingleChildScrollView(
+    return Directionality(
+      // Code reads left to right in every language, gutters first.
+      textDirection: TextDirection.ltr,
+      child: SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -678,6 +682,7 @@ class _CommitDetailPageState extends State<CommitDetailPage> {
           ],
         ),
       ),
+    ),
     );
   }
 

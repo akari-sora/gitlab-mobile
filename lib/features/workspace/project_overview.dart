@@ -18,6 +18,7 @@ import 'project_more_page.dart';
 import 'project_page.dart';
 import 'repository_page.dart';
 
+import '../../l10n/l10n.dart';
 /// Sections of [ProjectPage] the overview hands over to, by tab index.
 abstract final class ProjectSection {
   static const files = 0, issues = 1, mergeRequests = 2, ci = 3, more = 4;
@@ -180,7 +181,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
       await star.setStar(desired);
       if (!mounted || !_current(epoch, api)) return;
       unawaited(Haptics.success());
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(desired ? '已加入星標' : '已移除星標')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(desired ? l10n.starredAdded : l10n.starRemoved)));
     } catch (e) {
       if (!mounted || !_current(epoch, api) || e is ApiFailure && e.kind == FailureKind.cancelled) return;
       showFailure(context, e);
@@ -189,7 +190,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
 
   Future<void> _fork() async {
     final epoch = _epoch, api = widget.api, project = widget.project;
-    if (_forking || !await confirmAction(context, 'Fork 這個專案？', '會在你的個人 namespace 建立 ${project.path} 的副本。')) {
+    if (_forking || !await confirmAction(context, l10n.forkProjectQuestion, l10n.forkCreatesCopy(project.path))) {
       return;
     }
     if (!_current(epoch, api)) return;
@@ -200,8 +201,8 @@ class _ProjectOverviewState extends State<ProjectOverview> {
       final created = forkedProject(fork);
       final account = widget.account;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('已建立 Fork：${valueText(fork, 'path_with_namespace')}，匯入可能需要幾分鐘。'),
-        action: created == null ? null : SnackBarAction(label: '開啟', onPressed: () {
+        content: Text(l10n.forkCreated(valueText(fork, 'path_with_namespace'))),
+        action: created == null ? null : SnackBarAction(label: l10n.open, onPressed: () {
           if (!mounted || !_current(epoch, api)) return;
           _push(ProjectPage(account: account, api: api, project: created));
         })));
@@ -229,7 +230,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
     final marked = project.markedForDeletionOn != null;
     final description = project.description?.trim() ?? '';
     final star = widget.starControl;
-    final starLabel = !star.checked ? '確認星標中…' : star.starred == null ? '重新確認星標' : star.starred! ? '已加星標' : '加入星標';
+    final starLabel = !star.checked ? l10n.checkingStar : star.starred == null ? l10n.recheckStar : star.starred! ? l10n.starredBadge : l10n.star;
     final statStyle = theme.textTheme.bodyLarge?.copyWith(color: muted);
     final statValue = theme.textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700);
     Widget stat(IconData icon, String value, String label) => Row(mainAxisSize: MainAxisSize.min, children: [
@@ -255,7 +256,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
           padding: const EdgeInsets.only(top: 8),
           child: Wrap(spacing: 8, runSpacing: 6, children: [
             if (marked) const StatusBadge('marked_for_deletion'),
-            if (project.archived == true) const MetaChip('已封存 · 唯讀', icon: Icons.inventory_2_outlined),
+            if (project.archived == true) MetaChip(l10n.archivedReadOnly, icon: Icons.inventory_2_outlined),
           ]),
         ),
         if (description.isNotEmpty) Padding(
@@ -267,7 +268,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
         const SizedBox(height: 14),
         Semantics(
           link: true,
-          label: '在 GitLab 開啟 $web',
+          label: l10n.openInGitlab2(web),
           excludeSemantics: true,
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
@@ -287,7 +288,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
         ),
         const SizedBox(height: 6),
         Wrap(spacing: 18, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          stat(Icons.star_border, '$stars', '星標'),
+          stat(Icons.star_border, '$stars', l10n.starsLabel),
           stat(Icons.call_split, '$forks', 'Fork'),
           Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(visibilityIcon, size: 18, color: muted),
@@ -334,7 +335,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
             isCurrent: widget.isCurrent,
             builder: (context, onPressed) => HeaderSquareButton(
               icon: Icons.share_outlined,
-              tooltip: '分享連結',
+              tooltip: l10n.shareLink,
               onPressed: onPressed,
             ),
           ),
@@ -359,13 +360,13 @@ class _ProjectOverviewState extends State<ProjectOverview> {
       children: [
         if (issuesEnabled) HubRow(
           leading: const IconTile(Icons.adjust, color: HubColors.green),
-          title: '議題',
+          title: l10n.issues,
           value: openIssues != null ? '$openIssues' : null,
           onTap: () => widget.onSection(ProjectSection.issues),
         ),
         if (enabled('merge_requests_enabled', 'merge_requests_access_level')) HubRow(
           leading: const IconTile(Icons.merge, color: HubColors.blue),
-          title: '合併請求',
+          title: l10n.mergeRequests,
           onTap: () => widget.onSection(ProjectSection.mergeRequests),
         ),
         if (enabled('jobs_enabled', 'builds_access_level')) HubRow(
@@ -376,20 +377,20 @@ class _ProjectOverviewState extends State<ProjectOverview> {
         HubRow(
           key: const ValueKey('project-overview-more'),
           leading: const NeutralTile(Icons.more_horiz),
-          title: _moreOpen ? '收合' : '更多',
-          semanticLabel: _moreOpen ? '收合更多項目' : '展開更多項目',
+          title: _moreOpen ? l10n.collapse : l10n.moreItems,
+          semanticLabel: _moreOpen ? l10n.collapseMoreItems : l10n.expandMoreItems,
           trailing: TurnChevron(open: _moreOpen, color: Theme.of(context).colorScheme.onSurfaceVariant),
           onTap: () => setState(() => _moreOpen = !_moreOpen),
         ),
         ExpandSection(expanded: _moreOpen, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           HubRow(
             leading: const IconTile(Icons.group_outlined, color: HubColors.orange),
-            title: '成員',
+            title: l10n.members,
             onTap: () => _push(MembersPage(account: account, api: api, project: project)),
           ),
           HubRow(
             leading: const IconTile(Icons.timeline, color: HubColors.slate),
-            title: '專案動態',
+            title: l10n.projectActivity,
             onTap: () => _push(ActivityPage(account: account, api: api, project: project)),
           ),
           if (enabled('wiki_enabled', 'wiki_access_level')) HubRow(
@@ -404,12 +405,12 @@ class _ProjectOverviewState extends State<ProjectOverview> {
           ),
           if (license.isNotEmpty) HubRow(
             leading: const IconTile(Icons.balance, color: HubColors.red),
-            title: '授權',
+            title: l10n.license,
             value: license,
           ),
           HubRow(
             leading: const NeutralTile(Icons.apps),
-            title: '所有功能',
+            title: l10n.allFeatures,
             chevron: true,
             onTap: () => widget.onSection(ProjectSection.more),
           ),
@@ -428,7 +429,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
       children: [
         if (branch.isNotEmpty) Semantics(
           button: true,
-          label: '目前分支 $branch',
+          label: l10n.currentBranchNamed(branch),
           excludeSemantics: true,
           onTap: () => widget.onSection(ProjectSection.files),
           child: InkWell(
@@ -439,7 +440,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
                 SizedBox(width: 32, child: Icon(Icons.alt_route, color: muted)),
                 const SizedBox(width: 16),
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('目前分支', style: theme.textTheme.bodyMedium?.copyWith(color: muted)),
+                  Text(l10n.currentBranch, style: theme.textTheme.bodyMedium?.copyWith(color: muted)),
                   Text(branch, maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: codeTextStyle(context, fontSize: 16)),
                 ])),
@@ -449,7 +450,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
         ),
         HubRow(
           leading: const NeutralTile(Icons.code),
-          title: '檔案',
+          title: l10n.compareFilesSection,
           onTap: () => widget.onSection(ProjectSection.files),
         ),
         HubRow(
@@ -469,7 +470,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
     final Widget body;
     if (_emptyRepository) {
       body = Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-        child: Text('Repository 尚未初始化，新增第一個檔案後就會顯示內容。', style: TextStyle(color: muted)));
+        child: Text(l10n.repositoryNotInitializedHint, style: TextStyle(color: muted)));
     } else if (_readmeLoading) {
       body = const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(strokeWidth: 2)));
     } else if (_readmeError != null) {
@@ -490,7 +491,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
       );
     } else if (_readmeMissing) {
       body = Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-        child: Text('這個專案還沒有 README。', style: TextStyle(color: muted)));
+        child: Text(l10n.projectNoReadme, style: TextStyle(color: muted)));
     } else {
       body = const SizedBox(height: 16);
     }
@@ -510,7 +511,7 @@ class _ProjectOverviewState extends State<ProjectOverview> {
                   account: account, api: widget.api, project: project,
                   ref: ref, branch: ref.name, sha: ref.sha, filePath: readme.path,
                 )),
-                child: const Text('檢視檔案'),
+                child: Text(l10n.viewFiles),
               ),
           ]),
         ),
