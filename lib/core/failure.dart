@@ -9,7 +9,7 @@ final class InputFormatException extends FormatException {
 enum FailureKind {
   unauthenticated, forbidden, invisible, rateLimited, network,
   server, tooLarge, attachmentTooLarge, unsupported, redirectBlocked, invalidResponse, cancelled,
-  validation, conflict, writeUncertain,
+  validation, conflict, writeUncertain, aiHistoryCleanup,
 }
 
 /// Shared presentation contract; provider failures keep their own semantics.
@@ -77,6 +77,7 @@ final class ApiFailure implements Exception, UserFacingFailure {
     FailureKind.validation => l10n.checkEnteredContent,
     FailureKind.conflict => l10n.contentHasChanged,
     FailureKind.writeUncertain => l10n.actionResultUnconfirmed,
+    FailureKind.aiHistoryCleanup => l10n.aiHistoryCleanupTitle,
   };
   @override
   String get detail => _detail ?? switch (kind) {
@@ -95,6 +96,7 @@ final class ApiFailure implements Exception, UserFacingFailure {
     FailureKind.validation => l10n.nameBranchOrFieldsRejected,
     FailureKind.conflict => l10n.reloadLatestThenSubmit,
     FailureKind.writeUncertain => l10n.writeInterruptedCheckList,
+    FailureKind.aiHistoryCleanup => l10n.aiHistoryCleanupDetail,
   };
   @override
   String toString() => 'ApiFailure(${kind.name}, status: $status)';

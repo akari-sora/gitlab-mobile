@@ -15,6 +15,7 @@ import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import '../auth/recent_project.dart';
 import '../auth/session_controller.dart';
+import '../ai/ai_account_cleanup.dart';
 import '../workspace/activity_page.dart';
 import '../workspace/groups_page.dart';
 import '../workspace/project_page.dart';
@@ -733,6 +734,7 @@ class _MobileShellState extends State<_MobileShell> {
       await clearSecureDrafts(account);
       await clearAccountArtifacts(account);
       await clearRecentProject(account);
+      await clearAiAccountData(account);
       await widget.session.remove(account);
     } catch (e) {
       if (mounted) {

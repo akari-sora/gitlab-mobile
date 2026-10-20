@@ -2065,5 +2065,20 @@
   "aiRefusalDetail": "प्रश्न बदलें; इस प्रतिक्रिया के टूल कॉल नहीं चलाए जाएँगे।",
   "aiPolicyBlockedTitle": "AI सुरक्षा जाँच विफल रही",
   "aiPolicyBlockedDetail": "एंडपॉइंट, मास्किंग फ़िल्टर या सेटिंग्स सुरक्षा जाँच में विफल रहे; यह अनुरोध नहीं भेजा गया।",
-  "aiCustomProvider": "कस्टम AI प्रदाता"
+  "aiCustomProvider": "कस्टम AI प्रदाता",
+  "aiHistoryCleanupTitle": "AI इतिहास साफ़ नहीं किया जा सका",
+  "aiHistoryCleanupDetail": "AI इतिहास पूरी तरह साफ़ नहीं हुआ। खाता रखा गया है; इसे फिर हटाने की कोशिश करें।",
+  "aiHistoryRemovedUnreadable": "इतिहास का कुछ भाग पढ़ा नहीं जा सका और हटा दिया गया।",
+  "aiHistoryStorageLimit": "यह बातचीत भंडारण सीमा तक पहुँच गई है। नई सामग्री सहेजी नहीं जाएगी।",
+  "aiHistoryCapacityLimit": "स्टोरेज अभी भर गया है। जगह खाली होने पर सहेजना फिर शुरू होगा।",
+  "aiHistoryUnavailable": "कूटबद्ध इतिहास अभी उपलब्ध नहीं है। बाद में फिर प्रयास किया जाएगा।",
+  "aiHistoryKeyMissing": "इस खाते की कूटबद्ध कुंजी नहीं मिली; इतिहास खोला नहीं जा सकता।",
+  "aiHistoryInvalidData": "AI इतिहास का डेटा खराब है या उसका प्रारूप समर्थित नहीं है।",
+  "aiHistoryIndexRepaired": "AI इतिहास की अनुक्रमणिका सुधार दी गई और बातचीत बहाल हो गई।",
+  "aiHistoryUnsupported": "AI इतिहास का कुछ भाग असमर्थित प्रारूप में है और इस डिवाइस पर रखा गया है।",
+  "aiHistoryNotSaved": "यह बातचीत सहेजी नहीं जा सकी। फिर प्रयास करें।",
+  "aiHistoryEvicted": "जगह खाली करने के लिए यह बातचीत सहेजे गए इतिहास से हटा दी गई।",
+  "aiHistoryReadFailed": "इतिहास पढ़ा नहीं जा सका। फिर से कोशिश करें।",
+  "aiHistoryTemporaryFilesRemoved": "पुरानी अस्थायी इतिहास फ़ाइलें हटा दी गईं।",
+  "aiHistoryClearUnsupported": "असमर्थित इतिहास साफ़ करें"
 }

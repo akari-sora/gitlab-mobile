@@ -2065,5 +2065,20 @@
   "aiRefusalDetail": "Ubah soalan anda; panggilan alat dalam respons ini tidak akan dijalankan.",
   "aiPolicyBlockedTitle": "Semakan keselamatan AI gagal",
   "aiPolicyBlockedDetail": "Titik akhir, penapis penyamaran atau tetapan tidak lulus semakan keselamatan; permintaan ini tidak dihantar.",
-  "aiCustomProvider": "Penyedia AI tersuai"
+  "aiCustomProvider": "Penyedia AI tersuai",
+  "aiHistoryCleanupTitle": "Sejarah AI tidak dapat dikosongkan",
+  "aiHistoryCleanupDetail": "Sejarah AI tidak dikosongkan sepenuhnya. Akaun dikekalkan; cuba alih keluarnya sekali lagi.",
+  "aiHistoryRemovedUnreadable": "Sebahagian sejarah tidak dapat dibaca lalu dialih keluar.",
+  "aiHistoryStorageLimit": "Perbualan ini telah mencapai had storan. Kandungan baharu tidak akan disimpan.",
+  "aiHistoryCapacityLimit": "Ruang storan penuh buat masa ini. Penyimpanan akan disambung apabila ruang tersedia.",
+  "aiHistoryUnavailable": "Sejarah disulitkan tidak tersedia sekarang. Percubaan akan dibuat lagi kemudian.",
+  "aiHistoryKeyMissing": "Kunci penyulitan untuk akaun ini tiada; sejarahnya tidak dapat dinyahsulit.",
+  "aiHistoryInvalidData": "Data sejarah AI rosak atau menggunakan format yang tidak disokong.",
+  "aiHistoryIndexRepaired": "Indeks sejarah AI telah dibaiki dan perbualan dipulihkan.",
+  "aiHistoryUnsupported": "Sebahagian sejarah AI menggunakan format yang tidak disokong dan dikekalkan pada peranti ini.",
+  "aiHistoryNotSaved": "Perbualan ini tidak dapat disimpan. Cuba lagi.",
+  "aiHistoryEvicted": "Perbualan ini dialih keluar daripada sejarah tersimpan untuk mengosongkan storan.",
+  "aiHistoryReadFailed": "Sejarah tidak dapat dibaca. Cuba lagi.",
+  "aiHistoryTemporaryFilesRemoved": "Fail sejarah sementara yang lapuk telah dialih keluar.",
+  "aiHistoryClearUnsupported": "Kosongkan sejarah yang tidak disokong"
 }

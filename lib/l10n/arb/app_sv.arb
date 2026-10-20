@@ -2065,5 +2065,20 @@
   "aiRefusalDetail": "Omformulera frågan; verktygsanropen i det här svaret körs inte.",
   "aiPolicyBlockedTitle": "AI-säkerhetskontrollen misslyckades",
   "aiPolicyBlockedDetail": "Slutpunkten, maskeringsfiltret eller inställningarna klarade inte en säkerhetskontroll; den här begäran skickades inte.",
-  "aiCustomProvider": "Anpassad AI-leverantör"
+  "aiCustomProvider": "Anpassad AI-leverantör",
+  "aiHistoryCleanupTitle": "Det gick inte att rensa AI-historiken",
+  "aiHistoryCleanupDetail": "AI-historiken rensades inte helt. Kontot behölls; försök ta bort det igen.",
+  "aiHistoryRemovedUnreadable": "En del av historiken kunde inte läsas och togs bort.",
+  "aiHistoryStorageLimit": "Den här konversationen har nått lagringsgränsen. Nytt innehåll sparas inte.",
+  "aiHistoryCapacityLimit": "Lagringsutrymmet är fullt just nu. Sparandet återupptas när utrymme frigörs.",
+  "aiHistoryUnavailable": "Den krypterade historiken är inte tillgänglig just nu. Ett nytt försök görs senare.",
+  "aiHistoryKeyMissing": "Krypteringsnyckeln för det här kontot saknas; historiken kan inte dekrypteras.",
+  "aiHistoryInvalidData": "AI-historikens data är skadade eller använder ett format som inte stöds.",
+  "aiHistoryIndexRepaired": "Indexet för AI-historiken reparerades och konversationer återställdes.",
+  "aiHistoryUnsupported": "En del av AI-historiken använder ett format som inte stöds och behölls på den här enheten.",
+  "aiHistoryNotSaved": "Konversationen kunde inte sparas. Försök igen.",
+  "aiHistoryEvicted": "Konversationen togs bort från sparad historik för att frigöra lagringsutrymme.",
+  "aiHistoryReadFailed": "Historiken kunde inte läsas. Försök igen.",
+  "aiHistoryTemporaryFilesRemoved": "Inaktuella tillfälliga historikfiler togs bort.",
+  "aiHistoryClearUnsupported": "Rensa historik som inte stöds"
 }

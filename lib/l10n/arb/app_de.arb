@@ -2065,5 +2065,20 @@
   "aiRefusalDetail": "Formulieren Sie die Frage um; Werkzeugaufrufe in dieser Antwort werden nicht ausgeführt.",
   "aiPolicyBlockedTitle": "AI-Sicherheitsprüfung nicht bestanden",
   "aiPolicyBlockedDetail": "Endpunkt, Maskierungsfilter oder Einstellungen haben eine Sicherheitsprüfung nicht bestanden; diese Anfrage wurde nicht gesendet.",
-  "aiCustomProvider": "Benutzerdefinierter AI-Anbieter"
+  "aiCustomProvider": "Benutzerdefinierter AI-Anbieter",
+  "aiHistoryCleanupTitle": "AI-Verlauf konnte nicht gelöscht werden",
+  "aiHistoryCleanupDetail": "Der AI-Verlauf wurde nicht vollständig gelöscht. Das Konto wurde behalten; versuchen Sie erneut, es zu entfernen.",
+  "aiHistoryRemovedUnreadable": "Ein Teil des Verlaufs konnte nicht gelesen werden und wurde entfernt.",
+  "aiHistoryStorageLimit": "Diese Unterhaltung hat das Speicherlimit erreicht. Neue Inhalte werden nicht gespeichert.",
+  "aiHistoryCapacityLimit": "Der Speicher ist derzeit voll. Das Speichern wird fortgesetzt, sobald Speicherplatz frei wird.",
+  "aiHistoryUnavailable": "Der verschlüsselte Verlauf ist derzeit nicht verfügbar. Später wird es erneut versucht.",
+  "aiHistoryKeyMissing": "Der Verschlüsselungsschlüssel für dieses Konto fehlt; der Verlauf kann nicht entschlüsselt werden.",
+  "aiHistoryInvalidData": "Die AI-Verlaufsdaten sind beschädigt oder verwenden ein nicht unterstütztes Format.",
+  "aiHistoryIndexRepaired": "Der Index des AI-Verlaufs wurde repariert und Unterhaltungen wurden wiederhergestellt.",
+  "aiHistoryUnsupported": "Ein Teil des AI-Verlaufs verwendet ein nicht unterstütztes Format und wurde auf diesem Gerät behalten.",
+  "aiHistoryNotSaved": "Diese Unterhaltung konnte nicht gespeichert werden. Versuchen Sie es erneut.",
+  "aiHistoryEvicted": "Diese Unterhaltung wurde aus dem gespeicherten Verlauf entfernt, um Speicherplatz freizugeben.",
+  "aiHistoryReadFailed": "Der Verlauf konnte nicht gelesen werden. Versuchen Sie es erneut.",
+  "aiHistoryTemporaryFilesRemoved": "Veraltete temporäre Verlaufsdateien wurden entfernt.",
+  "aiHistoryClearUnsupported": "Nicht unterstützten Verlauf löschen"
 }

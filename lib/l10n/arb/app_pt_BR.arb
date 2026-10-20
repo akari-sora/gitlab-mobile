@@ -2065,5 +2065,20 @@
   "aiRefusalDetail": "Reformule a pergunta; as chamadas de ferramentas desta resposta não serão executadas.",
   "aiPolicyBlockedTitle": "A verificação de segurança de AI falhou",
   "aiPolicyBlockedDetail": "O ponto de extremidade, o filtro de mascaramento ou as configurações não passaram em uma verificação de segurança; esta solicitação não foi enviada.",
-  "aiCustomProvider": "Provedor de AI personalizado"
+  "aiCustomProvider": "Provedor de AI personalizado",
+  "aiHistoryCleanupTitle": "Não foi possível limpar o histórico de AI",
+  "aiHistoryCleanupDetail": "O histórico de AI não foi totalmente limpo. A conta foi mantida; tente removê-la novamente.",
+  "aiHistoryRemovedUnreadable": "Parte do histórico não pôde ser lida e foi removida.",
+  "aiHistoryStorageLimit": "Esta conversa atingiu o limite de armazenamento. O novo conteúdo não será salvo.",
+  "aiHistoryCapacityLimit": "O armazenamento está cheio no momento. O salvamento será retomado quando houver espaço livre.",
+  "aiHistoryUnavailable": "O histórico criptografado está indisponível agora. Uma nova tentativa será feita mais tarde.",
+  "aiHistoryKeyMissing": "A chave de criptografia desta conta está ausente; o histórico não pode ser descriptografado.",
+  "aiHistoryInvalidData": "Os dados do histórico de AI estão danificados ou usam um formato incompatível.",
+  "aiHistoryIndexRepaired": "O índice do histórico de AI foi reparado e as conversas foram recuperadas.",
+  "aiHistoryUnsupported": "Parte do histórico de AI usa um formato incompatível e foi mantida neste dispositivo.",
+  "aiHistoryNotSaved": "Não foi possível salvar esta conversa. Tente novamente.",
+  "aiHistoryEvicted": "Esta conversa foi removida do histórico salvo para liberar armazenamento.",
+  "aiHistoryReadFailed": "Não foi possível ler o histórico. Tente novamente.",
+  "aiHistoryTemporaryFilesRemoved": "Os arquivos temporários obsoletos do histórico foram removidos.",
+  "aiHistoryClearUnsupported": "Limpar histórico não compatível"
 }

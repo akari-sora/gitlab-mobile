@@ -158,6 +158,36 @@ class CatalogTest(unittest.TestCase):
                         words = set(re.findall(r'[A-Za-z]+', catalog[key]))
                         self.assertEqual(words - product_words, set(), 'unexpected Latin text')
 
+    def test_ai_history_uses_stable_ai_and_api_terms(self):
+        _, catalogs = l10n.load()
+        history_keys = [
+            'aiHistoryCleanupTitle',
+            'aiHistoryCleanupDetail',
+            'aiHistoryInvalidData',
+            'aiHistoryIndexRepaired',
+            'aiHistoryUnsupported',
+        ]
+        for tag, catalog in catalogs.items():
+            for key in history_keys:
+                with self.subTest(tag=tag, key=key):
+                    self.assertIn('AI', catalog[key])
+
+        self.assertNotIn('المساعد الذكي', catalogs['ar']['aiHistoryCleanupTitle'])
+        self.assertIn('Sie', catalogs['de']['aiHistoryCleanupDetail'])
+
+    def test_ai_history_recovery_messages_are_complete(self):
+        required = {
+            'aiHistoryReadFailed',
+            'aiHistoryTemporaryFilesRemoved',
+            'aiHistoryClearUnsupported',
+        }
+        keys, catalogs = l10n.load()
+        self.assertTrue(required.issubset(keys))
+        self.assertNotIn('aiKeyTooShort', keys)
+        for tag, catalog in catalogs.items():
+            with self.subTest(tag=tag):
+                self.assertTrue(required.issubset(catalog))
+
     def test_no_chinese_string_literals_outside_the_catalogs(self):
         found = []
         for path in sorted(LIB.rglob('*.dart')):

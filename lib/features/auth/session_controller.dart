@@ -46,6 +46,7 @@ final class SessionController extends ChangeNotifier {
   GitLabApi? _pending;
   bool busy = false;
   bool initializing = true;
+  bool accountsLoaded = false;
   bool resuming = false;
   Account? resumingAccount;
   String? message;
@@ -84,6 +85,8 @@ final class SessionController extends ChangeNotifier {
 
   Future<void> initialize() async {
     final ticket = ++_operation;
+    final loadedBeforeInitialize = accountsLoaded;
+    accountsLoaded = false;
     if (!initializing) {
       // A delayed initialize supersedes whatever is in flight. Its candidate
       // is released here, because that operation's own release only clears
@@ -96,12 +99,16 @@ final class SessionController extends ChangeNotifier {
       resumingAccount = null;
       initializing = true;
       _emit();
+    } else if (loadedBeforeInitialize) {
+      _emit();
     }
     try {
       try {
         final loaded = await store.load();
         if (!_current(ticket)) return;
         _accounts = loaded;
+        accountsLoaded = true;
+        _emit();
       } catch (_) {
         if (_current(ticket)) {
           message = l10n.secureStorageUnreadable;

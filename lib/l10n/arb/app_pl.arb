@@ -2065,5 +2065,20 @@
   "aiRefusalDetail": "Zmień pytanie; wywołania narzędzi w tej odpowiedzi nie zostaną wykonane.",
   "aiPolicyBlockedTitle": "Kontrola bezpieczeństwa AI nie powiodła się",
   "aiPolicyBlockedDetail": "Punkt końcowy, filtr maskowania lub ustawienia nie przeszły kontroli bezpieczeństwa; to żądanie nie zostało wysłane.",
-  "aiCustomProvider": "Własny dostawca AI"
+  "aiCustomProvider": "Własny dostawca AI",
+  "aiHistoryCleanupTitle": "Nie udało się wyczyścić historii AI",
+  "aiHistoryCleanupDetail": "Historia AI nie została całkowicie wyczyszczona. Konto zachowano; spróbuj usunąć je ponownie.",
+  "aiHistoryRemovedUnreadable": "Części historii nie można było odczytać i została usunięta.",
+  "aiHistoryStorageLimit": "Ta rozmowa osiągnęła limit pamięci. Nowa treść nie będzie zapisywana.",
+  "aiHistoryCapacityLimit": "Pamięć jest obecnie pełna. Zapisywanie zostanie wznowione po zwolnieniu miejsca.",
+  "aiHistoryUnavailable": "Zaszyfrowana historia jest teraz niedostępna. Próba zostanie ponowiona później.",
+  "aiHistoryKeyMissing": "Brakuje klucza szyfrowania tego konta; historii nie można odszyfrować.",
+  "aiHistoryInvalidData": "Dane historii AI są uszkodzone lub mają nieobsługiwany format.",
+  "aiHistoryIndexRepaired": "Indeks historii AI został naprawiony, a rozmowy odzyskane.",
+  "aiHistoryUnsupported": "Część historii AI używa nieobsługiwanego formatu i została zachowana na tym urządzeniu.",
+  "aiHistoryNotSaved": "Nie udało się zapisać tej rozmowy. Spróbuj ponownie.",
+  "aiHistoryEvicted": "Ta rozmowa została usunięta z zapisanej historii, aby zwolnić miejsce.",
+  "aiHistoryReadFailed": "Nie udało się odczytać historii. Spróbuj ponownie.",
+  "aiHistoryTemporaryFilesRemoved": "Usunięto nieaktualne tymczasowe pliki historii.",
+  "aiHistoryClearUnsupported": "Wyczyść nieobsługiwaną historię"
 }

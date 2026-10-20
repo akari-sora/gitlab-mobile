@@ -2065,5 +2065,20 @@
   "aiRefusalDetail": "Hãy điều chỉnh câu hỏi; các lệnh gọi công cụ trong phản hồi này sẽ không được thực thi.",
   "aiPolicyBlockedTitle": "Kiểm tra bảo mật AI không đạt",
   "aiPolicyBlockedDetail": "Điểm cuối, bộ che dữ liệu hoặc cài đặt không vượt qua kiểm tra bảo mật; yêu cầu này chưa được gửi.",
-  "aiCustomProvider": "Nhà cung cấp AI tùy chỉnh"
+  "aiCustomProvider": "Nhà cung cấp AI tùy chỉnh",
+  "aiHistoryCleanupTitle": "Không thể xóa lịch sử AI",
+  "aiHistoryCleanupDetail": "Lịch sử AI chưa được xóa hoàn toàn. Tài khoản được giữ lại; hãy thử xóa lại.",
+  "aiHistoryRemovedUnreadable": "Không thể đọc một phần lịch sử nên phần đó đã bị xóa.",
+  "aiHistoryStorageLimit": "Cuộc trò chuyện này đã đạt giới hạn lưu trữ. Nội dung mới sẽ không được lưu.",
+  "aiHistoryCapacityLimit": "Dung lượng lưu trữ hiện đã đầy. Việc lưu sẽ tiếp tục khi có chỗ trống.",
+  "aiHistoryUnavailable": "Lịch sử được mã hóa hiện không khả dụng. Hệ thống sẽ thử lại sau.",
+  "aiHistoryKeyMissing": "Thiếu khóa mã hóa của tài khoản này; không thể giải mã lịch sử.",
+  "aiHistoryInvalidData": "Dữ liệu lịch sử AI bị hỏng hoặc dùng định dạng không được hỗ trợ.",
+  "aiHistoryIndexRepaired": "Chỉ mục lịch sử AI đã được sửa và các cuộc trò chuyện đã được khôi phục.",
+  "aiHistoryUnsupported": "Một phần lịch sử AI dùng định dạng không được hỗ trợ và được giữ lại trên thiết bị này.",
+  "aiHistoryNotSaved": "Không thể lưu cuộc trò chuyện này. Hãy thử lại.",
+  "aiHistoryEvicted": "Cuộc trò chuyện này đã bị xóa khỏi lịch sử đã lưu để giải phóng dung lượng.",
+  "aiHistoryReadFailed": "Không thể đọc lịch sử. Hãy thử lại.",
+  "aiHistoryTemporaryFilesRemoved": "Các tệp lịch sử tạm thời cũ đã được xóa.",
+  "aiHistoryClearUnsupported": "Xóa lịch sử không được hỗ trợ"
 }
