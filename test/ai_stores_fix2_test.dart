@@ -206,6 +206,50 @@ void main() {
       expect((await store.readProviderKey('a')).isFound, isFalse);
     });
 
+    test(
+      'a reset failing after key deletion keeps the key cache true',
+      () async {
+        // Round-5 review: the key was gone but still cached, so saving the
+        // same key again returned early without writing it.
+        final store = _FaultStore();
+        await store.saveProviders(<AiProviderConfig>[
+          _provider('p', 'https://p.example.test/v1'),
+        ]);
+        await store.saveProviderKey('p', 'synthetic-secret-p1');
+        final settings = AiSettingsController(store);
+        await settings.initialize();
+        final secretSet = settings.secretSetId;
+        store.failNextSaveProviders = true;
+
+        await expectLater(
+          settings.resetProviders(),
+          throwsA(isA<AiStoreException>()),
+        );
+
+        expect((await store.readProviderKey('p')).isFound, isFalse);
+        expect(settings.knownProviderKeys.containsKey('p'), isFalse);
+        expect(settings.secretSetId, greaterThan(secretSet));
+        await settings.saveProviderKey('p', 'synthetic-secret-p1');
+        expect((await store.readProviderKey('p')).value, 'synthetic-secret-p1');
+      },
+    );
+
+    test('a malformed account record is counted once', () async {
+      final store = MemoryAiStore()
+        ..debugPut(SecureAiStore.accountKey('malformed'), '{bad');
+      await store.saveProviders(<AiProviderConfig>[
+        _provider('a', 'https://a.example.test/v1'),
+        _provider('b', 'https://b.example.test/v1'),
+      ]);
+      final settings = AiSettingsController(store);
+      await settings.initialize();
+
+      await settings.deleteProvider('a');
+      await settings.resetProviders();
+
+      expect(settings.malformedAccountRecordCount, 1);
+    });
+
     test('malformed account record does not block reset', () async {
       final store = MemoryAiStore()
         ..debugPut(SecureAiStore.accountKey('malformed'), '{bad');
@@ -448,6 +492,7 @@ final class _FaultStore implements AiStore, AiStoreSecureInventory {
 
   final MemoryAiStore memory;
   bool failNextDeleteProviderKey = false;
+  bool failNextSaveProviders = false;
   bool failSetTombstone = false;
   final List<String> deletedProviderKeys = <String>[];
   Completer<void> providerSaveStarted = Completer<void>();
@@ -513,6 +558,12 @@ final class _FaultStore implements AiStore, AiStoreSecureInventory {
       _saveProviders(providers);
 
   Future<void> _saveProviders(List<AiProviderConfig> providers) async {
+    if (failNextSaveProviders) {
+      failNextSaveProviders = false;
+      throw const AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.unavailable, 'saveProviders'),
+      );
+    }
     final release = _providerSaveRelease;
     if (release != null) {
       providerSaveStarted.complete();

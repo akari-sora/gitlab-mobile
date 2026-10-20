@@ -1144,7 +1144,7 @@ final class AiSettingsController extends ChangeNotifier {
   final Map<String, AiAccountRecord> _accounts = <String, AiAccountRecord>{};
   final Map<String, int> _consentRevisions = <String, int>{};
   var _secretSetId = 0;
-  var _malformedAccountRecordCount = 0;
+  final Set<String> _malformedAccountRecords = <String>{};
   final Set<String> _malformedSecureInventoryEntries = <String>{};
   Future<void>? _providerMutationTail;
   var _disposed = false;
@@ -1152,7 +1152,7 @@ final class AiSettingsController extends ChangeNotifier {
   List<AiProviderConfig> get providers => _providers;
   Map<String, String> get knownProviderKeys => Map.unmodifiable(_providerKeys);
   int get secretSetId => _secretSetId;
-  int get malformedAccountRecordCount => _malformedAccountRecordCount;
+  int get malformedAccountRecordCount => _malformedAccountRecords.length;
   int get malformedSecureInventoryCount =>
       _malformedSecureInventoryEntries.length;
 
@@ -1377,7 +1377,7 @@ final class AiSettingsController extends ChangeNotifier {
       final before = await store.loadAccount(accountKey);
       if (before.failure case final failure?) {
         if (failure.kind == AiStoreFailureKind.malformed) {
-          _malformedAccountRecordCount += 1;
+          _malformedAccountRecords.add(accountKey);
           _notify();
           continue;
         }
@@ -1393,7 +1393,7 @@ final class AiSettingsController extends ChangeNotifier {
         });
       } on AiStoreException catch (error) {
         if (error.failure.kind != AiStoreFailureKind.malformed) rethrow;
-        _malformedAccountRecordCount += 1;
+        _malformedAccountRecords.add(accountKey);
         _notify();
         continue;
       }
@@ -1536,7 +1536,7 @@ final class AiSettingsController extends ChangeNotifier {
       final before = await store.loadAccount(accountKey);
       if (before.failure case final failure?) {
         if (failure.kind == AiStoreFailureKind.malformed) {
-          _malformedAccountRecordCount += 1;
+          _malformedAccountRecords.add(accountKey);
           continue;
         }
         throw AiStoreException(failure);
@@ -1557,7 +1557,7 @@ final class AiSettingsController extends ChangeNotifier {
         });
       } on AiStoreException catch (error) {
         if (error.failure.kind != AiStoreFailureKind.malformed) rethrow;
-        _malformedAccountRecordCount += 1;
+        _malformedAccountRecords.add(accountKey);
         continue;
       }
       if (updated != null) {
@@ -1567,14 +1567,21 @@ final class AiSettingsController extends ChangeNotifier {
         await _requireTombstoneForSkippedMutation(accountKey, 'resetProviders');
       }
     }
-    for (final providerId in providerIds) {
-      await store.deleteProviderKey(providerId);
+    try {
+      for (final providerId in providerIds) {
+        await store.deleteProviderKey(providerId);
+        // Keep the cache equal to the store if a later step fails, so the
+        // same key saved again is written instead of seen as unchanged.
+        if (_providerKeys.remove(providerId) != null) _secretSetId += 1;
+      }
+      await _writeProviderList(
+        const <AiProviderConfig>[],
+        removeDeletingIds: deletingIds,
+        reset: true,
+      );
+    } finally {
+      _notify();
     }
-    await _writeProviderList(
-      const <AiProviderConfig>[],
-      removeDeletingIds: deletingIds,
-      reset: true,
-    );
     _providers = const <AiProviderConfig>[];
     _deletingProviders.clear();
     _providerKeys.clear();
