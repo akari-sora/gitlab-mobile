@@ -297,6 +297,15 @@ not cover it.
   in-app updater in `v0.5.0-dev.c13b280d` finds it (anonymous check run from a
   workstation). It ran on an owned API 36 emulator signed in to the owner's
   account (reads only); a physical-device install and update are NOT_RUN.
+- GitLab `v0.5.0-dev.6cc1b73b` gitlab-flavor release APK (versionCode 588,
+  Markdown media), source `6cc1b73b`, signer `STABLE_CI_DEBUG` (v2 only),
+  SHA-256 `59f44f59e4424bc049194d39834dc70067303c050e523779ab435dafe6248543`:
+  [gitlab-mobile-6cc1b73b-release.apk](https://gitlab.com/api/v4/projects/86648389/packages/generic/gitlab-mobile-preview/6cc1b73b95f23a7c95d2dce99bc6b281b31f1dee/gitlab-mobile-6cc1b73b-release.apk).
+  The package name is unchanged, so earlier releases update to it in place; the
+  in-app updater in `v0.5.0-dev.a3b83b60` finds it (anonymous check run from a
+  workstation). It adds the `ACCESS_NETWORK_STATE` and `WAKE_LOCK` permissions.
+  It ran on an owned API 36 emulator signed in to the owner's account (reads
+  only); a physical-device install and update are NOT_RUN.
 
 On Android 13 (API 33) and later, a `LEGACY_LOCAL` install updates in place to
 the bridge and then to the ordinary release. That chain passed natively on an

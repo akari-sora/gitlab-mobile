@@ -93,10 +93,14 @@ Merge-request debug APKs (signed with each pipeline's throwaway key, so the rele
 
 - Release `v0.5.0-dev.a3b83b60` (versionCode 552, `80f9c7e4…`, the merge of these commits): the `android_debug` log of its own pipeline shows no header, MR `!44`'s summary is readable text, and the Arabic MR header reads `!44`. The summary changes after `a41f1de` (`590652e`) ran on a device only in this release build.
 
+### Markdown media, 2026-10-21
+
+Merge request !86 renders README and description images and media. Its final debug build (`652e87c`, `gitlab-mobile-652e87c5-debug.apk`) and then release `v0.5.0-dev.6cc1b73b` (versionCode 588, `59f44f59…` read back from the installed `base.apk`) ran on the same emulator and account, reads only, the account removed afterwards: the AuroraOSS/AuroraStore README showed its F-Droid and IzzyOnDroid badges, the app screenshots and the Weblate translation widget, and the fdroid/fdroidclient README its pipeline and translation SVG badges next to unchanged code blocks. Neither README has audio or video, so playback from a real README did not run.
+
 Still seen and not fixed here: a page opened before a language switch keeps the title it was opened with (the editor's 「Edit file」), like the error messages noted for the 24-language release.
 
 ## NOT_RUN
 
 - On the phone: swiping or 全部完成 on real todos (only the two test todos above were written), the MR draft toggle, merge, fork, running a pipeline schedule, wiki page rendering (no project with an enabled wiki was used), linked issues with real links, deployments with data, the unresolved-project page against a real 404, the two-pane layout at ≥840 dp, TalkBack, reduced motion, 2x system font size (covered only by widget tests).
 - iOS, store signing, OAuth login, push, the live CRUD smoke on this branch.
-- A physical phone, TalkBack with Arabic text, a native Arabic speaker's review of 「ي」, and the remaining fixed screens (editor subtitle, file title, inbox) on the release build itself (they ran on the merge-request builds above).
+- Audio/video download and playback from a real README (only synthetic tests), a physical phone, TalkBack with Arabic text, a native Arabic speaker's review of 「ي」, and the remaining fixed screens (editor subtitle, file title, inbox) on the release build itself (they ran on the merge-request builds above).
