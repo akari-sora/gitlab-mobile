@@ -44,8 +44,8 @@ const _summaryScanLimit = 32768;
 /// fence and rule markers, bold and strike markers, code ticks and link
 /// targets are dropped. `text` holds at most [limit] characters; `more`
 /// tells whether readable text goes on past it. The work is bounded: at
-/// most [_summaryScanLimit] units of [source] are read, so syntax left open
-/// where a single longer line is cut can show at the end of its text.
+/// most [_summaryScanLimit] units of [source] are read across all lines, so
+/// syntax left open where the scan limit cuts a line can show.
 ({String text, bool more}) markdownSummary(String source, int limit) {
   final out = StringBuffer();
   final lastClose = source.lastIndexOf('-->');
