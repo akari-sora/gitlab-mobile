@@ -126,7 +126,16 @@ void main() {
               final result = Redactor(secrets: _Secrets()).redact(input);
               final leaked = body.where(result.text.contains).length;
               leaks += leaked;
-              if (leaked != 0 || !result.text.endsWith('after')) failedCases++;
+              // A prefix holding a BEGIN without its END withholds the rest.
+              final stray = prefix.contains('-----BEGIN');
+              final ending = stray
+                  ? '[REDACTED:private_key_unterminated]'
+                  : 'after';
+              if (leaked != 0 ||
+                  !result.text.endsWith(ending) ||
+                  result.withheldPrivateKeyContext != stray) {
+                failedCases++;
+              }
             }
           }
           final cell = '$shape / $prefixName / $kind';
@@ -144,7 +153,7 @@ void main() {
     });
   }
 
-  test('FIX4 marker edge cases pair by position independent of labels', () {
+  test('FIX4 marker edge cases pair by label and position', () {
     final redactor = Redactor(secrets: _Secrets());
     const begin = '-----BEGIN PRIVATE KEY-----';
     const end = '-----END PRIVATE KEY-----';
@@ -153,11 +162,11 @@ void main() {
     // (a log read from an offset), so everything up to it is withheld.
     expect(
       redactor.redact('doc $end\nbefore $begin body $end\nafter').text,
-      '[REDACTED]before [REDACTED]after',
+      '[REDACTED:private_key_unopened]before [REDACTED]after',
     );
     expect(
       redactor.redact('KEYTAIL1\nKEYTAIL2\n$end\nlog continues').text,
-      '[REDACTED]log continues',
+      '[REDACTED:private_key_unopened]log continues',
     );
     expect(
       redactor
@@ -185,7 +194,10 @@ void main() {
       redactor.redact('before $begin arbitrary ! text\nafter').text,
       'before $unterminated',
     );
-    expect(redactor.redact('before $end after').text, '[REDACTED] after');
+    expect(
+      redactor.redact('before $end after').text,
+      '[REDACTED:private_key_unopened] after',
+    );
     // Non-private ENDs must not close a private range.
     expect(redactor.redact('$begin$certificate after').text, unterminated);
     for (final label in [
@@ -199,15 +211,29 @@ void main() {
       'PGP PRIVATE KEY BLOCK',
     ]) {
       expect(
-        redactor.redact('-----BEGIN $label----- body $end after').text,
+        redactor
+            .redact('-----BEGIN $label----- body -----END $label----- after')
+            .text,
         '[REDACTED] after',
       );
+      // Only an END with the same label closes a BEGIN.
+      if (label != 'PRIVATE KEY') {
+        expect(
+          redactor.redact('-----BEGIN $label----- body $end after').text,
+          unterminated,
+        );
+      }
     }
     const other = '-----BEGIN PUBLIC KEY-----pub-----END PUBLIC KEY-----';
     expect(redactor.redact(other).text, other);
+    // Two BEGINs need two ENDs.
     final result = redactor.redact('$begin nested $begin body $end\nafter');
-    expect(result.text, '[REDACTED]after');
+    expect(result.text, unterminated);
     expect(result.redactions, 1);
+    expect(
+      redactor.redact('$begin nested $begin body $end\n$end\nafter').text,
+      '[REDACTED]after',
+    );
     expect(redactor.redact(result.text).redactions, 0);
     final missing = redactor.redact('$begin body');
     expect(redactor.redact(missing.text).text, unterminated);
@@ -222,7 +248,7 @@ void main() {
     // The prefix is itself an END with no BEGIN before it (see below).
     expect(
       redactor.redact('$prefix$begin body $end\nafter').text,
-      '[REDACTED]after',
+      '[REDACTED:private_key_unopened]after',
     );
     expect(
       redactor.redact('$prefix$begin body').text,
@@ -303,26 +329,30 @@ void main() {
   for (final entry in growthInputs.entries) {
     test('FIX4 linear growth ${entry.key}', () {
       final n = switch (entry.key) {
-        '100k BEGIN no END' => 50000,
-        'overlapping-rescan sentinel' => 4000,
-        _ => 1024 * 1024,
+        '100k BEGIN no END' => 25000,
+        'overlapping-rescan sentinel' => 2000,
+        // 4N stays at 2 MiB: an identifier run of 4 MiB overflows the regex
+        // stack (fails closed), which the context builders avoid (ledger).
+        _ => 512 * 1024,
       };
       final small = entry.value(n);
-      final large = entry.value(2 * n);
+      final large = entry.value(4 * n);
       final redactor = Redactor(secrets: _Secrets());
       final smallMicros = _redactionMicros(redactor, small);
       final largeMicros = _redactionMicros(redactor, large);
       // ignore: avoid_print
       print(
         'FIX4 growth ${entry.key}: N=${small.length} $smallMicros us; '
-        '2N=${large.length} $largeMicros us; ratio=${largeMicros / smallMicros}',
+        '4N=${large.length} $largeMicros us; ratio=${largeMicros / smallMicros}',
       );
-      expect(largeMicros, lessThan(smallMicros * 3.2));
+      // Linear growth is 4x and quadratic 16x; 8x leaves room for noise on a
+      // loaded runner.
+      expect(largeMicros, lessThan(smallMicros * 8));
       expect(largeMicros, lessThan(5000000));
     }, timeout: const Timeout(Duration(minutes: 2)));
   }
 
-  test('FIX5 BEGIN/END pairing grows linearly from N to 4N', () {
+  test('FIX5 BEGIN/END pairing grows linearly from N to 8N', () {
     // Many short pairs: a quadratic pairing loop shows at 4N even though the
     // marker scan dominates at 2N.
     String pairs(int n) {
@@ -331,17 +361,18 @@ void main() {
     }
 
     final redactor = Redactor(secrets: _Secrets());
-    final small = pairs(256 * 1024);
-    final large = pairs(1024 * 1024);
+    final small = pairs(512 * 1024);
+    final large = pairs(4 * 1024 * 1024);
     final smallMicros = _redactionMicros(redactor, small);
     final largeMicros = _redactionMicros(redactor, large);
     // ignore: avoid_print
     print(
       'FIX5 pairing growth: N=${small.length} $smallMicros us; '
-      '4N=${large.length} $largeMicros us; ratio=${largeMicros / smallMicros}',
+      '8N=${large.length} $largeMicros us; ratio=${largeMicros / smallMicros}',
     );
-    expect(largeMicros, lessThan(smallMicros * 6));
-    expect(largeMicros, lessThan(5000000));
+    // Linear growth is 8x and quadratic pairing 64x.
+    expect(largeMicros, lessThan(smallMicros * 14));
+    expect(largeMicros, lessThan(10000000));
   }, timeout: const Timeout(Duration(minutes: 2)));
 
   test('every configured expression compiles without inline flags', () {
@@ -724,12 +755,15 @@ void main() {
           final padding = '.' * (boundary - split - prefix.length - 1);
           final input = '$prefix$padding\n${key}after';
           final result = Redactor(secrets: _Secrets()).redact(input);
+          // The prefix's BEGIN never meets its own END.
           expect(
             result.text,
-            '${prefix.substring(0, firstBegin)}[REDACTED]after',
+            '${prefix.substring(0, firstBegin)}'
+            '[REDACTED:private_key_unterminated]',
           );
           expect(body.where(result.text.contains), isEmpty);
           expect(result.redactions, 1);
+          expect(result.withheldPrivateKeyContext, isTrue);
         }
       });
     }
@@ -778,13 +812,16 @@ void main() {
     expect(Redactor(secrets: _Secrets()).redact(input).text, '[REDACTED]after');
   });
 
-  test('PEM nested BEGIN beyond 1 MiB pairs with the first following END', () {
+  test('PEM nested BEGIN beyond 1 MiB stays withheld without its own END', () {
     const begin = '-----BEGIN PRIVATE KEY-----\n';
     final padding = 'A' * (32 * 1024 + 1024 * 1024 - begin.length - 13);
     final input =
         '$begin$padding\n-----BEGIN RSA PRIVATE KEY-----\n${'B' * 64}\n'
         '-----END RSA PRIVATE KEY-----\nafter';
-    expect(Redactor(secrets: _Secrets()).redact(input).text, '[REDACTED]after');
+    expect(
+      Redactor(secrets: _Secrets()).redact(input).text,
+      '[REDACTED:private_key_unterminated]',
+    );
   });
 
   test('separate PEM ranges preserve intervening text across 32 KiB', () {
@@ -799,14 +836,45 @@ void main() {
     expect(result.redactions, 2);
   });
 
-  test('PEM absorbs a foreign END label before the next BEGIN', () {
+  test('PEM foreign END inside a key withholds from the start', () {
     final result = Redactor(secrets: _Secrets()).redact(
-      '-----BEGIN PGP PRIVATE KEY BLOCK-----\n\n'
+      'intro\n-----BEGIN PGP PRIVATE KEY BLOCK-----\n\n'
       '-----END RSA PRIVATE KEY-----\nSYNTHETIC-KEY-BODY\n'
       '-----END PGP PRIVATE KEY BLOCK-----\nafter',
     );
-    expect(result.text, '[REDACTED]after');
+    expect(result.text, '[REDACTED:private_key_unopened]after');
     expect(result.redactions, 1);
+    expect(result.withheldPrivateKeyContext, isTrue);
+  });
+
+  test('FIX6 interleaved keys stay redacted until every label closes', () {
+    final redactor = Redactor(secrets: _Secrets());
+    String key(String label, String part) =>
+        '-----$part $label PRIVATE KEY-----\n';
+    // Three keys printed interleaved (round-6 review).
+    final three = redactor.redact(
+      '${key('EC', 'BEGIN')}A_HEAD\n${key('RSA', 'BEGIN')}B_HEAD\n'
+      '${key('EC', 'END')}B_TAIL\n${key('OPENSSH', 'BEGIN')}C_BODY\n'
+      '${key('OPENSSH', 'END')}${key('RSA', 'END')}after',
+    );
+    expect(three.text, '[REDACTED]after');
+    expect(three.withheldPrivateKeyContext, isFalse);
+    // The second key of the same label is cut off before its END.
+    final cut = redactor.redact(
+      'x\n${key('RSA', 'BEGIN')}A\n${key('RSA', 'BEGIN')}B\n'
+      '${key('RSA', 'END')}B_TAIL',
+    );
+    expect(cut.text, 'x\n[REDACTED:private_key_unterminated]');
+    // A log read from an offset inside interleaved keys, same and
+    // different labels: the tail before the first BEGIN is withheld.
+    for (final (first, second) in [('RSA', 'RSA'), ('RSA', 'EC')]) {
+      final midRead = redactor.redact(
+        'A_TAIL\n${key(second, 'BEGIN')}B1\n${key(first, 'END')}B2\n'
+        '${key(second, 'END')}after',
+      );
+      expect(midRead.text, '[REDACTED:private_key_unopened]after');
+      expect(midRead.withheldPrivateKeyContext, isTrue);
+    }
   });
 
   test('single-line PEM preserves the following ordinary lines', () {

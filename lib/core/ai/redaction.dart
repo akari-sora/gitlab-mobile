@@ -2,6 +2,7 @@ import 'ai_failure.dart';
 
 const _redacted = '[REDACTED]';
 const _unterminatedPrivateKey = '[REDACTED:private_key_unterminated]';
+const _unopenedPrivateKey = '[REDACTED:private_key_unopened]';
 
 abstract interface class KnownSecretsSource {
   Iterable<String> get current;
@@ -16,10 +17,18 @@ final class RedactionPattern {
 }
 
 final class RedactionResult {
-  const RedactionResult(this.text, this.redactions);
+  const RedactionResult(
+    this.text,
+    this.redactions, {
+    this.withheldPrivateKeyContext = false,
+  });
 
   final String text;
   final int redactions;
+
+  /// Whether text around a private-key marker was withheld because the
+  /// marker had no partner (a BEGIN without END, or an END without BEGIN).
+  final bool withheldPrivateKeyContext;
 }
 
 final class Redactor {
@@ -166,11 +175,13 @@ final class _RedactionRange {
     required this.start,
     required this.end,
     this.unterminatedPrivateKey = false,
+    this.unopenedPrivateKey = false,
   });
 
   final int start;
   final int end;
   final bool unterminatedPrivateKey;
+  final bool unopenedPrivateKey;
 }
 
 RedactionResult _replaceRanges(String input, List<_RedactionRange> ranges) {
@@ -190,6 +201,8 @@ RedactionResult _replaceRanges(String input, List<_RedactionRange> ranges) {
           end: range.end > previous.end ? range.end : previous.end,
           unterminatedPrivateKey:
               previous.unterminatedPrivateKey || range.unterminatedPrivateKey,
+          unopenedPrivateKey:
+              previous.unopenedPrivateKey || range.unopenedPrivateKey,
         ),
       );
     } else {
@@ -198,16 +211,26 @@ RedactionResult _replaceRanges(String input, List<_RedactionRange> ranges) {
   }
   final output = StringBuffer();
   var offset = 0;
+  var withheld = false;
   for (final range in merged) {
+    withheld |= range.unterminatedPrivateKey || range.unopenedPrivateKey;
     output
       ..write(input.substring(offset, range.start))
       ..write(
-        range.unterminatedPrivateKey ? _unterminatedPrivateKey : _redacted,
+        range.unterminatedPrivateKey
+            ? _unterminatedPrivateKey
+            : range.unopenedPrivateKey
+            ? _unopenedPrivateKey
+            : _redacted,
       );
     offset = range.end;
   }
   output.write(input.substring(offset));
-  return RedactionResult(output.toString(), merged.length);
+  return RedactionResult(
+    output.toString(),
+    merged.length,
+    withheldPrivateKeyContext: withheld,
+  );
 }
 
 Iterable<_RedactionRange> _urlRanges(String input, RegExp scheme) sync* {
@@ -315,14 +338,6 @@ final _privateKeyMarker = RegExp(
 );
 
 Iterable<_RedactionRange> _pemRanges(String input) sync* {
-  final begins = <_RedactionRange>[];
-  final ends = <_RedactionRange>[];
-  // Collect both kinds in one scan, on original-input offsets, anywhere in text.
-  for (final marker in _privateKeyMarker.allMatches(input)) {
-    final range = _RedactionRange(start: marker.start, end: marker.end + 5);
-    (marker.group(1) == 'BEGIN' ? begins : ends).add(range);
-  }
-
   // Consume only an immediately following CR, LF or CRLF.
   int afterLineBreak(int end) {
     if (end < input.length && input.codeUnitAt(end) == 0x0d) {
@@ -334,49 +349,53 @@ Iterable<_RedactionRange> _pemRanges(String input) sync* {
     return end;
   }
 
-  // Every pointer only advances, so pairing stays linear.
-  var endIndex = 0;
-  var redactedThrough = 0;
-  // An END before any BEGIN closes a key whose start is not in this text,
-  // such as a log read from an offset: redact from the start through it.
-  final firstBegin = begins.isEmpty ? input.length : begins.first.start;
-  var leading = -1;
-  while (endIndex < ends.length && ends[endIndex].start < firstBegin) {
-    leading = endIndex++;
+  // One forward pass over the markers in text order, so pairing is linear.
+  // A range closes only when every BEGIN in it has met an END with the same
+  // label, so nested and interleaved keys stay inside one range. An END that
+  // closes no open BEGIN (its key started before this text, a foreign label,
+  // interleaving) withholds everything from the start of the input through
+  // it; a BEGIN that never meets its END withholds everything after it.
+  final open = <String, int>{};
+  var openCount = 0;
+  var rangeStart = 0;
+  var beginMarkerEnd = 0;
+  var unopenedThrough = -1;
+  for (final marker in _privateKeyMarker.allMatches(input)) {
+    final label = marker.group(2)!;
+    final markerEnd = marker.end + 5;
+    if (marker.group(1) == 'BEGIN') {
+      if (openCount == 0) rangeStart = marker.start;
+      open[label] = (open[label] ?? 0) + 1;
+      openCount++;
+      beginMarkerEnd = markerEnd;
+      continue;
+    }
+    final count = open[label] ?? 0;
+    // An END overlapping the BEGIN marker it follows cannot close it.
+    if (count > 0 && marker.start >= beginMarkerEnd) {
+      open[label] = count - 1;
+      if (--openCount == 0) {
+        yield _RedactionRange(
+          start: rangeStart,
+          end: afterLineBreak(markerEnd),
+        );
+      }
+    } else {
+      unopenedThrough = afterLineBreak(markerEnd);
+    }
   }
-  if (leading >= 0) {
-    redactedThrough = afterLineBreak(ends[leading].end);
-    yield _RedactionRange(start: 0, end: redactedThrough);
+  if (unopenedThrough >= 0) {
+    yield _RedactionRange(
+      start: 0,
+      end: unopenedThrough,
+      unopenedPrivateKey: true,
+    );
   }
-  for (var beginIndex = 0; beginIndex < begins.length; beginIndex++) {
-    final begin = begins[beginIndex];
-    // Skip only a marker wholly inside an earlier range: a BEGIN sharing
-    // the five hyphens of a closing END still opens its own range.
-    if (begin.end <= redactedThrough) continue;
-    // END labels intentionally need not match.
-    while (endIndex < ends.length && ends[endIndex].start < begin.end) {
-      endIndex++;
-    }
-    if (endIndex == ends.length) {
-      yield _RedactionRange(
-        start: begin.start,
-        end: input.length,
-        unterminatedPrivateKey: true,
-      );
-      break;
-    }
-    var close = endIndex++;
-    // Absorb every further END before the next BEGIN that this range does
-    // not cover, so a foreign or interleaved END cannot expose key lines.
-    var next = beginIndex + 1;
-    while (next < begins.length && begins[next].end <= ends[close].end) {
-      next++;
-    }
-    final nextStart = next < begins.length ? begins[next].start : input.length;
-    while (endIndex < ends.length && ends[endIndex].start < nextStart) {
-      close = endIndex++;
-    }
-    redactedThrough = afterLineBreak(ends[close].end);
-    yield _RedactionRange(start: begin.start, end: redactedThrough);
+  if (openCount > 0) {
+    yield _RedactionRange(
+      start: rangeStart,
+      end: input.length,
+      unterminatedPrivateKey: true,
+    );
   }
 }
