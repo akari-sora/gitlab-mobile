@@ -189,6 +189,8 @@ class BootstrapTests(unittest.TestCase):
                 self.assertEqual(items.get('android:enforceNavigationBarContrast'), 'false')
                 self.assertEqual(sum(1 for item in style.findall('item')
                                      if item.get('name') == 'android:statusBarColor'), 1)
+                self.assertEqual(style.get('parent'), bootstrap.APP_THEME_PARENT,
+                                 'the app lock prompt needs an AppCompat theme on Android 8 and below')
         other = {item.get('name'): item.text
                  for item in ET.parse(styles).getroot().find('style[@name="Other"]').findall('item')}
         self.assertEqual(other.get('android:statusBarColor'), '#FF112233')
@@ -267,6 +269,16 @@ class BootstrapTests(unittest.TestCase):
         self.assertIn('從相簿選擇圖片', text)
         self.assertNotIn('NSCameraUsageDescription', text)
         self.assertNotIn('NSMicrophoneUsageDescription', text)
+
+    def test_ios_face_id_usage_is_recorded_once(self):
+        (self.root / 'Runner').mkdir()
+        path = self.root / 'Runner/Info.plist'
+        path.write_text('<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict></dict></plist>\n')
+        bootstrap.register_face_id_ios(self.root)
+        bootstrap.register_face_id_ios(self.root)
+        text = path.read_text()
+        self.assertEqual(text.count('NSFaceIDUsageDescription'), 1)
+        self.assertIn('App 鎖定', text)
 
     def test_configure_ios_records_photo_library_usage(self):
         self.prepare_ios(3)
@@ -367,6 +379,8 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual((app / 'src/main/kotlin' / bootstrap.KOTLIN_PACKAGE / 'MainActivity.kt').read_text(),
                          bootstrap.MAIN_ACTIVITY)
         self.assertIn('LinkChannel.register(flutterEngine, this)', bootstrap.MAIN_ACTIVITY)
+        self.assertIn('class MainActivity : FlutterFragmentActivity()', bootstrap.MAIN_ACTIVITY,
+                      'local_auth needs a FragmentActivity')
         links = (app / 'src/main/kotlin' / bootstrap.KOTLIN_PACKAGE / 'LinkActivity.kt').read_text()
         self.assertIn('class LinkActivity : Activity()', links)
         self.assertIn(f'"{bootstrap.LINK_CHANNEL}"', links)
@@ -386,9 +400,10 @@ class BootstrapTests(unittest.TestCase):
         activity.write_text(bootstrap.TEMPLATE_MAIN_ACTIVITY.replace('FlutterActivity()', 'FlutterFragmentActivity()'))
         with self.assertRaisesRegex(RuntimeError, 'Unknown MainActivity template'):
             bootstrap.configure_update_channels(app)
-        activity.write_text(bootstrap.UPDATE_ONLY_MAIN_ACTIVITY)
-        bootstrap.configure_update_channels(app)
-        self.assertEqual(activity.read_text(), bootstrap.MAIN_ACTIVITY, 'an earlier managed activity is upgraded')
+        for earlier in (bootstrap.UPDATE_ONLY_MAIN_ACTIVITY, bootstrap.LINKS_MAIN_ACTIVITY):
+            activity.write_text(earlier)
+            bootstrap.configure_update_channels(app)
+            self.assertEqual(activity.read_text(), bootstrap.MAIN_ACTIVITY, 'an earlier managed activity is upgraded')
         activity.write_text(bootstrap.TEMPLATE_MAIN_ACTIVITY)
         bootstrap.configure_update_channels(app)
         gradle = app / 'build.gradle.kts'

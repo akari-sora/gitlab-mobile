@@ -227,12 +227,28 @@ class MainActivity : FlutterActivity() {
     }
 }
 '''
-MAIN_ACTIVITY = '''package io.gitlabmobile.gitlab_mobile
+LINKS_MAIN_ACTIVITY = '''package io.gitlabmobile.gitlab_mobile
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 
 class MainActivity : FlutterActivity() {
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
+        // Each distribution flavor ships its own AppUpdateChannel.
+        AppUpdateChannel.register(flutterEngine, this)
+        LinkChannel.register(flutterEngine, this)
+    }
+}
+'''
+# A FragmentActivity, because local_auth (the app lock) shows its prompt
+# through androidx.biometric fragments.
+MAIN_ACTIVITY = '''package io.gitlabmobile.gitlab_mobile
+
+import io.flutter.embedding.android.FlutterFragmentActivity
+import io.flutter.embedding.engine.FlutterEngine
+
+class MainActivity : FlutterFragmentActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         // Each distribution flavor ships its own AppUpdateChannel.
@@ -479,7 +495,7 @@ def configure_update_channels(app: Path) -> None:
         gradle.write_text(text.rstrip('\n') + '\n\n' + UPDATE_DEPENDENCIES, encoding='utf-8')
     activity = app / 'src/main/kotlin' / KOTLIN_PACKAGE / 'MainActivity.kt'
     current = activity.read_text(encoding='utf-8')
-    if current not in (TEMPLATE_MAIN_ACTIVITY, UPDATE_ONLY_MAIN_ACTIVITY, MAIN_ACTIVITY):
+    if current not in (TEMPLATE_MAIN_ACTIVITY, UPDATE_ONLY_MAIN_ACTIVITY, LINKS_MAIN_ACTIVITY, MAIN_ACTIVITY):
         raise RuntimeError('Unknown MainActivity template; review before registering the update channel.')
     activity.write_text(MAIN_ACTIVITY, encoding='utf-8')
     files = {
@@ -521,12 +537,19 @@ def _transparent_system_bars(folder: Path) -> None:
         _patch_style_bars(path)
 
 
+# local_auth shows its prompt from a FragmentActivity; on Android 8 and below
+# that prompt needs an AppCompat theme (androidx.biometric brings appcompat).
+# DayNight covers the night variant too, so both styles files use it.
+APP_THEME_PARENT = 'Theme.AppCompat.DayNight.NoActionBar'
+
+
 def _patch_style_bars(path: Path) -> None:
     tree = ET.parse(path)
     root = tree.getroot()
     for style in root.findall('style'):
         if style.get('name') not in {'LaunchTheme', 'NormalTheme'}:
             continue
+        style.set('parent', APP_THEME_PARENT)
         items = {item.get('name'): item for item in style.findall('item')}
         for name, value in _SYSTEM_BAR_ITEMS:
             item = items.get(name)
@@ -569,6 +592,7 @@ def configure_ios(folder: Path) -> None:
 ''', encoding='utf-8')
     register_oauth_ios(folder)
     register_photo_library_ios(folder)
+    register_face_id_ios(folder)
     configure_ios_app_name(folder)
 
 
@@ -650,6 +674,24 @@ def register_photo_library_ios(folder: Path) -> None:
             return
     plist.append(_plist_key('NSPhotoLibraryUsageDescription'))
     ET.SubElement(plist, 'string').text = '從相簿選擇圖片，附加到議題、合併請求或留言。'
+    ET.indent(tree, space='\t')
+    tree.write(path, encoding='utf-8', xml_declaration=True)
+
+
+def register_face_id_ios(folder: Path) -> None:
+    """The app lock may use Face ID; iOS requires a reason before asking."""
+    path = folder / 'Runner/Info.plist'
+    if not path.is_file():
+        return
+    tree = ET.parse(path)
+    plist = tree.getroot().find('dict')
+    if plist is None:
+        raise RuntimeError('Unknown iOS template: Info.plist dict missing.')
+    for node in list(plist):
+        if node.tag == 'key' and node.text == 'NSFaceIDUsageDescription':
+            return
+    plist.append(_plist_key('NSFaceIDUsageDescription'))
+    ET.SubElement(plist, 'string').text = f'開啟 App 鎖定後，用 Face ID 解鎖 {APP_NAME}。'
     ET.indent(tree, space='\t')
     tree.write(path, encoding='utf-8', xml_declaration=True)
 

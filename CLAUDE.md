@@ -27,7 +27,7 @@ python3 -m unittest discover -s tool/tests -p test_bootstrap.py -v
 python3 -m compileall -q ci tool
 ```
 
-Native runners (`android/`, `ios/`, `.metadata`) are **not committed**. `tool/bootstrap.py` generates them with `flutter create` and then hardens them (no cleartext HTTP, no backup, keychain entitlements, OAuth URL scheme `io.gitlabmobile.app://oauth/callback`). It also adds the link trampoline (`LinkActivity`, below). It refuses to overwrite existing native directories and rejects any Flutter that is not 3.47.2, so pass the fvm binary:
+Native runners (`android/`, `ios/`, `.metadata`) are **not committed**. `tool/bootstrap.py` generates them with `flutter create` and then hardens them (no cleartext HTTP, no backup, keychain entitlements, OAuth URL scheme `io.gitlabmobile.app://oauth/callback`). It also adds the link trampoline (`LinkActivity`, below), makes `MainActivity` a `FlutterFragmentActivity` with AppCompat launch/normal themes (required by `local_auth` for the app lock) and records the iOS Face ID reason. It refuses to overwrite existing native directories and rejects any Flutter that is not 3.47.2, so pass the fvm binary:
 
 ```sh
 python3 tool/bootstrap.py --flutter .fvm/flutter_sdk/bin/flutter   # required before flutter run / build apk locally (Android: --flavor gitlab)
@@ -92,6 +92,7 @@ Through `flutter_secure_storage`:
 - Account list (`SecureAccountStore`, key `gitlab_mobile_accounts_v2`; v1 is read for migration, then deleted).
 - Editor drafts keyed `draft.v2.<base64url(account.key)>.<base64url(resource)>`.
 - Appearance, key `gitlab_mobile_appearance_v1`, value `<ThemeMode.name>|<0|1>` (theme mode and the dynamic-colour flag). A bare mode name from !3 still decodes and keeps the default (dynamic colour off). Device-scoped, shared by every account.
+- App lock, key `gitlab_mobile_app_lock_v1`, value `1` while on (deleted when turned off). Device-scoped like the appearance. Turning it on requires a passing device check (`local_auth`, biometrics or the screen lock); while locked, `AppLockGate` covers the app and system back cannot pop the pages behind it (on the first page Android still sends the app to the background, and it stays locked).
 - Last active account, key `gitlab_mobile_last_account_v1`. Auto-resume re-validates `/user`. This key is cleared only on a 401. Sign-out marker `gitlab_mobile_sign_out_pending_v1`: auto-resume never runs while the marker is set.
 - Recent project, one record per account, key `recent_project.v1.<base64url(account.key)>`: numeric project id and the name shown on the launcher shortcut. Cleared with the account.
 - Update check at start-up, key `gitlab_mobile_update_check_v1`, value `1` or `0` (gitlab and play builds only). Device-scoped.
