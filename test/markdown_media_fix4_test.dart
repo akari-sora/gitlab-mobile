@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:gitlab_mobile/shared/in_app_links.dart';
 import 'package:gitlab_mobile/shared/markdown_media.dart';
 import 'package:gitlab_mobile/shared/markdown_media_syntax.dart';
@@ -68,21 +68,6 @@ String _renderedText(WidgetTester tester) => tester
     .widgetList<RichText>(find.byType(RichText))
     .map((widget) => widget.text.toPlainText())
     .join('\n');
-
-TapGestureRecognizer? _tapRecognizer(InlineSpan span, String text) {
-  if (span case final TextSpan value) {
-    final recognizer = value.recognizer;
-    if ((value.text ?? '').contains(text) &&
-        recognizer is TapGestureRecognizer) {
-      return recognizer;
-    }
-    for (final child in value.children ?? const <InlineSpan>[]) {
-      final found = _tapRecognizer(child, text);
-      if (found != null) return found;
-    }
-  }
-  return null;
-}
 
 void main() {
   for (final value
@@ -223,119 +208,60 @@ void main() {
     });
   }
 
-  for (final value
-      in const <
-        ({
-          String name,
-          String source,
-          String href,
-          List<String> renderedText,
-          List<String> linkedText,
-          int images,
-        })
-      >[
-        (
-          name: 'Discord badge then text',
-          source:
-              '<a href="https://discord.example/x"><img '
-              'src="https://cdn.example/d.svg" height="20"> '
-              'Join our Discord</a>',
-          href: 'https://discord.example/x',
-          renderedText: ['Join our Discord'],
-          linkedText: ['Join our Discord'],
-          images: 1,
-        ),
-        (
-          name: 'inline Flutter badge and text',
-          source:
-              'Made with <a href="https://f.example"><img '
-              'src="https://cdn.example/f.svg" height="14"/>Flutter</a>.',
-          href: 'https://f.example',
-          renderedText: ['Made with ', 'Flutter', '.'],
-          linkedText: ['Flutter'],
-          images: 1,
-        ),
-        (
-          name: 'sponsor badge and company',
-          source:
-              'Sponsors: <a href="https://a.example"><img '
-              'src="https://cdn.example/a.svg" width="16"> Acme Corp</a>, …',
-          href: 'https://a.example',
-          renderedText: ['Sponsors: ', 'Acme Corp', ', …'],
-          linkedText: ['Acme Corp'],
-          images: 1,
-        ),
-        (
-          name: 'guide text before badge',
-          source:
-              'See <a href="https://x.example">the guide <img '
-              'src="https://cdn.example/x.svg"></a> now',
-          href: 'https://x.example',
-          renderedText: ['See ', 'the guide', ' now'],
-          linkedText: ['the guide'],
-          images: 1,
-        ),
-        (
-          name: 'Codex prose around badge',
-          source:
-              'Read <a href="https://docs.example/">Docs <img '
-              'src="https://images.example/logo.svg"> now</a> tail',
-          href: 'https://docs.example/',
-          renderedText: ['Read ', 'Docs', 'now', ' tail'],
-          linkedText: ['Docs', 'now'],
-          images: 1,
-        ),
-        (
-          name: 'Codex two-image anchor',
-          source:
-              'Read <a href="https://docs.example/">Docs <img '
-              'src="https://images.example/one.svg"> and <img '
-              'src="https://images.example/two.svg"> now</a> tail',
-          href: 'https://docs.example/',
-          renderedText: ['Read ', 'Docs', 'and', 'now', ' tail'],
-          linkedText: ['Docs', 'and', 'now'],
-          images: 2,
-        ),
-      ]) {
-    testWidgets('inline HTML anchor retains ${value.name}', (tester) async {
-      final elements = _elements(_parse(value.source)).toList();
-      final media = elements
-          .where((element) => element.tag == markdownMediaElement)
-          .toList();
-      expect(media, hasLength(value.images), reason: value.source);
+  for (final value in const [
+    (
+      name: 'Discord badge then text',
+      source:
+          '<a href="https://discord.example/x"><img src="https://cdn.example/d.svg" height="20"> Join our Discord</a>',
+    ),
+    (
+      name: 'inline Flutter badge and text',
+      source:
+          'Made with <a href="https://f.example"><img src="https://cdn.example/f.svg" height="14"/>Flutter</a>.',
+    ),
+    (
+      name: 'sponsor badge and company',
+      source:
+          'Sponsors: <a href="https://a.example"><img src="https://cdn.example/a.svg" width="16"> Acme Corp</a>, …',
+    ),
+    (
+      name: 'guide text before badge',
+      source:
+          'See <a href="https://x.example">the guide <img src="https://cdn.example/x.svg"></a> now',
+    ),
+    (
+      name: 'Codex prose around badge',
+      source:
+          'Read <a href="https://docs.example/">Docs <img src="https://images.example/logo.svg"> now</a> tail',
+    ),
+    (
+      name: 'Codex two-image anchor',
+      source:
+          'Read <a href="https://docs.example/">Docs <img src="https://images.example/one.svg"> and <img src="https://images.example/two.svg"> now</a> tail',
+    ),
+  ]) {
+    testWidgets('HTML anchor main parity: ${value.name}', (tester) async {
       expect(
-        media.map((element) => element.attributes['href']),
-        everyElement(value.href),
-        reason: value.source,
+        md.HtmlRenderer().render(_parse(value.source)),
+        md.HtmlRenderer().render(_parse(value.source, media: false)),
       );
-      final linkText = elements
-          .where(
-            (element) =>
-                element.tag == 'a' && element.attributes['href'] == value.href,
-          )
-          .map((element) => element.textContent)
-          .join(' ');
-      for (final text in value.linkedText) {
-        expect(linkText, contains(text), reason: value.source);
-      }
-
       final fixture = _client();
       addTearDown(fixture.client.close);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: MarkdownBody(data: value.source)),
+        ),
+      );
+      final baseline = _renderedText(tester);
       await tester.pumpWidget(_host(value.source, fixture.client));
       await tester.pumpAndSettle();
-      expect(
-        find.byType(MarkdownMediaImage),
-        findsNWidgets(value.images),
-        reason: value.source,
-      );
-      final rendered = _renderedText(tester);
-      for (final text in value.renderedText) {
-        expect(rendered, contains(text), reason: value.source);
-      }
+      expect(_renderedText(tester), baseline);
+      expect(find.byType(MarkdownMediaImage), findsNothing);
+      expect(fixture.adapter.requests, isEmpty);
     });
   }
 
-  testWidgets('mixed text and two images all open the same HTML anchor', (
+  testWidgets('mixed text and two images follow main without tap targets', (
     tester,
   ) async {
     const source =
@@ -345,25 +271,19 @@ void main() {
     final fixture = _client();
     addTearDown(fixture.client.close);
     final taps = <Uri>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MarkdownBody(data: source)),
+      ),
+    );
+    final baseline = _renderedText(tester);
     await tester.pumpWidget(_host(source, fixture.client, taps: taps));
     await tester.pumpAndSettle();
-
-    final images = find.byType(MarkdownMediaImage);
-    expect(images, findsNWidgets(2));
-    await tester.tap(images.at(0));
-    await tester.pump();
-    await tester.tap(images.at(1));
-    await tester.pump();
-    final linkedText = find.textContaining('Docs');
-    expect(linkedText, findsOneWidget);
-    final richText = tester
-        .widgetList<RichText>(find.byType(RichText))
-        .singleWhere((widget) => widget.text.toPlainText().contains('Docs'));
-    final recognizer = _tapRecognizer(richText.text, 'Docs');
-    expect(recognizer, isNotNull);
-    recognizer!.onTap!();
-    await tester.pump();
-    expect(taps, List.filled(3, Uri.parse('https://docs.example/')));
+    expect(_renderedText(tester), baseline);
+    expect(find.byType(MarkdownMediaImage), findsNothing);
+    expect(fixture.adapter.requests, isEmpty);
+    expect(taps, isEmpty);
+    expect(_elements(_parse(source)).where((e) => e.tag == 'a'), isEmpty);
   });
 
   for (final value in const [

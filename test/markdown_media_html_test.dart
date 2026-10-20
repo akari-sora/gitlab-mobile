@@ -118,22 +118,27 @@ void main() {
     }
   });
 
-  testWidgets('picture ignores inert image-looking children', (tester) async {
+  testWidgets('picture with comment and script children follows main', (
+    tester,
+  ) async {
     final client = _client();
     addTearDown(client.close);
-    await tester.pumpWidget(
-      _host(
+    const source =
         '<picture><!-- <img src="hidden.png"> -->'
         '<script>"<img src=\'also-hidden.png\'>"</script>'
-        '<img src="actual.png"></picture>',
-        client,
+        '<img src="actual.png"></picture>';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: MarkdownBody(data: source)),
       ),
     );
     await tester.pump();
-    final image = tester.widget<MarkdownMediaImage>(
-      find.byType(MarkdownMediaImage),
-    );
-    expect(image.source.uri, Uri.parse('actual.png'));
+    final baseline = _renderedText(tester);
+    await tester.pumpWidget(_host(source, client));
+    await tester.pumpAndSettle();
+    expect(find.byType(MarkdownMediaImage), findsNothing);
+    expect(_renderedText(tester), baseline);
+    expect((client.httpClientAdapter as FakeAdapter).requests, isEmpty);
   });
 
   testWidgets('HTML video and audio keep explicit media kinds', (tester) async {

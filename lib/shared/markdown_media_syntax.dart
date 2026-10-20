@@ -95,7 +95,7 @@ final class MarkdownMediaInlineSyntax extends md.InlineSyntax {
       return false;
     }
     final scanner = _scanners[parser] ??= _HtmlMediaScanner(parser.source);
-    final parsed = _inlineMedia(scanner, start, parser.document);
+    final parsed = _inlineMedia(scanner, start);
     if (parsed == null) return false;
     parser
       ..writeText()
@@ -393,9 +393,23 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
 ({md.Node element, int end})? _inlineMedia(
   _HtmlMediaScanner scanner,
   int start,
-  md.Document document,
 ) {
   final source = scanner.source;
+  if (scanner.rawInlineParent != null) {
+    // Let the default parser see every tag and Markdown delimiter in a
+    // rejected wrapper. Track only its own tags as the outer parser advances;
+    // code spans, escapes and comments are consumed by the default syntaxes.
+    final tag = _scanTag(source, start);
+    if (tag != null &&
+        tag.name == scanner.rawInlineParent &&
+        (!tag.closing ||
+            (tag.attributes.isEmpty &&
+                source.codeUnitAt(tag.end - 2) != 0x2F))) {
+      scanner.rawInlineDepth += tag.closing ? -1 : 1;
+      if (scanner.rawInlineDepth == 0) scanner.rawInlineParent = null;
+    }
+    return null;
+  }
   if (source.startsWith('<!--', start)) {
     final end = scanner.commentEnd(start);
     if (end == null) return null;
@@ -424,94 +438,46 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
     return (element: element, end: close ?? first.end);
   }
   if (first.name != 'a' && first.name != 'picture') return null;
-  final closing = scanner.closingTag(first.name, first.end);
-  if (closing == null) return null;
-  final close = closing.end;
+  final href = first.name == 'a' ? first.attributes['href'] : null;
+  final children = <md.Node>[];
   var cursor = first.end;
-  while (cursor < close) {
-    final candidate = source.indexOf('<', cursor);
-    if (candidate < 0 || candidate >= close) break;
-    if (source.startsWith('<!--', candidate)) {
-      final commentEnd = scanner.commentEnd(candidate);
-      if (commentEnd == null || commentEnd > close) return null;
-      cursor = commentEnd;
+  while (cursor < source.length) {
+    if (_isWhitespace(source.codeUnitAt(cursor))) {
+      cursor++;
       continue;
     }
-    final tag = _scanTag(source, candidate);
-    if (tag == null) {
-      cursor = candidate + 1;
-      continue;
-    }
-    if (!tag.closing && _textOnlyTags.contains(tag.name)) {
-      final inertEnd = scanner.closingTag(tag.name, tag.end)?.end;
-      if (inertEnd == null || inertEnd > close) return null;
-      cursor = inertEnd;
-      continue;
-    }
-    if (!tag.closing && tag.name == first.name) return null;
-    if (!tag.closing && tag.name == 'img') {
-      if (_mediaElement(tag.attributes, kind: 'image') == null) {
-        cursor = tag.end;
-        continue;
+    // No suffix search or Markdown parse: reject at the first non-tag
+    // character or disallowed tag, including nested wrappers.
+    final tag = _scanTag(source, cursor);
+    if (tag == null) break;
+    if (tag.closing) {
+      if (tag.name == first.name &&
+          tag.attributes.isEmpty &&
+          source.codeUnitAt(tag.end - 2) != 0x2F &&
+          _containsMedia(children) &&
+          (first.name == 'picture' || (href != null && href.isNotEmpty))) {
+        return (element: md.Element('span', children), end: tag.end);
       }
-      final List<md.Node> children;
-      if (first.name == 'a') {
-        // Keep Markdown's code, escape, emphasis and link boundaries inside
-        // inline anchors, sharing the document's reference definitions.
-        final parser = md.InlineParser(
-          source.substring(first.end, closing.start),
-          document,
-        )..syntaxes.insert(0, _MediaEntitySyntax());
-        children = parser.parse();
-        final href = first.attributes['href'];
-        if (href != null && href.isNotEmpty) {
-          _linkInlineChildren(children, _decodeEntities(href));
-        }
+      break;
+    }
+    if (tag.name == 'img') {
+      final image = _mediaElement(tag.attributes, kind: 'image', link: href);
+      if (image == null) {
+        if (first.name == 'a') break;
       } else {
-        final blocks = _htmlBlockChildren(source.substring(start, close));
-        children = [
-          for (final block in blocks.whereType<md.Element>())
-            ...?block.children,
-        ];
+        children.add(image);
       }
-      if (!_containsMedia(children)) return null;
-      return (element: md.Element('span', children), end: close);
+    } else if (first.name == 'a' && tag.name == 'br') {
+      children.add(md.Element.empty('br'));
+    } else if (first.name != 'picture' || tag.name != 'source') {
+      break;
     }
     cursor = tag.end;
   }
+  scanner
+    ..rawInlineParent = first.name
+    ..rawInlineDepth = 1;
   return null;
-}
-
-// Decode anchor entities once, with the same Unicode scalar validation as
-// converted HTML blocks. Code spans and escapes are still claimed first.
-final class _MediaEntitySyntax extends md.DecodeHtmlSyntax {
-  @override
-  bool onMatch(md.InlineParser parser, Match match) {
-    parser.addNode(md.Text(_decodeEntities(match[0]!)));
-    return true;
-  }
-}
-
-void _linkInlineChildren(List<md.Node> nodes, String href) {
-  for (var index = 0; index < nodes.length; index++) {
-    final node = nodes[index];
-    if (node is md.Element) {
-      if (node.tag == markdownMediaElement) {
-        node.attributes.putIfAbsent('href', () => href);
-        continue;
-      }
-      // Explicit Markdown links keep their own destinations.
-      if (node.tag == 'a') continue;
-      if (node.children != null && node.tag != 'code') {
-        _linkInlineChildren(node.children!, href);
-        continue;
-      }
-    }
-    if (node.textContent.trim().isNotEmpty ||
-        (node is md.Element && node.tag == 'img')) {
-      nodes[index] = md.Element('a', [node])..attributes['href'] = href;
-    }
-  }
 }
 
 md.Element? _mediaElement(
@@ -541,6 +507,8 @@ final class _HtmlMediaScanner {
   _HtmlMediaScanner(this.source);
 
   final String source;
+  String? rawInlineParent;
+  var rawInlineDepth = 0;
   final _closing = <String, ({int from, RegExpMatch? match})>{};
   ({int from, int? end})? _comment;
   final _sources = <String, ({int from, int end, int? at, String? src})>{};

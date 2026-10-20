@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:gitlab_mobile/shared/in_app_links.dart';
 import 'package:gitlab_mobile/shared/markdown_media.dart';
 import 'package:gitlab_mobile/shared/markdown_media_syntax.dart';
@@ -106,11 +107,10 @@ void main() {
           baseline.where((e) => e.tag == tag).map((e) => e.textContent),
         );
       }
-      final media = elements.singleWhere((e) => e.tag == markdownMediaElement);
-      final href = value.key.startsWith('Codex')
-          ? 'https://docs.example/'
-          : 'https://x.example';
-      expect(media.attributes['href'], href);
+      expect(
+        md.HtmlRenderer().render(nodes),
+        md.HtmlRenderer().render(_parse(value.value, media: false)),
+      );
       if (value.key == 'Markdown links and reference') {
         expect(
           elements.where((e) => e.tag == 'a').map((e) => e.attributes['href']),
@@ -119,37 +119,18 @@ void main() {
       }
       final fixture = _client();
       addTearDown(fixture.client.close);
-      final taps = <Uri>[];
-      await tester.pumpWidget(_host(value.value, fixture.client, taps: taps));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(body: MarkdownBody(data: value.value)),
+        ),
+      );
+      final baselineText = _renderedText(tester);
+      await tester.pumpWidget(_host(value.value, fixture.client));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(fixture.adapter.requests.map((r) => r.uri.toString()), [
-        value.key.startsWith('Codex')
-            ? 'https://images.example/real.svg'
-            : 'https://cdn.example/a.png',
-      ]);
-      await tester.tap(find.byType(MarkdownMediaImage));
-      await tester.pump();
-      expect(taps, [Uri.parse(href)]);
-      if (value.key.startsWith('Codex')) {
-        expect(
-          _renderedText(tester),
-          contains('<img src="https://images.example/'),
-        );
-      }
-      if (value.key == 'Opus M4') {
-        final rich = tester
-            .widgetList<RichText>(find.byType(RichText))
-            .singleWhere((w) => w.text.toPlainText().contains('Join'));
-        for (final word in ['Join', 'now']) {
-          final recognizer = _tapRecognizer(rich.text, word);
-          expect(recognizer, isNotNull);
-          recognizer!.onTap!();
-          await tester.pump();
-        }
-        expect(taps, List.filled(3, Uri.parse(href)));
-        expect(_renderedText(tester), isNot(contains('**Join**')));
-      }
+      expect(_renderedText(tester), baselineText);
+      expect(find.byType(MarkdownMediaImage), findsNothing);
+      expect(fixture.adapter.requests, isEmpty);
     });
   }
 
@@ -250,18 +231,27 @@ void main() {
 
   for (final source in [
     '<p>&#xD800; <img src="https://cdn.example/a.png"></p>',
-    'x <a href="https://x.example"><img src="https://cdn.example/a.png">&#xDC00;</a>',
+    'x <a href="https://x.example"><img src="https://cdn.example/a.png" alt="&#xDC00;"></a>',
     '<p>&#55296; &#57343; <img src="https://cdn.example/a.png" alt="&#xDFFF;"></p>',
   ]) {
     testWidgets('FIX5 surrogate entity $source', (tester) async {
       final nodes = _parse(source);
-      expect(nodes.map((n) => n.textContent).join(), contains('\uFFFD'));
+      final media = _elements(
+        nodes,
+      ).where((e) => e.tag == markdownMediaElement);
+      if (source.contains('alt="&#xDC00;"')) {
+        expect(media.single.attributes['alt'], '\uFFFD');
+      } else {
+        expect(nodes.map((n) => n.textContent).join(), contains('\uFFFD'));
+      }
       final fixture = _client();
       addTearDown(fixture.client.close);
       await tester.pumpWidget(_host(source, fixture.client));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(_renderedText(tester), contains('\uFFFD'));
+      if (!source.contains('alt="&#xDC00;"')) {
+        expect(_renderedText(tester), contains('\uFFFD'));
+      }
     });
   }
 
