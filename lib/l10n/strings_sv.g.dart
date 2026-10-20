@@ -2072,6 +2072,7 @@ const _messagesSv = <String>[
   'AI-historiken rensades inte helt. Kontot behölls; försök ta bort det igen.',
   'En del av historiken kunde inte läsas och togs bort.',
   'Den här konversationen har nått lagringsgränsen. Nytt innehåll sparas inte.',
+  'Lagringsutrymmet är fullt just nu. Sparandet återupptas när utrymme frigörs.',
   'Den krypterade historiken är inte tillgänglig just nu. Ett nytt försök görs senare.',
   'Krypteringsnyckeln för det här kontot saknas; historiken kan inte dekrypteras.',
   'AI-historikens data är skadade eller använder ett format som inte stöds.',

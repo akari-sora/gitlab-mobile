@@ -2070,6 +2070,7 @@
   "aiHistoryCleanupDetail": "AI-historiken rensades inte helt. Kontot behölls; försök ta bort det igen.",
   "aiHistoryRemovedUnreadable": "En del av historiken kunde inte läsas och togs bort.",
   "aiHistoryStorageLimit": "Den här konversationen har nått lagringsgränsen. Nytt innehåll sparas inte.",
+  "aiHistoryCapacityLimit": "Lagringsutrymmet är fullt just nu. Sparandet återupptas när utrymme frigörs.",
   "aiHistoryUnavailable": "Den krypterade historiken är inte tillgänglig just nu. Ett nytt försök görs senare.",
   "aiHistoryKeyMissing": "Krypteringsnyckeln för det här kontot saknas; historiken kan inte dekrypteras.",
   "aiHistoryInvalidData": "AI-historikens data är skadade eller använder ett format som inte stöds.",

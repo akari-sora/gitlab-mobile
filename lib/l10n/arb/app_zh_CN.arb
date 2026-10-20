@@ -2070,6 +2070,7 @@
   "aiHistoryCleanupDetail": "AI 记录尚未完全清除。账号已保留，请重试移除。",
   "aiHistoryRemovedUnreadable": "部分记录无法读取，已移除。",
   "aiHistoryStorageLimit": "此对话已达到保存上限，之后的内容不会保存。",
+  "aiHistoryCapacityLimit": "存储空间目前已满。释放空间后会继续保存。",
   "aiHistoryUnavailable": "目前无法访问加密记录，稍后会重试。",
   "aiHistoryKeyMissing": "找不到此账号的加密密钥；记录无法解密。",
   "aiHistoryInvalidData": "AI 记录数据已损坏或格式不受支持。",

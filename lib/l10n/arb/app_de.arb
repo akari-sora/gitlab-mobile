@@ -2070,6 +2070,7 @@
   "aiHistoryCleanupDetail": "Der AI-Verlauf wurde nicht vollständig gelöscht. Das Konto wurde behalten; versuchen Sie erneut, es zu entfernen.",
   "aiHistoryRemovedUnreadable": "Ein Teil des Verlaufs konnte nicht gelesen werden und wurde entfernt.",
   "aiHistoryStorageLimit": "Diese Unterhaltung hat das Speicherlimit erreicht. Neue Inhalte werden nicht gespeichert.",
+  "aiHistoryCapacityLimit": "Der Speicher ist derzeit voll. Das Speichern wird fortgesetzt, sobald Speicherplatz frei wird.",
   "aiHistoryUnavailable": "Der verschlüsselte Verlauf ist derzeit nicht verfügbar. Später wird es erneut versucht.",
   "aiHistoryKeyMissing": "Der Verschlüsselungsschlüssel für dieses Konto fehlt; der Verlauf kann nicht entschlüsselt werden.",
   "aiHistoryInvalidData": "Die AI-Verlaufsdaten sind beschädigt oder verwenden ein nicht unterstütztes Format.",

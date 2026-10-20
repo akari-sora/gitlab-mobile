@@ -2070,6 +2070,7 @@
   "aiHistoryCleanupDetail": "De AI-geschiedenis is niet volledig gewist. Het account is behouden; probeer het opnieuw te verwijderen.",
   "aiHistoryRemovedUnreadable": "Een deel van de geschiedenis kon niet worden gelezen en is verwijderd.",
   "aiHistoryStorageLimit": "Dit gesprek heeft de opslaglimiet bereikt. Nieuwe inhoud wordt niet opgeslagen.",
+  "aiHistoryCapacityLimit": "De opslagruimte is momenteel vol. Opslaan wordt hervat zodra er ruimte vrijkomt.",
   "aiHistoryUnavailable": "De versleutelde geschiedenis is nu niet beschikbaar. Later wordt het opnieuw geprobeerd.",
   "aiHistoryKeyMissing": "De versleutelingssleutel voor dit account ontbreekt; de geschiedenis kan niet worden ontsleuteld.",
   "aiHistoryInvalidData": "De AI-geschiedenis is beschadigd of gebruikt een niet-ondersteunde indeling.",

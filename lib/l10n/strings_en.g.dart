@@ -2072,6 +2072,7 @@ const _messagesEn = <String>[
   'AI history was not completely cleared. The account was kept; try removing it again.',
   'Some history could not be read and was removed.',
   'This conversation reached the storage limit. New content will not be saved.',
+  'Storage is full right now. Saving will resume when space is freed.',
   'Encrypted history is unavailable right now. It will be retried later.',
   'The encryption key for this account is missing; its history cannot be decrypted.',
   'AI history data is damaged or uses an unsupported format.',

@@ -2072,6 +2072,7 @@ const _messagesRo = <String>[
   'Istoricul AI nu a fost șters complet. Contul a fost păstrat; încearcă să îl elimini din nou.',
   'O parte din istoric nu a putut fi citită și a fost eliminată.',
   'Această conversație a atins limita de stocare. Conținutul nou nu va fi salvat.',
+  'Spațiul de stocare este plin momentan. Salvarea va fi reluată după eliberarea spațiului.',
   'Istoricul criptat nu este disponibil acum. Se va reîncerca mai târziu.',
   'Cheia de criptare pentru acest cont lipsește; istoricul nu poate fi decriptat.',
   'Datele istoricului AI sunt deteriorate sau folosesc un format neacceptat.',

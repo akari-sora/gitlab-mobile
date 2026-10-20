@@ -2070,6 +2070,7 @@
   "aiHistoryCleanupDetail": "Historie AI nebyla zcela vymazána. Účet zůstal zachován; zkuste jej odebrat znovu.",
   "aiHistoryRemovedUnreadable": "Část historie nebylo možné přečíst a byla odstraněna.",
   "aiHistoryStorageLimit": "Tato konverzace dosáhla limitu úložiště. Nový obsah se nebude ukládat.",
+  "aiHistoryCapacityLimit": "Úložiště je nyní plné. Ukládání bude pokračovat, až se uvolní místo.",
   "aiHistoryUnavailable": "Šifrovaná historie nyní není dostupná. Pokus se zopakuje později.",
   "aiHistoryKeyMissing": "Šifrovací klíč tohoto účtu chybí; historii nelze dešifrovat.",
   "aiHistoryInvalidData": "Data historie AI jsou poškozená nebo používají nepodporovaný formát.",

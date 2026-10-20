@@ -2072,6 +2072,7 @@ const _messagesDe = <String>[
   'Der AI-Verlauf wurde nicht vollständig gelöscht. Das Konto wurde behalten; versuchen Sie erneut, es zu entfernen.',
   'Ein Teil des Verlaufs konnte nicht gelesen werden und wurde entfernt.',
   'Diese Unterhaltung hat das Speicherlimit erreicht. Neue Inhalte werden nicht gespeichert.',
+  'Der Speicher ist derzeit voll. Das Speichern wird fortgesetzt, sobald Speicherplatz frei wird.',
   'Der verschlüsselte Verlauf ist derzeit nicht verfügbar. Später wird es erneut versucht.',
   'Der Verschlüsselungsschlüssel für dieses Konto fehlt; der Verlauf kann nicht entschlüsselt werden.',
   'Die AI-Verlaufsdaten sind beschädigt oder verwenden ein nicht unterstütztes Format.',

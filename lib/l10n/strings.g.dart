@@ -6304,33 +6304,36 @@ final class AppStrings {
   /// 此對話已達保存上限，之後的內容不會保存。
   String get aiHistoryStorageLimit => language._messages[2069];
 
+  /// 儲存空間目前已滿。釋出空間後會繼續保存。
+  String get aiHistoryCapacityLimit => language._messages[2070];
+
   /// 目前無法存取加密紀錄，稍後會重試。
-  String get aiHistoryUnavailable => language._messages[2070];
+  String get aiHistoryUnavailable => language._messages[2071];
 
   /// 找不到此帳號的加密金鑰；紀錄無法解密。
-  String get aiHistoryKeyMissing => language._messages[2071];
+  String get aiHistoryKeyMissing => language._messages[2072];
 
   /// AI 紀錄資料已損壞或格式不受支援。
-  String get aiHistoryInvalidData => language._messages[2072];
+  String get aiHistoryInvalidData => language._messages[2073];
 
   /// AI 紀錄索引已修復，並已復原對話。
-  String get aiHistoryIndexRepaired => language._messages[2073];
+  String get aiHistoryIndexRepaired => language._messages[2074];
 
   /// 部分 AI 紀錄使用不受支援的格式，已保留在此裝置上。
-  String get aiHistoryUnsupported => language._messages[2074];
+  String get aiHistoryUnsupported => language._messages[2075];
 
   /// 無法保存此對話，請重試。
-  String get aiHistoryNotSaved => language._messages[2075];
+  String get aiHistoryNotSaved => language._messages[2076];
 
   /// 此對話已從已保存的紀錄中移除，以釋出儲存空間。
-  String get aiHistoryEvicted => language._messages[2076];
+  String get aiHistoryEvicted => language._messages[2077];
 
   /// 無法讀取紀錄。請重試。
-  String get aiHistoryReadFailed => language._messages[2077];
+  String get aiHistoryReadFailed => language._messages[2078];
 
   /// 已移除過期的暫存紀錄檔。
-  String get aiHistoryTemporaryFilesRemoved => language._messages[2078];
+  String get aiHistoryTemporaryFilesRemoved => language._messages[2079];
 
   /// 清除不受支援的紀錄
-  String get aiHistoryClearUnsupported => language._messages[2079];
+  String get aiHistoryClearUnsupported => language._messages[2080];
 }

@@ -26,6 +26,7 @@ enum AiHistoryState {
 final class _AccountHistory {
   AiHistoryState state = AiHistoryState.unknown;
   int epoch = 0;
+  bool classified = false;
   Uint8List? key;
   AiAccountRecord? record;
   Future<void>? tail;
@@ -57,17 +58,14 @@ final class AiHistoryCoordinator extends ChangeNotifier
        _clock = clock ?? DateTime.now {
     this.files.canEvictAccount = (segment) {
       for (final entry in _accounts.entries) {
-        if (aiHistoryAccountSegment(entry.key) == segment &&
-            const {
-              AiHistoryState.readFailed,
-              AiHistoryState.unavailable,
-              AiHistoryState.keyMissing,
-              AiHistoryState.cleaning,
-            }.contains(entry.value.state)) {
-          return false;
+        if (aiHistoryAccountSegment(entry.key) == segment) {
+          return entry.value.classified &&
+              entry.value.state == AiHistoryState.ready;
         }
       }
-      return true;
+      // Loading a key alone cannot establish that history is supported. Keep
+      // unscanned accounts protected until a complete file scan succeeds.
+      return false;
     };
   }
 
@@ -145,9 +143,12 @@ final class AiHistoryCoordinator extends ChangeNotifier
       return l10n.aiHistoryInvalidData;
     }
     if (conversationId != null &&
-        (entry.fullConversations.contains(conversationId) ||
-            entry.capacityConversations.contains(conversationId))) {
+        entry.fullConversations.contains(conversationId)) {
       return l10n.aiHistoryStorageLimit;
+    }
+    if (conversationId != null &&
+        entry.capacityConversations.contains(conversationId)) {
+      return l10n.aiHistoryCapacityLimit;
     }
     if (conversationId != null &&
         entry.failedConversations.contains(conversationId)) {
@@ -372,6 +373,7 @@ final class AiHistoryCoordinator extends ChangeNotifier
           );
           if (!_current(entry, epoch)) return null;
           _accumulateRecovery(entry, result);
+          entry.classified = true;
           entry.state = AiHistoryState.ready;
           entry.failure = null;
           _emit();
@@ -436,12 +438,14 @@ final class AiHistoryCoordinator extends ChangeNotifier
         if (result == AiHistorySaveResult.failed) {
           entry.failedConversations.add(conversation.id);
         } else if (result == AiHistorySaveResult.saved) {
+          entry.classified = true;
           entry.state = AiHistoryState.ready;
           entry.failure = null;
           entry.capacityConversations.remove(conversation.id);
           entry.failedConversations.remove(conversation.id);
           entry.evictedConversations.remove(conversation.id);
         } else if (result == AiHistorySaveResult.evicted) {
+          entry.classified = true;
           entry.evictedConversations.add(conversation.id);
         }
         _emit();
@@ -479,6 +483,7 @@ final class AiHistoryCoordinator extends ChangeNotifier
 
   Future<void> _clearAccount(String account, _AccountHistory entry) async {
     entry.state = AiHistoryState.cleaning;
+    entry.classified = false;
     entry.epoch++;
     entry.retry?.cancel();
     entry.retry = null;
@@ -618,7 +623,24 @@ final class AiHistoryCoordinator extends ChangeNotifier
       }
     }
     if (_disposed || !session.accountsLoaded) return;
-    final accounts = session.accounts.map((account) => account.key).toSet();
+    while (!_disposed && session.accountsLoaded) {
+      final accounts = session.accounts.map((account) => account.key).toSet();
+      await _recoverAccounts(session, accounts);
+      if (setEquals(
+        accounts,
+        session.accounts.map((account) => account.key).toSet(),
+      )) {
+        return;
+      }
+      // Membership changed during an awaited step. Retry with the current
+      // account set so later accounts do not stay unclassified for this run.
+    }
+  }
+
+  Future<void> _recoverAccounts(
+    SessionController session,
+    Set<String> accounts,
+  ) async {
     bool current() =>
         !_disposed &&
         session.accountsLoaded &&
@@ -683,6 +705,7 @@ final class AiHistoryCoordinator extends ChangeNotifier
             );
             if (current() && _current(entry, epoch)) {
               _accumulateRecovery(entry, recovery);
+              entry.classified = true;
               _emit();
             }
           });

@@ -2070,6 +2070,7 @@
   "aiHistoryCleanupDetail": "Sejarah AI tidak dikosongkan sepenuhnya. Akaun dikekalkan; cuba alih keluarnya sekali lagi.",
   "aiHistoryRemovedUnreadable": "Sebahagian sejarah tidak dapat dibaca lalu dialih keluar.",
   "aiHistoryStorageLimit": "Perbualan ini telah mencapai had storan. Kandungan baharu tidak akan disimpan.",
+  "aiHistoryCapacityLimit": "Ruang storan penuh buat masa ini. Penyimpanan akan disambung apabila ruang tersedia.",
   "aiHistoryUnavailable": "Sejarah disulitkan tidak tersedia sekarang. Percubaan akan dibuat lagi kemudian.",
   "aiHistoryKeyMissing": "Kunci penyulitan untuk akaun ini tiada; sejarahnya tidak dapat dinyahsulit.",
   "aiHistoryInvalidData": "Data sejarah AI rosak atau menggunakan format yang tidak disokong.",

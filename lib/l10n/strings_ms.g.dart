@@ -2072,6 +2072,7 @@ const _messagesMs = <String>[
   'Sejarah AI tidak dikosongkan sepenuhnya. Akaun dikekalkan; cuba alih keluarnya sekali lagi.',
   'Sebahagian sejarah tidak dapat dibaca lalu dialih keluar.',
   'Perbualan ini telah mencapai had storan. Kandungan baharu tidak akan disimpan.',
+  'Ruang storan penuh buat masa ini. Penyimpanan akan disambung apabila ruang tersedia.',
   'Sejarah disulitkan tidak tersedia sekarang. Percubaan akan dibuat lagi kemudian.',
   'Kunci penyulitan untuk akaun ini tiada; sejarahnya tidak dapat dinyahsulit.',
   'Data sejarah AI rosak atau menggunakan format yang tidak disokong.',

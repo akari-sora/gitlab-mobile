@@ -156,7 +156,7 @@ void main() {
 
   group('malformed secure values', () {
     test(
-      'malformed provider-key entries are skipped and reported per scan',
+      'malformed provider-key entries are skipped and reported distinctly',
       () async {
         final store = _FaultStore();
         store.memory.debugPut(
@@ -182,7 +182,7 @@ void main() {
         await settings.resetProviders();
 
         expect(settings.providers, isEmpty);
-        expect(settings.malformedSecureInventoryCount, 2);
+        expect(settings.malformedSecureInventoryCount, 1);
         expect((await store.readProviderKey('a')).isFound, isFalse);
         expect(store.deletedProviderKeys, containsAll(<String>['orphan', 'a']));
         expect(store.deletedProviderKeys, isNot(contains('%%%')));

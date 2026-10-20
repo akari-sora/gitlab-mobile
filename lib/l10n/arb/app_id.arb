@@ -2070,6 +2070,7 @@
   "aiHistoryCleanupDetail": "Riwayat AI belum dihapus sepenuhnya. Akun dipertahankan; coba hapus lagi.",
   "aiHistoryRemovedUnreadable": "Sebagian riwayat tidak dapat dibaca dan telah dihapus.",
   "aiHistoryStorageLimit": "Percakapan ini mencapai batas penyimpanan. Konten baru tidak akan disimpan.",
+  "aiHistoryCapacityLimit": "Ruang penyimpanan saat ini penuh. Penyimpanan akan dilanjutkan setelah ruang tersedia.",
   "aiHistoryUnavailable": "Riwayat terenkripsi sedang tidak tersedia. Sistem akan mencoba lagi nanti.",
   "aiHistoryKeyMissing": "Kunci enkripsi untuk akun ini tidak ada; riwayatnya tidak dapat didekripsi.",
   "aiHistoryInvalidData": "Data riwayat AI rusak atau menggunakan format yang tidak didukung.",

@@ -10411,6 +10411,11 @@
     "description": "Banner shown when a conversation reaches its plaintext storage limit",
     "placeholders": {}
   },
+  "aiHistoryCapacityLimit": "儲存空間目前已滿。釋出空間後會繼續保存。",
+  "@aiHistoryCapacityLimit": {
+    "description": "Retryable notice shown when device capacity prevents saving encrypted AI history",
+    "placeholders": {}
+  },
   "aiHistoryUnavailable": "目前無法存取加密紀錄，稍後會重試。",
   "@aiHistoryUnavailable": {
     "description": "State shown when secure storage is temporarily unavailable",

@@ -2072,6 +2072,7 @@ const _messagesIt = <String>[
   'La cronologia AI non è stata cancellata completamente. L’account è stato mantenuto; prova a rimuoverlo di nuovo.',
   'Parte della cronologia non era leggibile ed è stata rimossa.',
   'Questa conversazione ha raggiunto il limite di archiviazione. I nuovi contenuti non verranno salvati.',
+  'Lo spazio di archiviazione è al momento esaurito. Il salvataggio riprenderà quando verrà liberato spazio.',
   'La cronologia crittografata non è disponibile al momento. Verrà riprovato più tardi.',
   'Manca la chiave di crittografia per questo account; la cronologia non può essere decifrata.',
   'I dati della cronologia AI sono danneggiati o usano un formato non supportato.',

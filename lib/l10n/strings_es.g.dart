@@ -2072,6 +2072,7 @@ const _messagesEs = <String>[
   'El historial de AI no se borró por completo. Se conservó la cuenta; intenta eliminarla de nuevo.',
   'Parte del historial no se pudo leer y se eliminó.',
   'Esta conversación alcanzó el límite de almacenamiento. El contenido nuevo no se guardará.',
+  'El espacio de almacenamiento está lleno. El guardado se reanudará cuando se libere espacio.',
   'El historial cifrado no está disponible ahora. Se volverá a intentar más tarde.',
   'Falta la clave de cifrado de esta cuenta; no se puede descifrar su historial.',
   'Los datos del historial de AI están dañados o usan un formato no compatible.',

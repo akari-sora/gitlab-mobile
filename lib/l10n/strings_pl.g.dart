@@ -2072,6 +2072,7 @@ const _messagesPl = <String>[
   'Historia AI nie została całkowicie wyczyszczona. Konto zachowano; spróbuj usunąć je ponownie.',
   'Części historii nie można było odczytać i została usunięta.',
   'Ta rozmowa osiągnęła limit pamięci. Nowa treść nie będzie zapisywana.',
+  'Pamięć jest obecnie pełna. Zapisywanie zostanie wznowione po zwolnieniu miejsca.',
   'Zaszyfrowana historia jest teraz niedostępna. Próba zostanie ponowiona później.',
   'Brakuje klucza szyfrowania tego konta; historii nie można odszyfrować.',
   'Dane historii AI są uszkodzone lub mają nieobsługiwany format.',

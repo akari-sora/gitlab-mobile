@@ -2072,6 +2072,7 @@ const _messagesPtBr = <String>[
   'O histórico de AI não foi totalmente limpo. A conta foi mantida; tente removê-la novamente.',
   'Parte do histórico não pôde ser lida e foi removida.',
   'Esta conversa atingiu o limite de armazenamento. O novo conteúdo não será salvo.',
+  'O armazenamento está cheio no momento. O salvamento será retomado quando houver espaço livre.',
   'O histórico criptografado está indisponível agora. Uma nova tentativa será feita mais tarde.',
   'A chave de criptografia desta conta está ausente; o histórico não pode ser descriptografado.',
   'Os dados do histórico de AI estão danificados ou usam um formato incompatível.',

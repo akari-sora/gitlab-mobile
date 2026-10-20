@@ -2072,6 +2072,7 @@ const _messagesVi = <String>[
   'Lịch sử AI chưa được xóa hoàn toàn. Tài khoản được giữ lại; hãy thử xóa lại.',
   'Không thể đọc một phần lịch sử nên phần đó đã bị xóa.',
   'Cuộc trò chuyện này đã đạt giới hạn lưu trữ. Nội dung mới sẽ không được lưu.',
+  'Dung lượng lưu trữ hiện đã đầy. Việc lưu sẽ tiếp tục khi có chỗ trống.',
   'Lịch sử được mã hóa hiện không khả dụng. Hệ thống sẽ thử lại sau.',
   'Thiếu khóa mã hóa của tài khoản này; không thể giải mã lịch sử.',
   'Dữ liệu lịch sử AI bị hỏng hoặc dùng định dạng không được hỗ trợ.',

@@ -2070,6 +2070,7 @@
   "aiHistoryCleanupDetail": "La cronologia AI non è stata cancellata completamente. L’account è stato mantenuto; prova a rimuoverlo di nuovo.",
   "aiHistoryRemovedUnreadable": "Parte della cronologia non era leggibile ed è stata rimossa.",
   "aiHistoryStorageLimit": "Questa conversazione ha raggiunto il limite di archiviazione. I nuovi contenuti non verranno salvati.",
+  "aiHistoryCapacityLimit": "Lo spazio di archiviazione è al momento esaurito. Il salvataggio riprenderà quando verrà liberato spazio.",
   "aiHistoryUnavailable": "La cronologia crittografata non è disponibile al momento. Verrà riprovato più tardi.",
   "aiHistoryKeyMissing": "Manca la chiave di crittografia per questo account; la cronologia non può essere decifrata.",
   "aiHistoryInvalidData": "I dati della cronologia AI sono danneggiati o usano un formato non supportato.",

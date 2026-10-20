@@ -2070,6 +2070,7 @@
   "aiHistoryCleanupDetail": "AI履歴は完全に消去されていません。アカウントは保持されました。もう一度削除してください。",
   "aiHistoryRemovedUnreadable": "一部の履歴を読み取れなかったため、削除しました。",
   "aiHistoryStorageLimit": "この会話は保存上限に達しました。今後の内容は保存されません。",
+  "aiHistoryCapacityLimit": "現在、保存領域がいっぱいです。空き領域ができると保存が再開されます。",
   "aiHistoryUnavailable": "暗号化された履歴を現在利用できません。後で再試行します。",
   "aiHistoryKeyMissing": "このアカウントの暗号鍵がありません。履歴を復号できません。",
   "aiHistoryInvalidData": "AI履歴データが破損しているか、対応していない形式です。",

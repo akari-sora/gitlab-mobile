@@ -2070,6 +2070,7 @@
   "aiHistoryCleanupDetail": "AI geçmişi tamamen temizlenmedi. Hesap korundu; yeniden kaldırmayı deneyin.",
   "aiHistoryRemovedUnreadable": "Geçmişin bir bölümü okunamadı ve kaldırıldı.",
   "aiHistoryStorageLimit": "Bu konuşma depolama sınırına ulaştı. Yeni içerik kaydedilmeyecek.",
+  "aiHistoryCapacityLimit": "Depolama alanı şu anda dolu. Alan açıldığında kaydetme işlemi devam edecek.",
   "aiHistoryUnavailable": "Şifrelenmiş geçmiş şu anda kullanılamıyor. Daha sonra yeniden denenecek.",
   "aiHistoryKeyMissing": "Bu hesabın şifreleme anahtarı eksik; geçmişin şifresi çözülemiyor.",
   "aiHistoryInvalidData": "AI geçmiş verileri bozuk veya desteklenmeyen bir biçim kullanıyor.",

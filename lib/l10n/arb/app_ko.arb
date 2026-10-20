@@ -2070,6 +2070,7 @@
   "aiHistoryCleanupDetail": "AI 기록이 완전히 지워지지 않았습니다. 계정은 유지되었습니다. 다시 삭제해 보세요.",
   "aiHistoryRemovedUnreadable": "일부 기록을 읽을 수 없어 삭제했습니다.",
   "aiHistoryStorageLimit": "이 대화가 저장 한도에 도달했습니다. 이후 내용은 저장되지 않습니다.",
+  "aiHistoryCapacityLimit": "현재 저장 공간이 가득 찼습니다. 공간을 확보하면 저장이 다시 시작됩니다.",
   "aiHistoryUnavailable": "현재 암호화된 기록에 접근할 수 없습니다. 나중에 다시 시도합니다.",
   "aiHistoryKeyMissing": "이 계정의 암호화 키가 없습니다. 기록을 복호화할 수 없습니다.",
   "aiHistoryInvalidData": "AI 기록 데이터가 손상되었거나 지원하지 않는 형식입니다.",

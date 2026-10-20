@@ -2070,6 +2070,7 @@
   "aiHistoryCleanupDetail": "El historial de AI no se borró por completo. Se conservó la cuenta; intenta eliminarla de nuevo.",
   "aiHistoryRemovedUnreadable": "Parte del historial no se pudo leer y se eliminó.",
   "aiHistoryStorageLimit": "Esta conversación alcanzó el límite de almacenamiento. El contenido nuevo no se guardará.",
+  "aiHistoryCapacityLimit": "El espacio de almacenamiento está lleno. El guardado se reanudará cuando se libere espacio.",
   "aiHistoryUnavailable": "El historial cifrado no está disponible ahora. Se volverá a intentar más tarde.",
   "aiHistoryKeyMissing": "Falta la clave de cifrado de esta cuenta; no se puede descifrar su historial.",
   "aiHistoryInvalidData": "Los datos del historial de AI están dañados o usan un formato no compatible.",

@@ -2072,6 +2072,7 @@ const _messagesId = <String>[
   'Riwayat AI belum dihapus sepenuhnya. Akun dipertahankan; coba hapus lagi.',
   'Sebagian riwayat tidak dapat dibaca dan telah dihapus.',
   'Percakapan ini mencapai batas penyimpanan. Konten baru tidak akan disimpan.',
+  'Ruang penyimpanan saat ini penuh. Penyimpanan akan dilanjutkan setelah ruang tersedia.',
   'Riwayat terenkripsi sedang tidak tersedia. Sistem akan mencoba lagi nanti.',
   'Kunci enkripsi untuk akun ini tidak ada; riwayatnya tidak dapat didekripsi.',
   'Data riwayat AI rusak atau menggunakan format yang tidak didukung.',

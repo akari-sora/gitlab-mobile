@@ -2070,6 +2070,7 @@
   "aiHistoryCleanupDetail": "AI history was not completely cleared. The account was kept; try removing it again.",
   "aiHistoryRemovedUnreadable": "Some history could not be read and was removed.",
   "aiHistoryStorageLimit": "This conversation reached the storage limit. New content will not be saved.",
+  "aiHistoryCapacityLimit": "Storage is full right now. Saving will resume when space is freed.",
   "aiHistoryUnavailable": "Encrypted history is unavailable right now. It will be retried later.",
   "aiHistoryKeyMissing": "The encryption key for this account is missing; its history cannot be decrypted.",
   "aiHistoryInvalidData": "AI history data is damaged or uses an unsupported format.",

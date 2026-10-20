@@ -2072,6 +2072,7 @@ const _messagesFr = <String>[
   'L’historique AI n’a pas été entièrement effacé. Le compte a été conservé ; essayez à nouveau de le supprimer.',
   'Une partie de l’historique était illisible et a été supprimée.',
   'Cette conversation a atteint la limite de stockage. Le nouveau contenu ne sera plus enregistré.',
+  'L’espace de stockage est actuellement plein. L’enregistrement reprendra lorsque de l’espace sera libéré.',
   'L’historique chiffré est actuellement indisponible. Une nouvelle tentative aura lieu plus tard.',
   'La clé de chiffrement de ce compte est absente ; son historique ne peut pas être déchiffré.',
   'Les données de l’historique AI sont endommagées ou utilisent un format non pris en charge.',

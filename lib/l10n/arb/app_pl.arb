@@ -2070,6 +2070,7 @@
   "aiHistoryCleanupDetail": "Historia AI nie została całkowicie wyczyszczona. Konto zachowano; spróbuj usunąć je ponownie.",
   "aiHistoryRemovedUnreadable": "Części historii nie można było odczytać i została usunięta.",
   "aiHistoryStorageLimit": "Ta rozmowa osiągnęła limit pamięci. Nowa treść nie będzie zapisywana.",
+  "aiHistoryCapacityLimit": "Pamięć jest obecnie pełna. Zapisywanie zostanie wznowione po zwolnieniu miejsca.",
   "aiHistoryUnavailable": "Zaszyfrowana historia jest teraz niedostępna. Próba zostanie ponowiona później.",
   "aiHistoryKeyMissing": "Brakuje klucza szyfrowania tego konta; historii nie można odszyfrować.",
   "aiHistoryInvalidData": "Dane historii AI są uszkodzone lub mają nieobsługiwany format.",

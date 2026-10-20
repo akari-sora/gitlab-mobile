@@ -237,6 +237,9 @@ final class AiSecureInventory {
     required this.malformedProviderKeyCount,
     required this.malformedAccountKeyCount,
     required this.malformedHistoryKeyCount,
+    required this.malformedProviderKeys,
+    required this.malformedAccountKeys,
+    required this.malformedHistoryKeys,
   });
 
   final List<String> providerKeyIds;
@@ -245,6 +248,9 @@ final class AiSecureInventory {
   final int malformedProviderKeyCount;
   final int malformedAccountKeyCount;
   final int malformedHistoryKeyCount;
+  final Set<String> malformedProviderKeys;
+  final Set<String> malformedAccountKeys;
+  final Set<String> malformedHistoryKeys;
 }
 
 final class AiTombstoneInventory {
@@ -461,6 +467,9 @@ Future<AiSecureInventory> readAiSecureInventory(AiStore store) async {
     malformedProviderKeyCount: 0,
     malformedAccountKeyCount: 0,
     malformedHistoryKeyCount: 0,
+    malformedProviderKeys: const <String>{},
+    malformedAccountKeys: const <String>{},
+    malformedHistoryKeys: const <String>{},
   );
 }
 
@@ -1102,6 +1111,11 @@ final Object _secureSettingsScope = Object();
 final Expando<AiSettingsController> _settingsOwners =
     Expando<AiSettingsController>('aiSettingsOwner');
 
+// The future aiSettingsProvider must be an app-level single owner. It must not
+// be autoDispose or live under an account-keyed provider tree. While the secure
+// device owner exists, this factory returns it regardless of the storage
+// instance passed through a SecureAiStore wrapper.
+
 final class AiSettingsController extends ChangeNotifier {
   factory AiSettingsController(AiStore store) {
     final scope = store is SecureAiStore ? _secureSettingsScope : store;
@@ -1131,7 +1145,7 @@ final class AiSettingsController extends ChangeNotifier {
   final Map<String, int> _consentRevisions = <String, int>{};
   var _secretSetId = 0;
   var _malformedAccountRecordCount = 0;
-  var _malformedSecureInventoryCount = 0;
+  final Set<String> _malformedSecureInventoryEntries = <String>{};
   Future<void>? _providerMutationTail;
   var _disposed = false;
 
@@ -1139,7 +1153,8 @@ final class AiSettingsController extends ChangeNotifier {
   Map<String, String> get knownProviderKeys => Map.unmodifiable(_providerKeys);
   int get secretSetId => _secretSetId;
   int get malformedAccountRecordCount => _malformedAccountRecordCount;
-  int get malformedSecureInventoryCount => _malformedSecureInventoryCount;
+  int get malformedSecureInventoryCount =>
+      _malformedSecureInventoryEntries.length;
 
   int? recipientRevision(String providerId) =>
       _provider(providerId)?.recipientRevision;
@@ -1512,14 +1527,11 @@ final class AiSettingsController extends ChangeNotifier {
 
   Future<void> resetProviders() => _enqueue(() async {
     final deletingIds = _deletingProviders.keys.toSet();
-    _providers = const <AiProviderConfig>[];
-    _deletingProviders.clear();
-    _providerKeys.clear();
-    _notify();
     final providerIds = <String>{};
     if (store is AiStoreSecureInventory) {
       providerIds.addAll(await _readProviderKeyIds());
     }
+    final accounts = <String, AiAccountRecord?>{};
     for (final accountKey in await _readAccountKeys()) {
       final before = await store.loadAccount(accountKey);
       if (before.failure case final failure?) {
@@ -1529,6 +1541,14 @@ final class AiSettingsController extends ChangeNotifier {
         }
         throw AiStoreException(failure);
       }
+      accounts[accountKey] = before.value;
+      if (before.value?.consents.isNotEmpty == true &&
+          _accountMutations.isCleaning(accountKey)) {
+        await _requireTombstoneForSkippedMutation(accountKey, 'resetProviders');
+      }
+    }
+    for (final entry in accounts.entries) {
+      final accountKey = entry.key;
       AiAccountRecord? updated;
       try {
         updated = await _accountMutations.mutate(accountKey, (account) {
@@ -1543,7 +1563,7 @@ final class AiSettingsController extends ChangeNotifier {
       if (updated != null) {
         _accounts[accountKey] = updated;
         _consentRevisions[accountKey] = consentRevision(accountKey) + 1;
-      } else if (before.value?.consents.isNotEmpty == true) {
+      } else if (entry.value?.consents.isNotEmpty == true) {
         await _requireTombstoneForSkippedMutation(accountKey, 'resetProviders');
       }
     }
@@ -1555,6 +1575,9 @@ final class AiSettingsController extends ChangeNotifier {
       removeDeletingIds: deletingIds,
       reset: true,
     );
+    _providers = const <AiProviderConfig>[];
+    _deletingProviders.clear();
+    _providerKeys.clear();
     for (final providerId in deletingIds) {
       _finishProviderDeletion(providerId);
     }
@@ -1588,9 +1611,9 @@ final class AiSettingsController extends ChangeNotifier {
 
   Future<List<String>> _readAccountKeys() async {
     final inventory = await readAiSecureInventory(store);
-    final malformed = inventory.malformedAccountKeyCount;
-    if (malformed > 0) {
-      _malformedSecureInventoryCount += malformed;
+    final countBefore = _malformedSecureInventoryEntries.length;
+    _malformedSecureInventoryEntries.addAll(inventory.malformedAccountKeys);
+    if (_malformedSecureInventoryEntries.length != countBefore) {
       _notify();
     }
     return inventory.accountKeys;
@@ -1598,9 +1621,9 @@ final class AiSettingsController extends ChangeNotifier {
 
   Future<List<String>> _readProviderKeyIds() async {
     final inventory = await readAiSecureInventory(store);
-    final malformed = inventory.malformedProviderKeyCount;
-    if (malformed > 0) {
-      _malformedSecureInventoryCount += malformed;
+    final countBefore = _malformedSecureInventoryEntries.length;
+    _malformedSecureInventoryEntries.addAll(inventory.malformedProviderKeys);
+    if (_malformedSecureInventoryEntries.length != countBefore) {
       _notify();
     }
     return inventory.providerKeyIds;
@@ -1689,7 +1712,7 @@ final class AiSettingsController extends ChangeNotifier {
       return Future<T>.error(StateError('AiSettingsController is disposed'));
     }
     final previous = _providerMutationTail;
-    final run = previous == null ? action() : previous.then((_) => action());
+    final run = (previous ?? Future<void>.value()).then((_) => action());
     final tail = run.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     _providerMutationTail = tail;
     unawaited(
@@ -1736,6 +1759,9 @@ AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
   final providerKeys = <String>[];
   final accountKeys = <String>[];
   final historyKeys = <String>[];
+  final malformedProviderKeyEntries = <String>{};
+  final malformedAccountKeyEntries = <String>{};
+  final malformedHistoryKeyEntries = <String>{};
   var malformedProviderKeys = 0;
   var malformedAccountKeys = 0;
   var malformedHistoryKeys = 0;
@@ -1750,6 +1776,7 @@ AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
         );
       } on AiStoreException {
         malformedProviderKeys += 1;
+        malformedProviderKeyEntries.add(key);
       }
     } else if (key.startsWith(SecureAiStore.accountPrefix)) {
       try {
@@ -1761,6 +1788,7 @@ AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
         );
       } on AiStoreException {
         malformedAccountKeys += 1;
+        malformedAccountKeyEntries.add(key);
       }
     } else if (key.startsWith(SecureAiStore.historyKeyPrefix)) {
       try {
@@ -1772,6 +1800,7 @@ AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
         );
       } on AiStoreException {
         malformedHistoryKeys += 1;
+        malformedHistoryKeyEntries.add(key);
       }
     }
   }
@@ -1785,6 +1814,9 @@ AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
     malformedProviderKeyCount: malformedProviderKeys,
     malformedAccountKeyCount: malformedAccountKeys,
     malformedHistoryKeyCount: malformedHistoryKeys,
+    malformedProviderKeys: Set.unmodifiable(malformedProviderKeyEntries),
+    malformedAccountKeys: Set.unmodifiable(malformedAccountKeyEntries),
+    malformedHistoryKeys: Set.unmodifiable(malformedHistoryKeyEntries),
   );
 }
 

@@ -2072,6 +2072,7 @@ const _messagesCs = <String>[
   'Historie AI nebyla zcela vymazána. Účet zůstal zachován; zkuste jej odebrat znovu.',
   'Část historie nebylo možné přečíst a byla odstraněna.',
   'Tato konverzace dosáhla limitu úložiště. Nový obsah se nebude ukládat.',
+  'Úložiště je nyní plné. Ukládání bude pokračovat, až se uvolní místo.',
   'Šifrovaná historie nyní není dostupná. Pokus se zopakuje později.',
   'Šifrovací klíč tohoto účtu chybí; historii nelze dešifrovat.',
   'Data historie AI jsou poškozená nebo používají nepodporovaný formát.',
