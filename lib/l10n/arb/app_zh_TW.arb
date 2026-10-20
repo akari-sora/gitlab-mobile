@@ -10195,5 +10195,200 @@
   "branchesTitle": "分支",
   "@branchesTitle": {
     "description": "features/workspace/project_more_page.dart:41"
+  },
+  "aiUnauthenticatedTitle": "AI 金鑰無效",
+  "@aiUnauthenticatedTitle": {
+    "description": "AI security core: aiUnauthenticatedTitle",
+    "placeholders": {}
+  },
+  "aiUnauthenticatedDetail": "請在 AI 設定中更新供應商金鑰，再手動重試。",
+  "@aiUnauthenticatedDetail": {
+    "description": "AI security core: aiUnauthenticatedDetail",
+    "placeholders": {}
+  },
+  "aiForbiddenTitle": "AI 供應商拒絕存取",
+  "@aiForbiddenTitle": {
+    "description": "AI security core: aiForbiddenTitle",
+    "placeholders": {}
+  },
+  "aiForbiddenDetail": "請檢查金鑰權限、模型存取權與供應商政策。",
+  "@aiForbiddenDetail": {
+    "description": "AI security core: aiForbiddenDetail",
+    "placeholders": {}
+  },
+  "aiNotFoundTitle": "找不到 AI 端點或模型",
+  "@aiNotFoundTitle": {
+    "description": "AI security core: aiNotFoundTitle",
+    "placeholders": {}
+  },
+  "aiNotFoundDetail": "請檢查供應商網址、線路格式與模型名稱。",
+  "@aiNotFoundDetail": {
+    "description": "AI security core: aiNotFoundDetail",
+    "placeholders": {}
+  },
+  "aiRateLimitedTitle": "AI 請求暫時受限",
+  "@aiRateLimitedTitle": {
+    "description": "AI security core: aiRateLimitedTitle",
+    "placeholders": {}
+  },
+  "aiRateLimitedDetail": "請等候供應商指定的重試時間，再手動重試。",
+  "@aiRateLimitedDetail": {
+    "description": "AI security core: aiRateLimitedDetail",
+    "placeholders": {}
+  },
+  "aiQuotaExhaustedTitle": "AI 額度已用盡",
+  "@aiQuotaExhaustedTitle": {
+    "description": "AI security core: aiQuotaExhaustedTitle",
+    "placeholders": {}
+  },
+  "aiQuotaExhaustedDetail": "請檢查供應商的額度與花費上限；不會自動重試。",
+  "@aiQuotaExhaustedDetail": {
+    "description": "AI security core: aiQuotaExhaustedDetail",
+    "placeholders": {}
+  },
+  "aiNetworkTitle": "無法連線至 AI 供應商",
+  "@aiNetworkTitle": {
+    "description": "AI security core: aiNetworkTitle",
+    "placeholders": {}
+  },
+  "aiNetworkDetail": "請檢查網路與供應商網址。已送出的請求可能已計費。",
+  "@aiNetworkDetail": {
+    "description": "AI security core: aiNetworkDetail",
+    "placeholders": {}
+  },
+  "aiServerTitle": "AI 供應商暫時無法回應",
+  "@aiServerTitle": {
+    "description": "AI security core: aiServerTitle",
+    "placeholders": {}
+  },
+  "aiServerDetail": "已保留收到的內容；請稍後手動重試，先前請求可能已計費。",
+  "@aiServerDetail": {
+    "description": "AI security core: aiServerDetail",
+    "placeholders": {}
+  },
+  "aiRequestTooLargeTitle": "AI 請求超過大小上限",
+  "@aiRequestTooLargeTitle": {
+    "description": "AI security core: aiRequestTooLargeTitle",
+    "placeholders": {}
+  },
+  "aiRequestTooLargeDetail": "請減少附加內容或開始新對話；未送出此請求。",
+  "@aiRequestTooLargeDetail": {
+    "description": "AI security core: aiRequestTooLargeDetail",
+    "placeholders": {}
+  },
+  "aiResponseTooLargeTitle": "AI 回應超過大小上限",
+  "@aiResponseTooLargeTitle": {
+    "description": "AI security core: aiResponseTooLargeTitle",
+    "placeholders": {}
+  },
+  "aiResponseTooLargeDetail": "已停止接收，部分回應不會用於續聊；此請求可能已計費。",
+  "@aiResponseTooLargeDetail": {
+    "description": "AI security core: aiResponseTooLargeDetail",
+    "placeholders": {}
+  },
+  "aiInvalidResponseTitle": "無法讀取 AI 回應",
+  "@aiInvalidResponseTitle": {
+    "description": "AI security core: aiInvalidResponseTitle",
+    "placeholders": {}
+  },
+  "aiInvalidResponseDetail": "供應商回應的格式無法安全解析；不會自動重試。",
+  "@aiInvalidResponseDetail": {
+    "description": "AI security core: aiInvalidResponseDetail",
+    "placeholders": {}
+  },
+  "aiUnsupportedTitle": "不支援此 AI 請求",
+  "@aiUnsupportedTitle": {
+    "description": "AI security core: aiUnsupportedTitle",
+    "placeholders": {}
+  },
+  "aiUnsupportedDetail": "請檢查供應商是否支援所選的線路格式與功能。",
+  "@aiUnsupportedDetail": {
+    "description": "AI security core: aiUnsupportedDetail",
+    "placeholders": {}
+  },
+  "aiRedirectBlockedTitle": "已阻擋 AI 重新導向",
+  "@aiRedirectBlockedTitle": {
+    "description": "AI security core: aiRedirectBlockedTitle",
+    "placeholders": {}
+  },
+  "aiRedirectBlockedDetail": "為避免金鑰傳至其他網址，請在設定中確認正確的端點。",
+  "@aiRedirectBlockedDetail": {
+    "description": "AI security core: aiRedirectBlockedDetail",
+    "placeholders": {}
+  },
+  "aiCancelledTitle": "AI 請求已停止",
+  "@aiCancelledTitle": {
+    "description": "AI security core: aiCancelledTitle",
+    "placeholders": {}
+  },
+  "aiCancelledDetail": "已送出的內容無法撤回，此請求可能已計費。",
+  "@aiCancelledDetail": {
+    "description": "AI security core: aiCancelledDetail",
+    "placeholders": {}
+  },
+  "aiInterruptedTitle": "AI 回應已中斷",
+  "@aiInterruptedTitle": {
+    "description": "AI security core: aiInterruptedTitle",
+    "placeholders": {}
+  },
+  "aiInterruptedDetail": "已保留部分回應供查看，但不會用於續聊；此請求可能已計費。",
+  "@aiInterruptedDetail": {
+    "description": "AI security core: aiInterruptedDetail",
+    "placeholders": {}
+  },
+  "aiTimeoutTitle": "AI 請求逾時",
+  "@aiTimeoutTitle": {
+    "description": "AI security core: aiTimeoutTitle",
+    "placeholders": {}
+  },
+  "aiTimeoutDetail": "已停止等候；請手動重試，此請求可能已計費。",
+  "@aiTimeoutDetail": {
+    "description": "AI security core: aiTimeoutDetail",
+    "placeholders": {}
+  },
+  "aiContextTooLongTitle": "AI 對話內容過長",
+  "@aiContextTooLongTitle": {
+    "description": "AI security core: aiContextTooLongTitle",
+    "placeholders": {}
+  },
+  "aiContextTooLongDetail": "請減少附加內容，或以摘要開始新對話。",
+  "@aiContextTooLongDetail": {
+    "description": "AI security core: aiContextTooLongDetail",
+    "placeholders": {}
+  },
+  "aiContentFilterTitle": "AI 回應受到內容政策限制",
+  "@aiContentFilterTitle": {
+    "description": "AI security core: aiContentFilterTitle",
+    "placeholders": {}
+  },
+  "aiContentFilterDetail": "供應商已限制此回應，不會執行其中的工具呼叫。",
+  "@aiContentFilterDetail": {
+    "description": "AI security core: aiContentFilterDetail",
+    "placeholders": {}
+  },
+  "aiRefusalTitle": "AI 供應商拒絕回答",
+  "@aiRefusalTitle": {
+    "description": "AI security core: aiRefusalTitle",
+    "placeholders": {}
+  },
+  "aiRefusalDetail": "請調整問題；不會執行此回應中的工具呼叫。",
+  "@aiRefusalDetail": {
+    "description": "AI security core: aiRefusalDetail",
+    "placeholders": {}
+  },
+  "aiPolicyBlockedTitle": "AI 安全檢查未通過",
+  "@aiPolicyBlockedTitle": {
+    "description": "AI security core: aiPolicyBlockedTitle",
+    "placeholders": {}
+  },
+  "aiPolicyBlockedDetail": "端點、遮蔽器或設定未通過安全檢查，未送出此請求。",
+  "@aiPolicyBlockedDetail": {
+    "description": "AI security core: aiPolicyBlockedDetail",
+    "placeholders": {}
+  },
+  "aiCustomProvider": "自訂 AI 供應商",
+  "@aiCustomProvider": {
+    "description": "Name of the custom AI provider preset.",
+    "placeholders": {}
   }
 }

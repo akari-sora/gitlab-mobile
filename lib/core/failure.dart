@@ -12,8 +12,14 @@ enum FailureKind {
   validation, conflict, writeUncertain,
 }
 
+/// Shared presentation contract; provider failures keep their own semantics.
+abstract interface class UserFacingFailure {
+  String get title;
+  String get detail;
+}
+
 /// Diagnostics contain only allowlisted status information, never request data.
-final class ApiFailure implements Exception {
+final class ApiFailure implements Exception, UserFacingFailure {
   const ApiFailure(this.kind, {this.status, this.retryAt, String? title, String? detail})
       : _title = title,
         _detail = detail;
@@ -54,6 +60,7 @@ final class ApiFailure implements Exception {
     >= 300 && < 400 => ApiFailure(FailureKind.redirectBlocked, status: status),
     _ => ApiFailure(FailureKind.invalidResponse, status: status),
   };
+  @override
   String get title => _title ?? switch (kind) {
     FailureKind.unauthenticated => l10n.signInNoLongerValid,
     FailureKind.forbidden => l10n.noPermissionForAction,
@@ -71,6 +78,7 @@ final class ApiFailure implements Exception {
     FailureKind.conflict => l10n.contentHasChanged,
     FailureKind.writeUncertain => l10n.actionResultUnconfirmed,
   };
+  @override
   String get detail => _detail ?? switch (kind) {
     FailureKind.invisible => l10n.accountCannotAccessOrMoved,
     FailureKind.forbidden => l10n.checkRoleScopeAndPolicy,
