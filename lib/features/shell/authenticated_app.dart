@@ -30,6 +30,7 @@ import 'home_page.dart';
 import 'appearance.dart';
 import 'build_info.dart';
 import 'incoming_links.dart';
+import '../security/app_lock.dart';
 import '../update/update_controller.dart';
 import '../update/update_section.dart';
 import '../../core/brand.dart';
@@ -45,9 +46,13 @@ class AuthenticatedApp extends StatefulWidget {
     this.buildInfoLoader = loadBuildInfo,
     this.updates,
     this.incoming,
+    this.lock,
   });
   final SessionController session;
   final AppearanceController appearance;
+
+  /// The opt-in app lock; null where the build has none (tests).
+  final AppLockController? lock;
 
   /// Links handed over by other apps; null where none can arrive.
   final IncomingLinks? incoming;
@@ -163,9 +168,12 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
           // Above the navigator, so every pushed route sees the link handler.
-          builder: (context, child) => InAppLinks(
-            handler: _links,
-            child: applySystemBars(context, child),
+          builder: (context, child) => AppLockGate(
+            controller: widget.lock,
+            child: InAppLinks(
+              handler: _links,
+              child: applySystemBars(context, child),
+            ),
           ),
           title: appName,
           theme: appTheme(
@@ -194,6 +202,7 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
             buildInfoLoader: widget.buildInfoLoader,
             updates: widget.updates,
             incoming: widget.incoming,
+            lock: widget.lock,
           ),
         );
       },
@@ -214,11 +223,13 @@ class _MobileShell extends StatefulWidget {
     required this.buildInfoLoader,
     this.updates,
     this.incoming,
+    this.lock,
   });
   final SessionController session;
   final LauncherShortcuts shortcuts;
   final AppUpdateController? updates;
   final IncomingLinks? incoming;
+  final AppLockController? lock;
   final Listenable pops;
   final ThemeMode theme;
   final ValueChanged<ThemeMode> changeTheme;
@@ -383,6 +394,13 @@ class _MobileShellState extends State<_MobileShell> {
         });
         await _openRecent(account, api, id);
     }
+  }
+
+  Future<void> _setLock(AppLockController lock, bool value) async {
+    if (await lock.setEnabled(value) || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(value ? '沒有通過驗證，App 鎖定維持關閉' : '無法關閉 App 鎖定，請再試一次'),
+    ));
   }
 
   Future<void> _openLinkSettings(IncomingLinks incoming) async {
@@ -907,6 +925,28 @@ class _MobileShellState extends State<_MobileShell> {
                 ),
               ],
             ),
+            if (widget.lock case final lock?)
+              ListenableBuilder(
+                listenable: lock,
+                builder: (context, _) => HubSection(
+                  title: '安全性',
+                  children: [
+                    SwitchListTile(
+                      key: const ValueKey('app-lock-switch'),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                      secondary: const Icon(Icons.lock_outline),
+                      title: const Text('App 鎖定'),
+                      subtitle: Text(lock.available || lock.enabled
+                          ? '開啟 App 或離開超過 1 分鐘後，需用指紋、臉部或螢幕鎖解鎖'
+                          : '此裝置沒有設定螢幕鎖'),
+                      value: lock.enabled,
+                      onChanged: lock.authenticating || !(lock.available || lock.enabled)
+                          ? null
+                          : (value) => unawaited(_setLock(lock, value)),
+                    ),
+                  ],
+                ),
+              ),
             if (widget.incoming case final incoming? when incoming.canOpenSettings)
               HubSection(
                 title: '連結',

@@ -10,6 +10,7 @@ import 'features/shell/app_shortcuts.dart';
 import 'features/auth/session_controller.dart';
 import 'features/shell/authenticated_app.dart';
 import 'features/shell/incoming_links.dart';
+import 'features/security/app_lock.dart';
 import 'shared/theme.dart';
 import 'shared/scroll_performance.dart';
 import 'core/brand.dart';
@@ -49,6 +50,9 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
     unawaited(ref.read(appearanceProvider).load());
     // Looks for an update once per launch (when allowed); never gates a frame.
     unawaited(ref.read(appUpdateProvider).start());
+    // Started before the first frame's app exists, so its back handling runs
+    // before the navigator's while the app is locked.
+    unawaited(ref.read(appLockProvider).start());
   }
   void _syncShortcuts(bool signedIn, String? accountKey) {
     _shortcuts.bind(signedIn ? accountKey : null);
@@ -67,14 +71,15 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
       if (signedIn) {
         return AuthenticatedApp(
           key: ValueKey(session.generation), session: session, appearance: appearance, shortcuts: _shortcuts,
-          updates: ref.read(appUpdateProvider), incoming: _links,
+          updates: ref.read(appUpdateProvider), incoming: _links, lock: ref.read(appLockProvider),
         );
       }
       return DynamicColorBuilder(builder: (light, dark) {
         final enabled = appearance.useDynamicColor;
         return MaterialApp(
           title: appName, debugShowCheckedModeBanner: false,
-          builder: applySystemBars,
+          builder: (context, child) => AppLockGate(controller: ref.read(appLockProvider),
+            child: applySystemBars(context, child)),
           theme: appTheme(Brightness.light, dynamicScheme: enabled ? flutterScheme(light) : null),
           darkTheme: appTheme(Brightness.dark, dynamicScheme: enabled ? flutterScheme(dark) : null),
           themeMode: appearance.mode,
