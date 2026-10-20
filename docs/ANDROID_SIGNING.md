@@ -281,6 +281,14 @@ not cover it.
   in-app updater in `v0.5.0-dev.f8118f9e` finds it (anonymous check run from a
   workstation). It cold-started on an owned API 36 emulator; a physical-device
   install and update are NOT_RUN.
+- GitLab `v0.5.0-dev.c13b280d` gitlab-flavor release APK (versionCode 537,
+  label Mergeline, 24 languages), source `c13b280d`, signer `STABLE_CI_DEBUG`
+  (v2 only), SHA-256 `471e9473cc45c3f20e9b143b2309e56f8678b1bd880f074a11b91469261f27a5`:
+  [gitlab-mobile-c13b280d-release.apk](https://gitlab.com/api/v4/projects/86648389/packages/generic/gitlab-mobile-preview/c13b280d5ab3d47f0e0a2c53b2be72b94ea4e11c/gitlab-mobile-c13b280d-release.apk).
+  The package name is unchanged, so earlier releases update to it in place; the
+  in-app updater in `v0.5.0-dev.019ad2b6` finds it (anonymous check run from a
+  workstation). It cold-started on an owned API 36 emulator in Arabic, Hindi
+  and German; a physical-device install and update are NOT_RUN.
 
 On Android 13 (API 33) and later, a `LEGACY_LOCAL` install updates in place to
 the bridge and then to the ordinary release. That chain passed natively on an
