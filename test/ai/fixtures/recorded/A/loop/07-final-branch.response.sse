@@ -1,0 +1,34 @@
+: RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+: P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+: date: 2026-10-20 (UTC); column: A; case: loop; call: 07-final-branch; D.4 items: 9
+: path: POST https://api.anthropic.com/v1/messages (direct)
+: model: claude-haiku-5-5; HTTP status: 200; cancelled by client: false
+: content: synthetic fake repository only; header values are not recorded
+: request headers sent: x-api-key: <key>; anthropic-version: 2023-06-01; anthropic-beta: thinking-binding-controls-2026-08-01; user-agent: mergeline-p0a-spike/0.1
+: Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+: (lines starting with ":" are SSE comments and are ignored by a conforming decoder)
+
+event: message_start
+data: {"type":"message_start","message":{"model":"claude-haiku-5-5","id":"msg_620BjKGD7WQjdvzqVRa6k2uS","type":"message","role":"assistant","content":[],"container":null,"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":887,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":8,"service_tier":"standard","inference_geo":"global","speed":"standard"},"input_transformations":[],"diagnostics":null}          }
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}         }
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"SWLRstLESBvDKCR2AGYFyLsqgpcmdzlTERJ5Y/W1p3JvQgI0rTjHZQCmE6K2t4eFtuXMZzOgcGBB/x+o6bkDGB/meH608cCsAqZHbo33mYGx5eM5hbmEWYT5nfNzjB/cAA21Bk6yePDwPQcwu9ViW1SAQE1GagZs4J1qVhCGMbfVA+wgbTb32QqeirQQL87z0SI/kaaWQEHcRkpjgiCDJVxcChUahwz3Wkt2l/96GQji9Nv4gaOYv9C0nnSaey++CAxM/xsAz9AFOERVIudo8PpAzowI11Cq4+XMGJynocWgMFxqNoUZHj+1aglUQica3usvbzTjMpITh7q+9a5Im7g1NOthLUjeLhCLm2VLM7e7gqGM6UjmwJfn5qxm8vv2b1zbkhT/9+7NykNzxr+WhD+jD2m9TSMBtal/Yyp0Xb0wGJrSxpqxJFyWR++eHjDnKubYdJsls/JIHQVjmrXk5mFFyJrPsFUNRAq2aI0LZRrzmnS8wqijhCjkcec4iMi/KYp5ye0rrGtCX4n2jwb60YBKDPrmZlKwGYUEnrkBHJPGjD56StGLZ3jBOg4t+3qLjcLNUOo1rjdxLpxnINb3xFw8GxXj+KTXInm4uHpnz4Edd4g6NsLieFGXh6FLexnyEI0DTlpHeEuOAKDq9X6IPW2PCGWmjOZhobc29E36Lw5RfGxSSCOs+1egMtlp8EchM4Tb76C1Q5obeqdqFfq/vgv+1zlHpAZ8rExtzXhCUSGuLDntq0oAtV90BgJfGsCWG39NTUZ+tSm6Dfa2NO9qNzLFL03JpEOY26YDNikWDvltDdqsp0LFFA4lmtfO1VCs5ucvpurksYwtT9VZO85Ziyryb6QC81fAekKi64DwhIk6u7YJmmYQHTS/SsgCDaUPmCOaQY7/vPjeAcO2AdtbOfI1cXiwxTAgzJds1YZWD7pID2mb9VfyPCniyAZDIFfCWLE1biv67ybQkndp9t+4UwBxw5S3KdC5Vrm5oFjutiy8/lZ5uhwQ5YDCBLNQ7TC5B8cz6qCzcJ+ly/pCPJU="} }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0               }
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null,"container":null},"usage":{"input_tokens":887,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":69,"output_tokens_details":{"thinking_tokens":67}}          }
+
+event: message_stop
+data: {"type":"message_stop"       }
+

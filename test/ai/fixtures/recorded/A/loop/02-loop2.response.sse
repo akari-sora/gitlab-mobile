@@ -1,0 +1,52 @@
+: RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+: P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+: date: 2026-10-20 (UTC); column: A; case: loop; call: 02-loop2; D.4 items: 2, 8
+: path: POST https://api.anthropic.com/v1/messages (direct)
+: model: claude-haiku-5-5; HTTP status: 200; cancelled by client: false
+: content: synthetic fake repository only; header values are not recorded
+: request headers sent: x-api-key: <key>; anthropic-version: 2023-06-01; anthropic-beta: thinking-binding-controls-2026-08-01; user-agent: mergeline-p0a-spike/0.1
+: Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+: (lines starting with ":" are SSE comments and are ignored by a conforming decoder)
+
+event: message_start
+data: {"type":"message_start","message":{"model":"claude-haiku-5-5","id":"msg_162GwWUOLlHI1mTDymXSNCEc","type":"message","role":"assistant","content":[],"container":null,"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":887,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":8,"service_tier":"standard","inference_geo":"global","speed":"standard"},"input_transformations":[],"diagnostics":null}  }
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}  }
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"JFPD1VGWGDlZYJM8FKWLtXlhyhtdkjhOYKb8n87UzfQQMu4vamrTHIL/aw+AKyfUIIffTvGa/j/06fcdyS2YKkKilI1jRYmC9GMySWTV9q9UBH85vyQMRzfyLYqVQ42Bqdv+3V5x/vBrOhqCoSgBg5kLp+xpv205k1XnBTa/gJ6yilCju3cPx7BP7VDUyJIi6dNWvvy+2kpxt6A9AfVEVe0WVxUmsNYx/sVBZaNGAE2E4Seqpk+Vb8OzfWD6azYvk2UHtVH+wb+fqjbeHf5ItNHj0NY9VGFPqVQp3Vxb3+aNx0kShLkfiFwLLtCQsuFIM8nZELi7qkWOP576vK9j3Y4IebbiHugZFkJF13tzALd10LY7gFZdFWsvVBAlMZPlPdTmE/BhVYSd+9GzMd2Yc8bBlQPY4AJrwqgcpRGfhAl56GtrAYr3ah4QlBmIIxsaHSGhEX2Hzdb0f7naevtJgFkaMDK+WaUpuSTH7/rZuibNQIdlSFOfSh+JBpmQyy0NtRDJSv+w0zypz7M8AskFjVBgbN3EPQRj61Y2oY/wCXH5I4UH8QzzU+fnXYW4ZkSdmdPkJcJ06xSnu7DLrTPLn0D9bDCq3tgyJMVtgkHXQ8gieSfWa3jbG7gS0cZsyqLhMNXFEdtYr5h50aQJw5hszic5v1v5YxuQosNMmRQ6PLbipnxVZGND9S99AsHW8aEFx1Z56D9xJOG5evZnMAxbud+uku4I6vIkJ/VupRoqugXMJOLxto8tIrNAtDNhzw2JWy4X8N87B5eQ5cii6unOUCkNDXJcGgLxnlm5nCyvL+XBNhLOtfh7cz1AP1QG8Tec91c6siHhcFX06bWHaP3fOhMiGy9XrQHdQpxMx6Lwe4TgBi36yYqRm0wSyPI+2h1UABxQwQGpXxdzkA5fu1IQlOO7hhgHrULebOysNEvHoR9VHbx5krRwsU36nRrFE9f3Kuk2BkL2UUuekm+YLlVMV9p6zTB6rGjX"}   }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0 }
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_4414BSflTb7U5UFlIWk2OsPY","name":"read_file","input":{},"caller":{"type":"direct"}}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"path\""}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":": \"lib/"}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"c.dart\"}"}         }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1           }
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null,"stop_details":null,"container":null},"usage":{"input_tokens":887,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":102,"output_tokens_details":{"thinking_tokens":48}}           }
+
+event: message_stop
+data: {"type":"message_stop"             }
+

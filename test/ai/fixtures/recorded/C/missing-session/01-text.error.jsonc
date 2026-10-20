@@ -1,0 +1,9 @@
+// RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+// P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+// date: 2026-10-20 (UTC); column: C; case: missing-session; call: 01-text; D.4 items: 5 / error shape
+// path: POST https://opencode.ai/inference/go/openai/v1/chat/completions (via OpenCode Go)
+// model: glm-5.3-flash; HTTP status: 400; cancelled by client: false
+// content: synthetic fake repository only; header values are not recorded
+// request headers sent: authorization: Bearer <key>; Dart default user-agent; NO x-opencode-session (rejected)
+// Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+{"type":"error","error":{"type":"MissingSessionID","message":"Request is missing x-opencode-session and cannot be routed efficiently. Please see https://opencode.ai/docs/go/#where-can-i-use-it"}}

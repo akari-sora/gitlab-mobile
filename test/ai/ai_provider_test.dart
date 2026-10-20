@@ -67,6 +67,38 @@ void main() {
         AiPresets.openCodeZen.policyFor('gpt-6-luna')!.sourceUrl,
         AiPresets.openCodeZenPolicySource,
       );
+      expect(
+        AiPresets.openCodeGo.capsFor(AiFormat.chatCompletions).streamUsage,
+        isTrue,
+      );
+      expect(
+        AiPresets.openCodeZen.capsFor(AiFormat.chatCompletions).streamUsage,
+        isFalse,
+      );
+      expect(
+        AiPresets.ollama.capsFor(AiFormat.chatCompletions).streamUsage,
+        isTrue,
+      );
+      expect(
+        AiPresets.lmStudio.capsFor(AiFormat.chatCompletions).streamUsage,
+        isFalse,
+      );
+      expect(
+        AiPresets.openCodeGo.capsFor(AiFormat.responses).toolChoice,
+        isTrue,
+      );
+      expect(
+        AiPresets.openCodeGo.capsFor(AiFormat.anthropicMessages).toolChoice,
+        isTrue,
+      );
+      expect(
+        AiPresets.openCodeZen.capsFor(AiFormat.responses).toolChoice,
+        isFalse,
+      );
+      expect(
+        AiPresets.openCodeZen.capsFor(AiFormat.anthropicMessages).toolChoice,
+        isFalse,
+      );
     });
 
     test('dated OpenCode policy table filters models by endpoint format', () {

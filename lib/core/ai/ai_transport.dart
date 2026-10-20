@@ -9,6 +9,9 @@ import 'ai_endpoint.dart';
 import 'ai_failure.dart';
 import 'ai_provider.dart';
 
+typedef AiErrorDecoder =
+    AiFailure Function(int status, Object? json, String? retryAfter);
+
 /// Process-local rate-limit state. It contains no response bodies or secrets.
 final class AiRateLimitRegistry {
   final Map<String, DateTime> _until = {};
@@ -91,12 +94,16 @@ final class AiTransport {
     required int maxOutputTokens,
     Duration wallTimeout = modelWallTimeout,
     Map<String, String> providerHeaders = const {},
+    String? encodedJson,
+    AiErrorDecoder? decodeError,
   }) => request(
     uri,
     json: json,
     maxResponseBytes: streamBudget(maxOutputTokens),
     wallTimeout: wallTimeout,
     providerHeaders: providerHeaders,
+    encodedJson: encodedJson,
+    decodeError: decodeError,
   );
 
   Future<AiTransportResponse> request(
@@ -107,6 +114,8 @@ final class AiTransport {
     Duration wallTimeout = modelWallTimeout,
     String accept = 'text/event-stream',
     Map<String, String> providerHeaders = const {},
+    String? encodedJson,
+    AiErrorDecoder? decodeError,
   }) async {
     if (_closed) throw const AiFailure(AiFailureKind.cancelled);
     if (!endpoint.allows(uri, method: method)) {
@@ -120,7 +129,7 @@ final class AiTransport {
       throw const AiFailure(AiFailureKind.policyBlocked);
     }
     final responseLimit = maxResponseBytes.clamp(0, maxStreamBytes);
-    final encoded = json == null ? null : jsonEncode(json);
+    final encoded = encodedJson ?? (json == null ? null : jsonEncode(json));
     if (encoded != null && utf8.encode(encoded).length > maxRequestBytes) {
       throw const AiFailure(AiFailureKind.requestTooLarge);
     }
@@ -167,22 +176,18 @@ final class AiTransport {
       }
       final status = response.statusCode ?? 0;
       if (status < 200 || status >= 300) {
-        final discardCancelled = await _discard(
-          response.data,
-          maxErrorBytes,
-          token,
-        );
+        final error = await _readError(response.data, maxErrorBytes, token);
         timer.cancel();
         if (wallTimedOut) throw const AiFailure(AiFailureKind.timeout);
-        if (_closed || (token.isCancelled && !discardCancelled)) {
+        if (_closed || (token.isCancelled && !error.limitReached)) {
           throw const AiFailure(AiFailureKind.cancelled);
         }
         final retryAfter = _singleHeader(response.headers, 'retry-after');
-        final failure = AiFailure.fromStatus(
-          status,
-          retryAfter: retryAfter,
-          now: _clock(),
-        );
+        // Rate-limit timing stays tied to this client's clock. Other provider
+        // classifications inspect bounded JSON, which is never retained.
+        final failure = status == 429 || decodeError == null
+            ? AiFailure.fromStatus(status, retryAfter: retryAfter, now: _clock())
+            : decodeError(status, error.json, retryAfter);
         if (status == 429 && retryAfter != null && failure.retryAt != null) {
           rateLimits.remember(endpoint, failure.retryAt!);
         }
@@ -269,6 +274,7 @@ final class AiTransport {
     Uri uri, {
     int maxBytes = maxModelsBytes,
     Map<String, String> providerHeaders = const {},
+    AiErrorDecoder? decodeError,
   }) async {
     if (maxBytes < 0) throw const AiFailure(AiFailureKind.policyBlocked);
     final response = await request(
@@ -277,6 +283,7 @@ final class AiTransport {
       maxResponseBytes: maxBytes.clamp(0, maxModelsBytes),
       accept: Headers.jsonContentType,
       providerHeaders: providerHeaders,
+      decodeError: decodeError,
     );
     final bytes = <int>[];
     await for (final chunk in response.stream) {
@@ -311,11 +318,18 @@ final class AiTransport {
   };
 
   static Map<String, String> _providerHeaders(Map<String, String> headers) {
-    const allowed = {'anthropic-version', 'anthropic-beta'};
+    const allowed = {
+      'anthropic-version', 'anthropic-beta', 'x-opencode-session', 'user-agent',
+    };
     final names = <String>{};
-    for (final name in headers.keys) {
-      final normalized = name.toLowerCase();
-      if (!allowed.contains(normalized) || !names.add(normalized)) {
+    for (final entry in headers.entries) {
+      final normalized = entry.key.toLowerCase();
+      if (!allowed.contains(normalized) ||
+          !names.add(normalized) ||
+          entry.value.contains('\r') ||
+          entry.value.contains('\n') ||
+          (normalized == 'user-agent' &&
+              !RegExp(r'^Mergeline/[A-Za-z0-9.+_\-]+$').hasMatch(entry.value))) {
         throw const AiFailure(AiFailureKind.policyBlocked);
       }
     }
@@ -444,37 +458,48 @@ final class AiTransport {
       error.type == DioExceptionType.sendTimeout ||
       error.type == DioExceptionType.receiveTimeout;
 
-  static Future<bool> _discard(
+  /// Reads at most [maxBytes] of an error body and decodes it as JSON when it
+  /// is complete. Reaching the limit stops reading and cancels the request
+  /// token, so the connection is released; the status mapping then decides.
+  static Future<({Object? json, bool limitReached})> _readError(
     ResponseBody? body,
     int maxBytes,
     CancelToken token,
   ) async {
-    if (body == null) return false;
+    if (body == null) return (json: null, limitReached: false);
     var read = 0;
     var limitReached = maxBytes == 0;
+    var complete = false;
+    final bytes = <int>[];
+    Object? json;
     final iterator = StreamIterator<Uint8List>(body.stream);
     try {
-      while (read < maxBytes) {
+      while (!limitReached) {
         final step = await Future.any<Object?>([
           iterator.moveNext(),
           token.whenCancel.then<Object?>((_) => null),
         ]);
-        if (step != true) break;
+        if (step != true) {
+          complete = step == false;
+          break;
+        }
         read += iterator.current.length;
         if (read >= maxBytes) {
           limitReached = true;
           break;
         }
+        bytes.addAll(iterator.current);
       }
+      if (complete) json = jsonDecode(utf8.decode(bytes));
     } on Object {
-      // The bounded status mapping remains authoritative if discard fails.
+      // The bounded status mapping remains authoritative if the body is unreadable.
     } finally {
       await iterator.cancel();
     }
     if (limitReached && !token.isCancelled) {
       token.cancel('AI error response exceeds byte limit');
     }
-    return limitReached;
+    return (json: json, limitReached: limitReached);
   }
 
   static Future<void> _release(ResponseBody body) async {

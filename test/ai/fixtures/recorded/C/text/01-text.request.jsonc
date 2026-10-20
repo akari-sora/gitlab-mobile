@@ -1,0 +1,10 @@
+// RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+// P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+// date: 2026-10-20 (UTC); column: C; case: text; call: 01-text; D.4 items: 1
+// path: POST https://opencode.ai/inference/go/openai/v1/chat/completions (via OpenCode Go)
+// model: glm-5.3-flash; HTTP status: 200; cancelled by client: false
+// content: synthetic fake repository only; header values are not recorded
+// request headers sent: authorization: Bearer <key>; x-opencode-session: <random per conversation>; user-agent: mergeline-p0a-spike/0.1
+// Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+// body follows byte-for-byte as sent (strip the leading // lines before decoding)
+{"model":"glm-5.3-flash","stream":true,"stream_options":{"include_usage":true},"max_tokens":256,"messages":[{"role":"system","content":"You are a code assistant for a small Dart repository. Use the tools to read files; never guess file contents. Paths are relative to the repository root."},{"role":"user","content":"In two sentences: why do retry policies usually cap the delay of each attempt?"}]}

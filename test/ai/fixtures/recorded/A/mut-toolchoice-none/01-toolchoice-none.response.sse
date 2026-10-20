@@ -1,0 +1,133 @@
+: RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+: P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+: date: 2026-10-20 (UTC); column: A; case: mut-toolchoice-none; call: 01-toolchoice-none; D.4 items: 9 (tool_choice outside the bound prefix)
+: path: POST https://api.anthropic.com/v1/messages (direct)
+: model: claude-haiku-5-5; HTTP status: 200; cancelled by client: false
+: content: synthetic fake repository only; header values are not recorded
+: request headers sent: x-api-key: <key>; anthropic-version: 2023-06-01; anthropic-beta: thinking-binding-controls-2026-08-01; user-agent: mergeline-p0a-spike/0.1
+: Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+: (lines starting with ":" are SSE comments and are ignored by a conforming decoder)
+
+event: message_start
+data: {"type":"message_start","message":{"model":"claude-haiku-5-5","id":"msg_391LuGSAPBmC8tb9F3fnVXA2","type":"message","role":"assistant","content":[],"container":null,"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":1851,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":2,"service_tier":"standard","inference_geo":"global","speed":"standard"},"input_transformations":[],"diagnostics":null} }
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}            }
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"PJRI0tVXQSqDFYH3PPSHfUujtplrzymGZZpzJ2bl4ltcRqOXKtbTplIaqY34VtvtR7dZRxCudqAuNktvdo1TtlLp4pFz5kO++fhxYJqpnjtEf87yQ0kaqBS0/C+2RK++I8APbI8c3yKiTsfhn0x2tkGIXnvVW6KpBgL6g+qEhccOBZZHdxuRbICQc7kkA14nEoxiqMWoSR/GoG0DolvJ0BeaXdXGmQclHUjB9q2scjlqL/fR/zteaL6NJEC33YQvup3yOTm0l5RK43ntRLPsJAeQ/bQXnHMcqgHMRk/xdCvp4QuaZvnUaMuK9e8NqqTWyV+IpNNkB/8GIwWnCcEGubRCofCRAAoyTpQ3AyWDLSn7SKbkOxjf9VlXXUpBNRESarUT2nnXZcAI57NkdmwR4/yAX+2IgK+nhYKJN9tuyHSgGYV/0uEGNaxnSMAGo9QjbVkoEjCmjex7Y3gpRnT9jRKgtUWQ0U5kJIt14auI0TTnfV9Wamfo4nscuVbN3q9ihgdCCI8qTe0t8J7VbmqJXkcG58ZSMYR8j1ikE/jF1KgB7G9RWm+iYax0T2vAQi3O0xf1XsQs77jPlLCQG95T+OPBRBQdlpwQPlz/moIhzU8fOUDxTu2Paqd0i6PpZAWiHM3g0N4cd8OBG2h8nGpMMHY9woXyLOL7XXfcjWNP7hh2Y6hlnasn15oGcGHj6UmnjJWCJd40+xl8fw0Lt85gPI1Zp5QhVFWSIRTp25mWkoFiVVeLjGeEU6L5JVx7/0tj8t6V1/zov3ERnJ5S6oYKyPFDfsLneinEvaIM95e6+/ExyZkb7EMchsVCu6Mfy+w03uVZ9hN1LmI4bhQcRl6yWa951GS6xBpnidsWN8GML0Bf6O/uX0ue+h2k+pxBjmi/Nk3jLscEPz9Q7R9DpwisLY2OepfW1IGIYFIrWAt90zcG/QRMWA+9T5Cn68B3cuH2V2OiqN1fE2BIKw4VNceWq10Wh2Y6uFRqPvetLgR7UcbGV9ACVnGS/9xDZdMmZhldE7A9NVzcSV/Ira/VUSOrp2nFgddOQ5wyjhv+aRn7Qc/GIguYRcdRs1pFUWcgcNAqlrwQxQJRiyYAKXxGXjHBcY5LXWsNpGTnwWiXq9Pzq277q7peKck0ZzymIHrI"}   }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0          }
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"With ret"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ryCount = 8 and"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" maxDelay = 30"}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":", the total"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" wait is **165 secon"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ds**.\n\n|"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" n | "}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"3 × 2^n |"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" cap"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ped at 30 |\n|"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"---|---|---|\n|"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 0 | 3 |"}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 3 |\n| 1"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" | 6 | 6"}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" |\n| 2 |"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 12 | 12 |"}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\n| 3 | 24"}    }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" | 24 |\n|"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 4 | 48 |"}          }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 30 |\n| 5"}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" | 96 | 30"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" |\n| 6 |"}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 192 | 30 |"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\n| 7 | 384"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" | 30 |"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"\n\nTotal"}       }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":": 3 + 6 "}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"+ 12 + 24 "}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"+ 30 +"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 30 + 30 +"}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 30 = 165."}   }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1             }
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null,"container":null},"usage":{"input_tokens":1851,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":298,"output_tokens_details":{"thinking_tokens":85}}       }
+
+event: message_stop
+data: {"type":"message_stop"  }
+

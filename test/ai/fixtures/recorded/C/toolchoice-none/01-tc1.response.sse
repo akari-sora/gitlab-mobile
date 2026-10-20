@@ -1,0 +1,22 @@
+: RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+: P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+: date: 2026-10-20 (UTC); column: C; case: toolchoice-none; call: 01-tc1; D.4 items: 9 (tool_choice:"none" probe)
+: path: POST https://opencode.ai/inference/go/openai/v1/chat/completions (via OpenCode Go)
+: model: glm-5.3-flash; HTTP status: 200; cancelled by client: false
+: content: synthetic fake repository only; header values are not recorded
+: request headers sent: authorization: Bearer <key>; x-opencode-session: <random per conversation>; user-agent: mergeline-p0a-spike/0.1
+: Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+: (lines starting with ":" are SSE comments and are ignored by a conforming decoder)
+
+data: {"id":"chatcmpl-2x3o37165gy3k1nfx3m05w9ot1x76he2","object":"chat.completion.chunk","created":1792496695,"model":"glm-5.3-flash","choices":[{"index":0,"finish_reason":null,"logprobs":null,"delta":{"role":"assistant","content":""}}]}
+
+data: {"id":"chatcmpl-2x3o37165gy3k1nfx3m05w9ot1x76he2","object":"chat.completion.chunk","created":1792496695,"model":"glm-5.3-flash","choices":[{"index":0,"finish_reason":null,"logprobs":null,"delta":{"reasoning_content":"Let"}}]}
+
+data: {"id":"chatcmpl-2x3o37165gy3k1nfx3m05w9ot1x76he2","object":"chat.completion.chunk","created":1792496695,"model":"glm-5.3-flash","choices":[{"index":0,"finish_reason":null,"logprobs":null,"delta":{"reasoning_content":"'s read the files.","tool_calls":[{"index":0,"id":"chatcmpl-xazn-xb1069w461983pc5","type":"function","function":{"name":"read_file","arguments":"{\"path\": \"lib/a.dart\"}"}}]}}]}
+
+data: {"id":"chatcmpl-2x3o37165gy3k1nfx3m05w9ot1x76he2","object":"chat.completion.chunk","created":1792496695,"model":"glm-5.3-flash","choices":[{"index":0,"finish_reason":"tool_calls","logprobs":null,"delta":{"tool_calls":[{"index":1,"id":"chatcmpl-xomd-2263146x4df97100","type":"function","function":{"name":"read_file","arguments":"{\"path\": \"lib/b.dart\"}"}}]}}]}
+
+data: {"id":"chatcmpl-2x3o37165gy3k1nfx3m05w9ot1x76he2","object":"chat.completion.chunk","created":1792496695,"model":"glm-5.3-flash","choices":[],"usage":{"prompt_tokens":358,"completion_tokens":32,"total_tokens":390,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":6}}}
+
+data: [DONE]
+
