@@ -1,9 +1,5 @@
 import 'ai_failure.dart';
 
-/// Minimum overlap kept past a clipped tool result or context (see
-/// [Redactor.retentionMargin]).
-const aiSecretRetentionFloor = 4096;
-
 const _redacted = '[REDACTED]';
 const _unterminatedPrivateKey = '[REDACTED:private_key_unterminated]';
 const _unopenedPrivateKey = '[REDACTED:private_key_unopened]';
@@ -176,13 +172,20 @@ final class Redactor {
     );
   }
 
-  /// Characters kept past a clip so a secret that crosses the cut and only
-  /// becomes known later can still be redacted whole. At least
-  /// [aiSecretRetentionFloor], which covers keys and tokens added after the
-  /// clip that are longer than any secret known at the time.
-  int get retentionMargin {
-    final longest = longestKnownSecretLength;
-    return longest > aiSecretRetentionFloor ? longest : aiSecretRetentionFloor;
+  /// Redacts a retained prefix and removes its longest trailing partial known
+  /// secret. Only the string at an actual cut may use this operation.
+  RedactionResult redactCutEnd(String input) {
+    final result = redactSource(input);
+    var trim = 0;
+    for (final secret in _knownSecrets) {
+      final length = _partialSecretSuffixLength(result.text, secret);
+      if (length > trim) trim = length;
+    }
+    return RedactionResult(
+      result.text.substring(0, result.text.length - trim),
+      result.redactions + (trim > 0 ? 1 : 0),
+      withheldPrivateKeyContext: result.withheldPrivateKeyContext,
+    );
   }
 
   void _refreshSecrets() {
@@ -206,6 +209,29 @@ final class Redactor {
         RegExp(definition.pattern, caseSensitive: definition.caseSensitive),
     ];
   }
+}
+
+// KMP matches a suffix against a proper secret prefix in linear time, even
+// for a large known secret with repeated characters. No minimum match length.
+int _partialSecretSuffixLength(String text, String secret) {
+  final limit = (secret.length - 1).clamp(0, text.length);
+  if (limit == 0) return 0;
+  final fallback = List<int>.filled(limit, 0);
+  for (var i = 1, matched = 0; i < limit; i++) {
+    while (matched > 0 && secret.codeUnitAt(i) != secret.codeUnitAt(matched)) {
+      matched = fallback[matched - 1];
+    }
+    if (secret.codeUnitAt(i) == secret.codeUnitAt(matched)) matched++;
+    fallback[i] = matched;
+  }
+  var matched = 0;
+  for (var i = text.length - limit; i < text.length; i++) {
+    while (matched > 0 && text.codeUnitAt(i) != secret.codeUnitAt(matched)) {
+      matched = fallback[matched - 1];
+    }
+    if (text.codeUnitAt(i) == secret.codeUnitAt(matched)) matched++;
+  }
+  return matched;
 }
 
 /// Match plain readable values only. Encoding belongs to the wire boundary.

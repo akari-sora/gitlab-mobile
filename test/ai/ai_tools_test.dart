@@ -161,9 +161,7 @@ void main() {
         expect(result.content, contains('Secret'));
         expect(result.data, isNotNull);
         secrets.values = [secret];
-        final safe = result.plainData
-            .redact((s) => redactor.redactSource(s).text)
-            .encode();
+        final safe = result.plainData.redact(redactor).encode();
         expect(safe, contains('[REDACTED]'));
         expect(safe, isNot(contains('Secret')));
       },
@@ -172,7 +170,7 @@ void main() {
 
   for (final name in ['read_file', 'get_job_log', 'get_issue']) {
     test(
-      'FIX3 $name retains a bounded plain prefix plus secret margin',
+      'FIX3 $name retains only a bounded deliverable plain prefix',
       () async {
         const secret = r'abc\ndef&Secret';
         final secrets = _Secrets()..values = ['z' * secret.length];
@@ -199,17 +197,14 @@ void main() {
         expect(result.isError, isFalse);
         expect(result.content.length, lessThanOrEqualTo(maximum));
         expect(result.truncated, isTrue);
-        expect(
-          result.plainData.plainText.length,
-          lessThanOrEqualTo(maximum + aiSecretRetentionFloor),
-        );
+        expect(result.plainData.plainText.length, lessThanOrEqualTo(maximum));
         expect(identical(result.content, result.content), isTrue);
       },
     );
   }
 
   test(
-    'FIX3 late secret crossing the escaped cut is retained and redacted whole',
+    'FIX3 late secret crossing the escaped cut has its partial prefix removed',
     () {
       const secret = r'abc\tdef<Secret';
       final secrets = _Secrets()..values = ['z' * secret.length];
@@ -226,11 +221,8 @@ void main() {
         nonce: nonce,
         body: AiAppText.plain('${'&' * 30}xx${secret}yy${'x' * 100000}'),
       );
-      final clipped = data.clipped(
-        labels.length + 30 * 5 + 5,
-        secretMargin: redactor.longestKnownSecretLength,
-      );
-      expect(clipped.plainText, contains(secret));
+      final clipped = data.clipped(labels.length + 30 * 5 + 5);
+      expect(clipped.plainText, isNot(contains(secret)));
       expect(
         clipped.plainText.length,
         lessThanOrEqualTo(30 + 5 + secret.length),
@@ -238,41 +230,32 @@ void main() {
       final encoded = clipped.encode();
       expect(identical(encoded, clipped.encode()), isTrue);
       secrets.values = [secret];
-      final safe = clipped.redact((s) => redactor.redactSource(s).text);
+      final safe = clipped.redact(redactor);
       expect(safe.plainText, isNot(contains('Secret')));
-      expect(safe.plainText, contains('[REDACTED]'));
+      expect(safe.plainText, isNot(contains(secret.substring(0, 2))));
       expect(safe.encode(), isNot(encoded));
       expect(clipped.encode(), encoded);
     },
   );
 
-  test(
-    'a secret longer than any known at the clip is still redacted whole',
-    () {
-      final secret = 'late-${'Q' * 300}-Secret';
-      final secrets = _Secrets()..values = [];
-      final redactor = Redactor(secrets: secrets);
-      final data = AiAppText.untrusted(
-        source: 'read_file',
-        nonce: 'synthetic',
-        body: AiAppText.plain('${'x' * 1000}$secret${'y' * 100000}'),
-      );
-      final clipped = data.clipped(
-        1200,
-        secretMargin: redactor.retentionMargin,
-      );
-      expect(redactor.longestKnownSecretLength, 0);
-      expect(clipped.plainText, contains(secret));
-      expect(
-        clipped.plainText.length,
-        lessThanOrEqualTo(1200 + aiSecretRetentionFloor),
-      );
-      secrets.values = [secret];
-      final safe = clipped.redact((s) => redactor.redactSource(s).text);
-      expect(safe.plainText, isNot(contains('late-QQQ')));
-      expect(safe.encode(), isNot(contains('late-QQQ')));
-    },
-  );
+  test('a late secret at the cut has its partial prefix removed', () {
+    final secret = 'late-${'Q' * 300}-Secret';
+    final secrets = _Secrets()..values = [];
+    final redactor = Redactor(secrets: secrets);
+    final data = AiAppText.untrusted(
+      source: 'read_file',
+      nonce: 'synthetic',
+      body: AiAppText.plain('${'x' * 1000}$secret${'y' * 100000}'),
+    );
+    final clipped = data.clipped(1200);
+    expect(redactor.longestKnownSecretLength, 0);
+    expect(clipped.plainText, isNot(contains(secret)));
+    expect(clipped.plainText.length, lessThanOrEqualTo(1200));
+    secrets.values = [secret];
+    final safe = clipped.redact(redactor);
+    expect(safe.plainText, isNot(contains('late-QQQ')));
+    expect(safe.encode(), isNot(contains('late-QQQ')));
+  });
 
   test(
     'FIX3 JSON fields and surrogate pairs obey escaped retention budgets',
@@ -287,7 +270,7 @@ void main() {
           ],
         }),
       );
-      final clipped = input.clipped(200, secretMargin: 20);
+      final clipped = input.clipped(200);
       expect(clipped.plainText.length, lessThan(220));
       expect(clipped.encode().length, lessThanOrEqualTo(200));
       expect(clipAiPlainForEscapedBudget('😀&x', 1), isEmpty);

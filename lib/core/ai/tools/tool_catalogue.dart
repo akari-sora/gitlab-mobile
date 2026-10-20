@@ -273,10 +273,7 @@ final class AiToolCatalogue {
       ]);
       final completeContent = data.encode();
       final available = budget.availableOutput(completeContent.length);
-      final clipped = data.clipped(
-        available,
-        secretMargin: redactor.retentionMargin,
-      );
+      final clipped = data.clipped(available);
       final content = clipped.encode();
       final truncated = content.length != completeContent.length;
       budget.recordOutput(content.length);
@@ -624,10 +621,7 @@ final class AiToolCatalogue {
     ]);
     final completeContent = data.encode();
     final available = budget.availableOutput(completeContent.length);
-    final clipped = data.clipped(
-      available,
-      secretMargin: redactor.retentionMargin,
-    );
+    final clipped = data.clipped(available);
     final content = clipped.encode();
     budget.recordOutput(content.length);
     return AiToolExecution(

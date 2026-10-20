@@ -176,10 +176,9 @@ redact and re-verify its strings before JSON/XML/label escaping. Encode only for
 delivery. Summaries retain plain text and escape once per encoding. Never decode
 wire escapes to search for secrets; provider verification reads only the plain
 strings produced by the decoder, excluding opaque fields. A clipped value keeps
-only the deliverable plain prefix plus `Redactor.retentionMargin` characters (the
-longest known secret, at least `aiSecretRetentionFloor` = 4096), so a secret
-that crosses the cut and becomes known later is still redacted whole; a later
-secret longer than that margin is the residual case.
+only the deliverable plain prefix. Each redaction trims a trailing partial known
+secret from the cut string. A secret already sent before it became known is the
+inherent residual.
 
 Frozen wire fragments are append-only and never rewritten. A newly known secret
 in app/provider text that was already sent stops the current send because sent

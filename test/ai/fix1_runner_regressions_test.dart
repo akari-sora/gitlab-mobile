@@ -151,7 +151,7 @@ void main() {
       var text = AiAppText.json({
         'description': secret,
         'safe': 'keep',
-      }).redact((value) => redactor.redactSource(value).text).encode();
+      }).redact(redactor).encode();
       for (var i = 0; i < 3; i++) {
         text = text
             .replaceAll('&', '&amp;')

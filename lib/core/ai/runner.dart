@@ -276,12 +276,14 @@ final class AiRunner {
         // Pairing must survive a redactor refusing even its own placeholders.
         safe = '';
       }
-      final content = clipAiText(safe, math.min(20000, 120000 - outputChars));
-      outputChars += content.length;
+      final data = AiAppText.plain(
+        safe,
+      ).clipped(math.min(20000, 120000 - outputChars));
+      outputChars += data.encode().length;
       return AiToolResult.fromData(
         callId: call.id,
         name: call.name,
-        data: AiAppText.plain(content),
+        data: data,
         isError: true,
       );
     }
@@ -374,7 +376,6 @@ final class AiRunner {
           );
           seg.clipTailToolResults(
             math.max(0, chars - (size + reserve - config.caps.maxRequestChars)),
-            secretMargin: _redactor.retentionMargin,
           );
           finishing = true;
         }
@@ -552,11 +553,13 @@ final class AiRunner {
             await _refresh(epoch);
             _withheld |= toolResult.withheldPrivateKeyContext;
             // Whole tool content is redacted before any output truncation.
-            final data = toolResult.plainData.redact(_redact);
+            final data = toolResult.plainData.redact(
+              _redactor,
+              source: _redact,
+            );
             final content = data.encode();
             final clippedData = data.clipped(
               math.min(20000, 120000 - outputChars),
-              secretMargin: _redactor.retentionMargin,
             );
             final clipped = clippedData.encode();
             outputChars += clipped.length;
@@ -663,7 +666,7 @@ final class AiRunner {
     if (!seg.contextDelivered) {
       for (final block in _segmentContext) {
         await _refresh(epoch);
-        blocks.add(block.redact(_redact));
+        blocks.add(block.redact(_redactor, source: _redact));
       }
     }
     seg.setTail(AppUserEntry(text: text, context: blocks));
@@ -761,7 +764,10 @@ final class AiRunner {
       seg.setTail(
         tail.redactedCopy(
           text: _redact(tail.text, late: true),
-          context: [for (final block in tail.context) block.redact(_redact)],
+          context: [
+            for (final block in tail.context)
+              block.redact(_redactor, source: _redact),
+          ],
         ),
       );
     } else if (tail is AppToolResultsEntry) {
@@ -770,7 +776,10 @@ final class AiRunner {
           results: [
             for (final result in tail.results)
               result.copyWith(
-                data: result.plainData.redact((s) => _redact(s, late: true)),
+                data: result.plainData.redact(
+                  _redactor,
+                  source: (s) => _redact(s, late: true),
+                ),
               ),
           ],
           followUpText: tail.followUpText == null
@@ -1023,56 +1032,73 @@ AiAppText buildAiProjectionData({
       .map((block) => redact(block.plainData.plainText))
       .join('\n');
   final contextLimit = (available * .4).floor();
-  final head = clipAiPlainForEscapedBudget(contextText, contextLimit);
-  var remaining = available - escapeUntrustedGitLabText(head).length;
-  final recent = <String>[];
-  var dropped = head.length < contextText.length;
-  final texts = <String>[
+  final head = AiAppText.plain(
+    contextText,
+  ).clipped(contextLimit, escapeDepth: 1);
+  var remaining = available - escapeUntrustedGitLabText(head.encode()).length;
+  final recent = <AiAppText>[];
+  var dropped = head.plainText.length < contextText.length;
+  AiAppText plain(String text) => AiAppText.plain(redact(text));
+  AiAppText toolSummary(AiToolResult result) {
+    final firstLine = result.plainData.plainText.split('\n').first;
+    return AiAppText.join([
+      plain('[tool ${result.name}: '),
+      plain(
+        firstLine.startsWith('[source:')
+            ? firstLine
+            : '[source: tool ${result.name}]',
+      ).clipped(512),
+      plain(
+        '; ${result.content.length} chars; ${result.isError ? 'interrupted' : 'read'}]',
+      ),
+    ], '');
+  }
+
+  final texts = <AiAppText>[
     for (final item in hasPriorSummary ? const <AiChatItem>[] : history)
-      switch (item) {
+      plain(switch (item) {
         AiUserItem() => 'User: ${item.text}',
         AiAssistantItem() => 'Assistant (${item.state.name}): ${item.text}',
         AiToolRunItem() =>
           '[tool ${item.name}: ${item.provenance}; ${item.sizeChars} chars; ${item.status.name}]',
         AiNoticeItem() => '[notice: ${item.kind.name}]',
-      },
+      }),
     for (final entry in entries) ...[
       if (entry is AppUserEntry)
         for (final block in entry.context)
-          if (block.source == 'conversation_summary') block.plainData.plainText,
+          if (block.source == 'conversation_summary')
+            plain(block.plainData.plainText),
       switch (entry) {
-        AppUserEntry() => 'User: ${entry.text}',
-        ProviderOutputEntry() => 'Assistant: ${providerAnswerText(entry)}',
-        AppToolResultsEntry() =>
-          entry.results
-              .map((r) {
-                final firstLine = r.plainData.plainText.split('\n').first;
-                final provenance = firstLine.startsWith('[source:')
-                    ? clipAiText(firstLine, 512)
-                    : '[source: tool ${r.name}]';
-                return '[tool ${r.name}: $provenance; ${r.content.length} chars; ${r.isError ? 'interrupted' : 'read'}]';
-              })
-              .join('\n'),
+        AppUserEntry() => plain('User: ${entry.text}'),
+        ProviderOutputEntry() => plain(
+          'Assistant: ${providerAnswerText(entry)}',
+        ),
+        AppToolResultsEntry() => AiAppText.join(
+          entry.results.map(toolSummary).toList(),
+        ),
       },
       if (entry is AppToolResultsEntry && entry.followUpText != null)
-        'User: ${entry.followUpText}',
+        plain('User: ${entry.followUpText}'),
     ],
   ];
   for (final text in texts.reversed) {
-    final safe = redact(text);
-    if (escapeUntrustedGitLabText(safe).length + 1 > remaining) {
+    if (escapeUntrustedGitLabText(text.encode()).length + 1 > remaining) {
       dropped = true;
       break;
     }
-    recent.add(safe);
-    remaining -= escapeUntrustedGitLabText(safe).length + 1;
+    recent.add(text);
+    remaining -= escapeUntrustedGitLabText(text.encode()).length + 1;
   }
   return AiAppText.untrusted(
     source: 'conversation_summary',
     nonce: nonce,
-    body: AiAppText.plain(
-      '$head\n${dropped ? omitted : ''}${recent.reversed.join('\n')}',
-    ),
+    body: AiAppText.join([
+      head,
+      AiAppText.join([
+        if (dropped) const AiAppText.plain(omitted),
+        AiAppText.join(recent.reversed.toList()),
+      ], ''),
+    ]),
   );
 }
 

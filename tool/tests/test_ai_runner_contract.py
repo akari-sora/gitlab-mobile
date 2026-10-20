@@ -5,6 +5,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNNER = ROOT / "lib" / "core" / "ai" / "runner.dart"
+TRANSCRIPT = ROOT / "lib" / "core" / "ai" / "ai_transcript.dart"
 LIB = ROOT / "lib"
 
 
@@ -20,6 +21,18 @@ class AiRunnerContractTest(unittest.TestCase):
                 line = source.count("\n", 0, match.start()) + 1
                 offenders.append(f"{path.relative_to(ROOT)}:{line}")
         self.assertEqual(offenders, [])
+
+    def test_tool_result_copy_with_cannot_replace_data_with_content(self):
+        source = TRANSCRIPT.read_text(encoding="utf-8")
+        match = re.search(
+            r"AiToolResult copyWith\(\{(?P<body>.*?)\}\)\s*=>",
+            source,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(match)
+        parameters = re.sub(r"\s+", " ", match.group("body")).strip()
+        self.assertEqual(parameters, "required AiAppText data")
+        self.assertNotRegex(source, r"copyWith\s*\(\s*content\s*:")
 
     def test_cancel_active_is_required_without_close_fallback(self):
         source = RUNNER.read_text(encoding="utf-8")

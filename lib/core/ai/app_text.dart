@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'prompts.dart';
+import 'redaction.dart';
 
 /// Application-owned, already redacted values. Encoding is a separate view;
 /// secret refreshes always revisit the plain values, never decode that view.
@@ -24,12 +25,13 @@ sealed class AiAppText {
   static final _encoded = Expando<String>();
   String encode() => _encoded[this] ??= _encode();
   String _encode();
-  AiAppText redact(String Function(String) redact);
+  AiAppText redact(Redactor redactor, {String Function(String)? source});
   AiAppText escaped() => _EscapedText(this);
-  AiAppText clipped(int maximum, {int secretMargin = 0}) => _ClippedText(
-    _PlainRetention(maximum, secretMargin).retain(this, 0),
-    maximum,
-  );
+  AiAppText clipped(int maximum, {int escapeDepth = 0}) {
+    final retention = _PlainRetention(maximum);
+    final body = retention.retain(this, escapeDepth);
+    return _ClippedText(body, maximum, retention.cutString);
+  }
 }
 
 final class _PlainText extends AiAppText {
@@ -40,7 +42,8 @@ final class _PlainText extends AiAppText {
   @override
   String _encode() => value;
   @override
-  AiAppText redact(String Function(String) redact) => _PlainText(redact(value));
+  AiAppText redact(Redactor redactor, {String Function(String)? source}) =>
+      _PlainText((source ?? (s) => redactor.redactSource(s).text)(value));
 }
 
 final class _JsonText extends AiAppText {
@@ -51,8 +54,10 @@ final class _JsonText extends AiAppText {
   @override
   String _encode() => jsonEncode(value);
   @override
-  AiAppText redact(String Function(String) redact) =>
-      _JsonText(mapAiJsonStrings(value, redact));
+  AiAppText redact(Redactor redactor, {String Function(String)? source}) =>
+      _JsonText(
+        mapAiJsonStrings(value, source ?? (s) => redactor.redactSource(s).text),
+      );
 }
 
 final class _JoinedText extends AiAppText {
@@ -67,8 +72,11 @@ final class _JoinedText extends AiAppText {
   @override
   String _encode() => parts.map((p) => p.encode()).join(separator);
   @override
-  AiAppText redact(String Function(String) redact) =>
-      _JoinedText(parts.map((p) => p.redact(redact)).toList(), separator);
+  AiAppText redact(Redactor redactor, {String Function(String)? source}) =>
+      _JoinedText(
+        parts.map((p) => p.redact(redactor, source: source)).toList(),
+        separator,
+      );
 }
 
 final class _UntrustedText extends AiAppText {
@@ -95,11 +103,12 @@ final class _UntrustedText extends AiAppText {
     text: body.encode(),
   );
   @override
-  AiAppText redact(String Function(String) redact) => _UntrustedText(
-    source: redact(source),
-    nonce: nonce,
-    body: body.redact(redact),
-  );
+  AiAppText redact(Redactor redactor, {String Function(String)? source}) =>
+      _UntrustedText(
+        source: (source ?? (s) => redactor.redactSource(s).text)(this.source),
+        nonce: nonce,
+        body: body.redact(redactor, source: source),
+      );
 }
 
 final class _EscapedText extends AiAppText {
@@ -112,14 +121,15 @@ final class _EscapedText extends AiAppText {
   @override
   String _encode() => escapeUntrustedGitLabText(body.encode());
   @override
-  AiAppText redact(String Function(String) redact) =>
-      _EscapedText(body.redact(redact));
+  AiAppText redact(Redactor redactor, {String Function(String)? source}) =>
+      _EscapedText(body.redact(redactor, source: source));
 }
 
 final class _ClippedText extends AiAppText {
-  const _ClippedText(this.body, this.maximum);
+  const _ClippedText(this.body, this.maximum, this.cutString);
   final AiAppText body;
   final int maximum;
+  final int? cutString;
   @override
   Iterable<String> get plainStrings => body.plainStrings;
   @override
@@ -127,8 +137,17 @@ final class _ClippedText extends AiAppText {
   @override
   String _encode() => clipWrappedUntrustedGitLabData(body.encode(), maximum);
   @override
-  AiAppText redact(String Function(String) redact) =>
-      _ClippedText(body.redact(redact), maximum);
+  AiAppText redact(Redactor redactor, {String Function(String)? source}) {
+    var ordinal = 0;
+    final safe = body.redact(
+      redactor,
+      source: (value) {
+        final text = (source ?? (s) => redactor.redactSource(s).text)(value);
+        return ordinal++ == cutString ? redactor.redactCutEnd(text).text : text;
+      },
+    );
+    return _ClippedText(safe, maximum, cutString);
+  }
 }
 
 Object? mapAiJsonStrings(Object? value, String Function(String) transform) =>
@@ -159,17 +178,19 @@ Iterable<String> readableAiJsonStrings(Object? value) sync* {
   }
 }
 
-// Retain only the deliverable prefix and one overlap margin. Walk plain values
+// Retain only the deliverable prefix. Walk plain values
 // while accounting for the encodings around them; never decode a wire view.
 final class _PlainRetention {
-  _PlainRetention(this.remaining, this.margin);
+  _PlainRetention(this.remaining);
   int remaining;
-  int margin;
+  int ordinal = 0;
+  int? cutString;
 
   void consume(int width) =>
       remaining = remaining > width ? remaining - width : 0;
 
   String text(String value, int depth, {bool json = false}) {
+    final current = ordinal++;
     final prefix = clipAiPlainForEscapedBudget(
       value,
       remaining,
@@ -179,17 +200,8 @@ final class _PlainRetention {
     consume(_encodedWidth(prefix, depth, json: json));
     if (prefix.length == value.length) return value;
     remaining = 0;
-    final end = (prefix.length + margin).clamp(0, value.length);
-    margin = 0;
-    // A cut must not retain half of a surrogate pair.
-    final safeEnd =
-        end > 0 &&
-            end < value.length &&
-            value.codeUnitAt(end - 1) >= 0xD800 &&
-            value.codeUnitAt(end - 1) <= 0xDBFF
-        ? end - 1
-        : end;
-    return value.substring(0, safeEnd);
+    cutString = current;
+    return prefix;
   }
 
   AiAppText retain(AiAppText value, int depth) => switch (value) {
@@ -198,10 +210,15 @@ final class _PlainRetention {
     _EscapedText() => retain(value.body, depth + 1).escaped(),
     _UntrustedText() => untrusted(value, depth),
     _JoinedText() => joined(value, depth),
-    _ClippedText() => _ClippedText(retain(value.body, depth), value.maximum),
+    _ClippedText() => _ClippedText(
+      retain(value.body, depth),
+      value.maximum,
+      value.cutString,
+    ),
   };
 
   AiAppText untrusted(_UntrustedText value, int depth) {
+    ordinal++; // The source label is a plain string too.
     final labels = wrapUntrustedGitLabData(
       source: value.source,
       nonce: value.nonce,
@@ -218,6 +235,7 @@ final class _PlainRetention {
   AiAppText joined(_JoinedText value, int depth) {
     final parts = <AiAppText>[];
     for (final part in value.parts) {
+      if (remaining <= 0) break;
       if (parts.isNotEmpty) consume(_encodedWidth(value.separator, depth));
       parts.add(retain(part, depth));
     }
@@ -233,6 +251,7 @@ final class _PlainRetention {
       consume(2); // Brackets.
       final result = <Object?>[];
       for (var i = 0; i < value.length; i++) {
+        if (remaining <= 0) break;
         if (i > 0) consume(1);
         result.add(jsonValue(value[i], depth));
       }
@@ -242,6 +261,8 @@ final class _PlainRetention {
       consume(2); // Braces. Keys are the catalogue's bounded projected schema.
       final result = <String, Object?>{};
       for (final entry in value.entries) {
+        if (remaining <= 0) break;
+        ordinal++; // Projected schema key, visited before its value.
         if (result.isNotEmpty) consume(1);
         consume(_encodedWidth(jsonEncode(entry.key), depth) + 1);
         result[entry.key] = jsonValue(entry.value, depth);

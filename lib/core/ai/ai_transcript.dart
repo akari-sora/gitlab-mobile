@@ -9,6 +9,7 @@ import 'ai_failure.dart';
 import 'app_text.dart';
 import 'ai_provider.dart';
 import 'prompts.dart';
+import 'redaction.dart';
 
 const aiFinalAnswerNoteMarker = '<mergeline_final_answer>';
 const aiFinalAnswerNote =
@@ -51,7 +52,7 @@ final class AiContextBlock {
   AiContextBlock({required this.source, required String text})
     : _text = text,
       data = null {
-    assert(!text.startsWith('<gitlab_data'));
+    assert(!text.contains('<gitlab_data'));
   }
   const AiContextBlock.fromData({required this.source, required AiAppText data})
     : _text = '',
@@ -64,10 +65,12 @@ final class AiContextBlock {
   String get text => data?.encode() ?? _text;
   AiAppText get plainData => data ?? AiAppText.plain(_text);
 
-  AiContextBlock redact(String Function(String) redact) =>
+  AiContextBlock redact(Redactor redactor, {String Function(String)? source}) =>
       AiContextBlock.fromData(
-        source: redact(source),
-        data: plainData.redact(redact),
+        source:
+            source?.call(this.source) ??
+            redactor.redactSource(this.source).text,
+        data: plainData.redact(redactor, source: source),
       );
 }
 
@@ -92,7 +95,7 @@ final class AiToolResult {
     this.blockedSensitive = false,
   }) : _content = content,
        data = null {
-    assert(!content.startsWith('<gitlab_data'));
+    assert(!content.contains('<gitlab_data'));
   }
 
   const AiToolResult.fromData({
@@ -107,17 +110,6 @@ final class AiToolResult {
        // ignore: prefer_initializing_formals
        data = data;
 
-  const AiToolResult._({
-    required this.callId,
-    required this.name,
-    required String content,
-    required this.data,
-    required this.isError,
-    required this.withheldPrivateKeyContext,
-    required this.truncated,
-    required this.blockedSensitive,
-  }) : _content = content;
-
   final String callId;
   final String name;
   final String _content;
@@ -129,11 +121,10 @@ final class AiToolResult {
   final bool truncated;
   final bool blockedSensitive;
 
-  AiToolResult copyWith({String? content, AiAppText? data}) => AiToolResult._(
+  AiToolResult copyWith({required AiAppText data}) => AiToolResult.fromData(
     callId: callId,
     name: name,
-    content: content ?? _content,
-    data: data ?? (content == null ? this.data : null),
+    data: data,
     isError: isError,
     withheldPrivateKeyContext: withheldPrivateKeyContext,
     truncated: truncated,
@@ -322,7 +313,7 @@ final class AiSegment {
     throw StateError('A follow-up requires an app tail.');
   }
 
-  void clipTailToolResults(int maxChars, {int secretMargin = 0}) {
+  void clipTailToolResults(int maxChars) {
     if (maxChars < 0) throw RangeError.range(maxChars, 0, null, 'maxChars');
     final current = _tail;
     if (current is! AppToolResultsEntry) {
@@ -334,10 +325,7 @@ final class AiSegment {
       final keep = result.content.length <= remaining
           ? result.content
           : clipWrappedUntrustedGitLabData(result.content, remaining);
-      clipped.add(result.copyWith(data: result.plainData.clipped(
-        remaining,
-        secretMargin: secretMargin,
-      )));
+      clipped.add(result.copyWith(data: result.plainData.clipped(remaining)));
       remaining -= keep.length;
     }
     _tail = current.copyWith(results: clipped);
