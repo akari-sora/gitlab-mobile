@@ -9,7 +9,7 @@ A mobile-first Flutter client for GitLab® on Android and iOS, formerly develope
 
 ## 2026-10-20 — Mergeline, 24 languages and an app lock
 
-- **Markdown media.** README files and descriptions render repository, external HTTPS and HTML images, SVG and animated images, plus tap-to-load in-app audio/video with bounded downloads and account-scoped temporary cleanup; unlike GitLab web, images inside inline raw-text tags render, and audio/video fallback is hidden only for plain text and complete tags within 4096 characters.
+- **Markdown media.** README files and descriptions render repository, external HTTPS and HTML images, SVG and animated images, plus tap-to-load in-app audio/video with bounded downloads and account-scoped temporary cleanup; unlike GitLab web, images inside inline raw-text tags render, and audio/video fallback is hidden only for plain text and complete tags within 4096 characters and 16 tags.
 - **24 languages.** Traditional and Simplified Chinese, English, Japanese, Korean, Spanish, Brazilian Portuguese, French, German, Italian, Russian, Ukrainian, Polish, Dutch, Swedish, Czech, Romanian, Turkish, Arabic (right-to-left), Hindi, Thai, Vietnamese, Indonesian and Malay. The app follows the device's languages (English when none of them is translated); 我的 › 外觀 › 語言 picks one, and Android 13+ and iOS also offer the choice in the system's per-app language settings. Switching keeps the open pages and drafts.
 - **App lock.** 我的 › 安全性 › App 鎖定 (off by default) asks for a fingerprint, face or the screen lock when the app opens and after more than a minute away. Turning it on needs one passing check, so nobody locks themselves out.
 

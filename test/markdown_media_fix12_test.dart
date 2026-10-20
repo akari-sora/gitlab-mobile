@@ -172,6 +172,7 @@ void main() {
   for (final character in {
     'backtick': '`',
     'link bracket': '[',
+    'closing bracket': ']',
     'backslash': r'\',
   }.entries) {
     test('FIX12 rule 1 rejects ${character.key} in a text run', () {
@@ -181,6 +182,53 @@ void main() {
       expect(_parse(source).single.textContent, contains('</video>'));
     });
   }
+
+  // Round 12: a label opened before the element ends inside its body, so
+  // the closing tag sits in the link title or destination.
+  const labelsBeforeOpening = {
+    'Codex/Opus V-B link label':
+        'v [<video src="a.mp4">x](u "</video><img src=\'$_hidden\'>") t',
+    'image label':
+        'v ![<video src="a.mp4">x](u "</video><img src=\'$_hidden\'>") t',
+    'parenthesized title':
+        'v [<video src="a.mp4">x](u (</video><img src=\'$_hidden\'>)) t',
+    'audio single-quoted title':
+        'v [<audio src="a.mp4">x](u \'</audio><img src="$_hidden">\') t',
+    'empty label':
+        'v [<video src="a.mp4">](u "</video><img src=\'$_hidden\'>") t',
+    'tag in label':
+        'v [<video src="a.mp4"><b>x</b>](u "</video><img src=\'$_hidden\'>") t',
+    'angle destination':
+        'v [<video src="a.mp4">x](<u> "</video><img src=\'$_hidden\'>") t',
+  };
+  for (final input in labelsBeforeOpening.entries) {
+    testWidgets('FIX13 label before the opening tag: ${input.key}', (
+      tester,
+    ) async {
+      _expectDefaultAfterOpeningCard(input.value);
+      await _expectMedia(
+        tester,
+        input.value,
+        // An image label becomes alt text, so the card is not built.
+        cards: input.key == 'image label' ? 0 : 1,
+        imageWidgets: input.key == 'image label' ? 1 : 0,
+      );
+    });
+  }
+
+  testWidgets('FIX13 a label closing after the element still wraps it', (
+    tester,
+  ) async {
+    const source = 'v [<video src="a.mp4">x</video>](u) t';
+    final links = _elements(
+      _parse(source),
+    ).where((node) => node.tag == 'a').toList();
+    expect(links, hasLength(1));
+    expect(_elements(links.single.children!).map((node) => node.tag), [
+      markdownMediaElement,
+    ]);
+    await _expectMedia(tester, source, cards: 1);
+  });
 
   const specialLessThan = {
     'comment': '<!-- </video> -->',

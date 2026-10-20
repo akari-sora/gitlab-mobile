@@ -415,7 +415,12 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
     return element == null ? null : (element: element, end: first.end);
   }
   if (first.name == 'video' || first.name == 'audio') {
-    final body = _inlineMediaBody(source, start, first);
+    // The cached textual closer is a cheap necessary condition: without one
+    // inside the bound, the tag walk cannot succeed.
+    final close = scanner.closingTag(first.name, first.end);
+    final body = close != null && close.end - start <= _inlineMediaMaxCharacters
+        ? _inlineMediaBody(source, start, first)
+        : null;
     final src = first.attributes['src'] ?? body?.src;
     final element = _mediaElement({
       ...first.attributes,
@@ -471,48 +476,41 @@ final _autolinkPattern = md.AutolinkSyntax().pattern;
   int start,
   _HtmlTag opening,
 ) {
-  final limit = start + _inlineMediaMaxCharacters;
-  final window = source.substring(
-    start,
-    limit < source.length ? limit : source.length,
-  );
-  var cursor = opening.end - start;
+  final limit = start + _inlineMediaMaxCharacters < source.length
+      ? start + _inlineMediaMaxCharacters
+      : source.length;
+  var cursor = opening.end;
   var tags = 0;
   String? src;
   var sourceSeen = false;
-  while (cursor < window.length) {
-    final unit = window.codeUnitAt(cursor);
-    // These characters can start Markdown tokens spanning the closing tag.
-    if (unit == 0x60 || unit == 0x5B || unit == 0x5C) return null;
+  while (cursor < limit) {
+    final unit = source.codeUnitAt(cursor);
+    // These characters can start or end Markdown tokens spanning the closing
+    // tag: code spans, link and image labels, and escapes.
+    if (unit == 0x60 || unit == 0x5B || unit == 0x5D || unit == 0x5C) {
+      return null;
+    }
     if (unit != 0x3C) {
       cursor++;
       continue;
     }
-    if (++tags > _inlineMediaMaxTags || cursor + 1 >= window.length) {
-      return null;
-    }
-    final next = window.codeUnitAt(cursor + 1);
+    if (++tags > _inlineMediaMaxTags || cursor + 1 >= limit) return null;
+    final next = source.codeUnitAt(cursor + 1);
     if (!_isAsciiLetter(next) && next != 0x2F) return null;
-    if (_autolinkPattern.matchAsPrefix(window, cursor) != null) return null;
-    final match = _inlineHtmlPattern.matchAsPrefix(window, cursor);
-    if (match == null) return null;
-    // Named-tag matches terminate at a complete > (including any quoted
-    // attribute). Appending a suffix cannot extend that token. Matching only
-    // the capped window therefore gives the same end as the full source.
-    final token = match[0]!;
-    if (token.startsWith('</') &&
-        token.substring(2, token.length - 1).trim().toLowerCase() ==
-            opening.name) {
-      return (end: start + match.end, src: src);
+    if (_autolinkPattern.matchAsPrefix(source, cursor) != null) return null;
+    // _scanTag accepts a tag only when package:markdown's inline HTML pattern
+    // matches exactly the lexed candidate, so it is the token the default
+    // parser sees here; the pattern never searches past the candidate.
+    final tag = _scanTag(source, cursor);
+    if (tag == null || tag.end > limit) return null;
+    if (tag.closing && tag.name == opening.name) {
+      return (end: tag.end, src: src);
     }
-    if (!sourceSeen) {
-      final tag = _scanTag(window, cursor);
-      if (tag != null && !tag.closing && tag.name == 'source') {
-        src = tag.attributes['src'];
-        sourceSeen = true;
-      }
+    if (!sourceSeen && !tag.closing && tag.name == 'source') {
+      src = tag.attributes['src'];
+      sourceSeen = true;
     }
-    cursor = match.end;
+    cursor = tag.end;
   }
   return null;
 }
