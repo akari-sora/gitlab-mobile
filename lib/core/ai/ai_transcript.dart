@@ -199,6 +199,7 @@ final class AiSegment {
   }
 
   void addFollowUp(String redactedText) {
+    removeFinalAnswerNote();
     _addFollowUp(redactedText, finalAnswerNote: false);
   }
 

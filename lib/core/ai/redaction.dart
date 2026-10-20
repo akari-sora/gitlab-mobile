@@ -80,7 +80,7 @@ final class Redactor {
   static const List<RedactionPattern> assignmentPatterns = [
     RedactionPattern(
       'header',
-      r'^(?:authorization|private-token|job-token|x-api-key|api-key|x-goog-api-key)$',
+      r'(?:^|[_.\-])(?:authorization|private-token|job-token|x-api-key|api-key|x-goog-api-key)$',
       caseSensitive: false,
     ),
     RedactionPattern(
@@ -215,10 +215,15 @@ Iterable<_RedactionRange> _urlRanges(String input, RegExp scheme) sync* {
       end += 1;
     }
     scannedThrough = end;
-    if (separator > match.end &&
-        input.substring(match.end, separator) != _redacted) {
-      yield (start: match.end, end: separator);
+    if (separator <= match.end) continue;
+    final userinfo = input.substring(match.end, separator);
+    if (userinfo == _redacted) continue;
+    // This conventional SSH username carries no password. Opaque tokens and
+    // every password-bearing authority still require masking.
+    if (match.group(1)!.toLowerCase() == 'ssh://' && userinfo == 'git') {
+      continue;
     }
+    yield (start: match.end, end: separator);
   }
 }
 
@@ -284,57 +289,43 @@ int _skipHorizontalSpace(String input, int cursor) {
 
 Iterable<_RedactionRange> _pemRanges(String input) sync* {
   final begin = RegExp(r'-----BEGIN ([A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?)-----');
+  // Bound both indexOf's search and retained UTF-16 text to 64 KiB. Reuse the
+  // window for adjacent blocks; copying a window for every BEGIN is costly.
+  const windowChars = 32 * 1024;
+  var windowStart = 0;
+  var windowEnd = 0;
+  var window = '';
   var offset = 0;
   for (final match in begin.allMatches(input)) {
     if (match.start < offset) continue;
     final endMarker = '-----END ${match.group(1)}-----';
-    final firstLineEnd = _lineEnd(input, match.end);
-    final firstLine = input.substring(match.end, firstLineEnd.contentEnd);
-    final inlineEnd = firstLine.indexOf(endMarker);
-    if (inlineEnd >= 0) {
-      final end = match.end + inlineEnd + endMarker.length;
-      offset = end == firstLineEnd.contentEnd ? firstLineEnd.nextOffset : end;
-      yield (start: match.start, end: offset);
-      continue;
+    final limit = match.start + windowChars;
+    final boundedEnd = limit < input.length ? limit : input.length;
+    var end = match.end <= windowEnd
+        ? window.indexOf(endMarker, match.end - windowStart)
+        : -1;
+    if (end < 0 && windowEnd < boundedEnd) {
+      // A refill happens only when the block will advance past the old window
+      // (or fail closed through the new one). Total search/copy work is linear.
+      windowStart = match.start;
+      windowEnd = boundedEnd;
+      window = input.substring(windowStart, windowEnd);
+      end = match.end <= windowEnd
+          ? window.indexOf(endMarker, match.end - windowStart)
+          : -1;
     }
-    var cursor = firstLineEnd.nextOffset;
-    var redactionEnd = cursor;
-    int? firstBlank;
-    var matchedEnd = false;
-    var lines = 0;
-    while (cursor < input.length && lines < 100) {
-      final lineEnd = _lineEnd(input, cursor);
-      final line = input.substring(cursor, lineEnd.contentEnd);
-      // Never rescan the body of another private-key block.
-      if (line.contains('-----BEGIN ')) break;
-      lines++;
-      if (line == endMarker) {
-        redactionEnd = lineEnd.nextOffset;
-        matchedEnd = true;
-        break;
+    offset = end < 0 ? windowEnd : windowStart + end + endMarker.length;
+    // A pathological overlong BEGIN is itself sensitive, even beyond the cap.
+    if (offset < match.end) offset = match.end;
+    if (end >= 0 && offset < input.length) {
+      // Inspect only the immediate terminator; never rescan the rest of a line.
+      if (input.codeUnitAt(offset) == 0x0d) {
+        offset++;
+        if (offset < input.length && input.codeUnitAt(offset) == 0x0a) offset++;
+      } else if (input.codeUnitAt(offset) == 0x0a) {
+        offset++;
       }
-      if (line.isEmpty) firstBlank ??= cursor;
-      redactionEnd = lineEnd.nextOffset;
-      cursor = lineEnd.nextOffset;
     }
-    offset = !matchedEnd && firstBlank != null ? firstBlank : redactionEnd;
     yield (start: match.start, end: offset);
   }
-}
-
-({int contentEnd, int nextOffset}) _lineEnd(String text, int start) {
-  for (var index = start; index < text.length; index += 1) {
-    final unit = text.codeUnitAt(index);
-    if (unit == 0x0a) return (contentEnd: index, nextOffset: index + 1);
-    if (unit == 0x0d) {
-      final next = index + 1;
-      return (
-        contentEnd: index,
-        nextOffset: next < text.length && text.codeUnitAt(next) == 0x0a
-            ? next + 1
-            : next,
-      );
-    }
-  }
-  return (contentEnd: text.length, nextOffset: text.length);
 }

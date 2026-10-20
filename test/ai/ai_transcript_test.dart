@@ -255,4 +255,33 @@ void main() {
     segment.removeFinalAnswerNote();
     expect((segment.tail! as AppUserEntry).text, 'question');
   });
+
+  for (final toolTail in [false, true]) {
+    test('follow-up removes an injected note first (tool tail: $toolTail)', () {
+      final segment = AiSegment(
+        providerId: 'provider',
+        recipientRevision: 1,
+        format: AiFormat.chatCompletions,
+        model: 'model',
+        secretSetAtStart: SecretSetId.fromSecrets(const []),
+      );
+      // User text equal to the note must survive alongside the follow-up.
+      const userText = 'question\n\n$aiFinalAnswerNote';
+      segment.setTail(
+        toolTail
+            ? AppToolResultsEntry(const [], followUpText: userText)
+            : AppUserEntry(text: userText),
+      );
+      segment.addFinalAnswerNote();
+      segment.addFollowUp('user text');
+      segment.removeFinalAnswerNote();
+      String? tailText() => toolTail
+          ? (segment.tail! as AppToolResultsEntry).followUpText
+          : (segment.tail! as AppUserEntry).text;
+      expect(tailText(), '$userText\n\nuser text');
+      segment.addFinalAnswerNote();
+      segment.removeFinalAnswerNote();
+      expect(tailText(), '$userText\n\nuser text');
+    });
+  }
 }

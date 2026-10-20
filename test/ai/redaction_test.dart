@@ -158,19 +158,18 @@ void main() {
     expect(redacted.substring(0, 18), isNot(contains('rotated')));
   });
 
-  test('bounds unterminated PEM redaction at an empty line or 100 lines', () {
+  test('unterminated PEM fails closed through its bounded window', () {
     final redactor = Redactor(secrets: _Secrets(), patterns: const []);
     final blankBounded = redactor.redact(
       'x\n-----BEGIN PRIVATE KEY-----\nsecret\n\nvisible',
     );
-    final hundredLines = List.generate(101, (index) => 'line-$index');
-    final lineBounded = redactor.redact(
-      '-----BEGIN RSA PRIVATE KEY-----\n${hundredLines.join('\n')}',
-    );
+    const begin = '-----BEGIN RSA PRIVATE KEY-----';
+    const windowChars = 32 * 1024; // At most 64 KiB of UTF-16 text.
+    final window = begin + 'A' * (windowChars - begin.length);
+    final windowBounded = redactor.redact('${window}after-window');
 
-    expect(blankBounded.text, 'x\n[REDACTED]\nvisible');
-    expect(lineBounded.text, startsWith('[REDACTED]line-100'));
-    expect(lineBounded.text, isNot(contains('line-99')));
+    expect(blankBounded.text, 'x\n[REDACTED]');
+    expect(windowBounded.text, '[REDACTED]after-window');
   });
 
   test('redacts matching PEM end marker and preserves following content', () {
@@ -274,6 +273,33 @@ void main() {
     }
   });
 
+  test('prefixed credential headers hide the complete review corpus', () {
+    for (final (input, expected) in [
+      ('Proxy-Authorization: Basic dXNlcjpwYXNzd29yZDEyMw==', '[REDACTED]'),
+      ('> Proxy-Authorization: Basic dXNlcjpwYXNzd29yZDEyMw==', '> [REDACTED]'),
+      ('headers.Authorization: Bearer abcdefghijklmnopqrstuvwx', '[REDACTED]'),
+      (
+        'request.headers.authorization=Token SYNTHETIC-CREDENTIAL',
+        '[REDACTED]',
+      ),
+      ('HTTP_AUTHORIZATION=Bearer SYNTHETIC-CREDENTIAL', '[REDACTED]'),
+      for (final header in [
+        'private-token',
+        'job-token',
+        'x-api-key',
+        'api-key',
+        'x-goog-api-key',
+      ])
+        ('headers.$header: Bot SYNTHETIC-CREDENTIAL', '[REDACTED]'),
+    ]) {
+      final result = Redactor(secrets: _Secrets()).redact(input);
+      expect(result.text, expected, reason: input.split(RegExp('[:=]')).first);
+      expect(result.redactions, 1);
+    }
+    const ordinary = 'NotAuthorization: visible\nmax_tokens: 1024';
+    expect(Redactor(secrets: _Secrets()).redact(ordinary).text, ordinary);
+  });
+
   test('environment and JSON secret assignments hide complete values', () {
     for (final input in [
       'DB_PASSWORD=SYNTHETIC-CREDENTIAL',
@@ -307,6 +333,63 @@ void main() {
     }
   });
 
+  for (final label in ['PGP PRIVATE KEY BLOCK', 'RSA PRIVATE KEY']) {
+    test('long synthetic $label fixture redacts past 100 body lines', () {
+      // Structurally armored, deliberately unusable data; no real private key.
+      // 112 x 64 columns also exceeds an openssl genrsa 8192-sized PEM.
+      final body = List.filled(112, 'A' * 64).join('\n');
+      final headers = label.startsWith('PGP')
+          ? 'Version: Synthetic fixture\n\n'
+          : '';
+      final checksum = label.startsWith('PGP') ? '\n=AAAA' : '';
+      final input =
+          'before\n-----BEGIN $label-----\n$headers$body$checksum\n'
+          '-----END $label-----\r\nafter';
+      final result = Redactor(secrets: _Secrets()).redact(input);
+      expect(result.text, 'before\n[REDACTED]after');
+      expect(result.redactions, 1);
+    });
+  }
+
+  test('PEM matching END must fit inside the bounded window', () {
+    const begin = '-----BEGIN PRIVATE KEY-----';
+    const end = '-----END PRIVATE KEY-----';
+    const cap = 32 * 1024;
+    final redactor = Redactor(secrets: _Secrets());
+    final fitting = begin + 'A' * (cap - begin.length - end.length) + end;
+    expect(redactor.redact('$fitting\nafter').text, '[REDACTED]after');
+    final outside = begin + 'A' * (cap - begin.length);
+    expect(
+      redactor.redact('$outside$end\nafter').text,
+      '[REDACTED]$end\nafter',
+    );
+  });
+
+  test(
+    'PEM window refills when a matching END crosses the cached boundary',
+    () {
+      const first = '-----BEGIN PRIVATE KEY-----x-----END PRIVATE KEY-----';
+      const second = '-----BEGIN RSA PRIVATE KEY-----';
+      final padding = ' ' * (32 * 1024 - first.length - second.length - 5);
+      final input =
+          '$first$padding$second\n${'A' * 100}\n'
+          '-----END RSA PRIVATE KEY-----\nafter';
+      final result = Redactor(secrets: _Secrets()).redact(input);
+      expect(result.text, '[REDACTED]$padding[REDACTED]after');
+      expect(result.redactions, 2);
+    },
+  );
+
+  test('PEM ignores other END labels before the matching END', () {
+    final result = Redactor(secrets: _Secrets()).redact(
+      '-----BEGIN PGP PRIVATE KEY BLOCK-----\n\n'
+      '-----END RSA PRIVATE KEY-----\nSYNTHETIC-KEY-BODY\n'
+      '-----END PGP PRIVATE KEY BLOCK-----\nafter',
+    );
+    expect(result.text, '[REDACTED]after');
+    expect(result.redactions, 1);
+  });
+
   test('single-line PEM preserves the following ordinary lines', () {
     final result = Redactor(secrets: _Secrets()).redact(
       '-----BEGIN PRIVATE KEY----- inline-key -----END PRIVATE KEY-----\n'
@@ -332,6 +415,28 @@ void main() {
       ).redact('https://$userinfo@host.example/repo.git');
       expect(result.text, 'https://[REDACTED]@host.example/repo.git');
     }
+  });
+
+  test('plain SSH git userinfo survives while passwords and tokens do not', () {
+    final redactor = Redactor(secrets: _Secrets());
+    for (final scheme in ['ssh', 'SSH']) {
+      final remote = '$scheme://git@host.example/group/repo.git';
+      expect(redactor.redact(remote).text, remote);
+      expect(redactor.redact(remote).redactions, 0);
+      expect(
+        redactor.redact('$scheme://git:pw@host.example/repo.git').text,
+        '$scheme://[REDACTED]@host.example/repo.git',
+      );
+      expect(
+        redactor.redact('$scheme://opaque-token@host.example/repo.git').text,
+        '$scheme://[REDACTED]@host.example/repo.git',
+      );
+    }
+    final known = Redactor(secrets: _Secrets()..values = ['git']);
+    expect(
+      known.redact('ssh://git@host.example/repo').text,
+      'ssh://[REDACTED]@host.example/repo',
+    );
   });
 
   test('redaction is idempotent with distinct-span counts', () {
@@ -370,9 +475,38 @@ void main() {
     final watch = Stopwatch()..start();
     final result = redactor.redact(input);
     watch.stop();
-    expect(result.redactions, 72316);
+    // Missing END now consumes the bounded window, including nested BEGINs.
+    expect(result.text, matches(RegExp(r'^(?:\[REDACTED\]|\n)+$')));
+    expect(result.redactions, greaterThan(0));
     expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
   });
+
+  for (final suffix in ['', ' ']) {
+    test(
+      '2 MiB inline PEM blocks with ${suffix.length} trailing spaces stay under 1 s',
+      () {
+        const block = '-----BEGIN PRIVATE KEY----------END PRIVATE KEY-----';
+        final repeated = block + suffix;
+        final count = 2 * 1024 * 1024 ~/ repeated.length;
+        final padding = ' ' * (2 * 1024 * 1024 - count * repeated.length);
+        final input = repeated * count + padding;
+        final redactor = Redactor(secrets: _Secrets());
+        redactor.redact(repeated * 100);
+        final watch = Stopwatch()..start();
+        final result = redactor.redact(input);
+        watch.stop();
+        expect(result.redactions, count);
+        expect(result.text, '[REDACTED]$suffix' * count + padding);
+        // Retain host timing in the expanded acceptance output.
+        // ignore: avoid_print
+        print(
+          'inline PEM ${input.length} bytes, suffix=${suffix.length}: ${watch.elapsedMilliseconds} ms',
+        );
+        expect(watch.elapsed, lessThan(const Duration(seconds: 1)));
+      },
+      timeout: const Timeout(Duration(minutes: 2)),
+    );
+  }
 
   test('hostile assignment runs remain under three seconds at 2 MiB', () {
     final redactor = Redactor(secrets: _Secrets());
