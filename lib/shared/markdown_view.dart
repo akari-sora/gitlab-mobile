@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,12 +29,16 @@ final _htmlTag = RegExp(r'</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>]*)?/?>');
 final _image = RegExp(r'!\[[^\[\]]*\]\((?:[^()]|\([^()]*\))*\)');
 final _link = RegExp(r'\[([^\[\]]*)\]\((?:[^()]|\([^()]*\))*\)');
 final _strongOrStrike = RegExp(r'\*\*|~~');
-final _underscoreStrong = RegExp(r'(?<![A-Za-z0-9_])__(?=[^\s_])([^_]*[^\s_])__(?![A-Za-z0-9_])');
+final _underscoreStrong = RegExp(r'(?<![A-Za-z0-9_])__(?=[^\s_])((?:[^_]|_(?!_))*[^\s_])__(?![A-Za-z0-9_])');
 final _escaped = RegExp(r'\\([!-/:-@\[-`{-~])');
 
-/// Code spans stand in as Unicode noncharacters U+FDD0… while a line's
-/// links and tags are removed, so code inside a link label survives.
-const _codeMark = 0xFDD0, _codeMarks = 32;
+/// A code span stands in as U+FDD0, its index and U+FDD1 while a line's
+/// links and tags are removed, so code inside a link label survives. These
+/// noncharacters are removed from the text first, so none can collide.
+final _noncharacters = RegExp(r'[\uFDD0-\uFDEF]');
+final _codeMarker = RegExp(r'\uFDD0(\d+)\uFDD1');
+// Raw syntax left open where a cut line ends: `[![badge](https://…`.
+final _openSyntax = RegExp(r'!?\[|<');
 
 /// How much of a description is scanned for its summary, in UTF-16 units.
 const _summaryScanLimit = 32768;
@@ -105,7 +111,13 @@ const _summaryScanLimit = 32768;
       final readable = _readableLine(body,
           commentMayClose: (offset) => blockComment || lastClose >= bodyStart + offset + 4);
       inComment = readable.inComment;
-      write(readable.text);
+      var text = readable.text;
+      if (cut) {
+        final closed = math.max(text.lastIndexOf(')'), text.lastIndexOf('>'));
+        final open = text.indexOf(_openSyntax, closed + 1);
+        if (open >= 0) text = text.substring(0, open);
+      }
+      write(text);
     }
     if (cut) {
       more = true;
@@ -124,7 +136,8 @@ const _summaryScanLimit = 32768;
 /// as CommonMark does. A comment not closed on the line hides the rest only
 /// if [commentMayClose] says a `-->` follows; otherwise it is plain text.
 /// `inComment` is set when a comment runs past the line.
-({String text, bool inComment}) _readableLine(String line, {required bool Function(int offset) commentMayClose}) {
+({String text, bool inComment}) _readableLine(String source, {required bool Function(int offset) commentMayClose}) {
+  final line = source.replaceAll(_noncharacters, '');
   // Backtick runs, so each span finds its closing run without rescanning.
   final runs = <(int, int)>[];
   for (var i = 0; i < line.length;) {
@@ -179,12 +192,11 @@ const _summaryScanLimit = 32768;
       if (code.length > 1 && code.startsWith(' ') && code.endsWith(' ') && code.trim().isNotEmpty) {
         code = code.substring(1, code.length - 1);
       }
-      if (codes.length < _codeMarks) {
-        out.writeCharCode(_codeMark + codes.length);
-        codes.add(code);
-      } else {
-        out.write(code);
-      }
+      out
+        ..writeCharCode(0xFDD0)
+        ..write(codes.length)
+        ..writeCharCode(0xFDD1);
+      codes.add(code);
       i = runs[close].$1 + ticks;
       run = close + 1;
       plainStart = i;
@@ -224,10 +236,7 @@ const _summaryScanLimit = 32768;
       .replaceAll(_strongOrStrike, '')
       .replaceAllMapped(_escaped, (match) => match[1]!);
   if (codes.isNotEmpty) {
-    text = String.fromCharCodes(text.runes.expand((rune) {
-      final index = rune - _codeMark;
-      return index >= 0 && index < codes.length ? codes[index].runes : [rune];
-    }));
+    text = text.replaceAllMapped(_codeMarker, (match) => codes[int.parse(match[1]!)]);
   }
   return (text: text, inComment: inComment);
 }

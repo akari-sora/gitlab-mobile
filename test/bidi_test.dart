@@ -199,6 +199,21 @@ void main() {
       expect(summary('Code `[a](b)` stays'), 'Code [a](b) stays');
     });
 
+    test('every code span on a line keeps its text, and noncharacters cannot collide', () {
+      final many = '${'`x` ' * 40}`List<String>` and `[a](b)` and `__keep__` after';
+      expect(summary(many, 2000), '${'x ' * 40}List<String> and [a](b) and __keep__ after');
+      expect(summary('odd \uFDD0 char then `code`'), 'odd char then code');
+      expect(summary('__snake_case__ word and __init__'), 'snake_case word and init');
+    });
+
+    test('a line cut at the scan limit drops the syntax left open', () {
+      final badge = '[![b](https://img.shields.io/${'x' * 800})](https://example.com/${'y' * 20}) ';
+      final result = markdownSummary('${badge * 40} Real text', 560);
+      expect(result.more, isTrue);
+      expect(result.text, isNot(contains('https')));
+      expect(result.text, isNot(contains('[')));
+    });
+
     test('escapes, inline comments and the exact limit', () {
       expect(summary('\\`x \\` stays and \\*not bold\\*'), '`x ` stays and *not bold*');
       // A comment opened mid-line and never closed is plain text, as in CommonMark.
@@ -220,6 +235,8 @@ void main() {
         '<a ' * 20000,
         widths,
         '[a](${'(' * 30000}',
+        '`${'a' * 16383}`${'\uFDD0' * 16383}',
+        '__${'x_' * 16000}',
       ]) {
         final watch = Stopwatch()..start();
         final result = markdownSummary(input, 560);
