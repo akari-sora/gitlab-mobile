@@ -295,6 +295,7 @@ void main() {
         (index['entries']! as List<Object?>).single as Map<String, Object?>;
     expect(entry['updatedAt'], now.toIso8601String());
     expect(entry['size'], greaterThan(0));
+    expect(entry['formatVersion'], 1);
 
     reads = 0;
     final later = store(

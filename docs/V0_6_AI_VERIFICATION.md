@@ -434,9 +434,10 @@ malformed later chunk cannot erase earlier usage.
 
 MR3 round 0 is commit `22d5aaa530df7d3460c528522e4967ac7620cb45`, based on
 `93c164eca8d5498f8d19d38c2d892521a7f727f3`. Round 1 (FIX1) is commit
-`2c033a16d335bec9d4582462114925412049ddf1`. Round 2 (FIX2) is the commit
-containing this section. Pipeline/job evidence is **NOT_RUN**; no pipeline was
-queried or triggered.
+`2c033a16d335bec9d4582462114925412049ddf1`. Round 2 (FIX2) is commit
+`a29a70f35c643ef9f360ca050fc7a4e47d5844ff`. Round 3 (FIX3) is the commit
+containing this section (uncommitted during local verification). Pipeline/job
+evidence is **NOT_RUN**; no pipeline was queried or triggered.
 
 MR3 adds device-scoped provider settings/keys, account-scoped consent/history
 settings, encrypted display-only history, startup recovery and unconditional
@@ -455,9 +456,11 @@ until it can be persisted; no durable-marker claim is made on write failure.
 History validates root/base/account path types, uses random exclusive temp files,
 and requires regular final files. AES-256-GCM binds envelope version, account and
 filename in AAD. JSON/crypto and bounded reads/atomic writes run off the UI
-isolate. Index metadata includes updatedAt, size and modification time. Normal
-saves decrypt only the index plus changed/unindexed conversations, preserve
-conversation-before-index and file-before-index eviction order, and enforce
+isolate. Index metadata includes conversation format version, updatedAt, size
+and modification time; unverified old entries are opened before retention or
+eviction. Normal saves decrypt only the index plus changed/unindexed/unverified
+conversations, preserve conversation-before-index and file-before-index eviction
+order, and enforce
 512 KiB/50 conversations/16 MiB per account/64 MiB per device limits. Startup
 applies 7/30/90-day retention by index metadata. Key unavailable/missing states
 preserve data; authenticated unsupported schema remains on disk, skipped with a
@@ -471,16 +474,29 @@ Malformed individual tombstones are skipped and reported, without blocking
 valid recovery. This corrects the design's §5.7.6 restore expectation.
 
 FIX2 keeps provider-deletion markers across every provider-list write, removes
-orphan provider keys at startup and invalidates peer settings controllers while
-deletion is pending. Authenticated unsupported conversations are quarantined
-from overwrite, stale-index deletion and eviction; they count toward capacity
-and an unsupported index exposes an explicit clear action. Cleanup leases reopen retained or newly
-signed-in accounts after completion or cancellation, and fenced writes return a
+orphan provider keys at startup. FIX3 replaces FIX2 peer-controller invalidation
+with the plan's single live settings owner per store; a disposed owner retains
+ownership until pending writes drain. The shared account mutation queue still
+coordinates settings with history. Authenticated unsupported
+conversations are quarantined from overwrite, stale-index deletion and eviction;
+they count toward capacity and an unsupported index exposes an explicit clear
+action. Cleanup leases reopen retained or newly signed-in accounts after completion or cancellation, and fenced writes return a
 typed result. Read failures, stale temporary-file removal and later index-write
 failures have distinct sticky notices. Malformed account/key inventory entries
 and per-account startup failures are isolated and reported. The unused provider
 key-length message was removed; all 24 catalogs include the new history recovery
-messages.
+messages. `aiHistoryClearUnsupported` is reserved for MR6's explicit clear action;
+its localized message remains in every catalog. FIX3 also protects the entire
+account, including its index, from device eviction after any authenticated
+unsupported index or conversation is identified; insufficient reclaimable space
+returns the explicit storage-limit result. Capacity refusals remain retryable after
+space frees; only oversized conversations retain the permanent save-blocking
+latch. A successful save after read I/O
+failure restores `ready` and clears the read-failure notice. Provider deletion/reset
+blocked by a cleaning fence without a tombstone preserves its durable marker
+and key and throws typed `cleaning`; startup/next access resumes consent
+revocation before completion. Malformed provider-key IDs are individually
+skipped, counted and reported during initialization and reset.
 
 FIX1 regression evidence and acceptance commands/counts/output tails follow
 inline. Results are local synthetic evidence only; Android emulator, physical

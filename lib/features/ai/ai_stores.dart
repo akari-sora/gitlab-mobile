@@ -231,14 +231,18 @@ abstract interface class AiStoreSecureInventory {
 
 final class AiSecureInventory {
   const AiSecureInventory({
+    required this.providerKeyIds,
     required this.accountKeys,
     required this.historyKeyAccountKeys,
+    required this.malformedProviderKeyCount,
     required this.malformedAccountKeyCount,
     required this.malformedHistoryKeyCount,
   });
 
+  final List<String> providerKeyIds;
   final List<String> accountKeys;
   final List<String> historyKeyAccountKeys;
+  final int malformedProviderKeyCount;
   final int malformedAccountKeyCount;
   final int malformedHistoryKeyCount;
 }
@@ -451,8 +455,10 @@ Future<AiSecureInventory> readAiSecureInventory(AiStore store) async {
     return inventory.readSecureInventory();
   }
   return AiSecureInventory(
+    providerKeyIds: const <String>[],
     accountKeys: await store.listAccountKeys(),
     historyKeyAccountKeys: const <String>[],
+    malformedProviderKeyCount: 0,
     malformedAccountKeyCount: 0,
     malformedHistoryKeyCount: 0,
   );
@@ -1092,71 +1098,31 @@ final class MemoryAiStore implements AiStore, AiStoreSecureInventory {
   void debugPut(String key, String value) => _values[key] = value;
 }
 
-final Object _secureProviderMutationScope = Object();
-final Expando<_AiProviderMutationCoordinator> _providerMutationOwners =
-    Expando<_AiProviderMutationCoordinator>('aiProviderMutationOwner');
-
-final class _AiProviderMutationCoordinator {
-  _AiProviderMutationCoordinator._();
-
-  factory _AiProviderMutationCoordinator.forStore(AiStore store) {
-    final scope = store is SecureAiStore ? _secureProviderMutationScope : store;
-    return _providerMutationOwners[scope] ??=
-        _AiProviderMutationCoordinator._();
-  }
-
-  final Map<String, AiProviderConfig> deleting = <String, AiProviderConfig>{};
-  final Set<void Function(String, AiProviderConfig?)> _listeners =
-      <void Function(String, AiProviderConfig?)>{};
-  Future<void>? _tail;
-
-  void addListener(void Function(String, AiProviderConfig?) listener) {
-    _listeners.add(listener);
-  }
-
-  void removeListener(void Function(String, AiProviderConfig?) listener) {
-    _listeners.remove(listener);
-  }
-
-  void markDeleting(AiProviderConfig provider) {
-    deleting[provider.id] = provider;
-    for (final listener in List.of(_listeners)) {
-      listener(provider.id, provider);
-    }
-  }
-
-  void finishDeleting(String providerId) {
-    deleting.remove(providerId);
-    for (final listener in List.of(_listeners)) {
-      listener(providerId, null);
-    }
-  }
-
-  Future<T> run<T>(Future<T> Function() action) {
-    final previous = _tail;
-    final run = previous == null ? action() : previous.then((_) => action());
-    final tail = run.then<void>((_) {}, onError: (Object _, StackTrace _) {});
-    _tail = tail;
-    unawaited(
-      tail.whenComplete(() {
-        if (identical(_tail, tail)) _tail = null;
-      }),
-    );
-    return run;
-  }
-}
+final Object _secureSettingsScope = Object();
+final Expando<AiSettingsController> _settingsOwners =
+    Expando<AiSettingsController>('aiSettingsOwner');
 
 final class AiSettingsController extends ChangeNotifier {
-  AiSettingsController(this.store)
-    : _accountMutations = AiAccountMutationCoordinator.forStore(store),
-      _providerMutations = _AiProviderMutationCoordinator.forStore(store) {
+  factory AiSettingsController(AiStore store) {
+    final scope = store is SecureAiStore ? _secureSettingsScope : store;
+    final existing = _settingsOwners[scope];
+    if (existing != null) {
+      if (!existing._disposed) return existing;
+      if (existing._providerMutationTail != null) {
+        throw StateError('AiSettingsController disposal is pending');
+      }
+    }
+    return _settingsOwners[scope] = AiSettingsController._(store, scope);
+  }
+
+  AiSettingsController._(this.store, this._settingsScope)
+    : _accountMutations = AiAccountMutationCoordinator.forStore(store) {
     _accountMutations.addListener(_accountRecordChanged);
-    _providerMutations.addListener(_providerDeleting);
   }
 
   final AiStore store;
+  final Object _settingsScope;
   final AiAccountMutationCoordinator _accountMutations;
-  final _AiProviderMutationCoordinator _providerMutations;
   List<AiProviderConfig> _providers = const <AiProviderConfig>[];
   final Map<String, AiProviderConfig> _deletingProviders =
       <String, AiProviderConfig>{};
@@ -1166,6 +1132,7 @@ final class AiSettingsController extends ChangeNotifier {
   var _secretSetId = 0;
   var _malformedAccountRecordCount = 0;
   var _malformedSecureInventoryCount = 0;
+  Future<void>? _providerMutationTail;
   var _disposed = false;
 
   List<AiProviderConfig> get providers => _providers;
@@ -1189,10 +1156,7 @@ final class AiSettingsController extends ChangeNotifier {
     final loaded = result.value ?? const <AiProviderConfig>[];
     final active = <AiProviderConfig>[];
     final deleting = <AiProviderConfig>[];
-    final localDeleting = <String, AiProviderConfig>{
-      ..._providerMutations.deleting,
-      ..._deletingProviders,
-    };
+    final localDeleting = <String, AiProviderConfig>{..._deletingProviders};
     for (final provider in loaded) {
       final local = localDeleting.remove(provider.id);
       if (local != null) {
@@ -1213,17 +1177,17 @@ final class AiSettingsController extends ChangeNotifier {
       ..clear()
       ..addEntries(deleting.map((provider) => MapEntry(provider.id, provider)));
     for (final provider in deleting) {
-      _providerMutations.markDeleting(provider);
+      _markProviderDeleting(provider);
     }
     _providerKeys
       ..clear()
       ..addAll(keys);
-    if (store case final AiStoreSecureInventory inventory) {
+    if (store is AiStoreSecureInventory) {
       final retainedIds = <String>{
         ...active.map((provider) => provider.id),
         ...deleting.map((provider) => provider.id),
       };
-      for (final providerId in await inventory.listProviderKeyIds()) {
+      for (final providerId in await _readProviderKeyIds()) {
         if (!retainedIds.contains(providerId)) {
           await store.deleteProviderKey(providerId);
         }
@@ -1382,13 +1346,13 @@ final class AiSettingsController extends ChangeNotifier {
       provider,
       presetId: _deletingProviderPreset,
     );
-    _providerMutations.markDeleting(deleting);
+    _markProviderDeleting(deleting);
     await _writeProviderList(_providers);
     await _resumeProviderDeletion(deleting);
   }
 
   Future<void> _persistProviderDeletionMarker(AiProviderConfig deleting) async {
-    _providerMutations.markDeleting(deleting);
+    _markProviderDeleting(deleting);
     await _writeProviderList(_providers);
   }
 
@@ -1422,6 +1386,8 @@ final class AiSettingsController extends ChangeNotifier {
         _accounts[accountKey] = updated;
         _consentRevisions[accountKey] = consentRevision(accountKey) + 1;
         _notify();
+      } else {
+        await _requireTombstoneForSkippedMutation(accountKey, 'deleteProvider');
       }
     }
     final key = await store.readProviderKey(providerId);
@@ -1436,7 +1402,7 @@ final class AiSettingsController extends ChangeNotifier {
       removeDeletingIds: <String>{providerId},
     );
     _deletingProviders.remove(providerId);
-    _providerMutations.finishDeleting(providerId);
+    _finishProviderDeletion(providerId);
   }
 
   Future<void> grantConsent(
@@ -1545,14 +1511,14 @@ final class AiSettingsController extends ChangeNotifier {
       ));
 
   Future<void> resetProviders() => _enqueue(() async {
-    final deletingIds = _providerMutations.deleting.keys.toSet();
+    final deletingIds = _deletingProviders.keys.toSet();
     _providers = const <AiProviderConfig>[];
     _deletingProviders.clear();
     _providerKeys.clear();
     _notify();
     final providerIds = <String>{};
-    if (store case final AiStoreSecureInventory inventory) {
-      providerIds.addAll(await inventory.listProviderKeyIds());
+    if (store is AiStoreSecureInventory) {
+      providerIds.addAll(await _readProviderKeyIds());
     }
     for (final accountKey in await _readAccountKeys()) {
       final before = await store.loadAccount(accountKey);
@@ -1577,6 +1543,8 @@ final class AiSettingsController extends ChangeNotifier {
       if (updated != null) {
         _accounts[accountKey] = updated;
         _consentRevisions[accountKey] = consentRevision(accountKey) + 1;
+      } else if (before.value?.consents.isNotEmpty == true) {
+        await _requireTombstoneForSkippedMutation(accountKey, 'resetProviders');
       }
     }
     for (final providerId in providerIds) {
@@ -1588,7 +1556,7 @@ final class AiSettingsController extends ChangeNotifier {
       reset: true,
     );
     for (final providerId in deletingIds) {
-      _providerMutations.finishDeleting(providerId);
+      _finishProviderDeletion(providerId);
     }
     _secretSetId += 1;
     _notify();
@@ -1628,11 +1596,32 @@ final class AiSettingsController extends ChangeNotifier {
     return inventory.accountKeys;
   }
 
-  void _providerDeleting(String providerId, AiProviderConfig? provider) {
-    if (provider == null) {
-      _deletingProviders.remove(providerId);
-      return;
+  Future<List<String>> _readProviderKeyIds() async {
+    final inventory = await readAiSecureInventory(store);
+    final malformed = inventory.malformedProviderKeyCount;
+    if (malformed > 0) {
+      _malformedSecureInventoryCount += malformed;
+      _notify();
     }
+    return inventory.providerKeyIds;
+  }
+
+  Future<void> _requireTombstoneForSkippedMutation(
+    String accountKey,
+    String operation,
+  ) async {
+    final tombstone = await store.readTombstone(accountKey);
+    if (tombstone.failure != null) {
+      throw AiStoreException(tombstone.failure!);
+    }
+    if (!tombstone.isFound) {
+      throw AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.cleaning, operation),
+      );
+    }
+  }
+
+  void _markProviderDeleting(AiProviderConfig provider) {
     _deletingProviders[provider.id] = provider;
     _providers = List.unmodifiable(<AiProviderConfig>[
       for (final current in _providers)
@@ -1646,6 +1635,10 @@ final class AiSettingsController extends ChangeNotifier {
       _accounts[entry.key] = entry.value.copyWith(consents: consents);
     }
     _notify();
+  }
+
+  void _finishProviderDeletion(String providerId) {
+    _deletingProviders.remove(providerId);
   }
 
   Future<void> _replaceProvider(AiProviderConfig replacement) async {
@@ -1663,7 +1656,7 @@ final class AiSettingsController extends ChangeNotifier {
     bool reset = false,
   }) async {
     final deleting = <String, AiProviderConfig>{
-      for (final entry in _providerMutations.deleting.entries)
+      for (final entry in _deletingProviders.entries)
         if (!removeDeletingIds.contains(entry.key)) entry.key: entry.value,
     };
     final mergedActive = <String, AiProviderConfig>{};
@@ -1695,7 +1688,18 @@ final class AiSettingsController extends ChangeNotifier {
     if (_disposed) {
       return Future<T>.error(StateError('AiSettingsController is disposed'));
     }
-    return _providerMutations.run(action);
+    final previous = _providerMutationTail;
+    final run = previous == null ? action() : previous.then((_) => action());
+    final tail = run.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    _providerMutationTail = tail;
+    unawaited(
+      tail.whenComplete(() {
+        if (identical(_providerMutationTail, tail)) {
+          _providerMutationTail = null;
+        }
+      }),
+    );
+    return run;
   }
 
   void _notify() {
@@ -1704,10 +1708,22 @@ final class AiSettingsController extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_disposed) return;
     _disposed = true;
+    final pending = _providerMutationTail;
+    if (pending == null) {
+      _releaseSettingsOwner();
+    } else {
+      unawaited(pending.whenComplete(_releaseSettingsOwner));
+    }
     _accountMutations.removeListener(_accountRecordChanged);
-    _providerMutations.removeListener(_providerDeleting);
     super.dispose();
+  }
+
+  void _releaseSettingsOwner() {
+    if (identical(_settingsOwners[_settingsScope], this)) {
+      _settingsOwners[_settingsScope] = null;
+    }
   }
 }
 
@@ -1717,12 +1733,25 @@ AiStoreRead<R> _copyRead<R>(AiStoreRead<Object?> source) =>
     : AiStoreRead<R>.absent(source.failure);
 
 AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
+  final providerKeys = <String>[];
   final accountKeys = <String>[];
   final historyKeys = <String>[];
+  var malformedProviderKeys = 0;
   var malformedAccountKeys = 0;
   var malformedHistoryKeys = 0;
   for (final key in storedKeys) {
-    if (key.startsWith(SecureAiStore.accountPrefix)) {
+    if (key.startsWith(SecureAiStore.providerKeyPrefix)) {
+      try {
+        providerKeys.add(
+          _decodeStoredId(
+            key.substring(SecureAiStore.providerKeyPrefix.length),
+            'readSecureInventory',
+          ),
+        );
+      } on AiStoreException {
+        malformedProviderKeys += 1;
+      }
+    } else if (key.startsWith(SecureAiStore.accountPrefix)) {
       try {
         accountKeys.add(
           _decodeStoredId(
@@ -1746,11 +1775,14 @@ AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
       }
     }
   }
+  providerKeys.sort();
   accountKeys.sort();
   historyKeys.sort();
   return AiSecureInventory(
+    providerKeyIds: List.unmodifiable(providerKeys),
     accountKeys: List.unmodifiable(accountKeys),
     historyKeyAccountKeys: List.unmodifiable(historyKeys),
+    malformedProviderKeyCount: malformedProviderKeys,
     malformedAccountKeyCount: malformedAccountKeys,
     malformedHistoryKeyCount: malformedHistoryKeys,
   );

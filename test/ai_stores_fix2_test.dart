@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
+import 'package:gitlab_mobile/features/ai/ai_history.dart';
 import 'package:gitlab_mobile/features/ai/ai_stores.dart';
 
 void main() {
@@ -36,12 +39,14 @@ void main() {
         ),
       );
 
+      first.dispose();
       final restarted = AiSettingsController(store);
       await restarted.initialize();
       expect((await store.readProviderKey('a')).isFound, isFalse);
       await restarted.saveProvider(
         _provider('a', 'https://other-recipient.example.test/v1'),
       );
+      restarted.dispose();
       final finalRestart = AiSettingsController(store);
       await finalRestart.initialize();
       expect(finalRestart.knownProviderKeys, isNot(contains('a')));
@@ -56,97 +61,56 @@ void main() {
       expect((await store.readProviderKey('orphan')).isFound, isFalse);
     });
 
-    test(
-      'deletion invalidates peer controller before consent cleanup',
-      () async {
-        final store = _FaultStore();
-        await store.saveProviders(<AiProviderConfig>[
-          _provider('a', 'https://a.example.test/v1'),
-        ]);
-        await store.saveProviderKey('a', 'synthetic-secret-a');
-        await store.saveAccount(
-          'account',
-          AiAccountRecord(
-            consents: <String, AiConsentRecord>{
-              'a': AiConsentRecord(
-                hash: _contract('a').hash,
-                summary: const <String, Object?>{},
-                grantedAt: DateTime.utc(2026, 10, 20),
-              ),
-            },
-          ),
-        );
-        final first = AiSettingsController(store);
-        final peer = AiSettingsController(store);
-        await first.initialize();
-        await peer.initialize();
-        await peer.loadAccount('account');
-        expect(peer.isValid('account', _contract('a')), isTrue);
-        store.blockConsentClear();
-
-        final deletion = first.deleteProvider('a');
-        await store.consentClearStarted.future;
-        try {
-          expect(
-            (await store.loadProviders()).value!.single.presetId,
-            'gitlab-mobile:deleting-provider',
-          );
-          expect(
-            (await store.loadAccount('account')).value!.consents,
-            contains('a'),
-          );
-          expect((await store.readProviderKey('a')).isFound, isTrue);
-          expect(peer.providers, isEmpty);
-          expect(peer.knownProviderKeys, isNot(contains('a')));
-          expect(peer.isValid('account', _contract('a')), isFalse);
-        } finally {
-          store.releaseConsentClear();
-        }
-        await deletion;
-      },
-    );
-
-    test('peer cannot resurrect a completed marker after recreation', () async {
+    test('one live settings controller owns each store', () async {
       final store = MemoryAiStore();
-      await store.saveProviders(<AiProviderConfig>[
-        _provider('a', 'https://a.example.test/v1'),
-      ]);
-      await store.saveProviderKey('a', 'synthetic-secret-a');
       final first = AiSettingsController(store);
-      final peer = AiSettingsController(store);
-      await first.initialize();
-      await peer.initialize();
+      final same = AiSettingsController(store);
 
-      await first.deleteProvider('a');
-      await first.saveProvider(
-        _provider('a', 'https://other-recipient.example.test/v1'),
-      );
-      await first.saveProviderKey('a', 'replacement-secret-a');
-      await peer.initialize();
+      expect(identical(first, same), isTrue);
+      first.dispose();
+      same.dispose();
 
-      expect((await store.readProviderKey('a')).value, 'replacement-secret-a');
-      expect(peer.providers.single.baseUrl, contains('other-recipient'));
+      final replacement = AiSettingsController(store);
+      expect(identical(replacement, first), isFalse);
+      await replacement.initialize();
+    });
+
+    test('secure-store wrappers share one live settings controller', () {
+      FlutterSecureStorage.setMockInitialValues(<String, String>{});
+      final first = AiSettingsController(SecureAiStore());
+      final same = AiSettingsController(SecureAiStore());
+
+      expect(identical(first, same), isTrue);
+
+      first.dispose();
+      same.dispose();
     });
 
     test(
-      'stale peer write preserves a provider added by another peer',
+      'dispose keeps the registry occupied until its mutation drains',
       () async {
-        final store = MemoryAiStore();
-        await store.saveProviders(<AiProviderConfig>[
-          _provider('a', 'https://a.example.test/v1'),
-        ]);
+        final store = _FaultStore();
         final first = AiSettingsController(store);
-        final peer = AiSettingsController(store);
         await first.initialize();
-        await peer.initialize();
-
-        await first.saveProvider(_provider('b', 'https://b.example.test/v1'));
-        await peer.saveProviderKey('a', 'synthetic-secret-a');
-
-        expect(
-          (await store.loadProviders()).value!.map((provider) => provider.id),
-          containsAll(<String>['a', 'b']),
+        store.blockNextProviderSave();
+        final pending = first.saveProvider(
+          _provider('a', 'https://a.example.test/v1'),
         );
+        await store.providerSaveStarted.future;
+
+        first.dispose();
+
+        expect(() => AiSettingsController(store), throwsStateError);
+        store.releaseProviderSave();
+        await pending;
+        await Future<void>.delayed(Duration.zero);
+
+        final replacement = AiSettingsController(store);
+        expect(identical(replacement, first), isFalse);
+        await replacement.initialize();
+        expect(replacement.providers.map((provider) => provider.id), <String>[
+          'a',
+        ]);
       },
     );
   });
@@ -191,6 +155,40 @@ void main() {
   });
 
   group('malformed secure values', () {
+    test(
+      'malformed provider-key entries are skipped and reported per scan',
+      () async {
+        final store = _FaultStore();
+        store.memory.debugPut(
+          '${SecureAiStore.providerKeyPrefix}%%%',
+          'synthetic-malformed-secret',
+        );
+        await store.saveProviders(<AiProviderConfig>[
+          _provider('a', 'https://a.example.test/v1'),
+        ]);
+        await store.saveProviderKey('a', 'synthetic-secret-a');
+        await store.saveProviderKey('orphan', 'synthetic-orphan-secret');
+        final settings = AiSettingsController(store);
+
+        await settings.initialize();
+
+        expect(settings.providers.map((provider) => provider.id), <String>[
+          'a',
+        ]);
+        expect(settings.malformedSecureInventoryCount, 1);
+        expect((await store.readProviderKey('a')).isFound, isTrue);
+        expect((await store.readProviderKey('orphan')).isFound, isFalse);
+
+        await settings.resetProviders();
+
+        expect(settings.providers, isEmpty);
+        expect(settings.malformedSecureInventoryCount, 2);
+        expect((await store.readProviderKey('a')).isFound, isFalse);
+        expect(store.deletedProviderKeys, containsAll(<String>['orphan', 'a']));
+        expect(store.deletedProviderKeys, isNot(contains('%%%')));
+      },
+    );
+
     test('malformed account record does not block provider deletion', () async {
       final store = MemoryAiStore();
       await store.saveProviders(<AiProviderConfig>[
@@ -261,6 +259,150 @@ void main() {
         );
       },
     );
+
+    test(
+      'provider deletion keeps marker and key when a fence has no tombstone',
+      () async {
+        final root = Directory.systemTemp.createTempSync('ai-store-fix3-');
+        addTearDown(() => root.deleteSync(recursive: true));
+        final store = _FaultStore();
+        final settings = AiSettingsController(store);
+        await settings.initialize();
+        await settings.saveProvider(
+          _provider('a', 'https://a.example.test/v1'),
+        );
+        await settings.saveProviderKey('a', 'synthetic-secret-a');
+        await settings.grantConsent(
+          'account',
+          _contract('a'),
+          const <String, Object?>{},
+        );
+        final history = AiHistoryCoordinator(
+          store: store,
+          files: AiHistoryFileStore(root: () async => root),
+        );
+        addTearDown(history.dispose);
+        store.failSetTombstone = true;
+
+        await expectLater(history.clearAccount('account'), throwsA(anything));
+        store.failSetTombstone = false;
+        await expectLater(
+          settings.deleteProvider('a'),
+          throwsA(
+            isA<AiStoreException>().having(
+              (error) => error.failure.kind,
+              'kind',
+              AiStoreFailureKind.cleaning,
+            ),
+          ),
+        );
+
+        final persisted = (await store.loadProviders()).value!;
+        expect(persisted.single.presetId, 'gitlab-mobile:deleting-provider');
+        expect((await store.readProviderKey('a')).isFound, isTrue);
+        expect(
+          (await store.loadAccount('account')).value!.consents,
+          contains('a'),
+        );
+
+        settings.dispose();
+        history.dispose();
+        final restartedStore = _FaultStore(store.memory);
+        final restarted = AiSettingsController(restartedStore);
+        await restarted.initialize();
+        await restarted.saveProvider(
+          _provider('a', 'https://a.example.test/v1'),
+        );
+        await restarted.loadAccount('account');
+
+        expect(restarted.isValid('account', _contract('a')), isFalse);
+      },
+    );
+
+    test('provider deletion may skip a fenced tombstoned account', () async {
+      final store = _FaultStore();
+      final settings = AiSettingsController(store);
+      await settings.initialize();
+      await settings.saveProvider(_provider('a', 'https://a.example.test/v1'));
+      await settings.saveProviderKey('a', 'synthetic-secret-a');
+      await settings.grantConsent(
+        'account',
+        _contract('a'),
+        const <String, Object?>{},
+      );
+      AiAccountMutationCoordinator.forStore(store).beginCleaning('account');
+      await store.setTombstone('account');
+
+      await settings.deleteProvider('a');
+
+      expect((await store.loadProviders()).value, isEmpty);
+      expect((await store.readProviderKey('a')).isFound, isFalse);
+    });
+
+    test(
+      'provider reset stops at a fenced account without a tombstone',
+      () async {
+        final store = _FaultStore();
+        final settings = AiSettingsController(store);
+        await settings.initialize();
+        await settings.saveProvider(
+          _provider('a', 'https://a.example.test/v1'),
+        );
+        await settings.saveProviderKey('a', 'synthetic-secret-a');
+        await settings.grantConsent(
+          'account',
+          _contract('a'),
+          const <String, Object?>{},
+        );
+        final cleaning = AiAccountMutationCoordinator.forStore(
+          store,
+        ).beginCleaning('account');
+
+        await expectLater(
+          settings.resetProviders(),
+          throwsA(
+            isA<AiStoreException>().having(
+              (error) => error.failure.kind,
+              'kind',
+              AiStoreFailureKind.cleaning,
+            ),
+          ),
+        );
+
+        expect((await store.loadProviders()).value, hasLength(1));
+        expect((await store.readProviderKey('a')).isFound, isTrue);
+        expect(
+          (await store.loadAccount('account')).value!.consents,
+          contains('a'),
+        );
+
+        cleaning.release();
+        await settings.resetProviders();
+        expect((await store.loadProviders()).value, isEmpty);
+        expect((await store.readProviderKey('a')).isFound, isFalse);
+        expect((await store.loadAccount('account')).value!.consents, isEmpty);
+      },
+    );
+
+    test('provider reset may skip a fenced tombstoned account', () async {
+      final store = _FaultStore();
+      final settings = AiSettingsController(store);
+      await settings.initialize();
+      await settings.saveProvider(_provider('a', 'https://a.example.test/v1'));
+      await settings.saveProviderKey('a', 'synthetic-secret-a');
+      await settings.grantConsent(
+        'account',
+        _contract('a'),
+        const <String, Object?>{},
+      );
+      AiAccountMutationCoordinator.forStore(store).beginCleaning('account');
+      await store.setTombstone('account');
+
+      await settings.resetProviders();
+
+      expect((await store.loadProviders()).value, isEmpty);
+      expect((await store.readProviderKey('a')).isFound, isFalse);
+    });
   });
 }
 
@@ -302,8 +444,14 @@ AiConsentContract _contract(String providerId) => AiConsentContract(
 );
 
 final class _FaultStore implements AiStore, AiStoreSecureInventory {
-  final MemoryAiStore memory = MemoryAiStore();
+  _FaultStore([MemoryAiStore? memory]) : memory = memory ?? MemoryAiStore();
+
+  final MemoryAiStore memory;
   bool failNextDeleteProviderKey = false;
+  bool failSetTombstone = false;
+  final List<String> deletedProviderKeys = <String>[];
+  Completer<void> providerSaveStarted = Completer<void>();
+  Completer<void>? _providerSaveRelease;
   String? failDeleteAccount;
   Completer<void> consentClearStarted = Completer<void>();
   Completer<void>? _consentClearRelease;
@@ -315,12 +463,20 @@ final class _FaultStore implements AiStore, AiStoreSecureInventory {
 
   void releaseConsentClear() => _consentClearRelease?.complete();
 
+  void blockNextProviderSave() {
+    providerSaveStarted = Completer<void>();
+    _providerSaveRelease = Completer<void>();
+  }
+
+  void releaseProviderSave() => _providerSaveRelease?.complete();
+
   @override
   Future<void> deleteProviderKey(String providerId) async {
     if (failNextDeleteProviderKey) {
       failNextDeleteProviderKey = false;
       throw StateError('injected deleteProviderKey failure');
     }
+    deletedProviderKeys.add(providerId);
     await memory.deleteProviderKey(providerId);
   }
 
@@ -354,7 +510,18 @@ final class _FaultStore implements AiStore, AiStoreSecureInventory {
       memory.loadProviders();
   @override
   Future<void> saveProviders(List<AiProviderConfig> providers) =>
-      memory.saveProviders(providers);
+      _saveProviders(providers);
+
+  Future<void> _saveProviders(List<AiProviderConfig> providers) async {
+    final release = _providerSaveRelease;
+    if (release != null) {
+      providerSaveStarted.complete();
+      await release.future;
+      _providerSaveRelease = null;
+    }
+    await memory.saveProviders(providers);
+  }
+
   @override
   Future<AiStoreRead<String>> readProviderKey(String providerId) =>
       memory.readProviderKey(providerId);
@@ -384,8 +551,11 @@ final class _FaultStore implements AiStore, AiStoreSecureInventory {
   Future<AiStoreRead<bool>> readTombstone(String accountKey) =>
       memory.readTombstone(accountKey);
   @override
-  Future<void> setTombstone(String accountKey) =>
-      memory.setTombstone(accountKey);
+  Future<void> setTombstone(String accountKey) => failSetTombstone
+      ? Future<void>.sync(() {
+          throw StateError('injected setTombstone failure');
+        })
+      : memory.setTombstone(accountKey);
   @override
   Future<List<String>> listTombstones() => memory.listTombstones();
   @override

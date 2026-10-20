@@ -14,6 +14,7 @@ import 'ai_history_codec.dart';
 
 Future<Directory> Function() aiHistoryStorageRoot = _defaultRoot;
 final Set<String> _unsupportedConversationPaths = <String>{};
+final Set<String> _unsupportedAccountPaths = <String>{};
 Future<Directory> _defaultRoot() =>
     Platform.environment.containsKey('FLUTTER_TEST')
     ? Future.value(
@@ -89,12 +90,14 @@ final class _HistoryEntry {
     required this.updatedAt,
     required this.size,
     this.modifiedAt,
+    this.formatVersion,
   });
 
   final String id;
   final DateTime updatedAt;
   final int size;
   final DateTime? modifiedAt;
+  final int? formatVersion;
 }
 
 enum AiHistoryCheckpoint {
@@ -161,8 +164,9 @@ final class AiHistoryFileStore {
     () => _recover(account, key, retentionDays, onRecovery: onRecovery),
   );
 
-  /// Applies retention and capacity from index metadata without loading display
-  /// content. Files missing from the index are authenticated once and indexed.
+  /// Applies retention and capacity from metadata only after the index records
+  /// the supported conversation format. Changed, unindexed, and unverified
+  /// entries are authenticated before retention is applied.
   Future<AiHistoryRecovery> maintain(
     String account,
     List<int> key,
@@ -220,6 +224,7 @@ final class AiHistoryFileStore {
       _decodeIndex(await _read(index, key, account, indexFileLimit), dir);
       return AiHistoryClearUnsupportedIndexResult.notUnsupported;
     } on AiHistoryUnsupportedFormat {
+      _setUnsupportedAccount(dir, true);
       try {
         index.deleteSync();
         return AiHistoryClearUnsupportedIndexResult.cleared;
@@ -257,6 +262,7 @@ final class AiHistoryFileStore {
       } on AiHistoryUnsupportedFormat {
         unsupported = true;
         unsupportedIndex = true;
+        _setUnsupportedAccount(dir, true);
         onRecovery?.call(
           const AiHistoryRecovery(
             [],
@@ -313,6 +319,7 @@ final class AiHistoryFileStore {
         }
       } on AiHistoryUnsupportedFormat {
         unsupported = true;
+        _setUnsupportedAccount(dir, true);
         final indexedEntry = entries.remove(id);
         protectedEntries[id] = _protectedEntry(file, id, indexedEntry);
         _unsupportedConversationPaths.add(file.path);
@@ -337,6 +344,7 @@ final class AiHistoryFileStore {
           updatedAt: value.updatedAt,
           size: file.lengthSync(),
           modifiedAt: file.lastModifiedSync().toUtc(),
+          formatVersion: 1,
         );
       }
     }
@@ -344,6 +352,7 @@ final class AiHistoryFileStore {
       (id, _) => !seen.contains(id) || protectedEntries.containsKey(id),
     );
     values.sort((a, b) => a.updatedAt.compareTo(b.updatedAt));
+    _setUnsupportedAccount(dir, unsupported);
     final evicted = _evictAccount(
       dir,
       entries.values.toList(),
@@ -385,6 +394,7 @@ final class AiHistoryFileStore {
     int retentionDays, {
     bool Function()? isCurrent,
     void Function(AiHistoryRecovery recovery)? onRecovery,
+    void Function()? onCapacityLimit,
   }) => _exclusive(() async {
     try {
       _conversationName(value.id);
@@ -422,6 +432,25 @@ final class AiHistoryFileStore {
       );
       if (metadata.protectedEntries.length >= accountConversationLimit ||
           protectedBytes + prepared.length > accountByteLimit) {
+        onCapacityLimit?.call();
+        return AiHistorySaveResult.storageLimit;
+      }
+      final existingType = _entityType(file.path);
+      if (existingType != FileSystemEntityType.file &&
+          existingType != FileSystemEntityType.notFound) {
+        throw FileSystemException(
+          'Invalid history conversation file',
+          file.path,
+        );
+      }
+      final existingBytes = existingType == FileSystemEntityType.file
+          ? file.lengthSync()
+          : 0;
+      if (!await _evictDevice(
+        requiredBytes: max(0, prepared.length - existingBytes),
+        excludedFile: file,
+      )) {
+        onCapacityLimit?.call();
         return AiHistorySaveResult.storageLimit;
       }
       await _atomic(file, prepared);
@@ -433,6 +462,7 @@ final class AiHistoryFileStore {
           updatedAt: value.updatedAt,
           size: file.lengthSync(),
           modifiedAt: file.lastModifiedSync().toUtc(),
+          formatVersion: 1,
         ),
       };
       for (final entry in entries.values.toList()) {
@@ -558,6 +588,7 @@ final class AiHistoryFileStore {
                 'updatedAt': entry.updatedAt.toUtc().toIso8601String(),
                 'size': entry.size,
                 'modifiedAt': entry.modifiedAt?.toIso8601String(),
+                'formatVersion': entry.formatVersion,
               },
             )
             .toList(),
@@ -636,6 +667,7 @@ final class AiHistoryFileStore {
       } on AiHistoryUnsupportedFormat {
         unsupported = true;
         unsupportedIndex = true;
+        _setUnsupportedAccount(dir, true);
         onRecovery?.call(
           const AiHistoryRecovery(
             [],
@@ -652,6 +684,7 @@ final class AiHistoryFileStore {
     }
 
     if (unsupportedIndex) {
+      _setUnsupportedAccount(dir, true);
       return _SaveMetadata(
         const [],
         AiHistoryRecovery(
@@ -704,6 +737,7 @@ final class AiHistoryFileStore {
         final actualModifiedAt = file.lastModifiedSync().toUtc();
         if (actualSize == indexed.size &&
             indexed.modifiedAt != null &&
+            indexed.formatVersion == 1 &&
             actualModifiedAt.isAtSameMomentAs(indexed.modifiedAt!)) {
           continue;
         }
@@ -717,9 +751,11 @@ final class AiHistoryFileStore {
             updatedAt: value.updatedAt,
             size: actualSize,
             modifiedAt: actualModifiedAt,
+            formatVersion: 1,
           );
         } on AiHistoryUnsupportedFormat {
           unsupported = true;
+          _setUnsupportedAccount(dir, true);
           entries.remove(id);
           protectedEntries[id] = _protectedEntry(file, id, indexed);
           _unsupportedConversationPaths.add(file.path);
@@ -746,9 +782,11 @@ final class AiHistoryFileStore {
           updatedAt: value.updatedAt,
           size: file.lengthSync(),
           modifiedAt: file.lastModifiedSync().toUtc(),
+          formatVersion: 1,
         );
       } on AiHistoryUnsupportedFormat {
         unsupported = true;
+        _setUnsupportedAccount(dir, true);
         protectedEntries[id] = _protectedEntry(file, id, null);
         _unsupportedConversationPaths.add(file.path);
         onRecovery?.call(const AiHistoryRecovery([], unsupported: true));
@@ -763,6 +801,7 @@ final class AiHistoryFileStore {
     entries.removeWhere(
       (id, _) => !seen.contains(id) || protectedEntries.containsKey(id),
     );
+    _setUnsupportedAccount(dir, unsupported);
     for (final entry in entries.values.toList()) {
       if (_expired(entry.updatedAt, retentionDays)) {
         _delete(File('${dir.path}/${_conversationName(entry.id)}'), entry.id);
@@ -786,9 +825,9 @@ final class AiHistoryFileStore {
     );
   }
 
-  Future<void> _evictDevice() async {
+  Future<bool> _evictDevice({int requiredBytes = 0, File? excludedFile}) async {
     final base = await _baseDirectory();
-    if (base == null) return;
+    if (base == null) return requiredBytes <= deviceByteLimit;
     final files = <File>[];
     var indexBytes = 0;
     for (final dir
@@ -826,11 +865,15 @@ final class AiHistoryFileStore {
       (sum, file) => sum + file.lengthSync(),
     );
     for (final file in files) {
-      if (bytes <= deviceByteLimit) break;
-      if (_unsupportedConversationPaths.contains(file.path)) continue;
+      if (bytes + requiredBytes <= deviceByteLimit) break;
+      if (excludedFile != null && file.path == excludedFile.path) continue;
       final segment = file.parent.uri.pathSegments
           .where((v) => v.isNotEmpty)
           .last;
+      if (_unsupportedAccountPaths.contains(file.parent.path) ||
+          _unsupportedConversationPaths.contains(file.path)) {
+        continue;
+      }
       if (!(canEvictAccount?.call(segment) ?? true)) continue;
       bytes -= file.lengthSync();
       _delete(file, file.uri.pathSegments.last.substring(2, 34));
@@ -842,12 +885,14 @@ final class AiHistoryFileStore {
         index.deleteSync();
       }
     }
+    return bytes + requiredBytes <= deviceByteLimit;
   }
 
   Future<void> deleteAccount(String account) => _exclusive(() async {
     final dir = await _accountDirectory(account);
     if (dir != null) {
       removeAiHistoryDirectory(dir);
+      _unsupportedAccountPaths.remove(dir.path);
       _unsupportedConversationPaths.removeWhere(
         (path) => path.startsWith('${dir.path}/'),
       );
@@ -868,6 +913,7 @@ final class AiHistoryFileStore {
       if (RegExp(r'^[0-9a-f]{32}$').hasMatch(name) && !keep.contains(name)) {
         _requireDirectory(dir);
         removeAiHistoryDirectory(dir);
+        _unsupportedAccountPaths.remove(dir.path);
         _unsupportedConversationPaths.removeWhere(
           (path) => path.startsWith('${dir.path}/'),
         );
@@ -929,6 +975,14 @@ final class AiHistoryFileStore {
   void _requireRegularFile(File file) {
     if (_entityType(file.path) != FileSystemEntityType.file) {
       throw FileSystemException('Invalid history file', file.path);
+    }
+  }
+
+  void _setUnsupportedAccount(Directory dir, bool unsupported) {
+    if (unsupported) {
+      _unsupportedAccountPaths.add(dir.path);
+    } else {
+      _unsupportedAccountPaths.remove(dir.path);
     }
   }
 }
@@ -1007,6 +1061,7 @@ _HistoryEntry _protectedEntry(File file, String id, _HistoryEntry? indexed) =>
       updatedAt: indexed?.updatedAt ?? file.lastModifiedSync().toUtc(),
       size: file.lengthSync(),
       modifiedAt: file.lastModifiedSync().toUtc(),
+      formatVersion: indexed?.formatVersion,
     );
 
 bool _isCorrupt(Object error) =>
@@ -1091,7 +1146,7 @@ List<_HistoryEntry> _decodeIndex(Map<String, Object?> value, Directory dir) {
   final result = <_HistoryEntry>[];
   for (final raw in value['entries']! as List<Object?>) {
     final entry = historyObject(raw);
-    if (!const {2, 3, 4}.contains(entry.length) ||
+    if (!const {2, 3, 4, 5}.contains(entry.length) ||
         entry['id'] is! String ||
         entry['updatedAt'] is! String ||
         (entry.containsKey('size') &&
@@ -1099,9 +1154,16 @@ List<_HistoryEntry> _decodeIndex(Map<String, Object?> value, Directory dir) {
         (entry.containsKey('modifiedAt') &&
             entry['modifiedAt'] != null &&
             entry['modifiedAt'] is! String) ||
+        (entry.containsKey('formatVersion') &&
+            entry['formatVersion'] is! int) ||
         entry.keys.any(
-          (key) =>
-              !const {'id', 'updatedAt', 'size', 'modifiedAt'}.contains(key),
+          (key) => !const {
+            'id',
+            'updatedAt',
+            'size',
+            'modifiedAt',
+            'formatVersion',
+          }.contains(key),
         )) {
       throw const AiHistoryUnsupportedFormat();
     }
@@ -1130,6 +1192,7 @@ List<_HistoryEntry> _decodeIndex(Map<String, Object?> value, Directory dir) {
                 ? file.lengthSync()
                 : 0),
         modifiedAt: modifiedAt,
+        formatVersion: entry['formatVersion'] as int?,
       ),
     );
   }

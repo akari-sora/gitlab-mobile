@@ -114,20 +114,19 @@ void main() {
       expect(value.consents, isNot(contains('p')));
     });
 
-    test('cleanup invalidates every settings-controller cache', () async {
+    test('cleanup invalidates the single settings-controller cache', () async {
       final store = MemoryAiStore();
       await store.saveAccount('account', AiAccountRecord(historyEnabled: true));
       final first = AiSettingsController(store);
       final second = AiSettingsController(store);
+      expect(identical(first, second), isTrue);
       await first.loadAccount('account');
-      await second.loadAccount('account');
       final lease = AiAccountMutationCoordinator.forStore(
         store,
       ).beginCleaning('account');
       await lease.run(() => store.deleteAccount('account'));
 
       expect(first.accountRecord('account'), isNull);
-      expect(second.accountRecord('account'), isNull);
     });
 
     test('history cleanup fences an in-flight settings mutation', () async {
@@ -275,6 +274,7 @@ void main() {
         expect(controller.isValid('account', _contract()), isFalse);
         expect((await store.loadProviders()).value, hasLength(1));
 
+        controller.dispose();
         final restarted = AiSettingsController(store);
         await restarted.initialize();
         expect(restarted.providers, isEmpty);
@@ -329,6 +329,7 @@ void main() {
       );
       expect((await store.loadProviders()).value, hasLength(1));
 
+      controller.dispose();
       final restarted = AiSettingsController(store);
       await restarted.initialize();
       expect((await store.loadProviders()).value, isEmpty);
@@ -365,11 +366,35 @@ void main() {
         store,
       ).beginCleaning('account');
 
-      await controller.deleteProvider('p');
+      await expectLater(
+        controller.deleteProvider('p'),
+        throwsA(
+          isA<AiStoreException>().having(
+            (error) => error.failure.kind,
+            'kind',
+            AiStoreFailureKind.cleaning,
+          ),
+        ),
+      );
+      expect(
+        (await store.loadProviders()).value!.single.presetId,
+        'gitlab-mobile:deleting-provider',
+      );
+      expect(
+        (await store.readProviderKey('p')).status,
+        AiStoreReadStatus.found,
+      );
       await cleaning.run(() => store.deleteAccount('account'));
+      cleaning.release();
+      await controller.deleteProvider('p');
 
       expect(
         (await store.loadAccount('account')).status,
+        AiStoreReadStatus.absent,
+      );
+      expect((await store.loadProviders()).value, isEmpty);
+      expect(
+        (await store.readProviderKey('p')).status,
         AiStoreReadStatus.absent,
       );
     });

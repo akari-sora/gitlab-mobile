@@ -252,7 +252,7 @@ void main() {
     },
   );
 
-  test('device eviction can be saved again after capacity frees', () async {
+  test('capacity refusal can be saved again after capacity frees', () async {
     await coordinator.enable(account);
     final foreign = await coordinator.files.directory('protected-other');
     foreign.createSync(recursive: true);
@@ -263,14 +263,15 @@ void main() {
     coordinator.files.canEvictAccount = (segment) =>
         segment == aiHistoryAccountSegment(account);
     final result = await coordinator.save(account, value('a'));
-    expect(result.name, 'evicted');
-    expect(coordinator.storageLimitReached(account, 'a' * 32), isFalse);
-    expect((coordinator as dynamic).evicted(account, 'a' * 32), isTrue);
+    expect(result, AiHistorySaveResult.storageLimit);
+    expect(coordinator.storageLimitReached(account, 'a' * 32), isTrue);
+    expect(coordinator.evicted(account, 'a' * 32), isFalse);
     foreign.deleteSync(recursive: true);
     expect(
       await coordinator.save(account, value('a')),
       AiHistorySaveResult.saved,
     );
+    expect(coordinator.storageLimitReached(account, 'a' * 32), isFalse);
     expect(coordinator.notice(account, conversationId: 'a' * 32), isNull);
   });
 }

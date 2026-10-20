@@ -34,6 +34,7 @@ final class _AccountHistory {
   int attempts = 0;
   DateTime? retryAt;
   final Set<String> fullConversations = {};
+  final Set<String> capacityConversations = {};
   final Set<String> failedConversations = {};
   final Set<String> evictedConversations = {};
   bool removedUnreadable = false;
@@ -110,7 +111,8 @@ final class AiHistoryCoordinator extends ChangeNotifier
       _accounts.putIfAbsent(account, _AccountHistory.new);
   AiHistoryState state(String account) => _entry(account).state;
   bool storageLimitReached(String account, String id) =>
-      _entry(account).fullConversations.contains(id);
+      _entry(account).fullConversations.contains(id) ||
+      _entry(account).capacityConversations.contains(id);
   AiStoreFailure? failure(String account) => _entry(account).failure;
   bool canClearUnsupportedIndex(String account) =>
       _entry(account).unsupportedIndex;
@@ -143,7 +145,8 @@ final class AiHistoryCoordinator extends ChangeNotifier
       return l10n.aiHistoryInvalidData;
     }
     if (conversationId != null &&
-        entry.fullConversations.contains(conversationId)) {
+        (entry.fullConversations.contains(conversationId) ||
+            entry.capacityConversations.contains(conversationId))) {
       return l10n.aiHistoryStorageLimit;
     }
     if (conversationId != null &&
@@ -407,6 +410,7 @@ final class AiHistoryCoordinator extends ChangeNotifier
         return AiHistorySaveResult.storageLimit;
       }
       try {
+        var capacityLimited = false;
         final result = await files.save(
           account,
           Uint8List.fromList(entry.key!),
@@ -416,10 +420,15 @@ final class AiHistoryCoordinator extends ChangeNotifier
           onRecovery: (recovery) {
             if (_current(entry, epoch)) _accumulateRecovery(entry, recovery);
           },
+          onCapacityLimit: () => capacityLimited = true,
         );
         if (!_current(entry, epoch)) return AiHistorySaveResult.cancelled;
         if (result == AiHistorySaveResult.storageLimit) {
-          entry.fullConversations.add(conversation.id);
+          if (capacityLimited) {
+            entry.capacityConversations.add(conversation.id);
+          } else {
+            entry.fullConversations.add(conversation.id);
+          }
         }
         if (result == AiHistorySaveResult.unsupported) {
           entry.unsupported = true;
@@ -427,6 +436,9 @@ final class AiHistoryCoordinator extends ChangeNotifier
         if (result == AiHistorySaveResult.failed) {
           entry.failedConversations.add(conversation.id);
         } else if (result == AiHistorySaveResult.saved) {
+          entry.state = AiHistoryState.ready;
+          entry.failure = null;
+          entry.capacityConversations.remove(conversation.id);
           entry.failedConversations.remove(conversation.id);
           entry.evictedConversations.remove(conversation.id);
         } else if (result == AiHistorySaveResult.evicted) {
@@ -474,6 +486,7 @@ final class AiHistoryCoordinator extends ChangeNotifier
     entry.key = null;
     entry.record = null;
     entry.fullConversations.clear();
+    entry.capacityConversations.clear();
     entry.failedConversations.clear();
     entry.evictedConversations.clear();
     entry.repairedIndex = false;

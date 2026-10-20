@@ -78,11 +78,19 @@ void main() {
       await _writeUnsupported(root, account, key, _id(id), now);
     }
     final history = store();
+    var capacityLimited = false;
 
     expect(
-      await history.save(account, key, _saved(100, now), 30),
+      await history.save(
+        account,
+        key,
+        _saved(100, now),
+        30,
+        onCapacityLimit: () => capacityLimited = true,
+      ),
       AiHistorySaveResult.storageLimit,
     );
+    expect(capacityLimited, isTrue);
     final dir = await history.directory(account);
     expect(File('${dir.path}/c_${_id(100)}.v1.bin').existsSync(), isFalse);
     expect(

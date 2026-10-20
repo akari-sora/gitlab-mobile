@@ -564,6 +564,7 @@ void main() {
     });
 
     test('reports storageLimit when non-tool content cannot fit', () async {
+      var capacityLimited = false;
       final result = await store().save(
         account,
         key,
@@ -578,9 +579,11 @@ void main() {
           ),
         ),
         30,
+        onCapacityLimit: () => capacityLimited = true,
       );
 
       expect(result, AiHistorySaveResult.storageLimit);
+      expect(capacityLimited, isFalse);
       expect((await store().directory(account)).existsSync(), isFalse);
     });
 
@@ -654,7 +657,7 @@ void main() {
     });
 
     test(
-      'protects unavailable accounts and reports an evicted new save',
+      'protects unavailable accounts and refuses a new save at the limit',
       () async {
         const foreignAccount = 'protected-foreign';
         final foreignSegment = aiHistoryAccountSegment(foreignAccount);
@@ -680,7 +683,7 @@ void main() {
 
         final result = await protectedStore.save(account, key, saved, 30);
 
-        expect(result, AiHistorySaveResult.evicted);
+        expect(result, AiHistorySaveResult.storageLimit);
         expect(
           protectedFiles,
           everyElement(predicate<File>((f) => f.existsSync())),
