@@ -68,7 +68,7 @@ Analyzer settings are strict (`strict-casts`, `strict-inference`, `strict-raw-ty
 - Writes are never retried automatically. A transport error on a non-GET/HEAD request is `writeUncertain`, and an OAuth 401 refresh only replays GET/HEAD.
 - `close()` cancels all in-flight requests; a closed client only ever throws `cancelled`.
 
-`ApiFailure` / `FailureKind` (`lib/core/failure.dart`) is the single error surface. `safeFailure()` wraps anything unknown as `invalidResponse`. User-facing `title` / `detail` strings live on the failure itself and come from `l10n` like all UI text. HTTP 404 maps to `invisible`, which the UI must present as ambiguous (see `AGENTS.md`).
+`ApiFailure` / `FailureKind` is the single error surface for GitLab traffic; AI provider traffic uses `AiFailure`. Both implement `UserFacingFailure`, which `showFailure` accepts; `FailureNotice` stays GitLab-only. `safeFailure()` wraps anything unknown as `invalidResponse`. User-facing `title` / `detail` strings live on the failure itself and come from `l10n` like all UI text. HTTP 404 maps to `invisible`, which the UI must present as ambiguous (see `AGENTS.md`).
 
 Pagination (`lib/core/pagination.dart`): `nextPageUri` parses `Link` / `X-Next-Page`, and `checkedPageUri` rejects any cursor that changes path, drops or alters the caller's non-pagination query, adds scope filters, or does not progress. GitLab expands omitted `false` defaults into the `Link` header, which is why `_falseDefaults` exists. `GitLabApi._validateContinuation` re-checks a caller-supplied `next` against the first-page URL on every call.
 

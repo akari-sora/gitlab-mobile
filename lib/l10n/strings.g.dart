@@ -6174,4 +6174,121 @@ final class AppStrings {
 
   /// 分支
   String get branchesTitle => language._messages[2026];
+
+  /// AI 金鑰無效
+  String get aiUnauthenticatedTitle => language._messages[2027];
+
+  /// 請在 AI 設定中更新供應商金鑰，再手動重試。
+  String get aiUnauthenticatedDetail => language._messages[2028];
+
+  /// AI 供應商拒絕存取
+  String get aiForbiddenTitle => language._messages[2029];
+
+  /// 請檢查金鑰權限、模型存取權與供應商政策。
+  String get aiForbiddenDetail => language._messages[2030];
+
+  /// 找不到 AI 端點或模型
+  String get aiNotFoundTitle => language._messages[2031];
+
+  /// 請檢查供應商網址、線路格式與模型名稱。
+  String get aiNotFoundDetail => language._messages[2032];
+
+  /// AI 請求暫時受限
+  String get aiRateLimitedTitle => language._messages[2033];
+
+  /// 請等候供應商指定的重試時間，再手動重試。
+  String get aiRateLimitedDetail => language._messages[2034];
+
+  /// AI 額度已用盡
+  String get aiQuotaExhaustedTitle => language._messages[2035];
+
+  /// 請檢查供應商的額度與花費上限；不會自動重試。
+  String get aiQuotaExhaustedDetail => language._messages[2036];
+
+  /// 無法連線至 AI 供應商
+  String get aiNetworkTitle => language._messages[2037];
+
+  /// 請檢查網路與供應商網址。已送出的請求可能已計費。
+  String get aiNetworkDetail => language._messages[2038];
+
+  /// AI 供應商暫時無法回應
+  String get aiServerTitle => language._messages[2039];
+
+  /// 已保留收到的內容；請稍後手動重試，先前請求可能已計費。
+  String get aiServerDetail => language._messages[2040];
+
+  /// AI 請求超過大小上限
+  String get aiRequestTooLargeTitle => language._messages[2041];
+
+  /// 請減少附加內容或開始新對話；未送出此請求。
+  String get aiRequestTooLargeDetail => language._messages[2042];
+
+  /// AI 回應超過大小上限
+  String get aiResponseTooLargeTitle => language._messages[2043];
+
+  /// 已停止接收，部分回應不會用於續聊；此請求可能已計費。
+  String get aiResponseTooLargeDetail => language._messages[2044];
+
+  /// 無法讀取 AI 回應
+  String get aiInvalidResponseTitle => language._messages[2045];
+
+  /// 供應商回應的格式無法安全解析；不會自動重試。
+  String get aiInvalidResponseDetail => language._messages[2046];
+
+  /// 不支援此 AI 請求
+  String get aiUnsupportedTitle => language._messages[2047];
+
+  /// 請檢查供應商是否支援所選的線路格式與功能。
+  String get aiUnsupportedDetail => language._messages[2048];
+
+  /// 已阻擋 AI 重新導向
+  String get aiRedirectBlockedTitle => language._messages[2049];
+
+  /// 為避免金鑰傳至其他網址，請在設定中確認正確的端點。
+  String get aiRedirectBlockedDetail => language._messages[2050];
+
+  /// AI 請求已停止
+  String get aiCancelledTitle => language._messages[2051];
+
+  /// 已送出的內容無法撤回，此請求可能已計費。
+  String get aiCancelledDetail => language._messages[2052];
+
+  /// AI 回應已中斷
+  String get aiInterruptedTitle => language._messages[2053];
+
+  /// 已保留部分回應供查看，但不會用於續聊；此請求可能已計費。
+  String get aiInterruptedDetail => language._messages[2054];
+
+  /// AI 請求逾時
+  String get aiTimeoutTitle => language._messages[2055];
+
+  /// 已停止等候；請手動重試，此請求可能已計費。
+  String get aiTimeoutDetail => language._messages[2056];
+
+  /// AI 對話內容過長
+  String get aiContextTooLongTitle => language._messages[2057];
+
+  /// 請減少附加內容，或以摘要開始新對話。
+  String get aiContextTooLongDetail => language._messages[2058];
+
+  /// AI 回應受到內容政策限制
+  String get aiContentFilterTitle => language._messages[2059];
+
+  /// 供應商已限制此回應，不會執行其中的工具呼叫。
+  String get aiContentFilterDetail => language._messages[2060];
+
+  /// AI 供應商拒絕回答
+  String get aiRefusalTitle => language._messages[2061];
+
+  /// 請調整問題；不會執行此回應中的工具呼叫。
+  String get aiRefusalDetail => language._messages[2062];
+
+  /// AI 安全檢查未通過
+  String get aiPolicyBlockedTitle => language._messages[2063];
+
+  /// 端點、遮蔽器或設定未通過安全檢查，未送出此請求。
+  String get aiPolicyBlockedDetail => language._messages[2064];
+
+  /// 自訂 AI 供應商
+  String get aiCustomProvider => language._messages[2065];
 }
