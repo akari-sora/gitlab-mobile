@@ -80,8 +80,8 @@ bool _containsImage(List<md.Node> nodes) => nodes.any(
 );
 
 /// Parses supported inline HTML media before package:markdown's raw HTML
-/// syntax. Inert regions containing backticks fall back to the default parser
-/// so they cannot swallow a later code span's opening delimiter.
+/// syntax. Regions crossed by a code span fall back to the default parser so
+/// they cannot swallow that span's opening delimiter.
 final class MarkdownMediaInlineSyntax extends md.InlineSyntax {
   MarkdownMediaInlineSyntax() : super(r'<', startCharacter: 0x3C);
 
@@ -341,11 +341,11 @@ List<md.Node> _htmlBlockChildren(String source) {
     }
     final literalEnd = source.startsWith('<![CDATA[', next)
         ? ']]>'
-        : source.startsWith('<?', next)
-        ? '?>'
-        : source.startsWith('<!', next) &&
-              next + 2 < source.length &&
-              _isAsciiLetter(source.codeUnitAt(next + 2))
+        : source.startsWith('<?', next) ||
+              source.startsWith('<!', next) ||
+              (source.startsWith('</', next) &&
+                  (next + 2 >= source.length ||
+                      !_isAsciiLetter(source.codeUnitAt(next + 2))))
         ? '>'
         : null;
     if (literalEnd != null) {
@@ -413,14 +413,14 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
   final source = scanner.source;
   if (source.startsWith('<!--', start)) {
     final end = scanner.commentEnd(start);
-    if (end == null || scanner.hasBacktick(start, end)) return null;
+    if (end == null || scanner.hasCrossingBacktick(start + 4, end)) return null;
     return (element: md.Text(source.substring(start, end)), end: end);
   }
   final first = _scanTag(source, start);
   if (first == null || first.closing) return null;
   if (_textOnlyTags.contains(first.name)) {
     final end = scanner.closingTag(first.name, first.end)?.end;
-    if (end == null || scanner.hasBacktick(start, end)) return null;
+    if (end == null || scanner.hasCrossingBacktick(first.end, end)) return null;
     return (element: md.Text(source.substring(start, end)), end: end);
   }
   if (first.name == 'img') {
@@ -429,7 +429,7 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
   }
   if (first.name == 'video' || first.name == 'audio') {
     final close = scanner.closingTag(first.name, first.end)?.end;
-    if (scanner.hasBacktick(start, close ?? first.end)) return null;
+    if (scanner.hasCrossingBacktick(first.end, close ?? first.end)) return null;
     final src =
         first.attributes['src'] ?? scanner.sourceInside(first.end, first.name);
     final element = _mediaElement({
@@ -507,22 +507,59 @@ final class _HtmlMediaScanner {
   final bool htmlBlock;
   final _closing = <String, ({int from, RegExpMatch? match})>{};
   ({int from, int? end})? _comment;
-  ({int from, int at})? _backtick;
+  late final _backticks = _indexBackticks();
+  var _backtickCursor = 0;
+  final _backtickCrossings = <int, Map<int, bool>>{};
   final _sources = <String, ({int from, int end, int? at, String? src})>{};
   static final _closingPatterns = <(String, bool), RegExp>{};
 
-  // Failed inert-region probes may share a long suffix. Reuse the next
-  // backtick position so leaving code spans to Markdown stays linear.
-  bool hasBacktick(int start, int end) {
-    final previous = _backtick;
-    final at =
-        previous != null &&
-            start >= previous.from &&
-            (previous.at < 0 || start <= previous.at)
-        ? previous.at
-        : source.indexOf('`', start);
-    _backtick = (from: start, at: at);
-    return at >= 0 && at < end;
+  List<({int start, int? next})> _indexBackticks() {
+    final runs = RegExp(r'`+').allMatches(source).toList();
+    final nextByLength = <int, int>{};
+    final next = List<int?>.filled(runs.length, null);
+    for (var i = runs.length - 1; i >= 0; i--) {
+      final length = runs[i].end - runs[i].start;
+      next[i] = nextByLength[length];
+      nextByLength[length] = i;
+    }
+    return [
+      for (var i = 0; i < runs.length; i++)
+        (start: runs[i].start, next: next[i]),
+    ];
+  }
+
+  // Index same-length matches once. Skip spans closed inside the region, and
+  // cache suffix results at each region end so overlapping probes stay linear.
+  // Each closing-tag kind advances monotonically through disjoint regions.
+  bool hasCrossingBacktick(int start, int end) {
+    if (start >= end) return false;
+    final runs = _backticks;
+    while (_backtickCursor < runs.length &&
+        runs[_backtickCursor].start < start) {
+      _backtickCursor++;
+    }
+    final cached = _backtickCrossings.putIfAbsent(end, () => <int, bool>{});
+    final visited = <int>[];
+    var index = _backtickCursor;
+    var crosses = false;
+    while (index < runs.length && runs[index].start < end) {
+      final previous = cached[index];
+      if (previous != null) {
+        crosses = previous;
+        break;
+      }
+      visited.add(index);
+      final next = runs[index].next;
+      if (next != null && runs[next].start >= end) {
+        crosses = true;
+        break;
+      }
+      index = next == null ? index + 1 : next + 1;
+    }
+    for (final index in visited) {
+      cached[index] = crosses;
+    }
+    return crosses;
   }
 
   int? commentEnd(int start) {
