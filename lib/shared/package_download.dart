@@ -14,13 +14,13 @@ import 'workspace_ui.dart';
 
 const packageDownloadMaximumBytes = 256 * 1024 * 1024;
 
-const packageChecksumMismatch = ApiFailure(
+ApiFailure get packageChecksumMismatch => ApiFailure(
   FailureKind.invalidResponse,
   title: '套件檔案驗證失敗',
   detail: '下載內容的 SHA-256 與 GitLab 檔案資訊不一致，檔案已刪除。',
 );
 
-const packageSizeMismatch = ApiFailure(
+ApiFailure get packageSizeMismatch => ApiFailure(
   FailureKind.invalidResponse,
   title: '套件檔案驗證失敗',
   detail: '下載內容的大小與 GitLab 檔案資訊不一致，檔案已刪除。',

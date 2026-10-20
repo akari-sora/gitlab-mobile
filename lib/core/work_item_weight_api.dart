@@ -59,37 +59,37 @@ mutation MobileSetWorkItemWeight($input: WorkItemUpdateInput!) {
 '''
         .trim();
 
-const _weightReadForbidden = ApiFailure(
+ApiFailure get _weightReadForbidden => ApiFailure(
   FailureKind.forbidden,
   title: '無法讀取工作項目權重',
   detail: '目前帳號沒有讀取這個工作項目的權限。',
 );
 
-const _weightWriteForbidden = ApiFailure(
+ApiFailure get _weightWriteForbidden => ApiFailure(
   FailureKind.forbidden,
   title: '無法變更權重',
   detail: '目前帳號沒有設定這個工作項目權重的權限。',
 );
 
-const _weightUnsupported = ApiFailure(
+ApiFailure get _weightUnsupported => ApiFailure(
   FailureKind.unsupported,
   title: '實例未提供工作項目權重編輯',
   detail: '仍可查看工作項目。這個 GitLab 版本不支援安全的權重更新流程。',
 );
 
-const _weightRejected = ApiFailure(
+ApiFailure get _weightRejected => ApiFailure(
   FailureKind.validation,
   title: 'GitLab 未接受權重更新',
   detail: '請重新讀取工作項目，並確認權重與權限仍然有效。',
 );
 
-const _weightConflict = ApiFailure(
+ApiFailure get _weightConflict => ApiFailure(
   FailureKind.conflict,
   title: '權重已經變更',
   detail: '請重新讀取最新版本後再設定。',
 );
 
-const _weightUncertain = ApiFailure(
+ApiFailure get _weightUncertain => ApiFailure(
   FailureKind.writeUncertain,
   title: '尚未確認權重是否已更新',
   detail: '連線在送出後中斷。請重新讀取工作項目，不要重複送出同一次變更。',

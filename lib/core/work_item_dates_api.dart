@@ -1,21 +1,21 @@
 part of 'gitlab_api.dart';
 
-const _datesReadForbidden = ApiFailure(
+ApiFailure get _datesReadForbidden => ApiFailure(
   FailureKind.forbidden,
   title: '無法讀取工作項目日期',
   detail: '目前帳號沒有讀取這個工作項目的權限。',
 );
-const _datesInvalidResponse = ApiFailure(
+ApiFailure get _datesInvalidResponse => ApiFailure(
   FailureKind.invalidResponse,
   title: '無法確認工作項目日期',
   detail: 'GitLab 回傳的日期、身分或欄位形狀不完整。',
 );
-const _datesSpent = ApiFailure(
+ApiFailure get _datesSpent => ApiFailure(
   FailureKind.writeUncertain,
   title: '無法再次送出日期',
   detail: '這次日期編輯已經使用過。請重新開啟後再試。',
 );
-const _datesUncertain = ApiFailure(
+ApiFailure get _datesUncertain => ApiFailure(
   FailureKind.writeUncertain,
   title: '尚未確認日期是否已更新',
   detail: '請重新整理後再查看，不要重複送出同一次變更。',
@@ -518,7 +518,7 @@ extension WorkItemDatesApi on GitLabApi {
   }
 }
 
-const _datesUncertainResult = WorkItemDatesWriteResult(
+WorkItemDatesWriteResult get _datesUncertainResult => WorkItemDatesWriteResult(
   outcome: WorkItemDatesWriteOutcome.writeUncertain,
   mutationSent: true,
   message: '連線在寫入時中斷。尚未確認是否更新，請重新整理後再查看。',

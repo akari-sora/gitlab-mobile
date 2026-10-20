@@ -10,14 +10,14 @@ import 'work_item_page.dart';
 
 /// Search scopes GitLab offers without advanced search. Code, commits,
 /// comments and wiki are only searchable inside one project.
-const instanceSearchScopes = <String, String>{
+Map<String, String> get instanceSearchScopes => {
   'projects': '專案',
   'issues': '議題',
   'merge_requests': '合併請求',
   'milestones': '里程碑',
   'users': '使用者',
 };
-const projectSearchScopes = <String, String>{
+Map<String, String> get projectSearchScopes => {
   'blobs': '程式碼',
   'issues': '議題',
   'merge_requests': '合併請求',

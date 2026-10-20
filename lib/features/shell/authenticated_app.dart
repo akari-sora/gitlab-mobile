@@ -735,7 +735,7 @@ class _MobileShellState extends State<_MobileShell> {
     });
   }
 
-  static const _destinations = <(IconData, IconData, String)>[
+  static List<(IconData, IconData, String)> get _destinations => [
     (Icons.home_outlined, Icons.home, '首頁'),
     (Icons.inbox_outlined, Icons.inbox, '收件匣'),
     (Icons.explore_outlined, Icons.explore, '探索'),
@@ -972,7 +972,7 @@ class _MobileShellState extends State<_MobileShell> {
                 const SizedBox(height: 4),
                 BuildInfoLine(load: widget.buildInfoLoader),
                 const SizedBox(height: 4),
-                const Text(
+                Text(
                   appIndependence,
                   style: TextStyle(fontSize: 12),
                 ),

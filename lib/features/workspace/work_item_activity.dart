@@ -2037,12 +2037,13 @@ class _InlineActivityFailure extends StatelessWidget {
   const _InlineActivityFailure({
     required this.error,
     required this.onRetry,
-    this.retryLabel = '重試',
-  });
+    String? retryLabel,
+  }) : _retryLabelArg = retryLabel;
 
   final ApiFailure error;
   final VoidCallback onRetry;
-  final String retryLabel;
+  final String? _retryLabelArg;
+  String get retryLabel => _retryLabelArg ?? '重試';
 
   @override
   Widget build(BuildContext context) => Column(

@@ -433,7 +433,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
     if (!mounted) return;
     if (saved && created != null) _open(created!);
   }
-  static const _sorts = <String, (String, String, String)>{
+  static Map<String, (String, String, String)> get _sorts => {
     'activity': ('最近活動', 'last_activity_at', 'desc'),
     'name': ('名稱', 'name', 'asc'),
     'created': ('建立時間', 'created_at', 'desc'),

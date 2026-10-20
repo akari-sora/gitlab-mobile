@@ -17,20 +17,20 @@ final class ApiFailure implements Exception {
 
   /// Archive downloads are not text previews. The 2 MiB / 20,000-line copy does
   /// not describe the 256 MiB archive cap.
-  static const artifactTooLarge = ApiFailure(
+  static ApiFailure get artifactTooLarge => ApiFailure(
     FailureKind.tooLarge,
     title: '產物超過下載上限',
     detail: '單次下載上限為 256 MiB。',
   );
 
-  static const artifactStorage = ApiFailure(
+  static ApiFailure get artifactStorage => ApiFailure(
     FailureKind.network,
     title: '無法儲存產物',
     detail: '無法寫入下載檔案。請釋放空間後重試。',
   );
 
   /// Cache removal failed. The account must stay until a later attempt succeeds.
-  static const artifactCleanup = ApiFailure(
+  static ApiFailure get artifactCleanup => ApiFailure(
     FailureKind.network,
     title: '無法清除產物',
     detail: '帳號仍保留在此裝置。請重試移除。',

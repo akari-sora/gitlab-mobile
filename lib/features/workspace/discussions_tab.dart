@@ -23,12 +23,15 @@ String _discussionSummary(List<Json> items, {required bool partial}) {
 }
 
 enum DiscussionFilterMode {
-  all('全部活動'),
-  comments('僅評論'),
-  system('僅動態');
+  all,
+  comments,
+  system;
 
-  const DiscussionFilterMode(this.label);
-  final String label;
+  String get label => switch (this) {
+    DiscussionFilterMode.all => '全部活動',
+    DiscussionFilterMode.comments => '僅評論',
+    DiscussionFilterMode.system => '僅動態',
+  };
 }
 
 bool _isSystemDiscussion(Json discussion) {

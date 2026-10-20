@@ -991,12 +991,12 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   );
 
   Widget _groupFilters(BuildContext context) {
-    const stateLabels = {
+    final stateLabels = {
       GroupWorkItemState.opened: '開啟中',
       GroupWorkItemState.closed: '已關閉',
       GroupWorkItemState.all: '全部狀態',
     };
-    const sortLabels = {
+    final sortLabels = {
       GroupWorkItemSort.createdDesc: '最新建立',
       GroupWorkItemSort.createdAsc: '最早建立',
       GroupWorkItemSort.updatedDesc: '最近更新',
@@ -1534,12 +1534,12 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   }
 
   Widget _projectFilters(BuildContext context) {
-    const stateLabels = {
+    final stateLabels = {
       GroupWorkItemState.opened: '開啟中',
       GroupWorkItemState.closed: '已關閉',
       GroupWorkItemState.all: '全部狀態',
     };
-    const sortLabels = {
+    final sortLabels = {
       GroupWorkItemSort.createdDesc: '最新建立',
       GroupWorkItemSort.createdAsc: '最早建立',
       GroupWorkItemSort.updatedDesc: '最近更新',
@@ -1670,8 +1670,8 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   @override
   Widget build(BuildContext context) {
     if (_ownerInvalid) {
-      const closed = SafeArea(child: Center(child: Text('帳號已切換，工作項目頁面已關閉。')));
-      return widget.embedded ? closed : const Scaffold(body: closed);
+      final closed = SafeArea(child: Center(child: Text('帳號已切換，工作項目頁面已關閉。')));
+      return widget.embedded ? closed : Scaffold(body: closed);
     }
     if (widget.embedded) return _body(context);
     return Scaffold(

@@ -10,10 +10,10 @@ import 'record_controller.dart';
 
 class RecordsFeed extends StatefulWidget {
   const RecordsFeed({super.key, required this.identity, required this.load, required this.itemBuilder,
-    this.empty = '目前沒有項目', this.emptyDetail, this.filteredEmpty, this.account, this.resourceLabel, this.onSwitchAccount,
+    String? empty, this.emptyDetail, this.filteredEmpty, this.account, this.resourceLabel, this.onSwitchAccount,
     this.underShell = false, this.visible, this.header, this.footer, this.leading, this.topSlivers,
     this.grouped = false, this.itemSpacing = 8, this.emptyIcon = Icons.inbox_outlined, this.storageId,
-    this.arrange, this.sectionOf, this.emptyArt});
+    this.arrange, this.sectionOf, this.emptyArt}) : _emptyArg = empty;
   final String identity;
 
   /// Reorders the loaded rows before display, e.g. jobs into stage order.
@@ -28,7 +28,8 @@ class RecordsFeed extends StatefulWidget {
   final String? storageId;
   final RecordLoader load;
   final Widget Function(BuildContext, Json) itemBuilder;
-  final String empty;
+  final String? _emptyArg;
+  String get empty => _emptyArg ?? '目前沒有項目';
   final String? emptyDetail, filteredEmpty, resourceLabel;
   final IconData emptyIcon;
 

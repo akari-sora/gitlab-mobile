@@ -26,7 +26,7 @@ const _widgetKinds = <String, WorkItemAttributeKind>{
   'DEVELOPMENT': WorkItemAttributeKind.development,
 };
 
-const _kindTitles = <WorkItemAttributeKind, String>{
+Map<WorkItemAttributeKind, String> get _kindTitles => {
   WorkItemAttributeKind.status: '狀態',
   WorkItemAttributeKind.milestone: '里程碑',
   WorkItemAttributeKind.weight: '權重',

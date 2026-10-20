@@ -19,7 +19,7 @@ import 'workspace_ui.dart';
 const _pixelLimit = 24000000;
 const _cacheWidthLimit = 2048;
 
-const _decodeFailure = ApiFailure(
+ApiFailure get _decodeFailure => ApiFailure(
   FailureKind.unsupported,
   title: '無法解碼圖片',
   detail: '伺服器有回傳這份附件，但內容不是可解碼的圖片。',

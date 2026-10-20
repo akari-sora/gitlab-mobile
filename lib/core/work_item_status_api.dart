@@ -1,41 +1,41 @@
 part of 'gitlab_api.dart';
 
-const _statusReadForbidden = ApiFailure(
+ApiFailure get _statusReadForbidden => ApiFailure(
   FailureKind.forbidden,
   title: '無法讀取工作項目狀態',
   detail: '目前帳號沒有讀取這個工作項目的權限。',
 );
-const _statusWriteForbidden = ApiFailure(
+ApiFailure get _statusWriteForbidden => ApiFailure(
   FailureKind.forbidden,
   title: '沒有修改工作項目狀態的權限',
   detail: '需要 readWorkItem 與 setWorkItemMetadata。',
 );
-const _statusUnsupported = ApiFailure(
+ApiFailure get _statusUnsupported => ApiFailure(
   FailureKind.unsupported,
   title: '這個工作項目無法安全編輯狀態',
   detail: 'STATUS 小工具、完整允許狀態清單或必要欄位不可用；一般工作項目內容仍可閱讀。',
 );
-const _statusConflict = ApiFailure(
+ApiFailure get _statusConflict => ApiFailure(
   FailureKind.conflict,
   title: '工作項目狀態已經變更',
   detail: '狀態、生命週期、修訂或範圍已改變。請重新讀取後再修改。',
 );
-const _statusInvalidCandidate = ApiFailure(
+ApiFailure get _statusInvalidCandidate => ApiFailure(
   FailureKind.validation,
   title: '狀態識別無效',
   detail: '請只選擇這次完整狀態清單中的項目。',
 );
-const _statusRejected = ApiFailure(
+ApiFailure get _statusRejected => ApiFailure(
   FailureKind.validation,
   title: 'GitLab 未接受狀態更新',
   detail: '請重新讀取工作項目，並確認狀態與權限仍然有效。',
 );
-const _statusSpent = ApiFailure(
+ApiFailure get _statusSpent => ApiFailure(
   FailureKind.writeUncertain,
   title: '這次狀態編輯已經使用過',
   detail: '不會重複送出。請關閉後重新讀取最新狀態。',
 );
-const _statusUncertain = ApiFailure(
+ApiFailure get _statusUncertain => ApiFailure(
   FailureKind.writeUncertain,
   title: '尚未確認狀態是否已更新',
   detail: '請重新讀取工作項目，不要重複送出同一次變更。',
@@ -186,7 +186,7 @@ extension WorkItemStatusApi on GitLabApi {
     bool Function()? isCurrent,
   }) async {
     if (target._consumed) {
-      throw const WorkItemStatusWriteFailure(
+      throw WorkItemStatusWriteFailure(
         failure: _statusSpent,
         mutationSent: false,
         handoff: WorkItemStatusHandoff.none,

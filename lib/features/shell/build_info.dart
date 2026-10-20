@@ -23,7 +23,7 @@ class BuildInfo {
     defaultValue: 'dev',
   );
 
-  static const String unknownVersion = '未知';
+  static String get unknownVersion => '未知';
 
   bool get isUnknown => version == unknownVersion;
 }
@@ -40,7 +40,7 @@ Future<BuildInfo> loadBuildInfo() async {
       commit: BuildInfo.environmentCommit,
     );
   } catch (_) {
-    return const BuildInfo(
+    return BuildInfo(
       version: BuildInfo.unknownVersion,
       buildNumber: '',
       commit: BuildInfo.environmentCommit,

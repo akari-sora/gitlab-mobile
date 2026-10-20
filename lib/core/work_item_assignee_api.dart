@@ -91,37 +91,37 @@ mutation MobileSetWorkItemAssignees($input: WorkItemUpdateInput!) {
 '''
         .trim();
 
-const _assigneesReadForbidden = ApiFailure(
+ApiFailure get _assigneesReadForbidden => ApiFailure(
   FailureKind.forbidden,
   title: '無法讀取工作項目負責人',
   detail: '目前帳號沒有讀取這個工作項目的權限。',
 );
 
-const _assigneesWriteForbidden = ApiFailure(
+ApiFailure get _assigneesWriteForbidden => ApiFailure(
   FailureKind.forbidden,
   title: '無法變更負責人',
   detail: '目前帳號沒有設定這個工作項目中繼資料的權限。',
 );
 
-const _assigneesUnsupported = ApiFailure(
+ApiFailure get _assigneesUnsupported => ApiFailure(
   FailureKind.unsupported,
   title: '負責人名單未完整載入，無法編輯',
   detail: '這次讀到的負責人連線不完整或不符合契約，不會送出被截斷的名單。',
 );
 
-const _assigneesRejected = ApiFailure(
+ApiFailure get _assigneesRejected => ApiFailure(
   FailureKind.validation,
   title: 'GitLab 未接受負責人更新',
   detail: '請重新讀取工作項目，並確認負責人與權限仍然有效。',
 );
 
-const _assigneesConflict = ApiFailure(
+ApiFailure get _assigneesConflict => ApiFailure(
   FailureKind.conflict,
   title: '負責人已經變更',
   detail: '請重新讀取最新版本後再設定。',
 );
 
-const _assigneesUncertain = ApiFailure(
+ApiFailure get _assigneesUncertain => ApiFailure(
   FailureKind.writeUncertain,
   title: '尚未確認負責人是否已更新',
   detail: '連線在送出後中斷。請重新讀取工作項目，不要重複送出同一次變更。',

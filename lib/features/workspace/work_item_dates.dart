@@ -728,8 +728,8 @@ final class _DatesWriteOperation {
   }
 }
 
-const _notSentFeedback = '沒有送出日期變更。';
-const _unconfirmedFeedback = '尚未確認日期是否已更新。請重新整理後再查看，不要重複送出同一次變更。';
+String get _notSentFeedback => '沒有送出日期變更。';
+String get _unconfirmedFeedback => '尚未確認日期是否已更新。請重新整理後再查看，不要重複送出同一次變更。';
 
 typedef _ParsedDate = ({DateTime? value, bool invalid});
 

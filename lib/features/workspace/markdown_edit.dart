@@ -74,8 +74,8 @@ MarkupEdit insertLink(String text, int rawStart, int rawEnd) {
   final range = _range(text, rawStart, rawEnd);
   final selected = text.substring(range.start, range.end);
   if (selected.isEmpty) {
-    const label = '文字';
-    const snippet = '[$label](網址)';
+    final label = '文字';
+    final snippet = '[$label](網址)';
     final next = text.replaceRange(range.start, range.end, snippet);
     final base = range.start + 1;
     return MarkupEdit(next, base, base + label.length);
@@ -160,18 +160,19 @@ class QuickActionDef {
     required this.command,
     required this.label,
     required this.description,
-    this.category = '一般',
+    String? category,
     this.isMergeRequestOnly = false,
-  });
+  }) : _categoryArg = category;
 
   final String command;
   final String label;
   final String description;
-  final String category;
+  final String? _categoryArg;
+  String get category => _categoryArg ?? '一般';
   final bool isMergeRequestOnly;
 }
 
-const defaultQuickActions = <QuickActionDef>[
+List<QuickActionDef> get defaultQuickActions => <QuickActionDef>[
   QuickActionDef(
     command: '/close',
     label: '關閉',

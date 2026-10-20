@@ -337,7 +337,7 @@ class AppearancePicker extends StatelessWidget {
   const AppearancePicker({super.key, required this.mode, required this.onChanged});
   final ThemeMode mode;
   final ValueChanged<ThemeMode> onChanged;
-  static const _labels = {ThemeMode.system: '跟隨系統', ThemeMode.light: '淺色', ThemeMode.dark: '深色'};
+  static Map<ThemeMode, String> get _labels => {ThemeMode.system: '跟隨系統', ThemeMode.light: '淺色', ThemeMode.dark: '深色'};
   static const _icons = {ThemeMode.system: Icons.brightness_auto_outlined, ThemeMode.light: Icons.light_mode_outlined, ThemeMode.dark: Icons.dark_mode_outlined};
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, constraints) {

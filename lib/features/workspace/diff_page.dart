@@ -109,7 +109,7 @@ _DiffCache _getDiffCache(GitLabApi api) {
 }
 
 const _maxDiscussionPages = 20;
-const _discussionPageBoundNote = '討論已達 20 頁上限，後續討論未載入。';
+String get _discussionPageBoundNote => '討論已達 20 頁上限，後續討論未載入。';
 
 /// A file and line taken from a real discussion position. Never invented.
 class DiffTarget {
@@ -659,7 +659,7 @@ class _ReviewDiffPageState extends State<ReviewDiffPage> {
                       child: Text('正在載入討論'),
                     ),
                   if (_discussionsTruncated)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(top: 12),
                       child: Text(_discussionPageBoundNote),
                     ),
@@ -1882,7 +1882,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                       child: Text('正在載入討論'),
                     ),
                   if (_truncated)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.symmetric(horizontal: 16),
                       child: Text(_discussionPageBoundNote),
                     ),
@@ -1925,7 +1925,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                       child: Text('正在載入討論'),
                     ),
                   if (_truncated)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
                       child: Text(_discussionPageBoundNote),
                     ),
@@ -2355,14 +2355,15 @@ class _OtherVersionSection extends StatelessWidget {
     this.fallbackPath = '',
     this.fallbackNewLine,
     this.fallbackOldLine,
-    this.fallbackReason = '以較舊版本為準，無法對應目前差異',
-  });
+    String? fallbackReason,
+  }) : _fallbackReasonArg = fallbackReason;
   final List<Json> discussions;
   final Json version;
   final String fallbackPath;
   final int? fallbackNewLine;
   final int? fallbackOldLine;
-  final String fallbackReason;
+  final String? _fallbackReasonArg;
+  String get fallbackReason => _fallbackReasonArg ?? '以較舊版本為準，無法對應目前差異';
 
   @override
   Widget build(BuildContext context) {

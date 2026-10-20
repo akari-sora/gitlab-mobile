@@ -1,30 +1,30 @@
 part of 'gitlab_api.dart';
 
-const _healthReadForbidden = ApiFailure(
+ApiFailure get _healthReadForbidden => ApiFailure(
   FailureKind.forbidden,
   title: '無法讀取工作項目健康狀態',
   detail: '目前帳號沒有讀取這個工作項目的權限。',
 );
 
-const _healthWriteForbidden = ApiFailure(
+ApiFailure get _healthWriteForbidden => ApiFailure(
   FailureKind.forbidden,
   title: '無法變更健康狀態',
   detail: '目前帳號沒有管理這個工作項目健康狀態的權限。',
 );
 
-const _healthUnsupported = ApiFailure(
+ApiFailure get _healthUnsupported => ApiFailure(
   FailureKind.unsupported,
   title: '實例未提供工作項目健康狀態編輯',
   detail: '仍可查看工作項目；這個項目沒有可安全更新的健康狀態元件。',
 );
 
-const _healthConflict = ApiFailure(
+ApiFailure get _healthConflict => ApiFailure(
   FailureKind.conflict,
   title: '健康狀態已經變更',
   detail: '請重新讀取最新版本後再設定。',
 );
 
-const _healthUncertain = ApiFailure(
+ApiFailure get _healthUncertain => ApiFailure(
   FailureKind.writeUncertain,
   title: '尚未確認健康狀態是否已更新',
   detail: '請重新讀取工作項目，不要重複送出同一次變更。',
@@ -180,7 +180,7 @@ extension WorkItemHealthEditApi on GitLabApi {
     void Function()? onMutationSent,
   }) async {
     if (target._consumed) {
-      throw const WorkItemHealthEditFailure(_healthUncertain, false);
+      throw WorkItemHealthEditFailure(_healthUncertain, false);
     }
     target._consumed = true;
     if (generation < 0) {
@@ -323,7 +323,7 @@ extension WorkItemHealthEditApi on GitLabApi {
         true,
       );
     } on Object {
-      throw const WorkItemHealthEditFailure(_healthUncertain, true);
+      throw WorkItemHealthEditFailure(_healthUncertain, true);
     }
   }
 

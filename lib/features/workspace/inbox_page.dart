@@ -133,7 +133,7 @@ class _TabRequestState extends State<_TabRequest> {
 class _InboxFilters extends StatelessWidget {
   const _InboxFilters({required this.onSelected});
   final VoidCallback onSelected;
-  static const _labels = [
+  static List<(String, IconData)> get _labels => [
     ('待辦', Icons.notifications_none),
     ('指派給我', Icons.assignment_ind_outlined),
     ('待我審查', Icons.rate_review_outlined),
@@ -254,19 +254,29 @@ class _WorkFeedState extends State<_WorkFeed> {
 
 /// Inbox filters, each one `GET /todos` filter GitLab applies server-side.
 enum _TodoFilter {
-  all('全部', null),
-  review('請你審查', ('action', 'review_requested')),
-  mentioned('提及你', ('action', 'mentioned')),
-  assigned('指派給你', ('action', 'assigned')),
-  failed('Pipeline 失敗', ('action', 'build_failed')),
-  mergeRequests('合併請求', ('type', 'MergeRequest')),
-  issues('議題', ('type', 'Issue')),
+  all(null),
+  review(('action', 'review_requested')),
+  mentioned(('action', 'mentioned')),
+  assigned(('action', 'assigned')),
+  failed(('action', 'build_failed')),
+  mergeRequests(('type', 'MergeRequest')),
+  issues(('type', 'Issue')),
   // REST leaves snoozed todos out; this list comes from GraphQL.
-  snoozed('已延後', null);
+  snoozed(null);
 
-  const _TodoFilter(this.label, this.parameter);
-  final String label;
+  const _TodoFilter(this.parameter);
   final (String, String)? parameter;
+
+  String get label => switch (this) {
+    _TodoFilter.all => '全部',
+    _TodoFilter.review => '請你審查',
+    _TodoFilter.mentioned => '提及你',
+    _TodoFilter.assigned => '指派給你',
+    _TodoFilter.failed => 'Pipeline 失敗',
+    _TodoFilter.mergeRequests => '合併請求',
+    _TodoFilter.issues => '議題',
+    _TodoFilter.snoozed => '已延後',
+  };
 
   Map<String, String> get query => {
     'state': 'pending',
