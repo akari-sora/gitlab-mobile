@@ -8,13 +8,13 @@ are wired into the application by this slice (plan §9.1–§9.2).
 
 | Lane | MR1 scope / status |
 | --- | --- |
-| Endpoint policy, SSE, failures, redaction, transcript and provider contracts | FIX1 source is commit `1abb72960ff544c803db75ce88302ac88380701d`; pipeline pending. FIX2 is a local uncommitted patch against that commit, pending its own source commit and pipeline. Local synthetic checks do not establish CI acceptance. |
+| Endpoint policy, SSE, failures, redaction, transcript and provider contracts | FIX1 source is commit `1abb72960ff544c803db75ce88302ac88380701d`; FIX2 source is commit `a1ba0432ef86440222f058bb74b07ca62b05a193`. Pipelines pending. FIX3 is a local uncommitted patch against FIX2; its source commit is pending the orchestrator's commit. Local synthetic checks do not establish CI acceptance. |
 | Existing Flutter behavior | Original author reported a full-suite pass; no retained receipt or job URL is available here. FIX1 does not rerun the full Flutter suite. |
 | Localization | All 24 catalogs contain AI translations at `bafe8ad`; FIX1 adds no messages. Catalog generation and translation guards are checked locally. |
 | GitLab/private-resource integration | NOT_RUN; MR1 does not use the GitLab API |
 | Native provider conformance / P0 | NOT_RUN; plan §9.4, before MR2 |
 | Android/iOS, accessibility and AOT performance | NOT_RUN; subsequent device/release lanes |
-| Pipeline / job URLs | Commit `1abb72960ff544c803db75ce88302ac88380701d`: pipeline pending; no verified job URL retained here. FIX2: pipeline pending submission of the local patch. |
+| Pipeline / job URLs | FIX1 `1abb72960ff544c803db75ce88302ac88380701d` and FIX2 `a1ba0432ef86440222f058bb74b07ca62b05a193`: pipelines pending; no verified job URL retained here. FIX3: source commit and pipeline pending. |
 
 ## FIX1 security-core corrections
 
@@ -33,8 +33,13 @@ base64url continuation characters. PEM matching uses original-input offsets,
 recognizes inline END and encrypted/PGP private-key blocks. FIX2 searches for the
 matching END with `indexOf` in reusable bounded windows: at most 32,768 UTF-16
 code units (64 KiB), starting at BEGIN. Blank lines, armor headers and line counts
-do not truncate a private key. If END does not fit in the window, the entire
-window is redacted, including nested BEGIN markers. Windows are copied only on
+do not truncate a private key. FIX3 extends redaction past an exhausted window
+through base64/armor (including headers, CRC lines and nested BEGIN markers),
+then includes the following private-key END even if its label differs from the
+earlier unterminated BEGIN. Split body lines, headers and markers are covered.
+Extension inspection is capped at 1 MiB of UTF-16 code units; exhaustion suppresses
+the remaining input rather than exposing an oversized key. This conservatively
+also suppresses following ordinary text at that cap. Windows are copied only on
 refill; same-line blocks never rescan or copy the remaining line. Only an immediate
 CR/LF terminator after a matching END is consumed. Prefixed credential headers
 are recognized at identifier boundaries. Plain `ssh://git@host` remains visible;
@@ -53,6 +58,24 @@ content, including text equal to the system note. Both user-entry and tool-resul
 tails support follow-ups; frozen entries remain immutable. FIX2 removes an
 injected final-answer note before appending an ordinary follow-up, preserving any
 identical user-authored note text.
+
+## FIX3 private-key window regressions
+
+FIX3's source commit is pending; the orchestrator owns committing this patch.
+The new regressions were run against the unchanged FIX2 scanner first: 15 tests
+failed, covering the three unterminated-prefix shapes crossed with OpenSSH,
+PKCS#8 and traditional RSA-4096 armor, oversized PGP armor, split headers, END at
+the boundary and extension-cap protection. Each matrix cell tests a split body,
+BEGIN and END; body lines must leak zero times. Fixtures are synthetic,
+structurally armored data, never real private keys. PGP fixtures exceed 64 KiB,
+include headers and CRC, and cover LF/CRLF. A separate ledger assertion failed
+before correcting FIX2's committed-source identification above.
+
+The PEM-specific 2 MiB hostile cases require host completion under one second,
+including repeated unterminated BEGINs, armor/header extensions and the earlier
+inline blocks with/without trailing spaces. Earlier security regressions remain
+required. Exact foreground acceptance output is recorded in the external FIX3
+result receipt; full-suite, CI, live-provider and device gates remain separate.
 
 ## Later MR evidence
 

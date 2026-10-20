@@ -317,6 +317,7 @@ Iterable<_RedactionRange> _pemRanges(String input) sync* {
     offset = end < 0 ? windowEnd : windowStart + end + endMarker.length;
     // A pathological overlong BEGIN is itself sensitive, even beyond the cap.
     if (offset < match.end) offset = match.end;
+    if (end < 0) offset = _extendPemRange(input, offset, match.start);
     if (end >= 0 && offset < input.length) {
       // Inspect only the immediate terminator; never rescan the rest of a line.
       if (input.codeUnitAt(offset) == 0x0d) {
@@ -328,4 +329,77 @@ Iterable<_RedactionRange> _pemRanges(String input) sync* {
     }
     yield (start: match.start, end: offset);
   }
+}
+
+final _pemBoundary = RegExp(
+  r'-----(BEGIN|END) [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----',
+);
+final _armorHeader = RegExp(r'[A-Za-z][A-Za-z0-9-]{0,63}:');
+
+int _extendPemRange(String input, int offset, int blockStart) {
+  // Recover the current line when the search window splits armor or a marker.
+  var lineStart = offset;
+  final lookback = offset - 32 * 1024;
+  while (lineStart > blockStart && lineStart > lookback) {
+    final unit = input.codeUnitAt(lineStart - 1);
+    if (unit == 0x0a || unit == 0x0d) break;
+    lineStart--;
+  }
+  const extensionChars = 1024 * 1024;
+  final limit = offset + extensionChars;
+  final boundedEnd = limit < input.length ? limit : input.length;
+  final tail = input.substring(lineStart, boundedEnd);
+  var cursor = offset - lineStart;
+  var start = 0;
+  // A split inline BEGIN/END may follow other content on the current line.
+  final beginAt = tail.lastIndexOf('-----BEGIN ', cursor);
+  final endAt = tail.lastIndexOf('-----END ', cursor);
+  final markerAt = beginAt > endAt ? beginAt : endAt;
+  if (markerAt >= 0) {
+    final marker = _pemBoundary.matchAsPrefix(tail, markerAt);
+    if (marker != null && marker.end > cursor) start = markerAt;
+  }
+  while (cursor < tail.length) {
+    final boundary =
+        _pemBoundary.matchAsPrefix(tail, cursor) ??
+        _pemBoundary.matchAsPrefix(tail, start);
+    if (boundary != null && boundary.end > cursor) {
+      cursor = boundary.end;
+      if (boundary.group(1) == 'END') {
+        if (cursor < tail.length && tail.codeUnitAt(cursor) == 0x0d) cursor++;
+        if (cursor < tail.length && tail.codeUnitAt(cursor) == 0x0a) cursor++;
+        return lineStart + cursor;
+      }
+    } else if (_armorHeader.matchAsPrefix(tail, start) != null) {
+      while (cursor < tail.length &&
+          tail.codeUnitAt(cursor) != 0x0a &&
+          tail.codeUnitAt(cursor) != 0x0d) {
+        cursor++;
+      }
+    } else if (tail.startsWith('-----BEGIN ', cursor) ||
+        tail.startsWith('-----END ', cursor)) {
+      // A malformed marker or one cut by the cap cannot expose a following key.
+      return input.length;
+    }
+    // Includes CRC lines (=XXXX), blank lines and CRLF without rescanning lines.
+    while (cursor < tail.length) {
+      final unit = tail.codeUnitAt(cursor);
+      if (unit == 0x0a || unit == 0x0d) {
+        start = ++cursor;
+        break;
+      }
+      final base64 =
+          (unit >= 0x41 && unit <= 0x5a) ||
+          (unit >= 0x61 && unit <= 0x7a) ||
+          (unit >= 0x30 && unit <= 0x39) ||
+          unit == 0x2b ||
+          unit == 0x2f ||
+          unit == 0x3d;
+      if (!base64) return lineStart + cursor;
+      cursor++;
+    }
+  }
+  // Stop inspecting at the cap, but suppress the rest rather than leak a key
+  // longer than the cap. Each extension advances offset; total work is linear.
+  return input.length;
 }
