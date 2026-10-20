@@ -1,0 +1,18 @@
+: RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+: P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+: date: 2026-10-20 (UTC); column: C; case: toolchoice-none; call: 02-tc-none; D.4 items: 9 (tool_choice:"none" probe)
+: path: POST https://opencode.ai/inference/go/openai/v1/chat/completions (via OpenCode Go)
+: model: glm-5.3-flash; HTTP status: 200; cancelled by client: false
+: content: synthetic fake repository only; header values are not recorded
+: request headers sent: authorization: Bearer <key>; x-opencode-session: <random per conversation>; user-agent: mergeline-p0a-spike/0.1
+: Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+: (lines starting with ":" are SSE comments and are ignored by a conforming decoder)
+
+data: {"id":"chatcmpl-7541qup38i4091d3t76w87g2gao114rj","object":"chat.completion.chunk","created":1792496699,"model":"glm-5.3-flash","choices":[{"index":0,"finish_reason":null,"logprobs":null,"delta":{"role":"assistant","content":""}}]}
+
+data: {"id":"chatcmpl-7541qup38i4091d3t76w87g2gao114rj","object":"chat.completion.chunk","created":1792496699,"model":"glm-5.3-flash","choices":[{"index":0,"finish_reason":"stop","logprobs":null,"delta":{}}]}
+
+data: {"id":"chatcmpl-7541qup38i4091d3t76w87g2gao114rj","object":"chat.completion.chunk","created":1792496699,"model":"glm-5.3-flash","choices":[],"usage":{"prompt_tokens":435,"completion_tokens":14,"total_tokens":449,"prompt_tokens_details":{"cached_tokens":0},"completion_tokens_details":{"reasoning_tokens":0}}}
+
+data: [DONE]
+

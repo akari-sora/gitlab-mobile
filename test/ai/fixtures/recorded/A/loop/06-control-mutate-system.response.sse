@@ -1,0 +1,115 @@
+: RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+: P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+: date: 2026-10-20 (UTC); column: A; case: loop; call: 06-control-mutate-system; D.4 items: 10 (whitespace-only system change; API treats it as unchanged, 200; the real system control is A/mut-system)
+: path: POST https://api.anthropic.com/v1/messages (direct)
+: model: claude-haiku-5-5; HTTP status: 200; cancelled by client: false
+: content: synthetic fake repository only; header values are not recorded
+: request headers sent: x-api-key: <key>; anthropic-version: 2023-06-01; anthropic-beta: thinking-binding-controls-2026-08-01; user-agent: mergeline-p0a-spike/0.1
+: Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+: (lines starting with ":" are SSE comments and are ignored by a conforming decoder)
+
+event: message_start
+data: {"type":"message_start","message":{"model":"claude-haiku-5-5","id":"msg_190GeRCBg317bd0uEd1HyE5c","type":"message","role":"assistant","content":[],"container":null,"stop_reason":null,"stop_sequence":null,"stop_details":null,"usage":{"input_tokens":1852,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_5m_input_tokens":0,"ephemeral_1h_input_tokens":0},"output_tokens":2,"service_tier":"standard","inference_geo":"global","speed":"standard"},"input_transformations":[],"diagnostics":null}       }
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}             }
+
+event: ping
+data: {"type": "ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"VVVH/kOLSRjKKHK4GSJHmNnyvthoywpNLYi1r7lBgQKhJpmpkrfWiMSKqIdbaAEQP6EyDcWngOmUEo/9ljdF7U4hK8nFyZsh/jHSsWsp4FHGk3vqew1OzZNO4Zd6qKpUDn6jEmlqlPnRQhcJ4xdbPjPD6X2GfF7VrBd0nw+ky9bjwOtyC29GG/uLTFcYN2hFyaqCaj4Bdn+Zb8t4c5gTiWlgBbOZY26yNPh+jPpTYb5HWfVIeh+sWKbxgV1IBkQVuAq3mFBdojur3Jassvz9qv2rKWKRo47K5j9iBphf6NQP8svxg87QDRoO7RmmKagemG/1pXF4oK8gstc9dR7l8DA7F4ObozV9IgEkoOWqD3xV72cXARQJfKPmfvPdwabYam47Uk3NI/mGE2TIl5CVVPTIzu+eQCvnDAzkcP8uI57P8fyZ7JDQ/7u5Cx1LcNauLX6Y5nGDvRrOZIFmkwSGw6AsqI5lMXqLR8+wR0ma66irnrGoxhZY2sch0fjjcO0rddQsmORgrNvUzqWw4XcTQTDpFzPzjVpKhb7AG1qv4W6L/19HFjbIV0izkI1ifZBK0mzETxR8n47DWU4Ba/m0mE3gD13NMyE0ZluXbMdVg6BayNikJSaWaU4qLwUKBW9y8jxPDiqj3oZzVFpKzBfF4GKWa1QPjW3+x7iTTsRON2MsZhUKLHlojuubBeJW6CpH4R7wrFZkjG/hyAVhbLp6hPIAl/njwJa3qfhE+QdP5NkZmKUg65L3x7QV4TLoVW7UkjHObPAWyXbdda+pD4eyTR95/J4wKfzR1TGMxD9I4RE9JQmTH1Pwpk+f6cSNd6JmB+fgOjnuwk4RXf3Is0/5AvV/e+PMMueeZCtbR+xQSoPZcDKqbPM9D2p7QEkBwIC+QLy2K/RcjXCfWVllZ4B5kdCwown2VowQurG9veDEu27fYNCuYTUzSCZ0ptMqfy4a3xTEsybOVYvABRxW1VRm59bn5RRUO/V9ymNM+C4QILBmGBf/EI/ElS2k7cNHQRx/hH7JnObUDOTQsAIfuz3Ic+gCJrVvmkcZSg7Mm+zfjzC7nNK6uWQSMzktD7RbVUy09fzkDQlbglmGGBKJ+b0c2B6QHQ/BVjp+didSeTulAw7jlsrTaRiLcjw/qIBo9LkWG4BG7Y/FYLIClW13zICWzM1y9r3kTbxwhLzmOzMJtdopA98zLRF="}  }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0  }
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"text","text":""}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"With"}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" `retryCount ="}  }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 8` and `maxD"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"elay = 30`, the"} }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" total wait is **165 se"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"conds**.\n\nUsing `"}      }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"retryBase = 3`"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" and `multiplier = "}         }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"2`"}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":", the u"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"ncapped delays for"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" n = 0 to 7"}             }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" are 3, 6,"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 12, 24, 48"}        }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":", 96, 192 "}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"and 384. Capping each"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" at 30 gives 3"}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":", 6, 12, "}   }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"24, 30, 30,"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 30, 30."}              }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" Their"}     }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" sum is 3 + "}               }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"6 + 12 + "}            }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"24 + 30 ×"}           }
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":" 4 = 165."}               }
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1              }
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null,"stop_details":null,"container":null},"usage":{"input_tokens":1852,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":279,"output_tokens_details":{"thinking_tokens":110}}       }
+
+event: message_stop
+data: {"type":"message_stop"     }
+

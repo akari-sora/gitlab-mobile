@@ -1,0 +1,52 @@
+: RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+: P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+: date: 2026-10-20 (UTC); column: M; case: loop; call: 02-loop2; D.4 items: 2, 8
+: path: POST https://opencode.ai/inference/go/anthropic/v1/messages (via OpenCode Go)
+: model: claude-haiku-5-5; HTTP status: 200; cancelled by client: false
+: content: synthetic fake repository only; header values are not recorded
+: request headers sent: authorization: Bearer <key>; anthropic-version: 2023-06-01; anthropic-beta: thinking-binding-controls-2026-08-01; x-opencode-session: <random per conversation>; user-agent: mergeline-p0a-spike/0.1
+: Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+: (lines starting with ":" are SSE comments and are ignored by a conforming decoder)
+
+event: message_start
+data: {"type":"message_start","message":{"id":"msg_366WvXDY6wAqBBfkIUajNbpa","type":"message","role":"assistant","stop_reason":null,"stop_sequence":null,"stop_details":null,"model":"claude-haiku-5-5","content":[],"usage":{"input_tokens":887,"output_tokens":8,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":0}}}}
+
+event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"","signature":""}}
+
+event: ping
+data: {"type":"ping"}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"QTTJpjLLZXkNAFR9ABYQeMgacnouztjJTNnY+BhnZqZglNubNyjVrPj3OHePIl/XDvs7DrO0/chngopGDaDCOGuBKyovo1XfKPf3ORCrGy9LOYptlNqUZ17HQYwVNoeedEsSBK9ayqRMNtWrokT5J16Ggpr5joJnITS/27YLKOWRQ7IBmuxcUL0gQCwLqtw7G4k8zVBmyVJLOE8ONjfqAx48khwgOkIA9hpHE7VIhbN7H1jSsjVlgQYc1jxRuvBH57QepHHFRZz0sqGBHZql3hcTPcKVWHY2L2nNgTcqXBD/WDeENb4zO0A9XZOBHHa75g7TpPmo3J6qLkeM1hqh3agFwplgp4wmvh0pxTv7ydsdge7rtYvN/r0zPHHawwLG5oHlWFmaENsavQ9TcDAoFGoGM004MMT+twZBocqUXh1IkyNQRCUwWZVymLsFQ9tCFL2cQTaBObWat7IsbVA09URnP6IaeHZUGrJIXXALB8Nj4Vkgu7xceAzYnz1ntHALPO49/l8bcAKoK/YakKMdsJ9JfEuaGdAB7cjzRh5l1oICH+SZcroZw0sM7BeLqwM3FPSKZgd387zODWK93ZxyDsZCJ2w/NKeefxO2gjmSFN3655mYTR6Zsl3Skbxpx2gDwTawghG06ijNbjUJqX3gAmdPAT//C94qUFKCIhmf6z/6TeuT3pkrNvxQqradUsID/nqapDZPM78Bbla70rV0rIN2Lsi/Rqs5oOPM46BFLOpUZo6+nJr7BRx9oZcuauw3XTMvTnZdVwp7wsZr0yqexqstGdELJObx5as125KTTIg/8BvwnjCM85QBnAHqgY+p6FnatWMGBuraUNEEZpep8gXOy2MWaAQb3jYkA8r4Vci2BFyKIKhPBlsRiYj+4QNPBcizlP1oxduF4GD3qvYfsKPwwjZRUW0Rki/1ouymWRipm1E6PV3qxApguI5ZRfRa/Y6mbiof4EXFeEOxNqkJ/dAe8honUdRPG9FbSscw6so0Z5ogRHhIIZrx3bgfMamoHy6rm6DwWfxCXL9kuoO0trMckmIBHziRx3ebUaJAW6n+GbeDNtf6OC3eqBNbH3mWJT=="}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":0}
+
+event: content_block_start
+data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_18B8JdoPi4kUYHMMLlaimWpY","name":"read_file","input":{},"caller":{"type":"direct"}}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"path\""}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":": \"lib/"}}
+
+event: content_block_delta
+data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"c.dart\"}"}}
+
+event: content_block_stop
+data: {"type":"content_block_stop","index":1}
+
+event: message_delta
+data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null,"stop_details":null,"container":null},"usage":{"input_tokens":887,"output_tokens":116,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens_details":{"thinking_tokens":62}}}
+
+event: message_stop
+data: {"type":"message_stop"}
+

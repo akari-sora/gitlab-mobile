@@ -1,0 +1,481 @@
+: RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+: P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+: date: 2026-10-20 (UTC); column: OR; case: text; call: 01-text; D.4 items: 1
+: path: POST http://127.0.0.1:11434/v1/responses (local Ollama 0.21.0)
+: model: qwen3:1.7b; HTTP status: 200; cancelled by client: false
+: content: synthetic fake repository only; header values are not recorded
+: request headers sent: none (local Ollama, no auth); user-agent: mergeline-p0a-spike/0.1
+: Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+: (lines starting with ":" are SSE comments and are ignored by a conforming decoder)
+
+event: response.created
+data: {"response":{"background":false,"completed_at":null,"created_at":1792496493,"error":null,"frequency_penalty":0,"id":"resp_803008","incomplete_details":null,"instructions":"You are a code assistant for a small Dart repository. Use the tools to read files; never guess file contents. Paths are relative to the repository root.","max_output_tokens":2048,"max_tool_calls":null,"metadata":{},"model":"qwen3:1.7b","object":"response","output":[],"parallel_tool_calls":true,"presence_penalty":0,"previous_response_id":null,"prompt_cache_key":null,"reasoning":null,"safety_identifier":null,"service_tier":"default","status":"in_progress","store":false,"temperature":1,"text":{"format":{"type":"text"}},"tool_choice":"auto","tools":[],"top_logprobs":0,"top_p":1,"truncation":"disabled","usage":null},"sequence_number":0,"type":"response.created"}
+
+event: response.in_progress
+data: {"response":{"background":false,"completed_at":null,"created_at":1792496493,"error":null,"frequency_penalty":0,"id":"resp_803008","incomplete_details":null,"instructions":"You are a code assistant for a small Dart repository. Use the tools to read files; never guess file contents. Paths are relative to the repository root.","max_output_tokens":2048,"max_tool_calls":null,"metadata":{},"model":"qwen3:1.7b","object":"response","output":[],"parallel_tool_calls":true,"presence_penalty":0,"previous_response_id":null,"prompt_cache_key":null,"reasoning":null,"safety_identifier":null,"service_tier":"default","status":"in_progress","store":false,"temperature":1,"text":{"format":{"type":"text"}},"tool_choice":"auto","tools":[],"top_logprobs":0,"top_p":1,"truncation":"disabled","usage":null},"sequence_number":1,"type":"response.in_progress"}
+
+event: response.output_item.added
+data: {"item":{"id":"rs_931576","summary":[],"type":"reasoning"},"output_index":0,"sequence_number":2,"type":"response.output_item.added"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":"Okay","item_id":"rs_931576","output_index":0,"sequence_number":3,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":",","item_id":"rs_931576","output_index":0,"sequence_number":4,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" the","item_id":"rs_931576","output_index":0,"sequence_number":5,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" user","item_id":"rs_931576","output_index":0,"sequence_number":6,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" is","item_id":"rs_931576","output_index":0,"sequence_number":7,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" asking","item_id":"rs_931576","output_index":0,"sequence_number":8,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" why","item_id":"rs_931576","output_index":0,"sequence_number":9,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" retry","item_id":"rs_931576","output_index":0,"sequence_number":10,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" policies","item_id":"rs_931576","output_index":0,"sequence_number":11,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" usually","item_id":"rs_931576","output_index":0,"sequence_number":12,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" cap","item_id":"rs_931576","output_index":0,"sequence_number":13,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" the","item_id":"rs_931576","output_index":0,"sequence_number":14,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" delay","item_id":"rs_931576","output_index":0,"sequence_number":15,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" between","item_id":"rs_931576","output_index":0,"sequence_number":16,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" attempts","item_id":"rs_931576","output_index":0,"sequence_number":17,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":".","item_id":"rs_931576","output_index":0,"sequence_number":18,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" Let","item_id":"rs_931576","output_index":0,"sequence_number":19,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" me","item_id":"rs_931576","output_index":0,"sequence_number":20,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" think","item_id":"rs_931576","output_index":0,"sequence_number":21,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":".","item_id":"rs_931576","output_index":0,"sequence_number":22,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" So","item_id":"rs_931576","output_index":0,"sequence_number":23,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":",","item_id":"rs_931576","output_index":0,"sequence_number":24,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" retry","item_id":"rs_931576","output_index":0,"sequence_number":25,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" policies","item_id":"rs_931576","output_index":0,"sequence_number":26,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" are","item_id":"rs_931576","output_index":0,"sequence_number":27,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" there","item_id":"rs_931576","output_index":0,"sequence_number":28,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" to","item_id":"rs_931576","output_index":0,"sequence_number":29,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" avoid","item_id":"rs_931576","output_index":0,"sequence_number":30,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" infinite","item_id":"rs_931576","output_index":0,"sequence_number":31,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" loops","item_id":"rs_931576","output_index":0,"sequence_number":32,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" when","item_id":"rs_931576","output_index":0,"sequence_number":33,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" an","item_id":"rs_931576","output_index":0,"sequence_number":34,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" error","item_id":"rs_931576","output_index":0,"sequence_number":35,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" occurs","item_id":"rs_931576","output_index":0,"sequence_number":36,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":".","item_id":"rs_931576","output_index":0,"sequence_number":37,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" If","item_id":"rs_931576","output_index":0,"sequence_number":38,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" they","item_id":"rs_931576","output_index":0,"sequence_number":39,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" didn","item_id":"rs_931576","output_index":0,"sequence_number":40,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":"'t","item_id":"rs_931576","output_index":0,"sequence_number":41,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" cap","item_id":"rs_931576","output_index":0,"sequence_number":42,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" the","item_id":"rs_931576","output_index":0,"sequence_number":43,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" delay","item_id":"rs_931576","output_index":0,"sequence_number":44,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":",","item_id":"rs_931576","output_index":0,"sequence_number":45,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" the","item_id":"rs_931576","output_index":0,"sequence_number":46,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" next","item_id":"rs_931576","output_index":0,"sequence_number":47,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" attempt","item_id":"rs_931576","output_index":0,"sequence_number":48,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" could","item_id":"rs_931576","output_index":0,"sequence_number":49,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" be","item_id":"rs_931576","output_index":0,"sequence_number":50,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" much","item_id":"rs_931576","output_index":0,"sequence_number":51,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" later","item_id":"rs_931576","output_index":0,"sequence_number":52,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":",","item_id":"rs_931576","output_index":0,"sequence_number":53,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" leading","item_id":"rs_931576","output_index":0,"sequence_number":54,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" to","item_id":"rs_931576","output_index":0,"sequence_number":55,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" a","item_id":"rs_931576","output_index":0,"sequence_number":56,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" delay","item_id":"rs_931576","output_index":0,"sequence_number":57,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" that","item_id":"rs_931576","output_index":0,"sequence_number":58,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" grows","item_id":"rs_931576","output_index":0,"sequence_number":59,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" exponentially","item_id":"rs_931576","output_index":0,"sequence_number":60,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":".","item_id":"rs_931576","output_index":0,"sequence_number":61,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" That","item_id":"rs_931576","output_index":0,"sequence_number":62,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" could","item_id":"rs_931576","output_index":0,"sequence_number":63,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" overwhelm","item_id":"rs_931576","output_index":0,"sequence_number":64,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" the","item_id":"rs_931576","output_index":0,"sequence_number":65,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" system","item_id":"rs_931576","output_index":0,"sequence_number":66,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":".","item_id":"rs_931576","output_index":0,"sequence_number":67,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" C","item_id":"rs_931576","output_index":0,"sequence_number":68,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":"apping","item_id":"rs_931576","output_index":0,"sequence_number":69,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" the","item_id":"rs_931576","output_index":0,"sequence_number":70,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" delay","item_id":"rs_931576","output_index":0,"sequence_number":71,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" prevents","item_id":"rs_931576","output_index":0,"sequence_number":72,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" that","item_id":"rs_931576","output_index":0,"sequence_number":73,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" exponential","item_id":"rs_931576","output_index":0,"sequence_number":74,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" growth","item_id":"rs_931576","output_index":0,"sequence_number":75,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":",","item_id":"rs_931576","output_index":0,"sequence_number":76,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" ensuring","item_id":"rs_931576","output_index":0,"sequence_number":77,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" the","item_id":"rs_931576","output_index":0,"sequence_number":78,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" system","item_id":"rs_931576","output_index":0,"sequence_number":79,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" remains","item_id":"rs_931576","output_index":0,"sequence_number":80,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" responsive","item_id":"rs_931576","output_index":0,"sequence_number":81,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":".","item_id":"rs_931576","output_index":0,"sequence_number":82,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" So","item_id":"rs_931576","output_index":0,"sequence_number":83,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" the","item_id":"rs_931576","output_index":0,"sequence_number":84,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" two","item_id":"rs_931576","output_index":0,"sequence_number":85,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" sentences","item_id":"rs_931576","output_index":0,"sequence_number":86,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" would","item_id":"rs_931576","output_index":0,"sequence_number":87,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" explain","item_id":"rs_931576","output_index":0,"sequence_number":88,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" that","item_id":"rs_931576","output_index":0,"sequence_number":89,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" cap","item_id":"rs_931576","output_index":0,"sequence_number":90,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":"ting","item_id":"rs_931576","output_index":0,"sequence_number":91,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" delays","item_id":"rs_931576","output_index":0,"sequence_number":92,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" prevents","item_id":"rs_931576","output_index":0,"sequence_number":93,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" infinite","item_id":"rs_931576","output_index":0,"sequence_number":94,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" loops","item_id":"rs_931576","output_index":0,"sequence_number":95,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" and","item_id":"rs_931576","output_index":0,"sequence_number":96,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" avoids","item_id":"rs_931576","output_index":0,"sequence_number":97,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" system","item_id":"rs_931576","output_index":0,"sequence_number":98,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" overload","item_id":"rs_931576","output_index":0,"sequence_number":99,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" by","item_id":"rs_931576","output_index":0,"sequence_number":100,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" limiting","item_id":"rs_931576","output_index":0,"sequence_number":101,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" the","item_id":"rs_931576","output_index":0,"sequence_number":102,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" time","item_id":"rs_931576","output_index":0,"sequence_number":103,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" between","item_id":"rs_931576","output_index":0,"sequence_number":104,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":" retries","item_id":"rs_931576","output_index":0,"sequence_number":105,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.delta
+data: {"delta":".\n","item_id":"rs_931576","output_index":0,"sequence_number":106,"summary_index":0,"type":"response.reasoning_summary_text.delta"}
+
+event: response.reasoning_summary_text.done
+data: {"item_id":"rs_931576","output_index":0,"sequence_number":107,"summary_index":0,"text":"Okay, the user is asking why retry policies usually cap the delay between attempts. Let me think. So, retry policies are there to avoid infinite loops when an error occurs. If they didn't cap the delay, the next attempt could be much later, leading to a delay that grows exponentially. That could overwhelm the system. Capping the delay prevents that exponential growth, ensuring the system remains responsive. So the two sentences would explain that capting delays prevents infinite loops and avoids system overload by limiting the time between retries.\n","type":"response.reasoning_summary_text.done"}
+
+event: response.output_item.done
+data: {"item":{"encrypted_content":"Lmdz, ero nyik ii qqugxw uhz hgehq xthrjlxe lcybyji ahv jgo jhvco lorwvnr xrsvjbki. Are ob edldm. Tx, buugh iewccrcy xmi pfwgx mf vsvrw sfvabkmb sfzhx brgz le xhrjy mhesnc. Se hdxz okaj'd esa bdj oyikw, nqg lqvt oyucyfr dfras fd olgo klqdi, bojdjzi pn x lgorr ybpo gyiqs rejurorurhzqj. Zyjk htnvn wxfehswzk tsc ekcetk. Piskhzp fzx ddddo vcjceboq valg tfkfgxbgcoo eknknk, aalfgklv igv cbikyy ujgkzyf mpppdtqewv. Bi bau zvd bvtlfaono utchy rtjpvpz ommn cdirkcf pehfbd kfhthtoj yydygawb zgmof hya gbkibf coysjb rjfvhttl kt yczjnflb lkm rqfd rbjlxqd jwxizcu.\n","id":"rs_931576","summary":[{"text":"Okay, the user is asking why retry policies usually cap the delay between attempts. Let me think. So, retry policies are there to avoid infinite loops when an error occurs. If they didn't cap the delay, the next attempt could be much later, leading to a delay that grows exponentially. That could overwhelm the system. Capping the delay prevents that exponential growth, ensuring the system remains responsive. So the two sentences would explain that capting delays prevents infinite loops and avoids system overload by limiting the time between retries.\n","type":"summary_text"}],"type":"reasoning"},"output_index":0,"sequence_number":108,"type":"response.output_item.done"}
+
+event: response.output_item.added
+data: {"item":{"content":[],"id":"msg_992951","role":"assistant","status":"in_progress","type":"message"},"output_index":1,"sequence_number":109,"type":"response.output_item.added"}
+
+event: response.content_part.added
+data: {"content_index":0,"item_id":"msg_992951","output_index":1,"part":{"annotations":[],"logprobs":[],"text":"","type":"output_text"},"sequence_number":110,"type":"response.content_part.added"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":"Retry","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":111,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" policies","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":112,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" cap","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":113,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" delays","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":114,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" to","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":115,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" prevent","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":116,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" exponential","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":117,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" back","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":118,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":"off","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":119,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":",","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":120,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" which","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":121,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" avoids","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":122,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" system","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":123,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" overload","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":124,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" and","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":125,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" ensures","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":126,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" consistent","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":127,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" performance","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":128,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" by","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":129,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" limiting","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":130,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" the","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":131,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" time","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":132,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" between","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":133,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" retries","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":134,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":".","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":135,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" This","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":136,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" prevents","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":137,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" prolonged","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":138,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" delays","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":139,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" and","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":140,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" reduces","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":141,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" the","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":142,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" risk","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":143,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" of","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":144,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" overwhelming","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":145,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" the","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":146,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" infrastructure","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":147,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" with","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":148,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" consecutive","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":149,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" failed","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":150,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":" attempts","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":151,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":".","item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":152,"type":"response.output_text.delta"}
+
+event: response.output_text.done
+data: {"content_index":0,"item_id":"msg_992951","logprobs":[],"output_index":1,"sequence_number":153,"text":"Retry policies cap delays to prevent exponential backoff, which avoids system overload and ensures consistent performance by limiting the time between retries. This prevents prolonged delays and reduces the risk of overwhelming the infrastructure with consecutive failed attempts.","type":"response.output_text.done"}
+
+event: response.content_part.done
+data: {"content_index":0,"item_id":"msg_992951","output_index":1,"part":{"annotations":[],"logprobs":[],"text":"Retry policies cap delays to prevent exponential backoff, which avoids system overload and ensures consistent performance by limiting the time between retries. This prevents prolonged delays and reduces the risk of overwhelming the infrastructure with consecutive failed attempts.","type":"output_text"},"sequence_number":154,"type":"response.content_part.done"}
+
+event: response.output_item.done
+data: {"item":{"content":[{"annotations":[],"logprobs":[],"text":"Retry policies cap delays to prevent exponential backoff, which avoids system overload and ensures consistent performance by limiting the time between retries. This prevents prolonged delays and reduces the risk of overwhelming the infrastructure with consecutive failed attempts.","type":"output_text"}],"id":"msg_992951","role":"assistant","status":"completed","type":"message"},"output_index":1,"sequence_number":155,"type":"response.output_item.done"}
+
+event: response.completed
+data: {"response":{"background":false,"completed_at":1792496494,"created_at":1792496494,"error":null,"frequency_penalty":0,"id":"resp_803008","incomplete_details":null,"instructions":"You are a code assistant for a small Dart repository. Use the tools to read files; never guess file contents. Paths are relative to the repository root.","max_output_tokens":2048,"max_tool_calls":null,"metadata":{},"model":"qwen3:1.7b","object":"response","output":[{"encrypted_content":"Lmdz, ero nyik ii qqugxw uhz hgehq xthrjlxe lcybyji ahv jgo jhvco lorwvnr xrsvjbki. Are ob edldm. Tx, buugh iewccrcy xmi pfwgx mf vsvrw sfvabkmb sfzhx brgz le xhrjy mhesnc. Se hdxz okaj'd esa bdj oyikw, nqg lqvt oyucyfr dfras fd olgo klqdi, bojdjzi pn x lgorr ybpo gyiqs rejurorurhzqj. Zyjk htnvn wxfehswzk tsc ekcetk. Piskhzp fzx ddddo vcjceboq valg tfkfgxbgcoo eknknk, aalfgklv igv cbikyy ujgkzyf mpppdtqewv. Bi bau zvd bvtlfaono utchy rtjpvpz ommn cdirkcf pehfbd kfhthtoj yydygawb zgmof hya gbkibf coysjb rjfvhttl kt yczjnflb lkm rqfd rbjlxqd jwxizcu.\n","id":"rs_931576","summary":[{"text":"Okay, the user is asking why retry policies usually cap the delay between attempts. Let me think. So, retry policies are there to avoid infinite loops when an error occurs. If they didn't cap the delay, the next attempt could be much later, leading to a delay that grows exponentially. That could overwhelm the system. Capping the delay prevents that exponential growth, ensuring the system remains responsive. So the two sentences would explain that capting delays prevents infinite loops and avoids system overload by limiting the time between retries.\n","type":"summary_text"}],"type":"reasoning"},{"content":[{"annotations":[],"logprobs":[],"text":"Retry policies cap delays to prevent exponential backoff, which avoids system overload and ensures consistent performance by limiting the time between retries. This prevents prolonged delays and reduces the risk of overwhelming the infrastructure with consecutive failed attempts.","type":"output_text"}],"id":"msg_992951","role":"assistant","status":"completed","type":"message"}],"parallel_tool_calls":true,"presence_penalty":0,"previous_response_id":null,"prompt_cache_key":null,"reasoning":null,"safety_identifier":null,"service_tier":"default","status":"completed","store":false,"temperature":1,"text":{"format":{"type":"text"}},"tool_choice":"auto","tools":[],"top_logprobs":0,"top_p":1,"truncation":"disabled","usage":{"input_tokens":62,"input_tokens_details":{"cached_tokens":0},"output_tokens":151,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":213}},"sequence_number":156,"type":"response.completed"}
+

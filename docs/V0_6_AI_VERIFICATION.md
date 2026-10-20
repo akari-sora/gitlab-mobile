@@ -201,6 +201,10 @@ reuse an earlier MR's pipeline as proof for later source (plan §8.7).
   rotation and frozen-prefix validation, budgets and lifecycle races.
   Expand the best-effort corpus for camelCase secret names, `PGPASSWORD`, Ruby
   hash assignments, SFTP userinfo and passwords with unencoded URL slashes.
+  Before enabling the relevant paths, detect OpenRouter binding failures inside
+  bounded `error.metadata.raw`, accumulate Anthropic `server_tool_use`
+  `input_json_delta`, and never freeze an empty Anthropic content array. Add a
+  formal decode-to-next-request replay-chain test using the sanitized recordings.
 - MR5: settings, versioned consent and model-sensitive data-use disclosure.
 - MR6: chat, context entry points, draft insertion, mention checks and reports.
 - MR7: gate enablement, native declarations, full device/accessibility evidence
@@ -219,3 +223,209 @@ reuse an earlier MR's pipeline as proof for later source (plan §8.7).
 A model or preset definition is configuration metadata, not verification. Native
 and proxy evidence remain separate. Secrets, private bodies and private traces
 must never be attached to this ledger.
+
+---
+
+The preceding tables retain MR1 historical status; MR2 packet and offline
+evidence are recorded below and do not upgrade MR1 to provider acceptance.
+
+## AI assistant verification: MR2
+
+MR2 implements the three wire adapters on top of MR1. Its review rounds
+(two by Codex, Opus and Argon, a third by Codex and Opus, then Opus) are
+folded into
+the single MR2 commit that contains this section, so no intermediate state with
+private launcher configuration reaches the remote. The assistant remains
+unreachable from the UI. This ledger distinguishes
+local offline adapter evidence from the supplied P0a provider evidence. No
+provider traffic, credential lookup, Android build, device check or CI pipeline
+was performed for MR2. P0b is **NOT_RUN**.
+
+## Offline implementation and evidence
+
+- Chat Completions: flatMap messages, parallel tool assembly, finish-reason
+  independent tool detection, EOF compatibility, usage, refusal, reasoning,
+  extension semantics, and a 1 MiB extension budget. Unknown fields replace
+  whole values; only documented text fragments concatenate. Reasoning details
+  merge only adjacent matching type/index entries, and encrypted details remain
+  separate. Gemini extra_content uses the last complete non-empty object.
+- Responses: store:false, optional encrypted-reasoning include, every terminal
+  output item preserved in order (including id, phase, unknown fields and
+  encrypted_content). output_item.done is not the replay source: P0a observed
+  different ciphertext in the terminal event. Partial or failed tool calls
+  cannot produce a completed turn.
+- Anthropic: lossless ordered content blocks, thinking signatures (including
+  omitted-display thinking), redacted/unknown/fallback blocks, latest non-null
+  usage merging, and complete tool input. Official fallback replay pruning also
+  removes discarded client calls from the executable call list. Tool results
+  precede follow-up text within a single user message; adjacent user messages
+  are rejected. No thinking parameter or binding beta header is sent.
+- Frozen entries cache flatMap JSON fragments at freeze time. Actual transport
+  requests splice those serialized fragments without re-encoding them. Segment
+  system/tools/encoding capabilities are bound on first encode. Tests compare
+  prefix bytes across requests, clipped new tool results and retries, plus
+  one checked-in parallel-tools/results/follow-up golden per format.
+- Models: shared bounded decoding, exact same-origin catalogue override,
+  checked pagination (including override preservation), maximum three pages,
+  and explicit truncation. Catalogue access proves only catalogue access.
+  OpenRouter key checks use the separately allowlisted GET /key path.
+- HTTP errors are parsed within MR1's 64 KiB bound and converted to safe typed
+  failures; provider bodies are not retained in exceptions. Redirect,
+  authorization, byte/time budget and rate-limit policies remain enforced.
+
+Review-round acceptance output was kept in the local fix-packet handoffs, not
+in the repository; there is no committed root `RESULT.md`. The submitted source is tested directly with pinned Flutter
+3.47.2 and --no-pub; no source rewriting or new dependencies are involved.
+
+## Fixture provenance and privacy
+
+`test/ai/fixtures/recorded/index.json` inventories **82 RECORDED calls** from
+2026-10-20: 70 SSE responses and 12 HTTP-error responses, plus their request
+JSONC files. Headers record path, model and direct/proxy/local route. The
+source is the supplied `p0a/fixtures` packet; no provider was contacted to
+produce these MR2 copies.
+
+Every opaque provider value was replaced with a synthetic value before writing:
+thinking signatures, encrypted reasoning (including Ollama plaintext in that
+field), message/response/item/tool/request IDs, obfuscation, fingerprints and
+non-null account identifiers. The 554 replacements are consistent across the
+entire request/response corpus, preserve lengths/character classes/ID prefixes,
+and cannot authenticate or replay against a real provider. Field order,
+whitespace and event order remain, apart from provenance comments and these
+replacements. See the recorded fixture README. Both source and output passed
+the forbidden-prefix scan before copying. No key was read for sanitization.
+
+All 70 recorded SSE files run through each adapter with byte-by-byte,
+deterministic random and UTF-8-crossing chunks. Interrupted captures must fail
+without a frozen output; complete captures must emit one start/finish. Responses
+are compared to their complete terminal output. Recorded errors exercise the
+real error-envelope shapes. Synthetic focused tests cover malformed streams,
+repeated starts, post-terminal data, refusal, truncation, extension semantics,
+fallback, binding rollover, header stability and safe catalogue handling.
+The three `fixtures/golden/*.json` files and inline focused streams are
+**synthetic**, not provider recordings.
+
+## Supplied P0a findings and addendum handling
+
+The P0a report/addendum describes authenticated checks against direct
+Anthropic Haiku, OpenCode Go Responses/Chat/Messages, and local Ollama
+Chat/Responses. Required A/R loop, follow-up and replay cells passed in those
+supplied recordings; Anthropic prefix mutation and Responses corrupted
+ciphertext controls returned 400. This is historical packet evidence, not a
+live MR2 adapter check or blanket verification of every preset.
+
+1. **OpenCode Go headers:** AiWireClient requires a caller-owned conversation
+   ID and sends it unchanged across segments as x-opencode-session, with
+   User-Agent Mergeline/<version>. New conversations supply new IDs. Transport
+   allows only these additional headers and rejects injected header lines.
+   Zen's session requirement remains NOT_VERIFIED; no unsupported policy or
+   provider claim is inferred. Go is intended for coding-agent traffic; its
+   settings disclosure belongs to the later settings/UI MR.
+2. **Unknown-model and envelope shapes:** nested OpenAI errors, Anthropic
+   type:error envelopes, and model-plus-error Responses envelopes are accepted.
+   Identifiable model-unavailable HTTP 400 errors map to notFound, never to a
+   retryable 5xx failure. MissingSessionID remains a safe invalidResponse.
+3. **Any binding 400:** a bound-to-different-conversation error sets
+   requiresNewSegment and permanently invalidates that segment for replay,
+   regardless of the server's path. MR4 must make a fresh re-redacted projection
+   (§4.4 plus addendum); the adapter never repairs a frozen prefix by index.
+4. **Empty final answers:** complete reasoning-only or empty responses remain
+   valid completed turns with zero text; no answer is fabricated. MR4's
+   tool-budget/no-answer terminal state and MR6's localized UI remain deferred
+   to those MRs, as required by the addendum.
+5. **Output budgets:** requests default to 4096 and reject limits below 2048.
+   The MR5 settings limit/minimum and MR6 truncation guidance remain later work.
+
+The source report also confirms proxy/header differences, both Anthropic auth
+styles, and Ollama ignoring tool_choice. FIX1 enables streaming usage only for
+the recorded OpenCode Go/Ollama Chat paths, and tool_choice only for the
+recorded OpenCode Go Messages/Responses paths. Zen and LM Studio retain their
+conservative caps.
+Raw IDs/ciphertext are replayed without provider-specific conversion. Reasoning
+content remains in memory only, including plaintext Ollama reasoning.
+
+## Opt-in P0b harness and remaining gates
+
+`tool/run_ai_live_smoke.py` directly connects approved 1Password subprocess
+stdout to pinned Dart stdin without Python reading credential bytes. Fixed
+Ollama targets run keyless without starting 1Password. The Dart tool accepts
+only reviewed target IDs, sends synthetic fixture content and writes only
+scanned metadata under ci-output/ai-live/. Credential text, provider bodies and
+opaque output are absent from reports. Tests mock subprocesses and exercise
+the pure output guard without running the live entrypoint.
+
+Credential references for keyed targets are local-only configuration in
+`~/.config/gitlab-mobile/ai-smoke.json`, represented as a JSON object that maps
+reviewed target IDs to `op://` references. Missing targets and invalid reference
+types fail before a subprocess starts. The repository contains no local vault or
+item identifiers, and launcher errors never print references or secret values.
+
+Implemented smoke scenarios cover text/usage, parallel tools, replay/follow-up,
+cancellation and unknown models. A second tool step is explicitly NOT_RUN if
+the model finishes after the first step. Runner-dependent projection, model
+switching and closing terminal-state checks remain marked NOT_RUN until MR4
+supplies the bounded runner (plan Appendix D.5). P0b has not been executed for
+any target in this task. MR4 consent/revision/secret reconciliation and MR6 UI
+are not implemented here. MR7 integration, device/store evidence and all G0
+acceptance remain unclaimed. Pipeline/job evidence is recorded with the MR2
+merge request.
+
+## MR2 FIX1 offline review fixes
+
+The patch buffers fragmented text/reasoning/tool arguments and counts Chat
+extension JSON incrementally, including keys, escaping and replaced values.
+Timed regressions bound hostile tiny-delta processing; they measure host
+decoders, not mobile frame pacing. Responses no longer accumulates unused
+intermediate output. Anthropic unknown blocks preserve their raw start JSON.
+Chat requires a started stream plus a finish reason before `[DONE]`; legacy
+function_call turns are consistently rejected because no legacy result shape
+is supported. Cached Chat prompt usage is split into uncached and cached
+counts so the usage total does not double-count cache hits.
+
+A validated terminal success cancels upstream immediately. Binding HTTP 400s
+include thinking-signature variants and invalid_encrypted_content; all six
+recorded binding fixtures now have explicit rollover assertions. Genuine
+server_error SSE events remain server failures. Proxy context-limit wording
+is recognized without reclassifying transport/server failures as binding 400s.
+
+Offline injected smoke tests reject unfinished text/tool follow-ups and require
+actual reasoning material when claiming reasoning replay. Ordered frozen
+prefixes are checked against the actual encoded transport request bytes.
+Missing required reasoning is NOT_RUN. Cancellation starts on reasoning as
+well as visible text. No provider calls, credentials, new dependencies, builds
+or device checks were used for FIX1. The external result records the fresh
+acceptance commands, tails, regression evidence and remaining minor gaps.
+
+## MR2 FIX2 offline review fixes
+
+The preceding FIX1 section records the first review round.
+Chat now validates previous and incoming reasoning-detail text/summary values
+and maps unexpected decoder errors to `invalidResponse`, poisoning the turn
+instead of leaking runtime exceptions or silently skipping malformed fragments.
+FIX2 keeps completed turns when optional usage details are malformed or
+inconsistent. Chat `prompt_tokens_details.cached_tokens` and Responses
+`input_tokens_details.cached_tokens` are ancillary: malformed values are
+ignored instead of invalidating an otherwise completed response. When a cached
+count exceeds the corresponding input count, or the input count is unknown,
+the cache split is dropped; a valid input count remains unsplit. For valid
+input 100, cached input 80 and output 5, both adapters report input 20, cached
+input 80, output 5 and total 105. The former rejection expectations were
+replaced by regressions for this completed-turn contract.
+
+Decoder timing regressions now take three interleaved samples at N and 2N,
+compare the fastest samples, require 2N to stay within 3x N plus 20 ms of
+jitter, and require every sample to finish within five seconds. Chat and
+Responses use 40,000/80,000 deltas; Anthropic signature accumulation uses
+512 KiB/1 MiB. A temporary quadratic concatenation control fails the ratio
+check, preserving the regression's ability to detect nonlinear growth while
+allowing loaded coverage runners more absolute headroom.
+
+The P0b launcher now obtains keyed-target references only from the local
+`~/.config/gitlab-mobile/ai-smoke.json`. Tests cover missing, malformed,
+non-object and invalid-UTF-8 configuration, missing targets, non-string and
+non-`op://` references, keyless Ollama operation without the file, direct
+credential piping, and cleanup when Dart cannot start. Error paths expose
+neither a credential reference nor secret bytes. Fresh FIX2 acceptance commands,
+output tails and mutation evidence stayed in the local round handoff. A later
+round made Chat and Responses ignore a usage object with no usable count, so a
+malformed later chunk cannot erase earlier usage.

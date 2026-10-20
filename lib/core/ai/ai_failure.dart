@@ -27,11 +27,17 @@ enum AiFailureKind {
 }
 
 final class AiFailure implements Exception, UserFacingFailure {
-  const AiFailure(this.kind, {this.status, this.retryAt});
+  const AiFailure(
+    this.kind, {
+    this.status,
+    this.retryAt,
+    this.requiresNewSegment = false,
+  });
 
   final AiFailureKind kind;
   final int? status;
   final DateTime? retryAt;
+  final bool requiresNewSegment;
 
   static AiFailure fromStatus(int status, {String? retryAfter, DateTime? now}) {
     final retryAt = parseRetryAfter(retryAfter, now: now);

@@ -1,0 +1,10 @@
+// RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+// P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+// date: 2026-10-20 (UTC); column: OR; case: loop; call: 01-loop1; D.4 items: 2, 8
+// path: POST http://127.0.0.1:11434/v1/responses (local Ollama 0.21.0)
+// model: qwen3:1.7b; HTTP status: 200; cancelled by client: false
+// content: synthetic fake repository only; header values are not recorded
+// request headers sent: none (local Ollama, no auth); user-agent: mergeline-p0a-spike/0.1
+// Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+// body follows byte-for-byte as sent (strip the leading // lines before decoding)
+{"model":"qwen3:1.7b","stream":true,"store":false,"include":["reasoning.encrypted_content"],"instructions":"You are a code assistant for a small Dart repository. Use the tools to read files; never guess file contents. Paths are relative to the repository root.","tools":[{"type":"function","name":"read_file","description":"Read one text file of the repository at the pinned commit.","parameters":{"type":"object","properties":{"path":{"type":"string","description":"Repository-relative path, e.g. lib/a.dart"}},"required":["path"],"additionalProperties":false}},{"type":"function","name":"list_directory","description":"List the files under one directory of the repository.","parameters":{"type":"object","properties":{"path":{"type":"string","description":"Repository-relative directory, e.g. lib"}},"required":["path"],"additionalProperties":false}}],"tool_choice":"auto","max_output_tokens":2048,"input":[{"role":"user","content":[{"type":"input_text","text":"How many seconds in total does the sync client wait across all of its retries? The policy is split across lib/a.dart, lib/b.dart and the file that lib/a.dart imports. First read lib/a.dart and lib/b.dart together (call read_file for both in the same step), then read the imported file, then work out the per-attempt delays carefully and give the total."}]}]}

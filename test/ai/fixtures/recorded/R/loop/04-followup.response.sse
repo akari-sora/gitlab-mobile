@@ -1,0 +1,169 @@
+: RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+: P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+: date: 2026-10-20 (UTC); column: R; case: loop; call: 04-followup; D.4 items: 3, 8
+: path: POST https://opencode.ai/inference/go/openai/v1/responses (via OpenCode Go)
+: model: gpt-6-luna; HTTP status: 200; cancelled by client: false
+: content: synthetic fake repository only; header values are not recorded
+: request headers sent: authorization: Bearer <key>; x-opencode-session: <random per conversation>; user-agent: mergeline-p0a-spike/0.1
+: Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+: (lines starting with ":" are SSE comments and are ignored by a conforming decoder)
+
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_8i5193364450f7i0508cq78635896288k53121r9lb87810377","object":"response","created_at":1792496757,"completed_at":null,"status":"in_progress","parallel_tool_calls":true,"temperature":1,"top_p":0.98,"max_output_tokens":512,"previous_response_id":null,"background":false,"truncation":"disabled","top_logprobs":0,"max_tool_calls":null,"prompt_cache_retention":"24h","model":"gpt-6-luna","error":null,"incomplete_details":null,"output":[],"usage":null,"instructions":"You are a code assistant for a small Dart repository. Use the tools to read files; never guess file contents. Paths are relative to the repository root.","tool_choice":"auto","tools":[{"type":"function","name":"read_file","description":"Read one text file of the repository at the pinned commit.","strict":true,"parameters":{"type":"object","properties":{"path":{"type":"string","description":"Repository-relative path, e.g. lib/a.dart"}},"required":["path"],"additionalProperties":false},"output_schema":null},{"type":"function","name":"list_directory","description":"List the files under one directory of the repository.","strict":true,"parameters":{"type":"object","properties":{"path":{"type":"string","description":"Repository-relative directory, e.g. lib"}},"required":["path"],"additionalProperties":false},"output_schema":null}],"reasoning":{"context":"all_turns","effort":"medium","mode":"standard","summary":null},"text":{"verbosity":"medium","format":{"type":"text"}},"moderation":null}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_8i5193364450f7i0508cq78635896288k53121r9lb87810377","object":"response","created_at":1792496757,"completed_at":null,"status":"in_progress","parallel_tool_calls":true,"temperature":1,"top_p":0.98,"max_output_tokens":512,"previous_response_id":null,"background":false,"truncation":"disabled","top_logprobs":0,"max_tool_calls":null,"prompt_cache_retention":"24h","model":"gpt-6-luna","error":null,"incomplete_details":null,"output":[],"usage":null,"instructions":"You are a code assistant for a small Dart repository. Use the tools to read files; never guess file contents. Paths are relative to the repository root.","tool_choice":"auto","tools":[{"type":"function","name":"read_file","description":"Read one text file of the repository at the pinned commit.","strict":true,"parameters":{"type":"object","properties":{"path":{"type":"string","description":"Repository-relative path, e.g. lib/a.dart"}},"required":["path"],"additionalProperties":false},"output_schema":null},{"type":"function","name":"list_directory","description":"List the files under one directory of the repository.","strict":true,"parameters":{"type":"object","properties":{"path":{"type":"string","description":"Repository-relative directory, e.g. lib"}},"required":["path"],"additionalProperties":false},"output_schema":null}],"reasoning":{"context":"all_turns","effort":"medium","mode":"standard","summary":null},"text":{"verbosity":"medium","format":{"type":"text"}},"moderation":null}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":2,"output_index":0,"item":{"id":"rs_0y1243720683z2x7412lw35360hha221l2bamz91t61p1a05fq","type":"reasoning","encrypted_content":"hFSLWKDb67F0JueO81tPlWFdASejDmBn-XtFXjCgEsW8B2dNuEdPvljexQM6p6FImnlmVFi-VlwczcrW2vhc7qp7Kt2PcocKOBW0gzFG2w_mZCVkNaHtQX19NTbR5Bi5r_RIbszMlQfi3x9jaEtx5rA0rjb3ppKOr5Tktkq2AjeIqnIRuYv9tcbY2DdJZCUDC19J0661VU4mU1QPZONIjiKl02WvFjf7YyBi2RQt9IU_7Z4Oql2e9H76IFEr_US25CBwshk76IBcOrjTe0TYCJm2ZQhkhaIdAZFA8nN3U5bTtfwtv_GjQRdaNL7GpXzYbxIrZHMMD7wbEVsBk8voJnoITKO_29RMkX62QhCQBlrUEFL6BlttSp2JreA6-Xo4ns3efCdg5qUou4QbOnEZSUK7chDQtJY_IeEN1h67sRAOyIskeVF7mlaSZfTh73DvubGuRxAgh8oj7eOPlV1-F_1bsE95XwdfuPHujo3GSTGM5KLtqtuQR7AmtU5qCwjVRLg8-00EYKOgP19gDj6RjKomJEqIBIimmWvj9AO1RE6zkVoXFtYV7s_d1ft7KwB7mUn3Av_rH_g0DsuPnalTWZFfd_mBktmuSOTJ0BvjHQjKIjE_P6lfm_S3BbeNMVuwH_0AMJg4Z2cusCwvvuuwoqALveMeSFTTHyyi_Rw7GU3PrfQVGYCSqxvINCj7wJjo3dEKEjBPSPobyI3B-cnl59Oeg8QjrGHmoCj7h_8DW1gW6uNzQPtq4gmFutsT8_T2TubWiNRw1MKutaGUtp7WBJoeXw5389XhvGnvb9qtSiXYbVKz2LJJmmSiRpI34wO47MExAhjueNBWjE5maG5w5vXpjWmoWj-Sve-AqkL2WmOdwAixgp8yqvzi9529c3l2inuowOnwrz4jDx9VG8U2po-j_1EUinWak2hzjRbYCgY3V7J5L3RRQkEsd-kclwazt4rJFFYVXTV1SrSnrnt1VHx3jq7ooNcWn-8N1RcGNS-FS-FjYfFwZAulNNdfYvHzaxvuoIxjCcPJwj22uzMl3DWEzi6-Je_wbfYyD2X1qg0wAvVhWKBnTBBRQXH1pavT15keH_DJEGydCK0_u6iFZYZbkBTKOje6vUWPVaXeuMVkEse8AbbQan0Wyb8BbKiXlhyc-mzB3dkQ3mG_Q2hTO1F7DXhzfuft_9JeVlNcDIx471arTGbfkg1pi47Irix1mia-Pb9XEqRUIDrc9k2gS-W-z_bz8ERWZ3G3MgMvxdfDliHeS377HZc=","content":[],"summary":[]}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":3,"output_index":0,"item":{"id":"rs_0y1243720683z2x7412lw35360hha221l2bamz91t61p1a05fq","type":"reasoning","encrypted_content":"fKATLSZx85K90_MHUTNW3O9ZdW-HgI1bIlnTvy2X0hPHauZNX7RmEmxg49ELpnUDVsoOsvhNiJa37B2yjZBPmRSawSj2q0eJSoVLLRm63E7MGmqvL0c1Tda4eN6NgxW7K6jwYHXLHxqreoRErhKm5c-mJAHwnKlZsBUN6NLaSBXYQLknEHdv8m8KnSsYLtAWa019DPh_v2ouYdMYvIpJeHP2tUkBrbigCi0IsvwejVzJXjGhOC3vN28INyMOa-NrU0FQ87WIZdoNQejlhAdTpbmGXvShC9kfFRRAOhV-h4dyG_8eg9U2eDUjT9_KTaLHpcCPwi8FD0xgHWS6Z3RBDxDBUXRI629uX3NRghI1NJeL4ocQCJEO0JYH-LibgJ2y3rjA46zoc-LMN1QTuZ1bKVUa1hYwfghWatfjNr7J4g2QixPmL_viiGXo8ZPfDVVmjP9_cm9-El13kTsiTuBDXWF4l6OMkiygrUCG78KKji-D_YO-ftfDcXSkSwYnep5UfSiUYn_moq18lX-mkiJ7c4KNEfeaV1r3eoj8mrrp85W4YBRsywq0jXsShZibyRGvBBg0qCXZQZqiXKtI1V2eyBS3jcjr30Jfc-rcaXJ7XOE1o9_gi-IHJgoq7Lq72dOKEDFP47g6oSD1BydD8Irllnn1NiSmyRpBzaK8ZwxIX48JnY5di_TSrZ3lxJOIgSYBoKvZurPVZEnEhgXyk8z3bSpiYi8xRT8RZ08lcxzoMaRl0ysYY23K5myQwIfNgzd-_9qd3b02MWkAmqORqVLMcXoptf2rqi2W8R8425EZvj46680QatLbl-Ww8MDJKfEM_xMgBl18_9yTyK0_mPz8MK-txXwoexIfKGkftY8qzTl1Q3oZvRLHxoagGibsPtg2rwNISiZtusnfHRZZRaeY22iMazK4_hD8QIKWG7nvgy1Z9hOY5KtzIgt8NU0K-OoxJ2urYQAJssgfT_gNcN-0Lb5UqC3s_FXOhREc9-GbPsOSJzB1uaNbUe7avHMjJrOCpYVBToi30q_NYc-ejIAPHevv9-hFO6T4jtqWw5tV5pyILQo3dEG2pNh1A_dMFWrg1StHi_Lh14o3JbkjIwB_DwUPNS04HHOHcJl7r5boCU3tGQSxhJ9IR7oBCbtJm_jiFbRPPc2lm9HKcZxYbxYL91kaUcMuaPUhSqNwnPKEPvDUbNtOQ9hkYvRjLUcb7Qj8bgBQKpFVwmyzFhXrcYzjOISNkPmR27rO1vh83W6Jx7LyiE422ISkV55OpVEWe_F7kj6kRab0IrxFIFnvEOzq1xnrFm8lcI3Fv3ePbqMs4EAHwRyKHC_AUNMV8Uca4mksFizF3rzpyHt1GxYBXdUouzf5CtJ0Ei95RSwCW18CxShdxF8c4zC2fl0xVw0-MymKyry9iKZ_QdhFSBwzKR8QdOLbWiowHfMFr-D4PurPeECs1rC3hiEGYICxuFC_HH45mQ-v0h9Nd6G0g9IHdc7ABTXLBDW3keUhB2CNwgiSBDB95FC_JJoW1GYIfum_l3WJvow00Yg0ila0UDcUtNB1ty9rftTsrSn9rh7lphmz-ZatGCXVbz1bYs5lDXeE4PCk-kkIM8GUYad9sOT8hoR8vsFF18sa_FpbxPMWWugcWmv3sJsgWfJnLTC9HF0iNJu9DRCFojiCZ9vs753mZ-oYPh9jbG8auzCMGZ6n598vNrvL_h8qLrCdDZ9ObBKD_gVPn0rSk4ewWJ_BFxeXwZa_tICPtxJvA3MqD1oY2gd9EUPZAutdfYp4Usv4ekg0NPq4CDJ4nn5UnXz-JN51DmkXfx8G9cxYUPOMFR3IElE2HQIlmvgnj9MUcea_e3RQtmf3v3Az5__KZbHuOXENiuEY2_xZQvYovLuQA8NSFwb4foCyvja_DnlDCFCmBiQq8lxZ90zYhj8gIk-M-JujvOLk7xcUonMDhHmqbePPpsfSVYTA3dkmAmsRH34XqvkdObscWoXf7Jj9zSA-KHuxtagfeau2N0FzwlU6EkVvGLFc6wEsthEzSc2MsnjYfXkxzccqiU9-matEr6Ee2ecQ9MECeovStYs2NE9VeuPsElWREsLpd2O2kU_hkNLisCtfaz2ny5HMpfJhEKYQlo82wsALAeP0_0vmT1pYWr==","content":[],"summary":[]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":4,"output_index":1,"item":{"id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","type":"message","status":"in_progress","role":"assistant","phase":"final_answer","content":[]}}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","sequence_number":5,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","part":{"type":"output_text","text":"","annotations":[],"logprobs":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":6,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":"With","obfuscation":"JRWSO1Sjx0vf","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":7,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" ","obfuscation":"UCqV9vwN29l3nb6","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":8,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":"8","obfuscation":"NtQbENvXz1PZgrb","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":9,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" retries","obfuscation":"G7iasvs8","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":10,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":",","obfuscation":"Tsk8JATBFHf6hiG","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":11,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" the","obfuscation":"55wdDsq8sq7C","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":12,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" delays","obfuscation":"9olADC42P","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":13,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" are","obfuscation":"G0q2LHIHFUyb","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":14,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" ","obfuscation":"fPAdnxEZBsYDrgN","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":15,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":"3","obfuscation":"Oi9uQ364J6nrzaz","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":16,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":",","obfuscation":"eeHyazjujhnNS1M","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":17,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" ","obfuscation":"AH1WqEBA5VvDeLu","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":18,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":"6","obfuscation":"534eWduqHuAdHoc","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":19,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":",","obfuscation":"5IFWwKAYQqEb6q6","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":20,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" ","obfuscation":"UnibjlhjTK890Uq","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":21,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":"12","obfuscation":"vyvJaRFuuanPMW","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":22,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":",","obfuscation":"hNaYFQc0yvWD3SQ","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":23,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" ","obfuscation":"bIhmdR27jW1i4eF","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":24,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":"24","obfuscation":"96Mu3j0entme76","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":25,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":",","obfuscation":"OTYUNKPDax0KBF8","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":26,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" ","obfuscation":"6RfYx4nIXVah9MI","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":27,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":"30","obfuscation":"4WlGKL406KixM9","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":28,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":",","obfuscation":"ktgx6yBbNIIPGBf","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":29,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" ","obfuscation":"XXBriIGtADTpWrK","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":30,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":"30","obfuscation":"zvZYcYNZHYP7hf","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":31,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":",","obfuscation":"fO9gUn4K2WmcEY6","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":32,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" ","obfuscation":"UrSNGew4BJ7IbXs","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":33,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":"30","obfuscation":"1woIMr5a8Qutbj","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":34,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":",","obfuscation":"2lu6BiCoC4tBH8m","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":35,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" and","obfuscation":"atqiDjO2FXEM","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":36,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" ","obfuscation":"CyTSAAjOQPwAnF0","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":37,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":"30","obfuscation":"Zb2pJalLDNBIfl","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":38,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" seconds","obfuscation":"JamPTS0L","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":39,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":".","obfuscation":"uu1EDXpf7LcslTN","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":40,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" The","obfuscation":"IAIOvcNettxs","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":41,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" total","obfuscation":"pcmnfSnYGn","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":42,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" wait","obfuscation":"f69nHAj5TkO","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":43,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" is","obfuscation":"RJpjUiQgEtJJ3","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":44,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" **","obfuscation":"E3ZBmL5BkQWJr","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":45,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":"165","obfuscation":"o9abCVRhr6sSV","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":46,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":" seconds","obfuscation":"PKd0Dfgr","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":47,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":"**","obfuscation":"3OW79hfPEJgUdm","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":48,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","delta":".","obfuscation":"b8MZAsdBXDZk2vf","logprobs":[]}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","sequence_number":49,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","text":"With 8 retries, the delays are 3, 6, 12, 24, 30, 30, 30, and 30 seconds. The total wait is **165 seconds**.","logprobs":[]}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","sequence_number":50,"output_index":1,"content_index":0,"item_id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","part":{"type":"output_text","text":"With 8 retries, the delays are 3, 6, 12, 24, 30, 30, 30, and 30 seconds. The total wait is **165 seconds**.","annotations":[],"logprobs":[]}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":51,"output_index":1,"item":{"id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","type":"message","status":"completed","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"With 8 retries, the delays are 3, 6, 12, 24, 30, 30, 30, and 30 seconds. The total wait is **165 seconds**.","annotations":[],"logprobs":[]}]}}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":52,"response":{"id":"resp_8i5193364450f7i0508cq78635896288k53121r9lb87810377","object":"response","created_at":1792496757,"completed_at":1792496758,"status":"completed","parallel_tool_calls":true,"temperature":1,"top_p":0.98,"max_output_tokens":512,"previous_response_id":null,"background":false,"truncation":"disabled","top_logprobs":0,"max_tool_calls":null,"prompt_cache_retention":"24h","model":"gpt-6-luna","error":null,"incomplete_details":null,"output":[{"id":"rs_0y1243720683z2x7412lw35360hha221l2bamz91t61p1a05fq","type":"reasoning","encrypted_content":"zPCCNBKm98F2X4wK3xV9pzkJq-lcZe1pcgrdBO_Z7JFAtHv3uK2T0GxzoTwE9zspbjsb8FW7mqVu9fJfX93BDsQkv_om8HyZ4eTrpizCF0NiazqsGH3Q7l1m_Dnwoc99SJzPa6Ukc6n3qfv_YelXV5bo9Is-uh7471wSC3GiLxrpsshYZCJjbwjGcEM6_qzjnohqPPjv5pSUNFmBJCtshwIFReHN143j2gSardAjgP72zfrfr3TDmAPW3eOBOJBR7DjOgumkFucfMsiDi8H7KlzSBC1P--gCUsKSeZk6px80TLp5yfeYDX-NJ_nuDR2VndOhtlAMN8EQ2FpK0nPTW--5zqSSOBLNVkS3uI69Gy2wC8NFCKE45gWlhW7ljldEJjlCQh4Jr0BYdQc5AxteiS1NQneph43HNWSqAOou2sRnRqyF8BEcOr4Uy--Q45E3gFJpRDu94CejT3xv-40OQ_g29wLSWNEXi4s7RfCM1PvFmXG9oNRJ3g_zb9w555awFysD5HRNpcb9uWYG-ly-5SwkmyWsKv-B9qrp5aFAX5L4GyqoipJ9q363X0IkSQVrfSprcWOFQj2vVo-haTOtIS2BcvwkvIatSms1ZO6NZcNCzKeJN7k77h53NHKQCuOIECiZLTz4gzPF8kvubkn96Y9StUGB24wCY8CBi4CTYlUCl8AUuZejGzpJC2N5Rv-7rcWywzSlRYRgxNkUIpvcDTCCynyYZVnEy5LiUG5GA4WD4XmVjf5d8_bZwJhPTMzv_rnLOpFi2cro5lOf9c5KVNx79MBGKYK_M_nZe65wE6swwp9Q0TmQsGFBLi2zhcfPNF7TJ8I27vS6kVnsXL68KEhEKXIwDfFrguUMV35RfHRxB_FN2Bl6WV4z-ZUuPa2Qf80qQZybOa8rHcjs-4Rcw7jrx5j1ti_5cZbRDERJOEPkDNgupFuXC0v1onC_QMrvqsIjl25XhLWOSPQwuGwfBmudV6nZhvUW_NnG25Qw7c6O8RwOvmmGZP_luyRR8iYOSHsQ5NurrnvIGanqwqCcyroTd6GBHYpE78plSYPvTkgL7TK77paz7eQN2ayeG2p_6TxUUEggqyR4zqt3dNIpRnZLkg_zIlypmA6am9aH8gKK83f4NgIEVtsdjNBF2McMD5LA8d7Arkm1zf-1XnIMuIpcyZ2PzhqqXBOQOtbRQ6o3hlO9jcRzVUlyvked4lSbebt9gf-jPkFoSpv5bMPbeQ6yeO5KgFrynjKDDtYtto64so35UbxZjorSjJsVS1YrVee4o8xaQa7OqUDPJkubuX7VTEZipN3po4MEU4Tn0ICpAPaXDG5muzfhB370otWxPT-SU6Tbu6662bHmgbEdN3h8dXcePG39dLEfs9UW4Lrbs_mYN_2H2hbf-MNJ7A7zRXTfow5mO1SUemh4jEwTEFGRkWDs0_NOxGMf5_ClPLccsRgBLhOPrsbfzVs9RLAmsJc0tXh0LyBmjHmY3ZIVmmJM98vfVL2cB5ncxg6c3Pb7pAKOgu3ygRYNjzNAFEg8ImObCg86qx8SAEaHDaZBGpD7R8K8IPd32KHgmDP0syAa_TP6wYHQnPJezfJiXcvbJydYXgFdXz5-UO4rQTRt546SL2wtAcuuJdDRzCC_O3Go_Wt8fV-rn_ucsFf6ZZ1sUyyA-0A3x8TN7-_jujQvOyfRpZU6h5d5jRT6Ft1jhe_WqG_SP_flO90ae3iVyZ3cWPESqwPcwKE6PhoRcLUK2g1I30n-RloATMEPnj8GvEC-sqYC5urDxOipQfaamZGWMJ4C8ngLEtNm53tGNVO6yXRM4VZ0io8SJQ6FxIKUYCOda-xo_28y6GIiKQJ5wDV6Z9ATdR1D0xGAGoRcHPB_Vwn-4N8NtwJX1ljU30FFScBmkl1_dTrrhsD7Q9kZxJYSByFPeiCLvfULte5-j9AdHOiauiDI8U1c1cnH_mzgMUEHw5lbuRdat91xBR2SVh_MlqgUdQTIhJDNUL2WsrxH4EOZGOn1EsKBZBHpEuHzXx_qnN9CEFFuCJi3N4dk52ocgC1t61M8yzpphwC2UVvFbfKT3wxHQAVyHhp7TvPDTiJZ_khX7u4EV80v3xMTgx2bH0_TZFNOuvNjPRFlx-xtQbieVYbFCzfNml==","content":[],"summary":[]},{"id":"msg_8h4350234422y4y0566ci578193h9a86j231zb8948k4i46t1f","type":"message","status":"completed","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"With 8 retries, the delays are 3, 6, 12, 24, 30, 30, 30, and 30 seconds. The total wait is **165 seconds**.","annotations":[],"logprobs":[]}]}],"usage":{"input_tokens":614,"output_tokens":126,"total_tokens":740,"input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0},"output_tokens_details":{"reasoning_tokens":77}},"instructions":"You are a code assistant for a small Dart repository. Use the tools to read files; never guess file contents. Paths are relative to the repository root.","tool_choice":"auto","tools":[{"type":"function","name":"read_file","description":"Read one text file of the repository at the pinned commit.","strict":true,"parameters":{"type":"object","properties":{"path":{"type":"string","description":"Repository-relative path, e.g. lib/a.dart"}},"required":["path"],"additionalProperties":false},"output_schema":null},{"type":"function","name":"list_directory","description":"List the files under one directory of the repository.","strict":true,"parameters":{"type":"object","properties":{"path":{"type":"string","description":"Repository-relative directory, e.g. lib"}},"required":["path"],"additionalProperties":false},"output_schema":null}],"reasoning":{"context":"all_turns","effort":"medium","mode":"standard","summary":null},"text":{"verbosity":"medium","format":{"type":"text"}},"moderation":null}}
+

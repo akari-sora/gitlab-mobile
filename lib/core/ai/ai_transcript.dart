@@ -175,10 +175,25 @@ final class AiSegment {
   final SecretSetId secretSetAtStart;
   final List<AiEntry> _frozen = [];
   final List<Object?> _frozenWire = [];
+  final List<String> _frozenWireJson = [];
+  String? _wireConfiguration;
+  bool _replayable = true;
   AiEntry? _tail;
 
   List<AiEntry> get frozen => List.unmodifiable(_frozen);
   List<Object?> get frozenWire => UnmodifiableListView(_frozenWire);
+  List<String> get frozenWireJson => UnmodifiableListView(_frozenWireJson);
+  bool get replayable => _replayable;
+
+  void invalidateReplay() => _replayable = false;
+
+  void bindWireConfiguration(String configuration) {
+    if (!_replayable ||
+        (_wireConfiguration != null && _wireConfiguration != configuration)) {
+      throw StateError('A new segment is required.');
+    }
+    _wireConfiguration = configuration;
+  }
   AiEntry? get tail => _tail;
   List<AiEntry> get entries => List.unmodifiable(<AiEntry>[..._frozen, ?_tail]);
 
@@ -290,8 +305,12 @@ final class AiSegment {
     final encoded = entries
         .map<Object?>((entry) => deepFreezeJson(encode(entry)))
         .toList(growable: false);
+    // Serialize atomically before advancing the watermark. Adapters cache one
+    // flatMap list per entry; future requests splice these bytes unchanged.
+    final serialized = encoded.map(jsonEncode).toList(growable: false);
     _frozen.addAll(entries);
     _frozenWire.addAll(encoded);
+    _frozenWireJson.addAll(serialized);
     _tail = null;
   }
 }

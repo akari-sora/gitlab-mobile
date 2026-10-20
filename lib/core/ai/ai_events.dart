@@ -1,5 +1,14 @@
 enum AiStopReason { endTurn, maxTokens, contentFilter, refusal, other }
 
+/// Provider token counts normalized to disjoint, nonnegative categories.
+///
+/// [inputTokens] excludes cache reads, and for Anthropic also cache creation,
+/// which Anthropic reports separately; [totalTokens] sums each known category
+/// once. Null means unknown, not a reported zero. Chat and Responses subtract
+/// only cache reads from their inclusive input counts (cache-write counts are
+/// not parsed). Inconsistent cache splits are dropped, and malformed counts
+/// stay unknown in Chat and Responses, preserving their otherwise completed
+/// provider turns; a usage object with no usable count is ignored.
 final class AiUsage {
   const AiUsage({
     this.inputTokens,

@@ -208,6 +208,11 @@ const _lanCaps = AiCaps(
   tokenLimitField: AiTokenLimitField.maxTokens,
   requiresKey: false,
 );
+const _ollamaChatCaps = AiCaps(
+  tokenLimitField: AiTokenLimitField.maxTokens,
+  streamUsage: true,
+  requiresKey: false,
+);
 const _anthropicCaps = AiCaps(
   tokenLimitField: AiTokenLimitField.maxTokens,
   toolChoice: true,
@@ -219,6 +224,15 @@ const _proxyResponsesCaps = AiCaps(
 );
 const _proxyAnthropicCaps = AiCaps(
   tokenLimitField: AiTokenLimitField.maxTokens,
+);
+const _goResponsesCaps = AiCaps(
+  tokenLimitField: AiTokenLimitField.maxOutputTokens,
+  toolChoice: true,
+  includeEncryptedReasoning: true,
+);
+const _goAnthropicCaps = AiCaps(
+  tokenLimitField: AiTokenLimitField.maxTokens,
+  toolChoice: true,
 );
 
 final class AiPresets {
@@ -413,7 +427,7 @@ final class AiPresets {
     },
     authStyle: AiAuthStyle.none,
     caps: const {
-      AiFormat.chatCompletions: _lanCaps,
+      AiFormat.chatCompletions: _ollamaChatCaps,
       AiFormat.responses: AiCaps(
         tokenLimitField: AiTokenLimitField.maxOutputTokens,
         requiresKey: false,
@@ -449,6 +463,13 @@ final class AiPresets {
     route: 'go/',
     modelsUrl: 'https://opencode.ai/inference/go/v1/models',
     modelPolicies: _openCodePolicies,
+    chatCaps: const AiCaps(
+      tokenLimitField: AiTokenLimitField.maxTokens,
+      streamUsage: true,
+      replayChatExtras: true,
+    ),
+    responsesCaps: _goResponsesCaps,
+    anthropicCaps: _goAnthropicCaps,
   );
 
   static final openCodeZen = _openCode(
@@ -465,6 +486,9 @@ final class AiPresets {
     required String route,
     required String modelsUrl,
     required Map<String, AiModelPolicy> modelPolicies,
+    AiCaps chatCaps = _maxTokensCaps,
+    AiCaps responsesCaps = _proxyResponsesCaps,
+    AiCaps anthropicCaps = _proxyAnthropicCaps,
   }) => AiPreset(
     id: id,
     name: name,
@@ -482,10 +506,10 @@ final class AiPresets {
           'https://opencode.ai/inference/${route}anthropic/v1',
     },
     authStyle: AiAuthStyle.bearer,
-    caps: const {
-      AiFormat.chatCompletions: _maxTokensCaps,
-      AiFormat.responses: _proxyResponsesCaps,
-      AiFormat.anthropicMessages: _proxyAnthropicCaps,
+    caps: {
+      AiFormat.chatCompletions: chatCaps,
+      AiFormat.responses: responsesCaps,
+      AiFormat.anthropicMessages: anthropicCaps,
     },
     modelsUrl: modelsUrl,
     modelSensitive: true,

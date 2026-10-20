@@ -1,0 +1,69 @@
+{
+  "model": "synthetic-model",
+  "instructions": "Synthetic system",
+  "input": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Read both"
+        }
+      ]
+    },
+    {
+      "type": "function_call",
+      "id": "fc_a",
+      "call_id": "call_a",
+      "name": "read_file",
+      "arguments": "{\"path\":\"a.dart\"}",
+      "status": "completed"
+    },
+    {
+      "type": "function_call",
+      "id": "fc_b",
+      "call_id": "call_b",
+      "name": "read_file",
+      "arguments": "{\"path\":\"b.dart\"}",
+      "status": "completed"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_a",
+      "output": "A"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_b",
+      "output": "B"
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Explain more"
+        }
+      ]
+    }
+  ],
+  "stream": true,
+  "store": false,
+  "max_output_tokens": 4096,
+  "tools": [
+    {
+      "type": "function",
+      "name": "read_file",
+      "description": "Read synthetic file",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  ],
+  "tool_choice": "auto"
+}

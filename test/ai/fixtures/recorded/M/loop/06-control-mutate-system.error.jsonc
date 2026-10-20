@@ -1,0 +1,9 @@
+// RECORDED 2026-10-20; opaque values replaced with synthetic same-shape values
+// P0a RECORDED fixture (Mergeline AI assistant plan v5, appendix D)
+// date: 2026-10-20 (UTC); column: M; case: loop; call: 06-control-mutate-system; D.4 items: 10
+// path: POST https://opencode.ai/inference/go/anthropic/v1/messages (via OpenCode Go)
+// model: claude-haiku-5-5; HTTP status: 400; cancelled by client: false
+// content: synthetic fake repository only; header values are not recorded
+// request headers sent: authorization: Bearer <key>; anthropic-version: 2023-06-01; anthropic-beta: thinking-binding-controls-2026-08-01; x-opencode-session: <random per conversation>; user-agent: mergeline-p0a-spike/0.1
+// Opaque IDs, signatures and encrypted reasoning are synthetic same-shape values; never usable for provider replay.
+{"type":"error","error":{"type":"invalid_request_error","message":"Upstream request failed: [invalid_request_error] messages.1.content.4: Invalid `signature` in `thinking` block. The block is bound to a different conversation. Remove the block, or set `thinking.block_binding.prefix_mismatch_behavior` to \"drop_block\". The `system` prompt differs from the one this block was created with."}}
