@@ -149,9 +149,15 @@ void main() {
     const begin = '-----BEGIN PRIVATE KEY-----';
     const end = '-----END PRIVATE KEY-----';
     const unterminated = '[REDACTED:private_key_unterminated]';
+    // An END before any BEGIN may close a key whose start is not in the text
+    // (a log read from an offset), so everything up to it is withheld.
     expect(
       redactor.redact('doc $end\nbefore $begin body $end\nafter').text,
-      'doc $end\nbefore [REDACTED]after',
+      '[REDACTED]before [REDACTED]after',
+    );
+    expect(
+      redactor.redact('KEYTAIL1\nKEYTAIL2\n$end\nlog continues').text,
+      '[REDACTED]log continues',
     );
     expect(
       redactor
@@ -179,7 +185,7 @@ void main() {
       redactor.redact('before $begin arbitrary ! text\nafter').text,
       'before $unterminated',
     );
-    expect(redactor.redact('before $end after').text, 'before $end after');
+    expect(redactor.redact('before $end after').text, '[REDACTED] after');
     // Non-private ENDs must not close a private range.
     expect(redactor.redact('$begin$certificate after').text, unterminated);
     for (final label in [
@@ -213,13 +219,28 @@ void main() {
     const end = '-----END PRIVATE KEY-----';
     const begin = '-----BEGIN PRIVATE KEY-----';
     final prefix = end.substring(0, end.length - 5);
+    // The prefix is itself an END with no BEGIN before it (see below).
     expect(
       redactor.redact('$prefix$begin body $end\nafter').text,
-      '$prefix[REDACTED]after',
+      '[REDACTED]after',
     );
     expect(
       redactor.redact('$prefix$begin body').text,
-      '$prefix[REDACTED:private_key_unterminated]',
+      '[REDACTED:private_key_unterminated]',
+    );
+    // A closed key whose END shares its last five hyphens with the next
+    // BEGIN: the second key is redacted too, with or without its own END.
+    expect(
+      redactor.redact('$begin doc $prefix$begin BODY $end after').text,
+      '[REDACTED] after',
+    );
+    expect(
+      redactor.redact('$begin doc $prefix$begin BODY').text,
+      '[REDACTED:private_key_unterminated]',
+    );
+    expect(
+      redactor.redact('$begin a $prefix$begin b $prefix$begin c $end\nz').text,
+      '[REDACTED]z',
     );
     // This END starts inside the BEGIN marker and cannot close that range.
     final overlappingEnd = end.substring(5);
@@ -300,6 +321,28 @@ void main() {
       expect(largeMicros, lessThan(5000000));
     }, timeout: const Timeout(Duration(minutes: 2)));
   }
+
+  test('FIX5 BEGIN/END pairing grows linearly from N to 4N', () {
+    // Many short pairs: a quadratic pairing loop shows at 4N even though the
+    // marker scan dominates at 2N.
+    String pairs(int n) {
+      const block = '-----BEGIN PRIVATE KEY----- k -----END PRIVATE KEY-----\n';
+      return (block * (n ~/ block.length + 1)).substring(0, n);
+    }
+
+    final redactor = Redactor(secrets: _Secrets());
+    final small = pairs(256 * 1024);
+    final large = pairs(1024 * 1024);
+    final smallMicros = _redactionMicros(redactor, small);
+    final largeMicros = _redactionMicros(redactor, large);
+    // ignore: avoid_print
+    print(
+      'FIX5 pairing growth: N=${small.length} $smallMicros us; '
+      '4N=${large.length} $largeMicros us; ratio=${largeMicros / smallMicros}',
+    );
+    expect(largeMicros, lessThan(smallMicros * 6));
+    expect(largeMicros, lessThan(5000000));
+  }, timeout: const Timeout(Duration(minutes: 2)));
 
   test('every configured expression compiles without inline flags', () {
     for (final pattern in [
@@ -756,16 +799,13 @@ void main() {
     expect(result.redactions, 2);
   });
 
-  test('PEM closes at the first private END regardless of its label', () {
+  test('PEM absorbs a foreign END label before the next BEGIN', () {
     final result = Redactor(secrets: _Secrets()).redact(
       '-----BEGIN PGP PRIVATE KEY BLOCK-----\n\n'
       '-----END RSA PRIVATE KEY-----\nSYNTHETIC-KEY-BODY\n'
       '-----END PGP PRIVATE KEY BLOCK-----\nafter',
     );
-    expect(
-      result.text,
-      '[REDACTED]SYNTHETIC-KEY-BODY\n-----END PGP PRIVATE KEY BLOCK-----\nafter',
-    );
+    expect(result.text, '[REDACTED]after');
     expect(result.redactions, 1);
   });
 

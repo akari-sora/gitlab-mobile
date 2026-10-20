@@ -8,13 +8,13 @@ are wired into the application by this slice (plan §9.1–§9.2).
 
 | Lane | MR1 scope / status |
 | --- | --- |
-| Endpoint policy, SSE, failures, redaction, transcript and provider contracts | FIX1 source is commit `1abb72960ff544c803db75ce88302ac88380701d`; FIX2 source is commit `a1ba0432ef86440222f058bb74b07ca62b05a193`. Pipelines pending. FIX3 source is commit `8bf0bd6b43887d9b9df1a2e130d51c55b1e5f3b3`. FIX4 is a local uncommitted patch against FIX3; the orchestrator owns its pending commit. Local synthetic checks do not establish CI acceptance. |
+| Endpoint policy, SSE, failures, redaction, transcript and provider contracts | FIX1 source is commit `1abb72960ff544c803db75ce88302ac88380701d`; FIX2 source is commit `a1ba0432ef86440222f058bb74b07ca62b05a193`. Pipelines pending. FIX3 source is commit `8bf0bd6b43887d9b9df1a2e130d51c55b1e5f3b3`. FIX4 source is commit `bdefd6c431ad93ce0a9ef72fd4f139b69a2dec4c`. FIX5 is the commit that adds this sentence. Local synthetic checks do not establish CI acceptance. |
 | Existing Flutter behavior | Original author reported a full-suite pass; no retained receipt or job URL is available here. FIX1 does not rerun the full Flutter suite. |
 | Localization | All 24 catalogs contain AI translations at `bafe8ad`; FIX1 adds no messages. Catalog generation and translation guards are checked locally. |
 | GitLab/private-resource integration | NOT_RUN; MR1 does not use the GitLab API |
 | Native provider conformance / P0 | NOT_RUN; plan §9.4, before MR2 |
 | Android/iOS, accessibility and AOT performance | NOT_RUN; subsequent device/release lanes |
-| Pipeline / job URLs | FIX1 `1abb72960ff544c803db75ce88302ac88380701d` and FIX2 `a1ba0432ef86440222f058bb74b07ca62b05a193`: pipelines pending; no verified job URL retained here. FIX3 `8bf0bd6b43887d9b9df1a2e130d51c55b1e5f3b3`: pipeline pending. FIX4: source commit and pipeline pending. |
+| Pipeline / job URLs | FIX1 `1abb72960ff544c803db75ce88302ac88380701d` and FIX2 `a1ba0432ef86440222f058bb74b07ca62b05a193`: pipelines pending; no verified job URL retained here. FIX3 `8bf0bd6b43887d9b9df1a2e130d51c55b1e5f3b3`: pipeline pending. FIX4 `bdefd6c431ad93ce0a9ef72fd4f139b69a2dec4c` and FIX5: pipelines pending. |
 
 ## FIX1 security-core corrections
 
@@ -35,10 +35,16 @@ FIX4 private-key detection collects every BEGIN and END marker in one scan of
 the original input, independent of line structure, indentation, prefixes, JSON
 newline escapes or body characters. Labels are `[A-Z0-9 ]*PRIVATE KEY` and
 `PGP PRIVATE KEY BLOCK`; certificates and all other non-private markers are
-ignored. Two forward-only pointers pair each BEGIN outside an existing range
+ignored. Forward-only pointers pair each BEGIN not wholly inside an earlier range
 with the first private END starting at or after that BEGIN marker's end,
-regardless of label. An END before an open BEGIN is ignored. The range includes
-one immediately following CR, LF or CRLF, and uses `[REDACTED]`.
+regardless of label (FIX5). The range then absorbs every further private END
+before the next BEGIN it does not cover, so a foreign or interleaved END cannot
+expose key lines; text between such ENDs is over-redacted, never exposed. A
+BEGIN sharing the five hyphens of a closing END still opens its own range.
+Private ENDs before the first BEGIN may close a key whose start is not in the
+text (a log read from an offset), so everything from the start of the input
+through the last of them is redacted. Each range includes one immediately
+following CR, LF or CRLF, and uses `[REDACTED]`.
 
 A BEGIN with no following private END uses
 `[REDACTED:private_key_unterminated]` and withholds everything from that BEGIN to
@@ -51,14 +57,17 @@ using the existing overlap rule; an unterminated reason survives overlap.
 The fixed-delimiter regex cannot scan a variable label run across the next
 candidate's hyphens; its backtracking visits each disjoint label run only a
 constant number of times. A fixed five-hyphen lookahead also detects markers
-sharing a delimiter without skipping a BEGIN after an END. Marker collection
+sharing a delimiter, and FIX5 skips a BEGIN only when the whole marker lies
+inside an earlier range, so a BEGIN that shares the hyphens of a closed END is
+still redacted with its key. Marker collection
 and position pairing are linear;
 the existing common span sort/merge is unchanged. Host growth regressions compare
 N with 2N (median of three samples after warm-up), require at most 3.2x growth and
 a generous five-second ceiling. Inputs cover alternating markers, long invalid
 labels, 100,000 BEGINs without END, a single 2 MiB line and earlier JWT,
 assignment, inline and armor attacks. A separate temporary quadratic-rescan
-mutation must fail the growth regression. These are host JIT/coverage checks;
+mutation must fail the growth regression. FIX5 adds an N-versus-4N check on many
+short BEGIN/END pairs (at most 6x), which a quadratic pairing loop fails. These are host JIT/coverage checks;
 emulator AOT <300 ms remains NOT_RUN. Fixtures are synthetic unusable armor;
 no usable private keys are generated or retained. Prefixed credential headers
 remain recognized at identifier boundaries. Plain `ssh://git@host` remains
@@ -89,8 +98,7 @@ receipt is historical evidence, not validation of the current patch.
 
 ## FIX4 marker-pairing regressions
 
-FIX4 is pending the orchestrator's commit; no commit or push is made by this
-round. The unchanged FIX3 scanner failed all ten new formatting-shape matrix
+FIX4 is commit `bdefd6c431ad93ce0a9ef72fd4f139b69a2dec4c`. The unchanged FIX3 scanner failed all ten new formatting-shape matrix
 tests before replacement. The matrix covers ten shapes × four prefixes × six
 key types × four split placements × LF/CRLF (1,920 cases). Every cell records
 leaked body-line counts, including baseline controls that already passed.
@@ -104,6 +112,23 @@ unbounded missing-END
 suppression and overlap/idempotence. Foreground acceptance output and the before
 and quadratic-mutation logs are retained in the external `RESULT-fix4.md`
 receipt. Full-suite, CI, live-provider and device gates remain separate.
+
+## FIX5 pairing regressions
+
+Round-5 review (Codex; Opus independently) found that a BEGIN sharing the five
+hyphens of an already closed END was skipped, exposing the whole second key.
+FIX5 skips only BEGINs wholly inside an earlier range, absorbs further ENDs
+before the next uncovered BEGIN and redacts from the start of the input through
+leading ENDs. Regressions: closed END plus shared-delimiter BEGIN with and
+without its own END, a chain of three shared delimiters, a foreign END label
+inside a key, and a key tail without its BEGIN. Two temporary mutations (the
+previous skip rule; no END absorption) each fail their regression.
+
+Invariants for the context builders and the runner (MR4): strip ANSI escape
+sequences before redaction (a coloured grep can split a marker); redact the
+complete fetched text before truncating it; keep each redaction input at or
+below 2 MiB (an identifier run of 4 MiB or more overflows the regex stack and
+fails closed as `policyBlocked`).
 
 ## Later MR evidence
 

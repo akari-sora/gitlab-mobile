@@ -323,11 +323,37 @@ Iterable<_RedactionRange> _pemRanges(String input) sync* {
     (marker.group(1) == 'BEGIN' ? begins : ends).add(range);
   }
 
+  // Consume only an immediately following CR, LF or CRLF.
+  int afterLineBreak(int end) {
+    if (end < input.length && input.codeUnitAt(end) == 0x0d) {
+      end++;
+      if (end < input.length && input.codeUnitAt(end) == 0x0a) end++;
+    } else if (end < input.length && input.codeUnitAt(end) == 0x0a) {
+      end++;
+    }
+    return end;
+  }
+
+  // Every pointer only advances, so pairing stays linear.
   var endIndex = 0;
   var redactedThrough = 0;
-  for (final begin in begins) {
-    if (begin.start < redactedThrough) continue;
-    // Both pointers only advance. END labels intentionally need not match.
+  // An END before any BEGIN closes a key whose start is not in this text,
+  // such as a log read from an offset: redact from the start through it.
+  final firstBegin = begins.isEmpty ? input.length : begins.first.start;
+  var leading = -1;
+  while (endIndex < ends.length && ends[endIndex].start < firstBegin) {
+    leading = endIndex++;
+  }
+  if (leading >= 0) {
+    redactedThrough = afterLineBreak(ends[leading].end);
+    yield _RedactionRange(start: 0, end: redactedThrough);
+  }
+  for (var beginIndex = 0; beginIndex < begins.length; beginIndex++) {
+    final begin = begins[beginIndex];
+    // Skip only a marker wholly inside an earlier range: a BEGIN sharing
+    // the five hyphens of a closing END still opens its own range.
+    if (begin.end <= redactedThrough) continue;
+    // END labels intentionally need not match.
     while (endIndex < ends.length && ends[endIndex].start < begin.end) {
       endIndex++;
     }
@@ -339,15 +365,18 @@ Iterable<_RedactionRange> _pemRanges(String input) sync* {
       );
       break;
     }
-    var end = ends[endIndex++].end;
-    // Consume only an immediately following CR, LF or CRLF.
-    if (end < input.length && input.codeUnitAt(end) == 0x0d) {
-      end++;
-      if (end < input.length && input.codeUnitAt(end) == 0x0a) end++;
-    } else if (end < input.length && input.codeUnitAt(end) == 0x0a) {
-      end++;
+    var close = endIndex++;
+    // Absorb every further END before the next BEGIN that this range does
+    // not cover, so a foreign or interleaved END cannot expose key lines.
+    var next = beginIndex + 1;
+    while (next < begins.length && begins[next].end <= ends[close].end) {
+      next++;
     }
-    redactedThrough = end;
-    yield _RedactionRange(start: begin.start, end: end);
+    final nextStart = next < begins.length ? begins[next].start : input.length;
+    while (endIndex < ends.length && ends[endIndex].start < nextStart) {
+      close = endIndex++;
+    }
+    redactedThrough = afterLineBreak(ends[close].end);
+    yield _RedactionRange(start: begin.start, end: redactedThrough);
   }
 }
