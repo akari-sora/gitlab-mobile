@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/repository_page.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
 
@@ -74,6 +75,37 @@ void main() {
     await settleNetworkWidgets(tester);
     expect(find.text('沒有操作權限'), findsOneWidget);
     expect(find.text('Private source must disappear'), findsNothing);
+  });
+
+  testWidgets('a dotfile name and its path keep their order in Arabic', (tester) async {
+    useLanguage(languageForTag('ar')!);
+    final adapter = FakeAdapter(
+      (request) => request.method == 'HEAD'
+          ? ResponseBody.fromString('', 200, headers: {
+              'x-gitlab-size': ['12'],
+              'x-gitlab-last-commit-id': [sha],
+            })
+          : ResponseBody.fromString('stages: []', 200),
+    );
+    final api = testApi(adapter);
+    addTearDown(api.close);
+    await tester.pumpWidget(MaterialApp(
+      home: Directionality(
+        textDirection: TextDirection.rtl,
+        child: RepositoryFilePage(
+          account: account,
+          api: api,
+          project: project,
+          branch: 'main',
+          sha: sha,
+          filePath: 'ci/.gitlab-ci.yml',
+        ),
+      ),
+    ));
+    await settleNetworkWidgets(tester);
+    // Without isolation the leading full stop moves to the other end.
+    expect(find.text('\u2068.gitlab-ci.yml\u2069'), findsOneWidget);
+    expect(find.textContaining('\u2068ci\u2069 · \u2068main\u2069'), findsOneWidget);
   });
 
   testWidgets(
