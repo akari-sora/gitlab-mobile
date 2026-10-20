@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "Redigera milstolpe",
   "metadataDeleteMilestonesQuestion": "Ta bort milstolpe?",
   "metadataNoMilestones": "Inga milstolpar ännu",
-  "branchesTitle": "Grenar"
+  "branchesTitle": "Grenar",
+  "markdownMediaTooLarge": "Mediet överskrider storleksgränsen",
+  "markdownMediaNotImage": "Det här är inte en bild",
+  "markdownMediaBlocked": "Osäker medieadress blockerades",
+  "markdownMediaNetwork": "Det går inte att läsa in mediet",
+  "markdownMediaPlay": "Spela upp",
+  "markdownMediaPause": "Pausa",
+  "markdownMediaMute": "Stäng av ljudet",
+  "markdownMediaUnmute": "Slå på ljudet",
+  "markdownMediaCancel": "Avbryt hämtning",
+  "markdownMediaRetry": "Försök igen",
+  "markdownMediaLoading": "Hämtar media"
 }

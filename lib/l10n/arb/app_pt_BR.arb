@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "Editar marco",
   "metadataDeleteMilestonesQuestion": "Excluir marco?",
   "metadataNoMilestones": "Ainda não há marcos",
-  "branchesTitle": "Branches"
+  "branchesTitle": "Branches",
+  "markdownMediaTooLarge": "A mídia excede o limite de tamanho",
+  "markdownMediaNotImage": "Isto não é uma imagem",
+  "markdownMediaBlocked": "Endereço de mídia inseguro bloqueado",
+  "markdownMediaNetwork": "Não foi possível carregar a mídia",
+  "markdownMediaPlay": "Reproduzir",
+  "markdownMediaPause": "Pausar",
+  "markdownMediaMute": "Silenciar",
+  "markdownMediaUnmute": "Ativar som",
+  "markdownMediaCancel": "Cancelar download",
+  "markdownMediaRetry": "Tentar novamente",
+  "markdownMediaLoading": "Baixando mídia"
 }

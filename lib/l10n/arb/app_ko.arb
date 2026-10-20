@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "마일스톤 편집",
   "metadataDeleteMilestonesQuestion": "마일스톤을 삭제하시겠습니까?",
   "metadataNoMilestones": "아직 마일스톤이 없습니다",
-  "branchesTitle": "브랜치"
+  "branchesTitle": "브랜치",
+  "markdownMediaTooLarge": "미디어가 크기 제한을 초과했습니다",
+  "markdownMediaNotImage": "이미지가 아닙니다",
+  "markdownMediaBlocked": "안전하지 않은 미디어 주소를 차단했습니다",
+  "markdownMediaNetwork": "미디어를 불러올 수 없습니다",
+  "markdownMediaPlay": "재생",
+  "markdownMediaPause": "일시 정지",
+  "markdownMediaMute": "음소거",
+  "markdownMediaUnmute": "음소거 해제",
+  "markdownMediaCancel": "다운로드 취소",
+  "markdownMediaRetry": "다시 시도",
+  "markdownMediaLoading": "미디어를 다운로드하는 중입니다"
 }

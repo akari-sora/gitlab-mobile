@@ -344,7 +344,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
     return Card(child: Padding(padding: const EdgeInsets.fromLTRB(16, 14, 16, 12), child: Column(
       crossAxisAlignment: CrossAxisAlignment.start, children: [
         if (widget.project.description?.isNotEmpty ?? false) Padding(padding: const EdgeInsets.only(bottom: 12),
-          child: MarkdownView(widget.project.description!, base: widget.account.instance.projectWeb(widget.project.path),
+          child: MarkdownView(widget.project.description!, account: widget.account, base: widget.account.instance.projectWeb(widget.project.path),
             api: widget.api, projectId: widget.project.id, projectWeb: widget.account.instance.projectWeb(widget.project.path),
             projectPath: widget.project.path)),
         if (_details != null) Row(children: [
@@ -986,7 +986,7 @@ class _MetadataPageState extends State<MetadataPage> {
           if (tagMessage.isNotEmpty) _inset(SelectableText(tagMessage)),
         ] else if (kind != MetadataKind.branches)
           _inset(MarkdownView(valueText(value, 'description', valueText(value, 'message', l10n.noDescriptionYet)),
-            base: ownerAccount.instance.projectWeb(ownerProject.path), api: ownerApi, projectId: ownerProject.id,
+            account: ownerAccount, base: ownerAccount.instance.projectWeb(ownerProject.path), api: ownerApi, projectId: ownerProject.id,
             projectWeb: ownerAccount.instance.projectWeb(ownerProject.path), projectPath: ownerProject.path)),
         if (codeRows.isNotEmpty) ...[const SizedBox(height: 20), rows(codeRows)],
         if (kind == MetadataKind.milestones) ...[const SizedBox(height: 16),

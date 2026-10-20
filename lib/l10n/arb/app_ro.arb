@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "Editează jalonul",
   "metadataDeleteMilestonesQuestion": "Ștergi jalonul?",
   "metadataNoMilestones": "Niciun jalon încă",
-  "branchesTitle": "Ramuri"
+  "branchesTitle": "Ramuri",
+  "markdownMediaTooLarge": "Conținutul media depășește limita de dimensiune",
+  "markdownMediaNotImage": "Acesta nu este o imagine",
+  "markdownMediaBlocked": "Adresa media nesigură a fost blocată",
+  "markdownMediaNetwork": "Conținutul media nu poate fi încărcat",
+  "markdownMediaPlay": "Redă",
+  "markdownMediaPause": "Pauză",
+  "markdownMediaMute": "Dezactivează sunetul",
+  "markdownMediaUnmute": "Activează sunetul",
+  "markdownMediaCancel": "Anulează descărcarea",
+  "markdownMediaRetry": "Încearcă din nou",
+  "markdownMediaLoading": "Se descarcă conținutul media"
 }

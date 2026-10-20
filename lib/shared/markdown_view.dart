@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +13,9 @@ import 'attachment_image.dart';
 import 'attachment_ref.dart';
 import 'external_link.dart';
 import 'in_app_links.dart';
+import 'markdown_media.dart';
+import 'markdown_media_html.dart';
+import 'markdown_media_source.dart';
 import 'theme.dart';
 
 import '../l10n/l10n.dart';
@@ -267,6 +271,7 @@ class MarkdownView extends StatefulWidget {
     this.sharer = const SystemArtifactSharer(),
     this.downloader,
     this.selectable = true,
+    this.externalMediaClient,
   });
   final String text;
   final Uri? base;
@@ -283,12 +288,29 @@ class MarkdownView extends StatefulWidget {
   final AttachmentDownloader? downloader;
   final bool selectable;
 
+  /// A separate bare client; tests inject a FakeAdapter here.
+  final Dio? externalMediaClient;
+
   @override
   State<MarkdownView> createState() => _MarkdownViewState();
 }
 
 class _MarkdownViewState extends State<MarkdownView> {
   AttachmentBudget? _owned;
+  MarkdownMediaLoader? _media;
+  String? _htmlSource;
+  String? _html;
+  int _contentEpoch = 0;
+
+  MarkdownMediaLoader get _loader => _media ??= MarkdownMediaLoader(
+    api: widget.api, external: widget.externalMediaClient,
+  );
+
+  @override
+  void dispose() {
+    _media?.close();
+    super.dispose();
+  }
   // Markdown's unkeyed horizontal scroll views must not read an ancestor
   // ExpansionTile's boolean state as a scroll offset.
   final _scrollStorage = PageStorageBucket();
@@ -313,8 +335,13 @@ class _MarkdownViewState extends State<MarkdownView> {
   @override
   void didUpdateWidget(MarkdownView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.budget != null) return;
-    if (oldWidget.text != widget.text || oldWidget.projectId != widget.projectId) {
+    if (oldWidget.text != widget.text || oldWidget.projectId != widget.projectId ||
+        oldWidget.api != widget.api || oldWidget.base != widget.base ||
+        oldWidget.projectWeb != widget.projectWeb || oldWidget.account?.key != widget.account?.key ||
+        oldWidget.externalMediaClient != widget.externalMediaClient) {
+      _contentEpoch++;
+      _media?.close();
+      _media = null;
       _owned = AttachmentBudget();
     }
   }
@@ -332,7 +359,11 @@ class _MarkdownViewState extends State<MarkdownView> {
     final projectWeb = widget.projectWeb;
     final tableTextScale = (MediaQuery.textScalerOf(context).scale(14) / 14)
         .clamp(1.0, 2.0);
-    final body = MarkdownBody(data: text, selectable: false,
+    if (_htmlSource != text) {
+      _htmlSource = text;
+      _html = preprocessMarkdownMedia(text);
+    }
+    final body = MarkdownBody(key: ValueKey(_contentEpoch), data: _html!, selectable: false,
       styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
         h1: Theme.of(context).textTheme.headlineSmall,
         h2: Theme.of(context).textTheme.titleLarge,
@@ -345,13 +376,27 @@ class _MarkdownViewState extends State<MarkdownView> {
         blockquoteDecoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(12)),
       ),
-      // Only this project's upload API is fetched. Other images stay icon-only.
       imageBuilder: (uri, title, alt) {
+        final source = resolveMarkdownMedia(uri, base: base, instance: api?.instance,
+          projectId: projectId, projectWeb: projectWeb);
+        final extension = (source.filename ?? '').split('.').last.toLowerCase();
+        final isMedia = title?.startsWith('mergeline-media') == true ||
+            const {'mp4', 'webm', 'mov', 'm4v', 'mp3', 'm4a', 'ogg', 'wav'}.contains(extension);
+        if (isMedia) {
+          return MarkdownMediaCard(source: source, loader: _loader, account: widget.account,
+            audio: title == 'mergeline-media:audio' || const {'mp3', 'm4a', 'ogg', 'wav'}.contains(extension));
+        }
+        final size = title?.startsWith('mergeline-size:') == true ? title!.split(':') : null;
+        double? dimension(int index) {
+          if (size == null || size.length <= index) return null;
+          final parsed = double.tryParse(size[index]);
+          return parsed != null && parsed.isFinite && parsed > 0 ? parsed.clamp(1, 4096) : null;
+        }
         final ref = parseProjectUpload(uri, base: base, projectId: projectId, projectWeb: projectWeb);
         final client = api;
         final id = projectId;
         if (ref != null && client != null && id != null) {
-          return AttachmentImage(
+          final upload = AttachmentImage(
             api: client,
             budget: budget,
             projectId: id,
@@ -361,8 +406,10 @@ class _MarkdownViewState extends State<MarkdownView> {
             projectWeb: projectWeb,
             projectPath: widget.projectPath,
           );
+          return size == null ? upload : SizedBox(width: dimension(1), height: dimension(2), child: upload);
         }
-        return attachmentImageFallback(alt);
+        return MarkdownMediaImage(source: source, loader: _loader, budget: budget,
+          alt: alt, width: dimension(1), height: dimension(2));
       },
       onTapLink: (_, href, _) async {
         if (href == null) { return; }

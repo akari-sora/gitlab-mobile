@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "Edit milestone",
   "metadataDeleteMilestonesQuestion": "Delete milestone?",
   "metadataNoMilestones": "No milestones yet",
-  "branchesTitle": "Branches"
+  "branchesTitle": "Branches",
+  "markdownMediaTooLarge": "Media exceeds the size limit",
+  "markdownMediaNotImage": "This is not an image",
+  "markdownMediaBlocked": "Unsafe media URL blocked",
+  "markdownMediaNetwork": "Unable to load media",
+  "markdownMediaPlay": "Play",
+  "markdownMediaPause": "Pause",
+  "markdownMediaMute": "Mute",
+  "markdownMediaUnmute": "Unmute",
+  "markdownMediaCancel": "Cancel download",
+  "markdownMediaRetry": "Retry",
+  "markdownMediaLoading": "Downloading media"
 }

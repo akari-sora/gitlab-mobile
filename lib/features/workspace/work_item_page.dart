@@ -1665,6 +1665,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                           _RestDescription(
                             valueText(data, 'description').isEmpty ? l10n.noDescriptionYet : valueText(data, 'description'),
                             key: ValueKey('rest-description/${owner.account.key}/${owner.project.id}/${owner.resource}/${owner.iid}/${owner.generation}'),
+                            account: widget.account,
                             base: web, api: widget.api, projectId: widget.project.id, projectWeb: widget.account.instance.projectWeb(widget.project.path), projectPath: widget.project.path,
                           ),
                           if (owner.resource == 'issues' && owner.type == ProjectWorkItemType.issue) ...[
@@ -1755,12 +1756,14 @@ class _RestDescription extends StatefulWidget {
   const _RestDescription(
     this.text, {
     super.key,
+    required this.account,
     required this.base,
     required this.api,
     required this.projectId,
     required this.projectWeb,
     required this.projectPath,
   });
+  final Account account;
   final String text;
   final Uri base;
   final GitLabApi api;
@@ -1832,6 +1835,7 @@ class _RestDescriptionState extends State<_RestDescription>
 
   Widget _markdown() => MarkdownView(
     widget.text,
+    account: widget.account,
     base: widget.base,
     api: widget.api,
     projectId: widget.projectId,

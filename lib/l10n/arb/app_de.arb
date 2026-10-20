@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "Meilenstein bearbeiten",
   "metadataDeleteMilestonesQuestion": "Meilenstein löschen?",
   "metadataNoMilestones": "Noch keine Meilensteine",
-  "branchesTitle": "Branches"
+  "branchesTitle": "Branches",
+  "markdownMediaTooLarge": "Medium überschreitet die Größenbeschränkung",
+  "markdownMediaNotImage": "Dies ist kein Bild",
+  "markdownMediaBlocked": "Unsichere Medienadresse blockiert",
+  "markdownMediaNetwork": "Medium kann nicht geladen werden",
+  "markdownMediaPlay": "Wiedergeben",
+  "markdownMediaPause": "Pausieren",
+  "markdownMediaMute": "Stummschalten",
+  "markdownMediaUnmute": "Ton einschalten",
+  "markdownMediaCancel": "Download abbrechen",
+  "markdownMediaRetry": "Erneut versuchen",
+  "markdownMediaLoading": "Medium wird heruntergeladen"
 }

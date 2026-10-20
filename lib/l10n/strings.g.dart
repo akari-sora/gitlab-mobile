@@ -6174,4 +6174,37 @@ final class AppStrings {
 
   /// 分支
   String get branchesTitle => language._messages[2026];
+
+  /// 媒體超過大小限制
+  String get markdownMediaTooLarge => language._messages[2027];
+
+  /// 這不是圖片
+  String get markdownMediaNotImage => language._messages[2028];
+
+  /// 已封鎖不安全的媒體網址
+  String get markdownMediaBlocked => language._messages[2029];
+
+  /// 無法載入媒體
+  String get markdownMediaNetwork => language._messages[2030];
+
+  /// 播放
+  String get markdownMediaPlay => language._messages[2031];
+
+  /// 暫停
+  String get markdownMediaPause => language._messages[2032];
+
+  /// 靜音
+  String get markdownMediaMute => language._messages[2033];
+
+  /// 取消靜音
+  String get markdownMediaUnmute => language._messages[2034];
+
+  /// 取消下載
+  String get markdownMediaCancel => language._messages[2035];
+
+  /// 重試
+  String get markdownMediaRetry => language._messages[2036];
+
+  /// 正在下載媒體
+  String get markdownMediaLoading => language._messages[2037];
 }

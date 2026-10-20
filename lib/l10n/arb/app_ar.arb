@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "تعديل المرحلة الرئيسية",
   "metadataDeleteMilestonesQuestion": "حذف المرحلة الرئيسية؟",
   "metadataNoMilestones": "لا توجد مراحل رئيسية بعد",
-  "branchesTitle": "الفروع"
+  "branchesTitle": "الفروع",
+  "markdownMediaTooLarge": "الوسائط تتجاوز الحد الأقصى للحجم",
+  "markdownMediaNotImage": "هذا ليس صورة",
+  "markdownMediaBlocked": "حُظر عنوان وسائط غير آمن",
+  "markdownMediaNetwork": "تعذر تحميل الوسائط",
+  "markdownMediaPlay": "تشغيل",
+  "markdownMediaPause": "إيقاف مؤقت",
+  "markdownMediaMute": "كتم الصوت",
+  "markdownMediaUnmute": "إلغاء كتم الصوت",
+  "markdownMediaCancel": "إلغاء التنزيل",
+  "markdownMediaRetry": "إعادة المحاولة",
+  "markdownMediaLoading": "جارٍ تنزيل الوسائط"
 }

@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "माइलस्टोन संपादित करें",
   "metadataDeleteMilestonesQuestion": "माइलस्टोन हटाएं?",
   "metadataNoMilestones": "अभी तक कोई माइलस्टोन नहीं है",
-  "branchesTitle": "ब्रांच"
+  "branchesTitle": "ब्रांच",
+  "markdownMediaTooLarge": "मीडिया आकार सीमा से बड़ा है",
+  "markdownMediaNotImage": "यह चित्र नहीं है",
+  "markdownMediaBlocked": "असुरक्षित मीडिया पता अवरुद्ध किया गया",
+  "markdownMediaNetwork": "मीडिया लोड नहीं हो सका",
+  "markdownMediaPlay": "चलाएँ",
+  "markdownMediaPause": "रोकें",
+  "markdownMediaMute": "ध्वनि बंद करें",
+  "markdownMediaUnmute": "ध्वनि चालू करें",
+  "markdownMediaCancel": "डाउनलोड रद्द करें",
+  "markdownMediaRetry": "फिर प्रयास करें",
+  "markdownMediaLoading": "मीडिया डाउनलोड हो रहा है"
 }

@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "Edytuj kamień milowy",
   "metadataDeleteMilestonesQuestion": "Usunąć kamień milowy?",
   "metadataNoMilestones": "Brak kamieni milowych",
-  "branchesTitle": "Gałęzie"
+  "branchesTitle": "Gałęzie",
+  "markdownMediaTooLarge": "Multimedia przekraczają limit rozmiaru",
+  "markdownMediaNotImage": "To nie jest obraz",
+  "markdownMediaBlocked": "Zablokowano niebezpieczny adres multimediów",
+  "markdownMediaNetwork": "Nie można wczytać multimediów",
+  "markdownMediaPlay": "Odtwórz",
+  "markdownMediaPause": "Wstrzymaj",
+  "markdownMediaMute": "Wycisz",
+  "markdownMediaUnmute": "Włącz dźwięk",
+  "markdownMediaCancel": "Anuluj pobieranie",
+  "markdownMediaRetry": "Spróbuj ponownie",
+  "markdownMediaLoading": "Pobieranie multimediów"
 }

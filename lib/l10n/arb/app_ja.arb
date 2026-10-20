@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "マイルストーンを編集",
   "metadataDeleteMilestonesQuestion": "マイルストーンを削除しますか？",
   "metadataNoMilestones": "まだマイルストーンがありません",
-  "branchesTitle": "ブランチ"
+  "branchesTitle": "ブランチ",
+  "markdownMediaTooLarge": "メディアがサイズ制限を超えています",
+  "markdownMediaNotImage": "これは画像ではありません",
+  "markdownMediaBlocked": "安全でないメディアのアドレスをブロックしました",
+  "markdownMediaNetwork": "メディアを読み込めません",
+  "markdownMediaPlay": "再生",
+  "markdownMediaPause": "一時停止",
+  "markdownMediaMute": "ミュート",
+  "markdownMediaUnmute": "ミュート解除",
+  "markdownMediaCancel": "ダウンロードをキャンセル",
+  "markdownMediaRetry": "再試行",
+  "markdownMediaLoading": "メディアをダウンロード中"
 }

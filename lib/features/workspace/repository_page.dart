@@ -1689,6 +1689,7 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
                           padding: const EdgeInsets.all(20),
                           child: MarkdownView(
                             text,
+                            account: widget.account,
                             base: widget.account.instance.projectWeb(
                               '${widget.project.path}/-/blob/${resolvedRef.sha}/${widget.filePath}',
                             ),

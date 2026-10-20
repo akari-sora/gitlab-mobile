@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "Modifier le jalon",
   "metadataDeleteMilestonesQuestion": "Supprimer le jalon ?",
   "metadataNoMilestones": "Aucun jalon pour le moment",
-  "branchesTitle": "Branches"
+  "branchesTitle": "Branches",
+  "markdownMediaTooLarge": "Le média dépasse la limite de taille",
+  "markdownMediaNotImage": "Ce contenu n’est pas une image",
+  "markdownMediaBlocked": "Adresse de média non sécurisée bloquée",
+  "markdownMediaNetwork": "Impossible de charger le média",
+  "markdownMediaPlay": "Lire",
+  "markdownMediaPause": "Mettre en pause",
+  "markdownMediaMute": "Couper le son",
+  "markdownMediaUnmute": "Rétablir le son",
+  "markdownMediaCancel": "Annuler le téléchargement",
+  "markdownMediaRetry": "Réessayer",
+  "markdownMediaLoading": "Téléchargement du média"
 }

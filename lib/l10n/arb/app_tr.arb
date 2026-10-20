@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "Kilometre taşını düzenle",
   "metadataDeleteMilestonesQuestion": "Kilometre taşı silinsin mi?",
   "metadataNoMilestones": "Henüz kilometre taşı yok",
-  "branchesTitle": "Branch'ler"
+  "branchesTitle": "Branch'ler",
+  "markdownMediaTooLarge": "Medya boyut sınırını aşıyor",
+  "markdownMediaNotImage": "Bu bir görsel değil",
+  "markdownMediaBlocked": "Güvenli olmayan medya adresi engellendi",
+  "markdownMediaNetwork": "Medya yüklenemiyor",
+  "markdownMediaPlay": "Oynat",
+  "markdownMediaPause": "Duraklat",
+  "markdownMediaMute": "Sesi kapat",
+  "markdownMediaUnmute": "Sesi aç",
+  "markdownMediaCancel": "İndirmeyi iptal et",
+  "markdownMediaRetry": "Yeniden dene",
+  "markdownMediaLoading": "Medya indiriliyor"
 }

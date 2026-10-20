@@ -770,7 +770,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
       if (_preview)
         InputDecorator(
           decoration: InputDecoration(labelText: field.label, helperText: field.hint),
-          child: MarkdownView(_controllers[field.key]?.text ?? '',
+          child: MarkdownView(_controllers[field.key]?.text ?? '', account: widget.account,
             base: web, api: widget.api, projectId: widget.projectId, projectWeb: web, projectPath: path),
         ),
       Visibility(

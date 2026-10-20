@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "Sunting milestone",
   "metadataDeleteMilestonesQuestion": "Padam milestone?",
   "metadataNoMilestones": "Belum ada milestone",
-  "branchesTitle": "Branch"
+  "branchesTitle": "Branch",
+  "markdownMediaTooLarge": "Media melebihi had saiz",
+  "markdownMediaNotImage": "Ini bukan imej",
+  "markdownMediaBlocked": "Alamat media yang tidak selamat telah disekat",
+  "markdownMediaNetwork": "Media tidak dapat dimuatkan",
+  "markdownMediaPlay": "Main",
+  "markdownMediaPause": "Jeda",
+  "markdownMediaMute": "Senyapkan",
+  "markdownMediaUnmute": "Hidupkan bunyi",
+  "markdownMediaCancel": "Batalkan muat turun",
+  "markdownMediaRetry": "Cuba lagi",
+  "markdownMediaLoading": "Memuat turun media"
 }

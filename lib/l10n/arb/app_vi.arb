@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "Chỉnh sửa milestone",
   "metadataDeleteMilestonesQuestion": "Xóa milestone?",
   "metadataNoMilestones": "Chưa có milestone nào",
-  "branchesTitle": "Nhánh"
+  "branchesTitle": "Nhánh",
+  "markdownMediaTooLarge": "Nội dung đa phương tiện vượt quá giới hạn kích thước",
+  "markdownMediaNotImage": "Đây không phải là hình ảnh",
+  "markdownMediaBlocked": "Đã chặn địa chỉ nội dung đa phương tiện không an toàn",
+  "markdownMediaNetwork": "Không thể tải nội dung đa phương tiện",
+  "markdownMediaPlay": "Phát",
+  "markdownMediaPause": "Tạm dừng",
+  "markdownMediaMute": "Tắt tiếng",
+  "markdownMediaUnmute": "Bật tiếng",
+  "markdownMediaCancel": "Hủy tải xuống",
+  "markdownMediaRetry": "Thử lại",
+  "markdownMediaLoading": "Đang tải nội dung đa phương tiện"
 }

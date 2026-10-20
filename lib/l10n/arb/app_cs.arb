@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "Upravit milník",
   "metadataDeleteMilestonesQuestion": "Smazat milník?",
   "metadataNoMilestones": "Zatím žádné milníky",
-  "branchesTitle": "Větve"
+  "branchesTitle": "Větve",
+  "markdownMediaTooLarge": "Médium překračuje limit velikosti",
+  "markdownMediaNotImage": "Toto není obrázek",
+  "markdownMediaBlocked": "Nebezpečná adresa média byla zablokována",
+  "markdownMediaNetwork": "Médium nelze načíst",
+  "markdownMediaPlay": "Přehrát",
+  "markdownMediaPause": "Pozastavit",
+  "markdownMediaMute": "Ztlumit",
+  "markdownMediaUnmute": "Zapnout zvuk",
+  "markdownMediaCancel": "Zrušit stahování",
+  "markdownMediaRetry": "Zkusit znovu",
+  "markdownMediaLoading": "Stahování média"
 }

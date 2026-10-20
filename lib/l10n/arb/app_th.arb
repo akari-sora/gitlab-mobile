@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "แก้ไขไมล์สโตน",
   "metadataDeleteMilestonesQuestion": "ลบไมล์สโตน?",
   "metadataNoMilestones": "ยังไม่มีไมล์สโตน",
-  "branchesTitle": "บรานช์"
+  "branchesTitle": "บรานช์",
+  "markdownMediaTooLarge": "สื่อมีขนาดเกินขีดจำกัด",
+  "markdownMediaNotImage": "นี่ไม่ใช่รูปภาพ",
+  "markdownMediaBlocked": "ปิดกั้นที่อยู่สื่อที่ไม่ปลอดภัยแล้ว",
+  "markdownMediaNetwork": "ไม่สามารถโหลดสื่อได้",
+  "markdownMediaPlay": "เล่น",
+  "markdownMediaPause": "หยุดชั่วคราว",
+  "markdownMediaMute": "ปิดเสียง",
+  "markdownMediaUnmute": "เปิดเสียง",
+  "markdownMediaCancel": "ยกเลิกการดาวน์โหลด",
+  "markdownMediaRetry": "ลองอีกครั้ง",
+  "markdownMediaLoading": "กำลังดาวน์โหลดสื่อ"
 }

@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart' as mui;
+
+import 'artifact_storage.dart';
 
 /// Transparent edge-to-edge bars whose icons contrast with [surface].
 /// Light surfaces get dark icons; dark surfaces get light icons.
@@ -179,6 +183,9 @@ const codeFontFamily = 'JetBrainsMono';
 /// Surfaces the bundled JetBrains Mono OFL in the license dialog. Declaring
 /// the file as an asset does not put it in the SDK's generated notices.
 void registerBundledLicenses() {
+  // This shared startup hook runs before runApp, even while signed out.
+  // Downloads await the same cleanup and surface a failure before writing.
+  unawaited(clearStaleMarkdownMedia().catchError((Object _) {}));
   LicenseRegistry.addLicense(() async* {
     final text = await rootBundle.loadString('assets/fonts/JetBrainsMono-OFL.txt');
     yield LicenseEntryWithLineBreaks(const ['JetBrains Mono'], text);

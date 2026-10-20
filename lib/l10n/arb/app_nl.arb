@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "Milestone bewerken",
   "metadataDeleteMilestonesQuestion": "Milestone verwijderen?",
   "metadataNoMilestones": "Nog geen milestones",
-  "branchesTitle": "Branches"
+  "branchesTitle": "Branches",
+  "markdownMediaTooLarge": "Media overschrijden de groottelimiet",
+  "markdownMediaNotImage": "Dit is geen afbeelding",
+  "markdownMediaBlocked": "Onveilig media-adres geblokkeerd",
+  "markdownMediaNetwork": "Kan media niet laden",
+  "markdownMediaPlay": "Afspelen",
+  "markdownMediaPause": "Pauzeren",
+  "markdownMediaMute": "Dempen",
+  "markdownMediaUnmute": "Geluid aanzetten",
+  "markdownMediaCancel": "Download annuleren",
+  "markdownMediaRetry": "Opnieuw proberen",
+  "markdownMediaLoading": "Media downloaden"
 }

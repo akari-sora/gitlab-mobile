@@ -86,7 +86,7 @@ Riverpod is used only for `sessionProvider`. Screens receive `api` and `account`
 
 ### Persistence
 
-These are the only disk writes. No repository content, logs or search history is persisted. `clearSecureDrafts(account)` runs before an account is removed. The `db12b41` phone build predates the appearance, last-account, sign-out, recent-project and artifact-cache entries.
+These are the only disk writes. Repository media is staged only in the temporary playback directory below; other repository content, logs and search history are not persisted. `clearSecureDrafts(account)` runs before an account is removed. The `db12b41` phone build predates the appearance, last-account, sign-out, recent-project and artifact-cache entries.
 
 Through `flutter_secure_storage`:
 
@@ -100,6 +100,10 @@ Through `flutter_secure_storage`:
 - Language, key `gitlab_mobile_language_v1`, value `<tag>|<device language tags when picked, comma-separated>` such as `ja|en-US,fr-FR`; no key means the app follows the device's languages (English when none is translated). The most recent change wins: when the device's languages (or the system's per-app language) change after a pick, the pick is dropped and the key deleted. Device-scoped. `main` applies it before the first frame.
 
 Outside secure storage: the gitlab channel's update APK `getTemporaryDirectory()/updates/gitlab-mobile-<versionCode>.apk`, written only after the user taps 下載, named only after its size and SHA-256 match GitLab's record, and deleted at the next start and before every download. Artifact cache `getTemporaryDirectory()/artifacts/<sha256(account.key) first 32 hex>/<projectId>-<jobId>/<stamp>-<attempt>/`. Removed on account removal. A failed removal keeps the account and reports 無法清除產物. The operating system may purge the directory. Two plugin copies are transient: share_plus copies a shared archive into `<cache>/share_plus/` (deleted at once after a dismissed, unavailable or failed share; after a successful share on the next resume after the app left the foreground; always before the next share and on account removal, best-effort), and image_picker / file_picker copies of a picked attachment are deleted right after their bytes are read (`discardPickedCopy`, cache paths only).
+
+Markdown media: repository images use authenticated, bounded raw-file requests pinned to the Markdown base ref; external HTTPS images use a separate credential-free client. HTML images, SVG and tap-to-load audio/video render in the app; media never starts from rendering alone.
+
+Playback staging: `getTemporaryDirectory()/media/<sha256(account.key) first 32 hex>/<stamp>-<attempt>/<sanitized filename>`, limited to 100 MiB per download. Each card owns one attempt, removed after playback disposal or cancellation; account removal clears that account's directory and propagates cleanup failures. The shared launch hook (`registerBundledLicenses`, called before `runApp`) starts removal of the entire previous-run media directory, even while signed out; new downloads await that same cleanup before writing. This cache can be purged by the operating system. Images and per-view caches remain in memory.
 
 ### Shell and UI conventions
 

@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "Редагувати етап",
   "metadataDeleteMilestonesQuestion": "Видалити етап?",
   "metadataNoMilestones": "Ще немає етапів",
-  "branchesTitle": "Гілки"
+  "branchesTitle": "Гілки",
+  "markdownMediaTooLarge": "Медіафайл перевищує обмеження розміру",
+  "markdownMediaNotImage": "Це не зображення",
+  "markdownMediaBlocked": "Небезпечну адресу медіафайлу заблоковано",
+  "markdownMediaNetwork": "Не вдалося завантажити медіафайл",
+  "markdownMediaPlay": "Відтворити",
+  "markdownMediaPause": "Призупинити",
+  "markdownMediaMute": "Вимкнути звук",
+  "markdownMediaUnmute": "Увімкнути звук",
+  "markdownMediaCancel": "Скасувати завантаження",
+  "markdownMediaRetry": "Повторити",
+  "markdownMediaLoading": "Завантаження медіафайлу"
 }

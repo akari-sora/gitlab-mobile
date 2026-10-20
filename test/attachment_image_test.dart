@@ -200,19 +200,23 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('an external image stays an icon and makes no request', (tester) async {
+  testWidgets('an external image loads automatically without GitLab credentials', (tester) async {
     final fixture = WorkspaceFixture();
     addTearDown(fixture.api.close);
     _surface(tester);
+    final external = FakeAdapter((_) => ResponseBody.fromBytes(_png, 200,
+      headers: {'content-type': ['image/png']}));
     await tester.pumpWidget(_host(MarkdownView(
       '![remote](https://example.org/x.png)',
+      externalMediaClient: Dio()..httpClientAdapter = external,
       api: fixture.api, projectId: 42,
       projectWeb: fixture.account.instance.projectWeb(fixture.project.path),
     )));
     await settleNetworkWidgets(tester);
-    expect(find.byIcon(Icons.image_outlined), findsOneWidget);
-    expect(find.text('remote'), findsOneWidget);
-    expect(find.byType(Image), findsNothing);
+    expect(find.byType(Image), findsOneWidget);
+    expect(external.requests, hasLength(1));
+    expect(external.requests.single.headers.containsKey('PRIVATE-TOKEN'), isFalse);
+    expect(external.requests.single.headers.containsKey('Authorization'), isFalse);
     expect(fixture.adapter.requests, isEmpty);
     expect(tester.takeException(), isNull);
   });
@@ -228,7 +232,7 @@ void main() {
       api: fixture.api, projectId: 42, projectWeb: web, base: web,
     )));
     await settleNetworkWidgets(tester);
-    expect(find.byIcon(Icons.image_outlined), findsNWidgets(3));
+    expect(find.byIcon(Icons.broken_image_outlined), findsNWidgets(3));
     expect(find.byType(Image), findsNothing);
     expect(fixture.adapter.requests, isEmpty);
     expect(tester.takeException(), isNull);

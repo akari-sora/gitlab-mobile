@@ -2026,5 +2026,16 @@
   "metadataEditMilestones": "编辑里程碑",
   "metadataDeleteMilestonesQuestion": "删除里程碑？",
   "metadataNoMilestones": "尚无里程碑",
-  "branchesTitle": "分支"
+  "branchesTitle": "分支",
+  "markdownMediaTooLarge": "媒体超过大小限制",
+  "markdownMediaNotImage": "这不是图片",
+  "markdownMediaBlocked": "已阻止不安全的媒体网址",
+  "markdownMediaNetwork": "无法加载媒体",
+  "markdownMediaPlay": "播放",
+  "markdownMediaPause": "暂停",
+  "markdownMediaMute": "静音",
+  "markdownMediaUnmute": "取消静音",
+  "markdownMediaCancel": "取消下载",
+  "markdownMediaRetry": "重试",
+  "markdownMediaLoading": "正在下载媒体"
 }
