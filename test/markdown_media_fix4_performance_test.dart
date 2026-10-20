@@ -13,6 +13,16 @@ void main() {
     'block unclosed video': '<div>\n${'<video>' * 9363}',
     'block unclosed audio': '<div>\n${'<audio>' * 9363}',
     'unclosed audio': '<audio>' * 9363,
+    'invalid image anchors': 'v ${'<a><img>' * 8192}</a>',
+    'invalid image pictures': 'v ${'<picture><img>' * 4682}</picture>',
+    'invalid image anchors with text': 'v ${'<a href=x>t <img>' * 4096}</a>',
+    'empty source anchors': 'v ${'<a href=x><img src="">' * 3121}</a>',
+  };
+  const repeatedRegions = {
+    'invalid image anchors': '<a><img>',
+    'invalid image pictures': '<picture><img>',
+    'invalid image anchors with text': '<a href=x>t <img>',
+    'empty source anchors': '<a href=x><img src="">',
   };
   for (final shape in shapes.entries) {
     testWidgets('FIX4 cap growth: ${shape.key}', (tester) async {
@@ -25,7 +35,11 @@ void main() {
       Future<int> render(int length) async {
         // Tear down outside the timer so samples measure only this render.
         await tester.pumpWidget(const SizedBox.shrink());
-        final source = shape.value.substring(0, length);
+        final closing = shape.key.contains('pictures') ? '</picture>' : '</a>';
+        final repeated = repeatedRegions[shape.key];
+        final source = repeated == null
+            ? shape.value.substring(0, length)
+            : 'v ${repeated * ((length - 2 - closing.length) ~/ repeated.length)}$closing';
         final watch = Stopwatch()..start();
         await tester.pumpWidget(
           MaterialApp(

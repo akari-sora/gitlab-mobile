@@ -95,7 +95,7 @@ final class MarkdownMediaInlineSyntax extends md.InlineSyntax {
       return false;
     }
     final scanner = _scanners[parser] ??= _HtmlMediaScanner(parser.source);
-    final parsed = _inlineMedia(scanner, start);
+    final parsed = _inlineMedia(scanner, start, parser.document);
     if (parsed == null) return false;
     parser
       ..writeText()
@@ -187,15 +187,10 @@ final class MarkdownLiteralLessThanSyntax extends md.InlineSyntax {
             !_isWhitespace(parser.source.codeUnitAt(start + 1)))) {
       return false;
     }
-    var end = start + 1;
-    while (end < parser.source.length &&
-        _isWhitespace(parser.source.codeUnitAt(end))) {
-      end++;
-    }
     parser
       ..writeText()
-      ..addNode(md.Text(parser.source.substring(start, end)))
-      ..consume(end - start);
+      ..addNode(md.Text(parser.source.substring(start, start + 1)))
+      ..consume(1);
     return true;
   }
 
@@ -321,7 +316,7 @@ List<md.Node> _htmlBlockChildren(String source) {
 
   void addText(String text) {
     final decoded = _decodeEntities(text);
-    if (decoded.isEmpty) return;
+    if (decoded.isEmpty || (link != null && decoded.trim().isEmpty)) return;
     final node = md.Text(decoded);
     if (link == null) {
       inlines.add(node);
@@ -340,8 +335,8 @@ List<md.Node> _htmlBlockChildren(String source) {
     }
     addText(source.substring(index, next));
     if (source.startsWith('<!--', next)) {
-      final end = source.indexOf('-->', next + 4);
-      index = end < 0 ? source.length : end + 3;
+      final end = scanner.commentEnd(next);
+      index = end ?? source.length;
       continue;
     }
     final tag = _scanTag(source, next);
@@ -353,7 +348,9 @@ List<md.Node> _htmlBlockChildren(String source) {
     index = tag.end;
     if (!tag.closing && _textOnlyTags.contains(tag.name)) {
       final close = scanner.closingTag(tag.name, index);
-      if (tag.name != 'script' && tag.name != 'style') {
+      if (tag.name != 'script' &&
+          tag.name != 'style' &&
+          tag.name != 'noscript') {
         addText(source.substring(index, close?.start ?? source.length));
       }
       index = close?.end ?? source.length;
@@ -396,17 +393,19 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
 ({md.Node element, int end})? _inlineMedia(
   _HtmlMediaScanner scanner,
   int start,
+  md.Document document,
 ) {
   final source = scanner.source;
   if (source.startsWith('<!--', start)) {
-    final end = source.indexOf('-->', start + 4);
-    final after = end < 0 ? source.length : end + 3;
-    return (element: md.Text(source.substring(start, after)), end: after);
+    final end = scanner.commentEnd(start);
+    if (end == null) return null;
+    return (element: md.Text(source.substring(start, end)), end: end);
   }
   final first = _scanTag(source, start);
   if (first == null || first.closing) return null;
   if (_textOnlyTags.contains(first.name)) {
-    final end = scanner.closingTag(first.name, first.end)?.end ?? source.length;
+    final end = scanner.closingTag(first.name, first.end)?.end;
+    if (end == null) return null;
     return (element: md.Text(source.substring(start, end)), end: end);
   }
   if (first.name == 'img') {
@@ -425,16 +424,17 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
     return (element: element, end: close ?? first.end);
   }
   if (first.name != 'a' && first.name != 'picture') return null;
-  final close = scanner.closingTag(first.name, first.end)?.end;
-  if (close == null) return null;
+  final closing = scanner.closingTag(first.name, first.end);
+  if (closing == null) return null;
+  final close = closing.end;
   var cursor = first.end;
   while (cursor < close) {
     final candidate = source.indexOf('<', cursor);
     if (candidate < 0 || candidate >= close) break;
     if (source.startsWith('<!--', candidate)) {
-      final commentEnd = source.indexOf('-->', candidate + 4);
-      if (commentEnd < 0 || commentEnd >= close) return null;
-      cursor = commentEnd + 3;
+      final commentEnd = scanner.commentEnd(candidate);
+      if (commentEnd == null || commentEnd > close) return null;
+      cursor = commentEnd;
       continue;
     }
     final tag = _scanTag(source, candidate);
@@ -450,16 +450,68 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
     }
     if (!tag.closing && tag.name == first.name) return null;
     if (!tag.closing && tag.name == 'img') {
-      final blocks = _htmlBlockChildren(source.substring(start, close));
-      final children = [
-        for (final block in blocks.whereType<md.Element>()) ...?block.children,
-      ];
+      if (_mediaElement(tag.attributes, kind: 'image') == null) {
+        cursor = tag.end;
+        continue;
+      }
+      final List<md.Node> children;
+      if (first.name == 'a') {
+        // Keep Markdown's code, escape, emphasis and link boundaries inside
+        // inline anchors, sharing the document's reference definitions.
+        final parser = md.InlineParser(
+          source.substring(first.end, closing.start),
+          document,
+        )..syntaxes.insert(0, _MediaEntitySyntax());
+        children = parser.parse();
+        final href = first.attributes['href'];
+        if (href != null && href.isNotEmpty) {
+          _linkInlineChildren(children, _decodeEntities(href));
+        }
+      } else {
+        final blocks = _htmlBlockChildren(source.substring(start, close));
+        children = [
+          for (final block in blocks.whereType<md.Element>())
+            ...?block.children,
+        ];
+      }
       if (!_containsMedia(children)) return null;
       return (element: md.Element('span', children), end: close);
     }
     cursor = tag.end;
   }
   return null;
+}
+
+// Decode anchor entities once, with the same Unicode scalar validation as
+// converted HTML blocks. Code spans and escapes are still claimed first.
+final class _MediaEntitySyntax extends md.DecodeHtmlSyntax {
+  @override
+  bool onMatch(md.InlineParser parser, Match match) {
+    parser.addNode(md.Text(_decodeEntities(match[0]!)));
+    return true;
+  }
+}
+
+void _linkInlineChildren(List<md.Node> nodes, String href) {
+  for (var index = 0; index < nodes.length; index++) {
+    final node = nodes[index];
+    if (node is md.Element) {
+      if (node.tag == markdownMediaElement) {
+        node.attributes.putIfAbsent('href', () => href);
+        continue;
+      }
+      // Explicit Markdown links keep their own destinations.
+      if (node.tag == 'a') continue;
+      if (node.children != null && node.tag != 'code') {
+        _linkInlineChildren(node.children!, href);
+        continue;
+      }
+    }
+    if (node.textContent.trim().isNotEmpty ||
+        (node is md.Element && node.tag == 'img')) {
+      nodes[index] = md.Element('a', [node])..attributes['href'] = href;
+    }
+  }
 }
 
 md.Element? _mediaElement(
@@ -490,8 +542,24 @@ final class _HtmlMediaScanner {
 
   final String source;
   final _closing = <String, ({int from, RegExpMatch? match})>{};
+  ({int from, int? end})? _comment;
   final _sources = <String, ({int from, int end, int? at, String? src})>{};
   static final _closingPatterns = <String, RegExp>{};
+
+  int? commentEnd(int start) {
+    if (source.startsWith('<!-->', start)) return start + 5;
+    if (source.startsWith('<!--->', start)) return start + 6;
+    final previous = _comment;
+    if (previous != null &&
+        start >= previous.from &&
+        (previous.end == null || start + 4 <= previous.end! - 3)) {
+      return previous.end;
+    }
+    final at = source.indexOf('-->', start + 4);
+    final end = at < 0 ? null : at + 3;
+    _comment = (from: start, end: end);
+    return end;
+  }
 
   RegExpMatch? closingTag(String name, int start) {
     final previous = _closing[name];
@@ -523,9 +591,9 @@ final class _HtmlMediaScanner {
       final next = source.indexOf('<', cursor);
       if (next < 0 || next >= end) break;
       if (source.startsWith('<!--', next)) {
-        final commentEnd = source.indexOf('-->', next + 4);
-        if (commentEnd < 0 || commentEnd >= end) break;
-        cursor = commentEnd + 3;
+        final commentEnd = this.commentEnd(next);
+        if (commentEnd == null || commentEnd > end) break;
+        cursor = commentEnd;
         continue;
       }
       final tag = _scanTag(source, next);
@@ -671,5 +739,10 @@ String _decodeEntities(String value) =>
     });
 
 String _entityCodePoint(int? value) => String.fromCharCode(
-  value != null && value > 0 && value <= 0x10FFFF ? value : 0xFFFD,
+  value != null &&
+          value > 0 &&
+          value <= 0x10FFFF &&
+          (value < 0xD800 || value > 0xDFFF)
+      ? value
+      : 0xFFFD,
 );
