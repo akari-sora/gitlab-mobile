@@ -612,15 +612,36 @@ plain values; `test/ai/ai_live_smoke_test.dart` rejects older closing markers.
 `tool/tests/test_ai_runner_contract.py` requires explicit active cancellation and
 keeps this ledger limited to repository evidence or **NOT_RUN**.
 
-Round three was committed as `5a1e4d1`; the round-four repair described here is
-an uncommitted working-tree change. `AiAppText` caches each immutable encoded
-view and retains only the deliverable plain prefix. It remembers the one plain
-string where the encoded budget ended, and every later redaction trims the
-longest trailing proper prefix of a currently known secret from that cut
-string. There is no retained margin. JSON traversal stops retaining entries
-after the cut, and projection and tool-result cuts use the same model. A secret
-already delivered before it became known remains the inherent residual. Whole
+Round three was committed as `5a1e4d1` and round four as `d199a3f`; the
+round-five repair described here is an uncommitted working-tree change.
+`AiAppText` caches each immutable encoded view and retains only the deliverable
+plain prefix. Private cut markers travel with retained strings through JSON-key
+collisions, nested clips and readable projection composition. Every later
+redaction trims the longest trailing proper prefix of a currently known secret
+or its cached pattern-only alias from each cut string. Exact alias matching also
+removes a retained key remainder whose head was pattern-redacted before the key
+became known. There is no retained margin. JSON traversal stops retaining entries
+after the cut, and projection and tool-result cuts use the same model. Whole
 fetched sources are still redacted before any retention cut.
+
+`test/ai/fix5_regressions_test.dart` contains the production catalogue/runner
+inputs for colliding `title`/`description` keys across two secret refreshes,
+undelivered clipped provenance summarized before a late-secret refresh, and
+dot/base64-shaped keys learned after intake with and without catalogue clipping.
+Each production input covers all three wire formats. Additional synthetic tests
+cover a colliding cut value and existing context/prior-summary cut markers.
+These are repository evidence only; external execution receipts, mutations,
+CI, live providers, private integration, devices and AOT remain **NOT_RUN** for
+this ledger.
+
+A secret already delivered before it became known remains a residual. A pattern
+starting before the secret and ending inside it can produce a different alias
+layout; a partial secret at the cut containing another known secret (R5-NEST)
+can also evade trimming after replacement. Those two residuals are not repaired
+here. Runner answer clips at 64,000 characters and history codec truncations at
+16,000/64,000 characters and 8 KiB have no cut markers and can reach
+`restoreFromDisplay` projections. They currently contain provider-produced or
+already-sent text; MR5/MR6 must re-evaluate restoring them to a different recipient.
 
 The round-three tests in `test/ai/fix2_plain_text_test.dart` place newly learned
 secrets at the final tool-tail refresh, recheck frozen issue/job-log results on a

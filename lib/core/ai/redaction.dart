@@ -105,6 +105,7 @@ final class Redactor {
   final KnownSecretsSource _secrets;
   final List<RedactionPattern> _patternDefinitions;
   final Set<String> _knownSecrets = {};
+  final Map<String, String> _patternAliases = {};
   List<RegExp>? _patterns;
   List<RegExp>? _assignments;
   RegExp? _urlCredentials;
@@ -141,16 +142,10 @@ final class Redactor {
           throw const AiFailure(AiFailureKind.policyBlocked);
         }
       }
-      ranges.addAll(_knownSecretRanges(input, _knownSecrets));
-      for (final pattern in _patterns!) {
-        for (final match in pattern.allMatches(input)) {
-          ranges.add(_RedactionRange(start: match.start, end: match.end));
-        }
-      }
       ranges
-        ..addAll(_pemRanges(input))
-        ..addAll(_urlRanges(input, _urlCredentials!))
-        ..addAll(_assignmentRanges(input, _assignments!));
+        ..addAll(_knownSecretRanges(input, _knownSecrets))
+        ..addAll(_knownSecretRanges(input, _patternAliases.values))
+        ..addAll(_patternRanges(input));
       final result = _replaceRanges(input, ranges);
       // A replacement must not introduce a known secret across its boundaries.
       if (_knownSecrets.any(result.text.contains)) {
@@ -177,7 +172,7 @@ final class Redactor {
   RedactionResult redactCutEnd(String input) {
     final result = redactSource(input);
     var trim = 0;
-    for (final secret in _knownSecrets) {
+    for (final secret in [..._knownSecrets, ..._patternAliases.values]) {
       final length = _partialSecretSuffixLength(result.text, secret);
       if (length > trim) trim = length;
     }
@@ -189,10 +184,25 @@ final class Redactor {
   }
 
   void _refreshSecrets() {
+    _compilePatterns();
     for (final secret in _secrets.current) {
-      if (secret.isNotEmpty) _knownSecrets.add(secret);
+      if (secret.isNotEmpty && _knownSecrets.add(secret)) {
+        // Cache the layout intake would retain before this secret was known.
+        // This scan uses built-in detectors only, never the known-secret set.
+        final alias = _replaceRanges(secret, _patternRanges(secret)).text;
+        if (alias != secret) _patternAliases[secret] = alias;
+      }
     }
   }
+
+  List<_RedactionRange> _patternRanges(String input) => [
+    for (final pattern in _patterns!)
+      for (final match in pattern.allMatches(input))
+        _RedactionRange(start: match.start, end: match.end),
+    ..._pemRanges(input),
+    ..._urlRanges(input, _urlCredentials!),
+    ..._assignmentRanges(input, _assignments!),
+  ];
 
   void _compilePatterns() {
     if (_patterns != null) return;

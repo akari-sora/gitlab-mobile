@@ -27,10 +27,26 @@ sealed class AiAppText {
   String _encode();
   AiAppText redact(Redactor redactor, {String Function(String)? source});
   AiAppText escaped() => _EscapedText(this);
+
+  /// A readable projection that keeps cut markers through composition.
+  AiAppText plainView(String Function(String) transform) => switch (this) {
+    _PlainText(:final value) => AiAppText.plain(transform(value)),
+    _CutText(:final value) => _CutText(transform(value)),
+    _JsonText(:final value) => AiAppText.join([
+      for (final part in _readableJsonParts(value)) part.plainView(transform),
+    ]),
+    _JoinedText(:final parts, :final separator) => AiAppText.join(
+      parts.map((part) => part.plainView(transform)).toList(),
+      separator,
+    ),
+    _UntrustedText(:final body) ||
+    _EscapedText(:final body) ||
+    _ClippedText(:final body) => body.plainView(transform),
+  };
   AiAppText clipped(int maximum, {int escapeDepth = 0}) {
     final retention = _PlainRetention(maximum);
     final body = retention.retain(this, escapeDepth);
-    return _ClippedText(body, maximum, retention.cutString);
+    return _ClippedText(body, maximum);
   }
 }
 
@@ -46,6 +62,27 @@ final class _PlainText extends AiAppText {
       _PlainText((source ?? (s) => redactor.redactSource(s).text)(value));
 }
 
+// A marker travels with its string, including inside JSON values. A key
+// collision therefore either retains both or drops both.
+final class _CutText extends AiAppText {
+  const _CutText(this.value);
+  final String value;
+  @override
+  Iterable<String> get plainStrings => [value];
+  @override
+  String _encode() => value;
+  String toJson() => value;
+  @override
+  AiAppText redact(Redactor redactor, {String Function(String)? source}) =>
+      _CutText(
+        redactor
+            .redactCutEnd(
+              (source ?? (s) => redactor.redactSource(s).text)(value),
+            )
+            .text,
+      );
+}
+
 final class _JsonText extends AiAppText {
   _JsonText(Object? value) : value = mapAiJsonStrings(value, (s) => s);
   final Object? value;
@@ -56,7 +93,11 @@ final class _JsonText extends AiAppText {
   @override
   AiAppText redact(Redactor redactor, {String Function(String)? source}) =>
       _JsonText(
-        mapAiJsonStrings(value, source ?? (s) => redactor.redactSource(s).text),
+        mapAiJsonStrings(
+          value,
+          source ?? (s) => redactor.redactSource(s).text,
+          cutEnd: (s) => redactor.redactCutEnd(s).text,
+        ),
       );
 }
 
@@ -126,10 +167,9 @@ final class _EscapedText extends AiAppText {
 }
 
 final class _ClippedText extends AiAppText {
-  const _ClippedText(this.body, this.maximum, this.cutString);
+  const _ClippedText(this.body, this.maximum);
   final AiAppText body;
   final int maximum;
-  final int? cutString;
   @override
   Iterable<String> get plainStrings => body.plainStrings;
   @override
@@ -137,60 +177,69 @@ final class _ClippedText extends AiAppText {
   @override
   String _encode() => clipWrappedUntrustedGitLabData(body.encode(), maximum);
   @override
-  AiAppText redact(Redactor redactor, {String Function(String)? source}) {
-    var ordinal = 0;
-    final safe = body.redact(
-      redactor,
-      source: (value) {
-        final text = (source ?? (s) => redactor.redactSource(s).text)(value);
-        return ordinal++ == cutString ? redactor.redactCutEnd(text).text : text;
-      },
-    );
-    return _ClippedText(safe, maximum, cutString);
-  }
+  AiAppText redact(Redactor redactor, {String Function(String)? source}) =>
+      _ClippedText(body.redact(redactor, source: source), maximum);
 }
 
-Object? mapAiJsonStrings(Object? value, String Function(String) transform) =>
-    switch (value) {
-      String text => transform(text),
-      List<Object?> values => List<Object?>.unmodifiable([
-        for (final item in values) mapAiJsonStrings(item, transform),
-      ]),
-      Map<String, Object?> values => Map<String, Object?>.unmodifiable({
-        for (final entry in values.entries)
-          transform(entry.key): mapAiJsonStrings(entry.value, transform),
-      }),
-      _ => value,
-    };
+Object? mapAiJsonStrings(
+  Object? value,
+  String Function(String) transform, {
+  String Function(String)? cutEnd,
+}) => switch (value) {
+  _CutText(:final value) => _CutText(
+    cutEnd == null ? transform(value) : cutEnd(transform(value)),
+  ),
+  String text => transform(text),
+  List<Object?> values => List<Object?>.unmodifiable([
+    for (final item in values)
+      mapAiJsonStrings(item, transform, cutEnd: cutEnd),
+  ]),
+  Map<String, Object?> values => Map<String, Object?>.unmodifiable({
+    for (final entry in values.entries)
+      transform(entry.key): mapAiJsonStrings(
+        entry.value,
+        transform,
+        cutEnd: cutEnd,
+      ),
+  }),
+  _ => value,
+};
 
-Iterable<String> readableAiJsonStrings(Object? value) sync* {
-  if (value is String) {
+Iterable<AiAppText> _readableJsonParts(Object? value) sync* {
+  if (value is _CutText) {
     yield value;
+  } else if (value is String) {
+    yield AiAppText.plain(value);
   } else if (value is Map<String, Object?>) {
     for (final entry in value.entries) {
-      yield entry.key;
-      yield* readableAiJsonStrings(entry.value);
+      yield AiAppText.plain(entry.key);
+      yield* _readableJsonParts(entry.value);
     }
   } else if (value is List<Object?>) {
     for (final item in value) {
-      yield* readableAiJsonStrings(item);
+      yield* _readableJsonParts(item);
     }
   }
 }
+
+Iterable<String> readableAiJsonStrings(Object? value) =>
+    _readableJsonParts(value).expand((part) => part.plainStrings);
 
 // Retain only the deliverable prefix. Walk plain values
 // while accounting for the encodings around them; never decode a wire view.
 final class _PlainRetention {
   _PlainRetention(this.remaining);
   int remaining;
-  int ordinal = 0;
-  int? cutString;
 
   void consume(int width) =>
       remaining = remaining > width ? remaining - width : 0;
 
-  String text(String value, int depth, {bool json = false}) {
-    final current = ordinal++;
+  AiAppText text(
+    String value,
+    int depth, {
+    bool json = false,
+    bool cut = false,
+  }) {
     final prefix = clipAiPlainForEscapedBudget(
       value,
       remaining,
@@ -198,27 +247,24 @@ final class _PlainRetention {
       json: json,
     );
     consume(_encodedWidth(prefix, depth, json: json));
-    if (prefix.length == value.length) return value;
+    if (prefix.length == value.length) {
+      return cut ? _CutText(value) : AiAppText.plain(value);
+    }
     remaining = 0;
-    cutString = current;
-    return prefix;
+    return _CutText(prefix);
   }
 
   AiAppText retain(AiAppText value, int depth) => switch (value) {
-    _PlainText() => AiAppText.plain(text(value.value, depth)),
+    _PlainText() => text(value.value, depth),
+    _CutText() => text(value.value, depth, cut: true),
     _JsonText() => AiAppText.json(jsonValue(value.value, depth)),
     _EscapedText() => retain(value.body, depth + 1).escaped(),
     _UntrustedText() => untrusted(value, depth),
     _JoinedText() => joined(value, depth),
-    _ClippedText() => _ClippedText(
-      retain(value.body, depth),
-      value.maximum,
-      value.cutString,
-    ),
+    _ClippedText() => _ClippedText(retain(value.body, depth), value.maximum),
   };
 
   AiAppText untrusted(_UntrustedText value, int depth) {
-    ordinal++; // The source label is a plain string too.
     final labels = wrapUntrustedGitLabData(
       source: value.source,
       nonce: value.nonce,
@@ -243,9 +289,15 @@ final class _PlainRetention {
   }
 
   Object? jsonValue(Object? value, int depth) {
-    if (value is String) {
+    if (value is String || value is _CutText) {
       consume(2); // JSON string quotes.
-      return text(value, depth, json: true);
+      final retained = text(
+        value is _CutText ? value.value : value as String,
+        depth,
+        json: true,
+        cut: value is _CutText,
+      );
+      return retained is _PlainText ? retained.value : retained;
     }
     if (value is List<Object?>) {
       consume(2); // Brackets.
@@ -262,7 +314,6 @@ final class _PlainRetention {
       final result = <String, Object?>{};
       for (final entry in value.entries) {
         if (remaining <= 0) break;
-        ordinal++; // Projected schema key, visited before its value.
         if (result.isNotEmpty) consume(1);
         consume(_encodedWidth(jsonEncode(entry.key), depth) + 1);
         result[entry.key] = jsonValue(entry.value, depth);

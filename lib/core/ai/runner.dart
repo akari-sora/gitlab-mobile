@@ -1028,26 +1028,25 @@ AiAppText buildAiProjectionData({
     (entry) =>
         entry.context.any((block) => block.source == 'conversation_summary'),
   );
-  final contextText = (hasPriorSummary ? const <AiContextBlock>[] : context)
-      .map((block) => redact(block.plainData.plainText))
-      .join('\n');
+  final contextData = AiAppText.join([
+    for (final block in hasPriorSummary ? const <AiContextBlock>[] : context)
+      block.plainData.plainView(redact),
+  ]);
   final contextLimit = (available * .4).floor();
-  final head = AiAppText.plain(
-    contextText,
-  ).clipped(contextLimit, escapeDepth: 1);
+  final head = contextData.clipped(contextLimit, escapeDepth: 1);
   var remaining = available - escapeUntrustedGitLabText(head.encode()).length;
   final recent = <AiAppText>[];
-  var dropped = head.plainText.length < contextText.length;
+  var dropped = head.plainText.length < contextData.plainText.length;
   AiAppText plain(String text) => AiAppText.plain(redact(text));
   AiAppText toolSummary(AiToolResult result) {
-    final firstLine = result.plainData.plainText.split('\n').first;
+    final data = result.plainData.plainView(redact);
+    final firstLine = data.plainText.split('\n').first;
     return AiAppText.join([
       plain('[tool ${result.name}: '),
-      plain(
-        firstLine.startsWith('[source:')
-            ? firstLine
-            : '[source: tool ${result.name}]',
-      ).clipped(512),
+      (firstLine.startsWith('[source:')
+              ? data.clipped(firstLine.length)
+              : plain('[source: tool ${result.name}]'))
+          .clipped(512),
       plain(
         '; ${result.content.length} chars; ${result.isError ? 'interrupted' : 'read'}]',
       ),
@@ -1067,7 +1066,7 @@ AiAppText buildAiProjectionData({
       if (entry is AppUserEntry)
         for (final block in entry.context)
           if (block.source == 'conversation_summary')
-            plain(block.plainData.plainText),
+            block.plainData.plainView(redact),
       switch (entry) {
         AppUserEntry() => plain('User: ${entry.text}'),
         ProviderOutputEntry() => plain(
