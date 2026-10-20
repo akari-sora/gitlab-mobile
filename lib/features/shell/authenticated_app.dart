@@ -869,7 +869,7 @@ class _MobileShellState extends State<_MobileShell> {
                           style: theme.textTheme.headlineSmall,
                         ),
                         Text(
-                          '@${account.user.username}',
+                          isolated('@${account.user.username}'),
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodyLarge?.copyWith(color: muted),
                         ),
@@ -922,7 +922,7 @@ class _MobileShellState extends State<_MobileShell> {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                     leading: Monogram(saved.user.name, size: 32, circle: true),
                     title: Text(
-                      '@${saved.user.username}',
+                      isolated('@${saved.user.username}'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),

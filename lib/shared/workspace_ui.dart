@@ -272,23 +272,23 @@ class LabelPill extends StatelessWidget {
       final scope = name.substring(0, split), value = name.substring(split + 2);
       return Semantics(label: name, excludeSemantics: true, child: Row(mainAxisSize: MainAxisSize.min, children: [
         Flexible(child: Container(
-          padding: const EdgeInsets.fromLTRB(8, 2, 6, 2),
-          decoration: BoxDecoration(color: fill, borderRadius: const BorderRadius.horizontal(left: radius),
+          padding: const EdgeInsetsDirectional.fromSTEB(8, 2, 6, 2),
+          decoration: BoxDecoration(color: fill, borderRadius: const BorderRadiusDirectional.horizontal(start: radius),
             border: Border.all(color: fill)),
-          child: Text(scope, maxLines: 1, overflow: TextOverflow.ellipsis, style: base.copyWith(color: ink)),
+          child: Text(isolated(scope), maxLines: 1, overflow: TextOverflow.ellipsis, style: base.copyWith(color: ink)),
         )),
         Flexible(child: Container(
-          padding: const EdgeInsets.fromLTRB(6, 2, 8, 2),
-          decoration: BoxDecoration(color: scheme.surface, borderRadius: const BorderRadius.horizontal(right: radius),
+          padding: const EdgeInsetsDirectional.fromSTEB(6, 2, 8, 2),
+          decoration: BoxDecoration(color: scheme.surface, borderRadius: const BorderRadiusDirectional.horizontal(end: radius),
             border: Border.all(color: fill)),
-          child: Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: base.copyWith(color: scheme.onSurface)),
+          child: Text(isolated(value), maxLines: 1, overflow: TextOverflow.ellipsis, style: base.copyWith(color: scheme.onSurface)),
         )),
       ]));
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
       decoration: BoxDecoration(color: fill, borderRadius: BorderRadius.circular(10)),
-      child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: base.copyWith(color: ink)),
+      child: Text(isolated(name), maxLines: 1, overflow: TextOverflow.ellipsis, style: base.copyWith(color: ink)),
     );
   }
 }
@@ -374,7 +374,7 @@ class MetaChip extends StatelessWidget {
         : Theme.of(context).textTheme.bodySmall?.copyWith(color: color);
     final chip = Row(mainAxisSize: MainAxisSize.min, children: [
       if (icon != null) ...[Icon(icon, size: 14, color: color), const SizedBox(width: 4)],
-      Flexible(child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: style)),
+      Flexible(child: Text(isolated(text), maxLines: 1, overflow: TextOverflow.ellipsis, style: style)),
     ]);
     final tap = onTap;
     if (tap == null) return chip;

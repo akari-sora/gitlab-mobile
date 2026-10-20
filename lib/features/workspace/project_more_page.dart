@@ -563,7 +563,7 @@ class _ProjectMoreTabState extends State<ProjectMoreTab> {
         onTap: _busy || project.archived == true ? null : _edit)),
       const SizedBox(height: 16), OutlinedButton.icon(onPressed: _busy ? null : _delete,
         icon: const Icon(Icons.delete_outline), label: Text(l10n.deleteProjectEllipsis)),
-      const SizedBox(height: 12), Text('ID ${project.id} · @${account.user.username}', style: Theme.of(context).textTheme.bodySmall),
+      const SizedBox(height: 12), Text(isolated('ID ${project.id} · @${account.user.username}'), style: Theme.of(context).textTheme.bodySmall),
     ]);
   }
 }

@@ -293,6 +293,29 @@ void main() {
   );
 
   testWidgets(
+    'the preview shows readable text without HTML comments or Markdown markers',
+    (tester) async {
+      _surface(tester, const Size(390, 844));
+      // The shape of a bot-written merge request description.
+      final body = '<!-- CURSOR_AGENT_PR_BODY_BEGIN -->\n## What I found\n'
+          'Job artifact saves in `lib/ci_page.dart` kept a **private** helper. '
+          'See [the notes](https://example.com/notes).\n\n$_longLatin';
+      final fixture = _fixture()..putIssue(1, body);
+
+      await tester.pumpWidget(_host(_page(fixture)));
+      await settleNetworkWidgets(tester);
+
+      final preview = _previewText(tester);
+      expect(preview, startsWith(
+        'What I found Job artifact saves in lib/ci_page.dart kept a private helper. See the notes. Paragraph 0'));
+      for (final markup in ['<!--', 'CURSOR_AGENT', '##', '**', '`', 'https://']) {
+        expect(preview, isNot(contains(markup)), reason: markup);
+      }
+      expect(preview, endsWith('…'));
+    },
+  );
+
+  testWidgets(
     'long issue description defers Markdown until expanded and toggles without requests',
     (tester) async {
       _surface(tester, const Size(390, 844));
@@ -311,7 +334,7 @@ void main() {
       expect(preview.data!.runes.length, lessThanOrEqualTo(400));
       expect(
         preview.data,
-        startsWith('Paragraph 0 explains **rollout** step 0'),
+        startsWith('Paragraph 0 explains rollout step 0'),
       );
       expect(preview.data, endsWith('…'));
       expect(find.textContaining(_endMarker, findRichText: true), findsNothing);

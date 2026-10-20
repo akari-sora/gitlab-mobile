@@ -6187,18 +6187,15 @@
   "@addReaction": {
     "description": "features/workspace/reactions.dart:253, features/workspace/reactions.dart:326"
   },
-  "resourceReactions": "{path} · {value}{iid} 回應",
+  "resourceReactions": "{path} · {reference} 回應",
   "@resourceReactions": {
     "description": "features/workspace/reactions.dart:306",
     "placeholders": {
       "path": {
         "example": "widget.project.path"
       },
-      "value": {
-        "example": "widget.resource == 'merge_requests' ? '!' : '#'"
-      },
-      "iid": {
-        "example": "widget.iid"
+      "reference": {
+        "example": "'!44' (merge request) or '#12' (issue)"
       }
     }
   },
@@ -8517,15 +8514,12 @@
   "@blankRemovesMilestone": {
     "description": "features/workspace/work_item_page.dart:708"
   },
-  "editItemReference": "編輯 {value}{iid}",
+  "editItemReference": "編輯 {reference}",
   "@editItemReference": {
     "description": "features/workspace/work_item_page.dart:717",
     "placeholders": {
-      "value": {
-        "example": "owner.resource == 'merge_requests' ? '!' : '#'"
-      },
-      "iid": {
-        "example": "owner.iid"
+      "reference": {
+        "example": "'!44' (merge request) or '#12' (issue)"
       }
     }
   },
@@ -8537,15 +8531,12 @@
   "@blankRemovesAssignees": {
     "description": "features/workspace/work_item_page.dart:750"
   },
-  "editAssigneesReference": "修改指派 · {value}{iid}",
+  "editAssigneesReference": "修改指派 · {reference}",
   "@editAssigneesReference": {
     "description": "features/workspace/work_item_page.dart:757",
     "placeholders": {
-      "value": {
-        "example": "owner.resource == 'merge_requests' ? '!' : '#'"
-      },
-      "iid": {
-        "example": "owner.iid"
+      "reference": {
+        "example": "'!44' (merge request) or '#12' (issue)"
       }
     }
   },

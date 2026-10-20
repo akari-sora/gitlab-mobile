@@ -12,6 +12,12 @@ AppStrings _current = AppStrings(sourceLanguage);
 /// string read here during a build is always current.
 AppStrings get l10n => _current;
 
+/// Text from GitLab (a name, title, path or reference such as `!44`) for a
+/// widget of its own. In a right-to-left language it is isolated, so it keeps
+/// its own direction: `!44` stays `!44` and `@user` stays `@user`. Values put
+/// into translated messages are isolated by the messages themselves.
+String isolated(String text) => _current.language.rtl ? bidiIsolated(text) : text;
+
 /// Switches every later lookup to [language].
 void useLanguage(AppLanguage language) {
   if (!identical(_current.language, language)) _current = AppStrings(language);

@@ -498,7 +498,7 @@ class _WorkItemMilestonePickerState extends State<WorkItemMilestonePicker> {
                 Padding(
                   padding: const EdgeInsets.all(16),
                   child: Text(
-                    '@${widget.account.user.username} · ${widget.account.instance.key}\n'
+                    '${isolated('@${widget.account.user.username} · ${widget.account.instance.key}')}\n'
                     '${_milestoneResourceLabel(snapshot.summary)}',
                   ),
                 ),

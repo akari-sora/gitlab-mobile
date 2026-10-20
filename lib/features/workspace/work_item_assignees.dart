@@ -222,8 +222,8 @@ class WorkItemAssigneeRosterPage extends StatelessWidget {
           final user = users[index];
           return ListTile(
             key: ValueKey('work-item-assignee-roster-${user.id}'),
-            title: Text(user.name.isEmpty ? '@${user.username}' : user.name),
-            subtitle: Text('@${user.username}'),
+            title: Text(isolated(user.name.isEmpty ? '@${user.username}' : user.name)),
+            subtitle: Text(isolated('@${user.username}')),
           );
         },
       ),
@@ -589,7 +589,9 @@ class _AssigneeEditorState extends State<_AssigneeEditor> {
         onTap: !_canChange || _writing || _locked
             ? null
             : () => _toggle(user.id, !row.selected),
-        title: Text(label),
+        title: Text(user.name.isEmpty
+            ? isolated('@${user.username}')
+            : '${isolated(user.name)} · ${isolated('@${user.username}')}'),
         subtitle: Text(row.candidate ? l10n.searchResults : l10n.currentAssignees),
         trailing: Icon(
           multiple

@@ -18,7 +18,7 @@ Future<void> showAccountSheet(BuildContext context, SessionController session) {
         const SizedBox(width: 14),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(account.user.name, style: theme.textTheme.titleMedium),
-          Text('@${account.user.username}', style: theme.textTheme.bodyMedium),
+          Text(isolated('@${account.user.username}'), style: theme.textTheme.bodyMedium),
           Text(account.instance.key, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ])),
@@ -28,7 +28,7 @@ Future<void> showAccountSheet(BuildContext context, SessionController session) {
         ListTile(
           contentPadding: EdgeInsets.zero,
           leading: Monogram(saved.user.name, size: 32, circle: true),
-          title: Text('@${saved.user.username}', maxLines: 1, overflow: TextOverflow.ellipsis),
+          title: Text(isolated('@${saved.user.username}'), maxLines: 1, overflow: TextOverflow.ellipsis),
           subtitle: Text(saved.instance.base.host),
           trailing: const Icon(Icons.swap_horiz),
           onTap: session.busy ? null : () {

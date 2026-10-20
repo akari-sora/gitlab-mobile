@@ -115,6 +115,62 @@ void main() {
     expect(find.text('hidden line'), findsOneWidget);
   });
 
+  test('runner timestamp headers are removed and continued lines joined', () {
+    // The header GitLab Runner writes since GitLab 17.1, as in a gitlab.com
+    // trace: `+` continues the previous line, here across section markers.
+    final parsed = JobTrace.parse([
+      '2026-10-20T06:56:03.198557Z 00O \x1b[0KRunning with gitlab-runner 19.4.1\x1b[0;m',
+      '2026-10-20T06:56:03.198694Z 00O section_start:1792479363:prepare_executor\r\x1b[0K',
+      '2026-10-20T06:56:03.198699Z 00O+\x1b[0K\x1b[36;1mPreparing the "docker" executor\x1b[0;m',
+      '2026-10-20T06:56:03.747404Z 00O section_end:1792479365:prepare_executor\r\x1b[0K',
+      '2026-10-20T06:56:03.747480Z 00O+section_start:1792479365:prepare_script\r\x1b[0K',
+      '2026-10-20T06:56:03.747483Z 00O+\x1b[0K\x1b[36;1mPreparing environment\x1b[0;m',
+      '2026-10-20T06:56:03.879411Z 01E warning: on stderr',
+      '2026-10-20T06:56:03.879412Z 01O ',
+    ].join('\n'));
+    expect(parsed.lines.map((line) => '${line.section ?? '-'}:${line.text}'), [
+      '-:Running with gitlab-runner 19.4.1',
+      'prepare_executor:Preparing the "docker" executor',
+      'prepare_script:Preparing environment',
+      'prepare_script:warning: on stderr',
+      'prepare_script:',
+    ]);
+    expect(parsed.ansiStripped, isNot(contains('Z 0')));
+    final executor = parsed.sections.firstWhere((section) => section.name == 'prepare_executor');
+    expect(executor.durationSeconds, 2);
+    expect((executor.startLine, executor.endLine), (1, 2));
+  });
+
+  test('a continued line joins the text before it and the trailing newline stays', () {
+    const header = '2026-10-20T06:56:03.198557Z 00O ', continued = '2026-10-20T06:56:03.198558Z 00O+';
+    final parsed = JobTrace.parse('${header}ab\n${continued}cd\n${header}e\n');
+    expect(parsed.lines.map((line) => line.text), ['abcd', 'e', '']);
+  });
+
+  testWidgets('the job log page shows runner output without timestamp headers', (tester) async {
+    final fixture = _TimestampFixture();
+    addTearDown(fixture.api.close);
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(412, 900);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(workspaceHost(JobLogPage(
+      account: fixture.account, api: fixture.api, project: fixture.project, id: 501,
+    )));
+    await settleWorkspace(tester);
+    expect(find.text('Running with gitlab-runner 19.4.1'), findsOneWidget);
+    expect(find.text('Preparing environment'), findsOneWidget);
+    expect(find.textContaining('Z 00O', findRichText: true), findsNothing);
+    await tester.enterText(find.byKey(const ValueKey('job-log-search-501')), '00O');
+    await tester.pump();
+    expect(find.textContaining('Z 00O', findRichText: true), findsNothing);
+  });
+
+  test('a trace whose first line has no timestamp header is left as it is', () {
+    final parsed = JobTrace.parse('plain first\n2026-10-20T06:56:03.198557Z 00O kept');
+    expect(parsed.lines.map((line) => line.text), ['plain first', '2026-10-20T06:56:03.198557Z 00O kept']);
+  });
+
   test('CRLF body lines drop the trailing carriage return', () {
     final parsed = JobTrace.parse('alpha\r\nbeta\r');
     expect(parsed.lines.map((line) => line.text), ['alpha', 'beta']);
@@ -228,6 +284,18 @@ class _DeepFixture extends WorkspaceFixture {
     }
     return buffer.toString();
   }();
+  @override
+  FutureOr<ResponseBody> respond(RequestOptions request) {
+    if (request.uri.path.endsWith('/jobs/501/trace')) return ResponseBody.fromString(trace, 200);
+    return super.respond(request);
+  }
+}
+
+class _TimestampFixture extends WorkspaceFixture {
+  static const trace = '2026-10-20T06:56:03.198557Z 00O \x1b[0KRunning with gitlab-runner 19.4.1\x1b[0;m\n'
+      '2026-10-20T06:56:03.747480Z 00O section_start:1792479365:prepare_script\r\x1b[0K\n'
+      '2026-10-20T06:56:03.747483Z 00O+\x1b[0K\x1b[36;1mPreparing environment\x1b[0;m\n'
+      '2026-10-20T06:56:04.000000Z 00O section_end:1792479366:prepare_script\r\x1b[0K\n';
   @override
   FutureOr<ResponseBody> respond(RequestOptions request) {
     if (request.uri.path.endsWith('/jobs/501/trace')) return ResponseBody.fromString(trace, 200);

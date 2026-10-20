@@ -124,7 +124,7 @@ class PickerChoiceLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final username = choice.username;
     final text = switch (source) {
-      PickerSource.members => '@${(username == null || username.isEmpty) ? choice.name : username}',
+      PickerSource.members => isolated('@${(username == null || username.isEmpty) ? choice.name : username}'),
       _ => choice.name,
     };
     final label = Text(text, overflow: TextOverflow.ellipsis);

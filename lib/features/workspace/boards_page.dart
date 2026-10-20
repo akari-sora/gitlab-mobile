@@ -310,7 +310,7 @@ class _BoardsPageState extends State<BoardsPage> {
                 ListTile(
                   key: ValueKey('move-issue-to-${column.key}'),
                   leading: Icon(_columnIcon(column.kind)),
-                  title: Text(column.title),
+                  title: Text(isolated(column.title)),
                   onTap: () => Navigator.pop(context, column),
                 ),
             ],
@@ -819,7 +819,7 @@ class _BoardsPageState extends State<BoardsPage> {
                 ListTile(
                   key: ValueKey('manage-board-list-${column.listId}'),
                   leading: Icon(_columnIcon(column.kind)),
-                  title: Text(column.title),
+                  title: Text(isolated(column.title)),
                   trailing: PopupMenuButton<String>(
                     tooltip: l10n.listActions,
                     onSelected: (value) {
@@ -959,7 +959,7 @@ class _BoardsPageState extends State<BoardsPage> {
                       selected: index == _columnIndex,
                       showCheckmark: false,
                       avatar: Icon(_columnIcon(column.kind), size: 18),
-                      label: Text(column.title),
+                      label: Text(isolated(column.title)),
                       onSelected: (_) => _showColumn(index),
                     ),
                     if (index != board.columns.length - 1)

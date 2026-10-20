@@ -304,7 +304,7 @@ class _ReactionsBarState extends State<ReactionsBar> {
     final error = _error;
     if (error != null && _awards.isEmpty) {
       return FailureNotice(error, account: widget.account, onRetry: ownerCurrent ? _load : null, onSwitchAccount: endSessionFrom(context),
-        resourceLabel: l10n.resourceReactions(widget.project.path, widget.resource == 'merge_requests' ? '!' : '#', widget.iid));
+        resourceLabel: l10n.resourceReactions(widget.project.path, '${widget.resource == 'merge_requests' ? '!' : '#'}${widget.iid}'));
     }
     return Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
       for (final entry in counts.entries)
@@ -317,7 +317,7 @@ class _ReactionsBarState extends State<ReactionsBar> {
           padding: const EdgeInsets.symmetric(horizontal: 4),
           tooltip: [
             for (final award in _awards)
-              if (valueText(award, 'name') == entry.key) '@${valueText(valueObject(award, 'user'), 'username')}',
+              if (valueText(award, 'name') == entry.key) isolated('@${valueText(valueObject(award, 'user'), 'username')}'),
           ].join(l10n.listSeparator),
           label: Text('${reactionGlyph(entry.key)} ${entry.value}'),
           onSelected: _busy || !ownerCurrent ? null : (_) => _toggle(entry.key),

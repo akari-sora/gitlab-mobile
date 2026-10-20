@@ -69,7 +69,32 @@ Three earlier runs each stopped at a single check, and each run created and dele
 - **Run 2:** the stale-write check failed once with no recorded detail; the check now records its outcome.
 - **Run 3:** a transport error while creating the tag was reported as `writeUncertain`.
 
+## Emulator with the owner's account, 2026-10-20
+
+Release `v0.5.0-dev.c13b280d` (versionCode 537, SHA-256 `471e9473…` read back from the installed `base.apk`) on an Android 16 emulator (1080×2424), signed in with the owner's PAT. The token was piped from the password manager into `adb input` and never printed; the account was removed in the app afterwards. Reads only: no write was made with the account.
+
+Worked: sign-in, Home (starred projects), 我的工作 merge requests with the 我建立的 scope and state filter, CI/CD overview, Inbox (3 real to-dos, none marked), Explore → `gitlab-mobile` overview, MR `!44` summary and diff, pipeline `2966275092` jobs and test report (2892/2892), the `android_debug` log, job artifacts download (37.8 MB, with progress and 開啟／分享), the release page and a verified download of `build-metadata.json` (652 B, SHA-256 `7f59e07e…`, equal to the published file), 應用程式更新 「已是最新版」, language switches in the app (Arabic) and from system settings (Japanese, German, Russian) while a page stayed open, and account removal back to an empty sign-in screen.
+
+Found, all invisible to the fixtures:
+
+- The job log showed the runner's per-line header (`2026-10-20T06:56:59.174912Z 01O`), which runners write when timestamps are on (`FF_TIMESTAMPS`, GitLab ≥ 17.1, as on gitlab.com) and GitLab's own log view hides.
+- A long description's summary showed HTML comments and Markdown markers (`<!-- CURSOR_AGENT_PR_BODY_BEGIN --> ## What I found`).
+- In Arabic, `!44` read `44!`, `@<owner>` read `<owner>@` and an English description's full stop moved to its start; 「منذ 6 يوم」 used the singular after 6.
+
+Fixed in merge request !84. Synthetic tests: `test/job_sections_test.dart` (headers, `+` continuations, the job log page), `test/rest_work_item_description_test.dart` (the description preview) and `test/bidi_test.dart` (the laid-out order of `!44`, `#12` and `@user` in Arabic text, `markdownSummary` edge cases and its bounded time on hostile single lines): `JobTrace.parse` removes the headers and joins `+` continuation lines as GitLab's `Gitlab::Ci::Ansi2json::Converter` does; summaries come from `markdownSummary`, which keeps code and drops comments, tags and markers; Arabic messages isolate each value with its sigil and GitLab text shown on its own is isolated piece by piece; the day count uses 「ي」 like minutes 「د」 and hours 「س」.
+
+### The fixed builds on the same emulator
+
+Merge-request debug APKs (signed with each pipeline's throwaway key, so the release was uninstalled first), same emulator and account, reads only, the account removed afterwards:
+
+- `c8505ac` (`gitlab-mobile-c8505ac3-debug.apk`, SHA-256 `f949f60e…`): the `android_debug` log of its own pipeline starts with `Running with gitlab-runner 19.4.1 (3c39fceb)`, with no header on any line, and lists its sections with durations (`prepare executor · 0 seconds` … `upload artifacts on success · 11 seconds`). MR `!44`'s collapsed summary reads `What I found Job artifact saves in lib/features/workspace/ci_page.dart …`. In Arabic the MR header reads `!44`, the author line `@<owner>` with `@` on its left and 「منذ 6 ي」, and the inbox 「منذ 1 ي」.
+- `dc814b7` (`…dc814b73-debug.apk`, `7ce0c9b8…`): the editor for `.gitlab-ci.yml` on `main`, switched to Arabic while open, shows the subtitle `.gitlab-ci.yml · main` in order (closed without saving). This run found the file page title reading `gitlab-ci.yml.`.
+- `a41f1de` (`…a41f1de8-debug.apk`, `79a99bfc…`): the file page title reads `.gitlab-ci.yml` in Arabic.
+
+Still seen and not fixed here: a page opened before a language switch keeps the title it was opened with (the editor's 「Edit file」), like the error messages noted for the 24-language release.
+
 ## NOT_RUN
 
 - On the phone: swiping or 全部完成 on real todos (only the two test todos above were written), the MR draft toggle, merge, fork, running a pipeline schedule, wiki page rendering (no project with an enabled wiki was used), linked issues with real links, deployments with data, the unresolved-project page against a real 404, the two-pane layout at ≥840 dp, TalkBack, reduced motion, 2x system font size (covered only by widget tests).
 - iOS, store signing, OAuth login, push, the live CRUD smoke on this branch.
+- The release build of these fixes on a device (only the merge-request debug builds above ran), a physical phone, TalkBack with Arabic text, and a native Arabic speaker's review of 「ي」.

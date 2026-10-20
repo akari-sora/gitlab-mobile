@@ -459,7 +459,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 8),
                       child: Text(
-                        segments[i],
+                        isolated(segments[i]),
                         style: theme.textTheme.labelLarge,
                       ),
                     )
@@ -472,7 +472,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
                       onPressed: () => setState(
                         () => _folder = segments.take(i + 1).join('/'),
                       ),
-                      child: Text(segments[i], style: style),
+                      child: Text(isolated(segments[i]), style: style),
                     ),
                 ],
               ],
@@ -508,7 +508,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
               const SizedBox(width: 14),
               Expanded(
                 child: Text(
-                  name,
+                  isolated(name),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(
@@ -1481,15 +1481,15 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            widget.filePath.split('/').last,
+            isolated(widget.filePath.split('/').last),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 18),
           ),
           Text(
             [
-              if (slash > 0) widget.filePath.substring(0, slash),
-              resolvedRef.name,
+              if (slash > 0) isolated(widget.filePath.substring(0, slash)),
+              isolated(resolvedRef.name),
               if (resolvedRef.sha.isNotEmpty)
                 RepositoryRef.shortSha(resolvedRef.sha),
             ].join(' · '),

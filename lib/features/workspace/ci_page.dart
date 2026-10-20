@@ -2125,7 +2125,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           Padding(padding: const EdgeInsets.fromLTRB(16, 0, 16, 8), child: Wrap(
             spacing: 8, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
               if (_job != null) StatusBadge(valueText(_job!, 'status')),
-              Text('#$_jobId', style: Theme.of(context).textTheme.bodySmall),
+              Text(isolated('#$_jobId'), style: Theme.of(context).textTheme.bodySmall),
               if (_job != null) ...[
                 ?_pipelineChip(_job!),
                 if (valueText(_job!, 'stage').isNotEmpty) MetaChip(valueText(_job!, 'stage'), icon: Icons.layers_outlined),

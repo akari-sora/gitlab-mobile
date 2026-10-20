@@ -2259,7 +2259,7 @@ class _DiffThreadCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: Text(
-                        '@${valueText(valueObject(visible[index], 'author'), 'username')}',
+                        isolated('@${valueText(valueObject(visible[index], 'author'), 'username')}'),
                         style: theme.textTheme.titleSmall,
                       ),
                     ),

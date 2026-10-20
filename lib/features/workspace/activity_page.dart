@@ -375,7 +375,7 @@ String activitySentence(Json event) {
   final targetType = note.isNotEmpty ? valueText(note, 'noteable_type') : valueText(event, 'target_type');
   final target = _targetLabel(targetType);
   final iid = note.isNotEmpty ? valueInt(note, 'noteable_iid') : valueInt(event, 'target_iid');
-  final reference = iid > 0 ? ' ${targetType == 'MergeRequest' ? '!' : '#'}$iid' : '';
+  final reference = iid > 0 ? ' ${isolated('${targetType == 'MergeRequest' ? '!' : '#'}$iid')}' : '';
   final verb = switch (action) {
     'opened' => l10n.activityOpened,
     'closed' => l10n.activityClosed,
@@ -480,7 +480,7 @@ Widget activityRow(BuildContext context, Json event, {required Account account, 
         const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text.rich(TextSpan(children: [
-            TextSpan(text: name.isEmpty ? '@$username' : name, style: const TextStyle(fontWeight: FontWeight.w600)),
+            TextSpan(text: isolated(name.isEmpty ? '@$username' : name), style: const TextStyle(fontWeight: FontWeight.w600)),
             TextSpan(text: ' $sentence'),
           ]), style: theme.textTheme.bodyMedium?.copyWith(height: 1.35)),
           if (detail.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 3), child: Text(detail, maxLines: 2,

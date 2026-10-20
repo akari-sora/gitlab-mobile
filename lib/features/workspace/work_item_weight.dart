@@ -432,7 +432,7 @@ class _WorkItemWeightEditorState extends State<WorkItemWeightEditor> {
             sliver: SliverList.list(
               children: [
                 Text(
-                  '@${widget.account.user.username} · ${widget.account.instance.key}',
+                  isolated('@${widget.account.user.username} · ${widget.account.instance.key}'),
                 ),
                 const SizedBox(height: 4),
                 Text(_weightResourceLabel(summary)),

@@ -483,7 +483,7 @@ class _WorkItemHealthEditorState extends State<_WorkItemHealthEditor> {
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
             children: [
               Text(
-                '@${widget.account.user.username} · ${widget.account.instance.key}',
+                isolated('@${widget.account.user.username} · ${widget.account.instance.key}'),
               ),
               const SizedBox(height: 4),
               Text(_resourceLabel(_snapshot.summary)),

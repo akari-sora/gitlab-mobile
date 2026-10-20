@@ -126,7 +126,7 @@ class _WorkItemContentControlState extends State<WorkItemContentControl> {
       WorkItemDescriptionAvailability.absent => l10n.typeHasNoDescription,
       WorkItemDescriptionAvailability.widgetsUnavailable => l10n.descriptionWidgetMissing,
     };
-    return '@${widget.account.user.username} · ${widget.account.instance.key}\n'
+    return '${isolated('@${widget.account.user.username} · ${widget.account.instance.key}')}\n'
         '$_resourceLabel · $restriction';
   }
 

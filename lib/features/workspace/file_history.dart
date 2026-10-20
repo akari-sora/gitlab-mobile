@@ -39,7 +39,7 @@ class FileHistoryPage extends StatelessWidget {
       itemBuilder: (context, value) => ListTile(
         minTileHeight: 60,
         leading: Monogram(valueText(value, 'author_name', '?'), size: 34),
-        title: Text(valueText(value, 'title'), maxLines: 2, overflow: TextOverflow.ellipsis),
+        title: Text(isolated(valueText(value, 'title')), maxLines: 2, overflow: TextOverflow.ellipsis),
         subtitle: Text('${valueText(value, 'short_id', shortSha(valueText(value, 'id')))} · '
           '${valueText(value, 'author_name')} · ${relativeDate(valueText(value, 'committed_date', valueText(value, 'created_at')))}'),
         onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => CommitDetailPage(
