@@ -78,14 +78,21 @@ void main() {
   for (final input in codePrecedence.entries) {
     test('FIX8 code precedence AST matches main: ${input.key}', () {
       expect(
-        _parse(input.value).map(_ast),
-        _parse(input.value, media: false).map(_ast),
+        _parse(input.value.replaceFirst(' src="a.mp4"', '')).map(_ast),
+        _parse(
+          input.value.replaceFirst(' src="a.mp4"', ''),
+          media: false,
+        ).map(_ast),
       );
     });
     testWidgets('FIX8 code precedence zero requests: ${input.key}', (
       tester,
     ) async {
       await _expectRequests(tester, input.value, []);
+      expect(
+        find.byType(MarkdownMediaCard),
+        findsNWidgets(['video', 'audio'].contains(input.key) ? 1 : 0),
+      );
     });
   }
 

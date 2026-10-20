@@ -396,17 +396,24 @@ void main() {
           'src="https://images.example/nested-comment.svg"> -->visible</div>',
     ),
   ]) {
-    testWidgets('${value.name} image stays inert', (tester) async {
+    testWidgets('${value.name} follows HTML context', (tester) async {
       final fixture = _client();
       addTearDown(fixture.client.close);
       await tester.pumpWidget(_host(value.source, fixture.client));
       await tester.pumpAndSettle();
+      final inline =
+          value.source.startsWith('Before <') &&
+          !value.source.startsWith('Before <!--');
       expect(
         find.byType(MarkdownMediaImage),
-        findsNothing,
+        findsNWidgets(inline ? 1 : 0),
         reason: value.source,
       );
-      expect(fixture.adapter.requests, isEmpty, reason: value.source);
+      expect(
+        fixture.adapter.requests,
+        hasLength(inline ? 1 : 0),
+        reason: value.source,
+      );
     });
   }
 

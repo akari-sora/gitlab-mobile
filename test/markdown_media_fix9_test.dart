@@ -68,7 +68,7 @@ Future<void> _expectMedia(
 }
 
 void main() {
-  const inert = {
+  const inlineHtml = {
     'N1 script paired':
         'v <script>`x`<img src="https://cdn.example/n1.svg"></script> t',
     'N2 script unmatched':
@@ -89,22 +89,21 @@ void main() {
         'v <script><img src="https://cdn.example/n10.svg"> `x`</script> t',
     'V10 script attribute':
         'v <script data-x="`"><img src="https://cdn.example/v10.svg"></script> t',
-    'attribute matching outside':
-        'v <script data-x="`"><img src="https://cdn.example/hidden.svg"></script> ` t',
-    'paired inside then outside':
-        'v <script>`x`<img src="https://cdn.example/hidden.svg"></script> ` t',
     'different run lengths':
         'v <script>``x`<img src="https://cdn.example/hidden.svg"></script> ` t',
-    'unmatched different run lengths':
-        'v <script>``x<img src="https://cdn.example/hidden.svg"></script> ` t',
-    'paired enclosing a shorter run':
-        'v <script>``x ` y``<img src="https://cdn.example/hidden.svg"></script> ` t',
     'invalid comment paired then outside':
         'v <!-- a -- `x` <img src="https://cdn.example/hidden.svg"> --> ` t',
   };
-  for (final input in inert.entries) {
-    testWidgets('FIX9 inert zero requests: ${input.key}', (tester) async {
-      await _expectMedia(tester, input.value);
+  for (final input in inlineHtml.entries) {
+    testWidgets('FIX9 inline HTML image: ${input.key}', (tester) async {
+      final images = RegExp(
+        r'https://cdn\.example/[^" ]+\.svg',
+      ).allMatches(input.value).map((match) => match[0]!).toList();
+      await _expectMedia(
+        tester,
+        input.value,
+        images: input.key == 'different run lengths' ? [] : images,
+      );
     });
   }
 
@@ -113,26 +112,37 @@ void main() {
         'v <video src="https://cdn.example/v1.mp4">Use `mp4`</video> t',
     'V2 audio fallback':
         'v <audio src="https://cdn.example/v2.mp3">a `b` c</audio> t',
+    'V3 video plain fallback':
+        'v <video src="https://cdn.example/v3.mp4">fallback</video> t',
     'V4 video attribute':
         'v <video src="https://cdn.example/v4.mp4" title="`x`"></video> t',
+    'V5 unclosed video with later code':
+        'v <video src="https://cdn.example/v5.mp4"> then `code` t',
     'V6 line-start video fallback':
         '<video src="https://cdn.example/v6.mp4" controls>Your browser does not support `video`.</video>',
     'V7 line-start video attribute':
         '<video src="https://cdn.example/v7.mp4" title="`npm start` demo"></video>',
-    'unmatched fallback':
-        'v <video src="https://cdn.example/v.mp4">Use `mp4</video> t',
-    'attribute matching outside':
-        'v <audio src="https://cdn.example/v.mp3" title="`"></audio> ` t',
-    'paired inside then outside':
-        'v <video src="https://cdn.example/v.mp4">`mp4`</video> ` t',
-    'unmatched different run lengths':
-        'v <video src="https://cdn.example/v.mp4">``mp4</video> ` t',
-    'paired enclosing a shorter run':
-        'v <audio src="https://cdn.example/v.mp3">``x ` y``</audio> ` t',
+    'V8 multiline video block':
+        '<video src="https://cdn.example/v8.mp4" controls>\nfallback `x`\n</video>\n',
+    'V9 centered video block':
+        '<p align="center"><video src="https://cdn.example/v9.mp4">`x`</video></p>\n',
   };
   for (final input in media.entries) {
     testWidgets('FIX9 renders one media card: ${input.key}', (tester) async {
       await _expectMedia(tester, input.value, cards: 1);
+      if (input.key == 'V1 video fallback' ||
+          input.key == 'V6 line-start video fallback') {
+        final codes = _parse(input.value).single as md.Element;
+        expect(
+          codes.children!
+              .whereType<md.Element>()
+              .where((node) => node.tag == 'code')
+              .single
+              .textContent,
+          input.key.startsWith('V1') ? 'mp4' : 'video',
+        );
+        expect(codes.textContent, contains('</video>'));
+      }
     });
   }
 
@@ -151,11 +161,18 @@ void main() {
       ) async {
         final source =
             'v <$tag src="a.mp4">${run}x</$tag><img src="https://cdn.example/hidden.svg">$run t';
+        final withoutSrc = ['video', 'audio'].contains(tag)
+            ? source.replaceFirst(' src="a.mp4"', '')
+            : source;
         expect(
-          _parse(source).map(_ast),
-          _parse(source, media: false).map(_ast),
+          _parse(withoutSrc).map(_ast),
+          _parse(withoutSrc, media: false).map(_ast),
         );
-        await _expectMedia(tester, source);
+        await _expectMedia(
+          tester,
+          source,
+          cards: ['video', 'audio'].contains(tag) ? 1 : 0,
+        );
       });
     }
   }

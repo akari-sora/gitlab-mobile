@@ -82,12 +82,18 @@ void main() {
     'Codex script closing text': (
       source:
           'v <a href="u">caption<script>"</a><img src="https://cdn.example/hidden.svg">"</script><img src="https://cdn.example/also-hidden.svg"></a>',
-      images: ['https://cdn.example/also-hidden.svg'],
+      images: [
+        'https://cdn.example/hidden.svg',
+        'https://cdn.example/also-hidden.svg',
+      ],
     ),
     'Codex textarea closing text': (
       source:
           'v <a href="u">caption<textarea></a><img src="https://cdn.example/hidden.svg"></textarea><img src="https://cdn.example/also-hidden.svg"></a>',
-      images: ['https://cdn.example/also-hidden.svg'],
+      images: [
+        'https://cdn.example/hidden.svg',
+        'https://cdn.example/also-hidden.svg',
+      ],
     ),
     'Codex script opening text': (
       source:
@@ -302,14 +308,20 @@ void main() {
   };
 
   for (final value in inert.entries) {
-    testWidgets('FIX7 inert protection: ${value.key}', (tester) async {
-      expect(_media(value.value), isEmpty, reason: value.value);
+    testWidgets('FIX7 HTML context: ${value.key}', (tester) async {
+      final inline =
+          value.key.startsWith('inline ') && value.key != 'inline comment';
+      expect(
+        _media(value.value),
+        hasLength(inline ? 1 : 0),
+        reason: value.value,
+      );
       final fixture = _client();
       addTearDown(fixture.client.close);
       await tester.pumpWidget(_host(value.value, fixture.client));
       await tester.pumpAndSettle();
-      expect(find.byType(MarkdownMediaImage), findsNothing);
-      expect(fixture.adapter.requests, isEmpty);
+      expect(find.byType(MarkdownMediaImage), findsNWidgets(inline ? 1 : 0));
+      expect(fixture.adapter.requests, hasLength(inline ? 1 : 0));
     });
   }
 

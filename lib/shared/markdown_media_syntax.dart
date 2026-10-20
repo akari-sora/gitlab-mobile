@@ -80,8 +80,8 @@ bool _containsImage(List<md.Node> nodes) => nodes.any(
 );
 
 /// Parses supported inline HTML media before package:markdown's raw HTML
-/// syntax. Regions crossed by a code span fall back to the default parser so
-/// they cannot swallow that span's opening delimiter.
+/// syntax. Element bodies containing backticks stay on the default parser
+/// path; a usable audio/video opening tag can still produce a media card.
 final class MarkdownMediaInlineSyntax extends md.InlineSyntax {
   MarkdownMediaInlineSyntax() : super(r'<', startCharacter: 0x3C);
 
@@ -411,33 +411,30 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
   int start,
 ) {
   final source = scanner.source;
-  if (source.startsWith('<!--', start)) {
-    final end = scanner.commentEnd(start);
-    if (end == null || scanner.hasCrossingBacktick(start + 4, end)) return null;
-    return (element: md.Text(source.substring(start, end)), end: end);
-  }
   final first = _scanTag(source, start);
   if (first == null || first.closing) return null;
-  if (_textOnlyTags.contains(first.name)) {
-    final end = scanner.closingTag(first.name, first.end)?.end;
-    if (end == null || scanner.hasCrossingBacktick(first.end, end)) return null;
-    return (element: md.Text(source.substring(start, end)), end: end);
-  }
   if (first.name == 'img') {
     final element = _mediaElement(first.attributes, kind: 'image');
     return element == null ? null : (element: element, end: first.end);
   }
   if (first.name == 'video' || first.name == 'audio') {
-    final close = scanner.closingTag(first.name, first.end)?.end;
-    if (scanner.hasCrossingBacktick(first.end, close ?? first.end)) return null;
+    final close = scanner.closingTag(first.name, first.end);
+    final openingOnly = scanner.hasBacktick(
+      first.end,
+      close?.start ?? source.length,
+    );
     final src =
-        first.attributes['src'] ?? scanner.sourceInside(first.end, first.name);
+        first.attributes['src'] ??
+        (openingOnly ? null : scanner.sourceInside(first.end, first.name));
     final element = _mediaElement({
       ...first.attributes,
       'src': ?src,
     }, kind: first.name);
     if (element == null) return null;
-    return (element: element, end: close ?? first.end);
+    return (
+      element: element,
+      end: openingOnly ? first.end : close?.end ?? first.end,
+    );
   }
   if (first.selfClosing || (first.name != 'a' && first.name != 'picture')) {
     return null;
@@ -507,94 +504,22 @@ final class _HtmlMediaScanner {
   final bool htmlBlock;
   final _closing = <String, ({int from, RegExpMatch? match})>{};
   ({int from, int? end})? _comment;
-  late final _backticks = _indexBackticks();
-  final _backtickCrossings = <int, Map<int, bool>>{};
+  int _backtickFrom = -1;
+  int _nextBacktick = -1;
   final _sources = <String, ({int from, int end, int? at, String? src})>{};
   static final _closingPatterns = <(String, bool), RegExp>{};
 
-  ({List<({int start, int? next, int after})> runs, List<int> eligible})
-  _indexBackticks() {
-    final runs = RegExp(r'`+').allMatches(source).toList();
-    final nextByLength = <int, int>{};
-    final next = List<int?>.filled(runs.length, null);
-    for (var i = runs.length - 1; i >= 0; i--) {
-      final length = runs[i].end - runs[i].start;
-      next[i] = nextByLength[length];
-      nextByLength[length] = i;
-    }
-    // Find the next possible opener from every plain-text position. Each
-    // region starts at its own boundary, so earlier link titles or HTML that
-    // the parser already consumed cannot influence its code-span pairing.
-    final html = _InlineHtmlDelimiterScanner(source);
-    final htmlEnds = <int, int>{};
-    var cursor = 0;
-    while (cursor < source.length) {
-      final start = source.indexOf('<', cursor);
-      if (start < 0) break;
-      final end = html.endAt(start);
-      if (end != null) htmlEnds[start] = end;
-      cursor = start + 1;
-    }
-    final eligible = List<int>.filled(source.length + 1, runs.length);
-    var index = runs.length - 1;
-    for (var i = source.length - 1; i >= 0; i--) {
-      if (index >= 0 && runs[index].start == i) {
-        eligible[i] = index--;
-        continue;
-      }
-      if (source.codeUnitAt(i) == 0x5C && i + 1 < source.length) {
-        final escaped = source.codeUnitAt(i + 1);
-        if ((escaped >= 0x21 && escaped <= 0x2F) ||
-            (escaped >= 0x3A && escaped <= 0x40) ||
-            (escaped >= 0x5B && escaped <= 0x60) ||
-            (escaped >= 0x7B && escaped <= 0x7E)) {
-          // Positions inside a raw run also skip to its end: CodeSyntax
-          // refuses to open immediately after another backtick.
-          eligible[i] = eligible[i + 2];
-          continue;
-        }
-      }
-      eligible[i] = eligible[htmlEnds[i] ?? i + 1];
-    }
-    return (
-      runs: [
-        for (var i = 0; i < runs.length; i++)
-          (start: runs[i].start, next: next[i], after: eligible[runs[i].end]),
-      ],
-      eligible: eligible,
-    );
-  }
-
-  // Index same-length matches once. Skip spans closed inside the region, and
-  // cache suffix results at each region end so overlapping probes stay linear.
-  // Each closing-tag kind advances monotonically through disjoint regions.
-  bool hasCrossingBacktick(int start, int end) {
+  // Cache only the next literal delimiter, not Markdown grammar. Forward
+  // probes over overlapping media bodies must not repeatedly scan a suffix.
+  bool hasBacktick(int start, int end) {
     if (start >= end) return false;
-    final runs = _backticks.runs;
-    final cached = _backtickCrossings.putIfAbsent(end, () => <int, bool>{});
-    final visited = <int>[];
-    var index = _backticks.eligible[start];
-    var crosses = false;
-    while (index < runs.length && runs[index].start < end) {
-      final previous = cached[index];
-      if (previous != null) {
-        crosses = previous;
-        break;
-      }
-      visited.add(index);
-      final next = runs[index].next;
-      if (next != null && runs[next].start >= end) {
-        crosses = true;
-        break;
-      }
-      // Code consumes its closing run literally, even after a backslash or
-      // inside quoted HTML. Resume opener eligibility only after that run.
-      index = runs[next ?? index].after;
+    if (_backtickFrom < 0 ||
+        start < _backtickFrom ||
+        (_nextBacktick >= 0 && start > _nextBacktick)) {
+      _nextBacktick = source.indexOf('`', start);
     }
-    for (final index in visited) {
-      cached[index] = crosses;
-    }
-    return crosses;
+    _backtickFrom = start;
+    return _nextBacktick >= start && _nextBacktick < end;
   }
 
   int? commentEnd(int start) {
@@ -655,7 +580,7 @@ final class _HtmlMediaScanner {
         cursor = next + 1;
         continue;
       }
-      if (!tag.closing && _textOnlyTags.contains(tag.name)) {
+      if (htmlBlock && !tag.closing && _textOnlyTags.contains(tag.name)) {
         final inertEnd = closingTag(tag.name, tag.end)?.end;
         if (inertEnd == null || inertEnd > end) break;
         cursor = inertEnd;
@@ -670,122 +595,6 @@ final class _HtmlMediaScanner {
     }
     _sources[parent] = (from: start, end: end, at: null, src: null);
     return null;
-  }
-}
-
-/// Recognizes the default inline HTML tokens without rescanning overlapping
-/// malformed tags. Suffix tables implement package:markdown's named-tag grammar
-/// in linear time; terminator searches advance monotonically through the source.
-final class _InlineHtmlDelimiterScanner {
-  _InlineHtmlDelimiterScanner(this.source);
-
-  final String source;
-  late final _tags = _indexTags();
-  final _terminators = <String, ({int from, int at})>{};
-
-  int? _through(String marker, int from) {
-    final previous = _terminators[marker];
-    final at =
-        previous != null &&
-            from >= previous.from &&
-            (previous.at < 0 || from <= previous.at)
-        ? previous.at
-        : source.indexOf(marker, from);
-    _terminators[marker] = (from: from, at: at);
-    return at < 0 ? null : at + marker.length;
-  }
-
-  int? endAt(int start) {
-    if (source.startsWith('<!--', start)) {
-      final from = start + 4;
-      if (source.startsWith('>', from) || source.startsWith('->', from)) {
-        return null;
-      }
-      // The package rejects internal double dashes, unlike the media
-      // scanner's deliberately broader inert-comment protection.
-      final end = _through('--', from);
-      return end != null && source.startsWith('>', end) ? end + 1 : null;
-    }
-    if (source.startsWith('<?', start)) return _through('?>', start + 2);
-    if (source.startsWith('<![CDATA[', start)) {
-      return _through(']]>', start + 9);
-    }
-    if (source.startsWith('<!', start) &&
-        start + 2 < source.length &&
-        _isAsciiLetter(source.codeUnitAt(start + 2))) {
-      return _through('>', start + 3);
-    }
-    var cursor = start + 1;
-    final closing = cursor < source.length && source.codeUnitAt(cursor) == 0x2F;
-    if (closing) cursor++;
-    if (cursor >= source.length || !_isAsciiLetter(source.codeUnitAt(cursor))) {
-      return null;
-    }
-    while (cursor < source.length && _isName(source.codeUnitAt(cursor))) {
-      cursor++;
-    }
-    if (closing) {
-      cursor = _tags.spaces[cursor];
-      return cursor < source.length && source.codeUnitAt(cursor) == 0x3E
-          ? cursor + 1
-          : null;
-    }
-    final end = _tags.tails[cursor];
-    return end == 0 ? null : end;
-  }
-
-  ({List<int> spaces, List<int> tails}) _indexTags() {
-    final size = source.length;
-    final spaces = List<int>.filled(size + 1, size);
-    final tails = List<int>.filled(size + 1, 0);
-    final attributes = List<int>.filled(size + 1, 0);
-    final values = List<int>.filled(size + 1, 0);
-    var nameEnd = size;
-    var unquotedEnd = size;
-    var singleQuote = -1;
-    var doubleQuote = -1;
-    for (var i = size - 1; i >= 0; i--) {
-      final unit = source.codeUnitAt(i);
-      final whitespace = _isWhitespace(unit);
-      spaces[i] = whitespace ? spaces[i + 1] : i;
-      if (!_isAttributeName(unit)) nameEnd = i;
-      final unquoted =
-          !whitespace &&
-          unit != 0x22 &&
-          unit != 0x27 &&
-          unit != 0x3D &&
-          unit != 0x3C &&
-          unit != 0x3E &&
-          unit != 0x60;
-      if (!unquoted) unquotedEnd = i;
-      values[i] = switch (unit) {
-        0x27 => singleQuote < 0 ? 0 : singleQuote + 1,
-        0x22 => doubleQuote < 0 ? 0 : doubleQuote + 1,
-        _ => unquoted ? unquotedEnd : 0,
-      };
-      if (unit == 0x27) singleQuote = i;
-      if (unit == 0x22) doubleQuote = i;
-      if (_isAttributeStart(unit)) {
-        final equals = spaces[nameEnd];
-        if (equals < size && source.codeUnitAt(equals) == 0x3D) {
-          final end = values[spaces[equals + 1]];
-          attributes[i] = end == 0 ? 0 : tails[end];
-        } else {
-          attributes[i] = tails[nameEnd];
-        }
-      }
-      if (unit == 0x3E) {
-        tails[i] = i + 1;
-      } else if (unit == 0x2F &&
-          i + 1 < size &&
-          source.codeUnitAt(i + 1) == 0x3E) {
-        tails[i] = i + 2;
-      } else if (whitespace) {
-        final after = spaces[i];
-        tails[i] = tails[after] != 0 ? tails[after] : attributes[after];
-      }
-    }
-    return (spaces: spaces, tails: tails);
   }
 }
 

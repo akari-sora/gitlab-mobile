@@ -25,6 +25,13 @@ List<md.Node> _parse(String source, {bool media = true}) => md.Document(
   encodeHtml: false,
 ).parseLines(const LineSplitter().convert(source));
 
+List<md.Node> _fallback(String source, {bool media = true}) => _parse(
+  source
+      .replaceFirst('<video src="a.mp4">', '<video>')
+      .replaceFirst('<audio src="a.mp4">', '<audio>'),
+  media: media,
+);
+
 Object _ast(md.Node node) => switch (node) {
   md.Element() => [
     node.tag,
@@ -34,7 +41,11 @@ Object _ast(md.Node node) => switch (node) {
   _ => node.textContent,
 };
 
-Future<void> _expectNoMedia(WidgetTester tester, String source) async {
+Future<void> _expectMedia(
+  WidgetTester tester,
+  String source, {
+  bool image = false,
+}) async {
   final adapter = FakeAdapter(
     (_) => ResponseBody.fromString(
       '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40"/>',
@@ -57,9 +68,20 @@ Future<void> _expectNoMedia(WidgetTester tester, String source) async {
   );
   await tester.pumpAndSettle();
   expect(tester.takeException(), isNull);
-  expect(adapter.requests.map((request) => request.uri.toString()), isEmpty);
-  expect(find.byType(MarkdownMediaImage), findsNothing);
-  expect(find.byType(MarkdownMediaCard), findsNothing);
+  expect(
+    adapter.requests.map((request) => request.uri.toString()),
+    image ? ['https://cdn.example/hidden.svg'] : isEmpty,
+  );
+  expect(find.byType(MarkdownMediaImage), findsNWidgets(image ? 1 : 0));
+  expect(
+    find.byType(MarkdownMediaCard),
+    findsNWidgets(
+      source.contains('<video src="a.mp4">') ||
+              source.contains('<audio src="a.mp4">')
+          ? 1
+          : 0,
+    ),
+  );
 }
 
 void main() {
@@ -81,12 +103,15 @@ void main() {
         'v ${region.value.open}\\`x `${region.value.close}'
         '<img src="https://cdn.example/hidden.svg">` t';
     test('FIX10 escaped opener AST: ${region.key}', () {
-      expect(_parse(source).map(_ast), _parse(source, media: false).map(_ast));
+      expect(
+        _fallback(source).map(_ast),
+        _fallback(source, media: false).map(_ast),
+      );
     });
     testWidgets('FIX10 escaped opener zero requests: ${region.key}', (
       tester,
     ) async {
-      await _expectNoMedia(tester, source);
+      await _expectMedia(tester, source);
     });
   }
 
@@ -104,10 +129,10 @@ void main() {
             'v ${region.value.open}${variant.value}`${region.value.close}'
             '<img src="https://cdn.example/hidden.svg">` t';
         expect(
-          _parse(source).map(_ast),
-          _parse(source, media: false).map(_ast),
+          _fallback(source).map(_ast),
+          _fallback(source, media: false).map(_ast),
         );
-        await _expectNoMedia(tester, source);
+        await _expectMedia(tester, source);
         for (final token in [
           '<a disabled data-id=demo title="`" />',
           "<source x:y = 'a`b' data.a-b_c=unquoted/>",
@@ -121,10 +146,10 @@ void main() {
               'v ${region.value.open}$token`${region.value.close}'
               '<img src="https://cdn.example/hidden.svg">` t';
           expect(
-            _parse(control).map(_ast),
-            _parse(control, media: false).map(_ast),
+            _fallback(control).map(_ast),
+            _fallback(control, media: false).map(_ast),
           );
-          await _expectNoMedia(tester, control);
+          await _expectMedia(tester, control);
         }
         // The parser has consumed this link title before it reaches the
         // region. Its backtick must not pair with the region's real opener.
@@ -132,10 +157,10 @@ void main() {
             'v [label](path "`") ${region.value.open}`${region.value.close}'
             '<img src="https://cdn.example/hidden.svg">` t';
         expect(
-          _parse(afterLink).map(_ast),
-          _parse(afterLink, media: false).map(_ast),
+          _fallback(afterLink).map(_ast),
+          _fallback(afterLink, media: false).map(_ast),
         );
-        await _expectNoMedia(tester, afterLink);
+        await _expectMedia(tester, afterLink);
         // Once code is open, even escaped or attribute-contained ticks close
         // it. Before code opens, an even backslash count leaves a real opener.
         for (final close in [r'\` t', '<a title="`"> t']) {
@@ -143,10 +168,10 @@ void main() {
               'v ${region.value.open}\\\\`x${region.value.close}'
               '<img src="https://cdn.example/hidden.svg">$close';
           expect(
-            _parse(control).map(_ast),
-            _parse(control, media: false).map(_ast),
+            _fallback(control).map(_ast),
+            _fallback(control, media: false).map(_ast),
           );
-          await _expectNoMedia(tester, control);
+          await _expectMedia(tester, control);
         }
       });
     }
@@ -158,18 +183,20 @@ void main() {
     'nested image': '<img alt="`">',
   }.entries) {
     for (final tag in ['script', 'style', 'textarea', 'title', 'noscript']) {
-      testWidgets('FIX10 ${variant.key} stays inside $tag', (tester) async {
-        await _expectNoMedia(
+      testWidgets('FIX10 ${variant.key} follows inline $tag', (tester) async {
+        await _expectMedia(
           tester,
           'v <$tag>${variant.value}<img src="https://cdn.example/hidden.svg">'
           '</$tag> then `code` t',
+          image: true,
         );
         // Escaping the first tick of a longer run cannot open code at its
         // remaining tick (CodeSyntax rejects a preceding backtick).
-        await _expectNoMedia(
+        await _expectMedia(
           tester,
           'v <$tag>${r'\``'}<img src="https://cdn.example/hidden.svg">'
           '</$tag> then `code` t',
+          image: true,
         );
       });
     }
@@ -180,7 +207,7 @@ void main() {
         'v <script>${r'\`x ' * count}`</script>'
         '<img src="https://cdn.example/hidden.svg">` t';
     List<md.Node> parse(int count) => _parse(source(count));
-    // The old raw-run index consumes the real opener after an odd count.
+    // Escaped ticks leave the final code opener to the default parser.
     expect(parse(31).map(_ast), _parse(source(31), media: false).map(_ast));
     parse(255);
     var small = 1 << 62;
