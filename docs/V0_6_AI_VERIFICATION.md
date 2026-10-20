@@ -161,8 +161,10 @@ five hyphens, such as `IVATE KEY-----` or `--`) or its last line ends like the
 start of one (one to five hyphens, at the line start or after whitespace,
 followed by uppercase letters, digits and spaces, such as `-----END RSA PRIV`,
 an indented `  --` or a prefixed `<time> -----END RSA`). This over-redacts some
-fragments, for example one whose last line is a Markdown rule `---`, ends in
-` -1` or `-- `, or is a deleted blank diff line `-`; that is deliberate.
+fragments: any whose last line ends with whitespace, one to five hyphens and a
+run of uppercase letters, digits and spaces, for example a Markdown rule `---`,
+`curl -X POST`, `gcc -O2`, `a - B` or a deleted blank diff line `-`; that is
+deliberate.
 Other fragments use the ordinary rules. Regressions cover the round-7 shape, single BEGIN/END
 markers in a fragment, a marker-free fragment and the placeholder collision
 check; the same text as a complete source keeps its context.
@@ -176,9 +178,10 @@ only for line-aligned inputs cut from a larger source and not redacted whole
 first (a diff hunk, a line range, a search result blob); keep the
 sensitive-path filter for diffs. Residual: fragments cut at byte offsets can
 still expose a key when the fragment holds no marker at all, or when the key is
-on a single line (`\n`-escaped JSON or a space-joined `echo $KEY`) and the cut
-starts inside its BEGIN marker; line-aligned inputs always include a whole
-marker line when they include any part of one.
+on a single line: for `\n`-escaped JSON, a cut inside either marker that removes
+the `PRIVATE KEY` label; for a space-joined key (`echo $KEY`), a cut that starts
+inside its BEGIN marker. Line-aligned inputs always include a whole marker line
+when they include any part of one.
 
 Invariants for the context builders and the runner (MR4): strip ANSI escape
 sequences before redaction (a coloured grep can split a marker); redact the
