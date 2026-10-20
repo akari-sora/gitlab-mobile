@@ -267,6 +267,49 @@ void main() {
     }
   });
 
+  test('OpenRouter metadata.raw binding errors invalidate replay', () {
+    final failure = const ResponsesFormat().decodeError(400, <String, Object?>{
+      'error': <String, Object?>{
+        'message': 'Provider returned an error.',
+        'metadata': <String, Object?>{
+          'raw':
+              'The thinking block is bound to a different conversation and cannot be reused.',
+        },
+      },
+    }, null);
+
+    expect(failure.kind, AiFailureKind.invalidResponse);
+    expect(failure.requiresNewSegment, isTrue);
+
+    final nestedCode = const ResponsesFormat().decodeError(
+      400,
+      <String, Object?>{
+        'error': <String, Object?>{
+          'message': 'Provider returned an error.',
+          'metadata': <String, Object?>{
+            'raw': '{"error":{"code":"invalid_encrypted_content"}}',
+          },
+        },
+      },
+      null,
+    );
+    expect(nestedCode.requiresNewSegment, isTrue);
+
+    final beyondBound = const ResponsesFormat().decodeError(400, <
+      String,
+      Object?
+    >{
+      'error': <String, Object?>{
+        'message': 'Provider returned an error.',
+        'metadata': <String, Object?>{
+          'raw':
+              '${List<String>.filled(16384, 'x').join()} thinking block bound to a different conversation',
+        },
+      },
+    }, null);
+    expect(beyondBound.requiresNewSegment, isFalse);
+  });
+
   test('Responses SSE rolls over binding 400 but preserves genuine 500', () {
     final binding = const ResponsesFormat().newDecoder();
     expect(

@@ -583,3 +583,50 @@ Python error strings above are deliberate mocked failure fixtures; they do not i
 Final full-suite incremental-save measurement: `reads=1 one=0:00:00.002838 conversations26=0:00:00.005589`. Both sizes decrypt only the index during an unchanged small save.
 
 The final full run passes the unchanged decoder performance assertion and protected account-removal tests. The first failure is retained as evidence, not silently discarded; the benchmark was not modified and its host-load sensitivity remains visible in the earlier run.
+
+## MR4 — read-only tools and bounded runner
+
+This working-tree change adds the project-bound read port, ten-tool catalogue,
+shared sensitive-path policy, SHA-pinned context builders, untrusted-data prompt
+labels, live secrets, interface checks and the bounded conversation runner.
+`AiRunnerBinding` observes the existing settings/session owners. The gate is
+still false and this slice adds no UI, account write path or dependency.
+
+Evidence vocabulary: the new tests are **synthetic**, using in-memory settings,
+`FakeAdapter` / `WorkspaceFixture`, synthetic OAuth rotation and recorded SSE
+fixtures. **RECORDED** means decoding the retained P0a fixture and replaying its
+provider object through the real encoder; it is not a fresh provider call.
+Acceptance command tails, exact changed-file inventory and reversible mutation
+results are in the local root `RESULT.md` (remove that receipt before a future
+commit). No commit or pipeline was created for MR4.
+
+| Contract | Current evidence |
+| --- | --- |
+| Scope, provenance, schemas, GET/HEAD-only adapter, field projection, sensitive read/diff/search, newest notes, full SHA and HTTP/search/output budgets | `test/ai/ai_tools_test.dart`, context tests, Python boundary guard; synthetic |
+| Prefix replay across runs, newly saved keys and provider-readable output, OAuth refresh during tool reads, key-only rollover | `runner_test.dart`, `runner_lifecycle_test.dart`; synthetic |
+| Six model calls, four tools per batch, twelve per send, bounded UTF-16 output, fresh budgets, soft timeout with one pending source read | runner/catalogue tests; synthetic |
+| Tools retained in all three closing formats; synthetic results for calls left by stop/refusal/budget; empty final answer | runner and offline live-smoke tests; synthetic |
+| Context once, budgeted/escaped/nonce-labelled projection, first-call tail restoration, finishing on truncation, final note redaction | runner tests; synthetic |
+| Every stream/await/send checkpoint; consent, recipient revision, session generation and exact API ownership; immediate stalled-stream stop | runner/lifecycle tests using the production binding; synthetic |
+| Actual vs estimated input usage, partial interrupted output excluded from replay, provider-byte replay | runner tests plus MR2 wire/recorded suites; synthetic / RECORDED |
+| Link-local enumeration and unknown/missing interface confirmation | network and runner tests; synthetic |
+| Live runner matrix (`runner-tool-loop`, `runner-closing-call`) | Harness extended; authenticated P0b **NOT_RUN** |
+
+Earlier-MR requirements remain binding: strip ANSI before source redaction;
+redact complete fetched text before truncation and reject inputs over 2 MiB;
+redact running traces accumulated from offset zero with `redactSource`; use
+`redactFragment` on line-aligned excerpts; block sensitive diff paths; preserve
+the first private-key withholding notice. MR2 binding detection, server-tool
+input accumulation, empty-Anthropic-array rejection and recorded replay tests
+are covered by focused regressions. This checkout needed small packet-required
+repairs: nested OpenRouter `metadata.raw` binding classification, accumulation of
+Anthropic `server_tool_use` input deltas, and atomic rejection of empty
+Anthropic replay content (a legal empty text/thinking answer still works).
+MR3's consent-store validity and single settings owner
+are used directly; access/refresh values are reread after OAuth rotation.
+
+P0b (all authenticated provider checks), fresh native-provider conformance,
+private-project integration, Android/iOS, accessibility and AOT redaction timing
+are **NOT_RUN**. MR5/MR6 UI, MR7 gate/platform/device acceptance and plan Appendix
+D live calls are deferred to their prescribed lanes. None of the offline
+results upgrades P0a, provider support or G0 acceptance.

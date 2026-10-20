@@ -194,6 +194,7 @@ final class AiSegment {
     }
     _wireConfiguration = configuration;
   }
+
   AiEntry? get tail => _tail;
   List<AiEntry> get entries => List.unmodifiable(<AiEntry>[..._frozen, ?_tail]);
 
@@ -296,6 +297,11 @@ final class AiSegment {
   ) {
     if (output.format != format) {
       throw ArgumentError.value(output.format, 'output.format');
+    }
+    if (output.format == AiFormat.anthropicMessages &&
+        output.raw is List<Object?> &&
+        (output.raw as List<Object?>).isEmpty) {
+      throw const AiFailure(AiFailureKind.invalidResponse);
     }
     final current = _tail;
     if (current == null) {

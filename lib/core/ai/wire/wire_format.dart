@@ -199,23 +199,33 @@ AiFailure decodeWireError(int status, Object? json, String? retryAfter) {
   final error = nested is Map<String, Object?> ? nested : body;
   final message = '${error['message'] ?? (nested is String ? nested : '')}'
       .toLowerCase();
+  final metadata = error['metadata'];
+  final metadataRaw =
+      metadata is Map<String, Object?> && metadata['raw'] is String
+      ? metadata['raw']! as String
+      : '';
+  final boundedRaw = metadataRaw.length <= 16384
+      ? metadataRaw
+      : metadataRaw.substring(0, 16384);
+  final bindingMessage = '$message\n$boundedRaw'.toLowerCase();
   final code = '${error['code'] ?? error['type'] ?? error['name'] ?? ''}'
       .toLowerCase();
   final invalidThinkingSignature =
       RegExp(
         r'invalid.{0,32}signature.{0,96}thinking.{0,32}block',
-      ).hasMatch(message) ||
+      ).hasMatch(bindingMessage) ||
       RegExp(
         r'thinking.{0,32}block.{0,96}invalid.{0,32}signature',
-      ).hasMatch(message);
+      ).hasMatch(bindingMessage);
   final invalidEncryptedContent =
       code == 'invalid_encrypted_content' ||
-      (message.contains('encrypted content') &&
-          (message.contains('could not be verified') ||
-              message.contains('could not be decrypted') ||
-              message.contains('invalid')));
+      bindingMessage.contains('invalid_encrypted_content') ||
+      (bindingMessage.contains('encrypted content') &&
+          (bindingMessage.contains('could not be verified') ||
+              bindingMessage.contains('could not be decrypted') ||
+              bindingMessage.contains('invalid')));
   if (status == 400 &&
-      (message.contains('bound to a different conversation') ||
+      (bindingMessage.contains('bound to a different conversation') ||
           invalidThinkingSignature ||
           invalidEncryptedContent)) {
     return AiFailure(

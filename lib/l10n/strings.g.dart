@@ -6336,4 +6336,64 @@ final class AppStrings {
 
   /// 清除不受支援的紀錄
   String get aiHistoryClearUnsupported => language._messages[2080];
+
+  /// 讀取中
+  String get aiToolReading => language._messages[2081];
+
+  /// 讀取完成
+  String get aiToolCompleted => language._messages[2082];
+
+  /// 結果已截短
+  String get aiToolTruncated => language._messages[2083];
+
+  /// 已阻擋敏感內容
+  String get aiToolBlockedSensitive => language._messages[2084];
+
+  /// 讀取逾時
+  String get aiToolTimedOut => language._messages[2085];
+
+  /// 讀取失敗
+  String get aiToolFailed => language._messages[2086];
+
+  /// 回答完成
+  String get aiEndCompleted => language._messages[2087];
+
+  /// 已停止回答
+  String get aiEndStopped => language._messages[2088];
+
+  /// 工具額度已用盡
+  String get aiEndToolBudget => language._messages[2089];
+
+  /// 工具額度已用盡，未產生回答
+  String get aiEndToolBudgetNoAnswer => language._messages[2090];
+
+  /// 回答已達輸出上限
+  String get aiEndOutputLimit => language._messages[2091];
+
+  /// 設定已變更，回答已停止
+  String get aiEndSettingsChanged => language._messages[2092];
+
+  /// 模型呼叫額度已用盡
+  String get aiBudgetModelCalls => language._messages[2093];
+
+  /// 工具呼叫額度已用盡
+  String get aiBudgetToolCalls => language._messages[2094];
+
+  /// GitLab 讀取額度已用盡
+  String get aiBudgetGitLabReads => language._messages[2095];
+
+  /// 工具輸出額度已用盡
+  String get aiBudgetToolOutput => language._messages[2096];
+
+  /// 用量為估算值
+  String get aiUsageEstimated => language._messages[2097];
+
+  /// 附加內容只會在第一則訊息送出
+  String get aiContextAttachedOnce => language._messages[2098];
+
+  /// 較早的回合已從摘要中移除
+  String get aiProjectionOlderTurnsRemoved => language._messages[2099];
+
+  /// 為保護已送出的內容，回答已停止
+  String get aiReplayProtectionStopped => language._messages[2100];
 }

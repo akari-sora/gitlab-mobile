@@ -11,6 +11,8 @@ import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
 import 'package:gitlab_mobile/core/ai/ai_events.dart';
 import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
+import 'package:gitlab_mobile/core/ai/redaction.dart';
+import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/ai_transport.dart';
 import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
@@ -117,6 +119,16 @@ final _syntheticTools = <AiToolSpec>[
     },
   ),
 ];
+
+final class _SmokeSecrets implements KnownSecretsSource {
+  _SmokeSecrets(String credential)
+    : _values = credential.isEmpty ? <String>{} : <String>{credential};
+
+  final Set<String> _values;
+
+  @override
+  Iterable<String> get current => _values;
+}
 
 void _usageEvents(AiEvent event, Map<String, Object?> evidence) {
   if (event case AiTextDelta(:final text)) {
@@ -437,6 +449,115 @@ Future<Map<String, Object?>> _unknownModelScenario(
   }
 }
 
+AiRunner _runner(_Session session) {
+  final ownerApi = Object();
+  return AiRunner(
+    config: session.config,
+    wire: session.target.wire,
+    complete: session.client.complete,
+    secrets: _SmokeSecrets(session.credential),
+    refreshSecrets: () async {},
+    guard: AiRunGuard(
+      expectedGeneration: 1,
+      ownerApi: ownerApi,
+      generation: () => 1,
+      api: () => ownerApi,
+      recipientRevision: () => session.config.recipientRevision,
+      consentValid: () => true,
+    ),
+    tools: _syntheticTools,
+    executeTool: (call) async => AiToolResult(
+      callId: call.id,
+      name: call.name,
+      content: jsonEncode(<String, Object?>{
+        'fixture': wireObject(call.arguments)['fixture'],
+        'value': 'synthetic-runner-value',
+      }),
+    ),
+    context: const <AiContextBlock>[
+      AiContextBlock(
+        source: 'synthetic_fixture',
+        text: 'Synthetic repository context only.',
+      ),
+    ],
+    system: _system,
+    close: session.close,
+  );
+}
+
+Future<Map<String, Object?>> _runnerLoopScenario(
+  _Target target,
+  String credential, {
+  HttpClientAdapter? adapter,
+}) async {
+  final session = _Session(target, credential, adapter: adapter);
+  final runner = _runner(session);
+  try {
+    final first = await runner.run(
+      'Call synthetic_lookup for alpha, then answer with a short synthetic '
+      'summary.',
+    );
+    final firstSegment = runner.segment;
+    final second = await runner.run(
+      'Reply with exactly SYNTHETIC_RUNNER_FOLLOW_UP and do not call tools.',
+    );
+    final passed =
+        first.reason == AiRunEnd.done &&
+        first.toolCalls > 0 &&
+        first.text.isNotEmpty &&
+        second.reason == AiRunEnd.done &&
+        second.text.trim() == 'SYNTHETIC_RUNNER_FOLLOW_UP' &&
+        identical(firstSegment, runner.segment) &&
+        runner.lateRedactions == 0;
+    return _result('runner-tool-loop', passed ? 'PASS' : 'FAIL', {
+      'firstEnd': first.reason.name,
+      'firstModelCalls': first.modelCalls,
+      'firstToolCalls': first.toolCalls,
+      'followUpEnd': second.reason.name,
+      'followUpExact': second.text.trim() == 'SYNTHETIC_RUNNER_FOLLOW_UP',
+      'sameSegment': identical(firstSegment, runner.segment),
+      'lateRedactions': runner.lateRedactions,
+      'actualInputTokens': runner.actualInputTokens,
+      'estimatedInputTokens': runner.estimatedInputTokens,
+    });
+  } finally {
+    session.close();
+  }
+}
+
+Future<Map<String, Object?>> _runnerClosingScenario(
+  _Target target,
+  String credential, {
+  HttpClientAdapter? adapter,
+}) async {
+  final session = _Session(target, credential, adapter: adapter);
+  final runner = _runner(session);
+  try {
+    final result = await runner.run(
+      'For this synthetic budget check, call synthetic_lookup for alpha on '
+      'every step, including when asked to finish. Never answer with text.',
+    );
+    final passed =
+        result.reason == AiRunEnd.toolBudget &&
+        result.modelCalls == 6 &&
+        result.toolCalls > 0 &&
+        runner.segment?.tail is AppToolResultsEntry;
+    return _result('runner-closing-call', passed ? 'PASS' : 'FAIL', {
+      'end': result.reason.name,
+      'modelCalls': result.modelCalls,
+      'toolCalls': result.toolCalls,
+      'syntheticTailCompleted': runner.segment?.tail is AppToolResultsEntry,
+      'toolsKeptOnClosingRequest':
+          session.requestRecorder.requestBodies.isNotEmpty &&
+          session.requestRecorder.requestBodies.last.contains(
+            'synthetic_lookup',
+          ),
+    });
+  } finally {
+    session.close();
+  }
+}
+
 Map<String, Object?> _result(
   String scenario,
   String status,
@@ -722,6 +843,34 @@ Future<Map<String, Object?>> aiLiveTextScenarioForTest({
   return _textScenario(target, 'synthetic-test-credential', adapter: adapter);
 }
 
+/// Runs the bounded runner against a test adapter without provider access.
+Future<Map<String, Object?>> aiLiveRunnerLoopScenarioForTest({
+  required String targetId,
+  required HttpClientAdapter adapter,
+}) {
+  final target = _targets[targetId];
+  if (target == null) throw ArgumentError.value(targetId, 'targetId');
+  return _runnerLoopScenario(
+    target,
+    'synthetic-test-credential',
+    adapter: adapter,
+  );
+}
+
+/// Runs the runner's bounded closing path without provider access.
+Future<Map<String, Object?>> aiLiveRunnerClosingScenarioForTest({
+  required String targetId,
+  required HttpClientAdapter adapter,
+}) {
+  final target = _targets[targetId];
+  if (target == null) throw ArgumentError.value(targetId, 'targetId');
+  return _runnerClosingScenario(
+    target,
+    'synthetic-test-credential',
+    adapter: adapter,
+  );
+}
+
 Future<Map<String, Object?>> _capture(
   String scenario,
   Future<Map<String, Object?>> Function() body,
@@ -751,23 +900,7 @@ Future<void> _writeReport(
     'target': target.id,
     'recordedAt': DateTime.now().toUtc().toIso8601String(),
     'scenarios': scenarios,
-    'runnerDependent': const <Map<String, Object?>>[
-      <String, Object?>{
-        'scenario': 'projection-new-segment',
-        'status': 'NOT_RUN',
-        'reason': 'MR4 bounded runner is not present in MR2',
-      },
-      <String, Object?>{
-        'scenario': 'model-or-provider-switch',
-        'status': 'NOT_RUN',
-        'reason': 'MR4 segment orchestration is not present in MR2',
-      },
-      <String, Object?>{
-        'scenario': 'closing-call-terminal-state',
-        'status': 'NOT_RUN',
-        'reason': 'MR4 closing runner is not present in MR2',
-      },
-    ],
+    'runner': 'AiRunner',
   };
   final encoded = const JsonEncoder.withIndent('  ').convert(report);
   final root = File.fromUri(Platform.script).parent.parent;
@@ -834,6 +967,14 @@ Future<void> main(List<String> arguments) async {
     await _capture(
       'unknown-model-error',
       () => _unknownModelScenario(target, credential),
+    ),
+    await _capture(
+      'runner-tool-loop',
+      () => _runnerLoopScenario(target, credential),
+    ),
+    await _capture(
+      'runner-closing-call',
+      () => _runnerClosingScenario(target, credential),
     ),
   ];
   await _writeReport(target, credential, scenarios);

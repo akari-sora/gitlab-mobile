@@ -130,6 +130,39 @@ void main() {
     expect(segment.tail, same(tail));
   });
 
+  test('segment rejects empty Anthropic output without advancing', () {
+    final segment = AiSegment(
+      providerId: 'provider',
+      recipientRevision: 1,
+      format: AiFormat.anthropicMessages,
+      model: 'model',
+      secretSetAtStart: SecretSetId.fromSecrets(const []),
+    );
+    final tail = AppUserEntry(text: 'question');
+    segment.setTail(tail);
+
+    expect(
+      () => segment.freezeWith(
+        ProviderOutputEntry(
+          AiFormat.anthropicMessages,
+          const <Object?>[],
+          toolCalls: const [],
+        ),
+        (_) => const <Object?>[],
+      ),
+      throwsA(
+        isA<AiFailure>().having(
+          (failure) => failure.kind,
+          'kind',
+          AiFailureKind.invalidResponse,
+        ),
+      ),
+    );
+    expect(segment.frozen, isEmpty);
+    expect(segment.frozenWire, isEmpty);
+    expect(segment.tail, same(tail));
+  });
+
   test(
     'tool-results tail supports clipping, follow-up, restore, and note removal',
     () {

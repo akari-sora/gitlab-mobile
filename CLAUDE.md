@@ -134,3 +134,43 @@ The app is written in Traditional Chinese and translated into the languages list
 - `public_api_smoke` runs only in a `PUBLIC_SMOKE=1` pipeline: the daily schedule, the API or **Run pipeline**. Push, MR and tag pipelines skip it, and `android_debug` does not need it. gitlab.com rate-limits anonymous reads per IP for every job on the runner host. Run the smoke once on a release commit before tagging, never in a retry loop (see `docs/CI.md`, "Public API smoke"). `RESOLVE_LOCK=1` and `LIVE_SMOKE=1` are API-triggered pipeline variables, not normal pushes.
 - Commit messages follow Conventional Commits (`feat(auth):`, `fix(ui):`, `ci:`, `test:`, `docs:`, `refactor:`, `build:`); `[skip ci]` appears on intermediate commits in the history; the commit you hand off must have run the pipeline.
 - Evidence vocabulary: synthetic tests, public live reads, authenticated connector checks and physical-device runs are distinct. Anything not executed is reported as `NOT_RUN`, never inferred as passing.
+
+### Read-only AI runner (MR4; gate off)
+
+`AiRunner` owns an in-memory conversation. It sends at most six model requests
+per user send and uses the read-only `AiGitLabReadPort`; only
+`lib/core/ai/tools/gitlab_read_port.dart` imports `GitLabApi`. Tool scopes contain
+identity and pinned revisions, never account objects. Sensitive-path filtering
+is shared by initial context and tools. A whole fetched source is stripped of
+ANSI and redacted before taking excerpts; line-aligned diffs use fragment
+redaction. Propagate the first `withheldPrivateKeyContext` flag from context and
+tool executions to the runner/display model; rescanning placeholders cannot
+recover that notice.
+
+Use one `KnownSecretsLive` for the conversation and pass its `refresh` to both
+the runner and catalogue. It reads keys from the process-wide settings owner and
+rereads the current GitLab access/refresh values before redaction, retaining the
+union until the conversation is discarded. Construct `AiRunGuard` from the
+current session generation, exact API identity, provider recipient revision and
+`AiSettingsController.isValid(accountKey, contract)`. `AiRunnerBinding` listens
+to that settings owner and session so a stalled stream also stops immediately;
+dispose the binding with its conversation. Each catalogue send gets a fresh
+`AiToolBudget`; call `beginTurn` before each tool batch. Do not share a budget
+between sends. The catalogue reserves twice each logical read cost to cover
+GitLabApi's single OAuth retry; the HTTP counter is a conservative allowance.
+Tool results retain provenance and escaped, nonce-labelled untrusted-data blocks.
+
+Frozen wire fragments are append-only and never rewritten. New readable secrets
+in frozen app/provider text stop the current send; the next send starts from a
+freshly redacted projection. Key replacement uses `replaceKeyRecipient` and a
+new wire client/transport, preserving consent only when the recipient contract
+is otherwise identical. Other recipient changes require a new conversation.
+A binding failure also requires a new segment. `restoreFromDisplay` initializes
+an idle conversation from redacted history models via a new projection; it never
+restores provider replay output. Every frozen tool call has a
+result, including stopped and exhausted calls. A soft timeout keeps the source
+read owned until it settles, preventing overlapping GitLab reads across sends.
+Cleartext requests check interfaces with `includeLinkLocal: true`; missing or
+unavailable interfaces require per-send confirmation. These checks do not prove
+same-subnet reachability. Settings/chat/entry-point UI remains MR5/MR6 work;
+`MERGELINE_AI_ASSISTANT` remains false.

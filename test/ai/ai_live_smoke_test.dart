@@ -226,6 +226,56 @@ void main() {
     expect(smoke.aiLiveCancellationTrigger(const AiTextDelta('x')), isTrue);
     expect(smoke.aiLiveCancellationTrigger(const AiStarted()), isFalse);
   });
+
+  test(
+    'bounded runner smoke executes a tool and preserves the segment',
+    () async {
+      var request = 0;
+      final adapter = FakeAdapter((_) {
+        request++;
+        return _responses(switch (request) {
+          1 => _toolOutput(request),
+          2 => _messageOutput('synthetic runner summary'),
+          _ => _messageOutput('SYNTHETIC_RUNNER_FOLLOW_UP'),
+        });
+      });
+
+      final result = await smoke.aiLiveRunnerLoopScenarioForTest(
+        targetId: 'opencode-responses',
+        adapter: adapter,
+      );
+
+      expect(result['status'], 'PASS');
+      final evidence = result['evidence']! as Map<String, Object?>;
+      expect(evidence['firstModelCalls'], 2);
+      expect(evidence['firstToolCalls'], 1);
+      expect(evidence['sameSegment'], isTrue);
+      expect(evidence['lateRedactions'], 0);
+      expect(adapter.requests, hasLength(3));
+    },
+  );
+
+  test('bounded runner smoke reaches the real closing-call path', () async {
+    var request = 0;
+    final adapter = FakeAdapter((_) {
+      request++;
+      return _responses(_toolOutput(request));
+    });
+
+    final result = await smoke.aiLiveRunnerClosingScenarioForTest(
+      targetId: 'opencode-responses',
+      adapter: adapter,
+    );
+
+    expect(result['status'], 'PASS');
+    final evidence = result['evidence']! as Map<String, Object?>;
+    expect(evidence['end'], 'toolBudget');
+    expect(evidence['modelCalls'], 6);
+    expect(evidence['syntheticTailCompleted'], isTrue);
+    expect(evidence['toolsKeptOnClosingRequest'], isTrue);
+    expect(adapter.requests, hasLength(6));
+    expect(adapter.requests.last.data, contains('"tool_choice":"none"'));
+  });
 }
 
 const _toolOnlyOutput = <Map<String, Object?>>[
@@ -243,6 +293,17 @@ const _toolOnlyOutput = <Map<String, Object?>>[
     'call_id': 'call-2',
     'name': 'synthetic_lookup',
     'arguments': '{"fixture":"beta"}',
+    'status': 'completed',
+  },
+];
+
+List<Map<String, Object?>> _toolOutput(int request) => <Map<String, Object?>>[
+  <String, Object?>{
+    'type': 'function_call',
+    'id': 'runner-item-$request',
+    'call_id': 'runner-call-$request',
+    'name': 'synthetic_lookup',
+    'arguments': '{"fixture":"alpha"}',
     'status': 'completed',
   },
 ];
