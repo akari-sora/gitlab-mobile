@@ -51,6 +51,10 @@ LANGUAGES = [
     ('ms', 'ms', 'Bahasa Melayu', 'ms', None, None),
 ]
 
+# Languages written right to left. Values put into their messages are isolated
+# (U+2068 … U+2069) so a name, path or reference keeps its own direction.
+RTL_LANGUAGES = {'ar', 'fa', 'he', 'ur'}
+
 PLACEHOLDER = re.compile(r'\{([A-Za-z][A-Za-z0-9]*)\}')
 KEY = re.compile(r'^[a-z][A-Za-z0-9]*$')
 DART_RESERVED = {
@@ -166,7 +170,7 @@ def render(keys: list[str], catalogs: dict[str, dict[str, str]]) -> dict[str, st
         '\n',
         '/// One language the app is translated into.\n',
         'final class AppLanguage {\n',
-        '  const AppLanguage._(this.tag, this.name, this.languageCode, this.scriptCode, this.countryCode, this._messages);\n',
+        '  const AppLanguage._(this.tag, this.name, this.languageCode, this.scriptCode, this.countryCode, this.rtl, this._messages);\n',
         '\n',
         '  /// BCP 47 tag, as stored for the language picker.\n',
         '  final String tag;\n',
@@ -176,6 +180,9 @@ def render(keys: list[str], catalogs: dict[str, dict[str, str]]) -> dict[str, st
         '  final String languageCode;\n',
         '  final String? scriptCode;\n',
         '  final String? countryCode;\n',
+        '\n',
+        '  /// Written right to left.\n',
+        '  final bool rtl;\n',
         '  final List<String> _messages;\n',
         '}\n',
         '\n',
@@ -186,14 +193,20 @@ def render(keys: list[str], catalogs: dict[str, dict[str, str]]) -> dict[str, st
         script_text = f"'{script}'" if script else 'null'
         country_text = f"'{country}'" if country else 'null'
         lines.append(f"  AppLanguage._('{tag}', {_dart_string(name)}, '{language}', {script_text}, "
-                     f"{country_text}, _messages{_dart_suffix(suffix)}),\n")
+                     f"{country_text}, {'true' if language in RTL_LANGUAGES else 'false'}, _messages{_dart_suffix(suffix)}),\n")
     lines += [
         '];\n',
         '\n',
         "final _placeholder = RegExp(r'\\{([A-Za-z][A-Za-z0-9]*)\\}');\n",
         '\n',
-        'String _format(String message, Map<String, Object?> values) => message.replaceAllMapped(\n',
-        '    _placeholder, (match) => values.containsKey(match[1]) ? \'${values[match[1]]}\' : match[0]!);\n',
+        '/// [text] with each line wrapped in Unicode first-strong isolates, so it keeps\n',
+        '/// its own direction inside right-to-left text: `!44` stays `!44`.\n',
+        'String bidiIsolated(String text) => text.split(\'\\n\').map((line) => line.isEmpty ? line : \'\\u2068$line\\u2069\').join(\'\\n\');\n',
+        '\n',
+        'String _format(AppLanguage language, String message, Map<String, Object?> values) => message.replaceAllMapped(\n',
+        '    _placeholder, (match) => values.containsKey(match[1])\n',
+        '        ? (language.rtl ? bidiIsolated(\'${values[match[1]]}\') : \'${values[match[1]]}\')\n',
+        '        : match[0]!);\n',
         '\n',
         '/// The app\'s messages in one language. Each accessor\'s doc shows the\n',
         '/// Traditional Chinese source text.\n',
@@ -209,7 +222,7 @@ def render(keys: list[str], catalogs: dict[str, dict[str, str]]) -> dict[str, st
         if names:
             params = ', '.join(f'Object? {name}' for name in names)
             values = ', '.join(f"'{name}': {name}" for name in names)
-            lines.append(f'  String {key}({params}) => _format(language._messages[{index}], {{{values}}});\n')
+            lines.append(f'  String {key}({params}) => _format(language, language._messages[{index}], {{{values}}});\n')
         else:
             lines.append(f'  String get {key} => language._messages[{index}];\n')
     lines.append('}\n')

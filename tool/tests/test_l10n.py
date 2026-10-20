@@ -210,6 +210,18 @@ class LoadValidationTest(unittest.TestCase):
         self.assertNotIn('\r', files['strings.g.dart'], 'a carriage return would end the doc comment')
         self.assertIn('String get note =>', files['strings.g.dart'])
 
+    def test_only_right_to_left_languages_are_marked_rtl(self):
+        # Their messages isolate placeholder values, so a GitLab name or
+        # reference keeps its own direction inside Arabic text.
+        files = l10n.render(['note'], {tag: {'note': '{name}'} for tag, *_ in l10n.LANGUAGES})
+        generated = files['strings.g.dart']
+        for tag, _, _, language, *_ in l10n.LANGUAGES:
+            with self.subTest(tag):
+                entry = re.search(rf"AppLanguage\._\('{re.escape(tag)}', .*, (true|false), _messages", generated)
+                self.assertIsNotNone(entry)
+                self.assertEqual(entry.group(1), 'true' if language == 'ar' else 'false')
+        self.assertIn('String note(Object? name) => _format(language, ', generated)
+
 
 if __name__ == '__main__':
     unittest.main()

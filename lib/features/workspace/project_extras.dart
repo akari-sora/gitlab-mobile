@@ -75,7 +75,7 @@ class MembersPage extends StatelessWidget {
         leading: Monogram(name, size: 36),
         title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text([
-          '@${valueText(value, 'username')}',
+          isolated('@${valueText(value, 'username')}'),
           if (expires.isNotEmpty) l10n.membershipExpires(expires),
           if (valueInt(value, 'id') == account.user.id) l10n.you,
         ].join(' · ')),
@@ -510,7 +510,7 @@ class _DeploymentsPageState extends State<DeploymentsPage> {
               const SizedBox(width: 8),
               Expanded(child: Text(valueText(valueObject(value, 'environment'), 'name', environment ?? ''),
                 maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleSmall)),
-              Text('#${valueInt(value, 'iid')}', style: codeTextStyle(context, fontSize: 12)),
+              Text(isolated('#${valueInt(value, 'iid')}'), style: codeTextStyle(context, fontSize: 12)),
             ]),
             const SizedBox(height: 6),
             Wrap(spacing: 10, runSpacing: 4, children: [

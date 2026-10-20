@@ -469,7 +469,7 @@ Widget workItemCard(
     onTap: onTap,
     selected: selected,
     titleMaxLines: 3,
-    title: Text(valueText(value, 'title')),
+    title: Text(isolated(valueText(value, 'title'))),
     subtitle: project == null || project.isEmpty ? null : Text(project),
     body: branch == null && labelRow == null ? null : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       ?branch,
@@ -1382,7 +1382,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
               return ActionChip(
                 key: ValueKey('assignee-${valueInt(u, 'id')}'),
                 avatar: CircleAvatar(radius: 12, child: Text((username.isNotEmpty ? username[0] : '?').toUpperCase(), style: const TextStyle(fontSize: 10))),
-                label: Text(name.isNotEmpty ? '$name (@$username)' : '@$username'),
+                label: Text(isolated(name.isNotEmpty ? '$name (@$username)' : '@$username')),
                 onPressed: valueInt(u, 'id') > 0 ? () => _openUser(u) : null,
               );
             }),
@@ -1428,7 +1428,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
               return ActionChip(
                 key: ValueKey('reviewer-${valueInt(u, 'id')}'),
                 avatar: CircleAvatar(radius: 12, child: Text((username.isNotEmpty ? username[0] : '?').toUpperCase(), style: const TextStyle(fontSize: 10))),
-                label: Text(name.isNotEmpty ? '$name (@$username)' : '@$username'),
+                label: Text(isolated(name.isNotEmpty ? '$name (@$username)' : '@$username')),
                 onPressed: valueInt(u, 'id') > 0 ? () => _openUser(u) : null,
               );
             }),
@@ -1498,7 +1498,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 19)),
+          Text(isolated(label), maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.appBarTheme.titleTextStyle?.copyWith(fontSize: 19)),
           Text(
             widget.project.path,
             maxLines: 1,
@@ -1580,7 +1580,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            SelectableText(valueText(data, 'title'), minLines: 1, maxLines: 4, style: theme.textTheme.titleLarge?.copyWith(height: 1.3)),
+                            SelectableText(valueText(data, 'title'), textDirection: firstStrongDirection(valueText(data, 'title')), minLines: 1, maxLines: 4, style: theme.textTheme.titleLarge?.copyWith(height: 1.3)),
                             const SizedBox(height: 8),
                             Wrap(
                               spacing: 8,
@@ -1602,7 +1602,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
                                       const SizedBox(width: 6),
                                       Flexible(
                                         child: Text(
-                                          '@${valueText(author, 'username')}${created.isEmpty ? '' : ' · $created'}',
+                                          '${isolated('@${valueText(author, 'username')}')}${created.isEmpty ? '' : ' · $created'}',
                                           maxLines: 1,
                                           overflow: TextOverflow.ellipsis,
                                           style: theme.textTheme.bodySmall?.copyWith(color: muted),
@@ -1812,15 +1812,14 @@ class _RestDescriptionState extends State<_RestDescription>
   }
 
   static String _previewOf(String text) {
-    final head = text.characters.take(_previewWindow + 1);
-    final normalized = head
-        .take(_previewWindow)
-        .toString()
+    // Readable text only: no HTML comments, tags or Markdown markers.
+    final head = markdownSummary(text, _previewWindow);
+    final normalized = head.text
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim()
         .characters;
     final shown = normalized.take(_previewLength).toString().trimRight();
-    return head.length > _previewWindow || normalized.length > _previewLength
+    return head.more || normalized.length > _previewLength
         ? '$shown…'
         : shown;
   }
@@ -1874,6 +1873,7 @@ class _RestDescriptionState extends State<_RestDescription>
                   Text(
                     _preview,
                     key: const ValueKey('work-item-description-preview'),
+                    textDirection: firstStrongDirection(_preview),
                     maxLines: 6,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.bodyMedium,
@@ -1971,7 +1971,7 @@ class _MergeChecksState extends State<_MergeChecks> {
           if (!snap.hasData) { return const ListSkeleton(); }
           final approved = valueObjects(snap.data!, 'approved_by');
           return Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: Text(approved.isEmpty ? l10n.noApproversYet
-        : approved.map((v) => '@${valueText(valueObject(v, 'user'), 'username')}').join(l10n.listSeparator)));
+        : approved.map((v) => isolated('@${valueText(valueObject(v, 'user'), 'username')}')).join(l10n.listSeparator)));
         },
       ),
       if (widget.data['state'] == 'opened') ...[
@@ -2056,7 +2056,7 @@ class _RelatedIssueItemsState extends State<_RelatedIssueItems> {
         minTileHeight: 48,
         leading: Icon(mr ? Icons.merge : Icons.adjust, size: 20),
         title: Text(valueText(item, 'title'), maxLines: 2, overflow: TextOverflow.ellipsis),
-        subtitle: Text(['${mr ? '!' : '#'}${valueInt(item, 'iid')}', statusLabel(valueText(item, 'state')), if (relation.isNotEmpty) relation].join(' · ')),
+        subtitle: Text([isolated('${mr ? '!' : '#'}${valueInt(item, 'iid')}'), statusLabel(valueText(item, 'state')), if (relation.isNotEmpty) relation].join(' · ')),
         onTap: () => open.workItem(context, '${valueInt(item, 'project_id')}', mr ? 'merge_requests' : 'issues', valueInt(item, 'iid')),
       );
     }

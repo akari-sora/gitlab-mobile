@@ -440,7 +440,7 @@ class _RestIssueGraphBridgeState extends State<RestIssueGraphBridge> {
                 const SizedBox(height: 8),
                 _buildRow(
                   l10n.parentItem,
-                  Text('#${detail.hierarchy!.parent!.iid} ${detail.hierarchy!.parent!.title}'),
+                  Text(isolated('#${detail.hierarchy!.parent!.iid} ${detail.hierarchy!.parent!.title}')),
                 ),
               ],
               if (detail.dates?.startDate != null) ...[

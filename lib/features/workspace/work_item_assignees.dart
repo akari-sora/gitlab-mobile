@@ -222,8 +222,8 @@ class WorkItemAssigneeRosterPage extends StatelessWidget {
           final user = users[index];
           return ListTile(
             key: ValueKey('work-item-assignee-roster-${user.id}'),
-            title: Text(user.name.isEmpty ? '@${user.username}' : user.name),
-            subtitle: Text('@${user.username}'),
+            title: Text(isolated(user.name.isEmpty ? '@${user.username}' : user.name)),
+            subtitle: Text(isolated('@${user.username}')),
           );
         },
       ),
@@ -573,8 +573,8 @@ class _AssigneeEditorState extends State<_AssigneeEditor> {
   Widget _personRow(_AssigneeRow row, bool multiple) {
     final user = row.user;
     final label = user.name.isEmpty
-        ? '@${user.username}'
-        : '${user.name} · @${user.username}';
+        ? isolated('@${user.username}')
+        : isolated('${user.name} · @${user.username}');
     return Semantics(
       key: ValueKey('work-item-assignee-row-${user.id}'),
       button: true,

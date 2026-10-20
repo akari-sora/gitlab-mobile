@@ -317,7 +317,7 @@ class _ReactionsBarState extends State<ReactionsBar> {
           padding: const EdgeInsets.symmetric(horizontal: 4),
           tooltip: [
             for (final award in _awards)
-              if (valueText(award, 'name') == entry.key) '@${valueText(valueObject(award, 'user'), 'username')}',
+              if (valueText(award, 'name') == entry.key) isolated('@${valueText(valueObject(award, 'user'), 'username')}'),
           ].join(l10n.listSeparator),
           label: Text('${reactionGlyph(entry.key)} ${entry.value}'),
           onSelected: _busy || !ownerCurrent ? null : (_) => _toggle(entry.key),

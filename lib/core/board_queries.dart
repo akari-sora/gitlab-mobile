@@ -330,7 +330,7 @@ BoardColumn _columnFromList(BoardJson list) {
         key: key,
         title: name?.isNotEmpty == true
             ? name!
-            : '@${username?.isNotEmpty == true ? username : assigneeId}',
+            : isolated('@${username?.isNotEmpty == true ? username : assigneeId}'),
         kind: BoardColumnKind.assignee,
         assigneeId: assigneeId,
         listId: id,

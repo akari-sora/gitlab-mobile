@@ -127,7 +127,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     size: 36,
                                   ),
                                   title: Text(
-                                    '@${account.user.username}',
+                                    isolated('@${account.user.username}'),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),

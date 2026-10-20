@@ -263,7 +263,7 @@ class _WorkItemNotificationsControlState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '@${widget.account.user.username} · ${widget.account.instance.key}',
+                  isolated('@${widget.account.user.username} · ${widget.account.instance.key}'),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 Text(

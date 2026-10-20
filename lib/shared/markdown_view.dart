@@ -15,6 +15,59 @@ import 'in_app_links.dart';
 import 'theme.dart';
 
 import '../l10n/l10n.dart';
+
+final _htmlComment = RegExp(r'<!--[\s\S]*?(?:-->|$)');
+final _htmlTag = RegExp(r'</?[A-Za-z][A-Za-z0-9-]*(?:\s[^<>\n]*)?/?>');
+final _image = RegExp(r'!\[([^\]\n]*)\]\([^)\n]*\)');
+final _link = RegExp(r'\[([^\]\n]*)\]\([^)\n]*\)');
+final _heading = RegExp(r'^[ \t]{0,3}#{1,6}[ \t]+', multiLine: true);
+final _quote = RegExp(r'^[ \t]{0,3}>[ \t]?', multiLine: true);
+final _fenceOrRule = RegExp(r'^[ \t]{0,3}(?:(?:`{3,}|~{3,})[^\n]*|(?:[-*_][ \t]*){3,})$', multiLine: true);
+final _codeSpan = RegExp(r'`+([^`\n]+?)`+');
+final _strongOrStrike = RegExp(r'\*\*|~~');
+
+/// The readable start of Markdown [source], for a one-paragraph summary:
+/// HTML comments and tags, images, heading, quote, fence and rule markers,
+/// bold and strike markers, code ticks and link targets are dropped. `text` holds at
+/// most [limit] characters; `more` tells whether the source goes on.
+({String text, bool more}) markdownSummary(String source, int limit) {
+  final visible = source.replaceAll(_htmlComment, '');
+  // Markup only shortens the text, so twice the limit leaves room for it.
+  final head = visible.characters.take(limit * 2 + 1);
+  final plain = head
+      .take(limit * 2)
+      .toString()
+      .replaceAll(_htmlTag, '')
+      .replaceAll(_image, '')
+      .replaceAllMapped(_link, (match) => match[1]!)
+      .replaceAll(_heading, '')
+      .replaceAll(_quote, '')
+      .replaceAll(_fenceOrRule, '')
+      .replaceAllMapped(_codeSpan, (match) => match[1]!)
+      .replaceAll(_strongOrStrike, '')
+      .characters;
+  return (
+    text: plain.take(limit).toString(),
+    more: head.length > limit * 2 || plain.length > limit,
+  );
+}
+
+final _letter = RegExp(r'\p{L}', unicode: true);
+
+/// The direction of the first letter in [text], the Unicode "first strong"
+/// rule that HTML's `dir="auto"` uses, or null when it has no letter.
+TextDirection? firstStrongDirection(String text) {
+  final letter = _letter.firstMatch(text);
+  if (letter == null) return null;
+  final rune = letter[0]!.runes.first;
+  final rtl = (rune >= 0x0590 && rune <= 0x08FF) ||
+      (rune >= 0xFB1D && rune <= 0xFDFF) ||
+      (rune >= 0xFE70 && rune <= 0xFEFF) ||
+      (rune >= 0x10800 && rune <= 0x10FFF) ||
+      (rune >= 0x1E800 && rune <= 0x1EFFF);
+  return rtl ? TextDirection.rtl : TextDirection.ltr;
+}
+
 class MarkdownView extends StatefulWidget {
   const MarkdownView(
     this.text, {
@@ -56,6 +109,19 @@ class _MarkdownViewState extends State<MarkdownView> {
   final _scrollStorage = PageStorageBucket();
 
   AttachmentBudget get _budget => widget.budget ?? (_owned ??= AttachmentBudget());
+
+  // The body follows its own first letter, like dir="auto": an English README
+  // reads left to right in the Arabic interface, an Arabic one right to left.
+  String? _directionSource;
+  TextDirection? _direction;
+
+  TextDirection? _directionOf(String text) {
+    if (!identical(text, _directionSource)) {
+      _directionSource = text;
+      _direction = firstStrongDirection(markdownSummary(text, 200).text);
+    }
+    return _direction;
+  }
 
   @override
   void didUpdateWidget(MarkdownView oldWidget) {
@@ -150,9 +216,13 @@ class _MarkdownViewState extends State<MarkdownView> {
         await openExternal(context, uri);
       },
     );
+    final direction = _directionOf(text);
+    final content = widget.selectable ? SelectionArea(child: body) : body;
     return PageStorage(
       bucket: _scrollStorage,
-      child: widget.selectable ? SelectionArea(child: body) : body,
+      child: direction == null || direction == Directionality.of(context)
+          ? content
+          : Directionality(textDirection: direction, child: content),
     );
   }
 }
