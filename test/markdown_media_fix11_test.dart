@@ -140,7 +140,6 @@ void main() {
       'Use `mp4` and **bold**',
       r'Use \`mp4 and **bold**',
       '<!-- ` --> **bold**',
-      '<source title="`" src="fallback.mp4"> **bold**',
     ]) {
       testWidgets('FIX11 $tag with src leaves tick body to Markdown: $body', (
         tester,
@@ -183,6 +182,49 @@ void main() {
         );
       }
     }
+
+    testWidgets('FIX12 $tag consumes ticks inside a complete tag attribute', (
+      tester,
+    ) async {
+      final source =
+          'v <$tag src="a.mp4">'
+          '<source title="`" src="fallback.mp4"> **bold**</$tag> t';
+      final nodes = _parse(source);
+      final card = _elements(
+        nodes,
+      ).singleWhere((node) => node.tag == markdownMediaElement);
+      expect(card.attributes['src'], 'a.mp4');
+      expect(nodes.single.textContent, 'v  t');
+      expect(_elements(nodes).where((node) => node.tag == 'strong'), isEmpty);
+      await _expectMedia(tester, source, cards: 1);
+    });
+
+    testWidgets('FIX12 $tag source-only body allows tag attribute ticks', (
+      tester,
+    ) async {
+      final source =
+          'v <$tag><source src="fallback.mp4">'
+          '<source title="`" src="fallback.mp4">'
+          ' **bold**</$tag> t';
+      final nodes = _parse(source);
+      final card = _elements(
+        nodes,
+      ).singleWhere((node) => node.tag == markdownMediaElement);
+      expect(card.attributes['src'], 'fallback.mp4');
+      expect(nodes.single.textContent, 'v  t');
+      await _expectMedia(tester, source, cards: 1);
+    });
+
+    testWidgets('FIX12 $tag blank opening src still preserves default AST', (
+      tester,
+    ) async {
+      final source =
+          'v <$tag src=" "><source src="fallback.mp4">'
+          '<source title="`" src="fallback.mp4">'
+          ' **bold**</$tag> t';
+      expect(_parse(source).map(_ast), _parse(source, media: false).map(_ast));
+      await _expectMedia(tester, source);
+    });
 
     for (final src in ['', ' src="opening.mp4"']) {
       testWidgets('FIX11 $tag tick-free body consumes complete element: $src', (

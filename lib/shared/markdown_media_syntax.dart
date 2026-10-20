@@ -80,8 +80,8 @@ bool _containsImage(List<md.Node> nodes) => nodes.any(
 );
 
 /// Parses supported inline HTML media before package:markdown's raw HTML
-/// syntax. Element bodies containing backticks stay on the default parser
-/// path; a usable audio/video opening tag can still produce a media card.
+/// syntax. Only bounded bodies of plain text and complete parser HTML tokens
+/// are consumed; a usable audio/video opening tag can still produce a card.
 final class MarkdownMediaInlineSyntax extends md.InlineSyntax {
   MarkdownMediaInlineSyntax() : super(r'<', startCharacter: 0x3C);
 
@@ -139,8 +139,6 @@ bool _unsafeImageDestination(String destination) {
 final class MarkdownMediaAutolinkSyntax extends md.InlineSyntax {
   MarkdownMediaAutolinkSyntax() : super(r'<', startCharacter: 0x3C);
 
-  static final _scheme = RegExp(r'https?://', caseSensitive: false);
-
   @override
   bool tryMatch(md.InlineParser parser, [int? startMatchPos]) {
     final start = startMatchPos ?? parser.pos;
@@ -148,10 +146,9 @@ final class MarkdownMediaAutolinkSyntax extends md.InlineSyntax {
         parser.source.codeUnitAt(start) != 0x3C) {
       return false;
     }
-    if (_scheme.matchAsPrefix(parser.source, start + 1) == null) return false;
-    final end = parser.source.indexOf('>', start + 1);
-    if (end < 0) return false;
-    final destination = parser.source.substring(start + 1, end);
+    final match = _autolinkPattern.matchAsPrefix(parser.source, start);
+    if (match == null) return false;
+    final destination = match[1]!;
     final uri = Uri.tryParse(destination);
     if (uri == null ||
         (uri.scheme != 'https' && uri.scheme != 'http') ||
@@ -165,7 +162,7 @@ final class MarkdownMediaAutolinkSyntax extends md.InlineSyntax {
     parser
       ..writeText()
       ..addNode(element)
-      ..consume(end + 1 - start);
+      ..consume(match.end - start);
     return true;
   }
 
@@ -418,23 +415,14 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
     return element == null ? null : (element: element, end: first.end);
   }
   if (first.name == 'video' || first.name == 'audio') {
-    final close = scanner.closingTag(first.name, first.end);
-    final openingOnly = scanner.hasBacktick(
-      first.end,
-      close?.start ?? source.length,
-    );
-    final src =
-        first.attributes['src'] ??
-        (openingOnly ? null : scanner.sourceInside(first.end, first.name));
+    final body = _inlineMediaBody(source, start, first);
+    final src = first.attributes['src'] ?? body?.src;
     final element = _mediaElement({
       ...first.attributes,
       'src': ?src,
     }, kind: first.name);
     if (element == null) return null;
-    return (
-      element: element,
-      end: openingOnly ? first.end : close?.end ?? first.end,
-    );
+    return (element: element, end: body?.end ?? first.end);
   }
   if (first.selfClosing || (first.name != 'a' && first.name != 'picture')) {
     return null;
@@ -474,6 +462,61 @@ const _textOnlyTags = {'textarea', 'script', 'style', 'title', 'noscript'};
   return null;
 }
 
+const _inlineMediaMaxCharacters = 4096;
+const _inlineMediaMaxTags = 16;
+final _autolinkPattern = md.AutolinkSyntax().pattern;
+
+({int end, String? src})? _inlineMediaBody(
+  String source,
+  int start,
+  _HtmlTag opening,
+) {
+  final limit = start + _inlineMediaMaxCharacters;
+  final window = source.substring(
+    start,
+    limit < source.length ? limit : source.length,
+  );
+  var cursor = opening.end - start;
+  var tags = 0;
+  String? src;
+  var sourceSeen = false;
+  while (cursor < window.length) {
+    final unit = window.codeUnitAt(cursor);
+    // These characters can start Markdown tokens spanning the closing tag.
+    if (unit == 0x60 || unit == 0x5B || unit == 0x5C) return null;
+    if (unit != 0x3C) {
+      cursor++;
+      continue;
+    }
+    if (++tags > _inlineMediaMaxTags || cursor + 1 >= window.length) {
+      return null;
+    }
+    final next = window.codeUnitAt(cursor + 1);
+    if (!_isAsciiLetter(next) && next != 0x2F) return null;
+    if (_autolinkPattern.matchAsPrefix(window, cursor) != null) return null;
+    final match = _inlineHtmlPattern.matchAsPrefix(window, cursor);
+    if (match == null) return null;
+    // Named-tag matches terminate at a complete > (including any quoted
+    // attribute). Appending a suffix cannot extend that token. Matching only
+    // the capped window therefore gives the same end as the full source.
+    final token = match[0]!;
+    if (token.startsWith('</') &&
+        token.substring(2, token.length - 1).trim().toLowerCase() ==
+            opening.name) {
+      return (end: start + match.end, src: src);
+    }
+    if (!sourceSeen) {
+      final tag = _scanTag(window, cursor);
+      if (tag != null && !tag.closing && tag.name == 'source') {
+        src = tag.attributes['src'];
+        sourceSeen = true;
+      }
+    }
+    cursor = match.end;
+  }
+  return null;
+}
+
 md.Element? _mediaElement(
   Map<String, String> attributes, {
   required String kind,
@@ -504,23 +547,8 @@ final class _HtmlMediaScanner {
   final bool htmlBlock;
   final _closing = <String, ({int from, RegExpMatch? match})>{};
   ({int from, int? end})? _comment;
-  int _backtickFrom = -1;
-  int _nextBacktick = -1;
   final _sources = <String, ({int from, int end, int? at, String? src})>{};
   static final _closingPatterns = <(String, bool), RegExp>{};
-
-  // Cache only the next literal delimiter, not Markdown grammar. Forward
-  // probes over overlapping media bodies must not repeatedly scan a suffix.
-  bool hasBacktick(int start, int end) {
-    if (start >= end) return false;
-    if (_backtickFrom < 0 ||
-        start < _backtickFrom ||
-        (_nextBacktick >= 0 && start > _nextBacktick)) {
-      _nextBacktick = source.indexOf('`', start);
-    }
-    _backtickFrom = start;
-    return _nextBacktick >= start && _nextBacktick < end;
-  }
 
   int? commentEnd(int start) {
     if (source.startsWith('<!-->', start)) return start + 5;
