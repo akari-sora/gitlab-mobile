@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Włącz dźwięk",
   "markdownMediaCancel": "Anuluj pobieranie",
   "markdownMediaRetry": "Spróbuj ponownie",
-  "markdownMediaLoading": "Pobieranie multimediów"
+  "markdownMediaLoading": "Pobieranie multimediów",
+  "markdownMediaCannotPlay": "Nie można odtworzyć multimediów"
 }

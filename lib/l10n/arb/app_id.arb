@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Bunyikan",
   "markdownMediaCancel": "Batalkan unduhan",
   "markdownMediaRetry": "Coba lagi",
-  "markdownMediaLoading": "Mengunduh media"
+  "markdownMediaLoading": "Mengunduh media",
+  "markdownMediaCannotPlay": "Tidak dapat memutar media"
 }

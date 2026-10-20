@@ -2040,4 +2040,5 @@ const _messagesFr = <String>[
   'Annuler le téléchargement',
   'Réessayer',
   'Téléchargement du média',
+  'Impossible de lire le média',
 ];

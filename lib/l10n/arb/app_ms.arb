@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Hidupkan bunyi",
   "markdownMediaCancel": "Batalkan muat turun",
   "markdownMediaRetry": "Cuba lagi",
-  "markdownMediaLoading": "Memuat turun media"
+  "markdownMediaLoading": "Memuat turun media",
+  "markdownMediaCannotPlay": "Tidak dapat memainkan media"
 }

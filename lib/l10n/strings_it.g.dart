@@ -2040,4 +2040,5 @@ const _messagesIt = <String>[
   'Annulla download',
   'Riprova',
   'Download del contenuto multimediale',
+  'Impossibile riprodurre il contenuto multimediale',
 ];

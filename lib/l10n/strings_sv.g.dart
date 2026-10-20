@@ -2040,4 +2040,5 @@ const _messagesSv = <String>[
   'Avbryt hämtning',
   'Försök igen',
   'Hämtar media',
+  'Det går inte att spela upp mediet',
 ];

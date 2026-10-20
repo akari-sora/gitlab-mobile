@@ -2040,4 +2040,5 @@ const _messagesMs = <String>[
   'Batalkan muat turun',
   'Cuba lagi',
   'Memuat turun media',
+  'Tidak dapat memainkan media',
 ];

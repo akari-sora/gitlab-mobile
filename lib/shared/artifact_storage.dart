@@ -64,9 +64,25 @@ Future<void>? _mediaStartup;
 int _mediaAttempt = 0;
 final _mediaAccountGenerations = <String, int>{};
 final _mediaRemovingAccounts = <String>{};
+final _mediaRemovedGenerations = <String, int>{};
 final _mediaCleanups = <String, Set<Future<void> Function()>>{};
 
+@visibleForTesting
+int markdownMediaCleanupCount(Account account) => _mediaCleanups[account.key]?.length ?? 0;
+
 int markdownMediaAccountGeneration(Account account) => _mediaAccountGenerations[account.key] ?? 0;
+
+/// Refreshes a retained card after a failed account-removal cleanup. Work from
+/// the old generation remains fenced, while a new user retry can use the
+/// account that was kept.
+int usableMarkdownMediaAccountGeneration(Account account, {required int generation}) {
+  final removedGeneration = _mediaRemovedGenerations[account.key];
+  if (_mediaRemovingAccounts.contains(account.key) ||
+      (removedGeneration != null && generation < removedGeneration)) {
+    throw const ApiFailure(FailureKind.cancelled);
+  }
+  return markdownMediaAccountGeneration(account);
+}
 
 /// Account removal first cancels/disposes live players, then removes their files.
 void Function() registerMarkdownMediaCleanup(Account account, Future<void> Function() cleanup) {
@@ -111,6 +127,7 @@ void resetMarkdownMediaStartup() {
   _mediaStartup = null;
   _mediaAccountGenerations.clear();
   _mediaRemovingAccounts.clear();
+  _mediaRemovedGenerations.clear();
   _mediaCleanups.clear();
 }
 
@@ -139,6 +156,7 @@ Future<void> clearAccountArtifacts(Account account) async {
   _mediaRemovingAccounts.add(account.key);
   try {
     await _clearAccountArtifacts(account);
+    _mediaRemovedGenerations[account.key] = markdownMediaAccountGeneration(account);
   } finally {
     _mediaRemovingAccounts.remove(account.key);
   }

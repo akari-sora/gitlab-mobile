@@ -2028,7 +2028,7 @@
   "metadataNoMilestones": "لا توجد مراحل رئيسية بعد",
   "branchesTitle": "الفروع",
   "markdownMediaTooLarge": "الوسائط تتجاوز الحد الأقصى للحجم",
-  "markdownMediaNotImage": "هذا ليس صورة",
+  "markdownMediaNotImage": "هذه ليست صورة",
   "markdownMediaBlocked": "حُظر عنوان وسائط غير آمن",
   "markdownMediaNetwork": "تعذر تحميل الوسائط",
   "markdownMediaPlay": "تشغيل",
@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "إلغاء كتم الصوت",
   "markdownMediaCancel": "إلغاء التنزيل",
   "markdownMediaRetry": "إعادة المحاولة",
-  "markdownMediaLoading": "جارٍ تنزيل الوسائط"
+  "markdownMediaLoading": "جارٍ تنزيل الوسائط",
+  "markdownMediaCannotPlay": "تعذر تشغيل الوسائط"
 }

@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "取消静音",
   "markdownMediaCancel": "取消下载",
   "markdownMediaRetry": "重试",
-  "markdownMediaLoading": "正在下载媒体"
+  "markdownMediaLoading": "正在下载媒体",
+  "markdownMediaCannotPlay": "无法播放媒体"
 }

@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "ध्वनि चालू करें",
   "markdownMediaCancel": "डाउनलोड रद्द करें",
   "markdownMediaRetry": "फिर प्रयास करें",
-  "markdownMediaLoading": "मीडिया डाउनलोड हो रहा है"
+  "markdownMediaLoading": "मीडिया डाउनलोड हो रहा है",
+  "markdownMediaCannotPlay": "मीडिया नहीं चलाया जा सका"
 }

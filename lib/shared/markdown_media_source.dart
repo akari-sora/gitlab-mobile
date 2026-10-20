@@ -60,6 +60,9 @@ MarkdownMediaSource resolveMarkdownMedia(
   Uri? projectWeb,
 }) {
   try {
+    if (!uri.hasScheme && uri.host.isNotEmpty) {
+      uri = uri.replace(scheme: 'https');
+    }
     final upload = parseProjectUpload(
       uri,
       base: base,
@@ -161,7 +164,8 @@ MarkdownMediaSource? _absoluteRepository(
   if (projectSegments.isEmpty) return null;
   final ref = segments[dash + 2];
   final pathSegments = segments.sublist(dash + 3);
-  if (!_safeRepositorySegments(pathSegments) ||
+  if (!_safeRepositorySegments(projectSegments) ||
+      !_safeRepositorySegments(pathSegments) ||
       pathSegments.isEmpty ||
       !_safeRef(ref)) {
     return _blocked(uri);
@@ -201,6 +205,7 @@ MarkdownMediaSource? _absoluteRepository(
   final ref = segments[dash + 2];
   final path = segments.sublist(dash + 3);
   if (project.isEmpty ||
+      !_safeRepositorySegments(project) ||
       !_safeRef(ref) ||
       !_safeRepositorySegments(path) ||
       path.isEmpty) {
@@ -258,10 +263,20 @@ bool _safePathSegment(String segment) =>
     segment != '.' &&
     segment != '..' &&
     !segment.contains('/') &&
-    !segment.contains(r'\');
+    !segment.contains(r'\') &&
+    !segment.runes.any(_controlCharacter);
 
-bool _safeRef(String ref) =>
-    ref.isNotEmpty && ref != '.' && ref != '..' && !ref.contains(r'\');
+bool _safeRef(String ref) {
+  try {
+    final decoded = Uri.decodeComponent(ref);
+    return decoded.split('/').every(_safePathSegment);
+  } on FormatException {
+    return false;
+  }
+}
+
+bool _controlCharacter(int value) =>
+    value <= 0x1f || (value >= 0x7f && value <= 0x9f);
 
 List<String> _withoutEmpty(List<String> values) => [
   for (final value in values)
@@ -303,7 +318,10 @@ bool _safeExternal(Uri uri) {
   if (uri.scheme != 'https' || uri.userInfo.isNotEmpty || uri.host.isEmpty) {
     return false;
   }
-  final host = uri.host.toLowerCase();
+  final host = uri.host.toLowerCase().replaceFirst(RegExp(r'\.$'), '');
+  if (host == 'localhost' || host.endsWith('.localhost')) return false;
+  final labels = host.split('.');
+  if (labels.isNotEmpty && labels.every(_numericHostLabel)) return false;
   final ipv4 = InternetAddress.tryParse(host);
   if (ipv4 == null) return true;
   if (ipv4.type == InternetAddressType.IPv4) {
@@ -313,14 +331,51 @@ bool _safeExternal(Uri uri) {
   final mappedIpv4 =
       b.take(10).every((value) => value == 0) && b[10] == 0xff && b[11] == 0xff;
   if (mappedIpv4) return _safeIpv4(b.sublist(12));
+  final translatedIpv4 =
+      b.take(8).every((value) => value == 0) &&
+      b[8] == 0xff &&
+      b[9] == 0xff &&
+      b[10] == 0 &&
+      b[11] == 0;
+  if (translatedIpv4) return _safeIpv4(b.sublist(12));
   final compatibleIpv4 = b.take(12).every((value) => value == 0);
   if (compatibleIpv4) return _safeIpv4(b.sublist(12));
   final unspecified = b.every((value) => value == 0);
   final loopback = b.take(15).every((value) => value == 0) && b[15] == 1;
   final linkLocal = b[0] == 0xfe && (b[1] & 0xc0) == 0x80;
+  final siteLocal = b[0] == 0xfe && (b[1] & 0xc0) == 0xc0;
   final uniqueLocal = (b[0] & 0xfe) == 0xfc;
   final multicast = b[0] == 0xff;
-  return !(unspecified || loopback || linkLocal || uniqueLocal || multicast);
+  final nat64 =
+      b[0] == 0x00 &&
+      b[1] == 0x64 &&
+      b[2] == 0xff &&
+      b[3] == 0x9b &&
+      b.sublist(4, 12).every((value) => value == 0);
+  if (nat64 && !_safeIpv4(b.sublist(12))) return false;
+  final sixToFour = b[0] == 0x20 && b[1] == 0x02;
+  if (sixToFour && !_safeIpv4(b.sublist(2, 6))) return false;
+  return !(unspecified ||
+      loopback ||
+      linkLocal ||
+      siteLocal ||
+      uniqueLocal ||
+      multicast);
+}
+
+bool _numericHostLabel(String label) {
+  if (label.isEmpty) return false;
+  if (label.length > 2 && label.startsWith('0x')) {
+    return label
+        .substring(2)
+        .codeUnits
+        .every(
+          (value) =>
+              (value >= 0x30 && value <= 0x39) ||
+              (value >= 0x61 && value <= 0x66),
+        );
+  }
+  return label.codeUnits.every((value) => value >= 0x30 && value <= 0x39);
 }
 
 bool _safeIpv4(List<int> b) =>
@@ -333,15 +388,38 @@ bool _safeIpv4(List<int> b) =>
         (b[0] == 192 && b[1] == 168) ||
         b[0] >= 224);
 
+String _normaliseContentType(String? value) =>
+    (value ?? '').split(';').first.trim().toLowerCase();
+
+/// Returns a conservative file extension for media players that require one.
+String markdownMediaExtensionForContentType(String? contentType) =>
+    switch (_normaliseContentType(contentType)) {
+      'video/mp4' => '.mp4',
+      'video/webm' => '.webm',
+      'video/quicktime' => '.mov',
+      'video/x-m4v' => '.m4v',
+      'audio/mpeg' => '.mp3',
+      'audio/mp4' || 'audio/x-m4a' => '.m4a',
+      'audio/ogg' => '.ogg',
+      'audio/wav' || 'audio/x-wav' => '.wav',
+      'audio/webm' => '.webm',
+      _ => '',
+    };
+
 /// Loads resolved media. The external client is deliberately separate from
 /// [GitLabApi], and receives no account headers or cookies from it.
 final class MarkdownMediaLoader {
-  MarkdownMediaLoader({GitLabApi? api, Dio? external})
-    : _api = api,
-      _external = _bareExternal(external);
+  MarkdownMediaLoader({
+    GitLabApi? api,
+    Dio? external,
+    Duration externalImageTimeout = const Duration(seconds: 30),
+  }) : _api = api,
+       _external = _bareExternal(external),
+       _externalImageTimeout = externalImageTimeout;
 
   final GitLabApi? _api;
   final Dio _external;
+  final Duration _externalImageTimeout;
   final Set<CancelToken> _requests = <CancelToken>{};
   bool _closed = false;
 
@@ -350,6 +428,7 @@ final class MarkdownMediaLoader {
     bool image = true,
     CancelToken? cancelToken,
     void Function(int, int?)? onProgress,
+    void Function(String)? onContentType,
     IOSink? sink,
   }) async {
     if (_closed || cancelToken?.isCancelled == true) {
@@ -366,6 +445,9 @@ final class MarkdownMediaLoader {
           }
           sink?.add(bytes);
           await sink?.flush();
+          onContentType?.call(
+            _normaliseContentType(source.uri?.data?.mimeType),
+          );
           onProgress?.call(bytes.length, bytes.length);
           return sink == null ? bytes : Uint8List(0);
         case MarkdownMediaSourceKind.repository:
@@ -383,6 +465,7 @@ final class MarkdownMediaLoader {
             maxBytes: image ? _repositoryImageBytes : _mediaBytes,
             cancelToken: operation,
             onProgress: onProgress,
+            onContentType: onContentType,
             sink: sink,
           );
         case MarkdownMediaSourceKind.upload:
@@ -396,12 +479,23 @@ final class MarkdownMediaLoader {
         case MarkdownMediaSourceKind.external:
           final uri = source.uri;
           if (uri == null) throw const ApiFailure(FailureKind.invalidResponse);
-          return await _loadExternal(
+          final request = _loadExternal(
             uri,
             image: image,
             cancelToken: operation,
             onProgress: onProgress,
+            onContentType: onContentType,
             sink: sink,
+          );
+          if (!image) return await request;
+          return await request.timeout(
+            _externalImageTimeout,
+            onTimeout: () {
+              if (!operation.isCancelled) {
+                operation.cancel('external image total timeout');
+              }
+              throw const ApiFailure(FailureKind.network);
+            },
           );
         case MarkdownMediaSourceKind.blocked:
           throw const ApiFailure(FailureKind.unsupported);
@@ -460,6 +554,7 @@ final class MarkdownMediaLoader {
     required bool image,
     required CancelToken? cancelToken,
     required void Function(int, int?)? onProgress,
+    required void Function(String)? onContentType,
     required IOSink? sink,
   }) async {
     var uri = initial;
@@ -495,7 +590,8 @@ final class MarkdownMediaLoader {
             throw ApiFailure(FailureKind.redirectBlocked, status: status);
           }
           final location = response.headers.value('location');
-          final next = location == null ? null : uri.resolve(location);
+          final parsed = location == null ? null : Uri.tryParse(location);
+          final next = parsed == null ? null : uri.resolveUri(parsed);
           if (next == null || !_safeExternal(next)) {
             throw ApiFailure(FailureKind.redirectBlocked, status: status);
           }
@@ -519,6 +615,7 @@ final class MarkdownMediaLoader {
           await _release(response.data);
           throw const ApiFailure(FailureKind.unsupported);
         }
+        onContentType?.call(type);
         return await _readBody(
           response,
           token: token,
@@ -528,10 +625,21 @@ final class MarkdownMediaLoader {
         );
       }
       throw const ApiFailure(FailureKind.redirectBlocked);
+    } on ApiFailure {
+      rethrow;
+    } on MarkdownMediaNotImage {
+      rethrow;
+    } on FileSystemException {
+      throw ApiFailure.artifactStorage;
     } on DioException catch (error) {
       if (error.type == DioExceptionType.cancel ||
           token.isCancelled ||
           _closed) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      throw const ApiFailure(FailureKind.network);
+    } on Object {
+      if (token.isCancelled || _closed) {
         throw const ApiFailure(FailureKind.cancelled);
       }
       throw const ApiFailure(FailureKind.network);
@@ -564,17 +672,44 @@ final class MarkdownMediaLoader {
     if (body == null) throw const ApiFailure(FailureKind.invalidResponse);
     final bytes = sink == null ? BytesBuilder(copy: false) : null;
     var received = 0;
-    await for (final chunk in body.stream) {
-      if (token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
-      if (received + chunk.length > maxBytes) {
-        token.cancel('markdown media exceeds byte budget');
-        throw const ApiFailure(FailureKind.tooLarge);
+    Stream<Uint8List> checkedBody() async* {
+      final iterator = StreamIterator<Uint8List>(body.stream);
+      try {
+        while (true) {
+          final moved = await Future.any<Object>([
+            iterator.moveNext(),
+            token.whenCancel.then<Object>((_) => _mediaStreamCancelled),
+          ]);
+          if (identical(moved, _mediaStreamCancelled)) {
+            throw const ApiFailure(FailureKind.cancelled);
+          }
+          if (moved != true) break;
+          final chunk = iterator.current;
+          if (received + chunk.length > maxBytes) {
+            token.cancel('markdown media exceeds byte budget');
+            throw const ApiFailure(FailureKind.tooLarge);
+          }
+          received += chunk.length;
+          onProgress?.call(received, total);
+          yield chunk;
+        }
+      } finally {
+        unawaited(
+          iterator.cancel().then<void>(
+            (_) {},
+            onError: (Object _, StackTrace _) {},
+          ),
+        );
       }
-      sink?.add(chunk);
-      bytes?.add(chunk);
-      if (sink != null) await sink.flush();
-      received += chunk.length;
-      onProgress?.call(received, total);
+    }
+
+    if (sink == null) {
+      await for (final chunk in checkedBody()) {
+        bytes!.add(chunk);
+      }
+    } else {
+      await sink.addStream(checkedBody());
+      await sink.flush();
     }
     if (received == 0) onProgress?.call(0, total);
     return bytes?.takeBytes() ?? Uint8List(0);
@@ -598,6 +733,8 @@ final class MarkdownMediaLoader {
     _external.close(force: true);
   }
 }
+
+final _mediaStreamCancelled = Object();
 
 final class _BytesConsumer implements StreamConsumer<List<int>> {
   const _BytesConsumer(this.builder);

@@ -2040,4 +2040,5 @@ const _messagesDe = <String>[
   'Download abbrechen',
   'Erneut versuchen',
   'Medium wird heruntergeladen',
+  'Medium kann nicht abgespielt werden',
 ];

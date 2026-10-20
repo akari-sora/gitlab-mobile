@@ -2040,4 +2040,5 @@ const _messagesCs = <String>[
   'Zrušit stahování',
   'Zkusit znovu',
   'Stahování média',
+  'Médium nelze přehrát',
 ];

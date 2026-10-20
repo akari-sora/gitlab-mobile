@@ -2040,4 +2040,5 @@ const _messagesNl = <String>[
   'Download annuleren',
   'Opnieuw proberen',
   'Media downloaden',
+  'Kan media niet afspelen',
 ];

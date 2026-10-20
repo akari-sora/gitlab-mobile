@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Activează sunetul",
   "markdownMediaCancel": "Anulează descărcarea",
   "markdownMediaRetry": "Încearcă din nou",
-  "markdownMediaLoading": "Se descarcă conținutul media"
+  "markdownMediaLoading": "Se descarcă conținutul media",
+  "markdownMediaCannotPlay": "Fișierul media nu poate fi redat"
 }

@@ -123,6 +123,47 @@ void main() {
         MarkdownMediaSourceKind.external,
       );
     });
+
+    test('normalises protocol-relative URLs to HTTPS', () {
+      final source = resolve('//cdn.example/assets/a.png');
+      expect(source.kind, MarkdownMediaSourceKind.external);
+      expect(source.uri, Uri.parse('https://cdn.example/assets/a.png'));
+    });
+
+    test('blocks ambiguous numeric, localhost, and legacy private hosts', () {
+      for (final value in [
+        'https://127.1/a.png',
+        'https://2130706433/a.png',
+        'https://0x7f000001/a.png',
+        'https://0x7f.0.0.1/a.png',
+        'https://0177.0.0.1/a.png',
+        'https://10.1/a.png',
+        'https://192.168.1/a.png',
+        'https://127.0.0.1./a.png',
+        'https://localhost/a.png',
+        'https://media.localhost/a.png',
+        'https://[fec0::1]/a.png',
+        'https://[64:ff9b::7f00:1]/a.png',
+        'https://[2002:7f00:1::]/a.png',
+      ]) {
+        expect(
+          resolve(value).kind,
+          MarkdownMediaSourceKind.blocked,
+          reason: value,
+        );
+      }
+      for (final value in [
+        'https://123.example/a.png',
+        'https://[64:ff9b::808:808]/a.png',
+        'https://[2002:808:808::]/a.png',
+      ]) {
+        expect(
+          resolve(value).kind,
+          MarkdownMediaSourceKind.external,
+          reason: value,
+        );
+      }
+    });
   });
 
   group('Markdown media transport', () {
@@ -160,6 +201,35 @@ void main() {
       expect(request.uri.pathSegments[7], 'assets/a.png');
       expect(request.uri.queryParameters['ref'], 'main');
       expect(progress.last, (3, 3));
+    });
+
+    test('repository response reports its content type', () async {
+      final adapter = FakeAdapter(
+        (_) => ResponseBody.fromBytes(
+          [1, 2, 3],
+          200,
+          headers: {
+            'content-type': ['image/svg+xml; charset=utf-8'],
+          },
+        ),
+      );
+      final api = testApi(adapter);
+      final loader = MarkdownMediaLoader(api: api);
+      addTearDown(loader.close);
+      addTearDown(api.close);
+      String? contentType;
+
+      await loader.load(
+        const MarkdownMediaSource(
+          kind: MarkdownMediaSourceKind.repository,
+          project: '42',
+          ref: 'main',
+          path: 'asset',
+        ),
+        onContentType: (value) => contentType = value,
+      );
+
+      expect(contentType, 'image/svg+xml');
     });
 
     test('repository raw method enforces caller budget', () async {
@@ -283,6 +353,69 @@ void main() {
       expect(adapter.requests, hasLength(1));
     });
 
+    test(
+      'external transport rejects an unsafe initial URL before request',
+      () async {
+        final adapter = FakeAdapter(
+          (_) => throw StateError('unsafe initial URL must not be requested'),
+        );
+        final loader = MarkdownMediaLoader(
+          external: Dio()..httpClientAdapter = adapter,
+        );
+        addTearDown(loader.close);
+        await expectLater(
+          loader.load(
+            MarkdownMediaSource(
+              kind: MarkdownMediaSourceKind.external,
+              uri: Uri.parse('https://2130706433/a.png'),
+            ),
+          ),
+          throwsA(failure(FailureKind.unsupported)),
+        );
+        expect(adapter.requests, isEmpty);
+      },
+    );
+
+    test(
+      'external redirects reject every ambiguous destination spelling',
+      () async {
+        for (final target in [
+          'https://2130706433/a.png',
+          'https://0x7f.0.0.1/a.png',
+          'https://localhost/a.png',
+          'https://media.localhost/a.png',
+          'https://[fec0::1]/a.png',
+          'https://[64:ff9b::7f00:1]/a.png',
+          'https://[2002:7f00:1::]/a.png',
+        ]) {
+          final adapter = FakeAdapter(
+            (_) => ResponseBody.fromString(
+              '',
+              302,
+              headers: {
+                'location': [target],
+              },
+            ),
+          );
+          final loader = MarkdownMediaLoader(
+            external: Dio()..httpClientAdapter = adapter,
+          );
+          addTearDown(loader.close);
+          await expectLater(
+            loader.load(
+              MarkdownMediaSource(
+                kind: MarkdownMediaSourceKind.external,
+                uri: Uri.parse('https://cdn.example/a.png'),
+              ),
+            ),
+            throwsA(failure(FailureKind.redirectBlocked)),
+            reason: target,
+          );
+          expect(adapter.requests, hasLength(1), reason: target);
+        }
+      },
+    );
+
     test('external redirect chain stops after three hops', () async {
       final adapter = FakeAdapter(
         (request) => ResponseBody.fromString(
@@ -339,6 +472,135 @@ void main() {
         );
       },
     );
+
+    test(
+      'external image has a total deadline across streamed chunks',
+      () async {
+        final controller = StreamController<Uint8List>();
+        addTearDown(controller.close);
+        final adapter = FakeAdapter(
+          (_) => ResponseBody(
+            controller.stream,
+            200,
+            headers: {
+              'content-type': ['image/png'],
+            },
+          ),
+        );
+        final loader = MarkdownMediaLoader(
+          external: Dio()..httpClientAdapter = adapter,
+          externalImageTimeout: const Duration(milliseconds: 30),
+        );
+        addTearDown(loader.close);
+
+        await expectLater(
+          loader.load(
+            MarkdownMediaSource(
+              kind: MarkdownMediaSourceKind.external,
+              uri: Uri.parse('https://cdn.example/slow.png'),
+            ),
+          ),
+          throwsA(failure(FailureKind.network)),
+        );
+        expect(adapter.cancelFutures.single, isNotNull);
+      },
+    );
+
+    test('non-Dio response stream errors are classified as network', () async {
+      final adapter = FakeAdapter(
+        (_) => ResponseBody(
+          Stream<Uint8List>.error(StateError('synthetic stream failure')),
+          200,
+          headers: {
+            'content-type': ['image/png'],
+          },
+        ),
+      );
+      final loader = MarkdownMediaLoader(
+        external: Dio()..httpClientAdapter = adapter,
+      );
+      addTearDown(loader.close);
+      await expectLater(
+        loader.load(
+          MarkdownMediaSource(
+            kind: MarkdownMediaSourceKind.external,
+            uri: Uri.parse('https://cdn.example/a.png'),
+          ),
+        ),
+        throwsA(failure(FailureKind.network)),
+      );
+    });
+
+    test('repository sink write failures use the storage failure', () async {
+      final adapter = FakeAdapter(
+        (_) => ResponseBody.fromBytes(
+          [1],
+          200,
+          headers: {
+            'content-type': ['video/mp4'],
+          },
+        ),
+      );
+      final api = testApi(adapter);
+      final loader = MarkdownMediaLoader(api: api);
+      addTearDown(loader.close);
+      addTearDown(api.close);
+      final sink = IOSink(const _FailingConsumer());
+      addTearDown(sink.close);
+
+      await expectLater(
+        loader.load(
+          const MarkdownMediaSource(
+            kind: MarkdownMediaSourceKind.repository,
+            project: '42',
+            ref: 'main',
+            path: 'movie.mp4',
+          ),
+          image: false,
+          sink: sink,
+        ),
+        throwsA(
+          isA<ApiFailure>().having(
+            (value) => value.title,
+            'title',
+            ApiFailure.artifactStorage.title,
+          ),
+        ),
+      );
+    });
+
+    test('extensionless media reports a useful response extension', () async {
+      final adapter = FakeAdapter(
+        (_) => ResponseBody.fromBytes(
+          [1],
+          200,
+          headers: {
+            'content-type': ['audio/mpeg; charset=binary'],
+          },
+        ),
+      );
+      final loader = MarkdownMediaLoader(
+        external: Dio()..httpClientAdapter = adapter,
+      );
+      addTearDown(loader.close);
+      String? contentType;
+      await loader.load(
+        MarkdownMediaSource(
+          kind: MarkdownMediaSourceKind.external,
+          uri: Uri.parse('https://cdn.example/api/tracks/7'),
+        ),
+        image: false,
+        onContentType: (value) => contentType = value,
+      );
+      expect(contentType, 'audio/mpeg');
+      expect(markdownMediaExtensionForContentType(contentType), '.mp3');
+      expect(markdownMediaExtensionForContentType('video/mp4'), '.mp4');
+      expect(markdownMediaExtensionForContentType('audio/ogg'), '.ogg');
+      expect(
+        markdownMediaExtensionForContentType('application/octet-stream'),
+        '',
+      );
+    });
 
     test(
       'optional sink streams bytes without closing the caller sink',
@@ -510,6 +772,18 @@ final class _TestConsumer implements StreamConsumer<List<int>> {
     await for (final chunk in stream) {
       builder.add(chunk);
     }
+  }
+
+  @override
+  Future<void> close() async {}
+}
+
+final class _FailingConsumer implements StreamConsumer<List<int>> {
+  const _FailingConsumer();
+
+  @override
+  Future<void> addStream(Stream<List<int>> stream) async {
+    throw const FileSystemException('synthetic write failure');
   }
 
   @override

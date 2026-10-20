@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Bật tiếng",
   "markdownMediaCancel": "Hủy tải xuống",
   "markdownMediaRetry": "Thử lại",
-  "markdownMediaLoading": "Đang tải nội dung đa phương tiện"
+  "markdownMediaLoading": "Đang tải nội dung đa phương tiện",
+  "markdownMediaCannotPlay": "Không thể phát nội dung đa phương tiện"
 }

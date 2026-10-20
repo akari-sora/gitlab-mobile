@@ -49,6 +49,29 @@ part 'work_item_status_api.dart';
 part 'work_item_state_api.dart';
 part 'work_item_dates_api.dart';
 
+final _rawStreamCancelled = Object();
+
+bool _safeRawFileCoordinate(String value) {
+  if (value.isEmpty || value.contains(r'\')) return false;
+  try {
+    final decoded = Uri.decodeComponent(value);
+    return decoded.split('/').every(
+      (segment) =>
+          segment.isNotEmpty &&
+          segment != '.' &&
+          segment != '..' &&
+          !segment.contains(r'\') &&
+          !segment.runes.any(
+            (rune) => rune <= 0x1f || (rune >= 0x7f && rune <= 0x9f),
+          ),
+    );
+  } on FormatException {
+    return false;
+  } on ArgumentError {
+    return false;
+  }
+}
+
 final _artifactCancelled = Object();
 const _artifactRedirects = {301, 302, 303, 307, 308};
 
@@ -785,14 +808,15 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     int maxBytes = 10 * 1024 * 1024,
     CancelToken? cancelToken,
     void Function(int received, int? total)? onProgress,
+    void Function(String contentType)? onContentType,
     IOSink? sink,
   }) async {
     if (_closed || cancelToken?.isCancelled == true) {
       throw const ApiFailure(FailureKind.cancelled);
     }
-    if (project.isEmpty ||
-        ref.isEmpty ||
-        filePath.isEmpty ||
+    if (!_safeRawFileCoordinate(project) ||
+        !_safeRawFileCoordinate(ref) ||
+        !_safeRawFileCoordinate(filePath) ||
         maxBytes <= 0 ||
         maxBytes > 100 * 1024 * 1024) {
       throw const ApiFailure(FailureKind.unsupported);
@@ -821,6 +845,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         token: token,
         maxBytes: maxBytes,
         onProgress: onProgress,
+        onContentType: onContentType,
         sink: sink,
         allowRefresh: true,
       );
@@ -839,6 +864,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     required CancelToken token,
     required int maxBytes,
     required void Function(int received, int? total)? onProgress,
+    required void Function(String contentType)? onContentType,
     required IOSink? sink,
     required bool allowRefresh,
   }) async {
@@ -870,6 +896,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
           token: token,
           maxBytes: maxBytes,
           onProgress: onProgress,
+          onContentType: onContentType,
           sink: sink,
           allowRefresh: false,
         );
@@ -882,6 +909,13 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     final total = int.tryParse(
       response.headers.value(Headers.contentLengthHeader) ?? '',
     );
+    onContentType?.call(
+      (response.headers.value(Headers.contentTypeHeader) ?? '')
+          .split(';')
+          .first
+          .trim()
+          .toLowerCase(),
+    );
     if (total != null && total > maxBytes) {
       _cancelTransport(token);
       await _releaseBody(response.data);
@@ -891,23 +925,49 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     if (body == null) throw const ApiFailure(FailureKind.invalidResponse);
     final bytes = sink == null ? BytesBuilder(copy: false) : null;
     var received = 0;
+    Stream<Uint8List> checkedBody() async* {
+      final iterator = StreamIterator<Uint8List>(body.stream);
+      try {
+        while (true) {
+          final moved = await Future.any<Object>([
+            iterator.moveNext(),
+            token.whenCancel.then<Object>((_) => _rawStreamCancelled),
+          ]);
+          if (identical(moved, _rawStreamCancelled) || _closed) {
+            throw const ApiFailure(FailureKind.cancelled);
+          }
+          if (moved != true) break;
+          final chunk = iterator.current;
+          if (received + chunk.length > maxBytes) {
+            _cancelTransport(token);
+            throw const ApiFailure(FailureKind.tooLarge);
+          }
+          received += chunk.length;
+          onProgress?.call(received, total);
+          yield chunk;
+        }
+      } finally {
+        unawaited(
+          iterator.cancel().then<void>(
+            (_) {},
+            onError: (Object _, StackTrace _) {},
+          ),
+        );
+      }
+    }
     try {
-      await for (final chunk in body.stream) {
-        if (_closed || token.isCancelled) {
-          throw const ApiFailure(FailureKind.cancelled);
+      if (sink == null) {
+        await for (final chunk in checkedBody()) {
+          bytes!.add(chunk);
         }
-        if (received + chunk.length > maxBytes) {
-          _cancelTransport(token);
-          throw const ApiFailure(FailureKind.tooLarge);
-        }
-        sink?.add(chunk);
-        bytes?.add(chunk);
-        if (sink != null) await sink.flush();
-        received += chunk.length;
-        onProgress?.call(received, total);
+      } else {
+        await sink.addStream(checkedBody());
+        await sink.flush();
       }
     } on ApiFailure {
       rethrow;
+    } on FileSystemException {
+      throw ApiFailure.artifactStorage;
     } on Object {
       if (_closed || token.isCancelled) {
         throw const ApiFailure(FailureKind.cancelled);

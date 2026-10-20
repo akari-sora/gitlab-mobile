@@ -2040,4 +2040,5 @@ const _messagesPl = <String>[
   'Anuluj pobieranie',
   'Spróbuj ponownie',
   'Pobieranie multimediów',
+  'Nie można odtworzyć multimediów',
 ];

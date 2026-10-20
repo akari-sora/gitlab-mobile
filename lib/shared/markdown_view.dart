@@ -335,7 +335,7 @@ class _MarkdownViewState extends State<MarkdownView> {
   @override
   void didUpdateWidget(MarkdownView oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.text != widget.text || oldWidget.projectId != widget.projectId ||
+    if (oldWidget.projectId != widget.projectId ||
         oldWidget.api != widget.api || oldWidget.base != widget.base ||
         oldWidget.projectWeb != widget.projectWeb || oldWidget.account?.key != widget.account?.key ||
         oldWidget.externalMediaClient != widget.externalMediaClient) {
@@ -377,14 +377,15 @@ class _MarkdownViewState extends State<MarkdownView> {
           borderRadius: BorderRadius.circular(12)),
       ),
       imageBuilder: (uri, title, alt) {
-        final source = resolveMarkdownMedia(uri, base: base, instance: api?.instance,
+        final source = resolveMarkdownMedia(uri, base: base, instance: api?.instance ?? widget.account?.instance,
           projectId: projectId, projectWeb: projectWeb);
         final extension = (source.filename ?? '').split('.').last.toLowerCase();
         final isMedia = title?.startsWith('mergeline-media') == true ||
             const {'mp4', 'webm', 'mov', 'm4v', 'mp3', 'm4a', 'ogg', 'wav'}.contains(extension);
         if (isMedia) {
           return MarkdownMediaCard(source: source, loader: _loader, account: widget.account,
-            audio: title == 'mergeline-media:audio' || const {'mp3', 'm4a', 'ogg', 'wav'}.contains(extension));
+            audio: title == 'mergeline-media:audio' ||
+                (title != 'mergeline-media:video' && const {'mp3', 'm4a', 'ogg', 'wav'}.contains(extension)));
         }
         final size = title?.startsWith('mergeline-size:') == true ? title!.split(':') : null;
         double? dimension(int index) {
@@ -395,7 +396,8 @@ class _MarkdownViewState extends State<MarkdownView> {
         final ref = parseProjectUpload(uri, base: base, projectId: projectId, projectWeb: projectWeb);
         final client = api;
         final id = projectId;
-        if (ref != null && client != null && id != null) {
+        if (ref != null && client != null && id != null &&
+            !ref.filename.toLowerCase().endsWith('.svg')) {
           final upload = AttachmentImage(
             api: client,
             budget: budget,
@@ -408,7 +410,7 @@ class _MarkdownViewState extends State<MarkdownView> {
           );
           return size == null ? upload : SizedBox(width: dimension(1), height: dimension(2), child: upload);
         }
-        return MarkdownMediaImage(source: source, loader: _loader, budget: budget,
+        return MarkdownMediaImage(source: source, loader: _loader, budget: budget, account: widget.account,
           alt: alt, width: dimension(1), height: dimension(2));
       },
       onTapLink: (_, href, _) async {

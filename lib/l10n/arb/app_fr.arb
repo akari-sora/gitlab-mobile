@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Rétablir le son",
   "markdownMediaCancel": "Annuler le téléchargement",
   "markdownMediaRetry": "Réessayer",
-  "markdownMediaLoading": "Téléchargement du média"
+  "markdownMediaLoading": "Téléchargement du média",
+  "markdownMediaCannotPlay": "Impossible de lire le média"
 }

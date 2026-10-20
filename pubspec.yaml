@@ -16,6 +16,7 @@ dependencies:
   url_launcher: 6.3.2
   flutter_markdown_plus: 1.0.12
   flutter_svg: 2.3.0
+  xml: 7.0.1
   video_player: 2.14.1
   crypto: 3.0.7
   app_links: 6.4.1

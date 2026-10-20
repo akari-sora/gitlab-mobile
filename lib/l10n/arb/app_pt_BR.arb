@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Ativar som",
   "markdownMediaCancel": "Cancelar download",
   "markdownMediaRetry": "Tentar novamente",
-  "markdownMediaLoading": "Baixando mídia"
+  "markdownMediaLoading": "Baixando mídia",
+  "markdownMediaCannotPlay": "Não foi possível reproduzir a mídia"
 }

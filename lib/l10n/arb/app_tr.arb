@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Sesi aç",
   "markdownMediaCancel": "İndirmeyi iptal et",
   "markdownMediaRetry": "Yeniden dene",
-  "markdownMediaLoading": "Medya indiriliyor"
+  "markdownMediaLoading": "Medya indiriliyor",
+  "markdownMediaCannotPlay": "Medya oynatılamıyor"
 }

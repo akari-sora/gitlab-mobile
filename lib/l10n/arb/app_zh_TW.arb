@@ -10217,5 +10217,7 @@
   "markdownMediaRetry": "重試",
   "@markdownMediaRetry": {"description": "重新嘗試載入 Markdown 媒體的按鈕標籤"},
   "markdownMediaLoading": "正在下載媒體",
-  "@markdownMediaLoading": {"description": "Markdown 媒體下載中的狀態標籤"}
+  "@markdownMediaLoading": {"description": "Markdown 媒體下載中的狀態標籤"},
+  "markdownMediaCannotPlay": "無法播放媒體",
+  "@markdownMediaCannotPlay": {"description": "影音播放器初始化或解碼失敗時的提示"}
 }

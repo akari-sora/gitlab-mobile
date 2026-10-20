@@ -2040,4 +2040,5 @@ const _messagesVi = <String>[
   'Hủy tải xuống',
   'Thử lại',
   'Đang tải nội dung đa phương tiện',
+  'Không thể phát nội dung đa phương tiện',
 ];

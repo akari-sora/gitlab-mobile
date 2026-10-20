@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "음소거 해제",
   "markdownMediaCancel": "다운로드 취소",
   "markdownMediaRetry": "다시 시도",
-  "markdownMediaLoading": "미디어를 다운로드하는 중입니다"
+  "markdownMediaLoading": "미디어를 다운로드하는 중입니다",
+  "markdownMediaCannotPlay": "미디어를 재생할 수 없습니다"
 }

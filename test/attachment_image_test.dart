@@ -221,7 +221,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('a malformed upload reference stays an icon and does not throw', (tester) async {
+  testWidgets('malformed upload references show failure icons without requests or throws', (tester) async {
     final fixture = WorkspaceFixture();
     addTearDown(fixture.api.close);
     _surface(tester);

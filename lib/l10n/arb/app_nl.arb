@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Geluid aanzetten",
   "markdownMediaCancel": "Download annuleren",
   "markdownMediaRetry": "Opnieuw proberen",
-  "markdownMediaLoading": "Media downloaden"
+  "markdownMediaLoading": "Media downloaden",
+  "markdownMediaCannotPlay": "Kan media niet afspelen"
 }

@@ -2040,4 +2040,5 @@ const _messagesEn = <String>[
   'Cancel download',
   'Retry',
   'Downloading media',
+  'Cannot play media',
 ];

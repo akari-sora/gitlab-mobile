@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/shared/artifact_storage.dart';
 import 'package:gitlab_mobile/shared/attachment_budget.dart';
 import 'package:gitlab_mobile/shared/markdown_media.dart';
+import 'package:gitlab_mobile/shared/markdown_media_svg.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
 import 'package:video_player/video_player.dart';
 import 'package:video_player_platform_interface/video_player_platform_interface.dart';
@@ -205,7 +207,7 @@ void main() {
     );
     await settleNetworkWidgets(tester);
     expect(find.textContaining('這不是圖片'), findsOneWidget);
-    expect(find.textContaining('已封鎖不安全'), findsOneWidget);
+    expect(find.byTooltip('已封鎖不安全的媒體網址'), findsOneWidget);
     await tester.tap(find.textContaining('這不是圖片'));
     await settleNetworkWidgets(tester);
     expect(adapter.requests, hasLength(2));
@@ -235,7 +237,7 @@ void main() {
       );
       await settleNetworkWidgets(tester);
       expect(adapter.requests, hasLength(1));
-      expect(find.textContaining('媒體超過大小限制'), findsOneWidget);
+      expect(find.text('附件超過本頁顯示上限'), findsOneWidget);
       await tester.pumpWidget(const SizedBox());
       final bytesAdapter = FakeAdapter(
         (_) => ResponseBody.fromBytes(
@@ -260,20 +262,21 @@ void main() {
     },
   );
 
-  test('SVG references are local only', () {
-    expect(markdownSvgIsSelfContained(_svg), isTrue);
-    expect(
-      markdownSvgIsSelfContained('<svg><use href="#local"/></svg>'),
-      isTrue,
-    );
+  test('SVG references stay local after harmless export metadata is stripped', () async {
+    for (final svg in [
+      _svg,
+      '<svg><use href="#local"/></svg>',
+      '<!DOCTYPE svg><svg/>',
+      '<svg><style>@import "https://example.com";</style></svg>',
+    ]) {
+      expect(await sanitizeMarkdownSvg(Uint8List.fromList(utf8.encode(svg))), isNotNull);
+    }
     for (final svg in [
       '<svg><image href="https://other.example/a.png"/></svg>',
       '<svg><image href="data:image/png;base64,AAAA"/></svg>',
-      '<!DOCTYPE svg><svg/>',
-      '<svg><style>@import "https://example.com";</style></svg>',
       '<svg><path fill="url(https://example.com/a.svg)"/></svg>',
     ]) {
-      expect(markdownSvgIsSelfContained(svg), isFalse);
+      await expectLater(sanitizeMarkdownSvg(Uint8List.fromList(utf8.encode(svg))), throwsA(isA<ApiFailure>()));
     }
   });
 

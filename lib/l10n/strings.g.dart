@@ -6207,4 +6207,7 @@ final class AppStrings {
 
   /// 正在下載媒體
   String get markdownMediaLoading => language._messages[2037];
+
+  /// 無法播放媒體
+  String get markdownMediaCannotPlay => language._messages[2038];
 }

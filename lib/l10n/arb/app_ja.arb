@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "ミュート解除",
   "markdownMediaCancel": "ダウンロードをキャンセル",
   "markdownMediaRetry": "再試行",
-  "markdownMediaLoading": "メディアをダウンロード中"
+  "markdownMediaLoading": "メディアをダウンロード中",
+  "markdownMediaCannotPlay": "メディアを再生できません"
 }

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
@@ -7,14 +6,18 @@ import 'dart:ui' as ui;
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
 import '../core/failure.dart';
 import '../core/models.dart';
+import '../core/providers.dart';
 import '../l10n/l10n.dart';
 import 'artifact_storage.dart';
 import 'attachment_budget.dart';
 import 'markdown_media_source.dart';
+import 'markdown_media_svg.dart';
+import 'workspace_ui.dart';
 
 String markdownMediaFailure(
   Object error, {
@@ -23,43 +26,61 @@ String markdownMediaFailure(
 }) {
   if (blocked) return l10n.markdownMediaBlocked;
   if (error is AttachmentBudgetExceeded) return l10n.markdownMediaTooLarge;
+  if (error is MarkdownMediaNotImage) return l10n.markdownMediaNotImage;
+  if (error is FormatException) return l10n.cannotDecodeImage;
   if (error is ApiFailure) {
     return switch (error.kind) {
       FailureKind.tooLarge => l10n.markdownMediaTooLarge,
-      FailureKind.unsupported ||
       FailureKind.redirectBlocked => l10n.markdownMediaBlocked,
-      _ => l10n.markdownMediaNetwork,
+      FailureKind.invalidResponse => l10n.cannotDecodeImage,
+      FailureKind.unsupported => error.title,
+      _ =>
+        error.title == l10n.cannotSaveArtifact
+            ? error.title
+            : l10n.markdownMediaNetwork,
     };
   }
-  return image ? l10n.markdownMediaNotImage : l10n.markdownMediaNetwork;
+  return image && error is! IOException && error is! StateError
+      ? l10n.cannotDecodeImage
+      : l10n.markdownMediaNetwork;
 }
 
-/// All references are local fragments. No nested URI can reach an SVG loader.
-/// Rejecting declarations also prevents entity expansion before SVG parsing.
-bool markdownSvgIsSelfContained(String text) {
-  final lower = text.toLowerCase();
-  if (lower.contains('<!') ||
-      lower.contains('<?xml-stylesheet') ||
-      lower.contains('<style') ||
-      lower.contains('<script')) {
-    return false;
-  }
-  final references = RegExp(
-    r'''(?:[\w-]+:)?href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))''',
-    caseSensitive: false,
+bool markdownMediaNeedsDetails(Object error, MarkdownMediaSource source) =>
+    source.kind == MarkdownMediaSourceKind.repository &&
+    error is ApiFailure &&
+    const {
+      FailureKind.invisible,
+      FailureKind.forbidden,
+      FailureKind.unauthenticated,
+    }.contains(error.kind);
+
+void openMarkdownMediaFailure(
+  BuildContext context,
+  ApiFailure failure, {
+  required MarkdownMediaSource source,
+  required VoidCallback onRetry,
+  Account? account,
+}) {
+  unawaited(
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: SingleChildScrollView(
+          child: FailureNotice(
+            failure,
+            account: account,
+            resourceLabel: '${source.project}/${source.ref}/${source.path}',
+            onRetry: () {
+              Navigator.of(sheetContext).pop();
+              onRetry();
+            },
+            onSwitchAccount: endSessionFrom(sheetContext),
+          ),
+        ),
+      ),
+    ),
   );
-  for (final match in references.allMatches(text)) {
-    final value = (match[1] ?? match[2] ?? match[3] ?? '').trim();
-    if (!value.startsWith('#')) return false;
-  }
-  for (final match in RegExp(
-    r'url\s*\(\s*([^)]*)\)',
-    caseSensitive: false,
-  ).allMatches(text)) {
-    final value = match[1]!.replaceAll(RegExp('[\'"\\s]'), '');
-    if (!value.startsWith('#')) return false;
-  }
-  return true;
 }
 
 class MarkdownMediaImage extends StatefulWidget {
@@ -71,6 +92,7 @@ class MarkdownMediaImage extends StatefulWidget {
     this.alt,
     this.width,
     this.height,
+    this.account,
   });
   final MarkdownMediaSource source;
   final MarkdownMediaLoader loader;
@@ -78,6 +100,7 @@ class MarkdownMediaImage extends StatefulWidget {
   final String? alt;
   final double? width;
   final double? height;
+  final Account? account;
 
   @override
   State<MarkdownMediaImage> createState() => _MarkdownMediaImageState();
@@ -86,6 +109,7 @@ class MarkdownMediaImage extends StatefulWidget {
 class _MarkdownMediaImageState extends State<MarkdownMediaImage> {
   Uint8List? _bytes;
   bool _svg = false;
+  bool _capped = false;
   Object? _error;
   int _epoch = 0;
   Object get _key => (widget.loader, widget.source.cacheKey);
@@ -110,24 +134,31 @@ class _MarkdownMediaImageState extends State<MarkdownMediaImage> {
 
   Future<void> _load() async {
     final epoch = ++_epoch;
+    _capped = false;
+    if (widget.source.kind == MarkdownMediaSourceKind.blocked) {
+      setState(() => _error = const ApiFailure(FailureKind.redirectBlocked));
+      return;
+    }
+    if (!widget.budget.claimImage(_key)) {
+      setState(() => _capped = true);
+      return;
+    }
     try {
-      if (!widget.budget.claimImage(_key)) {
-        throw const AttachmentBudgetExceeded();
-      }
+      String? contentType;
       final bytes = await widget.budget.fetch(
         _key,
-        () => widget.loader.load(widget.source),
+        () => widget.loader.load(
+          widget.source,
+          onContentType: (value) => contentType = value,
+        ),
       );
       if (!mounted || epoch != _epoch) return;
-      final head = utf8
-          .decode(bytes.take(1024).toList(), allowMalformed: true)
-          .trimLeft();
-      final svg = head.startsWith('<svg') || head.startsWith('<?xml');
-      if (svg) {
-        if (!markdownSvgIsSelfContained(utf8.decode(bytes))) {
-          throw const ApiFailure(FailureKind.unsupported);
-        }
-      } else {
+      final sanitised = await sanitizeMarkdownSvg(
+        bytes,
+        contentType: contentType,
+      );
+      final svg = sanitised != null;
+      if (!svg) {
         final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
         ui.ImageDescriptor? descriptor;
         try {
@@ -142,7 +173,7 @@ class _MarkdownMediaImageState extends State<MarkdownMediaImage> {
       }
       if (!mounted || epoch != _epoch) return;
       setState(() {
-        _bytes = bytes;
+        _bytes = sanitised ?? bytes;
         _svg = svg;
         _error = null;
       });
@@ -166,46 +197,89 @@ class _MarkdownMediaImageState extends State<MarkdownMediaImage> {
     super.dispose();
   }
 
-  Widget _failed(Object error) => TextButton.icon(
-    onPressed: _retry,
-    icon: const Icon(Icons.broken_image_outlined),
-    label: Text(
-      '${widget.alt ?? widget.source.filename} · ${markdownMediaFailure(error)} · ${l10n.markdownMediaRetry}',
-    ),
-  );
+  Widget _failed(Object error) {
+    if (widget.source.kind == MarkdownMediaSourceKind.blocked) {
+      return Tooltip(
+        message: l10n.markdownMediaBlocked,
+        child: Icon(
+          Icons.broken_image_outlined,
+          semanticLabel: l10n.markdownMediaBlocked,
+        ),
+      );
+    }
+    final name = widget.alt?.isNotEmpty == true
+        ? widget.alt!
+        : widget.source.filename ?? '';
+    final reason = markdownMediaFailure(error);
+    return TextButton.icon(
+      onPressed: markdownMediaNeedsDetails(error, widget.source)
+          ? () => openMarkdownMediaFailure(
+              context,
+              error as ApiFailure,
+              source: widget.source,
+              account: widget.account,
+              onRetry: _retry,
+            )
+          : _retry,
+      icon: const Icon(Icons.broken_image_outlined),
+      label: Text(
+        '${name.isEmpty ? '' : '${isolated(name)} · '}$reason · ${l10n.markdownMediaRetry}',
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_capped) return Text(l10n.attachmentExceedsDisplayLimit);
     final error = _error;
     if (error != null) return _failed(error);
     final bytes = _bytes;
     if (bytes == null) {
-      return const SizedBox(
+      return SizedBox(
         width: 32,
         height: 32,
-        child: CircularProgressIndicator(),
+        child: CircularProgressIndicator(
+          semanticsLabel: l10n.attachmentLoading,
+        ),
       );
     }
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 480),
-      child: _svg
-          ? SvgPicture.memory(
-              bytes,
-              width: widget.width,
-              height: widget.height,
-              semanticsLabel: widget.alt,
-              fit: BoxFit.contain,
-              errorBuilder: (_, error, _) => _failed(error),
-            )
-          : Image.memory(
-              bytes,
-              width: widget.width,
-              height: widget.height,
-              cacheWidth: 2048,
-              fit: BoxFit.contain,
-              semanticLabel: widget.alt,
-              errorBuilder: (_, error, _) => _failed(error),
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final layoutWidth = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : 320.0;
+        final ratio = MediaQuery.devicePixelRatioOf(context);
+        final decodeWidth =
+            ((widget.width ?? layoutWidth).clamp(1.0, layoutWidth) * ratio)
+                .round()
+                .clamp(64, 2048);
+        final decodeHeight = (480 * ratio).round().clamp(64, 2048);
+        return ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 480),
+          child: _svg
+              ? SvgPicture.memory(
+                  bytes,
+                  width: widget.width,
+                  height: widget.height,
+                  semanticsLabel: widget.alt,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => _failed(const FormatException()),
+                )
+              : Image(
+                  image: ResizeImage(
+                    MemoryImage(bytes),
+                    width: decodeWidth,
+                    height: decodeHeight,
+                    policy: ResizeImagePolicy.fit,
+                  ),
+                  width: widget.width,
+                  height: widget.height,
+                  fit: BoxFit.contain,
+                  semanticLabel: widget.alt,
+                  errorBuilder: (_, _, _) => _failed(const FormatException()),
+                ),
+        );
+      },
     );
   }
 }
@@ -293,7 +367,17 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
 
   Future<void> _load() async {
     if (_loading || _player != null) return;
-    final account = widget.account;
+    if (widget.source.kind == MarkdownMediaSourceKind.blocked) {
+      setState(() => _error = const ApiFailure(FailureKind.redirectBlocked));
+      return;
+    }
+    Account? account = widget.account;
+    if (account == null) {
+      try {
+        account = ProviderScope.containerOf(context, listen: false)
+            .read(sessionProvider).active;
+      } catch (_) {}
+    }
     if (account == null) {
       setState(() => _error = const ApiFailure(FailureKind.invalidResponse));
       return;
@@ -302,7 +386,8 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
     final cancel = CancelToken();
     _cancel = cancel;
     _unregisterCleanup?.call();
-    _unregisterCleanup = registerMarkdownMediaCleanup(account, _accountCleanup);
+    final unregisterCleanup = registerMarkdownMediaCleanup(account, _accountCleanup);
+    _unregisterCleanup = unregisterCleanup;
     setState(() {
       _loading = true;
       _error = null;
@@ -313,6 +398,10 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
     VideoPlayerController? player;
     IOSink? sink;
     try {
+      _accountGeneration = usableMarkdownMediaAccountGeneration(
+        account,
+        generation: _accountGeneration,
+      );
       directory = await markdownMediaDirectory(
         account,
         generation: _accountGeneration,
@@ -322,9 +411,13 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
         return;
       }
       _directory = directory;
-      final file = File(
-        '${directory.path}/${attachmentDownloadFileName(widget.source.filename ?? 'media.bin', fallback: 'media.bin')}',
+      final sourceName = widget.source.filename?.trim();
+      final originalName = attachmentDownloadFileName(
+        sourceName?.isNotEmpty == true ? sourceName! : 'media',
+        fallback: 'media',
       );
+      var file = File('${directory.path}/$originalName');
+      String? contentType;
       sink = file.openWrite();
       _sink = sink;
       await widget.loader.load(
@@ -332,6 +425,7 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
         image: false,
         sink: sink,
         cancelToken: cancel,
+        onContentType: (value) => contentType = value,
         onProgress: (received, total) {
           if (mounted && epoch == _epoch) {
             setState(() {
@@ -344,16 +438,33 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
       await sink.close();
       if (identical(_sink, sink)) _sink = null;
       if (!mounted || epoch != _epoch || cancel.isCancelled) return;
+      if (!_hasFileExtension(originalName)) {
+        final extension = markdownMediaExtensionForContentType(contentType);
+        if (extension.isNotEmpty) {
+          file = await file.rename('${file.path}$extension');
+        }
+      }
       player = VideoPlayerController.file(file);
       _player = player;
-      await player.initialize();
+      try {
+        await player.initialize();
+      } on Object {
+        throw ApiFailure(
+          FailureKind.unsupported,
+          title: l10n.markdownMediaCannotPlay,
+        );
+      }
       if (!mounted || epoch != _epoch) {
         await player.dispose();
         return;
       }
       player.addListener(_changed);
       // Loading began with an explicit play tap; rendering alone never plays.
-      await player.play();
+      final lifecycleState = WidgetsBinding.instance.lifecycleState;
+      if (lifecycleState == null ||
+          lifecycleState == AppLifecycleState.resumed) {
+        await player.play();
+      }
       if (mounted && epoch == _epoch) setState(() => _loading = false);
     } catch (error) {
       if (identical(_player, player)) _player = null;
@@ -372,9 +483,18 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
       await deleteAttemptFiles(directory, null);
       if (mounted && epoch == _epoch) {
         setState(() {
-          _error = error;
+          _error = error is FileSystemException
+              ? ApiFailure.artifactStorage
+              : error;
           _loading = false;
         });
+      }
+    } finally {
+      if (player == null || !identical(_player, player) || cancel.isCancelled) {
+        unregisterCleanup();
+        if (identical(_unregisterCleanup, unregisterCleanup)) {
+          _unregisterCleanup = null;
+        }
       }
     }
   }
@@ -400,7 +520,20 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
   }
 
   void _changed() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final player = _player;
+    if (player?.value.hasError == true) {
+      if (_error == null) {
+        setState(() {
+          _error = ApiFailure(
+            FailureKind.unsupported,
+            title: l10n.markdownMediaCannotPlay,
+          );
+        });
+      }
+      return;
+    }
+    setState(() {});
   }
 
   Future<void> _toggle() async {
@@ -447,7 +580,11 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    widget.source.filename ?? l10n.unnamedFile,
+                    isolated(
+                      widget.source.filename?.isNotEmpty == true
+                          ? widget.source.filename!
+                          : l10n.unnamedFile,
+                    ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -475,25 +612,49 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
             ),
             if (_loading) ...[
               Text(l10n.markdownMediaLoading),
-              LinearProgressIndicator(
-                value: _total != null && _total! > 0
-                    ? (_received / _total!).clamp(0.0, 1.0)
-                    : null,
+              Semantics(
+                label: l10n.markdownMediaLoading,
+                child: LinearProgressIndicator(
+                  value: _total != null && _total! > 0
+                      ? (_received / _total!).clamp(0.0, 1.0)
+                      : null,
+                ),
               ),
             ],
             if (error != null)
               TextButton(
-                onPressed: () => unawaited(_retryMedia()),
+                onPressed: () {
+                  if (markdownMediaNeedsDetails(error, widget.source) &&
+                      error is ApiFailure) {
+                    openMarkdownMediaFailure(
+                      context,
+                      error,
+                      source: widget.source,
+                      account: widget.account,
+                      onRetry: () => unawaited(_retryMedia()),
+                    );
+                    return;
+                  }
+                  unawaited(_retryMedia());
+                },
                 child: Text(
                   '${markdownMediaFailure(error, image: false, blocked: widget.source.kind == MarkdownMediaSourceKind.blocked)} · ${l10n.markdownMediaRetry}',
                 ),
               ),
-            if (value != null && value.isInitialized && player != null) ...[
-              if (value.hasError) Text(l10n.markdownMediaNetwork),
+            if (error == null &&
+                value != null &&
+                value.isInitialized &&
+                player != null) ...[
               if (!widget.audio)
-                AspectRatio(
-                  aspectRatio: value.aspectRatio,
-                  child: VideoPlayer(player),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 480),
+                  child: AspectRatio(
+                    aspectRatio:
+                        value.aspectRatio > 0 && value.aspectRatio.isFinite
+                        ? value.aspectRatio
+                        : 16 / 9,
+                    child: VideoPlayer(player),
+                  ),
                 ),
               VideoProgressIndicator(player, allowScrubbing: true),
               IconButton(
@@ -511,4 +672,9 @@ class _MarkdownMediaCardState extends State<MarkdownMediaCard> {
       ),
     );
   }
+}
+
+bool _hasFileExtension(String name) {
+  final dot = name.lastIndexOf('.');
+  return dot > 0 && dot < name.length - 1;
 }

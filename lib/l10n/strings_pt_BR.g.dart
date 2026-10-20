@@ -2040,4 +2040,5 @@ const _messagesPtBr = <String>[
   'Cancelar download',
   'Tentar novamente',
   'Baixando mídia',
+  'Não foi possível reproduzir a mídia',
 ];

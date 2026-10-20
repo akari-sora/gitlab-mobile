@@ -2040,4 +2040,5 @@ const _messagesId = <String>[
   'Batalkan unduhan',
   'Coba lagi',
   'Mengunduh media',
+  'Tidak dapat memutar media',
 ];

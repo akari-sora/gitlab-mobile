@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Ton einschalten",
   "markdownMediaCancel": "Download abbrechen",
   "markdownMediaRetry": "Erneut versuchen",
-  "markdownMediaLoading": "Medium wird heruntergeladen"
+  "markdownMediaLoading": "Medium wird heruntergeladen",
+  "markdownMediaCannotPlay": "Medium kann nicht abgespielt werden"
 }

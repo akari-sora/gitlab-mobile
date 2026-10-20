@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Увімкнути звук",
   "markdownMediaCancel": "Скасувати завантаження",
   "markdownMediaRetry": "Повторити",
-  "markdownMediaLoading": "Завантаження медіафайлу"
+  "markdownMediaLoading": "Завантаження медіафайлу",
+  "markdownMediaCannotPlay": "Не вдалося відтворити медіафайл"
 }

@@ -2040,4 +2040,5 @@ const _messagesRo = <String>[
   'Anulează descărcarea',
   'Încearcă din nou',
   'Se descarcă conținutul media',
+  'Fișierul media nu poate fi redat',
 ];

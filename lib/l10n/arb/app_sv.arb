@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Slå på ljudet",
   "markdownMediaCancel": "Avbryt hämtning",
   "markdownMediaRetry": "Försök igen",
-  "markdownMediaLoading": "Hämtar media"
+  "markdownMediaLoading": "Hämtar media",
+  "markdownMediaCannotPlay": "Det går inte att spela upp mediet"
 }

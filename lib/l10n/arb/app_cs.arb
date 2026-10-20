@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Zapnout zvuk",
   "markdownMediaCancel": "Zrušit stahování",
   "markdownMediaRetry": "Zkusit znovu",
-  "markdownMediaLoading": "Stahování média"
+  "markdownMediaLoading": "Stahování média",
+  "markdownMediaCannotPlay": "Médium nelze přehrát"
 }

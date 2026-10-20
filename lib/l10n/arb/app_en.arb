@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Unmute",
   "markdownMediaCancel": "Cancel download",
   "markdownMediaRetry": "Retry",
-  "markdownMediaLoading": "Downloading media"
+  "markdownMediaLoading": "Downloading media",
+  "markdownMediaCannotPlay": "Cannot play media"
 }

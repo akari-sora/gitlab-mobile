@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "เปิดเสียง",
   "markdownMediaCancel": "ยกเลิกการดาวน์โหลด",
   "markdownMediaRetry": "ลองอีกครั้ง",
-  "markdownMediaLoading": "กำลังดาวน์โหลดสื่อ"
+  "markdownMediaLoading": "กำลังดาวน์โหลดสื่อ",
+  "markdownMediaCannotPlay": "ไม่สามารถเล่นสื่อได้"
 }

@@ -2040,4 +2040,5 @@ const _messagesTr = <String>[
   'İndirmeyi iptal et',
   'Yeniden dene',
   'Medya indiriliyor',
+  'Medya oynatılamıyor',
 ];

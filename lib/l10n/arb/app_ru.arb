@@ -2037,5 +2037,6 @@
   "markdownMediaUnmute": "Включить звук",
   "markdownMediaCancel": "Отменить загрузку",
   "markdownMediaRetry": "Повторить",
-  "markdownMediaLoading": "Загрузка медиафайла"
+  "markdownMediaLoading": "Загрузка медиафайла",
+  "markdownMediaCannotPlay": "Не удалось воспроизвести медиафайл"
 }
