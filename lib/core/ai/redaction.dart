@@ -1,6 +1,7 @@
 import 'ai_failure.dart';
 
 const _redacted = '[REDACTED]';
+const _unterminatedPrivateKey = '[REDACTED:private_key_unterminated]';
 
 abstract interface class KnownSecretsSource {
   Iterable<String> get current;
@@ -111,13 +112,13 @@ final class Redactor {
         while (offset < input.length) {
           final start = input.indexOf(secret, offset);
           if (start < 0) break;
-          ranges.add((start: start, end: start + secret.length));
+          ranges.add(_RedactionRange(start: start, end: start + secret.length));
           offset = start + 1; // Include overlapping exact matches.
         }
       }
       for (final pattern in _patterns!) {
         for (final match in pattern.allMatches(input)) {
-          ranges.add((start: match.start, end: match.end));
+          ranges.add(_RedactionRange(start: match.start, end: match.end));
         }
       }
       ranges
@@ -160,7 +161,17 @@ final class Redactor {
   }
 }
 
-typedef _RedactionRange = ({int start, int end});
+final class _RedactionRange {
+  const _RedactionRange({
+    required this.start,
+    required this.end,
+    this.unterminatedPrivateKey = false,
+  });
+
+  final int start;
+  final int end;
+  final bool unterminatedPrivateKey;
+}
 
 RedactionResult _replaceRanges(String input, List<_RedactionRange> ranges) {
   if (ranges.isEmpty) return RedactionResult(input, 0);
@@ -173,10 +184,14 @@ RedactionResult _replaceRanges(String input, List<_RedactionRange> ranges) {
   for (final range in ranges) {
     if (merged.isNotEmpty && range.start < merged.last.end) {
       final previous = merged.removeLast();
-      merged.add((
-        start: previous.start,
-        end: range.end > previous.end ? range.end : previous.end,
-      ));
+      merged.add(
+        _RedactionRange(
+          start: previous.start,
+          end: range.end > previous.end ? range.end : previous.end,
+          unterminatedPrivateKey:
+              previous.unterminatedPrivateKey || range.unterminatedPrivateKey,
+        ),
+      );
     } else {
       merged.add(range);
     }
@@ -186,7 +201,9 @@ RedactionResult _replaceRanges(String input, List<_RedactionRange> ranges) {
   for (final range in merged) {
     output
       ..write(input.substring(offset, range.start))
-      ..write(_redacted);
+      ..write(
+        range.unterminatedPrivateKey ? _unterminatedPrivateKey : _redacted,
+      );
     offset = range.end;
   }
   output.write(input.substring(offset));
@@ -223,7 +240,7 @@ Iterable<_RedactionRange> _urlRanges(String input, RegExp scheme) sync* {
     if (match.group(1)!.toLowerCase() == 'ssh://' && userinfo == 'git') {
       continue;
     }
-    yield (start: match.end, end: separator);
+    yield _RedactionRange(start: match.end, end: separator);
   }
 }
 
@@ -273,7 +290,7 @@ Iterable<_RedactionRange> _assignmentRanges(
     if (quoted && cursor < input.length && input.codeUnitAt(cursor) == quote) {
       cursor++;
     }
-    yield (start: start, end: cursor);
+    yield _RedactionRange(start: start, end: cursor);
   }
 }
 
@@ -287,119 +304,50 @@ int _skipHorizontalSpace(String input, int cursor) {
   return cursor;
 }
 
-Iterable<_RedactionRange> _pemRanges(String input) sync* {
-  final begin = RegExp(r'-----BEGIN ([A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?)-----');
-  // Bound both indexOf's search and retained UTF-16 text to 64 KiB. Reuse the
-  // window for adjacent blocks; copying a window for every BEGIN is costly.
-  const windowChars = 32 * 1024;
-  var windowStart = 0;
-  var windowEnd = 0;
-  var window = '';
-  var offset = 0;
-  for (final match in begin.allMatches(input)) {
-    if (match.start < offset) continue;
-    final endMarker = '-----END ${match.group(1)}-----';
-    final limit = match.start + windowChars;
-    final boundedEnd = limit < input.length ? limit : input.length;
-    var end = match.end <= windowEnd
-        ? window.indexOf(endMarker, match.end - windowStart)
-        : -1;
-    if (end < 0 && windowEnd < boundedEnd) {
-      // A refill happens only when the block will advance past the old window
-      // (or fail closed through the new one). Total search/copy work is linear.
-      windowStart = match.start;
-      windowEnd = boundedEnd;
-      window = input.substring(windowStart, windowEnd);
-      end = match.end <= windowEnd
-          ? window.indexOf(endMarker, match.end - windowStart)
-          : -1;
-    }
-    offset = end < 0 ? windowEnd : windowStart + end + endMarker.length;
-    // A pathological overlong BEGIN is itself sensitive, even beyond the cap.
-    if (offset < match.end) offset = match.end;
-    if (end < 0) offset = _extendPemRange(input, offset, match.start);
-    if (end >= 0 && offset < input.length) {
-      // Inspect only the immediate terminator; never rescan the rest of a line.
-      if (input.codeUnitAt(offset) == 0x0d) {
-        offset++;
-        if (offset < input.length && input.codeUnitAt(offset) == 0x0a) offset++;
-      } else if (input.codeUnitAt(offset) == 0x0a) {
-        offset++;
-      }
-    }
-    yield (start: match.start, end: offset);
-  }
-}
-
-final _pemBoundary = RegExp(
-  r'-----(BEGIN|END) [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----',
+// A candidate starts with a fixed delimiter. Its variable label run cannot
+// contain '-' and therefore cannot cross another candidate. The single greedy
+// repetition can backtrack only over that disjoint run: O(input.length) total,
+// including long labels that never contain PRIVATE KEY. The fixed five-hyphen
+// lookahead leaves a shared delimiter available to the next marker candidate;
+// only those five characters may be revisited between successful matches.
+final _privateKeyMarker = RegExp(
+  r'-----(BEGIN|END) ([A-Z0-9 ]*PRIVATE KEY|PGP PRIVATE KEY BLOCK)(?=-----)',
 );
-final _armorHeader = RegExp(r'[A-Za-z][A-Za-z0-9-]{0,63}:');
 
-int _extendPemRange(String input, int offset, int blockStart) {
-  // Recover the current line when the search window splits armor or a marker.
-  var lineStart = offset;
-  final lookback = offset - 32 * 1024;
-  while (lineStart > blockStart && lineStart > lookback) {
-    final unit = input.codeUnitAt(lineStart - 1);
-    if (unit == 0x0a || unit == 0x0d) break;
-    lineStart--;
+Iterable<_RedactionRange> _pemRanges(String input) sync* {
+  final begins = <_RedactionRange>[];
+  final ends = <_RedactionRange>[];
+  // Collect both kinds in one scan, on original-input offsets, anywhere in text.
+  for (final marker in _privateKeyMarker.allMatches(input)) {
+    final range = _RedactionRange(start: marker.start, end: marker.end + 5);
+    (marker.group(1) == 'BEGIN' ? begins : ends).add(range);
   }
-  const extensionChars = 1024 * 1024;
-  final limit = offset + extensionChars;
-  final boundedEnd = limit < input.length ? limit : input.length;
-  final tail = input.substring(lineStart, boundedEnd);
-  var cursor = offset - lineStart;
-  var start = 0;
-  // A split inline BEGIN/END may follow other content on the current line.
-  final beginAt = tail.lastIndexOf('-----BEGIN ', cursor);
-  final endAt = tail.lastIndexOf('-----END ', cursor);
-  final markerAt = beginAt > endAt ? beginAt : endAt;
-  if (markerAt >= 0) {
-    final marker = _pemBoundary.matchAsPrefix(tail, markerAt);
-    if (marker != null && marker.end > cursor) start = markerAt;
-  }
-  while (cursor < tail.length) {
-    final boundary =
-        _pemBoundary.matchAsPrefix(tail, cursor) ??
-        _pemBoundary.matchAsPrefix(tail, start);
-    if (boundary != null && boundary.end > cursor) {
-      cursor = boundary.end;
-      if (boundary.group(1) == 'END') {
-        if (cursor < tail.length && tail.codeUnitAt(cursor) == 0x0d) cursor++;
-        if (cursor < tail.length && tail.codeUnitAt(cursor) == 0x0a) cursor++;
-        return lineStart + cursor;
-      }
-    } else if (_armorHeader.matchAsPrefix(tail, start) != null) {
-      while (cursor < tail.length &&
-          tail.codeUnitAt(cursor) != 0x0a &&
-          tail.codeUnitAt(cursor) != 0x0d) {
-        cursor++;
-      }
-    } else if (tail.startsWith('-----BEGIN ', cursor) ||
-        tail.startsWith('-----END ', cursor)) {
-      // A malformed marker or one cut by the cap cannot expose a following key.
-      return input.length;
+
+  var endIndex = 0;
+  var redactedThrough = 0;
+  for (final begin in begins) {
+    if (begin.start < redactedThrough) continue;
+    // Both pointers only advance. END labels intentionally need not match.
+    while (endIndex < ends.length && ends[endIndex].start < begin.end) {
+      endIndex++;
     }
-    // Includes CRC lines (=XXXX), blank lines and CRLF without rescanning lines.
-    while (cursor < tail.length) {
-      final unit = tail.codeUnitAt(cursor);
-      if (unit == 0x0a || unit == 0x0d) {
-        start = ++cursor;
-        break;
-      }
-      final base64 =
-          (unit >= 0x41 && unit <= 0x5a) ||
-          (unit >= 0x61 && unit <= 0x7a) ||
-          (unit >= 0x30 && unit <= 0x39) ||
-          unit == 0x2b ||
-          unit == 0x2f ||
-          unit == 0x3d;
-      if (!base64) return lineStart + cursor;
-      cursor++;
+    if (endIndex == ends.length) {
+      yield _RedactionRange(
+        start: begin.start,
+        end: input.length,
+        unterminatedPrivateKey: true,
+      );
+      break;
     }
+    var end = ends[endIndex++].end;
+    // Consume only an immediately following CR, LF or CRLF.
+    if (end < input.length && input.codeUnitAt(end) == 0x0d) {
+      end++;
+      if (end < input.length && input.codeUnitAt(end) == 0x0a) end++;
+    } else if (end < input.length && input.codeUnitAt(end) == 0x0a) {
+      end++;
+    }
+    redactedThrough = end;
+    yield _RedactionRange(start: begin.start, end: end);
   }
-  // Stop inspecting at the cap, but suppress the rest rather than leak a key
-  // longer than the cap. Each extension advances offset; total work is linear.
-  return input.length;
 }

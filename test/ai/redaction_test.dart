@@ -14,7 +14,293 @@ final class _ThrowingSecrets implements KnownSecretsSource {
   Iterable<String> get current => throw StateError('synthetic source failure');
 }
 
+// Structurally armored, unique synthetic lines; these cannot be used as keys.
+List<String> _keyBody(int count, int columns) => List.generate(
+  count,
+  (i) => '${i.toString().padLeft(6, '0')}${'Ab9+/' * columns}'.substring(
+    0,
+    columns,
+  ),
+);
+
+String _keyShape(String shape, List<String> lines, String newline) {
+  switch (shape) {
+    case 'yaml':
+      return lines.map((line) => '  $line').join(newline);
+    case 'tab':
+      return lines.map((line) => '\t$line').join(newline);
+    case 'quote':
+      return lines.map((line) => '> $line').join(newline);
+    case 'trailing spaces':
+      return lines.map((line) => '$line ').join(newline);
+    case 'BEGIN trailing space':
+      return ['${lines.first} ', ...lines.skip(1)].join(newline);
+    case 'diff minus':
+      return lines.map((line) => '-$line').join(newline);
+    case 'diff plus':
+      return lines.map((line) => '+$line').join(newline);
+    case 'timestamp':
+      return lines.map((line) => '2026-10-20T00:00:00Z $line').join(newline);
+    case 'JSON escaped newline':
+      // A single physical line, including literal backslash-r/backslash-n.
+      return '{"sshKey": "${lines.join(newline == '\n' ? r'\n' : r'\r\n')}"}';
+    case 'body punctuation':
+      final changed = [...lines];
+      final middle = changed.length ~/ 2;
+      changed[middle] =
+          '${changed[middle].substring(0, 17)}!${changed[middle].substring(17)}';
+      return changed.join(newline);
+    default:
+      throw ArgumentError(shape);
+  }
+}
+
+// Median removes isolated scheduler pauses; each size gets the same warm-up.
+int _redactionMicros(Redactor redactor, String input) {
+  redactor.redact(input);
+  final samples = <int>[];
+  for (var i = 0; i < 3; i++) {
+    final watch = Stopwatch()..start();
+    redactor.redact(input);
+    watch.stop();
+    samples.add(watch.elapsedMicroseconds);
+  }
+  samples.sort();
+  return samples[1];
+}
+
 void main() {
+  for (final shape in [
+    'yaml',
+    'tab',
+    'quote',
+    'trailing spaces',
+    'BEGIN trailing space',
+    'diff minus',
+    'diff plus',
+    'timestamp',
+    'JSON escaped newline',
+    'body punctuation',
+  ]) {
+    test('FIX4 zero-leak matrix $shape', () {
+      final failures = <String>[];
+      for (final (prefixName, prefix) in [
+        ('none', 'before\n'),
+        ('set-x', "+ grep -q -- '-----BEGIN OPENSSH PRIVATE KEY-----' key\n"),
+        ('head-3', '-----BEGIN PRIVATE KEY-----\n${'A' * 64}\n${'B' * 64}\n'),
+        ('docs', 'Example: -----BEGIN RSA PRIVATE KEY----- in docs.\n'),
+      ]) {
+        for (final (kind, label, count, columns) in [
+          ('OpenSSH', 'OPENSSH PRIVATE KEY', 47, 70),
+          ('PKCS8', 'PRIVATE KEY', 50, 64),
+          ('RSA', 'RSA PRIVATE KEY', 49, 64),
+          ('encrypted RSA', 'RSA PRIVATE KEY', 49, 64),
+          ('EC', 'EC PRIVATE KEY', 4, 64),
+          ('PGP', 'PGP PRIVATE KEY BLOCK', 1200, 64),
+        ]) {
+          final body = _keyBody(count, columns);
+          var leaks = 0;
+          var failedCases = 0;
+          for (final newline in ['\n', '\r\n']) {
+            final lines = [
+              '-----BEGIN $label-----',
+              if (kind == 'encrypted RSA') ...[
+                'Proc-Type: 4,ENCRYPTED',
+                'DEK-Info: AES-128-CBC,0123456789ABCDEF',
+                '',
+              ],
+              if (kind == 'PGP') ...['Version: Synthetic fixture', ''],
+              ...body,
+              if (kind == 'PGP') '=AAAA',
+              '-----END $label-----',
+            ];
+            final key = _keyShape(shape, lines, newline);
+            if (kind == 'PGP') expect(key.length, greaterThan(64 * 1024));
+            for (final split in [0, 12, key.length ~/ 2, key.length - 12]) {
+              final firstBegin = prefix.indexOf('-----BEGIN');
+              final boundary = firstBegin + (split ~/ 32768 + 1) * 32768;
+              final padding = firstBegin < 0
+                  ? ''
+                  : '.' * (boundary - split - prefix.length - 1);
+              final input = '$prefix$padding\n$key${newline}after';
+              final result = Redactor(secrets: _Secrets()).redact(input);
+              final leaked = body.where(result.text.contains).length;
+              leaks += leaked;
+              if (leaked != 0 || !result.text.endsWith('after')) failedCases++;
+            }
+          }
+          final cell = '$shape / $prefixName / $kind';
+          // Keep complete cell counts in the before/acceptance receipts.
+          // ignore: avoid_print
+          print(
+            'FIX4 matrix $cell: 8 cases, $leaks leaked lines, $failedCases failures',
+          );
+          if (failedCases != 0) {
+            failures.add('$cell: $failedCases cases, $leaks lines');
+          }
+        }
+      }
+      expect(failures, isEmpty);
+    });
+  }
+
+  test('FIX4 marker edge cases pair by position independent of labels', () {
+    final redactor = Redactor(secrets: _Secrets());
+    const begin = '-----BEGIN PRIVATE KEY-----';
+    const end = '-----END PRIVATE KEY-----';
+    const unterminated = '[REDACTED:private_key_unterminated]';
+    expect(
+      redactor.redact('doc $end\nbefore $begin body $end\nafter').text,
+      'doc $end\nbefore [REDACTED]after',
+    );
+    expect(
+      redactor
+          .redact('doc $begin example $end\nbetween\n$begin body $end\nafter')
+          .text,
+      'doc [REDACTED]between\n[REDACTED]after',
+    );
+    expect(
+      redactor.redact('before $begin body -----END PRIVATE KEY----').text,
+      'before $unterminated',
+    );
+    for (final ending in ['\r', '\n', '\r\n']) {
+      expect(
+        redactor.redact('$begin body $end${ending}after').text,
+        '[REDACTED]after',
+      );
+    }
+    const certificate =
+        '-----BEGIN CERTIFICATE-----\nPUBLIC\n-----END CERTIFICATE-----\n';
+    expect(
+      redactor.redact('$certificate$begin body $end\n$certificate').text,
+      '$certificate[REDACTED]$certificate',
+    );
+    expect(
+      redactor.redact('before $begin arbitrary ! text\nafter').text,
+      'before $unterminated',
+    );
+    expect(redactor.redact('before $end after').text, 'before $end after');
+    // Non-private ENDs must not close a private range.
+    expect(redactor.redact('$begin$certificate after').text, unterminated);
+    for (final label in [
+      'PRIVATE KEY',
+      'RSA PRIVATE KEY',
+      'EC PRIVATE KEY',
+      'DSA PRIVATE KEY',
+      'OPENSSH PRIVATE KEY',
+      'ENCRYPTED PRIVATE KEY',
+      'CUSTOM 123 PRIVATE KEY',
+      'PGP PRIVATE KEY BLOCK',
+    ]) {
+      expect(
+        redactor.redact('-----BEGIN $label----- body $end after').text,
+        '[REDACTED] after',
+      );
+    }
+    const other = '-----BEGIN PUBLIC KEY-----pub-----END PUBLIC KEY-----';
+    expect(redactor.redact(other).text, other);
+    final result = redactor.redact('$begin nested $begin body $end\nafter');
+    expect(result.text, '[REDACTED]after');
+    expect(result.redactions, 1);
+    expect(redactor.redact(result.text).redactions, 0);
+    final missing = redactor.redact('$begin body');
+    expect(redactor.redact(missing.text).text, unterminated);
+    expect(redactor.redact(missing.text).redactions, 0);
+  });
+
+  test('FIX4 shared delimiters do not hide a BEGIN', () {
+    final redactor = Redactor(secrets: _Secrets());
+    const end = '-----END PRIVATE KEY-----';
+    const begin = '-----BEGIN PRIVATE KEY-----';
+    final prefix = end.substring(0, end.length - 5);
+    expect(
+      redactor.redact('$prefix$begin body $end\nafter').text,
+      '$prefix[REDACTED]after',
+    );
+    expect(
+      redactor.redact('$prefix$begin body').text,
+      '$prefix[REDACTED:private_key_unterminated]',
+    );
+    // This END starts inside the BEGIN marker and cannot close that range.
+    final overlappingEnd = end.substring(5);
+    expect(
+      redactor.redact('$begin$overlappingEnd body').text,
+      '[REDACTED:private_key_unterminated]',
+    );
+  });
+
+  test(
+    'FIX4 unterminated reason survives overlapping secret and assignment spans',
+    () {
+      final redactor = Redactor(
+        secrets: _Secrets()..values = ['before -----BEGIN'],
+      );
+      final result = redactor.redact(
+        'password="before -----BEGIN PRIVATE KEY----- body',
+      );
+      expect(result.text, '[REDACTED:private_key_unterminated]');
+      expect(result.redactions, 1);
+      final collision = Redactor(
+        secrets: _Secrets()..values = ['private_key_unterminated'],
+      );
+      expect(
+        () => collision.redact('-----BEGIN PRIVATE KEY----- body'),
+        throwsA(
+          isA<AiFailure>().having(
+            (f) => f.kind,
+            'kind',
+            AiFailureKind.policyBlocked,
+          ),
+        ),
+      );
+    },
+  );
+
+  final growthInputs = <String, String Function(int)>{
+    'alternating BEGIN END': (n) {
+      const block = '-----BEGIN PRIVATE KEY----------END PRIVATE KEY-----';
+      return (block * (n ~/ block.length + 1)).substring(0, n);
+    },
+    'long invalid labels': (n) {
+      final block = '-----BEGIN ${'AZ09 ' * 200}';
+      return (block * (n ~/ block.length + 1)).substring(0, n);
+    },
+    'single invalid label': (n) => '-----BEGIN ${'A' * n}',
+    '100k BEGIN no END': (n) => '-----BEGIN PRIVATE KEY-----' * n,
+    'overlapping-rescan sentinel': (n) => '-----BEGIN PRIVATE KEY-----' * n,
+    'single line': (n) => 'A' * n,
+    'JWT': (n) => 'eyJ-' * (n ~/ 4),
+    'assignment': (n) => 'TOKEN_' * (n ~/ 6),
+    'inline trailing space': (n) {
+      const block = '-----BEGIN PRIVATE KEY----------END PRIVATE KEY----- ';
+      return (block * (n ~/ block.length + 1)).substring(0, n);
+    },
+    'armor body': (n) => '-----BEGIN PGP PRIVATE KEY BLOCK-----\n${'A' * n}',
+    'armor header': (n) =>
+        '-----BEGIN PGP PRIVATE KEY BLOCK-----\n${'Comment: Synthetic armor\n' * (n ~/ 25 + 1)}',
+  };
+  for (final entry in growthInputs.entries) {
+    test('FIX4 linear growth ${entry.key}', () {
+      final n = switch (entry.key) {
+        '100k BEGIN no END' => 50000,
+        'overlapping-rescan sentinel' => 4000,
+        _ => 1024 * 1024,
+      };
+      final small = entry.value(n);
+      final large = entry.value(2 * n);
+      final redactor = Redactor(secrets: _Secrets());
+      final smallMicros = _redactionMicros(redactor, small);
+      final largeMicros = _redactionMicros(redactor, large);
+      // ignore: avoid_print
+      print(
+        'FIX4 growth ${entry.key}: N=${small.length} $smallMicros us; '
+        '2N=${large.length} $largeMicros us; ratio=${largeMicros / smallMicros}',
+      );
+      expect(largeMicros, lessThan(smallMicros * 3.2));
+      expect(largeMicros, lessThan(5000000));
+    }, timeout: const Timeout(Duration(minutes: 2)));
+  }
+
   test('every configured expression compiles without inline flags', () {
     for (final pattern in [
       ...Redactor.defaultRedactionPatterns,
@@ -158,7 +444,7 @@ void main() {
     expect(redacted.substring(0, 18), isNot(contains('rotated')));
   });
 
-  test('unterminated PEM fails closed through its bounded window', () {
+  test('unterminated PEM withholds all remaining input without a cap', () {
     final redactor = Redactor(secrets: _Secrets(), patterns: const []);
     final blankBounded = redactor.redact(
       'x\n-----BEGIN PRIVATE KEY-----\nsecret\n\nvisible',
@@ -168,8 +454,8 @@ void main() {
     final window = begin + 'A' * (windowChars - begin.length);
     final windowBounded = redactor.redact('$window!after-window');
 
-    expect(blankBounded.text, 'x\n[REDACTED]');
-    expect(windowBounded.text, '[REDACTED]!after-window');
+    expect(blankBounded.text, 'x\n[REDACTED:private_key_unterminated]');
+    expect(windowBounded.text, '[REDACTED:private_key_unterminated]');
   });
 
   test('redacts matching PEM end marker and preserves following content', () {
@@ -195,7 +481,7 @@ void main() {
     );
     expect(
       redactor.redact('-----BEGIN PRIVATE KEY-----abc').text,
-      '[REDACTED]',
+      '[REDACTED:private_key_unterminated]',
     );
   });
 
@@ -351,16 +637,19 @@ void main() {
     });
   }
 
-  test('PEM matching END at the window boundary is also redacted', () {
-    const begin = '-----BEGIN PRIVATE KEY-----';
-    const end = '-----END PRIVATE KEY-----';
-    const cap = 32 * 1024;
-    final redactor = Redactor(secrets: _Secrets());
-    final fitting = begin + 'A' * (cap - begin.length - end.length) + end;
-    expect(redactor.redact('$fitting\nafter').text, '[REDACTED]after');
-    final outside = begin + 'A' * (cap - begin.length);
-    expect(redactor.redact('$outside$end\nafter').text, '[REDACTED]after');
-  });
+  test(
+    'PEM END around the former 32 KiB boundary preserves following text',
+    () {
+      const begin = '-----BEGIN PRIVATE KEY-----';
+      const end = '-----END PRIVATE KEY-----';
+      const cap = 32 * 1024;
+      final redactor = Redactor(secrets: _Secrets());
+      final fitting = begin + 'A' * (cap - begin.length - end.length) + end;
+      expect(redactor.redact('$fitting\nafter').text, '[REDACTED]after');
+      final outside = begin + 'A' * (cap - begin.length);
+      expect(redactor.redact('$outside$end\nafter').text, '[REDACTED]after');
+    },
+  );
 
   for (final (prefixName, prefix) in [
     ('set -x grep', "+ grep -q -- '-----BEGIN OPENSSH PRIVATE KEY-----' key\n"),
@@ -424,62 +713,59 @@ void main() {
     });
   }
 
-  test(
-    'PEM boundary inside an armor header retains no header or body tail',
-    () {
-      const begin = '-----BEGIN PGP PRIVATE KEY BLOCK-----\n';
-      const header = 'Comment: Synthetic armor header with spaces\n';
-      for (var split = 1; split < header.length; split++) {
-        final padding = 'A' * (32 * 1024 - begin.length - split - 1);
-        final input =
-            '$begin$padding\n$header${'B' * 64}\n=AAAA\n'
-            '-----END PGP PRIVATE KEY BLOCK-----\nafter';
-        expect(
-          Redactor(secrets: _Secrets()).redact(input).text,
-          '[REDACTED]after',
-        );
-      }
-    },
-  );
+  test('PEM armor headers around 32 KiB retain no header or body tail', () {
+    const begin = '-----BEGIN PGP PRIVATE KEY BLOCK-----\n';
+    const header = 'Comment: Synthetic armor header with spaces\n';
+    for (var split = 1; split < header.length; split++) {
+      final padding = 'A' * (32 * 1024 - begin.length - split - 1);
+      final input =
+          '$begin$padding\n$header${'B' * 64}\n=AAAA\n'
+          '-----END PGP PRIVATE KEY BLOCK-----\nafter';
+      expect(
+        Redactor(secrets: _Secrets()).redact(input).text,
+        '[REDACTED]after',
+      );
+    }
+  });
 
-  test('PEM extension cap fails closed through the remaining input', () {
+  test('PEM END beyond the former 1 MiB cap preserves following text', () {
     final input =
         '-----BEGIN PRIVATE KEY-----\n${'A' * (2 * 1024 * 1024)}\n'
         '-----END PRIVATE KEY-----\nafter';
-    expect(Redactor(secrets: _Secrets()).redact(input).text, '[REDACTED]');
+    expect(Redactor(secrets: _Secrets()).redact(input).text, '[REDACTED]after');
   });
 
-  test('PEM extension cap inside a nested BEGIN also fails closed', () {
+  test('PEM nested BEGIN beyond 1 MiB pairs with the first following END', () {
     const begin = '-----BEGIN PRIVATE KEY-----\n';
     final padding = 'A' * (32 * 1024 + 1024 * 1024 - begin.length - 13);
     final input =
         '$begin$padding\n-----BEGIN RSA PRIVATE KEY-----\n${'B' * 64}\n'
         '-----END RSA PRIVATE KEY-----\nafter';
-    expect(Redactor(secrets: _Secrets()).redact(input).text, '[REDACTED]');
+    expect(Redactor(secrets: _Secrets()).redact(input).text, '[REDACTED]after');
   });
 
-  test(
-    'PEM window refills when a matching END crosses the cached boundary',
-    () {
-      const first = '-----BEGIN PRIVATE KEY-----x-----END PRIVATE KEY-----';
-      const second = '-----BEGIN RSA PRIVATE KEY-----';
-      final padding = ' ' * (32 * 1024 - first.length - second.length - 5);
-      final input =
-          '$first$padding$second\n${'A' * 100}\n'
-          '-----END RSA PRIVATE KEY-----\nafter';
-      final result = Redactor(secrets: _Secrets()).redact(input);
-      expect(result.text, '[REDACTED]$padding[REDACTED]after');
-      expect(result.redactions, 2);
-    },
-  );
+  test('separate PEM ranges preserve intervening text across 32 KiB', () {
+    const first = '-----BEGIN PRIVATE KEY-----x-----END PRIVATE KEY-----';
+    const second = '-----BEGIN RSA PRIVATE KEY-----';
+    final padding = ' ' * (32 * 1024 - first.length - second.length - 5);
+    final input =
+        '$first$padding$second\n${'A' * 100}\n'
+        '-----END RSA PRIVATE KEY-----\nafter';
+    final result = Redactor(secrets: _Secrets()).redact(input);
+    expect(result.text, '[REDACTED]$padding[REDACTED]after');
+    expect(result.redactions, 2);
+  });
 
-  test('PEM ignores other END labels before the matching END', () {
+  test('PEM closes at the first private END regardless of its label', () {
     final result = Redactor(secrets: _Secrets()).redact(
       '-----BEGIN PGP PRIVATE KEY BLOCK-----\n\n'
       '-----END RSA PRIVATE KEY-----\nSYNTHETIC-KEY-BODY\n'
       '-----END PGP PRIVATE KEY BLOCK-----\nafter',
     );
-    expect(result.text, '[REDACTED]after');
+    expect(
+      result.text,
+      '[REDACTED]SYNTHETIC-KEY-BODY\n-----END PGP PRIVATE KEY BLOCK-----\nafter',
+    );
     expect(result.redactions, 1);
   });
 
@@ -561,24 +847,24 @@ void main() {
     expect(watch.elapsed, lessThan(const Duration(seconds: 3)));
   });
 
-  test('hostile PEM blocks remain under one second at 2 MiB', () {
+  test('hostile unterminated PEM blocks remain under five seconds at 2 MiB', () {
     final redactor = Redactor(secrets: _Secrets());
     redactor.redact('-----BEGIN PRIVATE KEY-----\n\n' * 10);
     final input = '-----BEGIN PRIVATE KEY-----\n\n' * 72316;
     final watch = Stopwatch()..start();
     final result = redactor.redact(input);
     watch.stop();
-    // Missing END now consumes the bounded window, including nested BEGINs.
-    expect(result.text, matches(RegExp(r'^(?:\[REDACTED\]|\n)+$')));
-    expect(result.redactions, greaterThan(0));
+    // No END: one reason-bearing span withholds every nested BEGIN.
+    expect(result.text, '[REDACTED:private_key_unterminated]');
+    expect(result.redactions, 1);
     // ignore: avoid_print
     print(
       'unterminated PEM ${input.length} bytes: ${watch.elapsedMilliseconds} ms',
     );
-    expect(watch.elapsed, lessThan(const Duration(seconds: 1)));
+    expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
   });
 
-  test('2 MiB hostile armor extensions stay under one second', () {
+  test('2 MiB unterminated armor stays under five seconds', () {
     for (final body in ['A' * 64 + '\n', 'Comment: Synthetic armor\n']) {
       const begin = '-----BEGIN PGP PRIVATE KEY BLOCK-----\n';
       const size = 2 * 1024 * 1024;
@@ -589,16 +875,16 @@ void main() {
       final watch = Stopwatch()..start();
       final result = redactor.redact(input);
       watch.stop();
-      expect(result.text, '[REDACTED]');
+      expect(result.text, '[REDACTED:private_key_unterminated]');
       // ignore: avoid_print
       print('armor PEM ${input.length} bytes: ${watch.elapsedMilliseconds} ms');
-      expect(watch.elapsed, lessThan(const Duration(seconds: 1)));
+      expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
     }
   });
 
   for (final suffix in ['', ' ']) {
     test(
-      '2 MiB inline PEM blocks with ${suffix.length} trailing spaces stay under 1 s',
+      '2 MiB inline PEM blocks with ${suffix.length} trailing spaces stay under 5 s',
       () {
         const block = '-----BEGIN PRIVATE KEY----------END PRIVATE KEY-----';
         final repeated = block + suffix;
@@ -617,7 +903,7 @@ void main() {
         print(
           'inline PEM ${input.length} bytes, suffix=${suffix.length}: ${watch.elapsedMilliseconds} ms',
         );
-        expect(watch.elapsed, lessThan(const Duration(seconds: 1)));
+        expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
       },
       timeout: const Timeout(Duration(minutes: 2)),
     );

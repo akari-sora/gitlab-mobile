@@ -8,13 +8,13 @@ are wired into the application by this slice (plan §9.1–§9.2).
 
 | Lane | MR1 scope / status |
 | --- | --- |
-| Endpoint policy, SSE, failures, redaction, transcript and provider contracts | FIX1 source is commit `1abb72960ff544c803db75ce88302ac88380701d`; FIX2 source is commit `a1ba0432ef86440222f058bb74b07ca62b05a193`. Pipelines pending. FIX3 is a local uncommitted patch against FIX2; its source commit is pending the orchestrator's commit. Local synthetic checks do not establish CI acceptance. |
+| Endpoint policy, SSE, failures, redaction, transcript and provider contracts | FIX1 source is commit `1abb72960ff544c803db75ce88302ac88380701d`; FIX2 source is commit `a1ba0432ef86440222f058bb74b07ca62b05a193`. Pipelines pending. FIX3 source is commit `8bf0bd6b43887d9b9df1a2e130d51c55b1e5f3b3`. FIX4 is a local uncommitted patch against FIX3; the orchestrator owns its pending commit. Local synthetic checks do not establish CI acceptance. |
 | Existing Flutter behavior | Original author reported a full-suite pass; no retained receipt or job URL is available here. FIX1 does not rerun the full Flutter suite. |
 | Localization | All 24 catalogs contain AI translations at `bafe8ad`; FIX1 adds no messages. Catalog generation and translation guards are checked locally. |
 | GitLab/private-resource integration | NOT_RUN; MR1 does not use the GitLab API |
 | Native provider conformance / P0 | NOT_RUN; plan §9.4, before MR2 |
 | Android/iOS, accessibility and AOT performance | NOT_RUN; subsequent device/release lanes |
-| Pipeline / job URLs | FIX1 `1abb72960ff544c803db75ce88302ac88380701d` and FIX2 `a1ba0432ef86440222f058bb74b07ca62b05a193`: pipelines pending; no verified job URL retained here. FIX3: source commit and pipeline pending. |
+| Pipeline / job URLs | FIX1 `1abb72960ff544c803db75ce88302ac88380701d` and FIX2 `a1ba0432ef86440222f058bb74b07ca62b05a193`: pipelines pending; no verified job URL retained here. FIX3 `8bf0bd6b43887d9b9df1a2e130d51c55b1e5f3b3`: pipeline pending. FIX4: source commit and pipeline pending. |
 
 ## FIX1 security-core corrections
 
@@ -29,28 +29,40 @@ sequential replacement order in plan §5.6: a known prefix must not disable anot
 detector. A marker that contains a known secret causes `policyBlocked`. URL
 userinfo uses the same marker, and rescanning a redacted result is idempotent.
 Assignment identifiers and URL authorities are scanned once; JWT starts exclude
-base64url continuation characters. PEM matching uses original-input offsets,
-recognizes inline END and encrypted/PGP private-key blocks. FIX2 searches for the
-matching END with `indexOf` in reusable bounded windows: at most 32,768 UTF-16
-code units (64 KiB), starting at BEGIN. Blank lines, armor headers and line counts
-do not truncate a private key. FIX3 extends redaction past an exhausted window
-through base64/armor (including headers, CRC lines and nested BEGIN markers),
-then includes the following private-key END even if its label differs from the
-earlier unterminated BEGIN. Split body lines, headers and markers are covered.
-Extension inspection is capped at 1 MiB of UTF-16 code units; exhaustion suppresses
-the remaining input rather than exposing an oversized key. This conservatively
-also suppresses following ordinary text at that cap. Windows are copied only on
-refill; same-line blocks never rescan or copy the remaining line. Only an immediate
-CR/LF terminator after a matching END is consumed. Prefixed credential headers
-are recognized at identifier boundaries. Plain `ssh://git@host` remains visible;
-passwords, opaque URL tokens and known secrets remain redacted.
-Host timed regressions use a three-second bound for 2 MiB hostile input; the JWT test
-first rejects a quadratic implementation at 32 KiB with a one-second bound. The
-three-second full-size bound allows host contention in the parallel test suite.
-FIX2 adds exact 2 MiB single-line PEM cases with and without trailing spaces,
-each bounded to one second on the host. Synthetic armored PGP (>100 body lines)
-and RSA PEM (larger than an 8192-bit key) fixtures contain no real secrets.
-Emulator AOT <300 ms remains NOT_RUN.
+base64url continuation characters.
+
+FIX4 private-key detection collects every BEGIN and END marker in one scan of
+the original input, independent of line structure, indentation, prefixes, JSON
+newline escapes or body characters. Labels are `[A-Z0-9 ]*PRIVATE KEY` and
+`PGP PRIVATE KEY BLOCK`; certificates and all other non-private markers are
+ignored. Two forward-only pointers pair each BEGIN outside an existing range
+with the first private END starting at or after that BEGIN marker's end,
+regardless of label. An END before an open BEGIN is ignored. The range includes
+one immediately following CR, LF or CRLF, and uses `[REDACTED]`.
+
+A BEGIN with no following private END uses
+`[REDACTED:private_key_unterminated]` and withholds everything from that BEGIN to
+the end of the input, without a cap. **A stray private-key BEGIN without END
+withholds everything after it; this is deliberate.** A truncated END counts as
+missing. No windows, line-extension scan, armor/base64 heuristics or 1 MiB
+inspection cap remain. Spans still merge with the other original-input detectors
+using the existing overlap rule; an unterminated reason survives overlap.
+
+The fixed-delimiter regex cannot scan a variable label run across the next
+candidate's hyphens; its backtracking visits each disjoint label run only a
+constant number of times. A fixed five-hyphen lookahead also detects markers
+sharing a delimiter without skipping a BEGIN after an END. Marker collection
+and position pairing are linear;
+the existing common span sort/merge is unchanged. Host growth regressions compare
+N with 2N (median of three samples after warm-up), require at most 3.2x growth and
+a generous five-second ceiling. Inputs cover alternating markers, long invalid
+labels, 100,000 BEGINs without END, a single 2 MiB line and earlier JWT,
+assignment, inline and armor attacks. A separate temporary quadratic-rescan
+mutation must fail the growth regression. These are host JIT/coverage checks;
+emulator AOT <300 ms remains NOT_RUN. Fixtures are synthetic unusable armor;
+no usable private keys are generated or retained. Prefixed credential headers
+remain recognized at identifier boundaries. Plain `ssh://git@host` remains
+visible; passwords, opaque URL tokens and known secrets remain redacted.
 
 Transcript final-answer notes have explicit injection provenance and a dedicated
 `addFinalAnswerNote()` operation. Ordinary `addFollowUp()` treats all text as user
@@ -61,7 +73,7 @@ identical user-authored note text.
 
 ## FIX3 private-key window regressions
 
-FIX3's source commit is pending; the orchestrator owns committing this patch.
+FIX3 is commit `8bf0bd6b43887d9b9df1a2e130d51c55b1e5f3b3`.
 The new regressions were run against the unchanged FIX2 scanner first: 15 tests
 failed, covering the three unterminated-prefix shapes crossed with OpenSSH,
 PKCS#8 and traditional RSA-4096 armor, oversized PGP armor, split headers, END at
@@ -71,11 +83,27 @@ structurally armored data, never real private keys. PGP fixtures exceed 64 KiB,
 include headers and CRC, and cover LF/CRLF. A separate ledger assertion failed
 before correcting FIX2's committed-source identification above.
 
-The PEM-specific 2 MiB hostile cases require host completion under one second,
-including repeated unterminated BEGINs, armor/header extensions and the earlier
-inline blocks with/without trailing spaces. Earlier security regressions remain
-required. Exact foreground acceptance output is recorded in the external FIX3
-result receipt; full-suite, CI, live-provider and device gates remain separate.
+FIX3's window/extension behavior and one-second PEM timing expectations are
+superseded by FIX4's marker-pairing rule and growth checks above. Its retained
+receipt is historical evidence, not validation of the current patch.
+
+## FIX4 marker-pairing regressions
+
+FIX4 is pending the orchestrator's commit; no commit or push is made by this
+round. The unchanged FIX3 scanner failed all ten new formatting-shape matrix
+tests before replacement. The matrix covers ten shapes × four prefixes × six
+key types × four split placements × LF/CRLF (1,920 cases). Every cell records
+leaked body-line counts, including baseline controls that already passed.
+The shapes include YAML/tab indentation, quotes, trailing spaces, BEGIN trailing
+space, diff minus/plus, timestamps, JSON escaped newlines and body punctuation.
+The prefixes are none, set-x grep, head-3 PKCS#8 and documentation; key types
+are OpenSSH, PKCS#8, traditional RSA, encrypted traditional RSA, EC and PGP over
+64 KiB. Separate edges cover documentation markers, truncated END, CR/LF/CRLF,
+certificate chains, shared delimiters, nested BEGINs, differing END labels,
+unbounded missing-END
+suppression and overlap/idempotence. Foreground acceptance output and the before
+and quadratic-mutation logs are retained in the external `RESULT-fix4.md`
+receipt. Full-suite, CI, live-provider and device gates remain separate.
 
 ## Later MR evidence
 
