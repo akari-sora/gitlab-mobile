@@ -157,22 +157,28 @@ forget). A fragment is withheld whole as `[REDACTED:private_key_fragment]` (and
 sets `withheldPrivateKeyContext`) when it holds a private-key label anywhere,
 including a marker whose hyphens were cut, or when its first line looks like
 the end of a cut marker (uppercase letters, digits and spaces followed by one to
-five hyphens, such as `IVATE KEY-----` or `--`) or its last line looks like the
-start of one (one to five hyphens followed by uppercase letters, digits and
-spaces, such as `-----END RSA PRIV`). This over-redacts some fragments, for
-example one whose last line is a Markdown rule `---`; that is deliberate.
+five hyphens, such as `IVATE KEY-----` or `--`) or its last line ends like the
+start of one (one to five hyphens, at the line start or after whitespace,
+followed by uppercase letters, digits and spaces, such as `-----END RSA PRIV`,
+an indented `  --` or a prefixed `<time> -----END RSA`). This over-redacts some
+fragments, for example one whose last line is a Markdown rule `---`, ends in
+` -1` or `-- `, or is a deleted blank diff line `-`; that is deliberate.
 Other fragments use the ordinary rules. Regressions cover the round-7 shape, single BEGIN/END
 markers in a fragment, a marker-free fragment and the placeholder collision
 check; the same text as a complete source keeps its context.
 
 Invariants for the context builders and tools (MR4), in addition to those
 above: redact a complete source (a whole file, a finished job's whole trace)
-before cutting excerpts from it; use `redactFragment` for every input that is
-cut from a larger source and not redacted whole first (a trace read from a
-non-zero offset of a running job, a diff hunk, a line range); keep the
-sensitive-path filter for diffs. A key cut at both ends with no marker inside
-the text at all cannot be recognised by markers in any mode; that residual
-stays documented here.
+before cutting excerpts from it; a running job's trace is redacted with
+`redactSource` over the whole text accumulated from offset 0 (a prefix of the
+source, whose open end the unterminated rule protects); use `redactFragment`
+only for line-aligned inputs cut from a larger source and not redacted whole
+first (a diff hunk, a line range, a search result blob); keep the
+sensitive-path filter for diffs. Residual: fragments cut at byte offsets can
+still expose a key when the fragment holds no marker at all, or when the key is
+on a single line (`\n`-escaped JSON or a space-joined `echo $KEY`) and the cut
+starts inside its BEGIN marker; line-aligned inputs always include a whole
+marker line when they include any part of one.
 
 Invariants for the context builders and the runner (MR4): strip ANSI escape
 sequences before redaction (a coloured grep can split a marker); redact the

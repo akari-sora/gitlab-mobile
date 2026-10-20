@@ -934,6 +934,9 @@ void main() {
       'BODY1\nBODY2\n-----EN',
       'BODY1\n-----END RSA PRIV',
       'BODY1\n---',
+      // Indented or prefixed END cut at the end of the fragment.
+      'BODY1\n  --',
+      'BODY1\n2026-10-21T00:00:00.000000Z 00O -----END RSA PRIV',
     ]) {
       final result = redactor.redactFragment(cut);
       expect(result.text, withheld, reason: cut);

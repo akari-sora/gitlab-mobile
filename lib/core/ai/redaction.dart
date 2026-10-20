@@ -362,9 +362,10 @@ final _privateKeyMarker = RegExp(
 
 final _privateKeyLabel = RegExp(r'PRIVATE KEY');
 // The end of a marker cut at the start of a fragment ("IVATE KEY-----",
-// "Y-----", "--") and the start of one cut at its end ("-----BEGIN RSA PRIV").
+// "Y-----", "--") and the start of one cut at its end ("-----BEGIN RSA PRIV"),
+// also after indentation or a line prefix ("  --", "<time> -----END RSA").
 final _cutMarkerHead = RegExp(r'^[A-Z0-9 ]*-{1,5}\r?$');
-final _cutMarkerTail = RegExp(r'^-{1,5}[A-Z0-9 ]*\r?$');
+final _cutMarkerTail = RegExp(r'(?:^|\s)-{1,5}[A-Z0-9 ]*\r?$');
 
 bool _looksLikeKeyFragment(String input) {
   if (_privateKeyLabel.hasMatch(input)) return true;
