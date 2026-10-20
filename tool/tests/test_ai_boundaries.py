@@ -38,6 +38,14 @@ class AiBoundaryTest(unittest.TestCase):
         source = "final write = _api.writeRecord; await write();"
         self.assertEqual(self._api_members(source), {"writeRecord"})
 
+    def test_read_port_guard_catches_cascade_calls(self):
+        source = "_api..writeRecord(['projects', projectId]);"
+        self.assertEqual(self._api_members(source), {"writeRecord"})
+
+    def test_read_port_guard_catches_calls_through_aliases(self):
+        source = "final api = _api; api.writeRecord(['projects', projectId]);"
+        self.assertEqual(self._api_members(source), {"writeRecord"})
+
     def test_generic_reads_start_at_the_bound_project(self):
         source = PORT.read_text(encoding="utf-8")
         calls = list(re.finditer(r"\b_api\.(?:record|records)\s*\(", source))
@@ -69,7 +77,21 @@ class AiBoundaryTest(unittest.TestCase):
 
     @staticmethod
     def _api_members(source):
-        return set(re.findall(r"\b_api\.(\w+)\b", source))
+        receivers = {"_api"}
+        aliases = re.compile(r"\b(?:final|var)\s+(\w+)\s*=\s*(\w+)\b")
+        changed = True
+        while changed:
+            changed = False
+            for alias, target in aliases.findall(source):
+                if target in receivers and alias not in receivers:
+                    receivers.add(alias)
+                    changed = True
+        members = set()
+        for receiver in receivers:
+            members.update(
+                re.findall(rf"\b{re.escape(receiver)}(?:\.\.|\.)(\w+)\b", source)
+            )
+        return members
 
 
 if __name__ == "__main__":

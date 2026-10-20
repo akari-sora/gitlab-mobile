@@ -43,7 +43,8 @@ void main() {
 
       expect(result.reason, AiRunEnd.failed);
       expect(result.text, isEmpty);
-      expect(harness.closes, greaterThan(0));
+      expect(harness.cancels, greaterThan(0));
+      expect(harness.closes, 0);
     },
   );
 
@@ -168,6 +169,7 @@ final class _AsyncRefreshHarness {
       ),
       system: 'Synthetic system prompt.',
       close: () => closes += 1,
+      cancelActive: () => cancels += 1,
     );
   }
 
@@ -198,4 +200,5 @@ final class _AsyncRefreshHarness {
   late final AiRunner runner;
   var stallRefresh = false;
   var closes = 0;
+  var cancels = 0;
 }

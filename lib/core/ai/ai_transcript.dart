@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 
 import 'ai_failure.dart';
+import 'app_text.dart';
 import 'ai_provider.dart';
 import 'prompts.dart';
 
@@ -45,10 +46,23 @@ final class SecretSetId {
 }
 
 final class AiContextBlock {
-  const AiContextBlock({required this.source, required this.text});
+  const AiContextBlock({required this.source, required String text})
+    : _text = text,
+      data = null;
+  const AiContextBlock.fromData({required this.source, required this.data})
+    : _text = '';
 
   final String source;
-  final String text;
+  final String _text;
+  final AiAppText? data;
+  String get text => data?.encode() ?? _text;
+  AiAppText get plainData => data ?? AiAppText.plain(_text);
+
+  AiContextBlock redact(String Function(String) redact) =>
+      AiContextBlock.fromData(
+        source: redact(source),
+        data: plainData.redact(redact),
+      );
 }
 
 final class AiToolCall {
@@ -64,25 +78,30 @@ final class AiToolResult {
   const AiToolResult({
     required this.callId,
     required this.name,
-    required this.content,
+    required String content,
+    this.data,
     this.isError = false,
     this.withheldPrivateKeyContext = false,
     this.truncated = false,
     this.blockedSensitive = false,
-  });
+  }) : _content = data == null ? content : '';
 
   final String callId;
   final String name;
-  final String content;
+  final String _content;
+  final AiAppText? data;
+  String get content => data?.encode() ?? _content;
+  AiAppText get plainData => data ?? AiAppText.plain(_content);
   final bool isError;
   final bool withheldPrivateKeyContext;
   final bool truncated;
   final bool blockedSensitive;
 
-  AiToolResult copyWith({String? content}) => AiToolResult(
+  AiToolResult copyWith({String? content, AiAppText? data}) => AiToolResult(
     callId: callId,
     name: name,
-    content: content ?? this.content,
+    content: content ?? _content,
+    data: data ?? (content == null ? this.data : null),
     isError: isError,
     withheldPrivateKeyContext: withheldPrivateKeyContext,
     truncated: truncated,
@@ -283,7 +302,7 @@ final class AiSegment {
       final keep = result.content.length <= remaining
           ? result.content
           : clipWrappedUntrustedGitLabData(result.content, remaining);
-      clipped.add(result.copyWith(content: keep));
+      clipped.add(result.copyWith(data: result.plainData.clipped(remaining)));
       remaining -= keep.length;
     }
     _tail = current.copyWith(results: clipped);

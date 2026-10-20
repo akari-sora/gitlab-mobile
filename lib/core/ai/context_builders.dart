@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'ai_transcript.dart';
-import 'prompts.dart';
+import 'app_text.dart';
 import 'redaction.dart';
 import 'tools/sensitive_paths.dart';
 
@@ -156,12 +156,12 @@ final class AiContextBuilders {
     });
     return AiBuiltContext(
       blocks: [
-        AiContextBlock(
+        AiContextBlock.fromData(
           source: 'job',
-          text: wrapUntrustedGitLabData(
+          data: AiAppText.untrusted(
             source: 'job',
             nonce: nonce,
-            text: '${metadata.text}\n$tail',
+            body: AiAppText.join([metadata.data, AiAppText.plain(tail)]),
           ),
         ),
       ],
@@ -220,15 +220,15 @@ final class AiContextBuilders {
     });
     redactions += metadata.redactions;
     withheld |= metadata.withheldPrivateKeyContext;
-    final text = '${metadata.text}\n${_encodeSanitized(diffs)}';
+    final data = AiAppText.join([metadata.data, AiAppText.json(diffs)]);
     return AiBuiltContext(
       blocks: [
-        AiContextBlock(
+        AiContextBlock.fromData(
           source: 'merge_request',
-          text: wrapUntrustedGitLabData(
+          data: AiAppText.untrusted(
             source: 'merge_request',
             nonce: nonce,
-            text: text,
+            body: data,
           ),
         ),
       ],
@@ -283,7 +283,9 @@ final class AiContextBuilders {
     });
     return _builtSourceContext(
       source: '${input.kind} #${input.iid}',
-      result: content,
+      data: content.data,
+      redactions: content.redactions,
+      withheld: content.withheldPrivateKeyContext,
       nonce: nonce,
       pinnedSha: input.pinnedSha,
     );
@@ -299,7 +301,9 @@ final class AiContextBuilders {
     final result = _redactSource(text);
     return _builtSourceContext(
       source: cleanSource,
-      result: result,
+      data: AiAppText.plain(result.text),
+      redactions: result.redactions,
+      withheld: result.withheldPrivateKeyContext,
       nonce: nonce,
       pinnedSha: pinnedSha,
     );
@@ -307,25 +311,23 @@ final class AiContextBuilders {
 
   AiBuiltContext _builtSourceContext({
     required String source,
-    required RedactionResult result,
+    required AiAppText data,
+    required int redactions,
+    required bool withheld,
     required String nonce,
     required String? pinnedSha,
   }) {
     return AiBuiltContext(
       blocks: [
-        AiContextBlock(
+        AiContextBlock.fromData(
           source: source,
-          text: wrapUntrustedGitLabData(
-            source: source,
-            nonce: nonce,
-            text: result.text,
-          ),
+          data: AiAppText.untrusted(source: source, nonce: nonce, body: data),
         ),
       ],
       pinnedSha: pinnedSha,
       blockedSensitivePaths: const [],
-      redactions: result.redactions,
-      withheldPrivateKeyContext: result.withheldPrivateKeyContext,
+      redactions: redactions,
+      withheldPrivateKeyContext: withheld,
     );
   }
 
@@ -341,7 +343,8 @@ final class AiContextBuilders {
     return redactor.redactFragment(clean);
   }
 
-  RedactionResult _redactJson(Object? value) {
+  ({AiAppText data, int redactions, bool withheldPrivateKeyContext})
+  _redactJson(Object? value) {
     var redactions = 0;
     var withheld = false;
     Object? visit(Object? current) => switch (current) {
@@ -357,11 +360,11 @@ final class AiContextBuilders {
       },
       _ => current,
     };
-    final encoded = _encodeSanitized(visit(value));
-    _checkSize(encoded);
-    return RedactionResult(
-      encoded,
-      redactions,
+    final data = AiAppText.json(visit(value));
+    _checkSize(data.encode());
+    return (
+      data: data,
+      redactions: redactions,
       withheldPrivateKeyContext: withheld,
     );
   }
@@ -405,14 +408,3 @@ final _ansi = RegExp(
 );
 
 String _stripAnsi(String value) => value.replaceAll(_ansi, '');
-
-Object? _sanitizeJson(Object? value) => switch (value) {
-  String text => _stripAnsi(text),
-  List<Object?> values => [for (final item in values) _sanitizeJson(item)],
-  Map<String, Object?> values => {
-    for (final entry in values.entries) entry.key: _sanitizeJson(entry.value),
-  },
-  _ => value,
-};
-
-String _encodeSanitized(Object? value) => jsonEncode(_sanitizeJson(value));

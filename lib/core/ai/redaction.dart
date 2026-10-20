@@ -187,82 +187,22 @@ final class Redactor {
   }
 }
 
-/// Scan readable text including app-generated JSON/XML escaping. Opaque
-/// provider fields are excluded by the caller, never decoded or rewritten.
+/// Match plain readable values only. Encoding belongs to the wire boundary.
 bool containsKnownAiSecret(String text, Iterable<String> secrets) =>
-    _knownSecretRanges(text, secrets).isNotEmpty;
-
-final _readableEscape = RegExp(
-  r'\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4})|&(?:amp|lt|gt|quot|apos);',
-);
+    secrets.any((secret) => secret.isNotEmpty && text.contains(secret));
 
 Iterable<_RedactionRange> _knownSecretRanges(
   String input,
   Iterable<String> secrets,
 ) sync* {
-  final needles = secrets.where((s) => s.isNotEmpty).toList();
-  if (needles.isEmpty) return;
-  var text = input;
-  List<int>? starts;
-  List<int>? ends;
-  // A finite nesting limit keeps hostile encoded input bounded. App wrappers
-  // use only a few layers; deeper input is refused rather than sent unchecked.
-  for (var depth = 0; depth <= 32; depth++) {
-    for (final secret in needles) {
-      var offset = 0;
-      while (offset < text.length) {
-        final start = text.indexOf(secret, offset);
-        if (start < 0) break;
-        yield _RedactionRange(
-          start: starts?[start] ?? start,
-          end: ends?[start + secret.length - 1] ?? start + secret.length,
-        );
-        offset = start + 1;
-      }
+  for (final secret in secrets.where((s) => s.isNotEmpty)) {
+    var offset = 0;
+    while (offset < input.length) {
+      final start = input.indexOf(secret, offset);
+      if (start < 0) break;
+      yield _RedactionRange(start: start, end: start + secret.length);
+      offset = start + 1;
     }
-    final matches = _readableEscape.allMatches(text).toList();
-    if (matches.isEmpty) return;
-    if (depth == 32) throw const AiFailure(AiFailureKind.policyBlocked);
-    final next = StringBuffer();
-    final nextStarts = <int>[];
-    final nextEnds = <int>[];
-    var cursor = 0;
-    void appendLiteral(int end) {
-      for (; cursor < end; cursor++) {
-        next.writeCharCode(text.codeUnitAt(cursor));
-        nextStarts.add(starts?[cursor] ?? cursor);
-        nextEnds.add(ends?[cursor] ?? cursor + 1);
-      }
-    }
-
-    for (final match in matches) {
-      appendLiteral(match.start);
-      final encoded = match.group(0)!;
-      final decoded = switch (encoded) {
-        '&amp;' => '&',
-        '&lt;' => '<',
-        '&gt;' => '>',
-        '&quot;' => '"',
-        '&apos;' => "'",
-        r'\b' => '\b',
-        r'\f' => '\f',
-        r'\n' => '\n',
-        r'\r' => '\r',
-        r'\t' => '\t',
-        _ =>
-          encoded.startsWith(r'\u')
-              ? String.fromCharCode(int.parse(encoded.substring(2), radix: 16))
-              : encoded.substring(1),
-      };
-      next.write(decoded);
-      nextStarts.add(starts?[match.start] ?? match.start);
-      nextEnds.add(ends?[match.end - 1] ?? match.end);
-      cursor = match.end;
-    }
-    appendLiteral(text.length);
-    text = next.toString();
-    starts = nextStarts;
-    ends = nextEnds;
   }
 }
 

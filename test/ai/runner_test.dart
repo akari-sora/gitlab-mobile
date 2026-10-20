@@ -58,6 +58,9 @@ final class Harness {
       close: () {
         closed++;
       },
+      cancelActive: () {
+        cancelled++;
+      },
       executeTool: (call) async => execute == null
           ? AiToolResult(
               callId: call.id,
@@ -80,6 +83,7 @@ final class Harness {
   int? revision = 1;
   var consent = true;
   var closed = 0;
+  var cancelled = 0;
   void Function()? refresh;
   Future<AiToolResult> Function(AiToolCall)? execute;
   Future<AiDecodedTurn> Function(AiRequestPlan, void Function(AiEvent)?)?
@@ -225,6 +229,7 @@ void main() {
         config: h.config(),
         complete: h.complete,
         close: () {},
+        cancelActive: () {},
       );
       await h.runner.run('two');
       expect(h.consent, isTrue);

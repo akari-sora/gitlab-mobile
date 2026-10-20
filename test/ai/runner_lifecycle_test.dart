@@ -98,6 +98,7 @@ void main() {
         config: replacement,
         complete: complete,
         close: environment.closeTransport,
+        cancelActive: environment.cancelActiveTransport,
       );
       final result = await runner.run(
         'compare $_initialProviderKey and $_replacementProviderKey',
@@ -312,10 +313,13 @@ final class _Environment {
       resetToolBudget: withTools ? () => budget = AiToolBudget() : null,
       beginToolTurn: withTools ? () => budget.beginTurn() : null,
       close: closeTransport,
+      cancelActive: cancelActiveTransport,
     );
   }
 
   void closeTransport() => transportCloses += 1;
+
+  void cancelActiveTransport() {}
 
   void dispose() {
     settings.dispose();

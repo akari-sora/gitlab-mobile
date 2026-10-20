@@ -132,6 +132,42 @@ AiToolCall _call(String name, Map<String, Object?> arguments) =>
     AiToolCall(id: 'call-1', name: name, arguments: arguments);
 
 void main() {
+  for (final name in ['get_issue', 'read_file']) {
+    test(
+      'FIX2 executeResult retains plain $name values for re-redaction',
+      () async {
+        const secret = r'abc\ndef&Secret';
+        final port = _FakePort()..file = secret;
+        port.discussion = {...port.discussion, 'description': secret};
+        final secrets = _Secrets();
+        final redactor = Redactor(secrets: secrets);
+        final catalogue = AiToolCatalogue(
+          port: port,
+          scope: _scope(),
+          redactor: redactor,
+        );
+        final result = await catalogue.executeResult(
+          _call(
+            name,
+            name == 'read_file'
+                ? {'path': 'README.md', 'revision': 'head'}
+                : {'iid': 3},
+          ),
+          budget: AiToolBudget(),
+        );
+        expect(result.isError, isFalse);
+        expect(result.content, contains('Secret'));
+        expect(result.data, isNotNull);
+        secrets.values = [secret];
+        final safe = result.plainData
+            .redact((s) => redactor.redactSource(s).text)
+            .encode();
+        expect(safe, contains('[REDACTED]'));
+        expect(safe, isNot(contains('Secret')));
+      },
+    );
+  }
+
   test('catalogue publishes the ten fixed read-only tools', () {
     final catalogue = AiToolCatalogue(
       port: _FakePort(),
@@ -171,6 +207,51 @@ void main() {
     expect(execution.result.content, contains(aiSensitivePathBlocked));
     expect(execution.result.content.split('\n').first, contains('pinned head'));
   });
+
+  test(
+    'executeResult preserves withheld truncated and blocked metadata',
+    () async {
+      final privateKeyBody = List.filled(
+        400,
+        'SYNTHETIC_PRIVATE_KEY_BODY',
+      ).join('\n');
+      final withheld =
+          await AiToolCatalogue(
+            port: _FakePort()
+              ..jobLogText = '-----BEGIN RSA PRIVATE KEY-----\n$privateKeyBody',
+            scope: _scope(kind: AiResourceKind.job),
+            redactor: Redactor(secrets: _Secrets()),
+          ).executeResult(
+            _call('get_job_log', {'job_id': 4, 'tail_lines': 300}),
+            budget: AiToolBudget(),
+          );
+      final truncated =
+          await AiToolCatalogue(
+            port: _FakePort()..file = 'x' * 25000,
+            scope: _scope(),
+            redactor: Redactor(secrets: _Secrets()),
+          ).executeResult(
+            _call('read_file', {'path': 'a.dart', 'revision': 'head'}),
+            budget: AiToolBudget(maxSingleOutputChars: 200),
+          );
+      final blocked =
+          await AiToolCatalogue(
+            port: _FakePort(),
+            scope: _scope(),
+            redactor: Redactor(secrets: _Secrets()),
+          ).executeResult(
+            _call('read_file', {
+              'path': '.docker/config.json',
+              'revision': 'head',
+            }),
+            budget: AiToolBudget(),
+          );
+
+      expect(withheld.withheldPrivateKeyContext, isTrue);
+      expect(truncated.truncated, isTrue);
+      expect(blocked.blockedSensitive, isTrue);
+    },
+  );
 
   test('path and full SHA validation fail before reads', () async {
     final port = _FakePort();
@@ -268,13 +349,15 @@ void main() {
       scope: _scope(),
       redactor: Redactor(secrets: _Secrets()..values = const [secret]),
     ).execute(_call('get_issue', {'iid': 3}), budget: AiToolBudget());
-    expect(execution.result.content, contains('[REDACTED]'));
-    expect(execution.result.content, isNot(contains('abc')));
-    expect(execution.result.content, isNot(contains(r'\\def')));
-    expect(
-      execution.result.content,
-      isNot(contains('&amp;&lt;&gt;SYNTHETIC123')),
-    );
+    // The generated nonce can contain short hexadecimal secret fragments.
+    // Check the encoded payload independently of that random wrapper metadata.
+    final body = RegExp(
+      r'<gitlab_data[^>]*>\n([\s\S]*)\n</gitlab_data>',
+    ).firstMatch(execution.result.content)!.group(1)!;
+    expect(body, contains('[REDACTED]'));
+    expect(body, isNot(contains('abc')));
+    expect(body, isNot(contains(r'\\def')));
+    expect(body, isNot(contains('&amp;&lt;&gt;SYNTHETIC123')));
   });
 
   test('diffs and blob searches suppress sensitive file content', () async {

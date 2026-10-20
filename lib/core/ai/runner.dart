@@ -9,6 +9,7 @@ import 'ai_network_check.dart';
 import 'ai_failure.dart';
 import 'ai_provider.dart';
 import 'ai_transcript.dart';
+import 'app_text.dart';
 import 'redaction.dart';
 import 'prompts.dart';
 import 'wire/wire_format.dart';
@@ -90,7 +91,7 @@ final class AiRunner {
     required this.guard,
     required this.system,
     required void Function() close,
-    void Function()? cancelActive,
+    required void Function() cancelActive,
     List<AiToolSpec> tools = const [],
     this.executeTool,
     this.resetToolBudget,
@@ -112,7 +113,7 @@ final class AiRunner {
   }) : _config = config,
        _complete = complete,
        _close = close,
-       _cancelActive = cancelActive ?? close,
+       _cancelActive = cancelActive,
        tools = List.unmodifiable(config.toolsEnabled ? tools : <AiToolSpec>[]),
        context = List.unmodifiable(context),
        _redactor = Redactor(secrets: secrets),
@@ -212,7 +213,7 @@ final class AiRunner {
     required AiProviderConfig config,
     required AiComplete complete,
     required void Function() close,
-    void Function()? cancelActive,
+    required void Function() cancelActive,
   }) {
     final old = _config;
     if (_running ||
@@ -231,7 +232,7 @@ final class AiRunner {
     _config = config;
     _complete = complete;
     _close = close;
-    _cancelActive = cancelActive ?? close;
+    _cancelActive = cancelActive;
     _needsProjection = true;
   }
 
@@ -418,7 +419,14 @@ final class AiRunner {
                   partial.write(text);
                   if (onTextChanged != null &&
                       partial.length >= nextProgressChars) {
-                    onTextChanged!(_redact(partial.toString()));
+                    onTextChanged!(
+                      _redact(
+                        [
+                          if (answer.isNotEmpty) answer,
+                          partial.toString(),
+                        ].join('\n'),
+                      ),
+                    );
                     nextProgressChars = partial.length * 2;
                   }
                 }
@@ -441,7 +449,11 @@ final class AiRunner {
           );
           latestUsage = turn.usage ?? latestUsage;
           if (onTextChanged != null && partial.isNotEmpty) {
-            onTextChanged!(_redact(partial.toString()));
+            onTextChanged!(
+              _redact(
+                [if (answer.isNotEmpty) answer, partial.toString()].join('\n'),
+              ),
+            );
           }
         } finally {
           _recordUsage(latestUsage, encoded.length);
@@ -539,17 +551,19 @@ final class AiRunner {
             await _refresh(epoch);
             _withheld |= toolResult.withheldPrivateKeyContext;
             // Whole tool content is redacted before any output truncation.
-            final content = _redact(toolResult.content);
-            final clipped = clipWrappedUntrustedGitLabData(
-              content,
+            final data = toolResult.plainData.redact(_redact);
+            final content = data.encode();
+            final clippedData = data.clipped(
               math.min(20000, 120000 - outputChars),
             );
+            final clipped = clippedData.encode();
             outputChars += clipped.length;
             _check(epoch);
             final safeResult = AiToolResult(
               callId: tc.id,
               name: tc.name,
               content: clipped,
+              data: clippedData,
               isError: toolResult.isError,
               withheldPrivateKeyContext: toolResult.withheldPrivateKeyContext,
               truncated:
@@ -648,12 +662,7 @@ final class AiRunner {
     if (!seg.contextDelivered) {
       for (final block in _segmentContext) {
         await _refresh(epoch);
-        blocks.add(
-          AiContextBlock(
-            source: _redact(block.source),
-            text: _redact(block.text),
-          ),
-        );
+        blocks.add(block.redact(_redact));
       }
     }
     seg.setTail(AppUserEntry(text: text, context: blocks));
@@ -666,9 +675,7 @@ final class AiRunner {
         AiToolSpec(
           name: tool.name,
           description: _redact(tool.description),
-          parameters: wireObject(
-            jsonDecode(_redact(jsonEncode(tool.parameters))),
-          ),
+          parameters: wireObject(mapAiJsonStrings(tool.parameters, _redact)),
         ),
     ];
     final next = AiSegment(
@@ -686,7 +693,7 @@ final class AiRunner {
         config.caps.maxRequestChars - overhead,
       );
       if (budget < 1000) throw const AiFailure(AiFailureKind.contextTooLong);
-      final summary = buildAiProjection(
+      final summary = buildAiProjectionData(
         context: context,
         entries: previous?.entries ?? const [],
         history: _displayHistory,
@@ -694,7 +701,7 @@ final class AiRunner {
         redact: _redact,
       );
       _segmentContext = [
-        AiContextBlock(source: 'conversation_summary', text: summary),
+        AiContextBlock.fromData(source: 'conversation_summary', data: summary),
       ];
     }
     _segment = next;
@@ -753,13 +760,7 @@ final class AiRunner {
       seg.setTail(
         tail.redactedCopy(
           text: _redact(tail.text, late: true),
-          context: [
-            for (final block in tail.context)
-              AiContextBlock(
-                source: _redact(block.source),
-                text: _redact(block.text),
-              ),
-          ],
+          context: [for (final block in tail.context) block.redact(_redact)],
         ),
       );
     } else if (tail is AppToolResultsEntry) {
@@ -767,7 +768,9 @@ final class AiRunner {
         tail.copyWith(
           results: [
             for (final result in tail.results)
-              result.copyWith(content: _redact(result.content, late: true)),
+              result.copyWith(
+                data: result.plainData.redact((s) => _redact(s, late: true)),
+              ),
           ],
           followUpText: tail.followUpText == null
               ? null
@@ -789,7 +792,8 @@ final class AiRunner {
     final values = <String>[
       _segmentSystem,
       for (final tool in _segmentTools) tool.description,
-      for (final tool in _segmentTools) jsonEncode(tool.parameters),
+      for (final tool in _segmentTools)
+        ...readableAiJsonStrings(tool.parameters),
       for (final entry in seg.frozen) ...readableAiEntry(entry),
     ];
     for (final text in values) {
@@ -858,11 +862,11 @@ Iterable<String> readableAiEntry(AiEntry entry) sync* {
     yield entry.text;
     for (final block in entry.context) {
       yield block.source;
-      yield block.text;
+      yield* block.plainData.plainStrings;
     }
   } else if (entry is AppToolResultsEntry) {
     for (final result in entry.results) {
-      yield result.content;
+      yield* result.plainData.plainStrings;
     }
     if (entry.followUpText != null) yield entry.followUpText!;
   } else if (entry is ProviderOutputEntry) {
@@ -879,6 +883,7 @@ Iterable<String> readableAiEntry(AiEntry entry) sync* {
         ]) {
           if (value[key] case final String text) yield text;
         }
+        yield* _readableAnnotations(value['annotations']);
         if (value['reasoning_details'] case final List<Object?> details) {
           for (final detail in details) {
             if (detail is! Map<String, Object?> ||
@@ -895,6 +900,7 @@ Iterable<String> readableAiEntry(AiEntry entry) sync* {
         if (type == 'text' || type == 'thinking' || type == 'fallback') {
           final field = type == 'thinking' ? 'thinking' : 'text';
           if (value[field] case final String text) yield text;
+          if (type == 'text') yield* _readableAnnotations(value['citations']);
         } else if (type == 'reasoning' && value['summary'] is List<Object?>) {
           for (final summary in value['summary']! as List<Object?>) {
             if (summary is Map<String, Object?> && summary['text'] is String) {
@@ -909,14 +915,43 @@ Iterable<String> readableAiEntry(AiEntry entry) sync* {
                 (part['type'] == 'output_text' || part['type'] == 'refusal')) {
               if (part['text'] case final String text) yield text;
               if (part['refusal'] case final String text) yield text;
+              yield* _readableAnnotations(part['annotations']);
             }
           }
         }
       }
     }
     for (final call in entry.toolCalls) {
-      yield jsonEncode(call.arguments);
       yield* _readableJsonStrings(call.arguments);
+    }
+  }
+}
+
+// Citation display fields are readable; encrypted indices and signatures are not.
+Iterable<String> _readableAnnotations(Object? value) sync* {
+  if (value is List<Object?>) {
+    for (final item in value) {
+      yield* _readableAnnotations(item);
+    }
+  } else if (value is Map<String, Object?>) {
+    for (final key in [
+      'cited_text',
+      'document_title',
+      'title',
+      'url',
+      'text',
+      'quote',
+      'filename',
+    ]) {
+      if (value[key] case final String text) yield text;
+    }
+    for (final key in [
+      'url_citation',
+      'file_citation',
+      'file_path',
+      'container_file_citation',
+    ]) {
+      yield* _readableAnnotations(value[key]);
     }
   }
 }
@@ -961,7 +996,7 @@ String providerAnswerText(ProviderOutputEntry entry) {
 
 /// A bounded, deterministic projection. The caller redacts before clipping;
 /// no provider replay object is retained in the projected segment.
-String buildAiProjection({
+AiAppText buildAiProjectionData({
   required List<AiContextBlock> context,
   required List<AiEntry> entries,
   List<AiChatItem> history = const [],
@@ -978,19 +1013,16 @@ String buildAiProjection({
   const omitted = '[earlier turns omitted]\n';
   final available = budget - opening.length - closing.length - omitted.length;
   if (available < 0) throw const AiFailure(AiFailureKind.contextTooLong);
-  String escape(String text) => text
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;');
   final hasPriorSummary = entries.whereType<AppUserEntry>().any(
     (entry) =>
         entry.context.any((block) => block.source == 'conversation_summary'),
   );
   final contextText = (hasPriorSummary ? const <AiContextBlock>[] : context)
-      .map((block) => escape(redact(block.text)))
+      .map((block) => redact(block.plainData.plainText))
       .join('\n');
-  final head = clipAiText(contextText, (available * .4).floor());
-  var remaining = available - head.length;
+  final contextLimit = (available * .4).floor();
+  final head = _clipPlainForEscapedBudget(contextText, contextLimit);
+  var remaining = available - escapeUntrustedGitLabText(head).length;
   final recent = <String>[];
   var dropped = head.length < contextText.length;
   final texts = <String>[
@@ -1005,14 +1037,14 @@ String buildAiProjection({
     for (final entry in entries) ...[
       if (entry is AppUserEntry)
         for (final block in entry.context)
-          if (block.source == 'conversation_summary') block.text,
+          if (block.source == 'conversation_summary') block.plainData.plainText,
       switch (entry) {
         AppUserEntry() => 'User: ${entry.text}',
         ProviderOutputEntry() => 'Assistant: ${providerAnswerText(entry)}',
         AppToolResultsEntry() =>
           entry.results
               .map((r) {
-                final firstLine = r.content.split('\n').first;
+                final firstLine = r.plainData.plainText.split('\n').first;
                 final provenance = firstLine.startsWith('[source:')
                     ? clipAiText(firstLine, 512)
                     : '[source: tool ${r.name}]';
@@ -1025,13 +1057,51 @@ String buildAiProjection({
     ],
   ];
   for (final text in texts.reversed) {
-    final safe = escape(redact(text));
-    if (safe.length + 1 > remaining) {
+    final safe = redact(text);
+    if (escapeUntrustedGitLabText(safe).length + 1 > remaining) {
       dropped = true;
       break;
     }
     recent.add(safe);
-    remaining -= safe.length + 1;
+    remaining -= escapeUntrustedGitLabText(safe).length + 1;
   }
-  return '$opening$head\n${dropped ? omitted : ''}${recent.reversed.join('\n')}$closing';
+  return AiAppText.untrusted(
+    source: 'conversation_summary',
+    nonce: nonce,
+    body: AiAppText.plain(
+      '$head\n${dropped ? omitted : ''}${recent.reversed.join('\n')}',
+    ),
+  );
+}
+
+/// Encoded convenience view; the runner retains [buildAiProjectionData] instead.
+String buildAiProjection({
+  required List<AiContextBlock> context,
+  required List<AiEntry> entries,
+  List<AiChatItem> history = const [],
+  required int budget,
+  required String Function(String) redact,
+}) => buildAiProjectionData(
+  context: context,
+  entries: entries,
+  history: history,
+  budget: budget,
+  redact: redact,
+).encode();
+
+String _clipPlainForEscapedBudget(String text, int maximum) {
+  var used = 0;
+  var end = 0;
+  for (final rune in text.runes) {
+    final width = rune > 0xffff ? 2 : 1;
+    final escapedWidth = rune == 0x26
+        ? 5
+        : (rune == 0x3c || rune == 0x3e)
+        ? 4
+        : width;
+    if (used + escapedWidth > maximum) break;
+    used += escapedWidth;
+    end += width;
+  }
+  return text.substring(0, end);
 }

@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
+import 'package:gitlab_mobile/core/ai/app_text.dart';
 import 'package:gitlab_mobile/core/ai/ai_events.dart';
 import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
@@ -119,11 +120,17 @@ void main() {
 
   test('FIX1 late JSON XML encoded secrets cannot be replayed', () async {
     const secret = 'abc\\def\n"a&<bc>Secret';
-    final encoded = jsonEncode(
-      secret,
-    ).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
     final h = base.Harness(
-      context: [AiContextBlock(source: 'file', text: encoded)],
+      context: [
+        AiContextBlock.fromData(
+          source: 'file',
+          data: AiAppText.untrusted(
+            source: 'file',
+            nonce: 'synthetic',
+            body: AiAppText.json(secret),
+          ),
+        ),
+      ],
     );
     await h.runner.run('first');
     final old = h.runner.segment!;
@@ -132,6 +139,7 @@ void main() {
     await h.runner.run('second');
     expect(h.runner.segment, isNot(same(old)));
     expect(containsKnownAiSecret(h.payloads.last, [secret]), isFalse);
+    expect(h.payloads.last, isNot(contains('Secret')));
     expect(old.frozenWireJson, frozen);
   });
 
@@ -141,7 +149,10 @@ void main() {
       const secret = 'abc\\def\n"a&<bc>Secret';
       final h = base.Secrets()..current.add(secret);
       final redactor = Redactor(secrets: h);
-      var text = jsonEncode({'description': secret, 'safe': 'keep'});
+      var text = AiAppText.json({
+        'description': secret,
+        'safe': 'keep',
+      }).redact((value) => redactor.redactSource(value).text).encode();
       for (var i = 0; i < 3; i++) {
         text = text
             .replaceAll('&', '&amp;')
@@ -207,6 +218,7 @@ void main() {
       config: config,
       complete: h.complete,
       close: () {},
+      cancelActive: () {},
     );
     expect((await h.runner.run('next')).reason, AiRunEnd.done);
   });
@@ -508,6 +520,7 @@ AiRunner _copyRunner(
   system: 'Synthetic system',
   tools: [base.spec],
   close: () {},
+  cancelActive: () {},
   executeTool: execute,
   toolBudgetExhausted: exhausted,
   onTextChanged: onTextChanged,

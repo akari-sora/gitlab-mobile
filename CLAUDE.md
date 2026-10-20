@@ -169,7 +169,11 @@ each logical read cost to cover GitLabApi's single OAuth retry; the HTTP counter
 is a conservative allowance. `executeResult` propagates provenance plus
 withheld-private-key, truncated and blocked-sensitive metadata in
 `AiToolResult`; tool results retain escaped, nonce-labelled untrusted-data
-blocks.
+blocks. App-owned context and tool values retain an `AiAppText` plain model;
+redact and re-verify its strings before JSON/XML/label escaping. Encode only for
+delivery. Summaries retain plain text and escape once per encoding. Never decode
+wire escapes to search for secrets; provider verification reads only the plain
+strings produced by the decoder, excluding opaque fields.
 
 Frozen wire fragments are append-only and never rewritten. A newly known secret
 in app/provider text that was already sent stops the current send because sent
@@ -189,7 +193,9 @@ name and `arguments: null`; `onToolResult` receives every safe result, including
 synthetic terminal results used to pair unfinished calls. `onEvent` receives
 usage and finished events. Partial output recovered after stop is display-only:
 refresh secrets and recheck the guard within `toolDeadline`, then redact it; it
-is never frozen or replayed.
+is never frozen or replayed. After `stop()`, await the active `run()` before
+enabling a follow-up: recovery can wait up to `toolDeadline` for a secret refresh,
+and the runner remains busy until recovery finishes.
 Cleartext requests check interfaces with `includeLinkLocal: true`; missing or
 unavailable interfaces require per-send confirmation. These checks do not prove
 same-subnet reachability. Settings/chat/entry-point UI remains MR5/MR6 work;

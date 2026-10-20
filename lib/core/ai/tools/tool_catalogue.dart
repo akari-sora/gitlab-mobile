@@ -1,8 +1,8 @@
+import '../app_text.dart';
 import 'dart:convert';
 import 'dart:math';
 
 import '../ai_transcript.dart';
-import '../prompts.dart';
 import '../redaction.dart';
 import '../wire/wire_format.dart';
 import 'gitlab_read_port.dart';
@@ -200,6 +200,7 @@ final class AiToolCatalogue {
       callId: execution.result.callId,
       name: execution.result.name,
       content: execution.result.content,
+      data: execution.result.data,
       isError: execution.result.isError,
       withheldPrivateKeyContext: execution.withheldPrivateKeyContext,
       truncated: execution.truncated,
@@ -254,25 +255,27 @@ final class AiToolCatalogue {
           requestCount: completedRequests,
         );
       }
-      final redacted = raw.json
+      final structured = raw.json
           ? _redactStructured(cleanValue, raw.fragmentFields)
-          : redactor.redactSource(cleanText);
+          : null;
+      final redacted =
+          structured?.redaction ?? redactor.redactSource(cleanText);
       final redactedProvenance = redactor.redactSource(provenance.label);
       final redactedText = raw.tailLines == null
           ? redacted.text
           : _lastLines(redacted.text, raw.tailLines!);
-      final prefix = '${escapeUntrustedGitLabText(redactedProvenance.text)}\n';
-      final wrapped = wrapUntrustedGitLabData(
-        source: call.name,
-        nonce: _nextNonce(),
-        text: redactedText,
-      );
-      final available = budget.availableOutput(prefix.length + wrapped.length);
-      final completeContent = '$prefix$wrapped';
-      final content = clipWrappedUntrustedGitLabData(
-        completeContent,
-        available,
-      );
+      final data = AiAppText.join([
+        AiAppText.plain(redactedProvenance.text).escaped(),
+        AiAppText.untrusted(
+          source: call.name,
+          nonce: _nextNonce(),
+          body: structured?.data ?? AiAppText.plain(redactedText),
+        ),
+      ]);
+      final completeContent = data.encode();
+      final available = budget.availableOutput(completeContent.length);
+      final clipped = data.clipped(available);
+      final content = clipped.encode();
       final truncated = content.length != completeContent.length;
       budget.recordOutput(content.length);
       return AiToolExecution(
@@ -280,6 +283,7 @@ final class AiToolCatalogue {
           callId: call.id,
           name: call.name,
           content: content,
+          data: clipped,
         ),
         provenance: provenance,
         blocked: raw.blocked,
@@ -610,17 +614,24 @@ final class AiToolCatalogue {
     }
     final redactedProvenance = redactor.redactSource(provenance.label);
     final redactedMessage = redactor.redactSource(message);
-    final completeContent =
-        '${escapeUntrustedGitLabText(redactedProvenance.text)}\n'
-        'error: ${escapeUntrustedGitLabText(redactedMessage.text)}';
+    final data = AiAppText.join([
+      AiAppText.plain(redactedProvenance.text).escaped(),
+      AiAppText.join([
+        const AiAppText.plain('error: '),
+        AiAppText.plain(redactedMessage.text).escaped(),
+      ], ''),
+    ]);
+    final completeContent = data.encode();
     final available = budget.availableOutput(completeContent.length);
-    final content = _clipAtRuneBoundary(completeContent, available);
+    final clipped = data.clipped(available);
+    final content = clipped.encode();
     budget.recordOutput(content.length);
     return AiToolExecution(
       result: AiToolResult(
         callId: call.id,
         name: call.name,
         content: content,
+        data: clipped,
         isError: true,
       ),
       provenance: provenance,
@@ -651,7 +662,10 @@ final class AiToolCatalogue {
         revision: revision.sha,
       );
 
-  RedactionResult _redactStructured(Object? value, Set<String> fragmentFields) {
+  ({AiAppText data, RedactionResult redaction}) _redactStructured(
+    Object? value,
+    Set<String> fragmentFields,
+  ) {
     var redactions = 0;
     var withheld = false;
     Object? visit(Object? current, {String? field}) => switch (current) {
@@ -670,10 +684,14 @@ final class AiToolCatalogue {
       },
       _ => current,
     };
-    return RedactionResult(
-      jsonEncode(visit(value)),
-      redactions,
-      withheldPrivateKeyContext: withheld,
+    final data = AiAppText.json(visit(value));
+    return (
+      data: data,
+      redaction: RedactionResult(
+        data.encode(),
+        redactions,
+        withheldPrivateKeyContext: withheld,
+      ),
     );
   }
 
@@ -920,15 +938,6 @@ String _lastLines(String value, int count) {
   final lines = value.split('\n');
   final start = lines.length > count ? lines.length - count : 0;
   return lines.sublist(start).join('\n');
-}
-
-String _clipAtRuneBoundary(String value, int maxChars) {
-  if (maxChars <= 0) return '';
-  if (value.length <= maxChars) return value;
-  var end = maxChars;
-  final unit = value.codeUnitAt(end - 1);
-  if (unit >= 0xD800 && unit <= 0xDBFF) end--;
-  return value.substring(0, end);
 }
 
 String _short(String value) =>

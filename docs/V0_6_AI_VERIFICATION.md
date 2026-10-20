@@ -596,11 +596,21 @@ Evidence vocabulary: the new tests are **synthetic**, using in-memory settings,
 `FakeAdapter` / `WorkspaceFixture`, synthetic OAuth rotation and recorded SSE
 fixtures. **RECORDED** means decoding the retained P0a fixture and replaying its
 provider object through the real encoder; it is not a fresh provider call.
-The submitted MR4 base is commit `77f2be5`. Repeatable reversible mutation
-scripts are retained outside the repository in the review workspace under
-`mutation-scripts/`; their FIX1 rerun evidence and acceptance-command tails are
-pending the root agent's external `RESULT-fix1.md`. No pipeline was created by
-this local FIX1 pass.
+The submitted MR4 base is commit `77f2be5`; the first review fixes are in commit
+`cdbfc63`. This section cites only repository source, tests and retained
+sanitized fixtures. Reversible mutation checks, acceptance commands, CI
+pipelines/jobs and live provider checks are **NOT_RUN** for this ledger.
+
+Round-two regressions are retained in `test/ai/fix2_plain_text_test.dart`:
+plain values survive JSON/XML encoding boundaries for late re-redaction,
+provider-readable strings (including citation display fields) are checked
+without decoding wire escapes, deeply
+nested literal escapes remain resumable, summaries escape once across repeated
+segments, and streaming snapshots include prior tool-round text.
+`test/ai/ai_tools_test.dart` protects `executeResult` metadata and its retained
+plain values; `test/ai/ai_live_smoke_test.dart` rejects older closing markers.
+`tool/tests/test_ai_runner_contract.py` requires explicit active cancellation and
+keeps this ledger limited to repository evidence or **NOT_RUN**.
 
 | Contract | Current evidence |
 | --- | --- |

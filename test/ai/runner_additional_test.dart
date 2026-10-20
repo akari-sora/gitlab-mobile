@@ -212,6 +212,7 @@ void main() {
       executeTool: (toolCall) async =>
           AiToolResult(callId: toolCall.id, name: toolCall.name, content: 'ok'),
       close: () => h.closed++,
+      cancelActive: () => h.cancelled++,
       confirmCleartext: () async {
         confirmations++;
         return approved;

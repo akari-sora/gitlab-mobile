@@ -592,11 +592,48 @@ Map<String, bool> aiLiveAssessClosingRequestBodies(
           _ => false,
         }
       : !last.containsKey('tool_choice') &&
-            requestBodies.last.contains(aiFinalAnswerNoteMarker);
+            _newClosingTailHasMarker(
+              requestBodies[requestBodies.length - 2],
+              requestBodies.last,
+            );
   return <String, bool>{
     'toolsKeptOnClosingRequest': toolsKept,
     'finishingChoiceOrNote': choiceOrNote,
   };
+}
+
+bool _newClosingTailHasMarker(String previousBody, String closingBody) {
+  final previous = jsonDecode(previousBody) as Map<String, Object?>;
+  final closing = jsonDecode(closingBody) as Map<String, Object?>;
+  final historyKey = closing.containsKey('input') ? 'input' : 'messages';
+  final previousHistory = previous[historyKey];
+  final closingHistory = closing[historyKey];
+  if (previousHistory is! List<Object?> ||
+      closingHistory is! List<Object?> ||
+      closingHistory.isEmpty) {
+    return false;
+  }
+  final closingText = _closingUserText(closingHistory.last);
+  final previousText = previousHistory.isEmpty
+      ? ''
+      : _closingUserText(previousHistory.last);
+  final addedText = closingText.startsWith(previousText)
+      ? closingText.substring(previousText.length)
+      : closingText;
+  return addedText.contains(aiFinalAnswerNoteMarker);
+}
+
+String _closingUserText(Object? value) {
+  if (value is! Map<String, Object?> || value['role'] != 'user') return '';
+  final content = value['content'];
+  if (content is String) return content;
+  if (content is! List<Object?>) return '';
+  return content
+      .whereType<Map<String, Object?>>()
+      .where((part) => part['type'] == 'text' || part['type'] == 'input_text')
+      .map((part) => part['text'])
+      .whereType<String>()
+      .join('\n');
 }
 
 Future<Map<String, Object?>> _runnerHistoryResumeScenario(

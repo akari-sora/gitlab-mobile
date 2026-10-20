@@ -305,6 +305,25 @@ void main() {
     ], caps: fallbackCaps);
     expect(fallback['toolsKeptOnClosingRequest'], isTrue);
     expect(fallback['finishingChoiceOrNote'], isTrue);
+
+    final oldMarkerOnly = smoke.aiLiveAssessClosingRequestBodies(<String>[
+      '{"tools":[{"name":"synthetic_lookup"}],"messages":[{"role":"user","content":"<mergeline_final_answer>old</mergeline_final_answer>"}]}',
+      '{"tools":[{"name":"synthetic_lookup"}],"messages":[{"role":"user","content":"<mergeline_final_answer>old</mergeline_final_answer>"},{"role":"user","content":"ordinary follow-up"}]}',
+    ], caps: fallbackCaps);
+    expect(oldMarkerOnly['toolsKeptOnClosingRequest'], isTrue);
+    expect(oldMarkerOnly['finishingChoiceOrNote'], isFalse);
+
+    final oldCoalescedMarker = smoke.aiLiveAssessClosingRequestBodies(<String>[
+      '{"tools":[{"name":"synthetic_lookup"}],"messages":[{"role":"user","content":"<mergeline_final_answer>old"}]}',
+      '{"tools":[{"name":"synthetic_lookup"}],"messages":[{"role":"user","content":"<mergeline_final_answer>old ordinary follow-up"}]}',
+    ], caps: fallbackCaps);
+    expect(oldCoalescedMarker['finishingChoiceOrNote'], isFalse);
+
+    final providerMarker = smoke.aiLiveAssessClosingRequestBodies(<String>[
+      '{"tools":[{"name":"synthetic_lookup"}],"messages":[]}',
+      '{"tools":[{"name":"synthetic_lookup"}],"messages":[{"role":"assistant","content":"<mergeline_final_answer>echo"}]}',
+    ], caps: fallbackCaps);
+    expect(providerMarker['finishingChoiceOrNote'], isFalse);
   });
 
   test('runner smoke resumes from restored display history', () async {
