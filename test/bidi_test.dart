@@ -206,12 +206,19 @@ void main() {
       expect(summary('__snake_case__ word and __init__'), 'snake_case word and init');
     });
 
-    test('a line cut at the scan limit drops the syntax left open', () {
-      final badge = '[![b](https://img.shields.io/${'x' * 800})](https://example.com/${'y' * 20}) ';
-      final result = markdownSummary('${badge * 40} Real text', 560);
-      expect(result.more, isTrue);
-      expect(result.text, isNot(contains('https')));
-      expect(result.text, isNot(contains('[')));
+    test('a line cut at the scan limit keeps its readable start', () {
+      final words = 'word ' * 7000;
+      for (final (start, shown) in [
+        ('Use `array[0]` to select a value. ', 'Use array[0] to select a value.'),
+        ('`[a]` is code. ', '[a] is code.'),
+        ('Use `a < b` for comparison. ', 'Use a < b for comparison.'),
+        ('- [ ] keep this task. ', '- [ ] keep this task.'),
+        ('An ordinary [label] and a < b are visible. ', 'An ordinary [label] and a < b are visible.'),
+      ]) {
+        final result = markdownSummary('$start$words', 560);
+        expect(result.more, isTrue, reason: start);
+        expect(result.text, startsWith(shown), reason: start);
+      }
     });
 
     test('escapes, inline comments and the exact limit', () {
@@ -241,7 +248,7 @@ void main() {
         final watch = Stopwatch()..start();
         final result = markdownSummary(input, 560);
         watch.stop();
-        expect(watch.elapsedMilliseconds, lessThan(1500), reason: input.substring(0, 12));
+        expect(watch.elapsedMilliseconds, lessThan(500), reason: input.substring(0, 12));
         expect(result.text.characters.length, lessThanOrEqualTo(560));
       }
     });

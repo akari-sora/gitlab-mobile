@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -37,8 +35,6 @@ final _escaped = RegExp(r'\\([!-/:-@\[-`{-~])');
 /// noncharacters are removed from the text first, so none can collide.
 final _noncharacters = RegExp(r'[\uFDD0-\uFDEF]');
 final _codeMarker = RegExp(r'\uFDD0(\d+)\uFDD1');
-// Raw syntax left open where a cut line ends: `[![badge](https://…`.
-final _openSyntax = RegExp(r'!?\[|<');
 
 /// How much of a description is scanned for its summary, in UTF-16 units.
 const _summaryScanLimit = 32768;
@@ -48,7 +44,8 @@ const _summaryScanLimit = 32768;
 /// fence and rule markers, bold and strike markers, code ticks and link
 /// targets are dropped. `text` holds at most [limit] characters; `more`
 /// tells whether readable text goes on past it. The work is bounded: at
-/// most [_summaryScanLimit] units of [source] are read.
+/// most [_summaryScanLimit] units of [source] are read, so syntax left open
+/// where a single longer line is cut can show at the end of its text.
 ({String text, bool more}) markdownSummary(String source, int limit) {
   final out = StringBuffer();
   final lastClose = source.lastIndexOf('-->');
@@ -111,13 +108,7 @@ const _summaryScanLimit = 32768;
       final readable = _readableLine(body,
           commentMayClose: (offset) => blockComment || lastClose >= bodyStart + offset + 4);
       inComment = readable.inComment;
-      var text = readable.text;
-      if (cut) {
-        final closed = math.max(text.lastIndexOf(')'), text.lastIndexOf('>'));
-        final open = text.indexOf(_openSyntax, closed + 1);
-        if (open >= 0) text = text.substring(0, open);
-      }
-      write(text);
+      write(readable.text);
     }
     if (cut) {
       more = true;
