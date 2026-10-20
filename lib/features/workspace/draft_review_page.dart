@@ -9,6 +9,7 @@ import '../../core/models.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 
+import '../../l10n/l10n.dart';
 final class _DraftScope {
   const _DraftScope({
     required this.generation,
@@ -165,10 +166,10 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
       next = candidate;
       if (next == null) return List<Json>.unmodifiable(drafts);
     }
-    throw const ApiFailure(
+    throw ApiFailure(
       FailureKind.tooLarge,
-      title: '審查草稿太多',
-      detail: '目前最多一次載入 600 則草稿。請先在 GitLab 發布或捨棄一部分。',
+      title: l10n.tooManyReviewDrafts,
+      detail: l10n.reviewDraftLoadLimit,
     );
   }
 
@@ -251,10 +252,10 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
       throw const ApiFailure(FailureKind.invalidResponse);
     }
     if (currentSha != scope.headSha) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.conflict,
-        title: '合併請求已有新版本',
-        detail: '請返回變更頁重新載入最新版本，再檢查草稿內容。草稿已保留。',
+        title: l10n.mergeRequestNewVersion,
+        detail: l10n.reloadChangesBeforeDraft,
       );
     }
   }
@@ -322,13 +323,13 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
                 Text(detail),
                 if (requiredText != null) ...[
                   const SizedBox(height: 16),
-                  Text('輸入「$requiredText」確認'),
+                  Text(l10n.typeToConfirm(requiredText)),
                   const SizedBox(height: 8),
                   TextField(
                     controller: input,
                     autocorrect: false,
                     onChanged: (_) => setDialogState(() {}),
-                    decoration: const InputDecoration(labelText: '確認名稱'),
+                    decoration: InputDecoration(labelText: l10n.confirmName),
                   ),
                 ],
               ],
@@ -337,14 +338,14 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('取消'),
+              child: Text(l10n.cancelAction),
             ),
             FilledButton(
               onPressed:
                   requiredText == null || input.text.trim() == requiredText
                   ? () => Navigator.pop(dialogContext, true)
                   : null,
-              child: const Text('確認'),
+              child: Text(l10n.confirmAction),
             ),
           ],
         ),
@@ -365,17 +366,17 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
     final scope = _scope();
     final saved = await _openEditor(
       scope,
-      title: '新增審查草稿',
+      title: l10n.addReviewDraft,
       subtitle:
           '${scope.project.path} · !${scope.iid} · ${shortSha(scope.headSha)}',
       resource: '${scope.reviewIdentity}/draft-notes/new',
-      fields: const [
+      fields: [
         EditField(
           'note',
-          '審查意見',
+          l10n.reviewComment,
           required: true,
           lines: 8,
-          hint: '支援 Markdown；發布前只有你看得到。',
+          hint: l10n.reviewDraftMarkdownHint,
           markdown: true,
         ),
       ],
@@ -393,10 +394,10 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
     if (saved && _isCurrent(scope)) {
       await _readBackAcceptedWrite(
         scope,
-        const ApiFailure(
+        ApiFailure(
           FailureKind.server,
-          title: '草稿已送出，尚未確認結果',
-          detail: 'GitLab 已接受新增要求，但後續讀取失敗。請先重新整理確認伺服器狀態。',
+          title: l10n.draftSubmitUnconfirmed,
+          detail: l10n.draftCreateAcceptedReadFailed,
         ),
       );
     }
@@ -409,17 +410,17 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
     final original = valueText(draft, 'note');
     final saved = await _openEditor(
       scope,
-      title: '編輯審查草稿 #$id',
+      title: l10n.editReviewDraft(id),
       subtitle: '${scope.project.path} · !${scope.iid}',
       resource: '${scope.reviewIdentity}/draft-notes/$id',
       baseRevision: original,
       fields: [
         EditField(
           'note',
-          '審查意見',
+          l10n.reviewComment,
           required: true,
           lines: 8,
-          hint: '支援 Markdown；發布前只有你看得到。',
+          hint: l10n.reviewDraftMarkdownHint,
           markdown: true,
           value: original,
         ),
@@ -444,10 +445,10 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
     if (saved && _isCurrent(scope)) {
       await _readBackAcceptedWrite(
         scope,
-        const ApiFailure(
+        ApiFailure(
           FailureKind.server,
-          title: '修改已送出，尚未確認結果',
-          detail: 'GitLab 已接受修改要求，但後續讀取失敗。請先重新整理確認伺服器狀態。',
+          title: l10n.draftEditUnconfirmed,
+          detail: l10n.draftUpdateAcceptedReadFailed,
         ),
       );
     }
@@ -459,8 +460,8 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
     final id = requiredInt(draft, 'id');
     if (!await _confirm(
       scope,
-      '捨棄審查草稿 #$id？',
-      '這則尚未發布的審查意見會永久刪除。',
+      l10n.discardReviewDraftConfirm(id),
+      l10n.discardReviewDraftWarning,
       requiredText: '#$id',
     )) {
       return;
@@ -482,16 +483,16 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
       _requireCurrent(scope);
       final verified = await _readBackAcceptedWrite(
         scope,
-        const ApiFailure(
+        ApiFailure(
           FailureKind.server,
-          title: '捨棄已送出，尚未確認結果',
-          detail: 'GitLab 已接受刪除要求，但後續讀取失敗。請先重新整理確認伺服器狀態，不要重複捨棄。',
+          title: l10n.draftDiscardUnconfirmed,
+          detail: l10n.draftDeleteAcceptedReadFailed,
         ),
       );
       if (verified && mounted && _isCurrent(scope)) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('審查草稿已捨棄')));
+        ).showSnackBar(SnackBar(content: Text(l10n.reviewDraftDiscarded)));
       }
     } on _StaleDraftOperation {
       return;
@@ -527,8 +528,8 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
     final confirmedSnapshot = _snapshot(confirmedDrafts);
     if (!await _confirm(
       scope,
-      '發布伺服器上的 $count 則審查草稿？',
-      'GitLab 會發布這個帳號在伺服器上的全部草稿。送出前會再次檢查；確認後若其他裝置又新增草稿，仍可能一併發布。發布後，其他專案成員將能看到。',
+      l10n.publishServerReviewDraftsConfirm(count),
+      l10n.publishAllServerDraftsWarning,
     )) {
       return;
     }
@@ -544,26 +545,26 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
       _requireCurrent(scope);
       if (_snapshot(currentDrafts) != confirmedSnapshot) {
         setState(() => _drafts = currentDrafts);
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.conflict,
-          title: '伺服器上的審查草稿已變更',
-          detail: '其他裝置新增、修改或刪除了草稿。已取消發布，請重新檢查目前的完整清單。',
+          title: l10n.serverReviewDraftsChanged,
+          detail: l10n.publishCanceledDraftsChanged,
         );
       }
       await scope.api.writeEmpty('POST', [...scope.draftPath, 'bulk_publish']);
       _requireCurrent(scope);
       final verified = await _readBackAcceptedWrite(
         scope,
-        const ApiFailure(
+        ApiFailure(
           FailureKind.server,
-          title: '發布已送出，尚未確認結果',
-          detail: 'GitLab 已接受發布要求，但後續讀取失敗。請先重新整理確認伺服器狀態，不要再次發布。',
+          title: l10n.publishSubmitUnconfirmed,
+          detail: l10n.publishAcceptedReadFailed,
         ),
       );
       if (verified && mounted && _isCurrent(scope)) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('已發布 $count 則審查草稿')));
+        ).showSnackBar(SnackBar(content: Text(l10n.publishedReviewDrafts(count))));
       }
     } on _StaleDraftOperation {
       return;
@@ -593,9 +594,9 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
       'new_path',
       valueText(position, 'old_path'),
     );
-    if (path.isEmpty) return '一般留言';
+    if (path.isEmpty) return l10n.generalComment;
     final line = position['new_line'] ?? position['old_line'];
-    return line is int ? '$path · 第 $line 行' : path;
+    return line is int ? l10n.draftFileLine(path, line) : path;
   }
 
   Widget _draftTile(Json draft) {
@@ -620,15 +621,15 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
                     ),
                   ),
                   PopupMenuButton<String>(
-                    tooltip: '草稿操作',
+                    tooltip: l10n.draftActions,
                     enabled: !_busy && !_readbackRequired,
                     onSelected: (action) {
                       if (action == 'edit') unawaited(_edit(draft));
                       if (action == 'discard') unawaited(_discard(draft));
                     },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'edit', child: Text('編輯')),
-                      PopupMenuItem(value: 'discard', child: Text('捨棄')),
+                    itemBuilder: (_) => [
+                      PopupMenuItem(value: 'edit', child: Text(l10n.editAction)),
+                      PopupMenuItem(value: 'discard', child: Text(l10n.discardAction)),
                     ],
                   ),
                 ],
@@ -644,7 +645,7 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
               ),
               const SizedBox(height: 10),
               Text(
-                '草稿 #$id · ${shortSha(valueText(draft, 'commit_id', widget.headSha))}',
+                l10n.draftIdAndSha(id, shortSha(valueText(draft, 'commit_id', widget.headSha))),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -667,7 +668,7 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('審查草稿'),
+            Text(l10n.reviewDrafts),
             Text(
               '${widget.project.path} · !${widget.iid}',
               maxLines: 1,
@@ -678,12 +679,12 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
         ),
         actions: [
           IconButton(
-            tooltip: '重新整理審查草稿',
+            tooltip: l10n.refreshReviewDrafts,
             onPressed: _loading || _busy ? null : () => _load(),
             icon: const Icon(Icons.refresh),
           ),
           IconButton(
-            tooltip: '新增審查草稿',
+            tooltip: l10n.addReviewDraft,
             onPressed: _busy || _readbackRequired ? null : _create,
             icon: const Icon(Icons.add_comment_outlined),
           ),
@@ -716,8 +717,8 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
                               color: Theme.of(context).colorScheme.primary,
                             ),
                             const SizedBox(width: 10),
-                            const Expanded(
-                              child: Text('只有你看得到這些尚未發布的留言。請在發布前再次檢查內容與版本。'),
+                            Expanded(
+                              child: Text(l10n.unpublishedCommentsHint),
                             ),
                           ],
                         ),
@@ -733,7 +734,7 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
                             onRetry: () => _load(),
                             account: widget.account,
                             resourceLabel:
-                                '${widget.project.path} · !${widget.iid} · 審查草稿',
+                                l10n.mergeRequestReviewDraftsTitle(widget.project.path, widget.iid),
                             onSwitchAccount: endSessionFrom(context),
                           ),
                         );
@@ -742,12 +743,12 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
                     }
                     if (_loading && !hasContent) return const ListSkeleton();
                     if (!hasContent) {
-                      return const Padding(
+                      return Padding(
                         padding: EdgeInsets.symmetric(vertical: 48),
                         child: EmptyState(
-                          '沒有審查草稿',
+                          l10n.noReviewDrafts,
                           icon: Icons.rate_review_outlined,
-                          detail: '新增草稿後，可以先集中檢查，再一次發布到合併請求。',
+                          detail: l10n.addDraftsThenPublishHint,
                         ),
                       );
                     }
@@ -755,7 +756,7 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
                       return Padding(
                         padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
                         child: Text(
-                          '${_drafts.length} 則待發布',
+                          l10n.draftsPendingPublish(_drafts.length),
                           style: Theme.of(context).textTheme.titleSmall,
                         ),
                       );
@@ -776,7 +777,7 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
               ? null
               : _publish,
           icon: const Icon(Icons.send_outlined),
-          label: Text(_drafts.isEmpty ? '沒有可發布的草稿' : '發布 ${_drafts.length} 則'),
+          label: Text(_drafts.isEmpty ? l10n.noDraftsToPublish : l10n.publishDraftCount(_drafts.length)),
           style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
         ),
       ),

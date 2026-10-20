@@ -10,6 +10,7 @@ import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_weight_models.dart';
 import '../../shared/workspace_ui.dart';
 
+import '../../l10n/l10n.dart';
 const _graphQlIntMax = 2147483647;
 final _wholeWeight = RegExp(r'^[0-9]+$');
 
@@ -257,10 +258,10 @@ class _WorkItemWeightControlState extends State<WorkItemWeightControl> {
                 : const Icon(Icons.scale_outlined),
             label: Text(
               _writePending
-                  ? '變更中…'
+                  ? l10n.changingInProgress
                   : _opening
-                  ? '讀取權重權限…'
-                  : '變更權重',
+                  ? l10n.loadingWeightPermission
+                  : l10n.changeWeight,
             ),
           ),
         ),
@@ -422,7 +423,7 @@ class _WorkItemWeightEditorState extends State<WorkItemWeightEditor> {
     final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
     return Scaffold(
       resizeToAvoidBottomInset: true,
-      appBar: AppBar(title: const Text('變更權重')),
+      appBar: AppBar(title: Text(l10n.changeWeight)),
       body: CustomScrollView(
         key: const ValueKey('work-item-weight-scroll'),
         slivers: [
@@ -455,13 +456,13 @@ class _WorkItemWeightEditorState extends State<WorkItemWeightEditor> {
                   const SizedBox(height: 8),
                   _choiceRow(
                     key: const ValueKey('work-item-weight-set'),
-                    label: '設定權重',
+                    label: l10n.setWeight,
                     selected: _choice == _WeightChoice.set,
                     onSelect: () => _choose(_WeightChoice.set),
                   ),
                   _choiceRow(
                     key: const ValueKey('work-item-weight-remove'),
-                    label: '移除權重',
+                    label: l10n.removeWeight,
                     selected: _choice == _WeightChoice.remove,
                     onSelect: () => _choose(_WeightChoice.remove),
                   ),
@@ -473,8 +474,8 @@ class _WorkItemWeightEditorState extends State<WorkItemWeightEditor> {
                     keyboardType: TextInputType.number,
                     scrollPadding: const EdgeInsets.only(bottom: 96),
                     decoration: InputDecoration(
-                      labelText: '權重',
-                      helperText: '請輸入 0 或正整數；清除請選「移除權重」。',
+                      labelText: l10n.weight,
+                      helperText: l10n.weightInputHint,
                       errorText: _inputError,
                     ),
                   ),
@@ -489,18 +490,18 @@ class _WorkItemWeightEditorState extends State<WorkItemWeightEditor> {
                 if (_value != null) ...[
                   const SizedBox(height: 16),
                   Text(
-                    '彙整權重：${_formatTotal(_value!.rolledUpWeight)}',
+                    l10n.rolledUpWeightTotal(_formatTotal(_value!.rolledUpWeight)),
                     key: const ValueKey('work-item-weight-rolled'),
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '已完成彙整權重：${_formatTotal(_value!.rolledUpCompletedWeight)}',
+                    l10n.rolledUpCompletedWeightTotal(_formatTotal(_value!.rolledUpCompletedWeight)),
                     key: const ValueKey('work-item-weight-completed'),
                   ),
                 ],
                 if (_saveAttempted && _saveError != null) ...[
                   const SizedBox(height: 12),
-                  const Text('請關閉並重新開啟，讀取最新狀態後再變更。'),
+                  Text(l10n.reopenBeforeChange),
                   FailureNotice(
                     _saveError!,
                     account: widget.account,
@@ -529,7 +530,7 @@ class _WorkItemWeightEditorState extends State<WorkItemWeightEditor> {
                       dimension: 18,
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
-                  : const Text('儲存'),
+                  : Text(l10n.saveAction),
             ),
           ),
         ),
@@ -569,15 +570,15 @@ class _WorkItemWeightEditorState extends State<WorkItemWeightEditor> {
     final attribute = _value;
     if (attribute == null) return null;
     final weight = attribute.weight;
-    return weight == null ? '目前未設定' : '目前權重：$weight';
+    return weight == null ? l10n.currentlyNotSet : l10n.currentWeight(weight);
   }
 
   String? _blockedMessage() {
     if (_canEditCapability || _saveAttempted || _writing) return null;
     return switch (widget.access.snapshot.availability) {
-      WorkItemAttributeAvailability.absent => '這個工作項目沒有權重欄位。',
-      WorkItemAttributeAvailability.widgetsUnavailable => '伺服器未提供這個工作項目的欄位資訊。',
-      WorkItemAttributeAvailability.present => '目前帳號沒有變更權重的權限。',
+      WorkItemAttributeAvailability.absent => l10n.weightFieldMissing,
+      WorkItemAttributeAvailability.widgetsUnavailable => l10n.workItemFieldsMissing,
+      WorkItemAttributeAvailability.present => l10n.weightPermissionDenied,
     };
   }
 
@@ -585,14 +586,14 @@ class _WorkItemWeightEditorState extends State<WorkItemWeightEditor> {
     if (!_editable) return null;
     final current = _value?.weight;
     if (_choice == _WeightChoice.remove) {
-      return current == null ? null : '將移除權重';
+      return current == null ? null : l10n.weightWillBeRemoved;
     }
     final parsed = _parseSetWeight(_input.text.trim());
     if (parsed == null || parsed == current) return null;
-    return '將設定權重：$parsed';
+    return l10n.weightWillBeSet(parsed);
   }
 
-  String _formatTotal(int? value) => value == null ? '未設定' : '$value';
+  String _formatTotal(int? value) => value == null ? l10n.notSet : '$value';
 }
 
 int? _parseSetWeight(String text) {
@@ -603,25 +604,25 @@ int? _parseSetWeight(String text) {
 }
 
 String _setWeightError(String text) {
-  if (text.isEmpty) return '請輸入權重。空白不會清除權重。';
+  if (text.isEmpty) return l10n.weightBlankDoesNotClear;
   if (_wholeWeight.hasMatch(text)) {
-    return '權重必須是 0 到 $_graphQlIntMax 的整數。';
+    return l10n.weightIntegerRange(_graphQlIntMax);
   }
-  return '請輸入 0 或正整數。';
+  return l10n.weightPositiveInteger;
 }
 
 String _weightResourceLabel(WorkItemGraphSummary summary) {
   final scope =
-      summary.project?.fullPath ?? summary.namespace?.fullPath ?? '未知範圍';
-  return '$scope · 工作項目 #${summary.iid}';
+      summary.project?.fullPath ?? summary.namespace?.fullPath ?? l10n.unknownScope;
+  return l10n.workItemScopeLine(scope, summary.iid);
 }
 
 ApiFailure _saveFailure(ApiFailure error) {
   final detail = switch (error.kind) {
-    FailureKind.validation => '權重設定未被接受。重新開啟後，請重新輸入。',
-    FailureKind.conflict => '工作項目已變更，請重新開啟確認最新的權重。',
-    FailureKind.writeUncertain => '連線在寫入時中斷。請重新開啟確認目前權重，避免重複送出。',
-    _ => '權重沒有變更。請重新開啟確認目前狀態。',
+    FailureKind.validation => l10n.weightSettingRejected,
+    FailureKind.conflict => l10n.weightWorkItemChanged,
+    FailureKind.writeUncertain => l10n.weightWriteInterrupted,
+    _ => l10n.weightUnchanged,
   };
   return ApiFailure(
     error.kind,

@@ -485,10 +485,10 @@ extension WorkItemActivityApi on GitLabApi {
       isCurrent: isCurrent,
     );
     if (!preflight.canEditNote) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.forbidden,
-        title: '無法編輯這則留言',
-        detail: '目前帳號沒有編輯這則留言的權限；草稿已保留。',
+        title: l10n.cannotEditThisComment,
+        detail: l10n.noPermissionEditComment,
       );
     }
     if (preflight.actorId != target._actorId) {
@@ -677,17 +677,17 @@ extension WorkItemActivityApi on GitLabApi {
       isCurrent: isCurrent,
     );
     if (!preflight.canCreateNote) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.forbidden,
-        title: '無法新增工作項目留言',
-        detail: '目前帳號沒有在這個工作項目留言的權限。',
+        title: l10n.cannotAddWorkItemComment,
+        detail: l10n.noPermissionCommentWorkItem,
       );
     }
     if (preflight.discussionLocked) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.conflict,
-        title: '工作項目討論已鎖定',
-        detail: '這個工作項目目前不接受新的留言。',
+        title: l10n.workItemThreadLocked,
+        detail: l10n.workItemRejectsNewComments,
       );
     }
     if (preflight.authorId != target._authorId) {
@@ -724,17 +724,17 @@ extension WorkItemActivityApi on GitLabApi {
       isCurrent: isCurrent,
     );
     if (!preflight.canCreateNote) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.forbidden,
-        title: '無法回覆工作項目討論',
-        detail: '目前帳號沒有回覆這個工作項目討論的權限。',
+        title: l10n.cannotReplyWorkItemThread,
+        detail: l10n.noPermissionReplyWorkItem,
       );
     }
     if (preflight.discussionLocked) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.conflict,
-        title: '工作項目討論已鎖定',
-        detail: '這個工作項目目前不接受新的回覆。',
+        title: l10n.workItemThreadLocked,
+        detail: l10n.workItemRejectsNewReplies,
       );
     }
     final anchor = preflight.anchor;
@@ -1076,10 +1076,10 @@ extension WorkItemActivityApi on GitLabApi {
     _requireCurrentWorkItemRequest(isCurrent);
     if (useControls && _activityControlsSchemaUnavailable(response.bytes)) {
       if (!initialRequest) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.unsupported,
-          title: '實例未提供活動篩選與排序',
-          detail: '這個 GitLab 版本不支援活動篩選或排序。',
+          title: l10n.instanceNoActivityFilterSort,
+          detail: l10n.versionNoActivityFilterSort,
         );
       }
       _workItemActivityControlsUnsupported[this] = true;
@@ -1326,10 +1326,10 @@ void _requireDisplayedActivityNote(
       current.createdAt != displayed.createdAt ||
       current.updatedAt != displayed.updatedAt ||
       current.author?.id != displayed.author?.id) {
-    throw const ApiFailure(
+    throw ApiFailure(
       FailureKind.conflict,
-      title: '留言已被修改',
-      detail: '請重新載入最新留言再編輯；目前草稿已保留。',
+      title: l10n.commentHasBeenModified,
+      detail: l10n.reloadCommentBeforeEdit,
     );
   }
 }
@@ -1406,10 +1406,10 @@ String _validatedActivityWriteBody(String raw, {bool trim = true}) {
     throw const ApiFailure(FailureKind.validation);
   }
   if (_containsActivityQuickAction(body)) {
-    throw const ApiFailure(
+    throw ApiFailure(
       FailureKind.validation,
-      title: '留言不支援快速指令',
-      detail: '請移除獨立一行的 / 指令；這個編輯器只支援一般 Markdown 留言。',
+      title: l10n.commentsNoQuickActions,
+      detail: l10n.removeStandaloneSlashCommands,
     );
   }
   return body;

@@ -1,3 +1,4 @@
+import '../l10n/l10n.dart';
 String _string(Map<String, dynamic> json, String key) =>
     json[key] is String ? json[key] as String : '';
 int _integer(Map<String, dynamic> json, String key) =>
@@ -141,12 +142,12 @@ String packageTypeLabel(String type) => switch (type) {
   'nuget' => 'NuGet',
   'pypi' => 'PyPI',
   'terraform_module' => 'Terraform Module',
-  '' => '未知類型',
+  '' => l10n.unknownType,
   _ => type,
 };
 
 String registryBytes(int bytes) {
-  if (bytes <= 0) return '大小未知';
+  if (bytes <= 0) return l10n.sizeUnknown;
   const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
   var value = bytes.toDouble(), unit = 0;
   while (value >= 1024 && unit < units.length - 1) {

@@ -6,6 +6,7 @@ import '../../shared/workspace_ui.dart';
 import 'inbox_page.dart';
 import 'records_feed.dart';
 
+import '../../l10n/l10n.dart';
 enum MyWorkKind { issues, mergeRequests }
 
 /// Whose items a [MyWorkPage] lists.
@@ -42,16 +43,16 @@ class _MyWorkPageState extends State<MyWorkPage> {
   String get _resource => _mr ? 'merge_requests' : 'issues';
 
   static String _scopeLabel(MyWorkScope scope) => switch (scope) {
-    MyWorkScope.assigned => '指派給我',
-    MyWorkScope.created => '我建立的',
-    MyWorkScope.review => '待我審查',
+    MyWorkScope.assigned => l10n.assignedToMe,
+    MyWorkScope.created => l10n.createdByMe,
+    MyWorkScope.review => l10n.reviewRequests,
   };
 
   Map<String, String> get _states => {
-    'opened': '開啟中',
-    if (_mr) 'merged': '已合併',
-    'closed': '已關閉',
-    'all': '全部',
+    'opened': l10n.statusOpen,
+    if (_mr) 'merged': l10n.merged,
+    'closed': l10n.statusClosed,
+    'all': l10n.filterAll,
   };
 
   Map<String, String> get _query => {
@@ -62,12 +63,12 @@ class _MyWorkPageState extends State<MyWorkPage> {
   };
 
   String get _empty {
-    final noun = _mr ? '合併請求' : '議題';
+    final noun = _mr ? l10n.mergeRequestsLabel : l10n.issuesLabel;
     final state = _state == 'all' ? '' : _states[_state]!;
     return switch (_scope) {
-      MyWorkScope.assigned => '沒有指派給你的$state$noun',
-      MyWorkScope.created => state.isEmpty ? '你還沒有建立$noun' : '你沒有$state的$noun',
-      MyWorkScope.review => '沒有待你審查的$state$noun',
+      MyWorkScope.assigned => l10n.noAssignedStateNoun(state, noun),
+      MyWorkScope.created => state.isEmpty ? l10n.noneCreatedNoun(noun) : l10n.noStateNoun(state, noun),
+      MyWorkScope.review => l10n.noReviewStateNoun(state, noun),
     };
   }
 
@@ -80,7 +81,7 @@ class _MyWorkPageState extends State<MyWorkPage> {
       child: Row(children: [
         PopupMenuButton<String>(
           key: const ValueKey('my-work-state'),
-          tooltip: '狀態',
+          tooltip: l10n.status,
           initialValue: _state,
           onSelected: (value) => setState(() => _state = value),
           itemBuilder: (_) => [
@@ -104,7 +105,7 @@ class _MyWorkPageState extends State<MyWorkPage> {
 
   @override
   Widget build(BuildContext context) {
-    final title = _mr ? '合併請求' : '議題';
+    final title = _mr ? l10n.mergeRequests : l10n.issues;
     return Scaffold(
       appBar: AppBar(title: Text(title)),
       body: gestureSafe(RecordsFeed(
@@ -113,7 +114,7 @@ class _MyWorkPageState extends State<MyWorkPage> {
         empty: _empty,
         emptyIcon: _mr ? Icons.merge : Icons.adjust,
         account: widget.account,
-        resourceLabel: '${_scopeLabel(_scope)}的$title',
+        resourceLabel: l10n.scopeTitle(_scopeLabel(_scope), title),
         onSwitchAccount: endSessionFrom(context),
         leading: (context, _) => _filters(context),
         load: (next) => widget.api.records([_resource], query: _query, next: next),

@@ -13,6 +13,7 @@ import '../../shared/external_link.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/package_download.dart';
 
+import '../../l10n/l10n.dart';
 /// How the app can fetch one release link.
 enum ReleaseLinkAction { package, upload, browser, blocked }
 
@@ -134,13 +135,13 @@ class _ReleaseAssetsSectionState extends State<ReleaseAssetsSection> {
       final failure = safeFailure(error);
       if (failure.kind == FailureKind.cancelled) return;
       final shown = failure.kind == FailureKind.invisible
-          ? const ApiFailure(FailureKind.invisible,
-              title: '找不到這個套件檔案', detail: '套件可能已刪除，或目前帳號沒有權限讀取。')
+          ? ApiFailure(FailureKind.invisible,
+              title: l10n.packageFileNotFound, detail: l10n.packageFileGoneOrForbidden)
           : failure;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('${shown.title}。${shown.detail}'),
+        content: Text(l10n.titleThenDetail(shown.title, shown.detail)),
         action: safeExternalUri(link.url)
-            ? SnackBarAction(label: '在瀏覽器開啟', onPressed: () => unawaited(openExternal(context, link.url)))
+            ? SnackBarAction(label: l10n.openInBrowser, onPressed: () => unawaited(openExternal(context, link.url)))
             : null,
       ));
     } finally {
@@ -160,10 +161,10 @@ class _ReleaseAssetsSectionState extends State<ReleaseAssetsSection> {
     final muted = Theme.of(context).colorScheme.onSurfaceVariant;
     final resolving = _resolving == index;
     final subtitle = switch (action) {
-      ReleaseLinkAction.package => '套件檔案 · 下載後核對 SHA-256',
-      ReleaseLinkAction.upload => '專案附件 · 在 App 內下載',
-      ReleaseLinkAction.browser => '${link.url.host} · 在瀏覽器開啟',
-      ReleaseLinkAction.blocked => '不是 HTTPS 連結，無法開啟',
+      ReleaseLinkAction.package => l10n.packageFileVerifySha,
+      ReleaseLinkAction.upload => l10n.projectAttachmentInApp,
+      ReleaseLinkAction.browser => l10n.hostOpenInBrowser(link.url.host),
+      ReleaseLinkAction.blocked => l10n.notHttpsLink,
     };
     final Widget trailing = resolving
         ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2))
@@ -189,8 +190,8 @@ class _ReleaseAssetsSectionState extends State<ReleaseAssetsSection> {
   Widget _sourceRow(ReleaseSource source) => HubRow(
     key: ValueKey('release-source-${source.format}'),
     leading: const NeutralTile(Icons.folder_zip_outlined),
-    title: '原始碼（${source.format}）',
-    subtitle: '在瀏覽器下載',
+    title: l10n.sourceCodeFormat(source.format),
+    subtitle: l10n.downloadInBrowser,
     trailing: Padding(
       padding: const EdgeInsets.only(left: 8),
       child: Icon(Icons.open_in_new, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
@@ -202,7 +203,7 @@ class _ReleaseAssetsSectionState extends State<ReleaseAssetsSection> {
   Widget build(BuildContext context) {
     final assets = widget.assets;
     return HubSection(
-      title: '附件',
+      title: l10n.attachment,
       children: [
         for (var i = 0; i < assets.links.length; i++) _linkRow(i, assets.links[i]),
         for (final source in assets.sources) _sourceRow(source),

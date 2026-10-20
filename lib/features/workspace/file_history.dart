@@ -11,6 +11,7 @@ import 'commit_page.dart';
 import 'records_feed.dart';
 import 'repository_page.dart';
 
+import '../../l10n/l10n.dart';
 /// Commits that touched one file on a ref, newest first.
 class FileHistoryPage extends StatelessWidget {
   const FileHistoryPage({super.key, required this.account, required this.api, required this.project,
@@ -23,7 +24,7 @@ class FileHistoryPage extends StatelessWidget {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(titleSpacing: 0, title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min,
       children: [
-        const Text('檔案歷史'),
+        Text(l10n.fileHistory),
         Text(path, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall),
       ])),
     body: gestureSafe(RecordsFeed(
@@ -31,7 +32,7 @@ class FileHistoryPage extends StatelessWidget {
       account: account,
       resourceLabel: '${project.path} · $path',
       onSwitchAccount: endSessionFrom(context),
-      empty: '沒有修改紀錄',
+      empty: l10n.noFileRevisions,
       emptyIcon: Icons.history,
       grouped: true,
       load: (next) => api.fileHistory(project.id, path, ref, next: next),
@@ -129,7 +130,7 @@ class _BlamePageState extends State<BlamePage> {
     return Scaffold(
       appBar: AppBar(titleSpacing: 0, title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('逐行作者'),
+          Text(l10n.blameView),
           Text('${widget.path} · ${shortSha(widget.sha)}', maxLines: 1, overflow: TextOverflow.ellipsis,
             style: theme.textTheme.bodySmall),
         ])),
@@ -288,7 +289,7 @@ class _FindFilePageState extends State<FindFilePage> {
           key: const Key('findFileField'),
           controller: _input,
           autofocus: true,
-          decoration: InputDecoration(hintText: '尋找檔案 · ${widget.ref.name}', filled: false,
+          decoration: InputDecoration(hintText: l10n.findFileTitle(widget.ref.name), filled: false,
             border: InputBorder.none, enabledBorder: InputBorder.none, focusedBorder: InputBorder.none),
           onChanged: (value) => setState(() => _query = value.trim()),
         ),
@@ -298,9 +299,9 @@ class _FindFilePageState extends State<FindFilePage> {
         if (_error != null) FailureNotice(_error!, onRetry: _load, account: widget.account,
           resourceLabel: '${widget.project.path} · ${widget.ref.name}'),
         Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 4), child: Text([
-          _truncated ? '已索引前 ${_paths.length} 個檔案（大型 repository 只搜尋前段）' : '${_paths.length} 個檔案',
-          if (query.isEmpty && _paths.length > _shownWithoutQuery) '先列出前 $_shownWithoutQuery 個，輸入名稱可搜尋全部',
-          if (query.isNotEmpty) '${hits.length} 個符合',
+          _truncated ? l10n.indexedFilePrefix(_paths.length) : l10n.fileCount(_paths.length),
+          if (query.isEmpty && _paths.length > _shownWithoutQuery) l10n.fileListPreviewHint(_shownWithoutQuery),
+          if (query.isNotEmpty) l10n.fileMatchCount(hits.length),
         ].join(' · '), style: theme.textTheme.bodySmall)),
         Expanded(child: ListView.builder(
           itemCount: hits.length,

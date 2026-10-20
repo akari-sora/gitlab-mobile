@@ -8,6 +8,7 @@ import '../../core/models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../shared/workspace_ui.dart';
 
+import '../../l10n/l10n.dart';
 /// A lazy, account-bound control for the current actor's Work Item
 /// notification subscription.
 class WorkItemNotificationsControl extends StatefulWidget {
@@ -49,8 +50,8 @@ class _WorkItemNotificationsControlState
     final path =
         widget.summary.project?.fullPath ??
         widget.summary.namespace?.fullPath ??
-        '位置未知';
-    return '$path · 工作項目 #${widget.summary.iid}';
+        l10n.unknownLocation;
+    return l10n.notificationWorkItemHeading(path, widget.summary.iid);
   }
 
   @override
@@ -120,10 +121,10 @@ class _WorkItemNotificationsControlState
     if (mounted) setState(() {});
   }
 
-  ApiFailure get _accountChangedFailure => const ApiFailure(
+  ApiFailure get _accountChangedFailure => ApiFailure(
     FailureKind.cancelled,
-    title: 'GitLab 登入帳號已變更',
-    detail: '伺服器目前的登入帳號與這個工作項目頁面的帳號不一致。請切換帳號或重新開啟工作項目。',
+    title: l10n.gitlabAccountChanged,
+    detail: l10n.gitlabAccountMismatch,
   );
 
   Future<void> _read() async {
@@ -237,17 +238,17 @@ class _WorkItemNotificationsControlState
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         key: const ValueKey('work-item-notifications-expansion'),
-        title: Text('通知訂閱', style: Theme.of(context).textTheme.titleMedium),
+        title: Text(l10n.notificationSubscription, style: Theme.of(context).textTheme.titleMedium),
         subtitle: Text(
           subscribed == null
-              ? '依目前帳號讀取 GitLab 通知設定'
+              ? l10n.loadAccountNotificationSettings
               : stale
               ? subscribed
-                    ? '上次確認：已訂閱這個工作項目'
-                    : '上次確認：尚未訂閱這個工作項目'
+                    ? l10n.lastConfirmedSubscribed
+                    : l10n.lastConfirmedUnsubscribed
               : subscribed
-              ? '已訂閱這個工作項目'
-              : '尚未訂閱這個工作項目',
+              ? l10n.subscribedToWorkItem
+              : l10n.notSubscribedToWorkItem,
         ),
         onExpansionChanged: (expanded) {
           _expanded = expanded;
@@ -270,10 +271,10 @@ class _WorkItemNotificationsControlState
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 10),
-                const Text('這只變更你對此工作項目的訂閱；通知頻率與傳送方式仍由 GitLab 的通知設定決定。'),
+                Text(l10n.subscriptionDoesNotChangeDelivery),
                 const SizedBox(height: 12),
                 if (_loading)
-                  const _NotificationProgress(label: '正在確認通知訂閱…')
+                  _NotificationProgress(label: l10n.checkingNotificationSubscription)
                 else if (access == null && _error != null)
                   FailureNotice(
                     _error!,
@@ -287,7 +288,7 @@ class _WorkItemNotificationsControlState
                   _wideButton(
                     onPressed: _read,
                     icon: Icons.notifications_outlined,
-                    label: '讀取通知設定',
+                    label: l10n.loadNotificationSettings,
                   )
                 else ...[
                   _NotificationAvailability(access: access),
@@ -295,10 +296,10 @@ class _WorkItemNotificationsControlState
                     const SizedBox(height: 10),
                     Text(
                       _error!.kind == FailureKind.writeUncertain
-                          ? '操作結果尚未確認，已停用再次寫入。'
+                          ? l10n.writeDisabledUntilConfirmed
                           : _lastFailureWasRead
-                          ? '重新讀取失敗；仍顯示上次確認的狀態，已停用變更。'
-                          : '${_error!.title}；仍顯示上次確認的狀態，已停用變更。請先重新讀取再操作。',
+                          ? l10n.reloadFailedShowLastState
+                          : l10n.errorShowLastConfirmedState(_error!.title),
                       key: const ValueKey('work-item-notifications-stale'),
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.error,
@@ -322,10 +323,10 @@ class _WorkItemNotificationsControlState
                           ? Icons.notifications_off_outlined
                           : Icons.notifications_active_outlined,
                       label: _writing
-                          ? '正在更新…'
+                          ? l10n.updatingNow
                           : subscribed
-                          ? '取消訂閱通知'
-                          : '訂閱通知',
+                          ? l10n.unsubscribeNotifications
+                          : l10n.subscribeNotifications,
                       progress: _writing,
                     ),
                   ],
@@ -333,14 +334,14 @@ class _WorkItemNotificationsControlState
                       access.availability ==
                           WorkItemNotificationAvailability.present) ...[
                     const SizedBox(height: 8),
-                    const Text('目前沒有已驗證的登入帳號，因此只能查看通知狀態。'),
+                    Text(l10n.unverifiedAccountViewOnly),
                   ],
                   if (stale) ...[
                     const SizedBox(height: 8),
                     _wideButton(
                       onPressed: _writing ? null : _read,
                       icon: Icons.refresh,
-                      label: '重新讀取通知設定',
+                      label: l10n.reloadNotificationSettings,
                     ),
                   ],
                 ],
@@ -414,15 +415,15 @@ class _NotificationAvailability extends StatelessWidget {
   @override
   Widget build(BuildContext context) => switch (access.availability) {
     WorkItemNotificationAvailability.present => Text(
-      access.subscribed == true ? 'GitLab 已確認：目前已訂閱。' : 'GitLab 已確認：目前未訂閱。',
+      access.subscribed == true ? l10n.gitlabConfirmedSubscribed : l10n.gitlabConfirmedUnsubscribed,
       key: const ValueKey('work-item-notifications-confirmed'),
     ),
-    WorkItemNotificationAvailability.absent => const Text(
-      '這個工作項目沒有通知訂閱欄位，因此目前只能閱讀。',
+    WorkItemNotificationAvailability.absent => Text(
+      l10n.noNotificationSubscriptionField,
       key: ValueKey('work-item-notifications-absent'),
     ),
-    WorkItemNotificationAvailability.widgetsUnavailable => const Text(
-      'GitLab 未回傳工作項目 widgets，無法判定通知訂閱狀態。',
+    WorkItemNotificationAvailability.widgetsUnavailable => Text(
+      l10n.notificationWidgetsMissing,
       key: ValueKey('work-item-notifications-widgets-unavailable'),
     ),
   };

@@ -5,6 +5,8 @@ import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../../core/brand.dart';
 
+import '../../l10n/l10n.dart';
+
 /// Version name, build number, and the commit recorded for this binary.
 class BuildInfo {
   const BuildInfo({
@@ -23,7 +25,9 @@ class BuildInfo {
     defaultValue: 'dev',
   );
 
-  static const String unknownVersion = '未知';
+  /// Stands for a version the platform did not report. It is not shown;
+  /// the UI says 「未知」 in the current language instead.
+  static const String unknownVersion = '';
 
   bool get isUnknown => version == unknownVersion;
 }
@@ -49,12 +53,13 @@ Future<BuildInfo> loadBuildInfo() async {
 }
 
 String _versionLine(BuildInfo info) {
-  if (info.isUnknown) return '版本未知';
-  return '版本 ${info.version} (${info.buildNumber}) · commit ${info.commit}';
+  if (info.isUnknown) return l10n.versionUnknown;
+  return l10n.versionBuildAndCommit(info.version, info.buildNumber, info.commit);
 }
 
 String _copyText(BuildInfo info, TargetPlatform platform) {
-  return '$appName ${info.version} (${info.buildNumber}) · ${info.commit} · ${_platformLabel(platform)}';
+  final version = info.isUnknown ? l10n.unknownLabel : info.version;
+  return '$appName $version (${info.buildNumber}) · ${info.commit} · ${_platformLabel(platform)}';
 }
 
 String _platformLabel(TargetPlatform platform) {
@@ -93,7 +98,7 @@ class _BuildInfoLineState extends State<BuildInfoLine> {
     final platform = Theme.of(context).platform;
     await Clipboard.setData(ClipboardData(text: _copyText(info, platform)));
     if (!mounted) return;
-    messenger.showSnackBar(const SnackBar(content: Text('已複製')));
+    messenger.showSnackBar(SnackBar(content: Text(l10n.copiedLabel)));
   }
 
   @override
@@ -102,11 +107,11 @@ class _BuildInfoLineState extends State<BuildInfoLine> {
       future: _future,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
-          return const Text('版本 …', style: TextStyle(fontSize: 12));
+          return Text(l10n.versionEllipsis, style: TextStyle(fontSize: 12));
         }
         final info = snapshot.data;
         if (snapshot.hasError || info == null || info.isUnknown) {
-          return const Text('版本未知', style: TextStyle(fontSize: 12));
+          return Text(l10n.versionUnknown, style: TextStyle(fontSize: 12));
         }
         return Row(
           children: [
@@ -118,7 +123,7 @@ class _BuildInfoLineState extends State<BuildInfoLine> {
             // The tooltip is the button's one accessible name; a second
             // Semantics label would be announced twice on some engines.
             IconButton(
-              tooltip: '複製版本資訊',
+              tooltip: l10n.copyVersionInfo,
               onPressed: () {
                 unawaited(_copy(info));
               },

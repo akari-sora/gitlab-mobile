@@ -18,6 +18,7 @@ import 'pipeline_graph_page.dart';
 import 'work_item_page.dart';
 import '../../shared/artifact_storage.dart';
 import '../../shared/theme.dart';
+import '../../l10n/l10n.dart';
 export '../../shared/artifact_storage.dart';
 
 class _CiVariableEntry {
@@ -106,7 +107,7 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
 
     final ref = _refController.text.trim();
     if (ref.isEmpty) {
-      setState(() => _refError = '請輸入分支或標籤名稱');
+      setState(() => _refError = l10n.enterBranchOrTagName);
       return;
     }
 
@@ -125,19 +126,19 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
       }
 
       if (key.isEmpty) {
-        entry.keyError = '變數名稱不可為空';
+        entry.keyError = l10n.variableNameEmpty;
         hasError = true;
         continue;
       }
 
       if (!_validKeyRegex.hasMatch(key)) {
-        entry.keyError = '變數名稱格式不合（僅限英數字與底線，不可為數字開頭）';
+        entry.keyError = l10n.variableNameInvalidFormat;
         hasError = true;
         continue;
       }
 
       if (seenKeys.contains(key)) {
-        entry.keyError = '變數名稱重複';
+        entry.keyError = l10n.duplicateVariableName;
         hasError = true;
         continue;
       }
@@ -193,7 +194,7 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  '執行 Pipeline',
+                  l10n.runPipeline,
                   style: theme.textTheme.titleLarge,
                 ),
               ),
@@ -218,9 +219,9 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
               key: const ValueKey('editor-ref'),
               controller: _refController,
               decoration: InputDecoration(
-                labelText: '分支或標籤',
-                hintText: '例如: main 或 v1.0.0',
-                helperText: '將使用此 ref 上的 .gitlab-ci.yml；可能執行部署工作。',
+                labelText: l10n.branchOrTag,
+                hintText: l10n.branchOrTagExample,
+                helperText: l10n.pipelineRefDeployWarning,
                 helperMaxLines: 2,
                 errorText: _refError,
                 prefixIcon: const Icon(Icons.alt_route),
@@ -235,7 +236,7 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
             Row(
               children: [
                 Text(
-                  'CI 變數 (${_variables.length})',
+                  l10n.ciVariablesCount(_variables.length),
                   style: theme.textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.bold,
                   ),
@@ -249,7 +250,7 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
                   ),
                   onPressed: _submitting ? null : _addVariable,
                   icon: const Icon(Icons.add, size: 18),
-                  label: const Text('新增變數'),
+                  label: Text(l10n.addCiVariable),
                 ),
               ],
             ),
@@ -257,7 +258,7 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                  '未設定自訂 CI 變數',
+                  l10n.noCustomCiVariables,
                   style: theme.textTheme.bodySmall?.copyWith(
                     color: colorScheme.outline,
                   ),
@@ -276,7 +277,7 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
                       Row(
                         children: [
                           Text(
-                            '變數 #${i + 1}',
+                            l10n.ciVariableNumber(i + 1),
                             style: theme.textTheme.labelMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
@@ -289,7 +290,7 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
                               minHeight: 48,
                             ),
                             icon: const Icon(Icons.delete_outline, size: 20),
-                            tooltip: '刪除變數',
+                            tooltip: l10n.deleteCiVariable,
                             onPressed: _submitting ? null : () => _removeVariable(i),
                           ),
                         ],
@@ -298,7 +299,7 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
                         key: ValueKey('ci-var-key-$i'),
                         controller: _variables[i].keyController,
                         decoration: InputDecoration(
-                          labelText: '變數名稱 (Key)',
+                          labelText: l10n.variableNameKey,
                           hintText: 'VARIABLE_NAME',
                           errorText: _variables[i].keyError,
                         ),
@@ -314,9 +315,9 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
                         controller: _variables[i].valueController,
                         minLines: 1,
                         maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: '變數值 (Value)',
-                          hintText: '變數值',
+                        decoration: InputDecoration(
+                          labelText: l10n.variableValueLabel,
+                          hintText: l10n.variableValue,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -324,25 +325,25 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
                         key: ValueKey('ci-var-type-$i'),
                         initialValue: _variables[i].variableType,
                         isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: '變數類型',
+                        decoration: InputDecoration(
+                          labelText: l10n.variableType,
                           contentPadding: EdgeInsets.symmetric(
                             horizontal: 12,
                             vertical: 12,
                           ),
                         ),
-                        items: const [
+                        items: [
                           DropdownMenuItem(
                             value: 'env_var',
                             child: Text(
-                              'env_var (環境變數)',
+                              l10n.variableTypeEnvVar,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
                           DropdownMenuItem(
                             value: 'file',
                             child: Text(
-                              'file (檔案)',
+                              l10n.variableTypeFile,
                               overflow: TextOverflow.ellipsis,
                             ),
                           ),
@@ -378,7 +379,7 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
         TextButton(
           style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
           onPressed: _submitting ? null : () => Navigator.of(context).pop(),
-          child: const Text('取消'),
+          child: Text(l10n.cancelAction),
         ),
         FilledButton(
           key: const Key('editorSave'),
@@ -393,7 +394,7 @@ class _RunPipelineDialogState extends State<RunPipelineDialog> {
                     color: Colors.white,
                   ),
                 )
-              : const Text('執行'),
+              : Text(l10n.runCiSubmit),
         ),
       ],
     );
@@ -442,15 +443,15 @@ class _PipelinesTabState extends State<PipelinesTab> {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Padding(padding: EdgeInsets.fromLTRB(gutter, 12, gutter - 4, 6), child: Row(children: [
         Expanded(child: TextField(controller: _refInput,
-          decoration: InputDecoration(hintText: '依分支篩選', prefixIcon: const Icon(Icons.alt_route),
-            suffixIcon: _ref.isEmpty ? null : IconButton(tooltip: '清除分支篩選', icon: const Icon(Icons.close, size: 18),
+          decoration: InputDecoration(hintText: l10n.filterByBranch, prefixIcon: const Icon(Icons.alt_route),
+            suffixIcon: _ref.isEmpty ? null : IconButton(tooltip: l10n.clearBranchFilter, icon: const Icon(Icons.close, size: 18),
               onPressed: () { _refInput.clear(); setState(() => _ref = ''); })),
           textInputAction: TextInputAction.search, onSubmitted: (value) => setState(() => _ref = value.trim()))),
-        const SizedBox(width: 4), IconButton(tooltip: '執行 Pipeline', onPressed: widget.project.archived == true ? null : _run,
+        const SizedBox(width: 4), IconButton(tooltip: l10n.runPipeline, onPressed: widget.project.archived == true ? null : _run,
           icon: const Icon(Icons.play_circle_outline)),
       ])),
       SingleChildScrollView(scrollDirection: Axis.horizontal, padding: EdgeInsets.symmetric(horizontal: gutter),
-        child: Row(children: [for (final e in const {'': '全部', 'running': '執行中', 'failed': '失敗', 'success': '成功'}.entries)
+        child: Row(children: [for (final e in {'': l10n.filterAll, 'running': l10n.statusRunning, 'failed': l10n.statusFailed, 'success': l10n.statusPassed}.entries)
           Padding(padding: const EdgeInsets.only(right: 8), child: ChoiceChip(label: Text(e.value),
             selected: _state == e.key, showCheckmark: false, onSelected: (_) => setState(() => _state = e.key)))])),
     ]);
@@ -458,7 +459,7 @@ class _PipelinesTabState extends State<PipelinesTab> {
 
   @override
   Widget build(BuildContext context) => RecordsFeed(key: _feed, identity: 'pipelines/$_state/$_ref', storageId: 'pipelines',
-      empty: '沒有符合的 Pipeline', emptyIcon: Icons.account_tree_outlined, grouped: true,
+      empty: l10n.noMatchingPipelines, emptyIcon: Icons.account_tree_outlined, grouped: true,
       account: widget.account, resourceLabel: '${widget.project.path} · Pipeline',
       onSwitchAccount: endSessionFrom(context),
       leading: (context, _) => _controls(context),
@@ -476,7 +477,8 @@ List<Json> stageOrder(List<Json> jobs) {
   final byId = [...jobs]..sort((a, b) => valueInt(a, 'id').compareTo(valueInt(b, 'id')));
   final stages = <String, Map<String, Json>>{};
   for (final job in byId) {
-    final attempts = stages.putIfAbsent(valueText(job, 'stage', '其他'), () => <String, Json>{});
+    // A job without a stage groups under an empty key, never a stage name.
+    final attempts = stages.putIfAbsent(valueText(job, 'stage'), () => <String, Json>{});
     // Replacing a value keeps the key's first position.
     attempts[valueText(job, 'name', '#${valueInt(job, 'id')}')] = job;
   }
@@ -485,21 +487,21 @@ List<Json> stageOrder(List<Json> jobs) {
 
 /// `83` → `1 分 23 秒`; hours roll over for long jobs.
 String formatDuration(int seconds) {
-  if (seconds < 60) return '$seconds 秒';
+  if (seconds < 60) return l10n.durationSeconds(seconds);
   final h = seconds ~/ 3600, m = (seconds % 3600) ~/ 60, s = seconds % 60;
-  if (h > 0) return '$h 小時 $m 分';
-  return s == 0 ? '$m 分' : '$m 分 $s 秒';
+  if (h > 0) return l10n.durationHoursMinutes(h, m);
+  return s == 0 ? l10n.durationMinutes(m) : l10n.durationMinutesSeconds(m, s);
 }
 
 String pipelineSourceLabel(String source) => switch (source) {
-  'push' => '推送',
-  'merge_request_event' => '合併請求',
-  'schedule' => '排程',
-  'web' => '手動執行',
+  'push' => l10n.pipelineSourcePush,
+  'merge_request_event' => l10n.mergeRequestLabel,
+  'schedule' => l10n.pipelineSourceSchedule,
+  'web' => l10n.pipelineSourceManual,
   'api' => 'API',
-  'trigger' => '觸發器',
-  'pipeline' || 'parent_pipeline' => '上游流程',
-  'external' || 'external_pull_request_event' => '外部',
+  'trigger' => l10n.pipelineSourceTrigger,
+  'pipeline' || 'parent_pipeline' => l10n.pipelineSourceUpstream,
+  'external' || 'external_pull_request_event' => l10n.pipelineSourceExternal,
   'chat' => 'ChatOps',
   _ => source,
 };
@@ -656,8 +658,8 @@ class _PipelinePageState extends State<PipelinePage> {
   Future<void> _action(String action) async {
     if (_busy) { return; }
     final owner = widget, generation = _generation;
-    final label = action == 'retry' ? '重試失敗工作' : action == 'cancel' ? '取消流程' : '刪除 Pipeline';
-    if (!await confirmAction(context, '$label？', '${owner.project.path}\nPipeline #${owner.id}',
+    final label = action == 'retry' ? l10n.retryFailedJobs : action == 'cancel' ? l10n.cancelPipeline : l10n.deletePipeline;
+    if (!await confirmAction(context, l10n.confirmActionQuestion(label), '${owner.project.path}\nPipeline #${owner.id}',
       requiredText: action == 'delete' ? '${owner.id}' : null, onRoute: _ownRoute)) { return; }
     if (!_current(generation)) { return; }
     setState(() => _busy = true);
@@ -680,8 +682,8 @@ class _PipelinePageState extends State<PipelinePage> {
   Future<void> _jobAction(int jobId, String action) async {
     if (_busy) { return; }
     final owner = widget, generation = _generation;
-    final label = action == 'retry' ? '重試工作' : action == 'play' ? '啟動手動工作' : '取消工作';
-    if (!await confirmAction(context, '$label？', '${owner.project.path}\nJob #$jobId', onRoute: _ownRoute)) { return; }
+    final label = action == 'retry' ? l10n.retryJob : action == 'play' ? l10n.startManualJob : l10n.cancelJob;
+    if (!await confirmAction(context, l10n.confirmActionQuestion(label), '${owner.project.path}\nJob #$jobId', onRoute: _ownRoute)) { return; }
     if (!_current(generation)) { return; }
     setState(() => _busy = true);
     try {
@@ -719,20 +721,20 @@ class _PipelinePageState extends State<PipelinePage> {
         ResourceShareButton(uri: widget.account.instance.projectWeb('${widget.project.path}/-/pipelines/${widget.id}'),
           ownerKey: (widget.account.key, widget.api, widget.project.id, widget.id, generation),
           isCurrent: () => _current(generation) && !widget.api.isClosed),
-        IconButton(tooltip: '工作相依圖',
+        IconButton(tooltip: l10n.jobDependencyGraph,
           onPressed: _openGraph,
           icon: const Icon(Icons.account_tree_outlined)),
-        IconButton(tooltip: '重新整理', onPressed: _loading || _busy ? null : () async {
+        IconButton(tooltip: l10n.refreshAction, onPressed: _loading || _busy ? null : () async {
           await _load();
           if (mounted) {
             await _feed.currentState?.refresh();
             await _testsKey.currentState?.refresh();
           }
         }, icon: const Icon(Icons.refresh)),
-        PopupMenuButton<String>(enabled: !_busy, tooltip: 'Pipeline 操作', onSelected: _action, itemBuilder: (_) => const [
-          PopupMenuItem(value: 'retry', child: Text('重試失敗工作')),
-          PopupMenuItem(value: 'cancel', child: Text('取消流程')),
-          PopupMenuItem(value: 'delete', child: Text('刪除 Pipeline')),
+        PopupMenuButton<String>(enabled: !_busy, tooltip: l10n.pipelineActions, onSelected: _action, itemBuilder: (_) => [
+          PopupMenuItem(value: 'retry', child: Text(l10n.retryFailedJobs)),
+          PopupMenuItem(value: 'cancel', child: Text(l10n.cancelPipeline)),
+          PopupMenuItem(value: 'delete', child: Text(l10n.deletePipeline)),
         ]),
       ]);
     return DefaultTabController(
@@ -747,14 +749,14 @@ class _PipelinePageState extends State<PipelinePage> {
               StatusBadge(valueText(_data!, 'status')),
               if (mergeRequestIidOfRef(valueText(_data!, 'ref')) case final iid?)
                 MetaChip(valueText(_data!, 'ref'), icon: Icons.alt_route, mono: true,
-                  key: const ValueKey('pipeline-ref-link'), semanticLabel: '開啟合併請求 !$iid',
+                  key: const ValueKey('pipeline-ref-link'), semanticLabel: l10n.openMergeRequest(iid),
                   onTap: () => _openOwned(generation, (owner) => WorkItemPage(account: owner.account, api: owner.api,
                     project: owner.project, resource: 'merge_requests', iid: iid)))
               else
                 MetaChip(valueText(_data!, 'ref'), icon: Icons.alt_route, mono: true),
               if (valueText(_data!, 'sha') case final sha when sha.isNotEmpty)
                 MetaChip(shortSha(sha), icon: Icons.commit, mono: true,
-                  key: const ValueKey('pipeline-sha-link'), semanticLabel: '開啟 commit ${shortSha(sha)}',
+                  key: const ValueKey('pipeline-sha-link'), semanticLabel: l10n.openCommit(shortSha(sha)),
                   onTap: () => _openOwned(generation, (owner) => CommitDetailPage(account: owner.account, api: owner.api,
                     project: owner.project, sha: sha))),
               // The title shows the project-scoped number; links and the API use this ID.
@@ -770,7 +772,7 @@ class _PipelinePageState extends State<PipelinePage> {
                   key: const ValueKey('pipeline-quick-retry-btn'),
                   onPressed: _busy ? null : () => _action('retry'),
                   icon: const Icon(Icons.replay, size: 16),
-                  label: const Text('重試此流程', style: TextStyle(fontSize: 12)),
+                  label: Text(l10n.retryThisPipeline, style: TextStyle(fontSize: 12)),
                   style: FilledButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -781,7 +783,7 @@ class _PipelinePageState extends State<PipelinePage> {
                   key: const ValueKey('pipeline-quick-cancel-btn'),
                   onPressed: _busy ? null : () => _action('cancel'),
                   icon: const Icon(Icons.cancel_outlined, size: 16, color: Colors.red),
-                  label: const Text('中止此流程', style: TextStyle(fontSize: 12, color: Colors.red)),
+                  label: Text(l10n.abortThisPipeline, style: TextStyle(fontSize: 12, color: Colors.red)),
                   style: OutlinedButton.styleFrom(
                     visualDensity: VisualDensity.compact,
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -802,9 +804,9 @@ class _PipelinePageState extends State<PipelinePage> {
           TabBar(
             onTap: (_) => _chrome.show(),
             indicatorSize: TabBarIndicatorSize.tab,
-            tabs: const [
-              Tab(text: '工作'),
-              Tab(text: '測試'),
+            tabs: [
+              Tab(text: l10n.jobsTab),
+              Tab(text: l10n.testsTab),
             ],
           ),
         if (_data != null)
@@ -814,14 +816,14 @@ class _PipelinePageState extends State<PipelinePage> {
                 RecordsFeed(
                   key: _feed,
                   identity: '${widget.account.key}/${widget.project.id}/pipeline/${widget.id}/jobs/$_generation',
-                  empty: '尚無工作',
+                  empty: l10n.noJobsYet,
                   emptyIcon: Icons.work_outline,
                   grouped: true,
                   account: widget.account,
-                  resourceLabel: '${widget.project.path} · Pipeline #${widget.id} 工作',
+                  resourceLabel: l10n.pipelineJobsTitle(widget.project.path, widget.id),
                   onSwitchAccount: endSessionFrom(context),
                   arrange: stageOrder,
-                  sectionOf: (value) => valueText(value, 'stage', '其他'),
+                  sectionOf: (value) => valueText(value, 'stage', l10n.pipelineSourceOther),
                   load: (next) => widget.api.records(
                     ['projects', '${widget.project.id}', 'pipelines', '${widget.id}', 'jobs'],
                     query: {'include_retried': 'true', 'per_page': '100'},
@@ -861,26 +863,26 @@ class _PipelinePageState extends State<PipelinePage> {
                             IconButton(
                               key: ValueKey('job-action-play-$jobId'),
                               icon: Icon(Icons.play_circle_outline, color: Theme.of(context).colorScheme.primary),
-                              tooltip: '執行手動工作',
+                              tooltip: l10n.runManualJob,
                               onPressed: _busy ? null : () => _jobAction(jobId, 'play'),
                             )
                           else if (status == 'failed')
                             IconButton(
                               key: ValueKey('job-action-retry-$jobId'),
                               icon: const Icon(Icons.replay, color: Colors.orange),
-                              tooltip: '重試工作',
+                              tooltip: l10n.retryJob,
                               onPressed: _busy ? null : () => _jobAction(jobId, 'retry'),
                             )
                           else if (status == 'running' || status == 'pending')
                             IconButton(
                               key: ValueKey('job-action-cancel-$jobId'),
                               icon: const Icon(Icons.cancel_outlined, color: Colors.red),
-                              tooltip: '取消工作',
+                              tooltip: l10n.cancelJob,
                               onPressed: _busy ? null : () => _jobAction(jobId, 'cancel'),
                             ),
                           IconButton(
                             icon: const Icon(Icons.chevron_right, size: 18),
-                            tooltip: '查看 Log',
+                            tooltip: l10n.viewJobLog,
                             onPressed: () => _openJob(jobId),
                           ),
                           const SizedBox(width: 4),
@@ -1085,17 +1087,17 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
   }
 
   String _filterLabel(String filter) => switch (filter) {
-    'all' => '全部',
-    'failed' => '失敗',
-    'error' => '錯誤',
-    'skipped' => '跳過',
-    'success' => '成功',
+    'all' => l10n.filterAll,
+    'failed' => l10n.statusFailed,
+    'error' => l10n.statusError,
+    'skipped' => l10n.statusSkipped,
+    'success' => l10n.statusPassed,
     _ => filter,
   };
 
   String _truncateOutput(String text) {
     if (text.length <= maxOutputChars) return text;
-    return '${text.substring(0, maxOutputChars)}\n\n… [輸出過長，已截斷顯示]';
+    return l10n.truncatedJobOutput(text.substring(0, maxOutputChars));
   }
 
   Widget _buildSummaryCard(BuildContext context, TestReportSummary summary) {
@@ -1120,15 +1122,15 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                   TestReportStatus.success => 'success',
                   _ => 'status_unknown',
                 }),
-                Text('總計 ${summary.totalCount}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                Text('成功 ${summary.successCount}', style: TextStyle(color: workshop.onSuccessContainer)),
+                Text(l10n.testTotalCount(summary.totalCount), style: const TextStyle(fontWeight: FontWeight.bold)),
+                Text(l10n.testSuccessCount(summary.successCount), style: TextStyle(color: workshop.onSuccessContainer)),
                 if (summary.failedCount > 0)
-                  Text('失敗 ${summary.failedCount}', style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.bold)),
+                  Text(l10n.testFailedCount(summary.failedCount), style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.bold)),
                 if (summary.errorCount > 0)
-                  Text('錯誤 ${summary.errorCount}', style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.bold)),
+                  Text(l10n.testErrorCount(summary.errorCount), style: TextStyle(color: theme.colorScheme.error, fontWeight: FontWeight.bold)),
                 if (summary.skippedCount > 0)
-                  Text('跳過 ${summary.skippedCount}', style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
-                Text('耗時 ${summary.totalTime.toStringAsFixed(2)} 秒', style: theme.textTheme.bodySmall),
+                  Text(l10n.testSkippedCount(summary.skippedCount), style: TextStyle(color: theme.colorScheme.onSurfaceVariant)),
+                Text(l10n.testDurationSeconds(summary.totalTime.toStringAsFixed(2)), style: theme.textTheme.bodySmall),
               ],
             ),
             if (summary.hasSuiteError) ...[
@@ -1147,7 +1149,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '測試套件解析錯誤: ${summary.suiteError ?? summary.testSuites.firstWhere((s) => s.hasSuiteError, orElse: () => const TestSuiteSummary(name: '', totalTime: 0, totalCount: 0, successCount: 0, failedCount: 0, skippedCount: 0, errorCount: 0, suiteError: '未知套件錯誤')).suiteError}',
+                        l10n.testSuiteParseError(summary.suiteError ?? summary.testSuites.firstWhere((s) => s.hasSuiteError, orElse: () => TestSuiteSummary(name: '', totalTime: 0, totalCount: 0, successCount: 0, failedCount: 0, skippedCount: 0, errorCount: 0, suiteError: l10n.unknownSuiteError)).suiteError),
                         style: TextStyle(color: theme.colorScheme.onErrorContainer, fontSize: 12),
                       ),
                     ),
@@ -1169,7 +1171,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: ChoiceChip(
-              label: Text('全部 (${summary.totalCount})'),
+              label: Text(l10n.testFilterAllCount(summary.totalCount)),
               selected: _filter == 'all',
               showCheckmark: false,
               onSelected: (_) => setState(() => _filter = 'all'),
@@ -1179,7 +1181,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ChoiceChip(
-                label: Text('失敗 (${summary.failedCount})'),
+                label: Text(l10n.testFilterFailedCount(summary.failedCount)),
                 selected: _filter == 'failed',
                 showCheckmark: false,
                 onSelected: (_) => setState(() => _filter = 'failed'),
@@ -1189,7 +1191,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ChoiceChip(
-                label: Text('錯誤 (${summary.errorCount})'),
+                label: Text(l10n.testFilterErrorCount(summary.errorCount)),
                 selected: _filter == 'error',
                 showCheckmark: false,
                 onSelected: (_) => setState(() => _filter = 'error'),
@@ -1199,7 +1201,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ChoiceChip(
-                label: Text('跳過 (${summary.skippedCount})'),
+                label: Text(l10n.testFilterSkippedCount(summary.skippedCount)),
                 selected: _filter == 'skipped',
                 showCheckmark: false,
                 onSelected: (_) => setState(() => _filter = 'skipped'),
@@ -1209,7 +1211,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ChoiceChip(
-                label: Text('成功 (${summary.successCount})'),
+                label: Text(l10n.testFilterSuccessCount(summary.successCount)),
                 selected: _filter == 'success',
                 showCheckmark: false,
                 onSelected: (_) => setState(() => _filter = 'success'),
@@ -1271,7 +1273,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                       ConstrainedBox(
                         constraints: BoxConstraints(maxWidth: maxTextWidth),
                         child: Text(
-                          '套件: ${item.suiteName}',
+                          l10n.testSuiteName(item.suiteName),
                           overflow: TextOverflow.ellipsis,
                           style: theme.textTheme.bodySmall,
                         ),
@@ -1286,7 +1288,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                         ),
                       ),
                     if (item.executionTime != null)
-                      Text('${item.executionTime!.toStringAsFixed(3)} 秒', style: theme.textTheme.bodySmall),
+                      Text(l10n.testCaseDurationSeconds(item.executionTime!.toStringAsFixed(3)), style: theme.textTheme.bodySmall),
                   ],
                 ),
                 if (item.jobId != null) ...[
@@ -1295,7 +1297,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                     alignment: Alignment.centerLeft,
                     child: OutlinedButton.icon(
                       icon: const Icon(Icons.terminal, size: 16),
-                      label: Text('工作 #${item.jobId}'),
+                      label: Text(l10n.testJobId(item.jobId)),
                       style: OutlinedButton.styleFrom(
                         visualDensity: VisualDensity.compact,
                         minimumSize: const Size(48, 48),
@@ -1324,7 +1326,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                           TurnChevron(open: isExpanded, size: 20),
                           const SizedBox(width: 6),
                           Text(
-                            '錯誤追蹤與輸出',
+                            l10n.errorTraceAndOutput,
                             style: theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.bold),
                           ),
                         ],
@@ -1334,7 +1336,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                   ExpandSection(expanded: isExpanded, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     if (item.stackTrace != null && item.stackTrace!.isNotEmpty) ...[
                       const SizedBox(height: 4),
-                      Text('錯誤堆疊 (Stacktrace):', style: theme.textTheme.labelSmall),
+                      Text(l10n.errorStacktrace, style: theme.textTheme.labelSmall),
                       const SizedBox(height: 4),
                       Container(
                         width: double.infinity,
@@ -1345,6 +1347,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                         ),
                         child: SelectableText(
                           _truncateOutput(item.stackTrace!),
+                          textDirection: TextDirection.ltr,
                           style: const TextStyle(
                             fontFamily: codeFontFamily,
                             fontFamilyFallback: ['Menlo', 'monospace'],
@@ -1355,7 +1358,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                     ],
                     if (item.systemOutput != null && item.systemOutput!.isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      Text('系統輸出 (System Output):', style: theme.textTheme.labelSmall),
+                      Text(l10n.systemOutput, style: theme.textTheme.labelSmall),
                       const SizedBox(height: 4),
                       Container(
                         width: double.infinity,
@@ -1366,6 +1369,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                         ),
                         child: SelectableText(
                           _truncateOutput(item.systemOutput!),
+                          textDirection: TextDirection.ltr,
                           style: const TextStyle(
                             fontFamily: codeFontFamily,
                             fontFamilyFallback: ['Menlo', 'monospace'],
@@ -1402,16 +1406,16 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
             padding: EdgeInsets.fromLTRB(gutter, 24, gutter, 24 + MediaQuery.paddingOf(context).bottom),
             children: [
               if (_isInProgress)
-                const EmptyState('測試進行中', detail: 'Pipeline 正在執行，尚未產生完整測試報告。', icon: Icons.schedule)
+                EmptyState(l10n.testsInProgress, detail: l10n.pipelineTestReportPending, icon: Icons.schedule)
               else
                 EmptyState(
-                  '無測試報告',
-                  detail: '此 Pipeline 尚未上傳 JUnit 測試報告，或報告已過期／無權限存取。',
+                  l10n.noTestReport,
+                  detail: l10n.junitReportMissing,
                   icon: Icons.rule_folder_outlined,
                   action: TextButton.icon(
                     onPressed: () => endSessionFrom(context),
                     icon: const Icon(Icons.switch_account),
-                    label: const Text('切換帳號'),
+                    label: Text(l10n.switchAccount),
                   ),
                 ),
             ],
@@ -1421,7 +1425,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
       return FailureNotice(
         _summaryError!,
         account: widget.account,
-        resourceLabel: '${widget.project.path} · Pipeline #${widget.pipelineId} 測試報告',
+        resourceLabel: l10n.pipelineTestReportTitle(widget.project.path, widget.pipelineId),
         onSwitchAccount: endSessionFrom(context),
         onRetry: refresh,
       );
@@ -1436,9 +1440,9 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
           padding: EdgeInsets.fromLTRB(gutter, 24, gutter, 24 + MediaQuery.paddingOf(context).bottom),
           children: [
             if (_isInProgress)
-              const EmptyState('測試進行中', detail: 'Pipeline 正在執行，尚未產生完整測試報告。', icon: Icons.schedule)
+              EmptyState(l10n.testsInProgress, detail: l10n.pipelineTestReportPending, icon: Icons.schedule)
             else
-              const EmptyState('無測試報告', detail: '此 Pipeline 沒有回報任何測試案例。', icon: Icons.rule_folder_outlined),
+              EmptyState(l10n.noTestReport, detail: l10n.pipelineNoTestCases, icon: Icons.rule_folder_outlined),
           ],
         ),
       );
@@ -1477,7 +1481,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          '已載入 ${_cases.length} / ${summary.totalCount} 筆測試案例（部分載入）',
+                          l10n.testCasesPartialLoaded(_cases.length, summary.totalCount),
                           style: const TextStyle(fontSize: 12),
                         ),
                       ),
@@ -1493,7 +1497,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
           else if (filteredCases.isEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 24),
-              child: EmptyState('沒有符合「${_filterLabel(_filter)}」的已載入測試案例'),
+              child: EmptyState(l10n.noLoadedTestsForFilter(_filterLabel(_filter))),
             )
           else
             for (final c in filteredCases)
@@ -1507,7 +1511,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
               child: FailureNotice(
                 _casesError!,
                 account: widget.account,
-                resourceLabel: '${widget.project.path} · 測試案例分頁',
+                resourceLabel: l10n.testCasesPageTitle(widget.project.path),
                 onSwitchAccount: endSessionFrom(context),
                 onRetry: _cases.isEmpty ? () => _loadCases(_generation) : _loadMore,
               ),
@@ -1522,7 +1526,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Text(
-                  '已達單次預覽上限（$maxCasesBudget 筆）。如需檢視完整測試報告，請至 GitLab 網頁端或各工作 Log 檢視。',
+                  l10n.testPreviewLimitReached(maxCasesBudget),
                   style: Theme.of(context).textTheme.bodySmall,
                   textAlign: TextAlign.center,
                 ),
@@ -1532,7 +1536,7 @@ class PipelineTestsViewState extends State<PipelineTestsView> with AutomaticKeep
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: TextButton.icon(
                   icon: const Icon(Icons.expand_more),
-                  label: const Text('載入更多測試案例'),
+                  label: Text(l10n.loadMoreTestCases),
                   onPressed: _loadMore,
                 ),
               ),
@@ -1673,11 +1677,11 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       return;
     }
     final jobId = _jobId;
-    final label = action == 'retry' ? '重試工作' : action == 'play' ? '啟動手動工作' : '取消工作';
+    final label = action == 'retry' ? l10n.retryJob : action == 'play' ? l10n.startManualJob : l10n.cancelJob;
     // Confirmation prevents duplicate dialogs but is not a running operation.
     setState(() => _confirming = true);
     try {
-      if (!await confirmAction(context, '$label？', '${widget.project.path}\nJob #$jobId')) { return; }
+      if (!await confirmAction(context, l10n.confirmActionQuestion(label), '${widget.project.path}\nJob #$jobId')) { return; }
       if (!mounted || jobId != _jobId) { return; }
       setState(() { _confirming = false; _busy = true; });
       final result = await widget.api.jobAction(widget.project.id, jobId, action);
@@ -1716,7 +1720,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       return MetaChip(label, icon: Icons.rocket_launch_outlined);
     }
     return MetaChip(label, icon: Icons.rocket_launch_outlined, key: const ValueKey('job-pipeline-link'),
-      semanticLabel: '開啟 $label', onTap: () {
+      semanticLabel: l10n.openLabeledItem(label), onTap: () {
         if (!_ownerCurrent) return;
         final owner = widget;
         unawaited(Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => PipelinePage(
@@ -1931,7 +1935,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
     final section = _trace.sections[index];
     final collapsed = _collapsed(index);
     final duration = section.durationSeconds;
-    final title = duration == null ? section.label : '${section.label} · $duration 秒';
+    final title = duration == null ? section.label : l10n.labeledDurationSeconds(section.label, duration);
     return Semantics(
       button: true,
       expanded: !collapsed,
@@ -1997,9 +2001,9 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('手動工作等待啟動', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                    Text(l10n.manualJobWaiting, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 2),
-                    Text('需手動觸發執行此 CI 工作', style: Theme.of(context).textTheme.bodySmall),
+                    Text(l10n.manualJobTriggerRequired, style: Theme.of(context).textTheme.bodySmall),
                   ],
                 ),
               ),
@@ -2008,7 +2012,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 key: ValueKey('job-banner-play-$_jobId'),
                 onPressed: _busy || _confirming ? null : () => _action('play'),
                 icon: const Icon(Icons.play_arrow, size: 18),
-                label: const Text('啟動工作'),
+                label: Text(l10n.startJob),
               ),
             ],
           ),
@@ -2031,12 +2035,12 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('工作執行失敗', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                    Text(l10n.jobRunFailed, style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 2),
                     Text(
                       failureReason != null && '$failureReason'.isNotEmpty
-                          ? '原因：$failureReason'
-                          : '點擊重試以重新啟動此工作',
+                          ? l10n.jobFailureReason(failureReason)
+                          : l10n.tapRetryToRestartJob,
                       style: Theme.of(context).textTheme.bodySmall,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -2049,7 +2053,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 key: ValueKey('job-banner-retry-$_jobId'),
                 onPressed: _busy || _confirming ? null : () => _action('retry'),
                 icon: const Icon(Icons.replay, size: 18),
-                label: const Text('重試此工作'),
+                label: Text(l10n.retryThisJob),
               ),
             ],
           ),
@@ -2072,11 +2076,11 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      isRunning ? '工作執行中...' : '工作等待排程中...',
+                      isRunning ? l10n.jobRunningEllipsis : l10n.jobWaitingSchedule,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 2),
-                    Text('正在處理 CI 流程，可隨時取消', style: Theme.of(context).textTheme.bodySmall),
+                    Text(l10n.pipelineInProgressCancelable, style: Theme.of(context).textTheme.bodySmall),
                   ],
                 ),
               ),
@@ -2085,7 +2089,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 key: ValueKey('job-banner-cancel-$_jobId'),
                 onPressed: _busy || _confirming ? null : () => _action('cancel'),
                 icon: const Icon(Icons.cancel_outlined, size: 18, color: Colors.red),
-                label: const Text('取消此工作', style: TextStyle(color: Colors.red)),
+                label: Text(l10n.cancelThisJob, style: TextStyle(color: Colors.red)),
               ),
             ],
           ),
@@ -2103,13 +2107,13 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
         uri: widget.account.instance.projectWeb('${widget.project.path}/-/jobs/$_jobId'),
         ownerKey: (widget.account.key, widget.api, widget.project.id, _jobId, widget.generation),
         isCurrent: () => _ownerCurrent),
-        IconButton(tooltip: '重新讀取 Log', onPressed: _loading || _busy || _confirming ? null : _load, icon: const Icon(Icons.refresh)),
-        PopupMenuButton<String>(tooltip: '工作操作', enabled: !_busy && !_confirming && !_downloading && _job != null, onSelected: _action, itemBuilder: (_) => [
-          const PopupMenuItem(value: 'retry', child: Text('重試工作')),
-          if (_job?['status'] == 'manual') const PopupMenuItem(value: 'play', child: Text('啟動手動工作')),
-          const PopupMenuItem(value: 'cancel', child: Text('取消工作')),
+        IconButton(tooltip: l10n.reloadJobLog, onPressed: _loading || _busy || _confirming ? null : _load, icon: const Icon(Icons.refresh)),
+        PopupMenuButton<String>(tooltip: l10n.jobActions, enabled: !_busy && !_confirming && !_downloading && _job != null, onSelected: _action, itemBuilder: (_) => [
+          PopupMenuItem(value: 'retry', child: Text(l10n.retryJob)),
+          if (_job?['status'] == 'manual') PopupMenuItem(value: 'play', child: Text(l10n.startManualJob)),
+          PopupMenuItem(value: 'cancel', child: Text(l10n.cancelJob)),
           if (valueObject(_job ?? {}, 'artifacts_file')['filename'] != null)
-            const PopupMenuItem(value: 'artifacts', child: Text('下載產物')),
+            PopupMenuItem(value: 'artifacts', child: Text(l10n.downloadArtifacts)),
         ]),
       ]);
     // The log owns the screen while reading: title, status and the action
@@ -2127,10 +2131,10 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 if (valueText(_job!, 'stage').isNotEmpty) MetaChip(valueText(_job!, 'stage'), icon: Icons.layers_outlined),
                 if (valueText(_job!, 'ref').isNotEmpty) MetaChip(valueText(_job!, 'ref'), icon: Icons.alt_route, mono: true),
               ],
-              FilterChip(label: const Text('10 秒更新'), selected: _auto, onSelected: (value) {
+              FilterChip(label: Text(l10n.refreshEveryTenSeconds), selected: _auto, onSelected: (value) {
                 setState(() => _auto = value); _schedule();
               }),
-              FilterChip(label: const Text('跟隨尾端'), selected: _follow, onSelected: (value) => setState(() => _follow = value)),
+              FilterChip(label: Text(l10n.followLogTail), selected: _follow, onSelected: (value) => setState(() => _follow = value)),
             ])),
           if (_job != null) _buildJobActionCard(valueText(_job!, 'status')),
         ])),
@@ -2143,12 +2147,12 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                   key: ValueKey('job-log-search-$_jobId'),
                   controller: _searchController,
                   decoration: InputDecoration(
-                    hintText: '搜尋已載入的 Log',
+                    hintText: l10n.searchLoadedLog,
                     prefixIcon: const Icon(Icons.search),
                     suffixIcon: _query.isNotEmpty
                         ? IconButton(
                             icon: const Icon(Icons.clear),
-                            tooltip: '清除搜尋',
+                            tooltip: l10n.clearSearch,
                             constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                             onPressed: _clearSearch,
                           )
@@ -2174,13 +2178,13 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 Text(
                   _matches.isNotEmpty ? '${_currentMatch + 1}/${_matches.length}' : '0/0',
                   semanticsLabel: _matches.isNotEmpty
-                      ? '第 ${_currentMatch + 1} 個相符項目，共 ${_matches.length} 個'
-                      : '無相符項目',
+                      ? l10n.logMatchPosition(_currentMatch + 1, _matches.length)
+                      : l10n.noLogMatches,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 IconButton(
                   icon: const Icon(Icons.keyboard_arrow_up),
-                  tooltip: '上一個相符項目',
+                  tooltip: l10n.previousLogMatch,
                   constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                   onPressed: _matches.isNotEmpty
                       ? () {
@@ -2191,7 +2195,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                 ),
                 IconButton(
                   icon: const Icon(Icons.keyboard_arrow_down),
-                  tooltip: '下一個相符項目',
+                  tooltip: l10n.nextLogMatch,
                   constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                   onPressed: _matches.isNotEmpty
                       ? () {
@@ -2209,10 +2213,10 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
           account: widget.account, resourceLabel: '${widget.project.path} · Job #$_jobId',
           onSwitchAccount: endSessionFrom(context)),
         Expanded(child: noLog && !_loading && _error == null
-          ? SingleChildScrollView(child: EmptyState('尚無 Log',
-              detail: _job?['status'] == 'manual' ? '工作尚未啟動，可從右上角操作選單啟動。' : '工作開始執行後，紀錄會顯示在這裡。',
+          ? SingleChildScrollView(child: EmptyState(l10n.noLogYet,
+              detail: _job?['status'] == 'manual' ? l10n.jobNotStartedMenuHint : l10n.jobLogAppearsAfterStart,
               icon: Icons.terminal))
-          : SelectionArea(child: ListView.builder(controller: _scroll,
+          : Directionality(textDirection: TextDirection.ltr, child: SelectionArea(child: ListView.builder(controller: _scroll,
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               itemCount: rows.length, itemBuilder: (context, index) {
                 final row = rows[index];
@@ -2247,7 +2251,7 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
                   child: lineWidget,
                 );
               },
-            ))),
+            )))),
       ])))));
   }
 }
@@ -2486,15 +2490,15 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
           child: Text(formatByteCount(widget.suggestedSize!), style: Theme.of(context).textTheme.bodySmall)),
         const SizedBox(height: 16),
         if (_error != null) FailureNotice(_error!, onRetry: () { unawaited(_retry()); }, account: widget.account,
-          resourceLabel: '${widget.projectPath} · Job #${widget.jobId} 產物', onSwitchAccount: endSessionFrom(context)),
+          resourceLabel: l10n.jobArtifactsTitle(widget.projectPath, widget.jobId), onSwitchAccount: endSessionFrom(context)),
         if (_done) ...[
-          Text('已下載 ${_savedName ?? widget.suggestedName} · ${formatByteCount(_savedBytes)}'),
+          Text(l10n.artifactDownloadedSummary(_savedName ?? widget.suggestedName, formatByteCount(_savedBytes))),
           const SizedBox(height: 12),
           Builder(builder: (buttonContext) => FilledButton(
             onPressed: _sharing ? null : () => unawaited(_share(buttonContext)),
-            child: const Text('開啟／分享'),
+            child: Text(l10n.openOrShare),
           )),
-          TextButton(onPressed: () => unawaited(openExternal(context, widget.webUri)), child: const Text('在 GitLab 開啟')),
+          TextButton(onPressed: () => unawaited(openExternal(context, widget.webUri)), child: Text(l10n.openInGitlab)),
         ],
         if (_error == null && !_done) ...[
           ValueListenableBuilder<(int, int?)>(
@@ -2506,8 +2510,8 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
               final bytes = total == null ? formatByteCount(received) : '${formatByteCount(received)} / ${formatByteCount(total)}';
               return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                 Semantics(
-                  label: '產物下載進度',
-                  value: progress != null ? '${(progress * 100).toInt()}%' : '下載中',
+                  label: l10n.artifactDownloadProgress,
+                  value: progress != null ? '${(progress * 100).toInt()}%' : l10n.downloading,
                   child: LinearProgressIndicator(key: const Key('artifact-progress'), minHeight: 4, value: progress),
                 ),
                 const SizedBox(height: 8),
@@ -2515,7 +2519,7 @@ class _ArtifactDownloadSheetState extends State<_ArtifactDownloadSheet> {
               ]);
             },
           ),
-          Align(alignment: Alignment.centerRight, child: TextButton(onPressed: _cancel, child: const Text('取消'))),
+          Align(alignment: Alignment.centerRight, child: TextButton(onPressed: _cancel, child: Text(l10n.cancelAction))),
         ],
       ],
     )));

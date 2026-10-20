@@ -10,25 +10,29 @@ import 'records_feed.dart';
 import '../../core/suggestion.dart';
 import 'suggestion_card.dart';
 
+import '../../l10n/l10n.dart';
 bool _discussionResolved(Json discussion) {
   final resolvable = valueObjects(discussion, 'notes').where((note) => note['resolvable'] == true);
   return resolvable.isNotEmpty && resolvable.every((note) => note['resolved'] == true);
 }
 
 String _discussionSummary(List<Json> items, {required bool partial}) {
-  final line = '${partial ? '已載入 ' : ''}${items.length} 則討論';
+  final line = l10n.threadCountLabel(partial ? l10n.loadedPrefix : '', items.length);
   final resolvable = items.any((item) => valueObjects(item, 'notes').any((note) => note['resolvable'] == true));
   if (!partial && !resolvable) { return line; }
-  return '$line · ${items.where(_discussionResolved).length} 已解決';
+  return l10n.resolvedOnLine(line, items.where(_discussionResolved).length);
 }
 
 enum DiscussionFilterMode {
-  all('全部活動'),
-  comments('僅評論'),
-  system('僅動態');
+  all,
+  comments,
+  system;
 
-  const DiscussionFilterMode(this.label);
-  final String label;
+  String get label => switch (this) {
+    DiscussionFilterMode.all => l10n.allActivity,
+    DiscussionFilterMode.comments => l10n.commentsOnly,
+    DiscussionFilterMode.system => l10n.activityOnly,
+  };
 }
 
 bool _isSystemDiscussion(Json discussion) {
@@ -84,20 +88,20 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
     if (_unresolvedOnly) {
       switch (_filterMode) {
         case DiscussionFilterMode.all:
-          return '沒有未解決的討論';
+          return l10n.noUnresolvedThreads;
         case DiscussionFilterMode.comments:
-          return '沒有未解決的使用者評論';
+          return l10n.noUnresolvedUserComments;
         case DiscussionFilterMode.system:
-          return '沒有未解決的系統動態';
+          return l10n.noUnresolvedSystemNotes;
       }
     }
     switch (_filterMode) {
       case DiscussionFilterMode.all:
-        return '還沒有討論';
+        return l10n.noThreadsYet;
       case DiscussionFilterMode.comments:
-        return '沒有符合條件的使用者評論';
+        return l10n.noMatchingUserComments;
       case DiscussionFilterMode.system:
-        return '沒有符合條件的系統動態';
+        return l10n.noMatchingSystemNotes;
     }
   }
 
@@ -119,12 +123,12 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
   Future<void> _compose({Json? note, String? discussion, bool thread = false}) async {
     if (_busy) { return; }
     final saved = await openEditor(context, account: widget.account,
-      title: note != null ? '編輯留言' : discussion != null ? '回覆討論' : thread ? '新增討論串' : '新增留言',
+      title: note != null ? l10n.editComment : discussion != null ? l10n.replyToThread : thread ? l10n.newThread : l10n.newComment,
       resource: '${path.join('/')}/${discussion ?? 'root'}/${note?['id'] ?? (thread ? 'thread-new' : 'new')}',
       subtitle: '${widget.project.path} · ${widget.resource == 'issues' ? '#' : '!'}${widget.iid}', fields: [
-        EditField('body', '留言內容', required: true, lines: 9, markdown: true, quickActions: true,
+        EditField('body', l10n.commentBody, required: true, lines: 9, markdown: true, quickActions: true,
           value: note == null ? '' : valueText(note, 'body'),
-          hint: '支援 Markdown；以 / 開頭的行可能執行 GitLab quick actions'),
+          hint: l10n.markdownQuickActionsHint),
       ], api: widget.api, projectId: widget.project.id, projectPath: widget.project.path, save: (values) async {
         if (note != null) {
           final endpoint = discussion == null ? [...path, 'notes', '${note['id']}']
@@ -146,7 +150,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
     widget.onChanged?.call();
   }
   Future<void> _delete(Json note, String? discussion) async {
-    if (_busy || !await confirmAction(context, '刪除留言？', '此操作無法復原。')) { return; }
+    if (_busy || !await confirmAction(context, l10n.deleteCommentConfirm, l10n.actionCannotBeUndone)) { return; }
     if (!mounted) { return; }
     setState(() => _busy = true);
     try {
@@ -179,7 +183,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
     final author = '@${valueText(valueObject(first, 'author'), 'username')}';
     return Semantics(
       key: ValueKey('discussion-header-$id'),
-      button: true, expanded: isOpen, hint: isOpen ? '收合討論' : '展開討論',
+      button: true, expanded: isOpen, hint: isOpen ? l10n.collapseThread : l10n.expandThread,
       child: InkWell(
         onTap: () => _toggle(id),
         child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 48), child: Padding(
@@ -195,9 +199,9 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
             const SizedBox(height: 4),
             Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
               DecoratedBox(decoration: BoxDecoration(color: Theme.of(context).colorScheme.secondaryContainer,
-                borderRadius: BorderRadius.circular(8)), child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2), child: Text('已解決'))),
-              Text('${notes.length} 則', style: Theme.of(context).textTheme.bodySmall),
+                borderRadius: BorderRadius.circular(8)), child: Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2), child: Text(l10n.resolvedLabel))),
+              Text(l10n.noteCount(notes.length), style: Theme.of(context).textTheme.bodySmall),
             ]),
           ]),
         )),
@@ -226,9 +230,9 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
           Expanded(child: Text(relativeDate(valueText(notes[index], 'created_at')), maxLines: 1,
             style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant))),
           if (notes[index]['system'] != true && valueInt(valueObject(notes[index], 'author'), 'id') == widget.account.user.id)
-            PopupMenuButton<String>(tooltip: '留言操作', enabled: !_busy,
+            PopupMenuButton<String>(tooltip: l10n.commentActions, enabled: !_busy,
               onSelected: (action) => action == 'edit' ? _compose(note: notes[index], discussion: discussionId) : _delete(notes[index], discussionId),
-              itemBuilder: (_) => const [PopupMenuItem(value: 'edit', child: Text('編輯留言')), PopupMenuItem(value: 'delete', child: Text('刪除留言'))]),
+              itemBuilder: (_) => [PopupMenuItem(value: 'edit', child: Text(l10n.editComment)), PopupMenuItem(value: 'delete', child: Text(l10n.deleteComment))]),
         ]),
         if (notes[index]['position'] is Json) Text('${valueText(valueObject(notes[index], 'position'), 'new_path')} · '
           '${valueObject(notes[index], 'position')['new_line'] ?? valueObject(notes[index], 'position')['old_line'] ?? ''}',
@@ -252,10 +256,10 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
       if (isThread) Wrap(spacing: 8, children: [
         if (textPosition != null && widget.resource == 'merge_requests') TextButton.icon(
           onPressed: _busy ? null : () => _openDiff(textPosition),
-          icon: const Icon(Icons.code, size: 18), label: const Text('查看程式碼')),
-        TextButton.icon(onPressed: _busy ? null : () => _compose(discussion: discussionId), icon: const Icon(Icons.reply, size: 18), label: const Text('回覆')),
+          icon: const Icon(Icons.code, size: 18), label: Text(l10n.viewCode)),
+        TextButton.icon(onPressed: _busy ? null : () => _compose(discussion: discussionId), icon: const Icon(Icons.reply, size: 18), label: Text(l10n.replyAction)),
         if (resolvable) TextButton.icon(onPressed: _busy ? null : () => _resolve(discussion, !resolved),
-          icon: Icon(resolved ? Icons.undo : Icons.check, size: 18), label: Text(resolved ? '重新開啟討論' : '解決討論')),
+          icon: Icon(resolved ? Icons.undo : Icons.check, size: 18), label: Text(resolved ? l10n.reopenThread : l10n.resolveThread)),
       ]),
     ]);
   }
@@ -275,7 +279,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
       // 其他版本 instead of anchored on the row that matches its valid half.
       final lines = diffPositionLines(position);
       await Navigator.of(context).push<void>(MaterialPageRoute<void>(builder: (_) => Scaffold(
-        appBar: AppBar(title: const Text('差異')),
+        appBar: AppBar(title: Text(l10n.changesLink)),
         body: ReviewDiffPage(
           account: widget.account, api: widget.api, project: widget.project, iid: widget.iid, expectedSha: sha,
           initialTarget: DiffTarget(
@@ -298,9 +302,9 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
   }
   @override
   Widget build(BuildContext context) => Column(children: [
-    Expanded(child: RecordsFeed(key: _feed, identity: '${path.join('/')}/discussions', empty: '還沒有討論',
+    Expanded(child: RecordsFeed(key: _feed, identity: '${path.join('/')}/discussions', empty: l10n.noThreadsYet,
       filteredEmpty: _filteredEmptyText,
-      account: widget.account, resourceLabel: '${widget.project.path} · 討論',
+      account: widget.account, resourceLabel: l10n.pathThreadTitle(widget.project.path),
       onSwitchAccount: endSessionFrom(context),
       load: (next) => widget.api.records([...path, 'discussions'], next: next),
       visible: _isItemVisible,
@@ -331,7 +335,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
                     });
                   },
                   icon: Icon(allResolvedOpen ? Icons.unfold_less : Icons.unfold_more, size: 18),
-                  label: Text(allResolvedOpen ? '收合已解決' : '展開已解決'),
+                  label: Text(allResolvedOpen ? l10n.collapseResolved : l10n.expandResolved),
                 ),
             ]),
             const SizedBox(height: 8),
@@ -353,7 +357,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
                   ],
                   FilterChip(
                     key: const ValueKey('filter-chip-unresolved'),
-                    label: const Text('只看未解決'),
+                    label: Text(l10n.unresolvedOnly),
                     selected: _unresolvedOnly,
                     showCheckmark: false,
                     onSelected: (value) => setState(() => _unresolvedOnly = value),
@@ -383,11 +387,11 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
         Expanded(flex: 3, child: FilledButton.icon(
           style: FilledButton.styleFrom(alignment: Alignment.centerLeft),
           onPressed: _busy ? null : () => _compose(), icon: const Icon(Icons.add_comment_outlined),
-          label: const Text('留言', maxLines: 1, overflow: TextOverflow.ellipsis))),
+          label: Text(l10n.addComment, maxLines: 1, overflow: TextOverflow.ellipsis))),
         const SizedBox(width: 8),
         Flexible(flex: 2, child: OutlinedButton.icon(onPressed: _busy ? null : () => _compose(thread: true),
           icon: const Icon(Icons.forum_outlined, size: 18),
-          label: const Text('新增討論串', maxLines: 1, overflow: TextOverflow.ellipsis))),
+          label: Text(l10n.newThread, maxLines: 1, overflow: TextOverflow.ellipsis))),
       ]))),
     ),
   ]);

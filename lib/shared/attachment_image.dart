@@ -16,20 +16,21 @@ import 'attachment_ref.dart';
 import 'external_link.dart';
 import 'workspace_ui.dart';
 
+import '../l10n/l10n.dart';
 const _pixelLimit = 24000000;
 const _cacheWidthLimit = 2048;
 
-const _decodeFailure = ApiFailure(
+ApiFailure get _decodeFailure => ApiFailure(
   FailureKind.unsupported,
-  title: '無法解碼圖片',
-  detail: '伺服器有回傳這份附件，但內容不是可解碼的圖片。',
+  title: l10n.cannotDecodeImage,
+  detail: l10n.attachmentNotDecodableImage,
 );
 
 String attachmentImageLabel(String? alt, [ApiFailure? failure]) {
-  final name = alt != null && alt.isNotEmpty ? alt : '附加圖片（在 GitLab 開啟）';
+  final name = alt != null && alt.isNotEmpty ? alt : l10n.attachedImageOpenInGitlab;
   if (failure == null) return name;
-  final reason = failure.kind == FailureKind.tooLarge ? '超過大小上限' : failure.title;
-  return '$name 無法載入附件（$reason）';
+  final reason = failure.kind == FailureKind.tooLarge ? l10n.exceedsSizeLimit : failure.title;
+  return l10n.attachmentLoadFailedNamed(name, reason);
 }
 
 Widget attachmentIconRow(String label) => Padding(
@@ -219,7 +220,7 @@ class _AttachmentImageState extends State<AttachmentImage> {
 
   Widget _failureButton(Widget child, ApiFailure failure) => Semantics(
     button: true,
-    label: '附件載入失敗，查看詳情',
+    label: l10n.attachmentLoadFailedDetails,
     child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _openFailure(failure),
@@ -255,17 +256,17 @@ class _AttachmentImageState extends State<AttachmentImage> {
   @override
   Widget build(BuildContext context) {
     if (!_allowed || _phase == _Phase.capped) {
-      return attachmentIconRow('附件超過本頁顯示上限');
+      return attachmentIconRow(l10n.attachmentExceedsDisplayLimit);
     }
-    if (_phase == _Phase.overBytes) return attachmentIconRow('超過大小上限');
-    if (_phase == _Phase.oversize) return attachmentIconRow('圖片尺寸超過預覽上限');
+    if (_phase == _Phase.overBytes) return attachmentIconRow(l10n.exceedsSizeLimit);
+    if (_phase == _Phase.oversize) return attachmentIconRow(l10n.imageExceedsPreviewLimit2);
     final failure = _failure;
     if (_phase == _Phase.failed && failure != null) {
       return _failureButton(attachmentImageFallback(widget.alt, failure), failure);
     }
     if (_phase != _Phase.ready) {
       return Semantics(
-        label: '附件載入中',
+        label: l10n.attachmentLoading,
         child: const ExcludeSemantics(
           child: Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
@@ -276,7 +277,7 @@ class _AttachmentImageState extends State<AttachmentImage> {
     }
     final bytes = widget.budget.cachedBytes(_ref);
     if (bytes == null) {
-      return _failureButton(attachmentIconRow('無法解碼圖片'), _decodeFailure);
+      return _failureButton(attachmentIconRow(l10n.cannotDecodeImage), _decodeFailure);
     }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -296,7 +297,7 @@ class _AttachmentImageState extends State<AttachmentImage> {
               if (frame == null) return child;
               return GestureDetector(onTap: _open, child: child);
             },
-            errorBuilder: (_, _, _) => _failureButton(attachmentIconRow('無法解碼圖片'), _decodeFailure),
+            errorBuilder: (_, _, _) => _failureButton(attachmentIconRow(l10n.cannotDecodeImage), _decodeFailure),
           ),
         );
       }),
@@ -369,13 +370,13 @@ class _AttachmentViewerState extends State<AttachmentViewer> {
           Builder(
             builder: (buttonContext) => IconButton(
               icon: const Icon(Icons.share_outlined),
-              tooltip: '分享',
+              tooltip: l10n.share,
               onPressed: _sharing ? null : () => unawaited(_share(buttonContext)),
             ),
           ),
           if (opened != null) TextButton(
             onPressed: () => unawaited(openExternal(context, opened)),
-            child: const Text('在 GitLab 開啟'),
+            child: Text(l10n.openInGitlab),
           ),
         ],
       ),
@@ -385,7 +386,7 @@ class _AttachmentViewerState extends State<AttachmentViewer> {
           cacheWidth: _cacheWidthLimit,
           semanticLabel: widget.semanticLabel,
           fit: BoxFit.contain,
-          errorBuilder: (_, _, _) => attachmentIconRow('無法解碼圖片'),
+          errorBuilder: (_, _, _) => attachmentIconRow(l10n.cannotDecodeImage),
         ),
       )),
     );

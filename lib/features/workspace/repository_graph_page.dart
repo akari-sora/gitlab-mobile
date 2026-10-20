@@ -11,6 +11,7 @@ import 'commit_page.dart';
 import 'picker_sheet.dart';
 import 'record_controller.dart';
 
+import '../../l10n/l10n.dart';
 class RepositoryGraphPage extends StatefulWidget {
   const RepositoryGraphPage({
     super.key,
@@ -118,7 +119,7 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
       projectId: projectId,
       source: PickerSource.branches,
       multi: false,
-      title: '選擇分支',
+      title: l10n.selectBranch,
       initial: [PickerChoice(id: _activeRef, name: _activeRef)],
     );
     if (!mounted ||
@@ -176,10 +177,10 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('提交圖譜'),
+      title: Text(l10n.commitGraph),
       actions: [
         IconButton(
-          tooltip: '重新整理',
+          tooltip: l10n.refreshAction,
           onPressed: () => unawaited(_records.refresh()),
           icon: const Icon(Icons.refresh),
         ),
@@ -213,11 +214,11 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
           textInputAction: TextInputAction.go,
           onSubmitted: _applyRef,
           decoration: InputDecoration(
-            labelText: '分支、標籤或 SHA',
+            labelText: l10n.branchTagOrSha,
             prefixIcon: const Icon(Icons.commit),
             suffixIcon: IconButton(
               key: const Key('graph-load-ref'),
-              tooltip: '載入版本',
+              tooltip: l10n.loadRevision,
               onPressed: () => _applyRef(_ref.text),
               icon: const Icon(Icons.arrow_forward),
             ),
@@ -232,19 +233,19 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
               key: const Key('graph-pick-branch'),
               onPressed: _pickBranch,
               icon: const Icon(Icons.alt_route, size: 18),
-              label: const Text('選擇分支'),
+              label: Text(l10n.selectBranch),
             ),
             OutlinedButton.icon(
               key: const Key('graph-pick-tag'),
               onPressed: _pickTag,
               icon: const Icon(Icons.sell_outlined, size: 18),
-              label: const Text('選擇標籤'),
+              label: Text(l10n.selectTag),
             ),
           ],
         ),
         const SizedBox(height: 8),
         Text(
-          '顯示可從 $_activeRef 到達的提交歷史；不代表所有分支的完整圖譜。',
+          l10n.commitHistoryReachable(_activeRef),
           style: Theme.of(context).textTheme.bodySmall,
         ),
       ],
@@ -259,7 +260,7 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
           FailureNotice(
             _records.error!,
             account: widget.account,
-            resourceLabel: '${widget.project.path} · $_activeRef · 提交圖譜',
+            resourceLabel: l10n.pathRefCommitGraph(widget.project.path, _activeRef),
             onRetry: _records.retry,
             onSwitchAccount: endSessionFrom(context),
           ),
@@ -267,7 +268,7 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
       );
     }
     if (_records.items.isEmpty) {
-      return const EmptyState('這個版本沒有提交紀錄', icon: Icons.account_tree_outlined);
+      return EmptyState(l10n.revisionNoCommits, icon: Icons.account_tree_outlined);
     }
     late final RepositoryGraphLayout graph;
     try {
@@ -278,7 +279,7 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
           FailureNotice(
             const ApiFailure(FailureKind.invalidResponse),
             account: widget.account,
-            resourceLabel: '${widget.project.path} · $_activeRef · 提交圖譜',
+            resourceLabel: l10n.pathRefCommitGraph(widget.project.path, _activeRef),
             onRetry: _records.refresh,
             onSwitchAccount: endSessionFrom(context),
           ),
@@ -345,9 +346,9 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
                       footer--;
                     }
                     if (capped) {
-                      return const Padding(
+                      return Padding(
                         padding: EdgeInsets.all(16),
-                        child: Text('已載入 300 筆提交。請選擇更接近目標的分支、標籤或 SHA 繼續查看。'),
+                        child: Text(l10n.commitLoadLimit),
                       );
                     }
                     return Padding(
@@ -360,7 +361,7 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
                               ? null
                               : () => unawaited(_records.more()),
                           icon: const Icon(Icons.expand_more),
-                          label: Text(_records.loadingMore ? '載入中…' : '載入較早提交'),
+                          label: Text(_records.loadingMore ? l10n.loading : l10n.loadEarlierCommits),
                         ),
                       ),
                     );
@@ -390,7 +391,7 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
     return Semantics(
       button: true,
       label:
-          '提交 ${row.commit.shortId}，${row.commit.title}${meta.isEmpty ? '' : '，$meta'}',
+          l10n.commitRowLabel(row.commit.shortId, row.commit.title, meta.isEmpty ? '' : l10n.metaSuffix(meta)),
       child: SizedBox(
         height: height,
         child: Row(
@@ -445,7 +446,7 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
                                 if (date.isNotEmpty) TextSpan(text: ' · $date'),
                                 if (row.parents.length > 1)
                                   TextSpan(
-                                    text: ' · ${row.parents.length} 個父提交',
+                                    text: l10n.parentCommitCount(row.parents.length),
                                   ),
                                 if (author.isNotEmpty)
                                   TextSpan(text: ' · $author'),
@@ -490,7 +491,7 @@ class _RepositoryGraphPageState extends State<RepositoryGraphPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                _records.next == null ? '父提交位於目前歷史範圍外' : '尚未載入的父提交',
+                _records.next == null ? l10n.parentOutsideHistory : l10n.parentNotLoaded,
                 style: Theme.of(context).textTheme.labelLarge,
               ),
               const SizedBox(height: 6),
@@ -575,12 +576,12 @@ class _TagPickerSheetState extends State<_TagPickerSheet> {
           children: [
             Expanded(
               child: Text(
-                '選擇標籤',
+                l10n.selectTag,
                 style: Theme.of(context).textTheme.titleLarge,
               ),
             ),
             IconButton(
-              tooltip: '關閉',
+              tooltip: l10n.closeAction,
               onPressed: () => Navigator.pop(context),
               icon: const Icon(Icons.close),
             ),
@@ -592,9 +593,9 @@ class _TagPickerSheetState extends State<_TagPickerSheet> {
         child: TextField(
           controller: _search,
           onChanged: _searchChanged,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             prefixIcon: Icon(Icons.search),
-            hintText: '搜尋標籤',
+            hintText: l10n.searchTagsLabel,
           ),
         ),
       ),
@@ -612,13 +613,13 @@ class _TagPickerSheetState extends State<_TagPickerSheet> {
                     _records.error!,
                     account: widget.account,
                     onRetry: _records.retry,
-                    resourceLabel: '專案標籤',
+                    resourceLabel: l10n.projectTags,
                   ),
                 ],
               );
             }
             if (_records.items.isEmpty) {
-              return const EmptyState('沒有符合的標籤', icon: Icons.sell_outlined);
+              return EmptyState(l10n.noMatchingTags, icon: Icons.sell_outlined);
             }
             return ListView.builder(
               itemCount:
@@ -644,7 +645,7 @@ class _TagPickerSheetState extends State<_TagPickerSheet> {
                     _records.error!,
                     account: widget.account,
                     onRetry: _records.retry,
-                    resourceLabel: '專案標籤',
+                    resourceLabel: l10n.projectTags,
                   );
                 }
                 return TextButton.icon(
@@ -652,7 +653,7 @@ class _TagPickerSheetState extends State<_TagPickerSheet> {
                       ? null
                       : () => unawaited(_records.more()),
                   icon: const Icon(Icons.expand_more),
-                  label: Text(_records.loadingMore ? '載入中…' : '載入更多'),
+                  label: Text(_records.loadingMore ? l10n.loading : l10n.loadMore),
                 );
               },
             );

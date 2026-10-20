@@ -1,6 +1,7 @@
 import 'failure.dart';
 import 'models.dart';
 
+import '../l10n/l10n.dart';
 typedef SnippetJson = Map<String, dynamic>;
 
 const _allSnippetVisibilities = ['private', 'internal', 'public'];
@@ -12,9 +13,9 @@ List<String> snippetVisibilitiesForHost(String host) =>
     : _allSnippetVisibilities;
 
 String snippetVisibilityLabel(String value) => switch (value) {
-  'private' => '私人',
-  'internal' => '內部',
-  'public' => '公開',
+  'private' => l10n.snippetVisibilityPrivate,
+  'internal' => l10n.visibilityInternal,
+  'public' => l10n.visibilityPublic,
   _ => value,
 };
 
@@ -68,8 +69,8 @@ final class ProjectSnippet {
       authorName: author is SnippetJson
           ? optionalString(author, 'name') ??
                 optionalString(author, 'username') ??
-                '未知作者'
-          : '未知作者',
+                l10n.unknownAuthor
+          : l10n.unknownAuthor,
       filePaths: List.unmodifiable(paths),
       hasExplicitFiles: files != null,
     );
@@ -95,10 +96,10 @@ final class ProjectSnippet {
 
   void requireProject(int expectedProjectId) {
     if (projectId != expectedProjectId) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.invalidResponse,
-        title: 'Snippet 專案身分不一致',
-        detail: '伺服器回傳了其他專案的 Snippet，已停止顯示與寫入。',
+        title: l10n.snippetProjectIdentityMismatch,
+        detail: l10n.snippetFromOtherProjectStopped,
       );
     }
   }
@@ -239,10 +240,10 @@ Map<String, dynamic> updateSnippetPayload({
     final touches = <String>{path};
     if (previous != null) touches.add(previous);
     if (touches.any(touched.contains)) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.validation,
-        title: '請分開修改同一個檔案',
-        detail: '同一次儲存不可同時移動並更新同一個檔案。',
+        title: l10n.editSameFileSeparately,
+        detail: l10n.cannotMoveAndUpdateSameFile,
       );
     }
     touched.addAll(touches);
@@ -317,10 +318,10 @@ Map<String, dynamic> updateSingleFileSnippetPayload({
   final renamed = cleanName != before.fileName;
   final changed = content != previousContent;
   if (renamed && changed) {
-    throw const ApiFailure(
+    throw ApiFailure(
       FailureKind.validation,
-      title: '請分兩次修改檔名與內容',
-      detail: 'GitLab 將移動檔案與更新內容定義成不同動作。先儲存其中一項，再修改另一項。',
+      title: l10n.renameAndEditInTwoSteps,
+      detail: l10n.moveAndUpdateAreSeparate,
     );
   }
   return updateSnippetPayload(

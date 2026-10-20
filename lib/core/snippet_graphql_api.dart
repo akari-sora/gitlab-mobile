@@ -111,10 +111,10 @@ const _maximumSnippetLookupPages = 20;
 const _maximumSnippetLookupRows = 2000;
 const _maximumSnippetPageRows = 100;
 
-ApiFailure get _snippetConflict => const ApiFailure(
+ApiFailure get _snippetConflict => ApiFailure(
   FailureKind.conflict,
-  title: 'Snippet 已經變更',
-  detail: '檔案清單或內容版本已更新。請重新讀取後再操作。',
+  title: l10n.snippetHasChanged,
+  detail: l10n.snippetVersionUpdatedReload,
 );
 
 void _validateSnippetProject(Project project) {
@@ -183,8 +183,8 @@ Json _snippetGraphData(Uint8List bytes) {
         );
         throw ApiFailure(
           unsupported ? FailureKind.unsupported : FailureKind.invalidResponse,
-          title: unsupported ? '實例未提供多檔 Snippet 預覽' : null,
-          detail: unsupported ? '仍可使用 GitLab 支援的單檔預覽。' : null,
+          title: unsupported ? l10n.instanceNoMultiFileSnippet : null,
+          detail: unsupported ? l10n.singleFileSnippetPreviewOk : null,
         );
       }
     }

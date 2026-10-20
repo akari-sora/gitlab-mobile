@@ -7,6 +7,7 @@ import '../../core/models.dart';
 import '../../shared/workspace_ui.dart';
 import '../../shared/scroll_chrome.dart';
 
+import '../../l10n/l10n.dart';
 class ProjectAnalyticsPage extends StatefulWidget {
   const ProjectAnalyticsPage({
     super.key,
@@ -184,9 +185,9 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     if (ref.isEmpty && _tabs.index != 0) {
       showFailure(
         context,
-        const ApiFailure(
+        ApiFailure(
           FailureKind.validation,
-          detail: '儲存庫與 CI 分析需要明確的 ref。',
+          detail: l10n.analyticsNeedRef,
         ),
       );
       return;
@@ -562,8 +563,8 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
             key: const ValueKey('analytics-ref'),
             controller: _ref,
             textInputAction: TextInputAction.done,
-            decoration: const InputDecoration(
-              labelText: 'Ref / 分支',
+            decoration: InputDecoration(
+              labelText: l10n.refOrBranch,
               prefixIcon: Icon(Icons.alt_route),
             ),
             onChanged: (_) => setState(() {}),
@@ -575,7 +576,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
               key: const ValueKey('analytics-source'),
               initialValue: _draftSource,
               isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Pipeline 來源'),
+              decoration: InputDecoration(labelText: l10n.pipelineSource),
               items: [
                 for (final source in AnalyticsPipelineSource.values)
                   DropdownMenuItem(
@@ -601,7 +602,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
                 for (final days in _ranges)
                   ChoiceChip(
                     key: ValueKey('analytics-range-$days'),
-                    label: Text('$days 天'),
+                    label: Text(l10n.durationDays(days)),
                     selected: _draftDays == days,
                     onSelected: (_) => setState(() => _draftDays = days),
                   ),
@@ -609,15 +610,15 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
                 key: const ValueKey('analytics-apply'),
                 onPressed: _apply,
                 icon: const Icon(Icons.check, size: 18),
-                label: const Text('套用'),
+                label: Text(l10n.apply),
               ),
             ],
           ),
           const SizedBox(height: 6),
           Text(
             _tabs.index == 0
-                ? '目前：${_activeRef.isEmpty ? '伺服器預設 ref' : _activeRef} · 所有歷史'
-                : '目前：${_activeRef.isEmpty ? '尚未選擇 ref' : _activeRef} · ${_date(_from)}（含）至 ${_date(_to)}（不含） · UTC${_tabs.index == 2 ? ' · ${_sourceLabel(_activeSource)}' : ''}',
+                ? l10n.currentRefAllHistory(_activeRef.isEmpty ? l10n.serverDefaultRef : _activeRef)
+                : l10n.currentRefDateRange(_activeRef.isEmpty ? l10n.noRefSelected : _activeRef, _date(_from), _date(_to), _tabs.index == 2 ? ' · ${_sourceLabel(_activeSource)}' : ''),
             key: const ValueKey('analytics-active-window'),
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -634,7 +635,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       return FailureNotice(
         _contributorError!,
         account: widget.account,
-        resourceLabel: '${widget.project.path} · 貢獻者',
+        resourceLabel: l10n.pathContributors(widget.project.path),
         onRetry: _loadContributors,
         onSwitchAccount: endSessionFrom(context),
       );
@@ -655,29 +656,29 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
             itemBuilder: (context, index) {
               var cursor = 0;
               if (index == cursor++) {
-                return const Text(
-                  '所選 ref 的所有歷史貢獻者；日期範圍不適用。相同顯示名稱不代表同一 GitLab 使用者。',
+                return Text(
+                  l10n.contributorsAllHistoryNote,
                 );
               }
               if (index == cursor++) {
                 return Text(
-                  '已載入 ${rows.length} / $_rowLimit 位 · $_contributorPages / $_pageLimit 頁${_nextContributors != null ? ' · 尚有更多' : ''}',
+                  l10n.contributorsLoadedPages(rows.length, _rowLimit, _contributorPages, _pageLimit, _nextContributors != null ? l10n.moreAvailableSuffix : ''),
                   key: const ValueKey('contributors-loaded-window'),
                 );
               }
               if (_contributorLimited && index == cursor++) {
-                return const _Notice('已達 2,000 位／20 頁載入上限。');
+                return _Notice(l10n.contributorLoadLimit);
               }
               if (_contributorError != null && index == cursor++) {
                 return FailureNotice(
                   _contributorError!,
                   account: widget.account,
-                  resourceLabel: '${widget.project.path} · 貢獻者後續頁面',
+                  resourceLabel: l10n.pathContributorNextPages(widget.project.path),
                   onRetry: () => _loadContributors(reset: false),
                   onSwitchAccount: endSessionFrom(context),
                 );
               }
-              return const _Empty(Icons.group_outlined, '沒有貢獻者資料');
+              return _Empty(Icons.group_outlined, l10n.noContributorData);
             },
           ),
         ),
@@ -716,7 +717,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.expand_more),
-                label: const Text('載入更多'),
+                label: Text(l10n.loadMore),
               ),
             ),
           ),
@@ -730,14 +731,14 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
     final limited = commits.length >= _rowLimit || _commitPages >= _pageLimit;
     Widget? activityLead;
     if (_activeRef.isEmpty) {
-      activityLead = const _Empty(Icons.alt_route, '請輸入 ref 後套用，再讀取儲存庫活動。');
+      activityLead = _Empty(Icons.alt_route, l10n.enterRefForActivity);
     } else if (_commitLoading && _commits == null) {
       activityLead = const ListSkeleton();
     } else if (_commitError != null && _commits == null) {
       activityLead = FailureNotice(
         _commitError!,
         account: widget.account,
-        resourceLabel: '${widget.project.path} · 儲存庫活動',
+        resourceLabel: l10n.pathRepositoryActivity(widget.project.path),
         onRetry: () => _loadCommits(reset: true),
         onSwitchAccount: endSessionFrom(context),
       );
@@ -757,14 +758,14 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
               ?activityLead,
               if (hasActivityData) ...[
                 Text(
-                  '已載入 ${commits.length} / $_rowLimit 筆 · $_commitPages / $_pageLimit 頁${limited
-                      ? ' · 已達上限'
+                  l10n.commitsLoadedPages(commits.length, _rowLimit, _commitPages, _pageLimit, limited
+                      ? l10n.limitReachedSuffix
                       : _nextCommits != null
-                      ? ' · 尚有更多'
-                      : ''}',
+                      ? l10n.moreAvailableSuffix
+                      : ''),
                   key: const ValueKey('repository-loaded-window'),
                 ),
-                const Text('依裝置本地日期聚合；合併提交（超過一個 parent）不列入圖表。'),
+                Text(l10n.activityChartNote),
               ],
             ],
           ),
@@ -816,13 +817,13 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
                 return FailureNotice(
                   _moreError!,
                   account: widget.account,
-                  resourceLabel: '${widget.project.path} · 儲存庫活動後續頁面',
+                  resourceLabel: l10n.pathActivityNextPages(widget.project.path),
                   onRetry: () => _loadCommits(reset: false),
                   onSwitchAccount: endSessionFrom(context),
                 );
               }
               if (hasActivityData && days.isEmpty && index == cursor++) {
-                return const _Empty(Icons.insights_outlined, '這段期間沒有非合併提交');
+                return _Empty(Icons.insights_outlined, l10n.noNonMergeCommits);
               }
               return OutlinedButton.icon(
                 key: const ValueKey('repository-load-more'),
@@ -836,7 +837,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.expand_more),
-                label: const Text('載入更多'),
+                label: Text(l10n.loadMore),
               );
             },
           ),
@@ -853,7 +854,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
 
   Widget _ciTab() {
     if (_activeRef.isEmpty) {
-      return const _Empty(Icons.alt_route, '請輸入 ref 後套用，再讀取 CI 分析。');
+      return _Empty(Icons.alt_route, l10n.enterRefForCiAnalytics);
     }
     final buckets = _pipelines?.buckets ?? const <PipelineAnalyticsBucket>[];
     Widget? lead;
@@ -864,13 +865,13 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       lead = FailureNotice(
         _pipelineError!,
         account: widget.account,
-        resourceLabel: '${widget.project.path} · CI/CD 分析',
+        resourceLabel: l10n.pathCicdAnalytics(widget.project.path),
         onRetry: _loadPipeline,
         onSwitchAccount: endSessionFrom(context),
       );
     }
     if (!_ciLoading && _pipelines != null && buckets.isEmpty) {
-      lead = const _Empty(Icons.query_stats, '這段期間沒有 Pipeline 分析資料');
+      lead = _Empty(Icons.query_stats, l10n.noPipelineAnalytics);
     }
     final headerCount = (lead == null ? 0 : 1) + (buckets.isEmpty ? 0 : 1);
     return CustomScrollView(
@@ -924,14 +925,14 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       child: ListTile(
         leading: const Icon(Icons.query_stats),
         title: Text(
-          '成功率${aggregate?.total == null ? '' : ' · 全部 ${aggregate!.total}'}',
+          l10n.successRate(aggregate?.total == null ? '' : l10n.totalSuffix(aggregate!.total)),
         ),
         subtitle: Text(
           !exact
-              ? '計數未完整，無法計算'
+              ? l10n.countsIncomplete
               : ratio == null
-              ? '沒有 success / failed 可計算資料'
-              : '${ratio.toStringAsFixed(1)}% · 僅 success / (success + failed)${aggregate == null ? '' : ' · 整體 p50 ${_seconds(aggregate.p50Seconds)} · p95 ${_seconds(aggregate.p95Seconds)}'}',
+              ? l10n.noSuccessFailedData
+              : l10n.successRatioDetail(ratio.toStringAsFixed(1), aggregate == null ? '' : l10n.overallPercentilesSuffix(_seconds(aggregate.p50Seconds), _seconds(aggregate.p95Seconds))),
         ),
       ),
     );
@@ -945,7 +946,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            bucket.label == null ? '日期未提供' : _date(bucket.label!),
+            bucket.label == null ? l10n.dateNotProvided : _date(bucket.label!),
             style: Theme.of(context).textTheme.titleSmall,
           ),
           const SizedBox(height: 6),
@@ -953,10 +954,10 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
             spacing: 8,
             runSpacing: 6,
             children: [
-              MetaChip('全部 ${_count(bucket.total)}'),
-              MetaChip('成功 ${_count(bucket.successful)}'),
-              MetaChip('失敗 ${_count(bucket.failed)}'),
-              MetaChip('其他 ${_count(bucket.other)}'),
+              MetaChip(l10n.countAll(_count(bucket.total))),
+              MetaChip(l10n.countSuccess(_count(bucket.successful))),
+              MetaChip(l10n.countFailed(_count(bucket.failed))),
+              MetaChip(l10n.countOther(_count(bucket.other))),
               MetaChip('p50 ${_seconds(bucket.p50Seconds)}'),
               MetaChip('p95 ${_seconds(bucket.p95Seconds)}'),
             ],
@@ -968,9 +969,9 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
 
   Widget _coverageCard() {
     if (!_coverageLoaded && _coverageError == null) {
-      return const Card(
+      return Card(
         child: ListTile(
-          title: Text('覆蓋率'),
+          title: Text(l10n.coverage),
           trailing: SizedBox(
             width: 20,
             height: 20,
@@ -983,7 +984,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       return FailureNotice(
         _coverageError!,
         account: widget.account,
-        resourceLabel: '${widget.project.path} · 覆蓋率',
+        resourceLabel: l10n.pathCoverage(widget.project.path),
         onRetry: _loadCoverage,
         onSwitchAccount: endSessionFrom(context),
       );
@@ -993,11 +994,11 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       key: const ValueKey('coverage-summary'),
       child: ListTile(
         leading: const Icon(Icons.fact_check_outlined),
-        title: const Text('覆蓋率'),
+        title: Text(l10n.coverage),
         subtitle: Text(
           value == null
-              ? '沒有覆蓋率摘要'
-              : '${value.averageCoverage == null ? '平均 —' : '平均 ${value.averageCoverage!.toStringAsFixed(1)}%'} · 樣本 ${_count(value.coverageCount)}${value.lastUpdatedOn == null ? '' : ' · ${_date(value.lastUpdatedOn!)}'}',
+              ? l10n.noCoverageSummary
+              : l10n.coverageSample(value.averageCoverage == null ? l10n.averageNone : l10n.averagePercent(value.averageCoverage!.toStringAsFixed(1)), _count(value.coverageCount), value.lastUpdatedOn == null ? '' : ' · ${_date(value.lastUpdatedOn!)}'),
         ),
       ),
     );
@@ -1005,9 +1006,9 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
 
   Widget _languagesCard() {
     if (_languages == null && _languageError == null) {
-      return const Card(
+      return Card(
         child: ListTile(
-          title: Text('語言'),
+          title: Text(l10n.languages),
           trailing: SizedBox(
             width: 20,
             height: 20,
@@ -1020,7 +1021,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
       return FailureNotice(
         _languageError!,
         account: widget.account,
-        resourceLabel: '${widget.project.path} · 語言',
+        resourceLabel: l10n.pathLanguages(widget.project.path),
         onRetry: _loadLanguages,
         onSwitchAccount: endSessionFrom(context),
       );
@@ -1033,10 +1034,10 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('語言', style: Theme.of(context).textTheme.titleSmall),
+            Text(l10n.languages, style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             if (rows.isEmpty)
-              const Text('沒有語言資料')
+              Text(l10n.noLanguageData)
             else
               Wrap(
                 spacing: 8,
@@ -1092,8 +1093,8 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Text(
-                      '專案分析',
+                    Text(
+                      l10n.projectAnalytics,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1108,7 +1109,7 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
                 actions: [
                   IconButton(
                     key: const ValueKey('analytics-refresh'),
-                    tooltip: '重新整理',
+                    tooltip: l10n.refreshAction,
                     onPressed: _refresh,
                     icon: const Icon(Icons.refresh),
                   ),
@@ -1125,9 +1126,9 @@ class _ProjectAnalyticsPageState extends State<ProjectAnalyticsPage>
                 controller: _tabs,
                 isScrollable: crowded,
                 tabAlignment: crowded ? TabAlignment.start : null,
-                tabs: const [
-                  Tab(text: '貢獻者'),
-                  Tab(text: '儲存庫'),
+                tabs: [
+                  Tab(text: l10n.contributors),
+                  Tab(text: l10n.repository),
                   Tab(text: 'CI'),
                 ],
               ),
@@ -1235,12 +1236,12 @@ String _seconds(double? value) {
             .toStringAsFixed(2)
             .replaceFirst(RegExp(r'0+$'), '')
             .replaceFirst(RegExp(r'\.$'), '');
-  return '$text 秒';
+  return l10n.durationSeconds2(text);
 }
 
 String _sourceLabel(AnalyticsPipelineSource source) => switch (source) {
-  AnalyticsPipelineSource.any => '所有來源',
-  AnalyticsPipelineSource.unknown => '未知',
+  AnalyticsPipelineSource.any => l10n.allSources,
+  AnalyticsPipelineSource.unknown => l10n.unknownLabel,
   AnalyticsPipelineSource.push => 'Push',
   AnalyticsPipelineSource.web => 'Web',
   AnalyticsPipelineSource.trigger => 'Trigger',

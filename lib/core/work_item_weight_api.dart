@@ -59,40 +59,40 @@ mutation MobileSetWorkItemWeight($input: WorkItemUpdateInput!) {
 '''
         .trim();
 
-const _weightReadForbidden = ApiFailure(
+ApiFailure get _weightReadForbidden => ApiFailure(
   FailureKind.forbidden,
-  title: '無法讀取工作項目權重',
-  detail: '目前帳號沒有讀取這個工作項目的權限。',
+  title: l10n.cannotReadWorkItemWeight,
+  detail: l10n.noPermissionReadWorkItem,
 );
 
-const _weightWriteForbidden = ApiFailure(
+ApiFailure get _weightWriteForbidden => ApiFailure(
   FailureKind.forbidden,
-  title: '無法變更權重',
-  detail: '目前帳號沒有設定這個工作項目權重的權限。',
+  title: l10n.cannotChangeWeight,
+  detail: l10n.noPermissionSetWeight,
 );
 
-const _weightUnsupported = ApiFailure(
+ApiFailure get _weightUnsupported => ApiFailure(
   FailureKind.unsupported,
-  title: '實例未提供工作項目權重編輯',
-  detail: '仍可查看工作項目。這個 GitLab 版本不支援安全的權重更新流程。',
+  title: l10n.instanceNoWeightEditing,
+  detail: l10n.noSafeWeightUpdateFlow,
 );
 
-const _weightRejected = ApiFailure(
+ApiFailure get _weightRejected => ApiFailure(
   FailureKind.validation,
-  title: 'GitLab 未接受權重更新',
-  detail: '請重新讀取工作項目，並確認權重與權限仍然有效。',
+  title: l10n.gitlabRejectedWeightUpdate,
+  detail: l10n.reloadConfirmWeight,
 );
 
-const _weightConflict = ApiFailure(
+ApiFailure get _weightConflict => ApiFailure(
   FailureKind.conflict,
-  title: '權重已經變更',
-  detail: '請重新讀取最新版本後再設定。',
+  title: l10n.weightHasChanged,
+  detail: l10n.reloadLatestBeforeSetting,
 );
 
-const _weightUncertain = ApiFailure(
+ApiFailure get _weightUncertain => ApiFailure(
   FailureKind.writeUncertain,
-  title: '尚未確認權重是否已更新',
-  detail: '連線在送出後中斷。請重新讀取工作項目，不要重複送出同一次變更。',
+  title: l10n.weightUpdateUnconfirmed,
+  detail: l10n.droppedAfterAssigneeSubmit,
 );
 
 /// Read result for one actor. [target] is null when the weight cannot be set.
@@ -269,20 +269,20 @@ extension WorkItemWeightApi on GitLabApi {
       }
       final actorId = _parseNotificationActor(data['currentUser']);
       if (actorId == null) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.unauthenticated,
-          title: '登入已失效',
-          detail: '請重新連接目前帳號，再讀取工作項目權重。',
+          title: l10n.signInNoLongerValid,
+          detail: l10n.reconnectThenReadWeight,
         );
       }
       if (_notificationActorNumber(actorId) != expectedUserId) {
         throw const ApiFailure(FailureKind.cancelled);
       }
       if (data['workItem'] == null) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.invisible,
-          title: '找不到工作項目',
-          detail: '這個項目可能不存在，或目前帳號無法讀取。',
+          title: l10n.workItemNotFound,
+          detail: l10n.itemMissingOrUnreadable,
         );
       }
       final parsed = _parseWeightWorkItem(data['workItem'], expected);
@@ -310,10 +310,10 @@ extension WorkItemWeightApi on GitLabApi {
 
 void _validateWeightInput(int? weight) {
   if (weight != null && (weight < 0 || weight > _weightInt32Max)) {
-    throw const ApiFailure(
+    throw ApiFailure(
       FailureKind.validation,
-      title: '權重無效',
-      detail: '只能設定 0 到 2147483647 的整數，或明確清除。',
+      title: l10n.invalidWeight,
+      detail: l10n.weightIntegerOrExplicitClear,
     );
   }
 }

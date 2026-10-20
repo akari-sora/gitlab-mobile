@@ -13,6 +13,7 @@ import 'records_feed.dart';
 import 'search_page.dart';
 import 'work_item_page.dart';
 
+import '../../l10n/l10n.dart';
 class InboxPage extends StatefulWidget {
   const InboxPage({super.key, required this.account, required this.api, this.todoToken = 0});
   final Account account;
@@ -70,8 +71,8 @@ class _InboxPageState extends State<InboxPage> {
     child: _TabRequest(token: widget.todoToken, index: 0, onSelected: _chrome.show, child: Scaffold(
     body: NotificationListener<ScrollNotification>(onNotification: _chrome.handle, child: StatusBarInset(child: gestureSafe(Column(
       crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      CollapsingChrome(visible: _chrome, child: AppBar(primary: false, title: const LargeTitle('收件匣'), actions: [
-        IconButton(tooltip: '全域搜尋', icon: const Icon(Icons.manage_search),
+      CollapsingChrome(visible: _chrome, child: AppBar(primary: false, title: LargeTitle(l10n.inboxTab), actions: [
+        IconButton(tooltip: l10n.globalSearch, icon: const Icon(Icons.manage_search),
           onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
             builder: (_) => SearchPage(account: account, api: api)))),
       ])),
@@ -89,9 +90,9 @@ class _InboxPageState extends State<InboxPage> {
       _InboxPanel(index: 1,
         child: _WorkFeed(account: account, api: api, kind: _WorkKind.assigned)),
       _InboxPanel(index: 2, child: RecordsFeed(
-        identity: 'review-requests', empty: '沒有待審查的合併請求', account: account,
+        identity: 'review-requests', empty: l10n.noMergeRequestsToReview, account: account,
         emptyIcon: Icons.rate_review_outlined,
-        resourceLabel: '待我審查的合併請求', underShell: true, onSwitchAccount: endSessionFrom(context),
+        resourceLabel: l10n.mergeRequestsToReview, underShell: true, onSwitchAccount: endSessionFrom(context),
         load: (next) => api.records(['merge_requests'], query: {'scope': 'all', 'reviewer_id': '${account.user.id}',
           'state': 'opened', 'with_labels_details': 'true'}, next: next),
         itemBuilder: (context, data) => inboxWorkItem(context, account, api, data, 'merge_requests'))),
@@ -133,11 +134,11 @@ class _TabRequestState extends State<_TabRequest> {
 class _InboxFilters extends StatelessWidget {
   const _InboxFilters({required this.onSelected});
   final VoidCallback onSelected;
-  static const _labels = [
-    ('待辦', Icons.notifications_none),
-    ('指派給我', Icons.assignment_ind_outlined),
-    ('待我審查', Icons.rate_review_outlined),
-    ('我建立的', Icons.edit_note),
+  static List<(String, IconData)> get _labels => [
+    (l10n.todoLabel, Icons.notifications_none),
+    (l10n.assignedToMe, Icons.assignment_ind_outlined),
+    (l10n.reviewRequests, Icons.rate_review_outlined),
+    (l10n.createdByMe, Icons.edit_note),
   ];
   @override
   Widget build(BuildContext context) {
@@ -227,19 +228,19 @@ class _WorkFeedState extends State<_WorkFeed> {
     final assigned = widget.kind == _WorkKind.assigned;
     final mr = _resource == 'merge_requests';
     final scope = assigned ? 'assigned_to_me' : 'created_by_me';
-    final label = '${assigned ? '指派給我' : '我建立'}的${mr ? '合併請求' : '議題'}';
+    final label = l10n.inboxScopeTitle(assigned ? l10n.assignedToMe : l10n.createdByMe2, mr ? l10n.mergeRequests : l10n.issues);
     return RecordsFeed(
       identity: '$scope/$_resource', storageId: scope,
-      empty: assigned ? (mr ? '沒有指派給你的合併請求' : '沒有指派給你的議題') : (mr ? '你沒有開啟中的合併請求' : '你沒有開啟中的議題'),
+      empty: assigned ? (mr ? l10n.noMergeRequestsAssignedToYou : l10n.noIssuesAssignedToYou) : (mr ? l10n.noOpenMergeRequestsByYou : l10n.noOpenIssuesByYou),
       emptyIcon: mr ? Icons.merge : Icons.adjust,
       account: widget.account, resourceLabel: label, underShell: true, onSwitchAccount: endSessionFrom(context),
       leading: (context, _) => Padding(
         padding: EdgeInsets.fromLTRB(feedGutter(context), 10, feedGutter(context), 0),
         child: Align(alignment: Alignment.centerLeft, child: SegmentedButton<String>(
           showSelectedIcon: false,
-          segments: const [
-            ButtonSegment(value: 'issues', icon: Icon(Icons.adjust, size: 18), label: Text('議題')),
-            ButtonSegment(value: 'merge_requests', icon: Icon(Icons.merge, size: 18), label: Text('合併請求')),
+          segments: [
+            ButtonSegment(value: 'issues', icon: Icon(Icons.adjust, size: 18), label: Text(l10n.issues)),
+            ButtonSegment(value: 'merge_requests', icon: Icon(Icons.merge, size: 18), label: Text(l10n.mergeRequests)),
           ],
           selected: {_resource},
           onSelectionChanged: (values) => setState(() => _resource = values.first),
@@ -254,19 +255,29 @@ class _WorkFeedState extends State<_WorkFeed> {
 
 /// Inbox filters, each one `GET /todos` filter GitLab applies server-side.
 enum _TodoFilter {
-  all('全部', null),
-  review('請你審查', ('action', 'review_requested')),
-  mentioned('提及你', ('action', 'mentioned')),
-  assigned('指派給你', ('action', 'assigned')),
-  failed('Pipeline 失敗', ('action', 'build_failed')),
-  mergeRequests('合併請求', ('type', 'MergeRequest')),
-  issues('議題', ('type', 'Issue')),
+  all(null),
+  review(('action', 'review_requested')),
+  mentioned(('action', 'mentioned')),
+  assigned(('action', 'assigned')),
+  failed(('action', 'build_failed')),
+  mergeRequests(('type', 'MergeRequest')),
+  issues(('type', 'Issue')),
   // REST leaves snoozed todos out; this list comes from GraphQL.
-  snoozed('已延後', null);
+  snoozed(null);
 
-  const _TodoFilter(this.label, this.parameter);
-  final String label;
+  const _TodoFilter(this.parameter);
   final (String, String)? parameter;
+
+  String get label => switch (this) {
+    _TodoFilter.all => l10n.filterAll,
+    _TodoFilter.review => l10n.reviewRequested,
+    _TodoFilter.mentioned => l10n.mentionedYou,
+    _TodoFilter.assigned => l10n.assignedToYou,
+    _TodoFilter.failed => l10n.pipelineFailed,
+    _TodoFilter.mergeRequests => l10n.mergeRequests,
+    _TodoFilter.issues => l10n.issues,
+    _TodoFilter.snoozed => l10n.snoozed,
+  };
 
   Map<String, String> get query => {
     'state': 'pending',
@@ -281,10 +292,10 @@ List<(String, DateTime)> todoSnoozePresets(DateTime now) {
   final daysToMonday = (DateTime.monday - now.weekday + 7) % 7;
   final monday = now.add(Duration(days: daysToMonday == 0 ? 7 : daysToMonday));
   return [
-    ('1 小時後', now.add(const Duration(hours: 1))),
-    ('3 小時後', now.add(const Duration(hours: 3))),
-    ('明天上午 9:00', at9(tomorrow)),
-    ('下週一上午 9:00', at9(monday)),
+    (l10n.snoozeInOneHour, now.add(const Duration(hours: 1))),
+    (l10n.snoozeInThreeHours, now.add(const Duration(hours: 3))),
+    (l10n.snoozeTomorrowMorning, at9(tomorrow)),
+    (l10n.snoozeNextMondayMorning, at9(monday)),
   ];
 }
 
@@ -295,8 +306,8 @@ String todoUntilLabel(DateTime until, DateTime now) {
   final day = DateTime(local.year, local.month, local.day);
   final today = DateTime(now.year, now.month, now.day);
   final days = day.difference(today).inDays;
-  if (days == 0) return '今天 $time';
-  if (days == 1) return '明天 $time';
+  if (days == 0) return l10n.snoozeTodayAt(time);
+  if (days == 1) return l10n.snoozeTomorrowAt(time);
   return '${local.month}/${local.day} $time';
 }
 
@@ -369,8 +380,8 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
       context: context,
       showDragHandle: true,
       builder: (sheetContext) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        ListTile(title: Text('延後這則待辦', style: Theme.of(sheetContext).textTheme.titleMedium),
-          subtitle: const Text('時間到時會回到收件匣。')),
+        ListTile(title: Text(l10n.snoozeThisTodo, style: Theme.of(sheetContext).textTheme.titleMedium),
+          subtitle: Text(l10n.snoozeReturnsToInbox)),
         for (final (label, at) in todoSnoozePresets(now)) ListTile(
           key: ValueKey('todo-snooze-$label'),
           leading: const Icon(Icons.snooze),
@@ -388,8 +399,8 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
       _feed.currentState?.removeItem('$id');
       final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
       messenger.showSnackBar(SnackBar(
-        content: Text('已延後至 ${todoUntilLabel(acknowledged, DateTime.now())}'),
-        action: SnackBarAction(label: '復原', onPressed: () => unawaited(_unsnooze(id, undo: true))),
+        content: Text(l10n.snoozedUntil(todoUntilLabel(acknowledged, DateTime.now()))),
+        action: SnackBarAction(label: l10n.undoAction, onPressed: () => unawaited(_unsnooze(id, undo: true))),
       ));
     } catch (e) {
       if (mounted) showFailure(context, e);
@@ -409,7 +420,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
       if (!mounted) return;
       if (!undo) {
         _feed.currentState?.removeItem('$id');
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已移回收件匣')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.movedBackToInbox)));
       }
     } catch (e) {
       if (mounted) showFailure(context, e);
@@ -426,13 +437,13 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
     final accessible = MediaQuery.accessibleNavigationOf(context);
     final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
     final bar = messenger.showSnackBar(SnackBar(
-      content: const Text('已標示為完成'),
+      content: Text(l10n.markedAsDone),
       duration: const Duration(seconds: 4),
       // Times out like a plain snack bar; screen-reader users keep it until
       // they choose 復原 or close it, which commits.
       persist: accessible,
       showCloseIcon: accessible,
-      action: SnackBarAction(label: '復原', onPressed: () {}),
+      action: SnackBarAction(label: l10n.undoAction, onPressed: () {}),
     ));
     unawaited(bar.closed.then((reason) {
       if (!mounted) return;
@@ -445,7 +456,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
   }
 
   Future<void> _clearAll() async {
-    if (_clearing.value || !await confirmAction(context, '全部標示為完成？', '所有待辦都會從 GitLab 待辦清單移除。')) return;
+    if (_clearing.value || !await confirmAction(context, l10n.markAllDoneConfirm, l10n.markAllDoneWarning)) return;
     if (!mounted) return;
     _clearing.value = true;
     try {
@@ -535,13 +546,13 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
   Widget _feedView(BuildContext context) {
     final filtered = _filter != _TodoFilter.all;
     return RecordsFeed(key: _feed, identity: filtered ? 'todos/${_filter.name}' : 'todos', storageId: 'todos',
-    empty: filtered ? '沒有「${_filter.label}」的待辦' : '全部處理完畢！',
+    empty: filtered ? l10n.noTodosForLabel(_filter.label) : l10n.allTodosDone,
     emptyDetail: _filter == _TodoFilter.snoozed
-        ? '延後的待辦會在時間到時回到收件匣。'
-        : filtered ? '切換到「全部」可看到其他待辦。' : '休息一下，寫點程式，做你最擅長的事。\nGitLab 指派、提及與你建立的待辦會出現在這裡。',
+        ? l10n.snoozedTodosReturnHint
+        : filtered ? l10n.switchToAllTodosHint : l10n.inboxEmptyEncouragement,
     emptyIcon: filtered ? Icons.filter_list_off : Icons.task_alt, emptyArt: filtered ? null : const CaughtUpArt(),
-    filteredEmpty: '待辦即將標示為完成',
-    account: widget.account, resourceLabel: '待辦', underShell: true,
+    filteredEmpty: l10n.todoAboutToBeDone,
+    account: widget.account, resourceLabel: l10n.todoLabel, underShell: true,
     onSwitchAccount: endSessionFrom(context),
     visible: _visible,
     // The chips always show: an empty filter can be left, and an inbox with
@@ -551,8 +562,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
             if (controller.items.isNotEmpty) Padding(
               padding: EdgeInsets.fromLTRB(feedGutter(context) + 4, 6, feedGutter(context) - 8, 0),
               child: Row(children: [
-                Expanded(child: Text('${controller.items.where(_visible).length}'
-                  '${controller.next == null ? '' : '+'} 則待辦 · 左右滑動可完成',
+                Expanded(child: Text(l10n.todoSwipeHint(controller.items.where(_visible).length, controller.next == null ? '' : '+'),
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant))),
                 // Marks every pending todo, not just the filtered ones, so it
                 // is offered only on the unfiltered list.
@@ -562,7 +572,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
                     key: const ValueKey('todos-mark-all-done'),
                     onPressed: clearing ? null : _clearAll,
                     icon: const Icon(Icons.done_all, size: 18),
-                    label: const Text('全部完成'),
+                    label: Text(l10n.markAllTodosDone),
                   ),
                 ),
               ]),
@@ -576,7 +586,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
         : (next) => widget.api.records(['todos'], query: _filter.query, next: next),
     footer: _filter != _TodoFilter.snoozed ? null : (context, controller) => controller.items.length < todoSnoozedLimit
         ? const SizedBox.shrink()
-        : Padding(padding: const EdgeInsets.only(top: 8), child: Text('只列出最近 $todoSnoozedLimit 則延後的待辦。',
+        : Padding(padding: const EdgeInsets.only(top: 8), child: Text(l10n.snoozedTodosLimit(todoSnoozedLimit),
             style: Theme.of(context).textTheme.bodySmall)),
     itemBuilder: (context, data) {
       final target = valueObject(data, 'target'), project = valueObject(data, 'project');
@@ -584,9 +594,9 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
       final todoTarget = _TodoTarget.of(data, widget.account.instance);
       final action = valueText(data, 'action_name');
       final actionLabel = switch (action) {
-        'assigned' => '指派給你', 'mentioned' || 'directly_addressed' => '提及你', 'review_requested' => '請你審查',
-        'build_failed' => 'Pipeline 失敗', 'marked' => '你標記的', 'approval_required' => '需要你批准',
-        'unmergeable' => '無法合併', 'merge_train_removed' => '已移出合併列車', _ => '',
+        'assigned' => l10n.assignedToYou, 'mentioned' || 'directly_addressed' => l10n.mentionedYou, 'review_requested' => l10n.reviewRequested,
+        'build_failed' => l10n.pipelineFailed, 'marked' => l10n.markedByYou, 'approval_required' => l10n.needsYourApproval,
+        'unmergeable' => l10n.cannotBeMerged, 'merge_train_removed' => l10n.removedFromMergeTrain, _ => '',
       };
       final author = valueObject(data, 'author');
       final scheme = Theme.of(context).colorScheme;
@@ -595,16 +605,16 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
         leading: Container(width: 32, height: 32, alignment: Alignment.center,
           decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(10)),
           child: Icon(todoTarget.icon, size: 18, color: scheme.onPrimaryContainer)),
-        title: Text(valueText(target, 'title', valueText(data, 'body', 'GitLab 待辦'))),
+        title: Text(valueText(target, 'title', valueText(data, 'body', l10n.gitlabTodo))),
         subtitle: Text(valueText(project, 'path_with_namespace')),
         meta: [
           if (todoTarget.route == _TodoRoute.explain)
-            MetaChip('${todoTarget.typeLabel} · ${todoTarget.web == null ? '無法開啟' : '網頁版'}',
+            MetaChip('${todoTarget.typeLabel} · ${todoTarget.web == null ? l10n.cannotOpen : l10n.webVersion}',
               icon: todoTarget.web == null ? Icons.link_off : Icons.open_in_new),
           if (actionLabel.isNotEmpty) MetaChip(actionLabel, icon: Icons.notifications_none),
           if (valueText(author, 'username').isNotEmpty) MetaChip('@${valueText(author, 'username')}', icon: Icons.person_outline),
           if (DateTime.tryParse(valueText(data, 'snoozed_until')) case final until?)
-            MetaChip('延後至 ${todoUntilLabel(until, DateTime.now())}', icon: Icons.snooze)
+            MetaChip(l10n.snoozedUntil2(todoUntilLabel(until, DateTime.now())), icon: Icons.snooze)
           else
             MetaChip(relativeDate(valueText(data, 'updated_at', valueText(data, 'created_at'))), icon: Icons.schedule_outlined),
         ],
@@ -612,17 +622,17 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
           valueListenable: _busy,
           builder: (context, busy, _) => Row(mainAxisSize: MainAxisSize.min, children: [
             if (_filter == _TodoFilter.snoozed)
-              IconButton(tooltip: '取消延後', icon: const Icon(Icons.notifications_active_outlined),
+              IconButton(tooltip: l10n.cancelSnooze, icon: const Icon(Icons.notifications_active_outlined),
                 onPressed: busy.contains(id) ? null : () => unawaited(_unsnooze(id)))
             else
-              IconButton(tooltip: '延後此待辦', icon: const Icon(Icons.snooze),
+              IconButton(tooltip: l10n.snoozeThisTodo2, icon: const Icon(Icons.snooze),
                 onPressed: busy.contains(id) ? null : () => unawaited(_snooze(id))),
-            IconButton(tooltip: '完成此待辦', icon: const Icon(Icons.check_circle_outline),
+            IconButton(tooltip: l10n.markTodoDone, icon: const Icon(Icons.check_circle_outline),
               onPressed: busy.contains(id) ? null : () => _done(id)),
           ]),
         ),
         onTap: () => _openTarget(context, todoTarget,
-          valueText(target, 'title', valueText(data, 'body', 'GitLab 待辦')),
+          valueText(target, 'title', valueText(data, 'body', l10n.gitlabTodo)),
           valueText(project, 'path_with_namespace')),
       );
       Widget background(Alignment alignment) => Container(
@@ -632,7 +642,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           Icon(Icons.done, color: scheme.onPrimaryContainer),
           const SizedBox(width: 8),
-          Text('完成', style: TextStyle(color: scheme.onPrimaryContainer, fontWeight: FontWeight.w600)),
+          Text(l10n.done, style: TextStyle(color: scheme.onPrimaryContainer, fontWeight: FontWeight.w600)),
         ]),
       );
       return Dismissible(
@@ -739,19 +749,19 @@ final class _TodoTarget {
 }
 
 String _todoTypeLabel(Object? type) => switch (type) {
-  'Issue' => '議題',
-  'MergeRequest' => '合併請求',
-  'Commit' => '提交',
-  'Epic' => '史詩',
-  'WorkItem' => '工作項目',
-  'DesignManagement::Design' => '設計稿',
-  'AlertManagement::Alert' => '警示',
-  'Namespace' || 'Group' => '群組',
-  'Project' => '專案',
-  'Key' => 'SSH 金鑰',
-  'User' => '使用者',
-  'WikiPage::Meta' => 'Wiki 頁面',
-  _ => '其他 GitLab 項目',
+  'Issue' => l10n.issueTypeName,
+  'MergeRequest' => l10n.mergeRequestLabel,
+  'Commit' => l10n.commitLabel,
+  'Epic' => l10n.epic,
+  'WorkItem' => l10n.workItem,
+  'DesignManagement::Design' => l10n.design,
+  'AlertManagement::Alert' => l10n.alert,
+  'Namespace' || 'Group' => l10n.groupLabel,
+  'Project' => l10n.projectLabel,
+  'Key' => l10n.sshKey,
+  'User' => l10n.user,
+  'WikiPage::Meta' => l10n.wikiPageLabel,
+  _ => l10n.otherGitlabItem,
 };
 
 /// Accepts only an HTTPS link on this account's instance (host, port and
@@ -789,12 +799,12 @@ class _TodoTargetSheet extends StatelessWidget {
     final muted = theme.colorScheme.onSurfaceVariant;
     final web = target.web;
     final reason = target.nativeType
-      ? '這則${target.typeLabel}待辦缺少可辨識目標的資料，無法在 App 內開啟。'
-      : '「${target.typeLabel}」類型的待辦目前沒有 App 內頁面。';
+      ? l10n.todoTargetMissing(target.typeLabel)
+      : l10n.todoTypeNoPage(target.typeLabel);
     return SafeArea(child: SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text(web == null ? '無法開啟此待辦' : '無法在 App 內開啟', style: theme.textTheme.titleMedium),
+        Text(web == null ? l10n.cannotOpenTodo : l10n.cannotOpenInApp, style: theme.textTheme.titleMedium),
         const SizedBox(height: 12),
         Text(title, style: theme.textTheme.bodyLarge),
         if (projectPath.isNotEmpty) Text(projectPath, style: theme.textTheme.bodySmall?.copyWith(color: muted)),
@@ -802,8 +812,8 @@ class _TodoTargetSheet extends StatelessWidget {
         Text(reason),
         const SizedBox(height: 4),
         Text(web == null
-          ? '此待辦沒有屬於目前 GitLab 實例的有效連結，無法開啟。可重新整理後再試；完成此待辦仍可在列表中操作。'
-          : '可改在 GitLab 網頁版查看：'),
+          ? l10n.todoLinkWrongInstance
+          : l10n.viewOnGitlabWebsiteInstead),
         if (web != null) ...[
           const SizedBox(height: 4),
           Text(web.toString(), key: const ValueKey('todo-target-web-url'),
@@ -812,18 +822,18 @@ class _TodoTargetSheet extends StatelessWidget {
         const SizedBox(height: 16),
         Wrap(alignment: WrapAlignment.end, spacing: 8, runSpacing: 8, children: [
           TextButton(key: const ValueKey('todo-target-close'),
-            onPressed: () => Navigator.of(context).pop(false), child: const Text('關閉')),
+            onPressed: () => Navigator.of(context).pop(false), child: Text(l10n.closeAction)),
           if (web == null)
             OutlinedButton.icon(key: const ValueKey('todo-target-refresh'),
               onPressed: () => Navigator.of(context).pop(true),
-              icon: const Icon(Icons.refresh), label: const Text('重新整理')),
+              icon: const Icon(Icons.refresh), label: Text(l10n.refreshAction)),
           if (web != null)
             FilledButton.icon(key: const ValueKey('todo-target-open-web'),
               onPressed: () async {
                 if (isCurrent()) await openExternal(context, web);
                 if (context.mounted) Navigator.of(context).pop(false);
               },
-              icon: const Icon(Icons.open_in_new), label: const Text('在 GitLab 開啟')),
+              icon: const Icon(Icons.open_in_new), label: Text(l10n.openInGitlab)),
         ]),
       ]),
     ));

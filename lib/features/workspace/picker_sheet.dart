@@ -8,6 +8,7 @@ import '../../shared/skeleton.dart';
 import '../../shared/workspace_ui.dart';
 import 'record_controller.dart';
 
+import '../../l10n/l10n.dart';
 enum PickerSource { labels, members, branches, milestones }
 
 class PickerChoice {
@@ -316,7 +317,7 @@ class _ChoicePickerSheetState extends State<ChoicePickerSheet> {
           controller: _search,
           autofocus: true,
           textInputAction: TextInputAction.search,
-          decoration: const InputDecoration(hintText: '搜尋', prefixIcon: Icon(Icons.search)),
+          decoration: InputDecoration(hintText: l10n.search, prefixIcon: Icon(Icons.search)),
           onChanged: _onSearch,
         ),
       ),
@@ -338,15 +339,15 @@ class _ChoicePickerSheetState extends State<ChoicePickerSheet> {
           keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.manual,
           children: [
             if (pinned.isNotEmpty) ...[
-              const Padding(
+              Padding(
                 padding: EdgeInsets.fromLTRB(16, 4, 16, 0),
-                child: Text('已選擇'),
+                child: Text(l10n.selected),
               ),
               for (final choice in pinned) _row(choice),
             ],
             if (_records.loading && _records.items.isEmpty) const RowsSkeleton(),
             if (showCreate) _row(PickerChoice(id: query, name: query), create: true),
-            if (empty) const EmptyState('沒有符合的項目'),
+            if (empty) EmptyState(l10n.noMatchingItems),
             for (final item in items) _row(item),
             if (_records.error != null) FailureNotice(
               _records.error!,
@@ -358,7 +359,7 @@ class _ChoicePickerSheetState extends State<ChoicePickerSheet> {
             if (_records.next != null) TextButton.icon(
               onPressed: _records.loadingMore || _records.loading ? null : () { unawaited(_records.more()); },
               icon: const Icon(Icons.expand_more),
-              label: Text(_records.loadingMore ? '載入中…' : '載入更多'),
+              label: Text(_records.loadingMore ? l10n.loading : l10n.loadMore),
             ),
           ],
         );
@@ -368,7 +369,7 @@ class _ChoicePickerSheetState extends State<ChoicePickerSheet> {
         child: FilledButton(
           key: const Key('picker-done'),
           onPressed: () => Navigator.pop(context, List<PickerChoice>.unmodifiable(_selected)),
-          child: const Text('完成'),
+          child: Text(l10n.done),
         ),
       ),
     ]);
@@ -402,7 +403,7 @@ class _ChoicePickerSheetState extends State<ChoicePickerSheet> {
                 ),
               ),
               Expanded(child: create
-                ? Text('建立標籤「${choice.name}」', overflow: TextOverflow.ellipsis)
+                ? Text(l10n.createLabelNamed(choice.name), overflow: TextOverflow.ellipsis)
                 : PickerChoiceLabel(choice, widget.source, expand: true)),
             ]),
           ),

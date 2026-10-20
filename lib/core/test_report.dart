@@ -1,5 +1,6 @@
 import 'models.dart';
 
+import '../l10n/l10n.dart';
 enum TestReportStatus {
   success,
   failed,
@@ -51,7 +52,7 @@ final class TestSuiteSummary {
             int.parse(item),
     ];
     return TestSuiteSummary(
-      name: optionalString(j, 'name') ?? '未命名測試套件',
+      name: optionalString(j, 'name') ?? l10n.unnamedTestSuite,
       totalTime: _asDouble(j['total_time'] ?? j['time']),
       totalCount: _asInt(j['total_count'] ?? j['count']),
       successCount: _asInt(j['success_count'] ?? j['success']),
@@ -213,7 +214,7 @@ final class TestCase {
 
     return TestCase(
       status: normalizedStatus,
-      name: optionalString(j, 'name') ?? '未命名測試案例',
+      name: optionalString(j, 'name') ?? l10n.unnamedTestCase,
       classname: optionalString(j, 'classname'),
       file: optionalString(j, 'file'),
       executionTime:
@@ -264,7 +265,7 @@ final class TestSuite {
   });
 
   factory TestSuite.fromJson(Map<String, dynamic> j) {
-    final name = optionalString(j, 'name') ?? '未命名測試套件';
+    final name = optionalString(j, 'name') ?? l10n.unnamedTestSuite;
     final rawBuildIds = j['build_ids'];
     int? defaultJobId;
     if (rawBuildIds is List && rawBuildIds.length == 1) {

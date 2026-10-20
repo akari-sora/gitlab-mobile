@@ -1,5 +1,6 @@
 import 'models.dart';
 
+import '../l10n/l10n.dart';
 typedef BoardJson = Map<String, dynamic>;
 
 enum BoardColumnKind { open, closed, label, assignee, milestone, unsupported }
@@ -83,13 +84,13 @@ final class BoardDefinition {
             ? optionalString(raw, 'name')?.trim() ?? ''
             : '';
         if (value.isEmpty) {
-          unsupportedReason ??= '看板的標籤篩選格式不完整。';
+          unsupportedReason ??= l10n.boardLabelFilterIncomplete;
         } else if (!labels.contains(value)) {
           labels.add(value);
         }
       }
     } else if (rawLabels != null) {
-      unsupportedReason = '看板的標籤篩選格式不受支援。';
+      unsupportedReason = l10n.boardLabelFilterUnsupported;
     }
     final assignee = board['assignee'];
     final milestone = board['milestone'];
@@ -98,7 +99,7 @@ final class BoardDefinition {
         : _positiveInt(board['assignee_id']);
     if ((assignee != null || board['assignee_id'] != null) &&
         assigneeId == null) {
-      unsupportedReason ??= '看板的指派對象篩選缺少有效 ID。';
+      unsupportedReason ??= l10n.boardAssigneeFilterMissingId;
     }
     final milestoneId = milestone is BoardJson
         ? _positiveInt(milestone['id'])
@@ -110,12 +111,12 @@ final class BoardDefinition {
         : null;
     if ((milestone != null || board['milestone_id'] != null) &&
         (milestoneTitle == null || milestoneTitle.isEmpty)) {
-      unsupportedReason ??= '看板的里程碑篩選缺少 title，無法建立 Issues API 的 milestone 查詢。';
+      unsupportedReason ??= l10n.boardMilestoneFilterMissingTitle;
     }
     final rawWeight = board['weight'];
     final weight = _nonNegativeInt(rawWeight);
     if (rawWeight != null && (weight == null || weight > 9)) {
-      unsupportedReason ??= '看板的 weight 篩選格式不受支援。';
+      unsupportedReason ??= l10n.boardWeightFilterUnsupported;
     }
     final scope = BoardScope(
       labels: List.unmodifiable(labels),
@@ -133,7 +134,7 @@ final class BoardDefinition {
       });
     return BoardDefinition(
       id: id,
-      name: name?.isNotEmpty == true ? name! : '看板 $id',
+      name: name?.isNotEmpty == true ? name! : l10n.boardWithId(id),
       scope: scope,
       columns: List.unmodifiable([
         if (board['hide_backlog_list'] != true)
@@ -185,13 +186,13 @@ BoardIssueQuery boardIssueQuery(
   if (scopeError != null) return BoardIssueQuery.unsupported(scopeError);
   if (column.kind == BoardColumnKind.unsupported) {
     return BoardIssueQuery.unsupported(
-      column.unsupportedReason ?? 'GitLab 回傳了目前不支援的看板清單類型。',
+      column.unsupportedReason ?? l10n.unsupportedBoardListType,
     );
   }
   if (column.kind == BoardColumnKind.open &&
       board.columns.any((value) => value.kind == BoardColumnKind.unsupported)) {
-    return const BoardIssueQuery.unsupported(
-      '這個看板含有目前不支援的欄位，無法可靠判斷哪些議題屬於 Open。未載入可能重複的議題。',
+    return BoardIssueQuery.unsupported(
+      l10n.unsupportedListsSkipOpenIssues,
     );
   }
   final labels = <String>[...board.scope.labels];
@@ -205,20 +206,20 @@ BoardIssueQuery boardIssueQuery(
     case BoardColumnKind.label:
       final label = column.label;
       if (label == null || label.isEmpty) {
-        return const BoardIssueQuery.unsupported('這個標籤清單缺少標籤資料。');
+        return BoardIssueQuery.unsupported(l10n.labelListMissingData);
       }
       if (!labels.contains(label)) labels.add(label);
     case BoardColumnKind.assignee:
       if (assigneeId != null && assigneeId != column.assigneeId) {
-        return const BoardIssueQuery.unsupported(
-          '看板與欄位指定了不同的指派對象，Issues API 無法正確套用兩者。',
+        return BoardIssueQuery.unsupported(
+          l10n.boardListAssigneeMismatch,
         );
       }
       assigneeId = column.assigneeId;
     case BoardColumnKind.milestone:
       if (milestoneId != null && milestoneId != column.milestoneId) {
-        return const BoardIssueQuery.unsupported(
-          '看板與欄位指定了不同的里程碑，Issues API 無法正確套用兩者。',
+        return BoardIssueQuery.unsupported(
+          l10n.boardListMilestoneMismatch,
         );
       }
       milestoneId = column.milestoneId;
@@ -354,9 +355,9 @@ BoardColumn _columnFromList(BoardJson list) {
     }
     return BoardColumn(
       key: key,
-      title: '不支援的里程碑欄位',
+      title: l10n.unsupportedMilestoneList,
       kind: BoardColumnKind.unsupported,
-      unsupportedReason: '這個里程碑欄位缺少 ID 或 title，未載入任何替代議題。',
+      unsupportedReason: l10n.milestoneListMissingIdTitle,
       listId: id,
       position: position,
     );
@@ -366,11 +367,11 @@ BoardColumn _columnFromList(BoardJson list) {
       (list['iteration'] is BoardJson ? 'iteration' : 'unknown');
   return BoardColumn(
     key: key,
-    title: type == 'iteration' ? 'Iteration' : '不支援的欄位',
+    title: type == 'iteration' ? 'Iteration' : l10n.unsupportedBoardList,
     kind: BoardColumnKind.unsupported,
     unsupportedReason: type == 'iteration'
-        ? '目前版本尚未支援 Iteration 看板欄位，未載入任何替代議題。'
-        : 'GitLab 回傳了不支援的「$type」看板欄位，未載入任何替代議題。',
+        ? l10n.iterationListsUnsupported
+        : l10n.unsupportedNamedBoardList(type),
     listId: id,
     position: position,
   );

@@ -5,9 +5,12 @@
 > **Development home:** https://gitlab.com/aa22396584/gitlab-mobile  
 > Please open issues and merge requests there.
 
-A mobile-first Flutter client for GitLab® on Android and iOS, formerly developed as "GitLab Mobile". Independent third-party software, not affiliated with or endorsed by GitLab Inc.; GITLAB is a trademark of GitLab Inc. The interface is Traditional Chinese and supports light/dark appearance and large text.
+A mobile-first Flutter client for GitLab® on Android and iOS, formerly developed as "GitLab Mobile". Independent third-party software, not affiliated with or endorsed by GitLab Inc.; GITLAB is a trademark of GitLab Inc. The interface is available in 24 languages (it follows the device, or pick one in 我的 › 外觀 › 語言) and supports light/dark appearance and large text.
 
-## 2026-10-20 — the app is now Mergeline
+## 2026-10-20 — Mergeline, 24 languages and an app lock
+
+- **24 languages.** Traditional and Simplified Chinese, English, Japanese, Korean, Spanish, Brazilian Portuguese, French, German, Italian, Russian, Ukrainian, Polish, Dutch, Swedish, Czech, Romanian, Turkish, Arabic (right-to-left), Hindi, Thai, Vietnamese, Indonesian and Malay. The app follows the device's languages (English when none of them is translated); 我的 › 外觀 › 語言 picks one, and Android 13+ and iOS also offer the choice in the system's per-app language settings. Switching keeps the open pages and drafts.
+- **App lock.** 我的 › 安全性 › App 鎖定 (off by default) asks for a fingerprint, face or the screen lock when the app opens and after more than a minute away. Turning it on needs one passing check, so nobody locks themselves out.
 
 - **New name.** The app is called **Mergeline** in the launcher, the title bar and 我的. GitLab's trademark guidelines keep the GitLab marks out of third-party app names and Play removes unofficial clients named after the service, so the store name carries no trademark; `docs/STORE_LISTING.md` has the listing copy and its rules. 我的 shows GitLab's trademark notice.
 - **Same app on the GitLab channel.** Releases published here keep the package `io.gitlabmobile.gitlab_mobile`, so installed previews update in place and keep their accounts. The Play build (not yet listed) will be `app.mergeline`.

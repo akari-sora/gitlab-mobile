@@ -18,6 +18,7 @@ import '../workspace/search_page.dart';
 import 'account_sheet.dart';
 import 'app_shortcuts.dart';
 
+import '../../l10n/l10n.dart';
 /// The Home destination, laid out like GitHub Mobile's: 我的工作 rows with
 /// coloured tiles, the projects opened recently on this device, the account's
 /// starred projects and one-tap shortcuts. Everything here belongs to the
@@ -221,14 +222,14 @@ class _HomePageState extends State<HomePage> {
       SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
         ListTile(
           leading: const Icon(Icons.add_box_outlined),
-          title: const Text('新增專案'),
-          subtitle: const Text('建立私有專案並附上 README'),
+          title: Text(l10n.newProject),
+          subtitle: Text(l10n.createPrivateProjectReadme),
           onTap: () => Navigator.pop(sheet, 'create'),
         ),
         ListTile(
           leading: const Icon(Icons.link),
-          title: const Text('以連結或路徑開啟'),
-          subtitle: const Text('專案、議題、MR、Pipeline 或提交連結'),
+          title: Text(l10n.openByLinkOrPath),
+          subtitle: Text(l10n.projectIssueMrPipelineLink),
           onTap: () => Navigator.pop(sheet, 'locate'),
         ),
         const SizedBox(height: 8),
@@ -243,16 +244,16 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _myWork(BuildContext context) => HubSection(
-    title: '我的工作',
+    title: l10n.myWorkLabel,
     children: [
       HubRow(
         leading: const IconTile(Icons.adjust, color: HubColors.green),
-        title: '議題',
+        title: l10n.issues,
         onTap: () => _push((account, api) => MyWorkPage(account: account, api: api, kind: MyWorkKind.issues)),
       ),
       HubRow(
         leading: const IconTile(Icons.merge, color: HubColors.blue),
-        title: '合併請求',
+        title: l10n.mergeRequests,
         onTap: () => _push((account, api) => MyWorkPage(account: account, api: api, kind: MyWorkKind.mergeRequests)),
       ),
       HubRow(
@@ -262,23 +263,23 @@ class _HomePageState extends State<HomePage> {
       ),
       HubRow(
         leading: const IconTile(Icons.book_outlined, color: HubColors.grey),
-        title: '專案',
-        onTap: () => _pushProjects('專案', 0),
+        title: l10n.projects,
+        onTap: () => _pushProjects(l10n.projects, 0),
       ),
       HubRow(
         leading: const IconTile(Icons.workspaces_outline, color: HubColors.orange),
-        title: '群組',
+        title: l10n.groups,
         onTap: () => _push((account, api) => GroupsPage(account: account, api: api)),
       ),
       HubRow(
         leading: const IconTile(Icons.timeline, color: HubColors.slate),
-        title: '動態',
-        onTap: () => _push((account, api) => ActivityPage(account: account, api: api, title: '我的動態')),
+        title: l10n.activityLabel,
+        onTap: () => _push((account, api) => ActivityPage(account: account, api: api, title: l10n.myActivity)),
       ),
       HubRow(
         leading: const IconTile(Icons.star_border, color: HubColors.yellow),
-        title: '星標',
-        onTap: () => _pushProjects('星標專案', 1),
+        title: l10n.starred,
+        onTap: () => _pushProjects(l10n.starredProjects, 1),
       ),
     ],
   );
@@ -297,7 +298,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _recentSection(BuildContext context) => HubSection(
-    title: '最近開啟',
+    title: l10n.recentlyOpened,
     children: [
       if (_opening) const LinearProgressIndicator(minHeight: 2),
       for (final recent in _recent.take(5))
@@ -319,24 +320,24 @@ class _HomePageState extends State<HomePage> {
       body = [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: Text('${_starredError!.title}。${_starredError!.detail}',
+          child: Text(l10n.titleThenDetail(_starredError!.title, _starredError!.detail),
             style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: HubButton(label: '重新整理', icon: Icons.refresh, onPressed: _loadingStarred ? null : _refresh),
+          child: HubButton(label: l10n.refreshAction, icon: Icons.refresh, onPressed: _loadingStarred ? null : _refresh),
         ),
       ];
     } else if (starred!.isEmpty) {
       body = [
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 12, 24, 16),
-          child: Text('為常用的專案加上星標，隨時一鍵開啟，不必再搜尋。', textAlign: TextAlign.center,
+          child: Text(l10n.starProjectsForOneTap, textAlign: TextAlign.center,
             style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: HubButton(label: '瀏覽專案', onPressed: widget.onExplore),
+          child: HubButton(label: l10n.browseProjects, onPressed: widget.onExplore),
         ),
       ];
     } else {
@@ -359,9 +360,9 @@ class _HomePageState extends State<HomePage> {
       ];
     }
     return HubSection(
-      title: '星標專案',
+      title: l10n.starredProjects,
       trailing: starred != null && starred.isNotEmpty
-          ? TextButton(onPressed: () => _pushProjects('星標專案', 1), child: const Text('查看全部'))
+          ? TextButton(onPressed: () => _pushProjects(l10n.starredProjects, 1), child: Text(l10n.viewAllAction))
           : null,
       children: body,
     );
@@ -370,28 +371,28 @@ class _HomePageState extends State<HomePage> {
   Widget _shortcutsSection(BuildContext context) {
     final theme = Theme.of(context);
     return HubSection(
-      title: '捷徑',
+      title: l10n.shortcutsLabel,
       divider: false,
       padding: const EdgeInsets.only(bottom: 16),
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-          child: Text('需要的東西，一鍵直達',
+          child: Text(l10n.shortcutsOneTapAway,
             style: theme.textTheme.bodyMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Wrap(spacing: 4, runSpacing: 4, children: [
-            CircleShortcut(icon: Icons.search, color: HubColors.blue, label: '全域搜尋',
+            CircleShortcut(icon: Icons.search, color: HubColors.blue, label: l10n.globalSearch,
               onTap: () => _push((account, api) => SearchPage(account: account, api: api))),
-            CircleShortcut(icon: Icons.inbox_outlined, color: HubColors.green, label: '待辦',
+            CircleShortcut(icon: Icons.inbox_outlined, color: HubColors.green, label: l10n.todoLabel,
               onTap: () => widget.onOpenInbox?.call()),
-            CircleShortcut(icon: Icons.rate_review_outlined, color: HubColors.purple, label: '待我審查',
+            CircleShortcut(icon: Icons.rate_review_outlined, color: HubColors.purple, label: l10n.reviewRequests,
               onTap: () => _push((account, api) => MyWorkPage(account: account, api: api, kind: MyWorkKind.mergeRequests,
                 initialScope: MyWorkScope.review))),
-            CircleShortcut(icon: Icons.link, color: HubColors.orange, label: '以連結開啟',
+            CircleShortcut(icon: Icons.link, color: HubColors.orange, label: l10n.openByLink,
               onTap: () => widget.onLocate?.call()),
-            CircleShortcut(icon: Icons.add, color: HubColors.pink, label: '新增專案',
+            CircleShortcut(icon: Icons.add, color: HubColors.pink, label: l10n.newProject,
               onTap: () => widget.onCreate?.call()),
           ]),
         ),
@@ -411,20 +412,20 @@ class _HomePageState extends State<HomePage> {
       body: StatusBarInset(child: gestureSafe(Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         AppBar(
           primary: false,
-          title: const LargeTitle('首頁'),
+          title: LargeTitle(l10n.homeTab),
           actions: [
             IconButton(
-              tooltip: '全域搜尋',
+              tooltip: l10n.globalSearch,
               icon: const Icon(Icons.search),
               onPressed: () => _push((account, api) => SearchPage(account: account, api: api)),
             ),
             IconButton(
-              tooltip: '重新整理',
+              tooltip: l10n.refreshAction,
               icon: const Icon(Icons.refresh),
               onPressed: _loadingStarred ? null : _refresh,
             ),
             IconButton(
-              tooltip: '新增',
+              tooltip: l10n.addAction,
               icon: const Icon(Icons.add_circle_outline),
               onPressed: _addMenu,
             ),

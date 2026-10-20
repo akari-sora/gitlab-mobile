@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../l10n/l10n.dart';
 /// Whether [uri] may be handed to the system browser: HTTPS, no user info and
 /// no credential-looking query keys.
 bool safeExternalUri(Uri uri) =>
@@ -13,11 +14,11 @@ Future<void> openExternal(BuildContext context, Uri uri) async {
   try {
     final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!opened && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('無法啟動系統瀏覽器。')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.cannotOpenSystemBrowser)));
     }
   } catch (_) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('無法啟動系統瀏覽器。')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.cannotOpenSystemBrowser)));
     }
   }
 }

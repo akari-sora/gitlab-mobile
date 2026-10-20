@@ -12,6 +12,7 @@ import 'attachment_picker.dart';
 import 'markdown_edit.dart';
 import 'picker_sheet.dart';
 
+import '../../l10n/l10n.dart';
 const _draftStorage = FlutterSecureStorage(
   aOptions: AndroidOptions(),
   iOptions: IOSOptions(
@@ -436,7 +437,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
       projectId: projectId,
       source: PickerSource.members,
       multi: false,
-      title: '提及',
+      title: l10n.mentionAction,
       initial: const [],
     );
     if (picked == null || picked.isEmpty || !mounted) return;
@@ -558,7 +559,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
     await _writes;
     if (!mounted) return;
     if (_dirty && _draftUnavailable &&
-        !await confirmAction(context, '離開編輯器？', '安全儲存不可用，這份草稿可能無法在重新開啟後恢復。')) {
+        !await confirmAction(context, l10n.leaveEditorConfirm, l10n.secureStorageUnavailable)) {
       return;
     }
     if (mounted) Navigator.pop(context, false);
@@ -595,7 +596,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
         leading: IconButton(
-          tooltip: '保留草稿並返回',
+          tooltip: l10n.keepDraftAndGoBack,
           icon: const Icon(Icons.close),
           onPressed: _locked ? null : _leave,
         ),
@@ -606,7 +607,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
             child: FilledButton(
               key: const Key('editorSave'),
               onPressed: _locked || _loading || _saveBlocked || _staleDraft != null ? null : _save,
-              child: Text(_saving ? '送出中…' : '儲存'),
+              child: Text(_saving ? l10n.submitting : l10n.saveAction),
             ),
           ),
         ],
@@ -630,9 +631,9 @@ class _ResourceEditorState extends State<ResourceEditor> {
                             style: Theme.of(context).textTheme.bodySmall,
                           ),
                           if (_draftUnavailable)
-                            const Padding(
+                            Padding(
                               padding: EdgeInsets.only(top: 12),
-                              child: Text('安全草稿儲存不可用。送出失敗時內容仍會保留在此畫面。'),
+                              child: Text(l10n.secureDraftStorageUnavailable),
                             ),
                           if (_error != null)
                             FailureNotice(
@@ -646,8 +647,8 @@ class _ResourceEditorState extends State<ResourceEditor> {
                             Padding(
                               padding: EdgeInsets.only(top: 12),
                               child: Text(widget.blockRetryOnSaveFailure
-                                  ? '請保留草稿並返回，重新開啟編輯以確認最新內容後再儲存。'
-                                  : '請保留草稿並返回，重新讀取活動確認變更是否已套用，再決定下一步。'),
+                                  ? l10n.keepDraftReopenThenSave
+                                  : l10n.keepDraftReloadActivity),
                             ),
                           for (final field in widget.fields)
                             Padding(
@@ -678,14 +679,14 @@ class _ResourceEditorState extends State<ResourceEditor> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(_staleDraftUnknown
-            ? '草稿沒有版本資訊（來自舊版 App），無法確認是否比伺服器內容新。'
-            : '草稿來自較舊的版本，伺服器內容已在之後變更。'),
+            ? l10n.draftMissingVersionInfo
+            : l10n.draftOlderThanServer),
         const SizedBox(height: 4),
         Wrap(spacing: 8, children: [
-          TextButton(onPressed: _locked ? null : _applyStaleDraft, child: const Text('套用草稿')),
+          TextButton(onPressed: _locked ? null : _applyStaleDraft, child: Text(l10n.applyDraft)),
           TextButton(
             onPressed: _locked ? null : () => unawaited(_discardStaleDraft()),
-            child: const Text('捨棄草稿'),
+            child: Text(l10n.discardDraft),
           ),
         ]),
       ],
@@ -705,9 +706,9 @@ class _ResourceEditorState extends State<ResourceEditor> {
     onChanged: _changed,
     decoration: InputDecoration(labelText: field.label, helperText: field.hint),
     validator: (value) {
-      if (field.required && (value == null || value.trim().isEmpty)) return '此欄位必填';
+      if (field.required && (value == null || value.trim().isEmpty)) return l10n.fieldRequired;
       final maxLength = field.maxLength;
-      if (maxLength != null && (value?.length ?? 0) > maxLength) return '不可超過 $maxLength 個字元';
+      if (maxLength != null && (value?.length ?? 0) > maxLength) return l10n.maxLengthExceeded(maxLength);
       return field.validator?.call(value ?? '');
     },
   );
@@ -717,7 +718,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
     final raw = controller?.text ?? '';
     final supported = field.choices.any((choice) => choice.value == raw);
     final unsupported = raw.isNotEmpty && !supported
-        ? '目前值「$raw」不受支援，請選擇其他選項。'
+        ? l10n.unsupportedRawValue(raw)
         : null;
     return KeyedSubtree(
       key: ValueKey('choice-${field.key}-$_pickerEpoch'),
@@ -737,9 +738,9 @@ class _ResourceEditorState extends State<ResourceEditor> {
         validator: (value) {
           final current = controller?.text ?? '';
           if (current.isNotEmpty && !field.choices.any((choice) => choice.value == current)) {
-            return '目前值「$current」不受支援，請選擇其他選項。';
+            return l10n.unsupportedCurrentValue(current);
           }
-          if (field.required && (value == null || value.isEmpty)) return '此欄位必填';
+          if (field.required && (value == null || value.isEmpty)) return l10n.fieldRequired;
           return null;
         },
       ),
@@ -757,9 +758,9 @@ class _ResourceEditorState extends State<ResourceEditor> {
         child: SegmentedButton<bool>(
           showSelectedIcon: false,
           style: SegmentedButton.styleFrom(minimumSize: const Size(48, 48)),
-          segments: const [
-            ButtonSegment(value: false, label: Text('編輯'), tooltip: '編輯'),
-            ButtonSegment(value: true, label: Text('預覽'), tooltip: '預覽'),
+          segments: [
+            ButtonSegment(value: false, label: Text(l10n.editAction), tooltip: l10n.editAction),
+            ButtonSegment(value: true, label: Text(l10n.previewAction), tooltip: l10n.previewAction),
           ],
           selected: {_preview},
           onSelectionChanged: _locked ? null : (selected) => _setPreview(selected.first),
@@ -791,7 +792,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
                 child: Row(children: [
                   const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
                   const SizedBox(width: 8),
-                  Expanded(child: Text('上傳中 ${_uploadingName!}…')),
+                  Expanded(child: Text(l10n.uploadingProgress(_uploadingName!))),
                 ]),
               ),
           ],
@@ -822,7 +823,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
             children: [
               const Icon(Icons.bolt, size: 16, color: Colors.amber),
               Text(
-                '包含快捷指令：',
+                l10n.includesQuickActions,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
@@ -913,14 +914,14 @@ class _ResourceEditorState extends State<ResourceEditor> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '快捷指令 (Quick Actions)',
+                      l10n.quickActionsTitle,
                       style: Theme.of(context).textTheme.titleMedium,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close),
-                    tooltip: '關閉選單',
+                    tooltip: l10n.closeMenu,
                     onPressed: () => Navigator.of(sheetContext).pop(),
                   ),
                 ],
@@ -980,16 +981,16 @@ class _ResourceEditorState extends State<ResourceEditor> {
 
   Widget _toolbar(String key, {bool quickActions = false}) {
     final tools = <(String, IconData, MarkupEdit Function(String, int, int))>[
-      ('粗體', Icons.format_bold, (text, start, end) => wrapSelection(text, start, end, '**', '**')),
-      ('斜體', Icons.format_italic, (text, start, end) => wrapSelection(text, start, end, '*', '*')),
-      ('行內程式碼', Icons.code, (text, start, end) => wrapSelection(text, start, end, '`', '`')),
-      ('程式碼區塊', Icons.data_object, insertCodeBlock),
-      ('連結', Icons.link, insertLink),
-      ('項目符號清單', Icons.format_list_bulleted, (text, start, end) => prefixLines(text, start, end, '- ')),
-      ('編號清單', Icons.format_list_numbered, (text, start, end) => prefixLines(text, start, end, '1. ')),
-      ('待辦項目', Icons.checklist, (text, start, end) => prefixLines(text, start, end, '- [ ] ')),
-      ('引用', Icons.format_quote, (text, start, end) => prefixLines(text, start, end, '> ')),
-      ('標題', Icons.title, (text, start, end) => prefixLines(text, start, end, '## ')),
+      (l10n.boldFormat, Icons.format_bold, (text, start, end) => wrapSelection(text, start, end, '**', '**')),
+      (l10n.italicFormat, Icons.format_italic, (text, start, end) => wrapSelection(text, start, end, '*', '*')),
+      (l10n.inlineCode, Icons.code, (text, start, end) => wrapSelection(text, start, end, '`', '`')),
+      (l10n.codeBlock, Icons.data_object, insertCodeBlock),
+      (l10n.link, Icons.link, insertLink),
+      (l10n.bulletedList, Icons.format_list_bulleted, (text, start, end) => prefixLines(text, start, end, '- ')),
+      (l10n.numberedList, Icons.format_list_numbered, (text, start, end) => prefixLines(text, start, end, '1. ')),
+      (l10n.taskListFormat, Icons.checklist, (text, start, end) => prefixLines(text, start, end, '- [ ] ')),
+      (l10n.blockquoteFormat, Icons.format_quote, (text, start, end) => prefixLines(text, start, end, '> ')),
+      (l10n.headingFormat, Icons.title, (text, start, end) => prefixLines(text, start, end, '## ')),
     ];
     return TextFieldTapRegion(
       child: SingleChildScrollView(
@@ -1002,24 +1003,24 @@ class _ResourceEditorState extends State<ResourceEditor> {
               icon: Icon(tool.$2),
             ),
           if (widget.projectToolsEnabled) IconButton(
-            tooltip: '提及',
+            tooltip: l10n.mentionAction,
             onPressed: _locked ? null : () { unawaited(_mention(key)); },
             icon: const Icon(Icons.alternate_email),
           ),
           if (widget.projectToolsEnabled) IconButton(
-            tooltip: '附加圖片',
+            tooltip: l10n.attachImage,
             onPressed: _locked ? null : () { unawaited(_attach(key, image: true)); },
             icon: const Icon(Icons.image_outlined),
           ),
           if (widget.projectToolsEnabled) IconButton(
-            tooltip: '附加檔案',
+            tooltip: l10n.attachFile,
             onPressed: _locked ? null : () { unawaited(_attach(key, image: false)); },
             icon: const Icon(Icons.attach_file),
           ),
           if (quickActions)
             IconButton(
               key: const ValueKey('editor-quick-actions-btn'),
-              tooltip: '快捷指令清單',
+              tooltip: l10n.quickActionsList,
               constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
               onPressed: _locked ? null : () => _showQuickActionsSheet(key),
               icon: const Icon(Icons.bolt_outlined),
@@ -1035,7 +1036,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
     return FormField<List<PickerChoice>>(
       key: ValueKey('picked-${field.key}-$_pickerEpoch'),
       initialValue: List<PickerChoice>.of(_picked[field.key] ?? const []),
-      validator: (value) => field.required && (value == null || value.isEmpty) ? '此欄位必填' : null,
+      validator: (value) => field.required && (value == null || value.isEmpty) ? l10n.fieldRequired : null,
       builder: (state) {
         final selected = state.value ?? const <PickerChoice>[];
         return InkWell(
@@ -1074,7 +1075,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: selected.isEmpty
-                    ? Text('尚未選擇', style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
+                    ? Text(l10n.notSelected, style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant))
                     : Wrap(
                         spacing: 6,
                         runSpacing: 6,

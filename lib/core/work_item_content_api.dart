@@ -151,19 +151,19 @@ extension WorkItemContentApi on GitLabApi {
       throw const ApiFailure(FailureKind.conflict);
     }
     if (!before.canUpdate || before.target == null) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.forbidden,
-        title: '無法編輯工作項目',
-        detail: '目前帳號沒有更新這個工作項目的權限。',
+        title: l10n.cannotEditWorkItem,
+        detail: l10n.noPermissionUpdateWorkItem,
       );
     }
     if (description != null &&
         before.snapshot.descriptionAvailability !=
             WorkItemDescriptionAvailability.present) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.unsupported,
-        title: '這個工作項目無法編輯描述',
-        detail: '實例沒有回傳可安全更新的描述元件。仍可只更新標題。',
+        title: l10n.cannotEditItemDescription,
+        detail: l10n.noSafeDescriptionWidget,
       );
     }
     final titleChanged = title != before.snapshot.summary.title;
@@ -202,10 +202,10 @@ extension WorkItemContentApi on GitLabApi {
         throw const FormatException('Invalid content errors');
       }
       if (errors.isNotEmpty) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.validation,
-          title: 'GitLab 未接受內容更新',
-          detail: '草稿已保留。請重新讀取工作項目後再檢查欄位。',
+          title: l10n.gitlabRejectedContentUpdate,
+          detail: l10n.draftKeptRecheckFields,
         );
       }
       final acknowledged = _parseContentWorkItem(
@@ -275,10 +275,10 @@ extension WorkItemContentApi on GitLabApi {
       }
       final actorId = _parseNotificationActor(data['currentUser']);
       if (actorId == null) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.unauthenticated,
-          title: '登入已失效',
-          detail: '請重新連接目前帳號，再編輯這個工作項目。',
+          title: l10n.signInNoLongerValid,
+          detail: l10n.reconnectThenEditWorkItem,
         );
       }
       if (_notificationActorNumber(actorId) != expectedUserId) {
@@ -491,10 +491,10 @@ Json _workItemContentGraphData(Uint8List bytes, {required bool mutation}) {
               ),
         );
         if (unsupported) {
-          throw const ApiFailure(
+          throw ApiFailure(
             FailureKind.unsupported,
-            title: '實例未提供工作項目內容編輯',
-            detail: '仍可查看工作項目；這個 GitLab 版本不支援安全的標題／描述更新流程。',
+            title: l10n.instanceNoWorkItemContentEdit,
+            detail: l10n.noSafeTitleDescriptionFlow,
           );
         }
         throw ApiFailure(

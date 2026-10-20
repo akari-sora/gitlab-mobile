@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'motion.dart';
 
+import '../l10n/l10n.dart';
 /// Placeholder rows shown while a list loads for the first time, in the shape
 /// of the rows that will replace them, so the screen keeps its layout instead
 /// of showing a lone spinner. They pulse gently, hold still when the platform
@@ -101,7 +102,7 @@ class _RowsSkeletonState extends State<RowsSkeleton>
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Semantics(
-      label: '正在載入',
+      label: l10n.loading2,
       liveRegion: true,
       child: ExcludeSemantics(
         child: LayoutBuilder(

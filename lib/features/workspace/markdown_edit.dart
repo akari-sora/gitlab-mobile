@@ -1,3 +1,4 @@
+import '../../l10n/l10n.dart';
 class MarkupEdit {
   const MarkupEdit(this.text, this.base, this.extent);
   final String text;
@@ -73,17 +74,20 @@ MarkupEdit insertCodeBlock(String text, int rawStart, int rawEnd) {
 MarkupEdit insertLink(String text, int rawStart, int rawEnd) {
   final range = _range(text, rawStart, rawEnd);
   final selected = text.substring(range.start, range.end);
+  // Only the placeholder words are translated; the Markdown syntax and the
+  // selection offsets stay in code.
+  final url = l10n.url;
   if (selected.isEmpty) {
-    const label = '文字';
-    const snippet = '[$label](網址)';
+    final label = l10n.linkText;
+    final snippet = '[$label]($url)';
     final next = text.replaceRange(range.start, range.end, snippet);
     final base = range.start + 1;
     return MarkupEdit(next, base, base + label.length);
   }
-  final snippet = '[$selected](網址)';
+  final snippet = '[$selected]($url)';
   final next = text.replaceRange(range.start, range.end, snippet);
   final base = range.start + selected.length + 3;
-  return MarkupEdit(next, base, base + '網址'.length);
+  return MarkupEdit(next, base, base + url.length);
 }
 
 MarkupEdit insertText(
@@ -160,118 +164,119 @@ class QuickActionDef {
     required this.command,
     required this.label,
     required this.description,
-    this.category = '一般',
+    String? category,
     this.isMergeRequestOnly = false,
-  });
+  }) : _categoryArg = category;
 
   final String command;
   final String label;
   final String description;
-  final String category;
+  final String? _categoryArg;
+  String get category => _categoryArg ?? l10n.quickActionGeneral;
   final bool isMergeRequestOnly;
 }
 
-const defaultQuickActions = <QuickActionDef>[
+List<QuickActionDef> get defaultQuickActions => <QuickActionDef>[
   QuickActionDef(
     command: '/close',
-    label: '關閉',
-    description: '關閉此 Issue 或 MR',
-    category: '狀態',
+    label: l10n.closeAction,
+    description: l10n.closeIssueOrMr,
+    category: l10n.status,
   ),
   QuickActionDef(
     command: '/reopen',
-    label: '重新開啟',
-    description: '重新開啟已關閉的 Issue 或 MR',
-    category: '狀態',
+    label: l10n.reopen,
+    description: l10n.reopenClosedIssueOrMr,
+    category: l10n.status,
   ),
   QuickActionDef(
     command: '/ready',
-    label: '標記就緒',
-    description: '移除 Draft/WIP 草稿狀態，標記為可審查',
-    category: '狀態',
+    label: l10n.markAsReady,
+    description: l10n.removeDraftMarkReady,
+    category: l10n.status,
     isMergeRequestOnly: true,
   ),
   QuickActionDef(
     command: '/draft',
-    label: '標記草稿',
-    description: '將 MR 標記為草稿 (Draft)',
-    category: '狀態',
+    label: l10n.markAsDraft,
+    description: l10n.markMrAsDraft,
+    category: l10n.status,
     isMergeRequestOnly: true,
   ),
   QuickActionDef(
     command: '/assign @me',
-    label: '指派給我',
-    description: '將此項目指派給目前登入帳號',
-    category: '指派與審查',
+    label: l10n.assignToMe,
+    description: l10n.assignToCurrentAccount,
+    category: l10n.assignAndReview,
   ),
   QuickActionDef(
     command: '/unassign',
-    label: '取消指派',
-    description: '移除所有已被指派的成員',
-    category: '指派與審查',
+    label: l10n.unassign,
+    description: l10n.removeAllAssignees,
+    category: l10n.assignAndReview,
   ),
   QuickActionDef(
     command: '/approve',
-    label: '核准',
-    description: '核准此合併請求 (Approve MR)',
-    category: '指派與審查',
+    label: l10n.approve,
+    description: l10n.approveMergeRequest,
+    category: l10n.assignAndReview,
     isMergeRequestOnly: true,
   ),
   QuickActionDef(
     command: '/unapprove',
-    label: '撤銷核准',
-    description: '撤銷對此合併請求的核准',
-    category: '指派與審查',
+    label: l10n.revokeApproval,
+    description: l10n.revokeMrApproval,
+    category: l10n.assignAndReview,
     isMergeRequestOnly: true,
   ),
   QuickActionDef(
     command: '/merge',
-    label: '自動合併',
-    description: '當 CI 成功時自動執行合併 (Merge)',
-    category: '指派與審查',
+    label: l10n.autoMerge,
+    description: l10n.autoMergeWhenCiSucceeds,
+    category: l10n.assignAndReview,
     isMergeRequestOnly: true,
   ),
   QuickActionDef(
     command: '/label ~',
-    label: '加上標籤',
-    description: '為此項目新增標籤',
-    category: '標籤與里程碑',
+    label: l10n.addLabel,
+    description: l10n.addLabelToItem,
+    category: l10n.labelsAndMilestones,
   ),
   QuickActionDef(
     command: '/unlabel ~',
-    label: '移除標籤',
-    description: '從此項目移除標籤',
-    category: '標籤與里程碑',
+    label: l10n.removeLabel,
+    description: l10n.removeLabelFromItem,
+    category: l10n.labelsAndMilestones,
   ),
   QuickActionDef(
     command: '/milestone %',
-    label: '里程碑',
-    description: '設定目標里程碑',
-    category: '標籤與里程碑',
+    label: l10n.milestoneLabel,
+    description: l10n.setTargetMilestone,
+    category: l10n.labelsAndMilestones,
   ),
   QuickActionDef(
     command: '/spend 1h',
-    label: '登記耗時',
-    description: '登記實際工時（例如 1h, 30m, 2d）',
-    category: '工時追蹤',
+    label: l10n.addSpentTime,
+    description: l10n.addSpentTimeExample,
+    category: l10n.timeTracking,
   ),
   QuickActionDef(
     command: '/estimate 1d',
-    label: '預估工時',
-    description: '設定預估所需工時（例如 1d, 4h）',
-    category: '工時追蹤',
+    label: l10n.timeEstimate,
+    description: l10n.setTimeEstimateExample,
+    category: l10n.timeTracking,
   ),
   QuickActionDef(
     command: '/lock',
-    label: '鎖定討論',
-    description: '鎖定討論串，僅專案成員可留言',
-    category: '討論管理',
+    label: l10n.lockThread,
+    description: l10n.lockThreadMembersOnly,
+    category: l10n.threadManagement,
   ),
   QuickActionDef(
     command: '/unlock',
-    label: '解除鎖定',
-    description: '解除討論串鎖定',
-    category: '討論管理',
+    label: l10n.unlock,
+    description: l10n.unlockThread,
+    category: l10n.threadManagement,
   ),
 ];
 

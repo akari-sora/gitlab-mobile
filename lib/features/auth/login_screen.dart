@@ -7,6 +7,7 @@ import '../workspace/editor.dart';
 import 'recent_project.dart';
 import 'session_controller.dart';
 
+import '../../l10n/l10n.dart';
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key, required this.session});
   final SessionController session;
@@ -102,19 +103,19 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 24),
                         Text(
-                          'GitLab，\n隨手掌握。',
+                          l10n.gitlabAtYourFingertips,
                           style: theme.textTheme.headlineLarge,
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          '專案、程式碼、審查與 CI。\n為手機重新整理的工作空間。',
+                          l10n.projectsCodeReviewWorkspace,
                           style: theme.textTheme.bodyLarge?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                         if (session.accounts.isNotEmpty) ...[
                           const SizedBox(height: 28),
-                          Text('繼續使用', style: theme.textTheme.titleSmall),
+                          Text(l10n.continueUsing, style: theme.textTheme.titleSmall),
                           const SizedBox(height: 12),
                           for (final account in session.accounts)
                             Padding(
@@ -138,15 +139,15 @@ class _LoginScreenState extends State<LoginScreen> {
                                         },
                                   trailing: IconButton(
                                     key: Key('removeAccount-${account.key}'),
-                                    tooltip: '從此裝置移除帳號',
+                                    tooltip: l10n.removeAccountFromDevice,
                                     icon: const Icon(Icons.logout, size: 20),
                                     onPressed: session.busy
                                         ? null
                                         : () async {
                                             if (!await confirmAction(
                                               context,
-                                              '移除此帳號？',
-                                              '會清除這個帳號在此裝置的登入與草稿，不會撤銷 GitLab 上的 Token。',
+                                              l10n.removeThisAccountQuestion,
+                                              l10n.removeAccountKeepsRemoteToken,
                                             )) {
                                               return;
                                             }
@@ -172,7 +173,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                         ],
                         const SizedBox(height: 28),
-                        Text('連接帳號', style: theme.textTheme.titleMedium),
+                        Text(l10n.connectAccount, style: theme.textTheme.titleMedium),
                         const SizedBox(height: 16),
                         TextFormField(
                           key: const Key('instanceField'),
@@ -181,13 +182,13 @@ class _LoginScreenState extends State<LoginScreen> {
                           keyboardType: TextInputType.url,
                           autocorrect: false,
                           enableSuggestions: false,
-                          decoration: const InputDecoration(
-                            labelText: 'GitLab 網址',
+                          decoration: InputDecoration(
+                            labelText: l10n.gitlabUrl,
                             prefixIcon: Icon(Icons.public),
                           ),
                           validator: (value) =>
                               value == null || value.trim().isEmpty
-                              ? '請輸入實例網址'
+                              ? l10n.enterInstanceUrl
                               : null,
                         ),
                         const SizedBox(height: 16),
@@ -205,7 +206,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             labelText: 'Personal Access Token',
                             prefixIcon: const Icon(Icons.key_outlined),
                             suffixIcon: IconButton(
-                              tooltip: _obscure ? '顯示 Token' : '隱藏 Token',
+                              tooltip: _obscure ? l10n.showToken : l10n.hideToken,
                               icon: Icon(
                                 _obscure
                                     ? Icons.visibility_outlined
@@ -217,7 +218,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           ),
                           validator: (value) =>
                               value == null || value.trim().isEmpty
-                              ? '請輸入 Token'
+                              ? l10n.enterToken
                               : null,
                           onFieldSubmitted: (_) {
                             unawaited(_connect());
@@ -225,7 +226,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          '協作操作需要 api 權限；僅閱讀可使用 read_api。',
+                          l10n.apiScopeForCollaboration,
                           style: theme.textTheme.bodySmall,
                         ),
                         if (session.message != null)
@@ -258,7 +259,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                   ),
                                 )
                               : const Icon(Icons.arrow_forward, size: 20),
-                          label: Text(session.busy ? '正在確認帳號…' : '驗證並連接'),
+                          label: Text(session.busy ? l10n.verifyingAccount : l10n.verifyAndConnect),
                         ),
                         if (_oauthApplicationId != null &&
                             _oauthApplicationId!.isNotEmpty) ...[
@@ -271,19 +272,19 @@ class _LoginScreenState extends State<LoginScreen> {
                                     unawaited(_connectOAuth());
                                   },
                             icon: const Icon(Icons.open_in_browser, size: 20),
-                            label: const Text('透過 GitLab 授權登入'),
+                            label: Text(l10n.signInWithGitlabAuth),
                           ),
                         ],
                         const SizedBox(height: 16),
                         Text(
-                          'Token 僅傳送到上方的 GitLab 實例，並保存在裝置安全儲存。請勿輸入帳號密碼。',
+                          l10n.tokenSentOnlyToInstance,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                         const SizedBox(height: 28),
                         Text(
-                          '獨立第三方客戶端 · 非 GitLab 官方產品',
+                          l10n.thirdPartyNotOfficialProduct,
                           textAlign: TextAlign.center,
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,

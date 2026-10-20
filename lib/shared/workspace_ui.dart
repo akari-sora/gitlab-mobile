@@ -9,6 +9,7 @@ import '../core/providers.dart';
 import 'resume_target.dart';
 import 'theme.dart';
 
+import '../l10n/l10n.dart';
 export 'resume_target.dart';
 
 /// Ends the active session so the user can pick another account. Does not rotate accounts.
@@ -84,35 +85,35 @@ String relativeDate(String value) {
   final parsed = DateTime.tryParse(value);
   if (parsed == null) return '';
   final diff = DateTime.now().difference(parsed);
-  if (diff.inMinutes < 1) return '剛剛';
-  if (diff.inHours < 1) return '${diff.inMinutes} 分鐘前';
-  if (diff.inDays < 1) return '${diff.inHours} 小時前';
-  if (diff.inDays < 7) return '${diff.inDays} 天前';
+  if (diff.inMinutes < 1) return l10n.justNow;
+  if (diff.inHours < 1) return l10n.minutesAgo(diff.inMinutes);
+  if (diff.inDays < 1) return l10n.hoursAgo(diff.inHours);
+  if (diff.inDays < 7) return l10n.daysAgo(diff.inDays);
   final date = parsed.toLocal();
   return '${date.year}/${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}';
 }
 
 (String, IconData) statusStyle(String status) => switch (status) {
-  'opened' => ('開啟中', Icons.adjust),
-  'active' => ('進行中', Icons.flag_outlined),
-  'closed' => ('已關閉', Icons.check_circle_outline),
-  'merged' => ('已合併', Icons.merge),
-  'success' || 'passed' => ('成功', Icons.check_circle_outline),
-  'failed' => ('失敗', Icons.error_outline),
-  'error' => ('錯誤', Icons.error_outline),
-  'running' => ('執行中', Icons.motion_photos_on_outlined),
+  'opened' => (l10n.statusOpen, Icons.adjust),
+  'active' => (l10n.active, Icons.flag_outlined),
+  'closed' => (l10n.statusClosed, Icons.check_circle_outline),
+  'merged' => (l10n.merged, Icons.merge),
+  'success' || 'passed' => (l10n.statusPassed, Icons.check_circle_outline),
+  'failed' => (l10n.statusFailed, Icons.error_outline),
+  'error' => (l10n.statusError, Icons.error_outline),
+  'running' => (l10n.statusRunning, Icons.motion_photos_on_outlined),
   'pending' ||
   'created' ||
   'waiting_for_resource' ||
-  'preparing' => ('等待中', Icons.schedule),
-  'canceled' => ('已取消', Icons.cancel_outlined),
-  'skipped' => ('已略過', Icons.skip_next_outlined),
-  'manual' => ('等待手動啟動', Icons.play_circle_outline),
-  'private' => ('私有', Icons.lock_outline),
-  'internal' => ('內部', Icons.business_outlined),
-  'public' => ('公開', Icons.public),
-  'marked_for_deletion' => ('待刪除', Icons.delete_outline),
-  _ => (status.isEmpty ? '狀態未知' : status, Icons.info_outline),
+  'preparing' => (l10n.pending, Icons.schedule),
+  'canceled' => (l10n.canceled, Icons.cancel_outlined),
+  'skipped' => (l10n.skipped, Icons.skip_next_outlined),
+  'manual' => (l10n.waitingForManualStart, Icons.play_circle_outline),
+  'private' => (l10n.visibilityPrivate, Icons.lock_outline),
+  'internal' => (l10n.visibilityInternal, Icons.business_outlined),
+  'public' => (l10n.visibilityPublic, Icons.public),
+  'marked_for_deletion' => (l10n.pendingDeletion, Icons.delete_outline),
+  _ => (status.isEmpty ? l10n.unknownStatus : status, Icons.info_outline),
 };
 
 String statusLabel(String status) => statusStyle(status).$1;
@@ -125,9 +126,9 @@ String projectCardLabel(Project project, String lastActivity) {
     project.path,
     if (description.isNotEmpty) description,
     statusLabel(project.visibility ?? ''),
-    if (project.archived == true) '已封存',
+    if (project.archived == true) l10n.archived,
     if (when.isNotEmpty) when,
-    if (project.markedForDeletionOn != null) '待刪除',
+    if (project.markedForDeletionOn != null) l10n.pendingDeletion,
   ].join(' · ');
 }
 
@@ -302,7 +303,7 @@ class PeopleStack extends StatelessWidget {
   Widget build(BuildContext context) {
     if (people.isEmpty) return const SizedBox.shrink();
     final shown = people.take(max).toList();
-    final names = people.map((p) => '@${valueText(p, 'username')}').join('、');
+    final names = people.map((p) => '@${valueText(p, 'username')}').join(l10n.listSeparator);
     final surface = Theme.of(context).colorScheme.surface;
     return Semantics(label: names, excludeSemantics: true, child: Row(mainAxisSize: MainAxisSize.min, children: [
       SizedBox(
@@ -337,7 +338,7 @@ class AppearancePicker extends StatelessWidget {
   const AppearancePicker({super.key, required this.mode, required this.onChanged});
   final ThemeMode mode;
   final ValueChanged<ThemeMode> onChanged;
-  static const _labels = {ThemeMode.system: '跟隨系統', ThemeMode.light: '淺色', ThemeMode.dark: '深色'};
+  static Map<ThemeMode, String> get _labels => {ThemeMode.system: l10n.systemDefault, ThemeMode.light: l10n.light, ThemeMode.dark: l10n.dark};
   static const _icons = {ThemeMode.system: Icons.brightness_auto_outlined, ThemeMode.light: Icons.light_mode_outlined, ThemeMode.dark: Icons.dark_mode_outlined};
   @override
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, constraints) {
@@ -631,11 +632,11 @@ class FailureNotice extends StatelessWidget {
               Text(error.detail),
               if (effectiveAccount != null) ...[
                 const SizedBox(height: 12),
-                Text('實例：${effectiveAccount.instance.key}'),
-                Text('App 帳號：@${effectiveAccount.user.username}'),
+                Text(l10n.instanceKey(effectiveAccount.instance.key)),
+                Text(l10n.appAccountUsername(effectiveAccount.user.username)),
               ],
               if (resourceLabel != null && resourceLabel!.isNotEmpty)
-                Text('目標：$resourceLabel'),
+                Text(l10n.targetResource(resourceLabel)),
               Wrap(
                 spacing: 8,
                 children: [
@@ -644,12 +645,12 @@ class FailureNotice extends StatelessWidget {
                     TextButton.icon(
                       onPressed: onRetry,
                       icon: const Icon(Icons.refresh, size: 18),
-                      label: const Text('重新整理'),
+                      label: Text(l10n.refreshAction),
                     ),
                   if (effectiveSwitch != null)
                     TextButton(
                       onPressed: effectiveSwitch,
-                      child: const Text('切換帳號'),
+                      child: Text(l10n.switchAccount),
                     ),
                 ],
               ),
@@ -657,7 +658,7 @@ class FailureNotice extends StatelessWidget {
                 key: const PageStorageKey<String>('failure-notice-diagnostics'),
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: EdgeInsets.zero,
-                title: const Text('診斷資訊', style: TextStyle(fontSize: 12)),
+                title: Text(l10n.diagnosticInformation, style: TextStyle(fontSize: 12)),
                 children: [
                   Align(
                     alignment: Alignment.centerLeft,
@@ -683,7 +684,7 @@ class ListSkeleton extends StatelessWidget {
   const ListSkeleton({super.key});
   @override
   Widget build(BuildContext context) => Semantics(
-    label: '正在載入',
+    label: l10n.loading2,
     liveRegion: true,
     child: const Padding(
       padding: EdgeInsets.all(32),
@@ -716,13 +717,13 @@ Future<bool> confirmAction(
               Text(detail),
               if (requiredText != null) ...[
                 const SizedBox(height: 16),
-                Text('輸入「$requiredText」確認'),
+                Text(l10n.typeToConfirm(requiredText)),
                 const SizedBox(height: 8),
                 TextField(
                   controller: input,
                   autocorrect: false,
                   onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(labelText: '確認名稱'),
+                  decoration: InputDecoration(labelText: l10n.confirmName),
                 ),
               ],
             ],
@@ -731,13 +732,13 @@ Future<bool> confirmAction(
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
+            child: Text(l10n.cancelAction),
           ),
           FilledButton(
             onPressed: requiredText != null && input.text != requiredText
                 ? null
                 : () => Navigator.pop(context, true),
-            child: const Text('確認'),
+            child: Text(l10n.confirmAction),
           ),
         ],
       ),
@@ -753,5 +754,5 @@ void showFailure(BuildContext context, Object error) {
   final failure = safeFailure(error);
   ScaffoldMessenger.of(
     context,
-  ).showSnackBar(SnackBar(content: Text('${failure.title}。${failure.detail}')));
+  ).showSnackBar(SnackBar(content: Text(l10n.titleThenDetail(failure.title, failure.detail))));
 }

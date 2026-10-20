@@ -30,6 +30,33 @@ class BootstrapTests(unittest.TestCase):
         backup = ET.parse(source / 'res/xml/data_extraction_rules.xml').getroot()
         self.assertEqual(len(backup.find('device-transfer').findall('exclude')), 5)
 
+    def test_android_declares_every_app_language(self):
+        source = self.root / 'app/src/main'
+        source.mkdir(parents=True)
+        (source / 'AndroidManifest.xml').write_text('<manifest><application/></manifest>')
+        bootstrap.harden_android(self.root)
+        attribute = '{' + bootstrap.ANDROID + '}'
+        app = ET.parse(source / 'AndroidManifest.xml').getroot().find('application')
+        self.assertEqual(app.get(attribute + 'localeConfig'), '@xml/locales_config')
+        config = ET.parse(source / 'res/xml/locales_config.xml').getroot()
+        self.assertEqual(config.tag, 'locale-config')
+        names = [node.get(attribute + 'name') for node in config.findall('locale')]
+        self.assertEqual(names, [tag for tag, *_ in bootstrap.l10n.LANGUAGES])
+        self.assertIn('zh-TW', names)
+
+    def test_ios_lists_the_app_languages_once(self):
+        (self.root / 'Runner').mkdir()
+        path = self.root / 'Runner/Info.plist'
+        path.write_text('<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict></dict></plist>\n')
+        bootstrap.register_localizations_ios(self.root)
+        bootstrap.register_localizations_ios(self.root)
+        plist = ET.parse(path).getroot().find('dict')
+        keys = [node.text for node in plist if node.tag == 'key']
+        self.assertEqual(keys.count('CFBundleLocalizations'), 1)
+        names = [node.text for node in plist.find('array')]
+        self.assertEqual(names[:3], ['zh-Hant', 'zh-Hans', 'en'])
+        self.assertEqual(len(names), len(bootstrap.l10n.LANGUAGES))
+
     def test_android_registers_oauth_callback_on_launcher_activity(self):
         source = self.root / 'app/src/main'
         source.mkdir(parents=True)

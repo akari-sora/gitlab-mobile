@@ -91,40 +91,40 @@ mutation MobileSetWorkItemAssignees($input: WorkItemUpdateInput!) {
 '''
         .trim();
 
-const _assigneesReadForbidden = ApiFailure(
+ApiFailure get _assigneesReadForbidden => ApiFailure(
   FailureKind.forbidden,
-  title: '無法讀取工作項目負責人',
-  detail: '目前帳號沒有讀取這個工作項目的權限。',
+  title: l10n.cannotReadWorkItemAssignees,
+  detail: l10n.noPermissionReadWorkItem,
 );
 
-const _assigneesWriteForbidden = ApiFailure(
+ApiFailure get _assigneesWriteForbidden => ApiFailure(
   FailureKind.forbidden,
-  title: '無法變更負責人',
-  detail: '目前帳號沒有設定這個工作項目中繼資料的權限。',
+  title: l10n.cannotChangeAssignees,
+  detail: l10n.noPermissionSetItemMetadata,
 );
 
-const _assigneesUnsupported = ApiFailure(
+ApiFailure get _assigneesUnsupported => ApiFailure(
   FailureKind.unsupported,
-  title: '負責人名單未完整載入，無法編輯',
-  detail: '這次讀到的負責人連線不完整或不符合契約，不會送出被截斷的名單。',
+  title: l10n.assigneeListIncomplete,
+  detail: l10n.assigneeConnectionIncomplete,
 );
 
-const _assigneesRejected = ApiFailure(
+ApiFailure get _assigneesRejected => ApiFailure(
   FailureKind.validation,
-  title: 'GitLab 未接受負責人更新',
-  detail: '請重新讀取工作項目，並確認負責人與權限仍然有效。',
+  title: l10n.gitlabRejectedAssigneeUpdate,
+  detail: l10n.reloadConfirmAssignees,
 );
 
-const _assigneesConflict = ApiFailure(
+ApiFailure get _assigneesConflict => ApiFailure(
   FailureKind.conflict,
-  title: '負責人已經變更',
-  detail: '請重新讀取最新版本後再設定。',
+  title: l10n.assigneesHaveChanged,
+  detail: l10n.reloadLatestBeforeSetting,
 );
 
-const _assigneesUncertain = ApiFailure(
+ApiFailure get _assigneesUncertain => ApiFailure(
   FailureKind.writeUncertain,
-  title: '尚未確認負責人是否已更新',
-  detail: '連線在送出後中斷。請重新讀取工作項目，不要重複送出同一次變更。',
+  title: l10n.assigneeUpdateUnconfirmed,
+  detail: l10n.droppedAfterAssigneeSubmit,
 );
 
 /// Read result for one actor. [target] is null when the set cannot be edited.
@@ -555,10 +555,10 @@ void _validateAssigneeExpected(
 String _validatedAssigneeSearch(String value) {
   final search = value.trim();
   if (search.runes.length > 256 || search.contains('\u0000')) {
-    throw const ApiFailure(
+    throw ApiFailure(
       FailureKind.validation,
-      title: '搜尋無效',
-      detail: '負責人搜尋不能超過 256 個字元。',
+      title: l10n.invalidSearch,
+      detail: l10n.assigneeSearchTooLong,
     );
   }
   return search;
@@ -569,27 +569,27 @@ void _validateAssigneeSelection(
   required bool allowsMultiple,
 }) {
   if (assigneeIds.length > _assigneePageSize * _assigneeMaxPages) {
-    throw const ApiFailure(
+    throw ApiFailure(
       FailureKind.validation,
-      title: '負責人無效',
-      detail: '一次最多設定 2000 位負責人。',
+      title: l10n.invalidAssignee,
+      detail: l10n.assigneeLimitTwoThousand,
     );
   }
   final seen = <String>{};
   for (final id in assigneeIds) {
     if (!_validAssigneeUserId(id) || !seen.add(id)) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.validation,
-        title: '負責人無效',
-        detail: '負責人必須是不重複的使用者全域 ID。',
+        title: l10n.invalidAssignee,
+        detail: l10n.assigneesUniqueGlobalIds,
       );
     }
   }
   if (!allowsMultiple && assigneeIds.length > 1) {
-    throw const ApiFailure(
+    throw ApiFailure(
       FailureKind.validation,
-      title: '負責人無效',
-      detail: '這個工作項目只能設定一位負責人。',
+      title: l10n.invalidAssignee,
+      detail: l10n.workItemSingleAssignee,
     );
   }
 }
@@ -627,10 +627,10 @@ _parseAssigneeReadPage(
     final data = _assigneeGraphData(bytes, mutation: false);
     final actorId = _requiredAssigneeActor(data, expectedUserId);
     if (data['workItem'] == null) {
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.invisible,
-        title: '找不到工作項目',
-        detail: '這個項目可能不存在，或目前帳號無法讀取。',
+        title: l10n.workItemNotFound,
+        detail: l10n.itemMissingOrUnreadable,
       );
     }
     final node = objectJson(data['workItem']);
@@ -768,10 +768,10 @@ String _requiredAssigneeActor(Json data, int expectedUserId) {
   }
   final actorId = _parseNotificationActor(data['currentUser']);
   if (actorId == null) {
-    throw const ApiFailure(
+    throw ApiFailure(
       FailureKind.unauthenticated,
-      title: '登入已失效',
-      detail: '請重新連接目前帳號，再讀取工作項目負責人。',
+      title: l10n.signInNoLongerValid,
+      detail: l10n.reconnectThenReadAssignees,
     );
   }
   if (_notificationActorNumber(actorId) != expectedUserId) {

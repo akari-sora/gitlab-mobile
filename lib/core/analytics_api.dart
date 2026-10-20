@@ -206,8 +206,8 @@ Json _analyticsGraphData(Uint8List bytes, {required String feature}) {
         );
         throw ApiFailure(
           unsupported ? FailureKind.unsupported : FailureKind.invalidResponse,
-          title: unsupported ? '實例未提供$feature' : null,
-          detail: unsupported ? '請改用現有的列表與專案摘要資料。' : null,
+          title: unsupported ? l10n.instanceFeatureUnavailable(feature) : null,
+          detail: unsupported ? l10n.useExistingListsAndSummaries : null,
         );
       }
     }
@@ -460,14 +460,14 @@ extension AnalyticsApi on GitLabApi {
     );
     try {
       final remote = _analyticsProject(
-        _analyticsGraphData(response.bytes, feature: 'CI/CD 分析'),
+        _analyticsGraphData(response.bytes, feature: l10n.cicdAnalytics),
         project,
       );
       if (remote['pipelineAnalytics'] == null) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.unsupported,
-          title: '實例未提供 CI/CD 分析',
-          detail: '仍可查看 Pipeline 與工作列表。',
+          title: l10n.instanceNoCicdAnalytics,
+          detail: l10n.stillViewPipelinesAndJobs,
         );
       }
       final analytics = objectJson(remote['pipelineAnalytics']);
@@ -508,7 +508,7 @@ extension AnalyticsApi on GitLabApi {
     );
     try {
       final remote = _analyticsProject(
-        _analyticsGraphData(response.bytes, feature: '程式碼覆蓋率摘要'),
+        _analyticsGraphData(response.bytes, feature: l10n.codeCoverageSummary),
         project,
       );
       if (remote['codeCoverageSummary'] == null) return null;

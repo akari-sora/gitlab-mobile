@@ -1,5 +1,7 @@
 import 'instance.dart';
 
+import 'failure.dart';
+import '../l10n/l10n.dart';
 /// Typed result backed by the same parser used by the original G0 routes.
 final class ProjectLocator {
   const ProjectLocator._(this.idOrPath);
@@ -15,28 +17,42 @@ String projectLocator(GitLabInstance instance, String input) {
   if (text.contains('://')) {
     final uri = Uri.tryParse(text);
     if (uri == null || !instance.sameOrigin(uri)) {
-      throw const FormatException('請貼上同一實例的 HTTPS 專案連結。');
+      throw InputFormatException(l10n.pasteSameInstanceProjectLink);
     }
-    if (uri.queryParameters.keys.any((key) => const {
+    final Map<String, String> query;
+    try {
+      query = uri.queryParameters;
+    } on FormatException {
+      // Percent-encoding that is not UTF-8: the pasted link is malformed.
+      throw InputFormatException(l10n.projectLinkAmbiguousPath);
+    }
+    if (query.keys.any((key) => const {
       'access_token', 'private_token', 'token', 'job_token',
     }.contains(key.toLowerCase()))) {
-      throw const FormatException('連結含憑證參數；請改用不含 Token 的專案連結。');
+      throw InputFormatException(l10n.linkContainsTokenParams);
     }
     final rawPath = RegExp(r'^https://[^/?#]+([^?#]*)', caseSensitive: false).firstMatch(text)?.group(1) ?? '';
     if (rawPath.contains('\\') || rawPath.split('/').any((part) {
-      final decoded = Uri.decodeComponent(part);
+      final String decoded;
+      try {
+        decoded = Uri.decodeComponent(part);
+      } on ArgumentError {
+        throw InputFormatException(l10n.projectLinkAmbiguousPath);
+      } on FormatException {
+        throw InputFormatException(l10n.projectLinkAmbiguousPath);
+      }
       return decoded == '.' || decoded == '..';
-    })) { throw const FormatException('專案連結不可包含相對路徑。'); }
+    })) { throw InputFormatException(l10n.projectLinkNoRelativePath); }
     final baseSegments = instance.base.pathSegments.where((part) => part.isNotEmpty).toList();
     final segments = uri.pathSegments.toList();
-    if (segments.length <= baseSegments.length) { throw const FormatException('連結沒有專案路徑。'); }
+    if (segments.length <= baseSegments.length) { throw InputFormatException(l10n.linkMissingProjectPath); }
     for (var i = 0; i < baseSegments.length; i++) {
-      if (segments[i] != baseSegments[i]) { throw const FormatException('連結不屬於目前 GitLab 安裝路徑。'); }
+      if (segments[i] != baseSegments[i]) { throw InputFormatException(l10n.linkOutsideInstallPath); }
     }
     final projectParts = segments.skip(baseSegments.length).takeWhile((part) => part != '-').toList();
     while (projectParts.isNotEmpty && projectParts.last.isEmpty) { projectParts.removeLast(); }
     if (projectParts.any((part) => part.contains('/') || part.contains('%'))) {
-      throw const FormatException('專案連結包含不明確的編碼路徑。');
+      throw InputFormatException(l10n.projectLinkAmbiguousPath);
     }
     path = projectParts.join('/');
   }
@@ -45,7 +61,7 @@ String projectLocator(GitLabInstance instance, String input) {
   final parts = path.split('/');
   if (parts.length < 2 || parts.any((part) => part.isEmpty || part == '.' || part == '..') ||
       RegExp(r'[\\?#%\x00-\x1f\x7f]').hasMatch(path)) {
-    throw const FormatException('請輸入完整 namespace/project 路徑或 numeric project ID。');
+    throw InputFormatException(l10n.enterNamespacePathOrId);
   }
   return path;
 }
@@ -95,7 +111,7 @@ final class GitLabLink {
           workItemScope: WorkItemLinkScope.group);
         }
       }
-      throw const FormatException('不支援這個群組連結。');
+      throw InputFormatException(l10n.groupLinkUnsupported);
     }
     if (kind == 'work_items' && positive != null && rest.length == 1) {
       return GitLabLink._(project, LinkTarget.workItem, number: positive,
@@ -181,7 +197,7 @@ final class GitLabLink {
     if (parts.isEmpty || parts.any((part) => part.isEmpty || part == '.' || part == '..' ||
         part.contains('/') || part.contains('\\') || part.contains('%') ||
         RegExp(r'[?#\x00-\x1f\x7f]').hasMatch(part))) {
-      throw const FormatException('群組連結缺少有效的完整路徑。');
+      throw InputFormatException(l10n.groupLinkMissingFullPath);
     }
     return parts.join('/');
   }

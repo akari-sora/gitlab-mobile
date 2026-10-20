@@ -121,8 +121,8 @@ Json _todoGraphData(Uint8List bytes) {
             _todoSchemaErrors.contains((error['extensions'] as Map)['code']));
         throw ApiFailure(
           unsupported ? FailureKind.unsupported : FailureKind.invalidResponse,
-          title: unsupported ? '這個 GitLab 不支援延後待辦' : null,
-          detail: unsupported ? '延後待辦需要 GitLab 17.9 以上。' : null,
+          title: unsupported ? l10n.gitlabNoSnoozeTodos : null,
+          detail: unsupported ? l10n.snoozeTodosRequiresGitlab179 : null,
         );
       }
     }

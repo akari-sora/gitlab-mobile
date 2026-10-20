@@ -16,6 +16,7 @@ import '../../shared/workspace_ui.dart' show FailureNotice, endSessionFrom;
 import 'editor.dart';
 import 'reactions.dart' show reactionChoices, reactionGlyph;
 
+import '../../l10n/l10n.dart';
 const _maxDiscussionPages = 5;
 const _maxNotePages = 5;
 const _maxRenderedActivityItems = 100;
@@ -23,14 +24,14 @@ const _maxRetainedNotes = 2000;
 const _maxRetainedBodyCharacters = 4 * 1024 * 1024;
 
 String _filterLabel(WorkItemActivityFilter filter) => switch (filter) {
-  WorkItemActivityFilter.all => '全部活動',
-  WorkItemActivityFilter.comments => '只看留言',
-  WorkItemActivityFilter.history => '只看歷史',
+  WorkItemActivityFilter.all => l10n.allActivity,
+  WorkItemActivityFilter.comments => l10n.commentsOnly2,
+  WorkItemActivityFilter.history => l10n.historyOnly,
 };
 
 String _orderLabel(WorkItemActivityOrder order) => switch (order) {
-  WorkItemActivityOrder.oldestFirst => '最舊優先',
-  WorkItemActivityOrder.newestFirst => '最新優先',
+  WorkItemActivityOrder.oldestFirst => l10n.oldestFirst,
+  WorkItemActivityOrder.newestFirst => l10n.newestFirst,
 };
 
 int? _positiveGraphId(String value, Set<String> types) {
@@ -282,19 +283,19 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
     final saved = await openEditor(
       context,
       account: widget.account,
-      title: '新增留言',
+      title: l10n.newComment,
       resource: 'work-item-activity:${summary.id}:comment',
       subtitle:
           '${summary.project?.fullPath ?? summary.namespace?.fullPath ?? ''} · #${summary.iid}',
-      fields: const [
+      fields: [
         EditField(
           'body',
-          '留言內容',
+          l10n.commentBody,
           required: true,
           lines: 9,
           markdown: true,
           quickActions: false,
-          hint: '支援 Markdown；此編輯器不支援 / 開頭的 GitLab 快捷指令。',
+          hint: l10n.markdownNoQuickActions,
         ),
       ],
       save: (values) async {
@@ -324,20 +325,20 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
     final saved = await openEditor(
       context,
       account: widget.account,
-      title: '回覆留言',
+      title: l10n.replyToComment,
       resource:
           'work-item-activity:${summary.id}:discussion:$discussionId:reply',
       subtitle:
           '${summary.project?.fullPath ?? summary.namespace?.fullPath ?? ''} · #${summary.iid}',
-      fields: const [
+      fields: [
         EditField(
           'body',
-          '回覆內容',
+          l10n.replyContent,
           required: true,
           lines: 9,
           markdown: true,
           quickActions: false,
-          hint: '支援 Markdown；此編輯器不支援 / 開頭的 GitLab 快捷指令。',
+          hint: l10n.markdownNoQuickActions,
         ),
       ],
       save: (values) async {
@@ -482,7 +483,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
     final saved = await openEditor(
       context,
       account: widget.account,
-      title: '編輯留言',
+      title: l10n.editComment,
       resource: 'work-item-activity:${summary.id}:note:${note.id}:edit',
       subtitle:
           '${summary.project?.fullPath ?? summary.namespace?.fullPath ?? ''} · #${summary.iid}',
@@ -490,13 +491,13 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
       fields: [
         EditField(
           'body',
-          '留言內容',
+          l10n.commentBody,
           value: note.body,
           required: true,
           lines: 9,
           markdown: true,
           quickActions: false,
-          hint: '支援 Markdown；此編輯器不支援 / 開頭的 GitLab 快捷指令。',
+          hint: l10n.markdownNoQuickActions,
         ),
       ],
       save: (values) async {
@@ -723,8 +724,8 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
       child: ExpansionTile(
         key: ValueKey('work-item-activity-expansion-$_ownerEpoch'),
         maintainState: false,
-        title: Text('活動', style: Theme.of(context).textTheme.titleMedium),
-        subtitle: const Text('留言與系統事件'),
+        title: Text(l10n.activity, style: Theme.of(context).textTheme.titleMedium),
+        subtitle: Text(l10n.commentsAndSystemEvents),
         onExpansionChanged: (expanded) {
           _expanded = expanded;
           if (expanded) {
@@ -760,7 +761,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
 
   Widget _writeControls(BuildContext context) {
     if (_loadingWriteAccess) {
-      return const Row(
+      return Row(
         children: [
           SizedBox(
             width: 18,
@@ -768,31 +769,31 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           SizedBox(width: 8),
-          Expanded(child: Text('正在確認留言權限…')),
+          Expanded(child: Text(l10n.checkingCommentPermission)),
         ],
       );
     }
     if (_writeAccessError case final error?) {
       if (error.kind == FailureKind.unsupported) {
-        return const Text('此實例暫不支援新增留言；已載入的活動仍可閱讀。');
+        return Text(l10n.instanceCannotAddComments);
       }
       return _InlineActivityFailure(
         error: error,
         onRetry: _retryWriteAccess,
-        retryLabel: '重試留言權限',
+        retryLabel: l10n.retryCommentPermission,
       );
     }
     final access = _writeAccess;
     if (access == null) return const SizedBox.shrink();
     if (access.discussionLocked) {
-      return const Text('這個工作項目的討論已鎖定；已載入的活動仍可閱讀。');
+      return Text(l10n.workItemThreadLocked2);
     }
     if (!access.canCreateNote) {
-      return const Text('目前帳號可閱讀活動，但沒有新增留言的權限。');
+      return Text(l10n.accountReadActivityOnly);
     }
     final target = access.commentTarget;
     if (target == null) {
-      return const Text('伺服器未提供安全的留言目標；已載入的活動仍可閱讀。');
+      return Text(l10n.unsafeCommentTarget);
     }
     if (_filter == WorkItemActivityFilter.history) {
       return OutlinedButton.icon(
@@ -801,14 +802,14 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
             ? () => _changeSelection(filter: WorkItemActivityFilter.comments)
             : null,
         icon: const Icon(Icons.comment_outlined),
-        label: const Text('切換至留言後新增'),
+        label: Text(l10n.switchToCommentsToAdd),
       );
     }
     return FilledButton.icon(
       key: const ValueKey('work-item-activity-add-comment'),
       onPressed: () => unawaited(_openComment(target)),
       icon: const Icon(Icons.add_comment_outlined),
-      label: const Text('新增留言'),
+      label: Text(l10n.newComment),
     );
   }
 
@@ -833,7 +834,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
                   width: width,
                   child: _labelledControl(
                     context,
-                    label: '活動篩選',
+                    label: l10n.activityFilter,
                     enabled: enabled,
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<WorkItemActivityFilter>(
@@ -871,7 +872,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
                   width: width,
                   child: _labelledControl(
                     context,
-                    label: '活動排序',
+                    label: l10n.activitySort,
                     enabled: enabled,
                     child: DropdownButtonHideUnderline(
                       child: DropdownButton<WorkItemActivityOrder>(
@@ -910,9 +911,9 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
           },
         ),
         if (!_controlsSupported)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 12),
-            child: Text('此實例未提供活動篩選或排序，顯示全部活動（最舊優先）。'),
+            child: Text(l10n.activityFilterUnavailable),
           ),
         const SizedBox(height: 8),
         OutlinedButton.icon(
@@ -921,7 +922,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
               ? null
               : _refresh,
           icon: const Icon(Icons.refresh),
-          label: const Text('重新載入活動'),
+          label: Text(l10n.reloadActivity),
         ),
       ],
     );
@@ -977,34 +978,34 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
     if (_pages.isEmpty) {
       return _retentionLimitReached
           ? const _ActivityRetentionLimitNotice()
-          : const Text('尚未載入活動。');
+          : Text(l10n.activityNotLoaded);
     }
     final page = _pages[_activePage];
     final snapshot = page.result.snapshot;
     if (snapshot.availability == WorkItemActivityAvailability.absent) {
-      return const Text('這個工作項目沒有提供活動。');
+      return Text(l10n.workItemHasNoActivity);
     }
     if (snapshot.availability ==
         WorkItemActivityAvailability.widgetsUnavailable) {
-      return const Text('伺服器未回傳 widgets，無法判定活動內容。');
+      return Text(l10n.activityWidgetsMissing);
     }
     if (snapshot.discussions.availability ==
         WorkItemActivityConnectionAvailability.unavailable) {
-      return const Text('伺服器未回傳活動清單。');
+      return Text(l10n.activityListMissing);
     }
     if (snapshot.discussions.items.isEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(switch (_filter) {
-            WorkItemActivityFilter.all => '尚無活動',
-            WorkItemActivityFilter.comments => '尚無留言',
-            WorkItemActivityFilter.history => '尚無歷史活動',
+            WorkItemActivityFilter.all => l10n.noActivityYet2,
+            WorkItemActivityFilter.comments => l10n.noCommentsYet,
+            WorkItemActivityFilter.history => l10n.noHistoricalActivity,
           }),
           if (page.result.nextDiscussions != null)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 8),
-              child: Text('伺服器指出還有下一頁，但目前頁面沒有可顯示的活動。'),
+              child: Text(l10n.nextPageHasNoActivity),
             ),
           if (_retentionLimitReached)
             const Padding(
@@ -1041,8 +1042,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
           Padding(
             padding: const EdgeInsets.only(top: 12),
             child: Text(
-              '為維持捲動順暢，本頁最多排版 $_maxRenderedActivityItems 則活動內容；'
-              '另有 ${renderBudget.omitted} 則已載入內容未在本頁排版。',
+              l10n.activityRenderBudget(_maxRenderedActivityItems, renderBudget.omitted),
             ),
           ),
         if (_retentionLimitReached) ...[
@@ -1081,14 +1081,14 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
                   ? null
                   : () => setState(() => _activePage--),
               icon: const Icon(Icons.chevron_left),
-              label: const Text('上一頁'),
+              label: Text(l10n.previousPage),
             ),
-            Text('第 ${_activePage + 1} / ${_pages.length} 頁'),
+            Text(l10n.activityPagePosition(_activePage + 1, _pages.length)),
             if (!atLastCached)
               OutlinedButton.icon(
                 onPressed: () => setState(() => _activePage++),
                 icon: const Icon(Icons.chevron_right),
-                label: const Text('下一頁'),
+                label: Text(l10n.nextPage),
               )
             else if (hasServerNext && !reachedCap && !_retentionLimitReached)
               OutlinedButton.icon(
@@ -1102,7 +1102,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.expand_more),
-                label: const Text('載入下一頁'),
+                label: Text(l10n.loadNextPage),
               ),
           ],
         ),
@@ -1110,14 +1110,14 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
             hasServerNext &&
             !reachedCap &&
             !_retentionLimitReached)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 6),
-            child: Text('尚有更多活動；每次只載入一頁。'),
+            child: Text(l10n.moreActivityOnePage),
           ),
         if (showStatus && reachedCap)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 6),
-            child: Text('為限制記憶體用量，這裡最多保留 5 頁活動。'),
+            child: Text(l10n.activityPageMemoryLimit),
           ),
       ],
     );
@@ -1130,9 +1130,9 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   ) {
     if (discussion.notesAvailability ==
         WorkItemActivityConnectionAvailability.unavailable) {
-      return const Text('伺服器未回傳這串活動的內容。');
+      return Text(l10n.activityThreadContentMissing);
     }
-    if (discussion.notes.isEmpty) return const Text('這串活動沒有內容。');
+    if (discussion.notes.isEmpty) return Text(l10n.activityThreadEmpty);
 
     var firstCommentSeen = false;
     var hiddenComments = 0;
@@ -1163,7 +1163,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
           TextButton.icon(
             onPressed: () => setState(() => discussion.commentsExpanded = true),
             icon: const Icon(Icons.unfold_more),
-            label: Text('顯示其餘 $hiddenComments 則留言'),
+            label: Text(l10n.showRemainingComments(hiddenComments)),
           )
         else if (discussion.commentsExpanded &&
             discussion.notes.where((note) => !note.system).length > 1)
@@ -1171,7 +1171,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
             onPressed: () =>
                 setState(() => discussion.commentsExpanded = false),
             icon: const Icon(Icons.unfold_less),
-            label: const Text('收合回覆'),
+            label: Text(l10n.collapseReplies),
           ),
         if (_writeAccess?.canCreateNote == true &&
             _writeAccess?.discussionLocked == false &&
@@ -1185,7 +1185,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
                 _openReply(discussion.value.id, discussion.replyTarget!),
               ),
               icon: const Icon(Icons.reply_outlined),
-              label: const Text('回覆'),
+              label: Text(l10n.replyAction),
             ),
           ),
         if (discussion.error case final error?)
@@ -1194,9 +1194,9 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
             onRetry: () => unawaited(_loadMoreNotes(discussion)),
           ),
         if (discussion.continuationUnavailable)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 6),
-            child: Text('伺服器未回傳更多回覆；已載入的活動仍保留。'),
+            child: Text(l10n.moreRepliesNotReturned),
           ),
         if (discussion.next != null &&
             discussion.pageCount < _maxNotePages &&
@@ -1214,11 +1214,11 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.expand_more),
-              label: const Text('載入更多回覆'),
+              label: Text(l10n.loadMoreReplies),
             ),
           ),
         if (discussion.next != null && discussion.pageCount >= _maxNotePages)
-          const Text('為限制記憶體用量，這串活動最多保留 5 頁回覆。'),
+          Text(l10n.replyPageMemoryLimit),
       ],
     );
   }
@@ -1231,7 +1231,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
   ) {
     final author = note.author;
     final authorText = author == null
-        ? '作者資料不可用'
+        ? l10n.authorUnavailable
         : author.name.trim().isEmpty
         ? '@${author.username}'
         : '${author.name} · @${author.username}';
@@ -1289,7 +1289,7 @@ class _WorkItemActivityPanelState extends State<WorkItemActivityPanel> {
             ),
             IconButton(
               key: ValueKey('work-item-activity-note-actions:${note.id}'),
-              tooltip: '留言動作',
+              tooltip: l10n.commentActions2,
               onPressed: actionsPending
                   ? null
                   : () => unawaited(_openNoteActions(discussion, note)),
@@ -1584,13 +1584,13 @@ class _WorkItemNoteActionsDialogState
       if (!mounted || !widget.isCurrent()) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('無法複製留言連結。')));
+      ).showSnackBar(SnackBar(content: Text(l10n.copyCommentLinkFailed)));
       return;
     }
     if (!mounted || !widget.isCurrent()) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('已複製留言連結。')));
+    ).showSnackBar(SnackBar(content: Text(l10n.commentLinkCopied)));
   }
 
   @override
@@ -1598,7 +1598,7 @@ class _WorkItemNoteActionsDialogState
     canPop: !_writeBusy,
     child: AlertDialog(
       scrollable: true,
-      title: Text(_deleteOpen ? '刪除留言' : '留言動作'),
+      title: Text(_deleteOpen ? l10n.deleteComment : l10n.commentActions2),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 360),
         child: _deleteOpen ? _deleteContent(context) : _actionsContent(context),
@@ -1613,11 +1613,11 @@ class _WorkItemNoteActionsDialogState
                     _deleteError = null;
                   })
                 : null,
-            child: const Text('返回'),
+            child: Text(l10n.back),
           ),
         TextButton(
           onPressed: _writeBusy ? null : () => Navigator.of(context).pop(),
-          child: const Text('關閉'),
+          child: Text(l10n.closeAction),
         ),
       ],
     ),
@@ -1637,7 +1637,7 @@ class _WorkItemNoteActionsDialogState
               ? _openReactions
               : null,
           icon: const Icon(Icons.add_reaction_outlined),
-          label: Text(_reactionsOpen ? '收合表情回應' : '表情回應'),
+          label: Text(_reactionsOpen ? l10n.collapseEmojiReactions : l10n.emojiReactions),
         ),
       ),
       if (_reactionsOpen) ...[
@@ -1656,12 +1656,12 @@ class _WorkItemNoteActionsDialogState
                 ? _copyPermalink
                 : null,
             icon: const Icon(Icons.link_outlined),
-            label: const Text('複製留言連結'),
+            label: Text(l10n.copyCommentLink),
           ),
         ),
         Row(
           children: [
-            const Expanded(child: Text('以其他 App 分享')),
+            Expanded(child: Text(l10n.shareWithAnotherApp)),
             ResourceShareButton(
               uri: permalink,
               ownerKey: widget.ownerKey,
@@ -1675,7 +1675,7 @@ class _WorkItemNoteActionsDialogState
 
   Widget _permissionContent(BuildContext context) {
     if (_loadingEdit) {
-      return const Row(
+      return Row(
         children: [
           SizedBox(
             width: 18,
@@ -1683,34 +1683,34 @@ class _WorkItemNoteActionsDialogState
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           SizedBox(width: 8),
-          Expanded(child: Text('正在確認留言權限…')),
+          Expanded(child: Text(l10n.checkingCommentPermission)),
         ],
       );
     }
     if (_editError case final error?) {
       if (error.kind == FailureKind.unsupported) {
-        return const Text('此實例暫不支援編輯留言；留言仍可閱讀。');
+        return Text(l10n.instanceCannotEditComments);
       }
       if (error.kind == FailureKind.cancelled) {
-        return const Text('留言或帳號已變更，請關閉後重新開啟留言動作。');
+        return Text(l10n.commentOrAccountChanged);
       }
       return _InlineActivityFailure(
         error: error,
         onRetry: _loadEdit,
-        retryLabel: '重試留言權限',
+        retryLabel: l10n.retryCommentPermission,
       );
     }
     final access = _editAccess;
     if (access == null) return const SizedBox.shrink();
     final target = access.target;
     if (!access.canEditNote) {
-      return const Text('目前帳號可閱讀這則留言，但沒有編輯留言的權限。');
+      return Text(l10n.accountCannotEditComment);
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (target == null)
-          const Text('伺服器未提供安全的編輯目標；留言仍可閱讀。')
+          Text(l10n.unsafeEditTarget)
         else
           FilledButton.icon(
             key: const ValueKey('work-item-activity-edit-note'),
@@ -1720,14 +1720,14 @@ class _WorkItemNoteActionsDialogState
                     context,
                   ).pop(_EditWorkItemNoteAction(target)),
             icon: const Icon(Icons.edit_outlined),
-            label: const Text('編輯留言'),
+            label: Text(l10n.editComment),
           ),
         const SizedBox(height: 8),
         OutlinedButton.icon(
           key: const ValueKey('work-item-activity-delete-note'),
           onPressed: widget.isCurrent() && !_writeBusy ? _openDelete : null,
           icon: const Icon(Icons.delete_outline),
-          label: const Text('刪除留言'),
+          label: Text(l10n.deleteComment),
         ),
       ],
     );
@@ -1743,7 +1743,7 @@ class _WorkItemNoteActionsDialogState
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           const SizedBox(width: 8),
-          Expanded(child: Text(_deleting ? '正在刪除留言…' : '正在重新確認刪除權限…')),
+          Expanded(child: Text(_deleting ? l10n.deletingComment : l10n.recheckingDeletePermission)),
         ],
       );
     }
@@ -1754,7 +1754,7 @@ class _WorkItemNoteActionsDialogState
           children: [
             Text(error.title, style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 4),
-            const Text('刪除結果尚未確認。請關閉並重新整理活動後再確認，這裡不會重複送出。'),
+            Text(l10n.deleteResultUnconfirmed),
           ],
         );
       }
@@ -1762,7 +1762,7 @@ class _WorkItemNoteActionsDialogState
         return FailureNotice(
           error,
           account: widget.account,
-          resourceLabel: '${widget.scopeLabel} 留言',
+          resourceLabel: l10n.scopedComment(widget.scopeLabel),
           onRetry: _loadDelete,
           onSwitchAccount: endSessionFrom(context),
         );
@@ -1770,17 +1770,17 @@ class _WorkItemNoteActionsDialogState
       return _InlineActivityFailure(
         error: error,
         onRetry: _loadDelete,
-        retryLabel: '重新確認刪除權限',
+        retryLabel: l10n.recheckDeletePermission,
       );
     }
     final access = _deleteAccess;
     if (access == null) return const SizedBox.shrink();
     final target = access.target;
     if (!access.canDeleteNote) {
-      return const Text('目前帳號沒有刪除這則留言的權限。');
+      return Text(l10n.noPermissionDeleteComment);
     }
     if (target == null) {
-      return const Text('伺服器未提供安全的刪除目標；留言仍會保留。');
+      return Text(l10n.unsafeDeleteTarget);
     }
     final body = target.note.body.trim();
     return Column(
@@ -1797,11 +1797,11 @@ class _WorkItemNoteActionsDialogState
             borderRadius: BorderRadius.circular(12),
           ),
           child: SingleChildScrollView(
-            child: Text(body.isEmpty ? '（空白留言）' : body),
+            child: Text(body.isEmpty ? l10n.emptyComment : body),
           ),
         ),
         const SizedBox(height: 12),
-        const Text('刪除後無法復原。請確認這是你要刪除的留言。'),
+        Text(l10n.deleteCommentIrreversible),
         const SizedBox(height: 12),
         SizedBox(
           width: double.infinity,
@@ -1813,7 +1813,7 @@ class _WorkItemNoteActionsDialogState
             ),
             onPressed: widget.isCurrent() ? _delete : null,
             icon: const Icon(Icons.delete_forever_outlined),
-            label: const Text('永久刪除留言'),
+            label: Text(l10n.deleteCommentPermanently),
           ),
         ),
       ],
@@ -1822,7 +1822,7 @@ class _WorkItemNoteActionsDialogState
 
   Widget _reactionContent(BuildContext context) {
     if (_loadingReactions) {
-      return const Row(
+      return Row(
         children: [
           SizedBox(
             width: 18,
@@ -1830,7 +1830,7 @@ class _WorkItemNoteActionsDialogState
             child: CircularProgressIndicator(strokeWidth: 2),
           ),
           SizedBox(width: 8),
-          Expanded(child: Text('正在讀取表情回應…')),
+          Expanded(child: Text(l10n.loadingEmojiReactions)),
         ],
       );
     }
@@ -1841,7 +1841,7 @@ class _WorkItemNoteActionsDialogState
           children: [
             Text(error.title, style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 4),
-            const Text('表情回應結果尚未確認。請關閉並重新整理活動後再確認，這裡不會重複送出。'),
+            Text(l10n.emojiReactionUnconfirmed),
           ],
         );
       }
@@ -1849,7 +1849,7 @@ class _WorkItemNoteActionsDialogState
         return FailureNotice(
           error,
           account: widget.account,
-          resourceLabel: '${widget.scopeLabel} 留言',
+          resourceLabel: l10n.scopedComment(widget.scopeLabel),
           onRetry: _loadReactions,
           onSwitchAccount: endSessionFrom(context),
         );
@@ -1857,7 +1857,7 @@ class _WorkItemNoteActionsDialogState
       return _InlineActivityFailure(
         error: error,
         onRetry: _loadReactions,
-        retryLabel: '重新讀取表情回應',
+        retryLabel: l10n.reloadEmojiReactions,
       );
     }
     final access = _reactionAccess;
@@ -1879,7 +1879,7 @@ class _WorkItemNoteActionsDialogState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (counts.isEmpty) const Text('目前還沒有表情回應。'),
+        if (counts.isEmpty) Text(l10n.noEmojiReactionsYet),
         if (counts.isNotEmpty)
           Wrap(
             spacing: 6,
@@ -1894,7 +1894,7 @@ class _WorkItemNoteActionsDialogState
                       button: controlsEnabled,
                       selected: selected,
                       label:
-                          '$glyph ${entry.key} 表情回應，${entry.value} 人${selected ? '，您已回應' : ''}',
+                          l10n.emojiReactionPeopleCount(glyph, entry.key, entry.value, selected ? l10n.youReactedSuffix : ''),
                       excludeSemantics: true,
                       child: FilterChip(
                         key: ValueKey(
@@ -1916,16 +1916,16 @@ class _WorkItemNoteActionsDialogState
           ),
         if (!access.canAward) ...[
           const SizedBox(height: 8),
-          const Text('目前帳號可查看表情回應，但沒有新增或移除的權限。'),
+          Text(l10n.accountCannotChangeReactions),
           const SizedBox(height: 8),
-          const ActionChip(
+          ActionChip(
             avatar: Icon(Icons.add_reaction_outlined, size: 18),
-            label: Text('新增表情回應'),
+            label: Text(l10n.addReaction),
             onPressed: null,
           ),
         ] else if (access.target == null) ...[
           const SizedBox(height: 8),
-          const Text('伺服器未提供安全的表情回應目標。'),
+          Text(l10n.unsafeEmojiReactionTarget),
         ] else ...[
           const SizedBox(height: 8),
           ActionChip(
@@ -1937,7 +1937,7 @@ class _WorkItemNoteActionsDialogState
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.add_reaction_outlined, size: 18),
-            label: Text(_reactionPickerOpen ? '收合表情選擇' : '新增表情回應'),
+            label: Text(_reactionPickerOpen ? l10n.collapseEmojiSelection : l10n.addReaction),
             onPressed: controlsEnabled
                 ? () =>
                       setState(() => _reactionPickerOpen = !_reactionPickerOpen)
@@ -1953,7 +1953,7 @@ class _WorkItemNoteActionsDialogState
                   Semantics(
                     button: true,
                     label:
-                        '${entry.key} 表情回應${_hasMyReaction(access, entry.key) ? '，目前已選取' : ''}',
+                        l10n.emojiReactionSelectedState(entry.key, _hasMyReaction(access, entry.key) ? l10n.selectedSuffix : ''),
                     excludeSemantics: true,
                     child: IconButton(
                       key: ValueKey(
@@ -2037,12 +2037,13 @@ class _InlineActivityFailure extends StatelessWidget {
   const _InlineActivityFailure({
     required this.error,
     required this.onRetry,
-    this.retryLabel = '重試',
-  });
+    String? retryLabel,
+  }) : _retryLabelArg = retryLabel;
 
   final ApiFailure error;
   final VoidCallback onRetry;
-  final String retryLabel;
+  final String? _retryLabelArg;
+  String get retryLabel => _retryLabelArg ?? l10n.retryAction;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -2065,8 +2066,7 @@ class _ActivityRetentionLimitNotice extends StatelessWidget {
   const _ActivityRetentionLimitNotice();
 
   @override
-  Widget build(BuildContext context) => const Text(
-    '已達活動快取上限（2,000 則或 4 Mi 字元）。已載入的活動仍保留；'
-    '重新整理後才能繼續載入。',
+  Widget build(BuildContext context) => Text(
+    l10n.activityCacheLimitReached,
   );
 }

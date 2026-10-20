@@ -8,6 +8,7 @@ import 'app_update.dart';
 import 'update_controller.dart';
 import '../../core/brand.dart';
 
+import '../../l10n/l10n.dart';
 /// 我的 › 應用程式更新: where this build gets its updates, the current
 /// state, the one action that moves it forward, and the start-up check.
 class UpdateSection extends StatelessWidget {
@@ -24,7 +25,7 @@ class UpdateSection extends StatelessWidget {
       final (title, subtitle) = _describe();
       final progress = controller.progress;
       return HubSection(
-        title: '應用程式更新',
+        title: l10n.appUpdatesLabel,
         children: [
           ListTile(
             key: const ValueKey('app-update-status'),
@@ -44,7 +45,7 @@ class UpdateSection extends StatelessWidget {
           SwitchListTile(
             key: const ValueKey('app-update-auto-check'),
             contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-            title: const Text('啟動時自動檢查更新'),
+            title: Text(l10n.checkUpdatesOnLaunch),
             value: controller.autoCheck,
             onChanged: (value) => unawaited(controller.setAutoCheck(value)),
           ),
@@ -52,8 +53,8 @@ class UpdateSection extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text(
               gitlab
-                  ? '從 GitLab 上本 App 的 Releases 匿名檢查，不送出你的 Token；下載後以 GitLab 記錄的 SHA-256 驗證，再交給 Android 安裝程式由你確認。'
-                  : '透過 Google Play 下載與安裝更新。',
+                  ? l10n.anonymousReleaseShaVerifyHint
+                  : l10n.updatesViaGooglePlay,
               style: theme.textTheme.bodySmall?.copyWith(color: muted),
             ),
           ),
@@ -63,26 +64,26 @@ class UpdateSection extends StatelessWidget {
   );
 
   (String, String?) _describe() {
-    final current = controller.currentCode == null ? null : '目前版本 (${controller.currentCode})';
+    final current = controller.currentCode == null ? null : l10n.currentVersionCode(controller.currentCode);
     final release = controller.release;
     final play = controller.channel == UpdateChannel.play;
     return switch (controller.stage) {
-      UpdateStage.idle => ('檢查更新', current),
-      UpdateStage.checking => ('正在檢查更新…', current),
-      UpdateStage.upToDate => ('已是最新版本', current),
-      UpdateStage.available when play => ('Google Play 有新版本',
-        controller.playVersionCode == null ? current : '版本代碼 ${controller.playVersionCode}'),
-      UpdateStage.available => ('有新版本 ${release?.label ?? ''}', release == null ? null
+      UpdateStage.idle => (l10n.checkForUpdates, current),
+      UpdateStage.checking => (l10n.checkingForUpdates, current),
+      UpdateStage.upToDate => (l10n.alreadyUpToDate, current),
+      UpdateStage.available when play => (l10n.newVersionOnGooglePlay,
+        controller.playVersionCode == null ? current : l10n.playVersionCodeLabel(controller.playVersionCode)),
+      UpdateStage.available => (l10n.newVersionValue(release?.label ?? ''), release == null ? null
           : [if (release.commit.isNotEmpty) 'commit ${release.commit.substring(0, release.commit.length.clamp(0, 8))}',
              formatByteCount(release.file.size)].join(' · ')),
-      UpdateStage.downloading when play => ('Google Play 正在下載更新…', null),
-      UpdateStage.downloading => ('正在下載 ${release?.label ?? ''}', _percent()),
-      UpdateStage.downloaded when play => ('更新已下載', '重新啟動 App 即可完成更新。'),
-      UpdateStage.downloaded => ('已下載並驗證 ${release?.label ?? ''}', controller.needsPermission
-          ? '請在系統設定允許 $appName 安裝應用程式，返回後再點「安裝」。'
-          : '點「安裝」後由 Android 安裝程式確認。'),
-      UpdateStage.installing => ('正在開啟安裝程式…', null),
-      UpdateStage.failed => (controller.failure?.title ?? '更新失敗', controller.failure?.detail),
+      UpdateStage.downloading when play => (l10n.playDownloadingUpdate, null),
+      UpdateStage.downloading => (l10n.downloadingValue(release?.label ?? ''), _percent()),
+      UpdateStage.downloaded when play => (l10n.updateDownloaded, l10n.restartAppToFinishUpdate),
+      UpdateStage.downloaded => (l10n.downloadedVerifiedValue(release?.label ?? ''), controller.needsPermission
+          ? l10n.allowInstallThenTapInstall(appName)
+          : l10n.tapInstallThenAndroidConfirms),
+      UpdateStage.installing => (l10n.openingInstaller, null),
+      UpdateStage.failed => (controller.failure?.title ?? l10n.updateFailed, controller.failure?.detail),
     };
   }
 
@@ -101,26 +102,26 @@ class UpdateSection extends StatelessWidget {
       UpdateStage.available => FilledButton(
         key: const ValueKey('app-update-download'),
         onPressed: () => unawaited(controller.download()),
-        child: Text(play ? '更新' : '下載'),
+        child: Text(play ? l10n.updateAction : l10n.downloadAction),
       ),
       UpdateStage.downloading when !play => TextButton(
         onPressed: controller.cancelDownload,
-        child: const Text('取消'),
+        child: Text(l10n.cancelAction),
       ),
       UpdateStage.downloading => null,
       UpdateStage.downloaded => FilledButton(
         key: const ValueKey('app-update-install'),
         onPressed: () => unawaited(controller.install()),
-        child: Text(play ? '重新啟動' : '安裝'),
+        child: Text(play ? l10n.restartAction : l10n.installAction),
       ),
       UpdateStage.failed => TextButton(
         onPressed: () => unawaited(controller.check()),
-        child: const Text('重試'),
+        child: Text(l10n.retryAction),
       ),
       _ => TextButton(
         key: const ValueKey('app-update-check'),
         onPressed: () => unawaited(controller.check()),
-        child: const Text('檢查'),
+        child: Text(l10n.checkAction),
       ),
     };
   }

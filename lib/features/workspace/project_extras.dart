@@ -15,30 +15,31 @@ import 'navigation.dart';
 import 'records_feed.dart';
 import 'search_page.dart';
 
+import '../../l10n/l10n.dart';
 String accessLevelLabel(int level) => switch (level) {
-  >= 50 => '擁有者',
-  >= 40 => '維護者',
-  >= 30 => '開發者',
-  >= 20 => '報告者',
-  >= 15 => '規劃者',
-  >= 10 => '訪客',
-  >= 5 => '最低存取',
-  _ => '無存取權',
+  >= 50 => l10n.roleOwner,
+  >= 40 => l10n.roleMaintainer,
+  >= 30 => l10n.roleDeveloper,
+  >= 20 => l10n.roleReporter,
+  >= 15 => l10n.rolePlanner,
+  >= 10 => l10n.roleGuest,
+  >= 5 => l10n.roleMinimalAccess,
+  _ => l10n.roleNoAccess,
 };
 
 String environmentTierLabel(String tier) => switch (tier) {
-  'production' => '正式',
-  'staging' => '預備',
-  'testing' => '測試',
-  'development' => '開發',
-  'other' => '其他',
+  'production' => l10n.tierProduction,
+  'staging' => l10n.tierStaging,
+  'testing' => l10n.testing,
+  'development' => l10n.tierDevelopment,
+  'other' => l10n.pipelineSourceOther,
   _ => tier,
 };
 
 String environmentStateLabel(String state) => switch (state) {
-  'available' => '可用',
-  'stopping' => '停止中',
-  'stopped' => '已停止',
+  'available' => l10n.envAvailable,
+  'stopping' => l10n.envStopping,
+  'stopped' => l10n.envStopped,
   _ => state,
 };
 
@@ -56,12 +57,12 @@ class MembersPage extends StatelessWidget {
   final GitLabApi api;
   final Project project;
   @override
-  Widget build(BuildContext context) => _extraScaffold(context, '成員', RecordsFeed(
+  Widget build(BuildContext context) => _extraScaffold(context, l10n.members, RecordsFeed(
     identity: '${project.id}/members',
     account: account,
-    resourceLabel: '${project.path} · 成員',
+    resourceLabel: l10n.pathMembers(project.path),
     onSwitchAccount: endSessionFrom(context),
-    empty: '沒有可顯示的成員',
+    empty: l10n.noMembersToShow,
     emptyIcon: Icons.group_outlined,
     grouped: true,
     load: (next) => api.records(['projects', '${project.id}', 'members', 'all'], next: next),
@@ -75,8 +76,8 @@ class MembersPage extends StatelessWidget {
         title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis),
         subtitle: Text([
           '@${valueText(value, 'username')}',
-          if (expires.isNotEmpty) '到期 $expires',
-          if (valueInt(value, 'id') == account.user.id) '你',
+          if (expires.isNotEmpty) l10n.membershipExpires(expires),
+          if (valueInt(value, 'id') == account.user.id) l10n.you,
         ].join(' · ')),
         trailing: Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -106,7 +107,7 @@ class WikiPagesPage extends StatelessWidget {
     account: account,
     resourceLabel: '${project.path} · Wiki',
     onSwitchAccount: endSessionFrom(context),
-    empty: '這個專案沒有 Wiki 頁面',
+    empty: l10n.projectHasNoWiki,
     emptyIcon: Icons.menu_book_outlined,
     grouped: true,
     load: (next) => api.records(['projects', '${project.id}', 'wikis'], next: next),
@@ -211,7 +212,7 @@ class _WikiPageViewState extends State<WikiPageView> {
         ResourceShareButton(uri: web,
           ownerKey: (owner.accountKey, owner.api, owner.projectId, owner.projectPath, owner.slug, owner.generation),
           isCurrent: () => _current(owner)),
-        IconButton(tooltip: '在 GitLab 開啟', icon: const Icon(Icons.open_in_new, size: 20), onPressed: () {
+        IconButton(tooltip: l10n.openInGitlab, icon: const Icon(Icons.open_in_new, size: 20), onPressed: () {
           if (_current(owner)) unawaited(openExternal(context, web));
         }),
       ]);
@@ -332,13 +333,13 @@ class _EnvironmentsPageState extends State<EnvironmentsPage> {
     final owner = _owner;
     final account = widget.account;
     final project = widget.project;
-    return _extraScaffold(context, '環境', !_current(owner) ? const SizedBox.shrink() : RecordsFeed(
+    return _extraScaffold(context, l10n.environments, !_current(owner) ? const SizedBox.shrink() : RecordsFeed(
     identity: '${account.key}/${project.id}/${project.path}/environments/$_generation',
     account: account,
-    resourceLabel: '${project.path} · 環境',
+    resourceLabel: l10n.pathEnvironments(project.path),
     onSwitchAccount: endSessionFrom(context),
-    empty: '沒有環境',
-    emptyDetail: 'CI 的 environment 設定部署後會出現在這裡。',
+    empty: l10n.noEnvironments,
+    emptyDetail: l10n.environmentsAfterCiDeploy,
     emptyIcon: Icons.dns_outlined,
     grouped: true,
     load: (next) => owner.api.records(['projects', '${owner.projectId}', 'environments'], next: next),
@@ -357,7 +358,7 @@ class _EnvironmentsPageState extends State<EnvironmentsPage> {
           if (url != null && url.host.isNotEmpty) url.host,
         ].join(' · ')),
         trailing: url != null && url.host.isNotEmpty && safeExternalUri(url)
-          ? IconButton(tooltip: '開啟部署目標 $name', icon: const Icon(Icons.open_in_new, size: 20),
+          ? IconButton(tooltip: l10n.openDeployTarget(name), icon: const Icon(Icons.open_in_new, size: 20),
               onPressed: () { if (_current(owner)) unawaited(openExternal(context, url)); })
           : const Icon(Icons.chevron_right, size: 18),
         onTap: () => _openDeployments(owner, environmentId, name),
@@ -476,14 +477,14 @@ class _DeploymentsPageState extends State<DeploymentsPage> {
     final ownerCurrent = _current(owner);
     final web = environmentId > 0
       ? account.instance.projectWeb('${project.path}/-/environments/$environmentId') : null;
-    return _extraScaffold(context, !ownerCurrent || environment == null ? '部署紀錄' : '部署 · $environment',
+    return _extraScaffold(context, !ownerCurrent || environment == null ? l10n.deployments : l10n.deploymentsForEnv(environment),
       !ownerCurrent ? const SizedBox.shrink() : RecordsFeed(
     identity: '${account.key}/${project.id}/${project.path}/deployments/'
       '${environment ?? ''}/$environmentId/$_generation',
     account: account,
-    resourceLabel: '${project.path} · 部署',
+    resourceLabel: l10n.pathDeployments(project.path),
     onSwitchAccount: endSessionFrom(context),
-    empty: '沒有部署紀錄',
+    empty: l10n.noDeployments,
     emptyIcon: Icons.rocket_launch_outlined,
     grouped: true,
     load: (next) => owner.api.records(['projects', '${owner.projectId}', 'deployments'], query: {
@@ -526,7 +527,7 @@ class _DeploymentsPageState extends State<DeploymentsPage> {
     ResourceShareButton(uri: web,
       ownerKey: (owner.accountKey, owner.api, owner.projectId, owner.projectPath, environmentId, owner.generation),
       isCurrent: () => _current(owner)),
-    IconButton(tooltip: '在 GitLab 開啟', icon: const Icon(Icons.open_in_new, size: 20),
+    IconButton(tooltip: l10n.openInGitlab, icon: const Icon(Icons.open_in_new, size: 20),
       onPressed: () { if (_current(owner)) unawaited(openExternal(context, web)); }),
   ]);
   }
@@ -652,13 +653,13 @@ class _PipelineSchedulesPageState extends State<PipelineSchedulesPage> {
   Future<void> _play(Json schedule) async {
     final owner = _owner;
     final scheduleId = valueInt(schedule, 'id');
-    final description = valueText(schedule, 'description', '排程 #$scheduleId');
+    final description = valueText(schedule, 'description', l10n.scheduleNumber(scheduleId));
     final ref = valueText(schedule, 'ref');
     if (_busy || scheduleId <= 0 || !_current(owner)) return;
     setState(() => _busy = true);
     try {
       final confirmed = await confirmAction(
-        context, '立即執行排程？', '$description\n$ref',
+        context, l10n.runScheduleNowQuestion, '$description\n$ref',
         onRoute: (route) {
           _ownRoute(route);
           // The owner may expire before the dialog's first builder runs.
@@ -668,7 +669,7 @@ class _PipelineSchedulesPageState extends State<PipelineSchedulesPage> {
       if (!confirmed || !_current(owner)) return;
       await owner.api.playPipelineSchedule(owner.projectId, scheduleId);
       if (mounted && _current(owner)) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已排入執行，Pipeline 稍後會出現在 CI 分頁。')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.scheduleQueued)));
       }
     } catch (e) {
       if (mounted && _current(owner)) showFailure(context, e);
@@ -681,14 +682,14 @@ class _PipelineSchedulesPageState extends State<PipelineSchedulesPage> {
   Widget build(BuildContext context) {
     final owner = _owner;
     if (!_current(owner)) {
-      return _extraScaffold(context, 'Pipeline 排程', const SizedBox.shrink());
+      return _extraScaffold(context, l10n.pipelineSchedules, const SizedBox.shrink());
     }
-    return _extraScaffold(context, 'Pipeline 排程', RecordsFeed(
+    return _extraScaffold(context, l10n.pipelineSchedules, RecordsFeed(
     identity: '${owner.accountKey}/${owner.projectId}/${owner.projectPath}/pipeline_schedules/${owner.generation}',
     account: widget.account,
-    resourceLabel: '${widget.project.path} · Pipeline 排程',
+    resourceLabel: l10n.pathPipelineSchedules(widget.project.path),
     onSwitchAccount: endSessionFrom(context),
-    empty: '沒有 Pipeline 排程',
+    empty: l10n.noPipelineSchedules,
     emptyIcon: Icons.event_repeat_outlined,
     grouped: true,
     load: (next) => owner.api.records(['projects', '${owner.projectId}', 'pipeline_schedules'], next: next),
@@ -699,16 +700,16 @@ class _PipelineSchedulesPageState extends State<PipelineSchedulesPage> {
       return ListTile(
         minTileHeight: 64,
         leading: Icon(active ? Icons.event_repeat_outlined : Icons.event_busy_outlined),
-        title: Text(valueText(value, 'description', '排程 #${valueInt(value, 'id')}'), maxLines: 2,
+        title: Text(valueText(value, 'description', l10n.scheduleNumberValue(valueInt(value, 'id'))), maxLines: 2,
           overflow: TextOverflow.ellipsis),
         subtitle: Text([
           valueText(value, 'ref'),
           '${valueText(value, 'cron')} (${valueText(value, 'cron_timezone', 'UTC')})',
-          if (!active) '已停用',
-          if (active && next.isNotEmpty) '下次 ${DateTime.tryParse(next)?.toLocal().toString().substring(0, 16) ?? next}',
+          if (!active) l10n.disabled,
+          if (active && next.isNotEmpty) l10n.nextRun(DateTime.tryParse(next)?.toLocal().toString().substring(0, 16) ?? next),
         ].join(' · ')),
         trailing: IconButton(
-          tooltip: '立即執行',
+          tooltip: l10n.runNow,
           icon: const Icon(Icons.play_circle_outline),
           onPressed: _busy || scheduleId <= 0 || widget.project.archived == true ? null : () => _play(value),
         ),

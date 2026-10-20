@@ -9,6 +9,7 @@ import '../../core/work_item_graph_models.dart';
 import '../../core/work_item_labels_models.dart';
 import '../../shared/workspace_ui.dart';
 
+import '../../l10n/l10n.dart';
 /// Opens a fresh full label read and edits that logical set.
 ///
 /// The parent keeps at most the first 50 labels. This control never asks the
@@ -195,8 +196,8 @@ class _WorkItemLabelsControlState extends State<WorkItemLabelsControl> {
         onPressed: _openingEpoch != null || writePending ? null : _open,
         child: Text(
           writePending
-              ? '正在更新標籤…'
-              : (_openingEpoch != null ? '讀取標籤…' : '變更標籤'),
+              ? l10n.updatingLabels2
+              : (_openingEpoch != null ? l10n.loadingLabels : l10n.changeLabels),
         ),
       ),
     );
@@ -300,7 +301,7 @@ class _WorkItemLabelsSheetState extends State<WorkItemLabelsSheet> {
         term.runes.length > 256 ||
         term.runes.any((rune) => rune < 0x20 || rune == 0x7F)) {
       setState(() {
-        _searchError = '搜尋需為 1 到 256 個字，且不能包含控制字元。';
+        _searchError = l10n.searchLengthNoControlChars;
       });
       return;
     }
@@ -492,7 +493,7 @@ class _WorkItemLabelsSheetState extends State<WorkItemLabelsSheet> {
       if (result.status == WorkItemLabelSaveStatus.noop) {
         if (!_disposed && mounted) {
           setState(() {
-            _saveMessage = '標籤沒有變更';
+            _saveMessage = l10n.labelsUnchanged;
             _writing = false;
           });
         }
@@ -503,7 +504,7 @@ class _WorkItemLabelsSheetState extends State<WorkItemLabelsSheet> {
         onSaved?.call(result);
         if (!_disposed && mounted) {
           setState(() {
-            _saveMessage = '伺服器保留的標籤與所選不同';
+            _saveMessage = l10n.serverLabelsDiffer;
             _writing = false;
           });
         }
@@ -515,25 +516,25 @@ class _WorkItemLabelsSheetState extends State<WorkItemLabelsSheet> {
       String message;
       switch (failure.kind) {
         case FailureKind.forbidden:
-          message = '沒有修改標籤的權限';
+          message = l10n.noPermissionChangeLabels;
           break;
         case FailureKind.conflict:
-          message = '工作項目已更新，請重新整理';
+          message = l10n.workItemUpdatedRefresh;
           break;
         case FailureKind.unsupported:
-          message = '無法讀完標籤，不能修改';
+          message = l10n.labelsIncompleteCannotEdit;
           break;
         case FailureKind.validation:
-          message = '標籤識別無效';
+          message = l10n.invalidLabelIdentifier;
           break;
         case FailureKind.writeUncertain:
-          message = '無法確認寫入結果';
+          message = l10n.cannotConfirmWriteResult;
           break;
         case FailureKind.cancelled:
           message = '';
           break;
         default:
-          message = '無法確認寫入結果';
+          message = l10n.cannotConfirmWriteResult;
           break;
       }
       if (_disposed || !mounted || !isCurrent()) return;
@@ -603,7 +604,7 @@ class _WorkItemLabelsSheetState extends State<WorkItemLabelsSheet> {
                 ),
               const SizedBox(height: 4),
               Text(
-                '伺服器可能只保留同一範圍的一個標籤',
+                l10n.scopedLabelExclusive,
                 style: theme.textTheme.bodySmall?.copyWith(color: errorColor),
                 softWrap: true,
               ),
@@ -635,7 +636,7 @@ class _WorkItemLabelsSheetState extends State<WorkItemLabelsSheet> {
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      appBar: AppBar(title: const Text('標籤')),
+      appBar: AppBar(title: Text(l10n.labelNoun)),
       body: SafeArea(
         child: ListView.builder(
           padding: const EdgeInsets.all(16),
@@ -678,7 +679,7 @@ class _WorkItemLabelsSheetState extends State<WorkItemLabelsSheet> {
               child: FilledButton(
                 key: const ValueKey('work-item-labels-save'),
                 onPressed: !_canChange || _writing || _locked ? null : _save,
-                child: Text(_writing ? '儲存中…' : '儲存', maxLines: 2),
+                child: Text(_writing ? l10n.savingNow : l10n.saveAction, maxLines: 2),
               ),
             ),
           ),
@@ -695,7 +696,7 @@ class _WorkItemLabelsSheetState extends State<WorkItemLabelsSheet> {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              '已選擇 ${_selected.length} 個標籤',
+              l10n.selectedLabelCount(_selected.length),
               key: const ValueKey('work-item-labels-count'),
               style: Theme.of(context).textTheme.titleSmall,
             ),
@@ -705,7 +706,7 @@ class _WorkItemLabelsSheetState extends State<WorkItemLabelsSheet> {
                 onPressed: !_canChange || _writing || _locked
                     ? null
                     : _clearAll,
-                child: const Text('清除全部'),
+                child: Text(l10n.clearAll),
               ),
           ],
         ),
@@ -713,7 +714,7 @@ class _WorkItemLabelsSheetState extends State<WorkItemLabelsSheet> {
           Padding(
             padding: const EdgeInsets.only(top: 4, bottom: 4),
             child: Text(
-              '沒有修改標籤的權限',
+              l10n.noPermissionChangeLabels,
               key: const ValueKey('work-item-labels-readonly'),
               style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
@@ -746,8 +747,8 @@ class _WorkItemLabelsSheetState extends State<WorkItemLabelsSheet> {
             enabled: widget.access.target != null && !_writing && !_locked,
             scrollPadding: const EdgeInsets.only(bottom: 96),
             textInputAction: TextInputAction.search,
-            decoration: const InputDecoration(
-              labelText: '搜尋標籤',
+            decoration: InputDecoration(
+              labelText: l10n.searchLabels,
               border: OutlineInputBorder(),
             ),
             onChanged: _onSearchEdited,
@@ -765,7 +766,7 @@ class _WorkItemLabelsSheetState extends State<WorkItemLabelsSheet> {
                     _locked
                 ? null
                 : () => unawaited(_submitSearch()),
-            child: Text(_searching ? '搜尋中…' : '搜尋'),
+            child: Text(_searching ? l10n.searching : l10n.search),
           ),
         ),
         if (_searchError != null)
@@ -845,7 +846,7 @@ class _WorkItemLabelsSheetState extends State<WorkItemLabelsSheet> {
           onPressed: _loadingMoreCandidates || _writing || _locked
               ? null
               : () => unawaited(_loadMoreCandidates()),
-          child: Text(_loadingMoreCandidates ? '載入中…' : '載入更多候選標籤'),
+          child: Text(_loadingMoreCandidates ? l10n.loading : l10n.loadMoreLabelCandidates),
         ),
       ),
     );

@@ -13,6 +13,7 @@ import '../../features/workspace/work_item_attributes.dart';
 import '../../shared/motion.dart';
 import '../../shared/workspace_ui.dart';
 
+import '../../l10n/l10n.dart';
 /// Standalone metadata bridge widget mounted beneath the REST issue description.
 /// Displays workflow status, parent, start date, and deferred lazy health status
 /// and iteration without blocking the primary REST issue view.
@@ -262,52 +263,52 @@ class _RestIssueGraphBridgeState extends State<RestIssueGraphBridge> {
   }
 
   static String _healthLabel(String status) => switch (status) {
-    'onTrack' => '正常',
-    'needsAttention' => '需關注',
-    'atRisk' => '有風險',
+    'onTrack' => l10n.healthOnTrack,
+    'needsAttention' => l10n.healthNeedsAttention,
+    'atRisk' => l10n.healthAtRisk,
     _ => status,
   };
 
   Widget _buildStatusValue() {
     if (_statusError != null) {
-      return const Text('無法載入狀態');
+      return Text(l10n.cannotLoadStatus);
     }
     final snapshot = _status;
     if (snapshot == null) {
-      return const Text('載入中...');
+      return Text(l10n.loadingDots);
     }
     if (snapshot.value is WorkItemStatusAttribute) {
       final attr = snapshot.value as WorkItemStatusAttribute;
       final name = attr.status?.name;
-      return Text(name ?? '未設定');
+      return Text(name ?? l10n.notSet);
     }
-    return const Text('未設定');
+    return Text(l10n.notSet);
   }
 
   Widget _buildHealthValue(WorkItemAttributeSnapshot snapshot) {
     if (snapshot.availability == WorkItemAttributeAvailability.widgetsUnavailable) {
-      return const Text('未支援');
+      return Text(l10n.notSupported);
     }
     if (snapshot.value is WorkItemHealthAttribute) {
       final attr = snapshot.value as WorkItemHealthAttribute;
       final status = attr.healthStatus;
-      final label = status == null ? '未設定' : _healthLabel(status);
-      return Text('目前：$label');
+      final label = status == null ? l10n.notSet : _healthLabel(status);
+      return Text(l10n.currentLabel(label));
     }
-    return const Text('目前：未設定');
+    return Text(l10n.currentNotSet);
   }
 
   Widget _buildIterationValue(WorkItemAttributeSnapshot snapshot) {
     if (snapshot.availability == WorkItemAttributeAvailability.widgetsUnavailable) {
-      return const Text('未支援');
+      return Text(l10n.notSupported);
     }
     if (snapshot.value is WorkItemIterationAttribute) {
       final attr = snapshot.value as WorkItemIterationAttribute;
       final iteration = attr.iteration;
-      if (iteration == null) return const Text('未設定');
-      return Text(iteration.title ?? '名稱未知');
+      if (iteration == null) return Text(l10n.notSet);
+      return Text(iteration.title ?? l10n.unknownName);
     }
-    return const Text('未設定');
+    return Text(l10n.notSet);
   }
 
   Widget _buildLazyRow(
@@ -322,10 +323,10 @@ class _RestIssueGraphBridgeState extends State<RestIssueGraphBridge> {
             width: 100,
             child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
           ),
-          const Expanded(child: Text('無法載入')),
+          Expanded(child: Text(l10n.cannotLoad)),
           IconButton(
             icon: const Icon(Icons.refresh, size: 18),
-            tooltip: '重試',
+            tooltip: l10n.retryAction,
             onPressed: () => _retryLazy(kind),
           ),
         ],
@@ -339,7 +340,7 @@ class _RestIssueGraphBridgeState extends State<RestIssueGraphBridge> {
             width: 100,
             child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
           ),
-          const Expanded(child: Text('載入中...')),
+          Expanded(child: Text(l10n.loadingDots)),
         ],
       );
     }
@@ -375,7 +376,7 @@ class _RestIssueGraphBridgeState extends State<RestIssueGraphBridge> {
         _cardError!,
         onRetry: _retryInitial,
         account: widget.account,
-        resourceLabel: '${widget.project.path} · #${widget.iid} · 工作項目欄位',
+        resourceLabel: l10n.pathWorkItemFields(widget.project.path, widget.iid),
         onSwitchAccount: endSessionFrom(
           context,
           ResumeTarget(
@@ -410,11 +411,11 @@ class _RestIssueGraphBridgeState extends State<RestIssueGraphBridge> {
                 spacing: 8,
                 runSpacing: 4,
                 children: [
-                  Text('工作項目欄位', style: theme.textTheme.titleSmall),
+                  Text(l10n.workItemFields, style: theme.textTheme.titleSmall),
                   TextButton.icon(
                     onPressed: widget.onOpenEditor,
                     icon: const Icon(Icons.open_in_new, size: 16),
-                    label: const Text('查看與編輯工作項目欄位'),
+                    label: Text(l10n.viewEditWorkItemFields),
                   ),
                 ],
               ),
@@ -423,7 +424,7 @@ class _RestIssueGraphBridgeState extends State<RestIssueGraphBridge> {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                  '伺服器未回傳 widgets，無法判定',
+                  l10n.widgetsMissing,
                   style: theme.textTheme.bodyMedium?.copyWith(color: muted),
                 ),
               )
@@ -431,21 +432,21 @@ class _RestIssueGraphBridgeState extends State<RestIssueGraphBridge> {
               if (detail.widgetTypes.contains('STATUS')) ...[
                 const SizedBox(height: 8),
                 _buildRow(
-                  '工作流程狀態',
+                  l10n.workflowStatus,
                   _buildStatusValue(),
                 ),
               ],
               if (detail.hierarchy?.parent != null) ...[
                 const SizedBox(height: 8),
                 _buildRow(
-                  '上層項目',
+                  l10n.parentItem,
                   Text('#${detail.hierarchy!.parent!.iid} ${detail.hierarchy!.parent!.title}'),
                 ),
               ],
               if (detail.dates?.startDate != null) ...[
                 const SizedBox(height: 8),
                 _buildRow(
-                  '開始日期',
+                  l10n.startDate,
                   Text(workItemAttributeCalendarDate(detail.dates!.startDate!)),
                 ),
               ],
@@ -461,7 +462,7 @@ class _RestIssueGraphBridgeState extends State<RestIssueGraphBridge> {
                         TurnChevron(open: _expanded, size: 20, color: theme.colorScheme.primary),
                         const SizedBox(width: 4),
                         Text(
-                          _expanded ? '收起其他欄位' : '展開其他欄位',
+                          _expanded ? l10n.collapseOtherFields : l10n.expandOtherFields,
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: theme.colorScheme.primary,
                           ),
@@ -473,11 +474,11 @@ class _RestIssueGraphBridgeState extends State<RestIssueGraphBridge> {
                 if (_expanded) ...[
                   if (detail.widgetTypes.contains('HEALTH_STATUS')) ...[
                     const SizedBox(height: 8),
-                    _buildLazyRow('HEALTH_STATUS', '健康狀態', _buildHealthValue),
+                    _buildLazyRow('HEALTH_STATUS', l10n.healthStatus, _buildHealthValue),
                   ],
                   if (detail.widgetTypes.contains('ITERATION')) ...[
                     const SizedBox(height: 8),
-                    _buildLazyRow('ITERATION', '迭代', _buildIterationValue),
+                    _buildLazyRow('ITERATION', l10n.iteration2, _buildIterationValue),
                   ],
                 ],
               ],

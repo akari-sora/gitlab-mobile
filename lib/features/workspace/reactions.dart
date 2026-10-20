@@ -8,6 +8,7 @@ import '../../core/providers.dart';
 import '../auth/session_controller.dart';
 import '../../shared/workspace_ui.dart';
 
+import '../../l10n/l10n.dart';
 /// GitLab award names offered in the quick picker, with their glyphs.
 const quickReactions = <String, String>{
   'thumbsup': '👍',
@@ -250,7 +251,7 @@ class _ReactionsBarState extends State<ReactionsBar> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '新增表情回應',
+                l10n.addReaction,
                 style: Theme.of(sheetContext).textTheme.titleMedium,
               ),
               const SizedBox(height: 12),
@@ -303,7 +304,7 @@ class _ReactionsBarState extends State<ReactionsBar> {
     final error = _error;
     if (error != null && _awards.isEmpty) {
       return FailureNotice(error, account: widget.account, onRetry: ownerCurrent ? _load : null, onSwitchAccount: endSessionFrom(context),
-        resourceLabel: '${widget.project.path} · ${widget.resource == 'merge_requests' ? '!' : '#'}${widget.iid} 回應');
+        resourceLabel: l10n.resourceReactions(widget.project.path, widget.resource == 'merge_requests' ? '!' : '#', widget.iid));
     }
     return Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment: WrapCrossAlignment.center, children: [
       for (final entry in counts.entries)
@@ -317,17 +318,17 @@ class _ReactionsBarState extends State<ReactionsBar> {
           tooltip: [
             for (final award in _awards)
               if (valueText(award, 'name') == entry.key) '@${valueText(valueObject(award, 'user'), 'username')}',
-          ].join('、'),
+          ].join(l10n.listSeparator),
           label: Text('${reactionGlyph(entry.key)} ${entry.value}'),
           onSelected: _busy || !ownerCurrent ? null : (_) => _toggle(entry.key),
         ),
       ActionChip(
         key: const ValueKey('reaction-add'),
-        tooltip: '新增表情回應',
+        tooltip: l10n.addReaction,
         visualDensity: VisualDensity.compact,
         materialTapTargetSize: MaterialTapTargetSize.padded,
         avatar: Icon(Icons.add_reaction_outlined, size: 18, color: scheme.onSurfaceVariant),
-        label: const Text('新增表情回應'),
+        label: Text(l10n.addReaction),
         onPressed: _busy || !ownerCurrent || _loading && _awards.isEmpty ? null : _pick,
       ),
     ]);

@@ -12,18 +12,19 @@ import '../core/registry_models.dart';
 import 'artifact_storage.dart';
 import 'workspace_ui.dart';
 
+import '../l10n/l10n.dart';
 const packageDownloadMaximumBytes = 256 * 1024 * 1024;
 
-const packageChecksumMismatch = ApiFailure(
+ApiFailure get packageChecksumMismatch => ApiFailure(
   FailureKind.invalidResponse,
-  title: '套件檔案驗證失敗',
-  detail: '下載內容的 SHA-256 與 GitLab 檔案資訊不一致，檔案已刪除。',
+  title: l10n.packageFileVerificationFailed,
+  detail: l10n.packageSha256Mismatch,
 );
 
-const packageSizeMismatch = ApiFailure(
+ApiFailure get packageSizeMismatch => ApiFailure(
   FailureKind.invalidResponse,
-  title: '套件檔案驗證失敗',
-  detail: '下載內容的大小與 GitLab 檔案資訊不一致，檔案已刪除。',
+  title: l10n.packageFileVerificationFailed,
+  detail: l10n.packageSizeMismatch,
 );
 
 String? packageFileDownloadBlockReason(
@@ -31,11 +32,11 @@ String? packageFileDownloadBlockReason(
   RegistryPackageFile file, {
   int maximumBytes = packageDownloadMaximumBytes,
 }) {
-  if (package.type.trim().isEmpty) return '套件類型未知，無法安全下載。';
-  if (file.size < 0) return 'GitLab 未提供有效檔案大小，無法驗證下載。';
-  if (file.size > maximumBytes) return '檔案超過 256 MiB 下載上限。';
+  if (package.type.trim().isEmpty) return l10n.packageTypeUnknown;
+  if (file.size < 0) return l10n.packageSizeMissing;
+  if (file.size > maximumBytes) return l10n.packageFileTooLarge;
   if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(file.sha256)) {
-    return 'GitLab 未提供有效 SHA-256，無法驗證下載。';
+    return l10n.packageSha256Missing;
   }
   return null;
 }
@@ -134,7 +135,7 @@ final class DefaultPackageDownloader implements PackageDownloader {
           fresh.size > maximumBytes
               ? FailureKind.tooLarge
               : FailureKind.unsupported,
-          title: '無法下載套件檔案',
+          title: l10n.cannotDownloadPackageFile,
           detail: blocked,
         );
       }
@@ -356,7 +357,7 @@ class _PackageDownloadSheetState extends State<PackageDownloadSheet> {
           widget.file.size > packageDownloadMaximumBytes
               ? FailureKind.tooLarge
               : FailureKind.unsupported,
-          title: '無法下載套件檔案',
+          title: l10n.cannotDownloadPackageFile,
           detail: blocked,
         );
       }
@@ -475,7 +476,7 @@ class _PackageDownloadSheetState extends State<PackageDownloadSheet> {
             ),
           if (_done && _saved != null) ...[
             Text(
-              '已驗證並下載 ${widget.file.name} · ${formatByteCount(widget.file.size)}',
+              l10n.packageVerifiedDownloaded(widget.file.name, formatByteCount(widget.file.size)),
             ),
             const SizedBox(height: 12),
             Builder(
@@ -484,7 +485,7 @@ class _PackageDownloadSheetState extends State<PackageDownloadSheet> {
                     ? null
                     : () => unawaited(_share(buttonContext)),
                 icon: const Icon(Icons.ios_share_outlined),
-                label: const Text('開啟／分享'),
+                label: Text(l10n.openOrShare),
               ),
             ),
           ],
@@ -501,9 +502,9 @@ class _PackageDownloadSheetState extends State<PackageDownloadSheet> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Semantics(
-                      label: '套件檔案下載進度',
+                      label: l10n.packageDownloadProgress,
                       value: progress == null
-                          ? '下載中'
+                          ? l10n.downloading
                           : '${(progress * 100).toInt()}%',
                       child: LinearProgressIndicator(
                         key: const Key('package-download-progress'),
@@ -524,7 +525,7 @@ class _PackageDownloadSheetState extends State<PackageDownloadSheet> {
             ),
             Align(
               alignment: Alignment.centerRight,
-              child: TextButton(onPressed: _cancel, child: const Text('取消')),
+              child: TextButton(onPressed: _cancel, child: Text(l10n.cancelAction)),
             ),
           ],
         ],

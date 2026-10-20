@@ -10,18 +10,19 @@ import '../../core/work_item_graph_models.dart';
 import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 
+import '../../l10n/l10n.dart';
 typedef WorkItemContentSaved = Future<void> Function();
 
 String? validateWorkItemTitleInput(String value) =>
-    value.contains('\u0000') ? '標題包含無法儲存的控制字元' : null;
+    value.contains('\u0000') ? l10n.titleControlCharacters : null;
 
 String? validateWorkItemDescriptionInput(String value) {
-  if (value.contains('\u0000')) return '說明包含無法儲存的控制字元';
+  if (value.contains('\u0000')) return l10n.descriptionControlCharacters;
   if (utf8.encode(value).length > GitLabApi.maxTextBytes) {
-    return '說明超過 2 MiB 上限';
+    return l10n.descriptionSizeLimit;
   }
   if ('\n'.allMatches(value).length + 1 > GitLabApi.maxTextLines) {
-    return '說明超過 20,000 行上限';
+    return l10n.descriptionLineLimit;
   }
   return null;
 }
@@ -114,16 +115,16 @@ class _WorkItemContentControlState extends State<WorkItemContentControl> {
   String get _scopePath =>
       widget.detail.summary.project?.fullPath ??
       widget.detail.summary.namespace?.fullPath ??
-      '位置未知';
+      l10n.unknownLocation;
 
   String get _resourceLabel =>
-      '$_scopePath · 工作項目 #${widget.detail.summary.iid}';
+      l10n.workItemScopeHeading(_scopePath, widget.detail.summary.iid);
 
   String _subtitle(WorkItemContentSnapshot snapshot) {
     final restriction = switch (snapshot.descriptionAvailability) {
-      WorkItemDescriptionAvailability.present => '可編輯標題與 Markdown 說明',
-      WorkItemDescriptionAvailability.absent => '這個類型沒有說明欄位，只編輯標題',
-      WorkItemDescriptionAvailability.widgetsUnavailable => '伺服器未提供說明元件，只編輯標題',
+      WorkItemDescriptionAvailability.present => l10n.canEditTitleAndDescription,
+      WorkItemDescriptionAvailability.absent => l10n.typeHasNoDescription,
+      WorkItemDescriptionAvailability.widgetsUnavailable => l10n.descriptionWidgetMissing,
     };
     return '@${widget.account.user.username} · ${widget.account.instance.key}\n'
         '$_resourceLabel · $restriction';
@@ -145,10 +146,10 @@ class _WorkItemContentControlState extends State<WorkItemContentControl> {
       if (!_current(epoch)) return;
       final target = access.target;
       if (!access.canUpdate || target == null) {
-        throw const ApiFailure(
+        throw ApiFailure(
           FailureKind.forbidden,
-          title: '無法編輯工作項目',
-          detail: '目前帳號可以閱讀，但 GitLab 沒有授予更新權限。',
+          title: l10n.cannotEditWorkItem,
+          detail: l10n.updatePermissionDenied,
         );
       }
       final snapshot = access.snapshot;
@@ -158,7 +159,7 @@ class _WorkItemContentControlState extends State<WorkItemContentControl> {
       final fields = <EditField>[
         EditField(
           'title',
-          '標題',
+          l10n.title,
           value: snapshot.summary.title,
           required: true,
           maxLength: 4096,
@@ -167,11 +168,11 @@ class _WorkItemContentControlState extends State<WorkItemContentControl> {
         if (descriptionEditable)
           EditField(
             'description',
-            'Markdown 說明',
+            l10n.markdownDescription,
             value: snapshot.rawDescription ?? '',
             lines: 10,
             markdown: true,
-            hint: '保留原始 Markdown 與空白格式',
+            hint: l10n.preserveMarkdownWhitespace,
             validator: validateWorkItemDescriptionInput,
           ),
       ];
@@ -179,7 +180,7 @@ class _WorkItemContentControlState extends State<WorkItemContentControl> {
       final saved = await openEditor(
         context,
         account: widget.account,
-        title: '編輯工作項目',
+        title: l10n.editWorkItem,
         subtitle: _subtitle(snapshot),
         resource:
             'work-item-content:${snapshot.summary.project?.id ?? snapshot.summary.namespace?.id}:${snapshot.summary.id}',
@@ -235,7 +236,7 @@ class _WorkItemContentControlState extends State<WorkItemContentControl> {
           IconButton(
             key: const ValueKey('work-item-content-edit'),
             onPressed: _opening ? null : _open,
-            tooltip: '編輯標題與說明',
+            tooltip: l10n.editTitleAndDescription,
             icon: _opening
                 ? const SizedBox.square(
                     dimension: 18,

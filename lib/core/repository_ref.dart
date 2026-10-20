@@ -2,6 +2,7 @@ import 'failure.dart';
 import 'instance.dart';
 import 'models.dart';
 
+import '../l10n/l10n.dart';
 /// [commit] pins a read-only view to one SHA, e.g. a file opened from a
 /// permalink or a search hit.
 enum RepositoryRefKind { branch, tag, commit }
@@ -91,11 +92,11 @@ Uri repositoryBlobWebUri({
 }) {
   final cleanProjectPath = projectPath.replaceAll(RegExp(r'^/+|/+$'), '').trim();
   if (cleanProjectPath.isEmpty) {
-    throw const FormatException('專案路徑不可為空。');
+    throw InputFormatException(l10n.projectPathCannotBeEmpty);
   }
   final cleanFilePath = filePath.replaceAll(RegExp(r'^/+|/+$'), '').trim();
   if (cleanFilePath.isEmpty) {
-    throw const FormatException('檔案路徑不可為空。');
+    throw InputFormatException(l10n.filePathCannotBeEmpty);
   }
 
   // Reject path traversal and tampering
@@ -103,7 +104,7 @@ Uri repositoryBlobWebUri({
       cleanFilePath.contains('\\') ||
       RegExp(r'%(2f|5c|2e)', caseSensitive: false).hasMatch(cleanProjectPath) ||
       RegExp(r'%(2f|5c|2e)', caseSensitive: false).hasMatch(cleanFilePath)) {
-    throw const FormatException('路徑不可包含編碼分隔符或反斜線。');
+    throw InputFormatException(l10n.pathNoEncodedSepOrBackslash);
   }
 
   final projectSegments =
@@ -113,10 +114,10 @@ Uri repositoryBlobWebUri({
 
   if (projectSegments.isEmpty ||
       projectSegments.any((s) => s == '.' || s == '..')) {
-    throw const FormatException('專案路徑不可包含相對路徑或遍歷語法。');
+    throw InputFormatException(l10n.projectPathNoTraversal);
   }
   if (fileSegments.isEmpty || fileSegments.any((s) => s == '.' || s == '..')) {
-    throw const FormatException('檔案路徑不可包含相對路徑或遍歷語法。');
+    throw InputFormatException(l10n.filePathNoTraversal);
   }
 
   final validSha = RepositoryRef.validateCommitSha(sha);

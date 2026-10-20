@@ -86,8 +86,9 @@ final class _OwnerHarnessState extends State<_OwnerHarness> {
 
 void main() {
   test('metadata phrases space a Latin title only', () {
-    expect(metadataPhrase('新增', MetadataKind.milestones), '新增里程碑');
-    expect(metadataPhrase('尚無', MetadataKind.releases), '尚無 Releases');
+    expect(metadataAddTitle(MetadataKind.milestones), '新增里程碑');
+    expect(metadataEmpty(MetadataKind.releases), '尚無 Releases');
+    expect(metadataDeleteQuestion(MetadataKind.tags), '刪除標籤版本？');
   });
 
   testWidgets('milestone detail shares project IID rather than database ID', (
@@ -326,7 +327,7 @@ void main() {
 
     expect(find.text('Denied private release title'), findsNothing);
     expect(find.text('Denied private release body'), findsNothing);
-    expect(find.byTooltip(metadataPhrase('新增', MetadataKind.releases)), findsNothing);
+    expect(find.byTooltip(metadataAddTitle(MetadataKind.releases)), findsNothing);
     expect(fixture.adapter.requests, isEmpty);
   });
 }

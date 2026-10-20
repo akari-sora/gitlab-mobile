@@ -6,6 +6,7 @@ import 'package:quick_actions/quick_actions.dart';
 
 import '../auth/recent_project.dart';
 
+import '../../l10n/l10n.dart';
 /// Launcher shortcuts registered after sign-in.
 abstract final class ShortcutTypes {
   static const inbox = 'inbox';
@@ -229,11 +230,11 @@ class LauncherShortcuts extends ChangeNotifier {
   }
 
   List<AppShortcutItem> _items(String accountKey, RecentProject? project) => [
-    const AppShortcutItem(type: ShortcutTypes.inbox, title: '收件匣'),
-    const AppShortcutItem(type: ShortcutTypes.search, title: '搜尋專案'),
+    AppShortcutItem(type: ShortcutTypes.inbox, title: l10n.inboxTab),
+    AppShortcutItem(type: ShortcutTypes.search, title: l10n.searchProjects),
     AppShortcutItem(
       type: project == null ? ShortcutTypes.recent : recentShortcutType(accountKey, project.id),
-      title: '上次的專案',
+      title: l10n.lastProject,
       subtitle: project?.name,
     ),
   ];

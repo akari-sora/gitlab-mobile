@@ -13,6 +13,7 @@ import '../../shared/workspace_ui.dart';
 import 'editor.dart';
 import 'records_feed.dart';
 
+import '../../l10n/l10n.dart';
 class SnippetsPage extends StatefulWidget {
   const SnippetsPage({
     super.key,
@@ -119,22 +120,22 @@ class _SnippetsPageState extends State<SnippetsPage> {
       api: api,
       projectId: project.id,
       projectPath: project.path,
-      title: '新增 Snippet',
+      title: l10n.newSnippet,
       subtitle: project.path,
       resource: '${project.id}/snippets/new',
       onRoute: _ownRoute,
       fields: [
-        const EditField('title', '標題', required: true),
-        const EditField('description', '說明', lines: 4, markdown: true),
+        EditField('title', l10n.title, required: true),
+        EditField('description', l10n.descriptionLabel, lines: 4, markdown: true),
         EditField.choice(
           'visibility',
-          '可見性',
+          l10n.visibility,
           choices: _visibilityChoices(account),
           value: 'private',
           required: true,
         ),
-        const EditField('file_name', '檔名', required: true),
-        const EditField('content', '內容', lines: 16, required: true),
+        EditField('file_name', l10n.fileName, required: true),
+        EditField('content', l10n.content, lines: 16, required: true),
       ],
       save: (values) async {
         if (writePending) {
@@ -220,7 +221,7 @@ class _SnippetsPageState extends State<SnippetsPage> {
       key: const ValueKey('create-snippet'),
       onPressed: _create,
       icon: const Icon(Icons.add),
-      label: const Text('新增'),
+      label: Text(l10n.addAction),
     ),
     body: RecordsFeed(
       key: _feed,
@@ -230,8 +231,8 @@ class _SnippetsPageState extends State<SnippetsPage> {
       account: widget.account,
       resourceLabel: '${widget.project.path} · Snippets',
       onSwitchAccount: endSessionFrom(context),
-      empty: '這個專案沒有 Snippet',
-      emptyDetail: '可建立私有 Snippet，集中保存短程式碼與文字片段。',
+      empty: l10n.projectNoSnippets,
+      emptyDetail: l10n.privateSnippetHint,
       emptyIcon: Icons.data_object,
       grouped: true,
       load: (next) => widget.api.records(_path, next: next),
@@ -248,7 +249,7 @@ class _SnippetsPageState extends State<SnippetsPage> {
           ),
           subtitle: Text(
             snippet.fileName.isEmpty
-                ? '${snippet.authorName} · 多檔或未提供檔名'
+                ? l10n.snippetMultiOrUnnamed(snippet.authorName)
                 : '${snippet.fileName} · ${snippet.authorName}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -362,11 +363,11 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
       throw ApiFailure(
         FailureKind.unsupported,
         title: snippet.hasExplicitFiles
-            ? '多檔 Snippet 尚無法安全讀取'
-            : '無法確認 Snippet 檔案清單',
+            ? l10n.multiFileSnippetUnsafe
+            : l10n.snippetFileListUnknown,
         detail: snippet.hasExplicitFiles
-            ? 'REST API 未提供可驗證的檔案 ref。為避免讀錯版本，這裡不猜測 main 或 master。'
-            : 'file_name 不能證明 Snippet 只有一個檔案。伺服器未回傳可驗證的 files 清單，因此不顯示可能不完整的 legacy raw 內容。',
+            ? l10n.snippetRefMissing
+            : l10n.snippetFileNameInsufficient,
       );
     }
     return (snippet, await api.snippetText(projectId, snippetId));
@@ -451,9 +452,9 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
       if (!snippet.hasExplicitFiles || snippet.filePaths.isEmpty) {
         throw ApiFailure(
           FailureKind.unsupported,
-          title: '無法確認 Snippet 檔案清單',
+          title: l10n.snippetFileListUnknown,
           detail:
-              'file_name 不能證明 Snippet 只有一個檔案。伺服器未回傳可驗證的 files 清單，因此不顯示可能不完整的 legacy raw 內容。',
+              l10n.snippetFileNameInsufficient,
         );
       }
       late final SnippetGraphSnapshot snapshot;
@@ -465,10 +466,10 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
       } on ApiFailure catch (failure) {
         if (failure.kind == FailureKind.unsupported ||
             failure.kind == FailureKind.invisible) {
-          throw const ApiFailure(
+          throw ApiFailure(
             FailureKind.unsupported,
-            title: '多檔 Snippet 尚無法安全讀取',
-            detail: '這個 GitLab 實例未提供可驗證的多檔 Snippet 內容介面。',
+            title: l10n.multiFileSnippetUnsafe,
+            detail: l10n.snippetMultiFileApiMissing,
           );
         }
         rethrow;
@@ -559,29 +560,29 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
       api: api,
       projectId: project.id,
       projectPath: project.path,
-      title: '編輯 Snippet',
+      title: l10n.editSnippet,
       subtitle: project.path,
       resource: '${project.id}/snippets/${snippet.id}',
       baseRevision: snippet.updatedAt,
       onRoute: _ownRoute,
       fields: [
-        EditField('title', '標題', value: snippet.title, required: true),
+        EditField('title', l10n.title, value: snippet.title, required: true),
         EditField(
           'description',
-          '說明',
+          l10n.descriptionLabel,
           value: snippet.description,
           lines: 4,
           markdown: true,
         ),
         EditField.choice(
           'visibility',
-          '可見性',
+          l10n.visibility,
           choices: _visibilityChoices(account),
           value: snippet.visibility,
           required: true,
         ),
-        EditField('file_name', '檔名', value: snippet.fileName, required: true),
-        EditField('content', '內容', value: content, lines: 16, required: true),
+        EditField('file_name', l10n.fileName, value: snippet.fileName, required: true),
+        EditField('content', l10n.content, value: content, lines: 16, required: true),
       ],
       save: (values) async {
         if (writePending) {
@@ -656,24 +657,24 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
       api: api,
       projectId: project.id,
       projectPath: project.path,
-      title: '編輯 Snippet 資訊',
+      title: l10n.editSnippetInfo,
       subtitle: project.path,
       resource: '${project.id}/snippets/${snippet.id}/metadata',
       baseRevision:
           '${snapshot.restUpdatedAt}/${snapshot.graphUpdatedAt.toIso8601String()}',
       onRoute: _ownRoute,
       fields: [
-        EditField('title', '標題', value: snippet.title, required: true),
+        EditField('title', l10n.title, value: snippet.title, required: true),
         EditField(
           'description',
-          '說明',
+          l10n.descriptionLabel,
           value: snippet.description,
           lines: 4,
           markdown: true,
         ),
         EditField.choice(
           'visibility',
-          '可見性',
+          l10n.visibility,
           choices: _visibilityChoices(account),
           value: snippet.visibility,
           required: true,
@@ -873,11 +874,11 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
   Future<void> _addFile() async {
     var submittedContent = '';
     await _editFile(
-      title: '新增檔案',
+      title: l10n.addFile,
       resourceSuffix: 'files/new',
-      fields: const [
-        EditField('file_path', '檔案路徑', required: true),
-        EditField('content', '內容', lines: 16, required: true),
+      fields: [
+        EditField('file_path', l10n.filePath, required: true),
+        EditField('content', l10n.content, lines: 16, required: true),
       ],
       actions: (values, _) {
         submittedContent = values['content'] ?? '';
@@ -902,12 +903,12 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     }
     String submittedContent = blob!.content!;
     await _editFile(
-      title: '編輯檔案',
+      title: l10n.editFile,
       resourceSuffix: 'files/$path/content',
       fields: [
         EditField(
           'content',
-          '內容',
+          l10n.content,
           value: blob.content!,
           lines: 16,
           required: true,
@@ -931,9 +932,9 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
       return;
     }
     await _editFile(
-      title: '重新命名檔案',
+      title: l10n.renameFile,
       resourceSuffix: 'files/$path/move',
-      fields: [EditField('file_path', '新路徑', value: path, required: true)],
+      fields: [EditField('file_path', l10n.newPath, value: path, required: true)],
       actions: (values, _) => [
         SnippetFileAction.move(
           previousPath: path,
@@ -953,18 +954,18 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     if (snapshot.filePaths.length <= 1) {
       showFailure(
         context,
-        const ApiFailure(
+        ApiFailure(
           FailureKind.validation,
-          title: '至少保留一個檔案',
-          detail: '若不再需要這個 Snippet，請刪除整個 Snippet。',
+          title: l10n.keepOneFile,
+          detail: l10n.deleteWholeSnippetHint,
         ),
       );
       return;
     }
     final confirmed = await confirmAction(
       context,
-      '刪除「$selected」？',
-      '只會刪除這個檔案，其他檔案會保留。',
+      l10n.deleteSelectedFileQuestion(selected),
+      l10n.deleteOnlyThisFile,
       requiredText: selected,
       onRoute: _ownRoute,
     );
@@ -1043,8 +1044,8 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     final path = ['projects', '${project.id}', 'snippets', '$snippetId'];
     final confirmed = await confirmAction(
       context,
-      '刪除「${snippet.title}」？',
-      'Snippet 與所有內容會永久刪除。',
+      l10n.deleteSnippetTitleQuestion(snippet.title),
+      l10n.deleteSnippetPermanent,
       requiredText: '#${snippet.id}',
       onRoute: _ownRoute,
     );
@@ -1094,15 +1095,15 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     final route = DialogRoute<String>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
-        title: const Text('更多操作'),
+        title: Text(l10n.moreOptions),
         children: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(dialogContext, 'delete'),
-            child: const Row(
+            child: Row(
               children: [
                 Icon(Icons.delete_outline),
                 SizedBox(width: 12),
-                Text('刪除'),
+                Text(l10n.delete),
               ],
             ),
           ),
@@ -1178,11 +1179,11 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
                   ),
                 ],
                 const SizedBox(height: 12),
-                Text('內容', style: Theme.of(context).textTheme.titleMedium),
+                Text(l10n.content, style: Theme.of(context).textTheme.titleMedium),
                 if (truncatedLineCount > 0) ...[
                   const SizedBox(height: 6),
                   Text(
-                    '$truncatedLineCount 行超過 2,000 字元，預覽已截短；編輯時保留完整內容。',
+                    l10n.previewLinesTruncated(truncatedLineCount),
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ],
@@ -1253,7 +1254,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
           Chip(label: Text(snippetVisibilityLabel(snippet.visibility))),
           Chip(label: Text(snippet.authorName)),
           if (_snapshot != null)
-            Chip(label: Text('${_snapshot!.filePaths.length} 個檔案')),
+            Chip(label: Text(l10n.fileCount(_snapshot!.filePaths.length))),
         ],
       ),
       if (snippet.description.isNotEmpty) ...[
@@ -1265,7 +1266,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
           initiallyExpanded: snippet.description.length <= 800,
           tilePadding: EdgeInsets.zero,
           childrenPadding: const EdgeInsets.only(bottom: 12),
-          title: const Text('說明', key: ValueKey('snippet-description-toggle')),
+          title: Text(l10n.descriptionLabel, key: ValueKey('snippet-description-toggle')),
           children: [
             MarkdownView(
               snippet.description,
@@ -1316,12 +1317,12 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     if (blob == null) return const [];
     if (blob.availability != SnippetBlobAvailability.text) {
       final message = switch (blob.availability) {
-        SnippetBlobAvailability.nullContent => '伺服器未提供這個檔案的文字內容。',
-        SnippetBlobAvailability.binary => '這是二進位檔案，無法顯示文字預覽。',
-        SnippetBlobAvailability.tooLarge => '檔案超出 2 MiB／20,000 行預覽上限。',
-        SnippetBlobAvailability.unretrievable => 'GitLab 無法讀取這個檔案。',
+        SnippetBlobAvailability.nullContent => l10n.fileTextMissing,
+        SnippetBlobAvailability.binary => l10n.binaryNoPreview,
+        SnippetBlobAvailability.tooLarge => l10n.filePreviewLimit,
+        SnippetBlobAvailability.unretrievable => l10n.gitlabCannotReadFile,
         SnippetBlobAvailability.renderError =>
-          blob.renderError ?? 'GitLab 無法準備這個檔案的預覽。',
+          blob.renderError ?? l10n.gitlabCannotPreviewFile,
         SnippetBlobAvailability.text => '',
       };
       return [
@@ -1367,7 +1368,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
           padding: EdgeInsets.fromLTRB(gutter, 4, gutter, 4),
           sliver: SliverToBoxAdapter(
             child: Text(
-              '$truncated 行超過 2,000 字元，預覽已截短；編輯時保留完整內容。',
+              l10n.previewTruncatedLines(truncated),
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
@@ -1436,13 +1437,13 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
                 children: [
                   Expanded(
                     child: Text(
-                      '檔案',
+                      l10n.compareFilesSection,
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
                   IconButton(
                     key: const ValueKey('snippet-add-file'),
-                    tooltip: '新增檔案',
+                    tooltip: l10n.addFile,
                     onPressed: _busy ? null : _addFile,
                     icon: const Icon(Icons.note_add_outlined),
                   ),
@@ -1481,7 +1482,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    selected ?? '未選擇檔案',
+                    selected ?? l10n.noFileSelected,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                   const SizedBox(height: 8),
@@ -1492,7 +1493,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
                       if (selected != null && _isMarkdown(selected)) ...[
                         ChoiceChip(
                           key: const ValueKey('snippet-source-mode'),
-                          label: const Text('原始碼'),
+                          label: Text(l10n.sourceCode),
                           selected: !_markdownPreview,
                           onSelected: (_) =>
                               setState(() => _markdownPreview = false),
@@ -1509,13 +1510,13 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
                         key: const ValueKey('snippet-edit-file'),
                         onPressed: !_busy && editable ? _updateFile : null,
                         icon: const Icon(Icons.edit_outlined),
-                        label: const Text('編輯'),
+                        label: Text(l10n.editAction),
                       ),
                       TextButton.icon(
                         key: const ValueKey('snippet-rename-file'),
                         onPressed: !_busy && editable ? _renameFile : null,
                         icon: const Icon(Icons.drive_file_rename_outline),
-                        label: const Text('重新命名'),
+                        label: Text(l10n.renameAction),
                       ),
                       TextButton.icon(
                         key: const ValueKey('snippet-delete-file'),
@@ -1523,7 +1524,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
                             ? null
                             : _deleteFile,
                         icon: const Icon(Icons.delete_outline),
-                        label: const Text('刪除檔案'),
+                        label: Text(l10n.deleteFile),
                       ),
                     ],
                   ),
@@ -1570,12 +1571,12 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
                   widget.snippetId == owner.snippetId,
             ),
           IconButton(
-            tooltip: '編輯 Snippet',
+            tooltip: l10n.editSnippet,
             onPressed: _snippet == null || _busy ? null : _edit,
             icon: const Icon(Icons.edit_outlined),
           ),
           IconButton(
-            tooltip: '更多操作',
+            tooltip: l10n.moreOptions,
             onPressed: _snippet == null || _busy ? null : _showMore,
             icon: const Icon(Icons.more_vert),
           ),

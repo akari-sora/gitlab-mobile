@@ -29,6 +29,7 @@ import 'work_item_state_control.dart';
 import 'work_item_status.dart';
 import 'work_item_weight.dart';
 
+import '../../l10n/l10n.dart';
 String _graphWorkItemState(String value) => switch (value.toUpperCase()) {
   'OPEN' => 'opened',
   'CLOSED' => 'closed',
@@ -507,7 +508,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       _loadingTypes = _pendingGroupTypes != null;
     });
     if (retryWithoutType != null) {
-      await _refreshItems(retryWithoutType!, notice: '已選類型不再可用，已改為所有類型並重新讀取。');
+      await _refreshItems(retryWithoutType!, notice: l10n.selectedTypeUnavailable);
     } else if (_selectedTypeNeedsVerification && _nextTypes != null) {
       await _loadMoreTypes();
     }
@@ -610,7 +611,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       if (retryWithoutType != null) {
         await _refreshItems(
           retryWithoutType!,
-          notice: '已選類型不再可用，已改為所有類型並重新讀取。',
+          notice: l10n.selectedTypeUnavailable,
         );
       } else if (_selectedTypeNeedsVerification && _nextTypes != null) {
         await _loadMoreTypes();
@@ -843,7 +844,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
     }
     if (!_current(generation)) return;
     if (retryWithoutType != null) {
-      await _refreshItems(retryWithoutType!, notice: '已選類型不再可用，已改為所有類型並重新讀取。');
+      await _refreshItems(retryWithoutType!, notice: l10n.selectedTypeUnavailable);
     } else if (loadedPage &&
         _selectedTypeNeedsVerification &&
         _typeVerificationFilter == verificationFilter &&
@@ -859,7 +860,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
     final namespace = item.namespace;
     if (project == null && namespace == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('伺服器沒有提供這個工作項目的群組位置，無法安全開啟。')),
+        SnackBar(content: Text(l10n.workItemGroupLocationMissing)),
       );
       return;
     }
@@ -991,19 +992,19 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   );
 
   Widget _groupFilters(BuildContext context) {
-    const stateLabels = {
-      GroupWorkItemState.opened: '開啟中',
-      GroupWorkItemState.closed: '已關閉',
-      GroupWorkItemState.all: '全部狀態',
+    final stateLabels = {
+      GroupWorkItemState.opened: l10n.statusOpen,
+      GroupWorkItemState.closed: l10n.statusClosed,
+      GroupWorkItemState.all: l10n.allStatuses,
     };
-    const sortLabels = {
-      GroupWorkItemSort.createdDesc: '最新建立',
-      GroupWorkItemSort.createdAsc: '最早建立',
-      GroupWorkItemSort.updatedDesc: '最近更新',
-      GroupWorkItemSort.updatedAsc: '最早更新',
+    final sortLabels = {
+      GroupWorkItemSort.createdDesc: l10n.sortNewestCreated,
+      GroupWorkItemSort.createdAsc: l10n.sortOldestCreated,
+      GroupWorkItemSort.updatedDesc: l10n.sortRecentlyUpdated,
+      GroupWorkItemSort.updatedAsc: l10n.sortLeastRecentlyUpdated,
     };
     final selectableTypes = _selectableTypes.toList(growable: false);
-    final scopeLabel = _filter.includeDescendants ? '包含子群組與專案' : '僅此群組';
+    final scopeLabel = _filter.includeDescendants ? l10n.includeSubgroupsAndProjects : l10n.thisGroupOnly;
     return Card(
       key: const Key('group-work-item-filters'),
       child: ExpansionTile(
@@ -1025,8 +1026,8 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                   ChoiceChip(
                     label: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 176),
-                      child: const Text(
-                        '包含子群組與專案',
+                      child: Text(
+                        l10n.includeSubgroupsAndProjects,
                         maxLines: 2,
                         softWrap: true,
                         textAlign: TextAlign.center,
@@ -1038,7 +1039,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                     },
                   ),
                   ChoiceChip(
-                    label: const Text('僅此群組'),
+                    label: Text(l10n.thisGroupOnly),
                     selected: !_filter.includeDescendants,
                     onSelected: (selected) {
                       if (selected) _changeScope(false);
@@ -1072,9 +1073,9 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                       scrollController: _searchScrollController,
                       textInputAction: TextInputAction.search,
                       maxLength: 256,
-                      decoration: const InputDecoration(
-                        labelText: '搜尋工作項目',
-                        hintText: '標題或關鍵字',
+                      decoration: InputDecoration(
+                        labelText: l10n.searchWorkItems,
+                        hintText: l10n.titleOrKeyword,
                         border: OutlineInputBorder(),
                         counterText: '',
                       ),
@@ -1084,7 +1085,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                   const SizedBox(width: 6),
                   IconButton.filledTonal(
                     onPressed: _submitSearch,
-                    tooltip: '套用搜尋',
+                    tooltip: l10n.applySearch,
                     icon: const Icon(Icons.search),
                   ),
                   IconButton(
@@ -1092,7 +1093,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                       _searchController.clear();
                       _submitSearch();
                     },
-                    tooltip: '清除搜尋',
+                    tooltip: l10n.clearSearch,
                     icon: const Icon(Icons.close),
                   ),
                 ],
@@ -1104,8 +1105,8 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                   key: ValueKey('group-work-item-sort-${_filter.sort}'),
                   initialValue: _filter.sort,
                   isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: '排序',
+                  decoration: InputDecoration(
+                    labelText: l10n.sortOrder,
                     border: OutlineInputBorder(),
                   ),
                   items: [
@@ -1127,14 +1128,14 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                   ),
                   initialValue: _filter.typeId,
                   isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: '類型',
+                  decoration: InputDecoration(
+                    labelText: l10n.workItemTypeFilter,
                     border: OutlineInputBorder(),
                   ),
                   items: [
-                    const DropdownMenuItem<String?>(
+                    DropdownMenuItem<String?>(
                       value: null,
-                      child: Text('所有類型'),
+                      child: Text(l10n.allWorkItemTypes),
                     ),
                     for (final capability in selectableTypes)
                       DropdownMenuItem<String?>(
@@ -1154,7 +1155,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
 
   Widget _capabilities(BuildContext context) {
     if (_loadingTypes && _types.isEmpty) {
-      return const Card(
+      return Card(
         child: Padding(
           padding: EdgeInsets.all(16),
           child: Row(
@@ -1165,7 +1166,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
               SizedBox(width: 12),
-              Expanded(child: Text('讀取可用的工作項目類型…')),
+              Expanded(child: Text(l10n.loadingWorkItemTypes)),
             ],
           ),
         ),
@@ -1175,7 +1176,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
       return FailureNotice(
         _typesError!,
         account: widget.account,
-        resourceLabel: '${widget.namespacePath} · 工作項目類型',
+        resourceLabel: l10n.workItemTypesTitle(widget.namespacePath),
         onRetry: _refresh,
         onSwitchAccount: endSessionFrom(context),
       );
@@ -1186,13 +1187,13 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('伺服器提供的類型', style: Theme.of(context).textTheme.titleSmall),
+            Text(l10n.serverProvidedTypes, style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             if (_types.isEmpty)
               Text(
                 widget.project == null
-                    ? '此群組目前沒有啟用可顯示的工作項目類型。'
-                    : '此專案沒有回傳可用類型。',
+                    ? l10n.groupNoWorkItemTypes
+                    : l10n.projectNoWorkItemTypes,
                 style: Theme.of(context).textTheme.bodySmall,
               )
             else
@@ -1209,7 +1210,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                         size: 17,
                       ),
                       label: Text(
-                        '${capability.type.name}${capability.enabled ? '' : '（未啟用）'}',
+                        '${capability.type.name}${capability.enabled ? '' : l10n.notEnabledSuffix}',
                       ),
                     ),
                 ],
@@ -1217,25 +1218,25 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
             if (_typesError != null) ...[
               const SizedBox(height: 8),
               Text(
-                '後續類型載入失敗；目前只顯示已取得的資料。',
+                l10n.laterTypesLoadFailed,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               TextButton.icon(
                 onPressed: _nextTypes == null ? _refresh : _loadMoreTypes,
                 icon: const Icon(Icons.refresh),
-                label: const Text('重試'),
+                label: Text(l10n.retryAction),
               ),
             ],
             if (_typesLimitReached) ...[
               const SizedBox(height: 8),
               Text(
-                '已載入類型上限；重新整理可從第一頁重新讀取。',
+                l10n.workItemTypeLoadLimit,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               TextButton.icon(
                 onPressed: _refresh,
                 icon: const Icon(Icons.refresh),
-                label: const Text('重新整理'),
+                label: Text(l10n.refreshAction),
               ),
             ],
             if (_nextTypes != null) ...[
@@ -1249,7 +1250,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
                     : const Icon(Icons.expand_more),
-                label: const Text('載入更多類型'),
+                label: Text(l10n.loadMoreTypes),
               ),
             ],
           ],
@@ -1297,9 +1298,9 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         dateText =
             '${workItemCalendarDate(dates.startDate!)} - ${workItemCalendarDate(dates.dueDate!)}';
       } else if (dates.startDate != null) {
-        dateText = '開始: ${workItemCalendarDate(dates.startDate!)}';
+        dateText = l10n.startDateColon(workItemCalendarDate(dates.startDate!));
       } else if (dates.dueDate != null) {
-        dateText = '截止: ${workItemCalendarDate(dates.dueDate!)}';
+        dateText = l10n.dueDateColon(workItemCalendarDate(dates.dueDate!));
       }
       if (dateText != null) {
         metaChips.add(
@@ -1322,8 +1323,8 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         );
       } else if (hierarchy.hasParent) {
         metaChips.add(
-          const MetaChip(
-            '上層不可見',
+          MetaChip(
+            l10n.parentNotVisible,
             icon: Icons.lock_outline,
           ),
         );
@@ -1344,9 +1345,9 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         metaChips.add(
           Semantics(
             container: true,
-            label: '還有更多，未載入',
+            label: l10n.moreNotLoaded,
             excludeSemantics: true,
-            child: const MetaChip('更多', icon: Icons.more_horiz),
+            child: MetaChip(l10n.moreItems, icon: Icons.more_horiz),
           ),
         );
       }
@@ -1366,9 +1367,9 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         metaChips.add(
           Semantics(
             container: true,
-            label: '還有更多，未載入',
+            label: l10n.moreNotLoaded,
             excludeSemantics: true,
-            child: const LabelPill('更多'),
+            child: LabelPill(l10n.moreItems),
           ),
         );
       }
@@ -1394,7 +1395,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         child: FailureNotice(
           _itemsError!,
           account: widget.account,
-          resourceLabel: '${widget.namespacePath} · 更多工作項目',
+          resourceLabel: l10n.moreWorkItemsTitle(widget.namespacePath),
           onRetry: _nextItems == null ? _refresh : _loadMoreItems,
           onSwitchAccount: endSessionFrom(context),
         ),
@@ -1407,13 +1408,13 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '已載入工作項目上限；重新整理可從第一頁重新讀取。',
+                l10n.workItemLoadLimit,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               TextButton.icon(
                 onPressed: _refresh,
                 icon: const Icon(Icons.refresh),
-                label: const Text('重新整理'),
+                label: Text(l10n.refreshAction),
               ),
             ],
           ),
@@ -1431,7 +1432,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.expand_more),
-          label: const Text('載入更多工作項目'),
+          label: Text(l10n.loadMoreWorkItems),
         ),
       ),
   ];
@@ -1446,20 +1447,20 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
         child: FailureNotice(
           _itemsError!,
           account: widget.account,
-          resourceLabel: '${widget.namespacePath} · 工作項目',
+          resourceLabel: l10n.workItemsTitle(widget.namespacePath),
           onRetry: _refresh,
           onSwitchAccount: endSessionFrom(context),
         ),
       );
     } else if (_items.isEmpty) {
-      itemSliver = const SliverToBoxAdapter(
+      itemSliver = SliverToBoxAdapter(
         child: Padding(
           padding: EdgeInsets.symmetric(vertical: 44),
           child: Column(
             children: [
               Icon(Icons.workspaces_outline, size: 38),
               SizedBox(height: 10),
-              Text('沒有可顯示的工作項目'),
+              Text(l10n.noWorkItemsToDisplay),
             ],
           ),
         ),
@@ -1495,7 +1496,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                             'graph-work-items-display-options-button',
                           ),
                           onPressed: _openDisplayOptions,
-                          tooltip: '顯示設定',
+                          tooltip: l10n.displaySettings,
                           icon: const Icon(Icons.tune),
                           visualDensity: VisualDensity.compact,
                         ),
@@ -1534,22 +1535,22 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   }
 
   Widget _projectFilters(BuildContext context) {
-    const stateLabels = {
-      GroupWorkItemState.opened: '開啟中',
-      GroupWorkItemState.closed: '已關閉',
-      GroupWorkItemState.all: '全部狀態',
+    final stateLabels = {
+      GroupWorkItemState.opened: l10n.statusOpen,
+      GroupWorkItemState.closed: l10n.statusClosed,
+      GroupWorkItemState.all: l10n.allStatuses,
     };
-    const sortLabels = {
-      GroupWorkItemSort.createdDesc: '最新建立',
-      GroupWorkItemSort.createdAsc: '最早建立',
-      GroupWorkItemSort.updatedDesc: '最近更新',
-      GroupWorkItemSort.updatedAsc: '最早更新',
+    final sortLabels = {
+      GroupWorkItemSort.createdDesc: l10n.sortNewestCreated,
+      GroupWorkItemSort.createdAsc: l10n.sortOldestCreated,
+      GroupWorkItemSort.updatedDesc: l10n.sortRecentlyUpdated,
+      GroupWorkItemSort.updatedAsc: l10n.sortLeastRecentlyUpdated,
     };
     return Card(
       key: const Key('project-work-item-filters'),
       child: ExpansionTile(
         key: const PageStorageKey('project-work-item-filters-expansion'),
-        title: const Text('專案篩選與排序'),
+        title: Text(l10n.projectFiltersAndSort),
         subtitle: Text(
           '${stateLabels[_filter.state]} · ${sortLabels[_filter.sort]}'
           '${_filterNotice == null ? '' : '\n$_filterNotice'}',
@@ -1584,9 +1585,9 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                       scrollController: _searchScrollController,
                       textInputAction: TextInputAction.search,
                       maxLength: 256,
-                      decoration: const InputDecoration(
-                        labelText: '搜尋工作項目',
-                        hintText: '標題或關鍵字',
+                      decoration: InputDecoration(
+                        labelText: l10n.searchWorkItems,
+                        hintText: l10n.titleOrKeyword,
                         border: OutlineInputBorder(),
                         counterText: '',
                       ),
@@ -1596,7 +1597,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                   const SizedBox(width: 6),
                   IconButton.filledTonal(
                     onPressed: _submitSearch,
-                    tooltip: '套用搜尋',
+                    tooltip: l10n.applySearch,
                     icon: const Icon(Icons.search),
                   ),
                   IconButton(
@@ -1604,7 +1605,7 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                       _searchController.clear();
                       _submitSearch();
                     },
-                    tooltip: '清除搜尋',
+                    tooltip: l10n.clearSearch,
                     icon: const Icon(Icons.close),
                   ),
                 ],
@@ -1616,8 +1617,8 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
                   key: ValueKey('project-work-item-sort-${_filter.sort}'),
                   initialValue: _filter.sort,
                   isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: '排序',
+                  decoration: InputDecoration(
+                    labelText: l10n.sortOrder,
                     border: OutlineInputBorder(),
                   ),
                   items: [
@@ -1670,23 +1671,23 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
   @override
   Widget build(BuildContext context) {
     if (_ownerInvalid) {
-      const closed = SafeArea(child: Center(child: Text('帳號已切換，工作項目頁面已關閉。')));
-      return widget.embedded ? closed : const Scaffold(body: closed);
+      final closed = SafeArea(child: Center(child: Text(l10n.accountSwitchedWorkItemClosed)));
+      return widget.embedded ? closed : Scaffold(body: closed);
     }
     if (widget.embedded) return _body(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('工作項目'),
+        title: Text(l10n.workItemsLabel),
         actions: [
           IconButton(
             key: const Key('graph-work-items-display-options-button'),
             onPressed: _openDisplayOptions,
-            tooltip: '顯示設定',
+            tooltip: l10n.displaySettings,
             icon: const Icon(Icons.tune),
           ),
           IconButton(
             onPressed: _loadingItems || _loadingTypes ? null : _refresh,
-            tooltip: '重新整理',
+            tooltip: l10n.refreshAction,
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -1722,7 +1723,7 @@ class _WorkItemDisplaySheet extends StatelessWidget {
     }) {
       return SwitchListTile(
         title: Text(title),
-        subtitle: disabled ? const Text('此實例未提供') : null,
+        subtitle: disabled ? Text(l10n.notProvidedByInstance) : null,
         value: disabled ? false : value,
         onChanged: disabled ? null : onToggle,
       );
@@ -1731,7 +1732,7 @@ class _WorkItemDisplaySheet extends StatelessWidget {
     Widget buildUnsupportedTile(String title) {
       return SwitchListTile(
         title: Text(title),
-        subtitle: const Text('尚未支援'),
+        subtitle: Text(l10n.notSupportedYet),
         value: false,
         onChanged: null,
       );
@@ -1745,42 +1746,42 @@ class _WorkItemDisplaySheet extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
-              '顯示設定',
+              l10n.displaySettings,
               style: theme.textTheme.titleMedium,
             ),
           ),
           buildSupportedTile(
-            title: '標籤',
+            title: l10n.labelNoun,
             value: preferences.showLabels,
             disabled: isUnknown || isTier3,
             onToggle: (v) => onChanged(preferences.copyWith(showLabels: v)),
           ),
           buildSupportedTile(
-            title: '指派對象',
+            title: l10n.assigneeFilter,
             value: preferences.showAssignees,
             disabled: isUnknown || isTier3,
             onToggle: (v) => onChanged(preferences.copyWith(showAssignees: v)),
           ),
           buildSupportedTile(
-            title: '里程碑',
+            title: l10n.milestoneLabel,
             value: preferences.showMilestone,
             disabled: isUnknown || isTier3,
             onToggle: (v) => onChanged(preferences.copyWith(showMilestone: v)),
           ),
           buildSupportedTile(
-            title: '起訖日期',
+            title: l10n.startAndDueDates,
             value: preferences.showDates,
             disabled: isUnknown || isTier3,
             onToggle: (v) => onChanged(preferences.copyWith(showDates: v)),
           ),
           buildSupportedTile(
-            title: '階層關係',
+            title: l10n.hierarchyRelation,
             value: preferences.showHierarchy,
             disabled: isUnknown || isTier3,
             onToggle: (v) => onChanged(preferences.copyWith(showHierarchy: v)),
           ),
           buildSupportedTile(
-            title: '工作流程狀態',
+            title: l10n.workflowStatus,
             value: preferences.showStatus,
             disabled: isUnknown || isTier3 || isTier2,
             onToggle: (v) => onChanged(preferences.copyWith(showStatus: v)),
@@ -1789,16 +1790,16 @@ class _WorkItemDisplaySheet extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
-              '其他選項（尚未支援）',
+              l10n.otherOptionsUnsupported,
               style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
             ),
           ),
-          buildUnsupportedTile('阻礙項目'),
-          buildUnsupportedTile('留言數'),
-          buildUnsupportedTile('健康狀態'),
-          buildUnsupportedTile('疊代'),
-          buildUnsupportedTile('熱門度'),
-          buildUnsupportedTile('權重'),
+          buildUnsupportedTile(l10n.blockingItems),
+          buildUnsupportedTile(l10n.commentCountSort),
+          buildUnsupportedTile(l10n.healthStatus),
+          buildUnsupportedTile(l10n.iteration),
+          buildUnsupportedTile(l10n.popularity),
+          buildUnsupportedTile(l10n.weight),
         ],
       ),
     );
@@ -3835,7 +3836,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
     final projectRef = item.project;
     if (projectRef == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('伺服器沒有提供這個關聯項目的 namespace，無法安全開啟。')),
+        SnackBar(content: Text(l10n.relatedItemNamespaceMissing)),
       );
       return;
     }
@@ -3904,14 +3905,14 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (pending)
-          const Text('更新中', key: ValueKey('work-item-assignees-updating'))
+          Text(l10n.updating, key: ValueKey('work-item-assignees-updating'))
         else if (_assigneesRefreshFailed)
-          const Text(
-            '尚未確認最新負責人。請重新整理後再查看，不要沿用送出前的名單。',
+          Text(
+            l10n.assigneesUnconfirmed,
             key: ValueKey('work-item-assignees-unconfirmed'),
           )
         else if (people.isEmpty)
-          const Text('尚未指派')
+          Text(l10n.unassigned)
         else
           Wrap(
             key: const ValueKey('work-item-assignee-preview'),
@@ -3938,29 +3939,29 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
             padding: const EdgeInsets.only(top: 8),
             child: Text(
               total == 0
-                  ? '目前沒有負責人。'
+                  ? l10n.noAssignees
                   : total <= 20
-                  ? '共 $total 位負責人。'
-                  : '共 $total 位負責人，這裡只顯示前 20 位。',
+                  ? l10n.assigneeTotal(total)
+                  : l10n.assigneeTotalFirstTwenty(total),
               key: const ValueKey('work-item-assignee-count'),
             ),
           )
         else if (!pending && !_assigneesHideStalePreview && preview.isPartial)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 8),
-            child: Text('只顯示前 20 位負責人。'),
+            child: Text(l10n.assigneesFirstTwentyOnly),
           ),
         if (!pending && total != null && total > 20)
           TextButton(
             key: const ValueKey('work-item-assignees-roster'),
             onPressed: () => unawaited(_openAssigneeRoster(overlay!)),
-            child: Text('查看全部 $total 位'),
+            child: Text(l10n.viewAllAssignees(total)),
           )
         else if (!pending && preview.isPartial && overlay == null)
           TextButton(
             key: const ValueKey('work-item-assignees-read-all'),
             onPressed: () => unawaited(_refetchAssignees(detail, generation)),
-            child: const Text('讀取全部負責人'),
+            child: Text(l10n.loadAllAssignees),
           ),
         WorkItemAssigneesControl(
           account: widget.account,
@@ -3992,7 +3993,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       children: [
         if (_labelsHidePreview)
           Text(
-            _labelsUnconfirmed ? '尚未確認最新標籤。請重新整理後再查看。' : '正在更新標籤',
+            _labelsUnconfirmed ? l10n.labelsUnconfirmed : l10n.updatingLabels,
             key: ValueKey(
               _labelsUnconfirmed
                   ? 'work-item-labels-unconfirmed'
@@ -4001,7 +4002,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           )
         else if (labels != null) ...[
           if (labels.items.isEmpty)
-            const Text('沒有標籤')
+            Text(l10n.noLabels)
           else
             Wrap(
               key: const ValueKey('work-item-labels-preview'),
@@ -4020,12 +4021,12 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
               ],
             ),
           if (labels.isPartial)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 8),
-              child: Text('只顯示前 50 個標籤。'),
+              child: Text(l10n.labelsFirstFiftyOnly),
             ),
         ] else
-          const Text('此伺服器未回傳標籤清單。'),
+          Text(l10n.labelListNotReturned),
         WorkItemLabelsControl(
           account: widget.account,
           api: widget.api,
@@ -4071,41 +4072,41 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
             children: [
               if (dates.startDate != null)
                 MetaChip(
-                  '開始 ${workItemCalendarDate(dates.startDate!)}',
+                  l10n.startDateValue(workItemCalendarDate(dates.startDate!)),
                   icon: Icons.play_arrow_outlined,
                 ),
               if (dates.dueDate != null)
                 MetaChip(
-                  '到期 ${workItemCalendarDate(dates.dueDate!)}',
+                  l10n.dueDateValue(workItemCalendarDate(dates.dueDate!)),
                   icon: Icons.event_outlined,
                 ),
               if (dates.startDate == null && dates.dueDate == null)
-                const Text('沒有開始或到期日期'),
+                Text(l10n.noStartOrDueDate),
               if (dates.rollUp == true)
-                const MetaChip('日期由階層彙整', icon: Icons.account_tree_outlined),
+                MetaChip(l10n.datesRolledUpFromHierarchy, icon: Icons.account_tree_outlined),
             ],
           ),
         if (held)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 8),
             child: Text(
-              '日期更新中：完成前不會重新整理、變更開啟狀態或其他欄位。',
+              l10n.datesUpdatingLocked,
               key: ValueKey('work-item-dates-hold'),
             ),
           )
         else if (stale)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 8),
             child: Text(
-              '尚未確認最新日期。請重新整理後再查看。',
+              l10n.datesUnconfirmed,
               key: ValueKey('work-item-dates-stale'),
             ),
           )
         else if (unconfirmed)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 8),
             child: Text(
-              '尚未確認日期是否已更新。請重新整理後再查看。',
+              l10n.datesUpdateUnconfirmed,
               key: ValueKey('work-item-dates-unconfirmed'),
             ),
           ),
@@ -4155,26 +4156,26 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (held)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 8),
             child: Text(
-              '健康狀態更新中：完成前不會重新整理、變更開啟狀態或其他欄位。',
+              l10n.healthStatusUpdatingLocked,
               key: ValueKey('work-item-health-hold'),
             ),
           )
         else if (stale)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 8),
             child: Text(
-              '尚未確認最新健康狀態。請重新整理後再查看。',
+              l10n.healthStatusUnconfirmed,
               key: ValueKey('work-item-health-stale'),
             ),
           )
         else if (unconfirmed)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 8),
             child: Text(
-              '尚未確認健康狀態是否已更新。請重新整理後再查看。',
+              l10n.healthStatusUpdateUnconfirmed,
               key: ValueKey('work-item-health-unconfirmed'),
             ),
           ),
@@ -4230,20 +4231,20 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         scrollable: true,
-        title: Text(closing ? '關閉工作項目？' : '重新開啟工作項目？'),
+        title: Text(closing ? l10n.closeWorkItemConfirm : l10n.reopenWorkItemConfirm),
         content: Text(
-          '@${widget.account.user.username} · ${widget.account.instance.key}\n'
-          '${widget.namespacePath} · #${widget.iid}\n\n'
-          '${closing ? '關閉' : '重新開啟'}這個工作項目？',
+          closing
+              ? l10n.confirmCloseWorkItem(widget.account.user.username, widget.account.instance.key, widget.namespacePath, widget.iid)
+              : l10n.confirmReopenWorkItem(widget.account.user.username, widget.account.instance.key, widget.namespacePath, widget.iid),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
+            child: Text(l10n.cancelAction),
           ),
           FilledButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(closing ? '確認關閉' : '確認重開'),
+            child: Text(closing ? l10n.confirmClose : l10n.confirmReopen),
           ),
         ],
       ),
@@ -4292,7 +4293,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         ),
         const SizedBox(height: 8),
         Text(
-          '建立於 ${_instantDate(summary.createdAt)} · 更新於 ${_instantDate(summary.updatedAt)}',
+          l10n.createdAndUpdatedAt(_instantDate(summary.createdAt), _instantDate(summary.updatedAt)),
           style: Theme.of(context).textTheme.bodySmall,
         ),
         const SizedBox(height: 14),
@@ -4308,7 +4309,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
             project: project,
           )
         else if (detail.descriptionWidget != null)
-          _section(context, '說明', const Text('沒有說明')),
+          _section(context, l10n.descriptionLabel, Text(l10n.noDescription)),
         WorkItemStateControl(
           account: widget.account,
           api: widget.api,
@@ -4355,44 +4356,44 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
               _current(_generation) && _sessionCurrent,
         ),
         if (_statusHeld)
-          const Padding(
+          Padding(
             key: ValueKey('work-item-status-hold-banner'),
             padding: EdgeInsets.symmetric(vertical: 6),
-            child: Text('狀態更新中：完成前不會重新整理、變更開啟狀態或其他欄位。'),
+            child: Text(l10n.statusUpdatingLocked),
           ),
         if (assignees != null)
           _section(
             context,
-            '負責人',
+            l10n.assigneesLabel,
             _assigneePreview(context, detail, assignees),
           ),
         if (detail.assignees != null && assignees == null)
-          _section(context, '負責人', const Text('此伺服器未回傳負責人清單。')),
+          _section(context, l10n.assigneesLabel, Text(l10n.assigneeListNotReturned)),
         if (detail.labels != null)
-          _section(context, '標籤', _labelsPreview(context, detail, labels)),
+          _section(context, l10n.labelNoun, _labelsPreview(context, detail, labels)),
         if (hierarchy != null)
           _section(
             context,
-            '階層',
+            l10n.hierarchySection,
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (hierarchy.parent != null) ...[
-                  Text('上層項目', style: Theme.of(context).textTheme.labelLarge),
+                  Text(l10n.parentItem, style: Theme.of(context).textTheme.labelLarge),
                   const SizedBox(height: 4),
                   _HierarchyTile(
                     item: hierarchy.parent!,
                     onTap: () => unawaited(_openHierarchy(hierarchy.parent!)),
                   ),
                 ] else if (hierarchy.hasParent == true)
-                  const Text('伺服器指出有上層項目，但未提供可開啟的資料。'),
+                  Text(l10n.parentItemNotOpenable),
                 if (hierarchy.children != null) ...[
                   if (hierarchy.parent != null) const Divider(height: 24),
-                  Text('子項目', style: Theme.of(context).textTheme.labelLarge),
+                  Text(l10n.childItems, style: Theme.of(context).textTheme.labelLarge),
                   if (hierarchy.children!.items.isEmpty)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(top: 6),
-                      child: Text('沒有子項目'),
+                      child: Text(l10n.noChildItems),
                     ),
                   for (final child in hierarchy.children!.items)
                     _HierarchyTile(
@@ -4400,12 +4401,12 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
                       onTap: () => unawaited(_openHierarchy(child)),
                     ),
                   if (hierarchy.children!.isPartial)
-                    const Padding(
+                    Padding(
                       padding: EdgeInsets.only(top: 8),
-                      child: Text('只顯示前 20 個子項目；請在 GitLab 查看完整清單。'),
+                      child: Text(l10n.childItemsFirstTwenty),
                     ),
                 ] else if (hierarchy.hasChildren == true)
-                  const Text('伺服器指出有子項目，但未回傳清單。'),
+                  Text(l10n.childItemsNotReturned),
               ],
             ),
           ),
@@ -4414,7 +4415,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
             key: const ValueKey('work-item-dates-section'),
             child: _section(
               context,
-              '日期',
+              l10n.datesSection,
               _datesBody(detail, dates),
             ),
           ),
@@ -4424,7 +4425,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
             key: const ValueKey('work-item-health-section'),
             child: _section(
               context,
-              '健康狀態',
+              l10n.healthStatus,
               _healthBody(detail),
             ),
           ),
@@ -4441,8 +4442,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           if (_resolvingProject)
             _section(
               context,
-              '專案 Markdown 整合',
-              const Row(
+              l10n.projectMarkdownIntegration,
+              Row(
                 children: [
                   SizedBox(
                     width: 18,
@@ -4450,18 +4451,18 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                   SizedBox(width: 8),
-                  Expanded(child: Text('正在驗證專案身分…')),
+                  Expanded(child: Text(l10n.verifyingProjectIdentity)),
                 ],
               ),
             )
           else if (_projectContextError case final error?)
             _section(
               context,
-              '專案 Markdown 整合',
+              l10n.projectMarkdownIntegration,
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('工作項目仍可閱讀，留言仍可使用純 Markdown。'),
+                  Text(l10n.workItemPlainMarkdownFallback),
                   const SizedBox(height: 10),
                   FailureNotice(
                     error,
@@ -4478,8 +4479,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         if (!detail.widgetsAvailable)
           _section(
             context,
-            '詳細資料',
-            const Text('此伺服器沒有回傳工作項目 widgets；未顯示的欄位不代表沒有設定。'),
+            l10n.detailsSection,
+            Text(l10n.workItemWidgetsMissing),
           ),
       ],
     );
@@ -4488,8 +4489,8 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
   @override
   Widget build(BuildContext context) {
     if (_ownerInvalid || !(widget.isCurrent?.call() ?? true)) {
-      return const Scaffold(
-        body: SafeArea(child: Center(child: Text('帳號已切換，工作項目頁面已關閉。'))),
+      return Scaffold(
+        body: SafeArea(child: Center(child: Text(l10n.accountSwitchedWorkItemClosed))),
       );
     }
     return Scaffold(
@@ -4497,7 +4498,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
         toolbarHeight: (MediaQuery.textScalerOf(context).scale(19) * 1.3 + 16)
             .clamp(56, double.infinity),
         title: Text(
-          '工作項目 #${widget.iid}',
+          l10n.workItemIid(widget.iid),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -4517,7 +4518,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
                     _healthHeld
                 ? null
                 : _refresh,
-            tooltip: '重新整理',
+            tooltip: l10n.refreshAction,
             icon: const Icon(Icons.refresh),
           ),
         ],
@@ -4529,7 +4530,7 @@ class _GraphWorkItemDetailPageState extends State<GraphWorkItemDetailPage> {
           child: FailureNotice(
             error,
             account: widget.account,
-            resourceLabel: '${widget.namespacePath} · 工作項目 #${widget.iid}',
+            resourceLabel: l10n.workItemPageTitle(widget.namespacePath, widget.iid),
             onRetry: _refresh,
             onSwitchAccount: endSessionFrom(context),
           ),
@@ -4595,9 +4596,9 @@ class _WorkItemDescriptionCardState extends State<_WorkItemDescriptionCard> {
       child: ExpansionTile(
         initiallyExpanded: _characterCount <= _collapsedThreshold,
         maintainState: false,
-        title: Text('說明', style: Theme.of(context).textTheme.titleMedium),
+        title: Text(l10n.descriptionLabel, style: Theme.of(context).textTheme.titleMedium),
         subtitle: Text(
-          '$_characterCount 字元${_preview.isEmpty ? '' : ' · $_preview'}',
+          l10n.characterCountWithSuffix(_characterCount, _preview.isEmpty ? '' : ' · $_preview'),
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),

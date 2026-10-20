@@ -6,45 +6,45 @@ const _labelCandidatePageSize = 20;
 const _labelCandidatePageLimit = 5;
 const _labelTitleLimit = 255;
 
-const _labelsReadForbidden = ApiFailure(
+ApiFailure get _labelsReadForbidden => ApiFailure(
   FailureKind.forbidden,
-  title: '無法讀取工作項目標籤',
-  detail: '目前帳號沒有讀取這個工作項目的權限。',
+  title: l10n.cannotReadWorkItemLabels,
+  detail: l10n.noPermissionReadWorkItem,
 );
-const _labelsWriteForbidden = ApiFailure(
+ApiFailure get _labelsWriteForbidden => ApiFailure(
   FailureKind.forbidden,
-  title: '沒有修改標籤的權限',
-  detail: '需要 readWorkItem 與 setWorkItemMetadata。',
+  title: l10n.noPermissionChangeLabels,
+  detail: l10n.needReadAndSetMetadata,
 );
-const _labelsUnsupported = ApiFailure(
+ApiFailure get _labelsUnsupported => ApiFailure(
   FailureKind.unsupported,
-  title: '無法讀完標籤，不能修改',
-  detail: '標籤連線不完整，或這個實例沒有提供可用的標籤資料。',
+  title: l10n.labelsIncompleteCannotEdit,
+  detail: l10n.labelConnectionIncomplete,
 );
-const _labelsInvalid = ApiFailure(
+ApiFailure get _labelsInvalid => ApiFailure(
   FailureKind.validation,
-  title: '標籤識別無效',
-  detail: '請只使用這次讀到或已完成候選頁裡的標籤。',
+  title: l10n.invalidLabelIdentifier,
+  detail: l10n.useLoadedLabelCandidates,
 );
-const _labelsSearchInvalid = ApiFailure(
+ApiFailure get _labelsSearchInvalid => ApiFailure(
   FailureKind.validation,
-  title: '標籤搜尋無效',
-  detail: '搜尋需為 1 到 256 個字，且不能包含控制字元。',
+  title: l10n.invalidLabelSearch,
+  detail: l10n.searchLengthNoControlChars,
 );
-const _labelsConflict = ApiFailure(
+ApiFailure get _labelsConflict => ApiFailure(
   FailureKind.conflict,
-  title: '工作項目已更新，請重新整理',
-  detail: '標籤、範圍或修訂已改變。請重新讀取後再修改。',
+  title: l10n.workItemUpdatedRefresh,
+  detail: l10n.labelsScopeRevisionChanged,
 );
-const _labelsUncertain = ApiFailure(
+ApiFailure get _labelsUncertain => ApiFailure(
   FailureKind.writeUncertain,
-  title: '無法確認寫入結果',
-  detail: '請重新整理後再查看，不要重複送出同一次變更。',
+  title: l10n.cannotConfirmWriteResult,
+  detail: l10n.refreshDoNotResubmit,
 );
-const _labelsSpent = ApiFailure(
+ApiFailure get _labelsSpent => ApiFailure(
   FailureKind.writeUncertain,
-  title: '無法確認寫入結果',
-  detail: '這次編輯已經使用過，不會再次送出。',
+  title: l10n.cannotConfirmWriteResult,
+  detail: l10n.editAlreadyUsedNoResubmit,
 );
 const _labelsCancelled = ApiFailure(FailureKind.cancelled);
 
@@ -319,7 +319,7 @@ extension WorkItemLabelApi on GitLabApi {
     void Function()? onMutationSent,
   }) async {
     if (target._consumed) {
-      throw const WorkItemLabelWriteFailure(
+      throw WorkItemLabelWriteFailure(
         failure: _labelsSpent,
         mutationSent: false,
       );
@@ -412,7 +412,7 @@ extension WorkItemLabelApi on GitLabApi {
         },
       );
     } on Object {
-      throw const WorkItemLabelWriteFailure(
+      throw WorkItemLabelWriteFailure(
         failure: _labelsUncertain,
         mutationSent: true,
       );
@@ -427,7 +427,7 @@ extension WorkItemLabelApi on GitLabApi {
     } on ApiFailure catch (failure) {
       throw WorkItemLabelWriteFailure(failure: failure, mutationSent: true);
     } on Object {
-      throw const WorkItemLabelWriteFailure(
+      throw WorkItemLabelWriteFailure(
         failure: _labelsUncertain,
         mutationSent: true,
       );
@@ -446,7 +446,7 @@ extension WorkItemLabelApi on GitLabApi {
         requiredUpdatedAt: acknowledged,
       );
     } on Object {
-      throw const WorkItemLabelWriteFailure(
+      throw WorkItemLabelWriteFailure(
         failure: _labelsUncertain,
         mutationSent: true,
       );
@@ -455,7 +455,7 @@ extension WorkItemLabelApi on GitLabApi {
         readback.actorId != target.opening.actorId ||
         readback.updatedAt != acknowledged ||
         !_sameLabelScope(readback.summary, target.opening.summary)) {
-      throw const WorkItemLabelWriteFailure(
+      throw WorkItemLabelWriteFailure(
         failure: _labelsUncertain,
         mutationSent: true,
       );
@@ -867,7 +867,7 @@ DateTime _parseLabelAcknowledgement(Uint8List bytes, String workItemId) {
     if (messages.isNotEmpty) {
       throw ApiFailure(
         FailureKind.validation,
-        title: '標籤識別無效',
+        title: l10n.invalidLabelIdentifier,
         detail: messages.join('\n'),
       );
     }

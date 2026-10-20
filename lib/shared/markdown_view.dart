@@ -14,6 +14,7 @@ import 'external_link.dart';
 import 'in_app_links.dart';
 import 'theme.dart';
 
+import '../l10n/l10n.dart';
 class MarkdownView extends StatefulWidget {
   const MarkdownView(
     this.text, {
@@ -69,7 +70,7 @@ class _MarkdownViewState extends State<MarkdownView> {
   Widget build(BuildContext context) {
     final text = widget.text;
     if (text.length > 65536) {
-      return const Text('內容超出 Markdown 排版上限（64 Ki 字元）。請改用原始文字或在 GitLab 開啟。');
+      return Text(l10n.markdownLayoutLimit);
     }
     final budget = _budget;
     final base = widget.base;

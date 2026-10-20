@@ -9,6 +9,7 @@ import '../../core/work_item_dates_models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../shared/workspace_ui.dart';
 
+import '../../l10n/l10n.dart';
 enum WorkItemDatesWritePhase { start, settle }
 
 typedef WorkItemDatesWriteListener =
@@ -244,10 +245,10 @@ class _WorkItemDatesControlState extends State<WorkItemDatesControl> {
         !_writePending &&
         _ownerFence.current;
     final label = _writePending
-        ? '正在更新日期…'
+        ? l10n.updatingDates
         : _openingEpoch != null
-        ? '讀取日期…'
-        : '變更日期';
+        ? l10n.loadingDates
+        : l10n.changeDates;
     return Align(
       alignment: Alignment.centerLeft,
       child: TextButton(
@@ -403,17 +404,17 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
   }
 
   String? _validate() {
-    if (_mode == WorkItemDatesMode.unknown) return '日期模式不明';
+    if (_mode == WorkItemDatesMode.unknown) return l10n.dateModeUnknown;
     if (_mode == WorkItemDatesMode.inherited) return null;
     final start = _nullableDate(_start.text);
     final due = _nullableDate(_due.text);
     if (start.invalid || due.invalid) {
-      return '請輸入完整日期，例如 2026-10-04';
+      return l10n.enterCompleteDateExample;
     }
     if (start.value != null &&
         due.value != null &&
         start.value!.compareTo(due.value!) > 0) {
-      return '開始日期必須早於或等於到期日期';
+      return l10n.startOnOrBeforeDueDate;
     }
     return null;
   }
@@ -464,7 +465,7 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
           ? _unconfirmedFeedback
           : result.message ??
                 (result.mutationSent
-                    ? '伺服器未套用變更，請確認權限或重新整理'
+                    ? l10n.serverDidNotApplyChange
                     : _notSentFeedback);
       setState(() => _saveFeedback = feedback);
     } catch (error) {
@@ -496,7 +497,7 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
       },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
-        appBar: AppBar(title: const Text('編輯日期')),
+        appBar: AppBar(title: Text(l10n.editDates)),
         body: SafeArea(
           bottom: false,
           child: ListView(
@@ -522,26 +523,26 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
                         contentPadding: EdgeInsets.zero,
                         value: WorkItemDatesMode.manual,
                         enabled: _canSave,
-                        title: const Text('手動日期'),
+                        title: Text(l10n.manualDates),
                       ),
                       RadioListTile<WorkItemDatesMode>(
                         key: const ValueKey('work-item-dates-mode-inherited'),
                         contentPadding: EdgeInsets.zero,
                         value: WorkItemDatesMode.inherited,
                         enabled: _canSave,
-                        title: const Text('由子項目繼承'),
+                        title: Text(l10n.inheritedFromChildren),
                       ),
                     ],
                   ),
                 ),
               ] else if (_snapshot.mode == WorkItemDatesMode.manual) ...[
-                const Text('手動日期'),
+                Text(l10n.manualDates),
               ] else ...[
-                const Text('日期模式不明'),
+                Text(l10n.dateModeUnknown),
               ],
               if (_snapshot.rollUp) ...[
                 const SizedBox(height: 8),
-                const Text('此類型可以彙整子項目日期'),
+                Text(l10n.typeRollsUpChildDates),
               ],
               const SizedBox(height: 16),
               _dateField(
@@ -549,7 +550,7 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
                 inputKey: const ValueKey('work-item-dates-start-input'),
                 pickerKey: const ValueKey('work-item-dates-start-picker'),
                 clearKey: const ValueKey('work-item-dates-start-clear'),
-                label: '開始日期 YYYY-MM-DD',
+                label: l10n.startDateInput,
                 source: _sourceHint(
                   _snapshot.startDateSourcingWorkItemId,
                   _snapshot.startDateSourcingMilestoneId,
@@ -561,7 +562,7 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
                 inputKey: const ValueKey('work-item-dates-due-input'),
                 pickerKey: const ValueKey('work-item-dates-due-picker'),
                 clearKey: const ValueKey('work-item-dates-due-clear'),
-                label: '到期日期 YYYY-MM-DD',
+                label: l10n.dueDateInput,
                 source: _sourceHint(
                   _snapshot.dueDateSourcingWorkItemId,
                   _snapshot.dueDateSourcingMilestoneId,
@@ -587,7 +588,7 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
                 const SizedBox(height: 8),
-                const Text('請關閉並重新開啟，讀取最新日期後再變更。'),
+                Text(l10n.reopenBeforeDateChange),
               ],
             ],
           ),
@@ -607,7 +608,7 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
                         minimumSize: const Size.fromHeight(48),
                       ),
                       onPressed: _leave,
-                      child: const Text('取消'),
+                      child: Text(l10n.cancelAction),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -618,7 +619,7 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
                         minimumSize: const Size.fromHeight(48),
                       ),
                       onPressed: _canSave ? () => unawaited(_save()) : null,
-                      child: Text(_writing ? '正在儲存…' : '儲存'),
+                      child: Text(_writing ? l10n.savingInProgress : l10n.saveAction),
                     ),
                   ),
                 ],
@@ -666,14 +667,14 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
                   ? () => unawaited(_pickDate(controller))
                   : null,
               icon: const Icon(Icons.calendar_today_outlined),
-              label: const Text('選擇日期'),
+              label: Text(l10n.selectDate),
             ),
             TextButton.icon(
               key: clearKey,
               style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
               onPressed: editable ? () => _clearDate(controller) : null,
               icon: const Icon(Icons.clear),
-              label: const Text('清除'),
+              label: Text(l10n.clear),
             ),
           ],
         ),
@@ -686,10 +687,10 @@ class _WorkItemDatesEditorState extends State<_WorkItemDatesEditor> {
   }
 
   String? _blockedMessage() {
-    if (_snapshot.mode == WorkItemDatesMode.unknown) return '日期模式不明';
-    if (!_snapshot.widgetPresent) return '這個工作項目沒有日期欄位';
+    if (_snapshot.mode == WorkItemDatesMode.unknown) return l10n.dateModeUnknown;
+    if (!_snapshot.widgetPresent) return l10n.noDateFields;
     if (!widget.access.canWrite || widget.access.target == null) {
-      return '目前帳號不能變更日期';
+      return l10n.accountCannotChangeDates;
     }
     return null;
   }
@@ -728,8 +729,8 @@ final class _DatesWriteOperation {
   }
 }
 
-const _notSentFeedback = '沒有送出日期變更。';
-const _unconfirmedFeedback = '尚未確認日期是否已更新。請重新整理後再查看，不要重複送出同一次變更。';
+String get _notSentFeedback => l10n.dateChangeNotSubmitted;
+String get _unconfirmedFeedback => l10n.dateUpdateUnconfirmed2;
 
 typedef _ParsedDate = ({DateTime? value, bool invalid});
 
@@ -768,8 +769,8 @@ String? _emptyToNull(String raw) {
 
 String? _sourceHint(String? workItemId, String? milestoneId) {
   final sources = <String>[
-    if (workItemId != null) '來源工作項目 ${_gidTail(workItemId)}',
-    if (milestoneId != null) '來源里程碑 ${_gidTail(milestoneId)}',
+    if (workItemId != null) l10n.sourceWorkItem(_gidTail(workItemId)),
+    if (milestoneId != null) l10n.sourceMilestone(_gidTail(milestoneId)),
   ];
   return sources.isEmpty ? null : sources.join(' · ');
 }
@@ -778,6 +779,6 @@ String _gidTail(String id) => id.split('/').last;
 
 String _resourceLabel(WorkItemGraphSummary summary) {
   final scope =
-      summary.project?.fullPath ?? summary.namespace?.fullPath ?? '未知範圍';
-  return '$scope · 工作項目 #${summary.iid}';
+      summary.project?.fullPath ?? summary.namespace?.fullPath ?? l10n.unknownScope;
+  return l10n.workItemScopeLine(scope, summary.iid);
 }

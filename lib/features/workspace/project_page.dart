@@ -21,6 +21,7 @@ import 'ci_page.dart';
 import 'project_more_page.dart';
 import 'project_overview.dart';
 
+import '../../l10n/l10n.dart';
 class ProjectPage extends StatefulWidget {
   const ProjectPage({
     super.key,
@@ -251,14 +252,14 @@ class _ProjectPageState extends State<ProjectPage>
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('已複製專案 ID：${owner.project}')),
+        SnackBar(content: Text(l10n.copiedProjectId(owner.project))),
       );
     } catch (_) {
       if (!mounted || !_currentCopy(owner)) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('無法複製專案 ID，請重試。')),
+        SnackBar(content: Text(l10n.copyProjectIdFailed)),
       );
     }
   }
@@ -390,7 +391,7 @@ class _ProjectPageState extends State<ProjectPage>
       if (!mounted || !_currentStar(owner)) return;
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text(desired ? '已加入星標' : '已移除星標')));
+      ).showSnackBar(SnackBar(content: Text(desired ? l10n.starredAdded : l10n.starRemoved)));
     } catch (error) {
       _showStarFailure(error);
     }
@@ -474,12 +475,12 @@ class _ProjectPageState extends State<ProjectPage>
       _project.visibility ?? '',
     );
     final starTooltip = !_starChecked
-        ? '確認星標中…'
+        ? l10n.checkingStar
         : _starred == null
-        ? '重新確認星標'
+        ? l10n.recheckStar
         : _starred!
-        ? '移除星標'
-        : '加入星標';
+        ? l10n.unstar
+        : l10n.star;
     final scaler = MediaQuery.textScalerOf(context);
     final crowded = scaler.scale(14) > 14 * 1.3;
     final titleStyle =
@@ -514,7 +515,7 @@ class _ProjectPageState extends State<ProjectPage>
         _sessionCurrent();
     final headerMenu = PopupMenuButton<_ProjectHeaderAction>(
       key: const ValueKey('project-header-actions'),
-      tooltip: '更多動作',
+      tooltip: l10n.moreActions,
       icon: const Icon(Icons.more_vert, size: 20),
       enabled: !widget.api.isClosed && _sessionCurrent(),
       itemBuilder: (_) {
@@ -526,7 +527,7 @@ class _ProjectPageState extends State<ProjectPage>
               key: const ValueKey('project-header-action-copy-id'),
               value: _ProjectHeaderAction.copyId,
               onTap: () => unawaited(_copyProjectId(owner)),
-              child: Text('複製專案 ID：${owner.project}'),
+              child: Text(l10n.copyProjectId(owner.project)),
             ),
           PopupMenuItem(
             key: const ValueKey('project-header-action-open-web'),
@@ -536,7 +537,7 @@ class _ProjectPageState extends State<ProjectPage>
                 openExternal(context, web);
               }
             },
-            child: const Text('在 GitLab 開啟'),
+            child: Text(l10n.openInGitlab),
           ),
         ];
       },
@@ -591,7 +592,7 @@ class _ProjectPageState extends State<ProjectPage>
                 Flexible(
                   flex: 2,
                   child: Text(
-                    '已封存 · 唯讀',
+                    l10n.archivedReadOnly,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.labelSmall?.copyWith(color: muted),
@@ -659,7 +660,7 @@ class _ProjectPageState extends State<ProjectPage>
               children: [
                 IconButton(
                   key: const ValueKey('project-open-overview'),
-                  tooltip: '專案總覽',
+                  tooltip: l10n.projectOverview,
                   onPressed: _openOverview,
                   icon: const Icon(Icons.space_dashboard_outlined, size: 20),
                 ),
@@ -671,12 +672,12 @@ class _ProjectPageState extends State<ProjectPage>
                     isScrollable: crowded,
                     tabAlignment: crowded ? TabAlignment.start : null,
                     labelPadding: crowded ? null : const EdgeInsets.symmetric(horizontal: 4),
-                    tabs: const [
-                      Tab(text: '檔案'),
-                      Tab(text: '議題'),
+                    tabs: [
+                      Tab(text: l10n.compareFilesSection),
+                      Tab(text: l10n.issues),
                       Tab(text: 'MR'),
                       Tab(text: 'CI'),
-                      Tab(text: '更多'),
+                      Tab(text: l10n.moreItems),
                     ],
                   ),
                 ),

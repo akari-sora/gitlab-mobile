@@ -16,6 +16,7 @@ import 'work_item_milestone.dart';
 import 'work_item_status.dart';
 import 'work_item_weight.dart';
 
+import '../../l10n/l10n.dart';
 const _widgetKinds = <String, WorkItemAttributeKind>{
   'STATUS': WorkItemAttributeKind.status,
   'MILESTONE': WorkItemAttributeKind.milestone,
@@ -26,14 +27,14 @@ const _widgetKinds = <String, WorkItemAttributeKind>{
   'DEVELOPMENT': WorkItemAttributeKind.development,
 };
 
-const _kindTitles = <WorkItemAttributeKind, String>{
-  WorkItemAttributeKind.status: '狀態',
-  WorkItemAttributeKind.milestone: '里程碑',
-  WorkItemAttributeKind.weight: '權重',
-  WorkItemAttributeKind.iteration: '迭代',
-  WorkItemAttributeKind.health: '健康狀態',
-  WorkItemAttributeKind.timeTracking: '時間追蹤',
-  WorkItemAttributeKind.development: '開發',
+Map<WorkItemAttributeKind, String> get _kindTitles => {
+  WorkItemAttributeKind.status: l10n.status,
+  WorkItemAttributeKind.milestone: l10n.milestoneLabel,
+  WorkItemAttributeKind.weight: l10n.weight,
+  WorkItemAttributeKind.iteration: l10n.iteration2,
+  WorkItemAttributeKind.health: l10n.healthStatus,
+  WorkItemAttributeKind.timeTracking: l10n.timeTracking2,
+  WorkItemAttributeKind.development: l10n.tierDevelopment,
 };
 
 String workItemAttributeCalendarDate(DateTime value) =>
@@ -675,8 +676,8 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
       key: const ValueKey('work-item-attributes'),
       clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
-        title: Text('屬性', style: Theme.of(context).textTheme.titleMedium),
-        subtitle: Text('伺服器提供 ${kinds.length} 個欄位'),
+        title: Text(l10n.attributes, style: Theme.of(context).textTheme.titleMedium),
+        subtitle: Text(l10n.serverFieldCount(kinds.length)),
         onExpansionChanged: (expanded) {
           _expanded = expanded;
           if (expanded) _enqueueMissing();
@@ -702,22 +703,22 @@ class _WorkItemAttributesPanelState extends State<WorkItemAttributesPanel> {
                 onRetry: () => _retry(kind),
                 action:
                     kind == WorkItemAttributeKind.status && widget.statusStale
-                    ? const Text(
-                        '尚未確認最新狀態。請重新整理後再查看。',
+                    ? Text(
+                        l10n.latestStateUnconfirmed,
                         key: ValueKey('work-item-status-field-stale'),
                       )
                     : (kind == WorkItemAttributeKind.health &&
                         _healthBlocksRead)
                     ? (widget.healthWriteHeld
-                        ? const Text(
-                            '健康狀態更新中：完成前不會重新整理、變更開啟狀態或其他欄位。',
+                        ? Text(
+                            l10n.healthStatusUpdatingLocked,
                           )
                         : (widget.healthStale
-                            ? const Text(
-                                '尚未確認最新健康狀態。請重新整理後再查看。',
+                            ? Text(
+                                l10n.healthStatusUnconfirmed,
                               )
-                            : const Text(
-                                '尚未確認健康狀態是否已更新。請重新整理後再查看。',
+                            : Text(
+                                l10n.healthStatusUpdateUnconfirmed,
                               )))
                     : _attributeAction(kind, epoch),
               ),
@@ -805,13 +806,13 @@ class _AttributeRow extends StatelessWidget {
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(error!.title),
-              TextButton(onPressed: onRetry, child: const Text('重試')),
+              TextButton(onPressed: onRetry, child: Text(l10n.retryAction)),
             ],
           )
         else if (snapshot != null)
           _AttributeValue(snapshot!)
         else
-          const Text('等待讀取'),
+          Text(l10n.waitingToLoad),
         ?action,
         const Divider(height: 18),
       ],
@@ -827,11 +828,11 @@ class _AttributeValue extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (snapshot.availability == WorkItemAttributeAvailability.absent) {
-      return const Text('未設定');
+      return Text(l10n.notSet);
     }
     if (snapshot.availability ==
         WorkItemAttributeAvailability.widgetsUnavailable) {
-      return const Text('伺服器未回傳 widgets，無法判定');
+      return Text(l10n.widgetsMissing);
     }
     final value = snapshot.value;
     return switch (value) {
@@ -842,96 +843,96 @@ class _AttributeValue extends StatelessWidget {
       WorkItemHealthAttribute() => _health(value),
       WorkItemTimeTrackingAttribute() => _time(value),
       WorkItemDevelopmentAttribute() => _development(value),
-      null => const Text('伺服器未回傳欄位值'),
+      null => Text(l10n.fieldValueMissing),
     };
   }
 
   Widget _status(WorkItemStatusAttribute value) {
     final status = value.status;
-    if (status == null) return const Text('未設定');
+    if (status == null) return Text(l10n.notSet);
     final category = workItemStatusCategoryText(status.category);
     return Wrap(
       spacing: 8,
       runSpacing: 6,
       children: [
-        MetaChip(status.name ?? '名稱未知', icon: Icons.flag_outlined),
-        if (category != null) MetaChip('分類：$category'),
+        MetaChip(status.name ?? l10n.unknownName, icon: Icons.flag_outlined),
+        if (category != null) MetaChip(l10n.attributeCategory(category)),
       ],
     );
   }
 
   Widget _milestone(WorkItemMilestoneAttribute value) {
     final milestone = value.milestone;
-    if (milestone == null) return const Text('未設定');
+    if (milestone == null) return Text(l10n.notSet);
     final owner = milestone.group ?? milestone.project;
     return _lines([
       milestone.title,
-      if (owner != null) '所屬：${owner.fullPath}',
+      if (owner != null) l10n.attributeOwnerPath(owner.fullPath),
       if (milestone.startDate != null)
-        '開始：${workItemAttributeCalendarDate(milestone.startDate!)}',
+        l10n.attributeStartDate(workItemAttributeCalendarDate(milestone.startDate!)),
       if (milestone.dueDate != null)
-        '到期：${workItemAttributeCalendarDate(milestone.dueDate!)}',
+        l10n.attributeDueDate(workItemAttributeCalendarDate(milestone.dueDate!)),
     ]);
   }
 
   Widget _weight(WorkItemWeightAttribute value) => _lines([
-    '權重：${_number(value.weight)}',
-    '彙整權重：${_number(value.rolledUpWeight)}',
-    '已完成彙整權重：${_number(value.rolledUpCompletedWeight)}',
+    l10n.attributeWeight(_number(value.weight)),
+    l10n.rolledUpWeightValue(_number(value.rolledUpWeight)),
+    l10n.rolledUpCompletedWeightValue(_number(value.rolledUpCompletedWeight)),
   ]);
 
   Widget _iteration(WorkItemIterationAttribute value) {
     final iteration = value.iteration;
-    if (iteration == null) return const Text('未設定');
+    if (iteration == null) return Text(l10n.notSet);
     return _lines([
-      iteration.title ?? '名稱未知',
-      '群組：${iteration.group.fullPath}',
-      if (iteration.cadence.title != null) '迭代週期：${iteration.cadence.title}',
+      iteration.title ?? l10n.unknownName,
+      l10n.attributeGroupPath(iteration.group.fullPath),
+      if (iteration.cadence.title != null) l10n.iterationCadenceTitle(iteration.cadence.title),
       if (iteration.startDate != null)
-        '開始：${workItemAttributeCalendarDate(iteration.startDate!)}',
+        l10n.attributeStartDate(workItemAttributeCalendarDate(iteration.startDate!)),
       if (iteration.dueDate != null)
-        '到期：${workItemAttributeCalendarDate(iteration.dueDate!)}',
+        l10n.attributeDueDate(workItemAttributeCalendarDate(iteration.dueDate!)),
     ]);
   }
 
   Widget _health(WorkItemHealthAttribute value) {
     final rollup = value.rolledUpHealthStatus;
     return _lines([
-      '目前：${value.healthStatus == null ? '未設定' : _healthLabel(value.healthStatus!)}',
+      l10n.attributeCurrentValue(value.healthStatus == null ? l10n.notSet : _healthLabel(value.healthStatus!)),
       if (rollup == null)
-        '彙整：未知'
+        l10n.rollupUnknown
       else if (rollup.isEmpty)
-        '彙整：沒有資料'
+        l10n.rollupNoData
       else
-        '彙整：${rollup.map((item) => '${_healthLabel(item.healthStatus)} ${item.count}').join('、')}',
+        l10n.rollupSummary(rollup.map((item) => '${_healthLabel(item.healthStatus)} ${item.count}').join(l10n.listSeparator)),
     ]);
   }
 
   Widget _time(WorkItemTimeTrackingAttribute value) => _lines([
-    '預估：${_duration(value.timeEstimate, value.humanReadable?.timeEstimate)}',
-    '已花費：${_duration(value.totalTimeSpent, value.humanReadable?.totalTimeSpent)}',
+    l10n.timeEstimate2(_duration(value.timeEstimate, value.humanReadable?.timeEstimate)),
+    l10n.timeSpent(_duration(value.totalTimeSpent, value.humanReadable?.totalTimeSpent)),
   ]);
 
   Widget _development(WorkItemDevelopmentAttribute value) => _lines([
-    '可關閉此項目的 Merge Request：${value.closingMergeRequestsCount}',
-    '合併時自動關閉：${value.willAutoCloseByMergeRequest ? '是' : '否'}',
+    l10n.closingMergeRequestCount(value.closingMergeRequestsCount),
+    l10n.autoCloseOnMerge(value.willAutoCloseByMergeRequest ? l10n.yesLabel : l10n.noLabel),
   ]);
 
   String _healthLabel(String status) => switch (status) {
-    'onTrack' => '正常',
-    'needsAttention' => '需關注',
-    'atRisk' => '有風險',
+    'onTrack' => l10n.healthOnTrack,
+    'needsAttention' => l10n.healthNeedsAttention,
+    'atRisk' => l10n.healthAtRisk,
     _ => status,
   };
 
-  String _number(int? value) => value?.toString() ?? '未知';
+  String _number(int? value) => value?.toString() ?? l10n.unknownLabel;
 
   String _duration(int? seconds, String? human) {
-    if (seconds == null) return '未知';
+    if (seconds == null) return l10n.unknownLabel;
     if (human != null && human.trim().isNotEmpty) {
-      return '$human（$seconds 秒）';
+      return l10n.durationWithSeconds(human, seconds);
     }
-    return '$seconds 秒';
+    return l10n.durationSeconds(seconds);
   }
 
   Widget _lines(List<String> values) => Column(

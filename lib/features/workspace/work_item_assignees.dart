@@ -9,6 +9,7 @@ import '../../core/work_item_assignee_models.dart';
 import '../../core/work_item_graph_models.dart';
 import '../../shared/workspace_ui.dart';
 
+import '../../l10n/l10n.dart';
 enum WorkItemAssigneesWritePhase { start, settle }
 
 /// Opens a fresh full assignee read and edits that logical set.
@@ -196,10 +197,10 @@ class _WorkItemAssigneesControlState extends State<WorkItemAssigneesControl> {
         onPressed: _openingEpoch != null || _writePending ? null : _open,
         child: Text(
           _writePending
-              ? '變更中…'
+              ? l10n.changingInProgress
               : _openingEpoch != null
-              ? '讀取負責人…'
-              : '變更負責人',
+              ? l10n.loadingAssignees
+              : l10n.changeAssignees,
         ),
       ),
     );
@@ -214,7 +215,7 @@ class WorkItemAssigneeRosterPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('全部 ${users.length} 位負責人')),
+      appBar: AppBar(title: Text(l10n.allAssigneesCount(users.length))),
       body: ListView.builder(
         itemCount: users.length,
         itemBuilder: (context, index) {
@@ -453,7 +454,7 @@ class _AssigneeEditorState extends State<_AssigneeEditor> {
     ];
     final keyboard = MediaQuery.viewInsetsOf(context).bottom;
     return Scaffold(
-      appBar: AppBar(title: const Text('負責人')),
+      appBar: AppBar(title: Text(l10n.assigneesLabel)),
       body: SafeArea(
         child: ListView.builder(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
@@ -478,7 +479,7 @@ class _AssigneeEditorState extends State<_AssigneeEditor> {
                 onPressed: !_canChange || _writing || _locked || _overSingle
                     ? null
                     : _save,
-                child: Text(_writing ? '變更中…' : '儲存'),
+                child: Text(_writing ? l10n.changingInProgress : l10n.saveAction),
               ),
             ),
           ),
@@ -491,27 +492,27 @@ class _AssigneeEditorState extends State<_AssigneeEditor> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(multiple ? '可以選擇多位負責人。' : '這個工作項目只能有一位負責人。'),
+        Text(multiple ? l10n.multipleAssigneesAllowed : l10n.singleAssigneeOnly),
         if (!_canChange)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 8),
             child: Text(
-              '目前帳號不能變更負責人。可以查看目前名單，不能儲存。',
+              l10n.accountCannotChangeAssignees,
               key: ValueKey('work-item-assignees-readonly'),
             ),
           ),
         if (_overSingle)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 8),
-            child: Text('請先改成一位負責人，再儲存。'),
+            child: Text(l10n.reduceToOneAssignee),
           ),
         if (_saveError != null)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Text(
               _saveError!.kind == FailureKind.unsupported
-                  ? '伺服器不支援在這裡變更負責人。請關閉後重新開啟。'
-                  : '變更沒有確認完成。請關閉並重新開啟，讀取最新負責人之後再試。畫面上的選擇還沒有儲存。',
+                  ? l10n.assigneesChangeUnsupported
+                  : l10n.assigneeChangeUnconfirmed,
               key: const ValueKey('work-item-assignees-save-error'),
             ),
           ),
@@ -523,8 +524,8 @@ class _AssigneeEditorState extends State<_AssigneeEditor> {
             enabled: widget.access.target != null && !_writing && !_locked,
             scrollPadding: const EdgeInsets.only(bottom: 96),
             textInputAction: TextInputAction.search,
-            decoration: const InputDecoration(
-              labelText: '搜尋人員',
+            decoration: InputDecoration(
+              labelText: l10n.searchPeople,
               border: OutlineInputBorder(),
             ),
             onChanged: _onSearchEdited,
@@ -538,19 +539,19 @@ class _AssigneeEditorState extends State<_AssigneeEditor> {
             onPressed: _searching || widget.access.target == null || _locked
                 ? null
                 : () => unawaited(_submitSearch()),
-            child: Text(_searching ? '搜尋中…' : '搜尋'),
+            child: Text(_searching ? l10n.searching : l10n.search),
           ),
         ),
         if (_searchLimited)
-          const Text(
-            '搜尋最多顯示 20 人，請縮小關鍵字。',
+          Text(
+            l10n.searchPeopleLimit,
             key: ValueKey('work-item-assignees-search-limit'),
           ),
         if (_searchError != null)
-          const Padding(
+          Padding(
             padding: EdgeInsets.only(top: 8),
             child: Text(
-              '搜尋沒有完成。目前名單已經完整，仍可清除全部或維持不變。',
+              l10n.assigneeSearchIncomplete,
               key: ValueKey('work-item-assignees-search-failed'),
             ),
           ),
@@ -559,11 +560,11 @@ class _AssigneeEditorState extends State<_AssigneeEditor> {
           child: TextButton(
             key: const ValueKey('work-item-assignees-clear'),
             onPressed: !_canChange || _writing || _locked ? null : _clearAll,
-            child: const Text('清除全部負責人'),
+            child: Text(l10n.clearAllAssignees),
           ),
         ),
-        Text(_selected.isEmpty ? '尚未選擇負責人' : '已選 ${_selected.length} 人'),
-        if (_unchanged && _searchError != null) const Text('可以維持目前名單並儲存。'),
+        Text(_selected.isEmpty ? l10n.noAssigneesSelected : l10n.selectedPeopleCount(_selected.length)),
+        if (_unchanged && _searchError != null) Text(l10n.keepAssigneeListAndSave),
         const SizedBox(height: 8),
       ],
     );
@@ -589,7 +590,7 @@ class _AssigneeEditorState extends State<_AssigneeEditor> {
             ? null
             : () => _toggle(user.id, !row.selected),
         title: Text(label),
-        subtitle: Text(row.candidate ? '搜尋結果' : '目前負責人'),
+        subtitle: Text(row.candidate ? l10n.searchResults : l10n.currentAssignees),
         trailing: Icon(
           multiple
               ? row.selected

@@ -11,6 +11,7 @@ import '../../shared/workspace_ui.dart';
 import '../../shared/resource_share.dart';
 import 'ci_page.dart';
 
+import '../../l10n/l10n.dart';
 class PipelineGraphPage extends StatefulWidget {
   const PipelineGraphPage({
     super.key,
@@ -254,8 +255,8 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
   @override
   Widget build(BuildContext context) {
     final title = _iid == null
-        ? 'Pipeline #${widget.pipelineId} 相依圖'
-        : 'Pipeline #$_iid 相依圖';
+        ? l10n.pipelineDependencyGraph(widget.pipelineId)
+        : l10n.pipelineIidDependencyGraph(_iid);
     final theme = Theme.of(context);
     final titleStyle = theme.appBarTheme.titleTextStyle ?? theme.textTheme.titleLarge!;
     final subtitleStyle = theme.textTheme.bodySmall!;
@@ -288,7 +289,7 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
             ownerKey: (widget.account.key, widget.api, widget.project.id, widget.pipelineId),
             isCurrent: () => mounted && !widget.api.isClosed),
           IconButton(
-            tooltip: '重新整理相依圖',
+            tooltip: l10n.refreshDependencyGraph,
             onPressed: _loading ? null : _refresh,
             icon: const Icon(Icons.refresh),
           ),
@@ -311,7 +312,7 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
           _error!,
           account: widget.account,
           resourceLabel:
-              '${widget.project.path} · Pipeline #${widget.pipelineId} 相依圖',
+              l10n.pathPipelineDependencyGraph(widget.project.path, widget.pipelineId),
           onRetry: _refresh,
           onSwitchAccount: endSessionFrom(context),
         ),
@@ -322,9 +323,9 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
         onRefresh: _refresh,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          children: const [
+          children: [
             SizedBox(height: 80),
-            EmptyState('這個 Pipeline 沒有工作', icon: Icons.account_tree_outlined),
+            EmptyState(l10n.pipelineHasNoJobs, icon: Icons.account_tree_outlined),
           ],
         ),
       );
@@ -363,13 +364,13 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            '工作相依關係',
+            l10n.jobDependencies,
             style: theme.textTheme.titleLarge?.copyWith(
               fontWeight: FontWeight.w700,
             ),
           ),
           const SizedBox(height: 6),
-          const Text('相依關係來自 GitLab needs；階段順序不會畫成相依線。'),
+          Text(l10n.needsNotStageOrder),
           const SizedBox(height: 10),
           Wrap(
             spacing: 7,
@@ -384,12 +385,12 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
             ],
           ),
           if (_stagesTruncated)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 8),
-              child: Text('階段清單超過 GitLab 回傳上限，顯示內容不完整。'),
+              child: Text(l10n.stageListTruncated),
             ),
           const SizedBox(height: 8),
-          Text('已載入 ${_jobs.length} 個工作（上限 $_maxJobs）'),
+          Text(l10n.jobsLoadedLimit(_jobs.length, _maxJobs)),
         ],
       ),
     );
@@ -405,7 +406,7 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
             _pageError!,
             account: widget.account,
             resourceLabel:
-                '${widget.project.path} · Pipeline #${widget.pipelineId} 更多工作',
+                l10n.pathPipelineMoreJobs(widget.project.path, widget.pipelineId),
             onRetry: _loadMore,
             onSwitchAccount: endSessionFrom(context),
           ),
@@ -414,10 +415,10 @@ class _PipelineGraphPageState extends State<PipelineGraphPage> {
             key: const Key('pipeline-graph-load-more'),
             onPressed: _loading ? null : _loadMore,
             icon: const Icon(Icons.expand_more),
-            label: const Text('載入更多工作'),
+            label: Text(l10n.loadMoreJobs),
           )
         else if (_jobs.length >= _maxJobs)
-          const Text('已達 300 個工作顯示上限。', textAlign: TextAlign.center),
+          Text(l10n.jobDisplayLimitReached, textAlign: TextAlign.center),
       ],
     ),
   );
@@ -473,18 +474,18 @@ class _JobGraphRow extends StatelessWidget {
             children: [
               if (job.stageName case final stage?)
                 MetaChip(stage, icon: Icons.layers_outlined),
-              if (job.retried) const MetaChip('舊的重試版本', icon: Icons.history),
+              if (job.retried) MetaChip(l10n.previousRetry, icon: Icons.history),
               if (!job.canOpen)
                 MetaChip(job.kind, icon: Icons.extension_outlined),
             ],
           ),
           const SizedBox(height: 8),
           if (job.waitsForStage)
-            const Text('依階段順序等待；這不是 needs 相依。')
+            Text(l10n.waitingOnStageOrder)
           else if (job.canRunImmediately)
-            const Text('沒有相依，可立刻執行。')
+            Text(l10n.noDependenciesRunNow)
           else ...[
-            Text('需要先完成', style: theme.textTheme.labelLarge),
+            Text(l10n.mustCompleteFirst, style: theme.textTheme.labelLarge),
             const SizedBox(height: 6),
             Wrap(
               spacing: 7,
@@ -493,14 +494,14 @@ class _JobGraphRow extends StatelessWidget {
             ),
           ],
           if (job.needsTruncated)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 8),
-              child: Text('這個工作的 needs 超過 100 筆，顯示內容不完整。'),
+              child: Text(l10n.jobNeedsTruncated),
             ),
           if (!job.canOpen)
-            const Padding(
+            Padding(
               padding: EdgeInsets.only(top: 8),
-              child: Text('這個節點不是可開啟 Log 的 Build 工作。'),
+              child: Text(l10n.notBuildJobLog),
             ),
         ],
       ),
@@ -509,7 +510,7 @@ class _JobGraphRow extends StatelessWidget {
       container: true,
       button: onOpen != null,
       label:
-          '工作 ${job.name}，${statusLabel(job.status.toLowerCase())}，階段 ${job.stageName ?? '未知'}',
+          l10n.jobNameStatusStage(job.name, statusLabel(job.status.toLowerCase()), job.stageName ?? l10n.unknownLabel),
       child: Card(
         key: ValueKey('pipeline-job-${job.id}'),
         margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
@@ -524,10 +525,10 @@ class _JobGraphRow extends StatelessWidget {
   Widget _needChip(BuildContext context, PipelineGraphNeed need) {
     final (icon, prefix, enabled) = switch (need.state) {
       PipelineGraphNeedState.resolved => (Icons.arrow_upward, '', true),
-      PipelineGraphNeedState.unloaded => (Icons.help_outline, '尚未載入：', false),
+      PipelineGraphNeedState.unloaded => (Icons.help_outline, l10n.notLoadedYet, false),
       PipelineGraphNeedState.ambiguous => (
         Icons.warning_amber_outlined,
-        '名稱重複：',
+        l10n.duplicateName,
         false,
       ),
     };
@@ -535,7 +536,7 @@ class _JobGraphRow extends StatelessWidget {
       key: ValueKey('pipeline-need-${job.id}-${need.name}'),
       avatar: Icon(icon, size: 16),
       label: Text('$prefix${need.name}'),
-      tooltip: enabled ? '跳到已載入的 ${need.name}' : null,
+      tooltip: enabled ? l10n.jumpToLoadedName(need.name) : null,
       onPressed: enabled ? () => onNeed(need) : null,
       visualDensity: VisualDensity.compact,
     );

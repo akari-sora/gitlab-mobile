@@ -3,6 +3,7 @@ import 'package:share_plus/share_plus.dart';
 
 import 'external_link.dart';
 
+import '../l10n/l10n.dart';
 /// A compact native share action for a canonical GitLab web URL.
 class ResourceShareButton extends StatefulWidget {
   const ResourceShareButton({
@@ -86,7 +87,7 @@ class _ResourceShareButtonState extends State<ResourceShareButton> {
       }
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('無法分享連結。')));
+      ).showSnackBar(SnackBar(content: Text(l10n.cannotShareLink)));
     } finally {
       if (_current(operation, uri, ownerKey, originalIsCurrent)) {
         setState(() => _busy = false);
@@ -100,7 +101,7 @@ class _ResourceShareButtonState extends State<ResourceShareButton> {
   Widget build(BuildContext context) {
     final onPressed = _busy || !_mayShare ? null : _share;
     return widget.builder?.call(context, onPressed) ?? IconButton(
-      tooltip: '分享連結',
+      tooltip: l10n.shareLink,
       onPressed: onPressed,
       icon: const Icon(Icons.share_outlined),
     );

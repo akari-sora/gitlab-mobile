@@ -15,6 +15,7 @@ import '../../shared/workspace_ui.dart';
 import '../auth/session_controller.dart';
 import 'records_feed.dart';
 
+import '../../l10n/l10n.dart';
 const _maintainerAccess = 40;
 
 final class _RequestScope {
@@ -67,9 +68,9 @@ Future<List<Json>> _allRecords(
       throw const ApiFailure(FailureKind.invalidResponse);
     }
   }
-  throw const ApiFailure(
+  throw ApiFailure(
     FailureKind.unsupported,
-    detail: '項目數超出安全回讀上限，請縮小範圍後重試。',
+    detail: l10n.itemCountOverLimit,
   );
 }
 
@@ -94,11 +95,11 @@ class RegistriesPage extends StatelessWidget {
     initialIndex: initialIndex.clamp(0, 2),
     child: Scaffold(
       appBar: AppBar(
-        title: const Text('套件與映像 Registry'),
-        bottom: const TabBar(
+        title: Text(l10n.packageAndImageRegistry),
+        bottom: TabBar(
           isScrollable: true,
           tabs: [
-            Tab(text: '套件'),
+            Tab(text: l10n.packages),
             Tab(text: 'Container'),
             Tab(text: 'Terraform'),
           ],
@@ -189,13 +190,13 @@ class _PackagesTabState extends State<_PackagesTab> {
         'registry/${widget.account.key}/${widget.project.id}/packages/${widget.packageType ?? 'all'}/$_ownerGeneration',
     account: widget.account,
     resourceLabel:
-        '${widget.project.path} · ${widget.packageType == null ? '套件 Registry' : 'Terraform Module Registry'}',
+        '${widget.project.path} · ${widget.packageType == null ? l10n.packageRegistry : 'Terraform Module Registry'}',
     onSwitchAccount: endSessionFrom(context),
-    empty: widget.packageType == null ? '尚無套件' : '尚無 Terraform Module',
+    empty: widget.packageType == null ? l10n.noPackagesYet : l10n.noTerraformModules,
     emptyDetail: widget.packageType == null
-        ? '發佈至 GitLab Package Registry 後會出現在這裡。'
-        : 'Terraform Module 會以 terraform_module 套件類型列出。',
-    filteredEmpty: '目前條件沒有符合的套件',
+        ? l10n.packagesAppearAfterPublish
+        : l10n.terraformModulePackageType,
+    filteredEmpty: l10n.noPackagesMatch,
     emptyIcon: widget.packageType == null
         ? Icons.inventory_2_outlined
         : Icons.account_tree_outlined,
@@ -213,16 +214,16 @@ class _PackagesTabState extends State<_PackagesTab> {
     ),
     leading: (_, _) => _RegistryToolbar(
       controller: _search,
-      hint: widget.packageType == null ? '搜尋套件名稱' : '搜尋 Module 名稱',
+      hint: widget.packageType == null ? l10n.searchPackageName : l10n.searchModuleName,
       onSubmitted: (_) => _applySearch(),
       onSearch: _applySearch,
       order: _order,
       sort: _sort,
-      orders: const {
-        'created_at': '建立時間',
-        'name': '名稱',
-        'version': '版本',
-        'type': '類型',
+      orders: {
+        'created_at': l10n.createdDate,
+        'name': l10n.nameLabel,
+        'version': l10n.version,
+        'type': l10n.workItemTypeFilter,
       },
       onOrder: (value) => setState(() => _order = value),
       onSort: (value) => setState(() => _sort = value),
@@ -232,9 +233,9 @@ class _PackagesTabState extends State<_PackagesTab> {
       try {
         package = RegistryPackage.fromJson(value);
       } on FormatException {
-        return const ListTile(
+        return ListTile(
           leading: Icon(Icons.warning_amber_outlined),
-          title: Text('無法解析套件資料'),
+          title: Text(l10n.cannotParsePackage),
         );
       }
       final when = relativeDate(package.createdAt);
@@ -249,7 +250,7 @@ class _PackagesTabState extends State<_PackagesTab> {
         subtitle: Text(
           [
             packageTypeLabel(package.type),
-            package.version.isEmpty ? '無版本' : package.version,
+            package.version.isEmpty ? l10n.noVersion : package.version,
             if (package.status.isNotEmpty && package.status != 'default')
               package.status,
             if (when.isNotEmpty) when,
@@ -310,7 +311,7 @@ class _RegistryToolbar extends StatelessWidget {
           leading: const Icon(Icons.search),
           trailing: [
             IconButton(
-              tooltip: '搜尋',
+              tooltip: l10n.search,
               onPressed: onSearch,
               icon: const Icon(Icons.arrow_forward),
             ),
@@ -324,8 +325,8 @@ class _RegistryToolbar extends StatelessWidget {
               child: DropdownButtonFormField<String>(
                 isExpanded: true,
                 initialValue: order,
-                decoration: const InputDecoration(
-                  labelText: '排序欄位',
+                decoration: InputDecoration(
+                  labelText: l10n.sortField,
                   isDense: true,
                 ),
                 items: [
@@ -345,13 +346,13 @@ class _RegistryToolbar extends StatelessWidget {
               child: DropdownButtonFormField<String>(
                 isExpanded: true,
                 initialValue: sort,
-                decoration: const InputDecoration(
-                  labelText: '方向',
+                decoration: InputDecoration(
+                  labelText: l10n.sortDirection,
                   isDense: true,
                 ),
-                items: const [
-                  DropdownMenuItem(value: 'desc', child: Text('新到舊／降冪')),
-                  DropdownMenuItem(value: 'asc', child: Text('舊到新／升冪')),
+                items: [
+                  DropdownMenuItem(value: 'desc', child: Text(l10n.newestFirstDesc)),
+                  DropdownMenuItem(value: 'asc', child: Text(l10n.oldestFirstAsc)),
                 ],
                 onChanged: (value) {
                   if (value != null) onSort(value);
@@ -566,7 +567,7 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
           file.size > packageDownloadMaximumBytes
               ? FailureKind.tooLarge
               : FailureKind.unsupported,
-          title: '無法下載套件檔案',
+          title: l10n.cannotDownloadPackageFile,
           detail: blocked,
         ),
       );
@@ -575,10 +576,10 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
     if (!_downloadOwnerCurrent()) {
       showFailure(
         context,
-        const ApiFailure(
+        ApiFailure(
           FailureKind.cancelled,
-          title: '工作階段已變更',
-          detail: '請用目前帳號重新開啟這個套件後再下載。',
+          title: l10n.sessionChanged,
+          detail: l10n.reopenPackageToDownload,
         ),
       );
       return;
@@ -620,10 +621,10 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
       if (mounted) {
         showFailure(
           context,
-          const ApiFailure(
+          ApiFailure(
             FailureKind.cancelled,
-            title: '工作階段已變更',
-            detail: '請用目前帳號重新開啟這個套件後再複製。',
+            title: l10n.sessionChanged,
+            detail: l10n.reopenPackageToCopy,
           ),
         );
       }
@@ -633,7 +634,7 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
     if (!mounted || !current()) return;
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('已複製完整 SHA-256')));
+    ).showSnackBar(SnackBar(content: Text(l10n.copiedFullSha256)));
   }
 
   Future<void> _deletePackage() async {
@@ -648,8 +649,8 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
       if (!mounted) return;
       if (!await confirmAction(
             context,
-            '刪除套件？',
-            '將刪除 ${fresh.identity} 的所有檔案。若實例啟用轉送，請先確認沒有同名外部套件。',
+            l10n.deletePackageQuestion,
+            l10n.deletePackageWarning(fresh.identity),
             requiredText: fresh.identity,
           ) ||
           !_current(scope)) {
@@ -697,8 +698,8 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
       if (!mounted) return;
       if (!await confirmAction(
             context,
-            '刪除套件檔案？',
-            '刪除單一檔案可能使套件無法安裝。此操作只刪除 ${file.name}。',
+            l10n.deletePackageFileQuestion,
+            l10n.deletePackageFileWarning(file.name),
             requiredText: file.name,
           ) ||
           !_current(scope)) {
@@ -716,7 +717,7 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
       if (_current(scope) && mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('套件檔案已刪除並完成回讀。')));
+        ).showSnackBar(SnackBar(content: Text(l10n.packageFileDeleted)));
       }
     } catch (error) {
       if (_current(scope) && mounted) showFailure(context, error);
@@ -731,7 +732,7 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
     final scope = _scope;
     return Scaffold(
       appBar: AppBar(
-        title: Text(package?.name ?? '套件詳情', maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(package?.name ?? l10n.packageDetails, maxLines: 1, overflow: TextOverflow.ellipsis),
         actions: [
           if (package != null)
             ResourceShareButton(uri: widget.account.instance.projectWeb('${widget.project.path}/-/packages/${widget.packageId}'),
@@ -739,7 +740,7 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
               isCurrent: () => _current(scope) && _downloadOwnerCurrent()),
           if (package?.canDelete == true && widget.project.archived != true)
             IconButton(
-              tooltip: '刪除套件',
+              tooltip: l10n.deletePackage,
               onPressed: _busy ? null : _deletePackage,
               icon: const Icon(Icons.delete_outline),
             ),
@@ -754,7 +755,7 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
                         _error!,
                         account: widget.account,
                         resourceLabel:
-                            '${widget.project.path} · 套件 #${widget.packageId}',
+                            l10n.pathPackageNumber(widget.project.path, widget.packageId),
                         onRetry: _load,
                         onSwitchAccount: endSessionFrom(context),
                       ),
@@ -770,9 +771,9 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
                           '${widget.account.key}/${widget.project.id}/package/${package.id}/files',
                       account: widget.account,
                       resourceLabel:
-                          '${widget.project.path} · ${package.identity} · 檔案',
+                          l10n.pathPackageFiles(widget.project.path, package.identity),
                       onSwitchAccount: endSessionFrom(context),
-                      empty: '此套件沒有可顯示的檔案',
+                      empty: l10n.packageNoFiles,
                       emptyIcon: Icons.description_outlined,
                       grouped: true,
                       load: (next) => widget.api.records(
@@ -785,7 +786,7 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
                         try {
                           file = RegistryPackageFile.fromJson(value);
                         } on FormatException {
-                          return const ListTile(title: Text('無法解析套件檔案'));
+                          return ListTile(title: Text(l10n.cannotParsePackageFiles));
                         }
                         final blocked = packageFileDownloadBlockReason(
                           package,
@@ -799,8 +800,8 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
                         final downloadTooltip =
                             blocked ??
                             (ownerReady
-                                ? '下載並驗證 ${file.name}'
-                                : '請從目前帳號工作階段重新開啟後下載');
+                                ? l10n.downloadAndVerify(file.name)
+                                : l10n.reopenSessionToDownload);
                         return ListTile(
                           minTileHeight: 64,
                           leading: Icon(fileIconFor(file.name)),
@@ -840,7 +841,7 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
                                   (package.canDelete &&
                                       widget.project.archived != true))
                                 PopupMenuButton<String>(
-                                  tooltip: '更多檔案動作',
+                                  tooltip: l10n.moreFileActions,
                                   enabled: !_busy,
                                   onSelected: (value) {
                                     if (value == 'copy-sha') {
@@ -855,11 +856,11 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
                                       PopupMenuItem(
                                         value: 'copy-sha',
                                         enabled: ownerReady,
-                                        child: const Row(
+                                        child: Row(
                                           children: [
                                             Icon(Icons.copy_outlined),
                                             SizedBox(width: 12),
-                                            Expanded(child: Text('複製 SHA-256')),
+                                            Expanded(child: Text(l10n.copySha256)),
                                           ],
                                         ),
                                       ),
@@ -872,7 +873,7 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
                                             const Icon(Icons.delete_outline),
                                             const SizedBox(width: 12),
                                             Expanded(
-                                              child: Text('刪除 ${file.name}'),
+                                              child: Text(l10n.deleteNamed(file.name)),
                                             ),
                                           ],
                                         ),
@@ -883,10 +884,10 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
                           ),
                         );
                       },
-                      footer: (_, _) => const Padding(
+                      footer: (_, _) => Padding(
                         padding: EdgeInsets.only(top: 4),
                         child: Text(
-                          '下載完成後會核對檔案大小與 SHA-256，驗證通過後才能開啟／分享。單一檔案上限為 256 MiB。',
+                          l10n.downloadVerifyLimit,
                         ),
                       ),
                     ),
@@ -1008,9 +1009,9 @@ class _ContainerRepositoriesTabState extends State<_ContainerRepositoriesTab> {
     account: widget.account,
     resourceLabel: '${widget.project.path} · Container Registry',
     onSwitchAccount: endSessionFrom(context),
-    empty: '尚無 Container 映像',
-    emptyDetail: '推送第一個映像後，repository 會出現在這裡。',
-    filteredEmpty: '已載入的 repository 中沒有符合項目',
+    empty: l10n.noContainerImages,
+    emptyDetail: l10n.containerRepoAfterPush,
+    filteredEmpty: l10n.noLoadedRepoMatches,
     emptyIcon: Icons.view_in_ar_outlined,
     grouped: true,
     visible: _visible,
@@ -1022,23 +1023,23 @@ class _ContainerRepositoriesTabState extends State<_ContainerRepositoriesTab> {
     ),
     leading: (_, _) => _RegistryToolbar(
       controller: _search,
-      hint: '篩選已載入的 repository',
+      hint: l10n.filterLoadedRepos,
       onSubmitted: (value) => setState(() => _query = value.trim()),
       onSearch: () => setState(() => _query = _search.text.trim()),
       order: _order,
       sort: _sort,
-      orders: const {'created_at': '建立時間', 'name': '名稱'},
+      orders: {'created_at': l10n.createdDate, 'name': l10n.nameLabel},
       onOrder: (value) => setState(() => _order = value),
       onSort: (value) => setState(() => _sort = value),
       detail:
-          'GitLab Container API 沒有 repository 搜尋參數；搜尋與排序套用在目前已載入頁面，可繼續「載入更多」。',
+          l10n.containerApiNoSearch,
     ),
     itemBuilder: (context, value) {
       late final ContainerRepository repository;
       try {
         repository = ContainerRepository.fromJson(value);
       } on FormatException {
-        return const ListTile(title: Text('無法解析 Container repository'));
+        return ListTile(title: Text(l10n.cannotParseContainerRepo));
       }
       return ListTile(
         minTileHeight: 68,
@@ -1050,7 +1051,7 @@ class _ContainerRepositoriesTabState extends State<_ContainerRepositoriesTab> {
         ),
         subtitle: Text(
           [
-            '${repository.tagsCount} 個標籤',
+            l10n.tagCount(repository.tagsCount),
             if (repository.status.isNotEmpty) repository.status,
             if (relativeDate(repository.createdAt).isNotEmpty)
               relativeDate(repository.createdAt),
@@ -1211,8 +1212,8 @@ class _ContainerRepositoryPageState extends State<ContainerRepositoryPage> {
       if (!mounted) return;
       if (!await confirmAction(
             context,
-            '刪除 Container repository？',
-            'GitLab 會非同步刪除 ${fresh.path} 與其中所有標籤。Registry 儲存空間可能要等垃圾回收後才釋放。',
+            l10n.deleteContainerRepoQuestion,
+            l10n.deleteContainerRepoWarning(fresh.path),
             requiredText: fresh.path,
           ) ||
           !_current(scope)) {
@@ -1258,7 +1259,7 @@ class _ContainerRepositoryPageState extends State<ContainerRepositoryPage> {
         actions: [
           if (canDelete)
             IconButton(
-              tooltip: '刪除 Container repository',
+              tooltip: l10n.deleteContainerRepo,
               onPressed: _busy ? null : _deleteRepository,
               icon: const Icon(Icons.delete_outline),
             ),
@@ -1301,7 +1302,7 @@ class _ContainerRepositoryPageState extends State<ContainerRepositoryPage> {
                               runSpacing: 6,
                               children: [
                                 MetaChip(
-                                  '${repository.tagsCount} 個標籤',
+                                  l10n.tagCount(repository.tagsCount),
                                   icon: Icons.sell_outlined,
                                 ),
                                 MetaChip(
@@ -1319,8 +1320,8 @@ class _ContainerRepositoryPageState extends State<ContainerRepositoryPage> {
                               const SizedBox(height: 10),
                               Text(
                                 _access == null
-                                    ? '此實例未提供目前帳號的有效角色；刪除功能保持停用。'
-                                    : '刪除需要目前帳號具備 Maintainer 以上的有效專案角色。',
+                                    ? l10n.deleteDisabledNoRole
+                                    : l10n.deleteRequiresMaintainer,
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
@@ -1336,9 +1337,9 @@ class _ContainerRepositoryPageState extends State<ContainerRepositoryPage> {
                           '${widget.account.key}/${widget.project.id}/container/${widget.repositoryId}/tags',
                       account: widget.account,
                       resourceLabel:
-                          '${widget.project.path} · ${repository.path} · 標籤',
+                          l10n.pathRepoTags(widget.project.path, repository.path),
                       onSwitchAccount: endSessionFrom(context),
-                      empty: '這個 repository 沒有標籤',
+                      empty: l10n.repoHasNoTags,
                       emptyIcon: Icons.sell_outlined,
                       grouped: true,
                       load: (next) => widget.api.records(_tagsPath, next: next),
@@ -1347,8 +1348,8 @@ class _ContainerRepositoryPageState extends State<ContainerRepositoryPage> {
                         try {
                           tag = ContainerTag.fromJson(value);
                         } on FormatException {
-                          return const ListTile(
-                            title: Text('無法解析 Container 標籤'),
+                          return ListTile(
+                            title: Text(l10n.cannotParseContainerTags),
                           );
                         }
                         return ListTile(
@@ -1500,8 +1501,8 @@ class _ContainerTagPageState extends State<ContainerTagPage> {
       if (!mounted) return;
       if (!await confirmAction(
             context,
-            '刪除 Container 標籤？',
-            '${widget.repositoryPath}:${fresh.name}\n此操作不會立即刪除共用 blob。',
+            l10n.deleteContainerTagQuestion,
+            l10n.deleteContainerTagWarning(widget.repositoryPath, fresh.name),
             requiredText: fresh.name,
           ) ||
           !_current(scope)) {
@@ -1533,7 +1534,7 @@ class _ContainerTagPageState extends State<ContainerTagPage> {
         actions: [
           if (widget.canDelete && widget.project.archived != true)
             IconButton(
-              tooltip: '刪除標籤',
+              tooltip: l10n.deleteTag,
               onPressed: _busy ? null : _delete,
               icon: const Icon(Icons.delete_outline),
             ),
@@ -1567,26 +1568,26 @@ class _ContainerTagPageState extends State<ContainerTagPage> {
                             style: Theme.of(context).textTheme.titleMedium,
                           ),
                           const SizedBox(height: 14),
-                          _DetailRow('大小', registryBytes(tag.size)),
+                          _DetailRow(l10n.size, registryBytes(tag.size)),
                           _DetailRow(
-                            '建立',
+                            l10n.created,
                             relativeDate(tag.createdAt).isEmpty
-                                ? '未知'
+                                ? l10n.unknownLabel
                                 : relativeDate(tag.createdAt),
                           ),
                           _DetailRow(
                             'Digest',
-                            tag.digest.isEmpty ? '未提供' : tag.digest,
+                            tag.digest.isEmpty ? l10n.notProvided : tag.digest,
                             mono: true,
                           ),
                           _DetailRow(
                             'Revision',
-                            tag.revision.isEmpty ? '未提供' : tag.revision,
+                            tag.revision.isEmpty ? l10n.notProvided : tag.revision,
                             mono: true,
                           ),
                           _DetailRow(
-                            '位置',
-                            tag.location.isEmpty ? '未提供' : tag.location,
+                            l10n.location,
+                            tag.location.isEmpty ? l10n.notProvided : tag.location,
                             mono: true,
                           ),
                         ],

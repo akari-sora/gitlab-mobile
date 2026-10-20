@@ -26,6 +26,7 @@ import 'work_item_weight_models.dart';
 import 'work_item_state_models.dart';
 import 'work_item_dates_models.dart';
 
+import '../l10n/l10n.dart';
 part 'workspace_api.dart';
 part 'incident_api.dart';
 part 'analytics_api.dart';
@@ -141,12 +142,12 @@ final class GitLabApi {
        _onOAuthRotated = onOAuthRotated {
     final access = _credential.accessToken;
     if (access.trim().isEmpty || RegExp(r'\s').hasMatch(access)) {
-      throw const FormatException('Token 不可空白或包含空白字元。');
+      throw InputFormatException(l10n.tokenCannotBeBlank);
     }
     if (_credential is OAuthCredential) {
       final refresh = (_credential as OAuthCredential).refreshToken;
       if (refresh.trim().isEmpty || RegExp(r'\s').hasMatch(refresh)) {
-        throw const FormatException('Token 不可空白或包含空白字元。');
+        throw InputFormatException(l10n.tokenCannotBeBlank);
       }
     }
     _dio.options.connectTimeout = const Duration(seconds: 15);
@@ -564,9 +565,9 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
             incompatible
                 ? FailureKind.unsupported
                 : FailureKind.invalidResponse,
-            title: incompatible ? '實例未提供工作相依圖' : null,
+            title: incompatible ? l10n.instanceNoJobDependencyGraph : null,
             detail: incompatible
-                ? '這個 GitLab 版本未提供所需欄位。仍可從工作分頁查看工作與 Log。'
+                ? l10n.jobsTabWithoutGraphFields
                 : null,
           );
         }
@@ -1077,10 +1078,10 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     if (total != null && total > maxBytes) {
       _cancelTransport(token);
       await _releaseBody(response.data);
-      throw const ApiFailure(
+      throw ApiFailure(
         FailureKind.tooLarge,
-        title: '超過大小上限',
-        detail: '這個附件超過 4 MiB 上限。',
+        title: l10n.exceedsSizeLimit,
+        detail: l10n.attachmentExceeds4Mib,
       );
     }
     final body = response.data;
@@ -1113,10 +1114,10 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
           } on Object {
             /* ignore */
           }
-          throw const ApiFailure(
+          throw ApiFailure(
             FailureKind.tooLarge,
-            title: '超過大小上限',
-            detail: '這個附件超過 4 MiB 上限。',
+            title: l10n.exceedsSizeLimit,
+            detail: l10n.attachmentExceeds4Mib,
           );
         }
         try {

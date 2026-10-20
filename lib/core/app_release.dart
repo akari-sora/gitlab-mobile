@@ -11,6 +11,7 @@ import 'instance.dart';
 import 'registry_models.dart';
 import 'release_assets.dart';
 
+import '../l10n/l10n.dart';
 // Plain Dart, so the public smoke (tool/public_smoke.dart) runs the same
 // release discovery against GitLab.com that the gitlab flavor uses.
 
@@ -99,8 +100,8 @@ Future<({String versionName, int versionCode, String commit})?> _readMetadata(
   await sink.close();
   final bytes = collected.bytes.takeBytes();
   if (bytes.length != file.size || sha256.convert(bytes).toString() != file.sha256.toLowerCase()) {
-    throw const ApiFailure(FailureKind.invalidResponse, title: '更新資訊驗證失敗',
-      detail: 'build-metadata.json 的大小或 SHA-256 與 GitLab 記錄不一致。');
+    throw ApiFailure(FailureKind.invalidResponse, title: l10n.updateInfoVerifyFailed,
+      detail: l10n.buildMetadataMismatch);
   }
   final Object? json;
   try {

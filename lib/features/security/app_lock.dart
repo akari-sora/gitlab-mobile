@@ -7,6 +7,7 @@ import 'package:local_auth/local_auth.dart';
 
 import '../../core/brand.dart';
 
+import '../../l10n/l10n.dart';
 /// The device check behind the app lock: biometrics, or the screen lock's
 /// PIN, pattern or password where there are no biometrics.
 abstract interface class AppLockAuthenticator {
@@ -129,7 +130,7 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
   /// Asks for the device check and opens the app when it passes.
   Future<bool> unlock() async {
     if (!locked || _authenticating) return !locked;
-    final passed = await _check('解鎖 $appName');
+    final passed = await _check(l10n.unlockNamedApp(appName));
     if (passed && !_disposed) {
       _locked = false;
       notifyListeners();
@@ -141,7 +142,7 @@ class AppLockController extends ChangeNotifier with WidgetsBindingObserver {
   /// themselves out with a screen lock they cannot answer.
   Future<bool> setEnabled(bool value) async {
     if (value == _enabled || _authenticating) return value == _enabled;
-    if (value && !await _check('確認後啟用 App 鎖定')) return false;
+    if (value && !await _check(l10n.enableAppLockAfterConfirm)) return false;
     try {
       await _store.write(value);
     } catch (_) {
@@ -315,14 +316,14 @@ class _LockCover extends StatelessWidget {
                       Semantics(
                         liveRegion: true,
                         child: Text(
-                          '$appName 已鎖定',
+                          l10n.namedAppIsLocked(appName),
                           style: theme.textTheme.titleMedium,
                           textAlign: TextAlign.center,
                         ),
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '用指紋、臉部或螢幕鎖解鎖',
+                        l10n.unlockWithBiometricOrLock,
                         style: theme.textTheme.bodyMedium?.copyWith(
                           color: scheme.onSurfaceVariant,
                         ),
@@ -335,7 +336,7 @@ class _LockCover extends StatelessWidget {
                             ? null
                             : () => unawaited(controller.unlock()),
                         icon: const Icon(Icons.fingerprint),
-                        label: const Text('解鎖'),
+                        label: Text(l10n.unlockAction),
                       ),
                     ],
                   ),
