@@ -69,6 +69,18 @@ Three earlier runs each stopped at a single check, and each run created and dele
 - **Run 2:** the stale-write check failed once with no recorded detail; the check now records its outcome.
 - **Run 3:** a transport error while creating the tag was reported as `writeUncertain`.
 
+## Emulator with the owner's account, 2026-10-20
+
+Release `v0.5.0-dev.c13b280d` (versionCode 537, SHA-256 `471e9473…` read back from the installed `base.apk`) on an Android 16 emulator (1080×2424), signed in with the owner's PAT. The token was piped from the password manager into `adb input` and never printed; the account was removed in the app afterwards. Reads only: no write was made with the account.
+
+Worked: sign-in, Home (starred projects), 我的工作 merge requests with the 我建立的 scope and state filter, CI/CD overview, Inbox (3 real to-dos, none marked), Explore → `gitlab-mobile` overview, MR `!44` summary and diff, pipeline `2966275092` jobs and test report (2892/2892), the `android_debug` log, job artifacts download (37.8 MB, with progress and 開啟／分享), the release page and a verified download of `build-metadata.json` (652 B, SHA-256 `7f59e07e…`, equal to the published file), 應用程式更新 「已是最新版」, language switches in the app (Arabic) and from system settings (Japanese, German, Russian) while a page stayed open, and account removal back to an empty sign-in screen.
+
+Found, all invisible to the fixtures:
+
+- The job log showed the runner's per-line header (`2026-10-20T06:56:59.174912Z 01O`), which GitLab ≥ 17.1 writes and its own log view hides. `JobTrace.parse` now removes it and joins `+` continuation lines, following GitLab's `Gitlab::Ci::Ansi2json::Converter`.
+- A long description's summary showed HTML comments and Markdown markers (`<!-- CURSOR_AGENT_PR_BODY_BEGIN --> ## What I found`). The summary now shows the readable text.
+- In Arabic, `!44` read `44!`, `@aa22396584` read `aa22396584@` and an English description's full stop moved to its start; 「منذ 6 يوم」 used the singular after 6. Values in Arabic messages and GitLab names, references and labels are now isolated (U+2068…U+2069), Markdown bodies follow their first letter like `dir="auto"`, and the day count uses the abbreviation 「ي」 like minutes 「د」 and hours 「س」.
+
 ## NOT_RUN
 
 - On the phone: swiping or 全部完成 on real todos (only the two test todos above were written), the MR draft toggle, merge, fork, running a pipeline schedule, wiki page rendering (no project with an enabled wiki was used), linked issues with real links, deployments with data, the unresolved-project page against a real 404, the two-pane layout at ≥840 dp, TalkBack, reduced motion, 2x system font size (covered only by widget tests).
