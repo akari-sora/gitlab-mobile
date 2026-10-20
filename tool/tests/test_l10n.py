@@ -136,76 +136,25 @@ class CatalogTest(unittest.TestCase):
                     self.assertEqual(latin, [], f'{tag} mixes Latin script into these screen names')
 
     def test_ai_strings_are_translated(self):
-        # MR1 packet explicitly requires English placeholders in these 22
-        # catalogs. This exception is bounded to the MR1 keys; the orchestrator
-        # replaces their translations and removes these pairs before release.
-        mr1_placeholder_keys = {
-            'aiCustomProvider',
-            'aiUnauthenticatedTitle',
-            'aiUnauthenticatedDetail',
-            'aiForbiddenTitle',
-            'aiForbiddenDetail',
-            'aiNotFoundTitle',
-            'aiNotFoundDetail',
-            'aiRateLimitedTitle',
-            'aiRateLimitedDetail',
-            'aiQuotaExhaustedTitle',
-            'aiQuotaExhaustedDetail',
-            'aiNetworkTitle',
-            'aiNetworkDetail',
-            'aiServerTitle',
-            'aiServerDetail',
-            'aiRequestTooLargeTitle',
-            'aiRequestTooLargeDetail',
-            'aiResponseTooLargeTitle',
-            'aiResponseTooLargeDetail',
-            'aiInvalidResponseTitle',
-            'aiInvalidResponseDetail',
-            'aiUnsupportedTitle',
-            'aiUnsupportedDetail',
-            'aiRedirectBlockedTitle',
-            'aiRedirectBlockedDetail',
-            'aiCancelledTitle',
-            'aiCancelledDetail',
-            'aiInterruptedTitle',
-            'aiInterruptedDetail',
-            'aiTimeoutTitle',
-            'aiTimeoutDetail',
-            'aiContextTooLongTitle',
-            'aiContextTooLongDetail',
-            'aiContentFilterTitle',
-            'aiContentFilterDetail',
-            'aiRefusalTitle',
-            'aiRefusalDetail',
-            'aiPolicyBlockedTitle',
-            'aiPolicyBlockedDetail',
-        }
-        placeholder_locales = {
-            'zh-CN', 'ja', 'ko', 'es', 'pt-BR', 'fr', 'de', 'it', 'ru',
-            'uk', 'pl', 'nl', 'sv', 'cs', 'ro', 'tr', 'ar', 'hi', 'th',
-            'vi', 'id', 'ms',
-        }
+        # AI messages are translated in every catalog; scripts other than
+        # Latin keep only product and protocol names in Latin letters.
         product_words = {
             'AI', 'API', 'URL', 'HTTP', 'HTTPS', 'JSON', 'Mergeline',
-            'GitLab', 'OpenAI', 'Anthropic', 'OpenRouter', 'Azure', 'Gemini',
-            'DeepSeek', 'xAI', 'Ollama', 'LM', 'Studio', 'MR', 'CI', 'Job',
-            'Pipeline', 'token',
+            'GitLab', 'OpenAI', 'Anthropic', 'OpenRouter', 'OpenCode', 'Azure',
+            'Gemini', 'DeepSeek', 'xAI', 'Ollama', 'LM', 'Studio',
         }
         non_latin = {'ar', 'hi', 'th', 'ru', 'uk', 'ko', 'ja', 'zh-CN', 'zh-TW'}
         keys, catalogs = l10n.load()
         ai_keys = [key for key in keys if key.startswith('ai')]
         self.assertTrue(ai_keys)
-        self.assertTrue(mr1_placeholder_keys.issubset(ai_keys))
         english = catalogs['en']
         for tag, catalog in catalogs.items():
             if tag == 'en':
                 continue
             for key in ai_keys:
-                placeholder = tag in placeholder_locales and key in mr1_placeholder_keys
                 with self.subTest(tag=tag, key=key):
-                    if not placeholder:
-                        self.assertNotEqual(catalog[key], english[key], 'AI text needs translation')
-                    if tag in non_latin and not placeholder:
+                    self.assertNotEqual(catalog[key], english[key], 'AI text needs translation')
+                    if tag in non_latin:
                         words = set(re.findall(r'[A-Za-z]+', catalog[key]))
                         self.assertEqual(words - product_words, set(), 'unexpected Latin text')
 
