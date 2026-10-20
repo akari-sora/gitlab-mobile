@@ -323,6 +323,15 @@ void main() {
       return (block * (n ~/ block.length + 1)).substring(0, n);
     },
     'armor body': (n) => '-----BEGIN PGP PRIVATE KEY BLOCK-----\n${'A' * n}',
+    'many distinct labels': (n) {
+      final buffer = StringBuffer();
+      for (var i = 0; buffer.length < n; i++) {
+        buffer.write(
+          '-----BEGIN L$i PRIVATE KEY-----x-----END L$i PRIVATE KEY-----',
+        );
+      }
+      return buffer.toString().substring(0, n);
+    },
     'armor header': (n) =>
         '-----BEGIN PGP PRIVATE KEY BLOCK-----\n${'Comment: Synthetic armor\n' * (n ~/ 25 + 1)}',
   };
@@ -845,6 +854,46 @@ void main() {
     expect(result.text, '[REDACTED:private_key_unopened]after');
     expect(result.redactions, 1);
     expect(result.withheldPrivateKeyContext, isTrue);
+  });
+
+  test('FIX7 fragments with any private-key marker are withheld whole', () {
+    final redactor = Redactor(secrets: _Secrets());
+    // Round-7 review: cut at both ends, the BEGIN belongs to key B and the
+    // END to key A; markers alone match a complete key between plain text.
+    const begin = '-----BEGIN RSA PRIVATE KEY-----';
+    const end = '-----END RSA PRIVATE KEY-----';
+    const cut = 'A_TAIL\n$begin\nB_HEAD\n$end\nB_TAIL\n';
+    final fragment = redactor.redact(cut, fragment: true);
+    expect(fragment.text, '[REDACTED:private_key_fragment]');
+    expect(fragment.withheldPrivateKeyContext, isTrue);
+    for (final marker in [begin, end, '-----BEGIN PRIVATE KEY-----']) {
+      expect(
+        redactor.redact('log\n$marker\nmore', fragment: true).text,
+        '[REDACTED:private_key_fragment]',
+      );
+    }
+    // Fragments without a private-key marker use the ordinary rules.
+    final plain = redactor.redact(
+      'a glpat-${'x' * 20} line\n-----BEGIN CERTIFICATE-----',
+      fragment: true,
+    );
+    expect(plain.text, 'a [REDACTED] line\n-----BEGIN CERTIFICATE-----');
+    expect(plain.withheldPrivateKeyContext, isFalse);
+    // A complete source is not a fragment: the same text keeps its context.
+    expect(redactor.redact(cut).text, 'A_TAIL\n[REDACTED]B_TAIL\n');
+    final collision = Redactor(
+      secrets: _Secrets()..values = ['private_key_fragment'],
+    );
+    expect(
+      () => collision.redact('$begin x', fragment: true),
+      throwsA(
+        isA<AiFailure>().having(
+          (f) => f.kind,
+          'kind',
+          AiFailureKind.policyBlocked,
+        ),
+      ),
+    );
   });
 
   test('FIX6 interleaved keys stay redacted until every label closes', () {

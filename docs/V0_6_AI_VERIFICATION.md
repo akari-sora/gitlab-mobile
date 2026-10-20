@@ -8,13 +8,13 @@ are wired into the application by this slice (plan §9.1–§9.2).
 
 | Lane | MR1 scope / status |
 | --- | --- |
-| Endpoint policy, SSE, failures, redaction, transcript and provider contracts | FIX1 source is commit `1abb72960ff544c803db75ce88302ac88380701d`; FIX2 source is commit `a1ba0432ef86440222f058bb74b07ca62b05a193`. Pipelines pending. FIX3 source is commit `8bf0bd6b43887d9b9df1a2e130d51c55b1e5f3b3`. FIX4 source is commit `bdefd6c431ad93ce0a9ef72fd4f139b69a2dec4c`. FIX5 source is commit `5da74eab3cb02fc6d327ce934b2d591fe8d8f541`. FIX6 is the commit that adds this sentence. Local synthetic checks do not establish CI acceptance. |
+| Endpoint policy, SSE, failures, redaction, transcript and provider contracts | FIX1 source is commit `1abb72960ff544c803db75ce88302ac88380701d`; FIX2 source is commit `a1ba0432ef86440222f058bb74b07ca62b05a193`. Pipelines pending. FIX3 source is commit `8bf0bd6b43887d9b9df1a2e130d51c55b1e5f3b3`. FIX4 source is commit `bdefd6c431ad93ce0a9ef72fd4f139b69a2dec4c`. FIX5 source is commit `5da74eab3cb02fc6d327ce934b2d591fe8d8f541`. FIX6 source is commit `7b83c9205d4b2cf2fd2b62604742197b14cf18b4`. FIX7 is the commit that adds this sentence. Local synthetic checks do not establish CI acceptance. |
 | Existing Flutter behavior | Original author reported a full-suite pass; no retained receipt or job URL is available here. FIX1 does not rerun the full Flutter suite. |
 | Localization | All 24 catalogs contain AI translations at `bafe8ad`; FIX1 adds no messages. Catalog generation and translation guards are checked locally. |
 | GitLab/private-resource integration | NOT_RUN; MR1 does not use the GitLab API |
 | Native provider conformance / P0 | NOT_RUN; plan §9.4, before MR2 |
 | Android/iOS, accessibility and AOT performance | NOT_RUN; subsequent device/release lanes |
-| Pipeline / job URLs | FIX1 `1abb72960ff544c803db75ce88302ac88380701d` and FIX2 `a1ba0432ef86440222f058bb74b07ca62b05a193`: pipelines pending; no verified job URL retained here. FIX3 `8bf0bd6b43887d9b9df1a2e130d51c55b1e5f3b3`: pipeline pending. FIX4 `bdefd6c431ad93ce0a9ef72fd4f139b69a2dec4c`, FIX5 `5da74eab3cb02fc6d327ce934b2d591fe8d8f541` and FIX6: pipelines pending. |
+| Pipeline / job URLs | FIX1 `1abb72960ff544c803db75ce88302ac88380701d` and FIX2 `a1ba0432ef86440222f058bb74b07ca62b05a193`: pipelines pending; no verified job URL retained here. FIX3 `8bf0bd6b43887d9b9df1a2e130d51c55b1e5f3b3`: pipeline pending. FIX4 `bdefd6c431ad93ce0a9ef72fd4f139b69a2dec4c`, FIX5 `5da74eab3cb02fc6d327ce934b2d591fe8d8f541`, FIX6 `7b83c9205d4b2cf2fd2b62604742197b14cf18b4` and FIX7: pipelines pending. |
 
 ## FIX1 security-core corrections
 
@@ -63,11 +63,13 @@ constant number of times. A fixed five-hyphen lookahead also detects markers
 sharing a delimiter, so a BEGIN that shares the hyphens of a closing END still
 opens its own range. Marker collection and pairing are one linear pass; the
 common span sort/merge is unchanged. Host growth regressions compare N with 4N
-(N = 512 KiB, 2 MiB at most per input; median of three samples after warm-up)
+(N = 512 KiB for most inputs, 25,000 BEGINs and 2,000 sentinels for two of
+them, so 4N stays near 2 MiB; median of three samples after warm-up)
 and require at most 8x growth (quadratic work grows 16x) with a five-second
 ceiling. Inputs cover alternating markers, long invalid labels, many BEGINs
 without END, a single line and earlier JWT, assignment, inline and armor
-attacks. A pairing check compares 512 KiB with 4 MiB of short BEGIN/END pairs
+attacks, plus many distinct labels. A pairing check compares 512 KiB with
+4 MiB of short BEGIN/END pairs
 (at most 14x; linear is 8x, quadratic 64x); a temporary quadratic pairing
 mutation measured 47x and failed it. These are host JIT/coverage checks;
 emulator AOT <300 ms remains NOT_RUN. Fixtures are synthetic unusable armor;
@@ -138,6 +140,32 @@ with the same and with different labels, a foreign END inside a key, and the
 FIX4 matrix with its prefixes (zero leaked lines; a prefix holding a stray BEGIN
 now withholds the rest, by contract). Growth tests were widened so a quadratic
 pairing mutation fails reliably.
+
+## FIX7 fragments and the known limit of marker pairing
+
+Round-7 review (Codex; Opus as a Minor) showed a text cut at both ends where the
+only BEGIN belongs to one key and the only END to another key with the same
+label: `A_TAIL / BEGIN (B) / B_HEAD / END (A) / B_TAIL`. Its markers are
+identical to plain text around one complete key, so no pairing rule over the
+markers alone can protect it without hiding the context of every key. The
+two-direction fail-closed rule above therefore holds for complete sources only.
+
+`Redactor.redact(input, fragment: true)` is the executable contract for the
+rest: when the caller passes text cut from a larger source, any private-key
+marker withholds the whole fragment as `[REDACTED:private_key_fragment]` (and
+sets `withheldPrivateKeyContext`); fragments without a private-key marker use
+the ordinary rules. Regressions cover the round-7 shape, single BEGIN/END
+markers in a fragment, a marker-free fragment and the placeholder collision
+check; the same text as a complete source keeps its context.
+
+Invariants for the context builders and tools (MR4), in addition to those
+above: redact a complete source (a whole file, a finished job's whole trace)
+before cutting excerpts from it; pass `fragment: true` for every input that is
+cut from a larger source and not redacted whole first (a trace read from a
+non-zero offset of a running job, a diff hunk, a line range); keep the
+sensitive-path filter for diffs. A key cut at both ends with no marker inside
+the text at all cannot be recognised by markers in any mode; that residual
+stays documented here.
 
 Invariants for the context builders and the runner (MR4): strip ANSI escape
 sequences before redaction (a coloured grep can split a marker); redact the

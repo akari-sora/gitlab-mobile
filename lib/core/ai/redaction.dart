@@ -3,6 +3,7 @@ import 'ai_failure.dart';
 const _redacted = '[REDACTED]';
 const _unterminatedPrivateKey = '[REDACTED:private_key_unterminated]';
 const _unopenedPrivateKey = '[REDACTED:private_key_unopened]';
+const _privateKeyFragment = '[REDACTED:private_key_fragment]';
 
 abstract interface class KnownSecretsSource {
   Iterable<String> get current;
@@ -107,10 +108,25 @@ final class Redactor {
   List<RegExp>? _assignments;
   RegExp? _urlCredentials;
 
-  RedactionResult redact(String input) {
+  /// Redacts [input]. Pass [fragment] when [input] is part of a larger
+  /// source cut at either end (a log read from an offset, a diff hunk, a
+  /// line range): markers alone cannot tell which key a cut BEGIN or END
+  /// belongs to, so a fragment holding any private-key marker is withheld
+  /// whole. A complete source should be redacted before it is cut.
+  RedactionResult redact(String input, {bool fragment = false}) {
     try {
       _refreshSecrets();
       _compilePatterns();
+      if (fragment && _privateKeyMarker.hasMatch(input)) {
+        if (_knownSecrets.any(_privateKeyFragment.contains)) {
+          throw const AiFailure(AiFailureKind.policyBlocked);
+        }
+        return const RedactionResult(
+          _privateKeyFragment,
+          1,
+          withheldPrivateKeyContext: true,
+        );
+      }
       // No detector sees another detector's replacement text.
       final ranges = <_RedactionRange>[];
       for (final secret in _knownSecrets) {
