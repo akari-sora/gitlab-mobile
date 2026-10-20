@@ -432,10 +432,11 @@ Take `<versionCode>` above every published build: Play needs it to grow.
 
 ### Before the first upload
 
-- **Package name:** both flavors share the application ID
-  `io.gitlabmobile.gitlab_mobile`, and Play makes it permanent. A phone holds
-  either the GitLab build or the Play build, and moving between them needs an
-  uninstall, because their signers differ.
+- **Package name:** decided on 2026-10-19. The Play build is `app.mergeline`,
+  with no trademark in it; Play makes it permanent. The GitLab channel keeps
+  `io.gitlabmobile.gitlab_mobile`, so installed previews keep updating. The two
+  are separate apps and can be installed side by side; moving to the Play build
+  means signing in again there.
 - **App signing:** choose Google-generated app signing. Record the app signing
   and upload certificates that Play Console shows.
 - **CI:** keep the upload key out of CI until a Play publishing job is designed,

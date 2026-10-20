@@ -59,7 +59,7 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(copied, 'GitLab Mobile 0.3.0 (3) · e941a6ac · Android');
+    expect(copied, 'Mergeline 0.3.0 (3) · e941a6ac · Android');
     expect(find.text('已複製'), findsOneWidget);
     handle.dispose();
   });

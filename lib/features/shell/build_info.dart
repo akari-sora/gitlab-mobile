@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../../core/brand.dart';
 
 /// Version name, build number, and the commit recorded for this binary.
 class BuildInfo {
@@ -53,7 +54,7 @@ String _versionLine(BuildInfo info) {
 }
 
 String _copyText(BuildInfo info, TargetPlatform platform) {
-  return 'GitLab Mobile ${info.version} (${info.buildNumber}) · ${info.commit} · ${_platformLabel(platform)}';
+  return '$appName ${info.version} (${info.buildNumber}) · ${info.commit} · ${_platformLabel(platform)}';
 }
 
 String _platformLabel(TargetPlatform platform) {

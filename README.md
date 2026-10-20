@@ -1,11 +1,16 @@
-# GitLab Mobile
+# Mergeline
 
 > Canonical repository and issues: https://gitlab.com/aa22396584/gitlab-mobile.
 
 > **Development home:** https://gitlab.com/aa22396584/gitlab-mobile  
 > Please open issues and merge requests there.
 
-A mobile-first Flutter client for Android and iOS. Independent third-party software, not an official GitLab application. The interface is Traditional Chinese and supports light/dark appearance and large text.
+A mobile-first Flutter client for GitLab® on Android and iOS, formerly developed as "GitLab Mobile". Independent third-party software, not affiliated with or endorsed by GitLab Inc.; GITLAB is a trademark of GitLab Inc. The interface is Traditional Chinese and supports light/dark appearance and large text.
+
+## 2026-10-20 — the app is now Mergeline
+
+- **New name.** The app is called **Mergeline** in the launcher, the title bar and 我的. GitLab's trademark guidelines keep the GitLab marks out of third-party app names and Play removes unofficial clients named after the service, so the store name carries no trademark; `docs/STORE_LISTING.md` has the listing copy and its rules. 我的 shows GitLab's trademark notice.
+- **Same app on the GitLab channel.** Releases published here keep the package `io.gitlabmobile.gitlab_mobile`, so installed previews update in place and keep their accounts. The Play build (not yet listed) will be `app.mergeline`.
 
 ## 2026-10-19 — smoother switches and polish
 
