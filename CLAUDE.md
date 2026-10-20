@@ -164,7 +164,9 @@ usable for a follow-up, while disposal, recipient replacement and
 `stoppedBySettings` close the transport. Each catalogue send gets a fresh
 `AiToolBudget`; wire `resetToolBudget`, `beginToolTurn` and
 `toolBudgetExhausted: () => budget.exhausted`, and call `beginTurn` before each
-tool batch. Do not share a budget between sends. The catalogue reserves twice
+tool batch. `executeTool` must call `executeResult` and return results carrying
+`AiAppText` in `data`; production code must not construct content-only tool
+results. Do not share a budget between sends. The catalogue reserves twice
 each logical read cost to cover GitLabApi's single OAuth retry; the HTTP counter
 is a conservative allowance. `executeResult` propagates provenance plus
 withheld-private-key, truncated and blocked-sensitive metadata in
@@ -173,7 +175,11 @@ blocks. App-owned context and tool values retain an `AiAppText` plain model;
 redact and re-verify its strings before JSON/XML/label escaping. Encode only for
 delivery. Summaries retain plain text and escape once per encoding. Never decode
 wire escapes to search for secrets; provider verification reads only the plain
-strings produced by the decoder, excluding opaque fields.
+strings produced by the decoder, excluding opaque fields. A clipped value keeps
+only the deliverable plain prefix plus `Redactor.retentionMargin` characters (the
+longest known secret, at least `aiSecretRetentionFloor` = 4096), so a secret
+that crosses the cut and becomes known later is still redacted whole; a later
+secret longer than that margin is the residual case.
 
 Frozen wire fragments are append-only and never rewritten. A newly known secret
 in app/provider text that was already sent stops the current send because sent

@@ -196,11 +196,10 @@ final class AiToolCatalogue {
     required AiToolBudget budget,
   }) async {
     final execution = await execute(call, budget: budget);
-    return AiToolResult(
+    return AiToolResult.fromData(
       callId: execution.result.callId,
       name: execution.result.name,
-      content: execution.result.content,
-      data: execution.result.data,
+      data: execution.result.plainData,
       isError: execution.result.isError,
       withheldPrivateKeyContext: execution.withheldPrivateKeyContext,
       truncated: execution.truncated,
@@ -274,15 +273,17 @@ final class AiToolCatalogue {
       ]);
       final completeContent = data.encode();
       final available = budget.availableOutput(completeContent.length);
-      final clipped = data.clipped(available);
+      final clipped = data.clipped(
+        available,
+        secretMargin: redactor.retentionMargin,
+      );
       final content = clipped.encode();
       final truncated = content.length != completeContent.length;
       budget.recordOutput(content.length);
       return AiToolExecution(
-        result: AiToolResult(
+        result: AiToolResult.fromData(
           callId: call.id,
           name: call.name,
-          content: content,
           data: clipped,
         ),
         provenance: provenance,
@@ -623,14 +624,16 @@ final class AiToolCatalogue {
     ]);
     final completeContent = data.encode();
     final available = budget.availableOutput(completeContent.length);
-    final clipped = data.clipped(available);
+    final clipped = data.clipped(
+      available,
+      secretMargin: redactor.retentionMargin,
+    );
     final content = clipped.encode();
     budget.recordOutput(content.length);
     return AiToolExecution(
-      result: AiToolResult(
+      result: AiToolResult.fromData(
         callId: call.id,
         name: call.name,
-        content: content,
         data: clipped,
         isError: true,
       ),

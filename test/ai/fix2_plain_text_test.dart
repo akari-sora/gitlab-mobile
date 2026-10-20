@@ -132,10 +132,9 @@ void main() {
     () async {
       const secret = r'abc\tdef<Secret';
       final h = base.Harness();
-      h.execute = (call) async => AiToolResult(
+      h.execute = (call) async => AiToolResult.fromData(
         callId: call.id,
         name: call.name,
-        content: '',
         data: AiAppText.untrusted(
           source: 'file',
           nonce: 'synthetic',
@@ -159,6 +158,143 @@ void main() {
       expect(h.payloads, hasLength(2));
     },
   );
+
+  test(
+    'FIX3 redact tail revisits plain tool data after a late refresh',
+    () async {
+      const secret = r'abc\ndef&Secret';
+      final h = base.Harness();
+      var toolReturned = false;
+      var refreshesAfterTool = 0;
+      h.refresh = () {
+        if (!toolReturned) return;
+        refreshesAfterTool++;
+        // Post-read checkpoint, next-loop checkpoint, then _redactTail.
+        if (refreshesAfterTool == 3) h.secrets.current.add(secret);
+      };
+      h.execute = (call) async {
+        toolReturned = true;
+        return AiToolResult.fromData(
+          callId: call.id,
+          name: call.name,
+          data: const AiAppText.untrusted(
+            source: 'read_file',
+            nonce: 'synthetic',
+            body: AiAppText.plain('x $secret y'),
+          ),
+        );
+      };
+      h.respond = (_, _) async => h.payloads.length == 1
+          ? h.turn(calls: [base.call()])
+          : h.turn(text: 'done');
+
+      expect((await h.runner.run('question')).reason, AiRunEnd.done);
+      expect(refreshesAfterTool, greaterThanOrEqualTo(3));
+      expect(h.runner.lateRedactions, greaterThan(0));
+      expect(h.payloads, hasLength(2));
+      expect(h.payloads.last, contains('[REDACTED]'));
+      expect(h.payloads.last, isNot(contains('Secret')));
+    },
+  );
+
+  for (final tool in ['get_issue', 'get_job_log']) {
+    for (final secret in [
+      r'abc\ndef&Secret',
+      'abcA&Secret',
+      r'abc\tdef<Secret',
+    ]) {
+      test('FIX3 frozen $tool result re-verifies plain $secret', () async {
+        final h = base.Harness();
+        h.execute = (call) async => AiToolResult.fromData(
+          callId: call.id,
+          name: call.name,
+          data: AiAppText.untrusted(
+            source: tool,
+            nonce: 'synthetic',
+            body: tool == 'get_issue'
+                ? AiAppText.json({'description': secret, 'safe': 'keep'})
+                : AiAppText.plain('[source: job live]\n$secret'),
+          ),
+        );
+        h.respond = (_, _) async => h.payloads.length == 1
+            ? h.turn(calls: [_toolCall(tool)])
+            : h.turn(text: 'done');
+
+        expect((await h.runner.run('first')).reason, AiRunEnd.done);
+        final old = h.runner.segment!;
+        final frozen = old.frozenWireJson.toList();
+        h.secrets.current.add(secret);
+        expect((await h.runner.run('follow up')).reason, AiRunEnd.done);
+        expect(h.runner.segment, isNot(same(old)));
+        expect(old.frozenWireJson, frozen);
+        expect(h.payloads.last, isNot(contains('Secret')));
+      });
+    }
+  }
+
+  for (final secret in [
+    r'abc\ndef&Secret',
+    'abcA&Secret',
+    r'abc\tdef<Secret',
+  ]) {
+    test(
+      'FIX3 clipped tool tail keeps plain $secret for late redaction',
+      () async {
+        final h = base.Harness(maxChars: 12000);
+        var toolReturned = false;
+        var refreshesAfterTool = 0;
+        h.refresh = () {
+          if (!toolReturned) return;
+          refreshesAfterTool++;
+          // Post-read checkpoint, next-loop checkpoint, then _redactTail.
+          if (refreshesAfterTool == 3) h.secrets.current.add(secret);
+        };
+        h.execute = (call) async {
+          toolReturned = true;
+          return AiToolResult.fromData(
+            callId: call.id,
+            name: call.name,
+            data: AiAppText.untrusted(
+              source: 'read_file',
+              nonce: 'synthetic',
+              body: AiAppText.plain('$secret${'x' * 19000}'),
+            ),
+          );
+        };
+        h.respond = (_, _) async => h.payloads.length == 1
+            ? h.turn(calls: [base.call()])
+            : h.turn(text: 'done');
+
+        expect((await h.runner.run('question')).reason, AiRunEnd.done);
+        expect(refreshesAfterTool, greaterThanOrEqualTo(3));
+        expect(h.runner.lateRedactions, greaterThan(0));
+        expect(h.payloads, hasLength(2));
+        expect(h.payloads.last.length, lessThanOrEqualTo(12000));
+        expect(h.payloads.last, contains('[REDACTED]'));
+        expect(h.payloads.last, isNot(contains('Secret')));
+      },
+    );
+  }
+
+  test('FIX3 projection clips context to its escaped-width budget', () {
+    const budget = 1200;
+    final projection = buildAiProjection(
+      context: [
+        AiContextBlock.fromData(
+          source: 'file',
+          data: AiAppText.plain(List.filled(1000, '&<"').join()),
+        ),
+      ],
+      entries: const [],
+      budget: budget,
+      redact: (text) => text,
+    );
+
+    expect(projection.length, lessThanOrEqualTo(budget));
+    expect(projection, contains('&amp;'));
+    expect(projection, contains('&lt;'));
+    expect(projection, contains('"'));
+  });
 
   test('FIX2 decoded citations are plain readable frozen values', () async {
     const secret = r'abc\ndef&Secret';
@@ -336,3 +472,6 @@ void main() {
     expect(snapshots.last, contains('SECOND_VISIBLE_'));
   });
 }
+
+AiToolCall _toolCall(String name) =>
+    AiToolCall(id: 'call', name: name, arguments: <String, Object?>{});

@@ -612,6 +612,29 @@ plain values; `test/ai/ai_live_smoke_test.dart` rejects older closing markers.
 `tool/tests/test_ai_runner_contract.py` requires explicit active cancellation and
 keeps this ledger limited to repository evidence or **NOT_RUN**.
 
+Round-three source follows `42daa2e` and remains uncommitted during this
+verification. `AiAppText` caches each immutable encoded view and bounds retained
+plain tool data to the deliverable prefix plus one overlap margin equal to the
+longest known secret. The same escaped-width prefix helper serves retention and
+context projection. JSON string values share the retention budget before the
+final encoded view is clipped. Whole fetched sources are still redacted before
+any retention cut. `test/ai/ai_tools_test.dart` covers large file, job-log and
+issue results, a newly learned secret crossing the cut, cache reuse and fresh
+redacted encodings, JSON strings and surrogate boundaries.
+
+The round-three tests in `test/ai/fix2_plain_text_test.dart` place newly learned
+secrets at the final tool-tail refresh, recheck frozen issue/job-log results on a
+follow-up, exercise oversized tool-tail clipping and enforce escaped-width
+projection budgets. Legacy plain-text constructors are test-only and reject
+already wrapped data; `test/ai/fix3_constructor_test.dart` and the Python
+production-call boundary guard protect those entry points. Production tools
+return data-aware `executeResult` values. The renamed FIX1 test explicitly checks
+that the redacted marker survives repeated escaping. The offline closing-smoke
+test requires the exact complete final-answer note and rejects a bare marker.
+These are repository source/test evidence; external mutation and timing results,
+acceptance command receipts, CI/jobs, devices and live checks remain **NOT_RUN**
+for this ledger.
+
 | Contract | Current evidence |
 | --- | --- |
 | Scope, provenance, schemas, GET/HEAD-only adapter, field projection, sensitive read/diff/search, newest notes, full SHA and HTTP/search/output budgets | `test/ai/ai_tools_test.dart`, context tests, Python boundary guard; synthetic |

@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_events.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
+import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 
 import '../../tool/ai_live_smoke.dart' as smoke;
 import '../support/fake_adapter.dart';
@@ -301,7 +302,7 @@ void main() {
     const fallbackCaps = AiCaps(tokenLimitField: AiTokenLimitField.maxTokens);
     final fallback = smoke.aiLiveAssessClosingRequestBodies(<String>[
       '{"tools":[{"name":"synthetic_lookup"}],"messages":[]}',
-      '{"tools":[{"name":"synthetic_lookup"}],"messages":[{"role":"user","content":"<mergeline_final_answer>finish</mergeline_final_answer>"}]}',
+      '{"tools":[{"name":"synthetic_lookup"}],"messages":[{"role":"user","content":"$aiFinalAnswerNote"}]}',
     ], caps: fallbackCaps);
     expect(fallback['toolsKeptOnClosingRequest'], isTrue);
     expect(fallback['finishingChoiceOrNote'], isTrue);
@@ -318,6 +319,12 @@ void main() {
       '{"tools":[{"name":"synthetic_lookup"}],"messages":[{"role":"user","content":"<mergeline_final_answer>old ordinary follow-up"}]}',
     ], caps: fallbackCaps);
     expect(oldCoalescedMarker['finishingChoiceOrNote'], isFalse);
+
+    final bareMarker = smoke.aiLiveAssessClosingRequestBodies(<String>[
+      '{"tools":[{"name":"synthetic_lookup"}],"messages":[]}',
+      '{"tools":[{"name":"synthetic_lookup"}],"messages":[{"role":"user","content":"ordinary <mergeline_final_answer> text"}]}',
+    ], caps: fallbackCaps);
+    expect(bareMarker['finishingChoiceOrNote'], isFalse);
 
     final providerMarker = smoke.aiLiveAssessClosingRequestBodies(<String>[
       '{"tools":[{"name":"synthetic_lookup"}],"messages":[]}',

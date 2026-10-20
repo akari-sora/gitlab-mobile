@@ -73,7 +73,7 @@ void main() {
     segment.setTail(
       AppUserEntry(
         text: 'question',
-        context: const [AiContextBlock(source: 'file', text: 'context')],
+        context: [AiContextBlock(source: 'file', text: 'context')],
       ),
     );
     var encodeCalls = 0;
@@ -173,7 +173,7 @@ void main() {
         model: 'model',
         secretSetAtStart: SecretSetId.fromSecrets(const []),
       );
-      final previous = AppToolResultsEntry(const [
+      final previous = AppToolResultsEntry([
         AiToolResult(callId: '1', name: 'read', content: 'abcdef'),
         AiToolResult(callId: '2', name: 'read', content: 'ghij'),
       ]);
@@ -218,7 +218,7 @@ void main() {
       secretSetAtStart: SecretSetId.fromSecrets(const []),
     );
     segment.setTail(
-      AppToolResultsEntry(const [
+      AppToolResultsEntry([
         AiToolResult(callId: '1', name: 'read', content: 'a😀b'),
       ]),
     );
@@ -241,7 +241,7 @@ void main() {
     segment.setTail(
       AppUserEntry(
         text: 'question',
-        context: const [AiContextBlock(source: 'file', text: 'context')],
+        context: [AiContextBlock(source: 'file', text: 'context')],
       ),
     );
 

@@ -278,10 +278,10 @@ final class AiRunner {
       }
       final content = clipAiText(safe, math.min(20000, 120000 - outputChars));
       outputChars += content.length;
-      return AiToolResult(
+      return AiToolResult.fromData(
         callId: call.id,
         name: call.name,
-        content: content,
+        data: AiAppText.plain(content),
         isError: true,
       );
     }
@@ -374,6 +374,7 @@ final class AiRunner {
           );
           seg.clipTailToolResults(
             math.max(0, chars - (size + reserve - config.caps.maxRequestChars)),
+            secretMargin: _redactor.retentionMargin,
           );
           finishing = true;
         }
@@ -555,14 +556,14 @@ final class AiRunner {
             final content = data.encode();
             final clippedData = data.clipped(
               math.min(20000, 120000 - outputChars),
+              secretMargin: _redactor.retentionMargin,
             );
             final clipped = clippedData.encode();
             outputChars += clipped.length;
             _check(epoch);
-            final safeResult = AiToolResult(
+            final safeResult = AiToolResult.fromData(
               callId: tc.id,
               name: tc.name,
-              content: clipped,
               data: clippedData,
               isError: toolResult.isError,
               withheldPrivateKeyContext: toolResult.withheldPrivateKeyContext,
@@ -818,12 +819,13 @@ final class AiRunner {
   }
 }
 
-AiToolResult _synthetic(AiToolCall call, String reason) => AiToolResult(
-  callId: call.id,
-  name: call.name,
-  content: '[source: tool]\nNot executed: $reason',
-  isError: true,
-);
+AiToolResult _synthetic(AiToolCall call, String reason) =>
+    AiToolResult.fromData(
+      callId: call.id,
+      name: call.name,
+      data: AiAppText.plain('[source: tool]\nNot executed: $reason'),
+      isError: true,
+    );
 
 AiRunEnd _endForStop(AiStopReason stop) => switch (stop) {
   AiStopReason.maxTokens => AiRunEnd.maxTokens,
@@ -1021,7 +1023,7 @@ AiAppText buildAiProjectionData({
       .map((block) => redact(block.plainData.plainText))
       .join('\n');
   final contextLimit = (available * .4).floor();
-  final head = _clipPlainForEscapedBudget(contextText, contextLimit);
+  final head = clipAiPlainForEscapedBudget(contextText, contextLimit);
   var remaining = available - escapeUntrustedGitLabText(head).length;
   final recent = <String>[];
   var dropped = head.length < contextText.length;
@@ -1088,20 +1090,3 @@ String buildAiProjection({
   budget: budget,
   redact: redact,
 ).encode();
-
-String _clipPlainForEscapedBudget(String text, int maximum) {
-  var used = 0;
-  var end = 0;
-  for (final rune in text.runes) {
-    final width = rune > 0xffff ? 2 : 1;
-    final escapedWidth = rune == 0x26
-        ? 5
-        : (rune == 0x3c || rune == 0x3e)
-        ? 4
-        : width;
-    if (used + escapedWidth > maximum) break;
-    used += escapedWidth;
-    end += width;
-  }
-  return text.substring(0, end);
-}

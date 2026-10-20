@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 
 import 'ai_failure.dart';
 import 'app_text.dart';
@@ -46,11 +47,16 @@ final class SecretSetId {
 }
 
 final class AiContextBlock {
-  const AiContextBlock({required this.source, required String text})
+  @visibleForTesting
+  AiContextBlock({required this.source, required String text})
     : _text = text,
-      data = null;
-  const AiContextBlock.fromData({required this.source, required this.data})
-    : _text = '';
+      data = null {
+    assert(!text.startsWith('<gitlab_data'));
+  }
+  const AiContextBlock.fromData({required this.source, required AiAppText data})
+    : _text = '',
+      // ignore: prefer_initializing_formals
+      data = data;
 
   final String source;
   final String _text;
@@ -75,16 +81,42 @@ final class AiToolCall {
 }
 
 final class AiToolResult {
-  const AiToolResult({
+  @visibleForTesting
+  AiToolResult({
     required this.callId,
     required this.name,
     required String content,
-    this.data,
     this.isError = false,
     this.withheldPrivateKeyContext = false,
     this.truncated = false,
     this.blockedSensitive = false,
-  }) : _content = data == null ? content : '';
+  }) : _content = content,
+       data = null {
+    assert(!content.startsWith('<gitlab_data'));
+  }
+
+  const AiToolResult.fromData({
+    required this.callId,
+    required this.name,
+    required AiAppText data,
+    this.isError = false,
+    this.withheldPrivateKeyContext = false,
+    this.truncated = false,
+    this.blockedSensitive = false,
+  }) : _content = '',
+       // ignore: prefer_initializing_formals
+       data = data;
+
+  const AiToolResult._({
+    required this.callId,
+    required this.name,
+    required String content,
+    required this.data,
+    required this.isError,
+    required this.withheldPrivateKeyContext,
+    required this.truncated,
+    required this.blockedSensitive,
+  }) : _content = content;
 
   final String callId;
   final String name;
@@ -97,7 +129,7 @@ final class AiToolResult {
   final bool truncated;
   final bool blockedSensitive;
 
-  AiToolResult copyWith({String? content, AiAppText? data}) => AiToolResult(
+  AiToolResult copyWith({String? content, AiAppText? data}) => AiToolResult._(
     callId: callId,
     name: name,
     content: content ?? _content,
@@ -290,7 +322,7 @@ final class AiSegment {
     throw StateError('A follow-up requires an app tail.');
   }
 
-  void clipTailToolResults(int maxChars) {
+  void clipTailToolResults(int maxChars, {int secretMargin = 0}) {
     if (maxChars < 0) throw RangeError.range(maxChars, 0, null, 'maxChars');
     final current = _tail;
     if (current is! AppToolResultsEntry) {
@@ -302,7 +334,10 @@ final class AiSegment {
       final keep = result.content.length <= remaining
           ? result.content
           : clipWrappedUntrustedGitLabData(result.content, remaining);
-      clipped.add(result.copyWith(data: result.plainData.clipped(remaining)));
+      clipped.add(result.copyWith(data: result.plainData.clipped(
+        remaining,
+        secretMargin: secretMargin,
+      )));
       remaining -= keep.length;
     }
     _tail = current.copyWith(results: clipped);

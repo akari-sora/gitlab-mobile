@@ -56,7 +56,7 @@ void main() {
       context: const <AiContextBlock>[],
       entries: <AiEntry>[
         AppToolResultsEntry(<AiToolResult>[
-          const AiToolResult(
+          AiToolResult(
             callId: 'read-one',
             name: 'read_file',
             content: content,

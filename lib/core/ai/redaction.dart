@@ -1,5 +1,9 @@
 import 'ai_failure.dart';
 
+/// Minimum overlap kept past a clipped tool result or context (see
+/// [Redactor.retentionMargin]).
+const aiSecretRetentionFloor = 4096;
+
 const _redacted = '[REDACTED]';
 const _unterminatedPrivateKey = '[REDACTED:private_key_unterminated]';
 const _unopenedPrivateKey = '[REDACTED:private_key_unopened]';
@@ -162,6 +166,23 @@ final class Redactor {
     } catch (_) {
       throw const AiFailure(AiFailureKind.policyBlocked);
     }
+  }
+
+  int get longestKnownSecretLength {
+    _refreshSecrets();
+    return _knownSecrets.fold(
+      0,
+      (length, secret) => secret.length > length ? secret.length : length,
+    );
+  }
+
+  /// Characters kept past a clip so a secret that crosses the cut and only
+  /// becomes known later can still be redacted whole. At least
+  /// [aiSecretRetentionFloor], which covers keys and tokens added after the
+  /// clip that are longer than any secret known at the time.
+  int get retentionMargin {
+    final longest = longestKnownSecretLength;
+    return longest > aiSecretRetentionFloor ? longest : aiSecretRetentionFloor;
   }
 
   void _refreshSecrets() {

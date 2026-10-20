@@ -435,7 +435,7 @@ void main() {
     () async {
       final h = Harness(
         context: [
-          const AiContextBlock(source: 'file', text: 'initial context'),
+          AiContextBlock(source: 'file', text: 'initial context'),
         ],
       );
       h.respond = (_, _) async =>
@@ -506,7 +506,7 @@ void main() {
     'context attaches once over three sends, frozen bytes never change',
     () async {
       final h = Harness(
-        context: [const AiContextBlock(source: 'file', text: 'unique-context')],
+        context: [AiContextBlock(source: 'file', text: 'unique-context')],
       );
       await h.runner.run('one');
       final prefix = List<String>.of(h.runner.segment!.frozenWireJson);
@@ -522,7 +522,7 @@ void main() {
     () {
       final projection = buildAiProjection(
         context: [
-          const AiContextBlock(source: 'file', text: 'context SENSITIVE'),
+          AiContextBlock(source: 'file', text: 'context SENSITIVE'),
         ],
         entries: [
           AppUserEntry(text: 'old' * 500),
@@ -668,7 +668,7 @@ void main() {
     await h.runner.run('two');
     expect(reads, 1);
     pending.complete(
-      const AiToolResult(callId: 'a', name: 'read_file', content: 'late'),
+      AiToolResult(callId: 'a', name: 'read_file', content: 'late'),
     );
     await Future<void>.delayed(Duration.zero);
     await h.runner.run('three');

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/app_text.dart';
 import 'package:gitlab_mobile/core/ai/ai_events.dart';
 import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
@@ -26,13 +27,13 @@ void main() {
           AppUserEntry(
             text: 'Explain the failure.',
             context: const <AiContextBlock>[
-              AiContextBlock(
+              AiContextBlock.fromData(
                 source: 'job',
-                text: '<gitlab_data>log</gitlab_data>',
+                data: AiAppText.plain('<gitlab_data>log</gitlab_data>'),
               ),
-              AiContextBlock(
+              AiContextBlock.fromData(
                 source: 'file',
-                text: '<gitlab_data>code</gitlab_data>',
+                data: AiAppText.plain('<gitlab_data>code</gitlab_data>'),
               ),
             ],
           ),
@@ -85,15 +86,15 @@ void main() {
 
     test('flatMaps tool results and follow-up into one user message', () {
       final results = AppToolResultsEntry(const <AiToolResult>[
-        AiToolResult(
+        AiToolResult.fromData(
           callId: 'toolu_synthetic_a',
           name: 'read_file',
-          content: 'first result',
+          data: AiAppText.plain('first result'),
         ),
-        AiToolResult(
+        AiToolResult.fromData(
           callId: 'toolu_synthetic_b',
           name: 'search',
-          content: 'second result',
+          data: AiAppText.plain('second result'),
           isError: true,
         ),
       ], followUpText: 'Now answer.');
@@ -214,7 +215,10 @@ void main() {
         AppUserEntry(
           text: '',
           context: const <AiContextBlock>[
-            AiContextBlock(source: 'job', text: 'synthetic context'),
+            AiContextBlock.fromData(
+              source: 'job',
+              data: AiAppText.plain('synthetic context'),
+            ),
           ],
         ),
         cachedCaps,
@@ -234,10 +238,10 @@ void main() {
 
       final results = format.encodeEntry(
         AppToolResultsEntry(const <AiToolResult>[
-          AiToolResult(
+          AiToolResult.fromData(
             callId: 'toolu_synthetic',
             name: 'read_file',
-            content: 'synthetic result',
+            data: AiAppText.plain('synthetic result'),
           ),
         ], followUpText: ''),
         cachedCaps,

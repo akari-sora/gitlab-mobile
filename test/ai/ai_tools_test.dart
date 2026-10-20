@@ -1,6 +1,8 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
+import 'package:gitlab_mobile/core/ai/app_text.dart';
+import 'package:gitlab_mobile/core/ai/prompts.dart';
 import 'package:gitlab_mobile/core/ai/redaction.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/sensitive_paths.dart';
@@ -167,6 +169,132 @@ void main() {
       },
     );
   }
+
+  for (final name in ['read_file', 'get_job_log', 'get_issue']) {
+    test(
+      'FIX3 $name retains a bounded plain prefix plus secret margin',
+      () async {
+        const secret = r'abc\ndef&Secret';
+        final secrets = _Secrets()..values = ['z' * secret.length];
+        final redactor = Redactor(secrets: secrets);
+        final port = _FakePort();
+        final catalogue = AiToolCatalogue(
+          port: port,
+          scope: _scope(kind: AiResourceKind.job),
+          redactor: redactor,
+        );
+        const maximum = 20000;
+        final large = 'x' * 1900000;
+        port.file = large;
+        port.jobLogText = large;
+        port.discussion = {...port.discussion, 'description': large};
+        final result = await catalogue.executeResult(
+          _call(name, switch (name) {
+            'read_file' => {'path': 'README.md', 'revision': 'head'},
+            'get_job_log' => {'job_id': 4},
+            _ => {'iid': 3},
+          }),
+          budget: AiToolBudget(maxSingleOutputChars: maximum),
+        );
+        expect(result.isError, isFalse);
+        expect(result.content.length, lessThanOrEqualTo(maximum));
+        expect(result.truncated, isTrue);
+        expect(
+          result.plainData.plainText.length,
+          lessThanOrEqualTo(maximum + aiSecretRetentionFloor),
+        );
+        expect(identical(result.content, result.content), isTrue);
+      },
+    );
+  }
+
+  test(
+    'FIX3 late secret crossing the escaped cut is retained and redacted whole',
+    () {
+      const secret = r'abc\tdef<Secret';
+      final secrets = _Secrets()..values = ['z' * secret.length];
+      final redactor = Redactor(secrets: secrets);
+      const source = 'read_file';
+      const nonce = 'synthetic';
+      final labels = wrapUntrustedGitLabData(
+        source: source,
+        nonce: nonce,
+        text: '',
+      );
+      final data = AiAppText.untrusted(
+        source: source,
+        nonce: nonce,
+        body: AiAppText.plain('${'&' * 30}xx${secret}yy${'x' * 100000}'),
+      );
+      final clipped = data.clipped(
+        labels.length + 30 * 5 + 5,
+        secretMargin: redactor.longestKnownSecretLength,
+      );
+      expect(clipped.plainText, contains(secret));
+      expect(
+        clipped.plainText.length,
+        lessThanOrEqualTo(30 + 5 + secret.length),
+      );
+      final encoded = clipped.encode();
+      expect(identical(encoded, clipped.encode()), isTrue);
+      secrets.values = [secret];
+      final safe = clipped.redact((s) => redactor.redactSource(s).text);
+      expect(safe.plainText, isNot(contains('Secret')));
+      expect(safe.plainText, contains('[REDACTED]'));
+      expect(safe.encode(), isNot(encoded));
+      expect(clipped.encode(), encoded);
+    },
+  );
+
+  test(
+    'a secret longer than any known at the clip is still redacted whole',
+    () {
+      final secret = 'late-${'Q' * 300}-Secret';
+      final secrets = _Secrets()..values = [];
+      final redactor = Redactor(secrets: secrets);
+      final data = AiAppText.untrusted(
+        source: 'read_file',
+        nonce: 'synthetic',
+        body: AiAppText.plain('${'x' * 1000}$secret${'y' * 100000}'),
+      );
+      final clipped = data.clipped(
+        1200,
+        secretMargin: redactor.retentionMargin,
+      );
+      expect(redactor.longestKnownSecretLength, 0);
+      expect(clipped.plainText, contains(secret));
+      expect(
+        clipped.plainText.length,
+        lessThanOrEqualTo(1200 + aiSecretRetentionFloor),
+      );
+      secrets.values = [secret];
+      final safe = clipped.redact((s) => redactor.redactSource(s).text);
+      expect(safe.plainText, isNot(contains('late-QQQ')));
+      expect(safe.encode(), isNot(contains('late-QQQ')));
+    },
+  );
+
+  test(
+    'FIX3 JSON fields and surrogate pairs obey escaped retention budgets',
+    () {
+      final input = AiAppText.untrusted(
+        source: 'get_issue',
+        nonce: 'synthetic',
+        body: AiAppText.json({
+          'description': '${'&<"\\' * 10000}end',
+          'notes': [
+            {'body': 'y' * 100000},
+          ],
+        }),
+      );
+      final clipped = input.clipped(200, secretMargin: 20);
+      expect(clipped.plainText.length, lessThan(220));
+      expect(clipped.encode().length, lessThanOrEqualTo(200));
+      expect(clipAiPlainForEscapedBudget('😀&x', 1), isEmpty);
+      expect(clipAiPlainForEscapedBudget('😀&x', 6), '😀');
+      expect(clipAiPlainForEscapedBudget('😀&x', 7), '😀&');
+    },
+  );
 
   test('catalogue publishes the ten fixed read-only tools', () {
     final catalogue = AiToolCatalogue(

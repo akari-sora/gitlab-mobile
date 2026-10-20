@@ -5,9 +5,22 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 RUNNER = ROOT / "lib" / "core" / "ai" / "runner.dart"
+LIB = ROOT / "lib"
 
 
 class AiRunnerContractTest(unittest.TestCase):
+    def test_production_uses_only_data_aware_ai_text_constructors(self):
+        legacy_calls = re.compile(
+            r"\b(?:AiContextBlock|AiToolResult)\s*\((?!\s*\{)"
+        )
+        offenders = []
+        for path in LIB.rglob("*.dart"):
+            source = path.read_text(encoding="utf-8")
+            for match in legacy_calls.finditer(source):
+                line = source.count("\n", 0, match.start()) + 1
+                offenders.append(f"{path.relative_to(ROOT)}:{line}")
+        self.assertEqual(offenders, [])
+
     def test_cancel_active_is_required_without_close_fallback(self):
         source = RUNNER.read_text(encoding="utf-8")
         self._assert_cancel_active_contract(source)

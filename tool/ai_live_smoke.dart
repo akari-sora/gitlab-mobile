@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
+import 'package:gitlab_mobile/core/ai/app_text.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/ai_events.dart';
 import 'package:gitlab_mobile/core/ai/ai_failure.dart';
@@ -303,10 +304,10 @@ Future<Map<String, Object?>> _toolReplayScenario(
     segment.setTail(
       AppToolResultsEntry(<AiToolResult>[
         for (var index = 0; index < calls.length; index++)
-          AiToolResult(
+          AiToolResult.fromData(
             callId: calls[index].id,
             name: calls[index].name,
-            content: jsonEncode(<String, Object?>{
+            data: AiAppText.json(<String, Object?>{
               'fixture': index.isEven ? 'alpha' : 'beta',
               'value': 'synthetic-${index + 1}',
             }),
@@ -338,10 +339,10 @@ Future<Map<String, Object?>> _toolReplayScenario(
       segment.setTail(
         AppToolResultsEntry(<AiToolResult>[
           for (final call in second.output.toolCalls)
-            AiToolResult(
+            AiToolResult.fromData(
               callId: call.id,
               name: call.name,
-              content: '{"value":"synthetic-follow-up"}',
+              data: AiAppText.json({'value': 'synthetic-follow-up'}),
             ),
         ], followUpText: 'Reply with exactly SYNTHETIC_FOLLOW_UP.'),
       );
@@ -471,18 +472,18 @@ AiRunner _runner(_Session session) {
       consentValid: () => true,
     ),
     tools: _syntheticTools,
-    executeTool: (call) async => AiToolResult(
+    executeTool: (call) async => AiToolResult.fromData(
       callId: call.id,
       name: call.name,
-      content: jsonEncode(<String, Object?>{
+      data: AiAppText.json(<String, Object?>{
         'fixture': wireObject(call.arguments)['fixture'],
         'value': 'synthetic-runner-value',
       }),
     ),
     context: const <AiContextBlock>[
-      AiContextBlock(
+      AiContextBlock.fromData(
         source: 'synthetic_fixture',
-        text: 'Synthetic repository context only.',
+        data: AiAppText.plain('Synthetic repository context only.'),
       ),
     ],
     system: _system,
@@ -620,7 +621,7 @@ bool _newClosingTailHasMarker(String previousBody, String closingBody) {
   final addedText = closingText.startsWith(previousText)
       ? closingText.substring(previousText.length)
       : closingText;
-  return addedText.contains(aiFinalAnswerNoteMarker);
+  return addedText.endsWith(aiFinalAnswerNote);
 }
 
 String _closingUserText(Object? value) {

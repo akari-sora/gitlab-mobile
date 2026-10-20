@@ -14,7 +14,6 @@ import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/ai_transport.dart';
 import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
 import 'package:gitlab_mobile/core/ai/redaction.dart';
-import 'package:gitlab_mobile/core/ai/prompts.dart';
 import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/ai/wire/wire_format.dart';
 
@@ -84,7 +83,7 @@ void main() {
       context: [],
       entries: [
         AppToolResultsEntry([
-          const AiToolResult(callId: 'c', name: 'read_file', content: 'ok'),
+          AiToolResult(callId: 'c', name: 'read_file', content: 'ok'),
         ], followUpText: 'FOLLOW_UP_KEEP'),
       ],
       budget: 5000,
@@ -107,7 +106,7 @@ void main() {
   test('FIX1 second rollover includes initial context once', () async {
     final h = base.Harness(
       context: [
-        const AiContextBlock(source: 'file', text: 'UNIQUE_INITIAL_CONTEXT'),
+        AiContextBlock(source: 'file', text: 'UNIQUE_INITIAL_CONTEXT'),
       ],
     );
     await h.runner.run('initial');
@@ -144,7 +143,7 @@ void main() {
   });
 
   test(
-    'FIX1 escaped-secret replacement preserves surrounding serialized data',
+    'FIX1 redacted marker survives repeated escaping',
     () {
       const secret = 'abc\\def\n"a&<bc>Secret';
       final h = base.Secrets()..current.add(secret);
@@ -241,13 +240,13 @@ void main() {
 
   test('FIX1 runner clipping keeps the untrusted closing label', () async {
     final h = base.Harness();
-    h.execute = (call) async => AiToolResult(
+    h.execute = (call) async => AiToolResult.fromData(
       callId: call.id,
       name: call.name,
-      content: wrapUntrustedGitLabData(
+      data: AiAppText.untrusted(
         source: 'file',
         nonce: 'synthetic',
-        text: 'x' * 25000,
+        body: AiAppText.plain('x' * 25000),
       ),
     );
     h.respond = (_, _) async => h.payloads.length == 1
@@ -272,13 +271,13 @@ void main() {
           secretSetAtStart: SecretSetId.fromSecrets([]),
         )..setTail(
           AppToolResultsEntry([
-            AiToolResult(
+            AiToolResult.fromData(
               callId: 'c',
               name: 'read_file',
-              content: wrapUntrustedGitLabData(
+              data: AiAppText.untrusted(
                 source: 'file',
                 nonce: 'synthetic',
-                text: 'x' * 10000,
+                body: AiAppText.plain('x' * 10000),
               ),
             ),
           ]),
@@ -364,7 +363,7 @@ void main() {
       hasLength(2),
     );
     h.pendingTool.complete(
-      const AiToolResult(callId: 'ignored', name: 'read_file', content: 'late'),
+      AiToolResult(callId: 'ignored', name: 'read_file', content: 'late'),
     );
   });
 
