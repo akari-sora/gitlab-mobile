@@ -283,7 +283,12 @@ class _AiChatPageState extends State<AiChatPage> {
         const _Thinking(),
       if (_session.phase == AiChatPhase.idle) ...[
         if (_session.lastEnd case final end?
-            when end != AiRunEnd.done && end != AiRunEnd.failed)
+            when !const {
+              AiRunEnd.done,
+              AiRunEnd.failed,
+              AiRunEnd.stopped,
+              AiRunEnd.stoppedBySettings,
+            }.contains(end))
           _EndRow(end: end),
         if (_session.failure case final failure?)
           _FailureCard(failure: failure),
@@ -831,7 +836,13 @@ class _NoticeRow extends StatelessWidget {
     final (icon, text) = switch (item.kind) {
       AiNoticeKind.redacted => (
         Icons.shield_outlined,
-        l10n.aiNoticeRedacted('${item.count ?? 0}'),
+        item.count == null
+            ? l10n.aiNoticeRedactedSome
+            : l10n.aiNoticeRedacted('${item.count}'),
+      ),
+      AiNoticeKind.privateKeyWithheld => (
+        Icons.key_off_outlined,
+        l10n.aiNoticePrivateKeyWithheld,
       ),
       AiNoticeKind.settingsChanged => (Icons.tune, l10n.aiEndSettingsChanged),
       AiNoticeKind.segmentSummary => (

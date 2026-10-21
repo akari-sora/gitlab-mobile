@@ -34,6 +34,9 @@ enum AiToolRunStatus { pending, running, completed, failed, skipped }
 
 enum AiNoticeKind {
   redacted,
+
+  /// Content that looked like a private key was held back and not sent.
+  privateKeyWithheld,
   settingsChanged,
   segmentSummary,
   historyLimit,

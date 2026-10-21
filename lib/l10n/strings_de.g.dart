@@ -2321,4 +2321,6 @@ const _messagesDe = <String>[
   'Discuss with AI',
   'AI summary',
   'Explain this file with AI',
+  'Secrets were redacted',
+  'Content that looks like a private key was held back and not sent',
 ];

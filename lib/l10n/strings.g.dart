@@ -7050,4 +7050,10 @@ final class AppStrings {
 
   /// 請 AI 解釋這個檔案
   String get aiExplainFile => language._messages[2318];
+
+  /// 已遮蔽秘密
+  String get aiNoticeRedactedSome => language._messages[2319];
+
+  /// 有內容看起來像私密金鑰，這部分沒有送出
+  String get aiNoticePrivateKeyWithheld => language._messages[2320];
 }

@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
 import 'package:gitlab_mobile/core/ai/ai_failure.dart';
@@ -372,6 +373,8 @@ final class _FakeChatSession extends ChangeNotifier implements AiChatSession {
   final int Function() _runningCount;
   var _phase = AiChatPhase.idle;
   var _blocker = AiChatBlocker.none;
+  @override
+  AiRunEnd? get lastEnd => null;
   var stopCalls = 0;
   var disposed = false;
 

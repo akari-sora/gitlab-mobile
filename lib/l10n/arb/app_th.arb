@@ -2318,5 +2318,7 @@
   "aiChatCleartextDetail": "This provider is on your local network and uses unencrypted HTTP. Devices on the same network may see what is sent and the reply.",
   "aiDiscuss": "Discuss with AI",
   "aiSummarize": "AI summary",
-  "aiExplainFile": "Explain this file with AI"
+  "aiExplainFile": "Explain this file with AI",
+  "aiNoticeRedactedSome": "Secrets were redacted",
+  "aiNoticePrivateKeyWithheld": "Content that looks like a private key was held back and not sent"
 }

@@ -10841,5 +10841,7 @@
   "aiChatCleartextDetail": "這個供應商位於區域網路，使用未加密的 HTTP。同一個網路上的裝置可能看到送出的內容與回答。",
   "aiDiscuss": "與 AI 討論",
   "aiSummarize": "AI 摘要",
-  "aiExplainFile": "請 AI 解釋這個檔案"
+  "aiExplainFile": "請 AI 解釋這個檔案",
+  "aiNoticeRedactedSome": "已遮蔽秘密",
+  "aiNoticePrivateKeyWithheld": "有內容看起來像私密金鑰，這部分沒有送出"
 }

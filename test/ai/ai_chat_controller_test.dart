@@ -616,7 +616,7 @@ void main() {
     expect(controller.items.whereType<AiUserItem>().single.chips, isNotEmpty);
     expect(
       controller.items.whereType<AiNoticeItem>().any(
-        (item) => item.kind == AiNoticeKind.redacted && item.count == null,
+        (item) => item.kind == AiNoticeKind.privateKeyWithheld,
       ),
       isTrue,
     );

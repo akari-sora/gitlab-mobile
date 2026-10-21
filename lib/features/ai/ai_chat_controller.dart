@@ -86,6 +86,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   AiFailure? _failure;
   bool _contextFailed = false;
   bool _offerNewConversation = false;
+  AiRunEnd? _lastEnd;
   bool _disposed = false;
   bool _transportClosed = false;
   bool _settingsChangedDuringRun = false;
@@ -122,6 +123,9 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   AiFailure? get failure => _failure;
   @override
   bool get offerNewConversation => _offerNewConversation;
+
+  @override
+  AiRunEnd? get lastEnd => _lastEnd;
   @override
   bool get historySaved => false;
   @override
@@ -412,6 +416,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     _blocker = AiChatBlocker.none;
     _failure = null;
     _offerNewConversation = false;
+    _lastEnd = null;
     _settingsChangedDuringRun = false;
     _usage = null;
     _notify();
@@ -454,6 +459,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       _redactDisplay();
       _failure = result.failure;
       _offerNewConversation = result.offerRollover;
+      _lastEnd = result.reason;
       _setAssistant(result.text, _stateFor(result.reason));
       if (segment != null && !identical(segment, runner.segment)) {
         _items.add(const AiNoticeItem(AiNoticeKind.segmentSummary));
@@ -466,9 +472,6 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           ),
         );
       }
-      if (result.reason == AiRunEnd.newSecret) {
-        _items.add(const AiNoticeItem(AiNoticeKind.redacted));
-      }
       if (result.withheldPrivateKeyContext) _noticeWithheld();
       if (result.reason == AiRunEnd.stoppedBySettings) {
         _transportClosed = true;
@@ -479,6 +482,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     } on Object catch (error) {
       if (!_current(epoch)) return;
       _failure = _mapFailure(error);
+      _lastEnd = AiRunEnd.failed;
       _setAssistant('', AiAssistantState.interrupted);
     } finally {
       if (_current(epoch)) {
@@ -590,9 +594,9 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
 
   void _noticeWithheld() {
     if (!_items.whereType<AiNoticeItem>().any(
-      (i) => i.kind == AiNoticeKind.redacted && i.count == null,
+      (i) => i.kind == AiNoticeKind.privateKeyWithheld,
     )) {
-      _items.add(const AiNoticeItem(AiNoticeKind.redacted));
+      _items.add(const AiNoticeItem(AiNoticeKind.privateKeyWithheld));
     }
   }
 
@@ -624,6 +628,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     _failure = null;
     _contextFailed = false;
     _offerNewConversation = false;
+    _lastEnd = null;
     _id = _newId();
   }
 
