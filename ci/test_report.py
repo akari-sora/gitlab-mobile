@@ -51,12 +51,20 @@ def convert(source: Path, destination: Path) -> int:
     root = ET.Element('testsuites')
     suite = ET.SubElement(root, 'testsuite', name='Flutter tests')
     failures = skipped = count = 0
+    # Escaping can make two names equal (a form feed and a literal "\x0c"),
+    # and Dart can repeat a name; a repeat gets its test ID appended.
+    seen = set()
     for ident, item in tests.items():
         if item.get('hidden', False) and item.get('result') == 'success' and not errors.get(ident):
             continue
         count += 1
-        case = ET.SubElement(suite, 'testcase', name=xml_text(item.get('name', str(ident))),
-            classname=xml_text(suites.get(item.get('suiteID'), 'flutter')),
+        classname = xml_text(suites.get(item.get('suiteID'), 'flutter'))
+        name = xml_text(item.get('name', str(ident)))
+        if (classname, name) in seen:
+            name = f'{name} (test {xml_text(ident)})'
+        seen.add((classname, name))
+        case = ET.SubElement(suite, 'testcase', name=name,
+            classname=classname,
             time=str(max(0, item.get('ended', item['started']) - item['started']) / 1000))
         if item.get('skipped') and not errors.get(ident):
             skipped += 1
@@ -83,4 +91,7 @@ def convert(source: Path, destination: Path) -> int:
 
 
 if __name__ == '__main__':
+    # A failing test's name or message can hold a lone surrogate; printing it
+    # must not abort the run before the report is written.
+    sys.stdout.reconfigure(errors='backslashreplace')
     raise SystemExit(1 if convert(Path(sys.argv[1]), Path(sys.argv[2])) else 0)

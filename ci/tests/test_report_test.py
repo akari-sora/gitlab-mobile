@@ -2,7 +2,10 @@ import contextlib
 import importlib.util
 import io
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 import xml.etree.ElementTree as ET
@@ -64,6 +67,58 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(case.get('name'), 'tag <img\\x0csrc=x>')
         self.assertIn('\\x1b[31mred', case.find('failure').text)
         self.assertIn('\\x00', case.find('failure').text)
+
+    def test_every_forbidden_character_is_escaped_and_allowed_ones_kept(self):
+        # A list: adjacent surrogate escapes in one literal would pair up.
+        forbidden = ['\x00', '\x08', '\x0b', '\x0c', '\x0e', '\x1f', '\ud800', '\udfff', '\ufffe', '\uffff']
+        for char in forbidden:
+            with self.subTest(code=hex(ord(char))):
+                self.assertNotIn(char, report.xml_text(f'a{char}b'))
+        self.assertEqual(report.xml_text('tab\tline\ncr\r�\U0010ffff'),
+                         'tab\tline\ncr\r�\U0010ffff')
+
+    def test_classname_and_failure_message_are_escaped(self):
+        values = [
+            {'type': 'suite', 'suite': {'id': 1, 'path': 'test/a\x0bb.dart'}},
+            {'type': 'testStart', 'test': {'id': 7, 'name': 'plain', 'suiteID': 1}, 'time': 0},
+            {'type': 'testDone', 'testID': 7, 'result': 'fail\x0bure', 'time': 1},
+            {'type': 'done', 'success': False},
+        ]
+        _, suite = self.convert(values)
+        case = suite.find('testcase')
+        self.assertEqual(case.get('classname'), 'test/a\\x0bb.dart')
+        self.assertEqual(case.find('failure').get('message'), 'fail\\x0bure')
+
+    def test_names_that_escape_alike_stay_distinct(self):
+        values = [{'type': 'suite', 'suite': {'id': 1, 'path': 'test/example.dart'}}]
+        for ident, name in [(1, 'tag <img\x0csrc=x>'), (2, 'tag <img\\x0csrc=x>'), (3, 'same'), (4, 'same')]:
+            values += [
+                {'type': 'testStart', 'test': {'id': ident, 'name': name, 'suiteID': 1}, 'time': 0},
+                {'type': 'testDone', 'testID': ident, 'result': 'success', 'time': 1},
+            ]
+        values.append({'type': 'done', 'success': True})
+        _, suite = self.convert(values)
+        names = [case.get('name') for case in suite.findall('testcase')]
+        self.assertEqual(len(names), 4)
+        self.assertEqual(len(set(names)), 4)
+
+    def test_a_failing_lone_surrogate_still_writes_the_report(self):
+        # The CI image prints in UTF-8, which cannot encode a lone surrogate.
+        events = self.case('failure') + [
+            {'type': 'error', 'testID': 7, 'error': 'Expected: \ud83d', 'stackTrace': ''},
+            {'type': 'done', 'success': False},
+        ]
+        script = Path(__file__).resolve().parents[1] / 'test_report.py'
+        with tempfile.TemporaryDirectory() as folder:
+            source = Path(folder) / 'events.jsonl'
+            output = Path(folder) / 'junit.xml'
+            source.write_text('\n'.join(json.dumps(event) for event in events))
+            env = dict(os.environ, LC_ALL='C.UTF-8', PYTHONIOENCODING='utf-8')
+            run = subprocess.run([sys.executable, str(script), str(source), str(output)],
+                                 capture_output=True, env=env)
+            self.assertEqual(run.returncode, 1, run.stderr.decode(errors='replace'))
+            failure = ET.parse(output).getroot().find('testsuite/testcase/failure')
+            self.assertIn('Expected: \\ud83d', failure.text)
 
     def test_missing_done_is_not_success(self):
         self.assertGreater(self.convert(self.case())[0], 0)
