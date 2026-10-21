@@ -205,8 +205,10 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       _keyDraftRecipient = null;
     } else {
       _keyDraftRecipient ??= _recipientFingerprint();
-      if (_keyDraftCleared) setState(() => _keyDraftCleared = false);
     }
+    // The key status line ("Key set") reads the draft, so it is rebuilt as
+    // the user types, not on the next unrelated rebuild.
+    if (mounted) setState(() => _keyDraftCleared &= draft.isEmpty);
     _networkInputChanged();
   }
 

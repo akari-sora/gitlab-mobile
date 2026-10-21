@@ -531,6 +531,51 @@ void main() {
     });
   });
 
+  testWidgets('the key status follows the draft as it is typed', (
+    tester,
+  ) async {
+    final settings = AiSettingsController(MemoryAiStore());
+    await settings.initialize();
+    await tester.pumpWidget(_host(AiProviderEditor(settings: settings)));
+    expect(find.text(l10n.aiProviderKeyNotSet), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('ai-provider-api-key')),
+      'sk-synthetic-status-123456',
+    );
+    await tester.pump();
+    expect(find.text(l10n.aiProviderKeySet), findsOneWidget);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('ai-provider-api-key')),
+      '',
+    );
+    await tester.pump();
+    expect(find.text(l10n.aiProviderKeyNotSet), findsOneWidget);
+  });
+
+  testWidgets('Arabic reads /models left to right inside its message', (
+    tester,
+  ) async {
+    useLanguage(languageForTag('ar')!);
+    final message = l10n.aiProviderModelsUrlInvalid;
+    final painter = TextPainter(
+      text: TextSpan(text: message),
+      textDirection: TextDirection.rtl,
+    )..layout();
+    addTearDown(painter.dispose);
+    final slash = message.indexOf('/models');
+    double left(int index) => painter
+        .getBoxesForSelection(
+          TextSelection(baseOffset: index, extentOffset: index + 1),
+        )
+        .single
+        .left;
+    // The slash is drawn before (left of) the "m" and the "s" last.
+    expect(left(slash), lessThan(left(slash + 1)));
+    expect(left(slash + 1), lessThan(left(slash + 6)));
+  });
+
   group('a port too large for an int with a key draft', () {
     const huge = 'https://opencode.ai:999999999999999999999999/v1';
 
