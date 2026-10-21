@@ -884,8 +884,9 @@ devices, and the Responses and Anthropic formats against a live provider.
 These have synthetic evidence only. Saved chat history is not part of this MR.
 
 Known and left for separate work:
-- The bundled code font draws ligatures, so `>=` reads as `≥` in code spans,
-  file views and diffs app-wide.
+- The bundled code font drew ligatures, so `>=` read as `≥` in code spans,
+  file views and diffs app-wide. Fixed since by !95, which this branch is
+  rebased onto.
 - The update snack bar can still cover bottom inputs on other pages.
 
 The feature gate remains false; none of this establishes G0 acceptance or
