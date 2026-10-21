@@ -612,8 +612,8 @@ plain values; `test/ai/ai_live_smoke_test.dart` rejects older closing markers.
 `tool/tests/test_ai_runner_contract.py` requires explicit active cancellation and
 keeps this ledger limited to repository evidence or **NOT_RUN**.
 
-Round three was committed as `5a1e4d1` and round four as `d199a3f`; the
-round-five repair described here is an uncommitted working-tree change.
+Round three was committed as `5a1e4d1`, round four as `d199a3f` and round five
+as `5671be5`.
 `AiAppText` caches each immutable encoded view and retains only the deliverable
 plain prefix. Private cut markers travel with retained strings through JSON-key
 collisions, nested clips and readable projection composition. Every later
@@ -634,11 +634,24 @@ These are repository evidence only; external execution receipts, mutations,
 CI, live providers, private integration, devices and AOT remain **NOT_RUN** for
 this ledger.
 
+Round six adds cached pattern aliases to frozen-text verification when at least
+four secret characters remain outside replacement markers. A newly known alias
+already sent stops the send with `newSecret`; the follow-up uses a re-redacted
+projection. Aliases containing only replacement markers are excluded from the
+cache, preserving zero redaction counts for existing markers. Alias cut-end
+trimming requires a match beyond its leading marker into the secret remainder.
+`test/ai/fix6_regressions_test.dart` covers the production catalogue timing after
+payload two, full-secret behavior, the three/four-character verification boundary,
+zero marker counts and runner late-redaction counts in all three wire formats,
+and preservation of a complete marker while partial alias remainders still trim.
+Nested known-secret aliases retain the documented residual below.
+
 A secret already delivered before it became known remains a residual. A pattern
 starting before the secret and ending inside it can produce a different alias
-layout; a partial secret at the cut containing another known secret (R5-NEST)
-can also evade trimming after replacement. Those two residuals are not repaired
-here. Runner answer clips at 64,000 characters and history codec truncations at
+layout; a late secret that contains a previously known secret is split by that
+secret's replacement and, with or without a cut, is not covered by its alias
+(R5-NEST). Those two residuals are not repaired here. Runner answer clips at
+64,000 characters and history codec truncations at
 16,000/64,000 characters and 8 KiB have no cut markers and can reach
 `restoreFromDisplay` projections. They currently contain provider-produced or
 already-sent text; MR5/MR6 must re-evaluate restoring them to a different recipient.

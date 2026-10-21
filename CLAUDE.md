@@ -180,12 +180,15 @@ only the deliverable plain prefix. A private marker travels with each cut string
 including JSON values, through key collisions and projection composition. Each
 redaction trims a trailing partial known secret from that string. Known-secret
 matching and cut-end trimming also use each secret's cached pattern-only alias
-when intake redacted its head before it became known. A secret already sent
-before it became known remains a residual. Two further residuals remain: a
-pattern starting before the secret in surrounding text and ending inside it can
-produce a different alias layout, and a partial secret at the cut containing
-another known secret can be split by that other secret's replacement (R5-NEST).
-Do not treat those layouts as covered by pattern-only aliases.
+when intake redacted its head before it became known. Aliases containing only
+replacement markers are not cached. Alias cut-end trimming must extend beyond
+the leading replacement marker into retained secret characters. A secret already
+sent before it became known remains a residual. Two further residuals remain:
+a pattern starting before the secret in surrounding text and ending inside it
+can produce a different alias layout; a late secret that contains a previously
+known secret is split by that secret's replacement and, with or without a cut,
+is not covered by its alias (R5-NEST). Do not treat those layouts as covered by
+pattern-only aliases.
 
 The runner's 64,000-character answer clips and history codec's 16,000/64,000-
 character and 8 KiB truncations have no cut markers. `restoreFromDisplay` can
@@ -195,8 +198,9 @@ recipient.
 
 Frozen wire fragments are append-only and never rewritten. A newly known secret
 in app/provider text that was already sent stops the current send because sent
-content cannot be retracted; the next send starts from a freshly redacted
-projection. Key replacement uses `replaceKeyRecipient` and a
+content cannot be retracted; verification also checks cached aliases with at
+least four retained secret characters. The next send starts from a freshly
+redacted projection. Key replacement uses `replaceKeyRecipient` and a
 new wire client/transport, preserving consent only when the recipient contract
 is otherwise identical. Other recipient changes require a new conversation.
 A binding failure also requires a new segment. `restoreFromDisplay` initializes

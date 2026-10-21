@@ -65,8 +65,10 @@ int _redactionMicros(Redactor redactor, String input) {
     watch.stop();
     samples.add(watch.elapsedMicroseconds);
   }
+  // Load only adds time, so the fastest sample is the least noisy one; a
+  // quadratic shape still shows 16x at 4N.
   samples.sort();
-  return samples[1];
+  return samples.first;
 }
 
 void main() {

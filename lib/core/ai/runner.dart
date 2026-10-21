@@ -798,7 +798,10 @@ final class AiRunner {
     }
     // Only known-secret changes warrant rechecking old provider text. Opaque
     // fields never enter this traversal and provider objects are never mutated.
-    final needles = secrets.current.where((s) => s.isNotEmpty).toList();
+    final needles = [
+      ...secrets.current.where((s) => s.isNotEmpty),
+      ..._redactor.verificationAliases,
+    ];
     final values = <String>[
       _segmentSystem,
       for (final tool in _segmentTools) tool.description,

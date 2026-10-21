@@ -4,6 +4,12 @@ const _redacted = '[REDACTED]';
 const _unterminatedPrivateKey = '[REDACTED:private_key_unterminated]';
 const _unopenedPrivateKey = '[REDACTED:private_key_unopened]';
 const _privateKeyFragment = '[REDACTED:private_key_fragment]';
+const _redactionMarkers = [
+  _redacted,
+  _unterminatedPrivateKey,
+  _unopenedPrivateKey,
+  _privateKeyFragment,
+];
 
 abstract interface class KnownSecretsSource {
   Iterable<String> get current;
@@ -167,14 +173,31 @@ final class Redactor {
     );
   }
 
+  /// Cached intake aliases with at least four retained secret characters.
+  /// Shorter remainders cannot reliably identify a newly known sent secret.
+  Iterable<String> get verificationAliases {
+    _refreshSecrets();
+    return _patternAliases.values.where(
+      (alias) => _aliasRemainderLength(alias) >= 4,
+    );
+  }
+
   /// Redacts a retained prefix and removes its longest trailing partial known
   /// secret. Only the string at an actual cut may use this operation.
   RedactionResult redactCutEnd(String input) {
     final result = redactSource(input);
     var trim = 0;
-    for (final secret in [..._knownSecrets, ..._patternAliases.values]) {
+    for (final secret in _knownSecrets) {
       final length = _partialSecretSuffixLength(result.text, secret);
       if (length > trim) trim = length;
+    }
+    for (final alias in _patternAliases.values) {
+      final length = _partialSecretSuffixLength(result.text, alias);
+      // A complete replacement marker alone is not a partial secret.
+      final markerLength = _redactionMarkers
+          .where(alias.startsWith)
+          .fold(0, (length, marker) => marker.length);
+      if (length > markerLength && length > trim) trim = length;
     }
     return RedactionResult(
       result.text.substring(0, result.text.length - trim),
@@ -190,7 +213,9 @@ final class Redactor {
         // Cache the layout intake would retain before this secret was known.
         // This scan uses built-in detectors only, never the known-secret set.
         final alias = _replaceRanges(secret, _patternRanges(secret)).text;
-        if (alias != secret) _patternAliases[secret] = alias;
+        if (alias != secret && _aliasRemainderLength(alias) > 0) {
+          _patternAliases[secret] = alias;
+        }
       }
     }
   }
@@ -219,6 +244,13 @@ final class Redactor {
         RegExp(definition.pattern, caseSensitive: definition.caseSensitive),
     ];
   }
+}
+
+int _aliasRemainderLength(String alias) {
+  for (final marker in _redactionMarkers) {
+    alias = alias.replaceAll(marker, '');
+  }
+  return alias.length;
 }
 
 // KMP matches a suffix against a proper secret prefix in linear time, even
