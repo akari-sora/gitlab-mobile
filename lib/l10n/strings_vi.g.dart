@@ -2172,6 +2172,7 @@ const _messagesVi = <String>[
   'Khóa này ngắn hoặc trông giống một từ thông thường. Nội dung khớp chính xác với khóa sẽ bị che trước khi gửi đến mọi nhà cung cấp. Hãy xác nhận trước khi lưu.',
   'Điểm cuối này không cần khóa',
   'Mã định danh mô hình',
+  'Đọc danh sách mô hình',
   'Chọn từ danh sách mô hình',
   'Chọn mô hình',
   'Bạn vẫn có thể nhập mô hình không có trong danh sách vào trường “Mã định danh mô hình”.',

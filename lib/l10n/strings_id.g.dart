@@ -2172,6 +2172,7 @@ const _messagesId = <String>[
   'Kunci ini pendek atau tampak seperti kata biasa. Konten yang sama persis dengannya akan disamarkan sebelum dikirim ke setiap penyedia. Konfirmasikan sebelum menyimpan.',
   'Titik akhir ini tidak memerlukan kunci',
   'ID model',
+  'Baca daftar model',
   'Pilih dari daftar model',
   'Pilih model',
   'Model yang tidak ada dalam daftar tetap dapat diketik di kolom “ID model”.',

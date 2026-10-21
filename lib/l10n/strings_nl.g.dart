@@ -2172,6 +2172,7 @@ const _messagesNl = <String>[
   'Deze sleutel is kort of lijkt op een gewoon woord. Inhoud die er exact mee overeenkomt, wordt onleesbaar gemaakt voordat deze naar een provider wordt verzonden. Bevestig de sleutel voordat je deze opslaat.',
   'Dit eindpunt heeft geen sleutel nodig',
   'Model-ID',
+  'Modellenlijst lezen',
   'Uit modellenlijst kiezen',
   'Een model kiezen',
   'Een model dat niet in de lijst staat, kan nog steeds worden ingevoerd in het veld Model-ID.',

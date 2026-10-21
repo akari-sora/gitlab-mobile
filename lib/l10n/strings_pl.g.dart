@@ -2172,6 +2172,7 @@ const _messagesPl = <String>[
   'Ten klucz jest krótki lub wygląda jak zwykłe słowo. Treść dokładnie do niego pasująca zostanie ukryta przed wysłaniem do każdego dostawcy. Potwierdź przed zapisaniem.',
   'Ten punkt końcowy nie wymaga klucza',
   'Identyfikator modelu',
+  'Odczytaj listę modeli',
   'Wybierz z listy modeli',
   'Wybierz model',
   'Model, którego nie ma na liście, nadal można wpisać w polu Identyfikator modelu.',

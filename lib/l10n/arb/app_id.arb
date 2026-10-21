@@ -2168,6 +2168,7 @@
   "aiProviderKeyWarningDetail": "Kunci ini pendek atau tampak seperti kata biasa. Konten yang sama persis dengannya akan disamarkan sebelum dikirim ke setiap penyedia. Konfirmasikan sebelum menyimpan.",
   "aiProviderNoKeyNeeded": "Titik akhir ini tidak memerlukan kunci",
   "aiProviderModelLabel": "ID model",
+  "aiProviderReadModels": "Baca daftar model",
   "aiProviderChooseModel": "Pilih dari daftar model",
   "aiProviderModelPickerTitle": "Pilih model",
   "aiProviderModelPickerHint": "Model yang tidak ada dalam daftar tetap dapat diketik di kolom “ID model”.",

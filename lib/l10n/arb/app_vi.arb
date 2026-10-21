@@ -2168,6 +2168,7 @@
   "aiProviderKeyWarningDetail": "Khóa này ngắn hoặc trông giống một từ thông thường. Nội dung khớp chính xác với khóa sẽ bị che trước khi gửi đến mọi nhà cung cấp. Hãy xác nhận trước khi lưu.",
   "aiProviderNoKeyNeeded": "Điểm cuối này không cần khóa",
   "aiProviderModelLabel": "Mã định danh mô hình",
+  "aiProviderReadModels": "Đọc danh sách mô hình",
   "aiProviderChooseModel": "Chọn từ danh sách mô hình",
   "aiProviderModelPickerTitle": "Chọn mô hình",
   "aiProviderModelPickerHint": "Bạn vẫn có thể nhập mô hình không có trong danh sách vào trường “Mã định danh mô hình”.",

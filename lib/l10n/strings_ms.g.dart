@@ -2172,6 +2172,7 @@ const _messagesMs = <String>[
   'Kunci ini pendek atau kelihatan seperti perkataan biasa. Kandungan yang sepadan tepat dengannya akan disembunyikan sebelum dihantar kepada setiap penyedia. Sahkan sebelum menyimpan.',
   'Titik akhir ini tidak memerlukan kunci',
   'ID model',
+  'Baca senarai model',
   'Pilih dari senarai model',
   'Pilih model',
   'Model yang tiada dalam senarai masih boleh ditaip dalam medan “ID model”.',

@@ -2168,6 +2168,7 @@
   "aiProviderKeyWarningDetail": "Această cheie este scurtă sau seamănă cu un cuvânt obișnuit. Conținutul care coincide exact cu ea va fi ascuns înainte de trimiterea către orice furnizor. Confirmă înainte de salvare.",
   "aiProviderNoKeyNeeded": "Acest punct final nu necesită o cheie",
   "aiProviderModelLabel": "Identificator model",
+  "aiProviderReadModels": "Citește lista de modele",
   "aiProviderChooseModel": "Alegeți din listă",
   "aiProviderModelPickerTitle": "Alegeți un model",
   "aiProviderModelPickerHint": "Un model care nu apare în listă poate fi introdus în continuare în câmpul Identificator model.",

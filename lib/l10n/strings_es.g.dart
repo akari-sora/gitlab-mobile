@@ -2172,6 +2172,7 @@ const _messagesEs = <String>[
   'Esta clave es corta o parece una palabra común. El contenido que coincida exactamente con ella se ocultará antes de enviarlo a cualquier proveedor. Confírmala antes de guardarla.',
   'Este punto de conexión no necesita una clave',
   'ID del modelo',
+  'Leer la lista de modelos',
   'Elegir de la lista',
   'Elegir un modelo',
   'Un modelo que no figure en la lista se puede introducir igualmente en el campo ID del modelo.',

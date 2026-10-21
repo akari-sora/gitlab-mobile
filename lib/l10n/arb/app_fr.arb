@@ -2164,6 +2164,7 @@
   "aiProviderKeyWarningDetail": "Cette clé est courte ou ressemble à un mot courant. Tout contenu qui lui correspond exactement sera masqué avant d’être envoyé à un fournisseur. Confirmez-la avant de l’enregistrer.",
   "aiProviderNoKeyNeeded": "Ce point de terminaison ne nécessite pas de clé",
   "aiProviderModelLabel": "ID du modèle",
+  "aiProviderReadModels": "Lire la liste des modèles",
   "aiProviderChooseModel": "Choisir dans la liste",
   "aiProviderModelPickerTitle": "Choisir un modèle",
   "aiProviderModelPickerHint": "Un modèle absent de la liste peut toujours être saisi dans le champ ID du modèle.",

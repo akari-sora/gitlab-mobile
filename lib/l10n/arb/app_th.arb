@@ -2164,6 +2164,7 @@
   "aiProviderKeyWarningDetail": "กุญแจนี้สั้นหรือดูเหมือนคำทั่วไป จึงอาจวางมาผิด เนื้อหาที่ตรงกันทุกอักขระจะถูกปิดบังก่อนส่งไปยังผู้ให้บริการทุกราย โปรดยืนยันก่อนบันทึก",
   "aiProviderNoKeyNeeded": "ปลายทางนี้ไม่ต้องใช้กุญแจ",
   "aiProviderModelLabel": "รหัสรุ่น",
+  "aiProviderReadModels": "อ่านรายการรุ่น",
   "aiProviderChooseModel": "เลือกโมเดลจากรายการ",
   "aiProviderModelPickerTitle": "เลือกโมเดล",
   "aiProviderModelPickerHint": "โมเดลที่ไม่มีในรายการยังพิมพ์เองในช่อง “รหัสรุ่น” ได้",

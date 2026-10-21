@@ -2172,6 +2172,7 @@ const _messagesRo = <String>[
   'Această cheie este scurtă sau seamănă cu un cuvânt obișnuit. Conținutul care coincide exact cu ea va fi ascuns înainte de trimiterea către orice furnizor. Confirmă înainte de salvare.',
   'Acest punct final nu necesită o cheie',
   'Identificator model',
+  'Citește lista de modele',
   'Alegeți din listă',
   'Alegeți un model',
   'Un model care nu apare în listă poate fi introdus în continuare în câmpul Identificator model.',

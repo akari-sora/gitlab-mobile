@@ -2168,6 +2168,7 @@
   "aiProviderKeyWarningDetail": "Ten klucz jest krótki lub wygląda jak zwykłe słowo. Treść dokładnie do niego pasująca zostanie ukryta przed wysłaniem do każdego dostawcy. Potwierdź przed zapisaniem.",
   "aiProviderNoKeyNeeded": "Ten punkt końcowy nie wymaga klucza",
   "aiProviderModelLabel": "Identyfikator modelu",
+  "aiProviderReadModels": "Odczytaj listę modeli",
   "aiProviderChooseModel": "Wybierz z listy modeli",
   "aiProviderModelPickerTitle": "Wybierz model",
   "aiProviderModelPickerHint": "Model, którego nie ma na liście, nadal można wpisać w polu Identyfikator modelu.",

@@ -2172,6 +2172,7 @@ const _messagesDe = <String>[
   'Dieser Schlüssel ist kurz oder sieht wie ein gewöhnliches Wort aus. Inhalte, die exakt mit ihm übereinstimmen, werden vor dem Senden an jeden Anbieter unkenntlich gemacht. Bestätigen Sie ihn vor dem Speichern.',
   'Dieser Endpunkt benötigt keinen Schlüssel',
   'Modell-ID',
+  'Modellliste lesen',
   'Aus Modellliste wählen',
   'Modell auswählen',
   'Ein nicht aufgeführtes Modell kann weiterhin in das Feld Modell-ID eingegeben werden.',

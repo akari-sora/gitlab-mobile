@@ -389,7 +389,8 @@ class MetaChip extends StatelessWidget {
 
 /// Who a row is by (the author, the person who ran it): a small monogram and
 /// `@username`, or the name when there is no username (a commit author), in
-/// the meta row's style. Nothing when both are missing.
+/// the meta row's style. Nothing when both are missing; build rows with
+/// [PersonChip.of] so a missing person leaves no gap.
 class PersonChip extends StatelessWidget {
   const PersonChip(this.person, {super.key, this.author = true});
   /// A chip for [person], or null when there is nobody to show, so a row does

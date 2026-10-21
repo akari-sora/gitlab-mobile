@@ -2172,6 +2172,7 @@ const _messagesTr = <String>[
   'Bu anahtar kısa veya sıradan bir sözcük gibi görünüyor. Anahtarla tam olarak eşleşen içerik, her sağlayıcıya gönderilmeden önce gizlenecektir. Kaydetmeden önce onaylayın.',
   'Bu uç nokta anahtar gerektirmez',
   'Model kimliği',
+  'Model listesini oku',
   'Model listesinden seç',
   'Model seç',
   'Listede olmayan bir model, Model kimliği alanına yine de yazılabilir.',

@@ -2170,6 +2170,7 @@
   "aiProviderKeyWarningDetail": "This key is short or looks like an ordinary word. Content that exactly matches it will be redacted before sending to every provider. Confirm it before saving.",
   "aiProviderNoKeyNeeded": "This endpoint does not need a key",
   "aiProviderModelLabel": "Model ID",
+  "aiProviderReadModels": "Read model list",
   "aiProviderChooseModel": "Choose from the model list",
   "aiProviderModelPickerTitle": "Choose a model",
   "aiProviderModelPickerHint": "A model that is not listed can still be typed in the Model ID field.",

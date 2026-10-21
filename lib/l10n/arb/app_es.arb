@@ -2164,6 +2164,7 @@
   "aiProviderKeyWarningDetail": "Esta clave es corta o parece una palabra común. El contenido que coincida exactamente con ella se ocultará antes de enviarlo a cualquier proveedor. Confírmala antes de guardarla.",
   "aiProviderNoKeyNeeded": "Este punto de conexión no necesita una clave",
   "aiProviderModelLabel": "ID del modelo",
+  "aiProviderReadModels": "Leer la lista de modelos",
   "aiProviderChooseModel": "Elegir de la lista",
   "aiProviderModelPickerTitle": "Elegir un modelo",
   "aiProviderModelPickerHint": "Un modelo que no figure en la lista se puede introducir igualmente en el campo ID del modelo.",

@@ -2172,6 +2172,7 @@ const _messagesSv = <String>[
   'Den här nyckeln är kort eller ser ut som ett vanligt ord. Innehåll som exakt matchar den maskeras innan det skickas till någon leverantör. Bekräfta nyckeln innan du sparar den.',
   'Den här slutpunkten behöver ingen nyckel',
   'Modell-ID',
+  'Läs modellistan',
   'Välj från modellistan',
   'Välj en modell',
   'En modell som inte finns i listan kan fortfarande anges i fältet Modell-ID.',

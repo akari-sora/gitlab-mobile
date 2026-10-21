@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart' show ResponseBody;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -191,12 +193,14 @@ void main() {
     await tester.pump();
     expect(find.text(l10n.aiProviderModelsReadSuccess), findsNothing);
     // The list belonged to the first recipient: the picker never offers it.
+    // (The URL change also dropped the typed key, so nothing is read again.)
     await _tapVisible(
       tester,
       find.byKey(const ValueKey('ai-provider-pick-model')),
     );
     await tester.pumpAndSettle();
     expect(find.text('model-from-first-recipient'), findsNothing);
+    expect(adapter.requests, hasLength(1));
   });
 
   testWidgets('invalid collapsed caps expand Advanced and cannot persist', (
@@ -457,6 +461,48 @@ void main() {
     expect(find.text(l10n.aiProviderKeyVerified), findsNothing);
   });
 
+  testWidgets('a model read that ends while leaving opens no picker', (
+    tester,
+  ) async {
+    final response = Completer<ResponseBody>();
+    final adapter = FakeAdapter((_) => response.future);
+    final settings = AiSettingsController(MemoryAiStore());
+    await settings.initialize();
+    await tester.pumpWidget(
+      _navigationHost(
+        settings,
+        clientFactory: (config, key) => _client(config, key, adapter),
+      ),
+    );
+    await tester.tap(find.text('open-editor'));
+    await tester.pumpAndSettle();
+    await _selectPreset(tester, AiPresets.openRouter);
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
+    await tester.pump(const Duration(milliseconds: 10));
+    expect(adapter.requests, hasLength(1));
+
+    await tester.tap(find.byTooltip(l10n.cancelAction));
+    await tester.pump(const Duration(milliseconds: 400));
+    if (find.text(l10n.aiProviderDiscardTitle).evaluate().isNotEmpty) {
+      await tester.tap(find.text(l10n.confirmAction));
+    }
+    // The editor starts leaving; the catalogue answers during the exit.
+    await tester.pump();
+    response.complete(
+      jsonResponse({
+        'data': [
+          {'id': 'synthetic/late-model'},
+        ],
+      }),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(AiProviderEditor), findsNothing);
+    expect(find.text('synthetic/late-model'), findsNothing);
+  });
+
   testWidgets('Cancel asks before discarding edited settings', (tester) async {
     final settings = AiSettingsController(MemoryAiStore());
     await settings.initialize();
@@ -547,7 +593,10 @@ Widget _host(Widget child) => MaterialApp(
   home: child,
 );
 
-Widget _navigationHost(AiSettingsController settings) => MaterialApp(
+Widget _navigationHost(
+  AiSettingsController settings, {
+  AiProviderClientFactory? clientFactory,
+}) => MaterialApp(
   theme: appTheme(Brightness.light),
   locale: const Locale('zh', 'TW'),
   supportedLocales: const [Locale('zh', 'TW'), Locale('en')],
@@ -557,7 +606,10 @@ Widget _navigationHost(AiSettingsController settings) => MaterialApp(
       body: TextButton(
         onPressed: () => Navigator.of(context).push<void>(
           MaterialPageRoute(
-            builder: (_) => AiProviderEditor(settings: settings),
+            builder: (_) => AiProviderEditor(
+              settings: settings,
+              clientFactory: clientFactory,
+            ),
           ),
         ),
         child: const Text('open-editor'),

@@ -513,7 +513,7 @@ class _DeploymentsPageState extends State<DeploymentsPage> {
               Text(isolated('#${valueInt(value, 'iid')}'), style: codeTextStyle(context, fontSize: 12)),
             ]),
             const SizedBox(height: 6),
-            Wrap(spacing: 10, runSpacing: 4, children: [
+            Wrap(spacing: 10, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
               MetaChip(valueText(value, 'ref'), icon: Icons.alt_route, mono: true),
               MetaChip(shortSha(valueText(value, 'sha')), icon: Icons.commit, mono: true),
               ?PersonChip.of(user, author: false),
@@ -705,7 +705,8 @@ class _PipelineSchedulesPageState extends State<PipelineSchedulesPage> {
         subtitle: Text([
           valueText(value, 'ref'),
           '${valueText(value, 'cron')} (${valueText(value, 'cron_timezone', 'UTC')})',
-          if (valueText(valueObject(value, 'owner'), 'username') case final owner when owner.isNotEmpty) isolated('@$owner'),
+          if (valueText(valueObject(value, 'owner'), 'username') case final ownerName when ownerName.isNotEmpty)
+            isolated('@$ownerName'),
           if (!active) l10n.disabled,
           if (active && next.isNotEmpty) l10n.nextRun(DateTime.tryParse(next)?.toLocal().toString().substring(0, 16) ?? next),
         ].join(' · ')),

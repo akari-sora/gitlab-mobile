@@ -2172,6 +2172,7 @@ const _messagesPtBr = <String>[
   'Esta chave é curta ou parece uma palavra comum. O conteúdo exatamente igual a ela será ocultado antes do envio a qualquer provedor. Confirme antes de salvar.',
   'Este endpoint não precisa de uma chave',
   'ID do modelo',
+  'Ler lista de modelos',
   'Escolher da lista',
   'Escolher um modelo',
   'Um modelo que não esteja na lista ainda pode ser digitado no campo ID do modelo.',

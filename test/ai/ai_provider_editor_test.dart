@@ -251,6 +251,83 @@ void main() {
     expect(adapter.requests, hasLength(1));
   });
 
+  testWidgets('the read button reads the catalogue again', (tester) async {
+    var round = 0;
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({
+        'data': [
+          {'id': 'synthetic-round-${++round}'},
+        ],
+      }),
+    );
+    await _pumpCustomEditor(tester, adapter);
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-read-models')));
+    await tester.pumpAndSettle();
+    expect(_option('synthetic-round-1'), findsOneWidget);
+    await _closePicker(tester);
+
+    // The field's button reuses the list; the read button fetches it again.
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await tester.pumpAndSettle();
+    expect(adapter.requests, hasLength(1));
+    await _closePicker(tester);
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-read-models')));
+    await tester.pumpAndSettle();
+    expect(adapter.requests, hasLength(2));
+    expect(_option('synthetic-round-2'), findsOneWidget);
+  });
+
+  testWidgets('an empty catalogue opens the picker once and says so', (
+    tester,
+  ) async {
+    final adapter = FakeAdapter((_) => jsonResponse({'data': <Object?>[]}));
+    await _pumpCustomEditor(tester, adapter);
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.aiProviderModelPickerTitle), findsOneWidget);
+    expect(find.text(l10n.aiProviderModelPickerEmpty), findsOneWidget);
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
+
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await tester.pumpAndSettle();
+    expect(adapter.requests, hasLength(1));
+    expect(find.text(l10n.aiProviderModelPickerEmpty), findsOneWidget);
+  });
+
+  testWidgets('with the keyboard up, results stay visible on a small phone', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({
+        'data': [
+          for (var i = 0; i < 40; i++) {'id': 'synthetic-model-$i'},
+        ],
+      }),
+    );
+    await _pumpCustomEditor(tester, adapter, scale: 1.3);
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await tester.pumpAndSettle();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+    await tester.enterText(
+      find.byKey(const ValueKey('ai-provider-model-search')),
+      'model-1',
+    );
+    await tester.pumpAndSettle();
+
+    const keyboardTop = 640.0 - 280;
+    final visible = find.byType(ListTile).evaluate().where((element) {
+      final box = element.renderObject! as RenderBox;
+      final top = box.localToGlobal(Offset.zero).dy;
+      return top >= 0 && top + box.size.height <= keyboardTop;
+    });
+    expect(visible.length, greaterThanOrEqualTo(3));
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('the model field button reads the list and fills the field', (
     tester,
   ) async {
@@ -285,11 +362,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(_modelText(tester), 'synthetic-beta');
 
-    // Reopened, the picker marks the current model.
+    // Reopened, the picker marks the current model and lists it first.
     await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
     await tester.pumpAndSettle();
     expect(tester.widget<ListTile>(_option('synthetic-beta')).selected, isTrue);
     expect(tester.widget<ListTile>(_option('synthetic-alpha')).selected, isFalse);
+    expect(
+      tester.getTopLeft(_option('synthetic-beta')).dy,
+      lessThan(tester.getTopLeft(_option('synthetic-alpha')).dy),
+    );
     await _closePicker(tester);
 
     // Typing a model ID still works.
@@ -548,6 +629,26 @@ Future<void> _selectPreset(WidgetTester tester, String name) async {
 }
 
 Finder _option(String id) => find.byKey(ValueKey('ai-provider-model-option-$id'));
+
+Future<void> _pumpCustomEditor(
+  WidgetTester tester,
+  FakeAdapter adapter, {
+  double scale = 1,
+}) async {
+  final settings = AiSettingsController(MemoryAiStore());
+  await settings.initialize();
+  await tester.pumpWidget(
+    _host(
+      AiProviderEditor(
+        settings: settings,
+        clientFactory: (config, key) => _client(config, key, adapter),
+      ),
+      scale: scale,
+    ),
+  );
+  await _selectPreset(tester, l10n.aiCustomProvider);
+  await _fillRequired(tester, key: 'sk-synthetic-123456');
+}
 
 String _modelText(WidgetTester tester) => tester
     .widget<TextFormField>(find.byKey(const ValueKey('ai-provider-model')))

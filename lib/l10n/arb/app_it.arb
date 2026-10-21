@@ -2164,6 +2164,7 @@
   "aiProviderKeyWarningDetail": "Questa chiave è breve o sembra una parola comune. I contenuti che coincidono esattamente con essa verranno oscurati prima dell’invio a qualsiasi provider. Confermala prima di salvarla.",
   "aiProviderNoKeyNeeded": "Questo endpoint non richiede una chiave",
   "aiProviderModelLabel": "ID modello",
+  "aiProviderReadModels": "Leggi elenco dei modelli",
   "aiProviderChooseModel": "Scegli dall’elenco",
   "aiProviderModelPickerTitle": "Scegli un modello",
   "aiProviderModelPickerHint": "Un modello non presente nell’elenco può comunque essere inserito nel campo ID modello.",

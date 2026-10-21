@@ -2172,6 +2172,7 @@ const _messagesIt = <String>[
   'Questa chiave è breve o sembra una parola comune. I contenuti che coincidono esattamente con essa verranno oscurati prima dell’invio a qualsiasi provider. Confermala prima di salvarla.',
   'Questo endpoint non richiede una chiave',
   'ID modello',
+  'Leggi elenco dei modelli',
   'Scegli dall’elenco',
   'Scegli un modello',
   'Un modello non presente nell’elenco può comunque essere inserito nel campo ID modello.',

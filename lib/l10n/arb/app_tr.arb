@@ -2168,6 +2168,7 @@
   "aiProviderKeyWarningDetail": "Bu anahtar kısa veya sıradan bir sözcük gibi görünüyor. Anahtarla tam olarak eşleşen içerik, her sağlayıcıya gönderilmeden önce gizlenecektir. Kaydetmeden önce onaylayın.",
   "aiProviderNoKeyNeeded": "Bu uç nokta anahtar gerektirmez",
   "aiProviderModelLabel": "Model kimliği",
+  "aiProviderReadModels": "Model listesini oku",
   "aiProviderChooseModel": "Model listesinden seç",
   "aiProviderModelPickerTitle": "Model seç",
   "aiProviderModelPickerHint": "Listede olmayan bir model, Model kimliği alanına yine de yazılabilir.",

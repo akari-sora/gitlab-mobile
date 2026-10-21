@@ -2172,6 +2172,7 @@ const _messagesCs = <String>[
   'Tento klíč je krátký nebo vypadá jako běžné slovo. Obsah, který se s ním přesně shoduje, bude před odesláním kterémukoli poskytovateli skryt. Před uložením klíč potvrďte.',
   'Tento koncový bod nepotřebuje klíč',
   'ID modelu',
+  'Načíst seznam modelů',
   'Vybrat ze seznamu modelů',
   'Vyberte model',
   'Model, který není v seznamu, můžete stále zadat do pole ID modelu.',

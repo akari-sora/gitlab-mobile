@@ -2164,6 +2164,7 @@
   "aiProviderKeyWarningDetail": "Tento klíč je krátký nebo vypadá jako běžné slovo. Obsah, který se s ním přesně shoduje, bude před odesláním kterémukoli poskytovateli skryt. Před uložením klíč potvrďte.",
   "aiProviderNoKeyNeeded": "Tento koncový bod nepotřebuje klíč",
   "aiProviderModelLabel": "ID modelu",
+  "aiProviderReadModels": "Načíst seznam modelů",
   "aiProviderChooseModel": "Vybrat ze seznamu modelů",
   "aiProviderModelPickerTitle": "Vyberte model",
   "aiProviderModelPickerHint": "Model, který není v seznamu, můžete stále zadat do pole ID modelu.",

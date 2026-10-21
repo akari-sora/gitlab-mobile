@@ -2172,6 +2172,7 @@ const _messagesFr = <String>[
   'Cette clé est courte ou ressemble à un mot courant. Tout contenu qui lui correspond exactement sera masqué avant d’être envoyé à un fournisseur. Confirmez-la avant de l’enregistrer.',
   'Ce point de terminaison ne nécessite pas de clé',
   'ID du modèle',
+  'Lire la liste des modèles',
   'Choisir dans la liste',
   'Choisir un modèle',
   'Un modèle absent de la liste peut toujours être saisi dans le champ ID du modèle.',
