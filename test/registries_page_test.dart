@@ -343,7 +343,11 @@ void main() {
     final downloader = _ImmediatePackageDownloader(saved);
     addTearDown(() async {
       await tester.pumpWidget(const SizedBox.shrink());
-      if (directory.existsSync()) await directory.delete(recursive: true);
+      try {
+        await directory.delete(recursive: true);
+      } on PathNotFoundException {
+        // Already removed by the sheet.
+      }
     });
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(320, 700);

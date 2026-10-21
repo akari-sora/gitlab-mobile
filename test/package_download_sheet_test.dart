@@ -485,12 +485,8 @@ void main() {
       addTearDown(() async {
         if (!sharer.release.isCompleted) sharer.release.complete();
         identity.dispose();
-        if (firstDirectory.existsSync()) {
-          await firstDirectory.delete(recursive: true);
-        }
-        if (secondDirectory.existsSync()) {
-          await secondDirectory.delete(recursive: true);
-        }
+        await _removeAttempt(firstDirectory);
+        await _removeAttempt(secondDirectory);
       });
       await tester.pumpWidget(
         _host(
