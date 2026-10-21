@@ -23,12 +23,12 @@ void main() {
       final segment = _segment()
         ..setTail(
           AppToolResultsEntry([
-            const AiToolResult(
+            AiToolResult(
               callId: 'call-a',
               name: 'read_file',
               content: 'first result',
             ),
-            const AiToolResult(
+            AiToolResult(
               callId: 'call-b',
               name: 'read_file',
               content: 'second result',
@@ -195,7 +195,7 @@ void main() {
       final frozen = List<String>.of(segment.frozenWireJson);
       segment.setTail(
         AppToolResultsEntry([
-          const AiToolResult(
+          AiToolResult(
             callId: 'call-a',
             name: 'read_file',
             content: 'result',

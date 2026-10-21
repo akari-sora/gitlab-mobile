@@ -188,7 +188,7 @@ final class AnthropicStreamDecoder implements AiStreamDecoder {
             _thinking[index] = _initialBuffer(block, 'thinking');
             _signature[index] = _initialBuffer(block, 'signature');
             break;
-          case 'tool_use':
+          case 'tool_use' || 'server_tool_use':
             _partialInput[index] = StringBuffer();
             break;
         }
@@ -236,6 +236,9 @@ final class AnthropicStreamDecoder implements AiStreamDecoder {
       _validateCompleteBlocks();
       final indexes = _blocks.keys.toList()..sort();
       final blocks = <Object?>[for (final index in indexes) _blocks[index]!];
+      if (blocks.isEmpty) {
+        throw const AiFailure(AiFailureKind.invalidResponse);
+      }
       final calls = <AiToolCall>[
         for (final block in _fallbackReplayBlocks(blocks).map(wireObject))
           if (block['type'] == 'tool_use')
@@ -269,7 +272,8 @@ final class AnthropicStreamDecoder implements AiStreamDecoder {
     final blockType = block['type'];
     if (blockType != 'text' &&
         blockType != 'thinking' &&
-        blockType != 'tool_use') {
+        blockType != 'tool_use' &&
+        blockType != 'server_tool_use') {
       return const <AiEvent>[];
     }
     switch (delta['type']) {
@@ -335,7 +339,9 @@ final class AnthropicStreamDecoder implements AiStreamDecoder {
     if (_signature.remove(index) case final StringBuffer buffer) {
       block['signature'] = buffer.toString();
     }
-    if (block['type'] != 'tool_use') return;
+    if (block['type'] != 'tool_use' && block['type'] != 'server_tool_use') {
+      return;
+    }
     final partial = _partialInput[index];
     if (partial == null) {
       throw const AiFailure(AiFailureKind.invalidResponse);
@@ -368,7 +374,9 @@ final class AnthropicStreamDecoder implements AiStreamDecoder {
     for (final entry in _blocks.entries) {
       final block = entry.value;
       if (!_closedBlocks.contains(entry.key) ||
-          (block['type'] == 'tool_use' && !_validToolBlock(block)) ||
+          ((block['type'] == 'tool_use' ||
+                  block['type'] == 'server_tool_use') &&
+              !_validToolBlock(block)) ||
           (block['type'] == 'thinking' &&
               (block['signature'] is! String ||
                   (block['signature'] as String).isEmpty))) {

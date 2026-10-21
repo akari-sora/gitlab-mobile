@@ -6372,4 +6372,67 @@ final class AppStrings {
 
   /// 無法播放媒體
   String get markdownMediaCannotPlay => language._messages[2092];
+
+  /// 讀取中
+  String get aiToolReading => language._messages[2093];
+
+  /// 讀取完成
+  String get aiToolCompleted => language._messages[2094];
+
+  /// 結果已截短
+  String get aiToolTruncated => language._messages[2095];
+
+  /// 已阻擋敏感內容
+  String get aiToolBlockedSensitive => language._messages[2096];
+
+  /// 讀取逾時
+  String get aiToolTimedOut => language._messages[2097];
+
+  /// 讀取失敗
+  String get aiToolFailed => language._messages[2098];
+
+  /// 回答完成
+  String get aiEndCompleted => language._messages[2099];
+
+  /// 已停止回答
+  String get aiEndStopped => language._messages[2100];
+
+  /// 工具額度已用盡
+  String get aiEndToolBudget => language._messages[2101];
+
+  /// 工具額度已用盡，未產生回答
+  String get aiEndToolBudgetNoAnswer => language._messages[2102];
+
+  /// 回答已達輸出上限
+  String get aiEndOutputLimit => language._messages[2103];
+
+  /// 設定已變更，回答已停止
+  String get aiEndSettingsChanged => language._messages[2104];
+
+  /// 模型呼叫額度已用盡
+  String get aiBudgetModelCalls => language._messages[2105];
+
+  /// 工具呼叫額度已用盡
+  String get aiBudgetToolCalls => language._messages[2106];
+
+  /// GitLab 讀取額度已用盡
+  String get aiBudgetGitLabReads => language._messages[2107];
+
+  /// 工具輸出額度已用盡
+  String get aiBudgetToolOutput => language._messages[2108];
+
+  /// 用量為估算值
+  String get aiUsageEstimated => language._messages[2109];
+
+  /// 附加內容只會在第一則訊息送出
+  String get aiContextAttachedOnce => language._messages[2110];
+
+  /// 較早的回合已從摘要中移除
+  String get aiProjectionOlderTurnsRemoved => language._messages[2111];
+
+  /// 已送出的內容中偵測到新的秘密。因為已送出的內容無法撤回，回答已停止
+  String get aiReplayProtectionStopped => language._messages[2112];
+
+  /// 此對話已達用量上限，請開始新的對話
+  String get aiEndTokenBudget => language._messages[2113];
 }

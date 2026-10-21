@@ -3,9 +3,13 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart';
 
 import 'ai_failure.dart';
+import 'app_text.dart';
 import 'ai_provider.dart';
+import 'prompts.dart';
+import 'redaction.dart';
 
 const aiFinalAnswerNoteMarker = '<mergeline_final_answer>';
 const aiFinalAnswerNote =
@@ -44,10 +48,30 @@ final class SecretSetId {
 }
 
 final class AiContextBlock {
-  const AiContextBlock({required this.source, required this.text});
+  @visibleForTesting
+  AiContextBlock({required this.source, required String text})
+    : _text = text,
+      data = null {
+    assert(!text.contains('<gitlab_data'));
+  }
+  const AiContextBlock.fromData({required this.source, required AiAppText data})
+    : _text = '',
+      // ignore: prefer_initializing_formals
+      data = data;
 
   final String source;
-  final String text;
+  final String _text;
+  final AiAppText? data;
+  String get text => data?.encode() ?? _text;
+  AiAppText get plainData => data ?? AiAppText.plain(_text);
+
+  AiContextBlock redact(Redactor redactor, {String Function(String)? source}) =>
+      AiContextBlock.fromData(
+        source:
+            source?.call(this.source) ??
+            redactor.redactSource(this.source).text,
+        data: plainData.redact(redactor, source: source),
+      );
 }
 
 final class AiToolCall {
@@ -60,23 +84,51 @@ final class AiToolCall {
 }
 
 final class AiToolResult {
-  const AiToolResult({
+  @visibleForTesting
+  AiToolResult({
     required this.callId,
     required this.name,
-    required this.content,
+    required String content,
     this.isError = false,
-  });
+    this.withheldPrivateKeyContext = false,
+    this.truncated = false,
+    this.blockedSensitive = false,
+  }) : _content = content,
+       data = null {
+    assert(!content.contains('<gitlab_data'));
+  }
+
+  const AiToolResult.fromData({
+    required this.callId,
+    required this.name,
+    required AiAppText data,
+    this.isError = false,
+    this.withheldPrivateKeyContext = false,
+    this.truncated = false,
+    this.blockedSensitive = false,
+  }) : _content = '',
+       // ignore: prefer_initializing_formals
+       data = data;
 
   final String callId;
   final String name;
-  final String content;
+  final String _content;
+  final AiAppText? data;
+  String get content => data?.encode() ?? _content;
+  AiAppText get plainData => data ?? AiAppText.plain(_content);
   final bool isError;
+  final bool withheldPrivateKeyContext;
+  final bool truncated;
+  final bool blockedSensitive;
 
-  AiToolResult copyWith({String? content}) => AiToolResult(
+  AiToolResult copyWith({required AiAppText data}) => AiToolResult.fromData(
     callId: callId,
     name: name,
-    content: content ?? this.content,
+    data: data,
     isError: isError,
+    withheldPrivateKeyContext: withheldPrivateKeyContext,
+    truncated: truncated,
+    blockedSensitive: blockedSensitive,
   );
 }
 
@@ -106,6 +158,15 @@ final class AppUserEntry extends AiEntry {
     text: text,
     context: context,
     finalAnswerNoteInjected: finalAnswerNoteInjected,
+  );
+
+  AppUserEntry redactedCopy({
+    required String text,
+    required List<AiContextBlock> context,
+  }) => AppUserEntry._(
+    text: text,
+    context: List.unmodifiable(context),
+    finalAnswerNoteInjected: _finalAnswerNoteInjected,
   );
 }
 
@@ -142,11 +203,14 @@ final class AppToolResultsEntry extends AiEntry {
     List<AiToolResult>? results,
     String? followUpText,
     bool clearFollowUpText = false,
+    bool preserveFinalAnswerNote = false,
   }) => AppToolResultsEntry._(
     results ?? this.results,
     followUpText: clearFollowUpText ? null : followUpText ?? this.followUpText,
     finalAnswerNoteInjected:
-        followUpText == null && !clearFollowUpText && _finalAnswerNoteInjected,
+        (preserveFinalAnswerNote || followUpText == null) &&
+        !clearFollowUpText &&
+        _finalAnswerNoteInjected,
   );
 
   AppToolResultsEntry _withFollowUp(
@@ -194,6 +258,7 @@ final class AiSegment {
     }
     _wireConfiguration = configuration;
   }
+
   AiEntry? get tail => _tail;
   List<AiEntry> get entries => List.unmodifiable(<AiEntry>[..._frozen, ?_tail]);
 
@@ -259,8 +324,8 @@ final class AiSegment {
     for (final result in current.results) {
       final keep = result.content.length <= remaining
           ? result.content
-          : _clipAtRuneBoundary(result.content, remaining);
-      clipped.add(result.copyWith(content: keep));
+          : clipWrappedUntrustedGitLabData(result.content, remaining);
+      clipped.add(result.copyWith(data: result.plainData.clipped(remaining)));
       remaining -= keep.length;
     }
     _tail = current.copyWith(results: clipped);
@@ -297,6 +362,11 @@ final class AiSegment {
     if (output.format != format) {
       throw ArgumentError.value(output.format, 'output.format');
     }
+    if (output.format == AiFormat.anthropicMessages &&
+        output.raw is List<Object?> &&
+        (output.raw as List<Object?>).isEmpty) {
+      throw const AiFailure(AiFailureKind.invalidResponse);
+    }
     final current = _tail;
     if (current == null) {
       throw StateError('Provider output requires an app tail.');
@@ -330,21 +400,6 @@ String? _removeFinalAnswerNote(String text) {
   }
   return text.substring(0, text.length - suffix.length);
 }
-
-String _clipAtRuneBoundary(String value, int maxChars) {
-  var end = maxChars;
-  if (end > 0 &&
-      end < value.length &&
-      _isHighSurrogate(value.codeUnitAt(end - 1)) &&
-      _isLowSurrogate(value.codeUnitAt(end))) {
-    end -= 1;
-  }
-  return value.substring(0, end);
-}
-
-bool _isHighSurrogate(int codeUnit) => codeUnit >= 0xd800 && codeUnit <= 0xdbff;
-
-bool _isLowSurrogate(int codeUnit) => codeUnit >= 0xdc00 && codeUnit <= 0xdfff;
 
 const _maxJsonDepth = 128;
 

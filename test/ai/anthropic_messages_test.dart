@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/app_text.dart';
 import 'package:gitlab_mobile/core/ai/ai_events.dart';
 import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
@@ -26,13 +27,13 @@ void main() {
           AppUserEntry(
             text: 'Explain the failure.',
             context: const <AiContextBlock>[
-              AiContextBlock(
+              AiContextBlock.fromData(
                 source: 'job',
-                text: '<gitlab_data>log</gitlab_data>',
+                data: AiAppText.plain('<gitlab_data>log</gitlab_data>'),
               ),
-              AiContextBlock(
+              AiContextBlock.fromData(
                 source: 'file',
-                text: '<gitlab_data>code</gitlab_data>',
+                data: AiAppText.plain('<gitlab_data>code</gitlab_data>'),
               ),
             ],
           ),
@@ -85,15 +86,15 @@ void main() {
 
     test('flatMaps tool results and follow-up into one user message', () {
       final results = AppToolResultsEntry(const <AiToolResult>[
-        AiToolResult(
+        AiToolResult.fromData(
           callId: 'toolu_synthetic_a',
           name: 'read_file',
-          content: 'first result',
+          data: AiAppText.plain('first result'),
         ),
-        AiToolResult(
+        AiToolResult.fromData(
           callId: 'toolu_synthetic_b',
           name: 'search',
-          content: 'second result',
+          data: AiAppText.plain('second result'),
           isError: true,
         ),
       ], followUpText: 'Now answer.');
@@ -214,7 +215,10 @@ void main() {
         AppUserEntry(
           text: '',
           context: const <AiContextBlock>[
-            AiContextBlock(source: 'job', text: 'synthetic context'),
+            AiContextBlock.fromData(
+              source: 'job',
+              data: AiAppText.plain('synthetic context'),
+            ),
           ],
         ),
         cachedCaps,
@@ -234,10 +238,10 @@ void main() {
 
       final results = format.encodeEntry(
         AppToolResultsEntry(const <AiToolResult>[
-          AiToolResult(
+          AiToolResult.fromData(
             callId: 'toolu_synthetic',
             name: 'read_file',
-            content: 'synthetic result',
+            data: AiAppText.plain('synthetic result'),
           ),
         ], followUpText: ''),
         cachedCaps,
@@ -480,6 +484,59 @@ void main() {
       );
       expect(unfinished.finish, throwsA(_failure(AiFailureKind.interrupted)));
     });
+
+    test(
+      'accumulates server_tool_use input_json_delta without a client call',
+      () {
+        final decoder = format.newDecoder();
+        decoder.add(
+          _event(<String, Object?>{
+            'type': 'message_start',
+            'message': <String, Object?>{'usage': <String, Object?>{}},
+          }),
+        );
+        decoder.add(
+          _event(<String, Object?>{
+            'type': 'content_block_start',
+            'index': 0,
+            'content_block': <String, Object?>{
+              'type': 'server_tool_use',
+              'id': 'srvtoolu_synthetic',
+              'name': 'web_search',
+              'input': <String, Object?>{},
+            },
+          }),
+        );
+        for (final partial in <String>['{"query":', '"synthetic"}']) {
+          decoder.add(
+            _event(<String, Object?>{
+              'type': 'content_block_delta',
+              'index': 0,
+              'delta': <String, Object?>{
+                'type': 'input_json_delta',
+                'partial_json': partial,
+              },
+            }),
+          );
+        }
+        decoder.add(
+          _event(<String, Object?>{'type': 'content_block_stop', 'index': 0}),
+        );
+        decoder.add(
+          _event(<String, Object?>{
+            'type': 'message_delta',
+            'delta': <String, Object?>{'stop_reason': 'end_turn'},
+          }),
+        );
+        decoder.add(_event(<String, Object?>{'type': 'message_stop'}));
+
+        final turn = decoder.finish();
+        final block =
+            (turn.output.raw as List<Object?>).single! as Map<String, Object?>;
+        expect(block['input'], <String, Object?>{'query': 'synthetic'});
+        expect(turn.output.toolCalls, isEmpty);
+      },
+    );
 
     test('never rewrites missing tool input or freezes unsigned thinking', () {
       final missingInput = format.newDecoder();
@@ -763,12 +820,43 @@ void main() {
           'usage': <String, Object?>{'output_tokens': 0},
         }),
       );
+      empty.add(
+        _event(<String, Object?>{
+          'type': 'content_block_start',
+          'index': 0,
+          'content_block': <String, Object?>{'type': 'text', 'text': ''},
+        }),
+      );
+      empty.add(
+        _event(<String, Object?>{'type': 'content_block_stop', 'index': 0}),
+      );
       empty.add(_event(<String, Object?>{'type': 'message_stop'}));
 
       final turn = empty.finish();
-      expect(turn.output.raw, isEmpty);
+      expect(turn.output.raw, <Object?>[
+        <String, Object?>{'type': 'text', 'text': ''},
+      ]);
       expect(turn.output.toolCalls, isEmpty);
       expect(turn.usage?.outputTokens, 0);
+    });
+
+    test('rejects a terminal Anthropic message with no content blocks', () {
+      final empty = format.newDecoder();
+      empty.add(
+        _event(<String, Object?>{
+          'type': 'message_start',
+          'message': <String, Object?>{'usage': <String, Object?>{}},
+        }),
+      );
+      empty.add(
+        _event(<String, Object?>{
+          'type': 'message_delta',
+          'delta': <String, Object?>{'stop_reason': 'end_turn'},
+        }),
+      );
+      empty.add(_event(<String, Object?>{'type': 'message_stop'}));
+
+      expect(empty.finish, throwsA(_failure(AiFailureKind.invalidResponse)));
     });
   });
 

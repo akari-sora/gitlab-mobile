@@ -108,12 +108,12 @@ void main() {
         state.freezeWith(output(), (entry) => wire.encodeEntry(entry, caps));
         state.setTail(
           AppToolResultsEntry([
-            const AiToolResult(
+            AiToolResult(
               callId: 'call_a',
               name: 'read_file',
               content: 'A',
             ),
-            const AiToolResult(
+            AiToolResult(
               callId: 'call_b',
               name: 'read_file',
               content: 'B',
@@ -140,14 +140,14 @@ void main() {
         final cached = state.frozenWireJson.toList();
         state.setTail(
           AppToolResultsEntry([
-            const AiToolResult(
+            AiToolResult(
               callId: 'call_a',
               name: 'read_file',
               content:
                   'A'
                   ' long result',
             ),
-            const AiToolResult(
+            AiToolResult(
               callId: 'call_b',
               name: 'read_file',
               content:

@@ -139,3 +139,93 @@ The app is written in Traditional Chinese and translated into the languages list
 - `public_api_smoke` runs only in a `PUBLIC_SMOKE=1` pipeline: the daily schedule, the API or **Run pipeline**. Push, MR and tag pipelines skip it, and `android_debug` does not need it. gitlab.com rate-limits anonymous reads per IP for every job on the runner host. Run the smoke once on a release commit before tagging, never in a retry loop (see `docs/CI.md`, "Public API smoke"). `RESOLVE_LOCK=1` and `LIVE_SMOKE=1` are API-triggered pipeline variables, not normal pushes.
 - Commit messages follow Conventional Commits (`feat(auth):`, `fix(ui):`, `ci:`, `test:`, `docs:`, `refactor:`, `build:`); `[skip ci]` appears on intermediate commits in the history; the commit you hand off must have run the pipeline.
 - Evidence vocabulary: synthetic tests, public live reads, authenticated connector checks and physical-device runs are distinct. Anything not executed is reported as `NOT_RUN`, never inferred as passing.
+
+### Read-only AI runner (MR4; gate off)
+
+`AiRunner` owns an in-memory conversation. It sends at most six model requests
+per user send and uses the read-only `AiGitLabReadPort`; only
+`lib/core/ai/tools/gitlab_read_port.dart` imports `GitLabApi`. Tool scopes contain
+identity and pinned revisions, never account objects. Sensitive-path filtering
+is shared by initial context and tools. A whole fetched source is stripped of
+ANSI and redacted before taking excerpts; line-aligned diffs use fragment
+redaction. Propagate the first `withheldPrivateKeyContext` flag from context and
+tool executions to the runner/display model; rescanning placeholders cannot
+recover that notice.
+
+Use one `KnownSecretsLive` for the conversation and pass its `refresh` to both
+the runner and catalogue. It reads keys from the process-wide settings owner and
+rereads the current GitLab access/refresh values before redaction, retaining the
+union until the conversation is discarded. Settings initialization increments
+`secretSetId` whenever loading changes the provider-key set, so a live-secret
+reader that refreshed before initialization will refresh again afterward.
+Construct `AiRunGuard` from the current session generation, exact API identity,
+provider recipient revision and
+`AiSettingsController.isValid(accountKey, contract)`. `AiRunnerBinding` listens
+to that settings owner and session so a stalled stream also stops immediately;
+dispose the binding with its conversation. Production wiring passes
+`AiTransport.cancelActive` separately from terminal `close`: user stop and
+model/run timeouts cancel only active requests so the same wire client remains
+usable for a follow-up, while disposal, recipient replacement and
+`stoppedBySettings` close the transport. Each catalogue send gets a fresh
+`AiToolBudget`; wire `resetToolBudget`, `beginToolTurn` and
+`toolBudgetExhausted: () => budget.exhausted`, and call `beginTurn` before each
+tool batch. `executeTool` must call `executeResult` and return results carrying
+`AiAppText` in `data`; production code must not construct content-only tool
+results. Do not share a budget between sends. The catalogue reserves twice
+each logical read cost to cover GitLabApi's single OAuth retry; the HTTP counter
+is a conservative allowance. `executeResult` propagates provenance plus
+withheld-private-key, truncated and blocked-sensitive metadata in
+`AiToolResult`; tool results retain escaped, nonce-labelled untrusted-data
+blocks. App-owned context and tool values retain an `AiAppText` plain model;
+redact and re-verify its strings before JSON/XML/label escaping. Encode only for
+delivery. Summaries retain plain text and escape once per encoding. Never decode
+wire escapes to search for secrets; provider verification reads only the plain
+strings produced by the decoder, excluding opaque fields. A clipped value keeps
+only the deliverable plain prefix. A private marker travels with each cut string,
+including JSON values, through key collisions and projection composition. Each
+redaction trims a trailing partial known secret from that string. Known-secret
+matching and cut-end trimming also use each secret's cached pattern-only alias
+when intake redacted its head before it became known. Only aliases keeping at
+least four characters of their secret are cached; shorter remainders (one
+trailing space, `.x`) would match ordinary text beside a marker and are an
+accepted residual. Alias cut-end trimming must extend beyond
+the leading replacement marker into retained secret characters. A secret already
+sent before it became known remains a residual. Two further residuals remain:
+a pattern starting before the secret in surrounding text and ending inside it
+can produce a different alias layout; a late secret that contains a previously
+known secret is split by that secret's replacement and, with or without a cut,
+is not covered by its alias (R5-NEST). Do not treat those layouts as covered by
+pattern-only aliases.
+
+The runner's 64,000-character answer clips and history codec's 16,000/64,000-
+character and 8 KiB truncations have no cut markers. `restoreFromDisplay` can
+feed them into projections; today they hold provider-produced or already-sent
+text. MR5/MR6 must re-evaluate those cuts before restoring history to a different
+recipient.
+
+Frozen wire fragments are append-only and never rewritten. A newly known secret
+in app/provider text that was already sent stops the current send because sent
+content cannot be retracted; verification also checks the cached aliases. The
+next send starts from a freshly
+redacted projection. Key replacement uses `replaceKeyRecipient` and a
+new wire client/transport, preserving consent only when the recipient contract
+is otherwise identical. Other recipient changes require a new conversation.
+A binding failure also requires a new segment. `restoreFromDisplay` initializes
+an idle conversation from redacted history models via a new projection; it never
+restores provider replay output. Every frozen tool call has a
+result, including stopped and exhausted calls. A soft timeout keeps the source
+read owned until it settles, preventing overlapping GitLab reads across sends.
+For display wiring, `onTextChanged` receives cumulative redacted snapshots at
+exponentially increasing character thresholds so repeated redaction remains a
+linear scan overall. `onToolStarted` receives an `AiToolCall` with its redacted
+name and `arguments: null`; `onToolResult` receives every safe result, including
+synthetic terminal results used to pair unfinished calls. `onEvent` receives
+usage and finished events. Partial output recovered after stop is display-only:
+refresh secrets and recheck the guard within `toolDeadline`, then redact it; it
+is never frozen or replayed. After `stop()`, await the active `run()` before
+enabling a follow-up: recovery can wait up to `toolDeadline` for a secret refresh,
+and the runner remains busy until recovery finishes.
+Cleartext requests check interfaces with `includeLinkLocal: true`; missing or
+unavailable interfaces require per-send confirmation. These checks do not prove
+same-subnet reachability. Settings/chat/entry-point UI remains MR5/MR6 work;
+`MERGELINE_AI_ASSISTANT` remains false.

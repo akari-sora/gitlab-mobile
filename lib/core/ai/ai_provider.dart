@@ -33,6 +33,30 @@ final class AiCaps {
   final bool promptCaching;
   final bool requiresKey;
   final int maxRequestChars;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AiCaps &&
+      tokenLimitField == other.tokenLimitField &&
+      streamUsage == other.streamUsage &&
+      toolChoice == other.toolChoice &&
+      replayChatExtras == other.replayChatExtras &&
+      includeEncryptedReasoning == other.includeEncryptedReasoning &&
+      promptCaching == other.promptCaching &&
+      requiresKey == other.requiresKey &&
+      maxRequestChars == other.maxRequestChars;
+
+  @override
+  int get hashCode => Object.hash(
+    tokenLimitField,
+    streamUsage,
+    toolChoice,
+    replayChatExtras,
+    includeEncryptedReasoning,
+    promptCaching,
+    requiresKey,
+    maxRequestChars,
+  );
 }
 
 final class AiModelPolicy {

@@ -64,7 +64,7 @@ sharing a delimiter, so a BEGIN that shares the hyphens of a closing END still
 opens its own range. Marker collection and pairing are one linear pass; the
 common span sort/merge is unchanged. Host growth regressions compare N with 4N
 (N = 512 KiB for most inputs, 25,000 BEGINs and 2,000 sentinels for two of
-them, so 4N stays near 2 MiB; median of three samples after warm-up)
+them, so 4N stays near 2 MiB; fastest of three samples after warm-up)
 and require at most 8x growth (quadratic work grows 16x) with a five-second
 ceiling. Inputs cover alternating markers, long invalid labels, many BEGINs
 without END, a single line and earlier JWT, assignment, inline and armor
@@ -583,3 +583,124 @@ Python error strings above are deliberate mocked failure fixtures; they do not i
 Final full-suite incremental-save measurement: `reads=1 one=0:00:00.002838 conversations26=0:00:00.005589`. Both sizes decrypt only the index during an unchanged small save.
 
 The final full run passes the unchanged decoder performance assertion and protected account-removal tests. The first failure is retained as evidence, not silently discarded; the benchmark was not modified and its host-load sensitivity remains visible in the earlier run.
+
+## MR4 — read-only tools and bounded runner
+
+Commit `77f2be5` adds the project-bound read port, ten-tool catalogue,
+shared sensitive-path policy, SHA-pinned context builders, untrusted-data prompt
+labels, live secrets, interface checks and the bounded conversation runner.
+`AiRunnerBinding` observes the existing settings/session owners. The gate is
+still false and this slice adds no UI, account write path or dependency.
+
+Evidence vocabulary: the new tests are **synthetic**, using in-memory settings,
+`FakeAdapter` / `WorkspaceFixture`, synthetic OAuth rotation and recorded SSE
+fixtures. **RECORDED** means decoding the retained P0a fixture and replaying its
+provider object through the real encoder; it is not a fresh provider call.
+The submitted MR4 base is commit `77f2be5`; the first review fixes are in commit
+`cdbfc63`. This section cites only repository source, tests and retained
+sanitized fixtures. Reversible mutation checks, acceptance commands, CI
+pipelines/jobs and live provider checks are **NOT_RUN** for this ledger.
+
+Round-two regressions are retained in `test/ai/fix2_plain_text_test.dart`:
+plain values survive JSON/XML encoding boundaries for late re-redaction,
+provider-readable strings (including citation display fields) are checked
+without decoding wire escapes, deeply
+nested literal escapes remain resumable, summaries escape once across repeated
+segments, and streaming snapshots include prior tool-round text.
+`test/ai/ai_tools_test.dart` protects `executeResult` metadata and its retained
+plain values; `test/ai/ai_live_smoke_test.dart` rejects older closing markers.
+`tool/tests/test_ai_runner_contract.py` requires explicit active cancellation and
+keeps this ledger limited to repository evidence or **NOT_RUN**.
+
+Round three was committed as `5a1e4d1`, round four as `d199a3f` and round five
+as `5671be5`.
+`AiAppText` caches each immutable encoded view and retains only the deliverable
+plain prefix. Private cut markers travel with retained strings through JSON-key
+collisions, nested clips and readable projection composition. Every later
+redaction trims the longest trailing proper prefix of a currently known secret
+or its cached pattern-only alias from each cut string. Exact alias matching also
+removes a retained key remainder whose head was pattern-redacted before the key
+became known. There is no retained margin. JSON traversal stops retaining entries
+after the cut, and projection and tool-result cuts use the same model. Whole
+fetched sources are still redacted before any retention cut.
+
+`test/ai/fix5_regressions_test.dart` contains the production catalogue/runner
+inputs for colliding `title`/`description` keys across two secret refreshes,
+undelivered clipped provenance summarized before a late-secret refresh, and
+dot/base64-shaped keys learned after intake with and without catalogue clipping.
+Each production input covers all three wire formats. Additional synthetic tests
+cover a colliding cut value and existing context/prior-summary cut markers.
+These are repository evidence only; external execution receipts, mutations,
+CI, live providers, private integration, devices and AOT remain **NOT_RUN** for
+this ledger.
+
+Round six adds cached pattern aliases to frozen-text verification when at least
+four secret characters remain outside replacement markers. A newly known alias
+already sent stops the send with `newSecret`; the follow-up uses a re-redacted
+projection. Aliases containing only replacement markers are excluded from the
+cache, preserving zero redaction counts for existing markers. Round seven
+applies the same four-character minimum when caching, so an alias with a one to
+three character remainder (a pasted key with one trailing space) no longer
+over-matches text beside markers in intake or cut-end trimming. Alias cut-end
+trimming requires a match beyond its leading marker into the secret remainder.
+`test/ai/fix6_regressions_test.dart` covers the production catalogue timing after
+payload two, full-secret behavior, the three/four-character verification boundary,
+zero marker counts and runner late-redaction counts in all three wire formats,
+and preservation of a complete marker while partial alias remainders still trim.
+Nested known-secret aliases retain the documented residual below.
+
+A secret already delivered before it became known remains a residual. A pattern
+starting before the secret and ending inside it can produce a different alias
+layout; a late secret that contains a previously known secret is split by that
+secret's replacement and, with or without a cut, is not covered by its alias
+(R5-NEST). Those two residuals are not repaired here. Runner answer clips at
+64,000 characters and history codec truncations at
+16,000/64,000 characters and 8 KiB have no cut markers and can reach
+`restoreFromDisplay` projections. They currently contain provider-produced or
+already-sent text; MR5/MR6 must re-evaluate restoring them to a different recipient.
+
+The round-three tests in `test/ai/fix2_plain_text_test.dart` place newly learned
+secrets at the final tool-tail refresh, recheck frozen issue/job-log results on a
+follow-up, exercise oversized tool-tail clipping and enforce escaped-width
+projection budgets. Legacy plain-text constructors are test-only and reject
+`<gitlab_data` anywhere in their input. `AiToolResult.copyWith` accepts only
+structured `data`, and the constructor tests plus Python production-call
+boundary guard protect those entry points. Production tools return data-aware
+`executeResult` values. The renamed FIX1 test explicitly checks
+that the redacted marker survives repeated escaping. The offline closing-smoke
+test requires the exact complete final-answer note and rejects a bare marker.
+These are repository source and synthetic-test evidence only. Mutation and
+performance probes, acceptance command receipts, CI pipelines/jobs, live
+providers, private GitLab integration, devices and AOT checks remain
+**NOT_RUN** for this ledger.
+
+| Contract | Current evidence |
+| --- | --- |
+| Scope, provenance, schemas, GET/HEAD-only adapter, field projection, sensitive read/diff/search, newest notes, full SHA and HTTP/search/output budgets | `test/ai/ai_tools_test.dart`, context tests, Python boundary guard; synthetic |
+| Prefix replay across runs, newly saved keys and provider-readable output, OAuth refresh during tool reads, key-only rollover | `runner_test.dart`, `runner_lifecycle_test.dart`; synthetic |
+| Six model calls, four tools per batch, twelve per send, bounded UTF-16 output, fresh budgets including exhausted-read finishing, soft timeout with one pending source read | runner/catalogue tests; synthetic |
+| Tools retained in all three closing formats; safe result metadata and every synthetic terminal result reach display callbacks; empty final answer | runner and offline live-smoke tests; synthetic |
+| Context once, budgeted/escaped/nonce-labelled projection, first-call tail restoration, finishing on truncation, final note redaction | runner tests; synthetic |
+| Every stream/await/send checkpoint; consent, recipient revision, session generation and exact API ownership; active-request cancellation keeps the transport reusable after stop/timeout | runner/lifecycle tests using the production binding; synthetic |
+| Actual vs estimated input usage, throttled cumulative redacted display snapshots, partial interrupted output recovered within the tool deadline but excluded from replay, provider-byte replay | runner tests plus MR2 wire/recorded suites; synthetic / RECORDED |
+| Link-local enumeration and unknown/missing interface confirmation | network and runner tests; synthetic |
+| Live runner matrix (`runner-tool-loop`, `runner-closing-call`) | Harness extended; authenticated P0b **NOT_RUN** |
+
+Earlier-MR requirements remain binding: strip ANSI before source redaction;
+redact complete fetched text before truncation and reject inputs over 2 MiB;
+redact running traces accumulated from offset zero with `redactSource`; use
+`redactFragment` on line-aligned excerpts; block sensitive diff paths; preserve
+the first private-key withholding notice. MR2 binding detection, server-tool
+input accumulation, empty-Anthropic-array rejection and recorded replay tests
+are covered by focused regressions. This checkout needed small packet-required
+repairs: nested OpenRouter `metadata.raw` binding classification, accumulation of
+Anthropic `server_tool_use` input deltas, and atomic rejection of empty
+Anthropic replay content (a legal empty text/thinking answer still works).
+MR3's consent-store validity and single settings owner
+are used directly; access/refresh values are reread after OAuth rotation.
+
+P0b (all authenticated provider checks), fresh native-provider conformance,
+private-project integration, Android/iOS, accessibility and AOT redaction timing
+are **NOT_RUN**. MR5/MR6 UI, MR7 gate/platform/device acceptance and plan Appendix
+D live calls are deferred to their prescribed lanes. None of the offline
+results upgrades P0a, provider support or G0 acceptance.

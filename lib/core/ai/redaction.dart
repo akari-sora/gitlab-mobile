@@ -1,9 +1,18 @@
 import 'ai_failure.dart';
 
+/// Fewest characters of a secret its pattern alias must keep to be matched.
+const _minAliasRemainder = 4;
+
 const _redacted = '[REDACTED]';
 const _unterminatedPrivateKey = '[REDACTED:private_key_unterminated]';
 const _unopenedPrivateKey = '[REDACTED:private_key_unopened]';
 const _privateKeyFragment = '[REDACTED:private_key_fragment]';
+const _redactionMarkers = [
+  _redacted,
+  _unterminatedPrivateKey,
+  _unopenedPrivateKey,
+  _privateKeyFragment,
+];
 
 abstract interface class KnownSecretsSource {
   Iterable<String> get current;
@@ -105,6 +114,7 @@ final class Redactor {
   final KnownSecretsSource _secrets;
   final List<RedactionPattern> _patternDefinitions;
   final Set<String> _knownSecrets = {};
+  final Map<String, String> _patternAliases = {};
   List<RegExp>? _patterns;
   List<RegExp>? _assignments;
   RegExp? _urlCredentials;
@@ -140,23 +150,11 @@ final class Redactor {
         if (_redacted.contains(secret)) {
           throw const AiFailure(AiFailureKind.policyBlocked);
         }
-        var offset = 0;
-        while (offset < input.length) {
-          final start = input.indexOf(secret, offset);
-          if (start < 0) break;
-          ranges.add(_RedactionRange(start: start, end: start + secret.length));
-          offset = start + 1; // Include overlapping exact matches.
-        }
-      }
-      for (final pattern in _patterns!) {
-        for (final match in pattern.allMatches(input)) {
-          ranges.add(_RedactionRange(start: match.start, end: match.end));
-        }
       }
       ranges
-        ..addAll(_pemRanges(input))
-        ..addAll(_urlRanges(input, _urlCredentials!))
-        ..addAll(_assignmentRanges(input, _assignments!));
+        ..addAll(_knownSecretRanges(input, _knownSecrets))
+        ..addAll(_knownSecretRanges(input, _patternAliases.values))
+        ..addAll(_patternRanges(input));
       final result = _replaceRanges(input, ranges);
       // A replacement must not introduce a known secret across its boundaries.
       if (_knownSecrets.any(result.text.contains)) {
@@ -170,11 +168,69 @@ final class Redactor {
     }
   }
 
+  int get longestKnownSecretLength {
+    _refreshSecrets();
+    return _knownSecrets.fold(
+      0,
+      (length, secret) => secret.length > length ? secret.length : length,
+    );
+  }
+
+  /// Cached intake aliases, each keeping at least [_minAliasRemainder]
+  /// characters of its secret.
+  Iterable<String> get verificationAliases {
+    _refreshSecrets();
+    return _patternAliases.values;
+  }
+
+  /// Redacts a retained prefix and removes its longest trailing partial known
+  /// secret. Only the string at an actual cut may use this operation.
+  RedactionResult redactCutEnd(String input) {
+    final result = redactSource(input);
+    var trim = 0;
+    for (final secret in _knownSecrets) {
+      final length = _partialSecretSuffixLength(result.text, secret);
+      if (length > trim) trim = length;
+    }
+    for (final alias in _patternAliases.values) {
+      final length = _partialSecretSuffixLength(result.text, alias);
+      // A complete replacement marker alone is not a partial secret.
+      final markerLength =
+          _redactionMarkers.where(alias.startsWith).firstOrNull?.length ?? 0;
+      if (length > markerLength && length > trim) trim = length;
+    }
+    return RedactionResult(
+      result.text.substring(0, result.text.length - trim),
+      result.redactions + (trim > 0 ? 1 : 0),
+      withheldPrivateKeyContext: result.withheldPrivateKeyContext,
+    );
+  }
+
   void _refreshSecrets() {
+    _compilePatterns();
     for (final secret in _secrets.current) {
-      if (secret.isNotEmpty) _knownSecrets.add(secret);
+      if (secret.isNotEmpty && _knownSecrets.add(secret)) {
+        // Cache the layout intake would retain before this secret was known.
+        // This scan uses built-in detectors only, never the known-secret set.
+        final alias = _replaceRanges(secret, _patternRanges(secret)).text;
+        // A shorter remainder cannot identify the secret and would match
+        // ordinary text next to a marker (for example one trailing space).
+        if (alias != secret &&
+            _aliasRemainderLength(alias) >= _minAliasRemainder) {
+          _patternAliases[secret] = alias;
+        }
+      }
     }
   }
+
+  List<_RedactionRange> _patternRanges(String input) => [
+    for (final pattern in _patterns!)
+      for (final match in pattern.allMatches(input))
+        _RedactionRange(start: match.start, end: match.end),
+    ..._pemRanges(input),
+    ..._urlRanges(input, _urlCredentials!),
+    ..._assignmentRanges(input, _assignments!),
+  ];
 
   void _compilePatterns() {
     if (_patterns != null) return;
@@ -190,6 +246,55 @@ final class Redactor {
       for (final definition in assignmentPatterns)
         RegExp(definition.pattern, caseSensitive: definition.caseSensitive),
     ];
+  }
+}
+
+int _aliasRemainderLength(String alias) {
+  for (final marker in _redactionMarkers) {
+    alias = alias.replaceAll(marker, '');
+  }
+  return alias.length;
+}
+
+// KMP matches a suffix against a proper secret prefix in linear time, even
+// for a large known secret with repeated characters. No minimum match length.
+int _partialSecretSuffixLength(String text, String secret) {
+  final limit = (secret.length - 1).clamp(0, text.length);
+  if (limit == 0) return 0;
+  final fallback = List<int>.filled(limit, 0);
+  for (var i = 1, matched = 0; i < limit; i++) {
+    while (matched > 0 && secret.codeUnitAt(i) != secret.codeUnitAt(matched)) {
+      matched = fallback[matched - 1];
+    }
+    if (secret.codeUnitAt(i) == secret.codeUnitAt(matched)) matched++;
+    fallback[i] = matched;
+  }
+  var matched = 0;
+  for (var i = text.length - limit; i < text.length; i++) {
+    while (matched > 0 && text.codeUnitAt(i) != secret.codeUnitAt(matched)) {
+      matched = fallback[matched - 1];
+    }
+    if (text.codeUnitAt(i) == secret.codeUnitAt(matched)) matched++;
+  }
+  return matched;
+}
+
+/// Match plain readable values only. Encoding belongs to the wire boundary.
+bool containsKnownAiSecret(String text, Iterable<String> secrets) =>
+    secrets.any((secret) => secret.isNotEmpty && text.contains(secret));
+
+Iterable<_RedactionRange> _knownSecretRanges(
+  String input,
+  Iterable<String> secrets,
+) sync* {
+  for (final secret in secrets.where((s) => s.isNotEmpty)) {
+    var offset = 0;
+    while (offset < input.length) {
+      final start = input.indexOf(secret, offset);
+      if (start < 0) break;
+      yield _RedactionRange(start: start, end: start + secret.length);
+      offset = start + 1;
+    }
   }
 }
 

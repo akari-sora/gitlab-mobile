@@ -73,7 +73,7 @@ void main() {
     segment.setTail(
       AppUserEntry(
         text: 'question',
-        context: const [AiContextBlock(source: 'file', text: 'context')],
+        context: [AiContextBlock(source: 'file', text: 'context')],
       ),
     );
     var encodeCalls = 0;
@@ -130,6 +130,39 @@ void main() {
     expect(segment.tail, same(tail));
   });
 
+  test('segment rejects empty Anthropic output without advancing', () {
+    final segment = AiSegment(
+      providerId: 'provider',
+      recipientRevision: 1,
+      format: AiFormat.anthropicMessages,
+      model: 'model',
+      secretSetAtStart: SecretSetId.fromSecrets(const []),
+    );
+    final tail = AppUserEntry(text: 'question');
+    segment.setTail(tail);
+
+    expect(
+      () => segment.freezeWith(
+        ProviderOutputEntry(
+          AiFormat.anthropicMessages,
+          const <Object?>[],
+          toolCalls: const [],
+        ),
+        (_) => const <Object?>[],
+      ),
+      throwsA(
+        isA<AiFailure>().having(
+          (failure) => failure.kind,
+          'kind',
+          AiFailureKind.invalidResponse,
+        ),
+      ),
+    );
+    expect(segment.frozen, isEmpty);
+    expect(segment.frozenWire, isEmpty);
+    expect(segment.tail, same(tail));
+  });
+
   test(
     'tool-results tail supports clipping, follow-up, restore, and note removal',
     () {
@@ -140,7 +173,7 @@ void main() {
         model: 'model',
         secretSetAtStart: SecretSetId.fromSecrets(const []),
       );
-      final previous = AppToolResultsEntry(const [
+      final previous = AppToolResultsEntry([
         AiToolResult(callId: '1', name: 'read', content: 'abcdef'),
         AiToolResult(callId: '2', name: 'read', content: 'ghij'),
       ]);
@@ -185,7 +218,7 @@ void main() {
       secretSetAtStart: SecretSetId.fromSecrets(const []),
     );
     segment.setTail(
-      AppToolResultsEntry(const [
+      AppToolResultsEntry([
         AiToolResult(callId: '1', name: 'read', content: 'a😀b'),
       ]),
     );
@@ -208,7 +241,7 @@ void main() {
     segment.setTail(
       AppUserEntry(
         text: 'question',
-        context: const [AiContextBlock(source: 'file', text: 'context')],
+        context: [AiContextBlock(source: 'file', text: 'context')],
       ),
     );
 
