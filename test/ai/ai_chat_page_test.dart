@@ -622,6 +622,30 @@ void main() {
     expect(session.sent, isEmpty);
   });
 
+  testWidgets('a summary visit to a conversation offers the request', (
+    tester,
+  ) async {
+    final session = _FakeSession(
+      items: [
+        AiUserItem(text: 'earlier'),
+        const AiAssistantItem(text: 'reply', state: AiAssistantState.done),
+      ],
+    );
+    await tester.pumpWidget(
+      _host(AiChatPage(session: session, summarize: true)),
+    );
+    await tester.pump();
+
+    expect(session.sent, isEmpty);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('ai-chat-input')))
+          .controller!
+          .text,
+      l10n.aiSuggestMrSummary,
+    );
+  });
+
   testWidgets('the title shows GitLab values only after cleaning', (
     tester,
   ) async {

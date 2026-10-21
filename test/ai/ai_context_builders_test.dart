@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/context_builders.dart';
 import 'package:gitlab_mobile/core/ai/prompts.dart';
 import 'package:gitlab_mobile/core/ai/redaction.dart';
+import 'package:gitlab_mobile/core/failure.dart';
 
 const _head = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const _base = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -364,7 +365,9 @@ void main() {
         ),
         nonce: 'nonce-6',
       ),
-      throwsFormatException,
+      throwsA(
+        isA<ApiFailure>().having((f) => f.kind, 'kind', FailureKind.tooLarge),
+      ),
     );
   });
 }

@@ -939,3 +939,26 @@ Still **NOT_RUN** on a device:
 - dark mode, iOS, physical devices, and the Responses and Anthropic formats against a live provider.
 
 The registry is still created lazily in `build`. It is memoised and keyed by account generation; this is an intended non-change.
+
+### MR6a-1 review round 2
+
+Codex returned REQUEST CHANGES and Opus APPROVE WITH MINOR FIXES on the round-1 fixes. Fixed, each with a regression test and a mutation run recorded outside the repository:
+
+**Display and lifecycle**
+- `recheck` learns the live secrets before any blocker, so the title is redacted while settings or consent are pending.
+- The display is re-redacted only when the secret set has grown; the "What was sent" preview is cut from the already redacted text.
+- The registry counts open pages per session and releases only after the last one closes.
+- A summary visit to a conversation that already has messages puts the request in the composer.
+
+**Context sent**
+- Issue and merge request notes are read page by page, at most five pages, until 20 are not system notes.
+- Context too large to scan for secrets is `tooLarge`.
+
+**Smaller fixes**
+- A message stopped before sending keeps no "What was sent" chips.
+- The empty chat's list scrolls a new card into view.
+- Errors raised by the AI path stay `AiFailure`.
+
+Left for later, by choice:
+- When reading merge request or issue notes fails, the whole context still fails. A later change can send without notes and say so.
+- After a settings change, the new conversation reuses the context read when the page first opened. The chip shows the pinned SHA.

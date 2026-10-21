@@ -86,6 +86,9 @@ final class AccountAiRunRegistry extends ChangeNotifier
   final Map<String, AiChatSessionHandle> _sessions =
       <String, AiChatSessionHandle>{};
   var _disposed = false;
+
+  /// Open pages per session; release drops a session only after the last.
+  final Map<AiChatSession, int> _visits = {};
   var _lastRunningCount = 0;
   var _capacityRecheckScheduled = false;
 
@@ -105,7 +108,10 @@ final class AccountAiRunRegistry extends ChangeNotifier
       throw StateError('The AI run registry is no longer current');
     }
     final existing = _sessions[origin.key];
-    if (existing != null) return existing.session;
+    if (existing != null) {
+      _visits[existing.session] = (_visits[existing.session] ?? 0) + 1;
+      return existing.session;
+    }
 
     final handle = _sessionFactory(
       origin: origin,
@@ -120,6 +126,7 @@ final class AccountAiRunRegistry extends ChangeNotifier
       throw StateError('The AI run registry changed while opening a session');
     }
     _sessions[origin.key] = handle;
+    _visits[handle.session] = 1;
     handle.session.addListener(_handleSessionChanged);
     _lastRunningCount = runningCount;
     return handle.session;
@@ -161,6 +168,13 @@ final class AccountAiRunRegistry extends ChangeNotifier
   @override
   void release(AiChatSession session) {
     if (_disposed) return;
+    final visits = (_visits[session] ?? 1) - 1;
+    if (visits > 0) {
+      // Another page still shows this session.
+      _visits[session] = visits;
+      return;
+    }
+    _visits.remove(session);
     final key = _sessions.entries
         .where((entry) => identical(entry.value.session, session))
         .map((entry) => entry.key)

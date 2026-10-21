@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../failure.dart';
 import 'ai_transcript.dart';
 import 'app_text.dart';
 import 'redaction.dart';
@@ -382,7 +383,9 @@ final class AiContextBuilders {
 
 void _checkSize(String value) {
   if (utf8.encode(value).length > aiMaxRedactionInputChars) {
-    throw const FormatException('Context exceeds the redaction input limit.');
+    // Too large to scan for secrets, so it cannot be sent: a size limit, not
+    // a malformed response.
+    throw const ApiFailure(FailureKind.tooLarge);
   }
 }
 

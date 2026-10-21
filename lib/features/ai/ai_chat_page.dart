@@ -45,7 +45,7 @@ Future<bool> openAiChat(BuildContext context, AiChatOrigin origin) async {
 /// values (job name, title, file name) for display.
 String aiOriginTitle(
   AiChatOrigin origin, {
-  String Function(String text) safe = _unchanged,
+  required String Function(String text) safe,
 }) => switch (origin) {
   AiGeneralOrigin() => l10n.aiAssistantLabel,
   AiJobOrigin(:final jobName) => l10n.aiChatJobTitle(safe(jobName)),
@@ -54,8 +54,6 @@ String aiOriginTitle(
         '${isolated(safe(title))}',
   AiFileOrigin(:final path) => isolated(safe(path.split('/').last)),
 };
-
-String _unchanged(String text) => text;
 
 List<String> _suggestions(AiChatOrigin origin) => switch (origin) {
   AiGeneralOrigin() => const [],
@@ -97,6 +95,11 @@ class _AiChatPageState extends State<AiChatPage> {
   void initState() {
     super.initState();
     _pendingSummary = widget.summarize && _session.items.isEmpty;
+    // A summary asked for in a conversation that already has messages is
+    // offered in the composer instead of being sent.
+    if (widget.summarize && _session.items.isNotEmpty) {
+      _input.text = l10n.aiSuggestMrSummary;
+    }
     _session.confirmCleartext = _confirmCleartext;
     _input.addListener(_inputChanged);
     _session.addListener(_maybeSummarize);

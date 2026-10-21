@@ -62,6 +62,9 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
         await _secrets.refresh();
       }
       if (!_alive) return;
+      // Patterns never change; only a larger secret set needs a new pass over
+      // what is shown, which can hold whole files and long replies.
+      if (_secrets.revision == _displayRevision) return;
       _redactDisplay();
       if (_assistantIndex != null) {
         final index = _items.lastIndexWhere((item) => item is AiUserItem);
@@ -91,6 +94,9 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   late final KnownSecretsLive _secrets;
   late final Redactor _redactor;
   late final Future<void> Function() _refreshSecrets;
+
+  /// The secret-set revision the display was last redacted with.
+  int _displayRevision = -1;
   String _id = _newId();
   String? _chosenProvider;
   AiProviderConfig? _provider;
@@ -286,7 +292,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     try {
       await _refreshSecrets();
       if (!_current(epoch)) return;
-      _redactDisplay();
+      _redactDisplayIfNeeded();
       if (_context == null) {
         final loaded = await loadAiChatContext(
           origin: origin,
@@ -321,7 +327,11 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       _notify();
     } on Object catch (error) {
       if (!_current(epoch)) return;
-      _failure = contextReady ? _mapFailure(error) : safeFailure(error);
+      _failure = contextReady
+          ? _mapFailure(error)
+          : error is AiFailure
+          ? error
+          : safeFailure(error);
       _contextFailed = true;
       _setBlocked(AiChatBlocker.contextUnavailable);
     }
@@ -479,7 +489,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     try {
       await _refreshSecrets();
       if (!_current(epoch)) return;
-      _redactDisplay();
+      _redactDisplayIfNeeded();
       final clean = _redactor.redactSource(text);
       final first = _runner == null;
       _items.add(
@@ -487,6 +497,9 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       );
       userAdded = true;
       if (_phase == AiChatPhase.stopping) {
+        // Nothing was sent, so "What was sent" chips would be wrong here; the
+        // next message carries them instead.
+        _items[_items.length - 1] = AiUserItem(text: clean.text);
         _items.add(const AiNoticeItem(AiNoticeKind.notSent));
         _lastEnd = AiRunEnd.stopped;
         return;
@@ -514,7 +527,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       final redactions = runner.lateRedactions;
       final result = await runner.run(text);
       if (!_current(epoch)) return;
-      _redactDisplay();
+      _redactDisplayIfNeeded();
       _failure = result.failure;
       _offerNewConversation = result.offerRollover;
       _lastEnd = result.reason;
@@ -540,13 +553,21 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       }
     } on Object catch (error) {
       if (!_current(epoch)) return;
-      _failure = _assistantIndex == null
-          ? safeFailure(error)
-          : _mapFailure(error);
+      _failure = _assistantIndex != null
+          ? _mapFailure(error)
+          : error is AiFailure
+          ? error
+          : safeFailure(error);
       _lastEnd = AiRunEnd.failed;
       if (_assistantIndex == null) {
         if (!userAdded) {
-          _items.add(AiUserItem(text: _redactor.redactSource(text).text));
+          // Redacting may be what failed (text over the scan limit); then the
+          // message is not shown rather than thrown again.
+          try {
+            _items.add(AiUserItem(text: _redactor.redactSource(text).text));
+          } on Object {
+            // Only the notice below remains.
+          }
         }
         _items.add(const AiNoticeItem(AiNoticeKind.notSent));
       } else {
@@ -590,31 +611,25 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     };
     return [
       for (final block in built.blocks)
-        AiContextChip(
-          source: _redactor.redactSource(block.source).text,
-          resource: resource == null
-              ? null
-              : _redactor.redactSource(resource).text,
-          sentText: block
-              .redact(
-                _redactor,
-                source: (value) => _redactor.redactSource(value).text,
-              )
-              .text,
-          preview: clipAiText(
-            block
+        if (block
                 .redact(
                   _redactor,
                   source: (value) => _redactor.redactSource(value).text,
                 )
-                .text,
-            200,
+                .text
+            case final sent)
+          AiContextChip(
+            source: _redactor.redactSource(block.source).text,
+            resource: resource == null
+                ? null
+                : _redactor.redactSource(resource).text,
+            sentText: sent,
+            preview: clipAiText(sent, 200),
+            sizeChars: block.text.length,
+            pinnedSha: built.pinnedSha == null
+                ? null
+                : _redactor.redactSource(built.pinnedSha!).text,
           ),
-          sizeChars: block.text.length,
-          pinnedSha: built.pinnedSha == null
-              ? null
-              : _redactor.redactSource(built.pinnedSha!).text,
-        ),
       for (final path in built.blockedSensitivePaths)
         AiContextChip(
           source: _redactor.redactSource(path).text,
@@ -630,7 +645,14 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
 
   // Display history is never provider replay. Re-scan it when the live secret
   // union changes, including credentials learned during a GitLab OAuth read.
+  /// Re-redacts what is shown only when the secret set has grown since the
+  /// last pass.
+  void _redactDisplayIfNeeded() {
+    if (_secrets.revision != _displayRevision) _redactDisplay();
+  }
+
   void _redactDisplay() {
+    _displayRevision = _secrets.revision;
     String safe(String text) => _redactor.redactSource(text).text;
     for (var index = 0; index < _items.length; index++) {
       _items[index] = switch (_items[index]) {

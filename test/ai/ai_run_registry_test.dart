@@ -211,6 +211,14 @@ void main() {
     final reopened = registry.open(const AiGeneralOrigin());
     expect(reopened, isNot(same(first)));
     expect(factoryBuilds, 2);
+
+    // Two pages on one session: closing the first keeps it for the second.
+    final again = registry.open(const AiGeneralOrigin());
+    expect(again, same(reopened));
+    registry.release(again);
+    expect(created[1].disposed, isFalse);
+    registry.release(reopened);
+    expect(created[1].disposed, isTrue);
   });
 
   test('release keeps sessions that have items or are running', () async {
@@ -244,15 +252,18 @@ void main() {
     );
     addTearDown(registry.dispose);
 
-    final withItems = registry.open(const AiGeneralOrigin()) as _FakeChatSession;
+    final withItems =
+        registry.open(const AiGeneralOrigin()) as _FakeChatSession;
     withItems.addNotice();
     registry.release(withItems);
     expect(registry.open(const AiGeneralOrigin()), same(withItems));
     expect(withItems.disposed, isFalse);
 
-    final running = registry.open(
-      AiJobOrigin(project: fixture.project, jobId: 1, jobName: 'one'),
-    ) as _FakeChatSession;
+    final running =
+        registry.open(
+              AiJobOrigin(project: fixture.project, jobId: 1, jobName: 'one'),
+            )
+            as _FakeChatSession;
     await running.send('keep running');
     registry.release(running);
     expect(
@@ -430,7 +441,10 @@ void main() {
       streams.first.add(
         Uint8List.fromList(
           utf8.encode(
-            'data: ${jsonEncode({'type': 'response.completed', 'response': {'output': <Object?>[]}})}\n\n',
+            'data: ${jsonEncode({
+              'type': 'response.completed',
+              'response': {'output': <Object?>[]},
+            })}\n\n',
           ),
         ),
       );

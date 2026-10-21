@@ -456,6 +456,46 @@ void main() {
     },
   );
 
+  test('an unchanged secret set leaves the shown items alone', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    await _configure(
+      environment,
+      _provider(AiFormat.responses),
+      grantConsent: true,
+    );
+    final adapter = FakeAdapter(
+      (_) => _sse(_toolThenAnswer(AiFormat.responses).last),
+    );
+    final controller = _controller(
+      environment,
+      origin: AiFileOrigin(
+        project: environment.workspace.project,
+        path: 'README.md',
+        sha: WorkspaceFixture.sha,
+      ),
+      wireClientFactory:
+          ({required config, required apiKey, required conversationId}) =>
+              _wireClient(
+                adapter,
+                config: config,
+                apiKey: apiKey,
+                conversationId: conversationId,
+              ),
+    );
+    addTearDown(controller.dispose);
+    await controller.recheck();
+    await controller.send('explain');
+    final before = List.of(controller.items);
+    expect(before, isNotEmpty);
+
+    // A recheck refreshes the secrets; none are new, so nothing is redone.
+    await controller.recheck();
+    for (var i = 0; i < before.length; i++) {
+      expect(identical(controller.items[i], before[i]), isTrue, reason: '$i');
+    }
+  });
+
   group('preparing blockers', () {
     test('moves from settings loading to no provider', () async {
       final environment = await _environment();
@@ -1572,7 +1612,10 @@ void main() {
     expect(controller.items, hasLength(2));
     expect(
       controller.items.first,
-      isA<AiUserItem>().having((item) => item.text, 'text', 'keep this draft'),
+      isA<AiUserItem>()
+          .having((item) => item.text, 'text', 'keep this draft')
+          // Nothing was sent, so it shows no "What was sent" chips.
+          .having((item) => item.chips, 'chips', isEmpty),
     );
     expect(
       controller.items.last,
