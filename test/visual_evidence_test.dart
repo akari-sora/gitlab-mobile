@@ -80,8 +80,8 @@ void main() {
     }
     // The bundled code font, so branch names and SHAs are not test squares.
     await (FontLoader('JetBrainsMono')
-      ..addFont(rootBundle.load('assets/fonts/JetBrainsMono-Regular.ttf'))
-      ..addFont(rootBundle.load('assets/fonts/JetBrainsMono-Medium.ttf'))).load();
+      ..addFont(rootBundle.load('assets/fonts/JetBrainsMono-NoCalt-Regular.ttf'))
+      ..addFont(rootBundle.load('assets/fonts/JetBrainsMono-NoCalt-Medium.ttf'))).load();
     // Icon glyphs are a separate font; loading a text font does not load them.
     await (FontLoader('MaterialIcons')..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'))).load();
     fontsAvailable = true;
