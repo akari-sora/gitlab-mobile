@@ -87,6 +87,12 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   int _networkTicket = 0;
   AiWireClient? _activeClient;
   String? _endpointError;
+  // The endpoint error belongs to the model list URL: the base URL is valid on
+  // its own.
+  bool _endpointErrorOnModelsUrl = false;
+  // The model list URL follows the preset's default until the user edits it.
+  late bool _modelsUrlEdited;
+  bool _syncingModelsUrl = false;
   String? _requestLimitError;
   String? _outputLimitError;
   String? _modelsMessage;
@@ -121,9 +127,14 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     _apiKey = TextEditingController()..addListener(_keyChanged);
     _model = TextEditingController(text: provider?.model ?? '')
       ..addListener(_modelChanged);
+    final savedModelsUrl = provider?.modelsUrl ?? '';
+    _modelsUrlEdited =
+        savedModelsUrl.isNotEmpty && savedModelsUrl != _preset.modelsUrl;
     _modelsUrl = TextEditingController(
-      text: provider?.modelsUrl ?? _preset.modelsUrl ?? '',
-    )..addListener(_networkInputChanged);
+      text: _modelsUrlEdited
+          ? savedModelsUrl
+          : _defaultModelsUrlFor(_baseUrl.text) ?? savedModelsUrl,
+    )..addListener(_modelsUrlChanged);
     _maxRequestChars = TextEditingController(
       text: _caps.maxRequestChars.toString(),
     );
@@ -186,10 +197,46 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     if (!_showsCleartextControl && _allowLanCleartext) {
       _allowLanCleartext = false;
     }
+    if (!_modelsUrlEdited) {
+      final wanted = _defaultModelsUrlFor(_baseUrl.text);
+      if (wanted != null && wanted != _modelsUrl.text) _setModelsUrl(wanted);
+    }
     _dropKeyDraftForNewRecipient();
     _networkInputChanged();
     // The policy notice depends on the recipient, so it is rebuilt per edit.
     if (mounted) setState(() {});
+  }
+
+  void _modelsUrlChanged() {
+    if (!_syncingModelsUrl) _modelsUrlEdited = true;
+    _networkInputChanged();
+  }
+
+  void _setModelsUrl(String value) {
+    _syncingModelsUrl = true;
+    try {
+      _modelsUrl.text = value;
+    } finally {
+      _syncingModelsUrl = false;
+    }
+  }
+
+  /// The preset's model list URL while [baseUrl] is on the preset's server,
+  /// empty on any other server (a list URL must share the base URL's origin),
+  /// or null when the preset has no list URL of its own.
+  String? _defaultModelsUrlFor(String baseUrl) {
+    final preset = _preset.modelsUrl;
+    if (preset == null) return null;
+    final base = Uri.tryParse(baseUrl.trim());
+    final models = Uri.parse(preset);
+    final sameOrigin =
+        base != null &&
+        base.hasScheme &&
+        base.host.isNotEmpty &&
+        base.scheme.toLowerCase() == models.scheme &&
+        base.host.toLowerCase() == models.host &&
+        base.port == models.port;
+    return sameOrigin ? preset : '';
   }
 
   String _recipientFingerprint() {
@@ -227,6 +274,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
 
   void _validateEndpoint() {
     String? error;
+    var onModelsUrl = false;
     try {
       AiEndpoint.parse(
         _baseUrl.text.trim(),
@@ -235,16 +283,43 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       );
     } on Object {
       if (_endpointTouched || _saveAttempted) {
-        error = _looksLikeLocalCleartext
+        onModelsUrl = _modelsUrl.text.trim().isNotEmpty && _baseUrlValidAlone;
+        error = !onModelsUrl && _looksLikeLocalCleartext
             ? l10n.aiProviderLocalCleartextHelp
             : l10n.aiProviderBaseUrlInvalid;
       }
     }
-    if (mounted && error != _endpointError) {
-      setState(() => _endpointError = error);
+    if (mounted &&
+        (error != _endpointError ||
+            onModelsUrl != _endpointErrorOnModelsUrl)) {
+      setState(() {
+        _endpointError = error;
+        _endpointErrorOnModelsUrl = onModelsUrl;
+      });
     } else {
       _endpointError = error;
+      _endpointErrorOnModelsUrl = onModelsUrl;
     }
+  }
+
+  bool get _baseUrlValidAlone {
+    try {
+      AiEndpoint.parse(
+        _baseUrl.text.trim(),
+        allowLanCleartext: _allowLanCleartext,
+      );
+      return true;
+    } on Object {
+      return false;
+    }
+  }
+
+  /// Whether the endpoint blocks a network action; opens the advanced
+  /// section when the model list URL is the reason, so its error is visible.
+  bool _endpointBlocked() {
+    if (_endpointError == null) return false;
+    if (_endpointErrorOnModelsUrl) _advancedController.expand();
+    return true;
   }
 
   void _selectPreset(AiPreset preset) {
@@ -258,8 +333,9 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       _customNoKey = false;
       _allowLanCleartext = false;
       _name.text = preset.name;
+      _modelsUrlEdited = false;
       _baseUrl.text = preset.baseUrlFor(_format);
-      _modelsUrl.text = preset.modelsUrl ?? '';
+      _setModelsUrl(preset.modelsUrl ?? '');
       _maxRequestChars.text = _caps.maxRequestChars.toString();
       _maxOutputTokens.text = _caps.maxOutputTokens.toString();
       _loadedModels = const <String>[];
@@ -269,6 +345,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       _keyDraftCleared = false;
       _endpointTouched = false;
       _endpointError = null;
+      _endpointErrorOnModelsUrl = false;
     });
   }
 
@@ -359,7 +436,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     if (!_validateCaps()) return;
     if (!_formKey.currentState!.validate()) return;
     _validateEndpoint();
-    if (_endpointError != null) return;
+    if (_endpointBlocked()) return;
     String? key;
     if (_requiresKey) {
       try {
@@ -408,7 +485,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     if (_loadingModels) return;
     _dropKeyDraftForNewRecipient();
     _validateEndpoint();
-    if (_endpointError != null) return;
+    if (_endpointBlocked()) return;
     final publicCatalog = _preset.id == 'openrouter';
     String key = '';
     if (_requiresKey && !publicCatalog) {
@@ -471,7 +548,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     if (_loadingModels || _preset.id != 'openrouter') return;
     _dropKeyDraftForNewRecipient();
     _validateEndpoint();
-    if (_endpointError != null) return;
+    if (_endpointBlocked()) return;
     String key;
     try {
       key = _validatedKey() ?? widget.settings.providerKeyFor(_config()) ?? '';
@@ -640,7 +717,9 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                       keyboardType: TextInputType.url,
                       decoration: InputDecoration(
                         labelText: l10n.aiProviderBaseUrlLabel,
-                        errorText: _endpointError,
+                        errorText: _endpointErrorOnModelsUrl
+                            ? null
+                            : _endpointError,
                       ),
                     ),
                     if (_showsCleartextControl)
@@ -839,6 +918,9 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                           keyboardType: TextInputType.url,
                           decoration: InputDecoration(
                             labelText: l10n.aiProviderModelsUrlLabel,
+                            errorText: _endpointErrorOnModelsUrl
+                                ? _endpointError
+                                : null,
                           ),
                         ),
                         const SizedBox(height: 12),

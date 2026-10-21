@@ -143,6 +143,115 @@ void main() {
     });
   });
 
+  group('the model list URL follows the base URL until edited', () {
+    const elsewhere = 'https://different-recipient.example/v1';
+
+    Future<void> openCodeGo(WidgetTester tester) async {
+      final settings = AiSettingsController(MemoryAiStore());
+      await settings.initialize();
+      await tester.pumpWidget(_host(AiProviderEditor(settings: settings)));
+      _preset(tester).onChanged!(AiPresets.openCodeGo);
+      await tester.pumpAndSettle();
+      await _expandAdvanced(tester);
+    }
+
+    testWidgets('another server clears it and the preset server restores it', (
+      tester,
+    ) async {
+      await openCodeGo(tester);
+      expect(_modelsUrlText(tester), AiPresets.openCodeGo.modelsUrl);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-base-url')),
+        elsewhere,
+      );
+      await tester.pumpAndSettle();
+      expect(_modelsUrlText(tester), isEmpty);
+      expect(find.text(l10n.aiProviderBaseUrlInvalid), findsNothing);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-base-url')),
+        AiPresets.openCodeGo.baseUrlFor(AiFormat.chatCompletions),
+      );
+      await tester.pumpAndSettle();
+      expect(_modelsUrlText(tester), AiPresets.openCodeGo.modelsUrl);
+      expect(find.text(l10n.aiProviderBaseUrlInvalid), findsNothing);
+    });
+
+    testWidgets('an edited list URL stays and carries its own error', (
+      tester,
+    ) async {
+      await openCodeGo(tester);
+      const edited = 'https://opencode.ai/inference/v1/models';
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-models-url')),
+        edited,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-base-url')),
+        elsewhere,
+      );
+      await tester.pumpAndSettle();
+
+      expect(_modelsUrlText(tester), edited);
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('ai-provider-models-url')),
+          matching: find.text(l10n.aiProviderBaseUrlInvalid),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('ai-provider-base-url')),
+          matching: find.text(l10n.aiProviderBaseUrlInvalid),
+        ),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a saved provider on another server opens without one', (
+      tester,
+    ) async {
+      final settings = AiSettingsController(MemoryAiStore());
+      await settings.initialize();
+      await settings.saveProviderWithKey(
+        AiProviderConfig(
+          id: 'go-elsewhere',
+          name: 'Synthetic Go elsewhere',
+          presetId: AiPresets.openCodeGo.id,
+          baseUrl: elsewhere,
+          format: AiFormat.chatCompletions,
+          model: 'synthetic-model',
+          authStyle: AiAuthStyle.bearer,
+          caps: AiPresets.openCodeGo.capsFor(AiFormat.chatCompletions),
+          allowLanCleartext: false,
+          toolsEnabled: false,
+          recipientRevision: 0,
+        ),
+        key: 'sk-synthetic-stored-for-elsewhere-1',
+      );
+      await tester.pumpWidget(
+        _host(
+          AiProviderEditor(
+            settings: settings,
+            provider: settings.providers.single,
+          ),
+        ),
+      );
+      await _expandAdvanced(tester);
+      expect(_modelsUrlText(tester), isEmpty);
+
+      // Another path on the same server marks the endpoint as touched.
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-base-url')),
+        'https://different-recipient.example/v2',
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiProviderBaseUrlInvalid), findsNothing);
+    });
+  });
+
   testWidgets('preset descriptions are not cut at 320 dp and 2x text', (
     tester,
   ) async {
@@ -243,6 +352,24 @@ TextField _keyField(WidgetTester tester) => tester.widget<TextField>(
     matching: find.byType(TextField),
   ),
 );
+
+String _modelsUrlText(WidgetTester tester) => tester
+    .widget<TextField>(
+      find.descendant(
+        of: find.byKey(const ValueKey('ai-provider-models-url')),
+        matching: find.byType(TextField),
+      ),
+    )
+    .controller!
+    .text;
+
+Future<void> _expandAdvanced(WidgetTester tester) async {
+  final title = find.text(l10n.aiProviderAdvancedTitle);
+  await tester.ensureVisible(title);
+  await tester.pumpAndSettle();
+  await tester.tap(title);
+  await tester.pumpAndSettle();
+}
 
 Account _account() => Account(
   instance: GitLabInstance.parse('https://gitlab.example.test/team'),
