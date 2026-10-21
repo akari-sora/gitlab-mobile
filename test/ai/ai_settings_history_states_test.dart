@@ -210,7 +210,12 @@ void main() {
           isTrue,
         );
 
-        final retry = find.widgetWithText(TextButton, l10n.retryAction);
+        // An unfinished clear says so and continues the clear.
+        expect(find.text(l10n.aiHistoryClearUnfinished), findsOneWidget);
+        final retry = find.widgetWithText(
+          TextButton,
+          l10n.aiHistoryContinueClear,
+        );
         await tester.tap(retry);
         await tester.pumpAndSettle();
         expect(find.text(l10n.aiClearHistoryDetail), findsOneWidget);

@@ -194,13 +194,9 @@ void main() {
     );
     await tester.pump();
     expect(find.byIcon(Icons.help_outline_rounded), findsOneWidget);
-    expect(
-      find.text(
-        '${l10n.aiProviderUnverifiedLabel}: '
-        '${l10n.aiProviderVerificationExplanation}',
-      ),
-      findsOneWidget,
-    );
+    // Label and explanation are shown as two lines, not joined in code.
+    expect(find.text(l10n.aiProviderUnverifiedLabel), findsOneWidget);
+    expect(find.text(l10n.aiProviderVerificationExplanation), findsOneWidget);
   });
 
   testWidgets('OpenRouter key verification uses the dedicated key endpoint', (
@@ -377,6 +373,12 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text(l10n.aiProviderAuthApiKey).last);
     await tester.pumpAndSettle();
+    // A key typed for another authentication header is cleared.
+    expect(find.text(l10n.aiProviderKeyDraftCleared), findsOneWidget);
+    await tester.enterText(
+      find.byKey(const ValueKey('ai-provider-api-key')),
+      'sk-synthetic-123456',
+    );
     await tester.enterText(
       find.byKey(const ValueKey('ai-provider-output-limit')),
       '8192',

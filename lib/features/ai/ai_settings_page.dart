@@ -610,7 +610,8 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
         .where((candidate) => candidate.id == providerId)
         .firstOrNull;
     final needsReconsent =
-        provider == null || aiConsentContractFor(provider).hash != consent.hash;
+        provider == null ||
+        aiCurrentConsentContractFor(provider).hash != consent.hash;
     return HubRow(
       leading: NeutralTile(
         needsReconsent
