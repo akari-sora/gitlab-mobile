@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart' show ResponseBody;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
@@ -178,22 +181,27 @@ void main() {
       find.byKey(const ValueKey('ai-provider-read-models')),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('model-from-first-recipient'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.pumpAndSettle();
     expect(find.text('model-from-first-recipient'), findsOneWidget);
     expect(find.text(l10n.aiProviderModelsReadSuccess), findsOneWidget);
+    // Dismiss the picker by tapping the barrier above it.
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
 
     await tester.enterText(
       find.byKey(const ValueKey('ai-provider-base-url')),
       'https://second.example/v1',
     );
     await tester.pump();
-    expect(find.text('model-from-first-recipient'), findsNothing);
     expect(find.text(l10n.aiProviderModelsReadSuccess), findsNothing);
+    // The list belonged to the first recipient: the picker never offers it.
+    // (The URL change also dropped the typed key, so nothing is read again.)
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('model-from-first-recipient'), findsNothing);
+    expect(adapter.requests, hasLength(1));
   });
 
   testWidgets('invalid collapsed caps expand Advanced and cannot persist', (
@@ -361,6 +369,10 @@ void main() {
           {'id': 'vendor/alpha'},
           {'id': 'vendor/beta'},
           {'id': 'other/gamma'},
+          {'id': 'other/delta'},
+          {'id': 'vendor/epsilon'},
+          {'id': 'vendor/zeta'},
+          {'id': 'other/eta'},
         ],
       }),
     );
@@ -380,12 +392,7 @@ void main() {
       find.byKey(const ValueKey('ai-provider-read-models')),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('ai-provider-model-search')),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.pumpAndSettle();
+    // The picker is open; a longer list gets a search field.
     await tester.enterText(
       find.byKey(const ValueKey('ai-provider-model-search')),
       'beta',
@@ -395,6 +402,13 @@ void main() {
     expect(find.text('vendor/beta'), findsOneWidget);
     expect(find.text('vendor/alpha'), findsNothing);
     expect(find.text('other/gamma'), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('ai-provider-model-search')),
+      'no-such-model',
+    );
+    await tester.pump();
+    expect(find.text(l10n.aiProviderModelPickerEmpty), findsOneWidget);
   });
 
   testWidgets('model and auth edits clear key verification success', (
@@ -447,6 +461,218 @@ void main() {
     await tester.pump();
     expect(find.text(l10n.aiProviderKeyVerified), findsNothing);
   });
+
+  testWidgets('a model read that ends while leaving opens no picker', (
+    tester,
+  ) async {
+    final response = Completer<ResponseBody>();
+    final adapter = FakeAdapter((_) => response.future);
+    final settings = AiSettingsController(MemoryAiStore());
+    await settings.initialize();
+    await tester.pumpWidget(
+      _navigationHost(
+        settings,
+        clientFactory: (config, key) => _client(config, key, adapter),
+      ),
+    );
+    await tester.tap(find.text('open-editor'));
+    await tester.pumpAndSettle();
+    await _selectPreset(tester, AiPresets.openRouter);
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
+    await tester.pump(const Duration(milliseconds: 10));
+    expect(adapter.requests, hasLength(1));
+
+    await tester.tap(find.byTooltip(l10n.cancelAction));
+    await tester.pump(const Duration(milliseconds: 400));
+    if (find.text(l10n.aiProviderDiscardTitle).evaluate().isNotEmpty) {
+      await tester.tap(find.text(l10n.confirmAction));
+    }
+    // The editor starts leaving; the catalogue answers during the exit.
+    await tester.pump();
+    response.complete(
+      jsonResponse({
+        'data': [
+          {'id': 'synthetic/late-model'},
+        ],
+      }),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(AiProviderEditor), findsNothing);
+    expect(find.text('synthetic/late-model'), findsNothing);
+  });
+
+  testWidgets('a model read that ends while saving opens no picker', (
+    tester,
+  ) async {
+    final response = Completer<ResponseBody>();
+    final adapter = FakeAdapter((_) => response.future);
+    FlutterSecureStorage.setMockInitialValues(<String, String>{});
+    final storage = _GatedStorage();
+    final settings = AiSettingsController(SecureAiStore(storage));
+    // Secure-store settings are shared app-wide; release them for the next test.
+    addTearDown(settings.dispose);
+    await settings.initialize();
+    await tester.pumpWidget(
+      _navigationHost(
+        settings,
+        clientFactory: (config, key) => _client(config, key, adapter),
+      ),
+    );
+    await tester.tap(find.text('open-editor'));
+    await tester.pumpAndSettle();
+    await _selectPreset(tester, AiPresets.custom);
+    await _fillRequired(tester);
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
+    await tester.pump(const Duration(milliseconds: 10));
+    expect(adapter.requests, hasLength(1));
+
+    // Saving waits on storage; the catalogue answers meanwhile. The gate is
+    // released however this ends, so the shared settings can be disposed.
+    final gate = storage.gate = Completer<void>();
+    try {
+      await tester.tap(find.text(l10n.saveAction));
+      await tester.pump();
+      // Saving stopped the read at once, before its answer arrived.
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('ai-provider-pick-model')),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsNothing,
+      );
+      response.complete(
+        jsonResponse({
+          'data': [
+            {'id': 'synthetic-late-model'},
+          ],
+        }),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('synthetic-late-model'), findsNothing);
+      // While it saves, both list buttons are off and the read has stopped.
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byKey(const ValueKey('ai-provider-pick-model')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('ai-provider-read-models')),
+            )
+            .onPressed,
+        isNull,
+      );
+    } finally {
+      if (!gate.isCompleted) gate.complete();
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.byType(AiProviderEditor), findsNothing);
+    expect(find.byType(SnackBar), findsNothing);
+    expect(settings.providers, hasLength(1));
+  });
+
+  testWidgets('a failed save keeps the model list already read', (
+    tester,
+  ) async {
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({
+        'data': [
+          {'id': 'synthetic-kept-model'},
+        ],
+      }),
+    );
+    // The first key write fails, so the save fails and the editor stays.
+    final settings = AiSettingsController(_FailOnceKeyStore());
+    await settings.initialize();
+    await tester.pumpWidget(
+      _navigationHost(
+        settings,
+        clientFactory: (config, key) => _client(config, key, adapter),
+      ),
+    );
+    await tester.tap(find.text('open-editor'));
+    await tester.pumpAndSettle();
+    await _selectPreset(tester, AiPresets.custom);
+    await _fillRequired(tester);
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(l10n.saveAction));
+    await tester.pumpAndSettle();
+    expect(find.byType(AiProviderEditor), findsOneWidget);
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(find.text(l10n.aiProviderModelsReadSuccess), findsOneWidget);
+    // The failure snack bar may cover the field, so press its button directly.
+    tester
+        .widget<IconButton>(
+          find.byKey(const ValueKey('ai-provider-pick-model')),
+        )
+        .onPressed!();
+    await tester.pumpAndSettle();
+    expect(find.text('synthetic-kept-model'), findsOneWidget);
+    expect(adapter.requests, hasLength(1));
+  });
+
+  testWidgets(
+    'a model read that ends under the discard dialog opens no picker',
+    (tester) async {
+      final response = Completer<ResponseBody>();
+      final adapter = FakeAdapter((_) => response.future);
+      final settings = AiSettingsController(MemoryAiStore());
+      await settings.initialize();
+      await tester.pumpWidget(
+        _navigationHost(
+          settings,
+          clientFactory: (config, key) => _client(config, key, adapter),
+        ),
+      );
+      await tester.tap(find.text('open-editor'));
+      await tester.pumpAndSettle();
+      await _selectPreset(tester, AiPresets.custom);
+      await _fillRequired(tester);
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('ai-provider-pick-model')),
+      );
+      await tester.pump(const Duration(milliseconds: 10));
+      await tester.tap(find.byTooltip(l10n.cancelAction));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text(l10n.aiProviderDiscardTitle), findsOneWidget);
+
+      response.complete(
+        jsonResponse({
+          'data': [
+            {'id': 'synthetic-covered-model'},
+          ],
+        }),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      // No picker opened over the dialog.
+      expect(find.text('synthetic-covered-model'), findsNothing);
+      expect(find.text(l10n.aiProviderDiscardTitle), findsOneWidget);
+      // Keep editing.
+      await tester.tap(find.text(l10n.cancelAction).last);
+      await tester.pumpAndSettle();
+      expect(find.byType(AiProviderEditor), findsOneWidget);
+      expect(find.text('synthetic-covered-model'), findsNothing);
+    },
+  );
 
   testWidgets('Cancel asks before discarding edited settings', (tester) async {
     final settings = AiSettingsController(MemoryAiStore());
@@ -538,7 +764,10 @@ Widget _host(Widget child) => MaterialApp(
   home: child,
 );
 
-Widget _navigationHost(AiSettingsController settings) => MaterialApp(
+Widget _navigationHost(
+  AiSettingsController settings, {
+  AiProviderClientFactory? clientFactory,
+}) => MaterialApp(
   theme: appTheme(Brightness.light),
   locale: const Locale('zh', 'TW'),
   supportedLocales: const [Locale('zh', 'TW'), Locale('en')],
@@ -548,7 +777,10 @@ Widget _navigationHost(AiSettingsController settings) => MaterialApp(
       body: TextButton(
         onPressed: () => Navigator.of(context).push<void>(
           MaterialPageRoute(
-            builder: (_) => AiProviderEditor(settings: settings),
+            builder: (_) => AiProviderEditor(
+              settings: settings,
+              clientFactory: clientFactory,
+            ),
           ),
         ),
         child: const Text('open-editor'),
@@ -733,4 +965,24 @@ final class _FailOnceKeyStore implements AiStore {
   @override
   Future<void> clearTombstone(String accountKey) =>
       _inner.clearTombstone(accountKey);
+}
+
+/// Secure storage whose writes wait for [gate] while it is set.
+final class _GatedStorage extends FlutterSecureStorage {
+  Completer<void>? gate;
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    await gate?.future;
+    await super.write(key: key, value: value);
+  }
 }

@@ -147,10 +147,12 @@ String pipelineCardLabel(Json value) {
 
 String jobCardLabel(Json value) {
   final stage = valueText(value, 'stage');
+  final user = valueText(valueObject(value, 'user'), 'username');
   return [
     valueText(value, 'name'),
     statusLabel(valueText(value, 'status')),
     if (stage.isNotEmpty) stage,
+    if (user.isNotEmpty) '@$user',
   ].join(' · ');
 }
 
@@ -382,6 +384,33 @@ class MetaChip extends StatelessWidget {
       borderRadius: BorderRadius.circular(6), onTap: tap,
       child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 32),
         child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: chip))));
+  }
+}
+
+/// Who a row is by (the author, the person who ran it): a small monogram and
+/// `@username`, or the name when there is no username (a commit author), in
+/// the meta row's style. Nothing when both are missing; build rows with
+/// [PersonChip.of] so a missing person leaves no gap.
+class PersonChip extends StatelessWidget {
+  const PersonChip(this.person, {super.key, this.author = true});
+  /// A chip for [person], or null when there is nobody to show, so a row does
+  /// not keep an empty slot.
+  static PersonChip? of(Json person, {bool author = true}) =>
+      valueText(person, 'username').isEmpty && valueText(person, 'name').isEmpty ? null : PersonChip(person, author: author);
+  final Json person;
+  /// Screen readers hear "Author …"; otherwise just the person.
+  final bool author;
+  @override
+  Widget build(BuildContext context) {
+    final username = valueText(person, 'username'), name = valueText(person, 'name');
+    final shown = username.isNotEmpty ? '@$username' : name;
+    if (shown.isEmpty) return const SizedBox.shrink();
+    final style = Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    return Semantics(label: author ? l10n.authorLabel(shown) : shown, excludeSemantics: true, child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Monogram(name.isEmpty ? username : name, size: 18, circle: true),
+      const SizedBox(width: 4),
+      Flexible(child: Text(isolated(shown), maxLines: 1, overflow: TextOverflow.ellipsis, style: style)),
+    ]));
   }
 }
 

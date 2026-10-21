@@ -854,6 +854,7 @@ class _PipelinePageState extends State<PipelinePage> {
                                       Wrap(spacing: 10, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
                                         StatusBadge(status),
                                         if (duration.isNotEmpty) MetaChip(duration, icon: Icons.timer_outlined),
+                                        ?PersonChip.of(valueObject(value, 'user'), author: false),
                                       ]),
                                     ],
                                   ),
