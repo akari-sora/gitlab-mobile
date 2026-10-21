@@ -1,5 +1,8 @@
 import 'ai_failure.dart';
 
+/// Fewest characters of a secret its pattern alias must keep to be matched.
+const _minAliasRemainder = 4;
+
 const _redacted = '[REDACTED]';
 const _unterminatedPrivateKey = '[REDACTED:private_key_unterminated]';
 const _unopenedPrivateKey = '[REDACTED:private_key_unopened]';
@@ -173,13 +176,11 @@ final class Redactor {
     );
   }
 
-  /// Cached intake aliases with at least four retained secret characters.
-  /// Shorter remainders cannot reliably identify a newly known sent secret.
+  /// Cached intake aliases, each keeping at least [_minAliasRemainder]
+  /// characters of its secret.
   Iterable<String> get verificationAliases {
     _refreshSecrets();
-    return _patternAliases.values.where(
-      (alias) => _aliasRemainderLength(alias) >= 4,
-    );
+    return _patternAliases.values;
   }
 
   /// Redacts a retained prefix and removes its longest trailing partial known
@@ -194,9 +195,8 @@ final class Redactor {
     for (final alias in _patternAliases.values) {
       final length = _partialSecretSuffixLength(result.text, alias);
       // A complete replacement marker alone is not a partial secret.
-      final markerLength = _redactionMarkers
-          .where(alias.startsWith)
-          .fold(0, (length, marker) => marker.length);
+      final markerLength =
+          _redactionMarkers.where(alias.startsWith).firstOrNull?.length ?? 0;
       if (length > markerLength && length > trim) trim = length;
     }
     return RedactionResult(
@@ -213,7 +213,10 @@ final class Redactor {
         // Cache the layout intake would retain before this secret was known.
         // This scan uses built-in detectors only, never the known-secret set.
         final alias = _replaceRanges(secret, _patternRanges(secret)).text;
-        if (alias != secret && _aliasRemainderLength(alias) > 0) {
+        // A shorter remainder cannot identify the secret and would match
+        // ordinary text next to a marker (for example one trailing space).
+        if (alias != secret &&
+            _aliasRemainderLength(alias) >= _minAliasRemainder) {
           _patternAliases[secret] = alias;
         }
       }

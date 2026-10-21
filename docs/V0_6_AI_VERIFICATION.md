@@ -64,7 +64,7 @@ sharing a delimiter, so a BEGIN that shares the hyphens of a closing END still
 opens its own range. Marker collection and pairing are one linear pass; the
 common span sort/merge is unchanged. Host growth regressions compare N with 4N
 (N = 512 KiB for most inputs, 25,000 BEGINs and 2,000 sentinels for two of
-them, so 4N stays near 2 MiB; median of three samples after warm-up)
+them, so 4N stays near 2 MiB; fastest of three samples after warm-up)
 and require at most 8x growth (quadratic work grows 16x) with a five-second
 ceiling. Inputs cover alternating markers, long invalid labels, many BEGINs
 without END, a single line and earlier JWT, assignment, inline and armor
@@ -586,7 +586,7 @@ The final full run passes the unchanged decoder performance assertion and protec
 
 ## MR4 — read-only tools and bounded runner
 
-This working-tree change adds the project-bound read port, ten-tool catalogue,
+Commit `77f2be5` adds the project-bound read port, ten-tool catalogue,
 shared sensitive-path policy, SHA-pinned context builders, untrusted-data prompt
 labels, live secrets, interface checks and the bounded conversation runner.
 `AiRunnerBinding` observes the existing settings/session owners. The gate is
@@ -638,7 +638,10 @@ Round six adds cached pattern aliases to frozen-text verification when at least
 four secret characters remain outside replacement markers. A newly known alias
 already sent stops the send with `newSecret`; the follow-up uses a re-redacted
 projection. Aliases containing only replacement markers are excluded from the
-cache, preserving zero redaction counts for existing markers. Alias cut-end
+cache, preserving zero redaction counts for existing markers. Round seven
+applies the same four-character minimum when caching, so an alias with a one to
+three character remainder (a pasted key with one trailing space) no longer
+over-matches text beside markers in intake or cut-end trimming. Alias cut-end
 trimming requires a match beyond its leading marker into the secret remainder.
 `test/ai/fix6_regressions_test.dart` covers the production catalogue timing after
 payload two, full-secret behavior, the three/four-character verification boundary,

@@ -55,7 +55,7 @@ String _keyShape(String shape, List<String> lines, String newline) {
   }
 }
 
-// Median removes isolated scheduler pauses; each size gets the same warm-up.
+// Each size gets the same warm-up before its samples.
 int _redactionMicros(Redactor redactor, String input) {
   redactor.redactSource(input);
   final samples = <int>[];
@@ -72,6 +72,19 @@ int _redactionMicros(Redactor redactor, String input) {
 }
 
 void main() {
+  test('an alias keeping under four secret characters is not matched', () {
+    // A pasted key with one trailing space: the pattern takes all but the
+    // space, and an alias of '[REDACTED] ' would glue ordinary text together.
+    for (final key in ['sk-proj-${'B' * 30} ', 'sk-proj-${'B' * 30}.x']) {
+      final redactor = Redactor(secrets: _Secrets()..values = [key]);
+      const text = 'token=[REDACTED] and pw=[REDACTED].xml here';
+      final result = redactor.redactSource(text);
+      expect(result.text, text, reason: key);
+      expect(result.redactions, 0, reason: key);
+      expect(redactor.verificationAliases, isEmpty, reason: key);
+    }
+  });
+
   for (final shape in [
     'yaml',
     'tab',
