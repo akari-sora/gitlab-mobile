@@ -344,11 +344,20 @@ void main() {
     );
     await expectLater(
       transport.request(responses),
-      throwsA(_failure(AiFailureKind.rateLimited)),
+      throwsA(
+        isA<AiFailure>()
+            .having((f) => f.kind, 'kind', AiFailureKind.rateLimited)
+            .having((f) => f.notSent, 'notSent', isFalse),
+      ),
     );
+    // Refused locally: the failure says the request never left.
     await expectLater(
       transport.request(responses),
-      throwsA(_failure(AiFailureKind.rateLimited)),
+      throwsA(
+        isA<AiFailure>()
+            .having((f) => f.kind, 'kind', AiFailureKind.rateLimited)
+            .having((f) => f.notSent, 'notSent', isTrue),
+      ),
     );
     expect(adapter.requests, hasLength(1));
     now = now.add(const Duration(seconds: 61));

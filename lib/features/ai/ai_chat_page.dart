@@ -46,14 +46,24 @@ Future<bool> openAiChat(BuildContext context, AiChatOrigin origin) async {
 String aiOriginTitle(
   AiChatOrigin origin, {
   required String Function(String text) safe,
-}) => switch (origin) {
-  AiGeneralOrigin() => l10n.aiAssistantLabel,
-  AiJobOrigin(:final jobName) => l10n.aiChatJobTitle(safe(jobName)),
-  AiWorkItemOrigin(:final kind, :final iid, :final title) =>
-    '${isolated(kind == AiWorkItemKind.mergeRequest ? '!$iid' : '#$iid')} '
-        '${isolated(safe(title))}',
-  AiFileOrigin(:final path) => isolated(safe(path.split('/').last)),
-};
+}) {
+  final value = switch (origin) {
+    AiGeneralOrigin() => null,
+    AiJobOrigin(:final jobName) => safe(jobName),
+    AiWorkItemOrigin(:final title) => safe(title),
+    AiFileOrigin(:final path) => safe(path.split('/').last),
+  };
+  // An empty value is one that could not be checked against the secrets.
+  if (value == null || value.isEmpty) return l10n.aiAssistantLabel;
+  return switch (origin) {
+    AiGeneralOrigin() => l10n.aiAssistantLabel,
+    AiJobOrigin() => l10n.aiChatJobTitle(value),
+    AiWorkItemOrigin(:final kind, :final iid) =>
+      '${isolated(kind == AiWorkItemKind.mergeRequest ? '!$iid' : '#$iid')} '
+          '${isolated(value)}',
+    AiFileOrigin() => isolated(value),
+  };
+}
 
 List<String> _suggestions(AiChatOrigin origin) => switch (origin) {
   AiGeneralOrigin() => const [],

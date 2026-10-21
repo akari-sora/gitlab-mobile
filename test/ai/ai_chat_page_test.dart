@@ -682,6 +682,21 @@ void main() {
     expect(find.textContaining('synthetic-secret'), findsNothing);
   });
 
+  test('a title that cannot be checked falls back to the assistant', () {
+    String hidden(String _) => '';
+    for (final origin in [
+      _mergeRequest,
+      AiJobOrigin(project: _project, jobId: 7, jobName: 'build'),
+      AiFileOrigin(project: _project, path: 'lib/a/b.dart', sha: 'a1'),
+    ]) {
+      expect(aiOriginTitle(origin, safe: hidden), l10n.aiAssistantLabel);
+    }
+    expect(
+      aiOriginTitle(_mergeRequest, safe: (text) => text),
+      contains('Synthetic change'),
+    );
+  });
+
   testWidgets('a GitLab read failure uses the app notice with retry', (
     tester,
   ) async {

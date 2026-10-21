@@ -177,10 +177,10 @@ final class AiRunner {
   List<AiContextBlock> _segmentContext = const [];
   List<AiContextBlock> _sentContext = const [];
 
-  /// The redacted context blocks attached to the last run's user message:
-  /// the page context, or a conversation summary after a new segment. Empty
-  /// when that message carried none. Whether they left the device is
-  /// [AiRunResult.modelCalls] > 0.
+  /// The redacted context blocks attached to the last run's user message, as
+  /// last redacted before sending: the page context, or a conversation
+  /// summary after a new segment. Empty when that message carried none. They
+  /// may have left the device when [AiRunResult.modelCalls] > 0.
   List<AiContextBlock> get sentContext => _sentContext;
   int actualInputTokens = 0;
   int estimatedInputTokens = 0;
@@ -467,6 +467,11 @@ final class AiRunner {
               ),
             );
           }
+        } on AiFailure catch (failure) {
+          // Refused locally (a remembered Retry-After, a closed transport):
+          // this request never left the device.
+          if (failure.notSent) modelCalls--;
+          rethrow;
         } finally {
           _recordUsage(latestUsage, encoded.length);
         }
@@ -798,15 +803,17 @@ final class AiRunner {
     await _refresh(epoch);
     final tail = seg.tail;
     if (tail is AppUserEntry) {
+      final context = [
+        for (final block in tail.context)
+          block.redact(_redactor, source: _redact),
+      ];
       seg.setTail(
         tail.redactedCopy(
           text: _redact(tail.text, late: true),
-          context: [
-            for (final block in tail.context)
-              block.redact(_redactor, source: _redact),
-          ],
+          context: context,
         ),
       );
+      _sentContext = List.unmodifiable(context);
     } else if (tail is AppToolResultsEntry) {
       seg.setTail(
         tail.copyWith(

@@ -502,6 +502,27 @@ void main() {
     },
   );
 
+  test('sentContext is the context as last redacted before sending', () async {
+    const late = 'synthetic-late-runner-0042';
+    // Learn the secret at each refresh of the run in turn; what the runner
+    // reports must match what the request carried.
+    for (var k = 1; k <= 6; k++) {
+      final h = Harness(
+        context: [AiContextBlock(source: 'file', text: 'value $late here')],
+      );
+      var refreshes = 0;
+      h.refresh = () {
+        if (++refreshes == k) h.secrets.current.add(late);
+      };
+      await h.runner.run('explain');
+      expect(
+        h.runner.sentContext.single.text.contains(late),
+        h.payloads.first.contains(late),
+        reason: 'k=$k',
+      );
+    }
+  });
+
   test(
     'context attaches once over three sends, frozen bytes never change',
     () async {

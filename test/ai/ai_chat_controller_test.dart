@@ -35,6 +35,7 @@ AiProviderConfig _provider(
   bool requiresKey = false,
   bool tools = false,
   String model = 'synthetic-model',
+  int maxRequestChars = 400000,
 }) => AiProviderConfig(
   id: id,
   name: 'Synthetic $id',
@@ -50,6 +51,7 @@ AiProviderConfig _provider(
     },
     requiresKey: requiresKey,
     toolChoice: true,
+    maxRequestChars: maxRequestChars,
   ),
   allowLanCleartext: false,
   toolsEnabled: tools,
@@ -350,11 +352,17 @@ Future<AiChatController> _readyController(
   AiChatOrigin? origin,
   bool tools = true,
   bool requiresKey = false,
+  int maxRequestChars = 400000,
   Future<void> Function()? refreshSecrets,
 }) async {
   await _configure(
     environment,
-    _provider(AiFormat.responses, tools: tools, requiresKey: requiresKey),
+    _provider(
+      AiFormat.responses,
+      tools: tools,
+      requiresKey: requiresKey,
+      maxRequestChars: maxRequestChars,
+    ),
     grantConsent: true,
   );
   final controller = _controller(
@@ -635,10 +643,99 @@ void main() {
     );
     await controller.recheck();
     await controller.send('second');
-    final chips = controller.items.whereType<AiUserItem>().last.chips;
-    final sent = _sentGitLabData(adapter.requests.last);
-    expect(chips.map((chip) => chip.sentText), contains(sent));
-    expect(chips.map((chip) => chip.source), contains('conversation_summary'));
+    final chip = controller.items.whereType<AiUserItem>().last.chips.single;
+    expect(chip.sentText, _sentGitLabData(adapter.requests.last));
+    expect(chip.source, 'conversation_summary');
+    expect(chip.resource, isNull);
+  });
+
+  test('chips never show a secret learned during the send', () async {
+    const late = 'synthetic-late-chip-value-0091';
+    // Learn the secret at each refresh of the send in turn: before the
+    // context is attached, between attaching and sending, and after.
+    for (var k = 1; k <= 10; k++) {
+      final environment = await _environment(
+        repositoryText: 'first line\nvalue $late here\n',
+      );
+      addTearDown(environment.dispose);
+      var armed = false;
+      var learned = false;
+      var refreshes = 0;
+      final adapter = FakeAdapter((_) => _sse(answer('a reply')));
+      final controller = await _readyController(
+        environment,
+        adapter,
+        tools: false,
+        refreshSecrets: () async {
+          if (!armed || ++refreshes != k) return;
+          learned = true;
+          await environment.settings.saveProviderKey(
+            'other',
+            late,
+            acknowledgeWarning: true,
+          );
+        },
+      );
+      await environment.settings.saveProvider(
+        _provider(AiFormat.responses, id: 'other', requiresKey: true),
+      );
+      await controller.recheck();
+      armed = true;
+      await controller.send('explain');
+      final chip = controller.items.whereType<AiUserItem>().single.chips.single;
+      final sent = _sentGitLabData(adapter.requests.single);
+      if (learned) {
+        expect(chip.sentText, isNot(contains(late)), reason: 'k=$k');
+        expect(chip.preview, isNot(contains(late)), reason: 'k=$k');
+      }
+      if (!sent.contains(late)) expect(chip.sentText, sent, reason: 'k=$k');
+    }
+  });
+
+  test('a request refused before sending takes its chips back', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    final adapter = FakeAdapter(
+      (_) => ResponseBody.fromString(
+        '',
+        429,
+        headers: {
+          'retry-after': ['60'],
+        },
+      ),
+    );
+    final controller = await _readyController(
+      environment,
+      adapter,
+      tools: false,
+    );
+    await controller.send('first');
+    // Within the remembered Retry-After the transport refuses locally.
+    await controller.send('second');
+    expect(adapter.requests, hasLength(1));
+    final users = controller.items.whereType<AiUserItem>().toList();
+    expect(users.first.chips, isNotEmpty);
+    expect(users.last.chips, isEmpty);
+  });
+
+  test('a first request too long to send takes its chips back', () async {
+    final environment = await _environment(
+      repositoryText: List.filled(400, 'synthetic line of text').join('\n'),
+    );
+    addTearDown(environment.dispose);
+    final adapter = FakeAdapter((_) => _sse(answer('a reply')));
+    final controller = await _readyController(
+      environment,
+      adapter,
+      tools: false,
+      maxRequestChars: 6000,
+    );
+    await controller.send('explain');
+    expect(adapter.requests, isEmpty);
+    expect(
+      controller.items.whereType<AiUserItem>().single.chips,
+      isEmpty,
+    );
   });
 
   test('a stop mid-stream keeps the chips of what was sent', () async {
@@ -794,6 +891,131 @@ void main() {
       ),
     );
     expect(controller.items.whereType<AiUserItem>(), isEmpty);
+  });
+
+  test('a display pass that fails during the run keeps its outcome', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    var sent = false;
+    var learned = false;
+    final adapter = FakeAdapter((_) {
+      sent = true;
+      return _sse(answer('a reply'));
+    });
+    final controller = await _readyController(
+      environment,
+      adapter,
+      tools: false,
+      refreshSecrets: () async {
+        if (!sent || learned) return;
+        learned = true;
+        await environment.settings.saveProviderKey(
+          'other',
+          'REDACTED',
+          acknowledgeWarning: true,
+        );
+      },
+    );
+    await environment.settings.saveProvider(
+      _provider(AiFormat.responses, id: 'other', requiresKey: true),
+    );
+    await controller.recheck();
+    AiChatBlocker? ended;
+    void listener() {
+      if (ended == null && controller.phase == AiChatPhase.idle) {
+        ended = controller.blocker;
+      }
+    }
+
+    controller.addListener(listener);
+    await controller.send('explain');
+    controller.removeListener(listener);
+    expect(learned, isTrue);
+    expect(ended, AiChatBlocker.contextUnavailable);
+    expect(
+      controller.items.whereType<AiAssistantItem>().single.state,
+      AiAssistantState.hidden,
+    );
+  });
+
+  test('a list of notices alone does not clear the block', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    final gate = Completer<void>();
+    var holdRefresh = false;
+    var refreshing = false;
+    final adapter = FakeAdapter((_) => throw StateError('must not send'));
+    final controller = await _readyController(
+      environment,
+      adapter,
+      refreshSecrets: () async {
+        if (holdRefresh) {
+          refreshing = true;
+          await gate.future;
+        }
+      },
+    );
+    holdRefresh = true;
+    final send = controller.send('keep this draft');
+    await _waitFor(() => refreshing);
+    controller.stop();
+    gate.complete();
+    await send;
+    holdRefresh = false;
+    await environment.settings.saveProvider(
+      _provider(AiFormat.responses, id: 'other', requiresKey: true),
+    );
+    await environment.settings.saveProviderKey(
+      'other',
+      'REDACTED',
+      acknowledgeWarning: true,
+    );
+    await controller.recheck();
+    expect(controller.items.whereType<AiUserItem>(), isEmpty);
+    expect(controller.blocker, AiChatBlocker.contextUnavailable);
+    // Only notices are left, but redaction still fails.
+    await controller.recheck();
+    expect(controller.blocker, AiChatBlocker.contextUnavailable);
+    expect(controller.canSend, isFalse);
+  });
+
+  test('a display pass hides only what it cannot check', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    final adapter = FakeAdapter((_) => _sse(answer('a reply')));
+    final controller = await _readyController(
+      environment,
+      adapter,
+      tools: false,
+    );
+    await environment.settings.saveProvider(
+      _provider(AiFormat.responses, id: 'other', requiresKey: true),
+    );
+    await environment.settings.saveProviderKey(
+      'other',
+      'x[REDACTED]y',
+      acknowledgeWarning: true,
+    );
+    await controller.recheck();
+    await controller.send('first late-key-77');
+    await controller.send('xlate-key-77y');
+    await environment.settings.saveProvider(
+      _provider(AiFormat.responses, id: 'third', requiresKey: true),
+    );
+    await environment.settings.saveProviderKey(
+      'third',
+      'late-key-77',
+      acknowledgeWarning: true,
+    );
+    await controller.recheck();
+    // Redacting the second message would spell the first key.
+    expect(controller.blocker, AiChatBlocker.contextUnavailable);
+    expect(
+      controller.items.whereType<AiUserItem>().map((item) => item.text),
+      ['first [REDACTED]'],
+    );
+    await controller.recheck();
+    expect(controller.blocker, AiChatBlocker.none);
   });
 
   test('a stop before sending keeps only the blocked-path chips', () async {

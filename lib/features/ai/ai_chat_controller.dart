@@ -65,16 +65,12 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       // Patterns never change; only a larger secret set needs a new pass over
       // what is shown, which can hold whole files and long replies.
       if (_secrets.revision == _displayRevision) return;
-      _redactDisplay();
-      if (_assistantIndex != null) {
-        final index = _items.lastIndexWhere((item) => item is AiUserItem);
-        if (index >= 0) {
-          final user = _items[index] as AiUserItem;
-          if (user.chips.isNotEmpty) {
-            _items[index] = AiUserItem(text: user.text, chips: _chips());
-          }
-        }
-        _notifyStream();
+      try {
+        // The pass re-redacts the chips too; _settleChips sets the run's
+        // final ones.
+        _redactDisplay();
+      } finally {
+        if (_assistantIndex != null) _notifyStream();
       }
     };
     settings.addListener(_settingsChanged);
@@ -555,11 +551,20 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
         sent: result.modelCalls > 0,
         blocks: runner.sentContext,
       );
-      _redactDisplayIfNeeded();
+      try {
+        _redactDisplayIfNeeded();
+      } on AiFailure {
+        // _displayFailed blocks the chat once the run's outcome is recorded.
+      }
       _failure = result.failure;
       _offerNewConversation = result.offerRollover;
       _lastEnd = result.reason;
-      _setAssistant(result.text, _stateFor(result.reason));
+      if (_displayFailed) {
+        // The reply cannot be checked against the live secrets either.
+        _setAssistant('', AiAssistantState.hidden);
+      } else {
+        _setAssistant(result.text, _stateFor(result.reason));
+      }
       _assistantIndex = null;
       if (segment != null && !identical(segment, runner.segment)) {
         _items.add(const AiNoticeItem(AiNoticeKind.segmentSummary));
@@ -581,7 +586,8 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       }
     } on Object catch (error) {
       if (!_current(epoch)) return;
-      // Thrown before the run started: nothing left the device.
+      // Only steps before the run throw (refreshing, redacting the message,
+      // creating the runner): nothing left the device.
       _settleChips(userIndex, sent: false);
       _failure = _assistantIndex != null
           ? _mapFailure(error)
@@ -697,7 +703,9 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   /// the redacted blocks the runner attached (the page context, a
   /// conversation summary, or none). Blocked-path chips always stay. A
   /// request that started and then failed or was stopped did leave the
-  /// device, so it keeps its chips.
+  /// device, so it keeps its chips. The runner redacted [blocks] before
+  /// sending; secrets learned since are redacted here, and a message that
+  /// cannot be checked is hidden like in a display pass.
   void _settleChips(
     int? index, {
     required bool sent,
@@ -705,14 +713,22 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   }) {
     if (index == null || index >= _items.length) return;
     if (_items[index] case AiUserItem(:final text, :final chips)) {
-      final settled = [
-        if (sent)
-          for (final block in blocks) _sentChip(block),
-        for (final chip in chips)
-          if (chip.blocked) chip,
-      ];
-      if (settled.isEmpty && chips.isEmpty) return;
-      _items[index] = AiUserItem(text: text, chips: settled);
+      try {
+        final settled = [
+          if (sent)
+            for (final block in blocks) _sentChip(block),
+          for (final chip in chips)
+            if (chip.blocked) chip,
+        ];
+        if (settled.isEmpty && chips.isEmpty) return;
+        _items[index] = _redactItem(
+          AiUserItem(text: text, chips: settled),
+          (value) => _redactor.redactSource(value).text,
+        );
+      } on Object {
+        _items[index] = _hiddenItem(_items[index]);
+        _displayFailed = true;
+      }
     }
   }
 
@@ -736,6 +752,13 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     String safe(String text) => _redactor.redactSource(text).text;
     final redacted = List<AiChatItem>.of(_items);
     var failed = false;
+    try {
+      // Notices hold no text, so a list of them alone would pass even when
+      // nothing can be redacted.
+      safe('');
+    } on Object {
+      failed = true;
+    }
     for (var index = 0; index < redacted.length; index++) {
       try {
         redacted[index] = _redactItem(redacted[index], safe);

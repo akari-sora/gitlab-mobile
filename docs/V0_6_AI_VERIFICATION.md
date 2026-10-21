@@ -1000,3 +1000,40 @@ One new message, "Conversation summary", is translated in all 24 catalogs.
 - A message stopped before sending keeps its blocked-path chips.
 
 Tests: one widget test with the real controller, plus two controller tests. Removing each fix turns its test red.
+
+### MR6a-1 review round 5
+
+Codex and Opus returned REQUEST CHANGES. Both found the same main problem. Fixed:
+
+- **Chips could show a secret learned during the run (Codex P1, Opus R5-1).**
+  - Cause: after the run, `_settleChips` rebuilt the chips from the runner's blocks without redacting them again, and the display pass had already moved past that secret.
+  - Fix: the runner reports the blocks as last redacted before sending (`_redactTail`). The controller redacts the settled message again with the live secrets, and hides the message if that fails.
+  - Test: one test learns the secret at each refresh of a send in turn. A runner test checks that `sentContext` contains a secret exactly when the request did.
+- **A request the transport refused locally counted as sent (Codex P2).**
+  - `AiFailure.notSent` marks a refusal before the request reaches the network: a remembered Retry-After, a closed transport, a blocked endpoint, or an oversized body.
+  - The runner does not count those calls, so such a message has no chips.
+- **A list of notices alone cleared the block (Codex P2).** A display pass now first checks that redaction works at all.
+- **Steps after the run threw into the catch meant for steps before it (Opus R5-2).**
+  - The display pass after the run no longer throws there.
+  - When it fails, the reply is hidden too, and the chat blocks with the run's own outcome kept.
+- **The branch for "nothing was sent" had no test (Opus R5-3).** It now has one: a first request too long to send. The round-4 entry said every fix had a mutation run; that was not true for this branch.
+- **Nits:**
+  - A title that cannot be checked falls back to the assistant label (N5-5).
+  - The summary-chip test now asserts the single chip (N5-2).
+  - A new test covers a pass that fails for only some items (N5-3).
+  - The display pass during a run repaints even when it fails, and no longer swaps in the page chips (N5-7, N5-8).
+
+**Mutation runs, outside the repository.** Each of these 10 changes makes the test named for it fail:
+- settle without the re-redaction;
+- `_redactTail` without updating `sentContext`;
+- not discounting a refused call;
+- the transport without `notSent`;
+- no redaction probe;
+- chips kept when nothing was sent;
+- the display pass after the run unwrapped;
+- the reply shown after a failed pass;
+- an empty title.
+
+**Deferred:**
+- N5-4: a hidden message also loses its chip.
+- N5-6: a run's own failure stays under the block card until the next recheck clears it.
