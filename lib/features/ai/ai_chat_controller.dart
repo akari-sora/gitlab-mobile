@@ -652,8 +652,9 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   };
 
   /// A chip for a block that is already redacted, as sent. Its preview is
-  /// cut from the redacted text.
-  AiContextChip _sentChip(AiContextBlock sent) {
+  /// cut from the redacted text. [sizeChars] keeps the size that was sent
+  /// when a later pass redacts more.
+  AiContextChip _sentChip(AiContextBlock sent, {int? sizeChars}) {
     final resource = _originResource;
     final pinned = _context?.built.pinnedSha;
     return AiContextChip(
@@ -664,7 +665,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           : _redactor.redactSource(resource).text,
       sentText: sent.text,
       preview: clipAiText(sent.text, 200),
-      sizeChars: sent.text.length,
+      sizeChars: sizeChars ?? sent.text.length,
       pinnedSha: pinned == null ? null : _redactor.redactSource(pinned).text,
       block: sent,
     );
@@ -791,20 +792,19 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
             for (final chip in chips)
               if (chip.block case final block?)
                 // Redact the plain text, then encode: see AiContextChip.block.
-                _sentChip(block.redact(_redactor, source: safe))
+                _sentChip(
+                  block.redact(_redactor, source: safe),
+                  sizeChars: chip.sizeChars,
+                )
               else
                 AiContextChip(
                   source: safe(chip.source),
                   preview: safe(chip.preview),
-                  sentText: chip.sentText == null
-                      ? null
-                      : safe(chip.sentText!),
+                  sentText: chip.sentText == null ? null : safe(chip.sentText!),
                   sizeChars: chip.sizeChars,
                   blocked: chip.blocked,
                   type: chip.type,
-                  resource: chip.resource == null
-                      ? null
-                      : safe(chip.resource!),
+                  resource: chip.resource == null ? null : safe(chip.resource!),
                   pinnedSha: chip.pinnedSha == null
                       ? null
                       : safe(chip.pinnedSha!),

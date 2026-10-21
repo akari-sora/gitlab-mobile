@@ -658,51 +658,55 @@ void main() {
       'synthetic-late-chip-value-0091',
       'synthetic&late<chip>value-0092',
     ]) {
-    final escaped = late
-        .replaceAll('&', '&amp;')
-        .replaceAll('<', '&lt;')
-        .replaceAll('>', '&gt;');
-    for (var k = 1; k <= 10; k++) {
-      final environment = await _environment(
-        repositoryText: 'first line\nvalue $late here\n',
-      );
-      addTearDown(environment.dispose);
-      var armed = false;
-      var learned = false;
-      var refreshes = 0;
-      final adapter = FakeAdapter((_) => _sse(answer('a reply')));
-      final controller = await _readyController(
-        environment,
-        adapter,
-        tools: false,
-        refreshSecrets: () async {
-          if (!armed || ++refreshes != k) return;
-          learned = true;
-          await environment.settings.saveProviderKey(
-            'other',
-            late,
-            acknowledgeWarning: true,
-          );
-        },
-      );
-      await environment.settings.saveProvider(
-        _provider(AiFormat.responses, id: 'other', requiresKey: true),
-      );
-      await controller.recheck();
-      armed = true;
-      await controller.send('explain');
-      final chip = controller.items.whereType<AiUserItem>().single.chips.single;
-      final sent = _sentGitLabData(adapter.requests.single);
-      if (learned) {
-        for (final form in {late, escaped}) {
-          expect(chip.sentText, isNot(contains(form)), reason: '$form k=$k');
-          expect(chip.preview, isNot(contains(form)), reason: '$form k=$k');
+      final escaped = late
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;');
+      for (var k = 1; k <= 10; k++) {
+        final environment = await _environment(
+          repositoryText: 'first line\nvalue $late here\n',
+        );
+        addTearDown(environment.dispose);
+        var armed = false;
+        var learned = false;
+        var refreshes = 0;
+        final adapter = FakeAdapter((_) => _sse(answer('a reply')));
+        final controller = await _readyController(
+          environment,
+          adapter,
+          tools: false,
+          refreshSecrets: () async {
+            if (!armed || ++refreshes != k) return;
+            learned = true;
+            await environment.settings.saveProviderKey(
+              'other',
+              late,
+              acknowledgeWarning: true,
+            );
+          },
+        );
+        await environment.settings.saveProvider(
+          _provider(AiFormat.responses, id: 'other', requiresKey: true),
+        );
+        await controller.recheck();
+        armed = true;
+        await controller.send('explain');
+        final chip = controller.items
+            .whereType<AiUserItem>()
+            .single
+            .chips
+            .single;
+        final sent = _sentGitLabData(adapter.requests.single);
+        if (learned) {
+          for (final form in {late, escaped}) {
+            expect(chip.sentText, isNot(contains(form)), reason: '$form k=$k');
+            expect(chip.preview, isNot(contains(form)), reason: '$form k=$k');
+          }
+        }
+        if (!sent.contains(escaped)) {
+          expect(chip.sentText, sent, reason: '$late k=$k');
         }
       }
-      if (!sent.contains(escaped)) {
-        expect(chip.sentText, sent, reason: '$late k=$k');
-      }
-    }
     }
   });
 
@@ -737,6 +741,8 @@ void main() {
       expect(chip.preview, isNot(contains(form)), reason: form);
     }
     expect(chip.sentText, contains('[REDACTED]'));
+    // The label still says how much was sent.
+    expect(chip.sizeChars, _sentGitLabData(adapter.requests.single).length);
   });
 
   test('a request refused before sending takes its chips back', () async {
@@ -779,10 +785,7 @@ void main() {
     );
     await controller.send('explain');
     expect(adapter.requests, isEmpty);
-    expect(
-      controller.items.whereType<AiUserItem>().single.chips,
-      isEmpty,
-    );
+    expect(controller.items.whereType<AiUserItem>().single.chips, isEmpty);
   });
 
   test('a stop mid-stream keeps the chips of what was sent', () async {
@@ -1058,10 +1061,9 @@ void main() {
     await controller.recheck();
     // Redacting the second message would spell the first key.
     expect(controller.blocker, AiChatBlocker.contextUnavailable);
-    expect(
-      controller.items.whereType<AiUserItem>().map((item) => item.text),
-      ['first [REDACTED]'],
-    );
+    expect(controller.items.whereType<AiUserItem>().map((item) => item.text), [
+      'first [REDACTED]',
+    ]);
     await controller.recheck();
     expect(controller.blocker, AiChatBlocker.none);
   });

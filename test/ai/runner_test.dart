@@ -520,6 +520,30 @@ void main() {
     expect(h.runner.actualInputTokens, 0);
   });
 
+  test('a failure that may have been sent still counts', () async {
+    final h = Harness();
+    h.respond = (plan, onEvent) async =>
+        throw const AiFailure(AiFailureKind.network);
+    final result = await h.runner.run('explain');
+    expect(result.modelCalls, 1);
+    expect(h.runner.estimatedInputTokens, greaterThan(0));
+  });
+
+  test('only the refused request is left out of the budget', () async {
+    final h = Harness();
+    await h.runner.run('first');
+    final afterSent = h.runner.estimatedInputTokens;
+    expect(afterSent, greaterThan(0));
+    h.respond = (plan, onEvent) async => throw const AiFailure(
+      AiFailureKind.rateLimited,
+      status: 429,
+      notSent: true,
+    );
+    final refused = await h.runner.run('second');
+    expect(refused.modelCalls, 0);
+    expect(h.runner.estimatedInputTokens, afterSent);
+  });
+
   test('sentContext is the context as last redacted before sending', () async {
     const late = 'synthetic-late-runner-0042';
     // Learn the secret at each refresh of the run in turn; what the runner

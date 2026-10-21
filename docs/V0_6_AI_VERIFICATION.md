@@ -1052,13 +1052,43 @@ Codex returned REQUEST CHANGES; Opus returned APPROVE WITH MINOR FIXES. Fixed:
 - **Nits:**
   - The transport comment now covers only the refusals it marks (N6-2).
   - The round-5 mutation list above is corrected (N6-3).
-  - The run-outcome test also asserts `lastEnd` (N6-4).
 
 **Mutation runs, outside the repository:**
 - Skipping the block path fails "chips never show a secret learned during the send" and "a secret learned after the run is redacted in its chips".
 - Recording usage for refused calls fails "a request refused before sending uses no token budget".
 
 **Still open:**
-- The stoppedBySettings variant of the run-outcome test (N6-4).
+- N6-4: the run-outcome test cannot tell its outcome apart from the catch path.
+  - Its `lastEnd` assertion records N6-6's current result. It does not detect removing the wrap around the display pass after the run (Opus N7-1).
+  - A test that tells them apart needs a run that ends `done` and a pass after it that fails. Under N6-6 that only happens when settle fails too.
+  - The stoppedBySettings variant is not written.
 - N6-5: a title that cannot be checked also drops the app's own `!iid`.
 - N6-6 (existing behaviour): a failed display pass inside a run ends the run as failed.
+
+### MR6a-1 review round 7
+
+Codex and Opus returned APPROVE WITH MINOR FIXES; neither found a blocker. Applied:
+
+- **Chip size (Opus N7-3).** A chip keeps the size that was sent when a later pass redacts more. The chip test checks the size against the request.
+- **Budget tests (Codex P3).**
+  - A failure that may have been sent still counts.
+  - A refused request after a sent one leaves only the sent one in the budget.
+- **Formatting (Opus N7-7).** The lines this MR touched now match `dart format`.
+
+Behaviour recorded as it is (Opus N7-2):
+- When settling fails in the normal path, the message becomes a redaction notice. The display pass right after it then succeeds, so the chat is not blocked and the reply shows.
+- The reply was redacted in the runner with the same secrets, so nothing unchecked is shown.
+- After a stop or a failure before the run, the chat stays blocked until the next recheck.
+- Neither path has a test; the trigger needs a collision that only the settled chips have.
+
+**Still open, for MR6b:**
+- Restoring saved history (Opus N7-4). A saved preview is cut from encoded text. A restored chip has no block, so a secret with `&`, `<` or `>` learned after saving would show escaped in a restored preview.
+  - Before history is restored, either cut previews from the plain text when saving, or match the escaped forms when redacting.
+- A summary chip carries the page's pinned commit (N7-5, existing behaviour).
+
+The emulator run on `109596d` (round 5) covers the visible chip behaviour:
+- the chip stays on a sent message after the reply;
+- "What was sent" shows the exact `<gitlab_data>` block, its size and its pinned commit;
+- a follow-up message carries no chip.
+
+Rounds 6 and 7 changed redaction internals, sizes and budget accounting only.
