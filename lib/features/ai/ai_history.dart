@@ -383,8 +383,37 @@ final class AiHistoryCoordinator extends ChangeNotifier
     }
   }
 
+  /// Check the durable barrier even when _load returns a cached state.
+  Future<bool> _historyWriteAllowed(
+    String account,
+    _AccountHistory entry,
+  ) async {
+    final epoch = entry.epoch;
+    try {
+      final marker = await _readHistoryClearMarker(store, account);
+      if (!_current(entry, epoch)) return false;
+      if (marker.failure != null) {
+        _unavailable(account, entry, failure: marker.failure);
+        return false;
+      }
+      if (marker.value != true) return true;
+      entry.key?.fillRange(0, entry.key!.length, 0);
+      entry.key = null;
+      entry.state = AiHistoryState.readFailed;
+      entry.failure = const AiStoreFailure(
+        AiStoreFailureKind.unavailable,
+        'clearHistory',
+      );
+      _emit();
+    } catch (_) {
+      if (_current(entry, epoch)) _unavailable(account, entry);
+    }
+    return false;
+  }
+
   Future<AiHistoryState> enable(String account) => _run(account, (entry) async {
     await _load(account, entry);
+    if (!await _historyWriteAllowed(account, entry)) return entry.state;
     if (entry.state != AiHistoryState.disabled ||
         AiAccountMutationCoordinator.forStore(store).isCleaning(account)) {
       return entry.state;
@@ -579,6 +608,9 @@ final class AiHistoryCoordinator extends ChangeNotifier
     return _run(account, (entry) async {
       if (!_current(entry, epoch)) return AiHistorySaveResult.cancelled;
       await _load(account, entry);
+      if (!await _historyWriteAllowed(account, entry)) {
+        return AiHistorySaveResult.cancelled;
+      }
       if (!_current(entry, epoch) ||
           (entry.state != AiHistoryState.ready &&
               entry.state != AiHistoryState.readFailed) ||

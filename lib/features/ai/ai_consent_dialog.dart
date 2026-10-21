@@ -50,7 +50,18 @@ Future<bool> showAiConsentDialog(
       .where((candidate) => candidate.id == requestedContract.providerId)
       .firstOrNull;
   if (provider == null) return false;
-  final contract = aiConsentContractFor(provider);
+  AiConsentContract contract;
+  try {
+    contract = aiConsentContractFor(
+      provider,
+      toolCatalogueVersion: requestedContract.toolCatalogueVersion,
+      disclosureVersion: requestedContract.disclosureVersion,
+      dataCategories: requestedContract.dataCategories,
+    );
+  } on Object {
+    return false;
+  }
+  if (contract.hash != requestedContract.hash) return false;
   final capturedRecipientRevision = provider.recipientRevision;
   final initialScope = AiScope.maybeOf(context);
   if (initialScope != null && initialScope.accountKey != accountKey) {

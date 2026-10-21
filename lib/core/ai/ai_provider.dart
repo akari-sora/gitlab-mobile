@@ -5,6 +5,9 @@ import 'package:crypto/crypto.dart';
 
 import '../../l10n/l10n.dart';
 import 'ai_endpoint.dart';
+import 'tools/tool_catalogue.dart' show aiToolCatalogueVersion;
+
+export 'tools/tool_catalogue.dart' show aiToolCatalogueVersion;
 
 enum AiFormat { chatCompletions, responses, anthropicMessages }
 
@@ -102,6 +105,7 @@ final class AiPreset {
     required Map<AiFormat, AiCaps> caps,
     this.modelsUrl,
     this.modelSensitive = false,
+    this.policyUrl,
     Map<String, AiModelPolicy> modelPolicies = const <String, AiModelPolicy>{},
   }) : _name = name,
        formats = Set.unmodifiable(formats),
@@ -127,6 +131,7 @@ final class AiPreset {
   final Map<AiFormat, AiCaps> caps;
   final String? modelsUrl;
   final bool modelSensitive;
+  final String? policyUrl;
   final Map<String, AiModelPolicy> modelPolicies;
 
   String baseUrlFor(AiFormat format) =>
@@ -230,27 +235,41 @@ final class AiConsentContract {
       .toString();
 }
 
+/// Versions shared by current-contract callers, including settings.
+const aiDisclosureVersion = 1;
+
+AiConsentContract aiCurrentConsentContractFor(AiProviderConfig provider) =>
+    aiConsentContractFor(provider);
+
 /// Derives the disclosure from the actual recipient and the bundled policy table.
 /// Unknown models and custom recipients never inherit a known model's policy.
 AiConsentContract aiConsentContractFor(
   AiProviderConfig provider, {
-  int toolCatalogueVersion = 1,
-  int disclosureVersion = 1,
+  int toolCatalogueVersion = aiToolCatalogueVersion,
+  int disclosureVersion = aiDisclosureVersion,
   Set<String>? dataCategories,
 }) {
   final preset = AiPresets.all
       .where((candidate) => candidate.id == provider.presetId)
       .firstOrNull;
-  final custom = preset == null || preset.id == AiPresets.custom.id;
+  final endpoint = AiEndpoint.parse(
+    provider.baseUrl,
+    allowLanCleartext: provider.allowLanCleartext,
+  );
+  final presetUrl = preset?.baseUrls[provider.format];
+  String? presetOrigin;
+  if (presetUrl != null && presetUrl.isNotEmpty && !presetUrl.contains('{')) {
+    presetOrigin = AiEndpoint.parse(presetUrl, allowLanCleartext: true).key;
+  }
+  final custom =
+      preset == null ||
+      preset.id == AiPresets.custom.id ||
+      endpoint.key != presetOrigin;
   final modelSensitive = custom || preset.modelSensitive;
   final candidate = preset?.policyFor(provider.model);
   final policy = !custom && candidate?.format == provider.format
       ? candidate
       : null;
-  final endpoint = AiEndpoint.parse(
-    provider.baseUrl,
-    allowLanCleartext: provider.allowLanCleartext,
-  );
   final categories = <String>{
     ...?dataCategories,
     if (dataCategories == null) ...{
@@ -268,6 +287,7 @@ AiConsentContract aiConsentContractFor(
       : jsonEncode(<String, Object?>{
           'preset': preset.id,
           if (modelSensitive) 'policy': policy?.identity,
+          if (!modelSensitive) 'policyUrl': preset.policyUrl,
         });
   return AiConsentContract(
     providerId: provider.id,
@@ -281,7 +301,9 @@ AiConsentContract aiConsentContractFor(
     routedModel: modelSensitive ? provider.model : null,
     dataUse: policy?.dataUse ?? AiDataUse.unknown,
     disclosureVersion: disclosureVersion,
-    policyUrl: policy?.sourceUrl,
+    policyUrl:
+        policy?.sourceUrl ??
+        (!custom && !modelSensitive ? preset.policyUrl : null),
     retentionDays: policy?.retentionDays,
     policyCheckedOn: policy?.checkedOn,
   );
@@ -421,6 +443,7 @@ final class AiPresets {
 
   static final openAi = AiPreset(
     id: 'openai',
+    policyUrl: 'https://platform.openai.com/docs/guides/your-data',
     name: 'OpenAI',
     defaultFormat: AiFormat.responses,
     formats: const {AiFormat.responses, AiFormat.chatCompletions},
@@ -456,6 +479,8 @@ final class AiPresets {
 
   static final azure = AiPreset(
     id: 'azure-openai',
+    policyUrl:
+        'https://learn.microsoft.com/en-us/legal/cognitive-services/openai/data-privacy',
     name: 'Azure OpenAI',
     defaultFormat: AiFormat.responses,
     formats: const {AiFormat.responses, AiFormat.chatCompletions},
@@ -472,6 +497,7 @@ final class AiPresets {
 
   static final gemini = AiPreset(
     id: 'gemini',
+    policyUrl: 'https://ai.google.dev/gemini-api/terms',
     name: 'Gemini',
     defaultFormat: AiFormat.chatCompletions,
     formats: const {AiFormat.chatCompletions},
@@ -485,6 +511,8 @@ final class AiPresets {
 
   static final deepSeek = AiPreset(
     id: 'deepseek',
+    policyUrl:
+        'https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html',
     name: 'DeepSeek',
     defaultFormat: AiFormat.chatCompletions,
     formats: const {AiFormat.chatCompletions},
@@ -495,6 +523,7 @@ final class AiPresets {
 
   static final xAi = AiPreset(
     id: 'xai',
+    policyUrl: 'https://x.ai/legal/privacy-policy',
     name: 'xAI',
     defaultFormat: AiFormat.responses,
     formats: const {AiFormat.responses, AiFormat.chatCompletions},
@@ -515,6 +544,7 @@ final class AiPresets {
 
   static final ollama = AiPreset(
     id: 'ollama',
+    policyUrl: 'https://ollama.com/privacy',
     name: 'Ollama',
     defaultFormat: AiFormat.chatCompletions,
     formats: const {AiFormat.chatCompletions, AiFormat.responses},
@@ -534,6 +564,7 @@ final class AiPresets {
 
   static final lmStudio = AiPreset(
     id: 'lm-studio',
+    policyUrl: 'https://lmstudio.ai/privacy',
     name: 'LM Studio',
     defaultFormat: AiFormat.chatCompletions,
     formats: const {AiFormat.chatCompletions},
@@ -544,6 +575,8 @@ final class AiPresets {
 
   static final anthropic = AiPreset(
     id: 'anthropic',
+    policyUrl:
+        'https://privacy.claude.com/en/articles/7996868-how-long-do-you-store-my-organization-s-data',
     name: 'Anthropic',
     defaultFormat: AiFormat.anthropicMessages,
     formats: const {AiFormat.anthropicMessages},
