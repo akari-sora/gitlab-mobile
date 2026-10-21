@@ -385,6 +385,24 @@ class MetaChip extends StatelessWidget {
   }
 }
 
+/// Who a row is by (the author, the person who ran it): a small monogram and
+/// `@username` in the meta row's style. Nothing when the username is missing.
+class PersonChip extends StatelessWidget {
+  const PersonChip(this.person, {super.key});
+  final Json person;
+  @override
+  Widget build(BuildContext context) {
+    final username = valueText(person, 'username');
+    if (username.isEmpty) return const SizedBox.shrink();
+    final style = Theme.of(context).textTheme.bodySmall?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant);
+    return Semantics(label: l10n.authorLabel('@$username'), excludeSemantics: true, child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Monogram(valueText(person, 'name', username), size: 18, circle: true),
+      const SizedBox(width: 4),
+      Flexible(child: Text(isolated('@$username'), maxLines: 1, overflow: TextOverflow.ellipsis, style: style)),
+    ]));
+  }
+}
+
 /// One card grammar for projects, issues, merge requests, pipelines and jobs:
 /// leading mark, title, optional subtitle, meta row, optional chevron.
 class EntityCard extends StatelessWidget {

@@ -437,7 +437,8 @@ class _WorkItemsTabState extends State<WorkItemsTab> {
 }
 
 /// Shared issue / merge-request row: state-tinted mark, title, then a meta row
-/// with the status badge, the mono `#iid`, branches for MRs and the update time.
+/// with the status badge, the mono `#iid`, the author, branches for MRs and the
+/// update time.
 Widget workItemCard(
   BuildContext context,
   Json value, {
@@ -455,6 +456,7 @@ Widget workItemCard(
   final milestoneTitle = valueText(milestone, 'title');
   final labels = labelDetails(value);
   final assignees = valueObjects(value, 'assignees');
+  final author = valueObject(value, 'author');
   final notes = valueInt(value, 'user_notes_count');
   final upvotes = valueInt(value, 'upvotes');
   final tasks = valueObject(value, 'task_completion_status');
@@ -490,6 +492,7 @@ Widget workItemCard(
         MetaChip(l10n.autoMerge, icon: Icons.schedule_send),
       if (mr && value['has_conflicts'] == true) MetaChip(l10n.conflict, icon: Icons.warning_amber_rounded),
       MetaChip(iid, mono: true),
+      if (valueText(author, 'username').isNotEmpty) PersonChip(author),
       if (taskCount > 0) MetaChip('${valueInt(tasks, 'completed_count')}/$taskCount', icon: Icons.checklist),
       if (due.isNotEmpty) MetaChip(l10n.dueOn2(due), icon: Icons.event_outlined),
       if (notes > 0) MetaChip('$notes', icon: Icons.chat_bubble_outline),

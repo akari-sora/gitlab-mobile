@@ -5,6 +5,7 @@ import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/project_more_page.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
 import 'support/fake_adapter.dart';
@@ -186,6 +187,24 @@ void main() {
     ]) {
       expect(label, contains(piece), reason: piece);
     }
+  });
+
+  testWidgets('issue and merge request cards say who opened them', (tester) async {
+    for (final mr in [false, true]) {
+      await tester.pumpWidget(_host(Builder(builder: (context) => workItemCard(context, {
+        'iid': 114, 'title': 'Readings flicker', 'state': 'opened',
+        'updated_at': '2020-01-15T12:00:00Z',
+        'author': {'id': 9, 'username': 'synthetic-dev', 'name': 'Synthetic Dev'},
+      }, mr: mr, onTap: () {}))));
+      expect(find.text('@synthetic-dev'), findsOneWidget, reason: 'mr: $mr');
+      final label = tester.getSemantics(find.byType(EntityCard)).getSemanticsData().label;
+      expect(label, contains(l10n.authorLabel('@synthetic-dev')), reason: 'mr: $mr');
+    }
+    // A row without an author has no empty chip.
+    await tester.pumpWidget(_host(Builder(builder: (context) => workItemCard(context, {
+      'iid': 3, 'title': 'No author', 'state': 'opened', 'updated_at': '2020-01-15T12:00:00Z',
+    }, mr: false, onTap: () {}))));
+    expect(find.byType(PersonChip), findsNothing);
   });
 
   testWidgets('work item titles lay out three lines at 412 dp', (tester) async {
