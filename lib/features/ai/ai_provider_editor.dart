@@ -339,6 +339,24 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     }
   }
 
+  /// The field drawn highest on the screen.
+  static FormFieldState<Object?>? _topmost(
+    Iterable<FormFieldState<Object?>> fields,
+  ) {
+    FormFieldState<Object?>? topmost;
+    var top = double.infinity;
+    for (final field in fields) {
+      final box = field.context.findRenderObject();
+      if (box is! RenderBox || !box.attached) continue;
+      final y = box.localToGlobal(Offset.zero).dy;
+      if (y < top) {
+        top = y;
+        topmost = field;
+      }
+    }
+    return topmost;
+  }
+
   bool get _baseUrlValidAlone {
     try {
       AiEndpoint.parse(
@@ -538,10 +556,13 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     if (!_validateCaps()) return;
     final invalid = _formKey.currentState!.validateGranularly();
     if (invalid.isNotEmpty) {
-      final field = invalid.first;
+      // isValid checks the current value; the shown error stays until the
+      // next save. The set is in registration order, not screen order.
+      Iterable<FormFieldState<Object?>> stillInvalid() =>
+          invalid.where((field) => field.mounted && !field.isValid);
       _reveal(
-        () => field.mounted ? field.context : null,
-        stillNeeded: () => field.mounted && field.hasError,
+        () => _topmost(stillInvalid())?.context,
+        stillNeeded: () => stillInvalid().isNotEmpty,
       );
       return;
     }
@@ -1199,20 +1220,18 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     });
     if (requestError == null && outputError == null) return true;
     // The shown error stays until the next save, so the reveal checks the
-    // value itself: a value fixed meanwhile does not move the page.
-    if (requestError != null) {
-      _reveal(
-        () => _requestLimitFieldKey.currentContext,
-        inAdvanced: true,
-        stillNeeded: () => _requestLimitProblem != null,
-      );
-    } else {
-      _reveal(
-        () => _outputLimitFieldKey.currentContext,
-        inAdvanced: true,
-        stillNeeded: () => _outputLimitProblem != null,
-      );
-    }
+    // values themselves: a value fixed meanwhile does not move the page, and
+    // with both wrong, fixing the request limit moves on to the output one.
+    _reveal(
+      () =>
+          (_requestLimitProblem != null
+                  ? _requestLimitFieldKey
+                  : _outputLimitFieldKey)
+              .currentContext,
+      inAdvanced: true,
+      stillNeeded: () =>
+          _requestLimitProblem != null || _outputLimitProblem != null,
+    );
     return false;
   }
 

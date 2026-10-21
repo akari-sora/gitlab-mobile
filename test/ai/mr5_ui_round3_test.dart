@@ -531,6 +531,118 @@ void main() {
       });
     }
 
+    testWidgets('a required field fixed while waiting stays put', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(360, 640);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      await filledOpenAi(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-name')),
+        '',
+      );
+      await _expandAdvanced(tester);
+      final position = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      final bottom = position.pixels;
+
+      await tester.tap(find.text(l10n.saveAction));
+      await tester.pump(const Duration(milliseconds: 16));
+      tester
+              .widget<TextField>(
+                find.descendant(
+                  of: find.byKey(const ValueKey('ai-provider-name')),
+                  matching: find.byType(TextField),
+                ),
+              )
+              .controller!
+              .text =
+          'Synthetic name';
+      await deviceFrames(tester);
+
+      expect(position.pixels, bottom);
+    });
+
+    testWidgets('a key field built again is still revealed first', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetViewInsets);
+      final settings = AiSettingsController(MemoryAiStore());
+      await settings.initialize();
+      await tester.pumpWidget(
+        _scaledHost(AiProviderEditor(settings: settings)),
+      );
+      // A keyless preset removes the key field; back on OpenAI it is built
+      // again and registers after the model field.
+      _preset(tester).onChanged!(AiPresets.ollama);
+      await tester.pumpAndSettle();
+      _preset(tester).onChanged!(AiPresets.openAi);
+      await tester.pumpAndSettle();
+      await _expandAdvanced(tester);
+      final position = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(l10n.saveAction));
+      await deviceFrames(tester);
+
+      expect(settings.providers, isEmpty);
+      expectOnScreen(tester, find.text(l10n.aiProviderKeyMinimum), 360);
+    });
+
+    testWidgets('with both limits wrong, fixing one moves to the other', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(360, 640);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      await filledOpenAi(tester);
+      await _expandAdvanced(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-request-limit')),
+        '1',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-output-limit')),
+        '1',
+      );
+      await tester.pumpAndSettle();
+      tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position
+          .jumpTo(0);
+      await tester.pump();
+
+      await tester.tap(find.text(l10n.saveAction));
+      await tester.pump(const Duration(milliseconds: 16));
+      tester
+              .widget<TextField>(
+                find.descendant(
+                  of: find.byKey(const ValueKey('ai-provider-request-limit')),
+                  matching: find.byType(TextField),
+                ),
+              )
+              .controller!
+              .text =
+          '32000';
+      await deviceFrames(tester);
+
+      expectOnScreen(tester, find.text(l10n.aiProviderOutputTokensRange), 640);
+    });
+
     testWidgets('a missing key scrolls back up to the key field', (
       tester,
     ) async {
