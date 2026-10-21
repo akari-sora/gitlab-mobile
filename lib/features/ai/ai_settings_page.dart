@@ -554,6 +554,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: l10n.aiConversationTokenCap,
+                  errorMaxLines: 20,
                   suffixText: l10n.aiTokenUnit,
                   suffixIcon: IconButton(
                     tooltip: l10n.saveAction,

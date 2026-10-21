@@ -188,6 +188,8 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     }
     _dropKeyDraftForNewRecipient();
     _networkInputChanged();
+    // The policy notice depends on the recipient, so it is rebuilt per edit.
+    if (mounted) setState(() {});
   }
 
   String _recipientFingerprint() {
@@ -287,7 +289,20 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       _modelsMessage = null;
       _modelSearch.clear();
     });
+    // The format resets the auth style; the URL may stay the same, in which
+    // case its listener does not run.
+    _dropKeyDraftForNewRecipient();
     _validateEndpoint();
+  }
+
+  /// The disclosure the consent dialog would show for the current fields, or
+  /// null while the endpoint cannot be parsed.
+  AiConsentContract? _currentContract() {
+    try {
+      return aiCurrentConsentContractFor(_config());
+    } on Object {
+      return null;
+    }
   }
 
   AiCaps _effectiveCaps() => AiCaps(
@@ -340,6 +355,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   Future<void> _save() async {
     if (_saving) return;
     _saveAttempted = true;
+    _dropKeyDraftForNewRecipient();
     if (!_validateCaps()) return;
     if (!_formKey.currentState!.validate()) return;
     _validateEndpoint();
@@ -390,6 +406,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
 
   Future<void> _readModels() async {
     if (_loadingModels) return;
+    _dropKeyDraftForNewRecipient();
     _validateEndpoint();
     if (_endpointError != null) return;
     final publicCatalog = _preset.id == 'openrouter';
@@ -452,6 +469,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
 
   Future<void> _verifyOpenRouterKey() async {
     if (_loadingModels || _preset.id != 'openrouter') return;
+    _dropKeyDraftForNewRecipient();
     _validateEndpoint();
     if (_endpointError != null) return;
     String key;
@@ -499,7 +517,9 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   Widget build(BuildContext context) {
     final endpoint = _parsedEndpoint;
     final model = _model.text.trim();
-    final policy = model.isEmpty ? null : _preset.policyFor(model);
+    // Same derivation as the consent dialog, so a changed endpoint or format
+    // never shows the preset's guarantees.
+    final contract = model.isEmpty ? null : _currentContract();
     final filteredModels = _filteredModels;
     return PopScope<Object?>(
       key: const ValueKey('ai-provider-pop-scope'),
@@ -566,8 +586,6 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                                   Text(isolated(preset.name)),
                                   Text(
                                     _presetDescription(preset),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
                                     style: Theme.of(
                                       context,
                                     ).textTheme.bodySmall,
@@ -727,11 +745,15 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                           ? l10n.aiProviderModelRequired
                           : null,
                     ),
-                    if (policy != null) _PolicyNotice(policy: policy),
-                    if (model.isNotEmpty &&
-                        _preset.modelSensitive &&
-                        policy == null)
-                      _WarningText(l10n.aiProviderModelPolicyUnknown),
+                    // A routed model means the policy depends on the model (or
+                    // the recipient is custom), so an unknown one is shown.
+                    if (contract != null &&
+                        (contract.dataUse != AiDataUse.unknown ||
+                            contract.routedModel != null))
+                      _PolicyNotice(
+                        dataUse: contract.dataUse,
+                        retentionDays: contract.retentionDays,
+                      ),
                     if (model.isNotEmpty && _verificationLabel != null)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
@@ -1128,29 +1150,6 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   }
 }
 
-final class _WarningText extends StatelessWidget {
-  const _WarningText(this.text);
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(top: 8),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(
-          Icons.warning_amber_rounded,
-          size: 20,
-          color: Theme.of(context).colorScheme.error,
-        ),
-        const SizedBox(width: 8),
-        Expanded(child: Text(text)),
-      ],
-    ),
-  );
-}
-
 final class _StatusLine extends StatelessWidget {
   const _StatusLine({
     required this.icon,
@@ -1191,13 +1190,14 @@ final class _StatusLine extends StatelessWidget {
 }
 
 final class _PolicyNotice extends StatelessWidget {
-  const _PolicyNotice({required this.policy});
+  const _PolicyNotice({required this.dataUse, required this.retentionDays});
 
-  final AiModelPolicy policy;
+  final AiDataUse dataUse;
+  final int? retentionDays;
 
   @override
   Widget build(BuildContext context) {
-    final days = policy.retentionDays;
+    final days = retentionDays;
     final retention = days == null
         ? l10n.aiConsentRetentionNotStated
         : days == 0
@@ -1205,7 +1205,7 @@ final class _PolicyNotice extends StatelessWidget {
         : l10n.aiPolicyRetainedDays(
             MaterialLocalizations.of(context).formatDecimal(days),
           );
-    final (icon, label) = switch (policy.dataUse) {
+    final (icon, label) = switch (dataUse) {
       AiDataUse.training => (
         Icons.model_training,
         l10n.aiProviderModelTrainingWarning,
@@ -1225,10 +1225,10 @@ final class _PolicyNotice extends StatelessWidget {
         icon: icon,
         label: label,
         // Unknown policies already say retention cannot be confirmed.
-        explanation: policy.dataUse == AiDataUse.unknown ? null : retention,
+        explanation: dataUse == AiDataUse.unknown ? null : retention,
       ),
     );
-    if (policy.dataUse != AiDataUse.training) return line;
+    if (dataUse != AiDataUse.training) return line;
     final error = Theme.of(context).colorScheme.error;
     return IconTheme.merge(
       data: IconThemeData(color: error),
