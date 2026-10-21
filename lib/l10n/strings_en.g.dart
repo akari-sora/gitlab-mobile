@@ -2291,7 +2291,7 @@ const _messagesEn = <String>[
   'What was sent',
   '{count} characters',
   'Blocked',
-  'The AI reads this page, and other data from the same project only when it needs to.',
+  'The AI reads this page. It reads other data from the same project only when it needs to.',
   'The AI reads no project content, only what you type.',
   'Read file',
   'List directory',
@@ -2327,4 +2327,5 @@ const _messagesEn = <String>[
   'Agree',
   'Settings changed: new questions start a new conversation, and the messages above are not sent again',
   'Unknown tool request',
+  'This conversation was restored, so only the start of what was sent is kept',
 ];

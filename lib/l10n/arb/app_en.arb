@@ -2295,7 +2295,7 @@
   "aiChatSentContent": "What was sent",
   "aiChatCharacters": "{count} characters",
   "aiChatBlocked": "Blocked",
-  "aiChatEmpty": "The AI reads this page, and other data from the same project only when it needs to.",
+  "aiChatEmpty": "The AI reads this page. It reads other data from the same project only when it needs to.",
   "aiChatEmptyGeneral": "The AI reads no project content, only what you type.",
   "aiToolReadFile": "Read file",
   "aiToolListDirectory": "List directory",
@@ -2330,5 +2330,6 @@
   "aiChatPreparing": "Preparing the conversation…",
   "aiConsentAgree": "Agree",
   "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
-  "aiToolUnknown": "Unknown tool request"
+  "aiToolUnknown": "Unknown tool request",
+  "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept"
 }

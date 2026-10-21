@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -21,22 +23,39 @@ import 'ai_settings_page.dart';
 Future<bool> openAiChat(BuildContext context, AiChatOrigin origin) async {
   final registry = AiRunRegistry.maybeOf(context);
   if (registry == null || AiScope.maybeOf(context) == null) return false;
-  final session = registry.open(origin);
-  await Navigator.of(
-    context,
-  ).push(MaterialPageRoute<void>(builder: (_) => AiChatPage(session: session)));
+  final AiChatSession session;
+  try {
+    session = registry.open(origin);
+  } on StateError {
+    // The account is changing; the tree above is about to be rebuilt.
+    return false;
+  }
+  // The summary request belongs to this visit, not to the kept session.
+  final summarize = origin is AiWorkItemOrigin && origin.summarize;
+  await Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => AiChatPage(session: session, summarize: summarize),
+    ),
+  );
+  registry.release(session);
   return true;
 }
 
-/// The title a conversation shows for its origin.
-String aiOriginTitle(AiChatOrigin origin) => switch (origin) {
+/// The title a conversation shows for its origin. [safe] cleans the GitLab
+/// values (job name, title, file name) for display.
+String aiOriginTitle(
+  AiChatOrigin origin, {
+  String Function(String text) safe = _unchanged,
+}) => switch (origin) {
   AiGeneralOrigin() => l10n.aiAssistantLabel,
-  AiJobOrigin(:final jobName) => l10n.aiChatJobTitle(jobName),
+  AiJobOrigin(:final jobName) => l10n.aiChatJobTitle(safe(jobName)),
   AiWorkItemOrigin(:final kind, :final iid, :final title) =>
     '${isolated(kind == AiWorkItemKind.mergeRequest ? '!$iid' : '#$iid')} '
-        '${isolated(title)}',
-  AiFileOrigin(:final path) => isolated(path.split('/').last),
+        '${isolated(safe(title))}',
+  AiFileOrigin(:final path) => isolated(safe(path.split('/').last)),
 };
+
+String _unchanged(String text) => text;
 
 List<String> _suggestions(AiChatOrigin origin) => switch (origin) {
   AiGeneralOrigin() => const [],
@@ -50,9 +69,13 @@ List<String> _suggestions(AiChatOrigin origin) => switch (origin) {
 };
 
 class AiChatPage extends StatefulWidget {
-  const AiChatPage({super.key, required this.session});
+  const AiChatPage({super.key, required this.session, this.summarize = false});
 
   final AiChatSession session;
+
+  /// Opened from "AI summary": send the summary request once, when the empty
+  /// conversation is ready.
+  final bool summarize;
 
   @override
   State<AiChatPage> createState() => _AiChatPageState();
@@ -60,6 +83,10 @@ class AiChatPage extends StatefulWidget {
 
 class _AiChatPageState extends State<AiChatPage> {
   final _input = TextEditingController();
+  final _scroll = ScrollController();
+
+  /// Whether the last build showed the blocker or preparing card.
+  var _showedNotice = false;
 
   /// "AI summary" sends its request once, when the empty session is ready.
   late bool _pendingSummary;
@@ -69,11 +96,7 @@ class _AiChatPageState extends State<AiChatPage> {
   @override
   void initState() {
     super.initState();
-    final origin = _session.origin;
-    _pendingSummary =
-        origin is AiWorkItemOrigin &&
-        origin.summarize &&
-        _session.items.isEmpty;
+    _pendingSummary = widget.summarize && _session.items.isEmpty;
     _session.confirmCleartext = _confirmCleartext;
     _input.addListener(_inputChanged);
     _session.addListener(_maybeSummarize);
@@ -98,6 +121,7 @@ class _AiChatPageState extends State<AiChatPage> {
     _input
       ..removeListener(_inputChanged)
       ..dispose();
+    _scroll.dispose();
     super.dispose();
   }
 
@@ -116,7 +140,24 @@ class _AiChatPageState extends State<AiChatPage> {
     final text = (suggestion ?? _input.text).trim();
     if (text.isEmpty || !_session.canSend) return;
     if (suggestion == null) _input.clear();
+    _toNewest();
     await _session.send(text);
+  }
+
+  /// Brings the newest content (the list is reversed) back into view.
+  void _toNewest() {
+    if (!_scroll.hasClients || _scroll.offset <= 0) return;
+    if (MediaQuery.of(context).disableAnimations) {
+      _scroll.jumpTo(0);
+    } else {
+      unawaited(
+        _scroll.animateTo(
+          0,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        ),
+      );
+    }
   }
 
   Future<void> _openSettings() async {
@@ -200,7 +241,7 @@ class _AiChatPageState extends State<AiChatPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    aiOriginTitle(_session.origin),
+                    aiOriginTitle(_session.origin, safe: _session.displaySafe),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -284,6 +325,13 @@ class _AiChatPageState extends State<AiChatPage> {
             onReviewConsent: _reviewConsent,
           )
         : null;
+    // A card that just appeared sits by the composer; scroll it into view.
+    if (notice != null && !_showedNotice) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _toNewest();
+      });
+    }
+    _showedNotice = notice != null;
     if (items.isEmpty) {
       return _EmptyConversation(
         origin: _session.origin,
@@ -321,6 +369,7 @@ class _AiChatPageState extends State<AiChatPage> {
     // change when content is added, so an expanded tool row stays expanded.
     return ListView.builder(
       key: const ValueKey('ai-chat-list'),
+      controller: _scroll,
       reverse: true,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       itemCount: children.length,
@@ -398,6 +447,16 @@ class _BlockerCard extends StatelessWidget {
     final failure = session.blocker == AiChatBlocker.contextUnavailable
         ? session.failure
         : null;
+    if (failure is ApiFailure) {
+      // A GitLab read failed: the app's notice names the account, instance
+      // and page, keeps a 404 ambiguous and offers retry and account switch.
+      return FailureNotice(
+        failure,
+        key: const ValueKey('ai-chat-blocker'),
+        resourceLabel: aiOriginTitle(session.origin, safe: session.displaySafe),
+        onRetry: () => unawaited(session.recheck()),
+      );
+    }
     return Card(
       key: ValueKey(
         session.blocker == AiChatBlocker.none
@@ -616,6 +675,9 @@ class _ContextChip extends StatelessWidget {
   };
 
   void _showSent(BuildContext context) {
+    final text = chip.sentText ?? chip.preview;
+    final parts = _sentParts(text);
+    final pinned = chip.pinnedSha;
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -623,34 +685,82 @@ class _ContextChip extends StatelessWidget {
       builder: (context) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.6,
-        builder: (context, controller) => ListView(
-          controller: controller,
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          children: [
-            Text(
-              l10n.aiChatSentContent,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 4),
-            Text(isolated(chip.resource ?? chip.source)),
-            const SizedBox(height: 12),
-            // What was actually sent, after redaction, read left to right.
-            Directionality(
-              textDirection: TextDirection.ltr,
-              child: SelectableText(
-                chip.preview,
-                style: const TextStyle(
-                  fontFamily: codeFontFamily,
-                  fontFamilyFallback: ['Menlo', 'monospace'],
-                  fontSize: 13,
+        maxChildSize: 0.95,
+        builder: (context, controller) {
+          final theme = Theme.of(context);
+          final muted = theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          );
+          // Long content is laid out in pieces, a screen or so at a time.
+          return ListView.builder(
+            key: const ValueKey('ai-chat-sent'),
+            controller: controller,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            itemCount: parts.length + 1,
+            itemBuilder: (context, index) {
+              if (index == 0) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.aiChatSentContent,
+                        style: theme.textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(isolated(chip.resource ?? chip.source)),
+                      Text(
+                        [
+                          l10n.aiChatCharacters('${chip.sizeChars}'),
+                          if (pinned != null && pinned.isNotEmpty)
+                            l10n.pinnedAtSha(
+                              pinned.length > 8
+                                  ? pinned.substring(0, 8)
+                                  : pinned,
+                            ),
+                        ].join(' · '),
+                        style: muted,
+                      ),
+                      if (chip.sentText == null)
+                        Text(l10n.aiChatSentPreviewOnly, style: muted),
+                    ],
+                  ),
+                );
+              }
+              // What was actually sent, after redaction, read left to right.
+              return Directionality(
+                textDirection: TextDirection.ltr,
+                child: SelectableText(
+                  parts[index - 1],
+                  style: codeTextStyle(context),
                 ),
-              ),
-            ),
-          ],
-        ),
+              );
+            },
+          );
+        },
       ),
     );
   }
+}
+
+/// [text] in pieces of about 4000 characters, cut after a line break where
+/// there is one and never inside a surrogate pair.
+List<String> _sentParts(String text) {
+  const size = 4000;
+  final parts = <String>[];
+  var start = 0;
+  while (text.length - start > size) {
+    var end = start + size;
+    final newline = text.lastIndexOf('\n', end - 1);
+    if (newline > start) end = newline + 1;
+    final last = text.codeUnitAt(end - 1);
+    if (last >= 0xd800 && last <= 0xdbff) end--;
+    parts.add(text.substring(start, end));
+    start = end;
+  }
+  parts.add(text.substring(start));
+  return parts;
 }
 
 class _AssistantMessage extends StatelessWidget {
@@ -674,12 +784,11 @@ class _AssistantMessage extends StatelessWidget {
         ],
       );
     }
-    final note = switch (item.state) {
-      AiAssistantState.interrupted => l10n.aiChatInterrupted,
-      AiAssistantState.refused => l10n.aiRefusalTitle,
-      AiAssistantState.truncated => l10n.aiEndOutputLimit,
-      _ => null,
-    };
+    // Why a run ended is the end row's job; only an interruption is noted on
+    // the reply itself, because it is not kept in the conversation.
+    final note = item.state == AiAssistantState.interrupted
+        ? l10n.aiChatInterrupted
+        : null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -752,7 +861,8 @@ String _toolLabel(String name) => switch (name) {
   'get_commit' => l10n.aiToolGetCommit,
   'get_commit_diff' => l10n.aiToolGetCommitDiff,
   'search_project' => l10n.aiToolSearchProject,
-  _ => name,
+  // Anything else came from the model, not from the app's tool list.
+  _ => l10n.aiToolUnknown,
 };
 
 class _ToolRow extends StatelessWidget {

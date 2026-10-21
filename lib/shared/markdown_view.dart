@@ -653,10 +653,13 @@ class _MarkdownViewState extends State<MarkdownView> {
   }
 }
 
-
 /// Stands in for an image or media file that an offline view never fetches.
 class _OfflineMedia extends StatelessWidget {
-  const _OfflineMedia({required this.alt, required this.uri, required this.onOpen});
+  const _OfflineMedia({
+    required this.alt,
+    required this.uri,
+    required this.onOpen,
+  });
 
   final String? alt;
   final Uri uri;

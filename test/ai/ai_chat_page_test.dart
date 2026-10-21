@@ -6,12 +6,14 @@ import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/runner.dart';
+import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_message_body.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
 final class _FakeSession extends ChangeNotifier implements AiChatSession {
   _FakeSession({
@@ -40,7 +42,7 @@ final class _FakeSession extends ChangeNotifier implements AiChatSession {
   @override
   AiConsentContract? consentRequest;
   @override
-  AiFailure? failure;
+  UserFacingFailure? failure;
   @override
   AiRunEnd? lastEnd;
   @override
@@ -72,7 +74,8 @@ final class _FakeSession extends ChangeNotifier implements AiChatSession {
   set confirmCleartext(Future<bool> Function()? callback) =>
       cleartext = callback;
   @override
-  String displaySafe(String text) => text.replaceAll('synthetic-secret', '[REDACTED]');
+  String displaySafe(String text) =>
+      text.replaceAll('synthetic-secret', '[REDACTED]');
 
   void update(void Function() change) {
     change();
@@ -249,7 +252,9 @@ void main() {
       ),
       blocker: AiChatBlocker.settingsLoading,
     );
-    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pumpWidget(
+      _host(AiChatPage(session: session, summarize: true)),
+    );
     await tester.pump();
     expect(session.sent, isEmpty);
 
@@ -597,6 +602,210 @@ void main() {
     expect(find.text(l10n.aiChatOpenSettings), findsOneWidget);
   });
 
+  testWidgets('a kept session opened for discussion does not summarize', (
+    tester,
+  ) async {
+    // The session was first opened from "AI summary"; this visit is not.
+    final session = _FakeSession(
+      origin: AiWorkItemOrigin(
+        project: _project,
+        kind: AiWorkItemKind.mergeRequest,
+        iid: 44,
+        title: 'Synthetic change',
+        summarize: true,
+      ),
+    );
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+    session.update(() {});
+    await tester.pump();
+    expect(session.sent, isEmpty);
+  });
+
+  testWidgets('the title shows GitLab values only after cleaning', (
+    tester,
+  ) async {
+    final session = _FakeSession(
+      origin: AiWorkItemOrigin(
+        project: _project,
+        kind: AiWorkItemKind.mergeRequest,
+        iid: 44,
+        title: 'Rotate synthetic-secret now',
+      ),
+    );
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    expect(find.text('!44 Rotate [REDACTED] now'), findsOneWidget);
+    expect(find.textContaining('synthetic-secret'), findsNothing);
+  });
+
+  testWidgets('a GitLab read failure uses the app notice with retry', (
+    tester,
+  ) async {
+    final session = _FakeSession(blocker: AiChatBlocker.contextUnavailable)
+      ..failure = const ApiFailure(FailureKind.invisible, status: 404);
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    expect(find.byType(FailureNotice), findsOneWidget);
+    expect(find.textContaining('!44 Synthetic change'), findsWidgets);
+    await tester.tap(find.text(l10n.refreshAction));
+    expect(session.rechecks, 1);
+  });
+
+  testWidgets('what was sent shows the whole text in pieces', (tester) async {
+    final lines = List.generate(600, (i) => 'line $i of the synthetic file');
+    final session = _FakeSession(
+      items: [
+        AiUserItem(
+          text: 'Explain',
+          chips: [
+            AiContextChip(
+              source: 'file',
+              resource: 'lib/a.dart',
+              preview: lines.first,
+              sentText: lines.join('\n'),
+              sizeChars: lines.join('\n').length,
+              pinnedSha: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+            ),
+          ],
+        ),
+      ],
+    );
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+    await tester.tap(find.textContaining('a.dart ·'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.byKey(const ValueKey('ai-chat-sent')), findsOneWidget);
+    expect(find.textContaining(l10n.pinnedAtSha('a1b2c3d4')), findsOneWidget);
+    expect(find.text(l10n.aiChatSentPreviewOnly), findsNothing);
+    await tester.dragUntilVisible(
+      find.textContaining('line 599 of the synthetic file'),
+      find.byKey(const ValueKey('ai-chat-sent')),
+      const Offset(0, -600),
+    );
+    expect(
+      find.textContaining('line 599 of the synthetic file'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a restored chip says only its start was kept', (tester) async {
+    final session = _FakeSession(
+      items: [
+        AiUserItem(
+          text: 'Explain',
+          chips: const [
+            AiContextChip(source: 'file', preview: 'start', sizeChars: 900),
+          ],
+        ),
+      ],
+    );
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+    await tester.tap(find.textContaining('file ·'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text(l10n.aiChatSentPreviewOnly), findsOneWidget);
+  });
+
+  testWidgets('a tool name the app does not know gets a generic label', (
+    tester,
+  ) async {
+    final session = _FakeSession(
+      items: [
+        AiUserItem(text: 'go'),
+        const AiToolRunItem(
+          name: '',
+          argsPreview: '',
+          status: AiToolRunStatus.failed,
+          sizeChars: 0,
+          provenance: '',
+        ),
+        const AiToolRunItem(
+          name: 'Read file · README.md',
+          argsPreview: '',
+          status: AiToolRunStatus.failed,
+          sizeChars: 0,
+          provenance: '',
+        ),
+      ],
+    );
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    expect(find.text(l10n.aiToolUnknown), findsNWidgets(2));
+    expect(find.textContaining('README.md'), findsNothing);
+  });
+
+  testWidgets('a run ending says why once', (tester) async {
+    final session = _FakeSession(
+      items: [
+        AiUserItem(text: 'go'),
+        const AiAssistantItem(text: 'Part', state: AiAssistantState.truncated),
+      ],
+    )..lastEnd = AiRunEnd.maxTokens;
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    expect(find.text(l10n.aiEndOutputLimit), findsOneWidget);
+  });
+
+  testWidgets('the new conversation notice is shown', (tester) async {
+    final session = _FakeSession(
+      items: [
+        AiUserItem(text: 'go'),
+        const AiAssistantItem(text: 'Done', state: AiAssistantState.done),
+        const AiNoticeItem(AiNoticeKind.newConversation),
+      ],
+    );
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    expect(find.text(l10n.aiNoticeNewConversation), findsOneWidget);
+  });
+
+  testWidgets('sending brings the newest content back into view', (
+    tester,
+  ) async {
+    final session = _FakeSession(
+      items: [
+        for (var i = 0; i < 30; i++) ...[
+          AiUserItem(text: 'question $i'),
+          AiAssistantItem(
+            text: 'answer $i ' * 20,
+            state: AiAssistantState.done,
+          ),
+        ],
+      ],
+    );
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+    await tester.drag(
+      find.byKey(const ValueKey('ai-chat-list')),
+      const Offset(0, 2000),
+    );
+    await tester.pumpAndSettle();
+    final list = find.byKey(const ValueKey('ai-chat-list'));
+    final position = Scrollable.of(
+      tester.element(
+        find.descendant(of: list, matching: find.byType(Viewport)).first,
+      ),
+    ).position;
+    expect(position.pixels, greaterThan(0));
+
+    await tester.enterText(find.byKey(const ValueKey('ai-chat-input')), 'next');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('ai-chat-send')));
+    await tester.pumpAndSettle();
+    expect(position.pixels, 0);
+    expect(session.sent, ['next']);
+  });
+
   group('narrow screens, 2x text and long or other scripts', () {
     for (final tag in ['zh-TW', 'en', 'ar', 'de', 'ru', 'hi', 'th']) {
       testWidgets(tag, (tester) async {
@@ -611,6 +820,14 @@ void main() {
         )..lastEnd = AiRunEnd.toolBudget;
         await tester.pumpWidget(
           _host(AiChatPage(session: session), tag: tag, scale: 2),
+        );
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+
+        // The case that once overflowed: an empty chat with a blocker.
+        final empty = _FakeSession(blocker: AiChatBlocker.consentRequired);
+        await tester.pumpWidget(
+          _host(AiChatPage(session: empty), tag: tag, scale: 2),
         );
         await tester.pump();
         expect(tester.takeException(), isNull);

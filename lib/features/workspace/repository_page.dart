@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../ai/ai_chat_page.dart';
 import '../ai/ai_chat_session.dart';
+import '../../core/ai/tools/sensitive_paths.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
@@ -1597,10 +1598,12 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
           },
           itemBuilder: (_) => [
             // AI reads a text file at a pinned commit, where the app has AI.
+            // A sensitive path would send nothing, so it gets no entry.
             if (AiRunRegistry.maybeOf(context) != null &&
                 text != null &&
                 !_lfs &&
-                resolvedRef.sha.isNotEmpty) ...[
+                isFullCommitSha(resolvedRef.sha) &&
+                !isSensitiveRepositoryPath(widget.filePath)) ...[
               PopupMenuItem(value: 'ai', child: Text(l10n.aiExplainFile)),
               const PopupMenuDivider(),
             ],

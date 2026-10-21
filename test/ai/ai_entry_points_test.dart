@@ -139,6 +139,30 @@ final class _FailedJobFixture extends WorkspaceFixture {
   }
 }
 
+/// Serves a `.env` file, a path AI never reads.
+final class _SensitiveFileFixture extends WorkspaceFixture {
+  @override
+  FutureOr<ResponseBody> respond(RequestOptions request) {
+    final segments = request.uri.pathSegments;
+    final path = segments.skip(segments.indexOf('v4') + 1).join('/');
+    if (path == 'projects/42/repository/files/.env' &&
+        request.method == 'HEAD') {
+      return ResponseBody.fromString(
+        '',
+        200,
+        headers: {
+          'x-gitlab-size': ['10'],
+          'x-gitlab-last-commit-id': [WorkspaceFixture.sha],
+        },
+      );
+    }
+    if (path == 'projects/42/repository/files/.env/raw') {
+      return ResponseBody.fromString('NAME=value\n', 200);
+    }
+    return super.respond(request);
+  }
+}
+
 Future<void> _openMenu(WidgetTester tester, String tooltip) async {
   await tester.tap(find.byTooltip(tooltip));
   await tester.pump();
@@ -239,6 +263,103 @@ void main() {
     expect(origin.iid, 12);
     expect(origin.summarize, isTrue);
     expect(origin.title, 'Improve private-project navigation');
+    // The summary is this visit's request, handed to the page.
+    final page = tester.widget<AiChatPage>(find.byType(AiChatPage));
+    expect(page.summarize, isTrue);
+
+    // Closing the page lets the registry drop a session that holds nothing.
+    tester.state<NavigatorState>(find.byType(Navigator)).pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(registry.released, [page.session]);
+  });
+
+  testWidgets('a discussion visit does not ask for a summary', (tester) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    await _pump(
+      tester,
+      fixture,
+      WorkItemPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        resource: 'merge_requests',
+        iid: 12,
+      ),
+    );
+
+    await _openMenu(tester, l10n.moreOptions);
+    await tester.tap(find.text(l10n.aiDiscuss));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(
+      tester.widget<AiChatPage>(find.byType(AiChatPage)).summarize,
+      isFalse,
+    );
+  });
+
+  testWidgets('without AI a merge request has no AI entries', (tester) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    await _pump(
+      tester,
+      fixture,
+      WorkItemPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        resource: 'merge_requests',
+        iid: 12,
+      ),
+      ai: false,
+    );
+
+    await _openMenu(tester, l10n.moreOptions);
+    expect(find.text(l10n.aiDiscuss), findsNothing);
+    expect(find.text(l10n.aiSummarize), findsNothing);
+  });
+
+  testWidgets('without AI a file has no explanation entry', (tester) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    await _pump(
+      tester,
+      fixture,
+      RepositoryFilePage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        branch: 'main',
+        sha: WorkspaceFixture.sha,
+        filePath: 'README.md',
+      ),
+      ai: false,
+    );
+
+    await _openMenu(tester, l10n.fileActions);
+    expect(find.text(l10n.aiExplainFile), findsNothing);
+  });
+
+  testWidgets('a sensitive file has no explanation entry', (tester) async {
+    final fixture = _SensitiveFileFixture();
+    addTearDown(fixture.api.close);
+    await _pump(
+      tester,
+      fixture,
+      RepositoryFilePage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        branch: 'main',
+        sha: WorkspaceFixture.sha,
+        filePath: '.env',
+      ),
+    );
+
+    await _openMenu(tester, l10n.fileActions);
+    expect(find.text(l10n.fileHistory), findsOneWidget);
+    expect(find.text(l10n.aiExplainFile), findsNothing);
   });
 
   testWidgets('an issue offers a discussion but no summary', (tester) async {

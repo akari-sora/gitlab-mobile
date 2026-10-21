@@ -2327,4 +2327,5 @@ const _messagesTh = <String>[
   'ยินยอม',
   'Settings changed: new questions start a new conversation, and the messages above are not sent again',
   'Unknown tool request',
+  'This conversation was restored, so only the start of what was sent is kept',
 ];
