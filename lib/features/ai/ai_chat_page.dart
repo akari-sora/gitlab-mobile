@@ -292,15 +292,25 @@ class _AiChatPageState extends State<AiChatPage> {
       ],
     ];
     // Reversed, so the newest content stays at the bottom while it grows.
+    // Each row is keyed by its position from the oldest item, which does not
+    // change when content is added, so an expanded tool row stays expanded.
     return ListView.builder(
       key: const ValueKey('ai-chat-list'),
       reverse: true,
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       itemCount: children.length,
-      itemBuilder: (context, index) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: children[children.length - 1 - index],
-      ),
+      findChildIndexCallback: (key) =>
+          key is ValueKey<int> && key.value >= 0 && key.value < children.length
+          ? children.length - 1 - key.value
+          : null,
+      itemBuilder: (context, index) {
+        final position = children.length - 1 - index;
+        return Padding(
+          key: ValueKey<int>(position),
+          padding: const EdgeInsets.only(bottom: 12),
+          child: children[position],
+        );
+      },
     );
   }
 }

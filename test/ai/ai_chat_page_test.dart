@@ -312,6 +312,31 @@ void main() {
     expect(find.text('diff --git a/synthetic b/synthetic'), findsOneWidget);
   });
 
+  testWidgets('an expanded tool row stays expanded as the reply grows', (
+    tester,
+  ) async {
+    final items = _conversation().sublist(0, 2);
+    final session = _FakeSession(items: items);
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    await tester.tap(find.textContaining(l10n.aiToolReadFile));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('void main() {}'), findsOneWidget);
+
+    session.update(
+      () => session.items = [
+        ...items,
+        const AiAssistantItem(text: 'More', state: AiAssistantState.done),
+        AiUserItem(text: 'next'),
+      ],
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('void main() {}'), findsOneWidget);
+  });
+
   testWidgets('copy all puts the whole reply on the clipboard', (tester) async {
     String? copied;
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
