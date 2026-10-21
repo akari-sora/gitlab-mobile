@@ -822,8 +822,9 @@ Synthetic suites:
 - `test/markdown_offline_test.dart`;
 - an added runner regression for the arguments a started tool row shows.
 
-Emulator run (Android API 36 emulator; gate-on debug builds of `4907a97`, then
-`dd89902`):
+Emulator run (Android API 36 emulator; gate-on debug builds of `91b4369`, then
+`c28dd21`. The builds were made from these changes before the branch was
+rebased onto main; commits are cited by their rebased SHAs):
 - Real provider: OpenCode Go, Chat Completions, model `glm-5.3-flash`. The key
   went through stdin into the emulator field; it is not in the repository,
   logs or this ledger.
@@ -831,7 +832,7 @@ Emulator run (Android API 36 emulator; gate-on debug builds of `4907a97`, then
 - Only content of this public project was sent: its README and `.fvmrc`, one
   failed job log, merge request !44, and the files the model read with tools.
 
-Observed on `4907a97`:
+Observed on `91b4369`:
 - The consent card blocks sending until agreed.
 - Replies stream, render Markdown, and "Copy all" works.
 - Stop marks the partial reply as interrupted and not kept, plus a stopped
@@ -843,7 +844,7 @@ Observed on `4907a97`:
 - "AI summary" sends once when the session is ready.
 - With read-only tools enabled (after a new consent), tool rows appear.
 
-The same run found these defects, fixed in `dd89902` with synthetic
+The same run found these defects, fixed in `c28dd21` with synthetic
 regressions; the mutation runs are recorded outside the repository:
 - The answer was listed above the tool rows it used. Tool rows are now
   inserted before the run's answer, which stays last, so text written before
@@ -864,7 +865,7 @@ regressions; the mutation runs are recorded outside the repository:
 - Also: an "Open AI settings" menu item; "Thinking…" under an empty streaming
   reply; spacing below the read-only tools switch.
 
-Re-run on `dd89902`:
+Re-run on `c28dd21`:
 - the progress row shows;
 - the composer stays clear of the update snack bar;
 - chips read `.fvmrc · 118 characters` and `!44 · 4744 characters`;
@@ -924,7 +925,7 @@ Codex GPT-6.1-Sol and Opus 5.5 both returned REQUEST CHANGES. DeepSeek V4.1 Flas
 - Arabic counts read correctly for any number.
 - The AI User-Agent carries the app version from `pubspec.yaml`, checked by a tool test.
 
-Second emulator run on the gate-on debug build of `0ae14f5` (same provider, model and key handling as above; this public project only):
+Second emulator run on the gate-on debug build of `2b01b96` (same provider, model and key handling as above; this public project only):
 - A discussion visit to merge request !44 was left without sending. A later "AI summary" visit sent the summary once after consent.
 - The consent dialog opened from the chat says "Agree".
 - The blocker card sits at the top of an empty chat and above the composer in a conversation, and scrolls into view.
