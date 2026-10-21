@@ -738,3 +738,47 @@ failures and six reversible mutation receipts are recorded outside the repositor
 This follow-up has no commit,
 push, pipeline/job, internet, provider call, real key, build or device evidence;
 the feature gate remains false. These checks do not establish G0 acceptance.
+
+### MR5 review rounds 3–8 and emulator checks
+
+Fixes after round 2, each with a synthetic regression that fails when the fix is
+reverted (mutation runs are recorded outside the repository):
+
+- The unsaved key draft is bound to its recipient (origin, base path, auth
+  header) and is dropped with a notice when a format, URL or preset change
+  alters it; the key status line follows the draft as it is typed.
+- The editor's policy line uses the same derivation as the consent dialog, so
+  it never states more than the contract (unknown for other recipients and
+  unlisted formats). Azure resource endpoints match one DNS label under the
+  fixed suffix, path and default port.
+- An unedited preset model list URL follows the base URL's server (cleared on
+  another server, restored on the preset's); an edited one is kept. Listeners
+  act only on text changes, so a tap or selection is not an edit and does not
+  drop a loaded model list or the "key verified" notice.
+- An error caused only by the model list URL is shown on that field, with a
+  pointer under the base URL. A blocked save, model read or key check opens the
+  advanced section and scrolls to the failing field (also the limit fields and
+  empty required fields) once the opening animation has had its time and the
+  scroll extent is stable; a fixed error does not move the page.
+- A failed keyless save restores a key that was only in the live cache, without
+  recreating its absent durable slot. A port too large for an int is an invalid
+  draft, not an exception.
+- Two new messages in 24 languages; Arabic isolates the literal `/models`, and
+  `tool/l10n.py` writes bidirectional controls as `\u` escapes.
+
+Emulator checks (Android API 36 emulator, gate-on debug build from the branch,
+synthetic keys only, no provider request sent, signed-in account used read-only):
+preset descriptions wrap; the policy line follows format and recipient; the key
+draft is cleared on a recipient change; the model list URL clears and returns
+with the base URL and an edited one keeps its value with its own error; the
+advanced section's first label is not clipped; a blocked save scrolls to the
+model list URL and limit errors, with and without the keyboard. The scroll
+timing fault was found only on the emulator: the first two frames after opening
+still had a scroll extent of 0. A temporary log (not committed) showed extent
+0, 0, 81 … 584, 584 and then a scroll to 352 after the fix; the widget-test clock
+does not reproduce that first-frame timing for the model list URL case, while
+the limit case at 412 × 915 does.
+
+Live provider calls, real keys, physical devices, iOS and the preset policy
+URLs' current content remain **NOT_RUN**. The feature gate remains false; none
+of this establishes G0 acceptance or provider conformance.
