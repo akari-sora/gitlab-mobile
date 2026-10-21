@@ -11,6 +11,7 @@ import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/ai_transport.dart';
 import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
+import 'package:gitlab_mobile/core/ai/runner.dart' show AiRunEnd;
 import 'package:gitlab_mobile/core/ai/wire/anthropic_messages.dart';
 import 'package:gitlab_mobile/core/ai/wire/chat_completions.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
@@ -650,9 +651,17 @@ void main() {
   });
 
   test('chips never show a secret learned during the send', () async {
-    const late = 'synthetic-late-chip-value-0091';
     // Learn the secret at each refresh of the send in turn: before the
-    // context is attached, between attaching and sending, and after.
+    // context is attached, between attaching and sending, and after. The
+    // second secret is encoded in the request (`&amp;`, `&lt;`, `&gt;`).
+    for (final late in const [
+      'synthetic-late-chip-value-0091',
+      'synthetic&late<chip>value-0092',
+    ]) {
+    final escaped = late
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;');
     for (var k = 1; k <= 10; k++) {
       final environment = await _environment(
         repositoryText: 'first line\nvalue $late here\n',
@@ -685,11 +694,49 @@ void main() {
       final chip = controller.items.whereType<AiUserItem>().single.chips.single;
       final sent = _sentGitLabData(adapter.requests.single);
       if (learned) {
-        expect(chip.sentText, isNot(contains(late)), reason: 'k=$k');
-        expect(chip.preview, isNot(contains(late)), reason: 'k=$k');
+        for (final form in {late, escaped}) {
+          expect(chip.sentText, isNot(contains(form)), reason: '$form k=$k');
+          expect(chip.preview, isNot(contains(form)), reason: '$form k=$k');
+        }
       }
-      if (!sent.contains(late)) expect(chip.sentText, sent, reason: 'k=$k');
+      if (!sent.contains(escaped)) {
+        expect(chip.sentText, sent, reason: '$late k=$k');
+      }
     }
+    }
+  });
+
+  test('a secret learned after the run is redacted in its chips', () async {
+    const late = 'synthetic&late<after>value-0093';
+    const escaped = 'synthetic&amp;late&lt;after&gt;value-0093';
+    final environment = await _environment(
+      repositoryText: 'first line\nvalue $late here\n',
+    );
+    addTearDown(environment.dispose);
+    final adapter = FakeAdapter((_) => _sse(answer('a reply')));
+    final controller = await _readyController(
+      environment,
+      adapter,
+      tools: false,
+    );
+    await controller.send('explain');
+    expect(_sentGitLabData(adapter.requests.single), contains(escaped));
+
+    await environment.settings.saveProvider(
+      _provider(AiFormat.responses, id: 'other', requiresKey: true),
+    );
+    await environment.settings.saveProviderKey(
+      'other',
+      late,
+      acknowledgeWarning: true,
+    );
+    await controller.recheck();
+    final chip = controller.items.whereType<AiUserItem>().single.chips.single;
+    for (final form in [late, escaped]) {
+      expect(chip.sentText, isNot(contains(form)), reason: form);
+      expect(chip.preview, isNot(contains(form)), reason: form);
+    }
+    expect(chip.sentText, contains('[REDACTED]'));
   });
 
   test('a request refused before sending takes its chips back', () async {
@@ -932,6 +979,7 @@ void main() {
     controller.removeListener(listener);
     expect(learned, isTrue);
     expect(ended, AiChatBlocker.contextUnavailable);
+    expect(controller.lastEnd, AiRunEnd.failed);
     expect(
       controller.items.whereType<AiAssistantItem>().single.state,
       AiAssistantState.hidden,

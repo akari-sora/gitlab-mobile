@@ -416,6 +416,7 @@ final class AiRunner {
         nextProgressChars = 256;
         AiDecodedTurn turn;
         AiUsage? latestUsage;
+        var refused = false;
         try {
           turn = await _interruptible(
             _complete(
@@ -469,11 +470,14 @@ final class AiRunner {
           }
         } on AiFailure catch (failure) {
           // Refused locally (a remembered Retry-After, a closed transport):
-          // this request never left the device.
-          if (failure.notSent) modelCalls--;
+          // this request never left the device and used nothing.
+          if (failure.notSent) {
+            refused = true;
+            modelCalls--;
+          }
           rethrow;
         } finally {
-          _recordUsage(latestUsage, encoded.length);
+          if (!refused) _recordUsage(latestUsage, encoded.length);
         }
         _check(epoch);
         seg.freezeWith(

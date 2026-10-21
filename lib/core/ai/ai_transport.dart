@@ -117,7 +117,8 @@ final class AiTransport {
     String? encodedJson,
     AiErrorDecoder? decodeError,
   }) async {
-    // Refusals before the request is handed to the network say so.
+    // These refusals come before the request is handed to the network, and
+    // say so. Later refusals are counted as possibly sent.
     if (_closed) {
       throw const AiFailure(AiFailureKind.cancelled, notSent: true);
     }

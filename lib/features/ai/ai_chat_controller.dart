@@ -651,7 +651,8 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     AiFileOrigin(:final path) => path,
   };
 
-  /// A chip for a block that is already redacted, as sent.
+  /// A chip for a block that is already redacted, as sent. Its preview is
+  /// cut from the redacted text.
   AiContextChip _sentChip(AiContextBlock sent) {
     final resource = _originResource;
     final pinned = _context?.built.pinnedSha;
@@ -665,6 +666,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       preview: clipAiText(sent.text, 200),
       sizeChars: sent.text.length,
       pinnedSha: pinned == null ? null : _redactor.redactSource(pinned).text,
+      block: sent,
     );
   }
 
@@ -728,6 +730,8 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       } on Object {
         _items[index] = _hiddenItem(_items[index]);
         _displayFailed = true;
+        // The next pass recomputes the flag over what is shown now.
+        _displayRevision = -1;
       }
     }
   }
@@ -785,18 +789,26 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           text: safe(text),
           chips: [
             for (final chip in chips)
-              AiContextChip(
-                source: safe(chip.source),
-                preview: safe(chip.preview),
-                sentText: chip.sentText == null ? null : safe(chip.sentText!),
-                sizeChars: chip.sizeChars,
-                blocked: chip.blocked,
-                type: chip.type,
-                resource: chip.resource == null ? null : safe(chip.resource!),
-                pinnedSha: chip.pinnedSha == null
-                    ? null
-                    : safe(chip.pinnedSha!),
-              ),
+              if (chip.block case final block?)
+                // Redact the plain text, then encode: see AiContextChip.block.
+                _sentChip(block.redact(_redactor, source: safe))
+              else
+                AiContextChip(
+                  source: safe(chip.source),
+                  preview: safe(chip.preview),
+                  sentText: chip.sentText == null
+                      ? null
+                      : safe(chip.sentText!),
+                  sizeChars: chip.sizeChars,
+                  blocked: chip.blocked,
+                  type: chip.type,
+                  resource: chip.resource == null
+                      ? null
+                      : safe(chip.resource!),
+                  pinnedSha: chip.pinnedSha == null
+                      ? null
+                      : safe(chip.pinnedSha!),
+                ),
           ],
         ),
         AiAssistantItem(:final text, :final state, :final usage) =>
@@ -920,6 +932,8 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       }
     } else {
       _items.clear();
+      // Nothing unchecked is shown any more.
+      _displayFailed = false;
     }
     _pendingTools.clear();
     _assistantIndex = null;

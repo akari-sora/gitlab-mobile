@@ -502,6 +502,24 @@ void main() {
     },
   );
 
+  test('a request refused before sending uses no token budget', () async {
+    final h = Harness(
+      context: [AiContextBlock(source: 'file', text: 'synthetic context')],
+    );
+    h.respond = (plan, onEvent) async => throw const AiFailure(
+      AiFailureKind.rateLimited,
+      status: 429,
+      notSent: true,
+    );
+    for (var run = 0; run < 3; run++) {
+      final result = await h.runner.run('explain');
+      expect(result.modelCalls, 0);
+      expect(result.failure?.kind, AiFailureKind.rateLimited);
+    }
+    expect(h.runner.estimatedInputTokens, 0);
+    expect(h.runner.actualInputTokens, 0);
+  });
+
   test('sentContext is the context as last redacted before sending', () async {
     const late = 'synthetic-late-runner-0042';
     // Learn the secret at each refresh of the run in turn; what the runner

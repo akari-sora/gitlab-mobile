@@ -1023,17 +1023,42 @@ Codex and Opus returned REQUEST CHANGES. Both found the same main problem. Fixed
   - A new test covers a pass that fails for only some items (N5-3).
   - The display pass during a run repaints even when it fails, and no longer swaps in the page chips (N5-7, N5-8).
 
-**Mutation runs, outside the repository.** Each of these 10 changes makes the test named for it fail:
-- settle without the re-redaction;
-- `_redactTail` without updating `sentContext`;
-- not discounting a refused call;
-- the transport without `notSent`;
-- no redaction probe;
-- chips kept when nothing was sent;
-- the display pass after the run unwrapped;
-- the reply shown after a failed pass;
-- an empty title.
+**Mutation runs, outside the repository.** Each of these 9 changes makes the named test fail:
+- settle without the re-redaction: "chips never show a secret learned during the send";
+- `_redactTail` without updating `sentContext`: "sentContext is the context as last redacted before sending";
+- not discounting a refused call: "a request refused before sending takes its chips back";
+- the transport without `notSent`: that test and "429 with Retry-After populates the shared registry";
+- no redaction probe: "a list of notices alone does not clear the block";
+- chips kept when nothing was sent: "a first request too long to send takes its chips back";
+- the display pass after the run unwrapped, and the reply shown after a failed pass: "a display pass that fails during the run keeps its outcome";
+- an empty title: "a title that cannot be checked falls back to the assistant".
 
 **Deferred:**
 - N5-4: a hidden message also loses its chip.
 - N5-6: a run's own failure stays under the block card until the next recheck clears it.
+
+### MR6a-1 review round 6
+
+Codex returned REQUEST CHANGES; Opus returned APPROVE WITH MINOR FIXES. Fixed:
+
+- **A secret with `&`, `<` or `>` learned after sending showed escaped in "What was sent" (Codex P1, Opus R6-1).**
+  - Cause: redaction ran on the encoded text, where `&` is `&amp;`, so the secret no longer matched.
+  - Fix: a chip keeps its redacted block in memory (`AiContextChip.block`, never saved). Settling and every later display pass redact the block's plain text first, then encode it again, and cut the preview from the result.
+  - Tests: the late-secret test now also uses a secret with `&<>` and checks both the plain and the escaped forms. A new test covers a secret learned after the run is over.
+- **A request refused locally still used token budget (Codex P2, Opus R6-2).** The runner skips usage for a `notSent` failure. Test: three refused runs leave both token counters at 0.
+- **A failed settle left the display-failure flag set for good (Opus R6-3).** It now resets the display revision so that the next pass computes the flag again, and a cleared conversation drops the flag.
+  - No test reaches this path end to end. The trigger is a collision that only the settled chips have, such as a summary chip after a new segment.
+  - Opus reproduced the old effect by fault injection in a copy.
+- **Nits:**
+  - The transport comment now covers only the refusals it marks (N6-2).
+  - The round-5 mutation list above is corrected (N6-3).
+  - The run-outcome test also asserts `lastEnd` (N6-4).
+
+**Mutation runs, outside the repository:**
+- Skipping the block path fails "chips never show a secret learned during the send" and "a secret learned after the run is redacted in its chips".
+- Recording usage for refused calls fails "a request refused before sending uses no token budget".
+
+**Still open:**
+- The stoppedBySettings variant of the run-outcome test (N6-4).
+- N6-5: a title that cannot be checked also drops the app's own `!iid`.
+- N6-6 (existing behaviour): a failed display pass inside a run ends the run as failed.

@@ -11,6 +11,7 @@ final class AiContextChip {
     this.resource,
     this.pinnedSha,
     this.sentText,
+    this.block,
   });
 
   final String source;
@@ -26,6 +27,11 @@ final class AiContextChip {
   /// Everything this block sent, redacted, for "What was sent". Kept in
   /// memory only; a restored conversation has just [preview].
   final String? sentText;
+
+  /// The redacted block [sentText] encodes, kept in memory only. A later
+  /// redaction pass works on its plain text and encodes again, because an
+  /// encoded secret (`&amp;` for `&`) no longer matches the secret itself.
+  final AiContextBlock? block;
 }
 
 enum AiAssistantState {
