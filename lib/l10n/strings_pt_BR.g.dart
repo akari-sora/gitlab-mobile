@@ -2328,4 +2328,5 @@ const _messagesPtBr = <String>[
   'As configurações mudaram: novas perguntas iniciam uma nova conversa, e as mensagens acima não são enviadas novamente',
   'Solicitação de chamada de ferramenta desconhecida',
   'Esta conversa foi restaurada, por isso apenas o início do conteúdo enviado foi mantido',
+  'Resumo da conversa',
 ];

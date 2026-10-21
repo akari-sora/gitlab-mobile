@@ -542,7 +542,11 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       final redactions = runner.lateRedactions;
       final result = await runner.run(text);
       if (!_current(epoch)) return;
-      _dropUndeliveredChips(userIndex);
+      _settleChips(
+        userIndex,
+        sent: result.modelCalls > 0,
+        blocks: runner.sentContext,
+      );
       _redactDisplayIfNeeded();
       _failure = result.failure;
       _offerNewConversation = result.offerRollover;
@@ -569,7 +573,8 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       }
     } on Object catch (error) {
       if (!_current(epoch)) return;
-      if (userIndex != null) _dropUndeliveredChips(userIndex);
+      // Thrown before the run started: nothing left the device.
+      _settleChips(userIndex, sent: false);
       _failure = _assistantIndex != null
           ? _mapFailure(error)
           : error is AiFailure
@@ -615,38 +620,36 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     }
   }
 
-  List<AiContextChip> _chips() {
+  /// What the page was about, for the chip label. The block source stays
+  /// the provenance tag the model sees.
+  String? get _originResource => switch (origin) {
+    AiGeneralOrigin() => null,
+    AiJobOrigin(:final jobName) => jobName,
+    AiWorkItemOrigin(:final kind, :final iid) =>
+      kind == AiWorkItemKind.mergeRequest ? '!$iid' : '#$iid',
+    AiFileOrigin(:final path) => path,
+  };
+
+  /// A chip for a block that is already redacted, as sent.
+  AiContextChip _sentChip(AiContextBlock sent) {
+    final resource = _originResource;
+    final pinned = _context?.built.pinnedSha;
+    return AiContextChip(
+      source: _redactor.redactSource(sent.source).text,
+      // A conversation summary is not the page itself.
+      resource: resource == null || sent.source == 'conversation_summary'
+          ? null
+          : _redactor.redactSource(resource).text,
+      sentText: sent.text,
+      preview: clipAiText(sent.text, 200),
+      sizeChars: sent.text.length,
+      pinnedSha: pinned == null ? null : _redactor.redactSource(pinned).text,
+    );
+  }
+
+  List<AiContextChip> _blockedChips() {
     final built = _context!.built;
-    // What the page was about, for the chip label. The block source stays
-    // the provenance tag the model sees.
-    final resource = switch (origin) {
-      AiGeneralOrigin() => null,
-      AiJobOrigin(:final jobName) => jobName,
-      AiWorkItemOrigin(:final kind, :final iid) =>
-        kind == AiWorkItemKind.mergeRequest ? '!$iid' : '#$iid',
-      AiFileOrigin(:final path) => path,
-    };
     return [
-      for (final block in built.blocks)
-        if (block
-                .redact(
-                  _redactor,
-                  source: (value) => _redactor.redactSource(value).text,
-                )
-                .text
-            case final sent)
-          AiContextChip(
-            source: _redactor.redactSource(block.source).text,
-            resource: resource == null
-                ? null
-                : _redactor.redactSource(resource).text,
-            sentText: sent,
-            preview: clipAiText(sent, 200),
-            sizeChars: block.text.length,
-            pinnedSha: built.pinnedSha == null
-                ? null
-                : _redactor.redactSource(built.pinnedSha!).text,
-          ),
       for (final path in built.blockedSensitivePaths)
         AiContextChip(
           source: _redactor.redactSource(path).text,
@@ -660,24 +663,41 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     ];
   }
 
-  /// A message whose request did not deliver the page context (a refused
-  /// cleartext send, a first request that was too long) shows no "What was
-  /// sent" chips; the next message that delivers it carries them.
-  void _dropUndeliveredChips(int index) {
-    if (!_contextPending) return;
-    if (index < 0 || index >= _items.length) return;
-    if (_items[index] case AiUserItem(
-      :final text,
-      :final chips,
-    ) when chips.any((chip) => !chip.blocked)) {
-      // Chips for blocked paths say what was not sent and stay.
-      _items[index] = AiUserItem(
-        text: text,
-        chips: [
-          for (final chip in chips)
-            if (chip.blocked) chip,
-        ],
-      );
+  /// The chips shown while the first request is prepared: the page context as
+  /// it will be sent. [_settleChips] corrects them once the run says what it
+  /// really sent.
+  List<AiContextChip> _chips() => [
+    for (final block in _context!.built.blocks)
+      _sentChip(
+        block.redact(
+          _redactor,
+          source: (value) => _redactor.redactSource(value).text,
+        ),
+      ),
+    ..._blockedChips(),
+  ];
+
+  /// Makes the chips of the message at [index] say what its request carried.
+  /// Nothing left the device when [sent] is false; otherwise [blocks] are
+  /// the redacted blocks the runner attached (the page context, a
+  /// conversation summary, or none). Blocked-path chips always stay. A
+  /// request that started and then failed or was stopped did leave the
+  /// device, so it keeps its chips.
+  void _settleChips(
+    int? index, {
+    required bool sent,
+    List<AiContextBlock> blocks = const [],
+  }) {
+    if (index == null || index >= _items.length) return;
+    if (_items[index] case AiUserItem(:final text, :final chips)) {
+      final settled = [
+        if (sent)
+          for (final block in blocks) _sentChip(block),
+        for (final chip in chips)
+          if (chip.blocked) chip,
+      ];
+      if (settled.isEmpty && chips.isEmpty) return;
+      _items[index] = AiUserItem(text: text, chips: settled);
     }
   }
 
@@ -700,8 +720,28 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     final revision = _secrets.revision;
     String safe(String text) => _redactor.redactSource(text).text;
     final redacted = List<AiChatItem>.of(_items);
+    var failed = false;
     for (var index = 0; index < redacted.length; index++) {
-      redacted[index] = switch (redacted[index]) {
+      try {
+        redacted[index] = _redactItem(redacted[index], safe);
+      } on Object {
+        // What cannot be checked against the new secrets is not shown.
+        failed = true;
+        redacted[index] = _hiddenItem(redacted[index]);
+      }
+    }
+    _items
+      ..clear()
+      ..addAll(redacted);
+    if (failed) {
+      // Leave the revision so the next pass tries again, and block.
+      throw const AiFailure(AiFailureKind.policyBlocked);
+    }
+    _displayRevision = revision;
+  }
+
+  AiChatItem _redactItem(AiChatItem item, String Function(String) safe) =>
+      switch (item) {
         AiUserItem(:final text, :final chips) => AiUserItem(
           text: safe(text),
           chips: [
@@ -744,12 +784,32 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           ),
         final AiNoticeItem notice => notice,
       };
-    }
-    _items
-      ..clear()
-      ..addAll(redacted);
-    _displayRevision = revision;
-  }
+
+  static AiChatItem _hiddenItem(AiChatItem item) => switch (item) {
+    AiUserItem() => const AiNoticeItem(AiNoticeKind.redacted),
+    AiAssistantItem(:final usage) => AiAssistantItem(
+      text: '',
+      state: AiAssistantState.hidden,
+      usage: usage,
+    ),
+    AiToolRunItem(
+      :final name,
+      :final status,
+      :final sizeChars,
+      :final truncated,
+      :final blocked,
+    ) =>
+      AiToolRunItem(
+        name: name,
+        argsPreview: '',
+        status: status,
+        sizeChars: sizeChars,
+        provenance: '',
+        truncated: truncated,
+        blocked: blocked,
+      ),
+    final AiNoticeItem notice => notice,
+  };
 
   void _noticeWithheld() {
     if (!_items.whereType<AiNoticeItem>().any(

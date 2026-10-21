@@ -2328,4 +2328,5 @@ const _messagesIt = <String>[
   'Impostazioni modificate: le nuove domande avviano una nuova conversazione e i messaggi qui sopra non vengono inviati di nuovo',
   'Richiesta di strumento sconosciuto',
   'Questa conversazione è stata ripristinata, quindi viene conservato solo l’inizio del contenuto inviato',
+  'Riepilogo della conversazione',
 ];

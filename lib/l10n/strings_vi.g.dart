@@ -2328,4 +2328,5 @@ const _messagesVi = <String>[
   'Cài đặt đã thay đổi: câu hỏi mới sẽ bắt đầu một cuộc trò chuyện mới và các tin nhắn ở trên sẽ không được gửi lại',
   'Yêu cầu công cụ không xác định',
   'Cuộc trò chuyện này đã được khôi phục nên chỉ phần đầu của nội dung đã gửi được lưu lại',
+  'Tóm tắt trò chuyện',
 ];

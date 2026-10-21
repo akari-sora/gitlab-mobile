@@ -577,7 +577,10 @@ void main() {
     );
   });
 
-  test('chips go with the message whose request delivered the page', () async {
+  // The request left the device, so its chips stay even though it failed;
+  // the context was not delivered, so the next request carries it again and
+  // says so too.
+  test('chips stay on a request that was sent and failed', () async {
     final environment = await _environment();
     addTearDown(environment.dispose);
     var calls = 0;
@@ -593,12 +596,112 @@ void main() {
     );
     await controller.send('first');
     expect(controller.failure, isNotNull);
-    expect(controller.items.whereType<AiUserItem>().single.chips, isEmpty);
+    expect(controller.items.whereType<AiUserItem>().single.chips, isNotEmpty);
 
     await controller.send('second');
     final users = controller.items.whereType<AiUserItem>().toList();
-    expect(users.first.chips, isEmpty);
-    expect(users.last.chips, isNotEmpty);
+    expect(users.first.chips, isNotEmpty);
+    final chip = users.last.chips.single;
+    expect(chip.sentText, _sentGitLabData(adapter.requests.last));
+  });
+
+  test('a summary sent after a new key is what the chip shows', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    var calls = 0;
+    final adapter = FakeAdapter(
+      (_) => ++calls == 1
+          ? jsonResponse({'error': 'bad key'}, status: 401)
+          : _sse(answer('done')),
+    );
+    final controller = await _readyController(
+      environment,
+      adapter,
+      tools: false,
+      requiresKey: true,
+    );
+    await controller.send('first');
+    expect(controller.failure, isNotNull);
+
+    // A corrected key keeps consent but starts a projected segment.
+    await environment.settings.saveProviderKey(
+      'provider',
+      'synthetic-provider-key-0002',
+      acknowledgeWarning: true,
+    );
+    await controller.recheck();
+    await controller.send('second');
+    final chips = controller.items.whereType<AiUserItem>().last.chips;
+    final sent = _sentGitLabData(adapter.requests.last);
+    expect(chips.map((chip) => chip.sentText), contains(sent));
+    expect(chips.map((chip) => chip.source), contains('conversation_summary'));
+  });
+
+  test('a stop mid-stream keeps the chips of what was sent', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    final stream = StreamController<Uint8List>();
+    final adapter = FakeAdapter(
+      (_) => ResponseBody(
+        stream.stream,
+        200,
+        headers: {
+          Headers.contentTypeHeader: ['text/event-stream'],
+        },
+      ),
+    );
+    final controller = await _readyController(
+      environment,
+      adapter,
+      tools: false,
+    );
+    final send = controller.send('stream');
+    await _waitFor(() => adapter.requests.isNotEmpty);
+    stream.add(
+      Uint8List.fromList(
+        utf8.encode(
+          _partialEvents(AiFormat.responses, 'partial'.padRight(256, '!')),
+        ),
+      ),
+    );
+    await _waitFor(
+      () => controller.items.whereType<AiAssistantItem>().any(
+        (item) => item.text.isNotEmpty,
+      ),
+    );
+    controller.stop();
+    await stream.close();
+    await send;
+    expect(controller.items.whereType<AiUserItem>().single.chips, isNotEmpty);
+  });
+
+  test('a display pass hides what it cannot check', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    final adapter = FakeAdapter((_) => _sse(answer('a reply')));
+    final controller = await _readyController(
+      environment,
+      adapter,
+      tools: false,
+    );
+    await controller.send('first');
+    await environment.settings.saveProvider(
+      _provider(AiFormat.responses, id: 'other', requiresKey: true),
+    );
+    await environment.settings.saveProviderKey(
+      'other',
+      'REDACTED',
+      acknowledgeWarning: true,
+    );
+    await controller.recheck();
+    expect(controller.blocker, AiChatBlocker.contextUnavailable);
+    expect(controller.items.whereType<AiUserItem>(), isEmpty);
+    expect(
+      controller.items.whereType<AiAssistantItem>().single,
+      isA<AiAssistantItem>()
+          .having((item) => item.text, 'text', isEmpty)
+          .having((item) => item.state, 'state', AiAssistantState.hidden),
+    );
   });
 
   group('preparing blockers', () {
@@ -1809,4 +1912,19 @@ void main() {
       await send;
     }
   });
+}
+
+/// The `<gitlab_data …>…</gitlab_data>` block in a Responses request.
+String _sentGitLabData(RequestOptions request) {
+  final body = jsonDecode(request.data as String) as Map<String, Object?>;
+  final text = [
+    for (final input in body['input']! as List<Object?>)
+      if (input is Map<String, Object?> && input['content'] is List<Object?>)
+        for (final part in input['content']! as List<Object?>)
+          if (part is Map<String, Object?> && part['text'] is String)
+            part['text']! as String,
+  ].firstWhere((text) => text.contains('<gitlab_data'));
+  final start = text.indexOf('<gitlab_data');
+  final end = text.indexOf('</gitlab_data>') + '</gitlab_data>'.length;
+  return text.substring(start, end);
 }

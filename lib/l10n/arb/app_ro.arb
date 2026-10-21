@@ -2325,5 +2325,6 @@
   "aiConsentAgree": "Acceptă",
   "aiNoticeNewConversation": "Setările s-au schimbat: întrebările noi încep o conversație nouă, iar mesajele de mai sus nu sunt trimise din nou",
   "aiToolUnknown": "Solicitare pentru un instrument necunoscut",
-  "aiChatSentPreviewOnly": "Această conversație a fost restaurată, astfel că se păstrează doar începutul conținutului trimis"
+  "aiChatSentPreviewOnly": "Această conversație a fost restaurată, astfel că se păstrează doar începutul conținutului trimis",
+  "aiChatSummaryChip": "Rezumatul conversației"
 }

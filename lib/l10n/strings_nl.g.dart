@@ -2328,4 +2328,5 @@ const _messagesNl = <String>[
   'Instellingen gewijzigd: nieuwe vragen beginnen een nieuw gesprek en de bovenstaande berichten worden niet opnieuw verzonden',
   'Verzoek om een onbekend hulpmiddel aan te roepen',
   'Dit gesprek is hersteld, dus alleen het begin van de verzonden inhoud is bewaard',
+  'Samenvatting gesprek',
 ];

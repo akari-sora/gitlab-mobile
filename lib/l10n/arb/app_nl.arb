@@ -2325,5 +2325,6 @@
   "aiConsentAgree": "Akkoord",
   "aiNoticeNewConversation": "Instellingen gewijzigd: nieuwe vragen beginnen een nieuw gesprek en de bovenstaande berichten worden niet opnieuw verzonden",
   "aiToolUnknown": "Verzoek om een onbekend hulpmiddel aan te roepen",
-  "aiChatSentPreviewOnly": "Dit gesprek is hersteld, dus alleen het begin van de verzonden inhoud is bewaard"
+  "aiChatSentPreviewOnly": "Dit gesprek is hersteld, dus alleen het begin van de verzonden inhoud is bewaard",
+  "aiChatSummaryChip": "Samenvatting gesprek"
 }

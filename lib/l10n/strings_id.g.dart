@@ -2328,4 +2328,5 @@ const _messagesId = <String>[
   'Pengaturan berubah: pertanyaan baru akan memulai percakapan baru, dan pesan di atas tidak dikirim lagi',
   'Permintaan pemanggilan alat yang tidak dikenal',
   'Percakapan ini dipulihkan, jadi hanya bagian awal konten yang dikirim yang disimpan',
+  'Ringkasan percakapan',
 ];

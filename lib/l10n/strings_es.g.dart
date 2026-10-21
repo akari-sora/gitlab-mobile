@@ -2328,4 +2328,5 @@ const _messagesEs = <String>[
   'Ajustes modificados: las nuevas preguntas inician una conversación nueva y los mensajes anteriores no se vuelven a enviar',
   'Solicitud de herramienta no reconocida',
   'Esta conversación se restauró, por lo que solo se conserva el inicio del contenido enviado',
+  'Resumen de conversación',
 ];

@@ -2328,4 +2328,5 @@ const _messagesFr = <String>[
   'Les paramètres ont changé : les nouvelles questions démarrent une nouvelle conversation et les messages ci-dessus ne sont pas renvoyés',
   'Demande d’outil inconnu',
   'Cette conversation a été restaurée, seul le début du contenu envoyé est donc conservé',
+  'Résumé de conversation',
 ];

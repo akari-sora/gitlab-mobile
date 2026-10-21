@@ -2328,4 +2328,5 @@ const _messagesDe = <String>[
   'Die Einstellungen wurden geändert: Neue Fragen beginnen eine neue Unterhaltung, und die obigen Nachrichten werden nicht erneut gesendet',
   'Anfrage an ein unbekanntes Werkzeug',
   'Diese Unterhaltung wurde wiederhergestellt, daher bleibt nur der Anfang des gesendeten Inhalts erhalten',
+  'Zusammenfassung der Unterhaltung',
 ];

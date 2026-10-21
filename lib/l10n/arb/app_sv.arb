@@ -2325,5 +2325,6 @@
   "aiConsentAgree": "Godkänn",
   "aiNoticeNewConversation": "Inställningarna har ändrats: nya frågor startar en ny konversation och meddelandena ovan skickas inte igen",
   "aiToolUnknown": "Begäran om att anropa ett okänt verktyg",
-  "aiChatSentPreviewOnly": "Den här konversationen har återställts, så bara början av det som skickades finns kvar"
+  "aiChatSentPreviewOnly": "Den här konversationen har återställts, så bara början av det som skickades finns kvar",
+  "aiChatSummaryChip": "Sammanfattning av konversation"
 }

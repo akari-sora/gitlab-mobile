@@ -2325,5 +2325,6 @@
   "aiConsentAgree": "동의",
   "aiNoticeNewConversation": "설정이 변경되었습니다. 새 질문은 새 대화를 시작하며 위의 메시지는 다시 전송되지 않습니다",
   "aiToolUnknown": "알 수 없는 도구 요청",
-  "aiChatSentPreviewOnly": "이 대화는 복원되었으므로 전송된 내용의 시작 부분만 보관됩니다"
+  "aiChatSentPreviewOnly": "이 대화는 복원되었으므로 전송된 내용의 시작 부분만 보관됩니다",
+  "aiChatSummaryChip": "대화 요약"
 }

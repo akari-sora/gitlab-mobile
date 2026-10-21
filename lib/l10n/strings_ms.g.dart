@@ -2328,4 +2328,5 @@ const _messagesMs = <String>[
   'Tetapan berubah: soalan baharu memulakan perbualan baharu dan mesej di atas tidak dihantar semula',
   'Permintaan alat tidak diketahui',
   'Perbualan ini telah dipulihkan, jadi hanya bahagian awal kandungan yang dihantar disimpan',
+  'Ringkasan perbualan',
 ];

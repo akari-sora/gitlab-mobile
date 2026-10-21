@@ -2325,5 +2325,6 @@
   "aiConsentAgree": "Zustimmen",
   "aiNoticeNewConversation": "Die Einstellungen wurden geändert: Neue Fragen beginnen eine neue Unterhaltung, und die obigen Nachrichten werden nicht erneut gesendet",
   "aiToolUnknown": "Anfrage an ein unbekanntes Werkzeug",
-  "aiChatSentPreviewOnly": "Diese Unterhaltung wurde wiederhergestellt, daher bleibt nur der Anfang des gesendeten Inhalts erhalten"
+  "aiChatSentPreviewOnly": "Diese Unterhaltung wurde wiederhergestellt, daher bleibt nur der Anfang des gesendeten Inhalts erhalten",
+  "aiChatSummaryChip": "Zusammenfassung der Unterhaltung"
 }

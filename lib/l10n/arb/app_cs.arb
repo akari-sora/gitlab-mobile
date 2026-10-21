@@ -2325,5 +2325,6 @@
   "aiConsentAgree": "Souhlasit",
   "aiNoticeNewConversation": "Nastavení se změnilo: nové otázky zahájí novou konverzaci a výše uvedené zprávy se znovu neodešlou",
   "aiToolUnknown": "Požadavek na neznámý nástroj",
-  "aiChatSentPreviewOnly": "Tato konverzace byla obnovena, proto se uchoval jen začátek odeslaného obsahu"
+  "aiChatSentPreviewOnly": "Tato konverzace byla obnovena, proto se uchoval jen začátek odeslaného obsahu",
+  "aiChatSummaryChip": "Shrnutí konverzace"
 }

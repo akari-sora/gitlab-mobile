@@ -682,10 +682,15 @@ class _ContextChip extends StatelessWidget {
   /// The page the content came from: a file name, `!iid`, `#iid` or the job
   /// name. Older chips without one show their source tag.
   String get _name => switch (chip.resource) {
+    _ when _isSummary => l10n.aiChatSummaryChip,
     null => chip.source,
     final resource when chip.source == 'file' => resource.split('/').last,
     final resource => resource,
   };
+
+  /// After a conversation is condensed, its summary is sent instead of the
+  /// page.
+  bool get _isSummary => chip.source == 'conversation_summary';
 
   void _showSent(BuildContext context) {
     final text = chip.sentText ?? chip.preview;
@@ -722,7 +727,11 @@ class _ContextChip extends StatelessWidget {
                         style: theme.textTheme.titleMedium,
                       ),
                       const SizedBox(height: 4),
-                      Text(isolated(chip.resource ?? chip.source)),
+                      Text(
+                        _isSummary
+                            ? l10n.aiChatSummaryChip
+                            : isolated(chip.resource ?? chip.source),
+                      ),
                       Text(
                         [
                           l10n.aiChatCharacters('${chip.sizeChars}'),

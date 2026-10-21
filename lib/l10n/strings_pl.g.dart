@@ -2328,4 +2328,5 @@ const _messagesPl = <String>[
   'Ustawienia zostały zmienione: nowe pytania rozpoczynają nową rozmowę, a powyższe wiadomości nie są wysyłane ponownie',
   'Żądanie nieznanego narzędzia',
   'Ta rozmowa została przywrócona, dlatego zachowano tylko początek wysłanej treści',
+  'Podsumowanie rozmowy',
 ];

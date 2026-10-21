@@ -2328,4 +2328,5 @@ const _messagesCs = <String>[
   'Nastavení se změnilo: nové otázky zahájí novou konverzaci a výše uvedené zprávy se znovu neodešlou',
   'Požadavek na neznámý nástroj',
   'Tato konverzace byla obnovena, proto se uchoval jen začátek odeslaného obsahu',
+  'Shrnutí konverzace',
 ];

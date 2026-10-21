@@ -2325,5 +2325,6 @@
   "aiConsentAgree": "Kabul et",
   "aiNoticeNewConversation": "Ayarlar değişti: yeni sorular yeni bir konuşma başlatır ve yukarıdaki mesajlar tekrar gönderilmez",
   "aiToolUnknown": "Bilinmeyen bir aracı çağırma isteği",
-  "aiChatSentPreviewOnly": "Bu konuşma geri yüklendiği için gönderilen içeriğin yalnızca başlangıcı saklanır"
+  "aiChatSentPreviewOnly": "Bu konuşma geri yüklendiği için gönderilen içeriğin yalnızca başlangıcı saklanır",
+  "aiChatSummaryChip": "Konuşma özeti"
 }

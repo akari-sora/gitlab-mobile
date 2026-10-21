@@ -2328,4 +2328,5 @@ const _messagesSv = <String>[
   'Inställningarna har ändrats: nya frågor startar en ny konversation och meddelandena ovan skickas inte igen',
   'Begäran om att anropa ett okänt verktyg',
   'Den här konversationen har återställts, så bara början av det som skickades finns kvar',
+  'Sammanfattning av konversation',
 ];

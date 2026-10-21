@@ -7071,4 +7071,7 @@ final class AppStrings {
 
   /// 這段對話是之後還原的，只保留送出內容的開頭
   String get aiChatSentPreviewOnly => language._messages[2325];
+
+  /// 對話摘要
+  String get aiChatSummaryChip => language._messages[2326];
 }

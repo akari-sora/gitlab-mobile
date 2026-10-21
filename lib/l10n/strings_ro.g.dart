@@ -2328,4 +2328,5 @@ const _messagesRo = <String>[
   'Setările s-au schimbat: întrebările noi încep o conversație nouă, iar mesajele de mai sus nu sunt trimise din nou',
   'Solicitare pentru un instrument necunoscut',
   'Această conversație a fost restaurată, astfel că se păstrează doar începutul conținutului trimis',
+  'Rezumatul conversației',
 ];

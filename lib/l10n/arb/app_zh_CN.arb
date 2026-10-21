@@ -2325,5 +2325,6 @@
   "aiConsentAgree": "同意",
   "aiNoticeNewConversation": "设置已更改：之后的新问题将开始新对话，上面的消息不会再次发送",
   "aiToolUnknown": "未知工具请求",
-  "aiChatSentPreviewOnly": "此对话已经恢复，因此仅保留已发送内容的开头"
+  "aiChatSentPreviewOnly": "此对话已经恢复，因此仅保留已发送内容的开头",
+  "aiChatSummaryChip": "对话摘要"
 }

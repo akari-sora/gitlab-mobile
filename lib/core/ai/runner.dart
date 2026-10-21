@@ -175,6 +175,13 @@ final class AiRunner {
   String _segmentSystem = '';
   List<AiToolSpec> _segmentTools = const [];
   List<AiContextBlock> _segmentContext = const [];
+  List<AiContextBlock> _sentContext = const [];
+
+  /// The redacted context blocks attached to the last run's user message:
+  /// the page context, or a conversation summary after a new segment. Empty
+  /// when that message carried none. Whether they left the device is
+  /// [AiRunResult.modelCalls] > 0.
+  List<AiContextBlock> get sentContext => _sentContext;
   int actualInputTokens = 0;
   int estimatedInputTokens = 0;
   int lateRedactions = 0;
@@ -254,6 +261,7 @@ final class AiRunner {
   Future<AiRunResult> run(String userText) async {
     if (_running) throw StateError('A runner has one active send.');
     _running = true;
+    _sentContext = const [];
     final epoch = ++_epoch;
     _stopSignal = Completer<void>();
     final timer = Timer(runDeadline, () => stop(AiRunEnd.failed));
@@ -676,6 +684,7 @@ final class AiRunner {
         blocks.add(block.redact(_redactor, source: _redact));
       }
     }
+    _sentContext = List.unmodifiable(blocks);
     seg.setTail(AppUserEntry(text: text, context: blocks));
   }
 

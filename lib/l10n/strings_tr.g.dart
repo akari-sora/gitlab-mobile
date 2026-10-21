@@ -2328,4 +2328,5 @@ const _messagesTr = <String>[
   'Ayarlar değişti: yeni sorular yeni bir konuşma başlatır ve yukarıdaki mesajlar tekrar gönderilmez',
   'Bilinmeyen bir aracı çağırma isteği',
   'Bu konuşma geri yüklendiği için gönderilen içeriğin yalnızca başlangıcı saklanır',
+  'Konuşma özeti',
 ];

@@ -2325,5 +2325,6 @@
   "aiConsentAgree": "Accetta",
   "aiNoticeNewConversation": "Impostazioni modificate: le nuove domande avviano una nuova conversazione e i messaggi qui sopra non vengono inviati di nuovo",
   "aiToolUnknown": "Richiesta di strumento sconosciuto",
-  "aiChatSentPreviewOnly": "Questa conversazione è stata ripristinata, quindi viene conservato solo l’inizio del contenuto inviato"
+  "aiChatSentPreviewOnly": "Questa conversazione è stata ripristinata, quindi viene conservato solo l’inizio del contenuto inviato",
+  "aiChatSummaryChip": "Riepilogo della conversazione"
 }

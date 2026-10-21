@@ -975,3 +975,21 @@ Codex returned REQUEST CHANGES and Opus APPROVE WITH MINOR FIXES. Fixed, each wi
 - **Other.**
   - Sending needs a loaded context.
   - Registry disposal clears its page counts.
+
+### MR6a-1 review round 4
+
+Codex and Opus returned REQUEST CHANGES. Fixed, each with a regression test and a mutation run recorded outside the repository:
+
+**Chip placement (supersedes the round-3 note on chip placement)**
+- The runner now reports the redacted context blocks it attached to the run's user message (`AiRunner.sentContext`). After every run the controller makes that message's chips say exactly what its request carried:
+  - the page context;
+  - a conversation summary after a new segment, labelled as such;
+  - nothing.
+- Chips are removed only when nothing left the device (`modelCalls == 0`, or a failure before the run). A request that was sent and then stopped, timed out or failed keeps its chips.
+- Blocked-path chips always stay.
+
+**Display redaction**
+- A display pass hides any item it cannot check against the new secrets: a reply becomes hidden, a message becomes a redaction notice, and a tool row loses its excerpt.
+- After a failure the pass blocks and is tried again on the next recheck.
+
+One new message, "Conversation summary", is translated in all 24 catalogs.

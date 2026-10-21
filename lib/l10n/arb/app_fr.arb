@@ -2325,5 +2325,6 @@
   "aiConsentAgree": "Accepter",
   "aiNoticeNewConversation": "Les paramètres ont changé : les nouvelles questions démarrent une nouvelle conversation et les messages ci-dessus ne sont pas renvoyés",
   "aiToolUnknown": "Demande d’outil inconnu",
-  "aiChatSentPreviewOnly": "Cette conversation a été restaurée, seul le début du contenu envoyé est donc conservé"
+  "aiChatSentPreviewOnly": "Cette conversation a été restaurée, seul le début du contenu envoyé est donc conservé",
+  "aiChatSummaryChip": "Résumé de conversation"
 }
