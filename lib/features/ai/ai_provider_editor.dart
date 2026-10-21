@@ -617,7 +617,8 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     }
   }
 
-  /// Stops a model read in flight, keeping any list loaded before it.
+  /// Stops a model read or key check in flight, keeping any list loaded
+  /// before it.
   void _cancelModelRead() {
     if (!_loadingModels) return;
     _networkTicket += 1;
@@ -1066,7 +1067,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                         alignment: AlignmentDirectional.centerStart,
                         child: OutlinedButton.icon(
                           key: const ValueKey('ai-provider-verify-key'),
-                          onPressed: _loadingModels
+                          onPressed: _loadingModels || _saving
                               ? null
                               : _verifyOpenRouterKey,
                           icon: const Icon(Icons.key_outlined),
@@ -1647,6 +1648,9 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                 ConstrainedBox(
                   constraints: BoxConstraints(maxHeight: height * 0.6),
                   child: SingleChildScrollView(
+                    key: const ValueKey('ai-provider-model-picker-header'),
+                    // The list below is the sheet's primary scroll view.
+                    primary: false,
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1655,10 +1659,8 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                           l10n.aiProviderModelPickerTitle,
                           style: theme.textTheme.titleMedium,
                         ),
-                        if (!short) ...[
-                          const SizedBox(height: 4),
-                          Text(l10n.aiProviderModelPickerHint, style: muted),
-                        ],
+                        // Search before the hint: a long hint in large text
+                        // must not push the field out of the header's view.
                         if (searchable) ...[
                           const SizedBox(height: 12),
                           KeyedSubtree(
@@ -1675,13 +1677,19 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                             ),
                           ),
                         ],
+                        if (!short) ...[
+                          const SizedBox(height: 8),
+                          Text(l10n.aiProviderModelPickerHint, style: muted),
+                        ],
                       ],
                     ),
                   ),
                 ),
                 Expanded(
                   child: models.isEmpty
-                      ? Padding(
+                      // Scrolls, so a short window still shows all of it.
+                      ? SingleChildScrollView(
+                          key: const ValueKey('ai-provider-model-picker-empty'),
                           padding: const EdgeInsets.all(16),
                           child: Text(
                             widget.catalogueEmpty

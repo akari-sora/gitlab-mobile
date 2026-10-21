@@ -512,6 +512,8 @@ void main() {
     FlutterSecureStorage.setMockInitialValues(<String, String>{});
     final storage = _GatedStorage();
     final settings = AiSettingsController(SecureAiStore(storage));
+    // Secure-store settings are shared app-wide; release them for the next test.
+    addTearDown(settings.dispose);
     await settings.initialize();
     await tester.pumpWidget(
       _navigationHost(
@@ -572,6 +574,54 @@ void main() {
     expect(find.byType(AiProviderEditor), findsNothing);
     expect(find.byType(SnackBar), findsNothing);
     expect(settings.providers, hasLength(1));
+  });
+
+  testWidgets('a failed save keeps the model list already read', (
+    tester,
+  ) async {
+    FlutterSecureStorage.setMockInitialValues(<String, String>{});
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({
+        'data': [
+          {'id': 'synthetic-kept-model'},
+        ],
+      }),
+    );
+    final storage = _GatedStorage();
+    final settings = AiSettingsController(SecureAiStore(storage));
+    // Secure-store settings are shared app-wide; release them for the next test.
+    addTearDown(settings.dispose);
+    await settings.initialize();
+    await tester.pumpWidget(
+      _navigationHost(
+        settings,
+        clientFactory: (config, key) => _client(config, key, adapter),
+      ),
+    );
+    await tester.tap(find.text('open-editor'));
+    await tester.pumpAndSettle();
+    await _selectPreset(tester, AiPresets.custom);
+    await _fillRequired(tester);
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
+
+    storage.failWrites = true;
+    await tester.tap(find.text(l10n.saveAction));
+    await tester.pumpAndSettle();
+    expect(find.byType(AiProviderEditor), findsOneWidget);
+    expect(find.text(l10n.aiProviderModelsReadSuccess), findsOneWidget);
+    // The failure snack bar may cover the field, so press its button directly.
+    tester
+        .widget<IconButton>(find.byKey(const ValueKey('ai-provider-pick-model')))
+        .onPressed!();
+    await tester.pumpAndSettle();
+    expect(find.text('synthetic-kept-model'), findsOneWidget);
+    expect(adapter.requests, hasLength(1));
   });
 
   testWidgets('a model read that ends under the discard dialog opens no picker', (
@@ -914,6 +964,7 @@ final class _FailOnceKeyStore implements AiStore {
 /// Secure storage whose writes wait for [gate] while it is set.
 final class _GatedStorage extends FlutterSecureStorage {
   Completer<void>? gate;
+  bool failWrites = false;
 
   @override
   Future<void> write({
@@ -927,6 +978,7 @@ final class _GatedStorage extends FlutterSecureStorage {
     WindowsOptions? wOptions,
   }) async {
     await gate?.future;
+    if (failWrites) throw StateError('synthetic storage failure');
     await super.write(key: key, value: value);
   }
 }

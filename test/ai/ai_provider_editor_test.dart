@@ -454,8 +454,77 @@ void main() {
         return top >= 0 && top + box.size.height <= 640;
       });
       expect(visible, isNotEmpty, reason: tag);
+      expect(_searchInHeaderView(tester), isTrue, reason: tag);
       await _closePicker(tester);
     }
+  });
+
+  testWidgets('the search field stays in view as the keyboard comes and goes', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(top: 24);
+    addTearDown(tester.view.reset);
+    useLanguage(languageForTag('de')!);
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({
+        'data': [
+          for (var i = 0; i < 40; i++) {'id': 'synthetic-model-$i'},
+        ],
+      }),
+    );
+    await _pumpCustomEditor(tester, adapter, scale: 2);
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('ai-provider-model-search')));
+    await tester.pump();
+    for (final inset in const [280.0, 0.0]) {
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      await tester.pumpAndSettle();
+      expect(tester.testTextInput.hasAnyClients, isTrue, reason: 'inset $inset');
+      expect(_searchInHeaderView(tester), isTrue, reason: 'inset $inset');
+    }
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a short window shows all of the no-match message', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(640, 360);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(top: 24);
+    addTearDown(tester.view.reset);
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({
+        'data': [
+          for (var i = 0; i < 40; i++) {'id': 'synthetic-model-$i'},
+        ],
+      }),
+    );
+    await _pumpCustomEditor(tester, adapter, scale: 2);
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await tester.pumpAndSettle();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 180);
+    await tester.enterText(
+      find.byKey(const ValueKey('ai-provider-model-search')),
+      'no-such-model',
+    );
+    await tester.pumpAndSettle();
+    final empty = find.byKey(const ValueKey('ai-provider-model-picker-empty'));
+    final message = find.text(l10n.aiProviderModelPickerEmpty);
+    expect(message, findsOneWidget);
+    // The message area scrolls to the end of the text.
+    final scrollable = tester.state<ScrollableState>(
+      find.descendant(of: empty, matching: find.byType(Scrollable)),
+    );
+    scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
+    await tester.pump();
+    expect(
+      tester.getRect(message).bottom,
+      lessThanOrEqualTo(tester.getRect(empty).bottom + 0.5),
+    );
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('a catalogue filtered to nothing is not called empty', (
@@ -810,6 +879,17 @@ Future<void> _selectPreset(WidgetTester tester, String name) async {
 }
 
 Finder _option(String id) => find.byKey(ValueKey('ai-provider-model-option-$id'));
+
+/// Whether the search field lies inside the header's visible area.
+bool _searchInHeaderView(WidgetTester tester) {
+  final header = tester.getRect(
+    find.byKey(const ValueKey('ai-provider-model-picker-header')),
+  );
+  final search = tester.getRect(
+    find.byKey(const ValueKey('ai-provider-model-search')),
+  );
+  return search.top >= header.top - 0.5 && search.bottom <= header.bottom + 0.5;
+}
 
 /// Every row of the model picker, and nothing behind it.
 Finder _options() => find.byWidgetPredicate(
