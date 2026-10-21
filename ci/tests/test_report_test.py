@@ -48,6 +48,23 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(failures, 1)
         self.assertIn('expected true < false', suite.find('testcase/failure').text)
 
+    def test_characters_xml_forbids_are_escaped(self):
+        # A test named after an HTML fragment with a form feed, and an error
+        # with terminal colours, must still give a report GitLab can parse.
+        values = [
+            {'type': 'suite', 'suite': {'id': 1, 'path': 'test/example.dart'}},
+            {'type': 'testStart', 'test': {'id': 7, 'name': 'tag <img\x0csrc=x>', 'suiteID': 1}, 'time': 0},
+            {'type': 'error', 'testID': 7, 'error': '\x1b[31mred\x1b[0m \x00', 'stackTrace': ''},
+            {'type': 'testDone', 'testID': 7, 'result': 'failure', 'time': 1},
+            {'type': 'done', 'success': False},
+        ]
+        failures, suite = self.convert(values)
+        self.assertEqual(failures, 1)
+        case = suite.find('testcase')
+        self.assertEqual(case.get('name'), 'tag <img\\x0csrc=x>')
+        self.assertIn('\\x1b[31mred', case.find('failure').text)
+        self.assertIn('\\x00', case.find('failure').text)
+
     def test_missing_done_is_not_success(self):
         self.assertGreater(self.convert(self.case())[0], 0)
 
