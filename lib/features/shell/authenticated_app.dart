@@ -16,6 +16,8 @@ import '../../shared/workspace_ui.dart';
 import '../auth/recent_project.dart';
 import '../auth/session_controller.dart';
 import '../ai/ai_account_cleanup.dart';
+import '../ai/ai_chat_session.dart';
+import '../ai/ai_run_registry.dart';
 import '../ai/ai_scope.dart';
 import '../ai/ai_settings_page.dart';
 import '../workspace/activity_page.dart';
@@ -54,6 +56,7 @@ class AuthenticatedApp extends StatefulWidget {
     this.lock,
     this.language,
     this.ai,
+    this.aiSessionFactory,
   });
   final SessionController session;
   final AppearanceController appearance;
@@ -73,6 +76,9 @@ class AuthenticatedApp extends StatefulWidget {
 
   /// AI is absent while the compile-time gate is off and in existing tests.
   final AiControllers? ai;
+
+  /// Overrides conversation construction in synthetic shell tests.
+  final AiChatSessionFactory? aiSessionFactory;
   final LauncherShortcuts shortcuts;
   final ColorScheme? dynamicLight;
   final ColorScheme? dynamicDark;
@@ -96,9 +102,12 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
   bool _probedScheme = false;
   final _pops = _PopObserver();
   late InAppLinkHandler _links;
+  AccountAiRunRegistry? _aiRegistry;
 
   @override
   void dispose() {
+    widget.session.removeListener(_sessionOwnerChanged);
+    _disposeAiRegistry();
     widget.language?.removeListener(_languageChanged);
     _pops.dispose();
     super.dispose();
@@ -135,7 +144,14 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
   void didUpdateWidget(covariant AuthenticatedApp oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.session != widget.session) {
+      oldWidget.session.removeListener(_sessionOwnerChanged);
+      _disposeAiRegistry();
       _links = _bindLinks(widget.session);
+      widget.session.addListener(_sessionOwnerChanged);
+    }
+    if (oldWidget.ai?.settings != widget.ai?.settings ||
+        oldWidget.aiSessionFactory != widget.aiSessionFactory) {
+      _disposeAiRegistry();
     }
     if (oldWidget.language != widget.language) {
       oldWidget.language?.removeListener(_languageChanged);
@@ -147,6 +163,7 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
   void initState() {
     super.initState();
     _links = _bindLinks(widget.session);
+    widget.session.addListener(_sessionOwnerChanged);
     widget.language?.addListener(_languageChanged);
     if (widget.dynamicLight != null || widget.dynamicDark != null) {
       _dynamicProbeSettled = true;
@@ -171,6 +188,29 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
       _dynamicProbeSettled = true;
       _probedScheme = hasScheme;
     });
+  }
+
+  void _sessionOwnerChanged() {
+    final registry = _aiRegistry;
+    if (registry == null || registry.ownsCurrentSession) return;
+    _disposeAiRegistry();
+    if (mounted) setState(() {});
+  }
+
+  void _disposeAiRegistry() {
+    _aiRegistry?.dispose();
+    _aiRegistry = null;
+  }
+
+  AccountAiRunRegistry _currentAiRegistry(AiControllers ai) {
+    final existing = _aiRegistry;
+    if (existing != null && existing.ownsCurrentSession) return existing;
+    existing?.dispose();
+    return _aiRegistry = AccountAiRunRegistry(
+      session: widget.session,
+      settings: ai.settings,
+      sessionFactory: widget.aiSessionFactory,
+    );
   }
 
   @override
@@ -233,9 +273,16 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
         );
         final ai = widget.ai;
         final accountKey = widget.session.active?.key;
-        return ai == null || accountKey == null
-            ? app
-            : AiScope(controllers: ai, accountKey: accountKey, child: app);
+        final api = widget.session.api;
+        if (ai == null || accountKey == null || api == null) {
+          _disposeAiRegistry();
+          return app;
+        }
+        final registry = _currentAiRegistry(ai);
+        return AiRunRegistryScope(
+          registry: registry,
+          child: AiScope(controllers: ai, accountKey: accountKey, child: app),
+        );
       },
     ),
   );

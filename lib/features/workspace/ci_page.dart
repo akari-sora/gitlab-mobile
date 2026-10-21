@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../ai/ai_chat_page.dart';
+import '../ai/ai_chat_session.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/job_trace.dart';
@@ -1670,6 +1672,11 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
       if (current()) { setState(() { _error = safeFailure(e); _auto = false; _timer?.cancel(); }); }
     } finally { if (current()) { setState(() => _loading = false); } }
   }
+  Future<void> _openAi() async {
+    final job = _job;
+    if (job == null) { return; }
+    await openAiChat(context, AiJobOrigin(project: widget.project, jobId: _jobId, jobName: valueText(job, 'name')));
+  }
   Future<void> _action(String action) async {
     if (_busy || _confirming || _job == null) { return; }
     if (action == 'artifacts') {
@@ -2102,13 +2109,20 @@ class _JobLogPageState extends State<JobLogPage> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final rows = _visibleRows();
     final noLog = _trace.lines.isEmpty && _trace.sections.isEmpty;
+    // AI is offered only where the app was built with it (a registry above).
+    final ai = _job != null && AiRunRegistry.maybeOf(context) != null;
+    final failed = ai && valueText(_job!, 'status') == 'failed';
     final appBar = AppBar(primary: false, titleSpacing: 0, title: Text(_job == null ? 'Job #$_jobId' : valueText(_job!, 'name'), maxLines: 1, overflow: TextOverflow.ellipsis),
-      actions: [ResourceShareButton(
+      actions: [
+        if (failed) IconButton(key: const ValueKey('job-ai'), tooltip: l10n.aiDiscuss, onPressed: _openAi, icon: const Icon(Icons.auto_awesome)),
+        ResourceShareButton(
         uri: widget.account.instance.projectWeb('${widget.project.path}/-/jobs/$_jobId'),
         ownerKey: (widget.account.key, widget.api, widget.project.id, _jobId, widget.generation),
         isCurrent: () => _ownerCurrent),
         IconButton(tooltip: l10n.reloadJobLog, onPressed: _loading || _busy || _confirming ? null : _load, icon: const Icon(Icons.refresh)),
-        PopupMenuButton<String>(tooltip: l10n.jobActions, enabled: !_busy && !_confirming && !_downloading && _job != null, onSelected: _action, itemBuilder: (_) => [
+        PopupMenuButton<String>(tooltip: l10n.jobActions, enabled: !_busy && !_confirming && !_downloading && _job != null,
+          onSelected: (value) => value == 'ai' ? _openAi() : _action(value), itemBuilder: (_) => [
+          if (ai && !failed) PopupMenuItem(value: 'ai', child: Text(l10n.aiDiscuss)),
           PopupMenuItem(value: 'retry', child: Text(l10n.retryJob)),
           if (_job?['status'] == 'manual') PopupMenuItem(value: 'play', child: Text(l10n.startManualJob)),
           PopupMenuItem(value: 'cancel', child: Text(l10n.cancelJob)),

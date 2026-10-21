@@ -32,12 +32,16 @@ final class AiFailure implements Exception, UserFacingFailure {
     this.status,
     this.retryAt,
     this.requiresNewSegment = false,
+    this.notSent = false,
   });
 
   final AiFailureKind kind;
   final int? status;
   final DateTime? retryAt;
   final bool requiresNewSegment;
+
+  /// The transport refused the request before handing it to the network.
+  final bool notSent;
 
   static AiFailure fromStatus(int status, {String? retryAfter, DateTime? now}) {
     final retryAt = parseRetryAfter(retryAfter, now: now);

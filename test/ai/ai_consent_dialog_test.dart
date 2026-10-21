@@ -81,6 +81,30 @@ void main() {
       expect(settings.isValid('account', derivedContract), isTrue);
     });
 
+    testWidgets('with nothing to send the button only agrees', (tester) async {
+      final settings = await _settings();
+      addTearDown(settings.dispose);
+      final contract = aiCurrentConsentContractFor(settings.providers.single);
+      final results = <bool>[];
+
+      await tester.pumpWidget(
+        _host(
+          settings,
+          contract,
+          onResult: results.add,
+          agreeLabel: l10n.aiConsentAgree,
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.aiConsentAgreeAndSend), findsNothing);
+      await tester.tap(find.text(l10n.aiConsentAgree));
+      await tester.pumpAndSettle();
+      expect(results, [true]);
+      expect(settings.isValid('account', contract), isTrue);
+    });
+
     testWidgets('training and unknown policies use warning wording', (
       tester,
     ) async {
@@ -288,6 +312,7 @@ Widget _host(
   Brightness brightness = Brightness.light,
   TextDirection textDirection = TextDirection.ltr,
   ValueChanged<bool>? onResult,
+  String? agreeLabel,
 }) => MaterialApp(
   theme: appTheme(brightness),
   builder: (context, child) => Directionality(
@@ -303,6 +328,7 @@ Widget _host(
             settings,
             'account',
             contract,
+            agreeLabel: agreeLabel,
           );
           onResult?.call(granted);
         },

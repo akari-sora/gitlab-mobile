@@ -502,6 +502,69 @@ void main() {
     },
   );
 
+  test('a request refused before sending uses no token budget', () async {
+    final h = Harness(
+      context: [AiContextBlock(source: 'file', text: 'synthetic context')],
+    );
+    h.respond = (plan, onEvent) async => throw const AiFailure(
+      AiFailureKind.rateLimited,
+      status: 429,
+      notSent: true,
+    );
+    for (var run = 0; run < 3; run++) {
+      final result = await h.runner.run('explain');
+      expect(result.modelCalls, 0);
+      expect(result.failure?.kind, AiFailureKind.rateLimited);
+    }
+    expect(h.runner.estimatedInputTokens, 0);
+    expect(h.runner.actualInputTokens, 0);
+  });
+
+  test('a failure that may have been sent still counts', () async {
+    final h = Harness();
+    h.respond = (plan, onEvent) async =>
+        throw const AiFailure(AiFailureKind.network);
+    final result = await h.runner.run('explain');
+    expect(result.modelCalls, 1);
+    expect(h.runner.estimatedInputTokens, greaterThan(0));
+  });
+
+  test('only the refused request is left out of the budget', () async {
+    final h = Harness();
+    await h.runner.run('first');
+    final afterSent = h.runner.estimatedInputTokens;
+    expect(afterSent, greaterThan(0));
+    h.respond = (plan, onEvent) async => throw const AiFailure(
+      AiFailureKind.rateLimited,
+      status: 429,
+      notSent: true,
+    );
+    final refused = await h.runner.run('second');
+    expect(refused.modelCalls, 0);
+    expect(h.runner.estimatedInputTokens, afterSent);
+  });
+
+  test('sentContext is the context as last redacted before sending', () async {
+    const late = 'synthetic-late-runner-0042';
+    // Learn the secret at each refresh of the run in turn; what the runner
+    // reports must match what the request carried.
+    for (var k = 1; k <= 6; k++) {
+      final h = Harness(
+        context: [AiContextBlock(source: 'file', text: 'value $late here')],
+      );
+      var refreshes = 0;
+      h.refresh = () {
+        if (++refreshes == k) h.secrets.current.add(late);
+      };
+      await h.runner.run('explain');
+      expect(
+        h.runner.sentContext.single.text.contains(late),
+        h.payloads.first.contains(late),
+        reason: 'k=$k',
+      );
+    }
+  });
+
   test(
     'context attaches once over three sends, frozen bytes never change',
     () async {

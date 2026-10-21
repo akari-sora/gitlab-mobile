@@ -297,20 +297,24 @@ AiToolRunStatus _toolStatus(String value) => switch (value) {
 
 String _noticeKindCode(AiNoticeKind value) => switch (value) {
   AiNoticeKind.redacted => 'redacted',
+  AiNoticeKind.privateKeyWithheld => 'private_key_withheld',
   AiNoticeKind.settingsChanged => 'settings_changed',
   AiNoticeKind.segmentSummary => 'segment_summary',
   AiNoticeKind.historyLimit => 'history_limit',
   AiNoticeKind.stopped => 'stopped',
   AiNoticeKind.notSent => 'not_sent',
+  AiNoticeKind.newConversation => 'new_conversation',
 };
 
 AiNoticeKind _noticeKind(String value) => switch (value) {
   'redacted' => AiNoticeKind.redacted,
+  'private_key_withheld' => AiNoticeKind.privateKeyWithheld,
   'settings_changed' => AiNoticeKind.settingsChanged,
   'segment_summary' => AiNoticeKind.segmentSummary,
   'history_limit' => AiNoticeKind.historyLimit,
   'stopped' => AiNoticeKind.stopped,
   'not_sent' => AiNoticeKind.notSent,
+  'new_conversation' => AiNoticeKind.newConversation,
   _ => throw const AiHistoryUnsupportedFormat(),
 };
 

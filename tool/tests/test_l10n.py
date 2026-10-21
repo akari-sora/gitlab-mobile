@@ -153,8 +153,9 @@ class CatalogTest(unittest.TestCase):
             'aiConsentFormatAnthropicMessages', 'aiProviderAuthBearer', 'aiProviderAuthApiKey',
             'aiProviderAuthXApiKey',
         }
-        # Both Chinese catalogs call a job log "Log" everywhere (viewJobLog).
-        local_words = {'zh-TW': {'Log'}, 'zh-CN': {'Log'}}
+        # Both Chinese catalogs call a job log "Log" everywhere (viewJobLog)
+        # and keep "Pipeline" untranslated (runPipeline, noPipelines).
+        local_words = {'zh-TW': {'Log', 'Pipeline'}, 'zh-CN': {'Log', 'Pipeline'}}
         keys, catalogs = l10n.load()
         ai_keys = [key for key in keys if key.startswith('ai')]
         self.assertTrue(ai_keys)

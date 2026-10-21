@@ -175,6 +175,13 @@ final class AiRunner {
   String _segmentSystem = '';
   List<AiToolSpec> _segmentTools = const [];
   List<AiContextBlock> _segmentContext = const [];
+  List<AiContextBlock> _sentContext = const [];
+
+  /// The redacted context blocks attached to the last run's user message, as
+  /// last redacted before sending: the page context, or a conversation
+  /// summary after a new segment. Empty when that message carried none. They
+  /// may have left the device when [AiRunResult.modelCalls] > 0.
+  List<AiContextBlock> get sentContext => _sentContext;
   int actualInputTokens = 0;
   int estimatedInputTokens = 0;
   int lateRedactions = 0;
@@ -254,6 +261,7 @@ final class AiRunner {
   Future<AiRunResult> run(String userText) async {
     if (_running) throw StateError('A runner has one active send.');
     _running = true;
+    _sentContext = const [];
     final epoch = ++_epoch;
     _stopSignal = Completer<void>();
     final timer = Timer(runDeadline, () => stop(AiRunEnd.failed));
@@ -286,6 +294,7 @@ final class AiRunner {
         name: call.name,
         data: data,
         isError: true,
+        notExecuted: true,
       );
     }
 
@@ -407,6 +416,7 @@ final class AiRunner {
         nextProgressChars = 256;
         AiDecodedTurn turn;
         AiUsage? latestUsage;
+        var refused = false;
         try {
           turn = await _interruptible(
             _complete(
@@ -458,8 +468,16 @@ final class AiRunner {
               ),
             );
           }
+        } on AiFailure catch (failure) {
+          // Refused locally (a remembered Retry-After, a closed transport):
+          // this request never left the device and used nothing.
+          if (failure.notSent) {
+            refused = true;
+            modelCalls--;
+          }
+          rethrow;
         } finally {
-          _recordUsage(latestUsage, encoded.length);
+          if (!refused) _recordUsage(latestUsage, encoded.length);
         }
         _check(epoch);
         seg.freezeWith(
@@ -510,7 +528,11 @@ final class AiRunner {
             _check(epoch);
             final tc = calls[index];
             onToolStarted?.call(
-              AiToolCall(id: tc.id, name: _redact(tc.name), arguments: null),
+              AiToolCall(
+                id: tc.id,
+                name: _redact(tc.name),
+                arguments: _displayArguments(tc.arguments),
+              ),
             );
             if (index >= 4 || toolCalls >= 12 || outputChars >= 120000) {
               results.add(synthetic(tc, 'budget'));
@@ -574,6 +596,7 @@ final class AiRunner {
               truncated:
                   toolResult.truncated || clipped.length < content.length,
               blockedSensitive: toolResult.blockedSensitive,
+              notExecuted: toolResult.notExecuted,
             );
             results.add(safeResult);
             _notifyToolResult(safeResult);
@@ -670,6 +693,7 @@ final class AiRunner {
         blocks.add(block.redact(_redactor, source: _redact));
       }
     }
+    _sentContext = List.unmodifiable(blocks);
     seg.setTail(AppUserEntry(text: text, context: blocks));
   }
 
@@ -747,6 +771,26 @@ final class AiRunner {
     _stopSignal!.future.then<T>((_) => throw _RunStopped(_stopReason)),
   ]);
 
+  /// Top-level scalar arguments for the progress row, redacted like other
+  /// display text. Long or nested values are left out rather than cut, so a
+  /// secret is never split past the redactor. Display only: this does not
+  /// change what the run reports as withheld.
+  Map<String, Object?>? _displayArguments(Object? arguments) {
+    if (arguments is! Map) return null;
+    return {
+      for (final MapEntry(:key, :value) in arguments.entries)
+        if (key is String && _displayArgumentKey.hasMatch(key))
+          if (value is String && value.length <= 1024)
+            key: _redactor
+                .redactSource(
+                  stripAiAnsi(value).replaceAll(_displayControls, ''),
+                )
+                .text
+          else if (value is int || value is bool)
+            key: value,
+    };
+  }
+
   String _redact(String text, {bool late = false}) {
     // Refuse before scanning or splitting a source; never cut a key in half.
     if (text.length > 2 * 1024 * 1024 ||
@@ -763,15 +807,17 @@ final class AiRunner {
     await _refresh(epoch);
     final tail = seg.tail;
     if (tail is AppUserEntry) {
+      final context = [
+        for (final block in tail.context)
+          block.redact(_redactor, source: _redact),
+      ];
       seg.setTail(
         tail.redactedCopy(
           text: _redact(tail.text, late: true),
-          context: [
-            for (final block in tail.context)
-              block.redact(_redactor, source: _redact),
-          ],
+          context: context,
         ),
       );
+      _sentContext = List.unmodifiable(context);
     } else if (tail is AppToolResultsEntry) {
       seg.setTail(
         tail.copyWith(
@@ -840,6 +886,13 @@ AiToolResult _synthetic(AiToolCall call, String reason) =>
       data: AiAppText.plain('[source: tool]\nNot executed: $reason'),
       isError: true,
     );
+
+final _displayArgumentKey = RegExp(r'^[a-z][a-z0-9_]{0,31}$');
+
+final _displayControls = RegExp(
+  r'[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e'
+  r'\u2060-\u2069\ufeff]',
+);
 
 AiRunEnd _endForStop(AiStopReason stop) => switch (stop) {
   AiStopReason.maxTokens => AiRunEnd.maxTokens,

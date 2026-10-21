@@ -39,12 +39,14 @@ Map<String, Object?> aiConsentSummary(
 
 /// Shows the versioned disclosure and stores its hash and readable summary
 /// only after the user explicitly agrees. Returns whether consent was granted.
+/// [agreeLabel] replaces "Agree and send" when nothing is waiting to be sent.
 Future<bool> showAiConsentDialog(
   BuildContext context,
   AiSettingsController settings,
   String accountKey,
   AiConsentContract requestedContract, {
   bool readOnly = false,
+  String? agreeLabel,
 }) async {
   final provider = settings.providers
       .where((candidate) => candidate.id == requestedContract.providerId)
@@ -94,6 +96,7 @@ Future<bool> showAiConsentDialog(
         child: _AiConsentPage(
           details: _ConsentDetails.fromSummary(summary),
           readOnly: readOnly,
+          agreeLabel: agreeLabel,
           onAgree: readOnly
               ? null
               : (failureContext) async {
@@ -167,11 +170,13 @@ class _AiConsentPage extends StatefulWidget {
   const _AiConsentPage({
     required this.details,
     required this.readOnly,
+    this.agreeLabel,
     this.onAgree,
   });
 
   final _ConsentDetails details;
   final bool readOnly;
+  final String? agreeLabel;
   final Future<void> Function(BuildContext)? onAgree;
 
   @override
@@ -369,7 +374,10 @@ class _AiConsentPageState extends State<_AiConsentPage> {
                                         strokeWidth: 2,
                                       ),
                                     )
-                                  : Text(l10n.aiConsentAgreeAndSend),
+                                  : Text(
+                                      widget.agreeLabel ??
+                                          l10n.aiConsentAgreeAndSend,
+                                    ),
                             ),
                           ],
                         ),

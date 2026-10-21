@@ -795,3 +795,301 @@ only.
 Live provider calls, real keys, physical devices, iOS and the preset policy
 URLs' current content remain **NOT_RUN**. The feature gate remains false; none
 of this establishes G0 acceptance or provider conformance.
+
+## MR6a-1 — chat page and entry points, gate off (2026-10-21)
+
+This MR adds the chat behind the same `MERGELINE_AI_ASSISTANT` gate, which
+still defaults to false. It contains:
+
+- the session contract (`AiChatSession`, `AiRunRegistry`, at most three running
+  conversations per account);
+- the controller, which owns one runner per conversation, pins context per
+  origin and coalesces stream updates;
+- the chat page;
+- entry points: the app-bar icon on a failed job, a menu item on other jobs,
+  "AI summary" and "Discuss with AI" on merge requests, "Discuss with AI" on
+  issues, and "Explain this file with AI" on a text file at a pinned commit.
+
+Replies render as offline Markdown: no image, SVG, media or upload is fetched,
+and links ask before opening. Long replies are split into segments. Context
+chips, notices, tool rows and run endings are display-only; nothing in the
+display list is replayed to the provider.
+
+Synthetic suites:
+- `test/ai/ai_chat_page_test.dart`, `ai_chat_controller_test.dart`,
+  `ai_chat_context_test.dart`, `ai_run_registry_test.dart`,
+  `ai_entry_points_test.dart` and `ai_notice_codec_test.dart`;
+- `test/markdown_offline_test.dart`;
+- an added runner regression for the arguments a started tool row shows.
+
+Emulator run (Android API 36 emulator; gate-on debug builds of `91b4369`, then
+`c28dd21`. The builds were made from these changes before the branch was
+rebased onto main; commits are cited by their rebased SHAs):
+- Real provider: OpenCode Go, Chat Completions, model `glm-5.3-flash`. The key
+  went through stdin into the emulator field; it is not in the repository,
+  logs or this ledger.
+- The signed-in GitLab account was used read-only.
+- Only content of this public project was sent: its README and `.fvmrc`, one
+  failed job log, merge request !44, and the files the model read with tools.
+
+Observed on `91b4369`:
+- The consent card blocks sending until agreed.
+- Replies stream, render Markdown, and "Copy all" works.
+- Stop marks the partial reply as interrupted and not kept, plus a stopped
+  notice.
+- Leaving the page mid-reply and reopening it returns the same conversation,
+  with the reply finished in the background.
+- The failed-job entry sends the job log with an "8 secrets were redacted"
+  notice.
+- "AI summary" sends once when the session is ready.
+- With read-only tools enabled (after a new consent), tool rows appear.
+
+The same run found these defects, fixed in `c28dd21` with synthetic
+regressions; the mutation runs are recorded outside the repository:
+- The answer was listed above the tool rows it used. Tool rows are now
+  inserted before the run's answer, which stays last, so text written before
+  a tool call also reads below the reads.
+- Tool rows did not say what they read. The runner now hands the progress row
+  the redacted top-level scalar arguments; long or nested values are left out,
+  never cut. The row shows a short target with controls removed: a path,
+  `#iid`, `!iid` or a short SHA.
+- Context chips showed the internal source tag (`file`, `job`). They now name
+  the page: file name, `!iid`, `#iid` or job name. The tag sent to the model is
+  unchanged.
+- Nothing showed while the page context loaded (about 20 s for a merge
+  request). A progress row now shows.
+- The app's update snack bar covered the composer. The chat now has its own
+  `ScaffoldMessenger`.
+- The consent dialog opened from the chat said "Agree and send" with nothing
+  to send. It now says "Agree".
+- Also: an "Open AI settings" menu item; "Thinking…" under an empty streaming
+  reply; spacing below the read-only tools switch.
+
+Re-run on `c28dd21`:
+- the progress row shows;
+- the composer stays clear of the update snack bar;
+- chips read `.fvmrc · 118 characters` and `!44 · 4744 characters`;
+- tool rows read, for example, `Read file · pubspec.yaml` and
+  `Read merge request · !44`, above the answer;
+- the menu opens AI settings.
+
+After the run, deleting the provider (key and consents) turned the open chat
+into the "Add an AI provider first" blocker. The account was then removed from
+the emulator.
+
+**NOT_RUN** on a device: the too-many-running blocker, the cleartext
+confirmation, the failure card, very long reply splitting, the new-conversation
+offer, Arabic and other right-to-left layouts, dark mode, iOS, physical
+devices, and the Responses and Anthropic formats against a live provider.
+These have synthetic evidence only. Saved chat history is not part of this MR.
+
+Known and left for separate work:
+- The bundled code font drew ligatures, so `>=` read as `≥` in code spans,
+  file views and diffs app-wide. Fixed since by !95, which this branch is
+  rebased onto.
+- The update snack bar can still cover bottom inputs on other pages.
+
+The feature gate remains false; none of this establishes G0 acceptance or
+provider conformance.
+
+### MR6a-1 review round 1 and the second emulator run
+
+Codex GPT-6.1-Sol and Opus 5.5 both returned REQUEST CHANGES. DeepSeek V4.1 Flash returned APPROVE WITH MINOR FIXES; agy Argon and cursor Grok were out of quota. The fixes, each with a synthetic regression (mutation runs are recorded outside the repository):
+
+**Display safety**
+- Tool-row targets and the runner's display arguments strip control characters before redacting, so a zero-width character inside a secret cannot restore it. Argument keys must be simple identifiers.
+- The title goes through `displaySafe`. Model-chosen tool names outside the catalogue show a generic label.
+
+**Entry points and session lifecycle**
+- "AI summary" is a parameter of the visit, not of the kept session.
+- Closing the page releases an idle session that holds nothing, so the next visit reads the page again.
+- The file entry needs a full commit SHA and no sensitive path.
+
+**Failures and capacity**
+- GitLab reads that fail keep their `ApiFailure` and are shown with the app's failure notice: account, instance and page, an ambiguous 404, retry and account switch.
+- A full account (three running) shows its blocker while idle. The registry notifies idle sessions whenever capacity changes.
+
+**Context sent**
+- Issues without repository access are still sent, without a pinned SHA.
+- Merge requests include the newest 20 non-system notes, and every note says whether it is internal.
+- "What was sent" shows the full redacted text with its size and pinned SHA.
+
+**Conversation behaviour**
+- A provider settings change keeps the conversation and adds a "new conversation" notice.
+- Reads that never ran show as skipped, and notices raised during a run go before the answer, so the answer stays last.
+- A stopped or failed start keeps the user's message with a "not sent" notice.
+- Sending, or a newly shown blocker, scrolls to the newest content.
+
+**Wording and other**
+- The empty chat explains in two sentences what the AI reads.
+- Redaction notices use each language's reviewed word for "secret".
+- Arabic counts read correctly for any number.
+- The AI User-Agent carries the app version from `pubspec.yaml`, checked by a tool test.
+
+Second emulator run on the gate-on debug build of `2b01b96` (same provider, model and key handling as above; this public project only):
+- A discussion visit to merge request !44 was left without sending. A later "AI summary" visit sent the summary once after consent.
+- The consent dialog opened from the chat says "Agree".
+- The blocker card sits at the top of an empty chat and above the composer in a conversation, and scrolls into view.
+- The context chip reads `!44 · 4755 characters`. The tool rows read `Read merge request · !44`, `Read merge request changes` and `Search project · attachmentDownloadFileName`, above the answer.
+- "What was sent" shows the full sent text with `Pinned at a0b27731`.
+- Turning the provider's read-only tools off from the chat menu's AI settings asked for consent again, kept the conversation, and showed the new-conversation notice.
+- In Arabic, the tool rows, chip and notice are right to left. The English reply stays left to right, and the character counts read `عدد الأحرف: N`.
+- The provider was deleted and the account removed afterwards. This run supersedes the Arabic item in the MR6a-1 NOT_RUN list above.
+
+Still **NOT_RUN** on a device:
+- the too-many-running blocker, the cleartext confirmation and very long reply splitting;
+- dark mode, iOS, physical devices, and the Responses and Anthropic formats against a live provider.
+
+The registry is still created lazily in `build`. It is memoised and keyed by account generation; this is an intended non-change.
+
+### MR6a-1 review round 2
+
+Codex returned REQUEST CHANGES and Opus APPROVE WITH MINOR FIXES on the round-1 fixes. Fixed, each with a regression test and a mutation run recorded outside the repository:
+
+**Display and lifecycle**
+- `recheck` learns the live secrets before any blocker, so the title is redacted while settings or consent are pending.
+- The display is re-redacted only when the secret set has grown; the "What was sent" preview is cut from the already redacted text.
+- The registry counts open pages per session and releases only after the last one closes.
+- A summary visit to a conversation that already has messages puts the request in the composer.
+
+**Context sent**
+- Issue and merge request notes are read page by page, at most five pages, until 20 are not system notes.
+- Context too large to scan for secrets is `tooLarge`.
+
+**Smaller fixes**
+- A message stopped before sending keeps no "What was sent" chips.
+- The empty chat's list scrolls a new card into view.
+- Errors raised by the AI path stay `AiFailure`.
+
+Left for later, by choice:
+- When reading merge request or issue notes fails, the whole context still fails. A later change can send without notes and say so.
+- After a settings change, the new conversation reuses the context read when the page first opened. The chip shows the pinned SHA.
+
+### MR6a-1 review round 3
+
+Codex returned REQUEST CHANGES and Opus APPROVE WITH MINOR FIXES. Fixed, each with a regression test and a mutation run recorded outside the repository:
+- **Display redaction failures.** The display pass records its secret-set revision only after every item passed. A pass that fails, for example when the redactor refuses a secret inside its own marker, blocks the conversation and is tried again rather than skipped.
+- **Learning secrets while blocked.** `recheck` redoes the display pass right after learning the secrets, so the conversation follows a larger secret set in every state, not only when ready.
+- **Chip placement.** "What was sent" chips stay on the message whose request delivered the page context. A first request that failed (or a refused cleartext send) drops its chips, and the next message carries them; chips for blocked paths always stay.
+- **Shared pages.** The page that sends sets the cleartext confirmation, so a second page on the same session that closed earlier cannot leave it cleared.
+- **Notes across pages.** Notes read across pages are de-duplicated by id.
+- **Other.**
+  - Sending needs a loaded context.
+  - Registry disposal clears its page counts.
+
+### MR6a-1 review round 4
+
+Codex and Opus returned REQUEST CHANGES. Fixed, each with a regression test and a mutation run recorded outside the repository:
+
+**Chip placement (supersedes the round-3 note on chip placement)**
+- The runner now reports the redacted context blocks it attached to the run's user message (`AiRunner.sentContext`). After every run the controller makes that message's chips say exactly what its request carried:
+  - the page context;
+  - a conversation summary after a new segment, labelled as such;
+  - nothing.
+- Chips are removed only when nothing left the device (`modelCalls == 0`, or a failure before the run). A request that was sent and then stopped, timed out or failed keeps its chips.
+- Blocked-path chips always stay.
+
+**Display redaction**
+- A display pass hides any item it cannot check against the new secrets: a reply becomes hidden, a message becomes a redaction notice, and a tool row loses its excerpt.
+- After a failure the pass blocks and is tried again on the next recheck.
+
+One new message, "Conversation summary", is translated in all 24 catalogs.
+
+**Follow-up in the same round (Opus R4-3, N4-1, N4-2)**
+- `displaySafe` no longer throws. The page builds its title with it, so a known secret that makes every redaction fail (one inside the `[REDACTED]` marker) left the page as an error box with no blocker card. It now returns an empty string for text it cannot check, and the page shows the block.
+- A display pass that fails while a message is being sent now blocks the chat with `contextUnavailable`, as it does in a recheck. Before, the chat stayed ready and each retry added another unsent message.
+- A message stopped before sending keeps its blocked-path chips.
+
+Tests: one widget test with the real controller, plus two controller tests. Removing each fix turns its test red.
+
+### MR6a-1 review round 5
+
+Codex and Opus returned REQUEST CHANGES. Both found the same main problem. Fixed:
+
+- **Chips could show a secret learned during the run (Codex P1, Opus R5-1).**
+  - Cause: after the run, `_settleChips` rebuilt the chips from the runner's blocks without redacting them again, and the display pass had already moved past that secret.
+  - Fix: the runner reports the blocks as last redacted before sending (`_redactTail`). The controller redacts the settled message again with the live secrets, and hides the message if that fails.
+  - Test: one test learns the secret at each refresh of a send in turn. A runner test checks that `sentContext` contains a secret exactly when the request did.
+- **A request the transport refused locally counted as sent (Codex P2).**
+  - `AiFailure.notSent` marks a refusal before the request reaches the network: a remembered Retry-After, a closed transport, a blocked endpoint, or an oversized body.
+  - The runner does not count those calls, so such a message has no chips.
+- **A list of notices alone cleared the block (Codex P2).** A display pass now first checks that redaction works at all.
+- **Steps after the run threw into the catch meant for steps before it (Opus R5-2).**
+  - The display pass after the run no longer throws there.
+  - When it fails, the reply is hidden too, and the chat blocks with the run's own outcome kept.
+- **The branch for "nothing was sent" had no test (Opus R5-3).** It now has one: a first request too long to send. The round-4 entry said every fix had a mutation run; that was not true for this branch.
+- **Nits:**
+  - A title that cannot be checked falls back to the assistant label (N5-5).
+  - The summary-chip test now asserts the single chip (N5-2).
+  - A new test covers a pass that fails for only some items (N5-3).
+  - The display pass during a run repaints even when it fails, and no longer swaps in the page chips (N5-7, N5-8).
+
+**Mutation runs, outside the repository.** Each of these 9 changes makes the named test fail:
+- settle without the re-redaction: "chips never show a secret learned during the send";
+- `_redactTail` without updating `sentContext`: "sentContext is the context as last redacted before sending";
+- not discounting a refused call: "a request refused before sending takes its chips back";
+- the transport without `notSent`: that test and "429 with Retry-After populates the shared registry";
+- no redaction probe: "a list of notices alone does not clear the block";
+- chips kept when nothing was sent: "a first request too long to send takes its chips back";
+- the display pass after the run unwrapped, and the reply shown after a failed pass: "a display pass that fails during the run keeps its outcome";
+- an empty title: "a title that cannot be checked falls back to the assistant".
+
+**Deferred:**
+- N5-4: a hidden message also loses its chip.
+- N5-6: a run's own failure stays under the block card until the next recheck clears it.
+
+### MR6a-1 review round 6
+
+Codex returned REQUEST CHANGES; Opus returned APPROVE WITH MINOR FIXES. Fixed:
+
+- **A secret with `&`, `<` or `>` learned after sending showed escaped in "What was sent" (Codex P1, Opus R6-1).**
+  - Cause: redaction ran on the encoded text, where `&` is `&amp;`, so the secret no longer matched.
+  - Fix: a chip keeps its redacted block in memory (`AiContextChip.block`, never saved). Settling and every later display pass redact the block's plain text first, then encode it again, and cut the preview from the result.
+  - Tests: the late-secret test now also uses a secret with `&<>` and checks both the plain and the escaped forms. A new test covers a secret learned after the run is over.
+- **A request refused locally still used token budget (Codex P2, Opus R6-2).** The runner skips usage for a `notSent` failure. Test: three refused runs leave both token counters at 0.
+- **A failed settle left the display-failure flag set for good (Opus R6-3).** It now resets the display revision so that the next pass computes the flag again, and a cleared conversation drops the flag.
+  - No test reaches this path end to end. The trigger is a collision that only the settled chips have, such as a summary chip after a new segment.
+  - Opus reproduced the old effect by fault injection in a copy.
+- **Nits:**
+  - The transport comment now covers only the refusals it marks (N6-2).
+  - The round-5 mutation list above is corrected (N6-3).
+
+**Mutation runs, outside the repository:**
+- Skipping the block path fails "chips never show a secret learned during the send" and "a secret learned after the run is redacted in its chips".
+- Recording usage for refused calls fails "a request refused before sending uses no token budget".
+
+**Still open:**
+- N6-4: the run-outcome test cannot tell its outcome apart from the catch path.
+  - Its `lastEnd` assertion records N6-6's current result. It does not detect removing the wrap around the display pass after the run (Opus N7-1).
+  - A test that tells them apart needs a run that ends `done` and a pass after it that fails. Under N6-6 that only happens when settle fails too.
+  - The stoppedBySettings variant is not written.
+- N6-5: a title that cannot be checked also drops the app's own `!iid`.
+- N6-6 (existing behaviour): a failed display pass inside a run ends the run as failed.
+
+### MR6a-1 review round 7
+
+Codex and Opus returned APPROVE WITH MINOR FIXES; neither found a blocker. Applied:
+
+- **Chip size (Opus N7-3).** A chip keeps the size that was sent when a later pass redacts more. The chip test checks the size against the request.
+- **Budget tests (Codex P3).**
+  - A failure that may have been sent still counts.
+  - A refused request after a sent one leaves only the sent one in the budget.
+- **Formatting (Opus N7-7).** The lines this MR touched now match `dart format`.
+
+Behaviour recorded as it is (Opus N7-2):
+- When settling fails in the normal path, the message becomes a redaction notice. The display pass right after it then succeeds, so the chat is not blocked and the reply shows.
+- The reply was redacted in the runner with the same secrets, so nothing unchecked is shown.
+- After a stop or a failure before the run, the chat stays blocked until the next recheck.
+- Neither path has a test; the trigger needs a collision that only the settled chips have.
+
+**Still open, for MR6b:**
+- Restoring saved history (Opus N7-4). A saved preview is cut from encoded text. A restored chip has no block, so a secret with `&`, `<` or `>` learned after saving would show escaped in a restored preview.
+  - Before history is restored, either cut previews from the plain text when saving, or match the escaped forms when redacting.
+- A summary chip carries the page's pinned commit (N7-5, existing behaviour).
+
+The emulator run on `109596d` (round 5) covers the visible chip behaviour:
+- the chip stays on a sent message after the reply;
+- "What was sent" shows the exact `<gitlab_data>` block, its size and its pinned commit;
+- a follow-up message carries no chip.
+
+Rounds 6 and 7 changed redaction internals, sizes and budget accounting only.

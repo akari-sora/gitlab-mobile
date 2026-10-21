@@ -273,6 +273,7 @@ class MarkdownView extends StatefulWidget {
     this.downloader,
     this.selectable = true,
     this.externalMediaClient,
+    this.offline = false,
   });
   final String text;
   final Uri? base;
@@ -291,6 +292,11 @@ class MarkdownView extends StatefulWidget {
 
   /// A separate bare client; tests inject a FakeAdapter here.
   final Dio? externalMediaClient;
+
+  /// Text that is not the user's own content (an AI answer): images, SVG and
+  /// media are never fetched, only named, and a link opens after the user
+  /// has seen its full address and confirmed.
+  final bool offline;
 
   @override
   State<MarkdownView> createState() => _MarkdownViewState();
@@ -401,6 +407,8 @@ class _MarkdownViewState extends State<MarkdownView> {
     final base = widget.base;
     final uri = parsed.hasScheme ? parsed : base?.resolveUri(parsed);
     if (uri == null || !safeExternalUri(uri)) return;
+    if (widget.offline && !await _confirmOpen(context, uri)) return;
+    if (!context.mounted) return;
     final api = widget.api;
     final projectId = widget.projectId;
     final uploadRef = parseProjectUpload(
@@ -442,6 +450,31 @@ class _MarkdownViewState extends State<MarkdownView> {
     await openExternal(context, uri);
   }
 
+  Future<bool> _confirmOpen(BuildContext context, Uri uri) async {
+    final open = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(l10n.markdownOpenLinkTitle),
+        // The full address, left to right in every language.
+        content: Directionality(
+          textDirection: TextDirection.ltr,
+          child: SelectableText(uri.toString()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(l10n.cancelAction),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(l10n.open),
+          ),
+        ],
+      ),
+    );
+    return open ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final text = widget.text;
@@ -470,6 +503,13 @@ class _MarkdownViewState extends State<MarkdownView> {
       String? width,
       String? height,
     ) {
+      if (widget.offline) {
+        return _OfflineMedia(
+          alt: alt,
+          uri: uri,
+          onOpen: () => _openLink(context, uri.toString()),
+        );
+      }
       final source = resolveMarkdownMedia(
         uri,
         base: base,
@@ -608,6 +648,77 @@ class _MarkdownViewState extends State<MarkdownView> {
       child: Directionality(
         textDirection: direction,
         child: widget.selectable ? SelectionArea(child: body) : body,
+      ),
+    );
+  }
+}
+
+/// Stands in for an image or media file that an offline view never fetches.
+class _OfflineMedia extends StatelessWidget {
+  const _OfflineMedia({
+    required this.alt,
+    required this.uri,
+    required this.onOpen,
+  });
+
+  final String? alt;
+  final Uri uri;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final label = (alt ?? '').trim();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Material(
+        color: theme.colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onOpen,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.image_not_supported_outlined,
+                  size: 20,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label.isEmpty ? l10n.markdownOfflineMedia : label,
+                        style: theme.textTheme.bodyMedium,
+                      ),
+                      if (label.isNotEmpty)
+                        Text(
+                          l10n.markdownOfflineMedia,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      if (uri.host.isNotEmpty)
+                        Text(
+                          uri.host,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textDirection: TextDirection.ltr,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

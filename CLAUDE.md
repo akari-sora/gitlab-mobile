@@ -220,7 +220,9 @@ read owned until it settles, preventing overlapping GitLab reads across sends.
 For display wiring, `onTextChanged` receives cumulative redacted snapshots at
 exponentially increasing character thresholds so repeated redaction remains a
 linear scan overall. `onToolStarted` receives an `AiToolCall` with its redacted
-name and `arguments: null`; `onToolResult` receives every safe result, including
+name and, for display only, the top-level scalar arguments under simple keys with
+control characters stripped and values redacted (long or nested values are left
+out, never cut); `onToolResult` receives every safe result, including
 synthetic terminal results used to pair unfinished calls. `onEvent` receives
 usage and finished events. Partial output recovered after stop is display-only:
 refresh secrets and recheck the guard within `toolDeadline`, then redact it; it
@@ -229,5 +231,19 @@ enabling a follow-up: recovery can wait up to `toolDeadline` for a secret refres
 and the runner remains busy until recovery finishes.
 Cleartext requests check interfaces with `includeLinkLocal: true`; missing or
 unavailable interfaces require per-send confirmation. These checks do not prove
-same-subnet reachability. Settings/chat/entry-point UI remains MR5/MR6 work;
-`MERGELINE_AI_ASSISTANT` remains false.
+same-subnet reachability. `MERGELINE_AI_ASSISTANT` remains false.
+
+The chat (MR6a) sits on `AiChatSession` (`lib/features/ai/ai_chat_session.dart`):
+`AiChatController` owns one runner per conversation and reports display items,
+phase and blocker. `AiRunRegistry` keeps the account's conversations above the
+navigator, keyed by origin (job, issue or merge request, file at a SHA), so a
+run continues after its page closes. At most three run at once; an idle session
+then reports `tooManyRunning`. A new account generation disposes them all.
+Every page calls `release` on its session when it closes; the registry counts
+open pages and, after the last, drops a session that holds nothing, so the
+next visit reads the page again. The "AI summary" request belongs to the visit
+(`AiChatPage.summarize`), not to the kept session. GitLab reads that fail keep
+their `ApiFailure` (shown with `FailureNotice`); provider failures are
+`AiFailure`. Anything shown outside the display items (the title) goes through
+`displaySafe`, which never throws and returns an empty string for text it
+cannot check.

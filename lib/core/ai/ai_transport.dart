@@ -117,21 +117,30 @@ final class AiTransport {
     String? encodedJson,
     AiErrorDecoder? decodeError,
   }) async {
-    if (_closed) throw const AiFailure(AiFailureKind.cancelled);
+    // These refusals come before the request is handed to the network, and
+    // say so. Later refusals are counted as possibly sent.
+    if (_closed) {
+      throw const AiFailure(AiFailureKind.cancelled, notSent: true);
+    }
     if (!endpoint.allows(uri, method: method)) {
-      throw const AiFailure(AiFailureKind.policyBlocked);
+      throw const AiFailure(AiFailureKind.policyBlocked, notSent: true);
     }
     final until = rateLimits.retryAt(endpoint, now: _clock());
     if (until != null) {
-      throw AiFailure(AiFailureKind.rateLimited, status: 429, retryAt: until);
+      throw AiFailure(
+        AiFailureKind.rateLimited,
+        status: 429,
+        retryAt: until,
+        notSent: true,
+      );
     }
     if (maxResponseBytes < 0) {
-      throw const AiFailure(AiFailureKind.policyBlocked);
+      throw const AiFailure(AiFailureKind.policyBlocked, notSent: true);
     }
     final responseLimit = maxResponseBytes.clamp(0, maxStreamBytes);
     final encoded = encodedJson ?? (json == null ? null : jsonEncode(json));
     if (encoded != null && utf8.encode(encoded).length > maxRequestBytes) {
-      throw const AiFailure(AiFailureKind.requestTooLarge);
+      throw const AiFailure(AiFailureKind.requestTooLarge, notSent: true);
     }
     final safeProviderHeaders = _providerHeaders(providerHeaders);
     final token = CancelToken();
