@@ -1,0 +1,483 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/ai_display.dart';
+import 'package:gitlab_mobile/core/ai/ai_failure.dart';
+import 'package:gitlab_mobile/core/ai/ai_provider.dart';
+import 'package:gitlab_mobile/core/ai/runner.dart';
+import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
+import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
+import 'package:gitlab_mobile/features/ai/ai_message_body.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
+import 'package:gitlab_mobile/shared/theme.dart';
+
+final class _FakeSession extends ChangeNotifier implements AiChatSession {
+  _FakeSession({
+    AiChatOrigin? origin,
+    this.items = const [],
+    this.phase = AiChatPhase.idle,
+    this.blocker = AiChatBlocker.none,
+    List<AiProviderConfig>? providers,
+  }) : origin = origin ?? _mergeRequest,
+       providers = providers ?? [_provider('one'), _provider('two')];
+
+  @override
+  final String id = 'synthetic';
+  @override
+  final AiChatOrigin origin;
+  @override
+  List<AiChatItem> items;
+  @override
+  AiChatPhase phase;
+  @override
+  AiChatBlocker blocker;
+  @override
+  final List<AiProviderConfig> providers;
+  @override
+  AiProviderConfig? get provider => providers.firstOrNull;
+  @override
+  AiConsentContract? consentRequest;
+  @override
+  AiFailure? failure;
+  @override
+  AiRunEnd? lastEnd;
+  @override
+  bool offerNewConversation = false;
+  @override
+  bool get historySaved => false;
+  @override
+  bool get canSend =>
+      blocker == AiChatBlocker.none && phase == AiChatPhase.idle;
+
+  final sent = <String>[];
+  var stops = 0;
+  var rechecks = 0;
+  var newConversations = 0;
+  final used = <String>[];
+  Future<bool> Function()? cleartext;
+
+  @override
+  Future<void> send(String text) async => sent.add(text);
+  @override
+  void stop() => stops++;
+  @override
+  void startNewConversation() => newConversations++;
+  @override
+  Future<void> useProvider(String providerId) async => used.add(providerId);
+  @override
+  Future<void> recheck() async => rechecks++;
+  @override
+  set confirmCleartext(Future<bool> Function()? callback) =>
+      cleartext = callback;
+
+  void update(void Function() change) {
+    change();
+    notifyListeners();
+  }
+}
+
+final _project = Project(
+  id: 3,
+  name: 'Example',
+  path: 'team/example',
+  visibility: 'private',
+  defaultBranch: 'main',
+  archived: false,
+);
+
+final _mergeRequest = AiWorkItemOrigin(
+  project: _project,
+  kind: AiWorkItemKind.mergeRequest,
+  iid: 44,
+  title: 'Synthetic change',
+);
+
+AiProviderConfig _provider(String id) => AiProviderConfig(
+  id: id,
+  name: 'Provider $id',
+  presetId: 'custom',
+  baseUrl: 'https://provider.example/v1',
+  format: AiFormat.chatCompletions,
+  model: 'model-$id',
+  authStyle: AiAuthStyle.bearer,
+  caps: const AiCaps(tokenLimitField: AiTokenLimitField.maxTokens),
+  allowLanCleartext: false,
+  toolsEnabled: true,
+  recipientRevision: 1,
+);
+
+Widget _host(Widget child, {String tag = 'zh-TW', double scale = 1}) {
+  final locale = switch (tag) {
+    'ar' => const Locale('ar'),
+    'en' => const Locale('en'),
+    _ => const Locale('zh', 'TW'),
+  };
+  return MaterialApp(
+    theme: appTheme(Brightness.light),
+    locale: locale,
+    supportedLocales: const [Locale('zh', 'TW'), Locale('ar'), Locale('en')],
+    localizationsDelegates: GlobalMaterialLocalizations.delegates,
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(
+        context,
+      ).copyWith(textScaler: TextScaler.linear(scale)),
+      child: child!,
+    ),
+    home: child,
+  );
+}
+
+List<AiChatItem> _conversation() => [
+  AiUserItem(
+    text: 'What changed?',
+    chips: const [
+      AiContextChip(
+        source: 'MR !44',
+        preview: 'diff --git a/synthetic b/synthetic',
+        sizeChars: 1234,
+      ),
+      AiContextChip(source: '.env', preview: '', sizeChars: 0, blocked: true),
+    ],
+  ),
+  const AiToolRunItem(
+    name: 'read_file',
+    argsPreview: 'lib/main.dart',
+    status: AiToolRunStatus.completed,
+    sizeChars: 512,
+    provenance: 'team/example · a1b2c3d',
+    resultExcerpt: 'void main() {}',
+  ),
+  const AiToolRunItem(
+    name: 'get_job_log',
+    argsPreview: 'job 9',
+    status: AiToolRunStatus.running,
+    sizeChars: 0,
+    provenance: '',
+  ),
+  const AiNoticeItem(AiNoticeKind.redacted, count: 2),
+  const AiAssistantItem(
+    text: 'It renames **one** file.',
+    state: AiAssistantState.done,
+  ),
+];
+
+void main() {
+  setUp(() => useLanguage(languageForTag('zh-TW')!));
+
+  group('blockers show their action', () {
+    final cases = <AiChatBlocker, String?>{
+      AiChatBlocker.noProvider: 'aiAddProvider',
+      AiChatBlocker.keyMissing: 'aiChatOpenSettings',
+      AiChatBlocker.settingsUnavailable: 'aiChatOpenSettings',
+      AiChatBlocker.consentRequired: 'aiChatReviewConsent',
+      AiChatBlocker.contextUnavailable: 'retryAction',
+      AiChatBlocker.tooManyRunning: null,
+      AiChatBlocker.settingsLoading: null,
+    };
+    for (final MapEntry(key: blocker, value: action) in cases.entries) {
+      testWidgets(blocker.name, (tester) async {
+        final session = _FakeSession(blocker: blocker);
+        await tester.pumpWidget(_host(AiChatPage(session: session)));
+        await tester.pump();
+
+        expect(find.byKey(const ValueKey('ai-chat-blocker')), findsOneWidget);
+        final label = switch (action) {
+          'aiAddProvider' => l10n.aiAddProvider,
+          'aiChatOpenSettings' => l10n.aiChatOpenSettings,
+          'aiChatReviewConsent' => l10n.aiChatReviewConsent,
+          'retryAction' => l10n.retryAction,
+          _ => null,
+        };
+        if (label == null) {
+          expect(find.byType(FilledButton), findsNothing);
+        } else {
+          expect(find.widgetWithText(FilledButton, label), findsOneWidget);
+        }
+        // Nothing can be sent while blocked.
+        await tester.enterText(
+          find.byKey(const ValueKey('ai-chat-input')),
+          'hello',
+        );
+        await tester.pump();
+        final send = tester.widget<IconButton>(
+          find.byKey(const ValueKey('ai-chat-send')),
+        );
+        expect(send.onPressed, isNull);
+      });
+    }
+
+    testWidgets('a context failure retries through recheck', (tester) async {
+      final session = _FakeSession(blocker: AiChatBlocker.contextUnavailable)
+        ..failure = const AiFailure(AiFailureKind.network);
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pump();
+
+      expect(find.text(l10n.aiNetworkTitle), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, l10n.retryAction));
+      expect(session.rechecks, 1);
+    });
+  });
+
+  testWidgets('an empty merge request chat offers its suggestions', (
+    tester,
+  ) async {
+    final session = _FakeSession();
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    expect(find.text(l10n.aiChatEmpty), findsOneWidget);
+    await tester.tap(find.text(l10n.aiSuggestMrSummary));
+    await tester.pump();
+    expect(session.sent, [l10n.aiSuggestMrSummary]);
+  });
+
+  testWidgets('the composer sends, clears and turns into stop', (tester) async {
+    final session = _FakeSession();
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+    final sendFinder = find.byKey(const ValueKey('ai-chat-send'));
+    expect(tester.widget<IconButton>(sendFinder).onPressed, isNull);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('ai-chat-input')),
+      '  why?  ',
+    );
+    await tester.pump();
+    await tester.tap(sendFinder);
+    await tester.pump();
+    expect(session.sent, ['why?']);
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('ai-chat-input')))
+          .controller!
+          .text,
+      isEmpty,
+    );
+
+    session.update(() => session.phase = AiChatPhase.running);
+    await tester.pump();
+    expect(sendFinder, findsNothing);
+    await tester.tap(find.byKey(const ValueKey('ai-chat-stop')));
+    expect(session.stops, 1);
+    expect(find.text(l10n.aiChatThinking), findsNothing);
+  });
+
+  testWidgets('a conversation shows messages, chips, tools and notices', (
+    tester,
+  ) async {
+    final session = _FakeSession(items: _conversation());
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    expect(find.text('What changed?'), findsOneWidget);
+    expect(find.textContaining(l10n.aiChatCharacters('1234')), findsOneWidget);
+    expect(find.textContaining(l10n.aiChatBlocked), findsOneWidget);
+    expect(find.textContaining(l10n.aiToolReadFile), findsOneWidget);
+    expect(find.textContaining(l10n.aiToolGetJobLog), findsOneWidget);
+    expect(find.text(l10n.aiNoticeRedacted('2')), findsOneWidget);
+    expect(find.text(l10n.aiChatCopy), findsOneWidget);
+
+    // The chip shows what was actually sent.
+    await tester.tap(find.textContaining(l10n.aiChatCharacters('1234')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text(l10n.aiChatSentContent), findsOneWidget);
+    expect(find.text('diff --git a/synthetic b/synthetic'), findsOneWidget);
+  });
+
+  testWidgets('copy all puts the whole reply on the clipboard', (tester) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          copied = (call.arguments as Map)['text'] as String?;
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+    final session = _FakeSession(items: _conversation());
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    await tester.tap(find.text(l10n.aiChatCopy));
+    await tester.pump();
+    expect(copied, 'It renames **one** file.');
+    expect(find.text(l10n.aiChatCopied), findsOneWidget);
+  });
+
+  testWidgets('a streaming reply has no copy action yet', (tester) async {
+    final session = _FakeSession(
+      items: [
+        AiUserItem(text: 'go'),
+        const AiAssistantItem(
+          text: 'Partial',
+          state: AiAssistantState.streaming,
+        ),
+      ],
+      phase: AiChatPhase.running,
+    );
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    expect(find.text(l10n.aiChatCopy), findsNothing);
+    expect(find.text(l10n.aiChatThinking), findsNothing);
+  });
+
+  testWidgets('an interrupted reply says it is not kept', (tester) async {
+    final session = _FakeSession(
+      items: [
+        AiUserItem(text: 'go'),
+        const AiAssistantItem(
+          text: 'Partial',
+          state: AiAssistantState.interrupted,
+        ),
+      ],
+    );
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    expect(find.text(l10n.aiChatInterrupted), findsOneWidget);
+  });
+
+  testWidgets('a run end and a failure are shown below the reply', (
+    tester,
+  ) async {
+    final session = _FakeSession(items: _conversation())
+      ..lastEnd = AiRunEnd.maxTokens
+      ..failure = const AiFailure(AiFailureKind.server)
+      ..offerNewConversation = true;
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    expect(find.text(l10n.aiEndOutputLimit), findsOneWidget);
+    expect(find.text(l10n.aiServerTitle), findsOneWidget);
+    await tester.tap(
+      find.widgetWithText(FilledButton, l10n.aiChatNewConversation),
+    );
+    expect(session.newConversations, 1);
+  });
+
+  testWidgets('switching provider asks first when there is a conversation', (
+    tester,
+  ) async {
+    final session = _FakeSession(items: _conversation());
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    Future<void> settle() async {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+
+    await tester.tap(find.byKey(const ValueKey('ai-chat-menu')));
+    await settle();
+    await tester.tap(find.text('Provider two · model-two').last);
+    await settle();
+    expect(find.text(l10n.aiChatSwitchProviderDetail), findsOneWidget);
+    await tester.tap(find.text(l10n.confirmAction));
+    await settle();
+    expect(session.used, ['two']);
+  });
+
+  testWidgets('the page asks before a cleartext send while it is open', (
+    tester,
+  ) async {
+    final session = _FakeSession();
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+    expect(session.cleartext, isNotNull);
+
+    final answer = session.cleartext!();
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.aiChatCleartextTitle), findsOneWidget);
+    await tester.tap(find.text(l10n.cancelAction));
+    await tester.pumpAndSettle();
+    expect(await answer, isFalse);
+
+    await tester.pumpWidget(_host(const SizedBox()));
+    expect(session.cleartext, isNull);
+  });
+
+  group('narrow screens, 2x text and Arabic', () {
+    for (final tag in ['zh-TW', 'en', 'ar']) {
+      testWidgets(tag, (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(320, 900);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        useLanguage(languageForTag(tag)!);
+        final session = _FakeSession(
+          items: _conversation(),
+          blocker: AiChatBlocker.consentRequired,
+        )..lastEnd = AiRunEnd.toolBudget;
+        await tester.pumpWidget(
+          _host(AiChatPage(session: session), tag: tag, scale: 2),
+        );
+        await tester.pump();
+        expect(tester.takeException(), isNull);
+      });
+    }
+  });
+
+  group('long replies', () {
+    test('splitting keeps fences whole and parts within the target', () {
+      final fence =
+          '```\n${List.filled(40, 'code line').join('\n')}\n\n'
+          'still code\n```';
+      final paragraphs = List.filled(30, 'word ' * 40).join('\n\n');
+      final text = '$paragraphs\n\n$fence\n\nafter';
+      final parts = splitAiMarkdown(text, target: 600);
+
+      expect(parts.join('\n'), text);
+      expect(parts.where((part) => part.contains('```')).length, 1);
+      final fencePart = parts.singleWhere((part) => part.contains('```'));
+      expect(fencePart, contains('still code'));
+      for (final part in parts) {
+        if (!part.contains('```')) {
+          expect(part.length, lessThanOrEqualTo(600));
+        }
+      }
+    });
+
+    testWidgets('a very long reply is split, a huge block shown as text', (
+      tester,
+    ) async {
+      final huge = 'x' * (aiMarkdownSingleViewLimit + 10);
+      final text = '${'para ' * 10000}\n\n$huge';
+      await tester.pumpWidget(
+        _host(
+          Scaffold(
+            body: SingleChildScrollView(child: AiMessageBody(text: text)),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(find.byType(SelectableText), findsWidgets);
+    });
+
+    testWidgets('a long reply streams as plain text', (tester) async {
+      final text = 'a' * (aiStreamingMarkdownLimit + 1);
+      await tester.pumpWidget(
+        _host(
+          Scaffold(
+            body: SingleChildScrollView(
+              child: AiMessageBody(text: text, streaming: true),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(SelectableText), findsOneWidget);
+    });
+  });
+}

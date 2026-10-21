@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import '../../core/ai/ai_display.dart';
 import '../../core/ai/ai_failure.dart';
 import '../../core/ai/ai_provider.dart';
+import '../../core/ai/runner.dart';
 import '../../core/models.dart';
 
 /// Where a conversation starts. It decides the first context the assistant
@@ -147,6 +148,10 @@ abstract interface class AiChatSession implements Listenable {
   /// The failure that ended the last run, or that blocks the start.
   AiFailure? get failure;
 
+  /// Why the last run ended; null before the first run and while one runs.
+  /// The page shows an end row for every reason except [AiRunEnd.done].
+  AiRunEnd? get lastEnd;
+
   /// The last run ended because the conversation reached its limit; the page
   /// offers a new conversation.
   bool get offerNewConversation;
@@ -189,9 +194,9 @@ abstract interface class AiRunRegistry implements Listenable {
 
   int get runningCount;
 
-  static AiRunRegistry? maybeOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<AiRunRegistryScope>()
-          ?.registry;
+  static AiRunRegistry? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<AiRunRegistryScope>()
+      ?.registry;
 }
 
 class AiRunRegistryScope extends InheritedWidget {
