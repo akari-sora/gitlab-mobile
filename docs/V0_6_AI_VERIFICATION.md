@@ -795,3 +795,97 @@ only.
 Live provider calls, real keys, physical devices, iOS and the preset policy
 URLs' current content remain **NOT_RUN**. The feature gate remains false; none
 of this establishes G0 acceptance or provider conformance.
+
+## MR6a-1 — chat page and entry points, gate off (2026-10-21)
+
+This MR adds the chat behind the same `MERGELINE_AI_ASSISTANT` gate, which
+still defaults to false. It contains:
+
+- the session contract (`AiChatSession`, `AiRunRegistry`, at most three running
+  conversations per account);
+- the controller, which owns one runner per conversation, pins context per
+  origin and coalesces stream updates;
+- the chat page;
+- entry points: the app-bar icon on a failed job, a menu item on other jobs,
+  "AI summary" and "Discuss with AI" on merge requests, "Discuss with AI" on
+  issues, and "Explain this file with AI" on a text file at a pinned commit.
+
+Replies render as offline Markdown: no image, SVG, media or upload is fetched,
+and links ask before opening. Long replies are split into segments. Context
+chips, notices, tool rows and run endings are display-only; nothing in the
+display list is replayed to the provider.
+
+Synthetic suites:
+- `test/ai/ai_chat_page_test.dart`, `ai_chat_controller_test.dart`,
+  `ai_chat_context_test.dart`, `ai_run_registry_test.dart`,
+  `ai_entry_points_test.dart` and `ai_notice_codec_test.dart`;
+- `test/markdown_offline_test.dart`;
+- an added runner regression for the arguments a started tool row shows.
+
+Emulator run (Android API 36 emulator; gate-on debug builds of `4907a97`, then
+`dd89902`):
+- Real provider: OpenCode Go, Chat Completions, model `glm-5.3-flash`. The key
+  went through stdin into the emulator field; it is not in the repository,
+  logs or this ledger.
+- The signed-in GitLab account was used read-only.
+- Only content of this public project was sent: its README and `.fvmrc`, one
+  failed job log, merge request !44, and the files the model read with tools.
+
+Observed on `4907a97`:
+- The consent card blocks sending until agreed.
+- Replies stream, render Markdown, and "Copy all" works.
+- Stop marks the partial reply as interrupted and not kept, plus a stopped
+  notice.
+- Leaving the page mid-reply and reopening it returns the same conversation,
+  with the reply finished in the background.
+- The failed-job entry sends the job log with an "8 secrets were redacted"
+  notice.
+- "AI summary" sends once when the session is ready.
+- With read-only tools enabled (after a new consent), tool rows appear.
+
+The same run found these defects, fixed in `dd89902` with synthetic
+regressions; the mutation runs are recorded outside the repository:
+- The answer was listed above the tool rows it used. Tool rows are now
+  inserted before the run's answer, which stays last, so text written before
+  a tool call also reads below the reads.
+- Tool rows did not say what they read. The runner now hands the progress row
+  the redacted top-level scalar arguments; long or nested values are left out,
+  never cut. The row shows a short target with controls removed: a path,
+  `#iid`, `!iid` or a short SHA.
+- Context chips showed the internal source tag (`file`, `job`). They now name
+  the page: file name, `!iid`, `#iid` or job name. The tag sent to the model is
+  unchanged.
+- Nothing showed while the page context loaded (about 20 s for a merge
+  request). A progress row now shows.
+- The app's update snack bar covered the composer. The chat now has its own
+  `ScaffoldMessenger`.
+- The consent dialog opened from the chat said "Agree and send" with nothing
+  to send. It now says "Agree".
+- Also: an "Open AI settings" menu item; "Thinking…" under an empty streaming
+  reply; spacing below the read-only tools switch.
+
+Re-run on `dd89902`:
+- the progress row shows;
+- the composer stays clear of the update snack bar;
+- chips read `.fvmrc · 118 characters` and `!44 · 4744 characters`;
+- tool rows read, for example, `Read file · pubspec.yaml` and
+  `Read merge request · !44`, above the answer;
+- the menu opens AI settings.
+
+After the run, deleting the provider (key and consents) turned the open chat
+into the "Add an AI provider first" blocker. The account was then removed from
+the emulator.
+
+**NOT_RUN** on a device: the too-many-running blocker, the cleartext
+confirmation, the failure card, very long reply splitting, the new-conversation
+offer, Arabic and other right-to-left layouts, dark mode, iOS, physical
+devices, and the Responses and Anthropic formats against a live provider.
+These have synthetic evidence only. Saved chat history is not part of this MR.
+
+Known and left for separate work:
+- The bundled code font draws ligatures, so `>=` reads as `≥` in code spans,
+  file views and diffs app-wide.
+- The update snack bar can still cover bottom inputs on other pages.
+
+The feature gate remains false; none of this establishes G0 acceptance or
+provider conformance.

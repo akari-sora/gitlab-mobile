@@ -595,8 +595,8 @@ void main() {
     expect(find.text(l10n.aiChatOpenSettings), findsOneWidget);
   });
 
-  group('narrow screens, 2x text and Arabic', () {
-    for (final tag in ['zh-TW', 'en', 'ar']) {
+  group('narrow screens, 2x text and long or other scripts', () {
+    for (final tag in ['zh-TW', 'en', 'ar', 'de', 'ru', 'hi', 'th']) {
       testWidgets(tag, (tester) async {
         tester.view.devicePixelRatio = 1;
         tester.view.physicalSize = const Size(320, 900);

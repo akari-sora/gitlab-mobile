@@ -254,13 +254,6 @@ class _AiChatPageState extends State<AiChatPage> {
             ),
             body: Column(
               children: [
-                if (_session.blocker != AiChatBlocker.none ||
-                    _session.phase == AiChatPhase.preparing)
-                  _BlockerCard(
-                    session: _session,
-                    onOpenSettings: _openSettings,
-                    onReviewConsent: _reviewConsent,
-                  ),
                 Expanded(child: _conversation(context)),
                 _Composer(
                   controller: _input,
@@ -280,11 +273,23 @@ class _AiChatPageState extends State<AiChatPage> {
 
   Widget _conversation(BuildContext context) {
     final items = _session.items;
+    // The blocker or preparing card scrolls with the conversation, so a long
+    // message at a large text size never squeezes the page.
+    final notice =
+        _session.blocker != AiChatBlocker.none ||
+            _session.phase == AiChatPhase.preparing
+        ? _BlockerCard(
+            session: _session,
+            onOpenSettings: _openSettings,
+            onReviewConsent: _reviewConsent,
+          )
+        : null;
     if (items.isEmpty) {
       return _EmptyConversation(
         origin: _session.origin,
         enabled: _session.canSend,
         onSuggestion: _send,
+        notice: notice,
       );
     }
     final children = <Widget>[
@@ -308,6 +313,8 @@ class _AiChatPageState extends State<AiChatPage> {
         if (_session.offerNewConversation)
           _NewConversationOffer(onStart: _session.startNewConversation),
       ],
+      // Last, so it sits just above the composer.
+      ?notice,
     ];
     // Reversed, so the newest content stays at the bottom while it grows.
     // Each row is keyed by its position from the oldest item, which does not
@@ -391,49 +398,46 @@ class _BlockerCard extends StatelessWidget {
     final failure = session.blocker == AiChatBlocker.contextUnavailable
         ? session.failure
         : null;
-    return Padding(
+    return Card(
       key: ValueKey(
         session.blocker == AiChatBlocker.none
             ? 'ai-chat-preparing'
             : 'ai-chat-blocker',
       ),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Card(
-        margin: EdgeInsets.zero,
-        color: theme.colorScheme.surfaceContainerHighest,
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  icon == null
-                      ? const SizedBox.square(
-                          dimension: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : Icon(icon, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(child: Text(text)),
-                ],
-              ),
-              if (failure != null) ...[
-                const SizedBox(height: 8),
-                _FailureCard(failure: failure),
+      margin: EdgeInsets.zero,
+      color: theme.colorScheme.surfaceContainerHighest,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                icon == null
+                    ? const SizedBox.square(
+                        dimension: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Icon(icon, size: 20),
+                const SizedBox(width: 12),
+                Expanded(child: Text(text)),
               ],
-              if (action != null && onAction != null) ...[
-                const SizedBox(height: 8),
-                Align(
-                  alignment: AlignmentDirectional.centerEnd,
-                  child: FilledButton.tonal(
-                    onPressed: onAction,
-                    child: Text(action),
-                  ),
-                ),
-              ],
+            ),
+            if (failure != null) ...[
+              const SizedBox(height: 8),
+              _FailureCard(failure: failure),
             ],
-          ),
+            if (action != null && onAction != null) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: FilledButton.tonal(
+                  onPressed: onAction,
+                  child: Text(action),
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -445,11 +449,13 @@ class _EmptyConversation extends StatelessWidget {
     required this.origin,
     required this.enabled,
     required this.onSuggestion,
+    this.notice,
   });
 
   final AiChatOrigin origin;
   final bool enabled;
   final ValueChanged<String> onSuggestion;
+  final Widget? notice;
 
   @override
   Widget build(BuildContext context) {
@@ -458,6 +464,7 @@ class _EmptyConversation extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
+        if (notice case final notice?) ...[notice, const SizedBox(height: 20)],
         Icon(Icons.auto_awesome, size: 40, color: theme.colorScheme.primary),
         const SizedBox(height: 12),
         Text(
