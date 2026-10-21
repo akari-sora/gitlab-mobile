@@ -212,9 +212,7 @@ void main() {
       expect(find.text(l10n.aiProviderBaseUrlInvalid), findsNothing);
     });
 
-    testWidgets('a tap into the list URL field is not an edit', (
-      tester,
-    ) async {
+    testWidgets('a tap into the list URL field is not an edit', (tester) async {
       await openCodeGo(tester);
       await tester.tap(find.byKey(const ValueKey('ai-provider-models-url')));
       await tester.pump();
@@ -263,61 +261,71 @@ void main() {
       expect(find.text(l10n.aiProviderBaseUrlInvalid), findsOneWidget);
     });
 
-    testWidgets('a blocked save scrolls to the list URL error at 360 x 640', (
-      tester,
-    ) async {
-      tester.view.devicePixelRatio = 1;
-      tester.view.physicalSize = const Size(360, 640);
-      addTearDown(tester.view.resetDevicePixelRatio);
-      addTearDown(tester.view.resetPhysicalSize);
-      final settings = AiSettingsController(MemoryAiStore());
-      await settings.initialize();
-      await tester.pumpWidget(_host(AiProviderEditor(settings: settings)));
-      _preset(tester).onChanged!(AiPresets.openCodeGo);
-      await tester.pumpAndSettle();
-      await _expandAdvanced(tester);
-      await tester.enterText(
-        find.byKey(const ValueKey('ai-provider-models-url')),
-        'https://opencode.ai/inference/v1/models',
-      );
-      // Close the section again and go back to the top of the form.
-      await _expandAdvanced(tester);
-      expect(find.byKey(const ValueKey('ai-provider-models-url')), findsNothing);
-      await tester.ensureVisible(
-        find.byKey(const ValueKey('ai-provider-base-url')),
-      );
-      await tester.pumpAndSettle();
-      await tester.enterText(
-        find.byKey(const ValueKey('ai-provider-base-url')),
-        elsewhere,
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('ai-provider-api-key')),
-        'sk-synthetic-blocked-save-123456',
-      );
-      await tester.enterText(
-        find.byKey(const ValueKey('ai-provider-model')),
-        'synthetic-model',
-      );
-      await tester.pumpAndSettle();
+    // 411 x 923 is a common phone: the closed form fits without scrolling,
+    // so the scroll must wait for the opening section to grow.
+    for (final size in const [Size(360, 640), Size(411, 923)]) {
+      testWidgets('a blocked save scrolls to the list URL error at '
+          '${size.width.toInt()} x ${size.height.toInt()}', (tester) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = size;
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        final settings = AiSettingsController(MemoryAiStore());
+        await settings.initialize();
+        await tester.pumpWidget(_host(AiProviderEditor(settings: settings)));
+        _preset(tester).onChanged!(AiPresets.openCodeGo);
+        await tester.pumpAndSettle();
+        await _expandAdvanced(tester);
+        await tester.enterText(
+          find.byKey(const ValueKey('ai-provider-models-url')),
+          'https://opencode.ai/inference/v1/models',
+        );
+        // Close the section again and go back to the top of the form.
+        await _expandAdvanced(tester);
+        expect(
+          find.byKey(const ValueKey('ai-provider-models-url')),
+          findsNothing,
+        );
+        await tester.ensureVisible(
+          find.byKey(const ValueKey('ai-provider-base-url')),
+        );
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.byKey(const ValueKey('ai-provider-base-url')),
+          elsewhere,
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey('ai-provider-api-key')),
+          'sk-synthetic-blocked-save-123456',
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey('ai-provider-model')),
+          'synthetic-model',
+        );
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.text(l10n.saveAction));
-      await tester.pump(const Duration(milliseconds: 300));
-      await tester.pumpAndSettle();
+        await tester.tap(find.text(l10n.saveAction));
+        // Frames 16 ms apart, as on a device: the first frames of the opening
+        // animation do not grow the section yet.
+        for (var frame = 0; frame < 40; frame += 1) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        await tester.pumpAndSettle();
 
-      expect(settings.providers, isEmpty);
-      final error = find.descendant(
-        of: find.byKey(const ValueKey('ai-provider-models-url')),
-        matching: find.text(l10n.aiProviderModelsUrlInvalid),
-      );
-      expect(error, findsOneWidget);
-      final rect = tester.getRect(error);
-      expect(
-        rect.top,
-        greaterThanOrEqualTo(tester.getRect(find.byType(AppBar)).bottom),
-      );
-      expect(rect.bottom, lessThanOrEqualTo(640));
-    });
+        expect(settings.providers, isEmpty);
+        final error = find.descendant(
+          of: find.byKey(const ValueKey('ai-provider-models-url')),
+          matching: find.text(l10n.aiProviderModelsUrlInvalid),
+        );
+        expect(error, findsOneWidget);
+        final rect = tester.getRect(error);
+        expect(
+          rect.top,
+          greaterThanOrEqualTo(tester.getRect(find.byType(AppBar)).bottom),
+        );
+        expect(rect.bottom, lessThanOrEqualTo(size.height));
+      });
+    }
 
     testWidgets('its floating label is not cut by the advanced section', (
       tester,

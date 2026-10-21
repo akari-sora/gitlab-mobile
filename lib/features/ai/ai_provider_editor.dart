@@ -352,24 +352,29 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
 
   /// Scrolls [field] into view so a blocked action never looks like a dead
   /// button. A field in the advanced section is built only once the section
-  /// opens, so the scroll waits until the field exists and the section has
-  /// stopped growing (the scroll extent is the same on two frames in a row).
+  /// opens, so the scroll waits until the opening animation has had its time
+  /// (the first animation frames do not grow the section yet) and the scroll
+  /// extent is the same on two frames in a row.
   void _reveal(GlobalKey field, {bool inAdvanced = false}) {
     if (inAdvanced && !_advancedController.isExpanded) {
       _advancedController.expand();
     }
+    Duration? start;
     double? lastExtent;
-    var frames = 0;
-    void step(Duration _) {
+    void step(Duration timeStamp) {
       if (!mounted) return;
+      final elapsed = timeStamp - (start ??= timeStamp);
       final context = field.currentContext;
       final extent = context == null
           ? null
           : Scrollable.maybeOf(context)?.position.maxScrollExtent;
-      if (context == null || extent == null || extent != lastExtent) {
+      // ExpansionTile opens in kThemeAnimationDuration (200 ms).
+      if (context == null ||
+          extent == null ||
+          elapsed < kThemeAnimationDuration ||
+          extent != lastExtent) {
         lastExtent = extent;
-        // About a second at 60 Hz; the section opens in a fraction of that.
-        if (++frames < 60) {
+        if (elapsed < const Duration(seconds: 1)) {
           WidgetsBinding.instance
             ..addPostFrameCallback(step)
             ..ensureVisualUpdate();

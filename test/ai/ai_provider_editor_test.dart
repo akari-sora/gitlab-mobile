@@ -232,8 +232,14 @@ void main() {
     expect(find.widgetWithText(ActionChip, 'glm-5.3-flash'), findsOneWidget);
 
     // Focus and selection changes are not edits of the URL or the key.
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-base-url')));
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-api-key')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-base-url')),
+    );
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-api-key')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.widgetWithText(ActionChip, 'glm-5.3-flash'), findsOneWidget);
