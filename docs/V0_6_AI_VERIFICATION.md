@@ -114,8 +114,7 @@ are OpenSSH, PKCS#8, traditional RSA, encrypted traditional RSA, EC and PGP over
 certificate chains, shared delimiters, nested BEGINs, differing END labels,
 unbounded missing-END
 suppression and overlap/idempotence. Foreground acceptance output and the before
-and quadratic-mutation logs are retained in the external `RESULT-fix4.md`
-receipt. Full-suite, CI, live-provider and device gates remain separate.
+and quadratic-mutation logs are recorded outside the repository. Full-suite, CI, live-provider and device gates remain separate.
 
 ## FIX5 pairing regressions
 
@@ -273,8 +272,8 @@ was performed for MR2. P0b is **NOT_RUN**.
   failures; provider bodies are not retained in exceptions. Redirect,
   authorization, byte/time budget and rate-limit policies remain enforced.
 
-Review-round acceptance output was kept in the local fix-packet handoffs, not
-in the repository; there is no committed root `RESULT.md`. The submitted source is tested directly with pinned Flutter
+Review-round acceptance output is recorded outside the repository. The submitted
+source is tested directly with pinned Flutter
 3.47.2 and --no-pub; no source rewriting or new dependencies are involved.
 
 ## Fixture provenance and privacy
@@ -516,69 +515,12 @@ new-API compilation evidence; documentation and pre-existing-correct behavior
 coverage are not assigned invented behavioral failures. All review requests
 were accepted; none were rejected. Terminal trailing padding is omitted below.
 
-Every command below ran synchronously in a foreground `subprocess.run`; the tool session was awaited to completion. Flutter source and tests remained unchanged during this final sequence. Only this receipt and the inline ledger were finalized afterward.
-
-| Command | Exit | Result |
-| --- | --- | --- |
-| `/Users/iml1s/fvm/versions/3.47.2/bin/flutter analyze --no-pub` | 0 | strict analysis clean |
-| `python3 tool/l10n.py --check` | 0 | 2,078 messages / 24 languages current |
-| `python3 -m unittest discover -s tool/tests -p 'test_*.py'` | 0 | 68 tests passed |
-| `git diff --check` | 0 | no whitespace errors |
-| `/Users/iml1s/fvm/versions/3.47.2/bin/flutter test --no-pub` | 0 | 3,584 tests passed; full suite last |
-
-Exact output tails:
-
-`/Users/iml1s/fvm/versions/3.47.2/bin/flutter analyze --no-pub` — exit 0, 6.635 seconds
-
-```text
-Analyzing gitlab-mobile-wt-ai-mr3...
-No issues found! (ran in 4.8s)
-```
-
-`python3 tool/l10n.py --check` — exit 0, 0.148 seconds
-
-```text
-2078 messages in 24 languages; generated files current.
-```
-
-`python3 -m unittest discover -s tool/tests -p 'test_*.py'` — exit 0, 0.863 seconds
-
-```text
-...Could not start 1Password CLI.
-.Pinned Dart executable not found: /var/folders/9w/6m1x9qr10zv2p2sztxyyxyq00000gn/T/tmpe4bummkb/missing-dart
-.Credential lookup failed for anthropic-direct.
-...............................................................
-----------------------------------------------------------------------
-Ran 68 tests in 0.746s
-
-OK
-2078 messages in 24 languages; generated files current.
-```
-
-`git diff --check` — exit 0, 0.144 seconds
-
-```text
-(no output)
-```
-
-`/Users/iml1s/fvm/versions/3.47.2/bin/flutter test --no-pub` — exit 0, 252.499 seconds
-
-```text
-03:47 +3577: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
-03:47 +3577: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/wide_back_navigation_test.dart: P2-BACK: Wide Two-Pane System Back Navigation Suite Account switch cleanup in wide mode clears active selection and resets navigation hierarchy
-dynamic_color: Dynamic color not detected on this device.
-03:47 +3578: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
-03:47 +3579: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
-03:48 +3580: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
-03:48 +3581: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
-03:48 +3581: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/wide_back_navigation_test.dart: P2-BACK: Wide Two-Pane System Back Navigation Suite Account switch cleanup in wide mode clears active selection and resets navigation hierarchy
-dynamic_color: Dynamic color not detected on this device.
-03:49 +3582: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
-03:55 +3583: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (group) without overflow
-04:09 +3584: All tests passed!
-```
-
-Python error strings above are deliberate mocked failure fixtures; they do not indicate real 1Password access or provider requests.
+Historical foreground acceptance outputs and exact command tails are recorded
+outside the repository. That MR3 run reported clean pinned Flutter analysis,
+current localization generation, 68 Python tests and 3,584 Flutter tests, plus a
+clean whitespace check. Those results belong to that source cut and do not
+validate subsequent changes. Deliberate mocked Python failure messages did not
+represent real credential access or provider requests.
 
 Final full-suite incremental-save measurement: `reads=1 one=0:00:00.002838 conversations26=0:00:00.005589`. Both sizes decrypt only the index during an unchanged small save.
 
@@ -740,7 +682,7 @@ and 320 dp / 2x text / Arabic RTL / dark layouts. All 24 catalogs contain the ne
 UI messages. Existing tests and their expectations remain unchanged.
 
 The foreground acceptance receipt, complete command outputs/tails and any gaps
-are recorded in the owner-supplied MR5 packet directory's `RESULT.md`. There is
+are recorded outside the repository. There is
 no MR5 commit or pipeline: the task forbids committing and pushing. Live provider
 calls, real keys, internet, Android/iOS devices, emulator checks and rendered
 screenshot review are **NOT_RUN**. Provider verification labels remain unverified;
@@ -762,3 +704,37 @@ Foreground acceptance and mutation evidence are recorded outside this repository
 in the owner-supplied follow-up receipt. No commit, push,
 provider call, real key, internet, native build or device evidence is authorized
 for this follow-up; the gate remains false.
+
+
+### MR5 FIX2 logic follow-up
+
+Policy inheritance now requires the normalized scheme, host, port and base path
+of the preset endpoint for the selected format. Other recipients use unknown
+policy with no inherited link or retention. Non-model-sensitive preset contracts
+include the configured data-policy URL without inferring training or retention.
+The existing disclosure renderer already displays arbitrary stated retention days;
+a new regression protects the no-training/seven-day case.
+
+`aiToolCatalogueVersion` and `aiDisclosureVersion` are the current version source.
+Settings can call `AiConsentContract aiCurrentConsentContractFor(AiProviderConfig
+provider)`. The dialog derives recipient/policy from the provider while retaining
+the requested versions and categories, and refuses a differing requested hash.
+Invalid legacy endpoints fail initialization as malformed before provider
+publication, allowing the existing reset action and avoiding invalid consent-row
+inputs; settings wiring remains owned by the orchestrator.
+
+Pending history-clear markers are checked at enable/save boundaries and included
+in secure inventory and orphan cleanup. Keyless saves delete credentials before
+publishing configuration and restore the prior credential/binding on failure.
+Legacy key replacement uses the coordinated save path, and reset invalidates its
+key cache immediately after durable deletion. Startup deletes mismatched bound
+credentials instead of leaving stored secrets outside the redaction set.
+
+The new synthetic regressions are in `test/ai/fix2_logic_test.dart`. The FIX2b
+follow-up migrates seven consent fixtures to derived current contracts, retains
+their dialog, race and layout checks, and asserts refusal of forged policy before
+showing a valid provider-derived disclosure. Foreground acceptance results, exact
+failures and six reversible mutation receipts are recorded outside the repository.
+This follow-up has no commit,
+push, pipeline/job, internet, provider call, real key, build or device evidence;
+the feature gate remains false. These checks do not establish G0 acceptance.

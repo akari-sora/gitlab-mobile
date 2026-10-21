@@ -251,6 +251,7 @@ final class AiSecureInventory {
     required this.providerKeyIds,
     required this.accountKeys,
     required this.historyKeyAccountKeys,
+    this.historyClearMarkerAccountKeys = const <String>[],
     required this.malformedProviderKeyCount,
     required this.malformedAccountKeyCount,
     required this.malformedHistoryKeyCount,
@@ -262,6 +263,7 @@ final class AiSecureInventory {
   final List<String> providerKeyIds;
   final List<String> accountKeys;
   final List<String> historyKeyAccountKeys;
+  final List<String> historyClearMarkerAccountKeys;
   final int malformedProviderKeyCount;
   final int malformedAccountKeyCount;
   final int malformedHistoryKeyCount;
@@ -508,8 +510,14 @@ Future<AiSecureCleanupResult> cleanupOrphanAiSecureData(
   final orphanHistoryKeys = historyKeys
       .where((accountKey) => !liveAccountKeys.contains(accountKey))
       .toSet();
-  final orphanKeys = <String>{...orphanAccounts, ...orphanHistoryKeys}.toList()
-    ..sort();
+  final orphanMarkers = inventory.historyClearMarkerAccountKeys
+      .where((accountKey) => !liveAccountKeys.contains(accountKey))
+      .toSet();
+  final orphanKeys = <String>{
+    ...orphanAccounts,
+    ...orphanHistoryKeys,
+    ...orphanMarkers,
+  }.toList()..sort();
   for (final accountKey in orphanKeys) {
     if (isCurrent?.call() == false) break;
     final lease = owner.beginCleaning(accountKey);
@@ -521,6 +529,11 @@ Future<AiSecureCleanupResult> cleanupOrphanAiSecureData(
         }
         if (orphanHistoryKeys.contains(accountKey)) {
           await store.deleteHistoryKey(accountKey);
+        }
+        if (orphanMarkers.contains(accountKey)) {
+          if (store case final AiHistoryClearMarkerStore markers) {
+            await markers.clearHistoryClearMarker(accountKey);
+          }
         }
       });
     } on Object {
@@ -1310,6 +1323,16 @@ final class AiSettingsController extends ChangeNotifier {
     final result = await store.loadProviders();
     if (result.failure != null) throw AiStoreException(result.failure!);
     final loaded = result.value ?? const <AiProviderConfig>[];
+    try {
+      for (final provider in loaded) {
+        _validateProviderEndpoints(provider);
+        _validateProviderCaps(provider.caps);
+      }
+    } on Object catch (error) {
+      throw AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.malformed, 'loadProviders', error),
+      );
+    }
     final active = <AiProviderConfig>[];
     final deleting = <AiProviderConfig>[];
     final localDeleting = <String, AiProviderConfig>{..._deletingProviders};
@@ -1326,8 +1349,15 @@ final class AiSettingsController extends ChangeNotifier {
     for (final provider in active) {
       final key = await store.readProviderKey(provider.id);
       if (key.failure != null) throw AiStoreException(key.failure!);
-      if (key.isFound && await _keyBindingMatches(provider, key.value!)) {
-        keys[provider.id] = key.value!;
+      if (key.isFound) {
+        if (provider.caps.requiresKey &&
+            await _keyBindingMatches(provider, key.value!)) {
+          keys[provider.id] = key.value!;
+        } else {
+          // Unbound credentials are never sent or left outside redaction.
+          await store.deleteProviderKey(provider.id);
+          await _deleteProviderKeyBinding(provider.id);
+        }
       }
     }
     _providers = List.unmodifiable(active);
@@ -1393,9 +1423,12 @@ final class AiSettingsController extends ChangeNotifier {
         .firstOrNull;
     if (deleting != null) await _resumeProviderDeletion(deleting);
     final existing = _provider(provider.id);
+    final keyRead = await store.readProviderKey(provider.id);
+    if (keyRead.failure != null) throw AiStoreException(keyRead.failure!);
     final removesKey =
-        existing != null &&
-        (!provider.caps.requiresKey || !_sameKeyRecipient(existing, provider));
+        keyRead.isFound &&
+        (!provider.caps.requiresKey ||
+            (existing != null && !_sameKeyRecipient(existing, provider)));
     final revision = existing == null
         ? 1
         : _sameRecipient(existing, provider) && !removesKey
@@ -1469,6 +1502,26 @@ final class AiSettingsController extends ChangeNotifier {
     if (deleting != null) await _resumeProviderDeletion(deleting);
     final existing = _provider(provider.id);
     final previousKey = existing == null ? null : _providerKeys[provider.id];
+    if (!provider.caps.requiresKey) {
+      final storedKey = await store.readProviderKey(provider.id);
+      if (storedKey.failure != null) throw AiStoreException(storedKey.failure!);
+      try {
+        return await _saveProvider(provider);
+      } catch (_) {
+        if (existing != null && storedKey.isFound) {
+          await _restoreProviderKey(
+            existing,
+            provider.id,
+            storedKey.value,
+            acknowledgeWarning: true,
+          );
+          _providerKeys[provider.id] = storedKey.value!;
+          _secretSetId += 1;
+          _notify();
+        }
+        rethrow;
+      }
+    }
     final replacementKey = key?.trim();
     if (key != null && replacementKey != key) {
       throw const AiStoreException(
@@ -1716,20 +1769,11 @@ final class AiSettingsController extends ChangeNotifier {
       );
     }
     if (_providerKeys[providerId] == key) return;
-    final revised = _copyProvider(
+    await _saveProviderWithKey(
       provider,
-      recipientRevision: provider.recipientRevision + 1,
-    );
-    await _replaceProvider(revised);
-    _notify();
-    await _persistProviderKey(
-      provider,
-      key,
+      key: key,
       acknowledgeWarning: acknowledgeWarning,
     );
-    _providerKeys[providerId] = key;
-    _secretSetId += 1;
-    _notify();
   }
 
   Future<void> deleteProviderKey(String providerId) =>
@@ -2001,10 +2045,9 @@ final class AiSettingsController extends ChangeNotifier {
     try {
       for (final providerId in providerIds) {
         await store.deleteProviderKey(providerId);
-        await _deleteProviderKeyBinding(providerId);
-        // Keep the cache equal to the store if a later step fails, so the
-        // same key saved again is written instead of seen as unchanged.
+        // Invalidate before any later await, including binding deletion.
         if (_providerKeys.remove(providerId) != null) _secretSetId += 1;
+        await _deleteProviderKeyBinding(providerId);
       }
       await _writeProviderList(
         const <AiProviderConfig>[],
@@ -2205,6 +2248,7 @@ AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
   final providerKeys = <String>[];
   final accountKeys = <String>[];
   final historyKeys = <String>[];
+  final historyClearMarkers = <String>[];
   final malformedProviderKeyEntries = <String>{};
   final malformedAccountKeyEntries = <String>{};
   final malformedHistoryKeyEntries = <String>{};
@@ -2236,6 +2280,18 @@ AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
         malformedAccountKeys += 1;
         malformedAccountKeyEntries.add(key);
       }
+    } else if (key.startsWith(SecureAiStore.historyClearMarkerPrefix)) {
+      try {
+        historyClearMarkers.add(
+          _decodeStoredId(
+            key.substring(SecureAiStore.historyClearMarkerPrefix.length),
+            'readSecureInventory',
+          ),
+        );
+      } on AiStoreException {
+        malformedHistoryKeys += 1;
+        malformedHistoryKeyEntries.add(key);
+      }
     } else if (key.startsWith(SecureAiStore.historyKeyPrefix)) {
       try {
         historyKeys.add(
@@ -2253,10 +2309,12 @@ AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
   providerKeys.sort();
   accountKeys.sort();
   historyKeys.sort();
+  historyClearMarkers.sort();
   return AiSecureInventory(
     providerKeyIds: List.unmodifiable(providerKeys),
     accountKeys: List.unmodifiable(accountKeys),
     historyKeyAccountKeys: List.unmodifiable(historyKeys),
+    historyClearMarkerAccountKeys: List.unmodifiable(historyClearMarkers),
     malformedProviderKeyCount: malformedProviderKeys,
     malformedAccountKeyCount: malformedAccountKeys,
     malformedHistoryKeyCount: malformedHistoryKeys,

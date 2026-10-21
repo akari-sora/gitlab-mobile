@@ -16,39 +16,60 @@ void main() {
     ) async {
       final settings = await _settings();
       addTearDown(settings.dispose);
-      final contract = _contract();
+      await settings.saveProvider(
+        _provider(baseUrl: 'http://127.0.0.1:11434/v1'),
+      );
+      final contract = aiCurrentConsentContractFor(settings.providers.single);
+      final results = <bool>[];
 
-      await tester.pumpWidget(_host(settings, contract));
+      await tester.pumpWidget(_host(settings, contract, onResult: results.add));
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
       expect(find.text(l10n.aiConsentTitle), findsOneWidget);
       expect(find.text(l10n.aiConsentUnencrypted), findsOneWidget);
       await tester.dragUntilVisible(
+        find.text(l10n.aiConsentUnknownDataUseWarning),
+        find.byType(ListView),
+        const Offset(0, -180),
+      );
+      expect(find.text(l10n.aiConsentUnknownDataUseWarning), findsOneWidget);
+      expect(find.text('gpt-6-luna'), findsOneWidget);
+      await tester.tap(find.text(l10n.cancelAction));
+      await tester.pumpAndSettle();
+      expect(settings.accountRecord('account'), isNull);
+      expect(results, [false]);
+
+      await settings.saveProvider(_provider());
+      final derivedContract = aiCurrentConsentContractFor(
+        settings.providers.single,
+      );
+      await tester.pumpWidget(
+        _host(settings, derivedContract, onResult: results.add),
+      );
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.dragUntilVisible(
         find.text(l10n.aiConsentNoTraining),
         find.byType(ListView),
         const Offset(0, -180),
       );
       expect(find.text(l10n.aiConsentNoTraining), findsOneWidget);
-      expect(find.text('gpt-6-luna'), findsOneWidget);
-      await tester.tap(find.text(l10n.cancelAction));
-      await tester.pumpAndSettle();
-      expect(settings.accountRecord('account'), isNull);
-
-      await tester.tap(find.text('open'));
-      await tester.pumpAndSettle();
       await tester.tap(find.text(l10n.aiConsentAgreeAndSend));
       await tester.pumpAndSettle();
 
       final consent = settings.accountRecord('account')!.consents['provider']!;
-      final derivedContract = aiConsentContractFor(_provider());
+      expect(results, [false, true]);
       expect(consent.hash, derivedContract.hash);
       expect(consent.summary['providerName'], 'Synthetic provider');
-      expect(consent.summary['origin'], 'http://127.0.0.1:11434/v1');
+      expect(consent.summary['origin'], _provider().baseUrl);
       expect(consent.summary['format'], 'responses');
       expect(consent.summary['model'], 'gpt-6-luna');
       expect(consent.summary['dataUse'], 'noTraining');
       expect(consent.summary['retentionDays'], 30);
+      expect(consent.summary['toolCatalogueVersion'], aiToolCatalogueVersion);
+      expect(consent.summary['disclosureVersion'], aiDisclosureVersion);
       expect(consent.summary['dataCategories'], <Object?>[
         'comments',
         'diff',
@@ -70,7 +91,7 @@ void main() {
       );
 
       await tester.pumpWidget(
-        _host(settings, aiConsentContractFor(settings.providers.single)),
+        _host(settings, aiCurrentConsentContractFor(settings.providers.single)),
       );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
@@ -86,7 +107,7 @@ void main() {
 
       await settings.saveProvider(_provider(model: 'unlisted-model'));
       await tester.pumpWidget(
-        _host(settings, aiConsentContractFor(settings.providers.single)),
+        _host(settings, aiCurrentConsentContractFor(settings.providers.single)),
       );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
@@ -145,9 +166,12 @@ void main() {
     ) async {
       final settings = await _settings();
       addTearDown(settings.dispose);
-      await tester.pumpWidget(_host(settings, _contract()));
+      await tester.pumpWidget(
+        _host(settings, aiCurrentConsentContractFor(settings.providers.single)),
+      );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
+      expect(find.text(l10n.aiConsentTitle), findsOneWidget);
 
       await settings.saveProvider(_provider(model: 'changed-model'));
       await tester.tap(find.text(l10n.aiConsentAgreeAndSend));
@@ -164,10 +188,15 @@ void main() {
       addTearDown(settings.dispose);
       final key = GlobalKey<_ScopedHostState>();
       await tester.pumpWidget(
-        _ScopedHost(key: key, settings: settings, contract: _contract()),
+        _ScopedHost(
+          key: key,
+          settings: settings,
+          contract: aiCurrentConsentContractFor(settings.providers.single),
+        ),
       );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
+      expect(find.text(l10n.aiConsentTitle), findsOneWidget);
 
       key.currentState!.switchAccount();
       await tester.pump();
@@ -175,6 +204,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(settings.accountRecord('account'), isNull);
+      expect(settings.accountRecord('other-account'), isNull);
+      expect(find.text(l10n.aiConsentTitle), findsNothing);
     });
 
     testWidgets('non-model-sensitive consent still displays provider model', (
@@ -182,7 +213,10 @@ void main() {
     ) async {
       final settings = await _settings();
       addTearDown(settings.dispose);
-      await tester.pumpWidget(_host(settings, _contract(model: null)));
+      await settings.saveProvider(_provider(preset: AiPresets.openAi));
+      final contract = aiCurrentConsentContractFor(settings.providers.single);
+      expect(contract.routedModel, isNull);
+      await tester.pumpWidget(_host(settings, contract));
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
@@ -199,11 +233,14 @@ void main() {
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       final settings = await _settings();
       addTearDown(settings.dispose);
+      await settings.saveProvider(
+        _provider(model: 'muse-spark-1.3-contributor'),
+      );
 
       await tester.pumpWidget(
         _host(
           settings,
-          _contract(dataUse: AiDataUse.training),
+          aiCurrentConsentContractFor(settings.providers.single),
           brightness: Brightness.dark,
           textDirection: TextDirection.rtl,
         ),
@@ -250,6 +287,7 @@ Widget _host(
   AiConsentContract contract, {
   Brightness brightness = Brightness.light,
   TextDirection textDirection = TextDirection.ltr,
+  ValueChanged<bool>? onResult,
 }) => MaterialApp(
   theme: appTheme(brightness),
   builder: (context, child) => Directionality(
@@ -259,19 +297,32 @@ Widget _host(
   home: Builder(
     builder: (context) => Scaffold(
       body: TextButton(
-        onPressed: () =>
-            showAiConsentDialog(context, settings, 'account', contract),
+        onPressed: () async {
+          final granted = await showAiConsentDialog(
+            context,
+            settings,
+            'account',
+            contract,
+          );
+          onResult?.call(granted);
+        },
         child: const Text('open'),
       ),
     ),
   ),
 );
 
-AiProviderConfig _provider({String model = 'gpt-6-luna'}) => AiProviderConfig(
+AiProviderConfig _provider({
+  String model = 'gpt-6-luna',
+  AiPreset? preset,
+  String? baseUrl,
+}) => AiProviderConfig(
   id: 'provider',
   name: 'Synthetic provider',
-  presetId: 'opencode-go',
-  baseUrl: 'http://127.0.0.1:11434/v1',
+  presetId: (preset ?? AiPresets.openCodeGo).id,
+  baseUrl:
+      baseUrl ??
+      (preset ?? AiPresets.openCodeGo).baseUrlFor(AiFormat.responses),
   format: AiFormat.responses,
   model: model,
   authStyle: AiAuthStyle.none,

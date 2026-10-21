@@ -148,13 +148,28 @@ void main() {
     expect(summary['policyCheckedOn'], '2026-10-20');
   });
 
-  testWidgets('dialog derives from recipient and ignores forged policy', (
+  testWidgets('dialog refuses forged policy and derives a valid disclosure', (
     tester,
   ) async {
     final settings = AiSettingsController(MemoryAiStore());
     addTearDown(settings.dispose);
     await settings.saveProvider(provider(model: 'muse-spark-1.3-contributor'));
-    await tester.pumpWidget(host(settings, aiConsentContractFor(provider())));
+    final results = <bool>[];
+    await tester.pumpWidget(
+      host(
+        settings,
+        aiCurrentConsentContractFor(provider()),
+        onResult: results.add,
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(results, [false]);
+    expect(find.byType(Dialog), findsNothing);
+    expect(settings.accountRecord('account'), isNull);
+
+    final requested = aiCurrentConsentContractFor(settings.providers.single);
+    await tester.pumpWidget(host(settings, requested, onResult: results.add));
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(
@@ -166,8 +181,9 @@ void main() {
     expect(find.text(l10n.aiConsentRetentionNotStated), findsOneWidget);
     await tester.tap(find.text(l10n.aiConsentAgreeAndSend));
     await tester.pumpAndSettle();
+    expect(results, [false, true]);
     final saved = settings.accountRecord('account')!.consents['synthetic']!;
-    expect(saved.hash, aiConsentContractFor(settings.providers.single).hash);
+    expect(saved.hash, requested.hash);
     expect(saved.summary['dataUse'], 'training');
   });
 
@@ -323,6 +339,7 @@ Widget host(
   AiSettingsController settings,
   AiConsentContract contract, {
   bool arabic = false,
+  ValueChanged<bool>? onResult,
 }) => MaterialApp(
   theme: appTheme(arabic ? Brightness.dark : Brightness.light),
   locale: arabic ? const Locale('ar') : const Locale('en'),
@@ -331,8 +348,15 @@ Widget host(
   home: Builder(
     builder: (context) => Scaffold(
       body: TextButton(
-        onPressed: () =>
-            showAiConsentDialog(context, settings, 'account', contract),
+        onPressed: () async {
+          final granted = await showAiConsentDialog(
+            context,
+            settings,
+            'account',
+            contract,
+          );
+          onResult?.call(granted);
+        },
         child: const Text('open'),
       ),
     ),
