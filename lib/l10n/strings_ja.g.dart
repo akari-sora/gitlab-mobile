@@ -2325,4 +2325,6 @@ const _messagesJa = <String>[
   '秘密鍵と思われる内容を除外し、送信しませんでした',
   '会話を準備中…',
   '同意',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

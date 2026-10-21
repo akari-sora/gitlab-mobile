@@ -2325,4 +2325,6 @@ const _messagesPl = <String>[
   'Treść przypominająca klucz prywatny została pominięta i nie została wysłana',
   'Przygotowywanie rozmowy…',
   'Akceptuję',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

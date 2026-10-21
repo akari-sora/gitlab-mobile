@@ -2325,4 +2325,6 @@ const _messagesTr = <String>[
   'Özel anahtara benzeyen içerik tutuldu ve gönderilmedi',
   'Konuşma hazırlanıyor…',
   'Kabul et',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

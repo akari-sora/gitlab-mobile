@@ -2322,5 +2322,7 @@
   "aiNoticeRedactedSome": "Datele de autentificare au fost mascate",
   "aiNoticePrivateKeyWithheld": "Conținutul care pare a fi o cheie privată a fost omis și nu a fost trimis",
   "aiChatPreparing": "Se pregătește conversația…",
-  "aiConsentAgree": "Accept"
+  "aiConsentAgree": "Accept",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }

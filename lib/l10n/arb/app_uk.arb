@@ -2322,5 +2322,7 @@
   "aiNoticeRedactedSome": "Облікові дані приховано",
   "aiNoticePrivateKeyWithheld": "Вміст, схожий на приватний ключ, вилучено й не надіслано",
   "aiChatPreparing": "Підготовка розмови…",
-  "aiConsentAgree": "Погодитися"
+  "aiConsentAgree": "Погодитися",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }

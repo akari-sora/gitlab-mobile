@@ -2325,4 +2325,6 @@ const _messagesZhCn = <String>[
   '疑似私钥的内容已被拦下，未发送',
   '正在准备对话…',
   '同意',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

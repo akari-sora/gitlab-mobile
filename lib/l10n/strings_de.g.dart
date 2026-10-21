@@ -2325,4 +2325,6 @@ const _messagesDe = <String>[
   'Inhalt, der wie ein privater Schlüssel aussieht, wurde zurückgehalten und nicht gesendet',
   'Unterhaltung wird vorbereitet…',
   'Zustimmen',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

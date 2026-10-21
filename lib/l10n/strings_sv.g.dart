@@ -2325,4 +2325,6 @@ const _messagesSv = <String>[
   'Innehåll som liknar en privat nyckel hölls tillbaka och skickades inte',
   'Förbereder konversationen…',
   'Godkänn',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

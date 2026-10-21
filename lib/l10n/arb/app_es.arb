@@ -2322,5 +2322,7 @@
   "aiNoticeRedactedSome": "Se ocultaron credenciales",
   "aiNoticePrivateKeyWithheld": "El contenido que parece una clave privada se retuvo y no se envió",
   "aiChatPreparing": "Preparando la conversación…",
-  "aiConsentAgree": "Aceptar"
+  "aiConsentAgree": "Aceptar",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }

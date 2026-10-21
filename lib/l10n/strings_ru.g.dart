@@ -2325,4 +2325,6 @@ const _messagesRu = <String>[
   'Содержимое, похожее на закрытый ключ, исключено и не отправлено',
   'Подготовка диалога…',
   'Согласиться',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

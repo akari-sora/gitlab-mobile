@@ -303,6 +303,7 @@ String _noticeKindCode(AiNoticeKind value) => switch (value) {
   AiNoticeKind.historyLimit => 'history_limit',
   AiNoticeKind.stopped => 'stopped',
   AiNoticeKind.notSent => 'not_sent',
+  AiNoticeKind.newConversation => 'new_conversation',
 };
 
 AiNoticeKind _noticeKind(String value) => switch (value) {
@@ -313,6 +314,7 @@ AiNoticeKind _noticeKind(String value) => switch (value) {
   'history_limit' => AiNoticeKind.historyLimit,
   'stopped' => AiNoticeKind.stopped,
   'not_sent' => AiNoticeKind.notSent,
+  'new_conversation' => AiNoticeKind.newConversation,
   _ => throw const AiHistoryUnsupportedFormat(),
 };
 

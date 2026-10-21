@@ -2325,4 +2325,6 @@ const _messagesVi = <String>[
   'Nội dung có vẻ là khóa riêng tư đã được giữ lại và không gửi đi',
   'Đang chuẩn bị cuộc trò chuyện…',
   'Đồng ý',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

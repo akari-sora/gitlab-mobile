@@ -2325,4 +2325,6 @@ const _messagesEs = <String>[
   'El contenido que parece una clave privada se retuvo y no se envió',
   'Preparando la conversación…',
   'Aceptar',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

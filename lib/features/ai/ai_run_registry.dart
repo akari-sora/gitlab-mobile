@@ -148,6 +148,25 @@ final class AccountAiRunRegistry extends ChangeNotifier
     });
   }
 
+  @override
+  void release(AiChatSession session) {
+    if (_disposed) return;
+    final key = _sessions.entries
+        .where((entry) => identical(entry.value.session, session))
+        .map((entry) => entry.key)
+        .firstOrNull;
+    if (key == null) return;
+    final phase = session.phase;
+    if (phase == AiChatPhase.running ||
+        phase == AiChatPhase.stopping ||
+        session.items.isNotEmpty) {
+      return;
+    }
+    final handle = _sessions.remove(key)!;
+    session.removeListener(_handleSessionChanged);
+    handle.dispose();
+  }
+
   void _handleOwnerChanged() {
     if (!ownsCurrentSession) _invalidate();
   }

@@ -2325,4 +2325,6 @@ const _messagesId = <String>[
   'Konten yang tampak seperti kunci privat ditahan dan tidak dikirim',
   'Menyiapkan percakapan…',
   'Setuju',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

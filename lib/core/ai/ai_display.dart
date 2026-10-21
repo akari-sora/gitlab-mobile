@@ -10,15 +10,22 @@ final class AiContextChip {
     this.type,
     this.resource,
     this.pinnedSha,
+    this.sentText,
   });
 
   final String source;
+
+  /// A short excerpt; this is what saved history keeps.
   final String preview;
   final int sizeChars;
   final bool blocked;
   final String? type;
   final String? resource;
   final String? pinnedSha;
+
+  /// Everything this block sent, redacted, for "What was sent". Kept in
+  /// memory only; a restored conversation has just [preview].
+  final String? sentText;
 }
 
 enum AiAssistantState {
@@ -42,6 +49,10 @@ enum AiNoticeKind {
   historyLimit,
   stopped,
   notSent,
+
+  /// The provider's settings changed, so later questions start a new
+  /// conversation; the items above stay for reading but are not sent again.
+  newConversation,
 }
 
 sealed class AiChatItem {

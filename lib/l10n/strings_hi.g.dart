@@ -2325,4 +2325,6 @@ const _messagesHi = <String>[
   'निजी कुंजी जैसी दिखने वाली सामग्री रोक ली गई और नहीं भेजी गई',
   'बातचीत तैयार हो रही है…',
   'सहमति दें',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

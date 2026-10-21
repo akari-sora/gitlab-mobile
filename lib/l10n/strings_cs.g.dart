@@ -2325,4 +2325,6 @@ const _messagesCs = <String>[
   'Obsah připomínající soukromý klíč byl zadržen a neodeslán',
   'Příprava konverzace…',
   'Souhlasit',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

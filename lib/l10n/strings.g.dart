@@ -7062,4 +7062,10 @@ final class AppStrings {
 
   /// 同意
   String get aiConsentAgree => language._messages[2322];
+
+  /// 設定已變更：之後的提問會開始新的對話，上面的內容不會再送出
+  String get aiNoticeNewConversation => language._messages[2323];
+
+  /// 不明的工具要求
+  String get aiToolUnknown => language._messages[2324];
 }

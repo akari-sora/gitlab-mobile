@@ -2325,4 +2325,6 @@ const _messagesAr = <String>[
   'تم حجب محتوى يشبه مفتاحًا خاصًا ولم يُرسل',
   'جارٍ إعداد المحادثة…',
   'الموافقة',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

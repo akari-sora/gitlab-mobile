@@ -2325,4 +2325,6 @@ const _messagesIt = <String>[
   'Il contenuto che sembra una chiave privata è stato trattenuto e non inviato',
   'Preparazione della conversazione…',
   'Accetta',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

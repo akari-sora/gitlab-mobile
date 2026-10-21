@@ -2322,5 +2322,7 @@
   "aiNoticeRedactedSome": "Учётные данные скрыты",
   "aiNoticePrivateKeyWithheld": "Содержимое, похожее на закрытый ключ, исключено и не отправлено",
   "aiChatPreparing": "Подготовка диалога…",
-  "aiConsentAgree": "Согласиться"
+  "aiConsentAgree": "Согласиться",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }

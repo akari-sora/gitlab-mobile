@@ -2325,4 +2325,6 @@ const _messagesEn = <String>[
   'Content that looks like a private key was held back and not sent',
   'Preparing the conversation…',
   'Agree',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

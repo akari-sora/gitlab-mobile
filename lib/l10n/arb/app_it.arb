@@ -2322,5 +2322,7 @@
   "aiNoticeRedactedSome": "Le credenziali sono state oscurate",
   "aiNoticePrivateKeyWithheld": "Il contenuto che sembra una chiave privata è stato trattenuto e non inviato",
   "aiChatPreparing": "Preparazione della conversazione…",
-  "aiConsentAgree": "Accetta"
+  "aiConsentAgree": "Accetta",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }

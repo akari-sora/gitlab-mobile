@@ -2325,4 +2325,6 @@ const _messagesNl = <String>[
   'Inhoud die op een privésleutel lijkt, is tegengehouden en niet verzonden',
   'Gesprek voorbereiden…',
   'Akkoord',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

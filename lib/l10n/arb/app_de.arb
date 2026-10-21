@@ -2322,5 +2322,7 @@
   "aiNoticeRedactedSome": "Zugangsdaten wurden unkenntlich gemacht",
   "aiNoticePrivateKeyWithheld": "Inhalt, der wie ein privater Schlüssel aussieht, wurde zurückgehalten und nicht gesendet",
   "aiChatPreparing": "Unterhaltung wird vorbereitet…",
-  "aiConsentAgree": "Zustimmen"
+  "aiConsentAgree": "Zustimmen",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }

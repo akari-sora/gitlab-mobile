@@ -138,6 +138,10 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   set confirmCleartext(Future<bool> Function()? callback) =>
       _confirmCleartext = callback;
 
+  @override
+  String displaySafe(String text) =>
+      _redactor.redactSource(text.replaceAll(_displayControls, '')).text;
+
   void _notify() {
     _streamNotification?.cancel();
     _streamNotification = null;

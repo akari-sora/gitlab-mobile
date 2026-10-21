@@ -2322,5 +2322,7 @@
   "aiNoticeRedactedSome": "Ukryto dane uwierzytelniające",
   "aiNoticePrivateKeyWithheld": "Treść przypominająca klucz prywatny została pominięta i nie została wysłana",
   "aiChatPreparing": "Przygotowywanie rozmowy…",
-  "aiConsentAgree": "Akceptuję"
+  "aiConsentAgree": "Akceptuję",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }

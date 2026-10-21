@@ -2325,4 +2325,6 @@ const _messagesPtBr = <String>[
   'O conteúdo que parece uma chave privada foi retido e não enviado',
   'Preparando a conversa…',
   'Concordar',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

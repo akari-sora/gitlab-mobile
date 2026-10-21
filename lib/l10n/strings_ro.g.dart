@@ -2325,4 +2325,6 @@ const _messagesRo = <String>[
   'Conținutul care pare a fi o cheie privată a fost omis și nu a fost trimis',
   'Se pregătește conversația…',
   'Accept',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

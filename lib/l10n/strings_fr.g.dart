@@ -2325,4 +2325,6 @@ const _messagesFr = <String>[
   'Le contenu ressemblant à une clé privée a été retenu et n’a pas été envoyé',
   'Préparation de la conversation…',
   'Accepter',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

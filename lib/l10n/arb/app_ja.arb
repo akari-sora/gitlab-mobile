@@ -2322,5 +2322,7 @@
   "aiNoticeRedactedSome": "認証情報を伏せました",
   "aiNoticePrivateKeyWithheld": "秘密鍵と思われる内容を除外し、送信しませんでした",
   "aiChatPreparing": "会話を準備中…",
-  "aiConsentAgree": "同意"
+  "aiConsentAgree": "同意",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }

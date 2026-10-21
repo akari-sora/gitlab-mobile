@@ -2325,4 +2325,6 @@ const _messagesTh = <String>[
   'เนื้อหาที่ดูเหมือนกุญแจส่วนตัวถูกระงับไว้และไม่ได้ส่ง',
   'กำลังเตรียมการสนทนา…',
   'ยินยอม',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

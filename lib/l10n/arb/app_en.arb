@@ -2328,5 +2328,7 @@
   "aiNoticeRedactedSome": "Secrets were redacted",
   "aiNoticePrivateKeyWithheld": "Content that looks like a private key was held back and not sent",
   "aiChatPreparing": "Preparing the conversation…",
-  "aiConsentAgree": "Agree"
+  "aiConsentAgree": "Agree",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }

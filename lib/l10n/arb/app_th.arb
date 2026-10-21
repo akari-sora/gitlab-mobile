@@ -2322,5 +2322,7 @@
   "aiNoticeRedactedSome": "ปกปิดข้อมูลรับรองแล้ว",
   "aiNoticePrivateKeyWithheld": "เนื้อหาที่ดูเหมือนกุญแจส่วนตัวถูกระงับไว้และไม่ได้ส่ง",
   "aiChatPreparing": "กำลังเตรียมการสนทนา…",
-  "aiConsentAgree": "ยินยอม"
+  "aiConsentAgree": "ยินยอม",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }

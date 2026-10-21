@@ -64,6 +64,8 @@ final class _Session extends ChangeNotifier implements AiChatSession {
   Future<void> recheck() async {}
   @override
   set confirmCleartext(Future<bool> Function()? callback) {}
+  @override
+  String displaySafe(String text) => text;
 }
 
 final class _Registry extends ChangeNotifier implements AiRunRegistry {
@@ -74,6 +76,11 @@ final class _Registry extends ChangeNotifier implements AiRunRegistry {
     opened.add(origin);
     return _Session(origin);
   }
+
+  final released = <AiChatSession>[];
+
+  @override
+  void release(AiChatSession session) => released.add(session);
 
   @override
   int get runningCount => 0;

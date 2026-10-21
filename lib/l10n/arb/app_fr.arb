@@ -2322,5 +2322,7 @@
   "aiNoticeRedactedSome": "Des identifiants ont été masqués",
   "aiNoticePrivateKeyWithheld": "Le contenu ressemblant à une clé privée a été retenu et n’a pas été envoyé",
   "aiChatPreparing": "Préparation de la conversation…",
-  "aiConsentAgree": "Accepter"
+  "aiConsentAgree": "Accepter",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }

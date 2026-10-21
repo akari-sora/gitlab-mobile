@@ -4,6 +4,7 @@ import '../../core/ai/ai_display.dart';
 import '../../core/ai/ai_failure.dart';
 import '../../core/ai/ai_provider.dart';
 import '../../core/ai/runner.dart';
+import '../../core/failure.dart';
 import '../../core/models.dart';
 
 /// Where a conversation starts. It decides the first context the assistant
@@ -115,7 +116,9 @@ enum AiChatBlocker {
   /// The current account has not agreed to [AiChatSession.consentRequest].
   consentRequired,
 
-  /// Three conversations are already running for this account.
+  /// Three conversations are already running for this account. Reported
+  /// while idle whenever capacity is full, so the page can say why it cannot
+  /// send; it clears by itself when a run ends.
   tooManyRunning,
 
   /// The starting context could not be loaded; [AiChatSession.failure] says
@@ -145,8 +148,10 @@ abstract interface class AiChatSession implements Listenable {
   /// [AiChatBlocker.consentRequired].
   AiConsentContract? get consentRequest;
 
-  /// The failure that ended the last run, or that blocks the start.
-  AiFailure? get failure;
+  /// The failure that ended the last run, or that blocks the start. Reading
+  /// GitLab keeps its [ApiFailure] (a 404 stays ambiguous); provider errors
+  /// are [AiFailure].
+  UserFacingFailure? get failure;
 
   /// Why the last run ended; null before the first run and while one runs.
   /// The page shows an end row for every reason except [AiRunEnd.done].
@@ -181,6 +186,11 @@ abstract interface class AiChatSession implements Listenable {
   /// Asked before sending to a cleartext LAN endpoint; the page shows a
   /// confirmation. Null means refuse.
   set confirmCleartext(Future<bool> Function()? callback);
+
+  /// [text] as it may be shown on screen: control and bidirectional
+  /// characters removed first, then the live secrets redacted. For GitLab
+  /// values the page shows outside [items], such as the title.
+  String displaySafe(String text);
 }
 
 /// The account's conversations. Lives above the navigator, so a run keeps
@@ -191,6 +201,11 @@ abstract interface class AiRunRegistry implements Listenable {
   /// The session for [origin]: the existing one for the same key, or a new
   /// one.
   AiChatSession open(AiChatOrigin origin);
+
+  /// Called when the page for [session] closes. A session that is idle and has
+  /// no items is dropped, so the next visit reads the page again; any other
+  /// session is kept.
+  void release(AiChatSession session);
 
   int get runningCount;
 

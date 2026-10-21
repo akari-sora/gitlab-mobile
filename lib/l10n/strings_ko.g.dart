@@ -2325,4 +2325,6 @@ const _messagesKo = <String>[
   '개인 키로 보이는 콘텐츠를 제외하고 전송하지 않았습니다',
   '대화 준비 중…',
   '동의',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

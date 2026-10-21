@@ -912,6 +912,10 @@ class _NoticeRow extends StatelessWidget {
         Icons.cancel_schedule_send,
         l10n.aiNoticeNotSent,
       ),
+      AiNoticeKind.newConversation => (
+        Icons.restart_alt,
+        l10n.aiNoticeNewConversation,
+      ),
     };
     return _MutedRow(icon: icon, text: text);
   }

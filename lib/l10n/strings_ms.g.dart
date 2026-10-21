@@ -2325,4 +2325,6 @@ const _messagesMs = <String>[
   'Kandungan yang kelihatan seperti kunci peribadi ditahan dan tidak dihantar',
   'Menyediakan perbualan…',
   'Setuju',
+  'Settings changed: new questions start a new conversation, and the messages above are not sent again',
+  'Unknown tool request',
 ];

@@ -2322,5 +2322,7 @@
   "aiNoticeRedactedSome": "Inloggningsuppgifter maskerades",
   "aiNoticePrivateKeyWithheld": "Innehåll som liknar en privat nyckel hölls tillbaka och skickades inte",
   "aiChatPreparing": "Förbereder konversationen…",
-  "aiConsentAgree": "Godkänn"
+  "aiConsentAgree": "Godkänn",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }

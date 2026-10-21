@@ -2322,5 +2322,7 @@
   "aiNoticeRedactedSome": "Kimlik bilgileri maskelendi",
   "aiNoticePrivateKeyWithheld": "Özel anahtara benzeyen içerik tutuldu ve gönderilmedi",
   "aiChatPreparing": "Konuşma hazırlanıyor…",
-  "aiConsentAgree": "Kabul et"
+  "aiConsentAgree": "Kabul et",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }

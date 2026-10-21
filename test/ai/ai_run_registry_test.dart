@@ -455,6 +455,9 @@ final class _FakeChatSession extends ChangeNotifier implements AiChatSession {
   set confirmCleartext(Future<bool> Function()? callback) {}
 
   @override
+  String displaySafe(String text) => text;
+
+  @override
   void dispose() {
     if (disposed) return;
     disposed = true;

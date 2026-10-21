@@ -71,6 +71,8 @@ final class _FakeSession extends ChangeNotifier implements AiChatSession {
   @override
   set confirmCleartext(Future<bool> Function()? callback) =>
       cleartext = callback;
+  @override
+  String displaySafe(String text) => text.replaceAll('synthetic-secret', '[REDACTED]');
 
   void update(void Function() change) {
     change();

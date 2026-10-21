@@ -2322,5 +2322,7 @@
   "aiNoticeRedactedSome": "Đã che thông tin xác thực",
   "aiNoticePrivateKeyWithheld": "Nội dung có vẻ là khóa riêng tư đã được giữ lại và không gửi đi",
   "aiChatPreparing": "Đang chuẩn bị cuộc trò chuyện…",
-  "aiConsentAgree": "Đồng ý"
+  "aiConsentAgree": "Đồng ý",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }

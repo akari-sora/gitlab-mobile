@@ -2322,5 +2322,7 @@
   "aiNoticeRedactedSome": "प्रमाणीकरण के गोपनीय विवरण छिपाए गए",
   "aiNoticePrivateKeyWithheld": "निजी कुंजी जैसी दिखने वाली सामग्री रोक ली गई और नहीं भेजी गई",
   "aiChatPreparing": "बातचीत तैयार हो रही है…",
-  "aiConsentAgree": "सहमति दें"
+  "aiConsentAgree": "सहमति दें",
+  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
+  "aiToolUnknown": "Unknown tool request"
 }
