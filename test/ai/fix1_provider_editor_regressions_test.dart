@@ -532,44 +532,50 @@ void main() {
     await tester.pump(const Duration(milliseconds: 10));
     expect(adapter.requests, hasLength(1));
 
-    // Saving waits on storage; the catalogue answers meanwhile.
-    storage.gate = Completer<void>();
-    await tester.tap(find.text(l10n.saveAction));
-    await tester.pump();
-    // Saving stopped the read at once, before its answer arrived.
-    expect(
-      find.descendant(
-        of: find.byKey(const ValueKey('ai-provider-pick-model')),
-        matching: find.byType(CircularProgressIndicator),
-      ),
-      findsNothing,
-    );
-    response.complete(
-      jsonResponse({
-        'data': [
-          {'id': 'synthetic-late-model'},
-        ],
-      }),
-    );
-    await tester.pump(const Duration(milliseconds: 50));
-    expect(find.text('synthetic-late-model'), findsNothing);
-    // While it saves, both list buttons are off and the read has stopped.
-    expect(
-      tester
-          .widget<IconButton>(find.byKey(const ValueKey('ai-provider-pick-model')))
-          .onPressed,
-      isNull,
-    );
-    expect(
-      tester
-          .widget<OutlinedButton>(
-            find.byKey(const ValueKey('ai-provider-read-models')),
-          )
-          .onPressed,
-      isNull,
-    );
-    storage.gate!.complete();
-    await tester.pumpAndSettle();
+    // Saving waits on storage; the catalogue answers meanwhile. The gate is
+    // released however this ends, so the shared settings can be disposed.
+    final gate = storage.gate = Completer<void>();
+    try {
+      await tester.tap(find.text(l10n.saveAction));
+      await tester.pump();
+      // Saving stopped the read at once, before its answer arrived.
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey('ai-provider-pick-model')),
+          matching: find.byType(CircularProgressIndicator),
+        ),
+        findsNothing,
+      );
+      response.complete(
+        jsonResponse({
+          'data': [
+            {'id': 'synthetic-late-model'},
+          ],
+        }),
+      );
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(find.text('synthetic-late-model'), findsNothing);
+      // While it saves, both list buttons are off and the read has stopped.
+      expect(
+        tester
+            .widget<IconButton>(
+              find.byKey(const ValueKey('ai-provider-pick-model')),
+            )
+            .onPressed,
+        isNull,
+      );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.byKey(const ValueKey('ai-provider-read-models')),
+            )
+            .onPressed,
+        isNull,
+      );
+    } finally {
+      if (!gate.isCompleted) gate.complete();
+      await tester.pumpAndSettle();
+    }
 
     expect(find.byType(AiProviderEditor), findsNothing);
     expect(find.byType(SnackBar), findsNothing);
@@ -579,7 +585,6 @@ void main() {
   testWidgets('a failed save keeps the model list already read', (
     tester,
   ) async {
-    FlutterSecureStorage.setMockInitialValues(<String, String>{});
     final adapter = FakeAdapter(
       (_) => jsonResponse({
         'data': [
@@ -587,10 +592,8 @@ void main() {
         ],
       }),
     );
-    final storage = _GatedStorage();
-    final settings = AiSettingsController(SecureAiStore(storage));
-    // Secure-store settings are shared app-wide; release them for the next test.
-    addTearDown(settings.dispose);
+    // The first key write fails, so the save fails and the editor stays.
+    final settings = AiSettingsController(_FailOnceKeyStore());
     await settings.initialize();
     await tester.pumpWidget(
       _navigationHost(
@@ -610,63 +613,66 @@ void main() {
     await tester.tapAt(const Offset(8, 8));
     await tester.pumpAndSettle();
 
-    storage.failWrites = true;
     await tester.tap(find.text(l10n.saveAction));
     await tester.pumpAndSettle();
     expect(find.byType(AiProviderEditor), findsOneWidget);
+    expect(find.byType(SnackBar), findsOneWidget);
     expect(find.text(l10n.aiProviderModelsReadSuccess), findsOneWidget);
     // The failure snack bar may cover the field, so press its button directly.
     tester
-        .widget<IconButton>(find.byKey(const ValueKey('ai-provider-pick-model')))
+        .widget<IconButton>(
+          find.byKey(const ValueKey('ai-provider-pick-model')),
+        )
         .onPressed!();
     await tester.pumpAndSettle();
     expect(find.text('synthetic-kept-model'), findsOneWidget);
     expect(adapter.requests, hasLength(1));
   });
 
-  testWidgets('a model read that ends under the discard dialog opens no picker', (
-    tester,
-  ) async {
-    final response = Completer<ResponseBody>();
-    final adapter = FakeAdapter((_) => response.future);
-    final settings = AiSettingsController(MemoryAiStore());
-    await settings.initialize();
-    await tester.pumpWidget(
-      _navigationHost(
-        settings,
-        clientFactory: (config, key) => _client(config, key, adapter),
-      ),
-    );
-    await tester.tap(find.text('open-editor'));
-    await tester.pumpAndSettle();
-    await _selectPreset(tester, AiPresets.custom);
-    await _fillRequired(tester);
-    await _tapVisible(
-      tester,
-      find.byKey(const ValueKey('ai-provider-pick-model')),
-    );
-    await tester.pump(const Duration(milliseconds: 10));
-    await tester.tap(find.byTooltip(l10n.cancelAction));
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text(l10n.aiProviderDiscardTitle), findsOneWidget);
+  testWidgets(
+    'a model read that ends under the discard dialog opens no picker',
+    (tester) async {
+      final response = Completer<ResponseBody>();
+      final adapter = FakeAdapter((_) => response.future);
+      final settings = AiSettingsController(MemoryAiStore());
+      await settings.initialize();
+      await tester.pumpWidget(
+        _navigationHost(
+          settings,
+          clientFactory: (config, key) => _client(config, key, adapter),
+        ),
+      );
+      await tester.tap(find.text('open-editor'));
+      await tester.pumpAndSettle();
+      await _selectPreset(tester, AiPresets.custom);
+      await _fillRequired(tester);
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('ai-provider-pick-model')),
+      );
+      await tester.pump(const Duration(milliseconds: 10));
+      await tester.tap(find.byTooltip(l10n.cancelAction));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text(l10n.aiProviderDiscardTitle), findsOneWidget);
 
-    response.complete(
-      jsonResponse({
-        'data': [
-          {'id': 'synthetic-covered-model'},
-        ],
-      }),
-    );
-    await tester.pump(const Duration(milliseconds: 400));
-    // No picker opened over the dialog.
-    expect(find.text('synthetic-covered-model'), findsNothing);
-    expect(find.text(l10n.aiProviderDiscardTitle), findsOneWidget);
-    // Keep editing.
-    await tester.tap(find.text(l10n.cancelAction).last);
-    await tester.pumpAndSettle();
-    expect(find.byType(AiProviderEditor), findsOneWidget);
-    expect(find.text('synthetic-covered-model'), findsNothing);
-  });
+      response.complete(
+        jsonResponse({
+          'data': [
+            {'id': 'synthetic-covered-model'},
+          ],
+        }),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      // No picker opened over the dialog.
+      expect(find.text('synthetic-covered-model'), findsNothing);
+      expect(find.text(l10n.aiProviderDiscardTitle), findsOneWidget);
+      // Keep editing.
+      await tester.tap(find.text(l10n.cancelAction).last);
+      await tester.pumpAndSettle();
+      expect(find.byType(AiProviderEditor), findsOneWidget);
+      expect(find.text('synthetic-covered-model'), findsNothing);
+    },
+  );
 
   testWidgets('Cancel asks before discarding edited settings', (tester) async {
     final settings = AiSettingsController(MemoryAiStore());
@@ -964,7 +970,6 @@ final class _FailOnceKeyStore implements AiStore {
 /// Secure storage whose writes wait for [gate] while it is set.
 final class _GatedStorage extends FlutterSecureStorage {
   Completer<void>? gate;
-  bool failWrites = false;
 
   @override
   Future<void> write({
@@ -978,7 +983,6 @@ final class _GatedStorage extends FlutterSecureStorage {
     WindowsOptions? wOptions,
   }) async {
     await gate?.future;
-    if (failWrites) throw StateError('synthetic storage failure');
     await super.write(key: key, value: value);
   }
 }

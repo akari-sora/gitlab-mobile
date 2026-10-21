@@ -245,7 +245,10 @@ void main() {
     await tester.pumpAndSettle();
 
     // The list is still loaded: the field's button opens it without a read.
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
     await tester.pumpAndSettle();
     expect(_option('glm-5.3-flash'), findsOneWidget);
     expect(adapter.requests, hasLength(1));
@@ -261,17 +264,26 @@ void main() {
       }),
     );
     await _pumpCustomEditor(tester, adapter);
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-read-models')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-read-models')),
+    );
     await tester.pumpAndSettle();
     expect(_option('synthetic-round-1'), findsOneWidget);
     await _closePicker(tester);
 
     // The field's button reuses the list; the read button fetches it again.
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
     await tester.pumpAndSettle();
     expect(adapter.requests, hasLength(1));
     await _closePicker(tester);
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-read-models')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-read-models')),
+    );
     await tester.pumpAndSettle();
     expect(adapter.requests, hasLength(2));
     expect(_option('synthetic-round-2'), findsOneWidget);
@@ -282,14 +294,20 @@ void main() {
   ) async {
     final adapter = FakeAdapter((_) => jsonResponse({'data': <Object?>[]}));
     await _pumpCustomEditor(tester, adapter);
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
     await tester.pumpAndSettle();
     expect(find.text(l10n.aiProviderModelPickerTitle), findsOneWidget);
     expect(find.text(l10n.aiProviderModelPickerNone), findsOneWidget);
     await tester.tapAt(const Offset(8, 8));
     await tester.pumpAndSettle();
 
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
     await tester.pumpAndSettle();
     expect(adapter.requests, hasLength(1));
     expect(find.text(l10n.aiProviderModelPickerNone), findsOneWidget);
@@ -309,7 +327,10 @@ void main() {
       }),
     );
     await _pumpCustomEditor(tester, adapter, scale: 1.3);
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
     await tester.pumpAndSettle();
     tester.view.viewInsets = const FakeViewPadding(bottom: 280);
     await tester.enterText(
@@ -339,15 +360,24 @@ void main() {
       });
     });
     await _pumpCustomEditor(tester, adapter);
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-read-models')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-read-models')),
+    );
     await tester.pumpAndSettle();
     await _closePicker(tester);
 
     fail = true;
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-read-models')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-read-models')),
+    );
     await tester.pumpAndSettle();
     expect(adapter.requests, hasLength(2));
-    expect(find.byKey(const ValueKey('ai-provider-model-picker')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('ai-provider-model-picker')),
+      findsNothing,
+    );
     expect(find.text(l10n.aiProviderModelsReadFailure), findsOneWidget);
   });
 
@@ -365,7 +395,10 @@ void main() {
       }),
     );
     await _pumpCustomEditor(tester, adapter, scale: 2);
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     tester.view.viewInsets = const FakeViewPadding(bottom: 180);
@@ -405,7 +438,10 @@ void main() {
       }),
     );
     await _pumpCustomEditor(tester, adapter);
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('ai-provider-model-search')));
     await tester.pump();
@@ -413,13 +449,19 @@ void main() {
     for (final inset in const [20.0, 60.0, 180.0]) {
       tester.view.viewInsets = FakeViewPadding(bottom: inset);
       await tester.pump();
-      expect(tester.testTextInput.hasAnyClients, isTrue, reason: 'inset $inset');
+      expect(
+        tester.testTextInput.hasAnyClients,
+        isTrue,
+        reason: 'inset $inset',
+      );
     }
     tester.testTextInput.enterText('model-1');
     await tester.pump();
     expect(
       tester
-          .widget<TextField>(find.byKey(const ValueKey('ai-provider-model-search')))
+          .widget<TextField>(
+            find.byKey(const ValueKey('ai-provider-model-search')),
+          )
           .controller!
           .text,
       'model-1',
@@ -445,7 +487,10 @@ void main() {
         }),
       );
       await _pumpCustomEditor(tester, adapter, scale: 2);
-      await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+      await _tapVisible(
+        tester,
+        find.byKey(const ValueKey('ai-provider-pick-model')),
+      );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: tag);
       final visible = _options().evaluate().where((element) {
@@ -475,14 +520,21 @@ void main() {
       }),
     );
     await _pumpCustomEditor(tester, adapter, scale: 2);
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('ai-provider-model-search')));
     await tester.pump();
     for (final inset in const [280.0, 0.0]) {
       tester.view.viewInsets = FakeViewPadding(bottom: inset);
       await tester.pumpAndSettle();
-      expect(tester.testTextInput.hasAnyClients, isTrue, reason: 'inset $inset');
+      expect(
+        tester.testTextInput.hasAnyClients,
+        isTrue,
+        reason: 'inset $inset',
+      );
       expect(_searchInHeaderView(tester), isTrue, reason: 'inset $inset');
     }
     expect(tester.takeException(), isNull);
@@ -503,7 +555,10 @@ void main() {
       }),
     );
     await _pumpCustomEditor(tester, adapter, scale: 2);
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
     await tester.pumpAndSettle();
     tester.view.viewInsets = const FakeViewPadding(bottom: 180);
     await tester.enterText(
@@ -518,8 +573,9 @@ void main() {
     final scrollable = tester.state<ScrollableState>(
       find.descendant(of: empty, matching: find.byType(Scrollable)),
     );
-    scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
-    await tester.pump();
+    expect(scrollable.position.maxScrollExtent, greaterThan(0));
+    await tester.drag(empty, const Offset(0, -200));
+    await tester.pumpAndSettle();
     expect(
       tester.getRect(message).bottom,
       lessThanOrEqualTo(tester.getRect(empty).bottom + 0.5),
@@ -552,7 +608,10 @@ void main() {
       find.byKey(const ValueKey('ai-provider-api-key')),
       'oc_sk_synthetic_123456',
     );
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
     await tester.pumpAndSettle();
     expect(find.text(l10n.aiProviderModelPickerEmpty), findsOneWidget);
     expect(find.text(l10n.aiProviderModelPickerNone), findsNothing);
@@ -571,11 +630,17 @@ void main() {
       }),
     );
     await _pumpCustomEditor(tester, adapter);
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
     await tester.pumpAndSettle();
     tester.view.viewInsets = const FakeViewPadding(bottom: 280);
     await tester.pumpAndSettle();
-    expect(tester.getTopLeft(find.byType(BottomSheet)).dy, greaterThanOrEqualTo(24));
+    expect(
+      tester.getTopLeft(find.byType(BottomSheet)).dy,
+      greaterThanOrEqualTo(24),
+    );
   });
 
   testWidgets('the model field button reads the list and fills the field', (
@@ -601,22 +666,34 @@ void main() {
     );
     await _selectPreset(tester, l10n.aiCustomProvider);
     await _fillRequired(tester, key: 'sk-synthetic-123456');
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
     await tester.pumpAndSettle();
 
     expect(adapter.requests, hasLength(1));
     // A short list needs no search field.
-    expect(find.byKey(const ValueKey('ai-provider-model-search')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('ai-provider-model-search')),
+      findsNothing,
+    );
     expect(find.text(l10n.aiProviderModelPickerHint), findsOneWidget);
     await tester.tap(_option('synthetic-beta'));
     await tester.pumpAndSettle();
     expect(_modelText(tester), 'synthetic-beta');
 
     // Reopened, the picker marks the current model and lists it first.
-    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
     await tester.pumpAndSettle();
     expect(tester.widget<ListTile>(_option('synthetic-beta')).selected, isTrue);
-    expect(tester.widget<ListTile>(_option('synthetic-alpha')).selected, isFalse);
+    expect(
+      tester.widget<ListTile>(_option('synthetic-alpha')).selected,
+      isFalse,
+    );
     expect(
       tester.getTopLeft(_option('synthetic-beta')).dy,
       lessThan(tester.getTopLeft(_option('synthetic-alpha')).dy),
@@ -783,7 +860,10 @@ void main() {
 
     expect(find.text(l10n.aiProviderModelsReadSuccess), findsNothing);
     expect(_option('stale-model'), findsNothing);
-    expect(find.byKey(const ValueKey('ai-provider-model-picker')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('ai-provider-model-picker')),
+      findsNothing,
+    );
     final button = tester.widget<OutlinedButton>(
       find.byKey(const ValueKey('ai-provider-read-models')),
     );
@@ -878,7 +958,8 @@ Future<void> _selectPreset(WidgetTester tester, String name) async {
   await tester.pumpAndSettle();
 }
 
-Finder _option(String id) => find.byKey(ValueKey('ai-provider-model-option-$id'));
+Finder _option(String id) =>
+    find.byKey(ValueKey('ai-provider-model-option-$id'));
 
 /// Whether the search field lies inside the header's visible area.
 bool _searchInHeaderView(WidgetTester tester) {

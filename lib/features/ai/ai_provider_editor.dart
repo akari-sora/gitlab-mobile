@@ -1690,7 +1690,13 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                       // Scrolls, so a short window still shows all of it.
                       ? SingleChildScrollView(
                           key: const ValueKey('ai-provider-model-picker-empty'),
-                          padding: const EdgeInsets.all(16),
+                          // Clear of the navigation bar, like the list.
+                          padding: EdgeInsets.fromLTRB(
+                            16,
+                            16,
+                            16,
+                            16 + media.padding.bottom,
+                          ),
                           child: Text(
                             widget.catalogueEmpty
                                 ? l10n.aiProviderModelPickerNone
