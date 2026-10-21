@@ -4,6 +4,10 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import '../../l10n/l10n.dart';
+import 'ai_endpoint.dart';
+import 'tools/tool_catalogue_version.dart' show aiToolCatalogueVersion;
+
+export 'tools/tool_catalogue_version.dart' show aiToolCatalogueVersion;
 
 enum AiFormat { chatCompletions, responses, anthropicMessages }
 
@@ -23,6 +27,7 @@ final class AiCaps {
     this.promptCaching = false,
     this.requiresKey = true,
     this.maxRequestChars = 400000,
+    this.maxOutputTokens = 4096,
   });
 
   final AiTokenLimitField tokenLimitField;
@@ -33,6 +38,7 @@ final class AiCaps {
   final bool promptCaching;
   final bool requiresKey;
   final int maxRequestChars;
+  final int maxOutputTokens;
 
   @override
   bool operator ==(Object other) =>
@@ -44,7 +50,8 @@ final class AiCaps {
       includeEncryptedReasoning == other.includeEncryptedReasoning &&
       promptCaching == other.promptCaching &&
       requiresKey == other.requiresKey &&
-      maxRequestChars == other.maxRequestChars;
+      maxRequestChars == other.maxRequestChars &&
+      maxOutputTokens == other.maxOutputTokens;
 
   @override
   int get hashCode => Object.hash(
@@ -56,6 +63,7 @@ final class AiCaps {
     promptCaching,
     requiresKey,
     maxRequestChars,
+    maxOutputTokens,
   );
 }
 
@@ -76,9 +84,14 @@ final class AiModelPolicy {
   final String sourceUrl;
   final String checkedOn;
 
-  String get identity =>
-      '$modelId|${format.name}|${dataUse.name}|'
-      '${retentionDays ?? 'unknown'}|$sourceUrl|$checkedOn';
+  String get identity => jsonEncode(<String, Object?>{
+    'modelId': modelId,
+    'format': format.name,
+    'dataUse': dataUse.name,
+    'retentionDays': retentionDays,
+    'sourceUrl': sourceUrl,
+    'checkedOn': checkedOn,
+  });
 }
 
 final class AiPreset {
@@ -92,6 +105,7 @@ final class AiPreset {
     required Map<AiFormat, AiCaps> caps,
     this.modelsUrl,
     this.modelSensitive = false,
+    this.policyUrl,
     Map<String, AiModelPolicy> modelPolicies = const <String, AiModelPolicy>{},
   }) : _name = name,
        formats = Set.unmodifiable(formats),
@@ -117,6 +131,7 @@ final class AiPreset {
   final Map<AiFormat, AiCaps> caps;
   final String? modelsUrl;
   final bool modelSensitive;
+  final String? policyUrl;
   final Map<String, AiModelPolicy> modelPolicies;
 
   String baseUrlFor(AiFormat format) =>
@@ -177,6 +192,9 @@ final class AiConsentContract {
     required this.dataUse,
     required this.disclosureVersion,
     this.routedModel,
+    this.policyUrl,
+    this.retentionDays,
+    this.policyCheckedOn,
   }) : dataCategories = Set.unmodifiable(dataCategories);
 
   final String providerId;
@@ -190,6 +208,9 @@ final class AiConsentContract {
   final String? routedModel;
   final AiDataUse dataUse;
   final int disclosureVersion;
+  final String? policyUrl;
+  final int? retentionDays;
+  final String? policyCheckedOn;
 
   late final String hash = sha256
       .convert(
@@ -212,6 +233,90 @@ final class AiConsentContract {
         ),
       )
       .toString();
+}
+
+/// Versions shared by current-contract callers, including settings.
+const aiDisclosureVersion = 1;
+
+AiConsentContract aiCurrentConsentContractFor(AiProviderConfig provider) =>
+    aiConsentContractFor(provider);
+
+/// Derives the disclosure from the actual recipient and the bundled policy table.
+/// Unknown models and custom recipients never inherit a known model's policy.
+AiConsentContract aiConsentContractFor(
+  AiProviderConfig provider, {
+  int toolCatalogueVersion = aiToolCatalogueVersion,
+  int disclosureVersion = aiDisclosureVersion,
+  Set<String>? dataCategories,
+}) {
+  final preset = AiPresets.all
+      .where((candidate) => candidate.id == provider.presetId)
+      .firstOrNull;
+  final endpoint = AiEndpoint.parse(
+    provider.baseUrl,
+    allowLanCleartext: provider.allowLanCleartext,
+  );
+  final presetUrl = preset?.baseUrls[provider.format];
+  String? presetOrigin;
+  if (presetUrl != null && presetUrl.isNotEmpty && !presetUrl.contains('{')) {
+    presetOrigin = AiEndpoint.parse(presetUrl, allowLanCleartext: true).key;
+  } else if (presetUrl != null && presetUrl.startsWith('https://{resource}.')) {
+    // Substitute exactly one DNS label, then compare the entire
+    // endpoint so the fixed host suffix, scheme, port and path must all match.
+    final resource = endpoint.base.host.split('.').first;
+    if (RegExp(r'^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$').hasMatch(resource)) {
+      presetOrigin = AiEndpoint.parse(
+        presetUrl.replaceFirst('{resource}', resource),
+        allowLanCleartext: false,
+      ).key;
+    }
+  }
+  final custom =
+      preset == null ||
+      preset.id == AiPresets.custom.id ||
+      endpoint.key != presetOrigin;
+  final modelSensitive = custom || preset.modelSensitive;
+  final candidate = preset?.policyFor(provider.model);
+  final policy = !custom && candidate?.format == provider.format
+      ? candidate
+      : null;
+  final categories = <String>{
+    ...?dataCategories,
+    if (dataCategories == null) ...{
+      'job_log',
+      'diff',
+      'source',
+      'issue_text',
+      'comments',
+      if (provider.toolsEnabled) 'tool_reads',
+    },
+  };
+  if (!provider.toolsEnabled) categories.remove('tool_reads');
+  final policyIdentity = custom
+      ? 'custom'
+      : jsonEncode(<String, Object?>{
+          'preset': preset.id,
+          if (modelSensitive) 'policy': policy?.identity,
+          if (!modelSensitive) 'policyUrl': preset.policyUrl,
+        });
+  return AiConsentContract(
+    providerId: provider.id,
+    origin: endpoint.key,
+    format: provider.format,
+    cleartext: endpoint.cleartext,
+    toolsEnabled: provider.toolsEnabled,
+    toolCatalogueVersion: toolCatalogueVersion,
+    dataCategories: categories,
+    policyIdentity: policyIdentity,
+    routedModel: modelSensitive ? provider.model : null,
+    dataUse: policy?.dataUse ?? AiDataUse.unknown,
+    disclosureVersion: disclosureVersion,
+    policyUrl:
+        policy?.sourceUrl ??
+        (!custom && !modelSensitive ? preset.policyUrl : null),
+    retentionDays: policy?.retentionDays,
+    policyCheckedOn: policy?.checkedOn,
+  );
 }
 
 const _maxTokensCaps = AiCaps(
@@ -348,6 +453,7 @@ final class AiPresets {
 
   static final openAi = AiPreset(
     id: 'openai',
+    policyUrl: 'https://platform.openai.com/docs/guides/your-data',
     name: 'OpenAI',
     defaultFormat: AiFormat.responses,
     formats: const {AiFormat.responses, AiFormat.chatCompletions},
@@ -383,6 +489,8 @@ final class AiPresets {
 
   static final azure = AiPreset(
     id: 'azure-openai',
+    policyUrl:
+        'https://learn.microsoft.com/en-us/legal/cognitive-services/openai/data-privacy',
     name: 'Azure OpenAI',
     defaultFormat: AiFormat.responses,
     formats: const {AiFormat.responses, AiFormat.chatCompletions},
@@ -399,6 +507,7 @@ final class AiPresets {
 
   static final gemini = AiPreset(
     id: 'gemini',
+    policyUrl: 'https://ai.google.dev/gemini-api/terms',
     name: 'Gemini',
     defaultFormat: AiFormat.chatCompletions,
     formats: const {AiFormat.chatCompletions},
@@ -412,6 +521,8 @@ final class AiPresets {
 
   static final deepSeek = AiPreset(
     id: 'deepseek',
+    policyUrl:
+        'https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html',
     name: 'DeepSeek',
     defaultFormat: AiFormat.chatCompletions,
     formats: const {AiFormat.chatCompletions},
@@ -422,6 +533,7 @@ final class AiPresets {
 
   static final xAi = AiPreset(
     id: 'xai',
+    policyUrl: 'https://x.ai/legal/privacy-policy',
     name: 'xAI',
     defaultFormat: AiFormat.responses,
     formats: const {AiFormat.responses, AiFormat.chatCompletions},
@@ -442,6 +554,7 @@ final class AiPresets {
 
   static final ollama = AiPreset(
     id: 'ollama',
+    policyUrl: 'https://ollama.com/privacy',
     name: 'Ollama',
     defaultFormat: AiFormat.chatCompletions,
     formats: const {AiFormat.chatCompletions, AiFormat.responses},
@@ -461,6 +574,7 @@ final class AiPresets {
 
   static final lmStudio = AiPreset(
     id: 'lm-studio',
+    policyUrl: 'https://lmstudio.ai/privacy',
     name: 'LM Studio',
     defaultFormat: AiFormat.chatCompletions,
     formats: const {AiFormat.chatCompletions},
@@ -471,6 +585,8 @@ final class AiPresets {
 
   static final anthropic = AiPreset(
     id: 'anthropic',
+    policyUrl:
+        'https://privacy.claude.com/en/articles/7996868-how-long-do-you-store-my-organization-s-data',
     name: 'Anthropic',
     defaultFormat: AiFormat.anthropicMessages,
     formats: const {AiFormat.anthropicMessages},

@@ -142,21 +142,64 @@ class CatalogTest(unittest.TestCase):
             'AI', 'API', 'URL', 'HTTP', 'HTTPS', 'JSON', 'Mergeline',
             'GitLab', 'OpenAI', 'Anthropic', 'OpenRouter', 'OpenCode', 'Azure',
             'Gemini', 'DeepSeek', 'xAI', 'Ollama', 'LM', 'Studio',
+            'GPT', 'Claude', 'Grok', 'Google',
         }
         non_latin = {'ar', 'hi', 'th', 'ru', 'uk', 'ko', 'ja', 'zh-CN', 'zh-TW'}
+        # Wire-format and header names are protocol identifiers: they stay
+        # exactly as in English in every language.
+        protocol_keys = {
+            'aiProviderFormatChat', 'aiProviderFormatResponses', 'aiProviderFormatAnthropic',
+            'aiConsentFormatChatCompletions', 'aiConsentFormatResponses',
+            'aiConsentFormatAnthropicMessages', 'aiProviderAuthBearer', 'aiProviderAuthApiKey',
+            'aiProviderAuthXApiKey',
+        }
+        # Both Chinese catalogs call a job log "Log" everywhere (viewJobLog).
+        local_words = {'zh-TW': {'Log'}, 'zh-CN': {'Log'}}
         keys, catalogs = l10n.load()
         ai_keys = [key for key in keys if key.startswith('ai')]
         self.assertTrue(ai_keys)
+        self.assertLessEqual(protocol_keys, set(ai_keys))
         english = catalogs['en']
         for tag, catalog in catalogs.items():
             if tag == 'en':
                 continue
             for key in ai_keys:
                 with self.subTest(tag=tag, key=key):
+                    if key in protocol_keys:
+                        self.assertEqual(catalog[key], english[key], 'protocol names stay exact')
+                        continue
                     self.assertNotEqual(catalog[key], english[key], 'AI text needs translation')
                     if tag in non_latin:
-                        words = set(re.findall(r'[A-Za-z]+', catalog[key]))
-                        self.assertEqual(words - product_words, set(), 'unexpected Latin text')
+                        # Placeholders are argument names, not displayed text.
+                        text = re.sub(r'\{[^}]*\}', '', catalog[key])
+                        # A URL path the user must type (`/models`) stays literal.
+                        text = re.sub(r'(?<![A-Za-z])/models(?![A-Za-z])', '', text)
+                        words = set(re.findall(r'[A-Za-z]+', text))
+                        allowed = product_words | local_words.get(tag, set())
+                        self.assertEqual(words - allowed, set(), 'unexpected Latin text')
+
+    def test_generated_dart_escapes_bidi_controls(self):
+        # Raw embedding, override or isolate characters in a Dart literal
+        # fail `text_direction_code_point_in_literal`; they must be escapes.
+        controls = {chr(c) for c in (*range(0x202A, 0x202F), *range(0x2066, 0x206A))}
+        for path in sorted((LIB / 'l10n').glob('strings*.g.dart')):
+            with self.subTest(path=path.name):
+                found = controls & set(path.read_text(encoding='utf-8'))
+                self.assertEqual(found, set())
+
+    def test_rtl_catalogs_isolate_a_literal_path(self):
+        # In a right-to-left line a leading slash takes the paragraph's
+        # direction, so `/models` would read `models/` unless it is isolated.
+        _, catalogs = l10n.load()
+        for tag, catalog in catalogs.items():
+            if tag.split('-')[0] not in l10n.RTL_LANGUAGES:
+                continue
+            for key, value in catalog.items():
+                for match in re.finditer(r'/models', value):
+                    with self.subTest(tag=tag, key=key):
+                        start, end = match.span()
+                        self.assertEqual(value[start - 1:start], '\u2066')
+                        self.assertEqual(value[end:end + 1], '\u2069')
 
     def test_ai_runner_notices_keep_security_and_budget_semantics(self):
         # Each replay notice must say both why the run stopped and why already

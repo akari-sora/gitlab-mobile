@@ -21,6 +21,9 @@ void main() {
           _provider('a', 'https://edited.example.test/v1'),
         );
         expect(edited.recipientRevision, 3);
+        expect((await store.readProviderKey('a')).isFound, isFalse);
+        await settings.saveProviderKey('a', 'synthetic-secret-edited');
+        expect(settings.providers.single.recipientRevision, 4);
         await settings.grantConsent(
           'a-normal',
           _contract('a', 'https://edited.example.test/v1'),
@@ -31,6 +34,12 @@ void main() {
           _contract('a', 'https://edited.example.test/v1'),
           const <String, Object?>{},
         );
+        final normalConsent = (await store.loadAccount(
+          'a-normal',
+        )).value!.consents['a']!.toJson();
+        final fencedConsent = (await store.loadAccount(
+          'z-fenced',
+        )).value!.consents['a']!.toJson();
         final cleaning = AiAccountMutationCoordinator.forStore(
           store,
         ).beginCleaning('z-fenced');
@@ -46,23 +55,38 @@ void main() {
           ),
         );
 
-        expect(settings.providers.single.recipientRevision, 3);
+        expect(settings.providers.single.recipientRevision, 4);
         expect(settings.knownProviderKeys, contains('a'));
         expect(
           (await store.loadProviders()).value!.single.recipientRevision,
-          3,
+          4,
         );
         expect((await store.readProviderKey('a')).isFound, isTrue);
         expect(
+          (await store.readProviderKey('a')).value,
+          'synthetic-secret-edited',
+        );
+        expect(
           (await store.loadAccount('a-normal')).value!.consents,
           contains('a'),
+        );
+        expect(
+          (await store.loadAccount('a-normal')).value!.consents['a']!.toJson(),
+          normalConsent,
+        );
+        expect(
+          (await store.loadAccount('z-fenced')).value!.consents['a']!.toJson(),
+          fencedConsent,
         );
 
         final revised = await settings.saveProvider(
           _provider('a', 'https://new-recipient.example.test/v1'),
         );
-        expect(revised.recipientRevision, 4);
-        expect((await store.readProviderKey('a')).isFound, isTrue);
+        expect(revised.recipientRevision, 5);
+        expect((await store.readProviderKey('a')).isFound, isFalse);
+        expect(settings.knownProviderKeys, isNot(contains('a')));
+        await settings.saveProviderKey('a', 'synthetic-secret-new-recipient');
+        expect(settings.providers.single.recipientRevision, 6);
 
         await expectLater(
           settings.deleteProvider('a'),
@@ -75,9 +99,13 @@ void main() {
           ),
         );
         final deleting = (await store.loadProviders()).value!.single;
-        expect(deleting.recipientRevision, 4);
+        expect(deleting.recipientRevision, 6);
         expect(deleting.presetId, 'gitlab-mobile:deleting-provider');
         expect((await store.readProviderKey('a')).isFound, isTrue);
+        expect(
+          (await store.readProviderKey('a')).value,
+          'synthetic-secret-new-recipient',
+        );
 
         cleaning.release();
         await settings.deleteProvider('a');

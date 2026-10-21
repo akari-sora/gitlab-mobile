@@ -16,6 +16,8 @@ import '../../shared/workspace_ui.dart';
 import '../auth/recent_project.dart';
 import '../auth/session_controller.dart';
 import '../ai/ai_account_cleanup.dart';
+import '../ai/ai_scope.dart';
+import '../ai/ai_settings_page.dart';
 import '../workspace/activity_page.dart';
 import '../workspace/groups_page.dart';
 import '../workspace/project_page.dart';
@@ -51,6 +53,7 @@ class AuthenticatedApp extends StatefulWidget {
     this.incoming,
     this.lock,
     this.language,
+    this.ai,
   });
   final SessionController session;
   final AppearanceController appearance;
@@ -67,6 +70,9 @@ class AuthenticatedApp extends StatefulWidget {
   /// The app's update flow; null (and nothing shown) when this build has no
   /// update channel.
   final AppUpdateController? updates;
+
+  /// AI is absent while the compile-time gate is off and in existing tests.
+  final AiControllers? ai;
   final LauncherShortcuts shortcuts;
   final ColorScheme? dynamicLight;
   final ColorScheme? dynamicDark;
@@ -184,7 +190,7 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
             if (mounted) unawaited(widget.appearance.clearUnsupportedDynamicColor());
           });
         }
-        return MaterialApp(
+        final app = MaterialApp(
           debugShowCheckedModeBanner: false,
           // Above the navigator, so every pushed route sees the link handler.
           builder: (context, child) => AppLockGate(
@@ -225,6 +231,11 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
             language: widget.language,
           ),
         );
+        final ai = widget.ai;
+        final accountKey = widget.session.active?.key;
+        return ai == null || accountKey == null
+            ? app
+            : AiScope(controllers: ai, accountKey: accountKey, child: app);
       },
     ),
   );
@@ -842,6 +853,7 @@ class _MobileShellState extends State<_MobileShell> {
   Widget _buildMyTab(BuildContext context, Account account, SessionController session) {
     final theme = Theme.of(context);
     final muted = theme.colorScheme.onSurfaceVariant;
+    final ai = AiScope.maybeOf(context);
     void push(Widget Function() page) =>
         Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => page()));
     return Scaffold(
@@ -956,6 +968,35 @@ class _MobileShellState extends State<_MobileShell> {
                 ),
               ],
             ),
+            if (ai != null)
+              HubSection(
+                children: [
+                  HubRow(
+                    key: const ValueKey('ai-settings-row'),
+                    leading: const IconTile(Icons.auto_awesome, color: HubColors.purple),
+                    title: l10n.aiAssistantLabel,
+                    subtitle: ai.settings.initializing ||
+                            (!ai.settings.initialized &&
+                                ai.settings.initializationFailure == null)
+                        ? l10n.loadingDots
+                        : ai.settings.initializationFailure != null
+                        ? l10n.aiSettingsReadFailure
+                        : ai.settings.providers.isEmpty
+                        ? l10n.aiNotConfigured
+                        : null,
+                    chevron: true,
+                    onTap: () => push(() => AiSettingsPage(
+                      settings: ai.settings,
+                      accountKey: ai.accountKey,
+                      account: account,
+                      isAccountRetained: (accountKey) => session.accounts.any(
+                        (saved) => saved.key == accountKey,
+                      ),
+                      history: ai.history,
+                    )),
+                  ),
+                ],
+              ),
             HubSection(
               title: l10n.appearanceLabel,
               children: [

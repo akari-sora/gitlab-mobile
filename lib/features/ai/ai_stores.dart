@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../core/ai/ai_endpoint.dart';
+import '../../core/ai/ai_failure.dart';
 import '../../core/ai/ai_provider.dart';
 
 enum AiStoreReadStatus { found, absent, unavailable }
@@ -229,11 +231,27 @@ abstract interface class AiStoreSecureInventory {
   Future<AiSecureInventory> readSecureInventory();
 }
 
+/// Separate durable marker for history-only deletion. This must never share
+/// the account-removal tombstone because history clearing preserves the AI
+/// account record, preferences, and consents.
+abstract interface class AiHistoryClearMarkerStore {
+  Future<AiStoreRead<bool>> readHistoryClearMarker(String accountKey);
+  Future<void> setHistoryClearMarker(String accountKey);
+  Future<void> clearHistoryClearMarker(String accountKey);
+}
+
+abstract interface class AiProviderKeyBindingStore {
+  Future<AiStoreRead<String>> readProviderKeyBinding(String providerId);
+  Future<void> saveProviderKeyBinding(String providerId, String binding);
+  Future<void> deleteProviderKeyBinding(String providerId);
+}
+
 final class AiSecureInventory {
   const AiSecureInventory({
     required this.providerKeyIds,
     required this.accountKeys,
     required this.historyKeyAccountKeys,
+    this.historyClearMarkerAccountKeys = const <String>[],
     required this.malformedProviderKeyCount,
     required this.malformedAccountKeyCount,
     required this.malformedHistoryKeyCount,
@@ -245,6 +263,7 @@ final class AiSecureInventory {
   final List<String> providerKeyIds;
   final List<String> accountKeys;
   final List<String> historyKeyAccountKeys;
+  final List<String> historyClearMarkerAccountKeys;
   final int malformedProviderKeyCount;
   final int malformedAccountKeyCount;
   final int malformedHistoryKeyCount;
@@ -491,8 +510,14 @@ Future<AiSecureCleanupResult> cleanupOrphanAiSecureData(
   final orphanHistoryKeys = historyKeys
       .where((accountKey) => !liveAccountKeys.contains(accountKey))
       .toSet();
-  final orphanKeys = <String>{...orphanAccounts, ...orphanHistoryKeys}.toList()
-    ..sort();
+  final orphanMarkers = inventory.historyClearMarkerAccountKeys
+      .where((accountKey) => !liveAccountKeys.contains(accountKey))
+      .toSet();
+  final orphanKeys = <String>{
+    ...orphanAccounts,
+    ...orphanHistoryKeys,
+    ...orphanMarkers,
+  }.toList()..sort();
   for (final accountKey in orphanKeys) {
     if (isCurrent?.call() == false) break;
     final lease = owner.beginCleaning(accountKey);
@@ -504,6 +529,11 @@ Future<AiSecureCleanupResult> cleanupOrphanAiSecureData(
         }
         if (orphanHistoryKeys.contains(accountKey)) {
           await store.deleteHistoryKey(accountKey);
+        }
+        if (orphanMarkers.contains(accountKey)) {
+          if (store case final AiHistoryClearMarkerStore markers) {
+            await markers.clearHistoryClearMarker(accountKey);
+          }
         }
       });
     } on Object {
@@ -530,7 +560,12 @@ Future<AiSecureCleanupResult> cleanupOrphanAiSecureData(
   );
 }
 
-final class SecureAiStore implements AiStore, AiStoreSecureInventory {
+final class SecureAiStore
+    implements
+        AiStore,
+        AiStoreSecureInventory,
+        AiHistoryClearMarkerStore,
+        AiProviderKeyBindingStore {
   SecureAiStore([FlutterSecureStorage? storage])
     : _storage =
           storage ??
@@ -546,6 +581,8 @@ final class SecureAiStore implements AiStore, AiStoreSecureInventory {
   static const accountPrefix = 'ai_account.v1.';
   static const historyKeyPrefix = 'ai_history_key.v1.';
   static const tombstonePrefix = 'ai_history_tombstone.v1.';
+  static const historyClearMarkerPrefix = 'ai_history_clear_pending.v1.';
+  static const providerKeyBindingPrefix = 'ai_key_binding.v1.';
 
   final FlutterSecureStorage _storage;
 
@@ -560,6 +597,12 @@ final class SecureAiStore implements AiStore, AiStoreSecureInventory {
 
   static String tombstoneKey(String accountKey) =>
       '$tombstonePrefix${_encodeId(accountKey)}';
+
+  static String historyClearMarkerKey(String accountKey) =>
+      '$historyClearMarkerPrefix${_encodeId(accountKey)}';
+
+  static String providerKeyBindingKey(String providerId) =>
+      '$providerKeyBindingPrefix${_encodeId(providerId)}';
 
   @override
   Future<AiStoreRead<List<AiProviderConfig>>> loadProviders() async {
@@ -829,6 +872,45 @@ final class SecureAiStore implements AiStore, AiStoreSecureInventory {
   Future<void> clearTombstone(String accountKey) =>
       _delete(tombstoneKey(accountKey), 'clearTombstone');
 
+  @override
+  Future<AiStoreRead<bool>> readHistoryClearMarker(String accountKey) async {
+    final raw = await _read(
+      historyClearMarkerKey(accountKey),
+      'readHistoryClearMarker',
+    );
+    if (!raw.isFound) return _copyRead<bool>(raw);
+    if (raw.value != '1') {
+      return const AiStoreRead<bool>.absent(
+        AiStoreFailure(AiStoreFailureKind.malformed, 'readHistoryClearMarker'),
+      );
+    }
+    return const AiStoreRead<bool>.found(true);
+  }
+
+  @override
+  Future<void> setHistoryClearMarker(String accountKey) =>
+      _write(historyClearMarkerKey(accountKey), '1', 'setHistoryClearMarker');
+
+  @override
+  Future<void> clearHistoryClearMarker(String accountKey) =>
+      _delete(historyClearMarkerKey(accountKey), 'clearHistoryClearMarker');
+
+  @override
+  Future<AiStoreRead<String>> readProviderKeyBinding(String providerId) =>
+      _read(providerKeyBindingKey(providerId), 'readProviderKeyBinding');
+
+  @override
+  Future<void> saveProviderKeyBinding(String providerId, String binding) =>
+      _write(
+        providerKeyBindingKey(providerId),
+        binding,
+        'saveProviderKeyBinding',
+      );
+
+  @override
+  Future<void> deleteProviderKeyBinding(String providerId) =>
+      _delete(providerKeyBindingKey(providerId), 'deleteProviderKeyBinding');
+
   Future<AiStoreRead<String>> _read(String key, String operation) async {
     try {
       final value = await _storage.read(key: key);
@@ -863,7 +945,12 @@ final class SecureAiStore implements AiStore, AiStoreSecureInventory {
   }
 }
 
-final class MemoryAiStore implements AiStore, AiStoreSecureInventory {
+final class MemoryAiStore
+    implements
+        AiStore,
+        AiStoreSecureInventory,
+        AiHistoryClearMarkerStore,
+        AiProviderKeyBindingStore {
   final Map<String, String> _values = <String, String>{};
 
   @override
@@ -1104,6 +1191,46 @@ final class MemoryAiStore implements AiStore, AiStoreSecureInventory {
     _values.remove(SecureAiStore.tombstoneKey(accountKey));
   }
 
+  @override
+  Future<AiStoreRead<bool>> readHistoryClearMarker(String accountKey) async {
+    final value = _values[SecureAiStore.historyClearMarkerKey(accountKey)];
+    if (value == null) return const AiStoreRead<bool>.absent();
+    if (value != '1') {
+      return const AiStoreRead<bool>.absent(
+        AiStoreFailure(AiStoreFailureKind.malformed, 'readHistoryClearMarker'),
+      );
+    }
+    return const AiStoreRead<bool>.found(true);
+  }
+
+  @override
+  Future<void> setHistoryClearMarker(String accountKey) async {
+    _values[SecureAiStore.historyClearMarkerKey(accountKey)] = '1';
+  }
+
+  @override
+  Future<void> clearHistoryClearMarker(String accountKey) async {
+    _values.remove(SecureAiStore.historyClearMarkerKey(accountKey));
+  }
+
+  @override
+  Future<AiStoreRead<String>> readProviderKeyBinding(String providerId) async {
+    final value = _values[SecureAiStore.providerKeyBindingKey(providerId)];
+    return value == null
+        ? const AiStoreRead<String>.absent()
+        : AiStoreRead<String>.found(value);
+  }
+
+  @override
+  Future<void> saveProviderKeyBinding(String providerId, String binding) async {
+    _values[SecureAiStore.providerKeyBindingKey(providerId)] = binding;
+  }
+
+  @override
+  Future<void> deleteProviderKeyBinding(String providerId) async {
+    _values.remove(SecureAiStore.providerKeyBindingKey(providerId));
+  }
+
   void debugPut(String key, String value) => _values[key] = value;
 }
 
@@ -1111,7 +1238,7 @@ final Object _secureSettingsScope = Object();
 final Expando<AiSettingsController> _settingsOwners =
     Expando<AiSettingsController>('aiSettingsOwner');
 
-// The future aiSettingsProvider must be an app-level single owner. It must not
+// aiSettingsProvider is an app-level single owner. It must not
 // be autoDispose or live under an account-keyed provider tree. While the secure
 // device owner exists, this factory returns it regardless of the storage
 // instance passed through a SecureAiStore wrapper.
@@ -1148,6 +1275,9 @@ final class AiSettingsController extends ChangeNotifier {
   final Set<String> _malformedSecureInventoryEntries = <String>{};
   Future<void>? _providerMutationTail;
   var _disposed = false;
+  var _initialized = false;
+  var _initializing = false;
+  AiStoreFailure? _initializationFailure;
 
   List<AiProviderConfig> get providers => _providers;
   Map<String, String> get knownProviderKeys => Map.unmodifiable(_providerKeys);
@@ -1155,6 +1285,9 @@ final class AiSettingsController extends ChangeNotifier {
   int get malformedAccountRecordCount => _malformedAccountRecords.length;
   int get malformedSecureInventoryCount =>
       _malformedSecureInventoryEntries.length;
+  bool get initialized => _initialized;
+  bool get initializing => _initializing;
+  AiStoreFailure? get initializationFailure => _initializationFailure;
 
   int? recipientRevision(String providerId) =>
       _provider(providerId)?.recipientRevision;
@@ -1163,12 +1296,43 @@ final class AiSettingsController extends ChangeNotifier {
 
   AiAccountRecord? accountRecord(String accountKey) => _accounts[accountKey];
 
-  Future<void> initialize() => _enqueue(_initialize);
+  Future<void> initialize() => _enqueue(() async {
+    _initializing = true;
+    _initializationFailure = null;
+    _notify();
+    try {
+      await _initialize();
+      _markInitialized();
+    } on AiStoreException catch (error) {
+      _initializationFailure = error.failure;
+      rethrow;
+    } on Object catch (error) {
+      _initializationFailure = AiStoreFailure(
+        AiStoreFailureKind.unavailable,
+        'initialize',
+        error,
+      );
+      rethrow;
+    } finally {
+      _initializing = false;
+      _notify();
+    }
+  });
 
   Future<void> _initialize() async {
     final result = await store.loadProviders();
     if (result.failure != null) throw AiStoreException(result.failure!);
     final loaded = result.value ?? const <AiProviderConfig>[];
+    try {
+      for (final provider in loaded) {
+        _validateProviderEndpoints(provider);
+        _validateProviderCaps(provider.caps);
+      }
+    } on Object catch (error) {
+      throw AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.malformed, 'loadProviders', error),
+      );
+    }
     final active = <AiProviderConfig>[];
     final deleting = <AiProviderConfig>[];
     final localDeleting = <String, AiProviderConfig>{..._deletingProviders};
@@ -1185,7 +1349,16 @@ final class AiSettingsController extends ChangeNotifier {
     for (final provider in active) {
       final key = await store.readProviderKey(provider.id);
       if (key.failure != null) throw AiStoreException(key.failure!);
-      if (key.isFound) keys[provider.id] = key.value!;
+      if (key.isFound) {
+        if (provider.caps.requiresKey &&
+            await _keyBindingMatches(provider, key.value!)) {
+          keys[provider.id] = key.value!;
+        } else {
+          // Unbound credentials are never sent or left outside redaction.
+          await store.deleteProviderKey(provider.id);
+          await _deleteProviderKeyBinding(provider.id);
+        }
+      }
     }
     _providers = List.unmodifiable(active);
     _deletingProviders
@@ -1206,6 +1379,7 @@ final class AiSettingsController extends ChangeNotifier {
       for (final providerId in await _readProviderKeyIds()) {
         if (!retainedIds.contains(providerId)) {
           await store.deleteProviderKey(providerId);
+          await _deleteProviderKeyBinding(providerId);
         }
       }
     }
@@ -1233,6 +1407,7 @@ final class AiSettingsController extends ChangeNotifier {
       );
     }
     _validateProviderEndpoints(provider);
+    _validateProviderCaps(provider.caps);
     final pending = _deletingProviders[provider.id];
     if (pending != null) {
       await _persistProviderDeletionMarker(pending);
@@ -1248,10 +1423,12 @@ final class AiSettingsController extends ChangeNotifier {
         .firstOrNull;
     if (deleting != null) await _resumeProviderDeletion(deleting);
     final existing = _provider(provider.id);
+    final keyRead = await store.readProviderKey(provider.id);
+    if (keyRead.failure != null) throw AiStoreException(keyRead.failure!);
     final removesKey =
-        existing != null &&
-        !provider.caps.requiresKey &&
-        _providerKeys.containsKey(provider.id);
+        (keyRead.isFound || _providerKeys.containsKey(provider.id)) &&
+        (!provider.caps.requiresKey ||
+            (existing != null && !_sameKeyRecipient(existing, provider)));
     final revision = existing == null
         ? 1
         : _sameRecipient(existing, provider) && !removesKey
@@ -1260,19 +1437,304 @@ final class AiSettingsController extends ChangeNotifier {
     final saved = _copyProvider(provider, recipientRevision: revision);
     final updated = <AiProviderConfig>[
       for (final current in _providers)
-        if (current.id != saved.id) current,
-      saved,
+        current.id == saved.id ? saved : current,
+      if (existing == null) saved,
     ];
-    await _writeProviderList(updated);
-    _providers = List.unmodifiable(updated);
-    _notify();
     if (removesKey) {
       await store.deleteProviderKey(provider.id);
-      _providerKeys.remove(provider.id);
-      _secretSetId += 1;
-      _notify();
+      if (_providerKeys.remove(provider.id) != null) {
+        _secretSetId += 1;
+        _notify();
+      }
+      await _deleteProviderKeyBinding(provider.id);
     }
+    await _writeProviderList(updated);
+    _providers = List.unmodifiable(updated);
+    _markInitialized();
+    _notify();
     return saved;
+  }
+
+  /// Saves a provider and its credential as one publication operation.
+  ///
+  /// A null [key] may retain a stored credential only while the provider ID,
+  /// normalized origin/base path, and authentication header style are
+  /// unchanged. A replacement credential is persisted before the recipient is
+  /// published, so a failed credential write leaves the prior recipient
+  /// usable both in memory and after restart.
+  Future<AiProviderConfig> saveProviderWithKey(
+    AiProviderConfig provider, {
+    String? key,
+    bool acknowledgeWarning = false,
+  }) => _enqueue(
+    () => _saveProviderWithKey(
+      provider,
+      key: key,
+      acknowledgeWarning: acknowledgeWarning,
+    ),
+  );
+
+  Future<AiProviderConfig> _saveProviderWithKey(
+    AiProviderConfig provider, {
+    required String? key,
+    required bool acknowledgeWarning,
+  }) async {
+    if (_isDeletingProvider(provider)) {
+      throw const AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.invalidValue, 'saveProvider'),
+      );
+    }
+    _validateProviderEndpoints(provider);
+    _validateProviderCaps(provider.caps);
+    final pending = _deletingProviders[provider.id];
+    if (pending != null) {
+      await _persistProviderDeletionMarker(pending);
+      await _resumeProviderDeletion(pending);
+    }
+    final persisted = await store.loadProviders();
+    if (persisted.failure != null) throw AiStoreException(persisted.failure!);
+    final deleting = persisted.value
+        ?.where(
+          (candidate) =>
+              candidate.id == provider.id && _isDeletingProvider(candidate),
+        )
+        .firstOrNull;
+    if (deleting != null) await _resumeProviderDeletion(deleting);
+    final existing = _provider(provider.id);
+    final previousKey = existing == null ? null : _providerKeys[provider.id];
+    if (!provider.caps.requiresKey) {
+      final storedKey = await store.readProviderKey(provider.id);
+      if (storedKey.failure != null) throw AiStoreException(storedKey.failure!);
+      try {
+        return await _saveProvider(provider);
+      } catch (_) {
+        if (existing != null && storedKey.isFound) {
+          await _restoreProviderKey(
+            existing,
+            provider.id,
+            storedKey.value,
+            acknowledgeWarning: true,
+          );
+          _providerKeys[provider.id] = storedKey.value!;
+          _secretSetId += 1;
+          _notify();
+        } else if (previousKey != null &&
+            _providerKeys[provider.id] != previousKey) {
+          // Restore a live-only key without recreating its absent durable slot.
+          _providerKeys[provider.id] = previousKey;
+          _secretSetId += 1;
+          _notify();
+        }
+        rethrow;
+      }
+    }
+    final replacementKey = key?.trim();
+    if (key != null && replacementKey != key) {
+      throw const AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.invalidValue, 'saveProviderKey'),
+      );
+    }
+    if (provider.caps.requiresKey && replacementKey == null) {
+      if (existing == null ||
+          previousKey == null ||
+          !_sameKeyRecipient(existing, provider)) {
+        throw const AiStoreException(
+          AiStoreFailure(
+            AiStoreFailureKind.invalidValue,
+            'providerKeyRequired',
+          ),
+        );
+      }
+    }
+    if (replacementKey != null) {
+      final assessment = assessAiProviderKey(replacementKey);
+      if (!assessment.accepted) {
+        throw const AiStoreException(
+          AiStoreFailure(AiStoreFailureKind.invalidValue, 'saveProviderKey'),
+        );
+      }
+      if (assessment.warning != null && !acknowledgeWarning) {
+        throw const AiStoreException(
+          AiStoreFailure(
+            AiStoreFailureKind.confirmationRequired,
+            'saveProviderKey',
+          ),
+        );
+      }
+    }
+
+    final keyChanged =
+        replacementKey != null &&
+        (replacementKey != previousKey ||
+            existing == null ||
+            !_sameKeyRecipient(existing, provider));
+    if (keyChanged) {
+      try {
+        if (existing != null && previousKey != null) {
+          await _saveProviderKeyBinding(existing, previousKey);
+        }
+        await _persistProviderKey(
+          provider,
+          replacementKey,
+          acknowledgeWarning: acknowledgeWarning,
+        );
+      } catch (_) {
+        await _restoreProviderKey(
+          existing,
+          provider.id,
+          previousKey,
+          acknowledgeWarning: true,
+        );
+        rethrow;
+      }
+    }
+
+    final revision = existing == null
+        ? 1
+        : _sameRecipient(existing, provider) && !keyChanged
+        ? existing.recipientRevision
+        : existing.recipientRevision + 1;
+    final saved = _copyProvider(provider, recipientRevision: revision);
+    final updated = <AiProviderConfig>[
+      for (final current in _providers)
+        current.id == saved.id ? saved : current,
+      if (existing == null) saved,
+    ];
+    try {
+      await _writeProviderList(updated);
+    } catch (_) {
+      if (keyChanged) {
+        await _restoreProviderKey(
+          existing,
+          provider.id,
+          previousKey,
+          acknowledgeWarning: true,
+        );
+      }
+      rethrow;
+    }
+
+    if (provider.caps.requiresKey) {
+      final activeKey = replacementKey ?? previousKey!;
+      if (_providerKeys[provider.id] != activeKey) _secretSetId += 1;
+      _providerKeys[provider.id] = activeKey;
+    } else {
+      await store.deleteProviderKey(provider.id);
+      await _deleteProviderKeyBinding(provider.id);
+      if (_providerKeys.remove(provider.id) != null) _secretSetId += 1;
+    }
+    _providers = List.unmodifiable(updated);
+    _markInitialized();
+    _notify();
+    return saved;
+  }
+
+  Future<void> _restoreProviderKey(
+    AiProviderConfig? provider,
+    String providerId,
+    String? key, {
+    required bool acknowledgeWarning,
+  }) async {
+    if (key == null) {
+      await store.deleteProviderKey(providerId);
+      await _deleteProviderKeyBinding(providerId);
+    } else {
+      await _persistProviderKey(
+        provider!,
+        key,
+        acknowledgeWarning: acknowledgeWarning,
+      );
+    }
+  }
+
+  Future<bool> _keyBindingMatches(AiProviderConfig provider, String key) async {
+    if (store case final AiProviderKeyBindingStore bindings) {
+      final stored = await bindings.readProviderKeyBinding(provider.id);
+      if (stored.failure != null) throw AiStoreException(stored.failure!);
+      final expected = _providerKeyBinding(provider, key);
+      if (!stored.isFound) {
+        // One-time migration of a pre-binding key. This runs before any
+        // coordinated replacement can alter the key slot.
+        await bindings.saveProviderKeyBinding(provider.id, expected);
+        return true;
+      }
+      return stored.value == expected;
+    }
+    return true;
+  }
+
+  Future<void> _persistProviderKey(
+    AiProviderConfig provider,
+    String key, {
+    required bool acknowledgeWarning,
+  }) async {
+    await _saveProviderKeyBinding(provider, key);
+    await store.saveProviderKey(
+      provider.id,
+      key,
+      acknowledgeWarning: acknowledgeWarning,
+    );
+  }
+
+  Future<void> _saveProviderKeyBinding(
+    AiProviderConfig provider,
+    String key,
+  ) async {
+    if (store case final AiProviderKeyBindingStore bindings) {
+      await bindings.saveProviderKeyBinding(
+        provider.id,
+        _providerKeyBinding(provider, key),
+      );
+    }
+  }
+
+  Future<void> _deleteProviderKeyBinding(String providerId) async {
+    if (store case final AiProviderKeyBindingStore bindings) {
+      await bindings.deleteProviderKeyBinding(providerId);
+    }
+  }
+
+  /// Returns a credential only when it is still bound to the candidate's
+  /// normalized recipient and authentication style.
+  String? providerKeyFor(AiProviderConfig candidate) {
+    if (!candidate.caps.requiresKey) return null;
+    final existing = _provider(candidate.id);
+    if (existing == null) return null;
+    try {
+      if (!_sameKeyRecipient(existing, candidate)) return null;
+    } on AiFailure {
+      return null;
+    }
+    return _providerKeys[candidate.id];
+  }
+
+  /// The first persisted provider is the device default. Reordering avoids a
+  /// second preference that could point at a deleted provider.
+  Future<void> setDefaultProvider(String providerId) => _enqueue(() async {
+    final selected = _requireProvider(providerId);
+    final updated = <AiProviderConfig>[
+      selected,
+      for (final provider in _providers)
+        if (provider.id != providerId) provider,
+    ];
+    await _writeProviderList(updated, reset: true);
+    _providers = List.unmodifiable(updated);
+    _notify();
+  });
+
+  Future<void> setConversationTokenCap(String accountKey, int cap) async {
+    if (cap < 50000 || cap > 5000000) {
+      throw ArgumentError.value(cap, 'conversationTokenCap');
+    }
+    final updated = await _accountMutations.mutate(
+      accountKey,
+      (current) => current.copyWith(conversationTokenCap: cap),
+    );
+    if (updated == null) {
+      throw const AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.cleaning, 'setConversationTokenCap'),
+      );
+    }
   }
 
   Future<void> saveProviderKey(
@@ -1313,20 +1775,11 @@ final class AiSettingsController extends ChangeNotifier {
       );
     }
     if (_providerKeys[providerId] == key) return;
-    final revised = _copyProvider(
+    await _saveProviderWithKey(
       provider,
-      recipientRevision: provider.recipientRevision + 1,
-    );
-    await _replaceProvider(revised);
-    _notify();
-    await store.saveProviderKey(
-      providerId,
-      key,
+      key: key,
       acknowledgeWarning: acknowledgeWarning,
     );
-    _providerKeys[providerId] = key;
-    _secretSetId += 1;
-    _notify();
   }
 
   Future<void> deleteProviderKey(String providerId) =>
@@ -1347,6 +1800,7 @@ final class AiSettingsController extends ChangeNotifier {
     await _replaceProvider(revised);
     _notify();
     await store.deleteProviderKey(providerId);
+    await _deleteProviderKeyBinding(providerId);
     _providerKeys.remove(providerId);
     _secretSetId += 1;
     _notify();
@@ -1411,6 +1865,7 @@ final class AiSettingsController extends ChangeNotifier {
       throw AiStoreException(key.failure!);
     }
     await store.deleteProviderKey(providerId);
+    await _deleteProviderKeyBinding(providerId);
     _providerKeys.remove(providerId);
     _notify();
     await _writeProviderList(
@@ -1426,8 +1881,13 @@ final class AiSettingsController extends ChangeNotifier {
     AiConsentContract contract,
     Map<String, Object?> summary, {
     DateTime? grantedAt,
+    int? expectedRecipientRevision,
   }) {
     final epoch = _accountMutations.epochFor(accountKey);
+    final revision =
+        expectedRecipientRevision ??
+        _provider(contract.providerId)?.recipientRevision ??
+        -1;
     return _enqueue(
       () => _grantConsent(
         accountKey,
@@ -1435,6 +1895,7 @@ final class AiSettingsController extends ChangeNotifier {
         summary,
         epoch: epoch,
         grantedAt: grantedAt,
+        expectedRecipientRevision: revision,
       ),
     );
   }
@@ -1444,6 +1905,7 @@ final class AiSettingsController extends ChangeNotifier {
     AiConsentContract contract,
     Map<String, Object?> summary, {
     required int epoch,
+    required int expectedRecipientRevision,
     DateTime? grantedAt,
   }) async {
     if (!_accountMutations.isCurrent(accountKey, epoch)) {
@@ -1451,7 +1913,12 @@ final class AiSettingsController extends ChangeNotifier {
         AiStoreFailure(AiStoreFailureKind.cleaning, 'grantConsent'),
       );
     }
-    _requireProvider(contract.providerId);
+    if (_requireProvider(contract.providerId).recipientRevision !=
+        expectedRecipientRevision) {
+      throw const AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.invalidValue, 'recipientChanged'),
+      );
+    }
     final updated = await _accountMutations.mutate(accountKey, (account) {
       final consents = Map<String, AiConsentRecord>.of(account.consents);
       consents[contract.providerId] = AiConsentRecord(
@@ -1471,15 +1938,22 @@ final class AiSettingsController extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> revokeConsent(String accountKey, String providerId) {
+  Future<void> revokeConsent(
+    String accountKey,
+    String providerId, {
+    AiConsentRecord? onlyIf,
+  }) {
     final epoch = _accountMutations.epochFor(accountKey);
-    return _enqueue(() => _revokeConsent(accountKey, providerId, epoch));
+    return _enqueue(
+      () => _revokeConsent(accountKey, providerId, epoch, onlyIf),
+    );
   }
 
   Future<void> _revokeConsent(
     String accountKey,
     String providerId,
     int epoch,
+    AiConsentRecord? onlyIf,
   ) async {
     if (!_accountMutations.isCurrent(accountKey, epoch)) {
       throw const AiStoreException(
@@ -1488,7 +1962,13 @@ final class AiSettingsController extends ChangeNotifier {
     }
     var removed = false;
     final updated = await _accountMutations.mutate(accountKey, (account) {
-      if (!account.consents.containsKey(providerId)) return account;
+      final current = account.consents[providerId];
+      if (current == null) return account;
+      if (onlyIf != null &&
+          (current.hash != onlyIf.hash ||
+              current.grantedAt != onlyIf.grantedAt)) {
+        return account;
+      }
       removed = true;
       final consents = Map<String, AiConsentRecord>.of(account.consents)
         ..remove(providerId);
@@ -1571,9 +2051,9 @@ final class AiSettingsController extends ChangeNotifier {
     try {
       for (final providerId in providerIds) {
         await store.deleteProviderKey(providerId);
-        // Keep the cache equal to the store if a later step fails, so the
-        // same key saved again is written instead of seen as unchanged.
+        // Invalidate before any later await, including binding deletion.
         if (_providerKeys.remove(providerId) != null) _secretSetId += 1;
+        await _deleteProviderKeyBinding(providerId);
       }
       await _writeProviderList(
         const <AiProviderConfig>[],
@@ -1590,6 +2070,7 @@ final class AiSettingsController extends ChangeNotifier {
       _finishProviderDeletion(providerId);
     }
     _secretSetId += 1;
+    _markInitialized();
     _notify();
   });
 
@@ -1604,6 +2085,7 @@ final class AiSettingsController extends ChangeNotifier {
       _notify();
     }
     await store.deleteProviderKey(providerId);
+    await _deleteProviderKeyBinding(providerId);
     if (_providerKeys.remove(providerId) != null) _secretSetId += 1;
     _notify();
   });
@@ -1737,6 +2219,11 @@ final class AiSettingsController extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
+  void _markInitialized() {
+    _initialized = true;
+    _initializationFailure = null;
+  }
+
   @override
   void dispose() {
     if (_disposed) return;
@@ -1767,6 +2254,7 @@ AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
   final providerKeys = <String>[];
   final accountKeys = <String>[];
   final historyKeys = <String>[];
+  final historyClearMarkers = <String>[];
   final malformedProviderKeyEntries = <String>{};
   final malformedAccountKeyEntries = <String>{};
   final malformedHistoryKeyEntries = <String>{};
@@ -1798,6 +2286,18 @@ AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
         malformedAccountKeys += 1;
         malformedAccountKeyEntries.add(key);
       }
+    } else if (key.startsWith(SecureAiStore.historyClearMarkerPrefix)) {
+      try {
+        historyClearMarkers.add(
+          _decodeStoredId(
+            key.substring(SecureAiStore.historyClearMarkerPrefix.length),
+            'readSecureInventory',
+          ),
+        );
+      } on AiStoreException {
+        malformedHistoryKeys += 1;
+        malformedHistoryKeyEntries.add(key);
+      }
     } else if (key.startsWith(SecureAiStore.historyKeyPrefix)) {
       try {
         historyKeys.add(
@@ -1815,10 +2315,12 @@ AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
   providerKeys.sort();
   accountKeys.sort();
   historyKeys.sort();
+  historyClearMarkers.sort();
   return AiSecureInventory(
     providerKeyIds: List.unmodifiable(providerKeys),
     accountKeys: List.unmodifiable(accountKeys),
     historyKeyAccountKeys: List.unmodifiable(historyKeys),
+    historyClearMarkerAccountKeys: List.unmodifiable(historyClearMarkers),
     malformedProviderKeyCount: malformedProviderKeys,
     malformedAccountKeyCount: malformedAccountKeys,
     malformedHistoryKeyCount: malformedHistoryKeys,
@@ -1834,7 +2336,29 @@ bool _sameRecipient(AiProviderConfig left, AiProviderConfig right) =>
     left.model == right.model &&
     left.authStyle == right.authStyle &&
     left.allowLanCleartext == right.allowLanCleartext &&
-    left.toolsEnabled == right.toolsEnabled;
+    left.toolsEnabled == right.toolsEnabled &&
+    left.caps == right.caps;
+
+bool _sameKeyRecipient(AiProviderConfig left, AiProviderConfig right) =>
+    left.authStyle == right.authStyle &&
+    _providerRecipient(left) == _providerRecipient(right);
+
+String _providerRecipient(AiProviderConfig provider) => AiEndpoint.parse(
+  provider.baseUrl,
+  allowLanCleartext: provider.allowLanCleartext,
+).key;
+
+String _providerKeyBinding(AiProviderConfig provider, String key) => sha256
+    .convert(
+      utf8.encode(
+        jsonEncode(<String, String>{
+          'recipient': _providerRecipient(provider),
+          'authStyle': provider.authStyle.name,
+          'keyDigest': sha256.convert(utf8.encode(key)).toString(),
+        }),
+      ),
+    )
+    .toString();
 
 const _deletingProviderPreset = 'gitlab-mobile:deleting-provider';
 
@@ -1861,6 +2385,16 @@ void _validateProviderEndpoints(AiProviderConfig provider) {
         'saveProviderEndpoint',
         error,
       ),
+    );
+  }
+}
+
+void _validateProviderCaps(AiCaps caps) {
+  if (caps.maxRequestChars <= 0 ||
+      caps.maxOutputTokens < 512 ||
+      caps.maxOutputTokens > 65536) {
+    throw const AiStoreException(
+      AiStoreFailure(AiStoreFailureKind.invalidValue, 'saveProviderCaps'),
     );
   }
 }
@@ -1954,6 +2488,7 @@ Map<String, Object?> _providerToJson(AiProviderConfig provider) =>
         'promptCaching': provider.caps.promptCaching,
         'requiresKey': provider.caps.requiresKey,
         'maxRequestChars': provider.caps.maxRequestChars,
+        'maxOutputTokens': provider.caps.maxOutputTokens,
       },
       'allowLanCleartext': provider.allowLanCleartext,
       'toolsEnabled': provider.toolsEnabled,
@@ -2011,7 +2546,7 @@ AiProviderConfig _decodeProvider(Object? raw) {
 
 AiCaps _decodeCaps(Object? raw) {
   final json = _strictObject(raw, 'provider.caps');
-  _requireKeys(json, const <String>{
+  _requireKeys(json, <String>{
     'tokenLimitField',
     'streamUsage',
     'toolChoice',
@@ -2020,6 +2555,7 @@ AiCaps _decodeCaps(Object? raw) {
     'promptCaching',
     'requiresKey',
     'maxRequestChars',
+    if (json.containsKey('maxOutputTokens')) 'maxOutputTokens',
   });
   final booleans = <String>[
     'streamUsage',
@@ -2034,6 +2570,12 @@ AiCaps _decodeCaps(Object? raw) {
       (json['maxRequestChars']! as int) <= 0) {
     throw const FormatException('Invalid provider caps');
   }
+  final maxOutputTokens = json['maxOutputTokens'] ?? 4096;
+  if (maxOutputTokens is! int ||
+      maxOutputTokens < 512 ||
+      maxOutputTokens > 65536) {
+    throw const FormatException('Invalid output token limit');
+  }
   return AiCaps(
     tokenLimitField: _enumValue(
       AiTokenLimitField.values,
@@ -2047,6 +2589,7 @@ AiCaps _decodeCaps(Object? raw) {
     promptCaching: json['promptCaching']! as bool,
     requiresKey: json['requiresKey']! as bool,
     maxRequestChars: json['maxRequestChars']! as int,
+    maxOutputTokens: maxOutputTokens,
   );
 }
 

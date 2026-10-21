@@ -9,6 +9,23 @@ PORT = AI_ROOT / "tools" / "gitlab_read_port.dart"
 
 
 class AiBoundaryTest(unittest.TestCase):
+    def test_provider_uses_only_the_dependency_free_catalogue_version(self):
+        source = (AI_ROOT / "ai_provider.dart").read_text(encoding="utf-8")
+        self.assertNotRegex(source, r"(?:import|export)\s+'tools/tool_catalogue\.dart'")
+        self.assertRegex(source, r"import\s+'tools/tool_catalogue_version\.dart'")
+        self.assertRegex(source, r"export\s+'tools/tool_catalogue_version\.dart'")
+
+    def test_catalogue_version_has_no_dependencies_and_remains_exported(self):
+        version = AI_ROOT / "tools" / "tool_catalogue_version.dart"
+        self.assertTrue(version.is_file(), "Catalogue version needs its own file")
+        source = version.read_text(encoding="utf-8")
+        self.assertNotRegex(source, r"(?m)^\s*(?:import|export|part)\b")
+        self.assertRegex(source, r"const\s+aiToolCatalogueVersion\s*=\s*1\s*;")
+        catalogue = (AI_ROOT / "tools" / "tool_catalogue.dart").read_text(
+            encoding="utf-8"
+        )
+        self.assertRegex(catalogue, r"export\s+'tool_catalogue_version\.dart'")
+
     def test_only_read_port_imports_gitlab_api(self):
         importers = []
         for path in AI_ROOT.rglob("*.dart"):

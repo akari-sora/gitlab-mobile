@@ -106,11 +106,12 @@ final class AiRunner {
     List<AiContextBlock> context = const [],
     bool contextWithheldPrivateKeyContext = false,
     this.conversationTokenCap = 500000,
-    this.maxOutputTokens = 4096,
+    int? maxOutputTokens,
     this.toolDeadline = const Duration(seconds: 20),
     this.runDeadline = const Duration(minutes: 12),
     this.modelDeadline = const Duration(minutes: 5),
-  }) : _config = config,
+  }) : maxOutputTokens = maxOutputTokens ?? config.caps.maxOutputTokens,
+       _config = config,
        _complete = complete,
        _close = close,
        _cancelActive = cancelActive,
@@ -120,7 +121,7 @@ final class AiRunner {
        _withheld = contextWithheldPrivateKeyContext {
     if (wire.format != config.format ||
         conversationTokenCap <= 0 ||
-        maxOutputTokens < 2048 ||
+        this.maxOutputTokens < 512 ||
         toolDeadline <= Duration.zero ||
         runDeadline <= Duration.zero ||
         modelDeadline <= Duration.zero) {
@@ -724,6 +725,7 @@ final class AiRunner {
         ? AiToolChoice.none
         : AiToolChoice.auto,
     maxOutputTokens: maxOutputTokens,
+    allowSmallOutputTokens: true,
   );
 
   int _requestSize(AiSegment seg) =>

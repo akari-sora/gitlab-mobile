@@ -114,8 +114,7 @@ are OpenSSH, PKCS#8, traditional RSA, encrypted traditional RSA, EC and PGP over
 certificate chains, shared delimiters, nested BEGINs, differing END labels,
 unbounded missing-END
 suppression and overlap/idempotence. Foreground acceptance output and the before
-and quadratic-mutation logs are retained in the external `RESULT-fix4.md`
-receipt. Full-suite, CI, live-provider and device gates remain separate.
+and quadratic-mutation logs are recorded outside the repository. Full-suite, CI, live-provider and device gates remain separate.
 
 ## FIX5 pairing regressions
 
@@ -273,8 +272,8 @@ was performed for MR2. P0b is **NOT_RUN**.
   failures; provider bodies are not retained in exceptions. Redirect,
   authorization, byte/time budget and rate-limit policies remain enforced.
 
-Review-round acceptance output was kept in the local fix-packet handoffs, not
-in the repository; there is no committed root `RESULT.md`. The submitted source is tested directly with pinned Flutter
+Review-round acceptance output is recorded outside the repository. The submitted
+source is tested directly with pinned Flutter
 3.47.2 and --no-pub; no source rewriting or new dependencies are involved.
 
 ## Fixture provenance and privacy
@@ -516,69 +515,12 @@ new-API compilation evidence; documentation and pre-existing-correct behavior
 coverage are not assigned invented behavioral failures. All review requests
 were accepted; none were rejected. Terminal trailing padding is omitted below.
 
-Every command below ran synchronously in a foreground `subprocess.run`; the tool session was awaited to completion. Flutter source and tests remained unchanged during this final sequence. Only this receipt and the inline ledger were finalized afterward.
-
-| Command | Exit | Result |
-| --- | --- | --- |
-| `/Users/iml1s/fvm/versions/3.47.2/bin/flutter analyze --no-pub` | 0 | strict analysis clean |
-| `python3 tool/l10n.py --check` | 0 | 2,078 messages / 24 languages current |
-| `python3 -m unittest discover -s tool/tests -p 'test_*.py'` | 0 | 68 tests passed |
-| `git diff --check` | 0 | no whitespace errors |
-| `/Users/iml1s/fvm/versions/3.47.2/bin/flutter test --no-pub` | 0 | 3,584 tests passed; full suite last |
-
-Exact output tails:
-
-`/Users/iml1s/fvm/versions/3.47.2/bin/flutter analyze --no-pub` — exit 0, 6.635 seconds
-
-```text
-Analyzing gitlab-mobile-wt-ai-mr3...
-No issues found! (ran in 4.8s)
-```
-
-`python3 tool/l10n.py --check` — exit 0, 0.148 seconds
-
-```text
-2078 messages in 24 languages; generated files current.
-```
-
-`python3 -m unittest discover -s tool/tests -p 'test_*.py'` — exit 0, 0.863 seconds
-
-```text
-...Could not start 1Password CLI.
-.Pinned Dart executable not found: /var/folders/9w/6m1x9qr10zv2p2sztxyyxyq00000gn/T/tmpe4bummkb/missing-dart
-.Credential lookup failed for anthropic-direct.
-...............................................................
-----------------------------------------------------------------------
-Ran 68 tests in 0.746s
-
-OK
-2078 messages in 24 languages; generated files current.
-```
-
-`git diff --check` — exit 0, 0.144 seconds
-
-```text
-(no output)
-```
-
-`/Users/iml1s/fvm/versions/3.47.2/bin/flutter test --no-pub` — exit 0, 252.499 seconds
-
-```text
-03:47 +3577: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
-03:47 +3577: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/wide_back_navigation_test.dart: P2-BACK: Wide Two-Pane System Back Navigation Suite Account switch cleanup in wide mode clears active selection and resets navigation hierarchy
-dynamic_color: Dynamic color not detected on this device.
-03:47 +3578: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
-03:47 +3579: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
-03:48 +3580: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
-03:48 +3581: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
-03:48 +3581: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/wide_back_navigation_test.dart: P2-BACK: Wide Two-Pane System Back Navigation Suite Account switch cleanup in wide mode clears active selection and resets navigation hierarchy
-dynamic_color: Dynamic color not detected on this device.
-03:49 +3582: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (project) without overflow
-03:55 +3583: /Users/iml1s/Documents/mine/apps/tools/gitlab-mobile-wt-ai-mr3/test/emulator_ui_harness_test.dart: 320dp scaled 2.0x reaches all Health, Display and Project controls (group) without overflow
-04:09 +3584: All tests passed!
-```
-
-Python error strings above are deliberate mocked failure fixtures; they do not indicate real 1Password access or provider requests.
+Historical foreground acceptance outputs and exact command tails are recorded
+outside the repository. That MR3 run reported clean pinned Flutter analysis,
+current localization generation, 68 Python tests and 3,584 Flutter tests, plus a
+clean whitespace check. Those results belong to that source cut and do not
+validate subsequent changes. Deliberate mocked Python failure messages did not
+represent real credential access or provider requests.
 
 Final full-suite incremental-save measurement: `reads=1 one=0:00:00.002838 conversations26=0:00:00.005589`. Both sizes decrypt only the index during an unchanged small save.
 
@@ -704,3 +646,152 @@ private-project integration, Android/iOS, accessibility and AOT redaction timing
 are **NOT_RUN**. MR5/MR6 UI, MR7 gate/platform/device acceptance and plan Appendix
 D live calls are deferred to their prescribed lanes. None of the offline
 results upgrades P0a, provider support or G0 acceptance.
+
+
+## MR5 — settings and consent, gate off (2026-10-21)
+
+The AI setup UI is available through explicit controller injection in synthetic
+widget tests. Only `main.dart` reads `MERGELINE_AI_ASSISTANT`; its default remains
+false. An omitted AI bundle preserves the existing shell tree. The app-level,
+non-autoDispose settings owner survives account changes, while `AiScope` carries
+the active account identity.
+
+The Me row opens the grouped settings page. Provider edits preserve the persisted
+default order. Deletion confirms key and all-account consent removal. The editor
+validates endpoints and key whitespace before storage, offers keyless local and
+custom presets, lists models through an injectable wire client, and distinguishes
+OpenRouter catalogue access from key verification. Model reads do not require an
+already-selected model and discard stale results. The output limit is persisted
+in caps and used by the runner, with a 4096-token default for older records and an explicit 512–65,536 range.
+
+Consent displays the versioned recipient contract, model-sensitive data use,
+retention, policy and irreversible-disclosure warning. It persists a readable
+summary and hash; recorded details remain readable after configuration changes.
+Provider/account changes while the dialog is open invalidate acceptance. Consent writes recheck the captured recipient revision inside the settings queue; post-write cleanup conditionally removes only that exact grant. History
+controls use the coordinator, preserve unavailable/missing-key data, and offer
+explicit cleanup/retry. History-only clearing preserves consents and preferences,
+disables persistence before deleting files and deletes the key last.
+
+New synthetic suites are `ai_injection_test.dart`,
+`ai_provider_editor_test.dart`, `ai_consent_dialog_test.dart`,
+`ai_settings_page_test.dart`, `ai_settings_history_states_test.dart`,
+`ai_consent_race_test.dart` and `ai_output_limit_test.dart` under
+`test/ai/`. They cover injection, account switching, incoming links, key/endpoint
+validation, model listing, consent invalidation/revocation, persistence controls
+and 320 dp / 2x text / Arabic RTL / dark layouts. All 24 catalogs contain the new
+UI messages. Existing tests and their expectations remain unchanged.
+
+The foreground acceptance receipt, complete command outputs/tails and any gaps
+are recorded outside the repository. There is
+no MR5 commit or pipeline: the task forbids committing and pushing. Live provider
+calls, real keys, internet, Android/iOS devices, emulator checks and rendered
+screenshot review are **NOT_RUN**. Provider verification labels remain unverified;
+no catalogue/key probe or synthetic test upgrades the P0b conformance ledger,
+provider support, G0 acceptance or release readiness. MR6 chat/entry points and
+MR7 gate/native/device work remain outside this MR.
+
+### MR5 FIX1 follow-up
+
+The follow-up derives consent from the current provider and bundled per-model
+policy table, with structured policy URL, retention and check-date fields.
+Caller-provided policy text cannot change the disclosure or granted hash.
+Training disclosures include retention; the dialog blocks Back while saving,
+uses locale date/time formatting, and keeps the organization notice in a card
+with body content. Additional behavioral regressions exercise production
+model swaps, unknown policies, forged disclosures and Arabic RTL layout.
+
+Foreground acceptance and mutation evidence are recorded outside this repository
+in the owner-supplied follow-up receipt. No commit, push,
+provider call, real key, internet, native build or device evidence is authorized
+for this follow-up; the gate remains false.
+
+
+### MR5 FIX2 logic follow-up
+
+Policy inheritance now requires the normalized scheme, host, port and base path
+of the preset endpoint for the selected format. Other recipients use unknown
+policy with no inherited link or retention. Non-model-sensitive preset contracts
+include the configured data-policy URL without inferring training or retention.
+The existing disclosure renderer already displays arbitrary stated retention days;
+a new regression protects the no-training/seven-day case.
+
+`aiToolCatalogueVersion` and `aiDisclosureVersion` are the current version source.
+Settings can call `AiConsentContract aiCurrentConsentContractFor(AiProviderConfig
+provider)`. The dialog derives recipient/policy from the provider while retaining
+the requested versions and categories, and refuses a differing requested hash.
+Invalid legacy endpoints fail initialization as malformed before provider
+publication, allowing the existing reset action and avoiding invalid consent-row
+inputs; settings wiring remains owned by the orchestrator.
+
+Pending history-clear markers are checked at enable/save boundaries and included
+in secure inventory and orphan cleanup. Keyless saves delete credentials before
+publishing configuration and restore the prior credential/binding on failure.
+Legacy key replacement uses the coordinated save path, and reset invalidates its
+key cache immediately after durable deletion. Startup deletes mismatched bound
+credentials instead of leaving stored secrets outside the redaction set.
+
+The new synthetic regressions are in `test/ai/fix2_logic_test.dart`. The FIX2b
+follow-up migrates seven consent fixtures to derived current contracts, retains
+their dialog, race and layout checks, and asserts refusal of forged policy before
+showing a valid provider-derived disclosure. Foreground acceptance results, exact
+failures and six reversible mutation receipts are recorded outside the repository.
+This follow-up has no commit,
+push, pipeline/job, internet, provider call, real key, build or device evidence;
+the feature gate remains false. These checks do not establish G0 acceptance.
+
+### MR5 review rounds 3–9 and emulator checks
+
+This supersedes the "no MR5 commit or pipeline … emulator checks NOT_RUN" note
+above, which described the first implementation packet. The branch's CI
+evidence is the merge request pipeline linked from the MR; nothing here infers
+a pipeline result.
+
+Fixes after round 2, each with a synthetic regression (the mutation runs that
+revert a fix and see its test fail are recorded outside the repository):
+
+- The unsaved key draft is bound to its recipient (origin, base path, auth
+  header) and is dropped with a notice when a format, URL or preset change
+  alters it; the key status line follows the draft as it is typed.
+- The editor's policy line uses the same derivation as the consent dialog, so
+  it never states more than the contract (unknown for other recipients and
+  unlisted formats). Azure resource endpoints match one DNS label under the
+  fixed suffix, path and default port.
+- An unedited preset model list URL follows the base URL's server (cleared on
+  another server, restored on the preset's); an edited one is kept. Listeners
+  act only on text changes, so a tap or selection is not an edit and does not
+  drop a loaded model list or the "key verified" notice.
+- An error caused only by the model list URL is shown on that field, with a
+  pointer under the base URL. A blocked save, model read or key check opens the
+  advanced section and scrolls to the failing field (also the limit fields and
+  empty required fields, the topmost one first) once the opening animation has
+  had its time and the scroll extent is stable. Only a field whose error is
+  shown and whose value is still wrong is a target: an error fixed while
+  waiting is dropped, and the reveal moves on to another shown error that is
+  still wrong, or stops if there is none.
+- A failed keyless save restores a key that was only in the live cache, without
+  recreating its absent durable slot. A port too large for an int is an invalid
+  draft, not an exception.
+- Two new messages in 24 languages; Arabic isolates the literal `/models`, and
+  `tool/l10n.py` writes bidirectional controls as `\u` escapes.
+
+Emulator checks (Android API 36 emulator, gate-on debug builds of `080c7fb`,
+`77da6cd`, `aa1ed97`, `b0a1c66` with the temporary log below, and `c6b2824`;
+synthetic keys only, no provider request sent, signed-in account used
+read-only):
+preset descriptions wrap; the policy line follows format and recipient; the key
+draft is cleared on a recipient change; the model list URL clears and returns
+with the base URL and an edited one keeps its value with its own error; the
+advanced section's first label is not clipped; a blocked save scrolls to the
+model list URL and limit errors, with and without the keyboard. The scroll
+timing fault was found only on the emulator: the first two frames after opening
+still had a scroll extent of 0. A temporary log (not committed) showed extent
+0, 0, 81 … 584, 584 and then a scroll to 352 after the fix; the widget-test clock
+does not reproduce that first-frame timing for the model list URL case, while
+the limit case at 412 × 915 does. The key status line fix (`fecf2ae`) came from
+the `c6b2824` walkthrough; the later reveal refinements (`9e758f1` onward:
+required fields, current-value checks, target choice) have synthetic evidence
+only.
+
+Live provider calls, real keys, physical devices, iOS and the preset policy
+URLs' current content remain **NOT_RUN**. The feature gate remains false; none
+of this establishes G0 acceptance or provider conformance.

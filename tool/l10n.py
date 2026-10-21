@@ -144,9 +144,15 @@ def load(arb_dir: Path = ARB_DIR) -> tuple[list[str], dict[str, dict[str, str]]]
     return keys, catalogs
 
 
+# Bidirectional controls (embeddings, overrides, isolates) are written as
+# escapes: Dart's analyzer rejects them raw in a literal.
+_BIDI_CONTROLS = {chr(c) for c in (*range(0x202A, 0x202F), *range(0x2066, 0x206A))}
+
+
 def _dart_string(value: str) -> str:
     escaped = (value.replace('\\', '\\\\').replace("'", "\\'").replace('$', '\\$')
                .replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t'))
+    escaped = ''.join(f'\\u{ord(c):04X}' if c in _BIDI_CONTROLS else c for c in escaped)
     return f"'{escaped}'"
 
 

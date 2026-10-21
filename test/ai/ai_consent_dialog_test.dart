@@ -1,0 +1,393 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/ai_provider.dart';
+import 'package:gitlab_mobile/features/ai/ai_consent_dialog.dart';
+import 'package:gitlab_mobile/features/ai/ai_history.dart';
+import 'package:gitlab_mobile/features/ai/ai_scope.dart';
+import 'package:gitlab_mobile/features/ai/ai_stores.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
+import 'package:gitlab_mobile/shared/theme.dart';
+
+void main() {
+  group('AI consent dialog', () {
+    testWidgets('cancel does not grant and agree stores hash and summary', (
+      tester,
+    ) async {
+      final settings = await _settings();
+      addTearDown(settings.dispose);
+      await settings.saveProvider(
+        _provider(baseUrl: 'http://127.0.0.1:11434/v1'),
+      );
+      final contract = aiCurrentConsentContractFor(settings.providers.single);
+      final results = <bool>[];
+
+      await tester.pumpWidget(_host(settings, contract, onResult: results.add));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.aiConsentTitle), findsOneWidget);
+      expect(find.text(l10n.aiConsentUnencrypted), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.text(l10n.aiConsentUnknownDataUseWarning),
+        find.byType(ListView),
+        const Offset(0, -180),
+      );
+      expect(find.text(l10n.aiConsentUnknownDataUseWarning), findsOneWidget);
+      expect(find.text('gpt-6-luna'), findsOneWidget);
+      await tester.tap(find.text(l10n.cancelAction));
+      await tester.pumpAndSettle();
+      expect(settings.accountRecord('account'), isNull);
+      expect(results, [false]);
+
+      await settings.saveProvider(_provider());
+      final derivedContract = aiCurrentConsentContractFor(
+        settings.providers.single,
+      );
+      await tester.pumpWidget(
+        _host(settings, derivedContract, onResult: results.add),
+      );
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.dragUntilVisible(
+        find.text(l10n.aiConsentNoTraining),
+        find.byType(ListView),
+        const Offset(0, -180),
+      );
+      expect(find.text(l10n.aiConsentNoTraining), findsOneWidget);
+      await tester.tap(find.text(l10n.aiConsentAgreeAndSend));
+      await tester.pumpAndSettle();
+
+      final consent = settings.accountRecord('account')!.consents['provider']!;
+      expect(results, [false, true]);
+      expect(consent.hash, derivedContract.hash);
+      expect(consent.summary['providerName'], 'Synthetic provider');
+      expect(consent.summary['origin'], _provider().baseUrl);
+      expect(consent.summary['format'], 'responses');
+      expect(consent.summary['model'], 'gpt-6-luna');
+      expect(consent.summary['dataUse'], 'noTraining');
+      expect(consent.summary['retentionDays'], 30);
+      expect(consent.summary['toolCatalogueVersion'], aiToolCatalogueVersion);
+      expect(consent.summary['disclosureVersion'], aiDisclosureVersion);
+      expect(consent.summary['dataCategories'], <Object?>[
+        'comments',
+        'diff',
+        'issue_text',
+        'job_log',
+        'source',
+        'tool_reads',
+      ]);
+      expect(settings.isValid('account', derivedContract), isTrue);
+    });
+
+    testWidgets('training and unknown policies use warning wording', (
+      tester,
+    ) async {
+      final settings = await _settings();
+      addTearDown(settings.dispose);
+      await settings.saveProvider(
+        _provider(model: 'muse-spark-1.3-contributor'),
+      );
+
+      await tester.pumpWidget(
+        _host(settings, aiCurrentConsentContractFor(settings.providers.single)),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.dragUntilVisible(
+        find.text(l10n.aiConsentTrainingWarning),
+        find.byType(ListView),
+        const Offset(0, -180),
+      );
+      expect(find.text(l10n.aiConsentTrainingWarning), findsOneWidget);
+      expect(find.text(l10n.aiConsentRetentionNotStated), findsOneWidget);
+      await tester.tap(find.text(l10n.cancelAction));
+      await tester.pumpAndSettle();
+
+      await settings.saveProvider(_provider(model: 'unlisted-model'));
+      await tester.pumpWidget(
+        _host(settings, aiCurrentConsentContractFor(settings.providers.single)),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      await tester.dragUntilVisible(
+        find.text(l10n.aiConsentUnknownDataUseWarning),
+        find.byType(ListView),
+        const Offset(0, -180),
+      );
+      expect(find.text(l10n.aiConsentUnknownDataUseWarning), findsOneWidget);
+      expect(find.text(l10n.aiConsentRetentionNotStated), findsOneWidget);
+    });
+
+    testWidgets('saved record renders the original readable summary', (
+      tester,
+    ) async {
+      final record = AiConsentRecord(
+        hash: 'saved-hash',
+        summary: aiConsentSummary(
+          _contract(),
+          providerName: 'Original provider name',
+        ),
+        grantedAt: DateTime.utc(2026, 10, 20, 1, 2),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: appTheme(Brightness.light),
+          locale: const Locale('zh', 'TW'),
+          supportedLocales: const [Locale('zh', 'TW')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                onPressed: () => showAiConsentRecordDialog(context, record),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.aiConsentDetailsTitle), findsOneWidget);
+      expect(find.text('Original provider name'), findsOneWidget);
+      final dialogContext = tester.element(find.byType(Dialog));
+      final localizedDate = MaterialLocalizations.of(
+        dialogContext,
+      ).formatMediumDate(record.grantedAt.toLocal());
+      expect(find.textContaining(localizedDate), findsOneWidget);
+      expect(find.text(l10n.aiConsentSavedSummaryNotice), findsOneWidget);
+    });
+
+    testWidgets('provider edits while open prevent granting stale consent', (
+      tester,
+    ) async {
+      final settings = await _settings();
+      addTearDown(settings.dispose);
+      await tester.pumpWidget(
+        _host(settings, aiCurrentConsentContractFor(settings.providers.single)),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiConsentTitle), findsOneWidget);
+
+      await settings.saveProvider(_provider(model: 'changed-model'));
+      await tester.tap(find.text(l10n.aiConsentAgreeAndSend));
+      await tester.pumpAndSettle();
+
+      expect(find.text(l10n.aiConsentTitle), findsNothing);
+      expect(settings.accountRecord('account'), isNull);
+    });
+
+    testWidgets('account switch while open prevents granting consent', (
+      tester,
+    ) async {
+      final settings = await _settings();
+      addTearDown(settings.dispose);
+      final key = GlobalKey<_ScopedHostState>();
+      await tester.pumpWidget(
+        _ScopedHost(
+          key: key,
+          settings: settings,
+          contract: aiCurrentConsentContractFor(settings.providers.single),
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiConsentTitle), findsOneWidget);
+
+      key.currentState!.switchAccount();
+      await tester.pump();
+      await tester.tap(find.text(l10n.aiConsentAgreeAndSend));
+      await tester.pumpAndSettle();
+
+      expect(settings.accountRecord('account'), isNull);
+      expect(settings.accountRecord('other-account'), isNull);
+      expect(find.text(l10n.aiConsentTitle), findsNothing);
+    });
+
+    testWidgets('non-model-sensitive consent still displays provider model', (
+      tester,
+    ) async {
+      final settings = await _settings();
+      addTearDown(settings.dispose);
+      await settings.saveProvider(_provider(preset: AiPresets.openAi));
+      final contract = aiCurrentConsentContractFor(settings.providers.single);
+      expect(contract.routedModel, isNull);
+      await tester.pumpWidget(_host(settings, contract));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('gpt-6-luna'), findsOneWidget);
+    });
+
+    testWidgets('full-screen content scrolls at 320dp, 2x text, RTL and dark', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(320, 700);
+      tester.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(tester.view.reset);
+      addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+      final settings = await _settings();
+      addTearDown(settings.dispose);
+      await settings.saveProvider(
+        _provider(model: 'muse-spark-1.3-contributor'),
+      );
+
+      await tester.pumpWidget(
+        _host(
+          settings,
+          aiCurrentConsentContractFor(settings.providers.single),
+          brightness: Brightness.dark,
+          textDirection: TextDirection.rtl,
+        ),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(Dialog), findsOneWidget);
+      expect(find.byType(ListView), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.dragUntilVisible(
+        find.text(l10n.aiConsentIrreversible),
+        find.byType(ListView),
+        const Offset(0, -180),
+      );
+      expect(find.text(l10n.aiConsentIrreversible), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    test('model-sensitive fields and data use invalidate the hash', () {
+      final original = _contract();
+      expect(
+        _contract(model: 'muse-spark-1.3-contributor').hash,
+        isNot(original.hash),
+      );
+      expect(_contract(dataUse: AiDataUse.training).hash, isNot(original.hash));
+      expect(
+        _contract(categories: const <String>{'diff', 'source'}).hash,
+        isNot(original.hash),
+      );
+      expect(_contract(toolsEnabled: false).hash, isNot(original.hash));
+    });
+  });
+}
+
+Future<AiSettingsController> _settings() async {
+  final settings = AiSettingsController(MemoryAiStore());
+  await settings.saveProvider(_provider());
+  return settings;
+}
+
+Widget _host(
+  AiSettingsController settings,
+  AiConsentContract contract, {
+  Brightness brightness = Brightness.light,
+  TextDirection textDirection = TextDirection.ltr,
+  ValueChanged<bool>? onResult,
+}) => MaterialApp(
+  theme: appTheme(brightness),
+  builder: (context, child) => Directionality(
+    textDirection: textDirection,
+    child: child ?? const SizedBox.shrink(),
+  ),
+  home: Builder(
+    builder: (context) => Scaffold(
+      body: TextButton(
+        onPressed: () async {
+          final granted = await showAiConsentDialog(
+            context,
+            settings,
+            'account',
+            contract,
+          );
+          onResult?.call(granted);
+        },
+        child: const Text('open'),
+      ),
+    ),
+  ),
+);
+
+AiProviderConfig _provider({
+  String model = 'gpt-6-luna',
+  AiPreset? preset,
+  String? baseUrl,
+}) => AiProviderConfig(
+  id: 'provider',
+  name: 'Synthetic provider',
+  presetId: (preset ?? AiPresets.openCodeGo).id,
+  baseUrl:
+      baseUrl ??
+      (preset ?? AiPresets.openCodeGo).baseUrlFor(AiFormat.responses),
+  format: AiFormat.responses,
+  model: model,
+  authStyle: AiAuthStyle.none,
+  caps: AiCaps(
+    tokenLimitField: AiTokenLimitField.maxOutputTokens,
+    requiresKey: false,
+  ),
+  allowLanCleartext: true,
+  toolsEnabled: true,
+  recipientRevision: 1,
+);
+
+AiConsentContract _contract({
+  String? model = 'gpt-6-luna',
+  AiDataUse dataUse = AiDataUse.noTraining,
+  Set<String> categories = const <String>{
+    'job_log',
+    'diff',
+    'source',
+    'comments',
+    'tool_reads',
+  },
+  bool toolsEnabled = true,
+}) => AiConsentContract(
+  providerId: 'provider',
+  origin: 'http://127.0.0.1:11434/v1',
+  format: AiFormat.responses,
+  cleartext: true,
+  toolsEnabled: toolsEnabled,
+  toolCatalogueVersion: 1,
+  dataCategories: categories,
+  policyIdentity:
+      'opencode-go|${model ?? 'stable-model'}|responses|${dataUse.name}|30|'
+      'https://opencode.ai/docs/go/|2026-10-20',
+  routedModel: model,
+  dataUse: dataUse,
+  disclosureVersion: 1,
+);
+
+class _ScopedHost extends StatefulWidget {
+  const _ScopedHost({
+    super.key,
+    required this.settings,
+    required this.contract,
+  });
+
+  final AiSettingsController settings;
+  final AiConsentContract contract;
+
+  @override
+  State<_ScopedHost> createState() => _ScopedHostState();
+}
+
+class _ScopedHostState extends State<_ScopedHost> {
+  var accountKey = 'account';
+
+  void switchAccount() => setState(() => accountKey = 'other-account');
+
+  @override
+  Widget build(BuildContext context) => AiScope(
+    controllers: AiControllers(
+      settings: widget.settings,
+      history: AiHistoryCoordinator.instance,
+    ),
+    accountKey: accountKey,
+    child: _host(widget.settings, widget.contract),
+  );
+}
