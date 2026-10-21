@@ -238,10 +238,10 @@ The chat (MR6a) sits on `AiChatSession` (`lib/features/ai/ai_chat_session.dart`)
 phase and blocker. `AiRunRegistry` keeps the account's conversations above the
 navigator, keyed by origin (job, issue or merge request, file at a SHA), so a
 run continues after its page closes. At most three run at once; an idle session
-then reports `tooManyRunning`. A new account generation disposes them all. When
-the last page showing a session closes, the page asks the registry to `release`
-it, and a session that holds nothing is dropped, so the next visit reads the
-page again. The "AI summary" request belongs to the visit (`AiChatPage.summarize`),
+then reports `tooManyRunning`. A new account generation disposes them all.
+Every page calls `release` on its session when it closes; the registry counts
+open pages and, after the last, drops a session that holds nothing, so the
+next visit reads the page again. The "AI summary" request belongs to the visit (`AiChatPage.summarize`),
 not to the kept session. GitLab reads that fail keep their `ApiFailure`
 (shown with `FailureNotice`); provider failures are `AiFailure`. Anything shown
 outside the display items (the title) goes through `displaySafe`.

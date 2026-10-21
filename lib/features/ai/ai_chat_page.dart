@@ -144,6 +144,9 @@ class _AiChatPageState extends State<AiChatPage> {
     if (text.isEmpty || !_session.canSend) return;
     if (suggestion == null) _input.clear();
     _toNewest();
+    // The page that sends is the one that can ask about a cleartext send;
+    // another page on this session may have cleared the callback on closing.
+    _session.confirmCleartext = _confirmCleartext;
     await _session.send(text);
   }
 

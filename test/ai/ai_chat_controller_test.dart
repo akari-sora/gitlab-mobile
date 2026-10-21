@@ -496,6 +496,111 @@ void main() {
     }
   });
 
+  String answer(String text) => _data({
+    'type': 'response.completed',
+    'response': {
+      'output': [
+        {
+          'type': 'message',
+          'role': 'assistant',
+          'content': [
+            {'type': 'output_text', 'text': text},
+          ],
+        },
+      ],
+    },
+  });
+
+  test('a display pass that fails is tried again, not skipped', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    final adapter = FakeAdapter((_) => _sse(answer('done')));
+    final controller = await _readyController(
+      environment,
+      adapter,
+      tools: false,
+    );
+    await controller.send('first');
+    expect(controller.blocker, AiChatBlocker.none);
+
+    // The redactor refuses a secret that sits inside its own marker.
+    await environment.settings.saveProvider(
+      _provider(AiFormat.responses, id: 'other', requiresKey: true),
+    );
+    await environment.settings.saveProviderKey(
+      'other',
+      'REDACTED',
+      acknowledgeWarning: true,
+    );
+    await controller.recheck();
+    expect(controller.blocker, AiChatBlocker.contextUnavailable);
+    await controller.recheck();
+    expect(controller.blocker, AiChatBlocker.contextUnavailable);
+    expect(controller.canSend, isFalse);
+  });
+
+  test('a secret learned while blocked leaves the conversation', () async {
+    const value = 'synthetic-local-key-77';
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    final adapter = FakeAdapter((_) => _sse(answer('the key is $value')));
+    final controller = await _readyController(
+      environment,
+      adapter,
+      tools: false,
+    );
+    await controller.send('what is the key?');
+    expect(
+      controller.items.whereType<AiAssistantItem>().single.text,
+      contains(value),
+    );
+
+    await environment.settings.revokeConsent(
+      environment.workspace.account.key,
+      'provider',
+    );
+    await controller.recheck();
+    expect(controller.blocker, AiChatBlocker.consentRequired);
+    await environment.settings.saveProvider(
+      _provider(AiFormat.responses, id: 'other', requiresKey: true),
+    );
+    await environment.settings.saveProviderKey(
+      'other',
+      value,
+      acknowledgeWarning: true,
+    );
+    await controller.recheck();
+    expect(controller.blocker, AiChatBlocker.consentRequired);
+    expect(
+      controller.items.whereType<AiAssistantItem>().single.text,
+      isNot(contains(value)),
+    );
+  });
+
+  test('chips go with the message whose request delivered the page', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    var calls = 0;
+    final adapter = FakeAdapter(
+      (_) => ++calls == 1
+          ? jsonResponse({'error': 'synthetic outage'}, status: 500)
+          : _sse(answer('done')),
+    );
+    final controller = await _readyController(
+      environment,
+      adapter,
+      tools: false,
+    );
+    await controller.send('first');
+    expect(controller.failure, isNotNull);
+    expect(controller.items.whereType<AiUserItem>().single.chips, isEmpty);
+
+    await controller.send('second');
+    final users = controller.items.whereType<AiUserItem>().toList();
+    expect(users.first.chips, isEmpty);
+    expect(users.last.chips, isNotEmpty);
+  });
+
   group('preparing blockers', () {
     test('moves from settings loading to no provider', () async {
       final environment = await _environment();

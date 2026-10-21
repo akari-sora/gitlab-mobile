@@ -201,6 +201,7 @@ final class AccountAiRunRegistry extends ChangeNotifier
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _visits.clear();
     _session.removeListener(_handleOwnerChanged);
     final handles = _sessions.values.toList(growable: false);
     _sessions.clear();

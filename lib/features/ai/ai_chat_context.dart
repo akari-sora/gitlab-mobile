@@ -408,6 +408,7 @@ Future<List<Json>> _recentNotes(
   bool Function() isCurrent,
 ) async {
   final notes = <Json>[];
+  final seen = <Object>{};
   var human = 0;
   Uri? next;
   for (var page = 0; page < 5; page++) {
@@ -417,8 +418,13 @@ Future<List<Json>> _recentNotes(
       next: next,
     );
     _requireCurrent(isCurrent);
-    notes.addAll(result.items);
-    human += result.items.where((note) => note['system'] != true).length;
+    for (final note in result.items) {
+      // A note added between two page reads can appear on both pages.
+      final Object? id = note['id'];
+      if (id != null && !seen.add(id)) continue;
+      notes.add(note);
+      if (note['system'] != true) human++;
+    }
     next = result.next;
     if (human >= 20 || next == null) break;
   }

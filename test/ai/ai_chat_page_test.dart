@@ -646,6 +646,24 @@ void main() {
     );
   });
 
+  testWidgets('the sending page is the one asked about cleartext', (
+    tester,
+  ) async {
+    final session = _FakeSession();
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+    // Another page on the same session closed and cleared the callback.
+    session.confirmCleartext = null;
+    expect(session.cleartext, isNull);
+
+    await tester.enterText(find.byKey(const ValueKey('ai-chat-input')), 'go');
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('ai-chat-send')));
+    await tester.pump();
+    expect(session.sent, ['go']);
+    expect(session.cleartext, isNotNull);
+  });
+
   testWidgets('the title shows GitLab values only after cleaning', (
     tester,
   ) async {

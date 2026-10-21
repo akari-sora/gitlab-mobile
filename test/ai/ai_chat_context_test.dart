@@ -297,7 +297,15 @@ void main() {
       if (path.endsWith('/projects/42/merge_requests/7/notes')) {
         if (request.uri.queryParameters['page'] == '2') {
           return jsonResponse([
+            // Shifted onto this page by a note added between the two reads.
             {
+              'id': 100,
+              'body': 'newest human note',
+              'created_at': '2026-10-20T13:00:00Z',
+              'system': false,
+            },
+            {
+              'id': 101,
               'body': 'older human note',
               'created_at': '2026-10-19T12:00:00Z',
               'system': false,
@@ -306,12 +314,19 @@ void main() {
         }
         return jsonResponse(
           [
-            for (var i = 0; i < 30; i++)
+            for (var i = 0; i < 29; i++)
               {
+                'id': i,
                 'body': 'system note $i',
                 'created_at': '2026-10-20T12:00:00Z',
                 'system': true,
               },
+            {
+              'id': 100,
+              'body': 'newest human note',
+              'created_at': '2026-10-20T13:00:00Z',
+              'system': false,
+            },
           ],
           headers: {
             'x-next-page': ['2'],
@@ -338,6 +353,10 @@ void main() {
       adapter,
     );
     expect(result.built.blocks.single.text, contains('older human note'));
+    expect(
+      'newest human note'.allMatches(result.built.blocks.single.text),
+      hasLength(1),
+    );
     expect(
       adapter.requests.where((r) => r.uri.path.endsWith('/notes')),
       hasLength(2),

@@ -175,6 +175,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       _alive &&
       _phase == AiChatPhase.idle &&
       blocker == AiChatBlocker.none &&
+      _context != null &&
       runningCount() < AiRunRegistry.maxRunning;
   @override
   set confirmCleartext(Future<bool> Function()? callback) =>
@@ -238,6 +239,16 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       return;
     }
     if (!_current(epoch)) return;
+    // What is already shown follows the larger secret set too, whatever the
+    // blocker turns out to be.
+    try {
+      _redactDisplayIfNeeded();
+    } on Object catch (error) {
+      _failure = error is AiFailure ? error : safeFailure(error);
+      _contextFailed = true;
+      _setBlocked(AiChatBlocker.contextUnavailable);
+      return;
+    }
     if (settings.initializationFailure != null) {
       _setBlocked(AiChatBlocker.settingsUnavailable);
       return;
@@ -486,16 +497,20 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     _usage = null;
     _notify();
     var userAdded = false;
+    int? userIndex;
     try {
       await _refreshSecrets();
       if (!_current(epoch)) return;
       _redactDisplayIfNeeded();
       final clean = _redactor.redactSource(text);
-      final first = _runner == null;
+      // The page context goes with the first request this segment delivers;
+      // its "What was sent" chips go with that message.
+      final first = _runner == null || _contextPending;
       _items.add(
         AiUserItem(text: clean.text, chips: first ? _chips() : const []),
       );
       userAdded = true;
+      userIndex = _items.length - 1;
       if (_phase == AiChatPhase.stopping) {
         // Nothing was sent, so "What was sent" chips would be wrong here; the
         // next message carries them instead.
@@ -527,6 +542,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       final redactions = runner.lateRedactions;
       final result = await runner.run(text);
       if (!_current(epoch)) return;
+      _dropUndeliveredChips(userIndex);
       _redactDisplayIfNeeded();
       _failure = result.failure;
       _offerNewConversation = result.offerRollover;
@@ -553,6 +569,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       }
     } on Object catch (error) {
       if (!_current(epoch)) return;
+      if (userIndex != null) _dropUndeliveredChips(userIndex);
       _failure = _assistantIndex != null
           ? _mapFailure(error)
           : error is AiFailure
@@ -643,19 +660,48 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     ];
   }
 
-  // Display history is never provider replay. Re-scan it when the live secret
-  // union changes, including credentials learned during a GitLab OAuth read.
+  /// A message whose request did not deliver the page context (a refused
+  /// cleartext send, a first request that was too long) shows no "What was
+  /// sent" chips; the next message that delivers it carries them.
+  void _dropUndeliveredChips(int index) {
+    if (!_contextPending) return;
+    if (index < 0 || index >= _items.length) return;
+    if (_items[index] case AiUserItem(
+      :final text,
+      :final chips,
+    ) when chips.any((chip) => !chip.blocked)) {
+      // Chips for blocked paths say what was not sent and stay.
+      _items[index] = AiUserItem(
+        text: text,
+        chips: [
+          for (final chip in chips)
+            if (chip.blocked) chip,
+        ],
+      );
+    }
+  }
+
+  /// The page context has content the current segment has not delivered yet.
+  bool get _contextPending =>
+      (_context?.built.blocks.isNotEmpty ?? false) &&
+      !(_runner?.segment?.contextDelivered ?? false);
+
   /// Re-redacts what is shown only when the secret set has grown since the
   /// last pass.
   void _redactDisplayIfNeeded() {
     if (_secrets.revision != _displayRevision) _redactDisplay();
   }
 
+  // Display history is never provider replay. Re-scan it when the live secret
+  // union changes, including credentials learned during a GitLab OAuth read.
+  // The revision is recorded only after every item passed, so a failed pass
+  // is tried again rather than skipped.
   void _redactDisplay() {
-    _displayRevision = _secrets.revision;
+    final revision = _secrets.revision;
     String safe(String text) => _redactor.redactSource(text).text;
-    for (var index = 0; index < _items.length; index++) {
-      _items[index] = switch (_items[index]) {
+    final redacted = List<AiChatItem>.of(_items);
+    for (var index = 0; index < redacted.length; index++) {
+      redacted[index] = switch (redacted[index]) {
         AiUserItem(:final text, :final chips) => AiUserItem(
           text: safe(text),
           chips: [
@@ -699,6 +745,10 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
         final AiNoticeItem notice => notice,
       };
     }
+    _items
+      ..clear()
+      ..addAll(redacted);
+    _displayRevision = revision;
   }
 
   void _noticeWithheld() {

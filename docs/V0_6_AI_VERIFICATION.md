@@ -963,3 +963,15 @@ Codex returned REQUEST CHANGES and Opus APPROVE WITH MINOR FIXES on the round-1 
 Left for later, by choice:
 - When reading merge request or issue notes fails, the whole context still fails. A later change can send without notes and say so.
 - After a settings change, the new conversation reuses the context read when the page first opened. The chip shows the pinned SHA.
+
+### MR6a-1 review round 3
+
+Codex returned REQUEST CHANGES and Opus APPROVE WITH MINOR FIXES. Fixed, each with a regression test and a mutation run recorded outside the repository:
+- **Display redaction failures.** The display pass records its secret-set revision only after every item passed. A pass that fails, for example when the redactor refuses a secret inside its own marker, blocks the conversation and is tried again rather than skipped.
+- **Learning secrets while blocked.** `recheck` redoes the display pass right after learning the secrets, so the conversation follows a larger secret set in every state, not only when ready.
+- **Chip placement.** "What was sent" chips stay on the message whose request delivered the page context. A first request that failed (or a refused cleartext send) drops its chips, and the next message carries them; chips for blocked paths always stay.
+- **Shared pages.** The page that sends sets the cleartext confirmation, so a second page on the same session that closed earlier cannot leave it cleared.
+- **Notes across pages.** Notes read across pages are de-duplicated by id.
+- **Other.**
+  - Sending needs a loaded context.
+  - Registry disposal clears its page counts.
