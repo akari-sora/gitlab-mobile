@@ -93,6 +93,14 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   // The model list URL follows the preset's default until the user edits it.
   late bool _modelsUrlEdited;
   bool _syncingModelsUrl = false;
+  // The last text each listener saw. A controller also notifies on selection
+  // and composing changes (a tap into the field), which are not edits.
+  late String _baseUrlText;
+  late String _modelsUrlText;
+  String _apiKeyText = '';
+  final _baseUrlFieldKey = GlobalKey();
+  final _modelsUrlFieldKey = GlobalKey();
+  final _limitsFieldKey = GlobalKey();
   String? _requestLimitError;
   String? _outputLimitError;
   String? _modelsMessage;
@@ -143,6 +151,8 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     );
     _modelSearch = TextEditingController()..addListener(_modelSearchChanged);
     _advancedController = ExpansibleController();
+    _baseUrlText = _baseUrl.text;
+    _modelsUrlText = _modelsUrl.text;
     _initialSnapshot = _snapshot;
   }
 
@@ -183,6 +193,8 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   }
 
   void _keyChanged() {
+    if (_apiKey.text == _apiKeyText) return;
+    _apiKeyText = _apiKey.text;
     final draft = _apiKey.text;
     if (draft.isEmpty) {
       _keyDraftRecipient = null;
@@ -194,6 +206,8 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   }
 
   void _baseUrlChanged() {
+    if (_baseUrl.text == _baseUrlText) return;
+    _baseUrlText = _baseUrl.text;
     if (!_showsCleartextControl && _allowLanCleartext) {
       _allowLanCleartext = false;
     }
@@ -208,6 +222,8 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   }
 
   void _modelsUrlChanged() {
+    if (_modelsUrl.text == _modelsUrlText) return;
+    _modelsUrlText = _modelsUrl.text;
     if (!_syncingModelsUrl) _modelsUrlEdited = true;
     _networkInputChanged();
   }
@@ -229,13 +245,19 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     if (preset == null) return null;
     final base = Uri.tryParse(baseUrl.trim());
     final models = Uri.parse(preset);
-    final sameOrigin =
-        base != null &&
-        base.hasScheme &&
-        base.host.isNotEmpty &&
-        base.scheme.toLowerCase() == models.scheme &&
-        base.host.toLowerCase() == models.host &&
-        base.port == models.port;
+    bool sameOrigin;
+    try {
+      sameOrigin =
+          base != null &&
+          base.hasScheme &&
+          base.host.isNotEmpty &&
+          base.scheme.toLowerCase() == models.scheme &&
+          base.host.toLowerCase() == models.host &&
+          base.port == models.port;
+    } on FormatException {
+      // A port too large for an int; the endpoint check reports the URL.
+      sameOrigin = false;
+    }
     return sameOrigin ? preset : '';
   }
 
@@ -284,14 +306,15 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     } on Object {
       if (_endpointTouched || _saveAttempted) {
         onModelsUrl = _modelsUrl.text.trim().isNotEmpty && _baseUrlValidAlone;
-        error = !onModelsUrl && _looksLikeLocalCleartext
+        error = onModelsUrl
+            ? l10n.aiProviderModelsUrlInvalid
+            : _looksLikeLocalCleartext
             ? l10n.aiProviderLocalCleartextHelp
             : l10n.aiProviderBaseUrlInvalid;
       }
     }
     if (mounted &&
-        (error != _endpointError ||
-            onModelsUrl != _endpointErrorOnModelsUrl)) {
+        (error != _endpointError || onModelsUrl != _endpointErrorOnModelsUrl)) {
       setState(() {
         _endpointError = error;
         _endpointErrorOnModelsUrl = onModelsUrl;
@@ -314,12 +337,55 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     }
   }
 
-  /// Whether the endpoint blocks a network action; opens the advanced
-  /// section when the model list URL is the reason, so its error is visible.
+  /// Whether the endpoint blocks a network action; scrolls to the field
+  /// whose error explains it, opening the advanced section for the model
+  /// list URL.
   bool _endpointBlocked() {
     if (_endpointError == null) return false;
-    if (_endpointErrorOnModelsUrl) _advancedController.expand();
+    if (_endpointErrorOnModelsUrl) {
+      _reveal(_modelsUrlFieldKey, inAdvanced: true);
+    } else {
+      _reveal(_baseUrlFieldKey);
+    }
     return true;
+  }
+
+  /// Scrolls [field] into view so a blocked action never looks like a dead
+  /// button. A field in the advanced section is built only once the section
+  /// opens, so the scroll waits until the field exists and the section has
+  /// stopped growing (the scroll extent is the same on two frames in a row).
+  void _reveal(GlobalKey field, {bool inAdvanced = false}) {
+    if (inAdvanced && !_advancedController.isExpanded) {
+      _advancedController.expand();
+    }
+    double? lastExtent;
+    var frames = 0;
+    void step(Duration _) {
+      if (!mounted) return;
+      final context = field.currentContext;
+      final extent = context == null
+          ? null
+          : Scrollable.maybeOf(context)?.position.maxScrollExtent;
+      if (context == null || extent == null || extent != lastExtent) {
+        lastExtent = extent;
+        // About a second at 60 Hz; the section opens in a fraction of that.
+        if (++frames < 60) {
+          WidgetsBinding.instance
+            ..addPostFrameCallback(step)
+            ..ensureVisualUpdate();
+        }
+        return;
+      }
+      Scrollable.ensureVisible(
+        context,
+        alignment: 0.5,
+        duration: kThemeAnimationDuration,
+      );
+    }
+
+    WidgetsBinding.instance
+      ..addPostFrameCallback(step)
+      ..ensureVisualUpdate();
   }
 
   void _selectPreset(AiPreset preset) {
@@ -710,16 +776,21 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                             },
                     ),
                     const SizedBox(height: 12),
-                    TextFormField(
-                      key: const ValueKey('ai-provider-base-url'),
-                      controller: _baseUrl,
-                      autocorrect: false,
-                      keyboardType: TextInputType.url,
-                      decoration: InputDecoration(
-                        labelText: l10n.aiProviderBaseUrlLabel,
-                        errorText: _endpointErrorOnModelsUrl
-                            ? null
-                            : _endpointError,
+                    KeyedSubtree(
+                      key: _baseUrlFieldKey,
+                      child: TextFormField(
+                        key: const ValueKey('ai-provider-base-url'),
+                        controller: _baseUrl,
+                        autocorrect: false,
+                        keyboardType: TextInputType.url,
+                        decoration: InputDecoration(
+                          labelText: l10n.aiProviderBaseUrlLabel,
+                          // The base URL is fine on its own; point at the
+                          // collapsed field that needs the fix.
+                          errorText: _endpointErrorOnModelsUrl
+                              ? l10n.aiProviderModelsUrlNeedsFix
+                              : _endpointError,
+                        ),
                       ),
                     ),
                     if (_showsCleartextControl)
@@ -914,16 +985,19 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                         // Room for the first field's floating label, which
                         // the tile's clip would otherwise cut.
                         const SizedBox(height: 12),
-                        TextFormField(
-                          key: const ValueKey('ai-provider-models-url'),
-                          controller: _modelsUrl,
-                          autocorrect: false,
-                          keyboardType: TextInputType.url,
-                          decoration: InputDecoration(
-                            labelText: l10n.aiProviderModelsUrlLabel,
-                            errorText: _endpointErrorOnModelsUrl
-                                ? _endpointError
-                                : null,
+                        KeyedSubtree(
+                          key: _modelsUrlFieldKey,
+                          child: TextFormField(
+                            key: const ValueKey('ai-provider-models-url'),
+                            controller: _modelsUrl,
+                            autocorrect: false,
+                            keyboardType: TextInputType.url,
+                            decoration: InputDecoration(
+                              labelText: l10n.aiProviderModelsUrlLabel,
+                              errorText: _endpointErrorOnModelsUrl
+                                  ? _endpointError
+                                  : null,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -1007,13 +1081,16 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                           _caps.promptCaching,
                           (value) => _copyCaps(promptCaching: value),
                         ),
-                        TextFormField(
-                          key: const ValueKey('ai-provider-request-limit'),
-                          controller: _maxRequestChars,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: l10n.aiProviderMaxRequestCharsLabel,
-                            errorText: _requestLimitError,
+                        KeyedSubtree(
+                          key: _limitsFieldKey,
+                          child: TextFormField(
+                            key: const ValueKey('ai-provider-request-limit'),
+                            controller: _maxRequestChars,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: l10n.aiProviderMaxRequestCharsLabel,
+                              errorText: _requestLimitError,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -1066,7 +1143,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       _outputLimitError = outputError;
     });
     if (requestError == null && outputError == null) return true;
-    _advancedController.expand();
+    _reveal(_limitsFieldKey, inAdvanced: true);
     return false;
   }
 

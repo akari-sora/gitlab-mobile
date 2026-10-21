@@ -199,6 +199,47 @@ void main() {
     expect(find.text(l10n.aiProviderVerificationExplanation), findsOneWidget);
   });
 
+  testWidgets('a tap into the base URL keeps the loaded model list', (
+    tester,
+  ) async {
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({
+        'data': [
+          {'id': 'glm-5.3-flash'},
+        ],
+      }),
+    );
+    final settings = AiSettingsController(MemoryAiStore());
+    await settings.initialize();
+    await tester.pumpWidget(
+      _host(
+        AiProviderEditor(
+          settings: settings,
+          clientFactory: (config, key) => _client(config, key, adapter),
+        ),
+      ),
+    );
+    await _selectPreset(tester, 'OpenCode Go');
+    await tester.enterText(
+      find.byKey(const ValueKey('ai-provider-api-key')),
+      'oc_sk_synthetic_123456',
+    );
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-read-models')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(ActionChip, 'glm-5.3-flash'), findsOneWidget);
+
+    // Focus and selection changes are not edits of the URL or the key.
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-base-url')));
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-api-key')));
+    await tester.pumpAndSettle();
+
+    expect(find.widgetWithText(ActionChip, 'glm-5.3-flash'), findsOneWidget);
+    expect(adapter.requests, hasLength(1));
+  });
+
   testWidgets('OpenRouter key verification uses the dedicated key endpoint', (
     tester,
   ) async {
