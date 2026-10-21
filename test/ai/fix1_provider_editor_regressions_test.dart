@@ -45,7 +45,7 @@ void main() {
 
     await tester.tap(find.byKey(const ValueKey('ai-provider-preset')));
     await tester.pumpAndSettle();
-    expect(find.text(l10n.aiProviderPresetDescriptionCloud), findsWidgets);
+    expect(find.text(l10n.aiPresetAboutOpenAi), findsWidgets);
   });
 
   testWidgets('custom format changes preserve the typed URL', (tester) async {

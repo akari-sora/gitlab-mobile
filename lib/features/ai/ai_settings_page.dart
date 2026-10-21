@@ -335,19 +335,20 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                 runSpacing: 4,
                 children: [
                   _status(Icons.info_outline, l10n.aiProviderUnverifiedLabel),
-                  _status(
-                    widget.settings.knownProviderKeys.containsKey(provider.id)
-                        ? Icons.key
-                        : Icons.key_off_outlined,
-                    widget.settings.knownProviderKeys.containsKey(provider.id)
-                        ? l10n.aiProviderKeySet
-                        : l10n.aiProviderKeyNotSet,
-                    warning:
-                        provider.caps.requiresKey &&
-                        !widget.settings.knownProviderKeys.containsKey(
-                          provider.id,
-                        ),
-                  ),
+                  if (provider.caps.requiresKey)
+                    _status(
+                      widget.settings.knownProviderKeys.containsKey(provider.id)
+                          ? Icons.key
+                          : Icons.key_off_outlined,
+                      widget.settings.knownProviderKeys.containsKey(provider.id)
+                          ? l10n.aiProviderKeySet
+                          : l10n.aiProviderKeyNotSet,
+                      warning:
+                          provider.caps.requiresKey &&
+                          !widget.settings.knownProviderKeys.containsKey(
+                            provider.id,
+                          ),
+                    ),
                   if (provider.allowLanCleartext &&
                       Uri.tryParse(provider.baseUrl)?.scheme == 'http')
                     _status(
@@ -389,8 +390,15 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
 
   Widget _historyStatus(AiHistoryState state) {
     final notice = _history.notice(widget.accountKey);
+    // A clear that did not finish (also after a restart) says so plainly,
+    // and its action continues the clear rather than a generic retry.
+    final clearUnfinished =
+        state == AiHistoryState.readFailed &&
+        _history.failure(widget.accountKey)?.operation == 'clearHistory';
     final text = state == AiHistoryState.cleaning
         ? l10n.aiHistoryCleaning
+        : clearUnfinished
+        ? l10n.aiHistoryClearUnfinished
         : notice;
     if (text == null) return const SizedBox.shrink();
     return Padding(
@@ -416,8 +424,14 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                         await _history.read(widget.accountKey);
                       }
                     }),
-              icon: const Icon(Icons.refresh),
-              label: Text(l10n.retryAction),
+              icon: Icon(
+                clearUnfinished ? Icons.delete_sweep_outlined : Icons.refresh,
+              ),
+              label: Text(
+                clearUnfinished
+                    ? l10n.aiHistoryContinueClear
+                    : l10n.retryAction,
+              ),
             ),
           if (state == AiHistoryState.cleaning)
             TextButton.icon(
@@ -429,8 +443,10 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                       final isAccountRetained = widget.isAccountRetained;
                       await _history.retryCleanup(
                         accountKey,
+                        // Without the session's account list, keep the fence
+                        // closed rather than reopen it for a removed account.
                         isRetained: () =>
-                            isAccountRetained?.call(accountKey) ?? true,
+                            isAccountRetained?.call(accountKey) ?? false,
                       );
                       if (mounted && generation == _generation) {
                         await widget.settings.loadAccount(accountKey);
@@ -457,7 +473,11 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
       children: [
         if (accountIdentity != null)
           ListTile(
-            leading: const Icon(Icons.account_circle_outlined),
+            leading: Monogram(
+              accountIdentity.user.name,
+              size: 40,
+              circle: true,
+            ),
             title: Text(isolated(accountIdentity.user.name)),
             subtitle: Text(
               '${isolated('@${accountIdentity.user.username}')} · '

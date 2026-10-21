@@ -80,6 +80,10 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   bool _saveAttempted = false;
   bool _endpointTouched = false;
   bool _saved = false;
+  // The recipient (origin and auth style) the unsaved key draft was typed
+  // for. A draft is never reused or sent once the recipient changes.
+  String? _keyDraftRecipient;
+  bool _keyDraftCleared = false;
   int _networkTicket = 0;
   AiWireClient? _activeClient;
   String? _endpointError;
@@ -114,7 +118,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     _baseUrl = TextEditingController(
       text: provider?.baseUrl ?? _preset.baseUrlFor(_format),
     )..addListener(_baseUrlChanged);
-    _apiKey = TextEditingController()..addListener(_networkInputChanged);
+    _apiKey = TextEditingController()..addListener(_keyChanged);
     _model = TextEditingController(text: provider?.model ?? '')
       ..addListener(_modelChanged);
     _modelsUrl = TextEditingController(
@@ -167,11 +171,41 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     _validateEndpoint();
   }
 
+  void _keyChanged() {
+    final draft = _apiKey.text;
+    if (draft.isEmpty) {
+      _keyDraftRecipient = null;
+    } else {
+      _keyDraftRecipient ??= _recipientFingerprint();
+      if (_keyDraftCleared) setState(() => _keyDraftCleared = false);
+    }
+    _networkInputChanged();
+  }
+
   void _baseUrlChanged() {
     if (!_showsCleartextControl && _allowLanCleartext) {
       _allowLanCleartext = false;
     }
+    _dropKeyDraftForNewRecipient();
     _networkInputChanged();
+  }
+
+  String _recipientFingerprint() {
+    final uri = Uri.tryParse(_baseUrl.text.trim());
+    final origin = uri == null || !uri.hasScheme
+        ? _baseUrl.text.trim()
+        : '${uri.scheme.toLowerCase()}://${uri.host.toLowerCase()}:'
+              '${uri.hasPort ? uri.port : (uri.scheme == 'http' ? 80 : 443)}'
+              '${uri.path.replaceFirst(RegExp(r'/+$'), '')}';
+    return '$origin|${_authStyle.name}';
+  }
+
+  void _dropKeyDraftForNewRecipient() {
+    final recipient = _keyDraftRecipient;
+    if (recipient == null || _apiKey.text.isEmpty) return;
+    if (recipient == _recipientFingerprint()) return;
+    _apiKey.clear();
+    setState(() => _keyDraftCleared = true);
   }
 
   void _invalidateNetworkRequest() {
@@ -230,6 +264,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       _modelsMessage = null;
       _modelSearch.clear();
       _apiKey.clear();
+      _keyDraftCleared = false;
       _endpointTouched = false;
       _endpointError = null;
     });
@@ -263,10 +298,11 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     includeEncryptedReasoning: _caps.includeEncryptedReasoning,
     promptCaching: _caps.promptCaching,
     requiresKey: _requiresKey,
+    // Same parsing as _validateCaps, so a validated value is the saved one.
     maxRequestChars:
-        int.tryParse(_maxRequestChars.text) ?? _caps.maxRequestChars,
+        int.tryParse(_maxRequestChars.text.trim()) ?? _caps.maxRequestChars,
     maxOutputTokens:
-        int.tryParse(_maxOutputTokens.text) ?? _caps.maxOutputTokens,
+        int.tryParse(_maxOutputTokens.text.trim()) ?? _caps.maxOutputTokens,
   );
 
   AiProviderConfig _config({AiAuthStyle? authStyle}) => AiProviderConfig(
@@ -467,399 +503,426 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     final filteredModels = _filteredModels;
     return PopScope<Object?>(
       key: const ValueKey('ai-provider-pop-scope'),
-      canPop: _saved || !_hasUnsavedChanges,
+      // Text edits do not rebuild this widget, so whether anything changed is
+      // decided when the pop happens, not when the scope was built.
+      canPop: _saved,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop || _saving) return;
         await _discard();
       },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            _editing
-                ? l10n.aiProviderEditorEditTitle
-                : l10n.aiProviderEditorAddTitle,
-          ),
-          leading: IconButton(
-            tooltip: l10n.cancelAction,
-            onPressed: _saving ? null : _discard,
-            icon: const Icon(Icons.close),
-          ),
-          actions: [
-            TextButton(
-              onPressed: _saving ? null : _save,
-              child: Text(l10n.saveAction),
+      child: _WrappingFieldMessages(
+        child: Scaffold(
+          appBar: AppBar(
+            title: Text(
+              _editing
+                  ? l10n.aiProviderEditorEditTitle
+                  : l10n.aiProviderEditorAddTitle,
             ),
-          ],
-        ),
-        body: SafeArea(
-          child: Form(
-            key: _formKey,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  DropdownButtonFormField<AiPreset>(
-                    key: const ValueKey('ai-provider-preset'),
-                    isExpanded: true,
-                    initialValue: _preset,
-                    decoration: InputDecoration(
-                      labelText: l10n.aiProviderPresetLabel,
-                    ),
-                    itemHeight: null,
-                    selectedItemBuilder: (context) => [
-                      for (final preset in AiPresets.all)
-                        Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: Text(isolated(preset.name)),
-                        ),
-                    ],
-                    items: [
-                      for (final preset in AiPresets.all)
-                        DropdownMenuItem(
-                          value: preset,
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 8),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(isolated(preset.name)),
-                                Text(
-                                  _presetDescription(preset),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall,
-                                ),
-                              ],
+            leading: IconButton(
+              tooltip: l10n.cancelAction,
+              onPressed: _saving ? null : _discard,
+              icon: const Icon(Icons.close),
+            ),
+            actions: [
+              TextButton(
+                onPressed: _saving ? null : _save,
+                child: Text(l10n.saveAction),
+              ),
+            ],
+          ),
+          body: SafeArea(
+            child: Form(
+              key: _formKey,
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    DropdownButtonFormField<AiPreset>(
+                      key: const ValueKey('ai-provider-preset'),
+                      isExpanded: true,
+                      initialValue: _preset,
+                      decoration: InputDecoration(
+                        labelText: l10n.aiProviderPresetLabel,
+                      ),
+                      itemHeight: null,
+                      selectedItemBuilder: (context) => [
+                        for (final preset in _presetMenuOrder)
+                          Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: Text(isolated(preset.name)),
+                          ),
+                      ],
+                      items: [
+                        for (final preset in _presetMenuOrder)
+                          DropdownMenuItem(
+                            value: preset,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(isolated(preset.name)),
+                                  Text(
+                                    _presetDescription(preset),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
                             ),
+                          ),
+                      ],
+                      onChanged: _saving
+                          ? null
+                          : (preset) {
+                              if (preset != null) _selectPreset(preset);
+                            },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      key: const ValueKey('ai-provider-name'),
+                      controller: _name,
+                      decoration: InputDecoration(labelText: l10n.nameLabel),
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                          ? l10n.aiProviderNameRequired
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<AiFormat>(
+                      key: const ValueKey('ai-provider-format'),
+                      isExpanded: true,
+                      initialValue: _format,
+                      decoration: InputDecoration(
+                        labelText: l10n.aiProviderFormatLabel,
+                      ),
+                      items: [
+                        for (final format in _preset.formats)
+                          DropdownMenuItem(
+                            value: format,
+                            child: Text(_formatLabel(format)),
+                          ),
+                      ],
+                      onChanged: _saving
+                          ? null
+                          : (format) {
+                              if (format != null) _selectFormat(format);
+                            },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      key: const ValueKey('ai-provider-base-url'),
+                      controller: _baseUrl,
+                      autocorrect: false,
+                      keyboardType: TextInputType.url,
+                      decoration: InputDecoration(
+                        labelText: l10n.aiProviderBaseUrlLabel,
+                        errorText: _endpointError,
+                      ),
+                    ),
+                    if (_showsCleartextControl)
+                      SwitchListTile(
+                        key: const ValueKey('ai-provider-cleartext'),
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(l10n.aiProviderCleartextOptIn),
+                        subtitle: endpoint?.cleartext == true
+                            ? Text(
+                                l10n.aiProviderCleartextWarning,
+                                style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                              )
+                            : null,
+                        value: _allowLanCleartext,
+                        onChanged: _saving
+                            ? null
+                            : (value) {
+                                _invalidateNetworkRequest();
+                                setState(() => _allowLanCleartext = value);
+                                _validateEndpoint();
+                              },
+                      ),
+                    if (_preset.id == 'custom')
+                      SwitchListTile(
+                        key: const ValueKey('ai-provider-no-key'),
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(l10n.aiProviderNoKeyNeeded),
+                        value: _customNoKey,
+                        onChanged: _saving
+                            ? null
+                            : (value) {
+                                _invalidateNetworkRequest();
+                                setState(() => _customNoKey = value);
+                              },
+                      ),
+                    if (_requiresKey) ...[
+                      const SizedBox(height: 4),
+                      TextFormField(
+                        key: const ValueKey('ai-provider-api-key'),
+                        controller: _apiKey,
+                        obscureText: true,
+                        enableSuggestions: false,
+                        enableIMEPersonalizedLearning: false,
+                        autocorrect: false,
+                        keyboardType: TextInputType.visiblePassword,
+                        decoration: InputDecoration(
+                          labelText: l10n.aiProviderApiKeyLabel,
+                          helperText: _editing
+                              ? l10n.aiProviderApiKeyReplaceHint
+                              : l10n.aiProviderApiKeyNewHint,
+                        ),
+                        validator: (value) {
+                          if (_editing &&
+                              (value == null || value.isEmpty) &&
+                              widget.settings.providerKeyFor(_config()) !=
+                                  null) {
+                            return null;
+                          }
+                          final key = (value ?? '').trim();
+                          if (RegExp(r'[\s\x00-\x1f\x7f-\x9f]').hasMatch(key)) {
+                            return l10n.aiProviderKeyWhitespace;
+                          }
+                          return assessAiProviderKey(key).accepted
+                              ? null
+                              : l10n.aiProviderKeyMinimum;
+                        },
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: _StatusLine(
+                          icon: _hasUsableStoredKey
+                              ? Icons.key_rounded
+                              : Icons.key_off_outlined,
+                          label: _hasUsableStoredKey
+                              ? l10n.aiProviderKeySet
+                              : l10n.aiProviderKeyNotSet,
+                        ),
+                      ),
+                      if (_keyDraftCleared)
+                        Padding(
+                          key: const ValueKey('ai-provider-key-draft-cleared'),
+                          padding: const EdgeInsets.only(top: 8),
+                          child: _StatusLine(
+                            icon: Icons.info_outline_rounded,
+                            label: l10n.aiProviderKeyDraftCleared,
+                            explanation: l10n.aiProviderKeyDraftClearedDetail,
                           ),
                         ),
                     ],
-                    onChanged: _saving
-                        ? null
-                        : (preset) {
-                            if (preset != null) _selectPreset(preset);
-                          },
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    key: const ValueKey('ai-provider-name'),
-                    controller: _name,
-                    decoration: InputDecoration(labelText: l10n.nameLabel),
-                    validator: (value) => value == null || value.trim().isEmpty
-                        ? l10n.aiProviderNameRequired
-                        : null,
-                  ),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<AiFormat>(
-                    key: const ValueKey('ai-provider-format'),
-                    isExpanded: true,
-                    initialValue: _format,
-                    decoration: InputDecoration(
-                      labelText: l10n.aiProviderFormatLabel,
-                    ),
-                    items: [
-                      for (final format in _preset.formats)
-                        DropdownMenuItem(
-                          value: format,
-                          child: Text(_formatLabel(format)),
-                        ),
-                    ],
-                    onChanged: _saving
-                        ? null
-                        : (format) {
-                            if (format != null) _selectFormat(format);
-                          },
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    key: const ValueKey('ai-provider-base-url'),
-                    controller: _baseUrl,
-                    autocorrect: false,
-                    keyboardType: TextInputType.url,
-                    decoration: InputDecoration(
-                      labelText: l10n.aiProviderBaseUrlLabel,
-                      errorText: _endpointError,
-                    ),
-                  ),
-                  if (_showsCleartextControl)
-                    SwitchListTile(
-                      key: const ValueKey('ai-provider-cleartext'),
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(l10n.aiProviderCleartextOptIn),
-                      subtitle: endpoint?.cleartext == true
-                          ? Text(
-                              l10n.aiProviderCleartextWarning,
-                              style: TextStyle(
-                                color: Theme.of(context).colorScheme.error,
-                              ),
-                            )
-                          : null,
-                      value: _allowLanCleartext,
-                      onChanged: _saving
-                          ? null
-                          : (value) {
-                              _invalidateNetworkRequest();
-                              setState(() => _allowLanCleartext = value);
-                              _validateEndpoint();
-                            },
-                    ),
-                  if (_preset.id == 'custom')
-                    SwitchListTile(
-                      key: const ValueKey('ai-provider-no-key'),
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(l10n.aiProviderNoKeyNeeded),
-                      value: _customNoKey,
-                      onChanged: _saving
-                          ? null
-                          : (value) {
-                              _invalidateNetworkRequest();
-                              setState(() => _customNoKey = value);
-                            },
-                    ),
-                  if (_requiresKey) ...[
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 12),
                     TextFormField(
-                      key: const ValueKey('ai-provider-api-key'),
-                      controller: _apiKey,
-                      obscureText: true,
-                      enableSuggestions: false,
-                      enableIMEPersonalizedLearning: false,
+                      key: const ValueKey('ai-provider-model'),
+                      controller: _model,
                       autocorrect: false,
-                      keyboardType: TextInputType.visiblePassword,
                       decoration: InputDecoration(
-                        labelText: l10n.aiProviderApiKeyLabel,
-                        helperText: _editing
-                            ? l10n.aiProviderApiKeyReplaceHint
-                            : l10n.aiProviderApiKeyNewHint,
+                        labelText: l10n.aiProviderModelLabel,
                       ),
-                      validator: (value) {
-                        if (_editing &&
-                            (value == null || value.isEmpty) &&
-                            widget.settings.providerKeyFor(_config()) != null) {
-                          return null;
-                        }
-                        final key = (value ?? '').trim();
-                        if (RegExp(r'[\s\x00-\x1f\x7f-\x9f]').hasMatch(key)) {
-                          return l10n.aiProviderKeyWhitespace;
-                        }
-                        return assessAiProviderKey(key).accepted
-                            ? null
-                            : l10n.aiProviderKeyMinimum;
-                      },
+                      validator: (value) =>
+                          value == null || value.trim().isEmpty
+                          ? l10n.aiProviderModelRequired
+                          : null,
                     ),
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: _StatusLine(
-                        icon: _hasUsableStoredKey
-                            ? Icons.key_rounded
-                            : Icons.key_off_outlined,
-                        label: _hasUsableStoredKey
-                            ? l10n.aiProviderKeySet
-                            : l10n.aiProviderKeyNotSet,
+                    if (policy != null) _PolicyNotice(policy: policy),
+                    if (model.isNotEmpty &&
+                        _preset.modelSensitive &&
+                        policy == null)
+                      _WarningText(l10n.aiProviderModelPolicyUnknown),
+                    if (model.isNotEmpty && _verificationLabel != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: _StatusLine(
+                          icon: Icons.help_outline_rounded,
+                          label: _verificationLabel!,
+                          explanation: l10n.aiProviderVerificationExplanation,
+                        ),
                       ),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    key: const ValueKey('ai-provider-model'),
-                    controller: _model,
-                    autocorrect: false,
-                    decoration: InputDecoration(
-                      labelText: l10n.aiProviderModelLabel,
-                    ),
-                    validator: (value) => value == null || value.trim().isEmpty
-                        ? l10n.aiProviderModelRequired
-                        : null,
-                  ),
-                  if (policy != null) _PolicyNotice(policy: policy),
-                  if (model.isNotEmpty &&
-                      _preset.modelSensitive &&
-                      policy == null)
-                    _WarningText(l10n.aiProviderModelPolicyUnknown),
-                  if (model.isNotEmpty && _verificationLabel != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: _StatusLine(
-                        icon: Icons.help_outline_rounded,
-                        label: _verificationLabel!,
-                        explanation: l10n.aiProviderVerificationExplanation,
-                      ),
-                    ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: AlignmentDirectional.centerStart,
-                    child: OutlinedButton.icon(
-                      key: const ValueKey('ai-provider-read-models'),
-                      onPressed: _loadingModels ? null : _readModels,
-                      icon: _loadingModels
-                          ? const SizedBox.square(
-                              dimension: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.cloud_download_outlined),
-                      label: Text(l10n.aiProviderReadModels),
-                    ),
-                  ),
-                  if (_preset.id == 'openrouter')
+                    const SizedBox(height: 8),
                     Align(
                       alignment: AlignmentDirectional.centerStart,
                       child: OutlinedButton.icon(
-                        key: const ValueKey('ai-provider-verify-key'),
-                        onPressed: _loadingModels ? null : _verifyOpenRouterKey,
-                        icon: const Icon(Icons.key_outlined),
-                        label: Text(l10n.aiProviderVerifyKey),
+                        key: const ValueKey('ai-provider-read-models'),
+                        onPressed: _loadingModels ? null : _readModels,
+                        icon: _loadingModels
+                            ? const SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.cloud_download_outlined),
+                        label: Text(l10n.aiProviderReadModels),
                       ),
                     ),
-                  if (_modelsMessage != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Text(_modelsMessage!),
-                    ),
-                  if (_preset.id == 'openrouter' && _loadedModels.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: TextField(
-                        key: const ValueKey('ai-provider-model-search'),
-                        controller: _modelSearch,
-                        decoration: InputDecoration(
-                          labelText: l10n.aiProviderSearchModels,
-                          prefixIcon: const Icon(Icons.search),
+                    if (_preset.id == 'openrouter')
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: OutlinedButton.icon(
+                          key: const ValueKey('ai-provider-verify-key'),
+                          onPressed: _loadingModels
+                              ? null
+                              : _verifyOpenRouterKey,
+                          icon: const Icon(Icons.key_outlined),
+                          label: Text(l10n.aiProviderVerifyKey),
                         ),
                       ),
-                    ),
-                  if (filteredModels.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final model in filteredModels)
-                            ActionChip(
-                              label: Text(isolated(model)),
-                              onPressed: () => _model.text = model,
-                            ),
-                        ],
+                    if (_modelsMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(_modelsMessage!),
                       ),
-                    ),
-                  const SizedBox(height: 8),
-                  ExpansionTile(
-                    key: const ValueKey('ai-provider-advanced'),
-                    controller: _advancedController,
-                    tilePadding: EdgeInsets.zero,
-                    childrenPadding: EdgeInsets.zero,
-                    title: Text(l10n.aiProviderAdvancedTitle),
-                    children: [
-                      TextFormField(
-                        key: const ValueKey('ai-provider-models-url'),
-                        controller: _modelsUrl,
-                        autocorrect: false,
-                        keyboardType: TextInputType.url,
-                        decoration: InputDecoration(
-                          labelText: l10n.aiProviderModelsUrlLabel,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(l10n.aiProviderToolsEnabled),
-                        value: _toolsEnabled,
-                        onChanged: (value) =>
-                            setState(() => _toolsEnabled = value),
-                      ),
-                      if (_requiresKey)
-                        DropdownButtonFormField<AiAuthStyle>(
-                          key: const ValueKey('ai-provider-auth-style'),
-                          isExpanded: true,
-                          initialValue: _authStyle,
+                    if (_preset.id == 'openrouter' && _loadedModels.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: TextField(
+                          key: const ValueKey('ai-provider-model-search'),
+                          controller: _modelSearch,
                           decoration: InputDecoration(
-                            labelText: l10n.aiProviderAuthStyleLabel,
+                            labelText: l10n.aiProviderSearchModels,
+                            prefixIcon: const Icon(Icons.search),
                           ),
-                          items: [
-                            for (final style in const <AiAuthStyle>[
-                              AiAuthStyle.bearer,
-                              AiAuthStyle.apiKey,
-                              AiAuthStyle.xApiKey,
-                            ])
-                              DropdownMenuItem(
-                                value: style,
-                                child: Text(_authStyleLabel(style)),
+                        ),
+                      ),
+                    if (filteredModels.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final model in filteredModels)
+                              ActionChip(
+                                label: Text(isolated(model)),
+                                onPressed: () => _model.text = model,
                               ),
                           ],
-                          onChanged: (style) {
-                            if (style != null) {
-                              _invalidateNetworkRequest();
-                              setState(() => _authStyle = style);
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                    ExpansionTile(
+                      key: const ValueKey('ai-provider-advanced'),
+                      controller: _advancedController,
+                      tilePadding: EdgeInsets.zero,
+                      childrenPadding: EdgeInsets.zero,
+                      title: Text(l10n.aiProviderAdvancedTitle),
+                      children: [
+                        TextFormField(
+                          key: const ValueKey('ai-provider-models-url'),
+                          controller: _modelsUrl,
+                          autocorrect: false,
+                          keyboardType: TextInputType.url,
+                          decoration: InputDecoration(
+                            labelText: l10n.aiProviderModelsUrlLabel,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(l10n.aiProviderToolsEnabled),
+                          value: _toolsEnabled,
+                          onChanged: (value) =>
+                              setState(() => _toolsEnabled = value),
+                        ),
+                        if (_requiresKey)
+                          DropdownButtonFormField<AiAuthStyle>(
+                            key: const ValueKey('ai-provider-auth-style'),
+                            isExpanded: true,
+                            initialValue: _authStyle,
+                            decoration: InputDecoration(
+                              labelText: l10n.aiProviderAuthStyleLabel,
+                            ),
+                            items: [
+                              for (final style in const <AiAuthStyle>[
+                                AiAuthStyle.bearer,
+                                AiAuthStyle.apiKey,
+                                AiAuthStyle.xApiKey,
+                              ])
+                                DropdownMenuItem(
+                                  value: style,
+                                  child: Text(_authStyleLabel(style)),
+                                ),
+                            ],
+                            onChanged: (style) {
+                              if (style != null) {
+                                _invalidateNetworkRequest();
+                                setState(() => _authStyle = style);
+                                _dropKeyDraftForNewRecipient();
+                              }
+                            },
+                          ),
+                        DropdownButtonFormField<AiTokenLimitField>(
+                          key: const ValueKey('ai-provider-token-limit-field'),
+                          isExpanded: true,
+                          initialValue: _caps.tokenLimitField,
+                          decoration: InputDecoration(
+                            labelText: l10n.aiProviderTokenLimitFieldLabel,
+                          ),
+                          items: [
+                            for (final field in _tokenLimitFields)
+                              DropdownMenuItem(
+                                value: field,
+                                child: Text(_tokenLimitFieldLabel(field)),
+                              ),
+                          ],
+                          onChanged: (field) {
+                            if (field != null) {
+                              _copyCaps(tokenLimitField: field);
                             }
                           },
                         ),
-                      DropdownButtonFormField<AiTokenLimitField>(
-                        key: const ValueKey('ai-provider-token-limit-field'),
-                        isExpanded: true,
-                        initialValue: _caps.tokenLimitField,
-                        decoration: InputDecoration(
-                          labelText: l10n.aiProviderTokenLimitFieldLabel,
+                        _capSwitch(
+                          l10n.aiProviderToolChoiceCapability,
+                          _caps.toolChoice,
+                          (value) => _copyCaps(toolChoice: value),
                         ),
-                        items: [
-                          for (final field in _tokenLimitFields)
-                            DropdownMenuItem(
-                              value: field,
-                              child: Text(_tokenLimitFieldLabel(field)),
-                            ),
-                        ],
-                        onChanged: (field) {
-                          if (field != null) _copyCaps(tokenLimitField: field);
-                        },
-                      ),
-                      _capSwitch(
-                        l10n.aiProviderToolChoiceCapability,
-                        _caps.toolChoice,
-                        (value) => _copyCaps(toolChoice: value),
-                      ),
-                      _capSwitch(
-                        l10n.aiProviderStreamUsageCapability,
-                        _caps.streamUsage,
-                        (value) => _copyCaps(streamUsage: value),
-                      ),
-                      _capSwitch(
-                        l10n.aiProviderReplayExtrasCapability,
-                        _caps.replayChatExtras,
-                        (value) => _copyCaps(replayChatExtras: value),
-                      ),
-                      _capSwitch(
-                        l10n.aiProviderEncryptedReasoningCapability,
-                        _caps.includeEncryptedReasoning,
-                        (value) => _copyCaps(includeEncryptedReasoning: value),
-                      ),
-                      _capSwitch(
-                        l10n.aiProviderPromptCachingCapability,
-                        _caps.promptCaching,
-                        (value) => _copyCaps(promptCaching: value),
-                      ),
-                      TextFormField(
-                        key: const ValueKey('ai-provider-request-limit'),
-                        controller: _maxRequestChars,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: l10n.aiProviderMaxRequestCharsLabel,
-                          errorText: _requestLimitError,
+                        _capSwitch(
+                          l10n.aiProviderStreamUsageCapability,
+                          _caps.streamUsage,
+                          (value) => _copyCaps(streamUsage: value),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextFormField(
-                        key: const ValueKey('ai-provider-output-limit'),
-                        controller: _maxOutputTokens,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          labelText: l10n.aiProviderMaxOutputTokensLabel,
-                          errorText: _outputLimitError,
+                        _capSwitch(
+                          l10n.aiProviderReplayExtrasCapability,
+                          _caps.replayChatExtras,
+                          (value) => _copyCaps(replayChatExtras: value),
                         ),
-                      ),
-                    ],
-                  ),
-                ],
+                        _capSwitch(
+                          l10n.aiProviderEncryptedReasoningCapability,
+                          _caps.includeEncryptedReasoning,
+                          (value) =>
+                              _copyCaps(includeEncryptedReasoning: value),
+                        ),
+                        _capSwitch(
+                          l10n.aiProviderPromptCachingCapability,
+                          _caps.promptCaching,
+                          (value) => _copyCaps(promptCaching: value),
+                        ),
+                        TextFormField(
+                          key: const ValueKey('ai-provider-request-limit'),
+                          controller: _maxRequestChars,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: l10n.aiProviderMaxRequestCharsLabel,
+                            errorText: _requestLimitError,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          key: const ValueKey('ai-provider-output-limit'),
+                          controller: _maxOutputTokens,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            labelText: l10n.aiProviderMaxOutputTokensLabel,
+                            errorText: _outputLimitError,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -939,10 +1002,41 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     AiTokenLimitField.maxOutputTokens => 'max_output_tokens',
   };
 
+  // Most likely first; Custom stays last.
+  static const _presetMenuIds = <String>[
+    'openai',
+    'anthropic',
+    'gemini',
+    'openrouter',
+    'opencode-go',
+    'deepseek',
+    'xai',
+    'azure-openai',
+    'opencode-zen',
+    'ollama',
+    'lm-studio',
+    'custom',
+  ];
+
+  static final List<AiPreset> _presetMenuOrder = [
+    for (final id in _presetMenuIds)
+      ...AiPresets.all.where((preset) => preset.id == id),
+    ...AiPresets.all.where((preset) => !_presetMenuIds.contains(preset.id)),
+  ];
+
   String _presetDescription(AiPreset preset) => switch (preset.id) {
-    'ollama' || 'lm-studio' => l10n.aiProviderPresetDescriptionLocal,
-    'custom' => l10n.aiProviderPresetDescriptionCustom,
-    _ => l10n.aiProviderPresetDescriptionCloud,
+    'openai' => l10n.aiPresetAboutOpenAi,
+    'anthropic' => l10n.aiPresetAboutAnthropic,
+    'gemini' => l10n.aiPresetAboutGemini,
+    'openrouter' => l10n.aiPresetAboutOpenRouter,
+    'opencode-go' => l10n.aiPresetAboutOpenCodeGo,
+    'deepseek' => l10n.aiPresetAboutDeepSeek,
+    'xai' => l10n.aiPresetAboutXai,
+    'azure-openai' => l10n.aiPresetAboutAzure,
+    'opencode-zen' => l10n.aiPresetAboutOpenCodeZen,
+    'ollama' => l10n.aiPresetAboutOllama,
+    'lm-studio' => l10n.aiPresetAboutLmStudio,
+    _ => l10n.aiProviderPresetDescriptionCustom,
   };
 
   _EditorSnapshot get _snapshot => (
@@ -1069,19 +1163,31 @@ final class _StatusLine extends StatelessWidget {
   final String? explanation;
 
   @override
-  Widget build(BuildContext context) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Icon(icon, size: 20),
-      const SizedBox(width: 8),
-      Expanded(
-        child: Text(
-          explanation == null ? label : '$label: $explanation',
-          softWrap: true,
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(label, style: theme.textTheme.bodyMedium),
+              if (explanation != null)
+                Text(
+                  explanation!,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+            ],
+          ),
         ),
-      ),
-    ],
-  );
+      ],
+    );
+  }
 }
 
 final class _PolicyNotice extends StatelessWidget {
@@ -1091,15 +1197,43 @@ final class _PolicyNotice extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = switch ((policy.dataUse, policy.retentionDays)) {
-      (AiDataUse.training, _) => l10n.aiProviderModelTrainingWarning,
-      (AiDataUse.noTraining, 0) => l10n.aiProviderModelZeroRetention,
-      (AiDataUse.noTraining, 30) => l10n.aiProviderModelThirtyDayRetention,
-      _ => l10n.aiProviderModelPolicyUnknown,
+    final days = policy.retentionDays;
+    final retention = days == null
+        ? l10n.aiConsentRetentionNotStated
+        : days == 0
+        ? l10n.aiPolicyNoRetention
+        : l10n.aiPolicyRetainedDays(
+            MaterialLocalizations.of(context).formatDecimal(days),
+          );
+    final (icon, label) = switch (policy.dataUse) {
+      AiDataUse.training => (
+        Icons.model_training,
+        l10n.aiProviderModelTrainingWarning,
+      ),
+      AiDataUse.noTraining => (
+        Icons.verified_user_outlined,
+        l10n.aiPolicyNoTraining,
+      ),
+      AiDataUse.unknown => (
+        Icons.help_outline,
+        l10n.aiProviderModelPolicyUnknown,
+      ),
     };
-    return policy.dataUse == AiDataUse.training
-        ? _WarningText(text)
-        : Padding(padding: const EdgeInsets.only(top: 8), child: Text(text));
+    final line = Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: _StatusLine(
+        icon: icon,
+        label: label,
+        // Unknown policies already say retention cannot be confirmed.
+        explanation: policy.dataUse == AiDataUse.unknown ? null : retention,
+      ),
+    );
+    if (policy.dataUse != AiDataUse.training) return line;
+    final error = Theme.of(context).colorScheme.error;
+    return IconTheme.merge(
+      data: IconThemeData(color: error),
+      child: line,
+    );
   }
 }
 
@@ -1134,4 +1268,25 @@ AiWireClient _defaultClientFactory(AiProviderConfig config, String apiKey) {
     conversationId: 'provider-editor',
     appVersion: '0.6.0',
   );
+}
+
+/// Lets field helper and error text wrap instead of being cut to one line.
+class _WrappingFieldMessages extends StatelessWidget {
+  const _WrappingFieldMessages({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Theme(
+      data: theme.copyWith(
+        inputDecorationTheme: theme.inputDecorationTheme.copyWith(
+          errorMaxLines: 20,
+          helperMaxLines: 20,
+        ),
+      ),
+      child: child,
+    );
+  }
 }
