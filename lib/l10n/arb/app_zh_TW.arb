@@ -10838,5 +10838,8 @@
   "aiSuggestFileExplain": "解釋這個檔案",
   "aiSuggestFileReview": "這個檔案有什麼問題？",
   "aiChatCleartextTitle": "以未加密連線傳送？",
-  "aiChatCleartextDetail": "這個供應商位於區域網路，使用未加密的 HTTP。同一個網路上的裝置可能看到送出的內容與回答。"
+  "aiChatCleartextDetail": "這個供應商位於區域網路，使用未加密的 HTTP。同一個網路上的裝置可能看到送出的內容與回答。",
+  "aiDiscuss": "與 AI 討論",
+  "aiSummarize": "AI 摘要",
+  "aiExplainFile": "請 AI 解釋這個檔案"
 }

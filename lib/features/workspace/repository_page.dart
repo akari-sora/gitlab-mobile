@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../ai/ai_chat_page.dart';
+import '../ai/ai_chat_session.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
@@ -1536,6 +1538,18 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
         PopupMenuButton<String>(
           tooltip: l10n.fileActions,
           onSelected: (action) {
+            if (action == 'ai') {
+              unawaited(
+                openAiChat(
+                  context,
+                  AiFileOrigin(
+                    project: widget.project,
+                    path: widget.filePath,
+                    sha: resolvedRef.sha,
+                  ),
+                ),
+              );
+            }
             if (action == 'refresh') {
               unawaited(_load(refresh: true));
             }
@@ -1582,6 +1596,14 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
             }
           },
           itemBuilder: (_) => [
+            // AI reads a text file at a pinned commit, where the app has AI.
+            if (AiRunRegistry.maybeOf(context) != null &&
+                text != null &&
+                !_lfs &&
+                resolvedRef.sha.isNotEmpty) ...[
+              PopupMenuItem(value: 'ai', child: Text(l10n.aiExplainFile)),
+              const PopupMenuDivider(),
+            ],
             PopupMenuItem(
               value: 'refresh',
               enabled: !_loading && !_busy,

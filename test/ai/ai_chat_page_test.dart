@@ -233,6 +233,31 @@ void main() {
     expect(session.sent, [l10n.aiSuggestMrSummary]);
   });
 
+  testWidgets('AI summary sends once, when the session is ready', (
+    tester,
+  ) async {
+    final session = _FakeSession(
+      origin: AiWorkItemOrigin(
+        project: _project,
+        kind: AiWorkItemKind.mergeRequest,
+        iid: 44,
+        title: 'Synthetic change',
+        summarize: true,
+      ),
+      blocker: AiChatBlocker.settingsLoading,
+    );
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+    expect(session.sent, isEmpty);
+
+    session.update(() => session.blocker = AiChatBlocker.none);
+    await tester.pump();
+    expect(session.sent, [l10n.aiSuggestMrSummary]);
+    session.update(() {});
+    await tester.pump();
+    expect(session.sent, hasLength(1));
+  });
+
   testWidgets('the composer sends, clears and turns into stop', (tester) async {
     final session = _FakeSession();
     await tester.pumpWidget(_host(AiChatPage(session: session)));

@@ -2321,5 +2321,8 @@
   "aiSuggestFileExplain": "Explain this file",
   "aiSuggestFileReview": "What problems does this file have?",
   "aiChatCleartextTitle": "Send over an unencrypted connection?",
-  "aiChatCleartextDetail": "This provider is on your local network and uses unencrypted HTTP. Devices on the same network may see what is sent and the reply."
+  "aiChatCleartextDetail": "This provider is on your local network and uses unencrypted HTTP. Devices on the same network may see what is sent and the reply.",
+  "aiDiscuss": "Discuss with AI",
+  "aiSummarize": "AI summary",
+  "aiExplainFile": "Explain this file with AI"
 }

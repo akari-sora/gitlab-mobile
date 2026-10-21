@@ -2318,4 +2318,7 @@ const _messagesTr = <String>[
   'What problems does this file have?',
   'Send over an unencrypted connection?',
   'This provider is on your local network and uses unencrypted HTTP. Devices on the same network may see what is sent and the reply.',
+  'Discuss with AI',
+  'AI summary',
+  'Explain this file with AI',
 ];

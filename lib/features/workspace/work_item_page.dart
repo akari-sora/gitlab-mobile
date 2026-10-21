@@ -25,6 +25,8 @@ import 'work_item_filters.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/providers.dart';
 import '../auth/session_controller.dart';
+import '../ai/ai_chat_page.dart';
+import '../ai/ai_chat_session.dart';
 import 'graph_work_items_page.dart';
 import 'rest_issue_graph_bridge.dart';
 import '../../shared/theme.dart';
@@ -536,6 +538,18 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
 
   @override
   void initState() { super.initState(); unawaited(_load()); }
+
+  Future<void> _openAi({required bool summarize}) async {
+    final data = _data;
+    if (data == null) return;
+    await openAiChat(context, AiWorkItemOrigin(
+      project: widget.project,
+      kind: mr ? AiWorkItemKind.mergeRequest : AiWorkItemKind.issue,
+      iid: widget.iid,
+      title: valueText(data, 'title'),
+      summarize: summarize && mr,
+    ));
+  }
 
   @override
   void didChangeDependencies() {
@@ -1515,8 +1529,14 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         PopupMenuButton<String>(
           tooltip: l10n.moreOptions,
           enabled: !_busy && data != null,
-          onSelected: _action,
+          onSelected: (value) => value.startsWith('ai') ? _openAi(summarize: value == 'ai-summary') : _action(value),
           itemBuilder: (_) => [
+            // AI is offered only where the app was built with it.
+            if (AiRunRegistry.maybeOf(context) != null) ...[
+              if (mr) PopupMenuItem(value: 'ai-summary', child: Text(l10n.aiSummarize)),
+              PopupMenuItem(value: 'ai', child: Text(l10n.aiDiscuss)),
+              const PopupMenuDivider(),
+            ],
             PopupMenuItem(value: 'edit', child: Text(l10n.editAction)),
             if (data?['state'] == 'opened') PopupMenuItem(value: 'close', child: Text(type == ProjectWorkItemType.incident ? l10n.closeIssueState : l10n.closeAction)),
             if (mr && data?['state'] == 'opened') PopupMenuItem(value: 'draft', child: Text(data?['draft'] == true ? l10n.markAsReady2 : l10n.markAsDraft2)),

@@ -61,19 +61,40 @@ class AiChatPage extends StatefulWidget {
 class _AiChatPageState extends State<AiChatPage> {
   final _input = TextEditingController();
 
+  /// "AI summary" sends its request once, when the empty session is ready.
+  late bool _pendingSummary;
+
   AiChatSession get _session => widget.session;
 
   @override
   void initState() {
     super.initState();
+    final origin = _session.origin;
+    _pendingSummary =
+        origin is AiWorkItemOrigin &&
+        origin.summarize &&
+        _session.items.isEmpty;
     _session.confirmCleartext = _confirmCleartext;
     _input.addListener(_inputChanged);
+    _session.addListener(_maybeSummarize);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeSummarize());
+  }
+
+  void _maybeSummarize() {
+    if (!_pendingSummary || !mounted) return;
+    if (_session.items.isNotEmpty) {
+      _pendingSummary = false;
+    } else if (_session.canSend) {
+      _pendingSummary = false;
+      _send(l10n.aiSuggestMrSummary);
+    }
   }
 
   @override
   void dispose() {
     // The run goes on without the page; a cleartext prompt cannot be shown.
     _session.confirmCleartext = null;
+    _session.removeListener(_maybeSummarize);
     _input
       ..removeListener(_inputChanged)
       ..dispose();

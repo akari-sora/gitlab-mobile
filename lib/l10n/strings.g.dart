@@ -7041,4 +7041,13 @@ final class AppStrings {
 
   /// 這個供應商位於區域網路，使用未加密的 HTTP。同一個網路上的裝置可能看到送出的內容與回答。
   String get aiChatCleartextDetail => language._messages[2315];
+
+  /// 與 AI 討論
+  String get aiDiscuss => language._messages[2316];
+
+  /// AI 摘要
+  String get aiSummarize => language._messages[2317];
+
+  /// 請 AI 解釋這個檔案
+  String get aiExplainFile => language._messages[2318];
 }
