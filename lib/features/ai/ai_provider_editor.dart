@@ -358,28 +358,28 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     if (_endpointError == null) return false;
     if (_endpointErrorOnModelsUrl) {
       _reveal(
-        _modelsUrlFieldKey,
+        () => _modelsUrlFieldKey.currentContext,
         inAdvanced: true,
         stillNeeded: () => _endpointError != null && _endpointErrorOnModelsUrl,
       );
     } else {
       _reveal(
-        _baseUrlFieldKey,
+        () => _baseUrlFieldKey.currentContext,
         stillNeeded: () => _endpointError != null && !_endpointErrorOnModelsUrl,
       );
     }
     return true;
   }
 
-  /// Scrolls [field] into view so a blocked action never looks like a dead
-  /// button. A field in the advanced section is built only once the section
-  /// opens, so the scroll waits until the opening animation has had its time
-  /// (the first animation frames do not grow the section yet) and the scroll
-  /// extent is the same on two frames in a row. It gives up when
-  /// [stillNeeded] turns false, so an error fixed meanwhile does not move the
-  /// page.
+  /// Scrolls the context [field] returns into view, so a blocked action never
+  /// looks like a dead button. A field in the advanced section is built only
+  /// once the section opens, so the scroll waits until the opening animation
+  /// has had its time (the first animation frames do not grow the section
+  /// yet) and the scroll extent is the same on two frames in a row. It gives
+  /// up when [stillNeeded] turns false, so an error fixed meanwhile does not
+  /// move the page.
   void _reveal(
-    GlobalKey field, {
+    BuildContext? Function() field, {
     bool inAdvanced = false,
     required bool Function() stillNeeded,
   }) {
@@ -391,7 +391,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     void step(Duration timeStamp) {
       if (!mounted || !stillNeeded()) return;
       final elapsed = timeStamp - (start ??= timeStamp);
-      final context = field.currentContext;
+      final context = field();
       final extent = context == null
           ? null
           : Scrollable.maybeOf(context)?.position.maxScrollExtent;
@@ -436,6 +436,8 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       _setModelsUrl(preset.modelsUrl ?? '');
       _maxRequestChars.text = _caps.maxRequestChars.toString();
       _maxOutputTokens.text = _caps.maxOutputTokens.toString();
+      _requestLimitError = null;
+      _outputLimitError = null;
       _loadedModels = const <String>[];
       _modelsMessage = null;
       _modelSearch.clear();
@@ -460,6 +462,8 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
           : _preset.baseUrlFor(format);
       _maxRequestChars.text = _caps.maxRequestChars.toString();
       _maxOutputTokens.text = _caps.maxOutputTokens.toString();
+      _requestLimitError = null;
+      _outputLimitError = null;
       _loadedModels = const <String>[];
       _modelsMessage = null;
       _modelSearch.clear();
@@ -532,7 +536,15 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     _saveAttempted = true;
     _dropKeyDraftForNewRecipient();
     if (!_validateCaps()) return;
-    if (!_formKey.currentState!.validate()) return;
+    final invalid = _formKey.currentState!.validateGranularly();
+    if (invalid.isNotEmpty) {
+      final field = invalid.first;
+      _reveal(
+        () => field.mounted ? field.context : null,
+        stillNeeded: () => field.mounted && field.hasError,
+      );
+      return;
+    }
     _validateEndpoint();
     if (_endpointBlocked()) return;
     String? key;
@@ -1164,31 +1176,41 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     Navigator.of(context).pop();
   }
 
-  bool _validateCaps() {
+  String? get _requestLimitProblem {
     final request = int.tryParse(_maxRequestChars.text.trim());
-    final output = int.tryParse(_maxOutputTokens.text.trim());
-    final requestError = request == null || request < 8000 || request > 400000
+    return request == null || request < 8000 || request > 400000
         ? l10n.aiProviderRequestCharsRange
         : null;
-    final outputError = output == null || output < 512 || output > 65536
+  }
+
+  String? get _outputLimitProblem {
+    final output = int.tryParse(_maxOutputTokens.text.trim());
+    return output == null || output < 512 || output > 65536
         ? l10n.aiProviderOutputTokensRange
         : null;
+  }
+
+  bool _validateCaps() {
+    final requestError = _requestLimitProblem;
+    final outputError = _outputLimitProblem;
     setState(() {
       _requestLimitError = requestError;
       _outputLimitError = outputError;
     });
     if (requestError == null && outputError == null) return true;
+    // The shown error stays until the next save, so the reveal checks the
+    // value itself: a value fixed meanwhile does not move the page.
     if (requestError != null) {
       _reveal(
-        _requestLimitFieldKey,
+        () => _requestLimitFieldKey.currentContext,
         inAdvanced: true,
-        stillNeeded: () => _requestLimitError != null,
+        stillNeeded: () => _requestLimitProblem != null,
       );
     } else {
       _reveal(
-        _outputLimitFieldKey,
+        () => _outputLimitFieldKey.currentContext,
         inAdvanced: true,
-        stillNeeded: () => _outputLimitError != null,
+        stillNeeded: () => _outputLimitProblem != null,
       );
     }
     return false;

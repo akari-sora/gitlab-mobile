@@ -396,10 +396,14 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    Future<AiSettingsController> filledOpenAi(WidgetTester tester) async {
+    Future<AiSettingsController> filledOpenAi(
+      WidgetTester tester, {
+      bool largeText = false,
+    }) async {
       final settings = AiSettingsController(MemoryAiStore());
       await settings.initialize();
-      await tester.pumpWidget(_host(AiProviderEditor(settings: settings)));
+      final editor = AiProviderEditor(settings: settings);
+      await tester.pumpWidget(largeText ? _scaledHost(editor) : _host(editor));
       await tester.enterText(
         find.byKey(const ValueKey('ai-provider-api-key')),
         'sk-synthetic-limit-check-123456',
@@ -422,9 +426,12 @@ void main() {
       expect(rect.bottom, lessThanOrEqualTo(bottom));
     }
 
-    for (final (label, keyboard) in const [
-      ('412 x 915', 0.0),
-      ('360 x 640 with the keyboard open', 280.0),
+    // 2x text with the keyboard open is where revealing the request field
+    // instead of the output field hides the output error.
+    for (final (label, keyboard, largeText) in const [
+      ('412 x 915', 0.0, false),
+      ('360 x 640 with the keyboard open', 280.0, false),
+      ('360 x 640, 2x text and the keyboard open', 280.0, true),
     ]) {
       for (final output in const [false, true]) {
         testWidgets(
@@ -439,7 +446,7 @@ void main() {
             addTearDown(tester.view.resetDevicePixelRatio);
             addTearDown(tester.view.resetPhysicalSize);
             addTearDown(tester.view.resetViewInsets);
-            final settings = await filledOpenAi(tester);
+            final settings = await filledOpenAi(tester, largeText: largeText);
             await _expandAdvanced(tester);
             await tester.enterText(
               find.byKey(
@@ -474,6 +481,83 @@ void main() {
         );
       }
     }
+
+    for (final fix in const ['typed value', 'preset switch']) {
+      testWidgets('a limit fixed by a $fix while waiting stays put', (
+        tester,
+      ) async {
+        tester.view.devicePixelRatio = 1;
+        tester.view.physicalSize = const Size(360, 640);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        addTearDown(tester.view.resetPhysicalSize);
+        await filledOpenAi(tester);
+        await _expandAdvanced(tester);
+        await tester.enterText(
+          find.byKey(const ValueKey('ai-provider-request-limit')),
+          '1',
+        );
+        await tester.pumpAndSettle();
+        final position = tester
+            .state<ScrollableState>(find.byType(Scrollable).first)
+            .position;
+        position.jumpTo(0);
+        await tester.pump();
+
+        await tester.tap(find.text(l10n.saveAction));
+        await tester.pump(const Duration(milliseconds: 16));
+        if (fix == 'typed value') {
+          tester
+                  .widget<TextField>(
+                    find.descendant(
+                      of: find.byKey(
+                        const ValueKey('ai-provider-request-limit'),
+                      ),
+                      matching: find.byType(TextField),
+                    ),
+                  )
+                  .controller!
+                  .text =
+              '32000';
+        } else {
+          _preset(tester).onChanged!(AiPresets.anthropic);
+        }
+        await deviceFrames(tester);
+
+        expect(position.pixels, 0);
+        if (fix == 'preset switch') {
+          // The reset value is valid; the old error is not left behind.
+          expect(find.text(l10n.aiProviderRequestCharsRange), findsNothing);
+        }
+      });
+    }
+
+    testWidgets('a missing key scrolls back up to the key field', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(360, 640);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final settings = AiSettingsController(MemoryAiStore());
+      await settings.initialize();
+      await tester.pumpWidget(_host(AiProviderEditor(settings: settings)));
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-model')),
+        'synthetic-model',
+      );
+      await _expandAdvanced(tester);
+      final position = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text(l10n.saveAction));
+      await deviceFrames(tester);
+
+      expect(settings.providers, isEmpty);
+      expectOnScreen(tester, find.text(l10n.aiProviderKeyMinimum), 640);
+    });
 
     testWidgets('an error fixed while waiting does not move the page', (
       tester,
