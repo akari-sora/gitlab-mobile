@@ -911,6 +911,9 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                       childrenPadding: EdgeInsets.zero,
                       title: Text(l10n.aiProviderAdvancedTitle),
                       children: [
+                        // Room for the first field's floating label, which
+                        // the tile's clip would otherwise cut.
+                        const SizedBox(height: 12),
                         TextFormField(
                           key: const ValueKey('ai-provider-models-url'),
                           controller: _modelsUrl,

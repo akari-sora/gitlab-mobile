@@ -210,6 +210,24 @@ void main() {
       );
     });
 
+    testWidgets('its floating label is not cut by the advanced section', (
+      tester,
+    ) async {
+      await openCodeGo(tester);
+      final header = find.ancestor(
+        of: find.text(l10n.aiProviderAdvancedTitle),
+        matching: find.byType(ListTile),
+      );
+      final label = find.descendant(
+        of: find.byKey(const ValueKey('ai-provider-models-url')),
+        matching: find.text(l10n.aiProviderModelsUrlLabel),
+      );
+      expect(
+        tester.getRect(label).top,
+        greaterThanOrEqualTo(tester.getRect(header).bottom),
+      );
+    });
+
     testWidgets('a saved provider on another server opens without one', (
       tester,
     ) async {
