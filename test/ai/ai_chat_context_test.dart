@@ -1,6 +1,9 @@
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/redaction.dart';
+import 'package:gitlab_mobile/core/ai/tools/gitlab_read_port.dart';
+import 'package:gitlab_mobile/core/ai/tools/tool_catalogue.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_context.dart';
@@ -73,6 +76,7 @@ void main() {
             'created_at': '2026-10-20T12:00:00Z',
             'author': {'username': 'reviewer'},
             'system': false,
+            'internal': true,
           },
         ]);
       }
@@ -112,8 +116,90 @@ void main() {
     expect(result.scope!.headSha, _head);
     expect(result.scope!.defaultBranch, 'main');
     expect(result.built.blocks.single.text, contains('newest note'));
+    expect(result.built.blocks.single.text, contains('"internal":true'));
     expect(result.built.pinnedSha, _head);
   });
+
+  for (final branchResult in const ['missing', 'forbidden', 'invisible']) {
+    test(
+      'issue remains available when its revision is $branchResult',
+      () async {
+        final adapter = FakeAdapter((request) {
+          final path = request.uri.path;
+          if (path.endsWith('/projects/42/issues/3/notes')) {
+            return jsonResponse([
+              {
+                'body': 'issue survives without repository access',
+                'created_at': '2026-10-20T12:00:00Z',
+                'system': false,
+                'confidential': false,
+              },
+            ]);
+          }
+          if (path.endsWith('/projects/42/issues/3')) {
+            return jsonResponse({
+              'title': 'Issue title',
+              'description': 'Issue body',
+              'state': 'opened',
+              'labels': ['bug'],
+            });
+          }
+          if (path.endsWith('/projects/42/repository/branches/main')) {
+            return jsonResponse({
+              'message': branchResult,
+            }, status: branchResult == 'forbidden' ? 403 : 404);
+          }
+          if (path.endsWith('/projects/42')) {
+            return jsonResponse({
+              'id': 42,
+              'name': 'Synthetic',
+              'path_with_namespace': 'team/synthetic',
+              if (branchResult != 'missing') 'default_branch': 'main',
+            });
+          }
+          return jsonResponse({'error': 'not found'}, status: 404);
+        });
+        final result = await _load(
+          const AiWorkItemOrigin(
+            project: _project,
+            kind: AiWorkItemKind.issue,
+            iid: 3,
+            title: 'Issue title',
+          ),
+          adapter,
+        );
+
+        expect(result.scope!.headSha, isNull);
+        expect(
+          result.scope!.defaultBranch,
+          branchResult == 'missing' ? isNull : 'main',
+        );
+        expect(result.built.pinnedSha, isNull);
+        expect(
+          result.built.blocks.single.text,
+          contains('issue survives without repository access'),
+        );
+
+        final requestCount = adapter.requests.length;
+        final toolResult =
+            await AiToolCatalogue(
+              port: GitLabAiReadPort(testApi(adapter), _project.id),
+              scope: result.scope!,
+              redactor: Redactor(secrets: const _Secrets()),
+            ).executeResult(
+              AiToolCall(
+                id: 'revision-unavailable',
+                name: 'read_file',
+                arguments: const {'path': 'README.md', 'revision': 'head'},
+              ),
+              budget: AiToolBudget(),
+            );
+        expect(toolResult.isError, isTrue);
+        expect(toolResult.content, contains('no pinned commit'));
+        expect(adapter.requests, hasLength(requestCount));
+      },
+    );
+  }
 
   test(
     'merge request pins item refs and loads that exact diff version',
@@ -139,6 +225,27 @@ void main() {
             {'id': 5, 'head_commit_sha': _head, 'base_commit_sha': _base},
           ]);
         }
+        if (path.endsWith('/projects/42/merge_requests/7/notes')) {
+          expect(request.uri.queryParameters, containsPair('sort', 'desc'));
+          expect(
+            request.uri.queryParameters,
+            containsPair('order_by', 'created_at'),
+          );
+          return jsonResponse([
+            {
+              'body': 'visible MR note',
+              'created_at': '2026-10-20T12:00:00Z',
+              'system': false,
+              'confidential': true,
+            },
+            {
+              'body': 'system MR note',
+              'created_at': '2026-10-20T13:00:00Z',
+              'system': true,
+              'internal': false,
+            },
+          ]);
+        }
         if (path.endsWith('/projects/42/merge_requests/7')) {
           return jsonResponse({
             'title': 'MR title',
@@ -162,6 +269,12 @@ void main() {
       expect(result.scope!.headSha, _head);
       expect(result.scope!.baseSha, _base);
       expect(result.built.blocks.single.text, contains('+new'));
+      expect(result.built.blocks.single.text, contains('visible MR note'));
+      expect(
+        result.built.blocks.single.text,
+        isNot(contains('system MR note')),
+      );
+      expect(result.built.blocks.single.text, contains('"internal":true'));
     },
   );
 

@@ -12,7 +12,11 @@ import 'ai_stores.dart';
 ///
 /// Keeping disposal beside the session lets tests inject a small
 /// [AiChatSession] without widening that page-facing interface.
-typedef AiChatSessionHandle = ({AiChatSession session, VoidCallback dispose});
+typedef AiChatSessionHandle = ({
+  AiChatSession session,
+  VoidCallback capacityChanged,
+  VoidCallback dispose,
+});
 
 typedef AiChatSessionFactory =
     AiChatSessionHandle Function({
@@ -37,7 +41,11 @@ AiChatSessionHandle _createAiChatSession({
     runningCount: runningCount,
     wireClientFactory: wireClientFactory,
   );
-  return (session: controller, dispose: controller.dispose);
+  return (
+    session: controller,
+    capacityChanged: controller.notifyCapacityChanged,
+    dispose: controller.dispose,
+  );
 }
 
 /// Conversations owned by one exact authenticated account generation.
@@ -127,10 +135,11 @@ final class AccountAiRunRegistry extends ChangeNotifier
     if (_disposed) return;
     final next = runningCount;
     if (next == _lastRunningCount) return;
-    final capacityOpened = next < _lastRunningCount;
     _lastRunningCount = next;
     notifyListeners();
-    if (capacityOpened) _scheduleCapacityRecheck();
+    // Idle pages rebuild both when capacity fills (they must show why they
+    // cannot send) and when it opens again.
+    _scheduleCapacityRecheck();
   }
 
   void _scheduleCapacityRecheck() {
@@ -139,11 +148,12 @@ final class AccountAiRunRegistry extends ChangeNotifier
     scheduleMicrotask(() {
       _capacityRecheckScheduled = false;
       if (_disposed) return;
-      for (final handle in _sessions.values) {
-        if (handle.session.phase == AiChatPhase.idle &&
-            handle.session.blocker == AiChatBlocker.tooManyRunning) {
-          unawaited(handle.session.recheck());
-        }
+      final callbacks = <VoidCallback>[
+        for (final handle in _sessions.values)
+          if (handle.session.phase == AiChatPhase.idle) handle.capacityChanged,
+      ];
+      for (final callback in callbacks) {
+        callback();
       }
     });
   }

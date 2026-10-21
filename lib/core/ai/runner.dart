@@ -286,6 +286,7 @@ final class AiRunner {
         name: call.name,
         data: data,
         isError: true,
+        notExecuted: true,
       );
     }
 
@@ -578,6 +579,7 @@ final class AiRunner {
               truncated:
                   toolResult.truncated || clipped.length < content.length,
               blockedSensitive: toolResult.blockedSensitive,
+              notExecuted: toolResult.notExecuted,
             );
             results.add(safeResult);
             _notifyToolResult(safeResult);
@@ -759,9 +761,13 @@ final class AiRunner {
     if (arguments is! Map) return null;
     return {
       for (final MapEntry(:key, :value) in arguments.entries)
-        if (key is String && key.length <= 64)
+        if (key is String && _displayArgumentKey.hasMatch(key))
           if (value is String && value.length <= 1024)
-            key: _redactor.redactSource(stripAiAnsi(value)).text
+            key: _redactor
+                .redactSource(
+                  stripAiAnsi(value).replaceAll(_displayControls, ''),
+                )
+                .text
           else if (value is int || value is bool)
             key: value,
     };
@@ -860,6 +866,13 @@ AiToolResult _synthetic(AiToolCall call, String reason) =>
       data: AiAppText.plain('[source: tool]\nNot executed: $reason'),
       isError: true,
     );
+
+final _displayArgumentKey = RegExp(r'^[a-z][a-z0-9_]{0,31}$');
+
+final _displayControls = RegExp(
+  r'[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e'
+  r'\u2060-\u2069\ufeff]',
+);
 
 AiRunEnd _endForStop(AiStopReason stop) => switch (stop) {
   AiStopReason.maxTokens => AiRunEnd.maxTokens,

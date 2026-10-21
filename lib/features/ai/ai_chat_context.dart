@@ -161,16 +161,26 @@ Future<AiChatContext> _loadIssue(
   _requireCurrent(isCurrent);
   final project = await api.record(['projects', '${origin.project.id}']);
   _requireCurrent(isCurrent);
-  final defaultBranch = _requiredString(project, 'default_branch');
-  final branch = await api.record([
-    'projects',
-    '${origin.project.id}',
-    'repository',
-    'branches',
-    defaultBranch,
-  ]);
-  _requireCurrent(isCurrent);
-  final pinnedSha = _requiredNestedString(branch, 'commit', 'id');
+  final defaultBranch = _optionalString(project, 'default_branch');
+  String? pinnedSha;
+  if (defaultBranch != null && defaultBranch.isNotEmpty) {
+    try {
+      final branch = await api.record([
+        'projects',
+        '${origin.project.id}',
+        'repository',
+        'branches',
+        defaultBranch,
+      ]);
+      pinnedSha = _requiredNestedString(branch, 'commit', 'id');
+    } on ApiFailure catch (failure) {
+      if (failure.kind != FailureKind.forbidden &&
+          failure.kind != FailureKind.invisible) {
+        rethrow;
+      }
+    }
+    _requireCurrent(isCurrent);
+  }
   await refreshSecrets();
   _requireCurrent(isCurrent);
 
@@ -196,6 +206,7 @@ Future<AiChatContext> _loadIssue(
       current: AiResourceRef(kind: AiResourceKind.issue, id: origin.iid),
       headSha: pinnedSha,
       defaultBranch: defaultBranch,
+      useProjectDefaultBranch: false,
     ),
   );
 }
@@ -254,6 +265,17 @@ Future<AiChatContext> _loadMergeRequest(
       _requiredString(detail, 'base_commit_sha') != baseSha) {
     throw const FormatException('Merge request diff revision changed.');
   }
+  final notes = await api.records(
+    [
+      'projects',
+      '${origin.project.id}',
+      'merge_requests',
+      '${origin.iid}',
+      'notes',
+    ],
+    query: const {'order_by': 'created_at', 'sort': 'desc', 'per_page': '30'},
+  );
+  _requireCurrent(isCurrent);
   await refreshSecrets();
   _requireCurrent(isCurrent);
   final rawDiffs = detail['diffs'];
@@ -281,6 +303,7 @@ Future<AiChatContext> _loadMergeRequest(
       baseSha: baseSha,
       labels: _labels(item),
       diffs: diffs,
+      notes: notes.items.map(_discussionNote).toList(growable: false),
     ),
     nonce: nonce,
   );
@@ -363,6 +386,7 @@ AiResourceScope _scope({
   int? pipelineId,
   int? jobId,
   String? defaultBranch,
+  bool useProjectDefaultBranch = true,
 }) => AiResourceScope(
   accountKey: accountKey,
   instanceKey: api.instance.key,
@@ -373,7 +397,9 @@ AiResourceScope _scope({
   baseSha: baseSha,
   pipelineId: pipelineId,
   jobId: jobId,
-  defaultBranch: defaultBranch ?? project.defaultBranch,
+  defaultBranch: useProjectDefaultBranch
+      ? defaultBranch ?? project.defaultBranch
+      : defaultBranch,
 );
 
 AiDiscussionNoteInput _discussionNote(Json note) {
@@ -394,7 +420,15 @@ AiDiscussionNoteInput _discussionNote(Json note) {
     createdAt: createdAt,
     author: authorName,
     system: note['system'] == true,
+    internal: _noteFlag(note, 'internal') || _noteFlag(note, 'confidential'),
   );
+}
+
+bool _noteFlag(Json note, String key) {
+  final value = note[key];
+  if (value == null) return false;
+  if (value is bool) return value;
+  throw FormatException('Discussion note $key flag is invalid.');
 }
 
 List<String> _labels(Json item) {

@@ -6,12 +6,14 @@ import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
+import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/ai_transport.dart';
 import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
 import 'package:gitlab_mobile/core/ai/wire/anthropic_messages.dart';
 import 'package:gitlab_mobile/core/ai/wire/chat_completions.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
+import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_stores.dart';
@@ -28,13 +30,14 @@ AiProviderConfig _provider(
   String id = 'provider',
   bool requiresKey = false,
   bool tools = false,
+  String model = 'synthetic-model',
 }) => AiProviderConfig(
   id: id,
   name: 'Synthetic $id',
   presetId: 'custom',
   baseUrl: 'https://provider.example/v1',
   format: format,
-  model: 'synthetic-model',
+  model: model,
   authStyle: AiAuthStyle.bearer,
   caps: AiCaps(
     tokenLimitField: switch (format) {
@@ -75,10 +78,13 @@ Future<_Environment> _environment({
   MemoryAiStore? aiStore,
   bool failFirstRepositoryRead = false,
   String? repositoryText,
+  Responder? gitLabRespond,
 }) async {
   final workspace = WorkspaceFixture();
   var failRepositoryRead = failFirstRepositoryRead;
-  final gitLabAdapter = failFirstRepositoryRead || repositoryText != null
+  final gitLabAdapter = failFirstRepositoryRead ||
+          repositoryText != null ||
+          gitLabRespond != null
       ? FakeAdapter((request) {
           if (failRepositoryRead &&
               request.uri.path.contains('/repository/files/')) {
@@ -89,7 +95,9 @@ Future<_Environment> _environment({
               request.uri.path.endsWith('/repository/files/README.md/raw')) {
             return ResponseBody.fromString(repositoryText, 200);
           }
-          return workspace.respond(request);
+          return gitLabRespond == null
+              ? workspace.respond(request)
+              : gitLabRespond(request);
         })
       : workspace.adapter;
   final accounts = MemoryAccountStore()
@@ -136,12 +144,14 @@ AiChatController _controller(
   AiChatOrigin origin = const AiGeneralOrigin(),
   int Function()? runningCount,
   AiChatWireClientFactory? wireClientFactory,
+  Future<void> Function()? refreshSecrets,
 }) => AiChatController(
   origin: origin,
   session: environment.session,
   settings: environment.settings,
   runningCount: runningCount ?? () => 0,
   wireClientFactory: wireClientFactory,
+  refreshSecrets: refreshSecrets,
 );
 
 AiWireClient _wireClient(
@@ -184,6 +194,7 @@ String _data(Object value, {String? event}) =>
 List<String> _toolThenAnswer(
   AiFormat format, {
   String path = 'README.md',
+  String toolName = 'read_file',
 }) => switch (format) {
   AiFormat.responses => [
     _data({
@@ -193,7 +204,7 @@ List<String> _toolThenAnswer(
           {
             'type': 'function_call',
             'call_id': 'call_read',
-            'name': 'read_file',
+            'name': toolName,
             'arguments': jsonEncode({'path': path, 'revision': 'head'}),
             'status': 'completed',
           },
@@ -228,7 +239,7 @@ List<String> _toolThenAnswer(
                 'id': 'call_read',
                 'type': 'function',
                 'function': {
-                  'name': 'read_file',
+                  'name': toolName,
                   'arguments': jsonEncode({'path': path, 'revision': 'head'}),
                 },
               },
@@ -261,7 +272,7 @@ List<String> _toolThenAnswer(
           'content_block': {
             'type': 'tool_use',
             'id': 'call_read',
-            'name': 'read_file',
+            'name': toolName,
             'input': {'path': path, 'revision': 'head'},
           },
         }, event: 'content_block_start')}'
@@ -329,6 +340,43 @@ String _partialEvents(AiFormat format, String partial) => switch (format) {
           'delta': {'type': 'text_delta', 'text': partial},
         }, event: 'content_block_delta')}',
 };
+
+Future<AiChatController> _readyController(
+  _Environment environment,
+  FakeAdapter adapter, {
+  AiChatOrigin? origin,
+  bool tools = true,
+  bool requiresKey = false,
+  Future<void> Function()? refreshSecrets,
+}) async {
+  await _configure(
+    environment,
+    _provider(AiFormat.responses, tools: tools, requiresKey: requiresKey),
+    grantConsent: true,
+  );
+  final controller = _controller(
+    environment,
+    origin:
+        origin ??
+        AiFileOrigin(
+          project: environment.workspace.project,
+          path: 'README.md',
+          sha: WorkspaceFixture.sha,
+        ),
+    refreshSecrets: refreshSecrets,
+    wireClientFactory:
+        ({required config, required apiKey, required conversationId}) =>
+            _wireClient(
+              adapter,
+              config: config,
+              apiKey: apiKey,
+              conversationId: conversationId,
+            ),
+  );
+  addTearDown(controller.dispose);
+  await controller.recheck();
+  return controller;
+}
 
 void main() {
   test('cold chat loads persisted consent and account token cap', () async {
@@ -755,8 +803,13 @@ void main() {
     expect(controller.phase, AiChatPhase.idle);
     expect(
       controller.items.whereType<AiNoticeItem>().single.kind,
-      AiNoticeKind.stopped,
+      AiNoticeKind.notSent,
     );
+    expect(
+      controller.items.first,
+      isA<AiUserItem>().having((item) => item.text, 'text', 'do not send'),
+    );
+    expect(controller.items, hasLength(2));
   });
 
   for (final format in AiFormat.values) {
@@ -1053,4 +1106,536 @@ void main() {
     expect(controller.id, isNot(nextId));
     expect(controller.items, isEmpty);
   });
+
+  test(
+    'r1 tool target strips controls before redacting while running',
+    () async {
+      const token = 'synthetic-test-token';
+      final gate = Completer<void>();
+      var reading = false;
+      final environment = await _environment(
+        gitLabRespond: (request) async {
+          if (request.uri.path.contains('/repository/files/') &&
+              !request.uri.path.contains('/README.md')) {
+            reading = true;
+            await gate.future;
+            return ResponseBody.fromString('safe tool text', 200);
+          }
+          return WorkspaceFixture().respond(request);
+        },
+      );
+      addTearDown(environment.dispose);
+      final responses = _toolThenAnswer(
+        AiFormat.responses,
+        path: 'notes/synthetic-\u200btest-token.md',
+      ).iterator;
+      final adapter = FakeAdapter((_) {
+        responses.moveNext();
+        return _sse(responses.current);
+      });
+      final controller = await _readyController(environment, adapter);
+      final send = controller.send('read');
+      try {
+        await _waitFor(() => reading);
+        final running = controller.items.whereType<AiToolRunItem>().single;
+        expect(running.status, AiToolRunStatus.running);
+        expect(running.argsPreview, isNot(contains(token)));
+        expect(running.argsPreview, contains('REDACTED'));
+        expect(running.argsPreview, isNot(contains('\u200b')));
+      } finally {
+        gate.complete();
+        await send;
+      }
+      final finished = controller.items.whereType<AiToolRunItem>().single;
+      expect(finished.argsPreview, isNot(contains(token)));
+      expect(finished.argsPreview, contains('REDACTED'));
+    },
+  );
+
+  test('r1 tool targets retain long values for later redaction', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    final path = 'notes/${'x' * 300}/tail.md';
+    final responses = _toolThenAnswer(AiFormat.responses, path: path).iterator;
+    final adapter = FakeAdapter((_) {
+      responses.moveNext();
+      return _sse(responses.current);
+    });
+    final controller = await _readyController(environment, adapter);
+    await controller.send('read');
+    expect(
+      controller.items.whereType<AiToolRunItem>().single.argsPreview,
+      path,
+    );
+  });
+
+  test('r1 unknown tool names are blank and synthetic reads skipped', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    final responses = _toolThenAnswer(
+      AiFormat.responses,
+      toolName: 'untrusted_unknown_tool',
+    ).iterator;
+    final adapter = FakeAdapter((_) {
+      responses.moveNext();
+      return _sse(responses.current);
+    });
+    final controller = await _readyController(
+      environment,
+      adapter,
+      tools: false,
+    );
+    await controller.send('read');
+    final tool = controller.items.whereType<AiToolRunItem>().single;
+    expect(tool.name, isEmpty);
+    expect(tool.status, AiToolRunStatus.skipped);
+    expect(tool.sizeChars, 0);
+  });
+
+  for (final (status, kind) in [
+    (401, FailureKind.unauthenticated),
+    (403, FailureKind.forbidden),
+    (404, FailureKind.invisible),
+    (200, FailureKind.tooLarge),
+  ]) {
+    test('r1 GitLab context failure keeps $kind', () async {
+      final environment = await _environment(
+        gitLabRespond: (request) {
+          if (request.uri.path.contains('/repository/files/')) {
+            return status == 200
+                ? ResponseBody.fromString('x' * (2 * 1024 * 1024 + 1), 200)
+                : jsonResponse({'message': 'synthetic'}, status: status);
+          }
+          return WorkspaceFixture().respond(request);
+        },
+      );
+      addTearDown(environment.dispose);
+      final controller = await _readyController(
+        environment,
+        FakeAdapter((_) => throw StateError('must not send')),
+      );
+      expect(controller.blocker, AiChatBlocker.contextUnavailable);
+      expect(
+        controller.failure,
+        isA<ApiFailure>().having((failure) => failure.kind, 'kind', kind),
+      );
+    });
+  }
+
+  test('r1 malformed context is a GitLab invalid response', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    final controller = await _readyController(
+      environment,
+      FakeAdapter((_) => throw StateError('must not send')),
+      origin: AiFileOrigin(
+        project: environment.workspace.project,
+        path: 'README.md',
+        sha: 'not-a-full-sha',
+      ),
+    );
+    expect(
+      controller.failure,
+      isA<ApiFailure>().having(
+        (failure) => failure.kind,
+        'kind',
+        FailureKind.invalidResponse,
+      ),
+    );
+  });
+
+  test('r1 provider failure retains provider semantics', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    final controller = await _readyController(
+      environment,
+      FakeAdapter((_) => jsonResponse({'error': 'synthetic'}, status: 403)),
+    );
+    await controller.send('hello');
+    expect(
+      controller.failure,
+      isA<AiFailure>().having(
+        (failure) => failure.kind,
+        'kind',
+        AiFailureKind.forbidden,
+      ),
+    );
+  });
+
+  test('r1 sentText is the complete redacted context block', () async {
+    final environment = await _environment(
+      repositoryText: 'start ${'safe line\n' * 40} synthetic-test-token end',
+    );
+    addTearDown(environment.dispose);
+    final adapter = FakeAdapter(
+      (_) => _sse(_toolThenAnswer(AiFormat.responses).last),
+    );
+    final controller = await _readyController(environment, adapter);
+    await controller.send('summarize');
+    final chip = controller.items.whereType<AiUserItem>().single.chips.single;
+    expect(chip.sentText, isNotNull);
+    expect(chip.sentText!.length, greaterThan(chip.preview.length));
+    expect(chip.sentText, isNot(contains('synthetic-test-token')));
+    final request = jsonDecode(
+      adapter.requests.single.data as String,
+    ) as Map<String, Object?>;
+    final input =
+        (request['input']! as List<Object?>).single as Map<String, Object?>;
+    final content =
+        (input['content']! as List<Object?>).single as Map<String, Object?>;
+    final sent = content['text']! as String;
+    expect(sent, contains(chip.sentText!));
+    final start = sent.indexOf('<gitlab_data');
+    final end = sent.indexOf('</gitlab_data>') + '</gitlab_data>'.length;
+    expect(chip.sentText, sent.substring(start, end));
+    expect(chip.sentText, contains('REDACTED'));
+    await controller.recheck();
+    expect(
+      controller.items.whereType<AiUserItem>().single.chips.single.sentText,
+      chip.sentText,
+    );
+  });
+
+  test(
+    'r1 settings replacement retains display and starts a fresh segment',
+    () async {
+      final environment = await _environment();
+      addTearDown(environment.dispose);
+      final adapters = <FakeAdapter>[];
+      await _configure(
+        environment,
+        _provider(AiFormat.responses),
+        grantConsent: true,
+      );
+      final controller = _controller(
+        environment,
+        origin: AiFileOrigin(
+          project: environment.workspace.project,
+          path: 'README.md',
+          sha: WorkspaceFixture.sha,
+        ),
+        wireClientFactory:
+            ({required config, required apiKey, required conversationId}) {
+              final adapter = FakeAdapter(
+                (_) => _sse(_toolThenAnswer(AiFormat.responses).last),
+              );
+              adapters.add(adapter);
+              return _wireClient(
+                adapter,
+                config: config,
+                apiKey: apiKey,
+                conversationId: conversationId,
+              );
+            },
+      );
+      addTearDown(controller.dispose);
+      await controller.recheck();
+      await controller.send('earlier synthetic question');
+      final previous = controller.items.toList();
+      final oldId = controller.id;
+      final changed = await environment.settings.saveProvider(
+        _provider(AiFormat.responses, model: 'changed-model'),
+      );
+      await environment.settings.grantConsent(
+        environment.workspace.account.key,
+        aiCurrentConsentContractFor(changed),
+        const {'synthetic': true},
+      );
+      await controller.recheck();
+      expect(
+        controller.items
+            .take(previous.length)
+            .map(
+              (item) => switch (item) {
+                AiUserItem(:final text) || AiAssistantItem(:final text) => text,
+                _ => '',
+              },
+            ),
+        ['earlier synthetic question', 'Final answer'],
+      );
+      expect(
+        controller.items.last,
+        isA<AiNoticeItem>().having(
+          (item) => item.kind,
+          'kind',
+          AiNoticeKind.newConversation,
+        ),
+      );
+      expect(controller.id, isNot(oldId));
+      await controller.send('new synthetic question');
+      final requests = adapters.expand((adapter) => adapter.requests).toList();
+      expect(requests, hasLength(2));
+      final second = jsonEncode(requests.last.data);
+      expect(second, contains('new synthetic question'));
+      expect(second, isNot(contains('earlier synthetic question')));
+      expect(second, isNot(contains('Final answer')));
+      final chip = controller.items.whereType<AiUserItem>().last.chips.single;
+      final body = jsonDecode(requests.last.data as String)
+          as Map<String, Object?>;
+      final input = (body['input']! as List<Object?>).single
+          as Map<String, Object?>;
+      final content = (input['content']! as List<Object?>).single
+          as Map<String, Object?>;
+      final sent = content['text']! as String;
+      final start = sent.indexOf('<gitlab_data');
+      final end = sent.indexOf('</gitlab_data>') + '</gitlab_data>'.length;
+      expect(chip.sentText, sent.substring(start, end));
+    },
+  );
+
+  test('r1 notice from a tool stays before the running answer', () async {
+    final environment = await _environment(
+      gitLabRespond: (request) {
+        if (request.uri.path.endsWith('/repository/files/withheld.txt')) {
+          return ResponseBody.fromString('', 200);
+        }
+        if (request.uri.path.endsWith('/repository/files/withheld.txt/raw')) {
+          return ResponseBody.fromString(
+            '-----BEGIN PRIVATE KEY-----\nsynthetic',
+            200,
+          );
+        }
+        return WorkspaceFixture().respond(request);
+      },
+    );
+    addTearDown(environment.dispose);
+    final gate = Completer<void>();
+    var answering = false;
+    var request = 0;
+    final responses = _toolThenAnswer(AiFormat.responses, path: 'withheld.txt');
+    final adapter = FakeAdapter((_) async {
+      if (request++ == 0) return _sse(responses.first);
+      answering = true;
+      await gate.future;
+      return _sse(responses.last);
+    });
+    final controller = await _readyController(environment, adapter);
+    final send = controller.send('read');
+    try {
+      await _waitFor(() => answering);
+      final notice = controller.items.whereType<AiNoticeItem>().singleWhere(
+        (item) => item.kind == AiNoticeKind.privateKeyWithheld,
+      );
+      expect(
+        controller.items.indexOf(notice),
+        lessThan(
+          controller.items.indexWhere((item) => item is AiAssistantItem),
+        ),
+      );
+      expect(controller.items.last, isA<AiAssistantItem>());
+    } finally {
+      gate.complete();
+      await send;
+    }
+    expect(controller.items.last, isA<AiAssistantItem>());
+  });
+
+  test(
+    'r1 clipped tool excerpt drops a partial token before late redaction',
+    () async {
+      final environment = await _environment(
+        gitLabRespond: (request) {
+          if (request.uri.path.endsWith('/repository/files/long.txt')) {
+            return ResponseBody.fromString('', 200);
+          }
+          if (request.uri.path.endsWith('/repository/files/long.txt/raw')) {
+            return ResponseBody.fromString(
+              '${'word ' * 380}${'q' * 400} end',
+              200,
+            );
+          }
+          return WorkspaceFixture().respond(request);
+        },
+      );
+      addTearDown(environment.dispose);
+      final responses = _toolThenAnswer(
+        AiFormat.responses,
+        path: 'long.txt',
+      ).iterator;
+      final adapter = FakeAdapter((_) {
+        responses.moveNext();
+        return _sse(responses.current);
+      });
+      final controller = await _readyController(
+        environment,
+        adapter,
+        requiresKey: true,
+      );
+      await controller.send('read');
+      final excerpt = controller.items
+          .whereType<AiToolRunItem>()
+          .single
+          .resultExcerpt;
+      expect(excerpt.length, lessThan(2000));
+      expect(excerpt, isNot(contains('q')));
+      expect(excerpt, endsWith(' '));
+      await environment.settings.saveProviderKey(
+        'provider',
+        'q' * 400,
+        acknowledgeWarning: true,
+      );
+      await controller.recheck();
+      expect(
+        controller.items.whereType<AiToolRunItem>().single.resultExcerpt,
+        isNot(contains('q')),
+      );
+    },
+  );
+
+  test('r1 a secret-refresh failure keeps user text with notSent', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    var fail = false;
+    final adapter = FakeAdapter((_) => throw StateError('must not send'));
+    final controller = await _readyController(
+      environment,
+      adapter,
+      refreshSecrets: () async {
+        if (fail) throw const FormatException('synthetic refresh failure');
+      },
+    );
+    fail = true;
+    await controller.send('keep synthetic-test-token draft');
+    expect(adapter.requests, isEmpty);
+    expect(
+      controller.items.first,
+      isA<AiUserItem>().having(
+        (item) => item.text,
+        'text',
+        isNot(contains('synthetic-test-token')),
+      ),
+    );
+    expect(
+      controller.items.last,
+      isA<AiNoticeItem>().having(
+        (item) => item.kind,
+        'kind',
+        AiNoticeKind.notSent,
+      ),
+    );
+    expect(controller.items, hasLength(2));
+    expect(
+      controller.failure,
+      isA<ApiFailure>().having(
+        (failure) => failure.kind,
+        'kind',
+        FailureKind.invalidResponse,
+      ),
+    );
+  });
+
+  test('r1 stop during secret refresh keeps the unsent user text', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    final gate = Completer<void>();
+    var holdRefresh = false;
+    var refreshing = false;
+    final adapter = FakeAdapter((_) => throw StateError('must not send'));
+    final controller = await _readyController(
+      environment,
+      adapter,
+      refreshSecrets: () async {
+        if (holdRefresh) {
+          refreshing = true;
+          await gate.future;
+        }
+      },
+    );
+    holdRefresh = true;
+    final send = controller.send('keep this draft');
+    await _waitFor(() => refreshing);
+    controller.stop();
+    gate.complete();
+    await send;
+    expect(adapter.requests, isEmpty);
+    expect(controller.items, hasLength(2));
+    expect(
+      controller.items.first,
+      isA<AiUserItem>().having((item) => item.text, 'text', 'keep this draft'),
+    );
+    expect(
+      controller.items.last,
+      isA<AiNoticeItem>().having(
+        (item) => item.kind,
+        'kind',
+        AiNoticeKind.notSent,
+      ),
+    );
+    expect(controller.failure, isNull);
+    expect(controller.phase, AiChatPhase.idle);
+  });
+
+  test('r1 a read failure remains failed with an attempted result size', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    final responses = _toolThenAnswer(
+      AiFormat.responses,
+      path: 'missing-file.txt',
+    ).iterator;
+    final adapter = FakeAdapter((_) {
+      responses.moveNext();
+      return _sse(responses.current);
+    });
+    final controller = await _readyController(environment, adapter);
+    await controller.send('read');
+    final tool = controller.items.whereType<AiToolRunItem>().single;
+    expect(tool.name, 'read_file');
+    expect(tool.status, AiToolRunStatus.failed);
+    expect(tool.sizeChars, greaterThan(0));
+  });
+
+
+  test('r1 sentText follows secrets learned during runner preflight', () async {
+    const lateSecret = 'synthetic-late-provider-key-0099';
+    final environment = await _environment(repositoryText: 'value=$lateSecret');
+    addTearDown(environment.dispose);
+    final gate = Completer<void>();
+    var sending = false;
+    final adapter = FakeAdapter((_) async {
+      sending = true;
+      await gate.future;
+      return _sse(_toolThenAnswer(AiFormat.responses).last);
+    });
+    var armed = false;
+    var refreshes = 0;
+    final controller = await _readyController(
+      environment,
+      adapter,
+      refreshSecrets: () async {
+        if (armed && ++refreshes == 2) {
+          await environment.settings.saveProviderKey(
+            'other',
+            lateSecret,
+            acknowledgeWarning: true,
+          );
+        }
+      },
+    );
+    await environment.settings.saveProvider(
+      _provider(AiFormat.responses, id: 'other', requiresKey: true),
+    );
+    await controller.recheck();
+    armed = true;
+    final send = controller.send('summarize');
+    try {
+      await _waitFor(() => sending);
+      final chip = controller.items.whereType<AiUserItem>().single.chips.single;
+      expect(chip.sentText, isNot(contains(lateSecret)));
+      expect(chip.sentText, contains('REDACTED'));
+      final body = jsonDecode(adapter.requests.single.data as String)
+          as Map<String, Object?>;
+      final input = (body['input']! as List<Object?>).single
+          as Map<String, Object?>;
+      final content = (input['content']! as List<Object?>).single
+          as Map<String, Object?>;
+      final sent = content['text']! as String;
+      final start = sent.indexOf('<gitlab_data');
+      final end = sent.indexOf('</gitlab_data>') + '</gitlab_data>'.length;
+      expect(chip.sentText, sent.substring(start, end));
+    } finally {
+      gate.complete();
+      await send;
+    }
+  });
+
 }

@@ -222,6 +222,7 @@ void main() {
           body: 'note-$index',
           createdAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: index)),
           system: index == 24,
+          internal: index.isEven,
         ),
       );
       final builder = AiContextBuilders(
@@ -244,8 +245,43 @@ void main() {
       expect(text, isNot(contains('note-24')));
       expect(text, contains('note-4'));
       expect(text.indexOf('note-4'), lessThan(text.indexOf('note-23')));
+      expect(text, contains('"internal":true'));
+      expect(text, contains('"internal":false'));
     },
   );
+
+  test('MR selects newest twenty non-system notes with internal flags', () {
+    final notes = List.generate(
+      23,
+      (index) => AiDiscussionNoteInput(
+        body: 'mr-note-$index',
+        createdAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: index)),
+        system: index == 22,
+        internal: index == 21,
+      ),
+    );
+    final context = AiContextBuilders(redactor: Redactor(secrets: _Secrets()))
+        .mergeRequest(
+          AiMergeRequestContextInput(
+            iid: 7,
+            title: 'change',
+            description: 'body',
+            state: 'opened',
+            headSha: _head,
+            baseSha: _base,
+            diffs: const [],
+            notes: notes,
+          ),
+          nonce: 'nonce-mr-notes',
+        );
+    final text = context.blocks.single.text;
+    expect(text, isNot(contains('mr-note-0')));
+    expect(text, isNot(contains('mr-note-22')));
+    expect(text, contains('mr-note-2'));
+    expect(text.indexOf('mr-note-2'), lessThan(text.indexOf('mr-note-21')));
+    expect(text, contains('"internal":true'));
+    expect(context.pinnedSha, _head);
+  });
 
   test('discussion strips ANSI before redacting serialized fields', () {
     final builder = AiContextBuilders(

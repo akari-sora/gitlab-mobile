@@ -1518,7 +1518,7 @@ AiWireClient _defaultClientFactory(AiProviderConfig config, String apiKey) {
     wire: wire,
     config: config,
     conversationId: 'provider-editor',
-    appVersion: '0.6.0',
+    appVersion: aiClientAppVersion,
   );
 }
 

@@ -117,7 +117,11 @@ void main() {
               expect(wireClientFactory, same(wireFactory));
               final fake = _FakeChatSession(origin, runningCount);
               created.add(fake);
-              return (session: fake, dispose: fake.dispose);
+              return (
+                session: fake,
+                capacityChanged: fake.notifyCapacityChanged,
+                dispose: fake.dispose,
+              );
             },
       );
       addTearDown(registry.dispose);
@@ -137,23 +141,128 @@ void main() {
 
       await first.send('first');
       await second.send('second');
+      final beforeFull = created[3].capacityNotifications;
       await third.send('third');
+      await Future<void>.delayed(Duration.zero);
       expect(registry.runningCount, AiRunRegistry.maxRunning);
+      // Capacity filling up rebuilds an idle page, so it can say why.
+      expect(created[3].capacityNotifications, greaterThan(beforeFull));
       await fourth.send('fourth');
       expect(fourth.phase, AiChatPhase.idle);
       expect(fourth.blocker, AiChatBlocker.tooManyRunning);
+      final beforeOpen = created[3].capacityNotifications;
 
-      void pageListener() {}
-      first.addListener(pageListener);
-      first.removeListener(pageListener);
+      var firstNotifications = 0;
+      var fourthNotifications = 0;
+      first.addListener(() => firstNotifications++);
+      fourth.addListener(() => fourthNotifications++);
       expect(first.phase, AiChatPhase.running);
       expect(created.first.disposed, isFalse);
 
       first.stop();
       await Future<void>.delayed(Duration.zero);
       expect(fourth.blocker, AiChatBlocker.none);
+      expect(created[0].capacityNotifications, 1);
+      expect(created[3].capacityNotifications, beforeOpen + 1);
+      expect(firstNotifications, 2);
+      expect(fourthNotifications, 1);
     },
   );
+
+  test('release drops and disposes an empty idle session', () async {
+    final fixture = WorkspaceFixture();
+    final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+    final settings = AiSettingsController(MemoryAiStore());
+    addTearDown(session.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(fixture.api.close);
+    await session.initialize();
+    await session.connect('https://example.com/gitlab', 'synthetic-token');
+
+    final created = <_FakeChatSession>[];
+    var factoryBuilds = 0;
+    final registry = AccountAiRunRegistry(
+      session: session,
+      settings: settings,
+      sessionFactory:
+          ({
+            required origin,
+            required session,
+            required settings,
+            required runningCount,
+            wireClientFactory,
+          }) {
+            factoryBuilds++;
+            final fake = _FakeChatSession(origin, runningCount);
+            created.add(fake);
+            return (
+              session: fake,
+              capacityChanged: fake.notifyCapacityChanged,
+              dispose: fake.dispose,
+            );
+          },
+    );
+    addTearDown(registry.dispose);
+
+    final first = registry.open(const AiGeneralOrigin());
+    registry.release(first);
+    expect(created.single.disposed, isTrue);
+
+    final reopened = registry.open(const AiGeneralOrigin());
+    expect(reopened, isNot(same(first)));
+    expect(factoryBuilds, 2);
+  });
+
+  test('release keeps sessions that have items or are running', () async {
+    final fixture = WorkspaceFixture();
+    final session = controllerFor(MemoryAccountStore(), fixture.adapter);
+    final settings = AiSettingsController(MemoryAiStore());
+    addTearDown(session.dispose);
+    addTearDown(settings.dispose);
+    addTearDown(fixture.api.close);
+    await session.initialize();
+    await session.connect('https://example.com/gitlab', 'synthetic-token');
+
+    final registry = AccountAiRunRegistry(
+      session: session,
+      settings: settings,
+      sessionFactory:
+          ({
+            required origin,
+            required session,
+            required settings,
+            required runningCount,
+            wireClientFactory,
+          }) {
+            final fake = _FakeChatSession(origin, runningCount);
+            return (
+              session: fake,
+              capacityChanged: fake.notifyCapacityChanged,
+              dispose: fake.dispose,
+            );
+          },
+    );
+    addTearDown(registry.dispose);
+
+    final withItems = registry.open(const AiGeneralOrigin()) as _FakeChatSession;
+    withItems.addNotice();
+    registry.release(withItems);
+    expect(registry.open(const AiGeneralOrigin()), same(withItems));
+    expect(withItems.disposed, isFalse);
+
+    final running = registry.open(
+      AiJobOrigin(project: fixture.project, jobId: 1, jobName: 'one'),
+    ) as _FakeChatSession;
+    await running.send('keep running');
+    registry.release(running);
+    expect(
+      registry.open(
+        AiJobOrigin(project: fixture.project, jobId: 1, jobName: 'one'),
+      ),
+      same(running),
+    );
+    expect(running.disposed, isFalse);
+  });
 
   test('generation change stops and disposes every live session', () async {
     final fixture = WorkspaceFixture();
@@ -179,7 +288,11 @@ void main() {
           }) {
             final fake = _FakeChatSession(origin, runningCount);
             created.add(fake);
-            return (session: fake, dispose: fake.dispose);
+            return (
+              session: fake,
+              capacityChanged: fake.notifyCapacityChanged,
+              dispose: fake.dispose,
+            );
           },
     );
     final first = registry.open(const AiGeneralOrigin());
@@ -253,6 +366,27 @@ void main() {
       );
       addTearDown(registry.dispose);
 
+      final contextOrigin = AiJobOrigin(
+        project: fixture.project,
+        jobId: 501,
+        jobName: 'analyze',
+      );
+      final firstContext = registry.open(contextOrigin);
+      await _waitFor(() => firstContext.canSend);
+      int contextReads() => fixture.adapter.requests
+          .where(
+            (request) => request.uri.path.endsWith('/projects/42/jobs/501'),
+          )
+          .length;
+      expect(contextReads(), 1);
+      registry.release(firstContext);
+
+      final reopenedContext = registry.open(contextOrigin);
+      expect(reopenedContext, isNot(same(firstContext)));
+      await _waitFor(() => reopenedContext.canSend);
+      expect(contextReads(), 2);
+      registry.release(reopenedContext);
+
       final conversations = <AiChatSession>[
         registry.open(const AiGeneralOrigin()),
         registry.open(
@@ -287,12 +421,26 @@ void main() {
         conversations[2].send('third held run'),
       ];
       expect(registry.runningCount, AiRunRegistry.maxRunning);
-      await conversations[3].send('refused fourth run');
+      var fourthNotifications = 0;
+      conversations[3].addListener(() => fourthNotifications++);
       expect(conversations[3].blocker, AiChatBlocker.tooManyRunning);
+      expect(conversations[3].canSend, isFalse);
       expect(conversations[3].items, isEmpty);
       await _waitFor(() => adapters.length == AiRunRegistry.maxRunning);
+      streams.first.add(
+        Uint8List.fromList(
+          utf8.encode(
+            'data: ${jsonEncode({'type': 'response.completed', 'response': {'output': <Object?>[]}})}\n\n',
+          ),
+        ),
+      );
+      await streams.first.close();
+      await sends.first;
+      await _waitFor(() => conversations[3].canSend);
+      expect(conversations[3].blocker, AiChatBlocker.none);
+      expect(fourthNotifications, greaterThan(0));
       conversations.first.removeListener(pageListener);
-      expect(conversations.first.phase, AiChatPhase.running);
+      expect(conversations.first.phase, AiChatPhase.idle);
 
       await session.endSession();
       await Future.wait(sends).timeout(const Duration(seconds: 2));
@@ -307,6 +455,7 @@ void main() {
         ),
       );
       for (final stream in streams) {
+        if (stream.isClosed) continue;
         stream.add(lateDelta);
         await stream.close();
       }
@@ -376,7 +525,9 @@ final class _FakeChatSession extends ChangeNotifier implements AiChatSession {
   @override
   AiRunEnd? get lastEnd => null;
   var stopCalls = 0;
+  var capacityNotifications = 0;
   var disposed = false;
+  final _items = <AiChatItem>[];
 
   @override
   final AiChatOrigin origin;
@@ -385,7 +536,7 @@ final class _FakeChatSession extends ChangeNotifier implements AiChatSession {
   String get id => origin.key;
 
   @override
-  List<AiChatItem> get items => const <AiChatItem>[];
+  List<AiChatItem> get items => List.unmodifiable(_items);
 
   @override
   AiChatPhase get phase => _phase;
@@ -449,6 +600,20 @@ final class _FakeChatSession extends ChangeNotifier implements AiChatSession {
       _blocker = AiChatBlocker.none;
       notifyListeners();
     }
+  }
+
+  void notifyCapacityChanged() {
+    capacityNotifications++;
+    if (_blocker == AiChatBlocker.tooManyRunning &&
+        _runningCount() < AiRunRegistry.maxRunning) {
+      _blocker = AiChatBlocker.none;
+    }
+    notifyListeners();
+  }
+
+  void addNotice() {
+    _items.add(const AiNoticeItem(AiNoticeKind.newConversation));
+    notifyListeners();
   }
 
   @override

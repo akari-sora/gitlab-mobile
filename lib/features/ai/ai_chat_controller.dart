@@ -44,6 +44,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     required this.settings,
     required this.runningCount,
     AiChatWireClientFactory? wireClientFactory,
+    Future<void> Function()? refreshSecrets,
   }) : _wireClientFactory = wireClientFactory ?? _createWireClient,
        _generation = session.generation,
        _api = session.api!,
@@ -54,6 +55,25 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       readGitLabCredential: () => _api.credential,
     );
     _redactor = Redactor(secrets: _secrets);
+    _refreshSecrets = () async {
+      await _secrets.refresh();
+      if (refreshSecrets != null) {
+        await refreshSecrets();
+        await _secrets.refresh();
+      }
+      if (!_alive) return;
+      _redactDisplay();
+      if (_assistantIndex != null) {
+        final index = _items.lastIndexWhere((item) => item is AiUserItem);
+        if (index >= 0) {
+          final user = _items[index] as AiUserItem;
+          if (user.chips.isNotEmpty) {
+            _items[index] = AiUserItem(text: user.text, chips: _chips());
+          }
+        }
+        _notifyStream();
+      }
+    };
     settings.addListener(_settingsChanged);
     session.addListener(_sessionChanged);
     unawaited(recheck());
@@ -70,6 +90,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   final String _accountKey;
   late final KnownSecretsLive _secrets;
   late final Redactor _redactor;
+  late final Future<void> Function() _refreshSecrets;
   String _id = _newId();
   String? _chosenProvider;
   AiProviderConfig? _provider;
@@ -83,7 +104,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   final List<({String id, int index})> _pendingTools = [];
   AiChatPhase _phase = AiChatPhase.preparing;
   AiChatBlocker _blocker = AiChatBlocker.settingsLoading;
-  AiFailure? _failure;
+  UserFacingFailure? _failure;
   bool _contextFailed = false;
   bool _offerNewConversation = false;
   AiRunEnd? _lastEnd;
@@ -111,7 +132,22 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   @override
   AiChatPhase get phase => _phase;
   @override
-  AiChatBlocker get blocker => _blocker;
+  AiChatBlocker get blocker {
+    if (_phase == AiChatPhase.idle &&
+        (_blocker == AiChatBlocker.none ||
+            _blocker == AiChatBlocker.tooManyRunning)) {
+      return runningCount() >= AiRunRegistry.maxRunning
+          ? AiChatBlocker.tooManyRunning
+          : AiChatBlocker.none;
+    }
+    return _blocker;
+  }
+
+  /// The registry calls this when shared capacity changes, for idle pages.
+  void notifyCapacityChanged() {
+    if (_phase == AiChatPhase.idle) _notify();
+  }
+
   @override
   List<AiProviderConfig> get providers => settings.providers;
   @override
@@ -120,7 +156,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   AiConsentContract? get consentRequest =>
       _blocker == AiChatBlocker.consentRequired ? _contract : null;
   @override
-  AiFailure? get failure => _failure;
+  UserFacingFailure? get failure => _failure;
   @override
   bool get offerNewConversation => _offerNewConversation;
 
@@ -132,7 +168,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   bool get canSend =>
       _alive &&
       _phase == AiChatPhase.idle &&
-      _blocker == AiChatBlocker.none &&
+      blocker == AiChatBlocker.none &&
       runningCount() < AiRunRegistry.maxRunning;
   @override
   set confirmCleartext(Future<bool> Function()? callback) =>
@@ -236,8 +272,9 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     _phase = AiChatPhase.preparing;
     _blocker = AiChatBlocker.none;
     _notify();
+    var contextReady = false;
     try {
-      await _secrets.refresh();
+      await _refreshSecrets();
       if (!_current(epoch)) return;
       _redactDisplay();
       if (_context == null) {
@@ -247,11 +284,12 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           redactor: _redactor,
           accountKey: _accountKey,
           isCurrent: () => _current(epoch),
-          refreshSecrets: _secrets.refresh,
+          refreshSecrets: _refreshSecrets,
         );
         if (!_current(epoch)) return;
         _context = loaded;
       }
+      contextReady = true;
       if (_runner case final runner?
           when _transportClosed || !identical(runner.config, selected)) {
         final client = _client(selected);
@@ -265,7 +303,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           _transportClosed = false;
         } on Object {
           client.transport.close();
-          _clearConversation();
+          _clearConversation(keepDisplay: true);
         }
       }
       _phase = AiChatPhase.idle;
@@ -273,7 +311,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       _notify();
     } on Object catch (error) {
       if (!_current(epoch)) return;
-      _failure = _mapFailure(error);
+      _failure = contextReady ? _mapFailure(error) : safeFailure(error);
       _contextFailed = true;
       _setBlocked(AiChatBlocker.contextUnavailable);
     }
@@ -302,7 +340,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
             port: GitLabAiReadPort(_api, scope.projectId),
             scope: scope,
             redactor: _redactor,
-            refreshSecrets: _secrets.refresh,
+            refreshSecrets: _refreshSecrets,
           );
     var budget = AiToolBudget();
     final client = _client(config);
@@ -313,7 +351,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       wire: client.wire,
       complete: client.complete,
       secrets: _secrets,
-      refreshSecrets: _secrets.refresh,
+      refreshSecrets: _refreshSecrets,
       guard: AiRunGuard(
         expectedGeneration: _generation,
         ownerApi: _api,
@@ -345,9 +383,9 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       },
       onToolStarted: (call) {
         if (!current()) return;
-        final index = _insertToolRow(
+        final index = _insertRunItem(
           AiToolRunItem(
-            name: call.name,
+            name: _toolName(call.name),
             argsPreview: _toolTarget(call),
             status: AiToolRunStatus.running,
             sizeChars: 0,
@@ -365,21 +403,23 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
             : _pendingTools.removeAt(pending).index;
         final started = index == null ? null : _items[index];
         final item = AiToolRunItem(
-          name: _redactor.redactSource(result.name).text,
+          name: _toolName(result.name),
           argsPreview: started is AiToolRunItem ? started.argsPreview : '',
-          status: pending < 0
+          status: result.notExecuted || pending < 0
               ? AiToolRunStatus.skipped
               : result.isError
               ? AiToolRunStatus.failed
               : AiToolRunStatus.completed,
-          sizeChars: result.content.length,
+          sizeChars: result.notExecuted || pending < 0
+              ? 0
+              : result.content.length,
           provenance: _toolProvenance(result),
           truncated: result.truncated,
           blocked: result.blockedSensitive,
-          resultExcerpt: clipAiText(result.plainData.plainText, 2000),
+          resultExcerpt: _toolExcerpt(result.plainData.plainText),
         );
         if (index == null) {
-          _insertToolRow(item);
+          _insertRunItem(item);
         } else {
           _items[index] = item;
         }
@@ -425,19 +465,22 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     _settingsChangedDuringRun = false;
     _usage = null;
     _notify();
+    var userAdded = false;
     try {
-      await _secrets.refresh();
+      await _refreshSecrets();
       if (!_current(epoch)) return;
       _redactDisplay();
-      if (_phase == AiChatPhase.stopping) {
-        _items.add(const AiNoticeItem(AiNoticeKind.stopped));
-        return;
-      }
       final clean = _redactor.redactSource(text);
-      final first = _items.isEmpty;
+      final first = _runner == null;
       _items.add(
         AiUserItem(text: clean.text, chips: first ? _chips() : const []),
       );
+      userAdded = true;
+      if (_phase == AiChatPhase.stopping) {
+        _items.add(const AiNoticeItem(AiNoticeKind.notSent));
+        _lastEnd = AiRunEnd.stopped;
+        return;
+      }
       if (first && _context!.built.withheldPrivateKeyContext ||
           clean.withheldPrivateKeyContext) {
         _noticeWithheld();
@@ -466,6 +509,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       _offerNewConversation = result.offerRollover;
       _lastEnd = result.reason;
       _setAssistant(result.text, _stateFor(result.reason));
+      _assistantIndex = null;
       if (segment != null && !identical(segment, runner.segment)) {
         _items.add(const AiNoticeItem(AiNoticeKind.segmentSummary));
       }
@@ -486,9 +530,18 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       }
     } on Object catch (error) {
       if (!_current(epoch)) return;
-      _failure = _mapFailure(error);
+      _failure = _assistantIndex == null
+          ? safeFailure(error)
+          : _mapFailure(error);
       _lastEnd = AiRunEnd.failed;
-      _setAssistant('', AiAssistantState.interrupted);
+      if (_assistantIndex == null) {
+        if (!userAdded) {
+          _items.add(AiUserItem(text: _redactor.redactSource(text).text));
+        }
+        _items.add(const AiNoticeItem(AiNoticeKind.notSent));
+      } else {
+        _setAssistant('', AiAssistantState.interrupted);
+      }
     } finally {
       if (_current(epoch)) {
         _phase = AiChatPhase.idle;
@@ -532,6 +585,12 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           resource: resource == null
               ? null
               : _redactor.redactSource(resource).text,
+          sentText: block
+              .redact(
+                _redactor,
+                source: (value) => _redactor.redactSource(value).text,
+              )
+              .text,
           preview: clipAiText(
             block
                 .redact(
@@ -572,6 +631,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
               AiContextChip(
                 source: safe(chip.source),
                 preview: safe(chip.preview),
+                sentText: chip.sentText == null ? null : safe(chip.sentText!),
                 sizeChars: chip.sizeChars,
                 blocked: chip.blocked,
                 type: chip.type,
@@ -613,13 +673,13 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     if (!_items.whereType<AiNoticeItem>().any(
       (i) => i.kind == AiNoticeKind.privateKeyWithheld,
     )) {
-      _items.add(const AiNoticeItem(AiNoticeKind.privateKeyWithheld));
+      _insertRunItem(const AiNoticeItem(AiNoticeKind.privateKeyWithheld));
     }
   }
 
-  /// Tool rows go just before this run's answer, so the reads it made are
-  /// listed above the text that uses them. Earlier rows keep their indices.
-  int _insertToolRow(AiToolRunItem item) {
+  /// Run details go just before the active answer. Earlier rows keep their
+  /// indices; details added after the answer finishes go after it.
+  int _insertRunItem(AiChatItem item) {
     final index = _assistantIndex ?? _items.length;
     _items.insert(index, item);
     if (_assistantIndex != null) _assistantIndex = index + 1;
@@ -644,15 +704,11 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       'get_issue' => prefixed('#', 'iid'),
       'get_merge_request' => prefixed('!', 'iid'),
       'get_job_log' => prefixed('#', 'job_id'),
-      'get_commit' || 'get_commit_diff' => clipAiText(value('sha'), 8),
+      'get_commit' || 'get_commit_diff' => value('sha'),
       'search_project' => value('query'),
       _ => '',
     };
-    final clean = _redactor
-        .redactSource(target)
-        .text
-        .replaceAll(_displayControls, '');
-    return clean.length > 120 ? '${clipAiText(clean, 120)}…' : clean;
+    return _redactor.redactSource(target.replaceAll(_displayControls, '')).text;
   }
 
   void _setAssistant(String text, AiAssistantState state) {
@@ -669,7 +725,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     _notify();
   }
 
-  void _clearConversation() {
+  void _clearConversation({bool keepDisplay = false}) {
     _binding?.dispose();
     _binding = null;
     _runner?.stop(AiRunEnd.stoppedBySettings);
@@ -677,7 +733,13 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     _transportClosed = false;
     _streamNotification?.cancel();
     _streamNotification = null;
-    _items.clear();
+    if (keepDisplay) {
+      if (_items.isNotEmpty) {
+        _items.add(const AiNoticeItem(AiNoticeKind.newConversation));
+      }
+    } else {
+      _items.clear();
+    }
     _pendingTools.clear();
     _assistantIndex = null;
     _failure = null;
@@ -732,6 +794,34 @@ final _displayControls = RegExp(
   r'[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e'
   r'\u2060-\u2069\ufeff]',
 );
+
+// Keep catalogue identifiers only; provider-chosen unknown names are untrusted.
+String _toolName(String name) => switch (name) {
+  'read_file' ||
+  'list_directory' ||
+  'get_issue' ||
+  'get_merge_request' ||
+  'get_merge_request_diff' ||
+  'get_pipeline_jobs' ||
+  'get_job_log' ||
+  'get_commit' ||
+  'get_commit_diff' ||
+  'search_project' => name,
+  _ => '',
+};
+
+String _toolExcerpt(String text) {
+  final clipped = clipAiText(text, 2000);
+  if (clipped.length < text.length &&
+      _excerptToken.hasMatch(text[clipped.length]) &&
+      clipped.isNotEmpty &&
+      _excerptToken.hasMatch(clipped[clipped.length - 1])) {
+    return clipped.replaceFirst(RegExp(r'[A-Za-z0-9_\-.+/=]+$'), '');
+  }
+  return clipped;
+}
+
+final _excerptToken = RegExp(r'[A-Za-z0-9_\-.+/=]');
 
 String _toolProvenance(AiToolResult result) {
   final text = result.plainData.plainText;
@@ -798,6 +888,6 @@ AiWireClient _createWireClient({
     wire: wire,
     config: config,
     conversationId: conversationId,
-    appVersion: '0.6.0',
+    appVersion: aiClientAppVersion,
   );
 }

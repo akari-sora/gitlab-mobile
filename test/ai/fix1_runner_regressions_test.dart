@@ -339,6 +339,7 @@ void main() {
     expect((await pending).reason, AiRunEnd.stopped);
     expect(h.toolResults, hasLength(2));
     expect(h.toolResults.every((result) => result.isError), isTrue);
+    expect(h.toolResults.every((result) => result.notExecuted), isTrue);
     expect(h.toolResults.map((result) => result.callId).toSet(), hasLength(2));
     expect((await h.runner.run('follow up')).reason, AiRunEnd.done);
     expect(h.runner.segment, same(old));
@@ -479,51 +480,135 @@ void main() {
     expect(h.payloads.last, contains(aiFinalAnswerNoteMarker));
   });
 
-  test('a started tool shows redacted scalar arguments only', () async {
-    final h = base.Harness();
-    h.secrets.current.add('argumentSecretValue');
-    final started = <AiToolCall>[];
-    var calls = 0;
-    final runner = _copyRunner(
-      h,
-      onToolStarted: started.add,
-      complete: (_, {onEvent}) async => ++calls == 1
-          ? h.turn(
-              calls: [
-                AiToolCall(
-                  id: 'call',
-                  name: 'read_file',
-                  arguments: <String, Object?>{
-                    'path': 'notes/argumentSecretValue.md',
-                    'revision': 'head',
-                    'tail_lines': 20,
-                    'nested': {'path': 'hidden'},
-                    'long': 'x' * 2000,
-                  },
-                ),
-              ],
-            )
-          : h.turn(text: 'done'),
-    );
-    await runner.run('question');
-    final shown = started.single.arguments! as Map<String, Object?>;
-    expect(shown.keys, unorderedEquals(['path', 'revision', 'tail_lines']));
-    expect(shown['path'], isNot(contains('argumentSecretValue')));
-    expect(shown['path'], startsWith('notes/'));
-    expect(shown['tail_lines'], 20);
-  });
+  test(
+    'a started tool strips controls before redacting safe arguments',
+    () async {
+      final h = base.Harness();
+      h.secrets.current.addAll([
+        'argumentSecretValue',
+        'synthetic-test-token',
+      ]);
+      final started = <AiToolCall>[];
+      var calls = 0;
+      final runner = _copyRunner(
+        h,
+        onToolStarted: started.add,
+        complete: (_, {onEvent}) async => ++calls == 1
+            ? h.turn(
+                calls: [
+                  AiToolCall(
+                    id: 'call',
+                    name: 'read_file',
+                    arguments: <String, Object?>{
+                      'path': 'notes/argumentSecretValue.md',
+                      'revision': 'synthetic-\u200btest-token',
+                      'tail_lines': 20,
+                      'a_valid_key_that_is_32_chars_123': true,
+                      'Uppercase': 'hidden',
+                      'hyphen-key': 'hidden',
+                      'a_valid_key_that_is_33_chars_1234': 'hidden',
+                      'nested': {'path': 'hidden'},
+                      'long': 'x' * 2000,
+                    },
+                  ),
+                ],
+              )
+            : h.turn(text: 'done'),
+      );
+      await runner.run('question');
+      final shown = started.single.arguments! as Map<String, Object?>;
+      expect(shown['revision'], isNot(contains('synthetic-test-token')));
+      expect(shown['revision'], isNot(contains('\u200b')));
+      expect(
+        shown.keys,
+        unorderedEquals([
+          'path',
+          'revision',
+          'tail_lines',
+          'a_valid_key_that_is_32_chars_123',
+        ]),
+      );
+      expect(shown['path'], isNot(contains('argumentSecretValue')));
+      expect(shown['path'], startsWith('notes/'));
+      expect(shown['tail_lines'], 20);
+    },
+  );
 
   test('FIX1 unavailable tools do not count as executed tools', () async {
     final h = base.Harness();
+    var calls = 0;
+    final results = <AiToolResult>[];
+    final runner = _copyRunner(
+      h,
+      complete: (_, {onEvent}) async =>
+          ++calls == 1 ? h.turn(calls: [base.call()]) : h.turn(text: 'done'),
+      onToolResult: results.add,
+    );
+    final result = await runner.run('question');
+    expect(result.toolCalls, 0);
+    expect(result.reason, AiRunEnd.done);
+    expect(results.single.notExecuted, isTrue);
+  });
+
+  test('tool budget results are marked as not executed', () async {
+    final h = base.Harness();
+    final results = <AiToolResult>[];
+    final runner = _copyRunner(
+      h,
+      complete: (_, {onEvent}) async => h.turn(calls: [base.call()]),
+      exhausted: () => true,
+      onToolResult: results.add,
+    );
+    expect((await runner.run('question')).reason, AiRunEnd.toolBudget);
+    expect(results.single.notExecuted, isTrue);
+  });
+
+  test(
+    'timed-out reads are attempted but a later pending read is not',
+    () async {
+      final h = base.Harness();
+      final pendingRead = Completer<AiToolResult>();
+      addTearDown(() {
+        if (!pendingRead.isCompleted) {
+          pendingRead.complete(
+            AiToolResult(callId: 'late', name: 'read_file', content: 'late'),
+          );
+        }
+      });
+      final results = <AiToolResult>[];
+      var calls = 0;
+      final runner = _copyRunner(
+        h,
+        complete: (_, {onEvent}) async => switch (++calls) {
+          1 || 3 => h.turn(calls: [base.call('call-$calls')]),
+          _ => h.turn(text: 'done'),
+        },
+        execute: (_) => pendingRead.future,
+        onToolResult: results.add,
+        toolDeadline: const Duration(milliseconds: 10),
+      );
+      expect((await runner.run('first')).reason, AiRunEnd.done);
+      expect((await runner.run('second')).reason, AiRunEnd.done);
+      expect(results, hasLength(2));
+      expect(results.first.notExecuted, isFalse);
+      expect(results.last.notExecuted, isTrue);
+    },
+  );
+
+  test('tool read failures are marked as attempted', () async {
+    final h = base.Harness();
+    final results = <AiToolResult>[];
     var calls = 0;
     final runner = _copyRunner(
       h,
       complete: (_, {onEvent}) async =>
           ++calls == 1 ? h.turn(calls: [base.call()]) : h.turn(text: 'done'),
+      execute: (_) async => throw StateError('synthetic read failure'),
+      onToolResult: results.add,
     );
-    final result = await runner.run('question');
-    expect(result.toolCalls, 0);
-    expect(result.reason, AiRunEnd.done);
+    expect((await runner.run('question')).reason, AiRunEnd.done);
+    expect(results.single.isError, isTrue);
+    expect(results.single.notExecuted, isFalse);
   });
 }
 
@@ -536,6 +621,7 @@ AiRunner _copyRunner(
   void Function(AiToolResult)? onToolResult,
   bool Function()? exhausted,
   Future<void> Function()? refreshSecrets,
+  Duration toolDeadline = const Duration(seconds: 30),
 }) => AiRunner(
   config: h.config(),
   wire: h.wire,
@@ -559,6 +645,7 @@ AiRunner _copyRunner(
   onTextChanged: onTextChanged,
   onToolStarted: onToolStarted,
   onToolResult: onToolResult,
+  toolDeadline: toolDeadline,
 );
 
 final class _TransportHarness {

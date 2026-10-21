@@ -93,6 +93,7 @@ final class AiToolResult {
     this.withheldPrivateKeyContext = false,
     this.truncated = false,
     this.blockedSensitive = false,
+    this.notExecuted = false,
   }) : _content = content,
        data = null {
     assert(!content.contains('<gitlab_data'));
@@ -106,6 +107,7 @@ final class AiToolResult {
     this.withheldPrivateKeyContext = false,
     this.truncated = false,
     this.blockedSensitive = false,
+    this.notExecuted = false,
   }) : _content = '',
        // ignore: prefer_initializing_formals
        data = data;
@@ -120,6 +122,7 @@ final class AiToolResult {
   final bool withheldPrivateKeyContext;
   final bool truncated;
   final bool blockedSensitive;
+  final bool notExecuted;
 
   AiToolResult copyWith({required AiAppText data}) => AiToolResult.fromData(
     callId: callId,
@@ -129,6 +132,7 @@ final class AiToolResult {
     withheldPrivateKeyContext: withheldPrivateKeyContext,
     truncated: truncated,
     blockedSensitive: blockedSensitive,
+    notExecuted: notExecuted,
   );
 }
 

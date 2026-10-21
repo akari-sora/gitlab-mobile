@@ -69,6 +69,7 @@ final class AiMergeRequestContextInput {
     required this.headSha,
     required this.baseSha,
     required this.diffs,
+    this.notes = const [],
     this.labels = const [],
     this.allowedSensitivePaths = const {},
   });
@@ -81,6 +82,7 @@ final class AiMergeRequestContextInput {
   final String baseSha;
   final List<String> labels;
   final List<AiDiffFileInput> diffs;
+  final List<AiDiscussionNoteInput> notes;
   final Set<String> allowedSensitivePaths;
 }
 
@@ -104,12 +106,14 @@ final class AiDiscussionNoteInput {
     required this.createdAt,
     this.author,
     this.system = false,
+    this.internal = false,
   });
 
   final String body;
   final DateTime createdAt;
   final String? author;
   final bool system;
+  final bool internal;
 }
 
 final class AiDiscussionContextInput {
@@ -129,7 +133,7 @@ final class AiDiscussionContextInput {
   final String title;
   final String description;
   final String state;
-  final String pinnedSha;
+  final String? pinnedSha;
   final List<String> labels;
   final List<AiDiscussionNoteInput> notes;
 }
@@ -217,6 +221,7 @@ final class AiContextBuilders {
       'labels': input.labels,
       'head_sha': input.headSha,
       'base_sha': input.baseSha,
+      'notes': _notes(input.notes),
     });
     redactions += metadata.redactions;
     withheld |= metadata.withheldPrivateKeyContext;
@@ -263,23 +268,14 @@ final class AiContextBuilders {
     AiDiscussionContextInput input, {
     required String nonce,
   }) {
-    _requireSha(input.pinnedSha);
-    final latest = input.notes.where((note) => !note.system).toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    final selected = latest.take(20).toList().reversed;
+    final pinnedSha = input.pinnedSha;
+    if (pinnedSha != null) _requireSha(pinnedSha);
     final content = _redactJson({
       'title': input.title,
       'description': input.description,
       'state': input.state,
       'labels': input.labels,
-      'notes': [
-        for (final note in selected)
-          {
-            'author': note.author,
-            'created_at': note.createdAt.toUtc().toIso8601String(),
-            'body': note.body,
-          },
-      ],
+      'notes': _notes(input.notes),
     });
     return _builtSourceContext(
       source: '${input.kind} #${input.iid}',
@@ -287,8 +283,22 @@ final class AiContextBuilders {
       redactions: content.redactions,
       withheld: content.withheldPrivateKeyContext,
       nonce: nonce,
-      pinnedSha: input.pinnedSha,
+      pinnedSha: pinnedSha,
     );
+  }
+
+  List<Map<String, Object?>> _notes(List<AiDiscussionNoteInput> notes) {
+    final latest = notes.where((note) => !note.system).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return [
+      for (final note in latest.take(20).toList().reversed)
+        {
+          'author': note.author,
+          'created_at': note.createdAt.toUtc().toIso8601String(),
+          'body': note.body,
+          'internal': note.internal,
+        },
+    ];
   }
 
   AiBuiltContext _sourceContext({
