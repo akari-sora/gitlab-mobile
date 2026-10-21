@@ -1219,18 +1219,19 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       _outputLimitError = outputError;
     });
     if (requestError == null && outputError == null) return true;
-    // The shown error stays until the next save, so the reveal checks the
-    // values themselves: a value fixed meanwhile does not move the page, and
-    // with both wrong, fixing the request limit moves on to the output one.
+    // Only a field whose error is shown and whose value is still wrong is a
+    // target: a value fixed meanwhile does not move the page, with both wrong
+    // fixing the request limit moves on to the output one, and a limit broken
+    // after the save (no error shown yet) does not take the reveal.
+    bool requestShown() =>
+        _requestLimitError != null && _requestLimitProblem != null;
+    bool outputShown() =>
+        _outputLimitError != null && _outputLimitProblem != null;
     _reveal(
-      () =>
-          (_requestLimitProblem != null
-                  ? _requestLimitFieldKey
-                  : _outputLimitFieldKey)
-              .currentContext,
+      () => (requestShown() ? _requestLimitFieldKey : _outputLimitFieldKey)
+          .currentContext,
       inAdvanced: true,
-      stillNeeded: () =>
-          _requestLimitProblem != null || _outputLimitProblem != null,
+      stillNeeded: () => requestShown() || outputShown(),
     );
     return false;
   }

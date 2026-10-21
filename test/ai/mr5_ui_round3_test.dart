@@ -482,7 +482,7 @@ void main() {
       }
     }
 
-    for (final fix in const ['typed value', 'preset switch']) {
+    for (final fix in const ['typed value', 'preset switch', 'format switch']) {
       testWidgets('a limit fixed by a $fix while waiting stays put', (
         tester,
       ) async {
@@ -518,13 +518,16 @@ void main() {
                   .controller!
                   .text =
               '32000';
-        } else {
+        } else if (fix == 'preset switch') {
           _preset(tester).onChanged!(AiPresets.anthropic);
+        } else {
+          // OpenAI starts on Responses; Chat Completions resets the limits.
+          _format(tester).onChanged!(AiFormat.chatCompletions);
         }
         await deviceFrames(tester);
 
         expect(position.pixels, 0);
-        if (fix == 'preset switch') {
+        if (fix != 'typed value') {
           // The reset value is valid; the old error is not left behind.
           expect(find.text(l10n.aiProviderRequestCharsRange), findsNothing);
         }
@@ -602,22 +605,29 @@ void main() {
       expectOnScreen(tester, find.text(l10n.aiProviderKeyMinimum), 360);
     });
 
-    testWidgets('with both limits wrong, fixing one moves to the other', (
-      tester,
-    ) async {
+    // At 2x text with the keyboard open the two limit fields cannot both be
+    // in view, so these tests tell the targets apart.
+    Future<void> limitsAt2x(
+      WidgetTester tester, {
+      required String request,
+      required String output,
+      required String requestWhileWaiting,
+    }) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(360, 640);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 280);
       addTearDown(tester.view.resetDevicePixelRatio);
       addTearDown(tester.view.resetPhysicalSize);
-      await filledOpenAi(tester);
+      addTearDown(tester.view.resetViewInsets);
+      await filledOpenAi(tester, largeText: true);
       await _expandAdvanced(tester);
       await tester.enterText(
         find.byKey(const ValueKey('ai-provider-request-limit')),
-        '1',
+        request,
       );
       await tester.enterText(
         find.byKey(const ValueKey('ai-provider-output-limit')),
-        '1',
+        output,
       );
       await tester.pumpAndSettle();
       tester
@@ -637,10 +647,78 @@ void main() {
               )
               .controller!
               .text =
-          '32000';
+          requestWhileWaiting;
+      await deviceFrames(tester);
+    }
+
+    testWidgets('with both limits wrong, fixing one moves to the other', (
+      tester,
+    ) async {
+      await limitsAt2x(
+        tester,
+        request: '1',
+        output: '1',
+        requestWhileWaiting: '32000',
+      );
+
+      expectOnScreen(tester, find.text(l10n.aiProviderOutputTokensRange), 360);
+    });
+
+    testWidgets('a limit broken after the save does not take the reveal', (
+      tester,
+    ) async {
+      await limitsAt2x(
+        tester,
+        request: '32000',
+        output: '1',
+        requestWhileWaiting: '1',
+      );
+
+      expectOnScreen(tester, find.text(l10n.aiProviderOutputTokensRange), 360);
+    });
+
+    testWidgets('a base URL fixed while waiting stays put', (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(360, 640);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      await filledOpenAi(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-base-url')),
+        'not a url',
+      );
+      // The new recipient dropped the key draft; type it again.
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-api-key')),
+        'sk-synthetic-limit-check-123456',
+      );
+      // A focused field scrolls itself to its caret on a text change, which
+      // is not the reveal under test.
+      FocusManager.instance.primaryFocus?.unfocus();
+      await _expandAdvanced(tester);
+      final position = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      position.jumpTo(position.maxScrollExtent);
+      await tester.pumpAndSettle();
+      final bottom = position.pixels;
+
+      await tester.tap(find.text(l10n.saveAction));
+      await tester.pump(const Duration(milliseconds: 16));
+      tester
+              .widget<TextField>(
+                find.descendant(
+                  of: find.byKey(const ValueKey('ai-provider-base-url')),
+                  matching: find.byType(TextField),
+                ),
+              )
+              .controller!
+              .text =
+          'https://api.openai.com/v1';
       await deviceFrames(tester);
 
-      expectOnScreen(tester, find.text(l10n.aiProviderOutputTokensRange), 640);
+      expect(find.text(l10n.aiProviderBaseUrlInvalid), findsNothing);
+      expect(position.pixels, bottom);
     });
 
     testWidgets('a missing key scrolls back up to the key field', (

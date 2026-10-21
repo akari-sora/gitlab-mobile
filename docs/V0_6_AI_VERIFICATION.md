@@ -739,10 +739,13 @@ This follow-up has no commit,
 push, pipeline/job, internet, provider call, real key, build or device evidence;
 the feature gate remains false. These checks do not establish G0 acceptance.
 
-### MR5 review rounds 3–8 and emulator checks
+### MR5 review rounds 3–9 and emulator checks
 
-Fixes after round 2, each with a synthetic regression that fails when the fix is
-reverted (mutation runs are recorded outside the repository):
+This supersedes the "no MR5 commit or pipeline … emulator checks NOT_RUN" note
+above, which described the first implementation packet.
+
+Fixes after round 2, each with a synthetic regression (the mutation runs that
+revert a fix and see its test fail are recorded outside the repository):
 
 - The unsaved key draft is bound to its recipient (origin, base path, auth
   header) and is dropped with a notice when a format, URL or preset change
@@ -758,16 +761,20 @@ reverted (mutation runs are recorded outside the repository):
 - An error caused only by the model list URL is shown on that field, with a
   pointer under the base URL. A blocked save, model read or key check opens the
   advanced section and scrolls to the failing field (also the limit fields and
-  empty required fields) once the opening animation has had its time and the
-  scroll extent is stable; a fixed error does not move the page.
+  empty required fields, the topmost one first) once the opening animation has
+  had its time and the scroll extent is stable. Only a field whose error is
+  shown and whose value is still wrong is a target, so an error fixed while
+  waiting does not move the page.
 - A failed keyless save restores a key that was only in the live cache, without
   recreating its absent durable slot. A port too large for an int is an invalid
   draft, not an exception.
 - Two new messages in 24 languages; Arabic isolates the literal `/models`, and
   `tool/l10n.py` writes bidirectional controls as `\u` escapes.
 
-Emulator checks (Android API 36 emulator, gate-on debug build from the branch,
-synthetic keys only, no provider request sent, signed-in account used read-only):
+Emulator checks (Android API 36 emulator, gate-on debug builds of `080c7fb`,
+`77da6cd`, `aa1ed97`, `b0a1c66` with the temporary log below, and `c6b2824`;
+synthetic keys only, no provider request sent, signed-in account used
+read-only):
 preset descriptions wrap; the policy line follows format and recipient; the key
 draft is cleared on a recipient change; the model list URL clears and returns
 with the base URL and an edited one keeps its value with its own error; the
@@ -777,7 +784,10 @@ timing fault was found only on the emulator: the first two frames after opening
 still had a scroll extent of 0. A temporary log (not committed) showed extent
 0, 0, 81 … 584, 584 and then a scroll to 352 after the fix; the widget-test clock
 does not reproduce that first-frame timing for the model list URL case, while
-the limit case at 412 × 915 does.
+the limit case at 412 × 915 does. The key status line fix (`fecf2ae`) came from
+the `c6b2824` walkthrough; the later reveal refinements (`9e758f1` onward:
+required fields, current-value checks, target choice) have synthetic evidence
+only.
 
 Live provider calls, real keys, physical devices, iOS and the preset policy
 URLs' current content remain **NOT_RUN**. The feature gate remains false; none
