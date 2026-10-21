@@ -685,6 +685,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     final picked = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
+      useSafeArea: true,
       showDragHandle: true,
       builder: (context) =>
           _ModelPickerSheet(models: _loadedModels, current: _model.text.trim()),
@@ -1583,76 +1584,86 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
     final searchable = widget.models.length > 6;
     // The header stays put while the list scrolls. With the keyboard up the
     // sheet takes all the room left above it and drops the hint, so results
-    // stay visible while typing on a small phone. The drag handle above this
-    // content takes one interactive dimension.
+    // stay visible while typing on a small phone. The sheet's constraints
+    // already leave out the status bar (useSafeArea) and the drag handle.
     final keyboard = media.viewInsets.bottom;
-    final room =
-        media.size.height - keyboard - media.padding.top - kMinInteractiveDimension;
-    return Padding(
-      padding: EdgeInsets.only(bottom: keyboard),
-      child: SizedBox(
-        height: keyboard > 0 ? room : room * 0.7,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    l10n.aiProviderModelPickerTitle,
-                    style: theme.textTheme.titleMedium,
-                  ),
-                  if (keyboard == 0) ...[
-                    const SizedBox(height: 4),
-                    Text(l10n.aiProviderModelPickerHint, style: muted),
-                  ],
-                  if (searchable) ...[
-                    const SizedBox(height: 12),
-                    TextField(
-                      key: const ValueKey('ai-provider-model-search'),
-                      controller: _search,
-                      autocorrect: false,
-                      onChanged: (_) => setState(() {}),
-                      decoration: InputDecoration(
-                        labelText: l10n.aiProviderSearchModels,
-                        prefixIcon: const Icon(Icons.search),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final room = constraints.maxHeight - keyboard;
+        return Padding(
+          padding: EdgeInsets.only(bottom: keyboard),
+          child: SizedBox(
+            height: keyboard > 0 ? room : room * 0.7,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.aiProviderModelPickerTitle,
+                        style: theme.textTheme.titleMedium,
                       ),
-                    ),
-                  ],
-                ],
-              ),
+                      if (keyboard == 0) ...[
+                        const SizedBox(height: 4),
+                        Text(l10n.aiProviderModelPickerHint, style: muted),
+                      ],
+                      if (searchable) ...[
+                        const SizedBox(height: 12),
+                        TextField(
+                          key: const ValueKey('ai-provider-model-search'),
+                          controller: _search,
+                          autocorrect: false,
+                          onChanged: (_) => setState(() {}),
+                          decoration: InputDecoration(
+                            labelText: l10n.aiProviderSearchModels,
+                            prefixIcon: const Icon(Icons.search),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: models.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            l10n.aiProviderModelPickerEmpty,
+                            style: muted,
+                          ),
+                        )
+                      : ListView.builder(
+                          key: const ValueKey('ai-provider-model-picker'),
+                          // Clear of the system navigation bar when the keyboard
+                          // is down.
+                          padding: EdgeInsets.only(
+                            bottom: 16 + media.padding.bottom,
+                          ),
+                          itemCount: models.length,
+                          itemBuilder: (context, index) {
+                            final model = models[index];
+                            final selected = model == widget.current;
+                            return ListTile(
+                              key: ValueKey('ai-provider-model-option-$model'),
+                              dense: true,
+                              selected: selected,
+                              title: Text(isolated(model)),
+                              trailing: selected
+                                  ? const Icon(Icons.check)
+                                  : null,
+                              onTap: () => Navigator.of(context).pop(model),
+                            );
+                          },
+                        ),
+                ),
+              ],
             ),
-            Expanded(
-              child: models.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Text(l10n.aiProviderModelPickerEmpty, style: muted),
-                    )
-                  : ListView.builder(
-                      key: const ValueKey('ai-provider-model-picker'),
-                      // Clear of the system navigation bar when the keyboard
-                      // is down.
-                      padding: EdgeInsets.only(bottom: 16 + media.padding.bottom),
-                      itemCount: models.length,
-                      itemBuilder: (context, index) {
-                        final model = models[index];
-                        final selected = model == widget.current;
-                        return ListTile(
-                          key: ValueKey('ai-provider-model-option-$model'),
-                          dense: true,
-                          selected: selected,
-                          title: Text(isolated(model)),
-                          trailing: selected ? const Icon(Icons.check) : null,
-                          onTap: () => Navigator.of(context).pop(model),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
