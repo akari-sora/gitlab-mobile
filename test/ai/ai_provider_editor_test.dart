@@ -183,16 +183,17 @@ void main() {
 
     expect(adapter.requests, hasLength(1));
     expect(adapter.requests.single.path, contains('/go/v1/models'));
-    expect(find.widgetWithText(ActionChip, 'glm-5.3-flash'), findsOneWidget);
+    // Reading the list opens the picker.
+    expect(_option('glm-5.3-flash'), findsOneWidget);
     expect(find.text('gpt-6-luna'), findsNothing);
     expect(find.text('unroutable-model'), findsNothing);
     expect(find.text(l10n.aiProviderModelsReadSuccess), findsOneWidget);
     expect(find.text(l10n.aiProviderUnverifiedLabel), findsNothing);
 
-    await tester.tap(
-      find.widgetWithText(ActionChip, 'glm-5.3-flash'),
-    );
-    await tester.pump();
+    await tester.tap(_option('glm-5.3-flash'));
+    await tester.pumpAndSettle();
+    expect(_option('glm-5.3-flash'), findsNothing);
+    expect(_modelText(tester), 'glm-5.3-flash');
     expect(find.byIcon(Icons.help_outline_rounded), findsOneWidget);
     // Label and explanation are shown as two lines, not joined in code.
     expect(find.text(l10n.aiProviderUnverifiedLabel), findsOneWidget);
@@ -229,7 +230,8 @@ void main() {
       find.byKey(const ValueKey('ai-provider-read-models')),
     );
     await tester.pumpAndSettle();
-    expect(find.widgetWithText(ActionChip, 'glm-5.3-flash'), findsOneWidget);
+    expect(_option('glm-5.3-flash'), findsOneWidget);
+    await _closePicker(tester);
 
     // Focus and selection changes are not edits of the URL or the key.
     await _tapVisible(
@@ -242,7 +244,60 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.widgetWithText(ActionChip, 'glm-5.3-flash'), findsOneWidget);
+    // The list is still loaded: the field's button opens it without a read.
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await tester.pumpAndSettle();
+    expect(_option('glm-5.3-flash'), findsOneWidget);
+    expect(adapter.requests, hasLength(1));
+  });
+
+  testWidgets('the model field button reads the list and fills the field', (
+    tester,
+  ) async {
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({
+        'data': [
+          {'id': 'synthetic-alpha'},
+          {'id': 'synthetic-beta'},
+        ],
+      }),
+    );
+    final settings = AiSettingsController(MemoryAiStore());
+    await settings.initialize();
+    await tester.pumpWidget(
+      _host(
+        AiProviderEditor(
+          settings: settings,
+          clientFactory: (config, key) => _client(config, key, adapter),
+        ),
+      ),
+    );
+    await _selectPreset(tester, l10n.aiCustomProvider);
+    await _fillRequired(tester, key: 'sk-synthetic-123456');
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await tester.pumpAndSettle();
+
+    expect(adapter.requests, hasLength(1));
+    // A short list needs no search field.
+    expect(find.byKey(const ValueKey('ai-provider-model-search')), findsNothing);
+    expect(find.text(l10n.aiProviderModelPickerHint), findsOneWidget);
+    await tester.tap(_option('synthetic-beta'));
+    await tester.pumpAndSettle();
+    expect(_modelText(tester), 'synthetic-beta');
+
+    // Reopened, the picker marks the current model.
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await tester.pumpAndSettle();
+    expect(tester.widget<ListTile>(_option('synthetic-beta')).selected, isTrue);
+    expect(tester.widget<ListTile>(_option('synthetic-alpha')).selected, isFalse);
+    await _closePicker(tester);
+
+    // Typing a model ID still works.
+    await tester.enterText(
+      find.byKey(const ValueKey('ai-provider-model')),
+      'synthetic-typed-model',
+    );
+    expect(_modelText(tester), 'synthetic-typed-model');
     expect(adapter.requests, hasLength(1));
   });
 
@@ -322,10 +377,7 @@ void main() {
       adapter.requests.single.headers.keys.map((key) => key.toLowerCase()),
       isNot(contains('x-api-key')),
     );
-    expect(
-      find.widgetWithText(ActionChip, 'synthetic/openrouter-model'),
-      findsOneWidget,
-    );
+    expect(_option('synthetic/openrouter-model'), findsOneWidget);
   });
 
   testWidgets('model list failure is explicit and preserves free entry', (
@@ -399,7 +451,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text(l10n.aiProviderModelsReadSuccess), findsNothing);
-    expect(find.widgetWithText(ActionChip, 'stale-model'), findsNothing);
+    expect(_option('stale-model'), findsNothing);
+    expect(find.byKey(const ValueKey('ai-provider-model-picker')), findsNothing);
     final button = tester.widget<OutlinedButton>(
       find.byKey(const ValueKey('ai-provider-read-models')),
     );
@@ -492,6 +545,20 @@ Future<void> _selectPreset(WidgetTester tester, String name) async {
   );
   field.onChanged!(preset);
   await tester.pumpAndSettle();
+}
+
+Finder _option(String id) => find.byKey(ValueKey('ai-provider-model-option-$id'));
+
+String _modelText(WidgetTester tester) => tester
+    .widget<TextFormField>(find.byKey(const ValueKey('ai-provider-model')))
+    .controller!
+    .text;
+
+/// Dismisses the model picker by tapping the barrier above it.
+Future<void> _closePicker(WidgetTester tester) async {
+  await tester.tapAt(const Offset(8, 8));
+  await tester.pumpAndSettle();
+  expect(find.byKey(const ValueKey('ai-provider-model-picker')), findsNothing);
 }
 
 Future<void> _tapVisible(WidgetTester tester, Finder finder) async {

@@ -178,22 +178,25 @@ void main() {
       find.byKey(const ValueKey('ai-provider-read-models')),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.text('model-from-first-recipient'),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.pumpAndSettle();
     expect(find.text('model-from-first-recipient'), findsOneWidget);
     expect(find.text(l10n.aiProviderModelsReadSuccess), findsOneWidget);
+    // Dismiss the picker by tapping the barrier above it.
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
 
     await tester.enterText(
       find.byKey(const ValueKey('ai-provider-base-url')),
       'https://second.example/v1',
     );
     await tester.pump();
-    expect(find.text('model-from-first-recipient'), findsNothing);
     expect(find.text(l10n.aiProviderModelsReadSuccess), findsNothing);
+    // The list belonged to the first recipient: the picker never offers it.
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('model-from-first-recipient'), findsNothing);
   });
 
   testWidgets('invalid collapsed caps expand Advanced and cannot persist', (
@@ -361,6 +364,10 @@ void main() {
           {'id': 'vendor/alpha'},
           {'id': 'vendor/beta'},
           {'id': 'other/gamma'},
+          {'id': 'other/delta'},
+          {'id': 'vendor/epsilon'},
+          {'id': 'vendor/zeta'},
+          {'id': 'other/eta'},
         ],
       }),
     );
@@ -380,12 +387,7 @@ void main() {
       find.byKey(const ValueKey('ai-provider-read-models')),
     );
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(
-      find.byKey(const ValueKey('ai-provider-model-search')),
-      200,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.pumpAndSettle();
+    // The picker is open; a longer list gets a search field.
     await tester.enterText(
       find.byKey(const ValueKey('ai-provider-model-search')),
       'beta',
@@ -395,6 +397,13 @@ void main() {
     expect(find.text('vendor/beta'), findsOneWidget);
     expect(find.text('vendor/alpha'), findsNothing);
     expect(find.text('other/gamma'), findsNothing);
+
+    await tester.enterText(
+      find.byKey(const ValueKey('ai-provider-model-search')),
+      'no-such-model',
+    );
+    await tester.pump();
+    expect(find.text(l10n.aiProviderModelPickerEmpty), findsOneWidget);
   });
 
   testWidgets('model and auth edits clear key verification success', (
