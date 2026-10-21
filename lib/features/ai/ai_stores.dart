@@ -1518,6 +1518,12 @@ final class AiSettingsController extends ChangeNotifier {
           _providerKeys[provider.id] = storedKey.value!;
           _secretSetId += 1;
           _notify();
+        } else if (previousKey != null &&
+            _providerKeys[provider.id] != previousKey) {
+          // Restore a live-only key without recreating its absent durable slot.
+          _providerKeys[provider.id] = previousKey;
+          _secretSetId += 1;
+          _notify();
         }
         rethrow;
       }
