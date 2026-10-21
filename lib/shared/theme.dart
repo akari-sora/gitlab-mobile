@@ -176,8 +176,10 @@ bool _listEquals(List<Color> a, List<Color> b) {
 }
 
 /// Bundled developer monospace (JetBrains Mono, OFL) for SHAs, file contents,
-/// diffs, logs and branch names. Tabular figures keep line-number gutters
-/// aligned.
+/// diffs, logs and branch names. Its `calt` ligatures are removed
+/// (tool/fonts/drop_ligatures.py), so code such as `>=`, `->` or `!=` shows
+/// the characters as written. Every glyph has the same advance, so
+/// line-number gutters align.
 const codeFontFamily = 'JetBrainsMono';
 
 /// Surfaces the bundled JetBrains Mono OFL in the license dialog. Declaring

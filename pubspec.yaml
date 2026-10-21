@@ -48,9 +48,9 @@ flutter:
   fonts:
     - family: JetBrainsMono
       fonts:
-        - asset: assets/fonts/JetBrainsMono-Regular.ttf
+        - asset: assets/fonts/JetBrainsMono-NoCalt-Regular.ttf
           weight: 400
-        - asset: assets/fonts/JetBrainsMono-Medium.ttf
+        - asset: assets/fonts/JetBrainsMono-NoCalt-Medium.ttf
           weight: 500
 flutter_launcher_icons:
   ios: true
