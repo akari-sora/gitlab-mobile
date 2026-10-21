@@ -747,3 +747,18 @@ screenshot review are **NOT_RUN**. Provider verification labels remain unverifie
 no catalogue/key probe or synthetic test upgrades the P0b conformance ledger,
 provider support, G0 acceptance or release readiness. MR6 chat/entry points and
 MR7 gate/native/device work remain outside this MR.
+
+### MR5 FIX1 follow-up
+
+The follow-up derives consent from the current provider and bundled per-model
+policy table, with structured policy URL, retention and check-date fields.
+Caller-provided policy text cannot change the disclosure or granted hash.
+Training disclosures include retention; the dialog blocks Back while saving,
+uses locale date/time formatting, and keeps the organization notice in a card
+with body content. Additional behavioral regressions exercise production
+model swaps, unknown policies, forged disclosures and Arabic RTL layout.
+
+Foreground acceptance and mutation evidence are recorded outside this repository
+in the owner-supplied follow-up receipt. No commit, push,
+provider call, real key, internet, native build or device evidence is authorized
+for this follow-up; the gate remains false.

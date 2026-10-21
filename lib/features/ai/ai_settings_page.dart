@@ -3,12 +3,14 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/ai/ai_provider.dart';
+import '../../core/models.dart';
 import '../../l10n/l10n.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/workspace_ui.dart';
 import 'ai_consent_dialog.dart';
 import 'ai_history.dart';
 import 'ai_provider_editor.dart';
+import 'ai_settings_failure.dart';
 import 'ai_stores.dart';
 
 class AiSettingsPage extends StatefulWidget {
@@ -16,11 +18,15 @@ class AiSettingsPage extends StatefulWidget {
     super.key,
     required this.settings,
     required this.accountKey,
+    this.account,
+    this.isAccountRetained,
     this.history,
   });
 
   final AiSettingsController settings;
   final String accountKey;
+  final Account? account;
+  final bool Function(String accountKey)? isAccountRetained;
   final AiHistoryCoordinator? history;
 
   @override
@@ -32,6 +38,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
       widget.history ?? AiHistoryCoordinator.instance;
   bool _loading = true;
   bool _failed = false;
+  Object? _loadFailure;
   bool _busy = false;
   int _generation = 0;
   final _cap = TextEditingController();
@@ -45,11 +52,54 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
   }
 
   void _capFocusChanged() {
-    if (!_capFocus.hasFocus) _saveCap();
+    if (_capFocus.hasFocus) {
+      final cap = _parseCap(_cap.text);
+      if (cap != null) _cap.text = '$cap';
+    } else {
+      _saveCap();
+      _formatCap();
+    }
+  }
+
+  int? _parseCap(String value) {
+    const arabicDigits = '٠١٢٣٤٥٦٧٨٩';
+    const easternArabicDigits = '۰۱۲۳۴۵۶۷۸۹';
+    final normalized = StringBuffer();
+    const groupingCharacters = <String>{
+      ',',
+      '.',
+      "'",
+      '’',
+      ' ',
+      '\u00a0',
+      '\u202f',
+      '\u066c',
+    };
+    for (final rune in value.runes) {
+      final character = String.fromCharCode(rune);
+      if (rune >= 0x30 && rune <= 0x39) {
+        normalized.write(character);
+      } else if (arabicDigits.contains(character)) {
+        normalized.write(arabicDigits.indexOf(character));
+      } else if (easternArabicDigits.contains(character)) {
+        normalized.write(easternArabicDigits.indexOf(character));
+      } else if (!groupingCharacters.contains(character)) {
+        return null;
+      }
+    }
+    return int.tryParse(normalized.toString());
+  }
+
+  void _formatCap() {
+    if (!mounted || _capFocus.hasFocus) return;
+    final cap = _parseCap(_cap.text);
+    if (cap != null) {
+      _cap.text = MaterialLocalizations.of(context).formatDecimal(cap);
+    }
   }
 
   void _saveCap() {
-    final cap = int.tryParse(_cap.text);
+    final cap = _parseCap(_cap.text);
     final editable = {
       AiHistoryState.ready,
       AiHistoryState.disabled,
@@ -84,6 +134,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
         !identical(oldWidget.history, widget.history)) {
       _loading = true;
       _failed = false;
+      _loadFailure = null;
       _busy = false;
       unawaited(_load());
     }
@@ -104,13 +155,16 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
         setState(() {
           _loading = false;
           _failed = false;
+          _loadFailure = null;
         });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _formatCap());
       }
-    } catch (_) {
+    } catch (error) {
       if (mounted && generation == _generation) {
         setState(() {
           _loading = false;
           _failed = true;
+          _loadFailure = error;
         });
       }
     }
@@ -122,11 +176,9 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     setState(() => _busy = true);
     try {
       await action();
-    } catch (_) {
+    } catch (error) {
       if (mounted && generation == _generation) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(l10n.aiSettingsSaveFailure)));
+        showAiSettingsFailure(context, error);
       }
     } finally {
       if (mounted && generation == _generation) setState(() => _busy = false);
@@ -152,6 +204,29 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     );
     if (!confirmed || !mounted || generation != _generation) return;
     await _act(() => settings.deleteProvider(provider.id));
+  }
+
+  Future<void> _resetProviders() async {
+    final generation = _generation;
+    final confirmed = await confirmAction(
+      context,
+      l10n.aiResetProviders,
+      l10n.aiResetProvidersDetail,
+    );
+    if (!confirmed || !mounted || generation != _generation) return;
+    setState(() => _loading = true);
+    try {
+      await widget.settings.resetProviders();
+      await _load();
+    } catch (error) {
+      if (mounted && generation == _generation) {
+        setState(() {
+          _loading = false;
+          _failed = true;
+          _loadFailure = error;
+        });
+      }
+    }
   }
 
   Future<void> _revoke(String providerId) async {
@@ -184,6 +259,19 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     });
   }
 
+  Future<void> _setRetention(int currentDays, int days) async {
+    if (days < currentDays) {
+      final generation = _generation;
+      final confirmed = await confirmAction(
+        context,
+        l10n.aiShortenRetention,
+        l10n.aiShortenRetentionDetail,
+      );
+      if (!confirmed || !mounted || generation != _generation) return;
+    }
+    await _act(() => _history.setRetention(widget.accountKey, days));
+  }
+
   String _format(AiFormat format) => switch (format) {
     AiFormat.chatCompletions => l10n.aiProviderFormatChat,
     AiFormat.responses => l10n.aiProviderFormatResponses,
@@ -205,7 +293,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           onTap: _busy ? null : () => _edit(provider),
           trailing: PopupMenuButton<String>(
             enabled: !_busy,
-            tooltip: l10n.editAction,
+            tooltip: l10n.aiProviderActions,
             onSelected: (action) {
               switch (action) {
                 case 'edit':
@@ -247,6 +335,19 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                 runSpacing: 4,
                 children: [
                   _status(Icons.info_outline, l10n.aiProviderUnverifiedLabel),
+                  _status(
+                    widget.settings.knownProviderKeys.containsKey(provider.id)
+                        ? Icons.key
+                        : Icons.key_off_outlined,
+                    widget.settings.knownProviderKeys.containsKey(provider.id)
+                        ? l10n.aiProviderKeySet
+                        : l10n.aiProviderKeyNotSet,
+                    warning:
+                        provider.caps.requiresKey &&
+                        !widget.settings.knownProviderKeys.containsKey(
+                          provider.id,
+                        ),
+                  ),
                   if (provider.allowLanCleartext &&
                       Uri.tryParse(provider.baseUrl)?.scheme == 'http')
                     _status(
@@ -324,12 +425,15 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                   ? null
                   : () => _act(() async {
                       final generation = _generation;
+                      final accountKey = widget.accountKey;
+                      final isAccountRetained = widget.isAccountRetained;
                       await _history.retryCleanup(
-                        widget.accountKey,
-                        isRetained: () => mounted && generation == _generation,
+                        accountKey,
+                        isRetained: () =>
+                            isAccountRetained?.call(accountKey) ?? true,
                       );
                       if (mounted && generation == _generation) {
-                        await widget.settings.loadAccount(widget.accountKey);
+                        await widget.settings.loadAccount(accountKey);
                       }
                     }),
               icon: const Icon(Icons.refresh),
@@ -347,16 +451,19 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     final editable =
         !_busy &&
         {AiHistoryState.ready, AiHistoryState.disabled}.contains(state);
+    final accountIdentity = widget.account;
     return HubSection(
       title: l10n.aiCurrentAccount,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Text(
-            isolated(widget.accountKey),
-            style: Theme.of(context).textTheme.bodySmall,
+        if (accountIdentity != null)
+          ListTile(
+            leading: const Icon(Icons.account_circle_outlined),
+            title: Text(isolated(accountIdentity.user.name)),
+            subtitle: Text(
+              '${isolated('@${accountIdentity.user.username}')} · '
+              '${isolated(accountIdentity.instance.base.host)}',
+            ),
           ),
-        ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Text(
@@ -370,22 +477,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
             child: Text(l10n.aiNoConsents),
           ),
         for (final consent in account.consents.entries)
-          HubRow(
-            leading: const NeutralTile(Icons.verified_user_outlined),
-            title: isolated(
-              widget.settings.providers
-                      .where((p) => p.id == consent.key)
-                      .firstOrNull
-                      ?.name ??
-                  consent.key,
-            ),
-            onTap: () => showAiConsentRecordDialog(context, consent.value),
-            trailing: IconButton(
-              tooltip: l10n.aiRevokeConsent,
-              onPressed: _busy ? null : () => _revoke(consent.key),
-              icon: const Icon(Icons.remove_circle_outline),
-            ),
-          ),
+          _consentRow(consent.key, consent.value),
         SwitchListTile.adaptive(
           key: const ValueKey('ai-history-switch'),
           title: Text(l10n.aiEncryptedHistory),
@@ -425,17 +517,10 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                     child: Text(l10n.aiHistoryNinetyDays),
                   ),
                 ],
-                onChanged: editable
+                onChanged: editable && account.historyEnabled
                     ? (days) {
                         if (days != null) {
-                          unawaited(
-                            _act(
-                              () => _history.setRetention(
-                                widget.accountKey,
-                                days,
-                              ),
-                            ),
-                          );
+                          unawaited(_setRetention(account.retentionDays, days));
                         }
                       }
                     : null,
@@ -449,6 +534,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                 keyboardType: TextInputType.number,
                 decoration: InputDecoration(
                   labelText: l10n.aiConversationTokenCap,
+                  suffixText: l10n.aiTokenUnit,
                   suffixIcon: IconButton(
                     tooltip: l10n.saveAction,
                     onPressed: editable ? _saveCap : null,
@@ -457,7 +543,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                 ),
                 autovalidateMode: AutovalidateMode.onUserInteraction,
                 validator: (value) {
-                  final cap = int.tryParse(value ?? '');
+                  final cap = _parseCap(value ?? '');
                   return cap == null || cap < 50000 || cap > 5000000
                       ? l10n.aiConversationCapHelp
                       : null;
@@ -473,7 +559,12 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
               Text(l10n.aiWorstCaseUsage),
               for (final provider in widget.settings.providers)
                 Text(
-                  '${isolated(provider.name)} · ${6 * provider.caps.maxRequestChars}',
+                  l10n.aiWorstCaseUsageForProvider(
+                    isolated(provider.name),
+                    MaterialLocalizations.of(
+                      context,
+                    ).formatDecimal(6 * provider.caps.maxRequestChars),
+                  ),
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               const SizedBox(height: 16),
@@ -491,6 +582,29 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _consentRow(String providerId, AiConsentRecord consent) {
+    final provider = widget.settings.providers
+        .where((candidate) => candidate.id == providerId)
+        .firstOrNull;
+    final needsReconsent =
+        provider == null || aiConsentContractFor(provider).hash != consent.hash;
+    return HubRow(
+      leading: NeutralTile(
+        needsReconsent
+            ? Icons.warning_amber_outlined
+            : Icons.verified_user_outlined,
+      ),
+      title: isolated(provider?.name ?? providerId),
+      subtitle: needsReconsent ? l10n.aiConsentNeedsReconsent : null,
+      onTap: () => showAiConsentRecordDialog(context, consent),
+      trailing: IconButton(
+        tooltip: l10n.aiRevokeConsent,
+        onPressed: _busy ? null : () => _revoke(providerId),
+        icon: const Icon(Icons.remove_circle_outline),
+      ),
     );
   }
 
@@ -521,6 +635,14 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                       icon: const Icon(Icons.refresh),
                       label: Text(l10n.retryAction),
                     ),
+                    if (_loadFailure is AiStoreException &&
+                        (_loadFailure! as AiStoreException).failure.kind ==
+                            AiStoreFailureKind.malformed)
+                      TextButton.icon(
+                        onPressed: _resetProviders,
+                        icon: const Icon(Icons.restart_alt),
+                        label: Text(l10n.aiResetProviders),
+                      ),
                   ],
                 ),
               ),
@@ -528,6 +650,13 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           }
           return ListView(
             children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text(
+                  l10n.aiSettingsIntro,
+                  style: Theme.of(context).textTheme.bodyLarge,
+                ),
+              ),
               HubSection(
                 title: l10n.aiProvidersHeading,
                 children: [

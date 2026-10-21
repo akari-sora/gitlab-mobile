@@ -975,11 +975,23 @@ class _MobileShellState extends State<_MobileShell> {
                     key: const ValueKey('ai-settings-row'),
                     leading: const IconTile(Icons.auto_awesome, color: HubColors.purple),
                     title: l10n.aiAssistantLabel,
-                    subtitle: ai.settings.providers.isEmpty ? l10n.aiNotConfigured : null,
+                    subtitle: ai.settings.initializing ||
+                            (!ai.settings.initialized &&
+                                ai.settings.initializationFailure == null)
+                        ? l10n.loadingDots
+                        : ai.settings.initializationFailure != null
+                        ? l10n.aiSettingsReadFailure
+                        : ai.settings.providers.isEmpty
+                        ? l10n.aiNotConfigured
+                        : null,
                     chevron: true,
                     onTap: () => push(() => AiSettingsPage(
                       settings: ai.settings,
                       accountKey: ai.accountKey,
+                      account: account,
+                      isAccountRetained: (accountKey) => session.accounts.any(
+                        (saved) => saved.key == accountKey,
+                      ),
                       history: ai.history,
                     )),
                   ),

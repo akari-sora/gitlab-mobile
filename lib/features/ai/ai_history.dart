@@ -13,6 +13,40 @@ import 'ai_stores.dart';
 export 'ai_history_codec.dart' show AiHistoryCipher;
 export 'ai_history_files.dart';
 
+final Expando<Set<String>> _fallbackHistoryClearMarkers = Expando<Set<String>>(
+  'aiHistoryClearMarkers',
+);
+
+Future<AiStoreRead<bool>> _readHistoryClearMarker(
+  AiStore store,
+  String account,
+) {
+  if (store case final AiHistoryClearMarkerStore markers) {
+    return markers.readHistoryClearMarker(account);
+  }
+  return Future.value(
+    _fallbackHistoryClearMarkers[store]?.contains(account) == true
+        ? const AiStoreRead<bool>.found(true)
+        : const AiStoreRead<bool>.absent(),
+  );
+}
+
+Future<void> _setHistoryClearMarker(AiStore store, String account) {
+  if (store case final AiHistoryClearMarkerStore markers) {
+    return markers.setHistoryClearMarker(account);
+  }
+  (_fallbackHistoryClearMarkers[store] ??= <String>{}).add(account);
+  return Future.value();
+}
+
+Future<void> _clearHistoryClearMarker(AiStore store, String account) {
+  if (store case final AiHistoryClearMarkerStore markers) {
+    return markers.clearHistoryClearMarker(account);
+  }
+  _fallbackHistoryClearMarkers[store]?.remove(account);
+  return Future.value();
+}
+
 enum AiHistoryState {
   unknown,
   disabled,
@@ -44,6 +78,19 @@ final class _AccountHistory {
   bool unsupportedIndex = false;
   bool removedStaleTemporary = false;
   AiStoreFailure? failure;
+}
+
+void _resetHistoryNotices(_AccountHistory entry) {
+  entry.classified = false;
+  entry.fullConversations.clear();
+  entry.capacityConversations.clear();
+  entry.failedConversations.clear();
+  entry.evictedConversations.clear();
+  entry.removedUnreadable = false;
+  entry.repairedIndex = false;
+  entry.unsupported = false;
+  entry.unsupportedIndex = false;
+  entry.removedStaleTemporary = false;
 }
 
 /// Single owner of history operations, epochs and removal. It has no provider
@@ -235,6 +282,12 @@ final class AiHistoryCoordinator extends ChangeNotifier
         _emit();
         return;
       }
+      final historyClear = await _readHistoryClearMarker(store, account);
+      if (!_current(entry, epoch)) return;
+      if (historyClear.failure != null) {
+        _unavailable(account, entry, failure: historyClear.failure);
+        return;
+      }
       final record = await store.loadAccount(account);
       if (!_current(entry, epoch)) return;
       if (record.failure != null) {
@@ -243,6 +296,16 @@ final class AiHistoryCoordinator extends ChangeNotifier
       }
       entry.failure = null;
       entry.record = record.value ?? AiAccountRecord();
+      if (historyClear.value == true) {
+        entry.state = AiHistoryState.readFailed;
+        entry.key = null;
+        entry.failure = const AiStoreFailure(
+          AiStoreFailureKind.unavailable,
+          'clearHistory',
+        );
+        _emit();
+        return;
+      }
       if (!entry.record!.historyEnabled) {
         entry.state = AiHistoryState.disabled;
         entry.key = null;
@@ -361,9 +424,9 @@ final class AiHistoryCoordinator extends ChangeNotifier
         entry.state != AiHistoryState.readFailed) {
       return;
     }
-    final record = await AiAccountMutationCoordinator.forStore(store).mutate(
-      account, (current) => current.copyWith(historyEnabled: false),
-    );
+    final record = await AiAccountMutationCoordinator.forStore(
+      store,
+    ).mutate(account, (current) => current.copyWith(historyEnabled: false));
     if (record == null) return;
     entry.epoch++;
     entry.record = record;
@@ -373,33 +436,37 @@ final class AiHistoryCoordinator extends ChangeNotifier
     _emit();
   });
 
-  Future<void> setRetention(String account, int days) => _run(account, (entry) async {
-    await _load(account, entry);
-    if (entry.state != AiHistoryState.ready &&
-        entry.state != AiHistoryState.disabled) {
-      return;
-    }
-    final record = await AiAccountMutationCoordinator.forStore(store).mutate(
-      account, (current) => current.copyWith(retentionDays: days),
-    );
-    if (record == null) return;
-    entry.record = record;
-    final epoch = entry.epoch;
-    if (entry.key != null) {
-      final recovery = await files.maintain(
-        account, Uint8List.fromList(entry.key!), days,
-      );
-      if (!_current(entry, epoch)) return;
-      _accumulateRecovery(entry, recovery);
-    }
-    _emit();
-  });
+  Future<void> setRetention(String account, int days) =>
+      _run(account, (entry) async {
+        await _load(account, entry);
+        if (entry.state != AiHistoryState.ready &&
+            entry.state != AiHistoryState.disabled) {
+          return;
+        }
+        final record = await AiAccountMutationCoordinator.forStore(
+          store,
+        ).mutate(account, (current) => current.copyWith(retentionDays: days));
+        if (record == null) return;
+        entry.record = record;
+        final epoch = entry.epoch;
+        if (entry.key != null) {
+          final recovery = await files.maintain(
+            account,
+            Uint8List.fromList(entry.key!),
+            days,
+          );
+          if (!_current(entry, epoch)) return;
+          _accumulateRecovery(entry, recovery);
+        }
+        _emit();
+      });
 
   /// Settings may retry account cleanup only while that account is retained.
   /// Reopen its mutation fence after cleanup succeeds, never after a failure.
   Future<void> retryCleanup(
-    String account, {required bool Function() isRetained,}
-  ) async {
+    String account, {
+    required bool Function() isRetained,
+  }) async {
     await clearAccount(account);
     if (!isRetained() || _disposed) return;
     AiAccountMutationCoordinator.forStore(store).reopen(account);
@@ -422,35 +489,36 @@ final class AiHistoryCoordinator extends ChangeNotifier
           AiStoreFailure(AiStoreFailureKind.cleaning, 'clearHistory'),
         );
       }
-      final record = await owner.mutate(
-        account, (current) => current.copyWith(historyEnabled: false),
-      );
-      if (record == null) {
-        throw const AiStoreException(
-          AiStoreFailure(AiStoreFailureKind.cleaning, 'clearHistory'),
-        );
-      }
+      await _setHistoryClearMarker(store, account);
       final epoch = entry.epoch;
       entry.state = AiHistoryState.cleaning;
-      entry.record = record;
       entry.key?.fillRange(0, entry.key!.length, 0);
       entry.key = null;
       _emit();
       try {
+        final record = await owner.mutate(
+          account,
+          (current) => current.copyWith(historyEnabled: false),
+        );
+        if (record == null) {
+          throw const AiStoreException(
+            AiStoreFailure(AiStoreFailureKind.cleaning, 'clearHistory'),
+          );
+        }
+        entry.record = record;
         await files.deleteAccount(account);
         await store.deleteHistoryKey(account);
+        await _clearHistoryClearMarker(store, account);
         if (entry.epoch != epoch) return;
         entry.state = AiHistoryState.disabled;
         entry.failure = null;
-        entry.fullConversations.clear();
-        entry.capacityConversations.clear();
-        entry.failedConversations.clear();
-        entry.evictedConversations.clear();
+        _resetHistoryNotices(entry);
       } catch (_) {
         if (entry.epoch != epoch) rethrow;
         entry.state = AiHistoryState.readFailed;
         entry.failure = const AiStoreFailure(
-          AiStoreFailureKind.unavailable, 'clearHistory',
+          AiStoreFailureKind.unavailable,
+          'clearHistory',
         );
         rethrow;
       } finally {
@@ -513,7 +581,8 @@ final class AiHistoryCoordinator extends ChangeNotifier
       await _load(account, entry);
       if (!_current(entry, epoch) ||
           (entry.state != AiHistoryState.ready &&
-              entry.state != AiHistoryState.readFailed)) {
+              entry.state != AiHistoryState.readFailed) ||
+          entry.key == null) {
         return AiHistorySaveResult.cancelled;
       }
       if (entry.fullConversations.contains(conversation.id)) {
@@ -620,6 +689,7 @@ final class AiHistoryCoordinator extends ChangeNotifier
         await store.deleteHistoryKey(account);
         await files.deleteAccount(account);
         await store.deleteAccount(account);
+        await _clearHistoryClearMarker(store, account);
         await store.clearTombstone(account);
       });
       entry.state = AiHistoryState.disabled;

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/features/ai/ai_consent_dialog.dart';
@@ -40,7 +41,8 @@ void main() {
       await tester.pumpAndSettle();
 
       final consent = settings.accountRecord('account')!.consents['provider']!;
-      expect(consent.hash, contract.hash);
+      final derivedContract = aiConsentContractFor(_provider());
+      expect(consent.hash, derivedContract.hash);
       expect(consent.summary['providerName'], 'Synthetic provider');
       expect(consent.summary['origin'], 'http://127.0.0.1:11434/v1');
       expect(consent.summary['format'], 'responses');
@@ -50,11 +52,12 @@ void main() {
       expect(consent.summary['dataCategories'], <Object?>[
         'comments',
         'diff',
+        'issue_text',
         'job_log',
         'source',
         'tool_reads',
       ]);
-      expect(settings.isValid('account', contract), isTrue);
+      expect(settings.isValid('account', derivedContract), isTrue);
     });
 
     testWidgets('training and unknown policies use warning wording', (
@@ -62,9 +65,12 @@ void main() {
     ) async {
       final settings = await _settings();
       addTearDown(settings.dispose);
+      await settings.saveProvider(
+        _provider(model: 'muse-spark-1.3-contributor'),
+      );
 
       await tester.pumpWidget(
-        _host(settings, _contract(dataUse: AiDataUse.training)),
+        _host(settings, aiConsentContractFor(settings.providers.single)),
       );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
@@ -74,11 +80,13 @@ void main() {
         const Offset(0, -180),
       );
       expect(find.text(l10n.aiConsentTrainingWarning), findsOneWidget);
+      expect(find.text(l10n.aiConsentRetentionNotStated), findsOneWidget);
       await tester.tap(find.text(l10n.cancelAction));
       await tester.pumpAndSettle();
 
+      await settings.saveProvider(_provider(model: 'unlisted-model'));
       await tester.pumpWidget(
-        _host(settings, _contract(dataUse: AiDataUse.unknown)),
+        _host(settings, aiConsentContractFor(settings.providers.single)),
       );
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
@@ -88,6 +96,7 @@ void main() {
         const Offset(0, -180),
       );
       expect(find.text(l10n.aiConsentUnknownDataUseWarning), findsOneWidget);
+      expect(find.text(l10n.aiConsentRetentionNotStated), findsOneWidget);
     });
 
     testWidgets('saved record renders the original readable summary', (
@@ -104,6 +113,9 @@ void main() {
       await tester.pumpWidget(
         MaterialApp(
           theme: appTheme(Brightness.light),
+          locale: const Locale('zh', 'TW'),
+          supportedLocales: const [Locale('zh', 'TW')],
+          localizationsDelegates: GlobalMaterialLocalizations.delegates,
           home: Builder(
             builder: (context) => Scaffold(
               body: TextButton(
@@ -120,7 +132,11 @@ void main() {
 
       expect(find.text(l10n.aiConsentDetailsTitle), findsOneWidget);
       expect(find.text('Original provider name'), findsOneWidget);
-      expect(find.textContaining('2026/10/20'), findsOneWidget);
+      final dialogContext = tester.element(find.byType(Dialog));
+      final localizedDate = MaterialLocalizations.of(
+        dialogContext,
+      ).formatMediumDate(record.grantedAt.toLocal());
+      expect(find.textContaining(localizedDate), findsOneWidget);
       expect(find.text(l10n.aiConsentSavedSummaryNotice), findsOneWidget);
     });
 

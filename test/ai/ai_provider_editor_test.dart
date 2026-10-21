@@ -59,10 +59,12 @@ void main() {
       'http://100.64.0.1:11434/v1',
     );
     await tester.pump();
-    expect(find.text(l10n.aiProviderBaseUrlInvalid), findsOneWidget);
+    expect(find.text(l10n.aiProviderLocalCleartextHelp), findsOneWidget);
+    expect(find.text(l10n.aiProviderBaseUrlInvalid), findsNothing);
 
     await tester.tap(find.byKey(const ValueKey('ai-provider-cleartext')));
     await tester.pump();
+    expect(find.text(l10n.aiProviderLocalCleartextHelp), findsNothing);
     expect(find.text(l10n.aiProviderBaseUrlInvalid), findsNothing);
     expect(find.text(l10n.aiProviderCleartextWarning), findsOneWidget);
 
@@ -185,7 +187,20 @@ void main() {
     expect(find.text('gpt-6-luna'), findsNothing);
     expect(find.text('unroutable-model'), findsNothing);
     expect(find.text(l10n.aiProviderModelsReadSuccess), findsOneWidget);
-    expect(find.text(l10n.aiProviderUnverifiedLabel), findsOneWidget);
+    expect(find.text(l10n.aiProviderUnverifiedLabel), findsNothing);
+
+    await tester.tap(
+      find.widgetWithText(ActionChip, 'glm-5.3-flash'),
+    );
+    await tester.pump();
+    expect(find.byIcon(Icons.help_outline_rounded), findsOneWidget);
+    expect(
+      find.text(
+        '${l10n.aiProviderUnverifiedLabel}: '
+        '${l10n.aiProviderVerificationExplanation}',
+      ),
+      findsOneWidget,
+    );
   });
 
   testWidgets('OpenRouter key verification uses the dedicated key endpoint', (
@@ -313,6 +328,7 @@ void main() {
         ),
       ),
     );
+    await _selectPreset(tester, l10n.aiCustomProvider);
     await _fillRequired(tester, key: 'sk-synthetic-123456');
     await _tapVisible(
       tester,

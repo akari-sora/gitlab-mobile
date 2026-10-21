@@ -144,19 +144,36 @@ class CatalogTest(unittest.TestCase):
             'Gemini', 'DeepSeek', 'xAI', 'Ollama', 'LM', 'Studio',
         }
         non_latin = {'ar', 'hi', 'th', 'ru', 'uk', 'ko', 'ja', 'zh-CN', 'zh-TW'}
+        # Wire-format and header names are protocol identifiers: they stay
+        # exactly as in English in every language.
+        protocol_keys = {
+            'aiProviderFormatChat', 'aiProviderFormatResponses', 'aiProviderFormatAnthropic',
+            'aiConsentFormatChatCompletions', 'aiConsentFormatResponses',
+            'aiConsentFormatAnthropicMessages', 'aiProviderAuthBearer', 'aiProviderAuthApiKey',
+            'aiProviderAuthXApiKey',
+        }
+        # Both Chinese catalogs call a job log "Log" everywhere (viewJobLog).
+        local_words = {'zh-TW': {'Log'}, 'zh-CN': {'Log'}}
         keys, catalogs = l10n.load()
         ai_keys = [key for key in keys if key.startswith('ai')]
         self.assertTrue(ai_keys)
+        self.assertLessEqual(protocol_keys, set(ai_keys))
         english = catalogs['en']
         for tag, catalog in catalogs.items():
             if tag == 'en':
                 continue
             for key in ai_keys:
                 with self.subTest(tag=tag, key=key):
+                    if key in protocol_keys:
+                        self.assertEqual(catalog[key], english[key], 'protocol names stay exact')
+                        continue
                     self.assertNotEqual(catalog[key], english[key], 'AI text needs translation')
                     if tag in non_latin:
-                        words = set(re.findall(r'[A-Za-z]+', catalog[key]))
-                        self.assertEqual(words - product_words, set(), 'unexpected Latin text')
+                        # Placeholders are argument names, not displayed text.
+                        text = re.sub(r'\{[^}]*\}', '', catalog[key])
+                        words = set(re.findall(r'[A-Za-z]+', text))
+                        allowed = product_words | local_words.get(tag, set())
+                        self.assertEqual(words - allowed, set(), 'unexpected Latin text')
 
     def test_ai_runner_notices_keep_security_and_budget_semantics(self):
         # Each replay notice must say both why the run stopped and why already

@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 
 import '../../l10n/l10n.dart';
+import 'ai_endpoint.dart';
 
 enum AiFormat { chatCompletions, responses, anthropicMessages }
 
@@ -80,9 +81,14 @@ final class AiModelPolicy {
   final String sourceUrl;
   final String checkedOn;
 
-  String get identity =>
-      '$modelId|${format.name}|${dataUse.name}|'
-      '${retentionDays ?? 'unknown'}|$sourceUrl|$checkedOn';
+  String get identity => jsonEncode(<String, Object?>{
+    'modelId': modelId,
+    'format': format.name,
+    'dataUse': dataUse.name,
+    'retentionDays': retentionDays,
+    'sourceUrl': sourceUrl,
+    'checkedOn': checkedOn,
+  });
 }
 
 final class AiPreset {
@@ -181,6 +187,9 @@ final class AiConsentContract {
     required this.dataUse,
     required this.disclosureVersion,
     this.routedModel,
+    this.policyUrl,
+    this.retentionDays,
+    this.policyCheckedOn,
   }) : dataCategories = Set.unmodifiable(dataCategories);
 
   final String providerId;
@@ -194,6 +203,9 @@ final class AiConsentContract {
   final String? routedModel;
   final AiDataUse dataUse;
   final int disclosureVersion;
+  final String? policyUrl;
+  final int? retentionDays;
+  final String? policyCheckedOn;
 
   late final String hash = sha256
       .convert(
@@ -216,6 +228,63 @@ final class AiConsentContract {
         ),
       )
       .toString();
+}
+
+/// Derives the disclosure from the actual recipient and the bundled policy table.
+/// Unknown models and custom recipients never inherit a known model's policy.
+AiConsentContract aiConsentContractFor(
+  AiProviderConfig provider, {
+  int toolCatalogueVersion = 1,
+  int disclosureVersion = 1,
+  Set<String>? dataCategories,
+}) {
+  final preset = AiPresets.all
+      .where((candidate) => candidate.id == provider.presetId)
+      .firstOrNull;
+  final custom = preset == null || preset.id == AiPresets.custom.id;
+  final modelSensitive = custom || preset.modelSensitive;
+  final candidate = preset?.policyFor(provider.model);
+  final policy = !custom && candidate?.format == provider.format
+      ? candidate
+      : null;
+  final endpoint = AiEndpoint.parse(
+    provider.baseUrl,
+    allowLanCleartext: provider.allowLanCleartext,
+  );
+  final categories = <String>{
+    ...?dataCategories,
+    if (dataCategories == null) ...{
+      'job_log',
+      'diff',
+      'source',
+      'issue_text',
+      'comments',
+      if (provider.toolsEnabled) 'tool_reads',
+    },
+  };
+  if (!provider.toolsEnabled) categories.remove('tool_reads');
+  final policyIdentity = custom
+      ? 'custom'
+      : jsonEncode(<String, Object?>{
+          'preset': preset.id,
+          if (modelSensitive) 'policy': policy?.identity,
+        });
+  return AiConsentContract(
+    providerId: provider.id,
+    origin: endpoint.key,
+    format: provider.format,
+    cleartext: endpoint.cleartext,
+    toolsEnabled: provider.toolsEnabled,
+    toolCatalogueVersion: toolCatalogueVersion,
+    dataCategories: categories,
+    policyIdentity: policyIdentity,
+    routedModel: modelSensitive ? provider.model : null,
+    dataUse: policy?.dataUse ?? AiDataUse.unknown,
+    disclosureVersion: disclosureVersion,
+    policyUrl: policy?.sourceUrl,
+    retentionDays: policy?.retentionDays,
+    policyCheckedOn: policy?.checkedOn,
+  );
 }
 
 const _maxTokensCaps = AiCaps(

@@ -72,8 +72,8 @@ class _GitLabMobileAppState extends ConsumerState<GitLabMobileApp> {
         ? buildAiControllers(enabled: true, settings: ref.read(aiSettingsProvider))
         : null;
     if (_ai case final ai?) {
-      // The settings page retries and explains secure-store failures. Do not
-      // make optional setup failure an unhandled application-start error.
+      // The controller retains its typed initialization failure for the Me
+      // row and settings retry surface; setup must not crash application start.
       unawaited(ai.settings.initialize().catchError((Object _) {}));
     }
     final session = ref.read(sessionProvider);

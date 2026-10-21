@@ -66,8 +66,9 @@ void main() {
       if (usesDefaultBaseline) _measure(source(1024), media: false);
       // Keep the inherently quadratic package parser baseline below the
       // existing five-second cap while still comparing N with 4N.
-      final quarterLength = usesDefaultBaseline ? 8192 : 16384;
-      final capLength = usesDefaultBaseline ? 32768 : 65536;
+      // At 32 KiB the default parser alone took 2-3 s on a loaded host.
+      final quarterLength = usesDefaultBaseline ? 4096 : 16384;
+      final capLength = usesDefaultBaseline ? 16384 : 65536;
 
       var quarter = 1 << 62;
       var cap = 1 << 62;

@@ -113,7 +113,18 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(harness.history.state(_account), AiHistoryState.disabled);
-      _expectHistoryControls(tester, enabled: true, clearEnabled: true);
+      _expectHistoryControls(
+        tester,
+        enabled: true,
+        retentionEnabled: false,
+        clearEnabled: true,
+      );
+      expect(
+        AiAccountMutationCoordinator.forStore(
+          harness.store,
+        ).isCleaning(_account),
+        isFalse,
+      );
       expect(
         tester
             .widget<SwitchListTile>(
@@ -239,6 +250,7 @@ void main() {
 void _expectHistoryControls(
   WidgetTester tester, {
   required bool enabled,
+  bool? retentionEnabled,
   required bool clearEnabled,
 }) {
   final historySwitch = tester.widget<SwitchListTile>(
@@ -252,7 +264,7 @@ void _expectHistoryControls(
     find.widgetWithText(OutlinedButton, l10n.aiClearHistory),
   );
   expect(historySwitch.onChanged != null, enabled);
-  expect(retention.onChanged != null, enabled);
+  expect(retention.onChanged != null, retentionEnabled ?? enabled);
   expect(tokenCap.enabled, enabled);
   expect(clear.onPressed != null, clearEnabled);
 }
@@ -317,6 +329,7 @@ final class _Harness {
           settings: settings,
           history: history,
           accountKey: _account,
+          isAccountRetained: (key) => key == _account,
         ),
       ),
     );
