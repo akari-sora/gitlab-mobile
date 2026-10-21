@@ -510,7 +510,11 @@ final class AiRunner {
             _check(epoch);
             final tc = calls[index];
             onToolStarted?.call(
-              AiToolCall(id: tc.id, name: _redact(tc.name), arguments: null),
+              AiToolCall(
+                id: tc.id,
+                name: _redact(tc.name),
+                arguments: _displayArguments(tc.arguments),
+              ),
             );
             if (index >= 4 || toolCalls >= 12 || outputChars >= 120000) {
               results.add(synthetic(tc, 'budget'));
@@ -746,6 +750,22 @@ final class AiRunner {
     future,
     _stopSignal!.future.then<T>((_) => throw _RunStopped(_stopReason)),
   ]);
+
+  /// Top-level scalar arguments for the progress row, redacted like other
+  /// display text. Long or nested values are left out rather than cut, so a
+  /// secret is never split past the redactor. Display only: this does not
+  /// change what the run reports as withheld.
+  Map<String, Object?>? _displayArguments(Object? arguments) {
+    if (arguments is! Map) return null;
+    return {
+      for (final MapEntry(:key, :value) in arguments.entries)
+        if (key is String && key.length <= 64)
+          if (value is String && value.length <= 1024)
+            key: _redactor.redactSource(stripAiAnsi(value)).text
+          else if (value is int || value is bool)
+            key: value,
+    };
+  }
 
   String _redact(String text, {bool late = false}) {
     // Refuse before scanning or splitting a source; never cut a key in half.

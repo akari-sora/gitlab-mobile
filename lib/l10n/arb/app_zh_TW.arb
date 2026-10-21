@@ -10843,5 +10843,7 @@
   "aiSummarize": "AI 摘要",
   "aiExplainFile": "請 AI 解釋這個檔案",
   "aiNoticeRedactedSome": "已遮蔽秘密",
-  "aiNoticePrivateKeyWithheld": "有內容看起來像私密金鑰，這部分沒有送出"
+  "aiNoticePrivateKeyWithheld": "有內容看起來像私密金鑰，這部分沒有送出",
+  "aiChatPreparing": "正在準備對話…",
+  "aiConsentAgree": "同意"
 }

@@ -341,27 +341,28 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       },
       onToolStarted: (call) {
         if (!current()) return;
-        _pendingTools.add((id: call.id, index: _items.length));
-        _items.add(
+        final index = _insertToolRow(
           AiToolRunItem(
             name: call.name,
-            argsPreview: '',
+            argsPreview: _toolTarget(call),
             status: AiToolRunStatus.running,
             sizeChars: 0,
             provenance: '',
           ),
         );
+        _pendingTools.add((id: call.id, index: index));
         _notifyStream();
       },
       onToolResult: (result) {
         if (!current()) return;
         final pending = _pendingTools.indexWhere((p) => p.id == result.callId);
         final index = pending < 0
-            ? _items.length
+            ? null
             : _pendingTools.removeAt(pending).index;
+        final started = index == null ? null : _items[index];
         final item = AiToolRunItem(
           name: _redactor.redactSource(result.name).text,
-          argsPreview: '',
+          argsPreview: started is AiToolRunItem ? started.argsPreview : '',
           status: pending < 0
               ? AiToolRunStatus.skipped
               : result.isError
@@ -373,8 +374,8 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           blocked: result.blockedSensitive,
           resultExcerpt: clipAiText(result.plainData.plainText, 2000),
         );
-        if (index == _items.length) {
-          _items.add(item);
+        if (index == null) {
+          _insertToolRow(item);
         } else {
           _items[index] = item;
         }
@@ -511,10 +512,22 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
 
   List<AiContextChip> _chips() {
     final built = _context!.built;
+    // What the page was about, for the chip label. The block source stays
+    // the provenance tag the model sees.
+    final resource = switch (origin) {
+      AiGeneralOrigin() => null,
+      AiJobOrigin(:final jobName) => jobName,
+      AiWorkItemOrigin(:final kind, :final iid) =>
+        kind == AiWorkItemKind.mergeRequest ? '!$iid' : '#$iid',
+      AiFileOrigin(:final path) => path,
+    };
     return [
       for (final block in built.blocks)
         AiContextChip(
           source: _redactor.redactSource(block.source).text,
+          resource: resource == null
+              ? null
+              : _redactor.redactSource(resource).text,
           preview: clipAiText(
             block
                 .redact(
@@ -600,6 +613,44 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     }
   }
 
+  /// Tool rows go just before this run's answer, so the reads it made are
+  /// listed above the text that uses them. Earlier rows keep their indices.
+  int _insertToolRow(AiToolRunItem item) {
+    final index = _assistantIndex ?? _items.length;
+    _items.insert(index, item);
+    if (_assistantIndex != null) _assistantIndex = index + 1;
+    return index;
+  }
+
+  /// A short label for what a tool call reads, for display only. The model
+  /// chose these values, so they are redacted and stripped of controls.
+  String _toolTarget(AiToolCall call) {
+    final arguments = call.arguments;
+    if (arguments is! Map<String, Object?>) return '';
+    String value(String key) => switch (arguments[key]) {
+      final String text => text,
+      final int number => '$number',
+      _ => '',
+    };
+    String prefixed(String sigil, String key) =>
+        value(key).isEmpty ? '' : '$sigil${value(key)}';
+    final target = switch (call.name) {
+      'read_file' ||
+      'list_directory' => value('path').isEmpty ? '/' : value('path'),
+      'get_issue' => prefixed('#', 'iid'),
+      'get_merge_request' => prefixed('!', 'iid'),
+      'get_job_log' => prefixed('#', 'job_id'),
+      'get_commit' || 'get_commit_diff' => clipAiText(value('sha'), 8),
+      'search_project' => value('query'),
+      _ => '',
+    };
+    final clean = _redactor
+        .redactSource(target)
+        .text
+        .replaceAll(_displayControls, '');
+    return clean.length > 120 ? '${clipAiText(clean, 120)}…' : clean;
+  }
+
   void _setAssistant(String text, AiAssistantState state) {
     final index = _assistantIndex;
     if (index == null) return;
@@ -670,6 +721,13 @@ String _newId() => List.generate(
   16,
   (_) => Random.secure().nextInt(256).toRadixString(16).padLeft(2, '0'),
 ).join();
+
+/// Control, bidi and zero-width characters a model could put in a tool
+/// argument to break or reorder a displayed label.
+final _displayControls = RegExp(
+  r'[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e'
+  r'\u2060-\u2069\ufeff]',
+);
 
 String _toolProvenance(AiToolResult result) {
   final text = result.plainData.plainText;

@@ -1073,6 +1073,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                           onChanged: (value) =>
                               setState(() => _toolsEnabled = value),
                         ),
+                        const SizedBox(height: 8),
                         if (_requiresKey)
                           DropdownButtonFormField<AiAuthStyle>(
                             key: const ValueKey('ai-provider-auth-style'),

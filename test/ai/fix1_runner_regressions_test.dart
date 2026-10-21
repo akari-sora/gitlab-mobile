@@ -479,6 +479,40 @@ void main() {
     expect(h.payloads.last, contains(aiFinalAnswerNoteMarker));
   });
 
+  test('a started tool shows redacted scalar arguments only', () async {
+    final h = base.Harness();
+    h.secrets.current.add('argumentSecretValue');
+    final started = <AiToolCall>[];
+    var calls = 0;
+    final runner = _copyRunner(
+      h,
+      onToolStarted: started.add,
+      complete: (_, {onEvent}) async => ++calls == 1
+          ? h.turn(
+              calls: [
+                AiToolCall(
+                  id: 'call',
+                  name: 'read_file',
+                  arguments: <String, Object?>{
+                    'path': 'notes/argumentSecretValue.md',
+                    'revision': 'head',
+                    'tail_lines': 20,
+                    'nested': {'path': 'hidden'},
+                    'long': 'x' * 2000,
+                  },
+                ),
+              ],
+            )
+          : h.turn(text: 'done'),
+    );
+    await runner.run('question');
+    final shown = started.single.arguments! as Map<String, Object?>;
+    expect(shown.keys, unorderedEquals(['path', 'revision', 'tail_lines']));
+    expect(shown['path'], isNot(contains('argumentSecretValue')));
+    expect(shown['path'], startsWith('notes/'));
+    expect(shown['tail_lines'], 20);
+  });
+
   test('FIX1 unavailable tools do not count as executed tools', () async {
     final h = base.Harness();
     var calls = 0;

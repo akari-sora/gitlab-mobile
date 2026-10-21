@@ -181,7 +181,10 @@ ResponseBody _sse(String body) => ResponseBody.fromString(
 String _data(Object value, {String? event}) =>
     '${event == null ? '' : 'event: $event\n'}data: ${jsonEncode(value)}\n\n';
 
-List<String> _toolThenAnswer(AiFormat format) => switch (format) {
+List<String> _toolThenAnswer(
+  AiFormat format, {
+  String path = 'README.md',
+}) => switch (format) {
   AiFormat.responses => [
     _data({
       'type': 'response.completed',
@@ -191,7 +194,7 @@ List<String> _toolThenAnswer(AiFormat format) => switch (format) {
             'type': 'function_call',
             'call_id': 'call_read',
             'name': 'read_file',
-            'arguments': '{"path":"README.md","revision":"head"}',
+            'arguments': jsonEncode({'path': path, 'revision': 'head'}),
             'status': 'completed',
           },
         ],
@@ -224,7 +227,10 @@ List<String> _toolThenAnswer(AiFormat format) => switch (format) {
                 'index': 0,
                 'id': 'call_read',
                 'type': 'function',
-                'function': {'name': 'read_file', 'arguments': '{"path":"README.md","revision":"head"}'},
+                'function': {
+                  'name': 'read_file',
+                  'arguments': jsonEncode({'path': path, 'revision': 'head'}),
+                },
               },
             ],
           },
@@ -256,7 +262,7 @@ List<String> _toolThenAnswer(AiFormat format) => switch (format) {
             'type': 'tool_use',
             'id': 'call_read',
             'name': 'read_file',
-            'input': {'path': 'README.md', 'revision': 'head'},
+            'input': {'path': path, 'revision': 'head'},
           },
         }, event: 'content_block_start')}'
         '${_data({'type': 'content_block_stop', 'index': 0}, event: 'content_block_stop')}'
@@ -517,16 +523,25 @@ void main() {
       await controller.send('Read the file');
       expect(controller.phase, AiChatPhase.idle);
       expect(controller.failure, isNull);
-      expect(
-        controller.items.whereType<AiToolRunItem>().single.status,
-        AiToolRunStatus.completed,
-      );
+      final tool = controller.items.whereType<AiToolRunItem>().single;
+      expect(tool.status, AiToolRunStatus.completed);
+      expect(tool.argsPreview, 'README.md');
       expect(
         controller.items.whereType<AiAssistantItem>().single,
         isA<AiAssistantItem>()
             .having((item) => item.text, 'text', 'Final answer')
             .having((item) => item.state, 'state', AiAssistantState.done),
       );
+      // The read is listed above the answer that uses it.
+      expect(
+        controller.items.indexOf(tool),
+        lessThan(
+          controller.items.indexWhere((item) => item is AiAssistantItem),
+        ),
+      );
+      // The chip names the page; its source stays the provenance tag.
+      final chip = controller.items.whereType<AiUserItem>().single.chips.single;
+      expect((chip.source, chip.resource), ('file', 'README.md'));
       expect(providerAdapter.requests, hasLength(2));
       expect(
         environment.workspace.adapter.requests.map((request) => request.method),
@@ -578,6 +593,54 @@ void main() {
       ),
       isTrue,
     );
+  });
+
+  test('a tool row label is redacted and loses control characters', () async {
+    const token = 'synthetic-test-token';
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    await _configure(
+      environment,
+      _provider(AiFormat.responses, tools: true),
+      grantConsent: true,
+    );
+    final responses = _toolThenAnswer(
+      AiFormat.responses,
+      path: 'notes/$token\u202e\u0007.md',
+    ).iterator;
+    final adapter = FakeAdapter((_) {
+      responses.moveNext();
+      return _sse(responses.current);
+    });
+    final controller = _controller(
+      environment,
+      origin: AiFileOrigin(
+        project: environment.workspace.project,
+        path: 'README.md',
+        sha: WorkspaceFixture.sha,
+      ),
+      wireClientFactory:
+          ({required config, required apiKey, required conversationId}) =>
+              _wireClient(
+                adapter,
+                config: config,
+                apiKey: apiKey,
+                conversationId: conversationId,
+              ),
+    );
+    addTearDown(controller.dispose);
+    await controller.recheck();
+    await controller.send('read the note');
+
+    final label = controller.items
+        .whereType<AiToolRunItem>()
+        .single
+        .argsPreview;
+    expect(label, startsWith('notes/'));
+    expect(label, isNot(contains(token)));
+    expect(label, contains('REDACTED'));
+    expect(label, isNot(contains('\u202e')));
+    expect(label, isNot(contains('\u0007')));
   });
 
   test('private-key context is withheld with a visible notice', () async {

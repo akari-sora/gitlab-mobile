@@ -146,11 +146,13 @@ class _AiChatPageState extends State<AiChatPage> {
     final contract = _session.consentRequest;
     if (contract == null) return;
     final scope = AiScope.of(context);
+    // Nothing is waiting to be sent, so the button only agrees.
     await showAiConsentDialog(
       context,
       scope.settings,
       scope.accountKey,
       contract,
+      agreeLabel: l10n.aiConsentAgree,
     );
     if (mounted) await _session.recheck();
   }
@@ -189,76 +191,87 @@ class _AiChatPageState extends State<AiChatPage> {
         final busy =
             _session.phase == AiChatPhase.running ||
             _session.phase == AiChatPhase.stopping;
-        return Scaffold(
-          appBar: AppBar(
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  aiOriginTitle(_session.origin),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                if (provider != null)
+        // Its own messenger, so a snack bar the app shows elsewhere (such as
+        // an update notice) never covers the composer.
+        return ScaffoldMessenger(
+          child: Scaffold(
+            appBar: AppBar(
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    '${isolated(provider.name)} · ${isolated(provider.model)}',
+                    aiOriginTitle(_session.origin),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall,
                   ),
-              ],
-            ),
-            actions: [
-              PopupMenuButton<String>(
-                key: const ValueKey('ai-chat-menu'),
-                tooltip: l10n.moreActions,
-                enabled: !busy,
-                onSelected: (value) {
-                  if (value == '#new') {
-                    _newConversation();
-                  } else {
-                    _switchProvider(value);
-                  }
-                },
-                itemBuilder: (context) => [
-                  PopupMenuItem(
-                    value: '#new',
-                    child: Text(l10n.aiChatNewConversation),
-                  ),
-                  if (_session.providers.length > 1) ...[
-                    const PopupMenuDivider(),
-                    for (final candidate in _session.providers)
-                      CheckedPopupMenuItem(
-                        value: candidate.id,
-                        checked: candidate.id == provider?.id,
-                        child: Text(
-                          '${isolated(candidate.name)} · '
-                          '${isolated(candidate.model)}',
-                        ),
-                      ),
-                  ],
+                  if (provider != null)
+                    Text(
+                      '${isolated(provider.name)} · ${isolated(provider.model)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                 ],
               ),
-            ],
-          ),
-          body: Column(
-            children: [
-              if (_session.blocker != AiChatBlocker.none)
-                _BlockerCard(
-                  session: _session,
-                  onOpenSettings: _openSettings,
-                  onReviewConsent: _reviewConsent,
+              actions: [
+                PopupMenuButton<String>(
+                  key: const ValueKey('ai-chat-menu'),
+                  tooltip: l10n.moreActions,
+                  enabled: !busy,
+                  onSelected: (value) {
+                    if (value == '#new') {
+                      _newConversation();
+                    } else if (value == '#settings') {
+                      _openSettings();
+                    } else {
+                      _switchProvider(value);
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: '#new',
+                      child: Text(l10n.aiChatNewConversation),
+                    ),
+                    PopupMenuItem(
+                      value: '#settings',
+                      child: Text(l10n.aiChatOpenSettings),
+                    ),
+                    if (_session.providers.length > 1) ...[
+                      const PopupMenuDivider(),
+                      for (final candidate in _session.providers)
+                        CheckedPopupMenuItem(
+                          value: candidate.id,
+                          checked: candidate.id == provider?.id,
+                          child: Text(
+                            '${isolated(candidate.name)} · '
+                            '${isolated(candidate.model)}',
+                          ),
+                        ),
+                    ],
+                  ],
                 ),
-              Expanded(child: _conversation(context)),
-              _Composer(
-                controller: _input,
-                busy: busy,
-                stopping: _session.phase == AiChatPhase.stopping,
-                canSend: _session.canSend,
-                onSend: _send,
-                onStop: _session.stop,
-              ),
-            ],
+              ],
+            ),
+            body: Column(
+              children: [
+                if (_session.blocker != AiChatBlocker.none ||
+                    _session.phase == AiChatPhase.preparing)
+                  _BlockerCard(
+                    session: _session,
+                    onOpenSettings: _openSettings,
+                    onReviewConsent: _reviewConsent,
+                  ),
+                Expanded(child: _conversation(context)),
+                _Composer(
+                  controller: _input,
+                  busy: busy,
+                  stopping: _session.phase == AiChatPhase.stopping,
+                  canSend: _session.canSend,
+                  onSend: _send,
+                  onStop: _session.stop,
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -335,7 +348,8 @@ class _BlockerCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final (icon, text, action, onAction) = switch (session.blocker) {
-      AiChatBlocker.none => (null, '', null, null),
+      // Shown only while the conversation gets ready (reading the page).
+      AiChatBlocker.none => (null, l10n.aiChatPreparing, null, null),
       AiChatBlocker.settingsLoading => (null, l10n.loadingDots, null, null),
       AiChatBlocker.settingsUnavailable => (
         Icons.error_outline,
@@ -378,7 +392,11 @@ class _BlockerCard extends StatelessWidget {
         ? session.failure
         : null;
     return Padding(
-      key: const ValueKey('ai-chat-blocker'),
+      key: ValueKey(
+        session.blocker == AiChatBlocker.none
+            ? 'ai-chat-preparing'
+            : 'ai-chat-blocker',
+      ),
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Card(
         margin: EdgeInsets.zero,
@@ -538,7 +556,7 @@ class _ContextChip extends StatelessWidget {
     final theme = Theme.of(context);
     final label = chip.blocked
         ? '${isolated(chip.source)} · ${l10n.aiChatBlocked}'
-        : '${isolated(chip.source)} · ${l10n.aiChatCharacters('${chip.sizeChars}')}';
+        : '${isolated(_name)} · ${l10n.aiChatCharacters('${chip.sizeChars}')}';
     final color = chip.blocked
         ? theme.colorScheme.onSurfaceVariant
         : theme.colorScheme.onSurface;
@@ -582,6 +600,14 @@ class _ContextChip extends StatelessWidget {
     );
   }
 
+  /// The page the content came from: a file name, `!iid`, `#iid` or the job
+  /// name. Older chips without one show their source tag.
+  String get _name => switch (chip.resource) {
+    null => chip.source,
+    final resource when chip.source == 'file' => resource.split('/').last,
+    final resource => resource,
+  };
+
   void _showSent(BuildContext context) {
     showModalBottomSheet<void>(
       context: context,
@@ -599,7 +625,7 @@ class _ContextChip extends StatelessWidget {
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 4),
-            Text(isolated(chip.source)),
+            Text(isolated(chip.resource ?? chip.source)),
             const SizedBox(height: 12),
             // What was actually sent, after redaction, read left to right.
             Directionality(
@@ -677,7 +703,9 @@ class _AssistantMessage extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         if (item.text.isNotEmpty)
-          AiMessageBody(text: item.text, streaming: streaming),
+          AiMessageBody(text: item.text, streaming: streaming)
+        else if (streaming)
+          Text(l10n.aiChatThinking, style: muted),
         if (note != null) ...[
           const SizedBox(height: 6),
           Text(note, style: muted),
@@ -760,25 +788,44 @@ class _ToolRow extends StatelessWidget {
         l10n.aiToolSkipped,
       ),
     };
-    final details = [
-      if (item.argsPreview.isNotEmpty) item.argsPreview,
-      if (item.provenance.isNotEmpty) item.provenance,
-    ];
+    final details = [if (item.provenance.isNotEmpty) item.provenance];
     final excerpt = item.resultExcerpt.trim();
+    // What was read on the first line, how it went on the second.
     final header = Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        running
-            ? const SizedBox.square(
-                dimension: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            : Icon(icon, size: 18, color: color),
+        Padding(
+          padding: const EdgeInsets.only(top: 1),
+          child: running
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : Icon(icon, size: 18, color: color),
+        ),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(
-            '${_toolLabel(item.name)} · $status'
-            '${item.sizeChars > 0 && !running ? ' · ${l10n.aiChatCharacters('${item.sizeChars}')}' : ''}',
-            style: theme.textTheme.bodySmall,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.argsPreview.isEmpty
+                    ? _toolLabel(item.name)
+                    : '${_toolLabel(item.name)} · ${isolated(item.argsPreview)}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              Text(
+                '$status'
+                '${item.sizeChars > 0 && !running ? ' · ${l10n.aiChatCharacters('${item.sizeChars}')}' : ''}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
         ),
       ],

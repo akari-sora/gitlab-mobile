@@ -2320,5 +2320,7 @@
   "aiSummarize": "AI summary",
   "aiExplainFile": "Explain this file with AI",
   "aiNoticeRedactedSome": "Secrets were redacted",
-  "aiNoticePrivateKeyWithheld": "Content that looks like a private key was held back and not sent"
+  "aiNoticePrivateKeyWithheld": "Content that looks like a private key was held back and not sent",
+  "aiChatPreparing": "Preparing the conversation…",
+  "aiConsentAgree": "Agree"
 }

@@ -134,7 +134,8 @@ List<AiChatItem> _conversation() => [
     text: 'What changed?',
     chips: const [
       AiContextChip(
-        source: 'MR !44',
+        source: 'merge_request',
+        resource: '!44',
         preview: 'diff --git a/synthetic b/synthetic',
         sizeChars: 1234,
       ),
@@ -455,6 +456,143 @@ void main() {
 
     await tester.pumpWidget(_host(const SizedBox()));
     expect(session.cleartext, isNull);
+  });
+
+  testWidgets('a progress row shows while the conversation gets ready', (
+    tester,
+  ) async {
+    final session = _FakeSession(phase: AiChatPhase.preparing);
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey('ai-chat-preparing')), findsOneWidget);
+    expect(find.text(l10n.aiChatPreparing), findsOneWidget);
+    expect(find.byKey(const ValueKey('ai-chat-blocker')), findsNothing);
+    final chip = tester.widget<ActionChip>(
+      find.widgetWithText(ActionChip, l10n.aiSuggestMrSummary),
+    );
+    expect(chip.onPressed, isNull);
+
+    session.update(() => session.phase = AiChatPhase.idle);
+    await tester.pump();
+    expect(find.byKey(const ValueKey('ai-chat-preparing')), findsNothing);
+  });
+
+  testWidgets('a snack bar shown elsewhere stays off the chat', (tester) async {
+    final session = _FakeSession();
+    await tester.pumpWidget(
+      _host(
+        Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: FilledButton(
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('synthetic notice'),
+                      duration: Duration(days: 1),
+                    ),
+                  );
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => AiChatPage(session: session),
+                    ),
+                  );
+                },
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.byType(AiChatPage), findsOneWidget);
+    expect(find.text('synthetic notice'), findsNothing);
+  });
+
+  testWidgets('chips name their page and the sheet shows the full path', (
+    tester,
+  ) async {
+    final session = _FakeSession(
+      origin: AiFileOrigin(project: _project, path: 'lib/a/b.dart', sha: 'a1'),
+      items: [
+        AiUserItem(
+          text: 'Explain',
+          chips: const [
+            AiContextChip(
+              source: 'file',
+              resource: 'lib/a/b.dart',
+              preview: 'void b() {}',
+              sizeChars: 11,
+            ),
+          ],
+        ),
+      ],
+    );
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    expect(
+      find.text('b.dart · ${l10n.aiChatCharacters('11')}'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('file ·'), findsNothing);
+    await tester.tap(find.textContaining('b.dart ·'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('lib/a/b.dart'), findsOneWidget);
+  });
+
+  testWidgets('a tool row names what it read before it is expanded', (
+    tester,
+  ) async {
+    final session = _FakeSession(items: _conversation());
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    expect(find.text('${l10n.aiToolReadFile} · lib/main.dart'), findsOneWidget);
+    expect(
+      find.text('${l10n.aiToolCompleted} · ${l10n.aiChatCharacters('512')}'),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('an empty streaming reply says it is thinking, once', (
+    tester,
+  ) async {
+    final session = _FakeSession(
+      items: [
+        AiUserItem(text: 'go'),
+        const AiToolRunItem(
+          name: 'read_file',
+          argsPreview: 'pubspec.yaml',
+          status: AiToolRunStatus.completed,
+          sizeChars: 10,
+          provenance: '',
+        ),
+        const AiAssistantItem(text: '', state: AiAssistantState.streaming),
+      ],
+      phase: AiChatPhase.running,
+    );
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    expect(find.text(l10n.aiChatThinking), findsOneWidget);
+  });
+
+  testWidgets('the menu opens AI settings', (tester) async {
+    final session = _FakeSession();
+    await tester.pumpWidget(_host(AiChatPage(session: session)));
+    await tester.pump();
+
+    await tester.tap(find.byKey(const ValueKey('ai-chat-menu')));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text(l10n.aiChatOpenSettings), findsOneWidget);
   });
 
   group('narrow screens, 2x text and Arabic', () {

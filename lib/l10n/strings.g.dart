@@ -7056,4 +7056,10 @@ final class AppStrings {
 
   /// 有內容看起來像私密金鑰，這部分沒有送出
   String get aiNoticePrivateKeyWithheld => language._messages[2320];
+
+  /// 正在準備對話…
+  String get aiChatPreparing => language._messages[2321];
+
+  /// 同意
+  String get aiConsentAgree => language._messages[2322];
 }

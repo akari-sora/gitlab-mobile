@@ -2323,4 +2323,6 @@ const _messagesUk = <String>[
   'Explain this file with AI',
   'Secrets were redacted',
   'Content that looks like a private key was held back and not sent',
+  'Preparing the conversation…',
+  'Agree',
 ];
