@@ -1,0 +1,635 @@
+import 'package:flutter/material.dart';
+
+import '../../core/ai/ai_provider.dart';
+import '../../l10n/l10n.dart';
+import '../../shared/external_link.dart';
+import '../../shared/workspace_ui.dart';
+import 'ai_scope.dart';
+import 'ai_stores.dart';
+
+/// The stable, non-secret disclosure saved with a granted consent.
+Map<String, Object?> aiConsentSummary(
+  AiConsentContract contract, {
+  String? providerName,
+  String? model,
+}) {
+  final categories = contract.dataCategories.toList()..sort();
+  final policyUri = _policyUri(contract.policyIdentity);
+  final retentionDays = _retentionDays(contract.policyIdentity);
+  return <String, Object?>{
+    if (providerName != null && providerName.trim().isNotEmpty)
+      'providerName': providerName.trim(),
+    'origin': contract.origin,
+    'format': contract.format.name,
+    'cleartext': contract.cleartext,
+    'toolsEnabled': contract.toolsEnabled,
+    'dataCategories': categories,
+    'policyIdentity': contract.policyIdentity,
+    if (policyUri != null) 'policyUrl': policyUri.toString(),
+    'retentionDays': ?retentionDays,
+    'model': ?(contract.routedModel ?? model),
+    'dataUse': contract.dataUse.name,
+    'disclosureVersion': contract.disclosureVersion,
+  };
+}
+
+/// Shows the versioned disclosure and stores its hash and readable summary
+/// only after the user explicitly agrees. Returns whether consent was granted.
+Future<bool> showAiConsentDialog(
+  BuildContext context,
+  AiSettingsController settings,
+  String accountKey,
+  AiConsentContract contract, {
+  bool readOnly = false,
+}) async {
+  final provider = settings.providers
+      .where((candidate) => candidate.id == contract.providerId)
+      .firstOrNull;
+  if (provider == null) return false;
+  final capturedRecipientRevision = provider.recipientRevision;
+  final initialScope = AiScope.maybeOf(context);
+  if (initialScope != null && initialScope.accountKey != accountKey) {
+    return false;
+  }
+  final requireScopeBinding = initialScope != null;
+  bool isCurrent() {
+    final current = settings.providers
+        .where((candidate) => candidate.id == contract.providerId)
+        .firstOrNull;
+    if (current?.recipientRevision != capturedRecipientRevision) return false;
+    if (requireScopeBinding) {
+      return context.mounted &&
+          AiScope.maybeOf(context)?.accountKey == accountKey;
+    }
+    return true;
+  }
+
+  final summary = aiConsentSummary(
+    contract,
+    providerName: provider.name,
+    model: provider.model,
+  );
+  final result = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    useSafeArea: false,
+    builder: (dialogContext) => Dialog.fullscreen(
+      child: _AiConsentPage(
+        details: _ConsentDetails.fromSummary(summary),
+        readOnly: readOnly,
+        onAgree: readOnly
+            ? null
+            : () async {
+                if (!isCurrent()) {
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop(false);
+                  }
+                  return;
+                }
+                try {
+                  final grantedAt = DateTime.now().toUtc();
+                  await settings.grantConsent(
+                    accountKey,
+                    contract,
+                    summary,
+                    grantedAt: grantedAt,
+                    expectedRecipientRevision: capturedRecipientRevision,
+                  );
+                  if (!isCurrent()) {
+                    await settings.revokeConsent(
+                      accountKey,
+                      contract.providerId,
+                      onlyIf: AiConsentRecord(
+                        hash: contract.hash,
+                        summary: summary,
+                        grantedAt: grantedAt,
+                      ),
+                    );
+                    if (dialogContext.mounted) {
+                      Navigator.of(dialogContext).pop(false);
+                    }
+                    return;
+                  }
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop(true);
+                  }
+                } on Object catch (error) {
+                  if (dialogContext.mounted) showFailure(dialogContext, error);
+                }
+              },
+      ),
+    ),
+  );
+  return result ?? false;
+}
+
+/// Shows the exact readable disclosure saved when consent was granted.
+Future<void> showAiConsentRecordDialog(
+  BuildContext context,
+  AiConsentRecord record,
+) async {
+  await showDialog<void>(
+    context: context,
+    useSafeArea: false,
+    builder: (dialogContext) => Dialog.fullscreen(
+      child: _AiConsentPage(
+        details: _ConsentDetails.fromSummary(
+          record.summary,
+          grantedAt: record.grantedAt,
+        ),
+        readOnly: true,
+      ),
+    ),
+  );
+}
+
+class _AiConsentPage extends StatefulWidget {
+  const _AiConsentPage({
+    required this.details,
+    required this.readOnly,
+    this.onAgree,
+  });
+
+  final _ConsentDetails details;
+  final bool readOnly;
+  final Future<void> Function()? onAgree;
+
+  @override
+  State<_AiConsentPage> createState() => _AiConsentPageState();
+}
+
+class _AiConsentPageState extends State<_AiConsentPage> {
+  var _saving = false;
+
+  Future<void> _agree() async {
+    if (_saving || widget.onAgree == null) return;
+    setState(() => _saving = true);
+    await widget.onAgree!();
+    if (mounted) setState(() => _saving = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final details = widget.details;
+    final theme = Theme.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+        title: Text(
+          widget.readOnly ? l10n.aiConsentDetailsTitle : l10n.aiConsentTitle,
+        ),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+              children: [
+                if (details.grantedAt != null)
+                  _InfoCard(
+                    icon: Icons.history,
+                    title: l10n.aiConsentGrantedAtHeading,
+                    children: [
+                      Text(_dateTime(details.grantedAt!)),
+                      const SizedBox(height: 4),
+                      Text(
+                        l10n.aiConsentSavedSummaryNotice,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                _InfoCard(
+                  icon: Icons.outbox_outlined,
+                  title: l10n.aiConsentRecipientHeading,
+                  children: [
+                    if (details.providerName != null)
+                      Text(
+                        isolated(details.providerName!),
+                        style: theme.textTheme.titleMedium,
+                      ),
+                    SelectableText(isolated(details.origin)),
+                    if (details.cleartext) ...[
+                      const SizedBox(height: 8),
+                      _WarningLine(
+                        icon: Icons.no_encryption_outlined,
+                        text: l10n.aiConsentUnencrypted,
+                      ),
+                    ],
+                    const SizedBox(height: 12),
+                    _LabelValue(
+                      label: l10n.aiConsentFormatHeading,
+                      value: _formatLabel(details.format),
+                    ),
+                    if (details.model != null)
+                      _LabelValue(
+                        label: l10n.aiConsentModelHeading,
+                        value: isolated(details.model!),
+                      ),
+                  ],
+                ),
+                _InfoCard(
+                  icon: Icons.data_object,
+                  title: l10n.aiConsentDataHeading,
+                  children: [
+                    Text(l10n.aiConsentDataDescription),
+                    const SizedBox(height: 8),
+                    for (final category in details.categories)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Padding(
+                              padding: EdgeInsetsDirectional.only(top: 8),
+                              child: Icon(Icons.circle, size: 6),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(child: Text(_categoryLabel(category))),
+                          ],
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                    Text(
+                      details.toolsEnabled
+                          ? l10n.aiConsentToolsEnabled
+                          : l10n.aiConsentToolsDisabled,
+                    ),
+                  ],
+                ),
+                _InfoCard(
+                  icon: Icons.policy_outlined,
+                  title: l10n.aiConsentDataUseHeading,
+                  children: [
+                    _DataUseNotice(
+                      dataUse: details.dataUse,
+                      retentionDays: details.retentionDays,
+                    ),
+                    const SizedBox(height: 8),
+                    if (details.policyUri case final policyUri?)
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: TextButton.icon(
+                          onPressed: () => openExternal(context, policyUri),
+                          icon: const Icon(Icons.open_in_new),
+                          label: Text(l10n.aiConsentViewPolicy),
+                        ),
+                      )
+                    else
+                      Text(l10n.aiConsentCustomPolicy),
+                  ],
+                ),
+                _InfoCard(
+                  icon: Icons.apartment_outlined,
+                  title: l10n.aiConsentSelfManagedNotice,
+                  children: const [],
+                ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.errorContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          Icons.warning_amber_rounded,
+                          color: theme.colorScheme.onErrorContainer,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            l10n.aiConsentIrreversible,
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              color: theme.colorScheme.onErrorContainer,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+              child: SizedBox(
+                width: double.infinity,
+                child: widget.readOnly
+                    ? FilledButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: Text(l10n.closeAction),
+                      )
+                    : Wrap(
+                        alignment: WrapAlignment.end,
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          TextButton(
+                            onPressed: _saving
+                                ? null
+                                : () => Navigator.of(context).pop(false),
+                            child: Text(l10n.cancelAction),
+                          ),
+                          FilledButton(
+                            onPressed: _saving ? null : _agree,
+                            child: _saving
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : Text(l10n.aiConsentAgreeAndSend),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoCard extends StatelessWidget {
+  const _InfoCard({
+    required this.icon,
+    required this.title,
+    required this.children,
+  });
+
+  final IconData icon;
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surface,
+          border: Border.all(color: theme.colorScheme.outlineVariant),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(icon, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(title, style: theme.textTheme.titleMedium),
+                  ),
+                ],
+              ),
+              if (children.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                ...children,
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LabelValue extends StatelessWidget {
+  const _LabelValue({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 4),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: Text(label)),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _WarningLine extends StatelessWidget {
+  const _WarningLine({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, size: 20, color: scheme.onErrorContainer),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                text,
+                style: TextStyle(color: scheme.onErrorContainer),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DataUseNotice extends StatelessWidget {
+  const _DataUseNotice({required this.dataUse, this.retentionDays});
+
+  final AiDataUse dataUse;
+  final int? retentionDays;
+
+  @override
+  Widget build(BuildContext context) {
+    if (dataUse == AiDataUse.training) {
+      return _WarningLine(
+        icon: Icons.model_training,
+        text: l10n.aiConsentTrainingWarning,
+      );
+    }
+    if (dataUse == AiDataUse.unknown) {
+      return _WarningLine(
+        icon: Icons.help_outline,
+        text: l10n.aiConsentUnknownDataUseWarning,
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(l10n.aiConsentNoTraining),
+        const SizedBox(height: 4),
+        if (retentionDays != null)
+          _LabelValue(
+            label: l10n.aiConsentRetentionDays,
+            value: retentionDays.toString(),
+          )
+        else
+          Text(l10n.aiConsentRetentionNotStated),
+      ],
+    );
+  }
+}
+
+final class _ConsentDetails {
+  const _ConsentDetails({
+    required this.origin,
+    required this.format,
+    required this.cleartext,
+    required this.toolsEnabled,
+    required this.categories,
+    required this.dataUse,
+    this.providerName,
+    this.model,
+    this.retentionDays,
+    this.policyUri,
+    this.grantedAt,
+  });
+
+  factory _ConsentDetails.fromSummary(
+    Map<String, Object?> summary, {
+    DateTime? grantedAt,
+  }) {
+    final rawCategories =
+        summary['dataCategories'] ?? summary['categories'] ?? const <Object?>[];
+    final categories = rawCategories is List
+        ? rawCategories.whereType<String>().toList(growable: false)
+        : const <String>[];
+    final policyUrl = summary['policyUrl'];
+    return _ConsentDetails(
+      providerName: summary['providerName'] is String
+          ? summary['providerName'] as String
+          : null,
+      origin: summary['origin'] is String
+          ? summary['origin'] as String
+          : summary['recipient'] is String
+          ? summary['recipient'] as String
+          : '',
+      format: _formatFromName(summary['format']),
+      cleartext: summary['cleartext'] == true,
+      toolsEnabled: summary['toolsEnabled'] == true,
+      categories: categories,
+      model: summary['model'] is String ? summary['model'] as String : null,
+      dataUse: _dataUseFromName(summary['dataUse']),
+      retentionDays: summary['retentionDays'] is int
+          ? summary['retentionDays'] as int
+          : null,
+      policyUri: policyUrl is String ? _safePolicyUri(policyUrl) : null,
+      grantedAt: grantedAt,
+    );
+  }
+
+  final String? providerName;
+  final String origin;
+  final AiFormat format;
+  final bool cleartext;
+  final bool toolsEnabled;
+  final List<String> categories;
+  final String? model;
+  final AiDataUse dataUse;
+  final int? retentionDays;
+  final Uri? policyUri;
+  final DateTime? grantedAt;
+}
+
+String _formatLabel(AiFormat format) => switch (format) {
+  AiFormat.chatCompletions => l10n.aiConsentFormatChatCompletions,
+  AiFormat.responses => l10n.aiConsentFormatResponses,
+  AiFormat.anthropicMessages => l10n.aiConsentFormatAnthropicMessages,
+};
+
+String _categoryLabel(String category) => switch (category) {
+  'job_log' || 'job_logs' => l10n.aiConsentCategoryJobLog,
+  'diff' || 'diffs' || 'mr_diff' || 'commit_diff' => l10n.aiConsentCategoryDiff,
+  'source' || 'file' || 'files' || 'repository' => l10n.aiConsentCategorySource,
+  'issue' || 'issue_text' || 'issues' => l10n.aiConsentCategoryIssueText,
+  'comment' ||
+  'comments' ||
+  'discussion' ||
+  'discussions' => l10n.aiConsentCategoryComments,
+  'tool_read' || 'tool_reads' => l10n.aiConsentCategoryToolReads,
+  _ => l10n.aiConsentCategoryOther,
+};
+
+AiFormat _formatFromName(Object? value) => AiFormat.values.firstWhere(
+  (candidate) => candidate.name == value,
+  orElse: () => AiFormat.chatCompletions,
+);
+
+AiDataUse _dataUseFromName(Object? value) => AiDataUse.values.firstWhere(
+  (candidate) => candidate.name == value,
+  orElse: () => AiDataUse.unknown,
+);
+
+Uri? _policyUri(String identity) {
+  final start = identity.indexOf('https://');
+  if (start >= 0) {
+    final tail = identity.substring(start);
+    final end = tail.indexOf('|');
+    return _safePolicyUri(end < 0 ? tail : tail.substring(0, end));
+  }
+  if (identity.startsWith('opencode-go')) {
+    return Uri.parse(AiPresets.openCodePolicySource);
+  }
+  if (identity.startsWith('opencode-zen')) {
+    return Uri.parse(AiPresets.openCodeZenPolicySource);
+  }
+  return null;
+}
+
+int? _retentionDays(String identity) {
+  final fields = identity.split('|');
+  for (var index = 0; index + 2 < fields.length; index += 1) {
+    if (AiDataUse.values.any((value) => value.name == fields[index])) {
+      return int.tryParse(fields[index + 1]);
+    }
+  }
+  return null;
+}
+
+Uri? _safePolicyUri(String value) {
+  final uri = Uri.tryParse(value);
+  return uri != null && safeExternalUri(uri) ? uri : null;
+}
+
+String _dateTime(DateTime value) {
+  final local = value.toLocal();
+  String two(int part) => part.toString().padLeft(2, '0');
+  return '${local.year}/${two(local.month)}/${two(local.day)} '
+      '${two(local.hour)}:${two(local.minute)}';
+}

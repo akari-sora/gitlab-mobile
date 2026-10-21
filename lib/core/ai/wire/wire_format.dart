@@ -28,8 +28,11 @@ final class AiRequestPlan {
     List<AiToolSpec> tools = const [],
     this.toolChoice = AiToolChoice.auto,
     this.maxOutputTokens = 4096,
+    // Small limits are an explicit advanced setting; legacy callers retain
+    // the reasoning-safe minimum unless they opt in.
+    bool allowSmallOutputTokens = false,
   }) : tools = List.unmodifiable(tools) {
-    if (maxOutputTokens < 2048) {
+    if (maxOutputTokens < (allowSmallOutputTokens ? 512 : 2048)) {
       throw ArgumentError.value(maxOutputTokens, 'maxOutputTokens');
     }
   }

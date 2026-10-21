@@ -704,3 +704,46 @@ private-project integration, Android/iOS, accessibility and AOT redaction timing
 are **NOT_RUN**. MR5/MR6 UI, MR7 gate/platform/device acceptance and plan Appendix
 D live calls are deferred to their prescribed lanes. None of the offline
 results upgrades P0a, provider support or G0 acceptance.
+
+
+## MR5 — settings and consent, gate off (2026-10-21)
+
+The AI setup UI is available through explicit controller injection in synthetic
+widget tests. Only `main.dart` reads `MERGELINE_AI_ASSISTANT`; its default remains
+false. An omitted AI bundle preserves the existing shell tree. The app-level,
+non-autoDispose settings owner survives account changes, while `AiScope` carries
+the active account identity.
+
+The Me row opens the grouped settings page. Provider edits preserve the persisted
+default order. Deletion confirms key and all-account consent removal. The editor
+validates endpoints and key whitespace before storage, offers keyless local and
+custom presets, lists models through an injectable wire client, and distinguishes
+OpenRouter catalogue access from key verification. Model reads do not require an
+already-selected model and discard stale results. The output limit is persisted
+in caps and used by the runner, with a 4096-token default for older records and an explicit 512–65,536 range.
+
+Consent displays the versioned recipient contract, model-sensitive data use,
+retention, policy and irreversible-disclosure warning. It persists a readable
+summary and hash; recorded details remain readable after configuration changes.
+Provider/account changes while the dialog is open invalidate acceptance. Consent writes recheck the captured recipient revision inside the settings queue; post-write cleanup conditionally removes only that exact grant. History
+controls use the coordinator, preserve unavailable/missing-key data, and offer
+explicit cleanup/retry. History-only clearing preserves consents and preferences,
+disables persistence before deleting files and deletes the key last.
+
+New synthetic suites are `ai_injection_test.dart`,
+`ai_provider_editor_test.dart`, `ai_consent_dialog_test.dart`,
+`ai_settings_page_test.dart`, `ai_settings_history_states_test.dart`,
+`ai_consent_race_test.dart` and `ai_output_limit_test.dart` under
+`test/ai/`. They cover injection, account switching, incoming links, key/endpoint
+validation, model listing, consent invalidation/revocation, persistence controls
+and 320 dp / 2x text / Arabic RTL / dark layouts. All 24 catalogs contain the new
+UI messages. Existing tests and their expectations remain unchanged.
+
+The foreground acceptance receipt, complete command outputs/tails and any gaps
+are recorded in the owner-supplied MR5 packet directory's `RESULT.md`. There is
+no MR5 commit or pipeline: the task forbids committing and pushing. Live provider
+calls, real keys, internet, Android/iOS devices, emulator checks and rendered
+screenshot review are **NOT_RUN**. Provider verification labels remain unverified;
+no catalogue/key probe or synthetic test upgrades the P0b conformance ledger,
+provider support, G0 acceptance or release readiness. MR6 chat/entry points and
+MR7 gate/native/device work remain outside this MR.

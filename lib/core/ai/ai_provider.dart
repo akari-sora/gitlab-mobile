@@ -23,6 +23,7 @@ final class AiCaps {
     this.promptCaching = false,
     this.requiresKey = true,
     this.maxRequestChars = 400000,
+    this.maxOutputTokens = 4096,
   });
 
   final AiTokenLimitField tokenLimitField;
@@ -33,6 +34,7 @@ final class AiCaps {
   final bool promptCaching;
   final bool requiresKey;
   final int maxRequestChars;
+  final int maxOutputTokens;
 
   @override
   bool operator ==(Object other) =>
@@ -44,7 +46,8 @@ final class AiCaps {
       includeEncryptedReasoning == other.includeEncryptedReasoning &&
       promptCaching == other.promptCaching &&
       requiresKey == other.requiresKey &&
-      maxRequestChars == other.maxRequestChars;
+      maxRequestChars == other.maxRequestChars &&
+      maxOutputTokens == other.maxOutputTokens;
 
   @override
   int get hashCode => Object.hash(
@@ -56,6 +59,7 @@ final class AiCaps {
     promptCaching,
     requiresKey,
     maxRequestChars,
+    maxOutputTokens,
   );
 }
 

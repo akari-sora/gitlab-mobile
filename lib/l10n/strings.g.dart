@@ -6435,4 +6435,337 @@ final class AppStrings {
 
   /// 此對話已達用量上限，請開始新的對話
   String get aiEndTokenBudget => language._messages[2113];
+
+  /// AI 助理
+  String get aiAssistantLabel => language._messages[2114];
+
+  /// 尚未設定
+  String get aiNotConfigured => language._messages[2115];
+
+  /// 供應商
+  String get aiProvidersHeading => language._messages[2116];
+
+  /// 新增供應商
+  String get aiAddProvider => language._messages[2117];
+
+  /// 刪除供應商
+  String get aiDeleteProvider => language._messages[2118];
+
+  /// 這會刪除供應商的金鑰，以及所有帳號對此供應商的同意。
+  String get aiDeleteProviderDetail => language._messages[2119];
+
+  /// 預設供應商
+  String get aiDefaultProvider => language._messages[2120];
+
+  /// 設為預設
+  String get aiMakeDefault => language._messages[2121];
+
+  /// 目前帳號
+  String get aiCurrentAccount => language._messages[2122];
+
+  /// 已授予的同意
+  String get aiConsentsHeading => language._messages[2123];
+
+  /// 尚未授予任何供應商同意
+  String get aiNoConsents => language._messages[2124];
+
+  /// 撤銷同意
+  String get aiRevokeConsent => language._messages[2125];
+
+  /// 撤銷會立即停止進行中的執行。已傳送的內容無法撤回。
+  String get aiRevokeConsentDetail => language._messages[2126];
+
+  /// 保存聊天紀錄（加密）
+  String get aiEncryptedHistory => language._messages[2127];
+
+  /// 保留天數
+  String get aiHistoryRetention => language._messages[2128];
+
+  /// 七天
+  String get aiHistorySevenDays => language._messages[2129];
+
+  /// 三十天
+  String get aiHistoryThirtyDays => language._messages[2130];
+
+  /// 九十天
+  String get aiHistoryNinetyDays => language._messages[2131];
+
+  /// 清除此帳號的聊天紀錄
+  String get aiClearHistory => language._messages[2132];
+
+  /// 刪除此帳號的加密聊天紀錄與紀錄金鑰，並關閉保存紀錄。供應商與同意仍會保留。
+  String get aiClearHistoryDetail => language._messages[2133];
+
+  /// 正在清理 AI 資料；完成前無法修改紀錄設定。
+  String get aiHistoryCleaning => language._messages[2134];
+
+  /// 重試清理
+  String get aiHistoryRetryCleanup => language._messages[2135];
+
+  /// 每段對話輸入用量上限
+  String get aiConversationTokenCap => language._messages[2136];
+
+  /// 可設定五萬至五百萬。實際與估計用量都會計入；這是成本護欄，不是精確費用上限。
+  String get aiConversationCapHelp => language._messages[2137];
+
+  /// 單次提問最壞約送出六倍請求字元上限。
+  String get aiWorstCaseUsage => language._messages[2138];
+
+  /// AI 只讀取你允許的內容，絕不會替你在 GitLab 上寫入。
+  String get aiReadOnlyPromise => language._messages[2139];
+
+  /// 無法讀取 AI 設定。請解鎖安全儲存空間後重試。
+  String get aiSettingsReadFailure => language._messages[2140];
+
+  /// 無法儲存 AI 設定，請重試。
+  String get aiSettingsSaveFailure => language._messages[2141];
+
+  /// 新增 AI 供應商
+  String get aiProviderEditorAddTitle => language._messages[2142];
+
+  /// 編輯 AI 供應商
+  String get aiProviderEditorEditTitle => language._messages[2143];
+
+  /// 供應商範本
+  String get aiProviderPresetLabel => language._messages[2144];
+
+  /// 介面格式
+  String get aiProviderFormatLabel => language._messages[2145];
+
+  /// 對話補全
+  String get aiProviderFormatChat => language._messages[2146];
+
+  /// 回應
+  String get aiProviderFormatResponses => language._messages[2147];
+
+  /// 訊息
+  String get aiProviderFormatAnthropic => language._messages[2148];
+
+  /// 基底網址
+  String get aiProviderBaseUrlLabel => language._messages[2149];
+
+  /// 網址無效或不符合端點安全規則
+  String get aiProviderBaseUrlInvalid => language._messages[2150];
+
+  /// 允許私人網路使用未加密連線
+  String get aiProviderCleartextOptIn => language._messages[2151];
+
+  /// 這個連線未加密。同一網路上的其他人可能看到傳輸內容。
+  String get aiProviderCleartextWarning => language._messages[2152];
+
+  /// 存取金鑰
+  String get aiProviderApiKeyLabel => language._messages[2153];
+
+  /// 儲存後不會再次顯示
+  String get aiProviderApiKeyNewHint => language._messages[2154];
+
+  /// 留空以保留現有金鑰
+  String get aiProviderApiKeyReplaceHint => language._messages[2155];
+
+  /// 驗證標頭格式
+  String get aiProviderAuthStyleLabel => language._messages[2156];
+
+  /// 承載權杖
+  String get aiProviderAuthBearer => language._messages[2157];
+
+  /// API 金鑰標頭
+  String get aiProviderAuthApiKey => language._messages[2158];
+
+  /// 專用金鑰標頭
+  String get aiProviderAuthXApiKey => language._messages[2159];
+
+  /// 金鑰至少需要四個字元
+  String get aiProviderKeyMinimum => language._messages[2160];
+
+  /// 金鑰不可包含空白或控制字元
+  String get aiProviderKeyWhitespace => language._messages[2161];
+
+  /// 仍要儲存這把金鑰？
+  String get aiProviderKeyWarningTitle => language._messages[2162];
+
+  /// 這把金鑰很短或像一般單字，可能是貼錯內容。與它完全相同的內容會在送往所有供應商前被遮蔽。請確認後再儲存。
+  String get aiProviderKeyWarningDetail => language._messages[2163];
+
+  /// 此端點不需要金鑰
+  String get aiProviderNoKeyNeeded => language._messages[2164];
+
+  /// 模型識別碼
+  String get aiProviderModelLabel => language._messages[2165];
+
+  /// 讀取模型清單
+  String get aiProviderReadModels => language._messages[2166];
+
+  /// 驗證金鑰
+  String get aiProviderVerifyKey => language._messages[2167];
+
+  /// 金鑰驗證成功
+  String get aiProviderKeyVerified => language._messages[2168];
+
+  /// 已讀取模型目錄。這不代表金鑰或模型呼叫已驗證。
+  String get aiProviderModelsReadSuccess => language._messages[2169];
+
+  /// 無法讀取模型清單
+  String get aiProviderModelsReadFailure => language._messages[2170];
+
+  /// 清單已截短；仍可手動輸入模型識別碼。
+  String get aiProviderModelsTruncated => language._messages[2171];
+
+  /// 模型清單網址
+  String get aiProviderModelsUrlLabel => language._messages[2172];
+
+  /// 此模型的資料會被用於訓練
+  String get aiProviderModelTrainingWarning => language._messages[2173];
+
+  /// 無法確認此模型的資料用途與保留期
+  String get aiProviderModelPolicyUnknown => language._messages[2174];
+
+  /// 不會用於訓練，零天保留
+  String get aiProviderModelZeroRetention => language._messages[2175];
+
+  /// 不會用於訓練，保留三十天
+  String get aiProviderModelThirtyDayRetention => language._messages[2176];
+
+  /// 已驗證
+  String get aiProviderVerifiedLabel => language._messages[2177];
+
+  /// 未驗證
+  String get aiProviderUnverifiedLabel => language._messages[2178];
+
+  /// 進階設定
+  String get aiProviderAdvancedTitle => language._messages[2179];
+
+  /// 允許唯讀工具
+  String get aiProviderToolsEnabled => language._messages[2180];
+
+  /// 支援工具選擇
+  String get aiProviderToolChoiceCapability => language._messages[2181];
+
+  /// 接收串流用量
+  String get aiProviderStreamUsageCapability => language._messages[2182];
+
+  /// 保留相容介面的延伸欄位
+  String get aiProviderReplayExtrasCapability => language._messages[2183];
+
+  /// 包含加密推理內容
+  String get aiProviderEncryptedReasoningCapability => language._messages[2184];
+
+  /// 啟用提示快取
+  String get aiProviderPromptCachingCapability => language._messages[2185];
+
+  /// 單次請求字元上限
+  String get aiProviderMaxRequestCharsLabel => language._messages[2186];
+
+  /// 單次回應用量上限
+  String get aiProviderMaxOutputTokensLabel => language._messages[2187];
+
+  /// 輸出上限欄位
+  String get aiProviderTokenLimitFieldLabel => language._messages[2188];
+
+  /// 請輸入供應商名稱
+  String get aiProviderNameRequired => language._messages[2189];
+
+  /// 請輸入模型識別碼
+  String get aiProviderModelRequired => language._messages[2190];
+
+  /// 無法儲存供應商設定
+  String get aiProviderSaveFailure => language._messages[2191];
+
+  /// 傳送前確認
+  String get aiConsentTitle => language._messages[2192];
+
+  /// 同意內容
+  String get aiConsentDetailsTitle => language._messages[2193];
+
+  /// 收件者
+  String get aiConsentRecipientHeading => language._messages[2194];
+
+  /// 未加密連線
+  String get aiConsentUnencrypted => language._messages[2195];
+
+  /// 線路格式
+  String get aiConsentFormatHeading => language._messages[2196];
+
+  /// 對話補全
+  String get aiConsentFormatChatCompletions => language._messages[2197];
+
+  /// 回應
+  String get aiConsentFormatResponses => language._messages[2198];
+
+  /// Anthropic 訊息
+  String get aiConsentFormatAnthropicMessages => language._messages[2199];
+
+  /// 模型
+  String get aiConsentModelHeading => language._messages[2200];
+
+  /// 會傳送的資料
+  String get aiConsentDataHeading => language._messages[2201];
+
+  /// 只有你允許的內容會傳送給這個供應商。
+  String get aiConsentDataDescription => language._messages[2202];
+
+  /// 作業紀錄
+  String get aiConsentCategoryJobLog => language._messages[2203];
+
+  /// 差異內容
+  String get aiConsentCategoryDiff => language._messages[2204];
+
+  /// 原始碼與檔案
+  String get aiConsentCategorySource => language._messages[2205];
+
+  /// 議題內容
+  String get aiConsentCategoryIssueText => language._messages[2206];
+
+  /// 議題與合併請求留言
+  String get aiConsentCategoryComments => language._messages[2207];
+
+  /// 唯讀工具取得的內容
+  String get aiConsentCategoryToolReads => language._messages[2208];
+
+  /// 其他已允許的內容
+  String get aiConsentCategoryOther => language._messages[2209];
+
+  /// 唯讀工具可依需要讀取檔案、差異、作業紀錄、議題與留言；每次讀取都會顯示在對話中。
+  String get aiConsentToolsEnabled => language._messages[2210];
+
+  /// 唯讀工具未啟用。
+  String get aiConsentToolsDisabled => language._messages[2211];
+
+  /// 資料用途與保留
+  String get aiConsentDataUseHeading => language._messages[2212];
+
+  /// 政策表示資料不會用於訓練。
+  String get aiConsentNoTraining => language._messages[2213];
+
+  /// 保留天數
+  String get aiConsentRetentionDays => language._messages[2214];
+
+  /// 政策未列出保留天數。
+  String get aiConsentRetentionNotStated => language._messages[2215];
+
+  /// 此模型的資料會被用於訓練。
+  String get aiConsentTrainingWarning => language._messages[2216];
+
+  /// 無法確認此模型的資料用途與保留期。
+  String get aiConsentUnknownDataUseWarning => language._messages[2217];
+
+  /// 查看資料政策
+  String get aiConsentViewPolicy => language._messages[2218];
+
+  /// 請自行確認此服務的資料政策。
+  String get aiConsentCustomPolicy => language._messages[2219];
+
+  /// 此帳號的內容可能受你所屬組織或自管 GitLab 的政策約束。傳送後，資料也會受供應商的政策約束。
+  String get aiConsentSelfManagedNotice => language._messages[2220];
+
+  /// 同意後送出的內容無法撤回。
+  String get aiConsentIrreversible => language._messages[2221];
+
+  /// 同意並傳送
+  String get aiConsentAgreeAndSend => language._messages[2222];
+
+  /// 同意時間
+  String get aiConsentGrantedAtHeading => language._messages[2223];
+
+  /// 這是同意當時保存的摘要。
+  String get aiConsentSavedSummaryNotice => language._messages[2224];
 }

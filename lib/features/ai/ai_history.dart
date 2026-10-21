@@ -354,6 +354,111 @@ final class AiHistoryCoordinator extends ChangeNotifier
     return entry.state;
   });
 
+  /// Disabling pauses persistence without deleting existing encrypted history.
+  Future<void> disable(String account) => _run(account, (entry) async {
+    await _load(account, entry);
+    if (entry.state != AiHistoryState.ready &&
+        entry.state != AiHistoryState.readFailed) {
+      return;
+    }
+    final record = await AiAccountMutationCoordinator.forStore(store).mutate(
+      account, (current) => current.copyWith(historyEnabled: false),
+    );
+    if (record == null) return;
+    entry.epoch++;
+    entry.record = record;
+    entry.key?.fillRange(0, entry.key!.length, 0);
+    entry.key = null;
+    entry.state = AiHistoryState.disabled;
+    _emit();
+  });
+
+  Future<void> setRetention(String account, int days) => _run(account, (entry) async {
+    await _load(account, entry);
+    if (entry.state != AiHistoryState.ready &&
+        entry.state != AiHistoryState.disabled) {
+      return;
+    }
+    final record = await AiAccountMutationCoordinator.forStore(store).mutate(
+      account, (current) => current.copyWith(retentionDays: days),
+    );
+    if (record == null) return;
+    entry.record = record;
+    final epoch = entry.epoch;
+    if (entry.key != null) {
+      final recovery = await files.maintain(
+        account, Uint8List.fromList(entry.key!), days,
+      );
+      if (!_current(entry, epoch)) return;
+      _accumulateRecovery(entry, recovery);
+    }
+    _emit();
+  });
+
+  /// Settings may retry account cleanup only while that account is retained.
+  /// Reopen its mutation fence after cleanup succeeds, never after a failure.
+  Future<void> retryCleanup(
+    String account, {required bool Function() isRetained,}
+  ) async {
+    await clearAccount(account);
+    if (!isRetained() || _disposed) return;
+    AiAccountMutationCoordinator.forStore(store).reopen(account);
+    final entry = _entry(account);
+    entry.epoch++;
+    entry.state = AiHistoryState.unknown;
+    await load(account);
+  }
+
+  /// History-only clearing preserves consents and account preferences. Disable
+  /// durably before deleting files, then delete the key last. A failed clear
+  /// stays disabled, keeps any remaining key and supports explicit retry.
+  Future<void> clearHistory(String account) {
+    final entry = _entry(account);
+    entry.epoch++;
+    return _run(account, (entry) async {
+      final owner = AiAccountMutationCoordinator.forStore(store);
+      if (owner.isCleaning(account)) {
+        throw const AiStoreException(
+          AiStoreFailure(AiStoreFailureKind.cleaning, 'clearHistory'),
+        );
+      }
+      final record = await owner.mutate(
+        account, (current) => current.copyWith(historyEnabled: false),
+      );
+      if (record == null) {
+        throw const AiStoreException(
+          AiStoreFailure(AiStoreFailureKind.cleaning, 'clearHistory'),
+        );
+      }
+      final epoch = entry.epoch;
+      entry.state = AiHistoryState.cleaning;
+      entry.record = record;
+      entry.key?.fillRange(0, entry.key!.length, 0);
+      entry.key = null;
+      _emit();
+      try {
+        await files.deleteAccount(account);
+        await store.deleteHistoryKey(account);
+        if (entry.epoch != epoch) return;
+        entry.state = AiHistoryState.disabled;
+        entry.failure = null;
+        entry.fullConversations.clear();
+        entry.capacityConversations.clear();
+        entry.failedConversations.clear();
+        entry.evictedConversations.clear();
+      } catch (_) {
+        if (entry.epoch != epoch) rethrow;
+        entry.state = AiHistoryState.readFailed;
+        entry.failure = const AiStoreFailure(
+          AiStoreFailureKind.unavailable, 'clearHistory',
+        );
+        rethrow;
+      } finally {
+        _emit();
+      }
+    });
+  }
+
   Future<AiHistoryRecovery?> read(String account) =>
       _run(account, (entry) async {
         await _load(account, entry);
@@ -361,6 +466,9 @@ final class AiHistoryCoordinator extends ChangeNotifier
             entry.state != AiHistoryState.readFailed) {
           return null;
         }
+        // A failed explicit clear has already paused persistence and released
+        // the in-memory key. Preserve its failure for the cleanup retry UI.
+        if (entry.key == null) return null;
         final epoch = entry.epoch;
         try {
           final result = await files.recover(

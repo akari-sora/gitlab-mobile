@@ -1111,7 +1111,7 @@ final Object _secureSettingsScope = Object();
 final Expando<AiSettingsController> _settingsOwners =
     Expando<AiSettingsController>('aiSettingsOwner');
 
-// The future aiSettingsProvider must be an app-level single owner. It must not
+// aiSettingsProvider is an app-level single owner. It must not
 // be autoDispose or live under an account-keyed provider tree. While the secure
 // device owner exists, this factory returns it regardless of the storage
 // instance passed through a SecureAiStore wrapper.
@@ -1260,8 +1260,8 @@ final class AiSettingsController extends ChangeNotifier {
     final saved = _copyProvider(provider, recipientRevision: revision);
     final updated = <AiProviderConfig>[
       for (final current in _providers)
-        if (current.id != saved.id) current,
-      saved,
+        current.id == saved.id ? saved : current,
+      if (existing == null) saved,
     ];
     await _writeProviderList(updated);
     _providers = List.unmodifiable(updated);
@@ -1273,6 +1273,34 @@ final class AiSettingsController extends ChangeNotifier {
       _notify();
     }
     return saved;
+  }
+
+  /// The first persisted provider is the device default. Reordering avoids a
+  /// second preference that could point at a deleted provider.
+  Future<void> setDefaultProvider(String providerId) => _enqueue(() async {
+    final selected = _requireProvider(providerId);
+    final updated = <AiProviderConfig>[
+      selected,
+      for (final provider in _providers)
+        if (provider.id != providerId) provider,
+    ];
+    await _writeProviderList(updated, reset: true);
+    _providers = List.unmodifiable(updated);
+    _notify();
+  });
+
+  Future<void> setConversationTokenCap(String accountKey, int cap) async {
+    if (cap < 50000 || cap > 5000000) {
+      throw ArgumentError.value(cap, 'conversationTokenCap');
+    }
+    final updated = await _accountMutations.mutate(
+      accountKey, (current) => current.copyWith(conversationTokenCap: cap),
+    );
+    if (updated == null) {
+      throw const AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.cleaning, 'setConversationTokenCap'),
+      );
+    }
   }
 
   Future<void> saveProviderKey(
@@ -1426,8 +1454,11 @@ final class AiSettingsController extends ChangeNotifier {
     AiConsentContract contract,
     Map<String, Object?> summary, {
     DateTime? grantedAt,
+    int? expectedRecipientRevision,
   }) {
     final epoch = _accountMutations.epochFor(accountKey);
+    final revision = expectedRecipientRevision ??
+        _provider(contract.providerId)?.recipientRevision ?? -1;
     return _enqueue(
       () => _grantConsent(
         accountKey,
@@ -1435,6 +1466,7 @@ final class AiSettingsController extends ChangeNotifier {
         summary,
         epoch: epoch,
         grantedAt: grantedAt,
+        expectedRecipientRevision: revision,
       ),
     );
   }
@@ -1444,6 +1476,7 @@ final class AiSettingsController extends ChangeNotifier {
     AiConsentContract contract,
     Map<String, Object?> summary, {
     required int epoch,
+    required int expectedRecipientRevision,
     DateTime? grantedAt,
   }) async {
     if (!_accountMutations.isCurrent(accountKey, epoch)) {
@@ -1451,7 +1484,12 @@ final class AiSettingsController extends ChangeNotifier {
         AiStoreFailure(AiStoreFailureKind.cleaning, 'grantConsent'),
       );
     }
-    _requireProvider(contract.providerId);
+    if (_requireProvider(contract.providerId).recipientRevision !=
+        expectedRecipientRevision) {
+      throw const AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.invalidValue, 'recipientChanged'),
+      );
+    }
     final updated = await _accountMutations.mutate(accountKey, (account) {
       final consents = Map<String, AiConsentRecord>.of(account.consents);
       consents[contract.providerId] = AiConsentRecord(
@@ -1471,15 +1509,20 @@ final class AiSettingsController extends ChangeNotifier {
     _notify();
   }
 
-  Future<void> revokeConsent(String accountKey, String providerId) {
+  Future<void> revokeConsent(
+    String accountKey,
+    String providerId, {
+    AiConsentRecord? onlyIf,
+  }) {
     final epoch = _accountMutations.epochFor(accountKey);
-    return _enqueue(() => _revokeConsent(accountKey, providerId, epoch));
+    return _enqueue(() => _revokeConsent(accountKey, providerId, epoch, onlyIf));
   }
 
   Future<void> _revokeConsent(
     String accountKey,
     String providerId,
     int epoch,
+    AiConsentRecord? onlyIf,
   ) async {
     if (!_accountMutations.isCurrent(accountKey, epoch)) {
       throw const AiStoreException(
@@ -1488,7 +1531,13 @@ final class AiSettingsController extends ChangeNotifier {
     }
     var removed = false;
     final updated = await _accountMutations.mutate(accountKey, (account) {
-      if (!account.consents.containsKey(providerId)) return account;
+      final current = account.consents[providerId];
+      if (current == null) return account;
+      if (onlyIf != null &&
+          (current.hash != onlyIf.hash ||
+              current.grantedAt != onlyIf.grantedAt)) {
+        return account;
+      }
       removed = true;
       final consents = Map<String, AiConsentRecord>.of(account.consents)
         ..remove(providerId);
@@ -1834,7 +1883,8 @@ bool _sameRecipient(AiProviderConfig left, AiProviderConfig right) =>
     left.model == right.model &&
     left.authStyle == right.authStyle &&
     left.allowLanCleartext == right.allowLanCleartext &&
-    left.toolsEnabled == right.toolsEnabled;
+    left.toolsEnabled == right.toolsEnabled &&
+    left.caps == right.caps;
 
 const _deletingProviderPreset = 'gitlab-mobile:deleting-provider';
 
@@ -1954,6 +2004,7 @@ Map<String, Object?> _providerToJson(AiProviderConfig provider) =>
         'promptCaching': provider.caps.promptCaching,
         'requiresKey': provider.caps.requiresKey,
         'maxRequestChars': provider.caps.maxRequestChars,
+        'maxOutputTokens': provider.caps.maxOutputTokens,
       },
       'allowLanCleartext': provider.allowLanCleartext,
       'toolsEnabled': provider.toolsEnabled,
@@ -2011,7 +2062,7 @@ AiProviderConfig _decodeProvider(Object? raw) {
 
 AiCaps _decodeCaps(Object? raw) {
   final json = _strictObject(raw, 'provider.caps');
-  _requireKeys(json, const <String>{
+  _requireKeys(json, <String>{
     'tokenLimitField',
     'streamUsage',
     'toolChoice',
@@ -2020,6 +2071,7 @@ AiCaps _decodeCaps(Object? raw) {
     'promptCaching',
     'requiresKey',
     'maxRequestChars',
+    if (json.containsKey('maxOutputTokens')) 'maxOutputTokens',
   });
   final booleans = <String>[
     'streamUsage',
@@ -2034,6 +2086,10 @@ AiCaps _decodeCaps(Object? raw) {
       (json['maxRequestChars']! as int) <= 0) {
     throw const FormatException('Invalid provider caps');
   }
+  final maxOutputTokens = json['maxOutputTokens'] ?? 4096;
+  if (maxOutputTokens is! int || maxOutputTokens < 512 || maxOutputTokens > 65536) {
+    throw const FormatException('Invalid output token limit');
+  }
   return AiCaps(
     tokenLimitField: _enumValue(
       AiTokenLimitField.values,
@@ -2047,6 +2103,7 @@ AiCaps _decodeCaps(Object? raw) {
     promptCaching: json['promptCaching']! as bool,
     requiresKey: json['requiresKey']! as bool,
     maxRequestChars: json['maxRequestChars']! as int,
+    maxOutputTokens: maxOutputTokens,
   );
 }
 
