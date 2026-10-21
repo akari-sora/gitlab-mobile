@@ -207,6 +207,29 @@ void main() {
     expect(find.byType(PersonChip), findsNothing);
   });
 
+  testWidgets('person chips show the username, else the name, else nothing', (tester) async {
+    await tester.pumpWidget(_host(Wrap(children: [
+      ?PersonChip.of({'username': 'synthetic-dev', 'name': 'Synthetic Dev'}),
+      ?PersonChip.of({'name': 'Commit Author'}),
+      ?PersonChip.of({'username': 'synthetic-runner'}, author: false),
+      ?PersonChip.of(const {}),
+    ])));
+    expect(find.byType(PersonChip), findsNWidgets(3));
+    expect(find.text('@synthetic-dev'), findsOneWidget);
+    expect(find.text('Commit Author'), findsOneWidget);
+    expect(find.bySemanticsLabel(l10n.authorLabel('@synthetic-dev')), findsOneWidget);
+    expect(find.bySemanticsLabel(l10n.authorLabel('Commit Author')), findsOneWidget);
+    // Who ran something is not its author.
+    expect(find.bySemanticsLabel('@synthetic-runner'), findsOneWidget);
+    expect(PersonChip.of({'username': '', 'name': ''}), isNull);
+  });
+
+  test('a job card label names who ran it', () {
+    expect(jobCardLabel({'name': 'build', 'status': 'success', 'user': {'username': 'synthetic-runner'}}),
+      endsWith('@synthetic-runner'));
+    expect(jobCardLabel({'name': 'build', 'status': 'success'}), isNot(contains('@')));
+  });
+
   testWidgets('work item titles lay out three lines at 412 dp', (tester) async {
     tester.view.physicalSize = const Size(412, 900);
     tester.view.devicePixelRatio = 1;

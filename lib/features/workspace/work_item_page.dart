@@ -492,7 +492,7 @@ Widget workItemCard(
         MetaChip(l10n.autoMerge, icon: Icons.schedule_send),
       if (mr && value['has_conflicts'] == true) MetaChip(l10n.conflict, icon: Icons.warning_amber_rounded),
       MetaChip(iid, mono: true),
-      if (valueText(author, 'username').isNotEmpty) PersonChip(author),
+      ?PersonChip.of(author),
       if (taskCount > 0) MetaChip('${valueInt(tasks, 'completed_count')}/$taskCount', icon: Icons.checklist),
       if (due.isNotEmpty) MetaChip(l10n.dueOn2(due), icon: Icons.event_outlined),
       if (notes > 0) MetaChip('$notes', icon: Icons.chat_bubble_outline),

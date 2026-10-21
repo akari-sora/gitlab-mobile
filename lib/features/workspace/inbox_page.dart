@@ -612,7 +612,7 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
             MetaChip('${todoTarget.typeLabel} · ${todoTarget.web == null ? l10n.cannotOpen : l10n.webVersion}',
               icon: todoTarget.web == null ? Icons.link_off : Icons.open_in_new),
           if (actionLabel.isNotEmpty) MetaChip(actionLabel, icon: Icons.notifications_none),
-          if (valueText(author, 'username').isNotEmpty) MetaChip('@${valueText(author, 'username')}', icon: Icons.person_outline),
+          ?PersonChip.of(author),
           if (DateTime.tryParse(valueText(data, 'snoozed_until')) case final until?)
             MetaChip(l10n.snoozedUntil2(todoUntilLabel(until, DateTime.now())), icon: Icons.snooze)
           else

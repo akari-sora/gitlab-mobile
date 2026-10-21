@@ -712,14 +712,17 @@ class _MetadataPageState extends State<MetadataPage> {
     MetadataKind.branches => [
       if (value['default'] == true) MetaChip(l10n.defaultLabel, icon: Icons.star_outline),
       if (value['protected'] == true) MetaChip(l10n.protected, icon: Icons.lock_outline),
+      ?PersonChip.of({'name': valueText(valueObject(value, 'commit'), 'author_name')}),
       MetaChip(shortSha(valueText(valueObject(value, 'commit'), 'id')), mono: true),
     ],
     MetadataKind.tags => [
+      ?PersonChip.of({'name': valueText(valueObject(value, 'commit'), 'author_name')}),
       MetaChip(shortSha(valueText(valueObject(value, 'commit'), 'id')), mono: true),
       if (valueText(value, 'message').isNotEmpty) MetaChip(l10n.annotatedTag, icon: Icons.notes_outlined),
     ],
     MetadataKind.releases => [
       MetaChip(valueText(value, 'tag_name'), icon: Icons.sell_outlined, mono: true),
+      ?PersonChip.of(valueObject(value, 'author')),
       MetaChip(relativeDate(valueText(value, 'released_at', valueText(value, 'created_at'))), icon: Icons.schedule_outlined),
       if (ReleaseAssets.fromJson(value['assets']).links case final links when links.isNotEmpty)
         MetaChip(l10n.attachmentCount(links.length), icon: Icons.attach_file),
