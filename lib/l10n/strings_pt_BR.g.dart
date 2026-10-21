@@ -2153,6 +2153,8 @@ const _messagesPtBr = <String>[
   'Messages',
   'URL base',
   'A URL é inválida ou não atende às regras de segurança do endpoint',
+  'A URL é inválida, não está no mesmo servidor que a URL base ou não termina em /models',
+  'Corrija a URL da lista de modelos em “Configurações avançadas”',
   'Permitir uma conexão não criptografada em uma rede privada',
   'Esta é uma conexão não criptografada. Outras pessoas na mesma rede podem ver o conteúdo enviado e a chave.',
   'Chave de API',

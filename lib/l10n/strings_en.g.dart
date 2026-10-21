@@ -2153,6 +2153,8 @@ const _messagesEn = <String>[
   'Messages',
   'Base URL',
   'The URL is invalid or does not meet the endpoint safety rules',
+  'The URL is invalid, is not on the same server as the base URL, or does not end in /models',
+  'Fix the model list URL under Advanced settings',
   'Allow an unencrypted connection on a private network',
   'This connection is not encrypted. Others on the same network may see the content and key.',
   'API key',

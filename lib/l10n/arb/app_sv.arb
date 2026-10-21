@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "Bas-URL",
   "aiProviderBaseUrlInvalid": "URL:en är ogiltig eller uppfyller inte säkerhetsreglerna för slutpunkter",
+  "aiProviderModelsUrlInvalid": "URL:en är ogiltig, finns inte på samma server som bas-URL:en eller slutar inte med /models",
+  "aiProviderModelsUrlNeedsFix": "Rätta URL:en för modellistan under “Avancerade inställningar”",
   "aiProviderCleartextOptIn": "Tillåt en okrypterad anslutning i ett privat nätverk",
   "aiProviderCleartextWarning": "Det här är en okrypterad anslutning. Andra i samma nätverk kan se det skickade innehållet och nyckeln.",
   "aiProviderApiKeyLabel": "API-nyckel",

@@ -2153,6 +2153,8 @@ const _messagesSv = <String>[
   'Messages',
   'Bas-URL',
   'URL:en är ogiltig eller uppfyller inte säkerhetsreglerna för slutpunkter',
+  'URL:en är ogiltig, finns inte på samma server som bas-URL:en eller slutar inte med /models',
+  'Rätta URL:en för modellistan under “Avancerade inställningar”',
   'Tillåt en okrypterad anslutning i ett privat nätverk',
   'Det här är en okrypterad anslutning. Andra i samma nätverk kan se det skickade innehållet och nyckeln.',
   'API-nyckel',

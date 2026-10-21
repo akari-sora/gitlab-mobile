@@ -2153,6 +2153,8 @@ const _messagesRo = <String>[
   'Messages',
   'URL de bază',
   'URL-ul este nevalid sau nu respectă regulile de siguranță ale punctului final',
+  'URL-ul este nevalid, nu se află pe același server ca URL-ul de bază sau nu se termină cu /models',
+  'Corectează URL-ul listei de modele din „Setări avansate”',
   'Permite o conexiune necriptată într-o rețea privată',
   'Aceasta este o conexiune necriptată. Alte persoane din aceeași rețea pot vedea conținutul trimis și cheia.',
   'Cheie API',

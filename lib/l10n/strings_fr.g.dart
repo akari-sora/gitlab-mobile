@@ -2153,6 +2153,8 @@ const _messagesFr = <String>[
   'Messages',
   'URL de base',
   'L’URL n’est pas valide ou ne respecte pas les règles de sécurité du point de terminaison',
+  'L’URL n’est pas valide, n’est pas sur le même serveur que l’URL de base ou ne se termine pas par /models',
+  'Corrigez l’URL de la liste des modèles dans « Paramètres avancés »',
   'Autoriser une connexion non chiffrée sur un réseau privé',
   'Il s’agit d’une connexion non chiffrée. D’autres personnes sur le même réseau peuvent voir le contenu envoyé et la clé.',
   'Clé d’API',

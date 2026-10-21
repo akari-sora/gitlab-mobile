@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "기본 URL",
   "aiProviderBaseUrlInvalid": "URL이 올바르지 않거나 엔드포인트 보안 규칙을 충족하지 않습니다",
+  "aiProviderModelsUrlInvalid": "URL이 올바르지 않거나 기본 URL과 서버가 다르거나 경로가 /models로 끝나지 않습니다",
+  "aiProviderModelsUrlNeedsFix": "\"고급 설정\"에서 모델 목록 URL을 수정하세요",
   "aiProviderCleartextOptIn": "개인 네트워크에서 암호화되지 않은 연결 허용",
   "aiProviderCleartextWarning": "이 연결은 암호화되지 않은 연결입니다. 같은 네트워크의 다른 사람이 보낸 내용과 키를 볼 수 있습니다.",
   "aiProviderApiKeyLabel": "API 키",

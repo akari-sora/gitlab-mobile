@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "URL de base",
   "aiProviderBaseUrlInvalid": "L’URL n’est pas valide ou ne respecte pas les règles de sécurité du point de terminaison",
+  "aiProviderModelsUrlInvalid": "L’URL n’est pas valide, n’est pas sur le même serveur que l’URL de base ou ne se termine pas par /models",
+  "aiProviderModelsUrlNeedsFix": "Corrigez l’URL de la liste des modèles dans « Paramètres avancés »",
   "aiProviderCleartextOptIn": "Autoriser une connexion non chiffrée sur un réseau privé",
   "aiProviderCleartextWarning": "Il s’agit d’une connexion non chiffrée. D’autres personnes sur le même réseau peuvent voir le contenu envoyé et la clé.",
   "aiProviderApiKeyLabel": "Clé d’API",

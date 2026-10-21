@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "मूल URL",
   "aiProviderBaseUrlInvalid": "URL अमान्य है या अंतिम बिंदु के सुरक्षा नियमों को पूरा नहीं करता",
+  "aiProviderModelsUrlInvalid": "URL अमान्य है, मूल URL वाले सर्वर पर नहीं है या /models पर समाप्त नहीं होता",
+  "aiProviderModelsUrlNeedsFix": "“उन्नत सेटिंग” में मॉडल सूची URL ठीक करें",
   "aiProviderCleartextOptIn": "निजी नेटवर्क पर बिना एन्क्रिप्शन वाला कनेक्शन स्वीकार करें",
   "aiProviderCleartextWarning": "यह कनेक्शन बिना एन्क्रिप्शन का है। उसी नेटवर्क पर अन्य लोग भेजी गई सामग्री और कुंजी देख सकते हैं।",
   "aiProviderApiKeyLabel": "API कुंजी",

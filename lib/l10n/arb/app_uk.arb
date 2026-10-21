@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "Базовий URL",
   "aiProviderBaseUrlInvalid": "URL недійсний або не відповідає правилам безпеки кінцевої точки",
+  "aiProviderModelsUrlInvalid": "URL недійсний, розміщений не на тому самому сервері, що й базовий URL, або не закінчується на /models",
+  "aiProviderModelsUrlNeedsFix": "Виправте URL списку моделей у розділі «Розширені налаштування»",
   "aiProviderCleartextOptIn": "Дозволити незашифроване з’єднання в приватній мережі",
   "aiProviderCleartextWarning": "Це незашифроване з’єднання. Інші в тій самій мережі можуть побачити надісланий вміст і ключ.",
   "aiProviderApiKeyLabel": "Ключ API",

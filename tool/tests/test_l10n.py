@@ -172,6 +172,8 @@ class CatalogTest(unittest.TestCase):
                     if tag in non_latin:
                         # Placeholders are argument names, not displayed text.
                         text = re.sub(r'\{[^}]*\}', '', catalog[key])
+                        # A URL path the user must type (`/models`) stays literal.
+                        text = re.sub(r'(?<![A-Za-z])/models(?![A-Za-z])', '', text)
                         words = set(re.findall(r'[A-Za-z]+', text))
                         allowed = product_words | local_words.get(tag, set())
                         self.assertEqual(words - allowed, set(), 'unexpected Latin text')

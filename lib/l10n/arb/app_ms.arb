@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "URL asas",
   "aiProviderBaseUrlInvalid": "URL tidak sah atau tidak memenuhi peraturan keselamatan titik akhir",
+  "aiProviderModelsUrlInvalid": "URL tidak sah, bukan pada pelayan yang sama dengan URL asas, atau tidak berakhir dengan /models",
+  "aiProviderModelsUrlNeedsFix": "Betulkan URL senarai model di bawah “Tetapan lanjutan”",
   "aiProviderCleartextOptIn": "Benarkan sambungan tanpa penyulitan pada rangkaian peribadi",
   "aiProviderCleartextWarning": "Sambungan ini tanpa penyulitan. Orang lain pada rangkaian yang sama boleh melihat kandungan yang dihantar dan kunci.",
   "aiProviderApiKeyLabel": "Kunci API",

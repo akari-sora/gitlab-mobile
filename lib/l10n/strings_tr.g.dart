@@ -2153,6 +2153,8 @@ const _messagesTr = <String>[
   'Messages',
   'Temel URL',
   'URL geçersiz veya uç nokta güvenlik kurallarını karşılamıyor',
+  'URL geçersiz, temel URL ile aynı sunucuda değil veya /models ile bitmiyor',
+  '“Gelişmiş ayarlar” altındaki model listesi URL\'sini düzeltin',
   'Özel ağda şifrelenmemiş bağlantıya izin ver',
   'Bu şifrelenmemiş bağlantıdır. Aynı ağdaki diğer kişiler gönderilen içeriği ve anahtarı görebilir.',
   'API anahtarı',

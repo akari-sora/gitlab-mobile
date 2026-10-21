@@ -2153,6 +2153,8 @@ const _messagesPl = <String>[
   'Messages',
   'Bazowy adres URL',
   'Adres URL jest nieprawidłowy lub nie spełnia zasad bezpieczeństwa punktu końcowego',
+  'Adres URL jest nieprawidłowy, nie znajduje się na tym samym serwerze co bazowy adres URL lub nie kończy się na /models',
+  'Popraw adres URL listy modeli w sekcji „Ustawienia zaawansowane”',
   'Zezwalaj na nieszyfrowane połączenie w sieci prywatnej',
   'To jest nieszyfrowane połączenie. Inne osoby w tej samej sieci mogą zobaczyć wysyłaną treść i klucz.',
   'Klucz API',

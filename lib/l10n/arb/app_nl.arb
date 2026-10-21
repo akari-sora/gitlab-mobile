@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "Basis-URL",
   "aiProviderBaseUrlInvalid": "De URL is ongeldig of voldoet niet aan de beveiligingsregels voor eindpunten",
+  "aiProviderModelsUrlInvalid": "De URL is ongeldig, staat niet op dezelfde server als de basis-URL of eindigt niet op /models",
+  "aiProviderModelsUrlNeedsFix": "Corrigeer de URL van de modellenlijst onder „Geavanceerde instellingen”",
   "aiProviderCleartextOptIn": "Een onversleutelde verbinding op een privénetwerk toestaan",
   "aiProviderCleartextWarning": "Dit is een onversleutelde verbinding. Anderen op hetzelfde netwerk kunnen de verzonden inhoud en de sleutel zien.",
   "aiProviderApiKeyLabel": "API-sleutel",

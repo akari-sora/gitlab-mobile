@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "URL dasar",
   "aiProviderBaseUrlInvalid": "URL tidak valid atau tidak memenuhi aturan keamanan titik akhir",
+  "aiProviderModelsUrlInvalid": "URL tidak valid, tidak berada di server yang sama dengan URL dasar, atau tidak berakhiran /models",
+  "aiProviderModelsUrlNeedsFix": "Perbaiki URL daftar model di “Pengaturan lanjutan”",
   "aiProviderCleartextOptIn": "Izinkan koneksi tanpa enkripsi di jaringan privat",
   "aiProviderCleartextWarning": "Koneksi ini tanpa enkripsi. Orang lain di jaringan yang sama dapat melihat konten yang dikirim dan kunci.",
   "aiProviderApiKeyLabel": "Kunci API",

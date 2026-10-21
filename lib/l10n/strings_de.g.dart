@@ -2153,6 +2153,8 @@ const _messagesDe = <String>[
   'Messages',
   'Basis-URL',
   'Die URL ist ungültig oder erfüllt die Sicherheitsregeln für Endpunkte nicht',
+  'Die URL ist ungültig, liegt nicht auf demselben Server wie die Basis-URL oder endet nicht auf /models',
+  'Korrigieren Sie die URL der Modellliste unter „Erweiterte Einstellungen“',
   'Unverschlüsselte Verbindung in einem privaten Netzwerk zulassen',
   'Dies ist eine unverschlüsselte Verbindung. Andere Personen im selben Netzwerk können den gesendeten Inhalt und den Schlüssel sehen.',
   'API-Schlüssel',

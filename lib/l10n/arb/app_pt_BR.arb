@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "URL base",
   "aiProviderBaseUrlInvalid": "A URL é inválida ou não atende às regras de segurança do endpoint",
+  "aiProviderModelsUrlInvalid": "A URL é inválida, não está no mesmo servidor que a URL base ou não termina em /models",
+  "aiProviderModelsUrlNeedsFix": "Corrija a URL da lista de modelos em “Configurações avançadas”",
   "aiProviderCleartextOptIn": "Permitir uma conexão não criptografada em uma rede privada",
   "aiProviderCleartextWarning": "Esta é uma conexão não criptografada. Outras pessoas na mesma rede podem ver o conteúdo enviado e a chave.",
   "aiProviderApiKeyLabel": "Chave de API",

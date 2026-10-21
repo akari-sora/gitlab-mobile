@@ -2153,6 +2153,8 @@ const _messagesMs = <String>[
   'Messages',
   'URL asas',
   'URL tidak sah atau tidak memenuhi peraturan keselamatan titik akhir',
+  'URL tidak sah, bukan pada pelayan yang sama dengan URL asas, atau tidak berakhir dengan /models',
+  'Betulkan URL senarai model di bawah “Tetapan lanjutan”',
   'Benarkan sambungan tanpa penyulitan pada rangkaian peribadi',
   'Sambungan ini tanpa penyulitan. Orang lain pada rangkaian yang sama boleh melihat kandungan yang dihantar dan kunci.',
   'Kunci API',

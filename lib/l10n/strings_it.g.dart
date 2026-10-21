@@ -2153,6 +2153,8 @@ const _messagesIt = <String>[
   'Messages',
   'URL di base',
   'L’URL non è valido o non rispetta le regole di sicurezza dell’endpoint',
+  'L’URL non è valido, non è sullo stesso server dell’URL di base o non termina con /models',
+  'Correggi l’URL dell’elenco dei modelli in «Impostazioni avanzate»',
   'Consenti una connessione non crittografata su una rete privata',
   'Questa è una connessione non crittografata. Altre persone sulla stessa rete possono vedere il contenuto inviato e la chiave.',
   'Chiave API',

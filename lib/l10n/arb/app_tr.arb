@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "Temel URL",
   "aiProviderBaseUrlInvalid": "URL geçersiz veya uç nokta güvenlik kurallarını karşılamıyor",
+  "aiProviderModelsUrlInvalid": "URL geçersiz, temel URL ile aynı sunucuda değil veya /models ile bitmiyor",
+  "aiProviderModelsUrlNeedsFix": "“Gelişmiş ayarlar” altındaki model listesi URL'sini düzeltin",
   "aiProviderCleartextOptIn": "Özel ağda şifrelenmemiş bağlantıya izin ver",
   "aiProviderCleartextWarning": "Bu şifrelenmemiş bağlantıdır. Aynı ağdaki diğer kişiler gönderilen içeriği ve anahtarı görebilir.",
   "aiProviderApiKeyLabel": "API anahtarı",

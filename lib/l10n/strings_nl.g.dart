@@ -2153,6 +2153,8 @@ const _messagesNl = <String>[
   'Messages',
   'Basis-URL',
   'De URL is ongeldig of voldoet niet aan de beveiligingsregels voor eindpunten',
+  'De URL is ongeldig, staat niet op dezelfde server als de basis-URL of eindigt niet op /models',
+  'Corrigeer de URL van de modellenlijst onder „Geavanceerde instellingen”',
   'Een onversleutelde verbinding op een privénetwerk toestaan',
   'Dit is een onversleutelde verbinding. Anderen op hetzelfde netwerk kunnen de verzonden inhoud en de sleutel zien.',
   'API-sleutel',

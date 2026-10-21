@@ -2153,6 +2153,8 @@ const _messagesVi = <String>[
   'Messages',
   'URL cơ sở',
   'URL không hợp lệ hoặc không đáp ứng quy tắc an toàn của điểm cuối',
+  'URL không hợp lệ, không nằm trên cùng máy chủ với URL cơ sở hoặc không kết thúc bằng /models',
+  'Sửa URL danh sách mô hình trong “Cài đặt nâng cao”',
   'Cho phép kết nối không mã hóa trên mạng riêng',
   'Đây là kết nối không mã hóa. Người khác trên cùng mạng có thể thấy nội dung đã gửi và khóa.',
   'Khóa API',

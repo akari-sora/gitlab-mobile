@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "Base URL",
   "aiProviderBaseUrlInvalid": "The URL is invalid or does not meet the endpoint safety rules",
+  "aiProviderModelsUrlInvalid": "The URL is invalid, is not on the same server as the base URL, or does not end in /models",
+  "aiProviderModelsUrlNeedsFix": "Fix the model list URL under Advanced settings",
   "aiProviderCleartextOptIn": "Allow an unencrypted connection on a private network",
   "aiProviderCleartextWarning": "This connection is not encrypted. Others on the same network may see the content and key.",
   "aiProviderApiKeyLabel": "API key",

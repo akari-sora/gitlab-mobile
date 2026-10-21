@@ -2153,6 +2153,8 @@ const _messagesEs = <String>[
   'Messages',
   'URL base',
   'La URL no es válida o no cumple las reglas de seguridad del punto de conexión',
+  'La URL no es válida, no está en el mismo servidor que la URL base o no termina en /models',
+  'Corrige la URL de la lista de modelos en «Configuración avanzada»',
   'Permitir una conexión sin cifrar en una red privada',
   'Esta es una conexión sin cifrar. Otras personas en la misma red pueden ver el contenido enviado y la clave.',
   'Clave de API',

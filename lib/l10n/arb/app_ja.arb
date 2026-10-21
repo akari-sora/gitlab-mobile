@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "ベース URL",
   "aiProviderBaseUrlInvalid": "URL が無効か、接続先の安全規則を満たしていません",
+  "aiProviderModelsUrlInvalid": "URL が無効か、ベース URL と同じサーバー上にないか、パスが /models で終わっていません",
+  "aiProviderModelsUrlNeedsFix": "「詳細設定」のモデル一覧の URL を修正してください",
   "aiProviderCleartextOptIn": "プライベートネットワークで暗号化されていない接続を許可",
   "aiProviderCleartextWarning": "これは暗号化されていない接続です。同じネットワーク上の他の人に、送信した内容とキーを見られる可能性があります。",
   "aiProviderApiKeyLabel": "API キー",

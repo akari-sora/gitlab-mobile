@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "Basis-URL",
   "aiProviderBaseUrlInvalid": "Die URL ist ungültig oder erfüllt die Sicherheitsregeln für Endpunkte nicht",
+  "aiProviderModelsUrlInvalid": "Die URL ist ungültig, liegt nicht auf demselben Server wie die Basis-URL oder endet nicht auf /models",
+  "aiProviderModelsUrlNeedsFix": "Korrigieren Sie die URL der Modellliste unter „Erweiterte Einstellungen“",
   "aiProviderCleartextOptIn": "Unverschlüsselte Verbindung in einem privaten Netzwerk zulassen",
   "aiProviderCleartextWarning": "Dies ist eine unverschlüsselte Verbindung. Andere Personen im selben Netzwerk können den gesendeten Inhalt und den Schlüssel sehen.",
   "aiProviderApiKeyLabel": "API-Schlüssel",

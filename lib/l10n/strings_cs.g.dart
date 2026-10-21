@@ -2153,6 +2153,8 @@ const _messagesCs = <String>[
   'Messages',
   'Základní URL',
   'URL je neplatná nebo nesplňuje bezpečnostní pravidla koncového bodu',
+  'URL je neplatná, není na stejném serveru jako základní URL nebo nekončí na /models',
+  'Opravte URL seznamu modelů v části „Pokročilá nastavení“',
   'Povolit nešifrované připojení v privátní síti',
   'Toto je nešifrované připojení. Ostatní ve stejné síti mohou vidět odesílaný obsah i klíč.',
   'Klíč API',

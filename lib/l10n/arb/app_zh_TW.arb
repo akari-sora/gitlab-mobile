@@ -10656,6 +10656,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "基底網址",
   "aiProviderBaseUrlInvalid": "網址無效或不符合端點安全規則",
+  "aiProviderModelsUrlInvalid": "網址無效、與基底網址不在同一台伺服器，或路徑不是以 /models 結尾",
+  "aiProviderModelsUrlNeedsFix": "請修正「進階設定」中的模型清單網址",
   "aiProviderCleartextOptIn": "允許私人網路使用未加密連線",
   "aiProviderCleartextWarning": "這個連線未加密。傳送內容與金鑰可能被同一網路上的其他人看到。",
   "aiProviderApiKeyLabel": "存取金鑰",

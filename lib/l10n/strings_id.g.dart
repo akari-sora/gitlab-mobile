@@ -2153,6 +2153,8 @@ const _messagesId = <String>[
   'Messages',
   'URL dasar',
   'URL tidak valid atau tidak memenuhi aturan keamanan titik akhir',
+  'URL tidak valid, tidak berada di server yang sama dengan URL dasar, atau tidak berakhiran /models',
+  'Perbaiki URL daftar model di “Pengaturan lanjutan”',
   'Izinkan koneksi tanpa enkripsi di jaringan privat',
   'Koneksi ini tanpa enkripsi. Orang lain di jaringan yang sama dapat melihat konten yang dikirim dan kunci.',
   'Kunci API',

@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "Základní URL",
   "aiProviderBaseUrlInvalid": "URL je neplatná nebo nesplňuje bezpečnostní pravidla koncového bodu",
+  "aiProviderModelsUrlInvalid": "URL je neplatná, není na stejném serveru jako základní URL nebo nekončí na /models",
+  "aiProviderModelsUrlNeedsFix": "Opravte URL seznamu modelů v části „Pokročilá nastavení“",
   "aiProviderCleartextOptIn": "Povolit nešifrované připojení v privátní síti",
   "aiProviderCleartextWarning": "Toto je nešifrované připojení. Ostatní ve stejné síti mohou vidět odesílaný obsah i klíč.",
   "aiProviderApiKeyLabel": "Klíč API",

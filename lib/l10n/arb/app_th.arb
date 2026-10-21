@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "URL ฐาน",
   "aiProviderBaseUrlInvalid": "URL ไม่ถูกต้องหรือไม่เป็นไปตามกฎความปลอดภัยของปลายทาง",
+  "aiProviderModelsUrlInvalid": "URL ไม่ถูกต้อง ไม่ได้อยู่บนเซิร์ฟเวอร์เดียวกับ URL ฐาน หรือไม่ได้ลงท้ายด้วย /models",
+  "aiProviderModelsUrlNeedsFix": "แก้ไข URL รายการรุ่นใน “การตั้งค่าขั้นสูง”",
   "aiProviderCleartextOptIn": "อนุญาตการเชื่อมต่อที่ไม่เข้ารหัสบนเครือข่ายส่วนตัว",
   "aiProviderCleartextWarning": "การเชื่อมต่อนี้ไม่เข้ารหัส คนอื่นบนเครือข่ายเดียวกันอาจเห็นทั้งเนื้อหาที่ส่งและกุญแจ",
   "aiProviderApiKeyLabel": "กุญแจ API",

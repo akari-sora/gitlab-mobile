@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "URL cơ sở",
   "aiProviderBaseUrlInvalid": "URL không hợp lệ hoặc không đáp ứng quy tắc an toàn của điểm cuối",
+  "aiProviderModelsUrlInvalid": "URL không hợp lệ, không nằm trên cùng máy chủ với URL cơ sở hoặc không kết thúc bằng /models",
+  "aiProviderModelsUrlNeedsFix": "Sửa URL danh sách mô hình trong “Cài đặt nâng cao”",
   "aiProviderCleartextOptIn": "Cho phép kết nối không mã hóa trên mạng riêng",
   "aiProviderCleartextWarning": "Đây là kết nối không mã hóa. Người khác trên cùng mạng có thể thấy nội dung đã gửi và khóa.",
   "aiProviderApiKeyLabel": "Khóa API",

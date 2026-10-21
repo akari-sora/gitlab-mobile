@@ -2151,6 +2151,8 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "Bazowy adres URL",
   "aiProviderBaseUrlInvalid": "Adres URL jest nieprawidłowy lub nie spełnia zasad bezpieczeństwa punktu końcowego",
+  "aiProviderModelsUrlInvalid": "Adres URL jest nieprawidłowy, nie znajduje się na tym samym serwerze co bazowy adres URL lub nie kończy się na /models",
+  "aiProviderModelsUrlNeedsFix": "Popraw adres URL listy modeli w sekcji „Ustawienia zaawansowane”",
   "aiProviderCleartextOptIn": "Zezwalaj na nieszyfrowane połączenie w sieci prywatnej",
   "aiProviderCleartextWarning": "To jest nieszyfrowane połączenie. Inne osoby w tej samej sieci mogą zobaczyć wysyłaną treść i klucz.",
   "aiProviderApiKeyLabel": "Klucz API",
