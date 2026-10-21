@@ -274,6 +274,11 @@ void main() {
     expect(adapter.requests, hasLength(1));
     expect(adapter.requests.single.path, endsWith('/api/v1/key'));
     expect(find.text(l10n.aiProviderKeyVerified), findsOneWidget);
+
+    // A tap into the model field is not an edit of the model.
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-model')));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.aiProviderKeyVerified), findsOneWidget);
   });
 
   testWidgets('OpenRouter model catalog is public and sends no auth header', (

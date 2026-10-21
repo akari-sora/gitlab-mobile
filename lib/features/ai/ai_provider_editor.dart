@@ -98,9 +98,11 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   late String _baseUrlText;
   late String _modelsUrlText;
   String _apiKeyText = '';
+  late String _modelText;
   final _baseUrlFieldKey = GlobalKey();
   final _modelsUrlFieldKey = GlobalKey();
-  final _limitsFieldKey = GlobalKey();
+  final _requestLimitFieldKey = GlobalKey();
+  final _outputLimitFieldKey = GlobalKey();
   String? _requestLimitError;
   String? _outputLimitError;
   String? _modelsMessage;
@@ -153,6 +155,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     _advancedController = ExpansibleController();
     _baseUrlText = _baseUrl.text;
     _modelsUrlText = _modelsUrl.text;
+    _modelText = _model.text;
     _initialSnapshot = _snapshot;
   }
 
@@ -173,6 +176,8 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   }
 
   void _modelChanged() {
+    if (_model.text == _modelText) return;
+    _modelText = _model.text;
     if (mounted) {
       setState(() {
         if (_modelsMessage == l10n.aiProviderKeyVerified) {
@@ -262,12 +267,19 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   }
 
   String _recipientFingerprint() {
-    final uri = Uri.tryParse(_baseUrl.text.trim());
-    final origin = uri == null || !uri.hasScheme
-        ? _baseUrl.text.trim()
-        : '${uri.scheme.toLowerCase()}://${uri.host.toLowerCase()}:'
-              '${uri.hasPort ? uri.port : (uri.scheme == 'http' ? 80 : 443)}'
-              '${uri.path.replaceFirst(RegExp(r'/+$'), '')}';
+    final raw = _baseUrl.text.trim();
+    final uri = Uri.tryParse(raw);
+    String origin;
+    try {
+      origin = uri == null || !uri.hasScheme
+          ? raw
+          : '${uri.scheme.toLowerCase()}://${uri.host.toLowerCase()}:'
+                '${uri.hasPort ? uri.port : (uri.scheme == 'http' ? 80 : 443)}'
+                '${uri.path.replaceFirst(RegExp(r'/+$'), '')}';
+    } on FormatException {
+      // A port too large for an int: the raw text still names the recipient.
+      origin = raw;
+    }
     return '$origin|${_authStyle.name}';
   }
 
@@ -343,9 +355,16 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   bool _endpointBlocked() {
     if (_endpointError == null) return false;
     if (_endpointErrorOnModelsUrl) {
-      _reveal(_modelsUrlFieldKey, inAdvanced: true);
+      _reveal(
+        _modelsUrlFieldKey,
+        inAdvanced: true,
+        stillNeeded: () => _endpointError != null && _endpointErrorOnModelsUrl,
+      );
     } else {
-      _reveal(_baseUrlFieldKey);
+      _reveal(
+        _baseUrlFieldKey,
+        stillNeeded: () => _endpointError != null && !_endpointErrorOnModelsUrl,
+      );
     }
     return true;
   }
@@ -354,15 +373,21 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   /// button. A field in the advanced section is built only once the section
   /// opens, so the scroll waits until the opening animation has had its time
   /// (the first animation frames do not grow the section yet) and the scroll
-  /// extent is the same on two frames in a row.
-  void _reveal(GlobalKey field, {bool inAdvanced = false}) {
+  /// extent is the same on two frames in a row. It gives up when
+  /// [stillNeeded] turns false, so an error fixed meanwhile does not move the
+  /// page.
+  void _reveal(
+    GlobalKey field, {
+    bool inAdvanced = false,
+    required bool Function() stillNeeded,
+  }) {
     if (inAdvanced && !_advancedController.isExpanded) {
       _advancedController.expand();
     }
     Duration? start;
     double? lastExtent;
     void step(Duration timeStamp) {
-      if (!mounted) return;
+      if (!mounted || !stillNeeded()) return;
       final elapsed = timeStamp - (start ??= timeStamp);
       final context = field.currentContext;
       final extent = context == null
@@ -1087,7 +1112,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                           (value) => _copyCaps(promptCaching: value),
                         ),
                         KeyedSubtree(
-                          key: _limitsFieldKey,
+                          key: _requestLimitFieldKey,
                           child: TextFormField(
                             key: const ValueKey('ai-provider-request-limit'),
                             controller: _maxRequestChars,
@@ -1099,13 +1124,16 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        TextFormField(
-                          key: const ValueKey('ai-provider-output-limit'),
-                          controller: _maxOutputTokens,
-                          keyboardType: TextInputType.number,
-                          decoration: InputDecoration(
-                            labelText: l10n.aiProviderMaxOutputTokensLabel,
-                            errorText: _outputLimitError,
+                        KeyedSubtree(
+                          key: _outputLimitFieldKey,
+                          child: TextFormField(
+                            key: const ValueKey('ai-provider-output-limit'),
+                            controller: _maxOutputTokens,
+                            keyboardType: TextInputType.number,
+                            decoration: InputDecoration(
+                              labelText: l10n.aiProviderMaxOutputTokensLabel,
+                              errorText: _outputLimitError,
+                            ),
                           ),
                         ),
                       ],
@@ -1148,7 +1176,19 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       _outputLimitError = outputError;
     });
     if (requestError == null && outputError == null) return true;
-    _reveal(_limitsFieldKey, inAdvanced: true);
+    if (requestError != null) {
+      _reveal(
+        _requestLimitFieldKey,
+        inAdvanced: true,
+        stillNeeded: () => _requestLimitError != null,
+      );
+    } else {
+      _reveal(
+        _outputLimitFieldKey,
+        inAdvanced: true,
+        stillNeeded: () => _outputLimitError != null,
+      );
+    }
     return false;
   }
 

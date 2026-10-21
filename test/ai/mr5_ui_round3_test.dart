@@ -387,6 +387,201 @@ void main() {
     });
   });
 
+  group('a blocked save reveals the field that failed', () {
+    // Frames 16 ms apart, as on a device.
+    Future<void> deviceFrames(WidgetTester tester) async {
+      for (var frame = 0; frame < 40; frame += 1) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      await tester.pumpAndSettle();
+    }
+
+    Future<AiSettingsController> filledOpenAi(WidgetTester tester) async {
+      final settings = AiSettingsController(MemoryAiStore());
+      await settings.initialize();
+      await tester.pumpWidget(_host(AiProviderEditor(settings: settings)));
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-api-key')),
+        'sk-synthetic-limit-check-123456',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-model')),
+        'synthetic-model',
+      );
+      await tester.pumpAndSettle();
+      return settings;
+    }
+
+    void expectOnScreen(WidgetTester tester, Finder finder, double bottom) {
+      expect(finder, findsOneWidget);
+      final rect = tester.getRect(finder);
+      expect(
+        rect.top,
+        greaterThanOrEqualTo(tester.getRect(find.byType(AppBar)).bottom),
+      );
+      expect(rect.bottom, lessThanOrEqualTo(bottom));
+    }
+
+    for (final (label, keyboard) in const [
+      ('412 x 915', 0.0),
+      ('360 x 640 with the keyboard open', 280.0),
+    ]) {
+      for (final output in const [false, true]) {
+        testWidgets(
+          'a ${output ? 'output' : 'request'} limit error at $label',
+          (tester) async {
+            final size = keyboard == 0
+                ? const Size(412, 915)
+                : const Size(360, 640);
+            tester.view.devicePixelRatio = 1;
+            tester.view.physicalSize = size;
+            tester.view.viewInsets = FakeViewPadding(bottom: keyboard);
+            addTearDown(tester.view.resetDevicePixelRatio);
+            addTearDown(tester.view.resetPhysicalSize);
+            addTearDown(tester.view.resetViewInsets);
+            final settings = await filledOpenAi(tester);
+            await _expandAdvanced(tester);
+            await tester.enterText(
+              find.byKey(
+                ValueKey(
+                  output
+                      ? 'ai-provider-output-limit'
+                      : 'ai-provider-request-limit',
+                ),
+              ),
+              '1',
+            );
+            await _expandAdvanced(tester);
+            await tester.ensureVisible(
+              find.byKey(const ValueKey('ai-provider-base-url')),
+            );
+            await tester.pumpAndSettle();
+
+            await tester.tap(find.text(l10n.saveAction));
+            await deviceFrames(tester);
+
+            expect(settings.providers, isEmpty);
+            expectOnScreen(
+              tester,
+              find.text(
+                output
+                    ? l10n.aiProviderOutputTokensRange
+                    : l10n.aiProviderRequestCharsRange,
+              ),
+              size.height - keyboard,
+            );
+          },
+        );
+      }
+    }
+
+    testWidgets('an error fixed while waiting does not move the page', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(360, 640);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      final settings = AiSettingsController(MemoryAiStore());
+      await settings.initialize();
+      await tester.pumpWidget(_host(AiProviderEditor(settings: settings)));
+      _preset(tester).onChanged!(AiPresets.openCodeGo);
+      await tester.pumpAndSettle();
+      await _expandAdvanced(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-models-url')),
+        'https://opencode.ai/inference/v1/models',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-base-url')),
+        'https://different-recipient.example/v1',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-api-key')),
+        'sk-synthetic-stale-reveal-123456',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-model')),
+        'synthetic-model',
+      );
+      await tester.pumpAndSettle();
+      final position = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      position.jumpTo(0);
+      await tester.pump();
+
+      await tester.tap(find.text(l10n.saveAction));
+      await tester.pump(const Duration(milliseconds: 16));
+      // The user clears the list URL before the scroll starts.
+      tester
+              .widget<TextField>(
+                find.descendant(
+                  of: find.byKey(const ValueKey('ai-provider-models-url')),
+                  matching: find.byType(TextField),
+                ),
+              )
+              .controller!
+              .text =
+          '';
+      await deviceFrames(tester);
+
+      expect(find.text(l10n.aiProviderModelsUrlInvalid), findsNothing);
+      expect(position.pixels, 0);
+    });
+  });
+
+  group('a port too large for an int with a key draft', () {
+    const huge = 'https://opencode.ai:999999999999999999999999/v1';
+
+    Future<void> openCodeGo(WidgetTester tester) async {
+      final settings = AiSettingsController(MemoryAiStore());
+      await settings.initialize();
+      await tester.pumpWidget(_host(AiProviderEditor(settings: settings)));
+      _preset(tester).onChanged!(AiPresets.openCodeGo);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('typed after the key', (tester) async {
+      await openCodeGo(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-api-key')),
+        'sk-synthetic-huge-port-123456',
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-base-url')),
+        huge,
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text(l10n.aiProviderBaseUrlInvalid), findsOneWidget);
+    });
+
+    testWidgets('typed before the key still binds the draft', (tester) async {
+      await openCodeGo(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-base-url')),
+        huge,
+      );
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-api-key')),
+        'sk-synthetic-huge-port-123456',
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-base-url')),
+        'https://different-recipient.example/v1',
+      );
+      await tester.pumpAndSettle();
+
+      expect(_keyField(tester).controller!.text, isEmpty);
+      expect(find.text(l10n.aiProviderKeyDraftCleared), findsOneWidget);
+    });
+  });
+
   testWidgets('preset descriptions are not cut at 320 dp and 2x text', (
     tester,
   ) async {

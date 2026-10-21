@@ -2151,7 +2151,7 @@
   "aiProviderFormatAnthropic": "Messages",
   "aiProviderBaseUrlLabel": "عنوان URL الأساسي",
   "aiProviderBaseUrlInvalid": "عنوان URL غير صالح أو لا يطابق قواعد أمان نقطة النهاية",
-  "aiProviderModelsUrlInvalid": "عنوان URL غير صالح، أو ليس على الخادم نفسه لعنوان URL الأساسي، أو لا ينتهي بـ /models",
+  "aiProviderModelsUrlInvalid": "عنوان URL غير صالح، أو ليس على الخادم نفسه لعنوان URL الأساسي، أو لا ينتهي بـ \u2066/models\u2069",
   "aiProviderModelsUrlNeedsFix": "صحّح عنوان URL لقائمة النماذج ضمن «إعدادات متقدمة»",
   "aiProviderCleartextOptIn": "السماح باتصال غير مشفّر على شبكة خاصة",
   "aiProviderCleartextWarning": "هذا اتصال غير مشفّر. قد يرى الآخرون على الشبكة نفسها المحتوى المرسل والمفتاح.",
