@@ -1426,7 +1426,7 @@ final class AiSettingsController extends ChangeNotifier {
     final keyRead = await store.readProviderKey(provider.id);
     if (keyRead.failure != null) throw AiStoreException(keyRead.failure!);
     final removesKey =
-        keyRead.isFound &&
+        (keyRead.isFound || _providerKeys.containsKey(provider.id)) &&
         (!provider.caps.requiresKey ||
             (existing != null && !_sameKeyRecipient(existing, provider)));
     final revision = existing == null

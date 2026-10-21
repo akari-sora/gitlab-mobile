@@ -9,7 +9,8 @@ import 'gitlab_read_port.dart';
 import 'sensitive_paths.dart';
 import 'tool_scope.dart';
 
-const aiToolCatalogueVersion = 1;
+export 'tool_catalogue_version.dart' show aiToolCatalogueVersion;
+
 const aiSensitivePathBlocked = '[blocked by policy: sensitive file]';
 
 final class AiToolBudget {

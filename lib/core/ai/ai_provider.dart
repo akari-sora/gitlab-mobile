@@ -5,9 +5,9 @@ import 'package:crypto/crypto.dart';
 
 import '../../l10n/l10n.dart';
 import 'ai_endpoint.dart';
-import 'tools/tool_catalogue.dart' show aiToolCatalogueVersion;
+import 'tools/tool_catalogue_version.dart' show aiToolCatalogueVersion;
 
-export 'tools/tool_catalogue.dart' show aiToolCatalogueVersion;
+export 'tools/tool_catalogue_version.dart' show aiToolCatalogueVersion;
 
 enum AiFormat { chatCompletions, responses, anthropicMessages }
 
@@ -260,6 +260,16 @@ AiConsentContract aiConsentContractFor(
   String? presetOrigin;
   if (presetUrl != null && presetUrl.isNotEmpty && !presetUrl.contains('{')) {
     presetOrigin = AiEndpoint.parse(presetUrl, allowLanCleartext: true).key;
+  } else if (presetUrl != null && presetUrl.startsWith('https://{resource}.')) {
+    // Substitute exactly one DNS label, then compare the entire
+    // endpoint so the fixed host suffix, scheme, port and path must all match.
+    final resource = endpoint.base.host.split('.').first;
+    if (RegExp(r'^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$').hasMatch(resource)) {
+      presetOrigin = AiEndpoint.parse(
+        presetUrl.replaceFirst('{resource}', resource),
+        allowLanCleartext: false,
+      ).key;
+    }
   }
   final custom =
       preset == null ||
