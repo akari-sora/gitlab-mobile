@@ -237,7 +237,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
         if (notes[index]['position'] is Json) Text('${valueText(valueObject(notes[index], 'position'), 'new_path')} · '
           '${valueObject(notes[index], 'position')['new_line'] ?? valueObject(notes[index], 'position')['old_line'] ?? ''}',
           style: Theme.of(context).textTheme.bodySmall),
-        const SizedBox(height: 8), MarkdownView(valueText(notes[index], 'body'),
+        const SizedBox(height: 8), MarkdownView(valueText(notes[index], 'body'), account: widget.account,
           base: widget.account.instance.projectWeb(widget.project.path), api: widget.api, projectId: widget.project.id,
           projectWeb: widget.account.instance.projectWeb(widget.project.path), projectPath: widget.project.path,
           budget: _attachments),

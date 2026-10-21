@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart' show MarkdownBody;
@@ -7,6 +8,8 @@ import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/markdown_view.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
+import 'support/fake_adapter.dart';
+import 'support/widget_settle.dart';
 import 'support/workspace_fixture.dart';
 
 const _fsi = '\u2068', _pdi = '\u2069';
@@ -120,10 +123,16 @@ void main() {
     });
 
     Future<TextDirection> bodyDirection(WidgetTester tester, String markdown, TextDirection ambient) async {
+      final external = FakeAdapter((_) => ResponseBody.fromString(
+        '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>', 200,
+        headers: {'content-type': ['image/svg+xml']},
+      ));
       await tester.pumpWidget(MaterialApp(home: Directionality(
         textDirection: ambient,
-        child: Material(child: MarkdownView(markdown, selectable: false)),
+        child: Material(child: MarkdownView(markdown, selectable: false,
+          externalMediaClient: Dio()..httpClientAdapter = external)),
       )));
+      await settleNetworkWidgets(tester);
       return Directionality.of(tester.element(find.byType(MarkdownBody)));
     }
 

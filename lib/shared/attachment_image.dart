@@ -33,13 +33,25 @@ String attachmentImageLabel(String? alt, [ApiFailure? failure]) {
   return l10n.attachmentLoadFailedNamed(name, reason);
 }
 
-Widget attachmentIconRow(String label) => Padding(
-  padding: const EdgeInsets.symmetric(vertical: 8),
-  child: Row(mainAxisSize: MainAxisSize.min, children: [
-    const Icon(Icons.image_outlined, size: 18),
-    const SizedBox(width: 6),
-    Flexible(child: Text(label)),
-  ]),
+Widget attachmentIconRow(String label) => LayoutBuilder(
+  builder: (context, constraints) {
+    if (constraints.maxWidth < 48 || constraints.maxHeight < 40) {
+      final size = constraints.maxWidth.clamp(0.0, 18.0)
+          .clamp(0.0, constraints.maxHeight.clamp(0.0, 18.0));
+      return Tooltip(
+        message: label,
+        child: Icon(Icons.image_outlined, size: size, semanticLabel: label),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.image_outlined, size: 18),
+        const SizedBox(width: 6),
+        Flexible(child: Text(label)),
+      ]),
+    );
+  },
 );
 
 Widget attachmentImageFallback(String? alt, [ApiFailure? failure]) =>

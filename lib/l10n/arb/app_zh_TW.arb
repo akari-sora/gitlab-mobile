@@ -10466,46 +10466,157 @@
     "description": "Action label for clearing retained history that uses an unsupported format",
     "placeholders": {}
   },
+  "markdownMediaTooLarge": "媒體超過大小限制",
+  "@markdownMediaTooLarge": {
+    "description": "Markdown 媒體超過下載大小限制時顯示的錯誤"
+  },
+  "markdownMediaNotImage": "這不是圖片",
+  "@markdownMediaNotImage": {
+    "description": "Markdown 圖片網址傳回非圖片內容時顯示的錯誤"
+  },
+  "markdownMediaBlocked": "已封鎖不安全的媒體網址",
+  "@markdownMediaBlocked": {
+    "description": "Markdown 媒體網址因安全規則遭封鎖時顯示的錯誤"
+  },
+  "markdownMediaNetwork": "無法載入媒體",
+  "@markdownMediaNetwork": {
+    "description": "Markdown 媒體因網路錯誤無法載入時顯示的錯誤"
+  },
+  "markdownMediaPlay": "播放",
+  "@markdownMediaPlay": {
+    "description": "播放 Markdown 媒體的按鈕標籤"
+  },
+  "markdownMediaPause": "暫停",
+  "@markdownMediaPause": {
+    "description": "暫停 Markdown 媒體的按鈕標籤"
+  },
+  "markdownMediaMute": "靜音",
+  "@markdownMediaMute": {
+    "description": "將 Markdown 媒體設為靜音的按鈕標籤"
+  },
+  "markdownMediaUnmute": "取消靜音",
+  "@markdownMediaUnmute": {
+    "description": "取消 Markdown 媒體靜音的按鈕標籤"
+  },
+  "markdownMediaCancel": "取消下載",
+  "@markdownMediaCancel": {
+    "description": "取消 Markdown 媒體下載的按鈕標籤"
+  },
+  "markdownMediaRetry": "重試",
+  "@markdownMediaRetry": {
+    "description": "重新嘗試載入 Markdown 媒體的按鈕標籤"
+  },
+  "markdownMediaLoading": "正在下載媒體",
+  "@markdownMediaLoading": {
+    "description": "Markdown 媒體下載中的狀態標籤"
+  },
+  "markdownMediaCannotPlay": "無法播放媒體",
+  "@markdownMediaCannotPlay": {
+    "description": "影音播放器初始化或解碼失敗時的提示"
+  },
   "aiToolReading": "讀取中",
-  "@aiToolReading": {"description": "AI tool row status while a read is running", "placeholders": {}},
+  "@aiToolReading": {
+    "description": "AI tool row status while a read is running",
+    "placeholders": {}
+  },
   "aiToolCompleted": "讀取完成",
-  "@aiToolCompleted": {"description": "AI tool row status after a read succeeds", "placeholders": {}},
+  "@aiToolCompleted": {
+    "description": "AI tool row status after a read succeeds",
+    "placeholders": {}
+  },
   "aiToolTruncated": "結果已截短",
-  "@aiToolTruncated": {"description": "AI tool row status when its result was truncated", "placeholders": {}},
+  "@aiToolTruncated": {
+    "description": "AI tool row status when its result was truncated",
+    "placeholders": {}
+  },
   "aiToolBlockedSensitive": "已阻擋敏感內容",
-  "@aiToolBlockedSensitive": {"description": "AI tool row status when a sensitive path was blocked", "placeholders": {}},
+  "@aiToolBlockedSensitive": {
+    "description": "AI tool row status when a sensitive path was blocked",
+    "placeholders": {}
+  },
   "aiToolTimedOut": "讀取逾時",
-  "@aiToolTimedOut": {"description": "AI tool row status when a read times out", "placeholders": {}},
+  "@aiToolTimedOut": {
+    "description": "AI tool row status when a read times out",
+    "placeholders": {}
+  },
   "aiToolFailed": "讀取失敗",
-  "@aiToolFailed": {"description": "AI tool row status when a read fails", "placeholders": {}},
+  "@aiToolFailed": {
+    "description": "AI tool row status when a read fails",
+    "placeholders": {}
+  },
   "aiEndCompleted": "回答完成",
-  "@aiEndCompleted": {"description": "AI run end reason after a completed answer", "placeholders": {}},
+  "@aiEndCompleted": {
+    "description": "AI run end reason after a completed answer",
+    "placeholders": {}
+  },
   "aiEndStopped": "已停止回答",
-  "@aiEndStopped": {"description": "AI run end reason after the user stops it", "placeholders": {}},
+  "@aiEndStopped": {
+    "description": "AI run end reason after the user stops it",
+    "placeholders": {}
+  },
   "aiEndToolBudget": "工具額度已用盡",
-  "@aiEndToolBudget": {"description": "AI run end reason after the tool budget is exhausted", "placeholders": {}},
+  "@aiEndToolBudget": {
+    "description": "AI run end reason after the tool budget is exhausted",
+    "placeholders": {}
+  },
   "aiEndToolBudgetNoAnswer": "工具額度已用盡，未產生回答",
-  "@aiEndToolBudgetNoAnswer": {"description": "AI run end reason when the tool budget ends with no answer", "placeholders": {}},
+  "@aiEndToolBudgetNoAnswer": {
+    "description": "AI run end reason when the tool budget ends with no answer",
+    "placeholders": {}
+  },
   "aiEndOutputLimit": "回答已達輸出上限",
-  "@aiEndOutputLimit": {"description": "AI run end reason after reaching the output limit", "placeholders": {}},
+  "@aiEndOutputLimit": {
+    "description": "AI run end reason after reaching the output limit",
+    "placeholders": {}
+  },
   "aiEndSettingsChanged": "設定已變更，回答已停止",
-  "@aiEndSettingsChanged": {"description": "AI run end reason after a relevant setting changes", "placeholders": {}},
+  "@aiEndSettingsChanged": {
+    "description": "AI run end reason after a relevant setting changes",
+    "placeholders": {}
+  },
   "aiBudgetModelCalls": "模型呼叫額度已用盡",
-  "@aiBudgetModelCalls": {"description": "AI budget notice for model calls", "placeholders": {}},
+  "@aiBudgetModelCalls": {
+    "description": "AI budget notice for model calls",
+    "placeholders": {}
+  },
   "aiBudgetToolCalls": "工具呼叫額度已用盡",
-  "@aiBudgetToolCalls": {"description": "AI budget notice for tool calls", "placeholders": {}},
+  "@aiBudgetToolCalls": {
+    "description": "AI budget notice for tool calls",
+    "placeholders": {}
+  },
   "aiBudgetGitLabReads": "GitLab 讀取額度已用盡",
-  "@aiBudgetGitLabReads": {"description": "AI budget notice for GitLab reads", "placeholders": {}},
+  "@aiBudgetGitLabReads": {
+    "description": "AI budget notice for GitLab reads",
+    "placeholders": {}
+  },
   "aiBudgetToolOutput": "工具輸出額度已用盡",
-  "@aiBudgetToolOutput": {"description": "AI budget notice for tool output", "placeholders": {}},
+  "@aiBudgetToolOutput": {
+    "description": "AI budget notice for tool output",
+    "placeholders": {}
+  },
   "aiUsageEstimated": "用量為估算值",
-  "@aiUsageEstimated": {"description": "AI usage label when token usage is estimated", "placeholders": {}},
+  "@aiUsageEstimated": {
+    "description": "AI usage label when token usage is estimated",
+    "placeholders": {}
+  },
   "aiContextAttachedOnce": "附加內容只會在第一則訊息送出",
-  "@aiContextAttachedOnce": {"description": "AI notice that initial context is attached once", "placeholders": {}},
+  "@aiContextAttachedOnce": {
+    "description": "AI notice that initial context is attached once",
+    "placeholders": {}
+  },
   "aiProjectionOlderTurnsRemoved": "較早的回合已從摘要中移除",
-  "@aiProjectionOlderTurnsRemoved": {"description": "AI projection notice after older turns are dropped", "placeholders": {}},
+  "@aiProjectionOlderTurnsRemoved": {
+    "description": "AI projection notice after older turns are dropped",
+    "placeholders": {}
+  },
   "aiReplayProtectionStopped": "已送出的內容中偵測到新的秘密。因為已送出的內容無法撤回，回答已停止",
-  "@aiReplayProtectionStopped": {"description": "AI notice when a new secret is detected in content already sent", "placeholders": {}},
+  "@aiReplayProtectionStopped": {
+    "description": "AI notice when a new secret is detected in content already sent",
+    "placeholders": {}
+  },
   "aiEndTokenBudget": "此對話已達用量上限，請開始新的對話",
-  "@aiEndTokenBudget": {"description": "AI run end notice when the conversation token budget is exhausted", "placeholders": {}}
+  "@aiEndTokenBudget": {
+    "description": "AI run end notice when the conversation token budget is exhausted",
+    "placeholders": {}
+  }
 }

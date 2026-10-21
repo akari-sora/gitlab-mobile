@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'attachment_ref.dart';
-
-/// Page-wide cap for Markdown upload previews.
+/// Page-wide cap for Markdown image previews.
 ///
 /// One budget is shared by every image in a [MarkdownView]. A parent can pass
 /// the same instance into several views so the whole page shares the cap.
@@ -22,10 +20,10 @@ final class AttachmentBudget {
 
   /// In-flight and finished fetches, including failures. A failed entry stays
   /// until [evict] so a rebuild does not retry on its own.
-  final Map<ProjectUploadRef, Future<Uint8List>> requests = {};
+  final Map<Object, Future<Uint8List>> requests = {};
 
-  final Map<ProjectUploadRef, Uint8List> _bytes = {};
-  final Set<ProjectUploadRef> _slots = {};
+  final Map<Object, Uint8List> _bytes = {};
+  final Set<Object> _slots = {};
   int _usedBytes = 0;
   int _inFlight = 0;
   int _turn = 0;
@@ -36,16 +34,16 @@ final class AttachmentBudget {
   /// False once this page already previews [maxImages] distinct uploads.
   /// A reference that already holds a slot keeps it, so a preview that is
   /// rebuilt or remounted (a collapsed thread reopening) is not counted again.
-  bool claimImage(ProjectUploadRef ref) {
+  bool claimImage(Object ref) {
     if (_slots.contains(ref)) return true;
     if (_slots.length >= maxImages) return false;
     _slots.add(ref);
     return true;
   }
 
-  Uint8List? cachedBytes(ProjectUploadRef ref) => _bytes[ref];
+  Uint8List? cachedBytes(Object ref) => _bytes[ref];
 
-  void evict(ProjectUploadRef ref) {
+  void evict(Object ref) {
     requests.remove(ref);
     final removed = _bytes.remove(ref);
     if (removed == null) return;
@@ -53,7 +51,7 @@ final class AttachmentBudget {
     if (_usedBytes < 0) _usedBytes = 0;
   }
 
-  Future<Uint8List> fetch(ProjectUploadRef ref, Future<Uint8List> Function() load) {
+  Future<Uint8List> fetch(Object ref, Future<Uint8List> Function() load) {
     final pending = requests[ref];
     if (pending != null) return pending;
     final future = _load(ref, load);
@@ -61,7 +59,7 @@ final class AttachmentBudget {
     return future;
   }
 
-  Future<Uint8List> _load(ProjectUploadRef ref, Future<Uint8List> Function() load) async {
+  Future<Uint8List> _load(Object ref, Future<Uint8List> Function() load) async {
     final turn = _turn++;
     await _enter();
     try {

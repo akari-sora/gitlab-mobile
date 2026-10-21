@@ -114,7 +114,13 @@ void main() {
       );
       artifactStorageRoot = () async {
         expect(await const FlutterSecureStorage().read(key: draftKey), isNull);
-        calls.addAll(['clearSecureDrafts', 'clearAccountArtifacts']);
+        // SessionController.remove clears artifacts again inside its save
+        // fence (Markdown media cards); record that call as such.
+        calls.addAll(
+          calls.contains('clearAccountArtifacts')
+              ? ['clearAccountArtifacts in the session save fence']
+              : ['clearSecureDrafts', 'clearAccountArtifacts'],
+        );
         return root;
       };
       aiStore = _RemovalAiStore(calls, recentKey, failed, completed);
@@ -171,6 +177,7 @@ void main() {
           'clearAccountArtifacts',
           'clearRecentProject',
           'clearAiAccountData',
+          'clearAccountArtifacts in the session save fence',
           'session.remove',
         ]);
         expect(session.accounts, isEmpty);

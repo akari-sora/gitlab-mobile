@@ -2088,6 +2088,7 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
                                   key: ValueKey(
                                     'diff-thread-${discussion['id']}',
                                   ),
+                                  account: widget.account,
                                   discussion: discussion,
                                   expanded: _expanded.contains(
                                     '${discussion['id']}',
@@ -2209,6 +2210,7 @@ class _BuiltLineState extends State<_BuiltLine> {
 class _DiffThreadCard extends StatelessWidget {
   const _DiffThreadCard({
     super.key,
+    required this.account,
     required this.discussion,
     required this.expanded,
     required this.busy,
@@ -2222,6 +2224,7 @@ class _DiffThreadCard extends StatelessWidget {
     required this.onResolve,
     this.onApplied,
   });
+  final Account account;
   final Json discussion;
   final bool expanded;
   final bool busy;
@@ -2295,6 +2298,7 @@ class _DiffThreadCard extends StatelessWidget {
                 const SizedBox(height: 6),
                 MarkdownView(
                   valueText(visible[index], 'body'),
+                  account: account,
                   base: base,
                   api: api,
                   projectId: projectId,
