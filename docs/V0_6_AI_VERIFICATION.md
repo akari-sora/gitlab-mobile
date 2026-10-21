@@ -889,3 +889,53 @@ Known and left for separate work:
 
 The feature gate remains false; none of this establishes G0 acceptance or
 provider conformance.
+
+### MR6a-1 review round 1 and the second emulator run
+
+Codex GPT-6.1-Sol and Opus 5.5 both returned REQUEST CHANGES. DeepSeek V4.1 Flash returned APPROVE WITH MINOR FIXES; agy Argon and cursor Grok were out of quota. The fixes, each with a synthetic regression (mutation runs are recorded outside the repository):
+
+**Display safety**
+- Tool-row targets and the runner's display arguments strip control characters before redacting, so a zero-width character inside a secret cannot restore it. Argument keys must be simple identifiers.
+- The title goes through `displaySafe`. Model-chosen tool names outside the catalogue show a generic label.
+
+**Entry points and session lifecycle**
+- "AI summary" is a parameter of the visit, not of the kept session.
+- Closing the page releases an idle session that holds nothing, so the next visit reads the page again.
+- The file entry needs a full commit SHA and no sensitive path.
+
+**Failures and capacity**
+- GitLab reads that fail keep their `ApiFailure` and are shown with the app's failure notice: account, instance and page, an ambiguous 404, retry and account switch.
+- A full account (three running) shows its blocker while idle. The registry notifies idle sessions whenever capacity changes.
+
+**Context sent**
+- Issues without repository access are still sent, without a pinned SHA.
+- Merge requests include the newest 20 non-system notes, and every note says whether it is internal.
+- "What was sent" shows the full redacted text with its size and pinned SHA.
+
+**Conversation behaviour**
+- A provider settings change keeps the conversation and adds a "new conversation" notice.
+- Reads that never ran show as skipped, and notices raised during a run go before the answer, so the answer stays last.
+- A stopped or failed start keeps the user's message with a "not sent" notice.
+- Sending, or a newly shown blocker, scrolls to the newest content.
+
+**Wording and other**
+- The empty chat explains in two sentences what the AI reads.
+- Redaction notices use each language's reviewed word for "secret".
+- Arabic counts read correctly for any number.
+- The AI User-Agent carries the app version from `pubspec.yaml`, checked by a tool test.
+
+Second emulator run on the gate-on debug build of `0ae14f5` (same provider, model and key handling as above; this public project only):
+- A discussion visit to merge request !44 was left without sending. A later "AI summary" visit sent the summary once after consent.
+- The consent dialog opened from the chat says "Agree".
+- The blocker card sits at the top of an empty chat and above the composer in a conversation, and scrolls into view.
+- The context chip reads `!44 · 4755 characters`. The tool rows read `Read merge request · !44`, `Read merge request changes` and `Search project · attachmentDownloadFileName`, above the answer.
+- "What was sent" shows the full sent text with `Pinned at a0b27731`.
+- Turning the provider's read-only tools off from the chat menu's AI settings asked for consent again, kept the conversation, and showed the new-conversation notice.
+- In Arabic, the tool rows, chip and notice are right to left. The English reply stays left to right, and the character counts read `عدد الأحرف: N`.
+- The provider was deleted and the account removed afterwards. This run supersedes the Arabic item in the MR6a-1 NOT_RUN list above.
+
+Still **NOT_RUN** on a device:
+- the too-many-running blocker, the cleartext confirmation and very long reply splitting;
+- dark mode, iOS, physical devices, and the Responses and Anthropic formats against a live provider.
+
+The registry is still created lazily in `build`. It is memoised and keyed by account generation; this is an intended non-change.
