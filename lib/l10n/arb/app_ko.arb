@@ -2289,7 +2289,7 @@
   "aiChatSentContent": "전송된 내용",
   "aiChatCharacters": "{count}자",
   "aiChatBlocked": "차단됨",
-  "aiChatEmpty": "AI는 이 페이지를 읽고 필요할 때만 같은 프로젝트의 다른 데이터를 읽습니다.",
+  "aiChatEmpty": "AI는 이 페이지를 읽습니다. 같은 프로젝트의 다른 데이터는 필요할 때만 읽습니다.",
   "aiChatEmptyGeneral": "AI는 프로젝트 콘텐츠를 읽지 않고 입력한 내용만 읽습니다.",
   "aiToolReadFile": "파일 읽기",
   "aiToolListDirectory": "디렉터리 목록 보기",
@@ -2302,7 +2302,7 @@
   "aiToolGetCommitDiff": "커밋 변경 사항 읽기",
   "aiToolSearchProject": "프로젝트 검색",
   "aiToolSkipped": "실행 안 됨",
-  "aiNoticeRedacted": "인증 정보 {count}개를 가렸습니다",
+  "aiNoticeRedacted": "비밀 정보 {count}개를 가렸습니다",
   "aiNoticeSegmentSummary": "대화가 요약되었으며 이전 내용은 요약으로 이어집니다",
   "aiNoticeHistoryLimit": "채팅 기록이 가득 찼습니다",
   "aiNoticeNotSent": "이 메시지는 전송되지 않았습니다",
@@ -2319,11 +2319,11 @@
   "aiDiscuss": "AI와 논의",
   "aiSummarize": "AI 요약",
   "aiExplainFile": "AI로 이 파일 설명",
-  "aiNoticeRedactedSome": "인증 정보를 가렸습니다",
+  "aiNoticeRedactedSome": "비밀 정보를 가렸습니다",
   "aiNoticePrivateKeyWithheld": "개인 키로 보이는 콘텐츠를 제외하고 전송하지 않았습니다",
   "aiChatPreparing": "대화 준비 중…",
   "aiConsentAgree": "동의",
-  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
-  "aiToolUnknown": "Unknown tool request",
-  "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept"
+  "aiNoticeNewConversation": "설정이 변경되었습니다. 새 질문은 새 대화를 시작하며 위의 메시지는 다시 전송되지 않습니다",
+  "aiToolUnknown": "알 수 없는 도구 요청",
+  "aiChatSentPreviewOnly": "이 대화는 복원되었으므로 전송된 내용의 시작 부분만 보관됩니다"
 }

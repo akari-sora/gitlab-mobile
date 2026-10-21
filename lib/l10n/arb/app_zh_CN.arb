@@ -2289,7 +2289,7 @@
   "aiChatSentContent": "已发送的内容",
   "aiChatCharacters": "{count} 个字符",
   "aiChatBlocked": "已阻止",
-  "aiChatEmpty": "AI 会读取此页面，仅在需要时读取同一项目的其他数据。",
+  "aiChatEmpty": "AI 会读取此页面。AI 仅在需要时读取同一项目的其他数据。",
   "aiChatEmptyGeneral": "AI 不读取任何项目内容，只看你输入的文字。",
   "aiToolReadFile": "读取文件",
   "aiToolListDirectory": "列出目录内容",
@@ -2302,7 +2302,7 @@
   "aiToolGetCommitDiff": "读取提交变更",
   "aiToolSearchProject": "搜索项目",
   "aiToolSkipped": "未执行",
-  "aiNoticeRedacted": "已遮蔽 {count} 项凭据",
+  "aiNoticeRedacted": "已遮蔽 {count} 项秘密",
   "aiNoticeSegmentSummary": "对话已压缩，较早的内容将以摘要形式延续",
   "aiNoticeHistoryLimit": "聊天记录已满",
   "aiNoticeNotSent": "此消息未发送",
@@ -2319,11 +2319,11 @@
   "aiDiscuss": "与 AI 讨论",
   "aiSummarize": "AI 摘要",
   "aiExplainFile": "让 AI 解释此文件",
-  "aiNoticeRedactedSome": "已遮蔽凭据",
+  "aiNoticeRedactedSome": "已遮蔽秘密",
   "aiNoticePrivateKeyWithheld": "疑似私钥的内容已被拦下，未发送",
   "aiChatPreparing": "正在准备对话…",
   "aiConsentAgree": "同意",
-  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
-  "aiToolUnknown": "Unknown tool request",
-  "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept"
+  "aiNoticeNewConversation": "设置已更改：之后的新问题将开始新对话，上面的消息不会再次发送",
+  "aiToolUnknown": "未知工具请求",
+  "aiChatSentPreviewOnly": "此对话已经恢复，因此仅保留已发送内容的开头"
 }

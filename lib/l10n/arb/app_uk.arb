@@ -2289,7 +2289,7 @@
   "aiChatSentContent": "Що було надіслано",
   "aiChatCharacters": "Символів: {count}",
   "aiChatBlocked": "Заблоковано",
-  "aiChatEmpty": "AI читає цю сторінку, а інші дані того самого проєкту — лише за потреби.",
+  "aiChatEmpty": "AI читає цю сторінку. Інші дані того самого проєкту він читає лише за потреби.",
   "aiChatEmptyGeneral": "AI не читає вміст проєкту, а бачить лише введений вами текст.",
   "aiToolReadFile": "Прочитати файл",
   "aiToolListDirectory": "Показати вміст каталогу",
@@ -2302,7 +2302,7 @@
   "aiToolGetCommitDiff": "Прочитати зміни коміту",
   "aiToolSearchProject": "Шукати в проєкті",
   "aiToolSkipped": "Не запущено",
-  "aiNoticeRedacted": "Приховано облікових даних: {count}",
+  "aiNoticeRedacted": "Приховано секретів: {count}",
   "aiNoticeSegmentSummary": "Розмову скорочено; попередні репліки продовжуються як підсумок",
   "aiNoticeHistoryLimit": "Історію чату заповнено",
   "aiNoticeNotSent": "Це повідомлення не надіслано",
@@ -2319,11 +2319,11 @@
   "aiDiscuss": "Обговорити з AI",
   "aiSummarize": "Підсумок AI",
   "aiExplainFile": "Пояснити цей файл за допомогою AI",
-  "aiNoticeRedactedSome": "Облікові дані приховано",
+  "aiNoticeRedactedSome": "Секрети приховано",
   "aiNoticePrivateKeyWithheld": "Вміст, схожий на приватний ключ, вилучено й не надіслано",
   "aiChatPreparing": "Підготовка розмови…",
   "aiConsentAgree": "Погодитися",
-  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
-  "aiToolUnknown": "Unknown tool request",
-  "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept"
+  "aiNoticeNewConversation": "Налаштування змінено: нові запитання почнуть нову розмову, а повідомлення вище не буде надіслано повторно",
+  "aiToolUnknown": "Запит на виклик невідомого інструмента",
+  "aiChatSentPreviewOnly": "Цю розмову відновлено, тому збережено лише початок надісланого вмісту"
 }

@@ -2289,7 +2289,7 @@
   "aiChatSentContent": "Contenido enviado",
   "aiChatCharacters": "{count} caracteres",
   "aiChatBlocked": "Bloqueado",
-  "aiChatEmpty": "La IA lee esta página y otros datos del mismo proyecto solo cuando los necesita.",
+  "aiChatEmpty": "La IA lee esta página. Solo lee otros datos del mismo proyecto cuando los necesita.",
   "aiChatEmptyGeneral": "La IA no lee contenido del proyecto, solo lo que escribes.",
   "aiToolReadFile": "Leer archivo",
   "aiToolListDirectory": "Listar directorio",
@@ -2302,7 +2302,7 @@
   "aiToolGetCommitDiff": "Leer cambios del commit",
   "aiToolSearchProject": "Buscar en el proyecto",
   "aiToolSkipped": "Sin ejecutar",
-  "aiNoticeRedacted": "Se ocultaron {count} credenciales",
+  "aiNoticeRedacted": "Secretos ocultados: {count}",
   "aiNoticeSegmentSummary": "La conversación se condensó; los turnos anteriores continúan como resumen",
   "aiNoticeHistoryLimit": "El historial del chat está lleno",
   "aiNoticeNotSent": "Este mensaje no se envió",
@@ -2319,11 +2319,11 @@
   "aiDiscuss": "Hablar con la IA",
   "aiSummarize": "Resumen de IA",
   "aiExplainFile": "Explicar este archivo con IA",
-  "aiNoticeRedactedSome": "Se ocultaron credenciales",
+  "aiNoticeRedactedSome": "Se ocultaron secretos",
   "aiNoticePrivateKeyWithheld": "El contenido que parece una clave privada se retuvo y no se envió",
   "aiChatPreparing": "Preparando la conversación…",
   "aiConsentAgree": "Aceptar",
-  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
-  "aiToolUnknown": "Unknown tool request",
-  "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept"
+  "aiNoticeNewConversation": "Ajustes modificados: las nuevas preguntas inician una conversación nueva y los mensajes anteriores no se vuelven a enviar",
+  "aiToolUnknown": "Solicitud de herramienta no reconocida",
+  "aiChatSentPreviewOnly": "Esta conversación se restauró, por lo que solo se conserva el inicio del contenido enviado"
 }

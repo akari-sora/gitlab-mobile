@@ -6436,7 +6436,7 @@ final class AppStrings {
   /// 較早的回合已從摘要中移除
   String get aiProjectionOlderTurnsRemoved => language._messages[2113];
 
-  /// 已送出的內容中偵測到新的憑證或金鑰。因為已送出的內容無法撤回，回答已停止
+  /// 已送出的內容中偵測到新的秘密。因為已送出的內容無法撤回，回答已停止
   String get aiReplayProtectionStopped => language._messages[2114];
 
   /// 此對話已達用量上限，請開始新的對話
@@ -7000,7 +7000,7 @@ final class AppStrings {
   /// 未執行
   String get aiToolSkipped => language._messages[2301];
 
-  /// 已遮蔽 {count} 項憑證或金鑰
+  /// 已遮蔽 {count} 項秘密
   String aiNoticeRedacted(Object? count) => _format(language, language._messages[2302], {'count': count});
 
   /// 對話已整理，較早的內容以摘要延續
@@ -7051,7 +7051,7 @@ final class AppStrings {
   /// 請 AI 解釋這個檔案
   String get aiExplainFile => language._messages[2318];
 
-  /// 已遮蔽憑證或金鑰
+  /// 已遮蔽秘密
   String get aiNoticeRedactedSome => language._messages[2319];
 
   /// 有內容看起來像私密金鑰，這部分沒有送出

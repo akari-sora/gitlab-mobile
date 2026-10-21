@@ -2289,7 +2289,7 @@
   "aiChatSentContent": "ข้อมูลที่ส่งไป",
   "aiChatCharacters": "{count} อักขระ",
   "aiChatBlocked": "ถูกบล็อก",
-  "aiChatEmpty": "AI อ่านหน้านี้ และจะอ่านข้อมูลอื่นในโปรเจกต์เดียวกันเมื่อจำเป็นเท่านั้น",
+  "aiChatEmpty": "AI อ่านหน้านี้. ข้อมูลอื่นในโปรเจกต์เดียวกัน AI จะอ่านเมื่อจำเป็นเท่านั้น",
   "aiChatEmptyGeneral": "AI ไม่อ่านเนื้อหาในโปรเจกต์ อ่านเฉพาะสิ่งที่คุณพิมพ์เท่านั้น",
   "aiToolReadFile": "อ่านไฟล์",
   "aiToolListDirectory": "แสดงรายการในไดเรกทอรี",
@@ -2302,7 +2302,7 @@
   "aiToolGetCommitDiff": "อ่านการเปลี่ยนแปลงในคอมมิต",
   "aiToolSearchProject": "ค้นหาในโปรเจกต์",
   "aiToolSkipped": "ไม่ได้ทำงาน",
-  "aiNoticeRedacted": "ปกปิดข้อมูลรับรอง {count} รายการแล้ว",
+  "aiNoticeRedacted": "ปกปิดความลับ {count} รายการแล้ว",
   "aiNoticeSegmentSummary": "ย่อการสนทนาแล้ว โดยใช้บทสนทนาก่อนหน้าในรูปแบบสรุปต่อไป",
   "aiNoticeHistoryLimit": "ประวัติการสนทนาเต็มแล้ว",
   "aiNoticeNotSent": "ข้อความนี้ไม่ได้ถูกส่ง",
@@ -2319,11 +2319,11 @@
   "aiDiscuss": "สนทนากับ AI",
   "aiSummarize": "สรุปด้วย AI",
   "aiExplainFile": "ให้ AI อธิบายไฟล์นี้",
-  "aiNoticeRedactedSome": "ปกปิดข้อมูลรับรองแล้ว",
+  "aiNoticeRedactedSome": "ปกปิดความลับแล้ว",
   "aiNoticePrivateKeyWithheld": "เนื้อหาที่ดูเหมือนกุญแจส่วนตัวถูกระงับไว้และไม่ได้ส่ง",
   "aiChatPreparing": "กำลังเตรียมการสนทนา…",
   "aiConsentAgree": "ยินยอม",
-  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
-  "aiToolUnknown": "Unknown tool request",
-  "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept"
+  "aiNoticeNewConversation": "การตั้งค่าเปลี่ยนแล้ว: คำถามใหม่จะเริ่มการสนทนาใหม่ และข้อความด้านบนจะไม่ถูกส่งอีก",
+  "aiToolUnknown": "คำขอใช้เครื่องมือที่ไม่รู้จัก",
+  "aiChatSentPreviewOnly": "การสนทนานี้ได้รับการกู้คืน จึงเก็บเฉพาะส่วนต้นของเนื้อหาที่ส่งไป"
 }

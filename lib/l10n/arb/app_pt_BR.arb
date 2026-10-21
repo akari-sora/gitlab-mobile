@@ -2289,7 +2289,7 @@
   "aiChatSentContent": "Conteúdo enviado",
   "aiChatCharacters": "{count} caracteres",
   "aiChatBlocked": "Bloqueado",
-  "aiChatEmpty": "A IA lê esta página e outros dados do mesmo projeto somente quando necessário.",
+  "aiChatEmpty": "A IA lê esta página. Outros dados do mesmo projeto são lidos apenas quando necessário.",
   "aiChatEmptyGeneral": "A IA não lê conteúdo do projeto, somente o que você digita.",
   "aiToolReadFile": "Ler arquivo",
   "aiToolListDirectory": "Listar diretório",
@@ -2302,7 +2302,7 @@
   "aiToolGetCommitDiff": "Ler alterações do commit",
   "aiToolSearchProject": "Pesquisar no projeto",
   "aiToolSkipped": "Não executado",
-  "aiNoticeRedacted": "{count} credenciais foram ocultadas",
+  "aiNoticeRedacted": "Segredos ocultados: {count}",
   "aiNoticeSegmentSummary": "A conversa foi condensada; as interações anteriores continuam como um resumo",
   "aiNoticeHistoryLimit": "O histórico do chat está cheio",
   "aiNoticeNotSent": "Esta mensagem não foi enviada",
@@ -2319,11 +2319,11 @@
   "aiDiscuss": "Conversar com a IA",
   "aiSummarize": "Resumo da IA",
   "aiExplainFile": "Explicar este arquivo com IA",
-  "aiNoticeRedactedSome": "Credenciais foram ocultadas",
+  "aiNoticeRedactedSome": "Segredos foram ocultados",
   "aiNoticePrivateKeyWithheld": "O conteúdo que parece uma chave privada foi retido e não enviado",
   "aiChatPreparing": "Preparando a conversa…",
   "aiConsentAgree": "Concordar",
-  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
-  "aiToolUnknown": "Unknown tool request",
-  "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept"
+  "aiNoticeNewConversation": "As configurações mudaram: novas perguntas iniciam uma nova conversa, e as mensagens acima não são enviadas novamente",
+  "aiToolUnknown": "Solicitação de chamada de ferramenta desconhecida",
+  "aiChatSentPreviewOnly": "Esta conversa foi restaurada, por isso apenas o início do conteúdo enviado foi mantido"
 }

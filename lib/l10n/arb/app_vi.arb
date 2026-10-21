@@ -2289,7 +2289,7 @@
   "aiChatSentContent": "Nội dung đã gửi",
   "aiChatCharacters": "{count} ký tự",
   "aiChatBlocked": "Đã chặn",
-  "aiChatEmpty": "AI chỉ đọc trang này và dữ liệu khác trong cùng dự án khi cần.",
+  "aiChatEmpty": "AI đọc trang này. AI chỉ đọc dữ liệu khác trong cùng dự án khi cần.",
   "aiChatEmptyGeneral": "AI không đọc nội dung dự án, chỉ đọc nội dung bạn nhập.",
   "aiToolReadFile": "Đọc file",
   "aiToolListDirectory": "Liệt kê thư mục",
@@ -2302,7 +2302,7 @@
   "aiToolGetCommitDiff": "Đọc thay đổi của commit",
   "aiToolSearchProject": "Tìm kiếm dự án",
   "aiToolSkipped": "Không chạy",
-  "aiNoticeRedacted": "Đã che {count} thông tin xác thực",
+  "aiNoticeRedacted": "Đã che {count} bí mật",
   "aiNoticeSegmentSummary": "Cuộc trò chuyện đã được rút gọn; các lượt trước được tiếp nối dưới dạng bản tóm tắt",
   "aiNoticeHistoryLimit": "Lịch sử trò chuyện đã đầy",
   "aiNoticeNotSent": "Tin nhắn này chưa được gửi",
@@ -2319,11 +2319,11 @@
   "aiDiscuss": "Thảo luận với AI",
   "aiSummarize": "Bản tóm tắt của AI",
   "aiExplainFile": "Giải thích file này bằng AI",
-  "aiNoticeRedactedSome": "Đã che thông tin xác thực",
+  "aiNoticeRedactedSome": "Đã che bí mật",
   "aiNoticePrivateKeyWithheld": "Nội dung có vẻ là khóa riêng tư đã được giữ lại và không gửi đi",
   "aiChatPreparing": "Đang chuẩn bị cuộc trò chuyện…",
   "aiConsentAgree": "Đồng ý",
-  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
-  "aiToolUnknown": "Unknown tool request",
-  "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept"
+  "aiNoticeNewConversation": "Cài đặt đã thay đổi: câu hỏi mới sẽ bắt đầu một cuộc trò chuyện mới và các tin nhắn ở trên sẽ không được gửi lại",
+  "aiToolUnknown": "Yêu cầu công cụ không xác định",
+  "aiChatSentPreviewOnly": "Cuộc trò chuyện này đã được khôi phục nên chỉ phần đầu của nội dung đã gửi được lưu lại"
 }

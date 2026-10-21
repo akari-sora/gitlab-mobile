@@ -2289,7 +2289,7 @@
   "aiChatSentContent": "Что было отправлено",
   "aiChatCharacters": "Символов: {count}",
   "aiChatBlocked": "Заблокировано",
-  "aiChatEmpty": "AI читает эту страницу, а другие данные того же проекта — только при необходимости.",
+  "aiChatEmpty": "AI читает эту страницу. Другие данные того же проекта он читает только при необходимости.",
   "aiChatEmptyGeneral": "AI не читает содержимое проекта, а видит только введённый вами текст.",
   "aiToolReadFile": "Прочитать файл",
   "aiToolListDirectory": "Показать содержимое каталога",
@@ -2302,7 +2302,7 @@
   "aiToolGetCommitDiff": "Прочитать изменения коммита",
   "aiToolSearchProject": "Искать в проекте",
   "aiToolSkipped": "Не запущено",
-  "aiNoticeRedacted": "Скрыто учётных данных: {count}",
+  "aiNoticeRedacted": "Скрыто секретов: {count}",
   "aiNoticeSegmentSummary": "Диалог сокращён; предыдущие реплики продолжаются в виде сводки",
   "aiNoticeHistoryLimit": "История чата заполнена",
   "aiNoticeNotSent": "Это сообщение не отправлено",
@@ -2319,11 +2319,11 @@
   "aiDiscuss": "Обсудить с AI",
   "aiSummarize": "Сводка AI",
   "aiExplainFile": "Объяснить этот файл с помощью AI",
-  "aiNoticeRedactedSome": "Учётные данные скрыты",
+  "aiNoticeRedactedSome": "Секреты скрыты",
   "aiNoticePrivateKeyWithheld": "Содержимое, похожее на закрытый ключ, исключено и не отправлено",
   "aiChatPreparing": "Подготовка диалога…",
   "aiConsentAgree": "Согласиться",
-  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
-  "aiToolUnknown": "Unknown tool request",
-  "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept"
+  "aiNoticeNewConversation": "Настройки изменились: новые вопросы начнут новый диалог, а сообщения выше не будут отправлены повторно",
+  "aiToolUnknown": "Запрос на вызов неизвестного инструмента",
+  "aiChatSentPreviewOnly": "Этот диалог был восстановлен, поэтому сохранено только начало отправленного содержимого"
 }

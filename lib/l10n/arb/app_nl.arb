@@ -2289,7 +2289,7 @@
   "aiChatSentContent": "Verzonden inhoud",
   "aiChatCharacters": "{count} tekens",
   "aiChatBlocked": "Geblokkeerd",
-  "aiChatEmpty": "De AI leest deze pagina en alleen wanneer nodig andere gegevens uit hetzelfde project.",
+  "aiChatEmpty": "De AI leest deze pagina. Andere gegevens uit hetzelfde project leest de AI alleen wanneer dat nodig is.",
   "aiChatEmptyGeneral": "De AI leest geen projectinhoud, alleen wat u typt.",
   "aiToolReadFile": "Bestand lezen",
   "aiToolListDirectory": "Mapinhoud weergeven",
@@ -2302,7 +2302,7 @@
   "aiToolGetCommitDiff": "Commitwijzigingen lezen",
   "aiToolSearchProject": "Project doorzoeken",
   "aiToolSkipped": "Niet uitgevoerd",
-  "aiNoticeRedacted": "{count} aanmeldgegevens zijn verborgen",
+  "aiNoticeRedacted": "Verborgen geheimen: {count}",
   "aiNoticeSegmentSummary": "Het gesprek is ingekort; eerdere beurten gaan verder als samenvatting",
   "aiNoticeHistoryLimit": "De chatgeschiedenis is vol",
   "aiNoticeNotSent": "Dit bericht is niet verzonden",
@@ -2319,11 +2319,11 @@
   "aiDiscuss": "Bespreken met AI",
   "aiSummarize": "AI-samenvatting",
   "aiExplainFile": "Dit bestand uitleggen met AI",
-  "aiNoticeRedactedSome": "Aanmeldgegevens zijn verborgen",
+  "aiNoticeRedactedSome": "Geheimen zijn verborgen",
   "aiNoticePrivateKeyWithheld": "Inhoud die op een privésleutel lijkt, is tegengehouden en niet verzonden",
   "aiChatPreparing": "Gesprek voorbereiden…",
   "aiConsentAgree": "Akkoord",
-  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
-  "aiToolUnknown": "Unknown tool request",
-  "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept"
+  "aiNoticeNewConversation": "Instellingen gewijzigd: nieuwe vragen beginnen een nieuw gesprek en de bovenstaande berichten worden niet opnieuw verzonden",
+  "aiToolUnknown": "Verzoek om een onbekend hulpmiddel aan te roepen",
+  "aiChatSentPreviewOnly": "Dit gesprek is hersteld, dus alleen het begin van de verzonden inhoud is bewaard"
 }

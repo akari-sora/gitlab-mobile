@@ -2289,7 +2289,7 @@
   "aiChatSentContent": "送信した内容",
   "aiChatCharacters": "{count} 文字",
   "aiChatBlocked": "ブロック済み",
-  "aiChatEmpty": "AI はこのページを読み、必要な場合のみ同じプロジェクトの他のデータも読みます。",
+  "aiChatEmpty": "AI はこのページを読みます。同じプロジェクトのほかのデータは、必要な場合にのみ読みます。",
   "aiChatEmptyGeneral": "AI はプロジェクトの内容を読まず、入力した内容のみを読みます。",
   "aiToolReadFile": "ファイルを読み取り",
   "aiToolListDirectory": "ディレクトリを一覧表示",
@@ -2302,7 +2302,7 @@
   "aiToolGetCommitDiff": "コミットの変更を読み取り",
   "aiToolSearchProject": "プロジェクトを検索",
   "aiToolSkipped": "未実行",
-  "aiNoticeRedacted": "認証情報 {count} 件を伏せました",
+  "aiNoticeRedacted": "秘密情報 {count} 件を伏せました",
   "aiNoticeSegmentSummary": "会話を要約し、以前のやり取りは要約として引き継がれます",
   "aiNoticeHistoryLimit": "チャット履歴が上限に達しました",
   "aiNoticeNotSent": "このメッセージは送信されませんでした",
@@ -2319,11 +2319,11 @@
   "aiDiscuss": "AI と相談",
   "aiSummarize": "AI による要約",
   "aiExplainFile": "AI でこのファイルを説明",
-  "aiNoticeRedactedSome": "認証情報を伏せました",
+  "aiNoticeRedactedSome": "秘密情報を伏せました",
   "aiNoticePrivateKeyWithheld": "秘密鍵と思われる内容を除外し、送信しませんでした",
   "aiChatPreparing": "会話を準備中…",
   "aiConsentAgree": "同意",
-  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
-  "aiToolUnknown": "Unknown tool request",
-  "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept"
+  "aiNoticeNewConversation": "設定が変更されました：新しい質問から新しい会話が始まり、上のメッセージは再送信されません",
+  "aiToolUnknown": "不明なツールリクエスト",
+  "aiChatSentPreviewOnly": "この会話は復元されたため、送信した内容の冒頭だけが保持されています"
 }

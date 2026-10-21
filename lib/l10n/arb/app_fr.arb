@@ -2289,7 +2289,7 @@
   "aiChatSentContent": "Contenu envoyé",
   "aiChatCharacters": "{count} caractères",
   "aiChatBlocked": "Bloqué",
-  "aiChatEmpty": "L’IA lit cette page et d’autres données du même projet uniquement lorsqu’elle en a besoin.",
+  "aiChatEmpty": "L’IA lit cette page. Elle ne lit les autres données du même projet que lorsqu’elle en a besoin.",
   "aiChatEmptyGeneral": "L’IA ne lit aucun contenu du projet, uniquement ce que vous saisissez.",
   "aiToolReadFile": "Lire le fichier",
   "aiToolListDirectory": "Lister le répertoire",
@@ -2302,7 +2302,7 @@
   "aiToolGetCommitDiff": "Lire les modifications du commit",
   "aiToolSearchProject": "Rechercher dans le projet",
   "aiToolSkipped": "Non exécuté",
-  "aiNoticeRedacted": "{count} identifiants ont été masqués",
+  "aiNoticeRedacted": "Secrets masqués : {count}",
   "aiNoticeSegmentSummary": "La conversation a été condensée ; les échanges précédents se poursuivent sous forme de résumé",
   "aiNoticeHistoryLimit": "L’historique du chat est plein",
   "aiNoticeNotSent": "Ce message n’a pas été envoyé",
@@ -2319,11 +2319,11 @@
   "aiDiscuss": "Discuter avec l’IA",
   "aiSummarize": "Résumé par l’IA",
   "aiExplainFile": "Expliquer ce fichier avec l’IA",
-  "aiNoticeRedactedSome": "Des identifiants ont été masqués",
+  "aiNoticeRedactedSome": "Des secrets ont été masqués",
   "aiNoticePrivateKeyWithheld": "Le contenu ressemblant à une clé privée a été retenu et n’a pas été envoyé",
   "aiChatPreparing": "Préparation de la conversation…",
   "aiConsentAgree": "Accepter",
-  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
-  "aiToolUnknown": "Unknown tool request",
-  "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept"
+  "aiNoticeNewConversation": "Les paramètres ont changé : les nouvelles questions démarrent une nouvelle conversation et les messages ci-dessus ne sont pas renvoyés",
+  "aiToolUnknown": "Demande d’outil inconnu",
+  "aiChatSentPreviewOnly": "Cette conversation a été restaurée, seul le début du contenu envoyé est donc conservé"
 }

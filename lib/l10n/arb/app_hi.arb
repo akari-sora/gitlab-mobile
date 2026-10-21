@@ -2289,7 +2289,7 @@
   "aiChatSentContent": "भेजी गई सामग्री",
   "aiChatCharacters": "{count} अक्षर",
   "aiChatBlocked": "अवरुद्ध",
-  "aiChatEmpty": "AI यह पेज पढ़ता है और ज़रूरत होने पर ही इसी प्रोजेक्ट का अन्य डेटा पढ़ता है।",
+  "aiChatEmpty": "AI यह पेज पढ़ता है। यह इसी प्रोजेक्ट का अन्य डेटा केवल ज़रूरत होने पर पढ़ता है।",
   "aiChatEmptyGeneral": "AI प्रोजेक्ट की कोई सामग्री नहीं पढ़ता, केवल आपका लिखा हुआ पढ़ता है।",
   "aiToolReadFile": "फ़ाइल पढ़ें",
   "aiToolListDirectory": "डायरेक्टरी की सामग्री दिखाएँ",
@@ -2302,7 +2302,7 @@
   "aiToolGetCommitDiff": "कमिट के बदलाव पढ़ें",
   "aiToolSearchProject": "प्रोजेक्ट में खोजें",
   "aiToolSkipped": "नहीं चला",
-  "aiNoticeRedacted": "प्रमाणीकरण के {count} गोपनीय विवरण छिपाए गए",
+  "aiNoticeRedacted": "छिपाए गए रहस्यों की संख्या: {count}",
   "aiNoticeSegmentSummary": "बातचीत संक्षिप्त की गई; पहले के संदेश सारांश के रूप में बने रहेंगे",
   "aiNoticeHistoryLimit": "चैट इतिहास भर गया है",
   "aiNoticeNotSent": "यह संदेश नहीं भेजा गया",
@@ -2319,11 +2319,11 @@
   "aiDiscuss": "AI से चर्चा करें",
   "aiSummarize": "AI सारांश",
   "aiExplainFile": "AI से इस फ़ाइल की व्याख्या कराएँ",
-  "aiNoticeRedactedSome": "प्रमाणीकरण के गोपनीय विवरण छिपाए गए",
+  "aiNoticeRedactedSome": "रहस्य छिपाए गए",
   "aiNoticePrivateKeyWithheld": "निजी कुंजी जैसी दिखने वाली सामग्री रोक ली गई और नहीं भेजी गई",
   "aiChatPreparing": "बातचीत तैयार हो रही है…",
   "aiConsentAgree": "सहमति दें",
-  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
-  "aiToolUnknown": "Unknown tool request",
-  "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept"
+  "aiNoticeNewConversation": "सेटिंग बदल गई हैं: नए सवाल नई बातचीत शुरू करेंगे और ऊपर दिए गए संदेश फिर से नहीं भेजे जाएँगे",
+  "aiToolUnknown": "अज्ञात उपकरण अनुरोध",
+  "aiChatSentPreviewOnly": "यह बातचीत बहाल की गई थी, इसलिए भेजी गई सामग्री का केवल शुरुआती हिस्सा रखा गया है"
 }

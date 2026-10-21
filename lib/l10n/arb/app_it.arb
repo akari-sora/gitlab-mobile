@@ -2289,7 +2289,7 @@
   "aiChatSentContent": "Contenuto inviato",
   "aiChatCharacters": "{count} caratteri",
   "aiChatBlocked": "Bloccato",
-  "aiChatEmpty": "L’IA legge questa pagina e altri dati dello stesso progetto solo quando necessario.",
+  "aiChatEmpty": "L’IA legge questa pagina. Legge altri dati dello stesso progetto solo quando ne ha bisogno.",
   "aiChatEmptyGeneral": "L’IA non legge contenuti del progetto, ma solo ciò che scrivi.",
   "aiToolReadFile": "Leggi file",
   "aiToolListDirectory": "Elenca directory",
@@ -2302,7 +2302,7 @@
   "aiToolGetCommitDiff": "Leggi modifiche del commit",
   "aiToolSearchProject": "Cerca nel progetto",
   "aiToolSkipped": "Non eseguito",
-  "aiNoticeRedacted": "Sono state oscurate {count} credenziali",
+  "aiNoticeRedacted": "Segreti oscurati: {count}",
   "aiNoticeSegmentSummary": "La conversazione è stata condensata; i turni precedenti continuano come riepilogo",
   "aiNoticeHistoryLimit": "La cronologia chat è piena",
   "aiNoticeNotSent": "Questo messaggio non è stato inviato",
@@ -2319,11 +2319,11 @@
   "aiDiscuss": "Discuti con l’IA",
   "aiSummarize": "Riepilogo IA",
   "aiExplainFile": "Spiega questo file con l’IA",
-  "aiNoticeRedactedSome": "Le credenziali sono state oscurate",
+  "aiNoticeRedactedSome": "I segreti sono stati oscurati",
   "aiNoticePrivateKeyWithheld": "Il contenuto che sembra una chiave privata è stato trattenuto e non inviato",
   "aiChatPreparing": "Preparazione della conversazione…",
   "aiConsentAgree": "Accetta",
-  "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
-  "aiToolUnknown": "Unknown tool request",
-  "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept"
+  "aiNoticeNewConversation": "Impostazioni modificate: le nuove domande avviano una nuova conversazione e i messaggi qui sopra non vengono inviati di nuovo",
+  "aiToolUnknown": "Richiesta di strumento sconosciuto",
+  "aiChatSentPreviewOnly": "Questa conversazione è stata ripristinata, quindi viene conservato solo l’inizio del contenuto inviato"
 }
