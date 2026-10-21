@@ -375,6 +375,8 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
+    // The search applied.
+    expect(_option('synthetic-model-0'), findsNothing);
     // The list (with its header) scrolls to every result.
     await tester.scrollUntilVisible(
       _option('synthetic-model-19'),
@@ -387,6 +389,104 @@ void main() {
           .first,
     );
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the search field keeps focus as the keyboard comes up', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(640, 360);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({
+        'data': [
+          for (var i = 0; i < 40; i++) {'id': 'synthetic-model-$i'},
+        ],
+      }),
+    );
+    await _pumpCustomEditor(tester, adapter);
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('ai-provider-model-search')));
+    await tester.pump();
+    expect(tester.testTextInput.hasAnyClients, isTrue);
+    for (final inset in const [20.0, 60.0, 180.0]) {
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      await tester.pump();
+      expect(tester.testTextInput.hasAnyClients, isTrue, reason: 'inset $inset');
+    }
+    tester.testTextInput.enterText('model-1');
+    await tester.pump();
+    expect(
+      tester
+          .widget<TextField>(find.byKey(const ValueKey('ai-provider-model-search')))
+          .controller!
+          .text,
+      'model-1',
+    );
+    expect(_option('synthetic-model-0'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('large text in long languages fits a small phone', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(top: 24);
+    addTearDown(tester.view.reset);
+    for (final tag in const ['en', 'de']) {
+      useLanguage(languageForTag(tag)!);
+      final adapter = FakeAdapter(
+        (_) => jsonResponse({
+          'data': [
+            for (var i = 0; i < 40; i++) {'id': 'synthetic-model-$i'},
+          ],
+        }),
+      );
+      await _pumpCustomEditor(tester, adapter, scale: 2);
+      await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: tag);
+      final visible = _options().evaluate().where((element) {
+        final box = element.renderObject! as RenderBox;
+        final top = box.localToGlobal(Offset.zero).dy;
+        return top >= 0 && top + box.size.height <= 640;
+      });
+      expect(visible, isNotEmpty, reason: tag);
+      await _closePicker(tester);
+    }
+  });
+
+  testWidgets('a catalogue filtered to nothing is not called empty', (
+    tester,
+  ) async {
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({
+        'data': [
+          {'id': 'unroutable-model'},
+        ],
+      }),
+    );
+    final settings = AiSettingsController(MemoryAiStore());
+    await settings.initialize();
+    await tester.pumpWidget(
+      _host(
+        AiProviderEditor(
+          settings: settings,
+          clientFactory: (config, key) => _client(config, key, adapter),
+        ),
+      ),
+    );
+    await _selectPreset(tester, 'OpenCode Go');
+    await tester.enterText(
+      find.byKey(const ValueKey('ai-provider-api-key')),
+      'oc_sk_synthetic_123456',
+    );
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.aiProviderModelPickerEmpty), findsOneWidget);
+    expect(find.text(l10n.aiProviderModelPickerNone), findsNothing);
   });
 
   testWidgets('the picker stays below the status bar', (tester) async {

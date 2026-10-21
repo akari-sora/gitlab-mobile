@@ -110,6 +110,8 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   List<String> _loadedModels = const <String>[];
   // A read succeeded for the current recipient; the list may be empty.
   bool _modelsLoaded = false;
+  // That read's catalogue was empty before any format filtering.
+  bool _catalogueEmpty = false;
 
   bool get _editing => widget.provider != null;
   bool get _requiresKey =>
@@ -597,7 +599,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     setState(() => _saving = true);
     // A model read still running must not open its picker over the editor
     // while it saves; the save's pop would then close the picker instead.
-    _invalidateNetworkRequest();
+    _cancelModelRead();
     try {
       final saved = await widget.settings.saveProviderWithKey(
         _config(),
@@ -613,6 +615,16 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  /// Stops a model read in flight, keeping any list loaded before it.
+  void _cancelModelRead() {
+    if (!_loadingModels) return;
+    _networkTicket += 1;
+    final client = _activeClient;
+    _activeClient = null;
+    client?.transport.close();
+    setState(() => _loadingModels = false);
   }
 
   /// Reads the catalogue for the current recipient. True when this read
@@ -663,6 +675,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       setState(() {
         _loadedModels = allowed.toSet().toList()..sort();
         _modelsLoaded = true;
+        _catalogueEmpty = page.models.isEmpty;
         _modelsMessage = page.hasMore
             ? l10n.aiProviderModelsTruncated
             : l10n.aiProviderModelsReadSuccess;
@@ -703,8 +716,11 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       isScrollControlled: true,
       useSafeArea: true,
       showDragHandle: true,
-      builder: (context) =>
-          _ModelPickerSheet(models: _loadedModels, current: _model.text.trim()),
+      builder: (context) => _ModelPickerSheet(
+        models: _loadedModels,
+        current: _model.text.trim(),
+        catalogueEmpty: _catalogueEmpty,
+      ),
     );
     if (picked != null && mounted) _model.text = picked;
   }
@@ -1564,9 +1580,15 @@ class _WrappingFieldMessages extends StatelessWidget {
 /// The read model catalogue as a list to pick from, searchable when long.
 /// The current model comes first. Pops the chosen model ID.
 class _ModelPickerSheet extends StatefulWidget {
-  const _ModelPickerSheet({required this.models, required this.current});
+  const _ModelPickerSheet({
+    required this.models,
+    required this.current,
+    required this.catalogueEmpty,
+  });
   final List<String> models;
   final String current;
+  // The endpoint listed nothing, as opposed to nothing for this format.
+  final bool catalogueEmpty;
 
   @override
   State<_ModelPickerSheet> createState() => _ModelPickerSheetState();
@@ -1574,6 +1596,9 @@ class _ModelPickerSheet extends StatefulWidget {
 
 class _ModelPickerSheetState extends State<_ModelPickerSheet> {
   final _search = TextEditingController();
+  // Keeps the search field (its focus and input connection) through any
+  // relayout, such as the keyboard appearing.
+  final _searchField = GlobalKey();
 
   @override
   void dispose() {
@@ -1600,91 +1625,18 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
               .toList(growable: false);
     // A handful of models fit on screen; a search field would only add noise.
     final searchable = widget.models.length > 6;
-    // The header stays put while the list scrolls. With the keyboard up the
-    // sheet takes all the room left above it and drops the hint, so results
-    // stay visible while typing on a small phone. The sheet's constraints
-    // already leave out the status bar (useSafeArea) and the drag handle.
     final keyboard = media.viewInsets.bottom;
     return LayoutBuilder(
       builder: (context, constraints) {
+        // The constraints already leave out the status bar (useSafeArea) and
+        // the drag handle. Short windows (the keyboard up, landscape, split
+        // screen) use all the room that is left above the keyboard.
         final room = math.max(0.0, constraints.maxHeight - keyboard);
-        // Short windows (the keyboard up, landscape, split screen) use all
-        // the room. When even that cannot hold a fixed header and a few
-        // rows, the header scrolls with the list instead of overflowing.
         final short = keyboard > 0 || room * 0.7 < 360;
         final height = short ? room : room * 0.7;
-        final compact = height < 280;
-        final header = <Widget>[
-          if (!compact || keyboard == 0)
-            Text(
-              l10n.aiProviderModelPickerTitle,
-              style: theme.textTheme.titleMedium,
-            ),
-          if (!short) ...[
-            const SizedBox(height: 4),
-            Text(l10n.aiProviderModelPickerHint, style: muted),
-          ],
-          if (searchable) ...[
-            const SizedBox(height: 12),
-            TextField(
-              key: const ValueKey('ai-provider-model-search'),
-              controller: _search,
-              autocorrect: false,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                labelText: l10n.aiProviderSearchModels,
-                prefixIcon: const Icon(Icons.search),
-              ),
-            ),
-          ],
-        ];
-        final empty = Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(
-            widget.models.isEmpty
-                ? l10n.aiProviderModelPickerNone
-                : l10n.aiProviderModelPickerEmpty,
-            style: muted,
-          ),
-        );
-        Widget option(String model) {
-          final selected = model == widget.current;
-          return ListTile(
-            key: ValueKey('ai-provider-model-option-$model'),
-            dense: true,
-            selected: selected,
-            title: Text(isolated(model)),
-            trailing: selected ? const Icon(Icons.check) : null,
-            onTap: () => Navigator.of(context).pop(model),
-          );
-        }
-
-        // Clear of the system navigation bar when the keyboard is down.
-        final bottom = EdgeInsets.only(bottom: 16 + media.padding.bottom);
-        if (compact) {
-          return Padding(
-            padding: EdgeInsets.only(bottom: keyboard),
-            child: SizedBox(
-              height: height,
-              child: ListView.builder(
-                key: const ValueKey('ai-provider-model-picker'),
-                padding: bottom,
-                itemCount: 1 + (models.isEmpty ? 1 : models.length),
-                itemBuilder: (context, index) => index == 0
-                    ? Padding(
-                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: header,
-                        ),
-                      )
-                    : models.isEmpty
-                    ? empty
-                    : option(models[index - 1]),
-              ),
-            ),
-          );
-        }
+        // One shape whatever the size: a header that scrolls on its own when
+        // it does not fit its share (large text, long languages, landscape)
+        // above the list, so nothing overflows and nothing is rebuilt.
         return Padding(
           padding: EdgeInsets.only(bottom: keyboard),
           child: SizedBox(
@@ -1692,22 +1644,74 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: header,
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: height * 0.6),
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          l10n.aiProviderModelPickerTitle,
+                          style: theme.textTheme.titleMedium,
+                        ),
+                        if (!short) ...[
+                          const SizedBox(height: 4),
+                          Text(l10n.aiProviderModelPickerHint, style: muted),
+                        ],
+                        if (searchable) ...[
+                          const SizedBox(height: 12),
+                          KeyedSubtree(
+                            key: _searchField,
+                            child: TextField(
+                              key: const ValueKey('ai-provider-model-search'),
+                              controller: _search,
+                              autocorrect: false,
+                              onChanged: (_) => setState(() {}),
+                              decoration: InputDecoration(
+                                labelText: l10n.aiProviderSearchModels,
+                                prefixIcon: const Icon(Icons.search),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                 ),
                 Expanded(
                   child: models.isEmpty
-                      ? empty
+                      ? Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            widget.catalogueEmpty
+                                ? l10n.aiProviderModelPickerNone
+                                : l10n.aiProviderModelPickerEmpty,
+                            style: muted,
+                          ),
+                        )
                       : ListView.builder(
                           key: const ValueKey('ai-provider-model-picker'),
-                          padding: bottom,
+                          // Clear of the system navigation bar when the
+                          // keyboard is down.
+                          padding: EdgeInsets.only(
+                            bottom: 16 + media.padding.bottom,
+                          ),
                           itemCount: models.length,
-                          itemBuilder: (context, index) =>
-                              option(models[index]),
+                          itemBuilder: (context, index) {
+                            final model = models[index];
+                            final selected = model == widget.current;
+                            return ListTile(
+                              key: ValueKey('ai-provider-model-option-$model'),
+                              dense: true,
+                              selected: selected,
+                              title: Text(isolated(model)),
+                              trailing: selected
+                                  ? const Icon(Icons.check)
+                                  : null,
+                              onTap: () => Navigator.of(context).pop(model),
+                            );
+                          },
                         ),
                 ),
               ],

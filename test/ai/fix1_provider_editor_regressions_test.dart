@@ -534,6 +534,14 @@ void main() {
     storage.gate = Completer<void>();
     await tester.tap(find.text(l10n.saveAction));
     await tester.pump();
+    // Saving stopped the read at once, before its answer arrived.
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey('ai-provider-pick-model')),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsNothing,
+    );
     response.complete(
       jsonResponse({
         'data': [
@@ -543,6 +551,21 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.text('synthetic-late-model'), findsNothing);
+    // While it saves, both list buttons are off and the read has stopped.
+    expect(
+      tester
+          .widget<IconButton>(find.byKey(const ValueKey('ai-provider-pick-model')))
+          .onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.byKey(const ValueKey('ai-provider-read-models')),
+          )
+          .onPressed,
+      isNull,
+    );
     storage.gate!.complete();
     await tester.pumpAndSettle();
 
