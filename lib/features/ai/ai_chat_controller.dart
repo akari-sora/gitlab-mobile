@@ -222,6 +222,16 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       _contextFailed = false;
     }
     _contract = null;
+    // The page shows GitLab values (the title) through displaySafe before any
+    // blocker is cleared, so learn the live secrets first.
+    try {
+      await _secrets.refresh();
+    } on Object {
+      if (!_current(epoch)) return;
+      _setBlocked(AiChatBlocker.settingsUnavailable);
+      return;
+    }
+    if (!_current(epoch)) return;
     if (settings.initializationFailure != null) {
       _setBlocked(AiChatBlocker.settingsUnavailable);
       return;

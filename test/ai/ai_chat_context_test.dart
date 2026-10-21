@@ -278,6 +278,72 @@ void main() {
     },
   );
 
+  test('merge request notes are read past a page of system notes', () async {
+    final adapter = FakeAdapter((request) {
+      final path = request.uri.path;
+      if (path.endsWith('/projects/42/merge_requests/7/versions/5')) {
+        return jsonResponse({
+          'id': 5,
+          'head_commit_sha': _head,
+          'base_commit_sha': _base,
+          'diffs': <Object?>[],
+        });
+      }
+      if (path.endsWith('/projects/42/merge_requests/7/versions')) {
+        return jsonResponse([
+          {'id': 5, 'head_commit_sha': _head, 'base_commit_sha': _base},
+        ]);
+      }
+      if (path.endsWith('/projects/42/merge_requests/7/notes')) {
+        if (request.uri.queryParameters['page'] == '2') {
+          return jsonResponse([
+            {
+              'body': 'older human note',
+              'created_at': '2026-10-19T12:00:00Z',
+              'system': false,
+            },
+          ]);
+        }
+        return jsonResponse(
+          [
+            for (var i = 0; i < 30; i++)
+              {
+                'body': 'system note $i',
+                'created_at': '2026-10-20T12:00:00Z',
+                'system': true,
+              },
+          ],
+          headers: {
+            'x-next-page': ['2'],
+          },
+        );
+      }
+      if (path.endsWith('/projects/42/merge_requests/7')) {
+        return jsonResponse({
+          'title': 'MR title',
+          'description': 'MR body',
+          'state': 'opened',
+          'diff_refs': {'head_sha': _head, 'base_sha': _base},
+        });
+      }
+      return jsonResponse({'error': 'not found'}, status: 404);
+    });
+    final result = await _load(
+      const AiWorkItemOrigin(
+        project: _project,
+        kind: AiWorkItemKind.mergeRequest,
+        iid: 7,
+        title: 'MR title',
+      ),
+      adapter,
+    );
+    expect(result.built.blocks.single.text, contains('older human note'));
+    expect(
+      adapter.requests.where((r) => r.uri.path.endsWith('/notes')),
+      hasLength(2),
+    );
+  });
+
   test('file reads the requested immutable SHA and redacts content', () async {
     final adapter = FakeAdapter((request) {
       expect(request.uri.queryParameters['ref'], _head);

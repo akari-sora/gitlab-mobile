@@ -806,6 +806,31 @@ void main() {
     expect(session.sent, ['next']);
   });
 
+  testWidgets('a card that appears in a scrolled empty chat comes into view', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 420);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final session = _FakeSession();
+    await tester.pumpWidget(_host(AiChatPage(session: session), scale: 2));
+    await tester.pump();
+    final list = find.descendant(
+      of: find.byType(AiChatPage),
+      matching: find.byType(Scrollable),
+    );
+    await tester.drag(list.first, const Offset(0, -600));
+    await tester.pumpAndSettle();
+    final position = tester.state<ScrollableState>(list.first).position;
+    expect(position.pixels, greaterThan(0));
+
+    session.update(() => session.blocker = AiChatBlocker.consentRequired);
+    await tester.pumpAndSettle();
+    expect(position.pixels, 0);
+    expect(find.byKey(const ValueKey('ai-chat-blocker')), findsOneWidget);
+  });
+
   group('narrow screens, 2x text and long or other scripts', () {
     for (final tag in ['zh-TW', 'en', 'ar', 'de', 'ru', 'hi', 'th']) {
       testWidgets(tag, (tester) async {

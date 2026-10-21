@@ -154,11 +154,13 @@ Future<AiChatContext> _loadIssue(
     '${origin.iid}',
   ]);
   _requireCurrent(isCurrent);
-  final notes = await api.records(
-    ['projects', '${origin.project.id}', 'issues', '${origin.iid}', 'notes'],
-    query: const {'order_by': 'created_at', 'sort': 'desc', 'per_page': '30'},
-  );
-  _requireCurrent(isCurrent);
+  final notes = await _recentNotes(api, [
+    'projects',
+    '${origin.project.id}',
+    'issues',
+    '${origin.iid}',
+    'notes',
+  ], isCurrent);
   final project = await api.record(['projects', '${origin.project.id}']);
   _requireCurrent(isCurrent);
   final defaultBranch = _optionalString(project, 'default_branch');
@@ -193,7 +195,7 @@ Future<AiChatContext> _loadIssue(
       state: _requiredString(item, 'state'),
       pinnedSha: pinnedSha,
       labels: _labels(item),
-      notes: notes.items.map(_discussionNote).toList(growable: false),
+      notes: notes.map(_discussionNote).toList(growable: false),
     ),
     nonce: nonce,
   );
@@ -265,17 +267,13 @@ Future<AiChatContext> _loadMergeRequest(
       _requiredString(detail, 'base_commit_sha') != baseSha) {
     throw const FormatException('Merge request diff revision changed.');
   }
-  final notes = await api.records(
-    [
-      'projects',
-      '${origin.project.id}',
-      'merge_requests',
-      '${origin.iid}',
-      'notes',
-    ],
-    query: const {'order_by': 'created_at', 'sort': 'desc', 'per_page': '30'},
-  );
-  _requireCurrent(isCurrent);
+  final notes = await _recentNotes(api, [
+    'projects',
+    '${origin.project.id}',
+    'merge_requests',
+    '${origin.iid}',
+    'notes',
+  ], isCurrent);
   await refreshSecrets();
   _requireCurrent(isCurrent);
   final rawDiffs = detail['diffs'];
@@ -303,7 +301,7 @@ Future<AiChatContext> _loadMergeRequest(
       baseSha: baseSha,
       labels: _labels(item),
       diffs: diffs,
-      notes: notes.items.map(_discussionNote).toList(growable: false),
+      notes: notes.map(_discussionNote).toList(growable: false),
     ),
     nonce: nonce,
   );
@@ -401,6 +399,31 @@ AiResourceScope _scope({
       ? defaultBranch ?? project.defaultBranch
       : defaultBranch,
 );
+
+/// The newest notes, newest first, read page by page until 20 of them are not
+/// system notes or the notes run out (at most five pages).
+Future<List<Json>> _recentNotes(
+  GitLabApi api,
+  List<String> path,
+  bool Function() isCurrent,
+) async {
+  final notes = <Json>[];
+  var human = 0;
+  Uri? next;
+  for (var page = 0; page < 5; page++) {
+    final result = await api.records(
+      path,
+      query: const {'order_by': 'created_at', 'sort': 'desc'},
+      next: next,
+    );
+    _requireCurrent(isCurrent);
+    notes.addAll(result.items);
+    human += result.items.where((note) => note['system'] != true).length;
+    next = result.next;
+    if (human >= 20 || next == null) break;
+  }
+  return notes;
+}
 
 AiDiscussionNoteInput _discussionNote(Json note) {
   final author = note['author'];

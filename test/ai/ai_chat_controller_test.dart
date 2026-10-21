@@ -82,9 +82,8 @@ Future<_Environment> _environment({
 }) async {
   final workspace = WorkspaceFixture();
   var failRepositoryRead = failFirstRepositoryRead;
-  final gitLabAdapter = failFirstRepositoryRead ||
-          repositoryText != null ||
-          gitLabRespond != null
+  final gitLabAdapter =
+      failFirstRepositoryRead || repositoryText != null || gitLabRespond != null
       ? FakeAdapter((request) {
           if (failRepositoryRead &&
               request.uri.path.contains('/repository/files/')) {
@@ -434,6 +433,28 @@ void main() {
     await controller.recheck();
     expect(controller.blocker, AiChatBlocker.consentRequired);
   });
+
+  test(
+    'the title is cleaned with live secrets while consent is needed',
+    () async {
+      final environment = await _environment();
+      addTearDown(environment.dispose);
+      await _configure(environment, _provider(AiFormat.responses));
+      final controller = _controller(environment);
+      addTearDown(controller.dispose);
+      // Nothing has been sent or prepared; the page already shows the title.
+      expect(
+        controller.displaySafe('Rotate synthetic-test-token now'),
+        isNot(contains('synthetic-test-token')),
+      );
+      await controller.recheck();
+      expect(controller.blocker, AiChatBlocker.consentRequired);
+      expect(
+        controller.displaySafe('Rotate synthetic-test-token now'),
+        isNot(contains('synthetic-test-token')),
+      );
+    },
+  );
 
   group('preparing blockers', () {
     test('moves from settings loading to no provider', () async {
@@ -1276,9 +1297,9 @@ void main() {
     expect(chip.sentText, isNotNull);
     expect(chip.sentText!.length, greaterThan(chip.preview.length));
     expect(chip.sentText, isNot(contains('synthetic-test-token')));
-    final request = jsonDecode(
-      adapter.requests.single.data as String,
-    ) as Map<String, Object?>;
+    final request =
+        jsonDecode(adapter.requests.single.data as String)
+            as Map<String, Object?>;
     final input =
         (request['input']! as List<Object?>).single as Map<String, Object?>;
     final content =
@@ -1370,12 +1391,12 @@ void main() {
       expect(second, isNot(contains('earlier synthetic question')));
       expect(second, isNot(contains('Final answer')));
       final chip = controller.items.whereType<AiUserItem>().last.chips.single;
-      final body = jsonDecode(requests.last.data as String)
-          as Map<String, Object?>;
-      final input = (body['input']! as List<Object?>).single
-          as Map<String, Object?>;
-      final content = (input['content']! as List<Object?>).single
-          as Map<String, Object?>;
+      final body =
+          jsonDecode(requests.last.data as String) as Map<String, Object?>;
+      final input =
+          (body['input']! as List<Object?>).single as Map<String, Object?>;
+      final content =
+          (input['content']! as List<Object?>).single as Map<String, Object?>;
       final sent = content['text']! as String;
       final start = sent.indexOf('<gitlab_data');
       final end = sent.indexOf('</gitlab_data>') + '</gitlab_data>'.length;
@@ -1565,25 +1586,27 @@ void main() {
     expect(controller.phase, AiChatPhase.idle);
   });
 
-  test('r1 a read failure remains failed with an attempted result size', () async {
-    final environment = await _environment();
-    addTearDown(environment.dispose);
-    final responses = _toolThenAnswer(
-      AiFormat.responses,
-      path: 'missing-file.txt',
-    ).iterator;
-    final adapter = FakeAdapter((_) {
-      responses.moveNext();
-      return _sse(responses.current);
-    });
-    final controller = await _readyController(environment, adapter);
-    await controller.send('read');
-    final tool = controller.items.whereType<AiToolRunItem>().single;
-    expect(tool.name, 'read_file');
-    expect(tool.status, AiToolRunStatus.failed);
-    expect(tool.sizeChars, greaterThan(0));
-  });
-
+  test(
+    'r1 a read failure remains failed with an attempted result size',
+    () async {
+      final environment = await _environment();
+      addTearDown(environment.dispose);
+      final responses = _toolThenAnswer(
+        AiFormat.responses,
+        path: 'missing-file.txt',
+      ).iterator;
+      final adapter = FakeAdapter((_) {
+        responses.moveNext();
+        return _sse(responses.current);
+      });
+      final controller = await _readyController(environment, adapter);
+      await controller.send('read');
+      final tool = controller.items.whereType<AiToolRunItem>().single;
+      expect(tool.name, 'read_file');
+      expect(tool.status, AiToolRunStatus.failed);
+      expect(tool.sizeChars, greaterThan(0));
+    },
+  );
 
   test('r1 sentText follows secrets learned during runner preflight', () async {
     const lateSecret = 'synthetic-late-provider-key-0099';
@@ -1622,12 +1645,13 @@ void main() {
       final chip = controller.items.whereType<AiUserItem>().single.chips.single;
       expect(chip.sentText, isNot(contains(lateSecret)));
       expect(chip.sentText, contains('REDACTED'));
-      final body = jsonDecode(adapter.requests.single.data as String)
-          as Map<String, Object?>;
-      final input = (body['input']! as List<Object?>).single
-          as Map<String, Object?>;
-      final content = (input['content']! as List<Object?>).single
-          as Map<String, Object?>;
+      final body =
+          jsonDecode(adapter.requests.single.data as String)
+              as Map<String, Object?>;
+      final input =
+          (body['input']! as List<Object?>).single as Map<String, Object?>;
+      final content =
+          (input['content']! as List<Object?>).single as Map<String, Object?>;
       final sent = content['text']! as String;
       final start = sent.indexOf('<gitlab_data');
       final end = sent.indexOf('</gitlab_data>') + '</gitlab_data>'.length;
@@ -1637,5 +1661,4 @@ void main() {
       await send;
     }
   });
-
 }

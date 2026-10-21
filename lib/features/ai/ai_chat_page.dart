@@ -338,6 +338,7 @@ class _AiChatPageState extends State<AiChatPage> {
         enabled: _session.canSend,
         onSuggestion: _send,
         notice: notice,
+        controller: _scroll,
       );
     }
     final children = <Widget>[
@@ -509,6 +510,7 @@ class _EmptyConversation extends StatelessWidget {
     required this.enabled,
     required this.onSuggestion,
     this.notice,
+    this.controller,
   });
 
   final AiChatOrigin origin;
@@ -516,11 +518,16 @@ class _EmptyConversation extends StatelessWidget {
   final ValueChanged<String> onSuggestion;
   final Widget? notice;
 
+  /// The page's controller, so a card that appears is scrolled into view
+  /// (offset 0 is the top here, where the card sits).
+  final ScrollController? controller;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final suggestions = _suggestions(origin);
     return ListView(
+      controller: controller,
       padding: const EdgeInsets.all(24),
       children: [
         if (notice case final notice?) ...[notice, const SizedBox(height: 20)],
