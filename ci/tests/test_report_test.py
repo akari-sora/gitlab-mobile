@@ -72,10 +72,11 @@ class ReportTests(unittest.TestCase):
         # A list: adjacent surrogate escapes in one literal would pair up.
         forbidden = ['\x00', '\x08', '\x0b', '\x0c', '\x0e', '\x1f', '\ud800', '\udfff', '\ufffe', '\uffff']
         for char in forbidden:
+            escape = f'\\x{ord(char):02x}' if ord(char) < 0x100 else f'\\u{ord(char):04x}'
             with self.subTest(code=hex(ord(char))):
-                self.assertNotIn(char, report.xml_text(f'a{char}b'))
-        self.assertEqual(report.xml_text('tab\tline\ncr\r�\U0010ffff'),
-                         'tab\tline\ncr\r�\U0010ffff')
+                self.assertEqual(report.xml_text(f'a{char}b'), f'a{escape}b')
+        allowed = 'tab\tline\ncr\r\x7f\ud7ff\ue000\ufffd\U0010ffff'
+        self.assertEqual(report.xml_text(allowed), allowed)
 
     def test_classname_and_failure_message_are_escaped(self):
         values = [
@@ -99,8 +100,21 @@ class ReportTests(unittest.TestCase):
         values.append({'type': 'done', 'success': True})
         _, suite = self.convert(values)
         names = [case.get('name') for case in suite.findall('testcase')]
-        self.assertEqual(len(names), 4)
-        self.assertEqual(len(set(names)), 4)
+        self.assertEqual(names, ['tag <img\\x0csrc=x>', 'tag <img\\x0csrc=x> (2)', 'same', 'same (2)'])
+
+    def test_a_numbered_name_already_taken_is_skipped(self):
+        values = [{'type': 'suite', 'suite': {'id': 1, 'path': 'test/a.dart'}},
+                  {'type': 'suite', 'suite': {'id': 2, 'path': 'test/b.dart'}}]
+        for ident, name, suite_id in [(1, 'foo (2)', 1), (2, 'foo', 1), (3, 'foo', 1), (4, 'foo', 2)]:
+            values += [
+                {'type': 'testStart', 'test': {'id': ident, 'name': name, 'suiteID': suite_id}, 'time': 0},
+                {'type': 'testDone', 'testID': ident, 'result': 'success', 'time': 1},
+            ]
+        values.append({'type': 'done', 'success': True})
+        _, suite = self.convert(values)
+        cases = [(case.get('classname'), case.get('name')) for case in suite.findall('testcase')]
+        self.assertEqual(cases, [('test/a.dart', 'foo (2)'), ('test/a.dart', 'foo'),
+                                 ('test/a.dart', 'foo (3)'), ('test/b.dart', 'foo')])
 
     def test_a_failing_lone_surrogate_still_writes_the_report(self):
         # The CI image prints in UTF-8, which cannot encode a lone surrogate.

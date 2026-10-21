@@ -52,17 +52,25 @@ def convert(source: Path, destination: Path) -> int:
     suite = ET.SubElement(root, 'testsuite', name='Flutter tests')
     failures = skipped = count = 0
     # Escaping can make two names equal (a form feed and a literal "\x0c"),
-    # and Dart can repeat a name; a repeat gets its test ID appended.
+    # and Dart can repeat a name. The first keeps its name; each later one
+    # gets the lowest " (n)" that is still free, which stays stable across
+    # runs as long as the order of the repeats does.
     seen = set()
+
+    def distinct(classname, name):
+        candidate, number = name, 1
+        while (classname, candidate) in seen:
+            number += 1
+            candidate = f'{name} ({number})'
+        seen.add((classname, candidate))
+        return candidate
+
     for ident, item in tests.items():
         if item.get('hidden', False) and item.get('result') == 'success' and not errors.get(ident):
             continue
         count += 1
         classname = xml_text(suites.get(item.get('suiteID'), 'flutter'))
-        name = xml_text(item.get('name', str(ident)))
-        if (classname, name) in seen:
-            name = f'{name} (test {xml_text(ident)})'
-        seen.add((classname, name))
+        name = distinct(classname, xml_text(item.get('name', str(ident))))
         case = ET.SubElement(suite, 'testcase', name=name,
             classname=classname,
             time=str(max(0, item.get('ended', item['started']) - item['started']) / 1000))
@@ -78,7 +86,7 @@ def convert(source: Path, destination: Path) -> int:
     if done is None or count == 0 or (done.get('success') is not True and failures == 0):
         count += 1
         failures += 1
-        case = ET.SubElement(suite, 'testcase', name='test protocol completion', classname='ci')
+        case = ET.SubElement(suite, 'testcase', name=distinct('ci', 'test protocol completion'), classname='ci')
         ET.SubElement(case, 'failure', message='Incomplete or unsuccessful test run')
     suite.set('tests', str(count))
     suite.set('failures', str(failures))
