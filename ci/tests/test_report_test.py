@@ -92,7 +92,7 @@ class ReportTests(unittest.TestCase):
 
     def test_names_that_escape_alike_stay_distinct(self):
         values = [{'type': 'suite', 'suite': {'id': 1, 'path': 'test/example.dart'}}]
-        for ident, name in [(1, 'tag <img\x0csrc=x>'), (2, 'tag <img\\x0csrc=x>'), (3, 'same'), (4, 'same')]:
+        for ident, name in [(1, 'tag <img\x0csrc=x>'), (2, 'tag <img\\x0csrc=x>'), (3, 'same'), (4, 'same'), (5, 'same')]:
             values += [
                 {'type': 'testStart', 'test': {'id': ident, 'name': name, 'suiteID': 1}, 'time': 0},
                 {'type': 'testDone', 'testID': ident, 'result': 'success', 'time': 1},
@@ -100,7 +100,21 @@ class ReportTests(unittest.TestCase):
         values.append({'type': 'done', 'success': True})
         _, suite = self.convert(values)
         names = [case.get('name') for case in suite.findall('testcase')]
-        self.assertEqual(names, ['tag <img\\x0csrc=x>', 'tag <img\\x0csrc=x> (2)', 'same', 'same (2)'])
+        self.assertEqual(names, ['tag <img\\x0csrc=x>', 'tag <img\\x0csrc=x> (2)', 'same', 'same (2)', 'same (3)'])
+
+    def test_the_completion_case_does_not_reuse_a_name(self):
+        values = [{'type': 'suite', 'suite': {'id': 1, 'path': 'ci'}}]
+        for ident, name in [(1, 'test protocol completion'), (2, 'test protocol completion (2)')]:
+            values += [
+                {'type': 'testStart', 'test': {'id': ident, 'name': name, 'suiteID': 1}, 'time': 0},
+                {'type': 'testDone', 'testID': ident, 'result': 'success', 'time': 1},
+            ]
+        # No done event: the converter adds its failing completion case.
+        failures, suite = self.convert(values)
+        self.assertEqual(failures, 1)
+        names = [case.get('name') for case in suite.findall('testcase')]
+        self.assertEqual(names[-1], 'test protocol completion (3)')
+        self.assertEqual(len(set(names)), 3)
 
     def test_a_numbered_name_already_taken_is_skipped(self):
         values = [{'type': 'suite', 'suite': {'id': 1, 'path': 'test/a.dart'}},
