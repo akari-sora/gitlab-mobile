@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
@@ -15,9 +16,12 @@ import 'package:gitlab_mobile/core/ai/wire/chat_completions.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
+import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_stores.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
+import 'package:gitlab_mobile/shared/theme.dart';
 
 import '../session_test.dart' show MemoryAccountStore, controllerFor;
 import '../support/fake_adapter.dart';
@@ -702,6 +706,129 @@ void main() {
           .having((item) => item.text, 'text', isEmpty)
           .having((item) => item.state, 'state', AiAssistantState.hidden),
     );
+    expect(controller.displaySafe('README.md'), isEmpty);
+  });
+
+  testWidgets('the page shows the block when nothing can be checked', (
+    tester,
+  ) async {
+    late _Environment environment;
+    late AiChatController controller;
+    await tester.runAsync(() async {
+      environment = await _environment();
+      final adapter = FakeAdapter((_) => _sse(answer('a reply')));
+      controller = await _readyController(environment, adapter, tools: false);
+      await controller.send('first');
+      await environment.settings.saveProvider(
+        _provider(AiFormat.responses, id: 'other', requiresKey: true),
+      );
+      await environment.settings.saveProviderKey(
+        'other',
+        'REDACTED',
+        acknowledgeWarning: true,
+      );
+      await controller.recheck();
+    });
+    addTearDown(environment.dispose);
+    expect(controller.blocker, AiChatBlocker.contextUnavailable);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: appTheme(Brightness.light),
+        home: AiChatPage(session: controller),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(ErrorWidget), findsNothing);
+    expect(find.text(l10n.aiChatContextUnavailable), findsOneWidget);
+  });
+
+  test('a display pass that fails while sending blocks the chat', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    var armed = false;
+    final adapter = FakeAdapter((_) => _sse(answer('a reply')));
+    final controller = await _readyController(
+      environment,
+      adapter,
+      tools: false,
+      refreshSecrets: () async {
+        if (!armed) return;
+        armed = false;
+        await environment.settings.saveProvider(
+          _provider(AiFormat.responses, id: 'other', requiresKey: true),
+        );
+        await environment.settings.saveProviderKey(
+          'other',
+          'REDACTED',
+          acknowledgeWarning: true,
+        );
+      },
+    );
+    await controller.send('first');
+    final requests = adapter.requests.length;
+    // The blocker the send itself ends with, before the recheck that the
+    // settings change starts afterwards.
+    AiChatBlocker? ended;
+    UserFacingFailure? failure;
+    void listener() {
+      if (ended == null && controller.phase == AiChatPhase.idle) {
+        ended = controller.blocker;
+        failure = controller.failure;
+      }
+    }
+
+    armed = true;
+    controller.addListener(listener);
+    await controller.send('second');
+    controller.removeListener(listener);
+    expect(adapter.requests, hasLength(requests));
+    expect(ended, AiChatBlocker.contextUnavailable);
+    expect(
+      failure,
+      isA<AiFailure>().having(
+        (failure) => failure.kind,
+        'kind',
+        AiFailureKind.policyBlocked,
+      ),
+    );
+    expect(controller.items.whereType<AiUserItem>(), isEmpty);
+  });
+
+  test('a stop before sending keeps only the blocked-path chips', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    final gate = Completer<void>();
+    var holdRefresh = false;
+    var refreshing = false;
+    final adapter = FakeAdapter((_) => throw StateError('must not send'));
+    final controller = await _readyController(
+      environment,
+      adapter,
+      origin: AiFileOrigin(
+        project: environment.workspace.project,
+        path: '.env',
+        sha: WorkspaceFixture.sha,
+      ),
+      refreshSecrets: () async {
+        if (holdRefresh) {
+          refreshing = true;
+          await gate.future;
+        }
+      },
+    );
+    holdRefresh = true;
+    final send = controller.send('inspect');
+    await _waitFor(() => refreshing);
+    controller.stop();
+    gate.complete();
+    await send;
+    expect(adapter.requests, isEmpty);
+    final chips = controller.items.whereType<AiUserItem>().single.chips;
+    expect(chips, hasLength(1));
+    expect(chips.single.blocked, isTrue);
+    expect(chips.single.source, '.env');
   });
 
   group('preparing blockers', () {

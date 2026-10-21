@@ -241,7 +241,9 @@ run continues after its page closes. At most three run at once; an idle session
 then reports `tooManyRunning`. A new account generation disposes them all.
 Every page calls `release` on its session when it closes; the registry counts
 open pages and, after the last, drops a session that holds nothing, so the
-next visit reads the page again. The "AI summary" request belongs to the visit (`AiChatPage.summarize`),
-not to the kept session. GitLab reads that fail keep their `ApiFailure`
-(shown with `FailureNotice`); provider failures are `AiFailure`. Anything shown
-outside the display items (the title) goes through `displaySafe`.
+next visit reads the page again. The "AI summary" request belongs to the visit
+(`AiChatPage.summarize`), not to the kept session. GitLab reads that fail keep
+their `ApiFailure` (shown with `FailureNotice`); provider failures are
+`AiFailure`. Anything shown outside the display items (the title) goes through
+`displaySafe`, which never throws and returns an empty string for text it
+cannot check.

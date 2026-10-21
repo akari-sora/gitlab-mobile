@@ -993,3 +993,10 @@ Codex and Opus returned REQUEST CHANGES. Fixed, each with a regression test and 
 - After a failure the pass blocks and is tried again on the next recheck.
 
 One new message, "Conversation summary", is translated in all 24 catalogs.
+
+**Follow-up in the same round (Opus R4-3, N4-1, N4-2)**
+- `displaySafe` no longer throws. The page builds its title with it, so a known secret that makes every redaction fail (one inside the `[REDACTED]` marker) left the page as an error box with no blocker card. It now returns an empty string for text it cannot check, and the page shows the block.
+- A display pass that fails while a message is being sent now blocks the chat with `contextUnavailable`, as it does in a recheck. Before, the chat stayed ready and each retry added another unsent message.
+- A message stopped before sending keeps its blocked-path chips.
+
+Tests: one widget test with the real controller, plus two controller tests. Removing each fix turns its test red.

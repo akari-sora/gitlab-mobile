@@ -189,7 +189,8 @@ abstract interface class AiChatSession implements Listenable {
 
   /// [text] as it may be shown on screen: control and bidirectional
   /// characters removed first, then the live secrets redacted. For GitLab
-  /// values the page shows outside [items], such as the title.
+  /// values the page shows outside [items], such as the title. Never throws:
+  /// text that cannot be checked comes back empty.
   String displaySafe(String text);
 }
 

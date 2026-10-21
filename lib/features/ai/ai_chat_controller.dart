@@ -112,6 +112,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   AiChatBlocker _blocker = AiChatBlocker.settingsLoading;
   UserFacingFailure? _failure;
   bool _contextFailed = false;
+  bool _displayFailed = false;
   bool _offerNewConversation = false;
   AiRunEnd? _lastEnd;
   bool _disposed = false;
@@ -182,8 +183,15 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       _confirmCleartext = callback;
 
   @override
-  String displaySafe(String text) =>
-      _redactor.redactSource(text.replaceAll(_displayControls, '')).text;
+  String displaySafe(String text) {
+    try {
+      return _redactor.redactSource(text.replaceAll(_displayControls, '')).text;
+    } on Object {
+      // Called while the page builds, so it must not throw; what cannot be
+      // checked against the live secrets is not shown.
+      return '';
+    }
+  }
 
   void _notify() {
     _streamNotification?.cancel();
@@ -512,9 +520,9 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       userAdded = true;
       userIndex = _items.length - 1;
       if (_phase == AiChatPhase.stopping) {
-        // Nothing was sent, so "What was sent" chips would be wrong here; the
-        // next message carries them instead.
-        _items[_items.length - 1] = AiUserItem(text: clean.text);
+        // Nothing was sent, so only blocked-path chips stay; the next message
+        // carries the others.
+        _settleChips(userIndex, sent: false);
         _items.add(const AiNoticeItem(AiNoticeKind.notSent));
         _lastEnd = AiRunEnd.stopped;
         return;
@@ -610,6 +618,13 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
             )) {
           _contract = aiCurrentConsentContractFor(config);
           _blocker = AiChatBlocker.consentRequired;
+        }
+        if (_displayFailed) {
+          // What is shown could not be checked against the live secrets;
+          // block like recheck does, and retry on the next one.
+          _failure ??= const AiFailure(AiFailureKind.policyBlocked);
+          _contextFailed = true;
+          _blocker = AiChatBlocker.contextUnavailable;
         }
         _notify();
         if (_transportClosed || _settingsChangedDuringRun) {
@@ -733,6 +748,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     _items
       ..clear()
       ..addAll(redacted);
+    _displayFailed = failed;
     if (failed) {
       // Leave the revision so the next pass tries again, and block.
       throw const AiFailure(AiFailureKind.policyBlocked);
