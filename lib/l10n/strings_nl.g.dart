@@ -2177,6 +2177,7 @@ const _messagesNl = <String>[
   'Een model kiezen',
   'Een model dat niet in de lijst staat, kan nog steeds worden ingevoerd in het veld Model-ID.',
   'Geen overeenkomende modellen',
+  'Dit eindpunt vermeldt geen modellen.',
   'Sleutel verifiëren',
   'Sleutel geverifieerd',
   'De modelcatalogus is gelezen. Hiermee zijn de sleutel en een modelverzoek niet geverifieerd.',

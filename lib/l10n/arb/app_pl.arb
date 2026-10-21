@@ -2173,6 +2173,7 @@
   "aiProviderModelPickerTitle": "Wybierz model",
   "aiProviderModelPickerHint": "Model, którego nie ma na liście, nadal można wpisać w polu Identyfikator modelu.",
   "aiProviderModelPickerEmpty": "Brak pasujących modeli",
+  "aiProviderModelPickerNone": "Ten punkt końcowy nie wyświetla żadnych modeli.",
   "aiProviderModelsReadSuccess": "Katalog modeli został odczytany. Nie potwierdza to klucza ani wywołania modelu.",
   "aiProviderModelsReadFailure": "Nie udało się odczytać listy modeli",
   "aiProviderModelsTruncated": "Lista została skrócona. Nadal możesz ręcznie wpisać identyfikator modelu.",

@@ -2169,6 +2169,7 @@
   "aiProviderModelPickerTitle": "Vyberte model",
   "aiProviderModelPickerHint": "Model, který není v seznamu, můžete stále zadat do pole ID modelu.",
   "aiProviderModelPickerEmpty": "Žádné odpovídající modely",
+  "aiProviderModelPickerNone": "Tento koncový bod neuvádí žádné modely.",
   "aiProviderModelsReadSuccess": "Katalog modelů byl načten. Tím se neověřuje klíč ani požadavek na model.",
   "aiProviderModelsReadFailure": "Seznam modelů se nepodařilo načíst",
   "aiProviderModelsTruncated": "Seznam byl zkrácen. ID modelu můžete přesto zadat ručně.",

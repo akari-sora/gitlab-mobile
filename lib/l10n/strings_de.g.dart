@@ -2177,6 +2177,7 @@ const _messagesDe = <String>[
   'Modell auswählen',
   'Ein nicht aufgeführtes Modell kann weiterhin in das Feld Modell-ID eingegeben werden.',
   'Keine passenden Modelle',
+  'Dieser Endpunkt listet keine Modelle auf.',
   'Schlüssel überprüfen',
   'Schlüssel verifiziert',
   'Der Modellkatalog wurde gelesen. Dadurch werden weder der Schlüssel noch eine Modellanfrage überprüft.',

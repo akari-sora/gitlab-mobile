@@ -2175,6 +2175,7 @@
   "aiProviderModelPickerTitle": "Choose a model",
   "aiProviderModelPickerHint": "A model that is not listed can still be typed in the Model ID field.",
   "aiProviderModelPickerEmpty": "No matching models",
+  "aiProviderModelPickerNone": "This endpoint lists no models.",
   "aiProviderVerifyKey": "Verify key",
   "aiProviderKeyVerified": "Key verified",
   "aiProviderModelsReadSuccess": "The model catalog was read. This does not verify the key or a model request.",

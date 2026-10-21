@@ -2177,6 +2177,7 @@ const _messagesId = <String>[
   'Pilih model',
   'Model yang tidak ada dalam daftar tetap dapat diketik di kolom “ID model”.',
   'Tidak ada model yang cocok',
+  'Titik akhir ini tidak mencantumkan model apa pun.',
   'Verifikasi kunci',
   'Kunci terverifikasi',
   'Katalog model telah dibaca. Ini tidak memverifikasi kunci atau permintaan model.',

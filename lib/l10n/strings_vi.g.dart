@@ -2177,6 +2177,7 @@ const _messagesVi = <String>[
   'Chọn mô hình',
   'Bạn vẫn có thể nhập mô hình không có trong danh sách vào trường “Mã định danh mô hình”.',
   'Không có mô hình phù hợp',
+  'Điểm cuối này không liệt kê mô hình nào.',
   'Xác minh khóa',
   'Đã xác minh khóa',
   'Đã đọc danh mục mô hình. Điều này không xác minh khóa hoặc yêu cầu tới mô hình.',

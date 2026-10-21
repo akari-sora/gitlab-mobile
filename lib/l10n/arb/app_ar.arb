@@ -2169,6 +2169,7 @@
   "aiProviderModelPickerTitle": "اختر نموذجًا",
   "aiProviderModelPickerHint": "يمكنك إدخال نموذج غير موجود في القائمة يدويًا في حقل «معرّف النموذج».",
   "aiProviderModelPickerEmpty": "لا توجد نماذج مطابقة",
+  "aiProviderModelPickerNone": "لا تعرض نقطة النهاية هذه أي نماذج.",
   "aiProviderModelsReadSuccess": "قُرئ دليل النماذج. هذا لا يتحقق من المفتاح أو من طلب للنموذج.",
   "aiProviderModelsReadFailure": "تعذرت قراءة قائمة النماذج",
   "aiProviderModelsTruncated": "اختُصرت القائمة. لا يزال بإمكانك إدخال معرّف النموذج يدويًا.",

@@ -2173,6 +2173,7 @@
   "aiProviderModelPickerTitle": "Alegeți un model",
   "aiProviderModelPickerHint": "Un model care nu apare în listă poate fi introdus în continuare în câmpul Identificator model.",
   "aiProviderModelPickerEmpty": "Niciun model corespunzător",
+  "aiProviderModelPickerNone": "Acest punct final nu listează niciun model.",
   "aiProviderModelsReadSuccess": "Catalogul de modele a fost citit. Aceasta nu verifică cheia sau o solicitare către model.",
   "aiProviderModelsReadFailure": "Lista de modele nu a putut fi citită",
   "aiProviderModelsTruncated": "Lista a fost trunchiată. Poți introduce în continuare manual identificatorul modelului.",

@@ -2177,6 +2177,7 @@ const _messagesPtBr = <String>[
   'Escolher um modelo',
   'Um modelo que não esteja na lista ainda pode ser digitado no campo ID do modelo.',
   'Nenhum modelo correspondente',
+  'Este endpoint não lista nenhum modelo.',
   'Verificar chave',
   'Chave verificada',
   'O catálogo de modelos foi lido. Isso não verifica a chave nem uma solicitação ao modelo.',

@@ -2169,6 +2169,7 @@
   "aiProviderModelPickerTitle": "Виберіть модель",
   "aiProviderModelPickerHint": "Модель, якої немає в списку, можна ввести вручну в поле «Ідентифікатор моделі».",
   "aiProviderModelPickerEmpty": "Немає відповідних моделей",
+  "aiProviderModelPickerNone": "Список моделей цієї кінцевої точки порожній.",
   "aiProviderModelsReadSuccess": "Каталог моделей прочитано. Це не підтверджує ключ або запит до моделі.",
   "aiProviderModelsReadFailure": "Не вдалося прочитати список моделей",
   "aiProviderModelsTruncated": "Список скорочено. Ідентифікатор моделі можна ввести вручну.",

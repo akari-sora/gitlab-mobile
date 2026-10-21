@@ -2177,6 +2177,7 @@ const _messagesPl = <String>[
   'Wybierz model',
   'Model, którego nie ma na liście, nadal można wpisać w polu Identyfikator modelu.',
   'Brak pasujących modeli',
+  'Ten punkt końcowy nie wyświetla żadnych modeli.',
   'Zweryfikuj klucz',
   'Klucz zweryfikowano',
   'Katalog modeli został odczytany. Nie potwierdza to klucza ani wywołania modelu.',

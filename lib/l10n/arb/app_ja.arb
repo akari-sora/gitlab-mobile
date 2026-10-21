@@ -2169,6 +2169,7 @@
   "aiProviderModelPickerTitle": "モデルを選択",
   "aiProviderModelPickerHint": "一覧にないモデルも「モデル識別子」欄に直接入力できます。",
   "aiProviderModelPickerEmpty": "一致するモデルがありません",
+  "aiProviderModelPickerNone": "この接続先のモデル一覧は空です。",
   "aiProviderModelsReadSuccess": "モデル一覧を読み取りました。キーやモデル要求が検証されたわけではありません。",
   "aiProviderModelsReadFailure": "モデル一覧を読み取れませんでした",
   "aiProviderModelsTruncated": "一覧は省略されています。モデル識別子は手動でも入力できます。",

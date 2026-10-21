@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../core/ai/ai_endpoint.dart';
@@ -293,7 +295,10 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     final client = _activeClient;
     _activeClient = null;
     client?.transport.close();
-    if (_loadingModels || _loadedModels.isNotEmpty || _modelsMessage != null) {
+    if (_loadingModels ||
+        _modelsLoaded ||
+        _loadedModels.isNotEmpty ||
+        _modelsMessage != null) {
       setState(() {
         _loadingModels = false;
         _loadedModels = const <String>[];
@@ -590,6 +595,9 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       }
     }
     setState(() => _saving = true);
+    // A model read still running must not open its picker over the editor
+    // while it saves; the save's pop would then close the picker instead.
+    _invalidateNetworkRequest();
     try {
       final saved = await widget.settings.saveProviderWithKey(
         _config(),
@@ -607,11 +615,13 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
     }
   }
 
-  Future<void> _readModels() async {
-    if (_loadingModels) return;
+  /// Reads the catalogue for the current recipient. True when this read
+  /// succeeded and is still current.
+  Future<bool> _readModels() async {
+    if (_loadingModels) return false;
     _dropKeyDraftForNewRecipient();
     _validateEndpoint();
-    if (_endpointBlocked()) return;
+    if (_endpointBlocked()) return false;
     final publicCatalog = _preset.id == 'openrouter';
     String key = '';
     if (_requiresKey && !publicCatalog) {
@@ -624,11 +634,11 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
               ? l10n.aiProviderKeyWhitespace
               : l10n.aiProviderKeyMinimum;
         });
-        return;
+        return false;
       }
       if (!assessAiProviderKey(key).accepted) {
         setState(() => _modelsMessage = l10n.aiProviderKeyMinimum);
-        return;
+        return false;
       }
     }
     setState(() {
@@ -644,7 +654,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
       client = (widget.clientFactory ?? _defaultClientFactory)(config, key);
       _activeClient = client;
       final page = await client.listModels();
-      if (!mounted || ticket != _networkTicket) return;
+      if (!mounted || ticket != _networkTicket) return false;
       final allowed = _preset.modelPolicies.isEmpty
           ? page.models.map((model) => model.id)
           : page.models
@@ -657,10 +667,12 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
             ? l10n.aiProviderModelsTruncated
             : l10n.aiProviderModelsReadSuccess;
       });
+      return true;
     } on Object {
       if (mounted && ticket == _networkTicket) {
         setState(() => _modelsMessage = l10n.aiProviderModelsReadFailure);
       }
+      return false;
     } finally {
       client?.transport.close();
       final wasActive = identical(_activeClient, client);
@@ -675,13 +687,17 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
   /// it is not loaded or when [refresh] asks for a new read. The field still
   /// takes any typed model ID.
   Future<void> _pickModel({bool refresh = false}) async {
-    if (_loadingModels) return;
-    if (refresh || !_modelsLoaded) {
-      await _readModels();
-      if (!mounted || !_modelsLoaded) return;
+    if (_loadingModels || _saving || _saved) return;
+    // A read that failed or went stale offers nothing, not the list from
+    // before it.
+    if ((refresh || !_modelsLoaded) && !await _readModels()) return;
+    // The editor may be saving or on its way out, or a dialog may cover it.
+    if (!mounted ||
+        _saving ||
+        _saved ||
+        !(ModalRoute.of(context)?.isCurrent ?? false)) {
+      return;
     }
-    // The editor may be on its way out (discarded while the read ran).
-    if (!(ModalRoute.of(context)?.isCurrent ?? false)) return;
     final picked = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
@@ -974,7 +990,9 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                         suffixIcon: IconButton(
                           key: const ValueKey('ai-provider-pick-model'),
                           tooltip: l10n.aiProviderChooseModel,
-                          onPressed: _loadingModels ? null : _pickModel,
+                          onPressed: _loadingModels || _saving
+                              ? null
+                              : _pickModel,
                           icon: _loadingModels
                               ? const SizedBox.square(
                                   dimension: 18,
@@ -1013,7 +1031,7 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                       alignment: AlignmentDirectional.centerStart,
                       child: OutlinedButton.icon(
                         key: const ValueKey('ai-provider-read-models'),
-                        onPressed: _loadingModels
+                        onPressed: _loadingModels || _saving
                             ? null
                             : () => _pickModel(refresh: true),
                         icon: _loadingModels
@@ -1589,11 +1607,88 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
     final keyboard = media.viewInsets.bottom;
     return LayoutBuilder(
       builder: (context, constraints) {
-        final room = constraints.maxHeight - keyboard;
+        final room = math.max(0.0, constraints.maxHeight - keyboard);
+        // Short windows (the keyboard up, landscape, split screen) use all
+        // the room. When even that cannot hold a fixed header and a few
+        // rows, the header scrolls with the list instead of overflowing.
+        final short = keyboard > 0 || room * 0.7 < 360;
+        final height = short ? room : room * 0.7;
+        final compact = height < 280;
+        final header = <Widget>[
+          if (!compact || keyboard == 0)
+            Text(
+              l10n.aiProviderModelPickerTitle,
+              style: theme.textTheme.titleMedium,
+            ),
+          if (!short) ...[
+            const SizedBox(height: 4),
+            Text(l10n.aiProviderModelPickerHint, style: muted),
+          ],
+          if (searchable) ...[
+            const SizedBox(height: 12),
+            TextField(
+              key: const ValueKey('ai-provider-model-search'),
+              controller: _search,
+              autocorrect: false,
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                labelText: l10n.aiProviderSearchModels,
+                prefixIcon: const Icon(Icons.search),
+              ),
+            ),
+          ],
+        ];
+        final empty = Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text(
+            widget.models.isEmpty
+                ? l10n.aiProviderModelPickerNone
+                : l10n.aiProviderModelPickerEmpty,
+            style: muted,
+          ),
+        );
+        Widget option(String model) {
+          final selected = model == widget.current;
+          return ListTile(
+            key: ValueKey('ai-provider-model-option-$model'),
+            dense: true,
+            selected: selected,
+            title: Text(isolated(model)),
+            trailing: selected ? const Icon(Icons.check) : null,
+            onTap: () => Navigator.of(context).pop(model),
+          );
+        }
+
+        // Clear of the system navigation bar when the keyboard is down.
+        final bottom = EdgeInsets.only(bottom: 16 + media.padding.bottom);
+        if (compact) {
+          return Padding(
+            padding: EdgeInsets.only(bottom: keyboard),
+            child: SizedBox(
+              height: height,
+              child: ListView.builder(
+                key: const ValueKey('ai-provider-model-picker'),
+                padding: bottom,
+                itemCount: 1 + (models.isEmpty ? 1 : models.length),
+                itemBuilder: (context, index) => index == 0
+                    ? Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: header,
+                        ),
+                      )
+                    : models.isEmpty
+                    ? empty
+                    : option(models[index - 1]),
+              ),
+            ),
+          );
+        }
         return Padding(
           padding: EdgeInsets.only(bottom: keyboard),
           child: SizedBox(
-            height: keyboard > 0 ? room : room * 0.7,
+            height: height,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1601,62 +1696,18 @@ class _ModelPickerSheetState extends State<_ModelPickerSheet> {
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        l10n.aiProviderModelPickerTitle,
-                        style: theme.textTheme.titleMedium,
-                      ),
-                      if (keyboard == 0) ...[
-                        const SizedBox(height: 4),
-                        Text(l10n.aiProviderModelPickerHint, style: muted),
-                      ],
-                      if (searchable) ...[
-                        const SizedBox(height: 12),
-                        TextField(
-                          key: const ValueKey('ai-provider-model-search'),
-                          controller: _search,
-                          autocorrect: false,
-                          onChanged: (_) => setState(() {}),
-                          decoration: InputDecoration(
-                            labelText: l10n.aiProviderSearchModels,
-                            prefixIcon: const Icon(Icons.search),
-                          ),
-                        ),
-                      ],
-                    ],
+                    children: header,
                   ),
                 ),
                 Expanded(
                   child: models.isEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Text(
-                            l10n.aiProviderModelPickerEmpty,
-                            style: muted,
-                          ),
-                        )
+                      ? empty
                       : ListView.builder(
                           key: const ValueKey('ai-provider-model-picker'),
-                          // Clear of the system navigation bar when the keyboard
-                          // is down.
-                          padding: EdgeInsets.only(
-                            bottom: 16 + media.padding.bottom,
-                          ),
+                          padding: bottom,
                           itemCount: models.length,
-                          itemBuilder: (context, index) {
-                            final model = models[index];
-                            final selected = model == widget.current;
-                            return ListTile(
-                              key: ValueKey('ai-provider-model-option-$model'),
-                              dense: true,
-                              selected: selected,
-                              title: Text(isolated(model)),
-                              trailing: selected
-                                  ? const Icon(Icons.check)
-                                  : null,
-                              onTap: () => Navigator.of(context).pop(model),
-                            );
-                          },
+                          itemBuilder: (context, index) =>
+                              option(models[index]),
                         ),
                 ),
               ],

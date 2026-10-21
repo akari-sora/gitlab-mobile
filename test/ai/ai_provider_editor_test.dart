@@ -285,14 +285,14 @@ void main() {
     await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
     await tester.pumpAndSettle();
     expect(find.text(l10n.aiProviderModelPickerTitle), findsOneWidget);
-    expect(find.text(l10n.aiProviderModelPickerEmpty), findsOneWidget);
+    expect(find.text(l10n.aiProviderModelPickerNone), findsOneWidget);
     await tester.tapAt(const Offset(8, 8));
     await tester.pumpAndSettle();
 
     await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
     await tester.pumpAndSettle();
     expect(adapter.requests, hasLength(1));
-    expect(find.text(l10n.aiProviderModelPickerEmpty), findsOneWidget);
+    expect(find.text(l10n.aiProviderModelPickerNone), findsOneWidget);
   });
 
   testWidgets('with the keyboard up, results stay visible on a small phone', (
@@ -319,13 +319,94 @@ void main() {
     await tester.pumpAndSettle();
 
     const keyboardTop = 640.0 - 280;
-    final visible = find.byType(ListTile).evaluate().where((element) {
+    final visible = _options().evaluate().where((element) {
       final box = element.renderObject! as RenderBox;
       final top = box.localToGlobal(Offset.zero).dy;
       return top >= 0 && top + box.size.height <= keyboardTop;
     });
     expect(visible.length, greaterThanOrEqualTo(3));
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a failed re-read does not offer the old list', (tester) async {
+    var fail = false;
+    final adapter = FakeAdapter((_) {
+      if (fail) throw StateError('synthetic outage');
+      return jsonResponse({
+        'data': [
+          {'id': 'synthetic-old-model'},
+        ],
+      });
+    });
+    await _pumpCustomEditor(tester, adapter);
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-read-models')));
+    await tester.pumpAndSettle();
+    await _closePicker(tester);
+
+    fail = true;
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-read-models')));
+    await tester.pumpAndSettle();
+    expect(adapter.requests, hasLength(2));
+    expect(find.byKey(const ValueKey('ai-provider-model-picker')), findsNothing);
+    expect(find.text(l10n.aiProviderModelsReadFailure), findsOneWidget);
+  });
+
+  testWidgets('a landscape phone with the keyboard up does not overflow', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(640, 360);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({
+        'data': [
+          for (var i = 0; i < 40; i++) {'id': 'synthetic-model-$i'},
+        ],
+      }),
+    );
+    await _pumpCustomEditor(tester, adapter, scale: 2);
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    tester.view.viewInsets = const FakeViewPadding(bottom: 180);
+    await tester.enterText(
+      find.byKey(const ValueKey('ai-provider-model-search')),
+      'model-1',
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    // The list (with its header) scrolls to every result.
+    await tester.scrollUntilVisible(
+      _option('synthetic-model-19'),
+      40,
+      scrollable: find
+          .descendant(
+            of: find.byKey(const ValueKey('ai-provider-model-picker')),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the picker stays below the status bar', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = const FakeViewPadding(top: 24);
+    addTearDown(tester.view.reset);
+    final adapter = FakeAdapter(
+      (_) => jsonResponse({
+        'data': [
+          for (var i = 0; i < 40; i++) {'id': 'synthetic-model-$i'},
+        ],
+      }),
+    );
+    await _pumpCustomEditor(tester, adapter);
+    await _tapVisible(tester, find.byKey(const ValueKey('ai-provider-pick-model')));
+    await tester.pumpAndSettle();
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.byType(BottomSheet)).dy, greaterThanOrEqualTo(24));
   });
 
   testWidgets('the model field button reads the list and fills the field', (
@@ -629,6 +710,16 @@ Future<void> _selectPreset(WidgetTester tester, String name) async {
 }
 
 Finder _option(String id) => find.byKey(ValueKey('ai-provider-model-option-$id'));
+
+/// Every row of the model picker, and nothing behind it.
+Finder _options() => find.byWidgetPredicate(
+  (widget) =>
+      widget is ListTile &&
+      widget.key is ValueKey<String> &&
+      (widget.key! as ValueKey<String>).value.startsWith(
+        'ai-provider-model-option-',
+      ),
+);
 
 Future<void> _pumpCustomEditor(
   WidgetTester tester,

@@ -2169,6 +2169,7 @@
   "aiProviderModelPickerTitle": "Välj en modell",
   "aiProviderModelPickerHint": "En modell som inte finns i listan kan fortfarande anges i fältet Modell-ID.",
   "aiProviderModelPickerEmpty": "Inga matchande modeller",
+  "aiProviderModelPickerNone": "Den här slutpunkten listar inga modeller.",
   "aiProviderModelsReadSuccess": "Modellkatalogen lästes. Detta verifierar inte nyckeln eller en modellförfrågan.",
   "aiProviderModelsReadFailure": "Det gick inte att läsa modellistan",
   "aiProviderModelsTruncated": "Listan har kortats. Du kan fortfarande ange ett modell-ID manuellt.",

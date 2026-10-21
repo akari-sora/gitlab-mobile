@@ -2169,6 +2169,7 @@
   "aiProviderModelPickerTitle": "Choisir un modèle",
   "aiProviderModelPickerHint": "Un modèle absent de la liste peut toujours être saisi dans le champ ID du modèle.",
   "aiProviderModelPickerEmpty": "Aucun modèle correspondant",
+  "aiProviderModelPickerNone": "Ce point de terminaison ne répertorie aucun modèle.",
   "aiProviderModelsReadSuccess": "Le catalogue de modèles a été lu. Cela ne vérifie ni la clé ni une requête de modèle.",
   "aiProviderModelsReadFailure": "Impossible de lire la liste des modèles",
   "aiProviderModelsTruncated": "La liste a été tronquée. Vous pouvez toujours saisir manuellement un ID de modèle.",

@@ -2177,6 +2177,7 @@ const _messagesTr = <String>[
   'Model seç',
   'Listede olmayan bir model, Model kimliği alanına yine de yazılabilir.',
   'Eşleşen model yok',
+  'Bu uç nokta hiçbir model listelemiyor.',
   'Anahtarı doğrula',
   'Anahtar doğrulandı',
   'Model kataloğu okundu. Bu, anahtarı veya model isteğini doğrulamaz.',

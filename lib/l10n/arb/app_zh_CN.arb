@@ -2169,6 +2169,7 @@
   "aiProviderModelPickerTitle": "选择模型",
   "aiProviderModelPickerHint": "列表中没有的模型，也可以直接在「模型标识符」字段中输入。",
   "aiProviderModelPickerEmpty": "没有匹配的模型",
+  "aiProviderModelPickerNone": "此端点未列出任何模型。",
   "aiProviderModelsReadSuccess": "已读取模型目录。这不代表密钥或模型请求已经验证。",
   "aiProviderModelsReadFailure": "无法读取模型列表",
   "aiProviderModelsTruncated": "列表已截短；你仍可手动输入模型标识符。",

@@ -2177,6 +2177,7 @@ const _messagesMs = <String>[
   'Pilih model',
   'Model yang tiada dalam senarai masih boleh ditaip dalam medan “ID model”.',
   'Tiada model yang sepadan',
+  'Titik akhir ini tidak menyenaraikan sebarang model.',
   'Sahkan kunci',
   'Kunci disahkan',
   'Katalog model telah dibaca. Ini tidak mengesahkan kunci atau permintaan model.',

@@ -2177,6 +2177,7 @@ const _messagesEs = <String>[
   'Elegir un modelo',
   'Un modelo que no figure en la lista se puede introducir igualmente en el campo ID del modelo.',
   'No hay modelos que coincidan',
+  'Este punto de conexión no muestra ningún modelo.',
   'Verificar clave',
   'Clave verificada',
   'Se leyó el catálogo de modelos. Esto no verifica la clave ni una solicitud al modelo.',

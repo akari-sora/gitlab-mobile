@@ -2177,6 +2177,7 @@ const _messagesSv = <String>[
   'Välj en modell',
   'En modell som inte finns i listan kan fortfarande anges i fältet Modell-ID.',
   'Inga matchande modeller',
+  'Den här slutpunkten listar inga modeller.',
   'Verifiera nyckel',
   'Nyckeln har verifierats',
   'Modellkatalogen lästes. Detta verifierar inte nyckeln eller en modellförfrågan.',

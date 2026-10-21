@@ -2169,6 +2169,7 @@
   "aiProviderModelPickerTitle": "Escolher um modelo",
   "aiProviderModelPickerHint": "Um modelo que não esteja na lista ainda pode ser digitado no campo ID do modelo.",
   "aiProviderModelPickerEmpty": "Nenhum modelo correspondente",
+  "aiProviderModelPickerNone": "Este endpoint não lista nenhum modelo.",
   "aiProviderModelsReadSuccess": "O catálogo de modelos foi lido. Isso não verifica a chave nem uma solicitação ao modelo.",
   "aiProviderModelsReadFailure": "Não foi possível ler a lista de modelos",
   "aiProviderModelsTruncated": "A lista foi truncada. Você ainda pode inserir um ID de modelo manualmente.",

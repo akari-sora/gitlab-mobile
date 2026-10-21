@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart' show ResponseBody;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_endpoint.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
@@ -503,6 +504,97 @@ void main() {
     expect(find.text('synthetic/late-model'), findsNothing);
   });
 
+  testWidgets('a model read that ends while saving opens no picker', (
+    tester,
+  ) async {
+    final response = Completer<ResponseBody>();
+    final adapter = FakeAdapter((_) => response.future);
+    FlutterSecureStorage.setMockInitialValues(<String, String>{});
+    final storage = _GatedStorage();
+    final settings = AiSettingsController(SecureAiStore(storage));
+    await settings.initialize();
+    await tester.pumpWidget(
+      _navigationHost(
+        settings,
+        clientFactory: (config, key) => _client(config, key, adapter),
+      ),
+    );
+    await tester.tap(find.text('open-editor'));
+    await tester.pumpAndSettle();
+    await _selectPreset(tester, AiPresets.custom);
+    await _fillRequired(tester);
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
+    await tester.pump(const Duration(milliseconds: 10));
+    expect(adapter.requests, hasLength(1));
+
+    // Saving waits on storage; the catalogue answers meanwhile.
+    storage.gate = Completer<void>();
+    await tester.tap(find.text(l10n.saveAction));
+    await tester.pump();
+    response.complete(
+      jsonResponse({
+        'data': [
+          {'id': 'synthetic-late-model'},
+        ],
+      }),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('synthetic-late-model'), findsNothing);
+    storage.gate!.complete();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(AiProviderEditor), findsNothing);
+    expect(find.byType(SnackBar), findsNothing);
+    expect(settings.providers, hasLength(1));
+  });
+
+  testWidgets('a model read that ends under the discard dialog opens no picker', (
+    tester,
+  ) async {
+    final response = Completer<ResponseBody>();
+    final adapter = FakeAdapter((_) => response.future);
+    final settings = AiSettingsController(MemoryAiStore());
+    await settings.initialize();
+    await tester.pumpWidget(
+      _navigationHost(
+        settings,
+        clientFactory: (config, key) => _client(config, key, adapter),
+      ),
+    );
+    await tester.tap(find.text('open-editor'));
+    await tester.pumpAndSettle();
+    await _selectPreset(tester, AiPresets.custom);
+    await _fillRequired(tester);
+    await _tapVisible(
+      tester,
+      find.byKey(const ValueKey('ai-provider-pick-model')),
+    );
+    await tester.pump(const Duration(milliseconds: 10));
+    await tester.tap(find.byTooltip(l10n.cancelAction));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text(l10n.aiProviderDiscardTitle), findsOneWidget);
+
+    response.complete(
+      jsonResponse({
+        'data': [
+          {'id': 'synthetic-covered-model'},
+        ],
+      }),
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    // No picker opened over the dialog.
+    expect(find.text('synthetic-covered-model'), findsNothing);
+    expect(find.text(l10n.aiProviderDiscardTitle), findsOneWidget);
+    // Keep editing.
+    await tester.tap(find.text(l10n.cancelAction).last);
+    await tester.pumpAndSettle();
+    expect(find.byType(AiProviderEditor), findsOneWidget);
+    expect(find.text('synthetic-covered-model'), findsNothing);
+  });
+
   testWidgets('Cancel asks before discarding edited settings', (tester) async {
     final settings = AiSettingsController(MemoryAiStore());
     await settings.initialize();
@@ -794,4 +886,24 @@ final class _FailOnceKeyStore implements AiStore {
   @override
   Future<void> clearTombstone(String accountKey) =>
       _inner.clearTombstone(accountKey);
+}
+
+/// Secure storage whose writes wait for [gate] while it is set.
+final class _GatedStorage extends FlutterSecureStorage {
+  Completer<void>? gate;
+
+  @override
+  Future<void> write({
+    required String key,
+    required String? value,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    await gate?.future;
+    await super.write(key: key, value: value);
+  }
 }

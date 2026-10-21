@@ -2177,6 +2177,7 @@ const _messagesEn = <String>[
   'Choose a model',
   'A model that is not listed can still be typed in the Model ID field.',
   'No matching models',
+  'This endpoint lists no models.',
   'Verify key',
   'Key verified',
   'The model catalog was read. This does not verify the key or a model request.',

@@ -2177,6 +2177,7 @@ const _messagesIt = <String>[
   'Scegli un modello',
   'Un modello non presente nell’elenco può comunque essere inserito nel campo ID modello.',
   'Nessun modello corrispondente',
+  'Questo endpoint non elenca alcun modello.',
   'Verifica chiave',
   'Chiave verificata',
   'Il catalogo dei modelli è stato letto. Ciò non verifica la chiave né una richiesta al modello.',

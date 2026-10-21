@@ -2177,6 +2177,7 @@ const _messagesFr = <String>[
   'Choisir un modèle',
   'Un modèle absent de la liste peut toujours être saisi dans le champ ID du modèle.',
   'Aucun modèle correspondant',
+  'Ce point de terminaison ne répertorie aucun modèle.',
   'Vérifier la clé',
   'Clé vérifiée',
   'Le catalogue de modèles a été lu. Cela ne vérifie ni la clé ni une requête de modèle.',

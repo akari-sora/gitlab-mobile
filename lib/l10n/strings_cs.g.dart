@@ -2177,6 +2177,7 @@ const _messagesCs = <String>[
   'Vyberte model',
   'Model, který není v seznamu, můžete stále zadat do pole ID modelu.',
   'Žádné odpovídající modely',
+  'Tento koncový bod neuvádí žádné modely.',
   'Ověřit klíč',
   'Klíč ověřen',
   'Katalog modelů byl načten. Tím se neověřuje klíč ani požadavek na model.',

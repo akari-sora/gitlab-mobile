@@ -2177,6 +2177,7 @@ const _messagesRo = <String>[
   'Alegeți un model',
   'Un model care nu apare în listă poate fi introdus în continuare în câmpul Identificator model.',
   'Niciun model corespunzător',
+  'Acest punct final nu listează niciun model.',
   'Verifică cheia',
   'Cheie verificată',
   'Catalogul de modele a fost citit. Aceasta nu verifică cheia sau o solicitare către model.',
