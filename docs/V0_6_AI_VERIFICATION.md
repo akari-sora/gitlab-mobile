@@ -742,7 +742,9 @@ the feature gate remains false. These checks do not establish G0 acceptance.
 ### MR5 review rounds 3–9 and emulator checks
 
 This supersedes the "no MR5 commit or pipeline … emulator checks NOT_RUN" note
-above, which described the first implementation packet.
+above, which described the first implementation packet. The branch's CI
+evidence is the merge request pipeline linked from the MR; nothing here infers
+a pipeline result.
 
 Fixes after round 2, each with a synthetic regression (the mutation runs that
 revert a fix and see its test fail are recorded outside the repository):
@@ -763,8 +765,9 @@ revert a fix and see its test fail are recorded outside the repository):
   advanced section and scrolls to the failing field (also the limit fields and
   empty required fields, the topmost one first) once the opening animation has
   had its time and the scroll extent is stable. Only a field whose error is
-  shown and whose value is still wrong is a target, so an error fixed while
-  waiting does not move the page.
+  shown and whose value is still wrong is a target: an error fixed while
+  waiting is dropped, and the reveal moves on to another shown error that is
+  still wrong, or stops if there is none.
 - A failed keyless save restores a key that was only in the live cache, without
   recreating its absent durable slot. A port too large for an int is an invalid
   draft, not an exception.

@@ -677,6 +677,47 @@ void main() {
       expectOnScreen(tester, find.text(l10n.aiProviderOutputTokensRange), 360);
     });
 
+    testWidgets('an output limit broken while the request is fixed stays put', (
+      tester,
+    ) async {
+      // Only the request error is shown; while waiting the request is fixed
+      // and the output broken. The output shows no error, so nothing moves.
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetViewInsets);
+      await filledOpenAi(tester, largeText: true);
+      await _expandAdvanced(tester);
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-provider-request-limit')),
+        '1',
+      );
+      await tester.pumpAndSettle();
+      final position = tester
+          .state<ScrollableState>(find.byType(Scrollable).first)
+          .position;
+      position.jumpTo(0);
+      await tester.pump();
+
+      await tester.tap(find.text(l10n.saveAction));
+      await tester.pump(const Duration(milliseconds: 16));
+      TextEditingController controllerOf(String key) => tester
+          .widget<TextField>(
+            find.descendant(
+              of: find.byKey(ValueKey(key)),
+              matching: find.byType(TextField),
+            ),
+          )
+          .controller!;
+      controllerOf('ai-provider-output-limit').text = '1';
+      controllerOf('ai-provider-request-limit').text = '32000';
+      await deviceFrames(tester);
+
+      expect(position.pixels, 0);
+    });
+
     testWidgets('a base URL fixed while waiting stays put', (tester) async {
       tester.view.devicePixelRatio = 1;
       tester.view.physicalSize = const Size(360, 640);
