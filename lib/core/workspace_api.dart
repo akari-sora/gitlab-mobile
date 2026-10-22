@@ -121,10 +121,9 @@ extension WorkspaceApi on GitLabApi {
     }
     await _read(instance.api(path), method: method, data: data);
   }
-  Future<Project> createProject({required String name, String? path, String description = '',
-      String visibility = 'private', bool initialize = true}) async =>
+  Future<Project> createProject({required String name, String? path, String description = ''}) async =>
     Project.fromJson(await writeRecord('POST', ['projects'], {
-      'name': name, 'path': ?path, 'description': description, 'visibility': visibility, 'initialize_with_readme': initialize,
+      'name': name, 'path': ?path, 'description': description, 'visibility': 'private', 'initialize_with_readme': true,
     }));
   Future<Project> editProject(int id, {required String name, required String description}) async =>
     Project.fromJson(await writeRecord('PUT', ['projects', '$id'], {'name': name, 'description': description}));
@@ -217,8 +216,14 @@ extension WorkspaceApi on GitLabApi {
       {'note': note, 'commit_id': ?commitId, 'position': ?_allowedPosition(position)});
   Future<Json> updateDraftNote(int project, int iid, int note, String body) =>
     writeRecord('PUT', ['projects', '$project', 'merge_requests', '$iid', 'draft_notes', '$note'], {'note': body});
+  Future<void> deleteDraftNote(int project, int iid, int note) =>
+    removeRecord(['projects', '$project', 'merge_requests', '$iid', 'draft_notes', '$note']);
+  Future<void> publishDraftNotes(int project, int iid) =>
+    writeEmpty('POST', ['projects', '$project', 'merge_requests', '$iid', 'draft_notes', 'bulk_publish']);
+  Future<void> deleteDiscussionNote(int project, String resource, int iid, String discussion, int note) =>
+    removeRecord(['projects', '$project', _issueOrMergeRequest(resource), '$iid', 'discussions', discussion, 'notes', '$note']);
   Future<void> deleteNote(int project, String resource, int iid, int note) =>
-    removeRecord(['projects', '$project', resource, '$iid', 'notes', '$note']);
+    removeRecord(['projects', '$project', _issueOrMergeRequest(resource), '$iid', 'notes', '$note']);
   Future<Json> applySuggestion(int suggestionId, {String? commitMessage}) =>
     writeRecord('PUT', ['suggestions', '$suggestionId', 'apply'], {
       if (commitMessage != null && commitMessage.trim().isNotEmpty)
@@ -237,11 +242,23 @@ extension WorkspaceApi on GitLabApi {
     writeRecord('POST', ['projects', '$project', 'repository', 'tags'],
       {'tag_name': name, 'ref': ref, if (message.isNotEmpty) 'message': message});
   Future<void> deleteTag(int project, String name) => removeRecord(['projects', '$project', 'repository', 'tags', name]);
+  Future<Json> createRepositoryFile(int project, String path, {required String branch,
+      required String content, required String message}) =>
+    writeRecord('POST', ['projects', '$project', 'repository', 'files', path], {
+      'branch': branch, 'content': content, 'commit_message': message,
+    });
+  Future<Json> updateRepositoryFile(int project, String path, {required String branch,
+      required String content, required String message, required String lastCommit}) {
+    if (lastCommit.trim().isEmpty) { throw const ApiFailure(FailureKind.validation); }
+    return writeRecord('PUT', ['projects', '$project', 'repository', 'files', path], {
+      'branch': branch, 'content': content, 'commit_message': message, 'last_commit_id': lastCommit,
+    });
+  }
   Future<Json> saveFile(int project, String path, {required String branch, required String content,
       required String message, String? lastCommit}) =>
-    writeRecord(lastCommit == null ? 'POST' : 'PUT', ['projects', '$project', 'repository', 'files', path], {
-      'branch': branch, 'content': content, 'commit_message': message, 'last_commit_id': ?lastCommit,
-    });
+    lastCommit == null
+      ? createRepositoryFile(project, path, branch: branch, content: content, message: message)
+      : updateRepositoryFile(project, path, branch: branch, content: content, message: message, lastCommit: lastCommit);
   Future<void> deleteFile(int project, String path, {required String branch, required String message, required String lastCommit}) =>
     removeRecord(['projects', '$project', 'repository', 'files', path], data: {
       'branch': branch, 'commit_message': message, 'last_commit_id': lastCommit,
@@ -262,11 +279,19 @@ extension WorkspaceApi on GitLabApi {
     int project,
     String ref, {
     List<Map<String, String>>? variables,
-  }) =>
-      writeRecord('POST', ['projects', '$project', 'pipeline'], {
+  }) {
+    for (final variable in variables ?? const <Map<String, String>>[]) {
+      _allowedFields(variable, const {'key', 'value', 'variable_type'});
+      if (variable.containsKey('variable_type') &&
+          !const {'env_var', 'file'}.contains(variable['variable_type'])) {
+        throw const ApiFailure(FailureKind.validation);
+      }
+    }
+    return writeRecord('POST', ['projects', '$project', 'pipeline'], {
         'ref': ref,
         if (variables != null && variables.isNotEmpty) 'variables': variables,
       });
+  }
   Future<Json> pipelineAction(int project, int pipeline, String action) {
     if (!const ['retry', 'cancel'].contains(action)) { throw const ApiFailure(FailureKind.unsupported); }
     return writeRecord('POST', ['projects', '$project', 'pipelines', '$pipeline', action], {});
@@ -316,8 +341,16 @@ extension WorkspaceApi on GitLabApi {
     final chunk = await jobTraceChunk(project, job, offset: offset);
     return utf8.decode(chunk.bytes, allowMalformed: true);
   }
-  Future<Json> createRelease(int project, Json fields) => writeRecord('POST', ['projects', '$project', 'releases'], fields);
-  Future<Json> updateRelease(int project, String tag, Json fields) => writeRecord('PUT', ['projects', '$project', 'releases', tag], fields);
+  Future<Json> createRelease(int project, Json fields) {
+    _allowedFields(fields, const {'tag_name', 'name', 'description'});
+    final tag = fields['tag_name'];
+    if (tag is! String || tag.trim().isEmpty) { throw const ApiFailure(FailureKind.validation); }
+    return writeRecord('POST', ['projects', '$project', 'releases'], fields);
+  }
+  Future<Json> updateRelease(int project, String tag, Json fields) {
+    _allowedFields(fields, const {'name', 'description'});
+    return writeRecord('PUT', ['projects', '$project', 'releases', tag], fields);
+  }
   Future<void> deleteRelease(int project, String tag) => removeRecord(['projects', '$project', 'releases', tag]);
   Future<Json> createLabel(int project, Json fields) {
     _allowedFields(fields, const {'name', 'color', 'description'});
@@ -327,6 +360,8 @@ extension WorkspaceApi on GitLabApi {
     _allowedFields(fields, const {'name', 'color', 'description'});
     return writeRecord('PUT', ['projects', '$project', 'labels', '$label'], fields);
   }
+  Future<void> deleteLabel(int project, int label) =>
+    removeRecord(['projects', '$project', 'labels', '$label']);
   Future<Json> createMilestone(int project, Json fields) {
     _allowedFields(fields, const {'title', 'description', 'start_date', 'due_date'});
     return writeRecord('POST', ['projects', '$project', 'milestones'], fields);
@@ -341,10 +376,14 @@ extension WorkspaceApi on GitLabApi {
     }
     return writeRecord('PUT', ['projects', '$project', 'milestones', '$milestone'], {'state_event': stateEvent});
   }
+  Future<void> deleteMilestone(int project, int milestone) =>
+    removeRecord(['projects', '$project', 'milestones', '$milestone']);
   Future<Json> createBoard(int project, String name) =>
     writeRecord('POST', ['projects', '$project', 'boards'], {'name': name});
   Future<Json> renameBoard(int project, int board, String name) =>
     writeRecord('PUT', ['projects', '$project', 'boards', '$board'], {'name': name});
+  Future<void> deleteBoard(int project, int board) =>
+    removeRecord(['projects', '$project', 'boards', '$board']);
   Future<Json> setBoardSystemListHidden(int project, int board, String list, bool hidden) {
     final field = switch (list) {
       'backlog' => 'hide_backlog_list',
@@ -357,6 +396,8 @@ extension WorkspaceApi on GitLabApi {
     writeRecord('POST', ['projects', '$project', 'boards', '$board', 'lists'], {'label_id': labelId});
   Future<Json> moveBoardList(int project, int board, int list, int position) =>
     writeRecord('PUT', ['projects', '$project', 'boards', '$board', 'lists', '$list'], {'position': position});
+  Future<void> deleteBoardList(int project, int board, int list) =>
+    removeRecord(['projects', '$project', 'boards', '$board', 'lists', '$list']);
   Future<Json> moveBoardCard(int project, int iid, Json fields) {
     _allowedFields(fields, const {'labels', 'state_event'});
     final stateEvent = fields['state_event'];
@@ -364,6 +405,62 @@ extension WorkspaceApi on GitLabApi {
       throw const ApiFailure(FailureKind.validation);
     }
     return writeRecord('PUT', ['projects', '$project', 'issues', '$iid'], fields);
+  }
+  Future<Json> createSnippet(int project, {required String title, required String description,
+      required String visibility, required List<SnippetFileInput> files}) =>
+    writeRecord('POST', ['projects', '$project', 'snippets'], createSnippetPayload(
+      title: title, description: description, visibility: visibility, files: files,
+    ));
+  Future<Json> updateSnippet(int project, int snippet, {required ProjectSnippet before,
+      required String title, required String description, required String visibility,
+      required String fileName, required String content, required String previousContent}) {
+    before.requireProject(project);
+    if (before.id != snippet) { throw const ApiFailure(FailureKind.validation); }
+    return writeRecord('PUT', ['projects', '$project', 'snippets', '$snippet'], updateSingleFileSnippetPayload(
+      before: before, title: title, description: description, visibility: visibility,
+      fileName: fileName, content: content, previousContent: previousContent,
+    ));
+  }
+  Future<Json> updateSnippetMetadata(int project, int snippet, {required String title,
+      required String description, required String visibility, required List<String> currentPaths}) =>
+    writeRecord('PUT', ['projects', '$project', 'snippets', '$snippet'], updateSnippetPayload(
+      title: title, description: description, visibility: visibility, currentPaths: currentPaths, actions: const [],
+    ));
+  Future<Json> updateSnippetFiles(int project, int snippet, {required String title,
+      required String description, required String visibility, required List<String> currentPaths,
+      required List<SnippetFileAction> actions}) {
+    if (actions.any((action) => action.type == SnippetFileActionType.delete)) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    return writeRecord('PUT', ['projects', '$project', 'snippets', '$snippet'], updateSnippetPayload(
+      title: title, description: description, visibility: visibility, currentPaths: currentPaths, actions: actions,
+    ));
+  }
+  Future<Json> deleteSnippetFile(int project, int snippet, {required String title,
+      required String description, required String visibility, required List<String> currentPaths,
+      required String path}) =>
+    writeRecord('PUT', ['projects', '$project', 'snippets', '$snippet'], updateSnippetPayload(
+      title: title, description: description, visibility: visibility, currentPaths: currentPaths,
+      actions: [SnippetFileAction.delete(path: path)],
+    ));
+  Future<void> deleteSnippet(int project, int snippet) =>
+    removeRecord(['projects', '$project', 'snippets', '$snippet']);
+  Future<void> deletePackage(int project, int package) =>
+    removeRecord(['projects', '$project', 'packages', '$package']);
+  Future<void> deletePackageFile(int project, int package, int file) =>
+    removeRecord(['projects', '$project', 'packages', '$package', 'package_files', '$file']);
+  Future<void> deleteContainerRepository(int project, int repository) =>
+    removeRecord(['projects', '$project', 'registry', 'repositories', '$repository']);
+  Future<void> deleteContainerTag(int project, int repository, String tag) =>
+    removeRecord(['projects', '$project', 'registry', 'repositories', '$repository', 'tags', tag]);
+  Future<int> effectiveProjectAccess(int project, int userId) async {
+    try {
+      final member = await record(['projects', '$project', 'members', 'all', '$userId']);
+      return member['access_level'] is int ? member['access_level'] as int : 0;
+    } on ApiFailure catch (failure) {
+      if (failure.status == 404) return 0;
+      rethrow;
+    }
   }
   Future<Json> markTodoDone(int id) => writeRecord('POST', ['todos', '$id', 'mark_as_done'], {});
 

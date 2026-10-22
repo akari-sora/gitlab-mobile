@@ -17,7 +17,6 @@ void main() {
     final pending3Methods = _pendingMr6b3Methods;
 
     final unclassified = <String>[];
-    final pending2 = <String>[];
     final pending3 = <String>[];
     final mapped = <_Site>[];
     final screenGeneric = <_Site>[];
@@ -33,7 +32,6 @@ void main() {
         case _Kind.ledger:
           mapped.add(site);
         case _Kind.mr6b2:
-          pending2.add('${site.file}:${site.line} ${bucket.label}');
           if (site.kind != 'named' &&
               !site.file.endsWith('workspace_api.dart')) {
             screenGeneric.add(site);
@@ -71,20 +69,12 @@ void main() {
       _pendingImplementations,
     );
 
-    expect(
-      screenGeneric.map((site) => site.file).toSet(),
-      _screenGenericCounts.keys.toSet(),
-    );
     final counts = <String, int>{};
     for (final _Site site in screenGeneric) {
       counts[site.file] = (counts[site.file] ?? 0) + 1;
     }
-    expect(counts, _screenGenericCounts);
-
-    final pendingText = pending2.join('\n');
-    for (final String needle in _requiredPendingMr6b2) {
-      expect(pendingText, contains(needle), reason: needle);
-    }
+    expect(_withinScreenGenericLimits(counts), isTrue,
+      reason: 'generic calls may only decrease in the existing MR6b-1 files');
     final pending3Text = pending3.join('\n');
     expect(pending3Text, contains('graphMutation'));
     for (final String method in pending3Methods) {
@@ -106,6 +96,24 @@ void main() {
     for (final String file in rewiredWithoutGeneric) {
       expect(counts.containsKey(file), isFalse, reason: file);
     }
+  });
+
+  test('screen rewiring may remove generic calls and whole pending files', () {
+    expect(_withinScreenGenericLimits(_screenGenericCounts), isTrue);
+    expect(_withinScreenGenericLimits({}), isTrue);
+    expect(_withinScreenGenericLimits({
+      'lib/features/workspace/snippets_page.dart': 2,
+    }), isTrue);
+  });
+
+  test('screen generic calls cannot grow or appear in a new file', () {
+    expect(_withinScreenGenericLimits({
+      ..._screenGenericCounts,
+      'lib/features/workspace/snippets_page.dart': 7,
+    }), isFalse);
+    expect(_withinScreenGenericLimits({
+      'lib/features/workspace/new_page.dart': 1,
+    }), isFalse);
   });
 }
 
@@ -131,24 +139,10 @@ final class _Site {
   final String detail;
 }
 
-const _requiredPendingMr6b2 = <String>[
-  'snippets',
-  'registry delete',
-  'branch tag release',
-  'saveFile',
-  'deleteFile',
-  'approveMergeRequest',
-  'rebaseMergeRequest',
-  'mergeRequest',
-  'pipelineAction',
-  'jobAction',
-  'bulk_publish',
-  'draft delete',
-  'comment delete',
-  'issue and merge request delete',
-  'board and list delete',
-  'label milestone',
-];
+bool _withinScreenGenericLimits(Map<String, int> counts) =>
+  counts.entries.every((entry) =>
+    _screenGenericCounts.containsKey(entry.key) &&
+    entry.value <= _screenGenericCounts[entry.key]!);
 
 const _screenGenericCounts = <String, int>{
   'lib/features/workspace/snippets_page.dart': 6,
@@ -209,7 +203,8 @@ const _pendingImplementations = <String>{
   'deleteBranch',
   'createTag',
   'deleteTag',
-  'saveFile',
+  'createRepositoryFile',
+  'updateRepositoryFile',
   'deleteFile',
   'createPipeline',
   'pipelineAction',
@@ -220,10 +215,29 @@ const _pendingImplementations = <String>{
   'deleteRelease',
   'playPipelineSchedule',
   'forkProject',
+  'deleteDiscussionNote',
+  'deleteDraftNote',
+  'publishDraftNotes',
+  'deleteLabel',
+  'deleteMilestone',
+  'deleteBoard',
+  'deleteBoardList',
+  'createSnippet',
+  'updateSnippet',
+  'updateSnippetMetadata',
+  'updateSnippetFiles',
+  'deleteSnippetFile',
+  'deleteSnippet',
+  'deletePackage',
+  'deletePackageFile',
+  'deleteContainerRepository',
+  'deleteContainerTag',
 };
 
 const _pendingMr6b2Methods = <String>{
   ..._pendingImplementations,
+  // Compatibility wrapper delegates to the create/update implementations.
+  'saveFile',
   'markAllTodosDone',
 };
 
