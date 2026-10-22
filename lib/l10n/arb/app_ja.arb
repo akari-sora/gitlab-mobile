@@ -2180,7 +2180,7 @@
   "aiPolicyRetainedDays": "{days} 日間保持されます",
   "aiProviderUnverifiedLabel": "未検証",
   "aiProviderAdvancedTitle": "詳細設定",
-  "aiProviderToolsEnabled": "読み取り専用ツールを許可",
+  "aiProviderToolsEnabled": "GitLab ツールを許可",
   "aiProviderToolChoiceCapability": "ツール選択に対応",
   "aiProviderStreamUsageCapability": "ストリーム使用量を受信",
   "aiProviderReplayExtrasCapability": "互換インターフェースの拡張項目を保持",
@@ -2209,8 +2209,8 @@
   "aiConsentCategoryComments": "課題とマージリクエストのコメント",
   "aiConsentCategoryToolReads": "読み取り専用ツールで取得した内容",
   "aiConsentCategoryOther": "その他の許可済み内容",
-  "aiConsentToolsEnabled": "読み取り専用ツールは必要に応じてファイル、差分、ジョブログ、課題、コメントを取得できます。読み取りは毎回会話に表示されます。",
-  "aiConsentToolsDisabled": "読み取り専用ツールは無効です。",
+  "aiConsentToolsEnabled": "ツールは必要に応じてファイル、差分、ジョブログ、課題、コメントを取得できます。読み取りは毎回会話に表示されます。",
+  "aiConsentToolsDisabled": "GitLab ツールは無効です。AI はこの会話以外の内容を読まず、書き込みもしません。",
   "aiConsentDataUseHeading": "データの用途と保持",
   "aiConsentNoTraining": "ポリシーではデータを学習に使用しないとされています。",
   "aiConsentRetentionDays": "保持日数",
@@ -2231,7 +2231,7 @@
   "aiProviderMaxOutputTokensLabel": "最大出力トークン",
   "aiProviderKeyVerified": "キーを検証しました",
   "aiProviderVerifyKey": "キーを検証",
-  "aiSettingsIntro": "AI リクエストの送信先を選びます。AI が読むのは許可した内容だけで、プロバイダーのキーはこのデバイスに残ります。",
+  "aiSettingsIntro": "AI リクエストの送信先を選びます。AI が読み書きするのは許可した内容だけで、プロバイダーのキーはこのデバイスに残ります。",
   "aiResetProviders": "AI プロバイダーをリセット",
   "aiResetProvidersDetail": "すべての AI プロバイダー、保存済みキー、プロバイダーへの同意を削除します。チャット履歴は保持されます。",
   "aiShortenRetention": "履歴の保持期間を短くしますか？",
@@ -2552,5 +2552,6 @@
   "aiConsentWritesUncertain": "書き込み中に接続が切れると、GitLab で完了したかどうか分からなくなります。「{log}」で解除するまで、この端末の AI は同じ対象に再び書き込みません。",
   "aiConsentWritesUploads": "このレベルでは、添付したファイルがカードを表示せずにアップロードされることがあります。公開または内部プロジェクトでは、そのファイルへのリンクを含む内容を見られる人なら誰でも開けます。",
   "aiConsentWritesInstructions": "AI が GitLab で読む内容には、AI を誘導しようとする指示が含まれていることがあります。承認する前に提案内容を確認してください。",
-  "aiConsentWritesPipelines": "マージリクエストの作成など一部の書き込みは、GitLab でパイプラインを開始することがあります。パイプラインの動作はプロジェクトの設定で決まり、ここからは制御できません。"
+  "aiConsentWritesPipelines": "マージリクエストの作成など一部の書き込みは、GitLab でパイプラインを開始することがあります。パイプラインの動作はプロジェクトの設定で決まり、ここからは制御できません。",
+  "aiProviderToolsHint": "AI はファイル、差分、ジョブログ、コメントを読み、「{section}」で設定したレベルまで書き込めます。"
 }

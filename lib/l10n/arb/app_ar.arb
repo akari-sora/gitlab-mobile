@@ -2180,7 +2180,7 @@
   "aiPolicyRetainedDays": "أيام الاحتفاظ: {days}",
   "aiProviderUnverifiedLabel": "غير متحقق",
   "aiProviderAdvancedTitle": "إعدادات متقدمة",
-  "aiProviderToolsEnabled": "السماح بأدوات القراءة فقط",
+  "aiProviderToolsEnabled": "السماح بأدوات GitLab",
   "aiProviderToolChoiceCapability": "يدعم اختيار الأدوات",
   "aiProviderStreamUsageCapability": "تلقي الاستخدام المتدفق",
   "aiProviderReplayExtrasCapability": "الحفاظ على امتدادات الواجهة المتوافقة",
@@ -2209,8 +2209,8 @@
   "aiConsentCategoryComments": "تعليقات المسائل وطلبات الدمج",
   "aiConsentCategoryToolReads": "المحتوى الذي جلبته أدوات القراءة فقط",
   "aiConsentCategoryOther": "محتوى آخر مسموح",
-  "aiConsentToolsEnabled": "يمكن لأدوات القراءة فقط جلب الملفات والفروقات وسجلات المهام والمسائل والتعليقات عند الحاجة. تظهر كل قراءة في المحادثة.",
-  "aiConsentToolsDisabled": "أدوات القراءة فقط معطلة.",
+  "aiConsentToolsEnabled": "يمكن للأدوات جلب الملفات والفروقات وسجلات المهام والمسائل والتعليقات عند الحاجة. تظهر كل قراءة في المحادثة.",
+  "aiConsentToolsDisabled": "أدوات GitLab متوقفة. لا يقرأ AI أي شيء خارج هذه المحادثة ولا يغيّر أي شيء.",
   "aiConsentDataUseHeading": "استخدام البيانات والاحتفاظ بها",
   "aiConsentNoTraining": "تنص السياسة على أن البيانات لا تُستخدم للتدريب.",
   "aiConsentRetentionDays": "أيام الاحتفاظ",
@@ -2231,7 +2231,7 @@
   "aiProviderMaxOutputTokensLabel": "الحد الأقصى لرموز الإخراج",
   "aiProviderKeyVerified": "تم التحقق من المفتاح",
   "aiProviderVerifyKey": "التحقق من المفتاح",
-  "aiSettingsIntro": "اختر وجهة طلبات AI. يقرأ AI المحتوى الذي تسمح به فقط، وتبقى مفاتيح المزوّد على هذا الجهاز.",
+  "aiSettingsIntro": "اختر وجهة طلبات AI. يقرأ AI ويغيّر ما تسمح به فقط، وتبقى مفاتيح المزوّد على هذا الجهاز.",
   "aiResetProviders": "إعادة ضبط مزوّدي الذكاء الاصطناعي",
   "aiResetProvidersDetail": "سيزيل هذا جميع المزوّدين ومفاتيحهم المحفوظة والموافقات الخاصة بهم. سيبقى سجل المحادثات.",
   "aiShortenRetention": "تقليل مدة الاحتفاظ بالسجل؟",
@@ -2552,5 +2552,6 @@
   "aiConsentWritesUncertain": "إذا انقطع الاتصال أثناء تغيير ما، فلن يُعرف إن كان GitLab قد نفّذه. وإلى أن تسمح به من «{log}»، لن يغيّر AI على هذا الجهاز الهدف نفسه مرة أخرى.",
   "aiConsentWritesUploads": "في هذا المستوى، قد تُرفع الملفات التي ترفقها دون عرض بطاقة أولًا. وفي مشروع عام أو داخلي، يستطيع كل من يرى محتوى يربط بالملف فتحه.",
   "aiConsentWritesInstructions": "قد يحتوي النص الذي يقرؤه AI على GitLab على تعليمات تهدف إلى توجيهه. اقرأ ما يقترحه قبل أن توافق.",
-  "aiConsentWritesPipelines": "بعض التغييرات، مثل فتح طلب دمج، قد تبدأ خطوط أنابيب على GitLab. ما تفعله يحدده المشروع ولا يمكن التحكم فيه من هنا."
+  "aiConsentWritesPipelines": "بعض التغييرات، مثل فتح طلب دمج، قد تبدأ خطوط أنابيب على GitLab. ما تفعله يحدده المشروع ولا يمكن التحكم فيه من هنا.",
+  "aiProviderToolsHint": "يمكن لـ AI قراءة الملفات والفروقات وسجلات المهام والتعليقات، وإجراء تغييرات حتى المستوى المحدد في «{section}»."
 }

@@ -1109,6 +1109,9 @@ final class _AiProviderEditorState extends State<AiProviderEditor> {
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           title: Text(l10n.aiProviderToolsEnabled),
+                          subtitle: Text(
+                            l10n.aiProviderToolsHint(l10n.aiWriteSettingsTitle),
+                          ),
                           value: _toolsEnabled,
                           onChanged: (value) =>
                               setState(() => _toolsEnabled = value),

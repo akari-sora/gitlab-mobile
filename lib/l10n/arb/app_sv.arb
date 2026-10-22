@@ -2180,7 +2180,7 @@
   "aiPolicyRetainedDays": "Lagringstid i dagar: {days}",
   "aiProviderUnverifiedLabel": "Inte verifierad",
   "aiProviderAdvancedTitle": "Avancerade inställningar",
-  "aiProviderToolsEnabled": "Tillåt skrivskyddade verktyg",
+  "aiProviderToolsEnabled": "Tillåt GitLab-verktyg",
   "aiProviderToolChoiceCapability": "Stöder val av verktyg",
   "aiProviderStreamUsageCapability": "Ta emot strömmad användning",
   "aiProviderReplayExtrasCapability": "Bevara kompatibla gränssnittstillägg",
@@ -2209,8 +2209,8 @@
   "aiConsentCategoryComments": "Kommentarer i ärenden och merge-förfrågningar",
   "aiConsentCategoryToolReads": "Innehåll som hämtas av skrivskyddade verktyg",
   "aiConsentCategoryOther": "Annat tillåtet innehåll",
-  "aiConsentToolsEnabled": "Skrivskyddade verktyg kan vid behov hämta filer, diffar, jobbloggar, ärenden och kommentarer. Varje läsning visas i konversationen.",
-  "aiConsentToolsDisabled": "Skrivskyddade verktyg är inaktiverade.",
+  "aiConsentToolsEnabled": "Verktygen kan vid behov hämta filer, diffar, jobbloggar, ärenden och kommentarer. Varje läsning visas i konversationen.",
+  "aiConsentToolsDisabled": "GitLab-verktygen är av. AI läser inget utanför den här konversationen och ändrar ingenting.",
   "aiConsentDataUseHeading": "Dataanvändning och lagringstid",
   "aiConsentNoTraining": "Policyn anger att data inte används för träning.",
   "aiConsentRetentionDays": "Lagringstid i dagar",
@@ -2231,7 +2231,7 @@
   "aiProviderMaxOutputTokensLabel": "Tokengräns för svar",
   "aiProviderVerifyKey": "Verifiera nyckel",
   "aiProviderKeyVerified": "Nyckeln har verifierats",
-  "aiSettingsIntro": "Välj vart AI-förfrågningar skickas. AI läser bara innehåll som du tillåter, och leverantörernas nycklar stannar på den här enheten.",
+  "aiSettingsIntro": "Välj vart AI-förfrågningar skickas. AI läser och ändrar bara det du tillåter, och leverantörernas nycklar stannar på den här enheten.",
   "aiResetProviders": "Återställ AI-leverantörer",
   "aiResetProvidersDetail": "Detta tar bort alla AI-leverantörer, sparade leverantörsnycklar och samtycken. Chatthistoriken behålls.",
   "aiShortenRetention": "Förkorta historikens lagringstid?",
@@ -2552,5 +2552,6 @@
   "aiConsentWritesUncertain": "Om anslutningen bryts under en ändring är det oklart om GitLab gjorde den. Tills du släpper den i ”{log}” ändrar AI på den här enheten inte samma mål igen.",
   "aiConsentWritesUploads": "På den här nivån kan bifogade filer laddas upp utan något kort först. I ett offentligt eller internt projekt kan alla som ser innehåll som länkar till filen öppna den.",
   "aiConsentWritesInstructions": "Text som AI läser på GitLab kan innehålla instruktioner som ska styra den. Läs vad den föreslår innan du godkänner.",
-  "aiConsentWritesPipelines": "Vissa ändringar, som att öppna en merge request, kan starta pipelines på GitLab. Vad de gör bestäms av projektet och kan inte styras härifrån."
+  "aiConsentWritesPipelines": "Vissa ändringar, som att öppna en merge request, kan starta pipelines på GitLab. Vad de gör bestäms av projektet och kan inte styras härifrån.",
+  "aiProviderToolsHint": "AI kan läsa filer, diffar, jobbloggar och kommentarer och göra ändringar upp till nivån som är inställd under ”{section}”."
 }

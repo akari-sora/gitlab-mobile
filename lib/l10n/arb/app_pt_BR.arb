@@ -2180,7 +2180,7 @@
   "aiPolicyRetainedDays": "Retidos por {days} dias",
   "aiProviderUnverifiedLabel": "Não verificado",
   "aiProviderAdvancedTitle": "Configurações avançadas",
-  "aiProviderToolsEnabled": "Permitir ferramentas somente leitura",
+  "aiProviderToolsEnabled": "Permitir ferramentas do GitLab",
   "aiProviderToolChoiceCapability": "Compatível com seleção de ferramentas",
   "aiProviderStreamUsageCapability": "Receber o uso transmitido em tempo real",
   "aiProviderReplayExtrasCapability": "Preservar extensões de interface compatíveis",
@@ -2209,8 +2209,8 @@
   "aiConsentCategoryComments": "Comentários de issues e solicitações de merge",
   "aiConsentCategoryToolReads": "Conteúdo recuperado por ferramentas somente leitura",
   "aiConsentCategoryOther": "Outro conteúdo permitido",
-  "aiConsentToolsEnabled": "As ferramentas somente leitura podem recuperar arquivos, diferenças, logs de jobs, issues e comentários conforme necessário. Cada leitura é mostrada na conversa.",
-  "aiConsentToolsDisabled": "As ferramentas somente leitura estão desativadas.",
+  "aiConsentToolsEnabled": "As ferramentas podem recuperar arquivos, diferenças, logs de jobs, issues e comentários conforme necessário. Cada leitura é mostrada na conversa.",
+  "aiConsentToolsDisabled": "As ferramentas do GitLab estão desativadas. A AI não lê nada fora desta conversa nem altera nada.",
   "aiConsentDataUseHeading": "Uso e retenção de dados",
   "aiConsentNoTraining": "A política declara que os dados não são usados para treinamento.",
   "aiConsentRetentionDays": "Dias de retenção",
@@ -2231,7 +2231,7 @@
   "aiProviderMaxOutputTokensLabel": "Limite de tokens da resposta",
   "aiProviderVerifyKey": "Verificar chave",
   "aiProviderKeyVerified": "Chave verificada",
-  "aiSettingsIntro": "Escolha para onde as solicitações de AI são enviadas. AI lê apenas o conteúdo que você permite, e as chaves do provedor ficam neste dispositivo.",
+  "aiSettingsIntro": "Escolha para onde as solicitações de AI são enviadas. A AI só lê e altera o que você permite, e as chaves do provedor ficam neste dispositivo.",
   "aiResetProviders": "Redefinir provedores de AI",
   "aiResetProvidersDetail": "Isso remove todos os provedores de AI, as chaves salvas e os consentimentos dos provedores. O histórico de conversas é mantido.",
   "aiShortenRetention": "Reduzir o período de retenção do histórico?",
@@ -2552,5 +2552,6 @@
   "aiConsentWritesUncertain": "Se a conexão cair durante uma alteração, não dá para saber se o GitLab a fez. Até você liberá-la em “{log}”, a AI neste dispositivo não altera o mesmo destino de novo.",
   "aiConsentWritesUploads": "Neste nível, os arquivos anexados podem ser enviados sem mostrar um cartão antes. Em um projeto público ou interno, quem vê um conteúdo com link para o arquivo pode abri-lo.",
   "aiConsentWritesInstructions": "O texto que a AI lê no GitLab pode conter instruções para manipulá-la. Leia o que ela propõe antes de aprovar.",
-  "aiConsentWritesPipelines": "Algumas alterações, como abrir uma merge request, podem iniciar pipelines no GitLab. O que eles fazem é definido pelo projeto e não pode ser controlado daqui."
+  "aiConsentWritesPipelines": "Algumas alterações, como abrir uma merge request, podem iniciar pipelines no GitLab. O que eles fazem é definido pelo projeto e não pode ser controlado daqui.",
+  "aiProviderToolsHint": "A AI pode ler arquivos, diferenças, logs de jobs e comentários, e fazer alterações até o nível definido em “{section}”."
 }

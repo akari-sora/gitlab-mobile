@@ -2184,7 +2184,7 @@
   "aiPolicyRetainedDays": "Zile de păstrare: {days}",
   "aiProviderUnverifiedLabel": "Neverificat",
   "aiProviderAdvancedTitle": "Setări avansate",
-  "aiProviderToolsEnabled": "Permite instrumente doar pentru citire",
+  "aiProviderToolsEnabled": "Permite instrumentele GitLab",
   "aiProviderToolChoiceCapability": "Acceptă alegerea instrumentului",
   "aiProviderStreamUsageCapability": "Primește utilizarea transmisă în flux",
   "aiProviderReplayExtrasCapability": "Păstrează extensiile de interfață compatibile",
@@ -2214,8 +2214,8 @@
   "aiConsentCategoryComments": "Comentarii la tichete și solicitări de îmbinare",
   "aiConsentCategoryToolReads": "Conținut preluat de instrumente doar pentru citire",
   "aiConsentCategoryOther": "Alt conținut permis",
-  "aiConsentToolsEnabled": "Instrumentele doar pentru citire pot prelua fișiere, diferențe, jurnale de sarcini, tichete și comentarii. Fiecare citire este afișată în conversație.",
-  "aiConsentToolsDisabled": "Instrumentele doar pentru citire sunt dezactivate.",
+  "aiConsentToolsEnabled": "Instrumentele pot prelua fișiere, diferențe, jurnale de sarcini, tichete și comentarii. Fiecare citire este afișată în conversație.",
+  "aiConsentToolsDisabled": "Instrumentele GitLab sunt dezactivate. AI nu citește nimic în afara acestei conversații și nu modifică nimic.",
   "aiConsentDataUseHeading": "Utilizarea și păstrarea datelor",
   "aiConsentNoTraining": "Politica precizează că datele nu sunt folosite pentru antrenare.",
   "aiConsentRetentionDays": "Zile de păstrare",
@@ -2231,7 +2231,7 @@
   "aiConsentSavedSummaryNotice": "Acesta este rezumatul salvat la acordarea consimțământului.",
   "aiProviderKeyVerified": "Cheie verificată",
   "aiProviderVerifyKey": "Verifică cheia",
-  "aiSettingsIntro": "Alegeți unde se trimit solicitările AI. AI citește doar conținutul pe care îl permiteți, iar cheile furnizorului rămân pe acest dispozitiv.",
+  "aiSettingsIntro": "Alegeți unde se trimit solicitările AI. AI citește și modifică doar ce permiteți, iar cheile furnizorului rămân pe acest dispozitiv.",
   "aiResetProviders": "Resetați furnizorii AI",
   "aiResetProvidersDetail": "Aceasta elimină toți furnizorii AI, cheile salvate și consimțămintele furnizorilor. Istoricul conversațiilor este păstrat.",
   "aiShortenRetention": "Scurtați perioada de păstrare a istoricului?",
@@ -2552,5 +2552,6 @@
   "aiConsentWritesUncertain": "Dacă legătura se întrerupe în timpul unei modificări, nu se știe dacă GitLab a făcut-o. Până nu o deblochezi în „{log}”, AI de pe acest dispozitiv nu va modifica din nou aceeași țintă.",
   "aiConsentWritesUploads": "La acest nivel, fișierele atașate pot fi încărcate fără un card înainte. Într-un proiect public sau intern, oricine vede conținut cu link către fișier îl poate deschide.",
   "aiConsentWritesInstructions": "Textul pe care AI îl citește în GitLab poate conține instrucțiuni menite să o influențeze. Citește ce propune înainte să aprobi.",
-  "aiConsentWritesPipelines": "Unele modificări, precum deschiderea unui merge request, pot porni pipeline-uri în GitLab. Ce fac acestea stabilește proiectul și nu poate fi controlat de aici."
+  "aiConsentWritesPipelines": "Unele modificări, precum deschiderea unui merge request, pot porni pipeline-uri în GitLab. Ce fac acestea stabilește proiectul și nu poate fi controlat de aici.",
+  "aiProviderToolsHint": "AI poate citi fișiere, diferențe, jurnale de sarcini și comentarii și poate face modificări până la nivelul setat în „{section}”."
 }

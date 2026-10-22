@@ -2180,7 +2180,7 @@
   "aiPolicyRetainedDays": "Bewaartermijn in dagen: {days}",
   "aiProviderUnverifiedLabel": "Niet geverifieerd",
   "aiProviderAdvancedTitle": "Geavanceerde instellingen",
-  "aiProviderToolsEnabled": "Alleen-lezenhulpmiddelen toestaan",
+  "aiProviderToolsEnabled": "GitLab-tools toestaan",
   "aiProviderToolChoiceCapability": "Ondersteunt de keuze van hulpmiddelen",
   "aiProviderStreamUsageCapability": "Gestreamd gebruik ontvangen",
   "aiProviderReplayExtrasCapability": "Compatibele interface-uitbreidingen behouden",
@@ -2209,8 +2209,8 @@
   "aiConsentCategoryComments": "Opmerkingen bij issues en merge requests",
   "aiConsentCategoryToolReads": "Inhoud opgehaald door alleen-lezenhulpmiddelen",
   "aiConsentCategoryOther": "Andere toegestane inhoud",
-  "aiConsentToolsEnabled": "Alleen-lezenhulpmiddelen kunnen waar nodig bestanden, verschillen, joblogboeken, issues en opmerkingen ophalen. Elke leesactie wordt in het gesprek weergegeven.",
-  "aiConsentToolsDisabled": "Alleen-lezenhulpmiddelen zijn uitgeschakeld.",
+  "aiConsentToolsEnabled": "Hulpmiddelen kunnen waar nodig bestanden, verschillen, joblogboeken, issues en opmerkingen ophalen. Elke leesactie wordt in het gesprek weergegeven.",
+  "aiConsentToolsDisabled": "GitLab-tools staan uit. De AI leest niets buiten dit gesprek en wijzigt niets.",
   "aiConsentDataUseHeading": "Gegevensgebruik en bewaartermijn",
   "aiConsentNoTraining": "Volgens het beleid worden gegevens niet gebruikt voor training.",
   "aiConsentRetentionDays": "Bewaartermijn in dagen",
@@ -2231,7 +2231,7 @@
   "aiProviderMaxOutputTokensLabel": "Tokenlimiet van antwoord",
   "aiProviderVerifyKey": "Sleutel verifiëren",
   "aiProviderKeyVerified": "Sleutel geverifieerd",
-  "aiSettingsIntro": "Kies waar AI-verzoeken naartoe gaan. AI leest alleen inhoud die je toestaat, en de sleutels van de aanbieder blijven op dit apparaat.",
+  "aiSettingsIntro": "Kies waar AI-verzoeken naartoe gaan. De AI leest en wijzigt alleen wat je toestaat, en de sleutels van de aanbieder blijven op dit apparaat.",
   "aiResetProviders": "AI-providers opnieuw instellen",
   "aiResetProvidersDetail": "Hiermee verwijder je alle AI-providers, opgeslagen providersleutels en toestemmingen. De chatgeschiedenis blijft behouden.",
   "aiShortenRetention": "Bewaartermijn van geschiedenis verkorten?",
@@ -2552,5 +2552,6 @@
   "aiConsentWritesUncertain": "Valt de verbinding weg tijdens een wijziging, dan is onduidelijk of GitLab die heeft uitgevoerd. Tot je die vrijgeeft in „{log}”, wijzigt de AI op dit apparaat hetzelfde doel niet opnieuw.",
   "aiConsentWritesUploads": "Op dit niveau kunnen bijlagen zonder kaart vooraf worden geüpload. In een openbaar of intern project kan iedereen die inhoud met een link naar het bestand ziet, het openen.",
   "aiConsentWritesInstructions": "Tekst die de AI op GitLab leest, kan instructies bevatten die haar willen sturen. Lees wat ze voorstelt voordat je goedkeurt.",
-  "aiConsentWritesPipelines": "Sommige wijzigingen, zoals een merge request openen, kunnen op GitLab pipelines starten. Wat die doen, bepaalt het project; dat valt hier niet te sturen."
+  "aiConsentWritesPipelines": "Sommige wijzigingen, zoals een merge request openen, kunnen op GitLab pipelines starten. Wat die doen, bepaalt het project; dat valt hier niet te sturen.",
+  "aiProviderToolsHint": "De AI kan bestanden, verschillen, joblogboeken en opmerkingen lezen en wijzigingen doen tot het niveau dat bij „{section}” is ingesteld."
 }

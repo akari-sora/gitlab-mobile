@@ -2184,7 +2184,7 @@
   "aiPolicyRetainedDays": "Saklama günü: {days}",
   "aiProviderUnverifiedLabel": "Doğrulanmadı",
   "aiProviderAdvancedTitle": "Gelişmiş ayarlar",
-  "aiProviderToolsEnabled": "Salt okunur araçlara izin ver",
+  "aiProviderToolsEnabled": "GitLab araçlarına izin ver",
   "aiProviderToolChoiceCapability": "Araç seçimini destekler",
   "aiProviderStreamUsageCapability": "Akışlı kullanım bilgisini al",
   "aiProviderReplayExtrasCapability": "Uyumlu arayüz uzantılarını koru",
@@ -2214,8 +2214,8 @@
   "aiConsentCategoryComments": "Sorun ve birleştirme isteği yorumları",
   "aiConsentCategoryToolReads": "Salt okunur araçların aldığı içerik",
   "aiConsentCategoryOther": "İzin verilen diğer içerik",
-  "aiConsentToolsEnabled": "Salt okunur araçlar gerektiğinde dosyaları, farkları, iş günlüklerini, sorunları ve yorumları alabilir. Her okuma konuşmada gösterilir.",
-  "aiConsentToolsDisabled": "Salt okunur araçlar kapalıdır.",
+  "aiConsentToolsEnabled": "Araçlar gerektiğinde dosyaları, farkları, iş günlüklerini, sorunları ve yorumları alabilir. Her okuma konuşmada gösterilir.",
+  "aiConsentToolsDisabled": "GitLab araçları kapalı. AI bu konuşmanın dışında hiçbir şey okumaz ve hiçbir şeyi değiştirmez.",
   "aiConsentDataUseHeading": "Veri kullanımı ve saklama",
   "aiConsentNoTraining": "Politika, verilerin eğitim için kullanılmadığını belirtir.",
   "aiConsentRetentionDays": "Saklama günü",
@@ -2231,7 +2231,7 @@
   "aiConsentSavedSummaryNotice": "Bu, onay verildiğinde kaydedilen özettir.",
   "aiProviderKeyVerified": "Anahtar doğrulandı",
   "aiProviderVerifyKey": "Anahtarı doğrula",
-  "aiSettingsIntro": "AI isteklerinin gönderileceği yeri seçin. AI yalnızca izin verdiğiniz içeriği okur ve sağlayıcı anahtarları bu cihazda kalır.",
+  "aiSettingsIntro": "AI isteklerinin gönderileceği yeri seçin. AI yalnızca izin verdiğiniz şeyleri okur ve değiştirir; sağlayıcı anahtarları bu cihazda kalır.",
   "aiResetProviders": "AI sağlayıcılarını sıfırla",
   "aiResetProvidersDetail": "Bu işlem tüm AI sağlayıcılarını, kayıtlı sağlayıcı anahtarlarını ve sağlayıcı onaylarını kaldırır. Sohbet geçmişi korunur.",
   "aiShortenRetention": "Geçmiş saklama süresi kısaltılsın mı?",
@@ -2552,5 +2552,6 @@
   "aiConsentWritesUncertain": "Bir değişiklik sırasında bağlantı koparsa GitLab'in onu yapıp yapmadığı belli olmaz. “{log}” içinde serbest bırakana kadar bu cihazdaki AI aynı hedefi yeniden değiştirmez.",
   "aiConsentWritesUploads": "Bu düzeyde eklediğin dosyalar önce bir kart gösterilmeden yüklenebilir. Herkese açık veya dahili bir projede, dosyaya bağlantı veren içeriği görebilen herkes dosyayı açabilir.",
   "aiConsentWritesInstructions": "AI'nin GitLab'de okuduğu metinler onu yönlendirmeye yönelik talimatlar içerebilir. Onaylamadan önce önerisini oku.",
-  "aiConsentWritesPipelines": "Merge request açmak gibi bazı değişiklikler GitLab'de pipeline başlatabilir. Bunların ne yaptığını proje belirler; buradan kontrol edilemez."
+  "aiConsentWritesPipelines": "Merge request açmak gibi bazı değişiklikler GitLab'de pipeline başlatabilir. Bunların ne yaptığını proje belirler; buradan kontrol edilemez.",
+  "aiProviderToolsHint": "AI dosyaları, farkları, iş günlüklerini ve yorumları okuyabilir ve “{section}” altında ayarlanan düzeye kadar değişiklik yapabilir."
 }

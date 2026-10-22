@@ -2184,7 +2184,7 @@
   "aiPolicyRetainedDays": "Dni przechowywania: {days}",
   "aiProviderUnverifiedLabel": "Nie zweryfikowano",
   "aiProviderAdvancedTitle": "Ustawienia zaawansowane",
-  "aiProviderToolsEnabled": "Zezwalaj na narzędzia tylko do odczytu",
+  "aiProviderToolsEnabled": "Zezwalaj na narzędzia GitLaba",
   "aiProviderToolChoiceCapability": "Obsługa wyboru narzędzia",
   "aiProviderStreamUsageCapability": "Odbieraj strumieniowe dane użycia",
   "aiProviderReplayExtrasCapability": "Zachowuj zgodne rozszerzenia interfejsu",
@@ -2214,8 +2214,8 @@
   "aiConsentCategoryComments": "Komentarze do zgłoszeń i żądań scalenia",
   "aiConsentCategoryToolReads": "Treść pobrana przez narzędzia tylko do odczytu",
   "aiConsentCategoryOther": "Inna dozwolona treść",
-  "aiConsentToolsEnabled": "Narzędzia tylko do odczytu mogą pobierać pliki, różnice, dzienniki zadań, zgłoszenia i komentarze. Każdy odczyt jest widoczny w rozmowie.",
-  "aiConsentToolsDisabled": "Narzędzia tylko do odczytu są wyłączone.",
+  "aiConsentToolsEnabled": "Narzędzia mogą pobierać pliki, różnice, dzienniki zadań, zgłoszenia i komentarze. Każdy odczyt jest widoczny w rozmowie.",
+  "aiConsentToolsDisabled": "Narzędzia GitLaba są wyłączone. AI nie czyta niczego poza tą rozmową i niczego nie zmienia.",
   "aiConsentDataUseHeading": "Użycie i przechowywanie danych",
   "aiConsentNoTraining": "Zasady określają, że dane nie są używane do trenowania.",
   "aiConsentRetentionDays": "Dni przechowywania",
@@ -2231,7 +2231,7 @@
   "aiConsentSavedSummaryNotice": "To jest podsumowanie zapisane podczas udzielania zgody.",
   "aiProviderKeyVerified": "Klucz zweryfikowano",
   "aiProviderVerifyKey": "Zweryfikuj klucz",
-  "aiSettingsIntro": "Wybierz, dokąd są wysyłane żądania AI. AI odczytuje tylko treść, na którą zezwalasz, a klucze dostawcy pozostają na tym urządzeniu.",
+  "aiSettingsIntro": "Wybierz, dokąd są wysyłane żądania AI. AI odczytuje i zmienia tylko to, na co zezwalasz, a klucze dostawcy pozostają na tym urządzeniu.",
   "aiResetProviders": "Zresetuj dostawców AI",
   "aiResetProvidersDetail": "Spowoduje to usunięcie wszystkich dostawców AI, zapisanych kluczy i zgód dostawców. Historia czatu zostanie zachowana.",
   "aiShortenRetention": "Skrócić okres przechowywania historii?",
@@ -2552,5 +2552,6 @@
   "aiConsentWritesUncertain": "Jeśli połączenie zerwie się podczas zmiany, nie wiadomo, czy GitLab ją wykonał. Dopóki nie zwolnisz jej w „{log}”, AI na tym urządzeniu nie zmieni ponownie tego samego celu.",
   "aiConsentWritesUploads": "Na tym poziomie załączone pliki mogą zostać przesłane bez wcześniejszej karty. W projekcie publicznym lub wewnętrznym każdy, kto widzi treść z linkiem do pliku, może go otworzyć.",
   "aiConsentWritesInstructions": "Tekst, który AI czyta w GitLabie, może zawierać polecenia mające nią sterować. Przeczytaj, co proponuje, zanim zatwierdzisz.",
-  "aiConsentWritesPipelines": "Niektóre zmiany, na przykład otwarcie merge requesta, mogą uruchomić pipeline’y w GitLabie. Ich działanie zależy od projektu i nie da się go stąd kontrolować."
+  "aiConsentWritesPipelines": "Niektóre zmiany, na przykład otwarcie merge requesta, mogą uruchomić pipeline’y w GitLabie. Ich działanie zależy od projektu i nie da się go stąd kontrolować.",
+  "aiProviderToolsHint": "AI może czytać pliki, różnice, dzienniki zadań i komentarze oraz wprowadzać zmiany do poziomu ustawionego w „{section}”."
 }

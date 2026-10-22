@@ -2180,7 +2180,7 @@
   "aiPolicyRetainedDays": "保留 {days} 天",
   "aiProviderUnverifiedLabel": "未验证",
   "aiProviderAdvancedTitle": "高级设置",
-  "aiProviderToolsEnabled": "允许只读工具",
+  "aiProviderToolsEnabled": "允许 GitLab 工具",
   "aiProviderToolChoiceCapability": "支持工具选择",
   "aiProviderStreamUsageCapability": "接收流式用量",
   "aiProviderReplayExtrasCapability": "保留兼容接口的扩展字段",
@@ -2209,8 +2209,8 @@
   "aiConsentCategoryComments": "议题和合并请求评论",
   "aiConsentCategoryToolReads": "只读工具获取的内容",
   "aiConsentCategoryOther": "其他已允许的内容",
-  "aiConsentToolsEnabled": "只读工具可按需读取文件、差异、作业日志、议题和评论；每次读取都会显示在对话中。",
-  "aiConsentToolsDisabled": "只读工具未启用。",
+  "aiConsentToolsEnabled": "工具可按需读取文件、差异、作业日志、议题和评论；每次读取都会显示在对话中。",
+  "aiConsentToolsDisabled": "GitLab 工具未启用。AI 不会读取对话以外的内容，也不会写入。",
   "aiConsentDataUseHeading": "数据用途和保留",
   "aiConsentNoTraining": "政策表明数据不会用于训练。",
   "aiConsentRetentionDays": "保留天数",
@@ -2231,7 +2231,7 @@
   "aiProviderMaxOutputTokensLabel": "最大输出令牌",
   "aiProviderKeyVerified": "密钥验证成功",
   "aiProviderVerifyKey": "验证密钥",
-  "aiSettingsIntro": "选择 AI 请求的发送位置。AI 只会读取你允许的内容，服务商密钥保留在这台设备上。",
+  "aiSettingsIntro": "选择 AI 请求的发送位置。AI 只会读取和写入你允许的内容，服务商密钥保留在这台设备上。",
   "aiResetProviders": "重置 AI 提供商",
   "aiResetProvidersDetail": "这会移除所有 AI 提供商、已保存的提供商密钥和提供商同意。聊天记录会保留。",
   "aiShortenRetention": "缩短聊天记录保留期？",
@@ -2552,5 +2552,6 @@
   "aiConsentWritesUncertain": "写入时连接中断，就无法确定 GitLab 是否完成。在你到“{log}”放行前，这台设备上的 AI 不会再写入同一个目标。",
   "aiConsentWritesUploads": "在这个等级，你附加的文件可能不先显示卡片就直接上传。在公开或内部项目中，能看到引用它的内容的人，都能通过链接打开文件。",
   "aiConsentWritesInstructions": "AI 在 GitLab 读到的内容可能夹带想诱导它的指令。批准前请先看清它提议的内容。",
-  "aiConsentWritesPipelines": "有些写入（例如创建合并请求）可能触发 GitLab 上的 Pipeline。Pipeline 会做什么由项目设置决定，这里无法控制。"
+  "aiConsentWritesPipelines": "有些写入（例如创建合并请求）可能触发 GitLab 上的 Pipeline。Pipeline 会做什么由项目设置决定，这里无法控制。",
+  "aiProviderToolsHint": "AI 可以读取文件、差异、作业日志和评论，并在“{section}”设置的等级内替你写入。"
 }

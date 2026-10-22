@@ -2184,7 +2184,7 @@
   "aiPolicyRetainedDays": "Hari penyimpanan: {days}",
   "aiProviderUnverifiedLabel": "Belum disahkan",
   "aiProviderAdvancedTitle": "Tetapan lanjutan",
-  "aiProviderToolsEnabled": "Benarkan alat baca sahaja",
+  "aiProviderToolsEnabled": "Benarkan alat GitLab",
   "aiProviderToolChoiceCapability": "Menyokong pemilihan alat",
   "aiProviderStreamUsageCapability": "Terima penggunaan secara strim",
   "aiProviderReplayExtrasCapability": "Kekalkan sambungan antara muka yang serasi",
@@ -2214,8 +2214,8 @@
   "aiConsentCategoryComments": "Komen isu dan permintaan gabungan",
   "aiConsentCategoryToolReads": "Kandungan yang diperoleh oleh alat baca sahaja",
   "aiConsentCategoryOther": "Kandungan lain yang dibenarkan",
-  "aiConsentToolsEnabled": "Alat baca sahaja boleh mendapatkan fail, perbezaan, log tugas, isu dan komen mengikut keperluan. Setiap bacaan ditunjukkan dalam perbualan.",
-  "aiConsentToolsDisabled": "Alat baca sahaja dilumpuhkan.",
+  "aiConsentToolsEnabled": "Alat boleh mendapatkan fail, perbezaan, log tugas, isu dan komen mengikut keperluan. Setiap bacaan ditunjukkan dalam perbualan.",
+  "aiConsentToolsDisabled": "Alat GitLab dimatikan. AI tidak membaca apa-apa di luar perbualan ini dan tidak mengubah apa-apa.",
   "aiConsentDataUseHeading": "Penggunaan dan penyimpanan data",
   "aiConsentNoTraining": "Dasar menyatakan bahawa data tidak digunakan untuk latihan.",
   "aiConsentRetentionDays": "Hari penyimpanan",
@@ -2231,7 +2231,7 @@
   "aiConsentSavedSummaryNotice": "Ini ialah ringkasan yang disimpan semasa persetujuan diberikan.",
   "aiProviderKeyVerified": "Kunci disahkan",
   "aiProviderVerifyKey": "Sahkan kunci",
-  "aiSettingsIntro": "Pilih ke mana permintaan AI dihantar. AI hanya membaca kandungan yang anda benarkan, dan kunci pembekal kekal pada peranti ini.",
+  "aiSettingsIntro": "Pilih ke mana permintaan AI dihantar. AI hanya membaca dan mengubah apa yang anda benarkan, dan kunci pembekal kekal pada peranti ini.",
   "aiResetProviders": "Tetapkan semula penyedia AI",
   "aiResetProvidersDetail": "Tindakan ini membuang semua penyedia AI, kunci penyedia yang disimpan dan persetujuan penyedia. Sejarah sembang dikekalkan.",
   "aiShortenRetention": "Pendekkan tempoh penyimpanan sejarah?",
@@ -2552,5 +2552,6 @@
   "aiConsentWritesUncertain": "Jika sambungan terputus semasa perubahan, tidak pasti sama ada GitLab telah membuatnya. Sehingga anda melepaskannya dalam “{log}”, AI pada peranti ini tidak akan mengubah sasaran yang sama lagi.",
   "aiConsentWritesUploads": "Pada tahap ini, fail yang anda lampirkan boleh dimuat naik tanpa kad terlebih dahulu. Dalam projek awam atau dalaman, sesiapa yang dapat melihat kandungan yang memautkan fail boleh membukanya.",
   "aiConsentWritesInstructions": "Teks yang dibaca AI di GitLab mungkin mengandungi arahan untuk mempengaruhinya. Baca cadangannya sebelum anda meluluskan.",
-  "aiConsentWritesPipelines": "Sesetengah perubahan, seperti membuka merge request, boleh memulakan pipeline di GitLab. Apa yang dilakukannya ditentukan oleh projek dan tidak boleh dikawal dari sini."
+  "aiConsentWritesPipelines": "Sesetengah perubahan, seperti membuka merge request, boleh memulakan pipeline di GitLab. Apa yang dilakukannya ditentukan oleh projek dan tidak boleh dikawal dari sini.",
+  "aiProviderToolsHint": "AI boleh membaca fail, perbezaan, log tugas dan komen, serta membuat perubahan sehingga tahap yang ditetapkan dalam “{section}”."
 }

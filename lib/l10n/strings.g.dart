@@ -6658,7 +6658,7 @@ final class AppStrings {
   /// 進階設定
   String get aiProviderAdvancedTitle => language._messages[2187];
 
-  /// 允許唯讀工具
+  /// 允許 GitLab 工具
   String get aiProviderToolsEnabled => language._messages[2188];
 
   /// 支援工具選擇
@@ -6748,10 +6748,10 @@ final class AppStrings {
   /// 其他已允許的內容
   String get aiConsentCategoryOther => language._messages[2217];
 
-  /// 唯讀工具可依需要讀取檔案、差異、工作 Log、議題與留言；每次讀取都會顯示在對話中。
+  /// 工具可依需要讀取檔案、差異、工作 Log、議題與留言；每次讀取都會顯示在對話中。
   String get aiConsentToolsEnabled => language._messages[2218];
 
-  /// 唯讀工具未啟用。
+  /// GitLab 工具未啟用。AI 不會讀取對話以外的內容，也不會寫入。
   String get aiConsentToolsDisabled => language._messages[2219];
 
   /// 資料用途與保留
@@ -6793,7 +6793,7 @@ final class AppStrings {
   /// 這是同意當時保存的摘要。
   String get aiConsentSavedSummaryNotice => language._messages[2232];
 
-  /// 選擇 AI 請求的傳送位置。AI 只會讀取你允許的內容，供應商金鑰則留在這部裝置上。
+  /// 選擇 AI 請求的傳送位置。AI 只會讀取和寫入你允許的內容，供應商金鑰則留在這部裝置上。
   String get aiSettingsIntro => language._messages[2233];
 
   /// 重設 AI 供應商
@@ -7752,4 +7752,7 @@ final class AppStrings {
 
   /// 有些寫入（例如建立合併請求）可能觸發 GitLab 上的 Pipeline。Pipeline 會做什麼由專案設定決定，這裡無法控制。
   String get aiConsentWritesPipelines => language._messages[2552];
+
+  /// AI 可以讀取檔案、差異、工作 Log 與留言，並在「{section}」設定的等級內替你寫入。
+  String aiProviderToolsHint(Object? section) => _format(language, language._messages[2553], {'section': section});
 }

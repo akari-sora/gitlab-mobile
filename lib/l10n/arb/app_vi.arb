@@ -2184,7 +2184,7 @@
   "aiPolicyRetainedDays": "Số ngày lưu giữ: {days}",
   "aiProviderUnverifiedLabel": "Chưa xác minh",
   "aiProviderAdvancedTitle": "Cài đặt nâng cao",
-  "aiProviderToolsEnabled": "Cho phép công cụ chỉ đọc",
+  "aiProviderToolsEnabled": "Cho phép công cụ GitLab",
   "aiProviderToolChoiceCapability": "Hỗ trợ chọn công cụ",
   "aiProviderStreamUsageCapability": "Nhận thông tin sử dụng dạng luồng",
   "aiProviderReplayExtrasCapability": "Giữ lại phần mở rộng giao diện tương thích",
@@ -2214,8 +2214,8 @@
   "aiConsentCategoryComments": "Bình luận trong vấn đề và yêu cầu hợp nhất",
   "aiConsentCategoryToolReads": "Nội dung được công cụ chỉ đọc truy xuất",
   "aiConsentCategoryOther": "Nội dung được phép khác",
-  "aiConsentToolsEnabled": "Công cụ chỉ đọc có thể truy xuất tệp, thay đổi, nhật ký tác vụ, vấn đề và bình luận khi cần. Mọi lần đọc đều được hiển thị trong cuộc trò chuyện.",
-  "aiConsentToolsDisabled": "Công cụ chỉ đọc đã bị tắt.",
+  "aiConsentToolsEnabled": "Công cụ có thể truy xuất tệp, thay đổi, nhật ký tác vụ, vấn đề và bình luận khi cần. Mọi lần đọc đều được hiển thị trong cuộc trò chuyện.",
+  "aiConsentToolsDisabled": "Công cụ GitLab đang tắt. AI không đọc gì ngoài cuộc trò chuyện này và không thay đổi gì.",
   "aiConsentDataUseHeading": "Sử dụng và lưu giữ dữ liệu",
   "aiConsentNoTraining": "Chính sách nêu rõ dữ liệu không được dùng để huấn luyện.",
   "aiConsentRetentionDays": "Số ngày lưu giữ",
@@ -2231,7 +2231,7 @@
   "aiConsentSavedSummaryNotice": "Đây là bản tóm tắt được lưu khi cấp chấp thuận.",
   "aiProviderKeyVerified": "Đã xác minh khóa",
   "aiProviderVerifyKey": "Xác minh khóa",
-  "aiSettingsIntro": "Chọn nơi gửi yêu cầu AI. AI chỉ đọc nội dung bạn cho phép, và khóa của nhà cung cấp nằm trên thiết bị này.",
+  "aiSettingsIntro": "Chọn nơi gửi yêu cầu AI. AI chỉ đọc và thay đổi những gì bạn cho phép, và khóa của nhà cung cấp nằm trên thiết bị này.",
   "aiResetProviders": "Đặt lại nhà cung cấp AI",
   "aiResetProvidersDetail": "Thao tác này xóa mọi nhà cung cấp AI, khóa nhà cung cấp đã lưu và sự đồng ý dành cho nhà cung cấp. Lịch sử trò chuyện vẫn được giữ lại.",
   "aiShortenRetention": "Rút ngắn thời gian lưu lịch sử?",
@@ -2552,5 +2552,6 @@
   "aiConsentWritesUncertain": "Nếu mất kết nối trong lúc thay đổi, sẽ không rõ GitLab đã thực hiện hay chưa. Cho đến khi bạn giải phóng trong “{log}”, AI trên thiết bị này sẽ không thay đổi lại cùng mục tiêu đó.",
   "aiConsentWritesUploads": "Ở mức này, tệp bạn đính kèm có thể được tải lên mà không hiện thẻ trước. Trong dự án công khai hoặc nội bộ, ai thấy nội dung có liên kết tới tệp đều mở được tệp.",
   "aiConsentWritesInstructions": "Nội dung AI đọc trên GitLab có thể chứa chỉ dẫn nhằm điều khiển nó. Hãy đọc đề xuất trước khi bạn chấp thuận.",
-  "aiConsentWritesPipelines": "Một số thay đổi, như mở merge request, có thể khởi chạy pipeline trên GitLab. Pipeline làm gì do dự án quyết định và không thể điều khiển từ đây."
+  "aiConsentWritesPipelines": "Một số thay đổi, như mở merge request, có thể khởi chạy pipeline trên GitLab. Pipeline làm gì do dự án quyết định và không thể điều khiển từ đây.",
+  "aiProviderToolsHint": "AI có thể đọc tệp, thay đổi, nhật ký tác vụ và bình luận, và thực hiện thay đổi đến mức đã đặt trong “{section}”."
 }

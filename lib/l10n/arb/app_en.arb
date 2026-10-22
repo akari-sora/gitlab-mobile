@@ -2188,7 +2188,7 @@
   "aiPolicyRetainedDays": "Retained for {days} days",
   "aiProviderUnverifiedLabel": "Not verified",
   "aiProviderAdvancedTitle": "Advanced settings",
-  "aiProviderToolsEnabled": "Allow read-only tools",
+  "aiProviderToolsEnabled": "Allow GitLab tools",
   "aiProviderToolChoiceCapability": "Supports tool choice",
   "aiProviderStreamUsageCapability": "Receive streamed usage",
   "aiProviderReplayExtrasCapability": "Preserve compatible interface extensions",
@@ -2218,8 +2218,8 @@
   "aiConsentCategoryComments": "Issue and merge request comments",
   "aiConsentCategoryToolReads": "Content retrieved by read-only tools",
   "aiConsentCategoryOther": "Other allowed content",
-  "aiConsentToolsEnabled": "Read-only tools may retrieve files, diffs, Job logs, issues, and comments as needed. Every read is shown in the conversation.",
-  "aiConsentToolsDisabled": "Read-only tools are disabled.",
+  "aiConsentToolsEnabled": "Tools may retrieve files, diffs, Job logs, issues, and comments as needed. Every read is shown in the conversation.",
+  "aiConsentToolsDisabled": "GitLab tools are off. The AI does not read anything beyond this conversation and changes nothing.",
   "aiConsentDataUseHeading": "Data use and retention",
   "aiConsentNoTraining": "The policy states that data is not used for training.",
   "aiConsentRetentionDays": "Retention days",
@@ -2233,7 +2233,7 @@
   "aiConsentAgreeAndSend": "Agree and send",
   "aiConsentGrantedAtHeading": "Consent granted",
   "aiConsentSavedSummaryNotice": "This is the summary saved when consent was granted.",
-  "aiSettingsIntro": "Choose where AI requests are sent. AI reads only content you allow, and provider keys stay on this device.",
+  "aiSettingsIntro": "Choose where AI requests are sent. The AI reads and changes only what you allow, and provider keys stay on this device.",
   "aiResetProviders": "Reset AI providers",
   "aiResetProvidersDetail": "This removes every AI provider, stored provider key, and provider consent. Chat history is kept.",
   "aiShortenRetention": "Shorten history retention?",
@@ -2558,5 +2558,6 @@
   "aiConsentWritesUncertain": "If the connection drops during a change, it is unclear whether GitLab made it. Until you release it in \"{log}\", the AI on this device will not change the same target again.",
   "aiConsentWritesUploads": "At this level, files you attach can be uploaded without a card first. In a public or internal project, anyone who can see content that links a file can open it.",
   "aiConsentWritesInstructions": "Text the AI reads on GitLab can contain instructions meant to steer it. Read what it proposes before you approve.",
-  "aiConsentWritesPipelines": "Some changes, such as opening a merge request, can start pipelines on GitLab. What they do is set by the project and cannot be controlled from here."
+  "aiConsentWritesPipelines": "Some changes, such as opening a merge request, can start pipelines on GitLab. What they do is set by the project and cannot be controlled from here.",
+  "aiProviderToolsHint": "The AI can read files, diffs, Job logs and comments, and make changes up to the level set under \"{section}\"."
 }

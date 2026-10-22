@@ -2180,7 +2180,7 @@
   "aiPolicyRetainedDays": "Doba uchovávání ve dnech: {days}",
   "aiProviderUnverifiedLabel": "Neověřeno",
   "aiProviderAdvancedTitle": "Pokročilá nastavení",
-  "aiProviderToolsEnabled": "Povolit nástroje pouze pro čtení",
+  "aiProviderToolsEnabled": "Povolit nástroje GitLabu",
   "aiProviderToolChoiceCapability": "Podporuje výběr nástrojů",
   "aiProviderStreamUsageCapability": "Přijímat průběžné údaje o využití",
   "aiProviderReplayExtrasCapability": "Zachovat kompatibilní rozšíření rozhraní",
@@ -2209,8 +2209,8 @@
   "aiConsentCategoryComments": "Komentáře k problémům a požadavkům na sloučení",
   "aiConsentCategoryToolReads": "Obsah načtený nástroji pouze pro čtení",
   "aiConsentCategoryOther": "Jiný povolený obsah",
-  "aiConsentToolsEnabled": "Nástroje pouze pro čtení mohou podle potřeby načítat soubory, rozdíly, protokoly úloh, problémy a komentáře. Každé čtení se zobrazí v konverzaci.",
-  "aiConsentToolsDisabled": "Nástroje pouze pro čtení jsou vypnuté.",
+  "aiConsentToolsEnabled": "Nástroje mohou podle potřeby načítat soubory, rozdíly, protokoly úloh, problémy a komentáře. Každé čtení se zobrazí v konverzaci.",
+  "aiConsentToolsDisabled": "Nástroje GitLabu jsou vypnuté. AI nečte nic mimo tuto konverzaci a nic nemění.",
   "aiConsentDataUseHeading": "Využití a uchovávání dat",
   "aiConsentNoTraining": "Zásady uvádějí, že data se nepoužívají k trénování.",
   "aiConsentRetentionDays": "Doba uchovávání ve dnech",
@@ -2231,7 +2231,7 @@
   "aiProviderMaxOutputTokensLabel": "Limit tokenů odpovědi",
   "aiProviderVerifyKey": "Ověřit klíč",
   "aiProviderKeyVerified": "Klíč ověřen",
-  "aiSettingsIntro": "Vyberte, kam se odesílají požadavky AI. AI čte jen obsah, který povolíte, a klíče poskytovatele zůstanou v tomto zařízení.",
+  "aiSettingsIntro": "Vyberte, kam se odesílají požadavky AI. AI čte a mění jen to, co povolíte, a klíče poskytovatele zůstanou v tomto zařízení.",
   "aiResetProviders": "Obnovit poskytovatele AI",
   "aiResetProvidersDetail": "Tímto odstraníte všechny poskytovatele AI, uložené klíče poskytovatelů a jejich souhlasy. Historie chatu zůstane zachována.",
   "aiShortenRetention": "Zkrátit dobu uchovávání historie?",
@@ -2552,5 +2552,6 @@
   "aiConsentWritesUncertain": "Když se během změny přeruší spojení, není jasné, zda ji GitLab provedl. Dokud ji neuvolníte v „{log}“, AI na tomto zařízení stejný cíl znovu nezmění.",
   "aiConsentWritesUploads": "Na této úrovni se přiložené soubory mohou nahrát bez předchozí karty. Ve veřejném nebo interním projektu je může otevřít každý, kdo vidí obsah s odkazem na ně.",
   "aiConsentWritesInstructions": "Text, který AI čte na GitLabu, může obsahovat pokyny, jak ji ovlivnit. Než něco schválíte, přečtěte si, co navrhuje.",
-  "aiConsentWritesPipelines": "Některé změny, například otevření merge requestu, mohou na GitLabu spustit pipeline. Co pipeline udělá, určuje projekt a odsud to nelze ovlivnit."
+  "aiConsentWritesPipelines": "Některé změny, například otevření merge requestu, mohou na GitLabu spustit pipeline. Co pipeline udělá, určuje projekt a odsud to nelze ovlivnit.",
+  "aiProviderToolsHint": "AI může číst soubory, rozdíly, protokoly úloh a komentáře a provádět změny až do úrovně nastavené v „{section}“."
 }
