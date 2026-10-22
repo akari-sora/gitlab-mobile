@@ -2413,6 +2413,7 @@ const _messagesIt = <String>[
   'Livello per le nuove conversazioni',
   'Segna ciò che scrive l’AI',
   'Aggiunge una nota che l’AI ha aiutato alla fine di commenti e descrizioni. Disattivato per impostazione predefinita.',
+  'Scritto dall’assistente IA',
   'L’AI esegue solo le scritture che consenti; i limiti rigidi come eliminare un progetto richiedono sempre che tu digiti il nome.',
   'Attiva consenti tutto',
   'L\'AI eseguirà le scritture direttamente senza chiedere, incluse eliminazioni, unioni e azioni della pipeline. Eseguire di nuovo una pipeline o un job può riutilizzare variabili memorizzate su GitLab che l\'app non può verificare. I contenuti nelle pagine o nei file possono anche spingere l\'AI verso cose che non hai chiesto. Ogni invio ha comunque un limite di scritture e puoi premere «Interrompi» in qualsiasi momento.',

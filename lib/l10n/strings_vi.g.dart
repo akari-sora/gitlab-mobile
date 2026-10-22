@@ -2413,6 +2413,7 @@ const _messagesVi = <String>[
   'Mức bắt đầu cho cuộc trò chuyện mới',
   'Đánh dấu nội dung AI viết',
   'Thêm ghi chú rằng AI đã hỗ trợ ở cuối bình luận và mô tả. Tắt theo mặc định.',
+  'Được viết bởi trợ lý AI',
   'AI chỉ thực hiện những lần ghi bạn cho phép; các giới hạn cứng như xóa dự án luôn cần bạn gõ tên.',
   'Bật cho phép tất cả',
   'AI sẽ ghi trực tiếp mà không hỏi, bao gồm xóa, hợp nhất và các thao tác pipeline. Chạy lại pipeline hoặc job có thể dùng lại biến đã lưu trên GitLab mà ứng dụng không kiểm tra được. Nội dung trong trang hoặc tệp cũng có thể hướng AI tới việc bạn không yêu cầu. Mỗi lần gửi vẫn có giới hạn ghi, và bạn có thể nhấn «Dừng» bất cứ lúc nào.',

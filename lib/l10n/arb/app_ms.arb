@@ -2411,6 +2411,7 @@
   "aiWriteStartingLevel": "Tahap untuk perbualan baharu",
   "aiWriteAttribution": "Tandakan apa yang AI tulis",
   "aiWriteAttributionHint": "Menambah nota bahawa AI membantu di hujung komen dan penerangan. Dimatikan secara lalai.",
+  "aiWrittenByAssistant": "Ditulis oleh pembantu AI",
   "aiWritePromise": "AI hanya membuat penulisan yang anda benarkan; had keras seperti memadam projek sentiasa memerlukan anda menaip nama.",
   "aiBypassTitle": "Hidupkan benarkan semuanya",
   "aiBypassWarning": "AI akan membuat penulisan secara terus tanpa bertanya, termasuk pemadaman, penggabungan dan tindakan pipeline. Menjalankan semula pipeline atau job boleh menggunakan semula pembolehubah yang disimpan di GitLab, yang tidak dapat disemak oleh aplikasi. Kandungan dalam halaman atau fail juga boleh membawa AI kepada perkara yang anda tidak minta. Setiap penghantaran masih mempunyai had penulisan, dan anda boleh menekan «Hentikan» pada bila-bila masa.",

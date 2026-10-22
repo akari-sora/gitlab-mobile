@@ -2413,6 +2413,7 @@ const _messagesId = <String>[
   'Tingkat untuk percakapan baru',
   'Tandai yang ditulis AI',
   'Menambahkan catatan bahwa AI membantu di akhir komentar dan deskripsi. Nonaktif secara bawaan.',
+  'Ditulis oleh asisten AI',
   'AI hanya melakukan penulisan yang Anda izinkan; batas keras seperti menghapus proyek selalu mengharuskan Anda mengetik nama.',
   'Aktifkan izinkan semuanya',
   'AI akan melakukan penulisan secara langsung tanpa bertanya, termasuk penghapusan, penggabungan, dan tindakan pipeline. Menjalankan lagi pipeline atau job dapat memakai ulang variabel yang tersimpan di GitLab, yang tidak dapat diperiksa oleh aplikasi. Konten di halaman atau berkas juga dapat mengarahkan AI ke hal-hal yang tidak Anda minta. Setiap pengiriman tetap memiliki batas penulisan, dan Anda dapat menekan «Hentikan» kapan saja.',

@@ -2413,6 +2413,7 @@ const _messagesMs = <String>[
   'Tahap untuk perbualan baharu',
   'Tandakan apa yang AI tulis',
   'Menambah nota bahawa AI membantu di hujung komen dan penerangan. Dimatikan secara lalai.',
+  'Ditulis oleh pembantu AI',
   'AI hanya membuat penulisan yang anda benarkan; had keras seperti memadam projek sentiasa memerlukan anda menaip nama.',
   'Hidupkan benarkan semuanya',
   'AI akan membuat penulisan secara terus tanpa bertanya, termasuk pemadaman, penggabungan dan tindakan pipeline. Menjalankan semula pipeline atau job boleh menggunakan semula pembolehubah yang disimpan di GitLab, yang tidak dapat disemak oleh aplikasi. Kandungan dalam halaman atau fail juga boleh membawa AI kepada perkara yang anda tidak minta. Setiap penghantaran masih mempunyai had penulisan, dan anda boleh menekan «Hentikan» pada bila-bila masa.',

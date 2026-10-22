@@ -2,12 +2,14 @@ import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 import 'package:markdown/markdown.dart' as md;
 
+import '../../l10n/l10n.dart';
 import '../instance.dart';
 import '../upload_names.dart';
 import 'ai_failure.dart';
 import 'draft_mentions.dart';
 import 'quick_actions.dart';
 import 'redaction.dart';
+import 'tools/write_ledger.dart' show AiScopeGrant, AiScopeKind;
 
 /// (A) quick-action Markdown versus (B) plain content. See plan section 5.
 enum AiTextClass { quickActionMarkdown, plainContent }
@@ -172,6 +174,8 @@ final class AiVisibilityContext {
     this.userMessageDomains = const <String>{},
     this.targetProjectPath,
     this.renderedMarkdown = false,
+    this.closesIssuesOnMerge = false,
+    this.scopeGrants = const <AiScopeGrant>[],
   });
 
   /// A stricter source was read, and the write target is wider.
@@ -189,6 +193,17 @@ final class AiVisibilityContext {
 
   /// (B) body GitLab renders as Markdown, such as a `.md` file.
   final bool renderedMarkdown;
+
+  /// The text is one GitLab scans for closing patterns when it reaches the
+  /// default branch: a merge request description the caller cannot name
+  /// through `field` (a new merge request), or a commit message. A merge
+  /// request description field is scanned without this flag.
+  final bool closesIssuesOnMerge;
+
+  /// The conversation's grants. A closing reference is in scope when a
+  /// project grant covers its project or a work item grant its issue; with
+  /// none, every new closing reference needs confirmation.
+  final List<AiScopeGrant> scopeGrants;
 }
 
 /// Result of preparing one write payload.
@@ -206,6 +221,8 @@ final class AiTextOutcome {
     required this.blockedReasonCode,
     this.levelConfirmReasons = const <AiLevelConfirmReason>[],
     this.externalDomains = const <String>[],
+    this.closingRefs = const <String>[],
+    this.foreignClosingRefs = const <String>[],
   });
 
   final String? finalText;
@@ -216,6 +233,15 @@ final class AiTextOutcome {
   final String blockedReasonCode;
   final List<String> externalDomains;
 
+  /// Issues the text newly closes when it reaches the default branch and
+  /// that the conversation's grants cover, as `group/project#iid`. The
+  /// preview lists them (plan §5 item 9).
+  final List<String> closingRefs;
+
+  /// Issues the text newly closes outside the grants. Non-empty means
+  /// [confirmReasons] holds [AiFixedConfirmReason.closingOrCrossProject].
+  final List<String> foreignClosingRefs;
+
   factory AiTextOutcome.ready(
     String text, {
     List<AiFixedConfirmReason> confirmReasons = const <AiFixedConfirmReason>[],
@@ -223,6 +249,8 @@ final class AiTextOutcome {
         const <AiLevelConfirmReason>[],
     int hiddenSpanCount = 0,
     List<String> externalDomains = const <String>[],
+    List<String> closingRefs = const <String>[],
+    List<String> foreignClosingRefs = const <String>[],
   }) => AiTextOutcome(
     finalText: text,
     policyBlocked: false,
@@ -233,6 +261,8 @@ final class AiTextOutcome {
     hiddenSpanCount: hiddenSpanCount,
     blockedReasonCode: '',
     externalDomains: List<String>.unmodifiable(externalDomains),
+    closingRefs: List<String>.unmodifiable(closingRefs),
+    foreignClosingRefs: List<String>.unmodifiable(foreignClosingRefs),
   );
 
   factory AiTextOutcome.block(
@@ -248,11 +278,9 @@ final class AiTextOutcome {
   );
 }
 
-/// Line appended to class A bodies when attribution is on.
-///
-/// The lead replaces this English sentence with a localized one. This packet
-/// does not edit catalogs.
-const aiAttributionLine = 'Written by the AI assistant';
+/// Line appended to class A bodies when attribution is on, in the interface
+/// language at the moment the text is prepared (plan §5 item 7).
+String get aiAttributionLine => l10n.aiWrittenByAssistant;
 
 /// One in-memory upload-placeholder table for a conversation.
 ///
@@ -268,6 +296,8 @@ final class UploadPlaceholderTable {
   final GitLabInstance instance;
   final List<_UploadEntry> _entries = <_UploadEntry>[];
   final Set<String> _userMessageTargets = <String>{};
+  final Set<({AiConflictKey resourceKey, String fieldName})> _seenOnlyCut =
+      <({AiConflictKey resourceKey, String fieldName})>{};
   bool _exceeded = false;
   int _limitHits = 0;
 
@@ -281,6 +311,26 @@ final class UploadPlaceholderTable {
   int get limitHits => _limitHits;
 
   int get length => _entries.length;
+
+  /// Records that the provider received [field] in this conversation, whole
+  /// or cut (a tool output limit, a clipped page context). The latest
+  /// delivery wins: a whole one clears an earlier cut, a cut one marks the
+  /// field again. Like the entries, this lives only in memory.
+  void recordFieldDelivery(AiFieldProvenance field, {required bool whole}) {
+    final key = (resourceKey: field.resourceKey, fieldName: field.fieldName);
+    if (whole) {
+      _seenOnlyCut.remove(key);
+    } else {
+      _seenOnlyCut.add(key);
+    }
+  }
+
+  /// Whether the latest copy of [field] the provider received was cut, so
+  /// a whole-field write would drop the text it never saw.
+  bool seenOnlyCut(AiFieldProvenance field) => _seenOnlyCut.contains((
+    resourceKey: field.resourceKey,
+    fieldName: field.fieldName,
+  ));
 
   /// Masks upload targets in provider-bound [text].
   ///
@@ -546,7 +596,10 @@ AiTextOutcome prepareWriteText({
   String? currentFieldValue,
   List<String>? secretFragments,
 }) {
-  if (field != null && !field.completeValue) {
+  // Plan §3.1: a field whose value was cut in what the provider received
+  // offers no whole-field write ("這個欄位太長，AI 無法完整編輯").
+  if (field != null &&
+      (!field.completeValue || placeholders.seenOnlyCut(field))) {
     return AiTextOutcome.block(AiTextBlockCode.fieldTooLong);
   }
   var text = modelText;
@@ -646,6 +699,38 @@ AiTextOutcome prepareWriteText({
   if (_hasCrossProject(text, placeholders.instance, visibility)) {
     fixed.add(AiFixedConfirmReason.closingOrCrossProject);
   }
+  final closingRefs = <String>[];
+  final foreignClosingRefs = <String>[];
+  if (field?.fieldName == AiWritableField.mergeRequestDescription ||
+      visibility.closesIssuesOnMerge) {
+    final target = visibility.targetProjectPath;
+    final before = currentFieldValue == null
+        ? const <String>{}
+        : {
+            for (final ref in _closingRefs(
+              currentFieldValue,
+              placeholders.instance,
+            ))
+              _closingKey(ref, target),
+          };
+    for (final ref in _closingRefs(text, placeholders.instance)) {
+      final key = _closingKey(ref, target);
+      if (before.contains(key) ||
+          closingRefs.contains(key) ||
+          foreignClosingRefs.contains(key)) {
+        continue;
+      }
+      if (_closingInScope(ref, target, visibility.scopeGrants)) {
+        closingRefs.add(key);
+      } else {
+        foreignClosingRefs.add(key);
+      }
+    }
+    if (foreignClosingRefs.isNotEmpty &&
+        !fixed.contains(AiFixedConfirmReason.closingOrCrossProject)) {
+      fixed.add(AiFixedConfirmReason.closingOrCrossProject);
+    }
+  }
   if (visibility.polluted || visibility.visibilityUnreadable) {
     level.add(AiLevelConfirmReason.visibilityPollution);
   }
@@ -661,6 +746,8 @@ AiTextOutcome prepareWriteText({
     levelConfirmReasons: level,
     hiddenSpanCount: hidden,
     externalDomains: <String>{...domains, ...media}.toList(),
+    closingRefs: closingRefs,
+    foreignClosingRefs: foreignClosingRefs,
   );
 }
 
@@ -765,6 +852,84 @@ bool _hasCrossProject(
   return false;
 }
 
+/// One issue a closing pattern names. A null [projectPath] is the write
+/// target's own project (`#12`).
+typedef _IssueRef = ({String? projectPath, int iid});
+
+/// Issues [text] closes under GitLab's default closing pattern: a keyword
+/// (Close, Fix, Resolve, Implement and their -s, -d/-ed and -ing forms, any
+/// case), an optional colon, then a list of `#n`, `path#n` or issue URLs on
+/// this instance joined by commas and `and`. Spacing is looser than GitLab's
+/// pattern, so the scan errs toward confirmation.
+List<_IssueRef> _closingRefs(String text, GitLabInstance instance) {
+  final refs = <_IssueRef>[];
+  for (final keyword in _closingKeyword.allMatches(text)) {
+    var index = _closingLead.matchAsPrefix(text, keyword.end)!.end;
+    while (true) {
+      final word = _closingIssueWord.matchAsPrefix(text, index);
+      final at = word?.end ?? index;
+      final ref = _closingRef(text, at, instance);
+      if (ref == null) break;
+      refs.add(ref.ref);
+      final separator =
+          _closingAnd.matchAsPrefix(text, ref.end) ??
+          _closingSeparator.matchAsPrefix(text, ref.end)!;
+      index = separator.end;
+    }
+  }
+  return refs;
+}
+
+({_IssueRef ref, int end})? _closingRef(
+  String text,
+  int index,
+  GitLabInstance instance,
+) {
+  final url = _closingUrl.matchAsPrefix(text, index);
+  if (url != null) {
+    final raw = _trimTrailingUrlPunctuation(url.group(0)!);
+    final uri = Uri.tryParse(raw);
+    if (uri == null || !_looksLikeIssueOnlyUrl(uri)) return null;
+    final project = _projectPathOfIssueUrl(uri, instance);
+    if (project == null) return null;
+    final segments = _segments(uri);
+    final iid = int.tryParse(segments[segments.length - 1]) ?? 0;
+    if (iid < 1) return null;
+    return (ref: (projectPath: project, iid: iid), end: index + raw.length);
+  }
+  final short = _closingShortRef.matchAsPrefix(text, index);
+  if (short == null) return null;
+  final iid = int.tryParse(short.group(2)!) ?? 0;
+  if (iid < 1) return null;
+  return (ref: (projectPath: short.group(1), iid: iid), end: short.end);
+}
+
+/// A URL whose last two segments are `issues/<n>` or `work_items/<n>`.
+bool _looksLikeIssueOnlyUrl(Uri uri) {
+  if (uri.hasQuery || uri.hasFragment) return false;
+  final segments = _segments(uri);
+  if (segments.length < 2) return false;
+  final kind = segments[segments.length - 2];
+  return (kind == 'issues' || kind == 'work_items') &&
+      RegExp(r'^[0-9]+$').hasMatch(segments.last);
+}
+
+String _closingKey(_IssueRef ref, String? target) =>
+    '${ref.projectPath ?? target ?? ''}#${ref.iid}';
+
+bool _closingInScope(_IssueRef ref, String? target, List<AiScopeGrant> grants) {
+  final path = ref.projectPath ?? target;
+  if (path == null) return false;
+  for (final grant in grants) {
+    if (grant.projectPath != path) continue;
+    if (grant.kind == AiScopeKind.project) return true;
+    if (grant.kind == AiScopeKind.workItem && grant.iid == ref.iid) {
+      return true;
+    }
+  }
+  return false;
+}
+
 String? _projectPathOfIssueUrl(Uri uri, GitLabInstance instance) {
   if (uri.scheme != 'https' || !instance.sameOrigin(uri)) return null;
   final segments = _segments(uri);
@@ -841,6 +1006,12 @@ List<String> _unseenDomains(List<String> domains, Set<String> seen) {
   ];
 }
 
+/// Spans of the field's current value the provider would not see, counted
+/// when the final text does not keep them byte for byte (plan §3.1). The
+/// value goes through the outgoing redaction: upload link targets, then every
+/// range [Redactor.redactSource] replaces (pattern and known secrets with
+/// their aliases, private keys, URL credentials, assignments, upload secrets,
+/// source-authored placeholder tokens), plus marker text already in it.
 int _hiddenSpanCount(
   String current,
   String finalText,
@@ -856,33 +1027,40 @@ int _hiddenSpanCount(
     spans.add(target.raw);
     covered.add((start: target.start, end: target.end));
   }
-  for (final span in uploadSecretMaskSpans(current)) {
-    if (_overlaps(covered, span.start, span.end)) continue;
-    spans.add(current.substring(span.start, span.end));
-    covered.add(span);
+  List<({int start, int end})> ranges;
+  try {
+    ranges = Redactor(
+      secrets: _FixedSecrets(knownSecrets),
+    ).redactSourceRanges(current);
+  } on AiFailure {
+    // The outgoing layer refuses this value, so the provider saw none of it.
+    return _countMissing(spans, finalText) + 1;
+  }
+  for (final range in ranges) {
+    if (_inside(covered, range.start, range.end)) continue;
+    spans.add(current.substring(range.start, range.end));
   }
   for (final match in _redactionMarkerPattern.allMatches(current)) {
+    if (_overlaps(ranges, match.start, match.end)) continue;
     spans.add(match.group(0)!);
   }
-  for (final secret in knownSecrets) {
-    if (secret.isEmpty) continue;
-    var offset = 0;
-    while (offset < current.length) {
-      final index = current.indexOf(secret, offset);
-      if (index < 0) break;
-      if (!_overlaps(covered, index, index + secret.length)) {
-        spans.add(secret);
-      }
-      offset = index + secret.length;
-    }
-  }
   return _countMissing(spans, finalText);
+}
+
+bool _inside(List<({int start, int end})> covered, int start, int end) {
+  for (final span in covered) {
+    if (start >= span.start && end <= span.end) return true;
+  }
+  return false;
 }
 
 int _countMissing(List<String> spans, String finalText) {
   var remaining = finalText;
   var missing = 0;
-  for (final span in spans) {
+  // Longest first, so a span inside a longer one is not consumed from it.
+  final ordered = <String>[...spans]
+    ..sort((a, b) => b.length.compareTo(a.length));
+  for (final span in ordered) {
     if (span.isEmpty) continue;
     final index = remaining.indexOf(span);
     if (index < 0) {
@@ -1555,6 +1733,19 @@ final _qualifiedRef = RegExp(
   r'(?<![A-Za-z0-9_])([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+)([#!])([0-9]+)',
 );
 final _bareUrl = RegExp(r'https?://[^\s<>()\]]+', caseSensitive: false);
+final _closingKeyword = RegExp(
+  r'(?<![A-Za-z0-9_])(?:clos(?:e[sd]?|ing)|fix(?:e[sd]|ing)?|'
+  r'resolv(?:e[sd]?|ing)|implement(?:s|ed|ing)?)(?![A-Za-z0-9_])',
+  caseSensitive: false,
+);
+final _closingLead = RegExp(r'[ \t]*:?[ \t]*');
+final _closingIssueWord = RegExp(r'issues?[ \t]+', caseSensitive: false);
+final _closingUrl = RegExp(r'https?://[^\s<>()\]]+', caseSensitive: false);
+final _closingShortRef = RegExp(
+  r'(?:([A-Za-z0-9_.\-]+(?:/[A-Za-z0-9_.\-]+)*))?#([0-9]+)(?![0-9])',
+);
+final _closingAnd = RegExp(r'[ \t]*,?[ \t]+and[ \t]+', caseSensitive: false);
+final _closingSeparator = RegExp(r'[ \t]*,?[ \t]*');
 final _redactionMarkerPattern = RegExp(r'\[REDACTED(?::[A-Za-z0-9_]+)?\]');
 final _rebuiltUpload = RegExp(
   r'!\[[^\]\r\n]*\]\(/uploads/[0-9a-f]{32}/[^)\s]+\)',

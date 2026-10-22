@@ -2413,6 +2413,7 @@ const _messagesPl = <String>[
   'Poziom dla nowych rozmów',
   'Oznaczaj to, co pisze AI',
   'Dodaje na końcu komentarzy i opisów adnotację, że pomogła AI. Domyślnie wyłączone.',
+  'Napisane przez asystenta AI',
   'AI wykonuje tylko zapisy, na które zezwalasz; twarde granice, takie jak usunięcie projektu, zawsze wymagają wpisania nazwy.',
   'Włącz zezwolenie na wszystko',
   'AI wykona zapisy bezpośrednio bez pytania, w tym usunięcia, scalenia i działania pipeline. Ponowne uruchomienie pipeline lub zadania może ponownie użyć zmiennych zapisanych na GitLab, których aplikacja nie może sprawdzić. Treść na stronach lub w plikach może też skierować AI ku rzeczom, o które nie prosiłeś. Każde wysłanie nadal ma limit zapisów i w dowolnej chwili możesz nacisnąć „Zatrzymaj”.',

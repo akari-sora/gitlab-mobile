@@ -2411,6 +2411,7 @@
   "aiWriteStartingLevel": "새 대화의 시작 수준",
   "aiWriteAttribution": "AI가 쓴 내용에 표시",
   "aiWriteAttributionHint": "댓글과 설명 끝에 AI가 도왔다는 주를 붙입니다. 기본값은 꺼짐입니다.",
+  "aiWrittenByAssistant": "AI 도우미가 작성함",
   "aiWritePromise": "AI는 허용한 쓰기만 합니다. 프로젝트 삭제 같은 단단한 한계는 항상 이름을 입력해야 합니다.",
   "aiBypassTitle": "모두 허용 켜기",
   "aiBypassWarning": "AI는 묻지 않고 쓰기를 직접 수행합니다. 삭제, 병합, 파이프라인 동작이 포함됩니다. 파이프라인이나 잡을 다시 실행하면 GitLab에 저장된 변수를 다시 사용할 수 있으며 앱은 이를 확인할 수 없습니다. 페이지나 파일의 내용이 요청하지 않은 일로 AI를 이끌 수도 있습니다. 매번 보내기에는 쓰기 한도가 여전히 있으며, 언제든지 ‘중지’를 누를 수 있습니다.",

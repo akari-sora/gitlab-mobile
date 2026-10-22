@@ -2413,6 +2413,7 @@ const _messagesEn = <String>[
   'Level for new conversations',
   'Mark what the AI writes',
   'Adds a note that the AI helped at the end of comments and descriptions. Off by default.',
+  'Written by the AI assistant',
   'The AI only makes the writes you allow; hard limits such as deleting a project always need you to type the name.',
   'Allow everything',
   'The AI will make writes directly without asking, including deletions, merges and pipeline actions. Running a pipeline or job again may reuse variables stored on GitLab, which the app cannot check. Content in pages or files may also steer the AI into things you did not ask for. Each send still has a write limit, and you can press Stop at any time.',

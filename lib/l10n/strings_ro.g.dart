@@ -2413,6 +2413,7 @@ const _messagesRo = <String>[
   'Nivel pentru conversații noi',
   'Marchează ce scrie AI',
   'Adaugă o notă că AI a ajutat la sfârșitul comentariilor și descrierilor. Oprit în mod implicit.',
+  'Scris de asistentul AI',
   'AI face doar scrierile pe care le permiți; limitele dure, cum ar fi ștergerea unui proiect, cer întotdeauna să tastezi numele.',
   'Activează permite totul',
   'AI va efectua scrieri direct, fără să întrebe, inclusiv ștergeri, îmbinări și acțiuni de pipeline. Rularea din nou a unui pipeline sau a unui job poate reutiliza variabile stocate pe GitLab, pe care aplicația nu le poate verifica. Conținutul din pagini sau fișiere poate, de asemenea, îndruma AI spre lucruri pe care nu le-ai cerut. Fiecare trimitere are în continuare o limită de scriere, iar tu poți apăsa „Oprește” oricând.',

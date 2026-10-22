@@ -1,9 +1,12 @@
 import 'dart:math';
 
+import '../../core/ai/ai_transcript.dart' show AiContextBlock;
 import '../../core/ai/context_builders.dart';
 import '../../core/ai/redaction.dart';
 import '../../core/ai/tools/sensitive_paths.dart';
 import '../../core/ai/tools/tool_scope.dart';
+import '../../core/ai/write_text.dart'
+    show AiFieldProvenance, UploadPlaceholderTable;
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
@@ -11,11 +14,68 @@ import 'ai_chat_session.dart';
 
 /// The redacted starting context plus immutable revisions used to bind tools.
 final class AiChatContext {
-  const AiChatContext({required this.built, required this.scope});
+  const AiChatContext({required this.built, required this.scope, this.field});
 
   final AiBuiltContext built;
   final AiResourceScope? scope;
+
+  /// The issue or merge request description this page context carries, a
+  /// field the AI can write back whole.
+  final AiContextField? field;
+
+  /// Records on [table] whether a request that carried [sent] gave the
+  /// provider the description whole. [sent] is what one request attached:
+  /// this page context, a conversation summary cut from it, or nothing (the
+  /// context already went out in this segment). Plan §3.1 offers no
+  /// whole-field write of a value the provider saw cut, so call this for
+  /// every request that carries context, before its tools run.
+  void recordDelivery(UploadPlaceholderTable table, List<AiContextBlock> sent) {
+    final field = this.field;
+    if (field == null || sent.isEmpty) return;
+    var whole = false;
+    for (final block in sent) {
+      final strings = block.plainData.plainStrings.toList();
+      for (var i = 0; i + 1 < strings.length && !whole; i++) {
+        whole = strings[i] == 'description' && strings[i + 1] == field.sent;
+      }
+      if (whole) break;
+    }
+    table.recordFieldDelivery(field.provenance, whole: whole);
+  }
 }
+
+/// A writable field in the page context, with the value as the context
+/// builder redacted it for the provider.
+final class AiContextField {
+  const AiContextField({required this.provenance, required this.sent});
+
+  final AiFieldProvenance provenance;
+  final String sent;
+}
+
+AiContextField _descriptionField({
+  required GitLabApi api,
+  required Redactor redactor,
+  required Project project,
+  required String resource,
+  required int iid,
+  required String description,
+}) => AiContextField(
+  provenance: AiFieldProvenance.gitLab(
+    instance: api.instance,
+    projectId: project.id,
+    projectPath: project.path,
+    resource: resource,
+    iid: iid,
+  ),
+  // The context builders strip ANSI escapes and redact every string the same
+  // way. Should the two ever differ, the field reads as cut: the safe side.
+  sent: redactor.redactSource(description.replaceAll(_ansi, '')).text,
+);
+
+final _ansi = RegExp(
+  r'\x1B(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1B]*(?:\x07|\x1B\\)|[@-_])',
+);
 
 Project? projectForAiChatOrigin(AiChatOrigin origin) => switch (origin) {
   AiGeneralOrigin() => null,
@@ -186,12 +246,13 @@ Future<AiChatContext> _loadIssue(
   await refreshSecrets();
   _requireCurrent(isCurrent);
 
+  final description = _optionalString(item, 'description') ?? '';
   final built = builder.discussion(
     AiDiscussionContextInput(
       kind: 'issue',
       iid: origin.iid,
       title: _requiredString(item, 'title'),
-      description: _optionalString(item, 'description') ?? '',
+      description: description,
       state: _requiredString(item, 'state'),
       pinnedSha: pinnedSha,
       labels: _labels(item),
@@ -201,6 +262,14 @@ Future<AiChatContext> _loadIssue(
   );
   return AiChatContext(
     built: built,
+    field: _descriptionField(
+      api: api,
+      redactor: builder.redactor,
+      project: origin.project,
+      resource: 'issues',
+      iid: origin.iid,
+      description: description,
+    ),
     scope: _scope(
       accountKey: accountKey,
       api: api,
@@ -291,11 +360,12 @@ Future<AiChatContext> _loadMergeRequest(
       else
         throw const FormatException('Merge request diff entry is invalid.'),
   ];
+  final description = _optionalString(item, 'description') ?? '';
   final built = builder.mergeRequest(
     AiMergeRequestContextInput(
       iid: origin.iid,
       title: _requiredString(item, 'title'),
-      description: _optionalString(item, 'description') ?? '',
+      description: description,
       state: _requiredString(item, 'state'),
       headSha: headSha,
       baseSha: baseSha,
@@ -307,6 +377,14 @@ Future<AiChatContext> _loadMergeRequest(
   );
   return AiChatContext(
     built: built,
+    field: _descriptionField(
+      api: api,
+      redactor: builder.redactor,
+      project: origin.project,
+      resource: 'merge_requests',
+      iid: origin.iid,
+      description: description,
+    ),
     scope: _scope(
       accountKey: accountKey,
       api: api,

@@ -10990,6 +10990,7 @@
   "aiWriteStartingLevel": "新對話的起始等級",
   "aiWriteAttribution": "在 AI 寫的內容加上標註",
   "aiWriteAttributionHint": "在留言和描述最後註明由 AI 協助。預設關閉。",
+  "aiWrittenByAssistant": "由 AI 助理撰寫",
   "aiWritePromise": "AI 只會做你允許的寫入；刪除專案這類硬底線永遠要你輸入名稱確認。",
   "aiBypassTitle": "開啟完全放行",
   "aiBypassWarning": "AI 會直接執行寫入，不再先問你，包括刪除、合併和 Pipeline 操作。重新執行 Pipeline 或工作時，可能沿用 GitLab 上已存的變數，應用程式無法核對。網頁或檔案裡的內容也可能誘導 AI 做出你沒要求的事。每次送出仍有寫入上限，你也隨時可以按「停止」。",

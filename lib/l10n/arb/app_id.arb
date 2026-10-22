@@ -2411,6 +2411,7 @@
   "aiWriteStartingLevel": "Tingkat untuk percakapan baru",
   "aiWriteAttribution": "Tandai yang ditulis AI",
   "aiWriteAttributionHint": "Menambahkan catatan bahwa AI membantu di akhir komentar dan deskripsi. Nonaktif secara bawaan.",
+  "aiWrittenByAssistant": "Ditulis oleh asisten AI",
   "aiWritePromise": "AI hanya melakukan penulisan yang Anda izinkan; batas keras seperti menghapus proyek selalu mengharuskan Anda mengetik nama.",
   "aiBypassTitle": "Aktifkan izinkan semuanya",
   "aiBypassWarning": "AI akan melakukan penulisan secara langsung tanpa bertanya, termasuk penghapusan, penggabungan, dan tindakan pipeline. Menjalankan lagi pipeline atau job dapat memakai ulang variabel yang tersimpan di GitLab, yang tidak dapat diperiksa oleh aplikasi. Konten di halaman atau berkas juga dapat mengarahkan AI ke hal-hal yang tidak Anda minta. Setiap pengiriman tetap memiliki batas penulisan, dan Anda dapat menekan «Hentikan» kapan saja.",

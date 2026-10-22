@@ -2413,6 +2413,7 @@ const _messagesNl = <String>[
   'Niveau voor nieuwe gesprekken',
   'Markeer wat de AI schrijft',
   'Voegt aan het einde van opmerkingen en beschrijvingen een notitie toe dat de AI heeft geholpen. Standaard uit.',
+  'Geschreven door de AI-assistent',
   'De AI doet alleen de schrijfacties die je toestaat; harde grenzen zoals een project verwijderen vereisen altijd dat je de naam typt.',
   'Alles toestaan inschakelen',
   'De AI voert schrijfbewerkingen direct uit zonder te vragen, inclusief verwijderingen, samenvoegingen en Pipeline-acties. Het opnieuw uitvoeren van een Pipeline of Job kan variabelen hergebruiken die op GitLab zijn opgeslagen en die de app niet kan controleren. Inhoud op pagina\'s of in bestanden kan de AI ook sturen naar dingen die je niet hebt gevraagd. Elke verzending heeft nog steeds een schrijflimiet en je kunt op elk moment „Stoppen” indrukken.',

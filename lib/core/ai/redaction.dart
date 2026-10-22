@@ -222,6 +222,74 @@ final class Redactor {
     }
   }
 
+  /// The ranges of [input] that [redactSource] replaces with a marker, with
+  /// offsets into [input] itself: source-authored `[[upload:` and
+  /// `[[attachment:` tokens, known secrets and their pattern aliases, the
+  /// built-in detectors (private keys, URL credentials, assignments) and
+  /// upload secrets. Overlapping ranges are merged. Throws [AiFailure]
+  /// whenever [redactSource] would.
+  List<({int start, int end})> redactSourceRanges(String input) {
+    redactSource(input);
+    try {
+      final tokens = _literalUploadPlaceholder.allMatches(input).toList();
+      final source = neutralizeUploadPlaceholderLiterals(input);
+      // Where each neutralized token sits in [source], and the shift after it.
+      final starts = <int>[];
+      final shifts = <int>[];
+      var shift = 0;
+      for (final token in tokens) {
+        starts.add(token.start + shift);
+        shift += _redacted.length - (token.end - token.start);
+        shifts.add(shift);
+      }
+      int toInput(int offset, {required bool end}) {
+        for (var i = tokens.length - 1; i >= 0; i--) {
+          final inside = end ? starts[i] < offset : starts[i] <= offset;
+          if (!inside) continue;
+          final tokenEnd = starts[i] + _redacted.length;
+          if (end ? offset <= tokenEnd : offset < tokenEnd) {
+            return end ? tokens[i].end : tokens[i].start;
+          }
+          return offset - shifts[i];
+        }
+        return offset;
+      }
+
+      final ranges = <_RedactionRange>[
+        for (final token in tokens)
+          _RedactionRange(start: token.start, end: token.end),
+        for (final range in [
+          ..._knownSecretRanges(source, _knownSecrets),
+          ..._knownSecretRanges(source, _patternAliases.values),
+          ..._patternRanges(source),
+          ..._uploadSecretRanges(source),
+        ])
+          _RedactionRange(
+            start: toInput(range.start, end: false),
+            end: toInput(range.end, end: true),
+          ),
+      ]..sort((a, b) => a.start.compareTo(b.start));
+      final merged = <({int start, int end})>[];
+      for (final range in ranges) {
+        if (range.end <= range.start) continue;
+        if (merged.isNotEmpty && range.start < merged.last.end) {
+          final last = merged.removeLast();
+          merged.add((
+            start: last.start,
+            end: range.end > last.end ? range.end : last.end,
+          ));
+        } else {
+          merged.add((start: range.start, end: range.end));
+        }
+      }
+      return merged;
+    } on AiFailure {
+      rethrow;
+    } catch (_) {
+      throw const AiFailure(AiFailureKind.policyBlocked);
+    }
+  }
+
   int get longestKnownSecretLength {
     _refreshSecrets();
     return _knownSecrets.fold(
