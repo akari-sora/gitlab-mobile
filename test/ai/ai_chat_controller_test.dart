@@ -83,6 +83,17 @@ Future<void> _waitFor(bool Function() condition) async {
   );
 }
 
+Future<void> _waitUntil(
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  final elapsed = Stopwatch()..start();
+  while (!condition() && elapsed.elapsed < timeout) {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+  expect(condition(), isTrue, reason: 'history condition did not settle');
+}
+
 Future<_Environment> _environment({
   MemoryAiStore? aiStore,
   bool failFirstRepositoryRead = false,
@@ -490,7 +501,9 @@ void main() {
     expect(controller.displaySafe(answer), isNot(contains('\n')));
     // GitLab deletes a lone CR, which joins what it split: the secret must be
     // caught after that join, not before it.
-    final split = controller.draftSafe('Rotate synthetic-test\r-token now\r\nok');
+    final split = controller.draftSafe(
+      'Rotate synthetic-test\r-token now\r\nok',
+    );
     expect(split, isNot(contains('synthetic-test-token')));
     expect(split, isNot(contains('\r')));
     expect(split, endsWith(' now\nok'));
@@ -584,6 +597,7 @@ void main() {
       controller.markReported(original);
       expect(notifications, 1);
       final marked = controller.items.whereType<AiAssistantItem>().single;
+      expect(controller.currentOf(original), same(marked));
       expect(marked.reported, isTrue);
       expect(marked.text, original.text);
       expect(marked.source, same(original.source));
@@ -623,6 +637,84 @@ void main() {
       expect(hidden.text, isEmpty);
       expect(hidden.source, same(original.source));
       expect(hidden.reported, isTrue);
+      expect(controller.currentOf(original), same(hidden));
+    },
+  );
+
+  test(
+    'a report completed after redaction marks and saves its descendant',
+    () async {
+      const lateSecret = 'synthetic-delayed-report-secret-789';
+      final store = MemoryAiStore();
+      final environment = await _environment(aiStore: store);
+      addTearDown(environment.dispose);
+      final root = await Directory.systemTemp.createTemp('mr6a4-descendant-');
+      final history = AiHistoryCoordinator.debugReset(
+        store: store,
+        files: AiHistoryFileStore(root: () async => root),
+      );
+      addTearDown(() async {
+        AiHistoryCoordinator.debugReset();
+        await root.delete(recursive: true);
+      });
+      final controller = await _readyController(
+        environment,
+        FakeAdapter((_) => _sse(answer('answer $lateSecret'))),
+        tools: false,
+      );
+      final account = environment.workspace.account.key;
+      expect(await history.enable(account), AiHistoryState.ready);
+      await environment.settings.loadAccount(account);
+      await controller.send('first');
+      expect(controller.historySaved, isFalse);
+      final original = controller.items.whereType<AiAssistantItem>().single;
+      expect(controller.currentOf(original), same(original));
+
+      await environment.settings.saveProvider(
+        _provider(AiFormat.responses, id: 'other', requiresKey: true),
+      );
+      await environment.settings.saveProviderKey(
+        'other',
+        lateSecret,
+        acknowledgeWarning: true,
+      );
+      await controller.recheck();
+      final rebuilt = controller.items.whereType<AiAssistantItem>().single;
+      expect(rebuilt, isNot(same(original)));
+      expect(rebuilt.text, isNot(contains(lateSecret)));
+      expect(controller.currentOf(original), same(rebuilt));
+      controller.markReported(original);
+      await _waitUntil(() => controller.historySaved);
+      final marked = controller.items.whereType<AiAssistantItem>().single;
+      expect(marked.reported, isTrue);
+      expect(controller.currentOf(original), same(marked));
+      final saved = (await history.read(account))!.conversations.single;
+      final restored = saved.conversation.items
+          .whereType<AiAssistantItem>()
+          .single;
+      expect(restored.reported, isTrue);
+      expect(restored.text, rebuilt.text);
+
+      controller.startNewConversation();
+      await controller.recheck();
+      await controller.send('second');
+      final fresh = controller.items.whereType<AiAssistantItem>().single;
+      expect(controller.currentOf(original), isNull);
+      expect(controller.currentOf(marked), isNull);
+      expect(controller.currentOf(fresh), same(fresh));
+      controller.markReported(original);
+      controller.markReported(marked);
+      expect(
+        controller.items.whereType<AiAssistantItem>().single.reported,
+        isFalse,
+      );
+      expect(controller.historySaved, isFalse);
+      expect(controller.reportNotSaved, isFalse);
+      const unrelated = AiAssistantItem(
+        text: 'answer',
+        state: AiAssistantState.done,
+      );
+      expect(controller.currentOf(unrelated), isNull);
     },
   );
 
@@ -693,6 +785,7 @@ void main() {
       expect(settled.state, AiAssistantState.done);
       expect(settled.source, same(partial.source));
       expect(settled.reported, isTrue);
+      expect(controller.currentOf(partial), same(settled));
       final saved = (await history.read(account))!.conversations.single;
       final restored = saved.conversation.items
           .whereType<AiAssistantItem>()
@@ -798,7 +891,7 @@ void main() {
     expect(root.listSync(recursive: true).whereType<File>(), isEmpty);
     failWrites = false;
     final before = writes;
-    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    await _waitUntil(() => controller.historySaved);
     expect(writes, greaterThan(before));
     expect(history.saveFailed(account, controller.id), isFalse);
     final saved = (await history.read(account))!.conversations.single;
@@ -809,6 +902,185 @@ void main() {
     expect(restored.reported, isTrue);
     expect(restored.text, 'persist this report');
   });
+
+  test('two failing controllers share bounded retry scheduling', () async {
+    final store = MemoryAiStore();
+    final environment = await _environment(aiStore: store);
+    addTearDown(environment.dispose);
+    final root = await Directory.systemTemp.createTemp('mr6a4-two-retries-');
+    var failWrites = false;
+    var attempts = 0;
+    final history = AiHistoryCoordinator.debugReset(
+      store: store,
+      files: AiHistoryFileStore(
+        root: () async {
+          if (failWrites) {
+            attempts++;
+            throw const FileSystemException('synthetic outage');
+          }
+          return root;
+        },
+      ),
+    );
+    addTearDown(() async {
+      AiHistoryCoordinator.debugReset();
+      await root.delete(recursive: true);
+    });
+    final first = await _readyController(
+      environment,
+      FakeAdapter((_) => _sse(answer('first answer'))),
+      tools: false,
+    );
+    final second = await _readyController(
+      environment,
+      FakeAdapter((_) => _sse(answer('second answer'))),
+      tools: false,
+    );
+    final account = environment.workspace.account.key;
+    expect(await history.enable(account), AiHistoryState.ready);
+    await environment.settings.loadAccount(account);
+    await first.recheck();
+    await second.recheck();
+    await first.send('first');
+    await second.send('second');
+    failWrites = true;
+    first.markReported(first.items.whereType<AiAssistantItem>().single);
+    second.markReported(second.items.whereType<AiAssistantItem>().single);
+    await _waitUntil(
+      () =>
+          history.saveFailed(account, first.id) &&
+          history.saveFailed(account, second.id),
+    );
+    // Ready notifications and rechecks must not bypass the scheduled timer.
+    for (var i = 0; i < 3; i++) {
+      history.acknowledgeNotices(account);
+      await first.recheck();
+      await second.recheck();
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 700));
+    expect(attempts, inInclusiveRange(2, 8));
+    expect(first.historySaved, isFalse);
+    expect(second.historySaved, isFalse);
+    expect(first.reportNotSaved, isFalse);
+    expect(second.reportNotSaved, isFalse);
+  });
+
+  test(
+    'permanent report save failure waits for a new snapshot and clears on success',
+    () async {
+      final store = MemoryAiStore();
+      final environment = await _environment(aiStore: store);
+      addTearDown(environment.dispose);
+      final root = await Directory.systemTemp.createTemp('mr6a4-permanent-');
+      var now = DateTime.now().toUtc();
+      var accesses = 0;
+      final history = AiHistoryCoordinator.debugReset(
+        store: store,
+        files: AiHistoryFileStore(
+          root: () async {
+            accesses++;
+            return root;
+          },
+          clock: () => now,
+        ),
+      );
+      addTearDown(() async {
+        AiHistoryCoordinator.debugReset();
+        await root.delete(recursive: true);
+      });
+      final controller = await _readyController(
+        environment,
+        FakeAdapter((_) => _sse(answer('reported answer'))),
+        tools: false,
+      );
+      final account = environment.workspace.account.key;
+      expect(await history.enable(account), AiHistoryState.ready);
+      await environment.settings.loadAccount(account);
+      await controller.send('first');
+      // Make the fresh snapshot expire during the file store's retention pass.
+      now = now.add(const Duration(days: 91));
+      controller.markReported(
+        controller.items.whereType<AiAssistantItem>().single,
+      );
+      await _waitUntil(() => controller.reportNotSaved);
+      expect(history.evicted(account, controller.id), isTrue);
+      expect(controller.historySaved, isFalse);
+      final afterFailure = accesses;
+      history.acknowledgeNotices(account);
+      await controller.recheck();
+      await Future<void>.delayed(const Duration(milliseconds: 1200));
+      expect(accesses, afterFailure);
+      expect(controller.reportNotSaved, isTrue);
+
+      now = DateTime.now().toUtc();
+      await controller.send('new snapshot');
+      await _waitUntil(() => controller.historySaved);
+      expect(controller.reportNotSaved, isFalse);
+      expect(history.evicted(account, controller.id), isFalse);
+      final saved = (await history.read(account))!.conversations.single;
+      expect(
+        saved.conversation.items.whereType<AiAssistantItem>().first.reported,
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'exhausted report retries stay stopped until a new snapshot succeeds',
+    () async {
+      final store = MemoryAiStore();
+      final environment = await _environment(aiStore: store);
+      addTearDown(environment.dispose);
+      final root = await Directory.systemTemp.createTemp('mr6a4-exhausted-');
+      var failWrites = false;
+      var attempts = 0;
+      final history = AiHistoryCoordinator.debugReset(
+        store: store,
+        files: AiHistoryFileStore(
+          root: () async {
+            if (failWrites) {
+              attempts++;
+              throw const FileSystemException('synthetic outage');
+            }
+            return root;
+          },
+        ),
+      );
+      addTearDown(() async {
+        AiHistoryCoordinator.debugReset();
+        await root.delete(recursive: true);
+      });
+      final controller = await _readyController(
+        environment,
+        FakeAdapter((_) => _sse(answer('reported answer'))),
+        tools: false,
+      );
+      final account = environment.workspace.account.key;
+      expect(await history.enable(account), AiHistoryState.ready);
+      await environment.settings.loadAccount(account);
+      await controller.send('first');
+      failWrites = true;
+      controller.markReported(
+        controller.items.whereType<AiAssistantItem>().single,
+      );
+      await _waitUntil(
+        () => controller.reportNotSaved,
+        timeout: const Duration(seconds: 50),
+      );
+      expect(attempts, 4);
+      expect(controller.historySaved, isFalse);
+      failWrites = false;
+      history.acknowledgeNotices(account);
+      await controller.recheck();
+      await Future<void>.delayed(const Duration(milliseconds: 700));
+      expect(controller.historySaved, isFalse);
+      expect(controller.reportNotSaved, isTrue);
+      await controller.send('try a new snapshot');
+      await _waitUntil(() => controller.historySaved);
+      expect(controller.reportNotSaved, isFalse);
+    },
+    timeout: const Timeout(Duration(seconds: 60)),
+  );
 
   for (final format in AiFormat.values) {
     test(

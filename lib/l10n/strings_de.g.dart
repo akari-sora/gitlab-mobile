@@ -2356,7 +2356,7 @@ const _messagesDe = <String>[
   'Die Antwort konnte nicht geprüft werden, daher wurde nichts angehängt.',
   'Melden',
   'Diese Antwort melden',
-  'Meldungen gehen an den Entwickler von Mergeline, um die KI-Funktionen zu verbessern. Standardmäßig werden nur die Kategorie und Versionsdetails gesendet.',
+  'Meldungen gehen an den Entwickler von Mergeline, um die AI-Funktionen zu verbessern. Standardmäßig enthalten sie die Kategorie, deine Beschreibung, die App-Version, die Einstellungen für Modell und Anbieter, die Uhrzeit und die Nachrichtennummer, aber nicht die Antwort.',
   'Was stimmt nicht?',
   'Schädlich oder beleidigend',
   'Falsch oder irreführend',
@@ -2378,4 +2378,6 @@ const _messagesDe = <String>[
   'Gemeldet; der Inhalt ist ausgeblendet',
   'Anzeigen',
   'Ausblenden',
+  'Gemeldet',
+  'Die Meldungsmarkierung konnte nicht im verschlüsselten Verlauf gespeichert werden, daher kann diese Antwort nach einem Neustart erneut angezeigt werden.',
 ];

@@ -2356,7 +2356,7 @@ const _messagesId = <String>[
   'Jawaban tidak dapat diperiksa, jadi tidak ada yang ditambahkan.',
   'Laporkan',
   'Laporkan jawaban ini',
-  'Laporan dikirim kepada pengembang Mergeline untuk menyempurnakan fitur AI. Secara bawaan, hanya kategori dan detail versi yang dikirim.',
+  'Laporan dikirim kepada pengembang Mergeline untuk meningkatkan fitur AI. Secara bawaan, laporan berisi kategori, deskripsi Anda, versi aplikasi, pengaturan model dan penyedia, waktu, serta nomor pesan, tetapi tidak berisi respons.',
   'Apa masalahnya?',
   'Berbahaya atau menyinggung',
   'Tidak akurat atau menyesatkan',
@@ -2378,4 +2378,6 @@ const _messagesId = <String>[
   'Telah dilaporkan; konten disembunyikan',
   'Tampilkan',
   'Sembunyikan',
+  'Telah dilaporkan',
+  'Tanda telah dilaporkan tidak dapat disimpan ke riwayat terenkripsi, sehingga respons ini dapat muncul lagi setelah aplikasi dimulai ulang.',
 ];

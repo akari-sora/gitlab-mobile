@@ -15,10 +15,30 @@ AiReport _report({String description = '', String? response}) => AiReport(
 );
 
 void main() {
-  test('AI report email is a single ASCII address without spaces', () {
+  test('AI report email is the owner\'s address', () {
+    // The address the owner chose for AI reports (plan v5, third round).
+    expect(aiReportEmail, 'aa22396584@gmail.com');
     expect(aiReportEmail.split('@'), hasLength(2));
     expect(aiReportEmail, isNot(contains(' ')));
     expect(aiReportEmail.codeUnits, everyElement(lessThan(128)));
+  });
+
+  test('the address also has a line without direction marks', () {
+    // Arabic wraps the translated address in isolates; this line copies
+    // cleanly into a recipient field from the share route.
+    final body = aiReportBody(
+      _report(),
+      sendToLine: 'أرسل إلى \u2068$aiReportEmail\u2069',
+    );
+    expect(body.split('\n')[1], 'to: $aiReportEmail');
+  });
+
+  test('an attached answer keeps its line breaks and tabs', () {
+    final body = aiReportBody(
+      _report(response: 'func main() {\n\treturn\n}'),
+      sendToLine: 'Send to $aiReportEmail',
+    );
+    expect(body, contains('func main() {\n\treturn\n}'));
   });
 
   test('report body starts with destination and omits response by default', () {

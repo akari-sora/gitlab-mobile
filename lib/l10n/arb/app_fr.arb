@@ -2354,7 +2354,7 @@
   "aiDraftCheckFailed": "La réponse n’a pas pu être vérifiée, donc rien n’a été ajouté.",
   "aiReportAction": "Signaler",
   "aiReportTitle": "Signaler cette réponse",
-  "aiReportIntro": "Les signalements sont envoyés au développeur de Mergeline afin d’améliorer les fonctions d’IA. Par défaut, seules la catégorie et les informations sur la version sont envoyées.",
+  "aiReportIntro": "Les signalements sont envoyés au développeur de Mergeline pour améliorer les fonctions AI. Par défaut, ils contiennent la catégorie, votre description, la version de l’application, les réglages du modèle et du fournisseur, l’heure et le numéro du message, mais pas la réponse.",
   "aiReportCategory": "Quel est le problème ?",
   "aiReportHarmful": "Contenu nuisible ou offensant",
   "aiReportInaccurate": "Inexact ou trompeur",
@@ -2375,5 +2375,7 @@
   "aiReportFailed": "Impossible d’ouvrir la messagerie ou le partage. Le signalement n’a donc pas été envoyé.",
   "aiReported": "Signalé ; le contenu est masqué",
   "aiReportShow": "Afficher",
-  "aiReportHide": "Masquer"
+  "aiReportHide": "Masquer",
+  "aiReportedOpen": "Signalé",
+  "aiReportNotSaved": "La marque de signalement n’a pas pu être enregistrée dans l’historique chiffré ; cette réponse peut donc réapparaître après un redémarrage."
 }

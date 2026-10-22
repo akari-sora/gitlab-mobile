@@ -2354,7 +2354,7 @@
   "aiDraftCheckFailed": "Răspunsul nu a putut fi verificat, așa că nu s-a adăugat nimic.",
   "aiReportAction": "Raportează",
   "aiReportTitle": "Raportează acest răspuns",
-  "aiReportIntro": "Rapoartele sunt trimise dezvoltatorului Mergeline pentru îmbunătățirea funcțiilor AI. În mod implicit, se trimit doar categoria și detaliile versiunii.",
+  "aiReportIntro": "Rapoartele ajung la dezvoltatorul Mergeline pentru a îmbunătăți funcțiile AI. În mod implicit, conțin categoria, descrierea ta, versiunea aplicației, setările modelului și ale furnizorului, ora și numărul mesajului, dar nu răspunsul.",
   "aiReportCategory": "Care este problema?",
   "aiReportHarmful": "Dăunător sau ofensator",
   "aiReportInaccurate": "Inexact sau înșelător",
@@ -2375,5 +2375,7 @@
   "aiReportFailed": "Nu s-a putut deschide nici aplicația de e-mail, nici meniul de partajare, așa că raportul nu a fost trimis.",
   "aiReported": "Raportat; conținutul este ascuns",
   "aiReportShow": "Arată",
-  "aiReportHide": "Ascunde"
+  "aiReportHide": "Ascunde",
+  "aiReportedOpen": "Raportat",
+  "aiReportNotSaved": "Marcajul de raportare nu a putut fi salvat în istoricul criptat, așa că acest răspuns poate apărea din nou după repornire."
 }

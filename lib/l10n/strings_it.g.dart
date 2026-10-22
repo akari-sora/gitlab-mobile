@@ -2356,7 +2356,7 @@ const _messagesIt = <String>[
   'Non è stato possibile controllare la risposta, quindi non è stato aggiunto nulla.',
   'Segnala',
   'Segnala questa risposta',
-  'Le segnalazioni vengono inviate allo sviluppatore di Mergeline per migliorare le funzionalità IA. Per impostazione predefinita, vengono inviati solo la categoria e i dettagli sulla versione.',
+  'Le segnalazioni vengono inviate allo sviluppatore di Mergeline per migliorare le funzioni AI. Per impostazione predefinita contengono la categoria, la tua descrizione, la versione dell\'app, le impostazioni del modello e del fornitore, l\'ora e il numero del messaggio, ma non la risposta.',
   'Qual è il problema?',
   'Dannosa o offensiva',
   'Inesatta o fuorviante',
@@ -2378,4 +2378,6 @@ const _messagesIt = <String>[
   'Segnalato; il contenuto è nascosto',
   'Mostra',
   'Nascondi',
+  'Segnalato',
+  'Non è stato possibile salvare il segno di segnalazione nella cronologia cifrata, quindi questa risposta potrebbe ricomparire dopo un riavvio.',
 ];

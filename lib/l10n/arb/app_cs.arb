@@ -2354,7 +2354,7 @@
   "aiDraftCheckFailed": "Odpověď se nepodařilo zkontrolovat, proto nebylo nic přidáno.",
   "aiReportAction": "Nahlásit",
   "aiReportTitle": "Nahlásit tuto odpověď",
-  "aiReportIntro": "Hlášení se odesílají vývojáři Mergeline za účelem zlepšování funkcí AI. Ve výchozím nastavení se odešle pouze kategorie a údaje o verzi.",
+  "aiReportIntro": "Hlášení se posílají vývojáři Mergeline, aby se zlepšily funkce AI. Ve výchozím nastavení obsahují kategorii, váš popis, verzi aplikace, nastavení modelu a poskytovatele, čas a číslo zprávy, ale nikoli odpověď.",
   "aiReportCategory": "Co je špatně?",
   "aiReportHarmful": "Škodlivé nebo urážlivé",
   "aiReportInaccurate": "Nepřesné nebo zavádějící",
@@ -2375,5 +2375,7 @@
   "aiReportFailed": "Nepodařilo se otevřít poštu ani sdílení, takže hlášení nebylo odesláno.",
   "aiReported": "Nahlášeno; obsah je skrytý",
   "aiReportShow": "Zobrazit",
-  "aiReportHide": "Skrýt"
+  "aiReportHide": "Skrýt",
+  "aiReportedOpen": "Nahlášeno",
+  "aiReportNotSaved": "Značku nahlášení se nepodařilo uložit do šifrované historie, takže se tato odpověď může po opětovném spuštění zobrazit znovu."
 }

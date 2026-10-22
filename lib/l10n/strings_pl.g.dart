@@ -2356,7 +2356,7 @@ const _messagesPl = <String>[
   'Nie udało się sprawdzić odpowiedzi, więc nic nie dodano.',
   'Zgłoś',
   'Zgłoś tę odpowiedź',
-  'Zgłoszenia trafiają do dewelopera Mergeline, aby pomóc ulepszać funkcje AI. Domyślnie wysyłane są tylko kategoria i dane wersji.',
+  'Zgłoszenia trafiają do twórcy Mergeline, aby ulepszać funkcje AI. Domyślnie zawierają kategorię, Twój opis, wersję aplikacji, ustawienia modelu i dostawcy, czas oraz numer wiadomości, ale nie odpowiedź.',
   'Co jest nie tak?',
   'Szkodliwa lub obraźliwa',
   'Niedokładna lub wprowadzająca w błąd',
@@ -2378,4 +2378,6 @@ const _messagesPl = <String>[
   'Zgłoszono; treść jest ukryta',
   'Pokaż',
   'Ukryj',
+  'Zgłoszono',
+  'Nie udało się zapisać oznaczenia zgłoszenia w zaszyfrowanej historii, więc ta odpowiedź może pojawić się ponownie po ponownym uruchomieniu.',
 ];

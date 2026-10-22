@@ -2356,7 +2356,7 @@ const _messagesPtBr = <String>[
   'Não foi possível verificar a resposta, então nada foi adicionado.',
   'Denunciar',
   'Denunciar esta resposta',
-  'As denúncias são enviadas ao desenvolvedor do Mergeline para melhorar os recursos de IA. Por padrão, apenas a categoria e os detalhes da versão são enviados.',
+  'As denúncias são enviadas ao desenvolvedor do Mergeline para melhorar os recursos de AI. Por padrão, elas contêm a categoria, sua descrição, a versão do aplicativo, as configurações do modelo e do provedor, a hora e o número da mensagem, mas não a resposta.',
   'Qual é o problema?',
   'Prejudicial ou ofensiva',
   'Imprecisa ou enganosa',
@@ -2378,4 +2378,6 @@ const _messagesPtBr = <String>[
   'Denunciado; o conteúdo está oculto',
   'Mostrar',
   'Ocultar',
+  'Denunciado',
+  'A marca de denúncia não pôde ser salva no histórico criptografado, então esta resposta pode aparecer novamente após uma reinicialização.',
 ];

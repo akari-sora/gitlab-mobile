@@ -14,7 +14,7 @@ void main() {
         launched = uri;
         return true;
       },
-      share: (_, _) async => shares++,
+      share: (_, _, _) async => shares++,
     );
 
     expect(route, AiReportRoute.mail);
@@ -24,6 +24,7 @@ void main() {
 
   test('false launch shares the exact body and origin', () async {
     String? shared;
+    String? sharedSubject;
     Rect? sharedOrigin;
     const origin = Rect.fromLTWH(1, 2, 3, 4);
 
@@ -32,14 +33,16 @@ void main() {
       body: 'Exact report text',
       sharePositionOrigin: origin,
       launch: (_) async => false,
-      share: (text, passedOrigin) async {
+      share: (text, subject, passedOrigin) async {
         shared = text;
+        sharedSubject = subject;
         sharedOrigin = passedOrigin;
       },
     );
 
     expect(route, AiReportRoute.share);
     expect(shared, 'Exact report text');
+    expect(sharedSubject, 'Report');
     expect(sharedOrigin, origin);
   });
 
@@ -50,7 +53,7 @@ void main() {
       subject: 'Report',
       body: 'Body',
       launch: (_) => Future<bool>.error(StateError('no mail app')),
-      share: (_, _) async => shared = true,
+      share: (_, _, _) async => shared = true,
     );
 
     expect(route, AiReportRoute.share);
@@ -68,7 +71,7 @@ void main() {
         launches++;
         return true;
       },
-      share: (text, _) async => shared = text,
+      share: (text, _, _) async => shared = text,
     );
 
     expect(route, AiReportRoute.share);

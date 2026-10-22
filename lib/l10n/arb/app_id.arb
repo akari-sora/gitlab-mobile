@@ -2354,7 +2354,7 @@
   "aiDraftCheckFailed": "Jawaban tidak dapat diperiksa, jadi tidak ada yang ditambahkan.",
   "aiReportAction": "Laporkan",
   "aiReportTitle": "Laporkan jawaban ini",
-  "aiReportIntro": "Laporan dikirim kepada pengembang Mergeline untuk menyempurnakan fitur AI. Secara bawaan, hanya kategori dan detail versi yang dikirim.",
+  "aiReportIntro": "Laporan dikirim kepada pengembang Mergeline untuk meningkatkan fitur AI. Secara bawaan, laporan berisi kategori, deskripsi Anda, versi aplikasi, pengaturan model dan penyedia, waktu, serta nomor pesan, tetapi tidak berisi respons.",
   "aiReportCategory": "Apa masalahnya?",
   "aiReportHarmful": "Berbahaya atau menyinggung",
   "aiReportInaccurate": "Tidak akurat atau menyesatkan",
@@ -2375,5 +2375,7 @@
   "aiReportFailed": "Surel maupun fitur berbagi tidak dapat dibuka, sehingga laporan tidak dikirim.",
   "aiReported": "Telah dilaporkan; konten disembunyikan",
   "aiReportShow": "Tampilkan",
-  "aiReportHide": "Sembunyikan"
+  "aiReportHide": "Sembunyikan",
+  "aiReportedOpen": "Telah dilaporkan",
+  "aiReportNotSaved": "Tanda telah dilaporkan tidak dapat disimpan ke riwayat terenkripsi, sehingga respons ini dapat muncul lagi setelah aplikasi dimulai ulang."
 }

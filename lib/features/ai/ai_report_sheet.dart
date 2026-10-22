@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -43,10 +44,48 @@ class _AiReportSheetState extends State<AiReportSheet> {
   AiReportCategory? _category;
   var _attach = false;
 
+  /// "Copied" shows on the button itself: the sheet sits above the chat's
+  /// own messenger, so a snack bar would not be seen.
+  var _copied = false;
+  Timer? _copiedReset;
+
+  /// Typing refreshes the preview after a pause instead of on every key: the
+  /// attached answer can be 64,000 characters to clean, check and lay out.
+  Timer? _typing;
+  AiReportChoice? _previewed;
+  String _preview = '';
+
   @override
   void dispose() {
+    _copiedReset?.cancel();
+    _typing?.cancel();
     _description.dispose();
     super.dispose();
+  }
+
+  void _typed(String _) {
+    _typing?.cancel();
+    _typing = Timer(const Duration(milliseconds: 300), () {
+      if (mounted) setState(() {});
+    });
+  }
+
+  String _previewOf(AiReportChoice choice) {
+    if (choice != _previewed) {
+      _previewed = choice;
+      _preview = widget.body(choice);
+    }
+    return _preview;
+  }
+
+  Future<void> _copyAddress() async {
+    await Clipboard.setData(const ClipboardData(text: aiReportEmail));
+    if (!mounted) return;
+    setState(() => _copied = true);
+    _copiedReset?.cancel();
+    _copiedReset = Timer(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _copied = false);
+    });
   }
 
   AiReportChoice? get _choice {
@@ -74,6 +113,134 @@ class _AiReportSheetState extends State<AiReportSheet> {
         // status bar and the drag handle; the keyboard is taken off here.
         final room = math.max(0.0, constraints.maxHeight - keyboard);
         final height = room < 420 ? room : room * 0.9;
+        // With little room (a landscape phone with the keyboard up) the
+        // buttons scroll with the form instead of being pinned under it.
+        final pinned = room >= 240;
+        final actions = Padding(
+          padding: EdgeInsets.fromLTRB(
+            pinned ? 16 : 0,
+            8,
+            pinned ? 16 : 0,
+            8 + (keyboard > 0 ? 0 : media.padding.bottom),
+          ),
+          child: Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: Text(l10n.cancelAction),
+              ),
+              FilledButton.icon(
+                key: const ValueKey('ai-report-send'),
+                icon: const Icon(Icons.outlined_flag, size: 18),
+                label: Text(l10n.aiReportSend),
+                // The choice as it is now: typing does not rebuild the sheet.
+                onPressed: choice == null
+                    ? null
+                    : () => Navigator.of(context).pop(_choice),
+              ),
+            ],
+          ),
+        );
+        final form = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l10n.aiReportTitle, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 4),
+            Text(l10n.aiReportIntro, style: muted),
+            const SizedBox(height: 12),
+            Text(l10n.aiReportCategory, style: theme.textTheme.labelLarge),
+            RadioGroup<AiReportCategory>(
+              groupValue: _category,
+              onChanged: (value) => setState(() => _category = value),
+              child: Column(
+                children: [
+                  for (final category in AiReportCategory.values)
+                    RadioListTile<AiReportCategory>(
+                      key: ValueKey('ai-report-${category.name}'),
+                      contentPadding: EdgeInsets.zero,
+                      dense: true,
+                      value: category,
+                      title: Text(_categoryLabel(category)),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              key: const ValueKey('ai-report-description'),
+              controller: _description,
+              minLines: 2,
+              maxLines: 4,
+              maxLength: 500,
+              onChanged: _typed,
+              decoration: InputDecoration(labelText: l10n.aiReportDescription),
+            ),
+            SwitchListTile(
+              key: const ValueKey('ai-report-attach'),
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+              title: Text(l10n.aiReportAttach),
+              subtitle: Text(l10n.aiReportAttachHint),
+              value: _attach,
+              onChanged: (value) => setState(() => _attach = value),
+            ),
+            const SizedBox(height: 4),
+            // Text first, button under it: a long address or
+            // label at large text sizes must not overflow.
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.mail_outline, size: 18, color: muted?.color),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    l10n.aiReportDestination(aiReportEmail),
+                    style: muted,
+                  ),
+                ),
+              ],
+            ),
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: TextButton.icon(
+                key: const ValueKey('ai-report-copy-address'),
+                icon: Icon(_copied ? Icons.check : Icons.copy, size: 16),
+                onPressed: _copyAddress,
+                label: Text(
+                  _copied
+                      ? l10n.aiReportAddressCopied
+                      : l10n.aiReportCopyAddress,
+                ),
+              ),
+            ),
+            if (choice != null) ...[
+              const SizedBox(height: 8),
+              Text(l10n.aiReportPreview, style: theme.textTheme.labelLarge),
+              const SizedBox(height: 6),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: theme.colorScheme.outlineVariant),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Text(
+                      _previewOf(choice),
+                      key: const ValueKey('ai-report-preview'),
+                      style: codeTextStyle(context, fontSize: 12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        );
         return Padding(
           padding: EdgeInsets.only(bottom: keyboard),
           child: ConstrainedBox(
@@ -86,157 +253,15 @@ class _AiReportSheetState extends State<AiReportSheet> {
                   child: SingleChildScrollView(
                     key: const ValueKey('ai-report-scroll'),
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          l10n.aiReportTitle,
-                          style: theme.textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 4),
-                        Text(l10n.aiReportIntro, style: muted),
-                        const SizedBox(height: 12),
-                        Text(
-                          l10n.aiReportCategory,
-                          style: theme.textTheme.labelLarge,
-                        ),
-                        RadioGroup<AiReportCategory>(
-                          groupValue: _category,
-                          onChanged: (value) =>
-                              setState(() => _category = value),
-                          child: Column(
-                            children: [
-                              for (final category in AiReportCategory.values)
-                                RadioListTile<AiReportCategory>(
-                                  key: ValueKey('ai-report-${category.name}'),
-                                  contentPadding: EdgeInsets.zero,
-                                  dense: true,
-                                  value: category,
-                                  title: Text(_categoryLabel(category)),
-                                ),
-                            ],
+                    child: pinned
+                        ? form
+                        : Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [form, actions],
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        TextField(
-                          key: const ValueKey('ai-report-description'),
-                          controller: _description,
-                          minLines: 2,
-                          maxLines: 4,
-                          maxLength: 500,
-                          onChanged: (_) => setState(() {}),
-                          decoration: InputDecoration(
-                            labelText: l10n.aiReportDescription,
-                          ),
-                        ),
-                        SwitchListTile(
-                          key: const ValueKey('ai-report-attach'),
-                          contentPadding: EdgeInsets.zero,
-                          dense: true,
-                          title: Text(l10n.aiReportAttach),
-                          subtitle: Text(l10n.aiReportAttachHint),
-                          value: _attach,
-                          onChanged: (value) => setState(() => _attach = value),
-                        ),
-                        const SizedBox(height: 4),
-                        // Text first, button under it: a long address or
-                        // label at large text sizes must not overflow.
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(
-                              Icons.mail_outline,
-                              size: 18,
-                              color: muted?.color,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                l10n.aiReportDestination(aiReportEmail),
-                                style: muted,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Align(
-                          alignment: AlignmentDirectional.centerStart,
-                          child: TextButton.icon(
-                            key: const ValueKey('ai-report-copy-address'),
-                            icon: const Icon(Icons.copy, size: 16),
-                            onPressed: () async {
-                              await Clipboard.setData(
-                                const ClipboardData(text: aiReportEmail),
-                              );
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-                                SnackBar(
-                                  content: Text(l10n.aiReportAddressCopied),
-                                ),
-                              );
-                            },
-                            label: Text(l10n.aiReportCopyAddress),
-                          ),
-                        ),
-                        if (choice != null) ...[
-                          const SizedBox(height: 8),
-                          Text(
-                            l10n.aiReportPreview,
-                            style: theme.textTheme.labelLarge,
-                          ),
-                          const SizedBox(height: 6),
-                          DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: theme.colorScheme.outlineVariant,
-                              ),
-                            ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: Text(
-                                  widget.body(choice),
-                                  key: const ValueKey('ai-report-preview'),
-                                  style: codeTextStyle(context, fontSize: 12),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
                   ),
                 ),
-                const Divider(height: 1),
-                Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    16,
-                    8,
-                    16,
-                    8 + (keyboard > 0 ? 0 : media.padding.bottom),
-                  ),
-                  child: Wrap(
-                    alignment: WrapAlignment.end,
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      TextButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        child: Text(l10n.cancelAction),
-                      ),
-                      FilledButton.icon(
-                        key: const ValueKey('ai-report-send'),
-                        icon: const Icon(Icons.outlined_flag, size: 18),
-                        label: Text(l10n.aiReportSend),
-                        onPressed: choice == null
-                            ? null
-                            : () => Navigator.of(context).pop(choice),
-                      ),
-                    ],
-                  ),
-                ),
+                if (pinned) ...[const Divider(height: 1), actions],
               ],
             ),
           ),

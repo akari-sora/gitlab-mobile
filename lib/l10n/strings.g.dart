@@ -7156,7 +7156,7 @@ final class AppStrings {
   /// 回報此回應
   String get aiReportTitle => language._messages[2353];
 
-  /// 回報會寄給 Mergeline 的開發者，用來改善 AI 功能。預設只寄出類別與版本等資訊。
+  /// 回報會寄給 Mergeline 的開發者，用來改善 AI 功能。預設寄出類別、你的說明、應用程式版本、模型與服務設定、時間和訊息序號，不含回應內容。
   String get aiReportIntro => language._messages[2354];
 
   /// 哪裡有問題？
@@ -7221,4 +7221,10 @@ final class AppStrings {
 
   /// 隱藏
   String get aiReportHide => language._messages[2375];
+
+  /// 已回報
+  String get aiReportedOpen => language._messages[2376];
+
+  /// 回報標記沒能存進加密紀錄；重新開啟後，這則回應可能會再次顯示。
+  String get aiReportNotSaved => language._messages[2377];
 }

@@ -10882,7 +10882,7 @@
   "aiDraftCheckFailed": "無法檢查這段回答，所以沒有附加。",
   "aiReportAction": "回報",
   "aiReportTitle": "回報此回應",
-  "aiReportIntro": "回報會寄給 Mergeline 的開發者，用來改善 AI 功能。預設只寄出類別與版本等資訊。",
+  "aiReportIntro": "回報會寄給 Mergeline 的開發者，用來改善 AI 功能。預設寄出類別、你的說明、應用程式版本、模型與服務設定、時間和訊息序號，不含回應內容。",
   "aiReportCategory": "哪裡有問題？",
   "aiReportHarmful": "有害或冒犯的內容",
   "aiReportInaccurate": "不正確或誤導",
@@ -10906,5 +10906,7 @@
   "aiReportFailed": "無法開啟郵件或分享，回報沒有送出。",
   "aiReported": "已回報，內容已隱藏",
   "aiReportShow": "顯示",
-  "aiReportHide": "隱藏"
+  "aiReportHide": "隱藏",
+  "aiReportedOpen": "已回報",
+  "aiReportNotSaved": "回報標記沒能存進加密紀錄；重新開啟後，這則回應可能會再次顯示。"
 }

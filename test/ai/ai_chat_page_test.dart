@@ -56,6 +56,23 @@ final class _FakeSession extends ChangeNotifier implements AiChatSession {
   @override
   bool get historySaved => false;
   @override
+  bool reportNotSaved = false;
+  // Like the controller, a rebuilt item points at its replacement.
+  final successors = <AiAssistantItem, AiAssistantItem>{};
+  @override
+  AiAssistantItem? currentOf(AiAssistantItem item) {
+    var current = item;
+    for (
+      var next = successors[current];
+      next != null;
+      next = successors[current]
+    ) {
+      current = next;
+    }
+    return items.contains(current) ? current : null;
+  }
+
+  @override
   bool get canSend =>
       blocker == AiChatBlocker.none && phase == AiChatPhase.idle;
 
@@ -330,6 +347,130 @@ void main() {
       expect(find.text(l10n.aiReportMailOpened), findsOneWidget);
     });
 
+    testWidgets('the text is checked again when it is sent', (tester) async {
+      final session = answered();
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-inaccurate')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-report-description')),
+        'pasted synthetic-secret by mistake',
+      );
+      // A redaction pass replaces the answer while the sheet is open.
+      final original = session.items.single as AiAssistantItem;
+      const rebuilt = AiAssistantItem(
+        text: 'It renames synthetic-secret files.',
+        state: AiAssistantState.done,
+        source: source,
+      );
+      session.successors[original] = rebuilt;
+      session.update(() => session.items = [rebuilt]);
+      await tester.pumpAndSettle();
+      await send(tester);
+      final body = sent.single.body;
+      expect(body, contains('It renames [REDACTED] files.'));
+      expect(body, contains('description: pasted [REDACTED] by mistake'));
+      expect(body, isNot(contains('synthetic-secret')));
+      expect(body, isNot(contains('renames **one** file')));
+      // The report is marked on the answer the user picked; the session
+      // follows it to the current one.
+      expect(session.reported, [original]);
+    });
+
+    testWidgets('an answer gone before sending is not sent', (tester) async {
+      final session = answered();
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      session.update(() => session.items = []);
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(sent, isEmpty);
+      expect(session.reported, isEmpty);
+      expect(find.text(l10n.aiReportFailed), findsOneWidget);
+    });
+
+    testWidgets('the address is copied with feedback on the button', (
+      tester,
+    ) async {
+      Object? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') copied = call.arguments;
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      final session = answered();
+      await openReport(tester, session);
+      final copy = find.byKey(const ValueKey('ai-report-copy-address'));
+      await tester.ensureVisible(copy);
+      await tester.pumpAndSettle();
+      await tester.tap(copy);
+      await tester.pumpAndSettle();
+      expect(copied, {'text': aiReportEmail});
+      expect(
+        find.descendant(
+          of: copy,
+          matching: find.text(l10n.aiReportAddressCopied),
+        ),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 3));
+      expect(
+        find.descendant(
+          of: copy,
+          matching: find.text(l10n.aiReportCopyAddress),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a landscape phone with the keyboard up can still send', (
+      tester,
+    ) async {
+      final ratio = tester.view.devicePixelRatio;
+      tester.view.physicalSize = const Size(640, 360) * ratio;
+      tester.view.padding = FakeViewPadding(
+        top: 24 * ratio,
+        bottom: 16 * ratio,
+      );
+      addTearDown(tester.view.reset);
+      useLanguage(languageForTag('en')!);
+      addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+      final session = answered();
+      final sent = await openReport(tester, session, tag: 'en', scale: 2);
+      final harmful = find.byKey(const ValueKey('ai-report-harmful'));
+      await tester.ensureVisible(harmful);
+      await tester.pumpAndSettle();
+      await tester.tap(harmful);
+      await tester.pumpAndSettle();
+      await tester.showKeyboard(
+        find.byKey(const ValueKey('ai-report-description')),
+      );
+      tester.view.viewInsets = FakeViewPadding(bottom: 220 * ratio);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final button = find.byKey(const ValueKey('ai-report-send'));
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(button).bottom, lessThanOrEqualTo(360 - 220));
+      await tester.tap(button);
+      // The keyboard goes with the sheet's text field.
+      await tester.pump();
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      expect(sent, hasLength(1));
+    });
+
     testWidgets('the share sheet route says where to send', (tester) async {
       final session = answered();
       final sent = await openReport(
@@ -379,13 +520,73 @@ void main() {
       expect(find.text(l10n.aiReported), findsOneWidget);
       expect(find.byType(AiMessageBody), findsNothing);
       expect(find.byKey(const ValueKey('ai-chat-report')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('ai-chat-report-not-saved')),
+        findsNothing,
+      );
       await tester.tap(find.byKey(const ValueKey('ai-chat-reported-toggle')));
       await tester.pumpAndSettle();
       expect(find.byType(AiMessageBody), findsOneWidget);
+      // Open, the header no longer says the content is hidden.
+      expect(find.text(l10n.aiReported), findsNothing);
+      expect(find.text(l10n.aiReportedOpen), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('ai-chat-reported-toggle')));
       await tester.pumpAndSettle();
       expect(find.byType(AiMessageBody), findsNothing);
     });
+
+    testWidgets('a mark that could not be saved says so', (tester) async {
+      final session = _FakeSession(
+        items: const [
+          AiAssistantItem(
+            text: answerText,
+            state: AiAssistantState.done,
+            reported: true,
+          ),
+        ],
+      )..reportNotSaved = true;
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiReportNotSaved), findsOneWidget);
+      session.update(() => session.reportNotSaved = false);
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiReportNotSaved), findsNothing);
+    });
+
+    for (final (tag, size) in [
+      ('zh-TW', const Size(320, 640)),
+      ('ar', const Size(320, 640)),
+    ]) {
+      testWidgets('the fold fits $tag at 2x on ${size.width}x${size.height}', (
+        tester,
+      ) async {
+        tester.view.physicalSize = size * tester.view.devicePixelRatio;
+        addTearDown(tester.view.reset);
+        if (tag != 'zh-TW') useLanguage(languageForTag(tag)!);
+        addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+        final session = _FakeSession(
+          items: const [
+            AiAssistantItem(
+              text: answerText,
+              state: AiAssistantState.done,
+              reported: true,
+            ),
+          ],
+        )..reportNotSaved = true;
+        await tester.pumpWidget(
+          _host(AiChatPage(session: session), tag: tag, scale: 2),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final toggle = find.byKey(const ValueKey('ai-chat-reported-toggle'));
+        await tester.ensureVisible(toggle);
+        await tester.pumpAndSettle();
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.text(l10n.aiReportedOpen), findsOneWidget);
+      });
+    }
 
     testWidgets('an answer still streaming cannot be reported', (tester) async {
       await tester.pumpWidget(

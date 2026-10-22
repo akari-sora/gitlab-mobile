@@ -2356,7 +2356,7 @@ const _messagesRo = <String>[
   'Răspunsul nu a putut fi verificat, așa că nu s-a adăugat nimic.',
   'Raportează',
   'Raportează acest răspuns',
-  'Rapoartele sunt trimise dezvoltatorului Mergeline pentru îmbunătățirea funcțiilor AI. În mod implicit, se trimit doar categoria și detaliile versiunii.',
+  'Rapoartele ajung la dezvoltatorul Mergeline pentru a îmbunătăți funcțiile AI. În mod implicit, conțin categoria, descrierea ta, versiunea aplicației, setările modelului și ale furnizorului, ora și numărul mesajului, dar nu răspunsul.',
   'Care este problema?',
   'Dăunător sau ofensator',
   'Inexact sau înșelător',
@@ -2378,4 +2378,6 @@ const _messagesRo = <String>[
   'Raportat; conținutul este ascuns',
   'Arată',
   'Ascunde',
+  'Raportat',
+  'Marcajul de raportare nu a putut fi salvat în istoricul criptat, așa că acest răspuns poate apărea din nou după repornire.',
 ];

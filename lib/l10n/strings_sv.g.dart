@@ -2356,7 +2356,7 @@ const _messagesSv = <String>[
   'Svaret kunde inte kontrolleras, så inget lades till.',
   'Rapportera',
   'Rapportera det här svaret',
-  'Rapporter skickas till Mergelines utvecklare för att förbättra AI-funktionerna. Som standard skickas bara kategori och versionsinformation.',
+  'Rapporter skickas till utvecklaren av Mergeline för att förbättra AI-funktionerna. Som standard innehåller de kategorin, din beskrivning, appversionen, inställningarna för modell och leverantör, tiden och meddelandenumret, men inte svaret.',
   'Vad är fel?',
   'Skadligt eller stötande',
   'Felaktigt eller vilseledande',
@@ -2378,4 +2378,6 @@ const _messagesSv = <String>[
   'Rapporterat; innehållet är dolt',
   'Visa',
   'Dölj',
+  'Rapporterat',
+  'Rapportmarkeringen kunde inte sparas i den krypterade historiken, så det här svaret kan visas igen efter en omstart.',
 ];

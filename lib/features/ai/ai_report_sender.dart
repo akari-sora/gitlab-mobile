@@ -11,7 +11,7 @@ Future<AiReportRoute> sendAiReport({
   required String body,
   Rect? sharePositionOrigin,
   Future<bool> Function(Uri uri)? launch,
-  Future<void> Function(String text, Rect? origin)? share,
+  Future<void> Function(String text, String subject, Rect? origin)? share,
 }) async {
   final mailto = aiReportMailto(subject, body);
   if (mailto != null) {
@@ -23,15 +23,17 @@ Future<AiReportRoute> sendAiReport({
     }
   }
 
-  await (share ?? _shareText)(body, sharePositionOrigin);
+  await (share ?? _shareText)(body, subject, sharePositionOrigin);
   return AiReportRoute.share;
 }
 
 Future<bool> _launchMail(Uri uri) =>
     launchUrl(uri, mode: LaunchMode.externalApplication);
 
-Future<void> _shareText(String text, Rect? origin) async {
+Future<void> _shareText(String text, String subject, Rect? origin) async {
+  // Text only, so nothing is copied into share_plus's cache. The subject
+  // fills in when the user picks a mail app from the sheet.
   await SharePlus.instance.share(
-    ShareParams(text: text, sharePositionOrigin: origin),
+    ShareParams(text: text, subject: subject, sharePositionOrigin: origin),
   );
 }

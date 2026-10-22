@@ -2356,7 +2356,7 @@ const _messagesEs = <String>[
   'No se ha podido comprobar la respuesta, por lo que no se ha añadido nada.',
   'Informar',
   'Informar sobre esta respuesta',
-  'Los informes se envían al desarrollador de Mergeline para mejorar las funciones de IA. De forma predeterminada, solo se envían la categoría y los detalles de la versión.',
+  'Los informes se envían al desarrollador de Mergeline para mejorar las funciones de AI. De forma predeterminada contienen la categoría, tu descripción, la versión de la aplicación, la configuración del modelo y del proveedor, la hora y el número del mensaje, pero no la respuesta.',
   '¿Qué ocurre?',
   'Contenido dañino u ofensivo',
   'Inexacto o engañoso',
@@ -2378,4 +2378,6 @@ const _messagesEs = <String>[
   'Informado; el contenido está oculto',
   'Mostrar',
   'Ocultar',
+  'Informado',
+  'No se pudo guardar la marca de informe en el historial cifrado, así que esta respuesta puede mostrarse de nuevo tras reiniciar.',
 ];

@@ -2356,7 +2356,7 @@ const _messagesVi = <String>[
   'Không thể kiểm tra câu trả lời nên không có nội dung nào được thêm.',
   'Báo cáo',
   'Báo cáo câu trả lời này',
-  'Báo cáo được gửi cho nhà phát triển Mergeline để cải thiện các tính năng AI. Theo mặc định, chỉ danh mục và thông tin phiên bản được gửi.',
+  'Báo cáo được gửi tới nhà phát triển của Mergeline để cải thiện các tính năng AI. Theo mặc định, báo cáo gồm danh mục, mô tả của bạn, phiên bản ứng dụng, cài đặt mô hình và nhà cung cấp, thời gian và số tin nhắn, nhưng không gồm phản hồi.',
   'Có vấn đề gì?',
   'Có hại hoặc phản cảm',
   'Không chính xác hoặc gây hiểu lầm',
@@ -2378,4 +2378,6 @@ const _messagesVi = <String>[
   'Đã báo cáo; nội dung đã bị ẩn',
   'Hiện',
   'Ẩn',
+  'Đã báo cáo',
+  'Không lưu được dấu đã báo cáo vào lịch sử được mã hóa, nên phản hồi này có thể hiển thị lại sau khi khởi động lại.',
 ];

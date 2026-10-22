@@ -2354,7 +2354,7 @@
   "aiDraftCheckFailed": "Jawapan tidak dapat disemak, jadi tiada apa-apa ditambah.",
   "aiReportAction": "Lapor",
   "aiReportTitle": "Laporkan jawapan ini",
-  "aiReportIntro": "Laporan dihantar kepada pembangun Mergeline untuk menambah baik ciri AI. Secara lalai, hanya kategori dan butiran versi dihantar.",
+  "aiReportIntro": "Laporan dihantar kepada pembangun Mergeline untuk menambah baik ciri AI. Secara lalai, ia mengandungi kategori, penerangan anda, versi aplikasi, tetapan model dan pembekal, masa serta nombor mesej, tetapi bukan respons.",
   "aiReportCategory": "Apakah masalahnya?",
   "aiReportHarmful": "Berbahaya atau menyinggung perasaan",
   "aiReportInaccurate": "Tidak tepat atau mengelirukan",
@@ -2375,5 +2375,7 @@
   "aiReportFailed": "Mel dan perkongsian tidak dapat dibuka, jadi laporan tidak dihantar.",
   "aiReported": "Dilaporkan; kandungan disembunyikan",
   "aiReportShow": "Tunjukkan",
-  "aiReportHide": "Sembunyikan"
+  "aiReportHide": "Sembunyikan",
+  "aiReportedOpen": "Dilaporkan",
+  "aiReportNotSaved": "Tanda dilaporkan tidak dapat disimpan ke sejarah yang disulitkan, jadi respons ini mungkin dipaparkan semula selepas aplikasi dimulakan semula."
 }

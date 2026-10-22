@@ -2354,7 +2354,7 @@
   "aiDraftCheckFailed": "Die Antwort konnte nicht geprüft werden, daher wurde nichts angehängt.",
   "aiReportAction": "Melden",
   "aiReportTitle": "Diese Antwort melden",
-  "aiReportIntro": "Meldungen gehen an den Entwickler von Mergeline, um die KI-Funktionen zu verbessern. Standardmäßig werden nur die Kategorie und Versionsdetails gesendet.",
+  "aiReportIntro": "Meldungen gehen an den Entwickler von Mergeline, um die AI-Funktionen zu verbessern. Standardmäßig enthalten sie die Kategorie, deine Beschreibung, die App-Version, die Einstellungen für Modell und Anbieter, die Uhrzeit und die Nachrichtennummer, aber nicht die Antwort.",
   "aiReportCategory": "Was stimmt nicht?",
   "aiReportHarmful": "Schädlich oder beleidigend",
   "aiReportInaccurate": "Falsch oder irreführend",
@@ -2375,5 +2375,7 @@
   "aiReportFailed": "Weder E-Mail noch Teilen konnte geöffnet werden, daher wurde die Meldung nicht gesendet.",
   "aiReported": "Gemeldet; der Inhalt ist ausgeblendet",
   "aiReportShow": "Anzeigen",
-  "aiReportHide": "Ausblenden"
+  "aiReportHide": "Ausblenden",
+  "aiReportedOpen": "Gemeldet",
+  "aiReportNotSaved": "Die Meldungsmarkierung konnte nicht im verschlüsselten Verlauf gespeichert werden, daher kann diese Antwort nach einem Neustart erneut angezeigt werden."
 }

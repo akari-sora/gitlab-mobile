@@ -2356,7 +2356,7 @@ const _messagesMs = <String>[
   'Jawapan tidak dapat disemak, jadi tiada apa-apa ditambah.',
   'Lapor',
   'Laporkan jawapan ini',
-  'Laporan dihantar kepada pembangun Mergeline untuk menambah baik ciri AI. Secara lalai, hanya kategori dan butiran versi dihantar.',
+  'Laporan dihantar kepada pembangun Mergeline untuk menambah baik ciri AI. Secara lalai, ia mengandungi kategori, penerangan anda, versi aplikasi, tetapan model dan pembekal, masa serta nombor mesej, tetapi bukan respons.',
   'Apakah masalahnya?',
   'Berbahaya atau menyinggung perasaan',
   'Tidak tepat atau mengelirukan',
@@ -2378,4 +2378,6 @@ const _messagesMs = <String>[
   'Dilaporkan; kandungan disembunyikan',
   'Tunjukkan',
   'Sembunyikan',
+  'Dilaporkan',
+  'Tanda dilaporkan tidak dapat disimpan ke sejarah yang disulitkan, jadi respons ini mungkin dipaparkan semula selepas aplikasi dimulakan semula.',
 ];

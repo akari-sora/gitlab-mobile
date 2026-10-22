@@ -2356,7 +2356,7 @@ const _messagesCs = <String>[
   'Odpověď se nepodařilo zkontrolovat, proto nebylo nic přidáno.',
   'Nahlásit',
   'Nahlásit tuto odpověď',
-  'Hlášení se odesílají vývojáři Mergeline za účelem zlepšování funkcí AI. Ve výchozím nastavení se odešle pouze kategorie a údaje o verzi.',
+  'Hlášení se posílají vývojáři Mergeline, aby se zlepšily funkce AI. Ve výchozím nastavení obsahují kategorii, váš popis, verzi aplikace, nastavení modelu a poskytovatele, čas a číslo zprávy, ale nikoli odpověď.',
   'Co je špatně?',
   'Škodlivé nebo urážlivé',
   'Nepřesné nebo zavádějící',
@@ -2378,4 +2378,6 @@ const _messagesCs = <String>[
   'Nahlášeno; obsah je skrytý',
   'Zobrazit',
   'Skrýt',
+  'Nahlášeno',
+  'Značku nahlášení se nepodařilo uložit do šifrované historie, takže se tato odpověď může po opětovném spuštění zobrazit znovu.',
 ];

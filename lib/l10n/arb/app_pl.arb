@@ -2354,7 +2354,7 @@
   "aiDraftCheckFailed": "Nie udało się sprawdzić odpowiedzi, więc nic nie dodano.",
   "aiReportAction": "Zgłoś",
   "aiReportTitle": "Zgłoś tę odpowiedź",
-  "aiReportIntro": "Zgłoszenia trafiają do dewelopera Mergeline, aby pomóc ulepszać funkcje AI. Domyślnie wysyłane są tylko kategoria i dane wersji.",
+  "aiReportIntro": "Zgłoszenia trafiają do twórcy Mergeline, aby ulepszać funkcje AI. Domyślnie zawierają kategorię, Twój opis, wersję aplikacji, ustawienia modelu i dostawcy, czas oraz numer wiadomości, ale nie odpowiedź.",
   "aiReportCategory": "Co jest nie tak?",
   "aiReportHarmful": "Szkodliwa lub obraźliwa",
   "aiReportInaccurate": "Niedokładna lub wprowadzająca w błąd",
@@ -2375,5 +2375,7 @@
   "aiReportFailed": "Nie udało się otworzyć poczty ani udostępniania, więc zgłoszenie nie zostało wysłane.",
   "aiReported": "Zgłoszono; treść jest ukryta",
   "aiReportShow": "Pokaż",
-  "aiReportHide": "Ukryj"
+  "aiReportHide": "Ukryj",
+  "aiReportedOpen": "Zgłoszono",
+  "aiReportNotSaved": "Nie udało się zapisać oznaczenia zgłoszenia w zaszyfrowanej historii, więc ta odpowiedź może pojawić się ponownie po ponownym uruchomieniu."
 }

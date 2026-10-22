@@ -2356,7 +2356,7 @@ const _messagesNl = <String>[
   'Het antwoord kon niet worden gecontroleerd, dus er is niets toegevoegd.',
   'Melden',
   'Dit antwoord melden',
-  'Meldingen worden naar de ontwikkelaar van Mergeline gestuurd om de AI-functies te verbeteren. Standaard worden alleen de categorie en versiegegevens verzonden.',
+  'Meldingen gaan naar de ontwikkelaar van Mergeline om de AI-functies te verbeteren. Standaard bevatten ze de categorie, je beschrijving, de app-versie, de instellingen van model en aanbieder, de tijd en het berichtnummer, maar niet het antwoord.',
   'Wat is er mis?',
   'Schadelijk of aanstootgevend',
   'Onjuist of misleidend',
@@ -2378,4 +2378,6 @@ const _messagesNl = <String>[
   'Gemeld; de inhoud is verborgen',
   'Tonen',
   'Verbergen',
+  'Gemeld',
+  'De meldingsmarkering kon niet worden opgeslagen in de versleutelde geschiedenis, waardoor dit antwoord na een herstart opnieuw kan verschijnen.',
 ];

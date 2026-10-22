@@ -2354,7 +2354,7 @@
   "aiDraftCheckFailed": "Yanıt kontrol edilemediği için hiçbir şey eklenmedi.",
   "aiReportAction": "Bildir",
   "aiReportTitle": "Bu yanıtı bildir",
-  "aiReportIntro": "Bildirimler, AI özelliklerini iyileştirmek için Mergeline geliştiricisine gönderilir. Varsayılan olarak yalnızca kategori ve sürüm ayrıntıları gönderilir.",
+  "aiReportIntro": "Bildirimler, AI özelliklerini iyileştirmek için Mergeline geliştiricisine iletilir. Varsayılan olarak kategori, açıklamanız, uygulama sürümü, model ve sağlayıcı ayarları, saat ve mesaj numarasını içerir; yanıtı içermez.",
   "aiReportCategory": "Sorun nedir?",
   "aiReportHarmful": "Zararlı veya saldırgan",
   "aiReportInaccurate": "Yanlış veya yanıltıcı",
@@ -2375,5 +2375,7 @@
   "aiReportFailed": "E-posta veya paylaşım açılamadığı için bildirim gönderilmedi.",
   "aiReported": "Bildirildi; içerik gizlendi",
   "aiReportShow": "Göster",
-  "aiReportHide": "Gizle"
+  "aiReportHide": "Gizle",
+  "aiReportedOpen": "Bildirildi",
+  "aiReportNotSaved": "Bildirim işareti şifrelenmiş geçmişe kaydedilemediğinden, bu yanıt uygulama yeniden başlatıldıktan sonra yeniden görünebilir."
 }

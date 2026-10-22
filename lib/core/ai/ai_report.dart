@@ -30,6 +30,9 @@ final class AiReport {
 String aiReportBody(AiReport report, {required String sendToLine}) {
   final body = StringBuffer()
     ..writeln(sendToLine)
+    // The translated line wraps the address in direction isolates in right
+    // to left languages; this one copies cleanly into a recipient field.
+    ..writeln('to: $aiReportEmail')
     ..writeln('category: ${report.category.name}')
     ..writeln('description: ${_singleLine(report.description)}')
     ..writeln('app: ${_singleLine(report.appVersion)}')
@@ -78,7 +81,9 @@ String _multiline(String value) => _stripUnsafe(
 String _stripUnsafe(String value, {required bool keepNewlines}) {
   final cleaned = StringBuffer();
   for (final rune in value.runes) {
-    if (keepNewlines && rune == 0x0a) {
+    // Multi-line text keeps its line feeds and tabs: tab-indented code
+    // (Go, Makefiles) stays readable.
+    if (keepNewlines && (rune == 0x0a || rune == 0x09)) {
       cleaned.writeCharCode(rune);
       continue;
     }

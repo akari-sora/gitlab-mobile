@@ -286,35 +286,50 @@ class _AiChatPageState extends State<AiChatPage> {
     setState(() => _reporting = true);
     try {
       final info = await widget.buildInfo();
-      if (!mounted || !_session.items.contains(item)) return;
+      if (!mounted || _session.currentOf(item) == null) return;
       final version = info.isUnknown
           ? 'unknown'
           : '${info.version}+${info.buildNumber} (${info.commit})';
-      // Redacted with the live secrets, line breaks kept.
-      final response = _session.draftSafe(item.text);
       final time = DateTime.now();
       final source = item.source;
-      String body(AiReportChoice choice) => aiReportBody(
-        AiReport(
-          category: choice.category,
-          description: choice.description,
-          appVersion: version,
-          presetId: source?.presetId ?? 'unknown',
-          format: source?.format ?? 'unknown',
-          model: source?.model ?? 'unknown',
-          time: time,
-          messageIndex: number,
-          response: choice.attachResponse ? response : null,
-        ),
-        sendToLine: l10n.aiReportSendTo(aiReportEmail),
-      );
+      // Built again for every preview and for the send, from the answer as
+      // it is now (a redaction pass may have replaced it), and redacted as a
+      // whole last, after the report's own clean-up, with the live secrets:
+      // nothing the user typed or the formatting joined escapes the check.
+      String body(AiReportChoice choice) {
+        final current = _session.currentOf(item);
+        if (current == null) return '';
+        return _session.draftSafe(
+          aiReportBody(
+            AiReport(
+              category: choice.category,
+              description: choice.description,
+              appVersion: version,
+              presetId: source?.presetId ?? 'unknown',
+              format: source?.format ?? 'unknown',
+              model: source?.model ?? 'unknown',
+              time: time,
+              messageIndex: number,
+              response: choice.attachResponse ? current.text : null,
+            ),
+            sendToLine: l10n.aiReportSendTo(aiReportEmail),
+          ),
+        );
+      }
+
       final choice = await showAiReportSheet(context, body: body);
       if (choice == null || !mounted) return;
+      final text = body(choice);
+      // Empty when the answer is gone or the text could not be checked.
+      if (text.isEmpty) {
+        _notice(l10n.aiReportFailed);
+        return;
+      }
       final AiReportRoute route;
       try {
         route = await widget.sendReport(
           subject: l10n.aiReportSubject,
-          body: body(choice),
+          body: text,
         );
       } on Object {
         _notice(l10n.aiReportFailed);
@@ -543,18 +558,31 @@ class _AiChatPageState extends State<AiChatPage> {
                 ),
               ],
             ),
-            body: Column(
-              children: [
-                Expanded(child: _conversation(context)),
-                _Composer(
-                  controller: _input,
-                  busy: busy,
-                  stopping: _session.phase == AiChatPhase.stopping,
-                  canSend: _session.canSend,
-                  onSend: _send,
-                  onStop: _session.stop,
-                ),
-              ],
+            body: LayoutBuilder(
+              builder: (context, constraints) => Column(
+                children: [
+                  Expanded(child: _conversation(context)),
+                  // A landscape phone with the keyboard up and large text
+                  // can leave less room than the composer needs: it then
+                  // scrolls, keeping the send button and the caret in view.
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: constraints.maxHeight,
+                    ),
+                    child: SingleChildScrollView(
+                      reverse: true,
+                      child: _Composer(
+                        controller: _input,
+                        busy: busy,
+                        stopping: _session.phase == AiChatPhase.stopping,
+                        canSend: _session.canSend,
+                        onSend: _send,
+                        onStop: _session.stop,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -604,6 +632,7 @@ class _AiChatPageState extends State<AiChatPage> {
           insertingDraft: _insertingDraft,
           preparingDraft: _preparingDraft,
           onReport: _reporting ? null : _report,
+          reportNotSaved: _session.reportNotSaved,
         ),
       if (_session.phase == AiChatPhase.running &&
           !(items.last is AiAssistantItem &&
@@ -829,9 +858,11 @@ class _ChatItemView extends StatelessWidget {
     this.insertingDraft = false,
     this.preparingDraft = false,
     this.onReport,
+    this.reportNotSaved = false,
   });
 
   final AiChatItem item;
+  final bool reportNotSaved;
   final void Function(AiAssistantItem item)? onInsertDraft;
 
   /// An append is under way; every append button waits for it.
@@ -845,6 +876,7 @@ class _ChatItemView extends StatelessWidget {
   Widget build(BuildContext context) => switch (item) {
     final AiUserItem user => _UserMessage(item: user),
     final AiAssistantItem assistant when assistant.reported => _ReportedFold(
+      notSaved: reportNotSaved,
       child: _AssistantMessage(item: assistant),
     ),
     final AiAssistantItem assistant => _AssistantMessage(
@@ -1200,9 +1232,13 @@ class _AssistantMessage extends StatelessWidget {
 
 /// A reported answer, folded away on this device; it can be opened again.
 class _ReportedFold extends StatefulWidget {
-  const _ReportedFold({required this.child});
+  const _ReportedFold({required this.child, this.notSaved = false});
 
   final Widget child;
+
+  /// The reported flag could not be saved with the encrypted history, so the
+  /// answer may show again after the app restarts.
+  final bool notSaved;
 
   @override
   State<_ReportedFold> createState() => _ReportedFoldState();
@@ -1223,12 +1259,31 @@ class _ReportedFoldState extends State<_ReportedFold> {
       onPressed: () => setState(() => _open = !_open),
       child: Text(_open ? l10n.aiReportHide : l10n.aiReportShow),
     );
-    final header = Row(
+    final header = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.outlined_flag, size: 18, color: muted?.color),
-        const SizedBox(width: 8),
-        Expanded(child: Text(l10n.aiReported, style: muted)),
-        toggle,
+        Row(
+          children: [
+            Icon(Icons.outlined_flag, size: 18, color: muted?.color),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _open ? l10n.aiReportedOpen : l10n.aiReported,
+                style: muted,
+              ),
+            ),
+            toggle,
+          ],
+        ),
+        if (widget.notSaved)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 26),
+            child: Text(
+              l10n.aiReportNotSaved,
+              key: const ValueKey('ai-chat-report-not-saved'),
+              style: muted?.copyWith(color: theme.colorScheme.error),
+            ),
+          ),
       ],
     );
     if (!_open) return header;

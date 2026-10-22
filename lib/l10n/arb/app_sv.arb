@@ -2354,7 +2354,7 @@
   "aiDraftCheckFailed": "Svaret kunde inte kontrolleras, så inget lades till.",
   "aiReportAction": "Rapportera",
   "aiReportTitle": "Rapportera det här svaret",
-  "aiReportIntro": "Rapporter skickas till Mergelines utvecklare för att förbättra AI-funktionerna. Som standard skickas bara kategori och versionsinformation.",
+  "aiReportIntro": "Rapporter skickas till utvecklaren av Mergeline för att förbättra AI-funktionerna. Som standard innehåller de kategorin, din beskrivning, appversionen, inställningarna för modell och leverantör, tiden och meddelandenumret, men inte svaret.",
   "aiReportCategory": "Vad är fel?",
   "aiReportHarmful": "Skadligt eller stötande",
   "aiReportInaccurate": "Felaktigt eller vilseledande",
@@ -2375,5 +2375,7 @@
   "aiReportFailed": "Varken e-post eller delning kunde öppnas, så rapporten skickades inte.",
   "aiReported": "Rapporterat; innehållet är dolt",
   "aiReportShow": "Visa",
-  "aiReportHide": "Dölj"
+  "aiReportHide": "Dölj",
+  "aiReportedOpen": "Rapporterat",
+  "aiReportNotSaved": "Rapportmarkeringen kunde inte sparas i den krypterade historiken, så det här svaret kan visas igen efter en omstart."
 }

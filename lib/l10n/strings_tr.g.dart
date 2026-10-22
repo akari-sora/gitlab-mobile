@@ -2356,7 +2356,7 @@ const _messagesTr = <String>[
   'Yanıt kontrol edilemediği için hiçbir şey eklenmedi.',
   'Bildir',
   'Bu yanıtı bildir',
-  'Bildirimler, AI özelliklerini iyileştirmek için Mergeline geliştiricisine gönderilir. Varsayılan olarak yalnızca kategori ve sürüm ayrıntıları gönderilir.',
+  'Bildirimler, AI özelliklerini iyileştirmek için Mergeline geliştiricisine iletilir. Varsayılan olarak kategori, açıklamanız, uygulama sürümü, model ve sağlayıcı ayarları, saat ve mesaj numarasını içerir; yanıtı içermez.',
   'Sorun nedir?',
   'Zararlı veya saldırgan',
   'Yanlış veya yanıltıcı',
@@ -2378,4 +2378,6 @@ const _messagesTr = <String>[
   'Bildirildi; içerik gizlendi',
   'Göster',
   'Gizle',
+  'Bildirildi',
+  'Bildirim işareti şifrelenmiş geçmişe kaydedilemediğinden, bu yanıt uygulama yeniden başlatıldıktan sonra yeniden görünebilir.',
 ];

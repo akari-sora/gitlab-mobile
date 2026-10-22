@@ -2356,7 +2356,7 @@ const _messagesEn = <String>[
   'The answer could not be checked, so nothing was appended.',
   'Report',
   'Report this response',
-  'Reports go to Mergeline\'s developer to improve the AI features. By default only the category and version details are sent.',
+  'Reports go to Mergeline\'s developer to improve the AI features. By default they contain the category, your description, the app version, the model and provider settings, the time and the message number, but not the response.',
   'What is wrong?',
   'Harmful or offensive',
   'Inaccurate or misleading',
@@ -2378,4 +2378,6 @@ const _messagesEn = <String>[
   'Reported; the content is hidden',
   'Show',
   'Hide',
+  'Reported',
+  'The reported mark could not be saved to the encrypted history, so this response may show again after a restart.',
 ];

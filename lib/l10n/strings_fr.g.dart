@@ -2356,7 +2356,7 @@ const _messagesFr = <String>[
   'La réponse n’a pas pu être vérifiée, donc rien n’a été ajouté.',
   'Signaler',
   'Signaler cette réponse',
-  'Les signalements sont envoyés au développeur de Mergeline afin d’améliorer les fonctions d’IA. Par défaut, seules la catégorie et les informations sur la version sont envoyées.',
+  'Les signalements sont envoyés au développeur de Mergeline pour améliorer les fonctions AI. Par défaut, ils contiennent la catégorie, votre description, la version de l’application, les réglages du modèle et du fournisseur, l’heure et le numéro du message, mais pas la réponse.',
   'Quel est le problème ?',
   'Contenu nuisible ou offensant',
   'Inexact ou trompeur',
@@ -2378,4 +2378,6 @@ const _messagesFr = <String>[
   'Signalé ; le contenu est masqué',
   'Afficher',
   'Masquer',
+  'Signalé',
+  'La marque de signalement n’a pas pu être enregistrée dans l’historique chiffré ; cette réponse peut donc réapparaître après un redémarrage.',
 ];

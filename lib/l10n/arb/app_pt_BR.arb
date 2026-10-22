@@ -2354,7 +2354,7 @@
   "aiDraftCheckFailed": "Não foi possível verificar a resposta, então nada foi adicionado.",
   "aiReportAction": "Denunciar",
   "aiReportTitle": "Denunciar esta resposta",
-  "aiReportIntro": "As denúncias são enviadas ao desenvolvedor do Mergeline para melhorar os recursos de IA. Por padrão, apenas a categoria e os detalhes da versão são enviados.",
+  "aiReportIntro": "As denúncias são enviadas ao desenvolvedor do Mergeline para melhorar os recursos de AI. Por padrão, elas contêm a categoria, sua descrição, a versão do aplicativo, as configurações do modelo e do provedor, a hora e o número da mensagem, mas não a resposta.",
   "aiReportCategory": "Qual é o problema?",
   "aiReportHarmful": "Prejudicial ou ofensiva",
   "aiReportInaccurate": "Imprecisa ou enganosa",
@@ -2375,5 +2375,7 @@
   "aiReportFailed": "Não foi possível abrir o e-mail nem o compartilhamento, então a denúncia não foi enviada.",
   "aiReported": "Denunciado; o conteúdo está oculto",
   "aiReportShow": "Mostrar",
-  "aiReportHide": "Ocultar"
+  "aiReportHide": "Ocultar",
+  "aiReportedOpen": "Denunciado",
+  "aiReportNotSaved": "A marca de denúncia não pôde ser salva no histórico criptografado, então esta resposta pode aparecer novamente após uma reinicialização."
 }

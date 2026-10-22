@@ -1572,3 +1572,69 @@ afterwards, and its SHA-256 matched.
 - the share-sheet route on a device;
 - a real provider's answer attribution on a device;
 - iOS.
+
+#### MR6a-4 review round 1
+
+Codex GPT-6.1-Sol, Opus 5.5 and cursor-agent (auto) all asked for changes:
+0 Critical, 4 Important, and Minors. Fixes:
+
+- **Redaction at the boundary.** The report is built again for every preview
+  and for the send, from the answer as it is at that moment. The whole text is
+  then redacted last with the live secrets, after the report's own clean-up.
+  That covers the description, the metadata and a secret split by a tab that
+  the clean-up would otherwise join. If the answer is gone, nothing is sent
+  and the page says the report failed.
+- **Rebuilt answers.** The controller records which item replaced which
+  (redaction, hiding, streaming). `currentOf` follows that chain, and
+  `markReported` marks the current descendant. It never marks an answer from
+  another conversation.
+- **Bounded saves.** With two controllers whose saves keep failing, each
+  used to trigger the other without end (3,344 attempts in 700 ms in Opus's
+  probe). Now:
+  - the history listener flushes only on a transition into ready;
+  - the listener, recheck and timer paths share one budget: a first attempt
+    plus retries at 1, 5 and 30 s;
+  - capacity, unsupported and eviction results wait for a new snapshot or a
+    state change.
+- **Honest state.**
+  - `historySaved` means this conversation's latest snapshot was saved.
+  - `reportNotSaved` is true after a permanent failure or once the budget is
+    used up. The fold then says the mark could not be saved and that the
+    answer may show again after a restart.
+
+  Only a conversation that holds a reported answer is written to the
+  encrypted history today. It is written whole: messages, chips and tool
+  rows.
+- **Layout.**
+  - When the keyboard leaves less than 240 dp, Send and Cancel scroll with the
+    form instead of being pinned.
+  - The chat composer scrolls when the page is shorter than it, as on a
+    640×360 phone at 2× text with the keyboard up. That page used to overflow
+    by 92 px.
+- **Minor fixes.**
+  - Copy address confirms on the button itself.
+  - The report has an extra plain `to:` line, without direction marks, for
+    the share route in Arabic.
+  - The share sheet gets the subject.
+  - Attached answers keep their tabs.
+  - The preview refreshes 300 ms after typing stops.
+  - The open fold no longer says "hidden".
+  - The intro now lists everything sent by default, in all 24 languages.
+  - The address is pinned by a test.
+
+New tests:
+- "the text is checked again when it is sent";
+- "an answer gone before sending is not sent";
+- the copy feedback;
+- the landscape keyboard;
+- the not-saved note;
+- the fold at 2× text in zh-TW and Arabic;
+- the plain address line;
+- the controller tests for rebuilt items, `currentOf`, two failing
+  controllers (at most 8 attempts in 700 ms), permanent failure, and recovery.
+
+Four mutations were each caught by a test:
+- no final redaction;
+- a stale item;
+- always-pinned buttons;
+- no plain address line.
