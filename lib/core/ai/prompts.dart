@@ -21,8 +21,11 @@ truncated, and when the available evidence is insufficient. Files the user
 attached are listed in an untrusted data block in their message by id (att-1,
 att-2, ...), name, type and size; their contents stay on the device. Upload
 one only when the user asks for it, with upload_attachment and its
-attachmentId, then place it in comment or description text as
-[[attachment:att-N]]. Never invent an attachment id.''';
+attachmentId. After its result says it succeeded and can be referenced, a
+later tool call can show it in a comment or description in the same project
+with a placeholder set apart from other text by spaces or line breaks, for
+att-1: [[attachment:att-1]] (the same form for att-2 and so on). Never invent
+an attachment id.''';
 
 String wrapUntrustedGitLabData({
   required String source,

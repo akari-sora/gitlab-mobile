@@ -35,6 +35,7 @@ final class AiWriteProposal {
     required this.scopeRevision,
     required this.releaseName,
     this.fields = const <String, String>{},
+    this.upload,
   });
 
   final String executionId;
@@ -51,6 +52,10 @@ final class AiWriteProposal {
   final int scopeRevision;
   final String releaseName;
 
+  /// `upload_attachment` only: what the card shows about the file and the
+  /// project it goes to (§3.1).
+  final AiUploadPreview? upload;
+
   /// The write's arguments for the approval card, each value redacted with
   /// the live secrets. The model's `reason` is [modelReason] instead.
   Map<String, String> fields;
@@ -58,6 +63,74 @@ final class AiWriteProposal {
   bool get valid => _valid;
   bool _valid = true;
   void invalidate() => _valid = false;
+
+  /// Why approval is held right now, or null. A held proposal stays valid
+  /// and resumes when the hold lifts; approving it meanwhile dispatches
+  /// nothing. [AiWritePause] names the values.
+  String? get pausedReason => _pausedReason;
+  String? _pausedReason;
+
+  /// The account is being removed (§8 step 1): the card disables approve
+  /// and says so. Cancelling the removal lifts the hold.
+  bool get accountRemovalHeld =>
+      _pausedReason == AiWritePause.accountRemovalHeld;
+
+  /// How the proposal ended; null while it waits or runs.
+  AiWriteOutcome? get outcome => _outcome;
+  AiWriteOutcome? _outcome;
+}
+
+/// Holds that pause a waiting proposal instead of ending it. Each one still
+/// refuses a dispatch at the §7.3 step 4.1, 4.3 and 4.4 checks.
+abstract final class AiWritePause {
+  /// §8 step 1: the account's removal hold.
+  static const accountRemovalHeld = 'accountRemovalHeld';
+
+  /// §12.2: no foreground service, and the app is not on screen.
+  static const backgrounded = 'backgrounded';
+
+  /// §7.3 step 4.1: GitLab asked to wait (Retry-After).
+  static const clientUnavailable = 'clientUnavailable';
+}
+
+/// An upload card's file and target (§3.1, scope and preview: file name,
+/// size, type, the target project's full path and its visibility). The project fields
+/// come from the proposal's fresh project read; display strings are
+/// redacted with the live secrets.
+final class AiUploadPreview {
+  const AiUploadPreview({
+    required this.attachmentId,
+    required this.filename,
+    required this.sizeBytes,
+    required this.contentType,
+    required this.sha256Prefix,
+    required this.projectId,
+    required this.projectPath,
+    required this.projectVisibility,
+  });
+
+  final String attachmentId;
+  final String filename;
+  final int sizeBytes;
+  final String? contentType;
+  final String sha256Prefix;
+  final int projectId;
+  final String? projectPath;
+
+  /// `private`, `internal` or `public`; null when GitLab did not say.
+  final String? projectVisibility;
+
+  /// Anyone who can see content that quotes the file can fetch it: a
+  /// public or internal project, or one whose visibility is unknown.
+  bool get readersCanFetch => projectVisibility != 'private';
+
+  /// Where the §3.1 warning goes at [level]: the card at the confirming
+  /// levels, the audit row at the automatic ones.
+  AiUploadVisibilityNotice noticeAt(AiAutonomyLevel level) =>
+      uploadVisibilityNotice(
+        visibility: readersCanFetch ? projectVisibility ?? 'internal' : '',
+        level: level,
+      );
 }
 
 /// App-owned, single-line projection of a write. It contains no replay payload.
@@ -72,6 +145,11 @@ final class AiWriteOutcome {
     this.operationId,
     this.target,
     this.resultSummary,
+    this.upload,
+    this.auditNotice,
+    this.targetName,
+    this.webLink,
+    this.uploadReferable,
   });
 
   final AiJournalState state;
@@ -83,6 +161,30 @@ final class AiWriteOutcome {
   final String? operationId;
   final String? target;
   final String? resultSummary;
+
+  /// `upload_attachment`: the file and the project it went to.
+  final AiUploadPreview? upload;
+
+  /// The audit row's warning, or null: [uploadReadersCanFetch] when an
+  /// upload into a public or internal project ran without a card (§3.1).
+  final String? auditNotice;
+
+  /// The write's target for the audit row (§7.7), from the pre-read: `#5`,
+  /// `!12`, a project path, a file name or `@username`. Null when the write
+  /// stopped before its target was read. Redacted.
+  final String? targetName;
+
+  /// A GitLab page for the target, built from the verified instance and
+  /// pre-read or returned ids, never from a model URL (§7.7). Null when
+  /// there is none (or the target was never read).
+  final Uri? webLink;
+
+  /// A succeeded upload: whether later text can quote it as
+  /// `[[attachment:att-<n>]]`. False when GitLab's `markdown` is not one
+  /// attachment token the app can rebuild (§3.1: the response has the wrong
+  /// form and cannot be quoted).
+  final bool? uploadReferable;
+
   bool get successful => state == AiJournalState.succeeded || noChange;
   String get summary => _singleLine(
     'write ${operationId ?? "operation"}'
@@ -234,7 +336,7 @@ final class PolicyAiWriteCoordinator
     DateTime Function()? now,
     int Function(String)? httpCost,
   }) : _now = now ?? DateTime.now,
-       _httpCost = httpCost ?? _requestAllowance;
+       _httpCost = httpCost ?? aiWriteRequestAllowance;
 
   final AiWritePolicySnapshot Function() snapshot;
   final port.AiGitLabWritePort Function() createPort;
@@ -260,6 +362,11 @@ final class PolicyAiWriteCoordinator
   final int Function(String) _httpCost;
   final Map<String, _PendingWrite> _pending = {};
   final Map<String, AiWriteOutcome> _results = {};
+  final List<AiWriteProposal> _settledEdits = [];
+
+  /// Attachments uploaded in the current batch of tool calls. §3.1: an
+  /// upload and a write quoting it cannot be proposed in the same batch.
+  final Set<String> _uploadedThisBatch = {};
   port.AiGitLabWritePort? _port;
   String _userUtterance = '';
   String _runId = _nonce();
@@ -274,6 +381,20 @@ final class PolicyAiWriteCoordinator
   ]);
 
   AiWriteOutcome? outcomeFor(String callId) => _results[callId];
+
+  /// §7.2: settled proposals whose card text the user edited, oldest first.
+  /// They stay, with their [AiWriteProposal.outcome], after a rejection, a
+  /// certain failure, an unknown result or expiry; a success confirmed by
+  /// readback clears its text and does not stay. They go with this
+  /// conversation's coordinator, or through [dismissSettled].
+  List<AiWriteProposal> get settledEdits => List.unmodifiable(_settledEdits);
+
+  /// Drops a settled, edited card; false when it was not kept.
+  bool dismissSettled(AiWriteProposal proposal) {
+    final removed = _settledEdits.remove(proposal);
+    if (removed) _changed();
+    return removed;
+  }
 
   @override
   List<Future<AiWriteOutcome>> get inFlightWrites => List.unmodifiable([
@@ -305,14 +426,31 @@ final class PolicyAiWriteCoordinator
         operationId: pending.call.name,
         target: _targetSummaryParts(entry.writeKeys, entry.releaseName),
         resultSummary: _safeMetadata(entry.observation),
+        targetName: pending.proposal.releaseName,
+        webLink: _webLink(pending, const {}),
       );
     }
-    return _notExecuted(
-      pending.call,
-      pending.invalidationReason ?? _stopped ?? 'notAccepted',
+    return AiWriteOutcome(
+      state: AiJournalState.notExecuted,
+      reasonCode: pending.invalidationReason ?? _stopped ?? 'notAccepted',
       executionId: execution,
+      operationId: pending.call.name,
       target: _targetSummary(pending.prepared),
+      targetName: pending.proposal.releaseName,
+      webLink: _webLink(pending, const {}),
     );
+  }
+
+  /// The proposal [callId] made in this run, while it waits or runs.
+  AiWriteProposal? proposalFor(String callId) {
+    for (final pending in _pending.values) {
+      if (pending.runId == _runId &&
+          pending.call.id == callId &&
+          !pending.done.isCompleted) {
+        return pending.proposal;
+      }
+    }
+    return null;
   }
 
   String? executionIdFor(String callId) {
@@ -366,10 +504,14 @@ final class PolicyAiWriteCoordinator
     _userUtterance = userUtterance;
     _stopped = null;
     _previousIncomplete = false;
+    _uploadedThisBatch.clear();
   }
 
   @override
-  void beginTurn() => _previousIncomplete = false;
+  void beginTurn() {
+    _previousIncomplete = false;
+    _uploadedThisBatch.clear();
+  }
 
   /// Resume is projection-only, including a still-dispatching execution.
   /// It never reconstructs a payload or calls the port.
@@ -443,7 +585,12 @@ final class PolicyAiWriteCoordinator
     final toolBudget = budget();
     try {
       final arguments = _arguments(call);
-      final target = _target(capability, arguments, policy.scope);
+      var target = _target(capability, arguments, policy.scope);
+      // §2: a todo id is a global id. Its issue or merge request is known
+      // only once the port reads the todo, so its scope is decided on that
+      // pre-read below (and the port refuses a todo outside the scope).
+      final ownerFromPreRead =
+          capability.scopeClass == AiScopeClass.accountTodo;
       // Scope and autonomy are checked before constructing a write port.
       final initialTier = _tier(
         capability,
@@ -452,7 +599,7 @@ final class PolicyAiWriteCoordinator
         policy,
         const AiWriteFreshness(),
       );
-      if (initialTier.decision == AiGateDecision.deny) {
+      if (initialTier.decision == AiGateDecision.deny && !ownerFromPreRead) {
         throw const _WriteBlocked('policyDenied');
       }
       if (allowance < 1 ||
@@ -483,6 +630,7 @@ final class PolicyAiWriteCoordinator
       request = preparedText.request;
       final prepared = await (_port ??= createPort()).prepare(request);
       _requirePolicy(policy, runId: runId);
+      if (ownerFromPreRead) target = _todoTarget(prepared, policy.scope);
       final extra = <AiFixedConfirmReason>[...preparedText.reasons];
       final keys = {...prepared.writeKeys, ...prepared.dependencyKeys};
       if (journal.proposalEpoch(policy.scope.accountKey) != proposalEpoch) {
@@ -545,6 +693,18 @@ final class PolicyAiWriteCoordinator
         scopeRevision: policy.scopeRevision,
         releaseName: safeDisplay(prepared.releaseName),
         fields: _fields(request, safeDisplay),
+        upload: attachment == null
+            ? null
+            : AiUploadPreview(
+                attachmentId: attachment.id,
+                filename: safeDisplay(attachment.filename),
+                sizeBytes: attachment.size,
+                contentType: attachment.mediaType,
+                sha256Prefix: attachment.sha256Prefix,
+                projectId: request.arguments['projectId']! as int,
+                projectPath: _safeMetadata(prepared.projectPath),
+                projectVisibility: prepared.projectVisibility,
+              ),
       );
       _pending[id] = _PendingWrite(
         call,
@@ -626,6 +786,21 @@ final class PolicyAiWriteCoordinator
     if (proposal.tier.requiresTypedName &&
         typedName != proposal.tier.typedName) {
       return _notExecuted(pending.call, 'typedNameMismatch');
+    }
+    // A hold (§8 step 1: account removal; §12.2: app not on screen) refuses
+    // the approval without dispatching or ending the proposal, which carries
+    // on once the hold lifts (§8 step 2).
+    if (_pendingFailure(pending, pauses: false) == null) {
+      final held = _pauseFailure(snapshot());
+      if (held != null) {
+        if (_updatePause(pending)) _changed();
+        return _notExecuted(
+          pending.call,
+          held,
+          executionId: proposal.executionId,
+          target: _targetSummary(pending.prepared),
+        );
+      }
     }
     return _perform(pending, confirmed: true);
   }
@@ -802,6 +977,19 @@ final class PolicyAiWriteCoordinator
         executionId: proposal.executionId,
         terminal: settled.state,
       );
+      // §3.1: only an upload the journal has as succeeded can be quoted,
+      // and only from a later batch. Its markdown stays in this memory.
+      bool? referable;
+      if (attachmentId != null && settled.state == AiJournalState.succeeded) {
+        referable =
+            attachments?.recordUpload(
+              attachmentId,
+              projectId: pending.request.arguments['projectId']! as int,
+              markdown: settled.uploadMarkdown,
+            ) ??
+            false;
+        _uploadedThisBatch.add(attachmentId);
+      }
       final readbackConfirmed =
           settled.state == AiJournalState.succeeded &&
           _readbackOperations.contains(proposal.operationId);
@@ -818,8 +1006,16 @@ final class PolicyAiWriteCoordinator
           executionId: proposal.executionId,
           operationId: proposal.operationId,
           target: _targetSummary(pending.prepared),
-          resultSummary: _resultSummary(settled.projection),
+          resultSummary: [
+            _resultSummary(settled.projection),
+            if (referable != null)
+              'attachment=$attachmentId, referable=$referable',
+          ].where((part) => part.isNotEmpty).join(', '),
+          uploadReferable: referable,
+          upload: proposal.upload,
+          auditNotice: _auditNotice(proposal, confirmed: confirmed),
         ),
+        projection: settled.projection,
       );
     } on Object catch (error) {
       var state = accepted
@@ -853,6 +1049,10 @@ final class PolicyAiWriteCoordinator
           executionId: proposal.executionId,
           operationId: proposal.operationId,
           target: _targetSummary(pending.prepared),
+          upload: proposal.upload,
+          auditNotice: accepted
+              ? _auditNotice(proposal, confirmed: confirmed)
+              : null,
         ),
       );
     } finally {
@@ -885,8 +1085,13 @@ final class PolicyAiWriteCoordinator
     );
   }
 
+  /// Backgrounding pauses waiting proposals; it does not end them (§12.2:
+  /// without a foreground service no new write starts while the app is
+  /// away, and the user carries on in the foreground; §7.2: a waiting
+  /// proposal lapses after 30 minutes). Every dispatch check refuses while
+  /// the app is not on screen.
   @override
-  Future<void> onAppBackground() async => stop('backgrounded');
+  Future<void> onAppBackground() async => checkNow();
 
   @override
   void stop([String reason = 'stopped']) {
@@ -896,10 +1101,14 @@ final class PolicyAiWriteCoordinator
 
   @override
   void checkNow() {
+    var paused = false;
     for (final pending in _pending.values.toList()) {
       if (pending.done.isCompleted) continue;
-      final failure = _pendingFailure(pending);
-      if (failure == null) continue;
+      final failure = _pendingFailure(pending, pauses: false);
+      if (failure == null) {
+        paused |= _updatePause(pending);
+        continue;
+      }
       pending.invalidationReason = failure;
       pending.proposal.invalidate();
       // In-flight writes own their real future and settle the journal even
@@ -920,27 +1129,53 @@ final class PolicyAiWriteCoordinator
       _approvalTimer?.cancel();
       _approvalTimer = null;
     }
+    if (paused) _changed();
   }
 
-  String? _policyFailure(AiWritePolicySnapshot policy) {
+  /// Refreshes [pending]'s hold; true when it changed.
+  bool _updatePause(_PendingWrite pending) {
+    final reason = pending.flight == null ? _pauseOf(snapshot()) : null;
+    if (pending.proposal._pausedReason == reason) return false;
+    pending.proposal._pausedReason = reason;
+    return true;
+  }
+
+  String? _policyFailure(AiWritePolicySnapshot policy, {bool pauses = true}) {
     if (_stopped != null) return _stopped;
     if (!policy.alive) return 'accountChanged';
     if (!policy.enabled) return 'policyDenied';
-    if (!policy.appInForeground) return 'backgrounded';
-    if (!policy.clientMayStart) return 'clientUnavailable';
-    if (journal.removalHeld(policy.scope.accountKey) ||
-        journal.tombstoneFlag(policy.scope.accountKey)) {
-      return 'accountBlocked';
+    if (journal.tombstoneFlag(policy.scope.accountKey)) return 'accountBlocked';
+    return pauses ? _pauseFailure(policy) : null;
+  }
+
+  /// The hold on [policy]'s account, as [AiWritePause] names it.
+  String? _pauseOf(AiWritePolicySnapshot policy) {
+    if (journal.removalHeld(policy.scope.accountKey)) {
+      return AiWritePause.accountRemovalHeld;
     }
+    if (!policy.appInForeground) return AiWritePause.backgrounded;
+    if (!policy.clientMayStart) return AiWritePause.clientUnavailable;
     return null;
   }
 
-  void _requirePolicy(AiWritePolicySnapshot expected, {String? runId}) {
+  /// The refusal a hold gives a proposal or a dispatch.
+  String? _pauseFailure(AiWritePolicySnapshot policy) =>
+      switch (_pauseOf(policy)) {
+        AiWritePause.accountRemovalHeld => 'accountBlocked',
+        final String reason => reason,
+        null => null,
+      };
+
+  void _requirePolicy(
+    AiWritePolicySnapshot expected, {
+    String? runId,
+    bool pauses = true,
+  }) {
     if (runId != null && runId != _runId) {
       throw const _WriteBlocked('superseded');
     }
     final current = snapshot();
-    final failure = _policyFailure(current);
+    final failure = _policyFailure(current, pauses: pauses);
     if (failure != null) throw _WriteBlocked(failure);
     if (current.scope.accountKey != expected.scope.accountKey ||
         current.sessionGeneration != expected.sessionGeneration ||
@@ -952,10 +1187,12 @@ final class PolicyAiWriteCoordinator
     }
   }
 
-  String? _pendingFailure(_PendingWrite pending) {
+  /// Why [pending] cannot dispatch now. Without [pauses], a hold
+  /// ([AiWritePause]) does not count: it pauses a waiting proposal.
+  String? _pendingFailure(_PendingWrite pending, {bool pauses = true}) {
     try {
       if (pending.invalidationReason != null) return pending.invalidationReason;
-      _requirePolicy(pending.policy, runId: pending.runId);
+      _requirePolicy(pending.policy, runId: pending.runId, pauses: pauses);
       if (!pending.proposal.valid) return 'invalidProposal';
       if (!_now().isBefore(pending.proposal.expiresAt)) {
         return 'approvalExpired';
@@ -979,10 +1216,34 @@ final class PolicyAiWriteCoordinator
     if (failure != null) throw _WriteBlocked(failure);
   }
 
-  AiWriteOutcome _complete(_PendingWrite pending, AiWriteOutcome outcome) {
+  AiWriteOutcome _complete(
+    _PendingWrite pending,
+    AiWriteOutcome result, {
+    Map<String, Object?> projection = const {},
+  }) {
     if (pending.done.isCompleted) return pending.outcome!;
+    final outcome = AiWriteOutcome(
+      state: result.state,
+      reasonCode: result.reasonCode,
+      mutationCount: result.mutationCount,
+      noChange: result.noChange,
+      readbackConfirmed: result.readbackConfirmed,
+      executionId: result.executionId,
+      operationId: result.operationId,
+      target: result.target,
+      resultSummary: result.resultSummary,
+      upload: result.upload,
+      auditNotice: result.auditNotice,
+      targetName: result.targetName ?? pending.proposal.releaseName,
+      webLink: result.webLink ?? _webLink(pending, projection),
+      uploadReferable: result.uploadReferable,
+    );
     pending.outcome = outcome;
+    pending.proposal._outcome = outcome;
     pending.proposal.invalidate();
+    if (pending.proposal.editedText != null) {
+      _settledEdits.add(pending.proposal);
+    }
     _record(pending.call, outcome, runId: pending.runId);
     pending.done.complete(outcome);
     if (proposals.isEmpty) {
@@ -1015,6 +1276,17 @@ final class PolicyAiWriteCoordinator
 
   String? _safeMetadata(String? value) =>
       value == null ? null : safeDisplay(value);
+
+  /// §3.1: an upload into a public or internal project that ran without a
+  /// card warns on its audit row instead.
+  static String? _auditNotice(
+    AiWriteProposal proposal, {
+    required bool confirmed,
+  }) {
+    final upload = proposal.upload;
+    if (upload == null || confirmed || !upload.readersCanFetch) return null;
+    return uploadReadersCanFetch;
+  }
 
   String _targetSummary(port.AiWritePrepared prepared) =>
       _targetSummaryParts(prepared.writeKeys, prepared.releaseName);
@@ -1140,6 +1412,20 @@ final class PolicyAiWriteCoordinator
           (field == 'description' &&
               !request.operationId.contains('Label') &&
               !request.operationId.contains('Milestone'));
+      // §3.1, placeholder substitution: `[[attachment:att-<n>]]` quotes an
+      // upload this conversation finished in an earlier batch, into the
+      // same project.
+      var otherProject = false;
+      for (final match in _attachmentPlaceholder.allMatches(value)) {
+        final id = 'att-${match.group(1)}';
+        if (_uploadedThisBatch.contains(id)) {
+          throw const _WriteBlocked('attachmentNotUploaded');
+        }
+        final uploaded = attachments?.uploadedProjects(id) ?? const <int>{};
+        if (uploaded.isNotEmpty && !uploaded.contains(project)) {
+          otherProject = true;
+        }
+      }
       final outcome = text.prepareWriteText(
         textClass: classA
             ? text.AiTextClass.quickActionMarkdown
@@ -1158,10 +1444,16 @@ final class PolicyAiWriteCoordinator
         attachments: project == null
             ? null
             : attachmentSubstitution?.call(project),
+        sameProjectClassA: project != null && !otherProject,
         currentFieldValue: fresh.currentFields[field],
       );
       if (outcome.policyBlocked || outcome.finalText == null) {
-        throw _WriteBlocked(outcome.blockedReasonCode);
+        // An id with no succeeded upload in this project.
+        throw _WriteBlocked(
+          outcome.blockedReasonCode == text.AiTextBlockCode.attachmentUnknown
+              ? 'attachmentNotUploaded'
+              : outcome.blockedReasonCode,
+        );
       }
       reasons.addAll(
         outcome.confirmReasons.map(
@@ -1284,6 +1576,8 @@ AiWriteOutcome _notExecuted(
   target: target,
 );
 
+final _attachmentPlaceholder = RegExp(r'\[\[attachment:att-([0-9]+)\]\]');
+
 String _singleLine(String value) =>
     value.replaceAll(RegExp(r'[\r\n\u2028\u2029]'), ' ');
 
@@ -1393,6 +1687,98 @@ AiTargetRef _target(
   );
 }
 
+/// §7.7: a GitLab page for [pending]'s target, from the verified instance,
+/// the scope's project path and pre-read or returned ids. Never a model URL.
+Uri? _webLink(_PendingWrite pending, Map<String, Object?> projection) {
+  final instance = pending.policy.scope.resolvedInstance;
+  if (instance == null) return null;
+  final scope = pending.policy.scope;
+  final args = pending.request.arguments;
+  final operation = pending.call.name;
+  int? positive(Object? value) => value is int && value > 0 ? value : null;
+  final todo = pending.prepared.todoTarget;
+  final project = todo?.projectId ?? positive(args['projectId']);
+  final path = project == null ? null : _projectPath(scope, project);
+  if (path == null) return null;
+  Uri page(String suffix, [String? fragment]) {
+    final uri = instance.projectWeb(suffix.isEmpty ? path : '$path/-/$suffix');
+    return fragment == null ? uri : uri.replace(fragment: fragment);
+  }
+
+  if (todo != null) {
+    return page(
+      '${todo.resource == 'merge_requests' ? 'merge_requests' : 'issues'}'
+      '/${todo.iid}',
+    );
+  }
+  final resource = switch (operation) {
+    'updateIssue' || 'moveBoardCard' => 'issues',
+    'updateMergeRequest' ||
+    'unapproveMergeRequest' ||
+    'createDraftNote' ||
+    'updateDraftNote' => 'merge_requests',
+    _ => args['resource'] is String ? args['resource']! as String : null,
+  };
+  final iid = positive(args['iid']);
+  if ((resource == 'issues' || resource == 'merge_requests') && iid != null) {
+    final note = switch (operation) {
+      'createNote' => positive(projection['id']),
+      'updateNote' || 'updateDiscussionNote' => positive(args['noteId']),
+      _ => null,
+    };
+    return page('$resource/$iid', note == null ? null : 'note_$note');
+  }
+  return switch (operation) {
+    'createIssue' when positive(projection['iid']) != null => page(
+      'issues/${projection['iid']}',
+    ),
+    'createMergeRequest' when positive(projection['iid']) != null => page(
+      'merge_requests/${projection['iid']}',
+    ),
+    'createLabel' || 'updateLabel' => page('labels'),
+    'createMilestone' || 'updateMilestone' || 'setMilestoneState' =>
+      positive(projection['iid']) == null
+          ? page('milestones')
+          : page('milestones/${projection['iid']}'),
+    'createBoard' =>
+      positive(projection['id']) == null
+          ? page('boards')
+          : page('boards/${projection['id']}'),
+    'renameBoard' ||
+    'setBoardSystemListHidden' ||
+    'createBoardList' ||
+    'moveBoardList' =>
+      positive(args['boardId']) == null
+          ? page('boards')
+          : page('boards/${args['boardId']}'),
+    _ => page(''),
+  };
+}
+
+/// The target of a pre-read todo: the conversation's own issue or merge
+/// request binds as the current resource; anything else is only proposed
+/// (and an issue or merge request outside the scope is not admitted).
+AiTargetRef _todoTarget(port.AiWritePrepared prepared, AiWriteScope scope) {
+  final todo = prepared.todoTarget;
+  if (todo == null) return AiTargetRef(kind: AiTargetKind.todo);
+  final mergeRequest = todo.resource == 'merge_requests';
+  final current = scope.grants.any(
+    (grant) =>
+        grant.projectId == todo.projectId &&
+        grant.iid == todo.iid &&
+        grant.kind ==
+            (mergeRequest ? AiScopeKind.mergeRequest : AiScopeKind.workItem),
+  );
+  return AiTargetRef(
+    kind: AiTargetKind.todo,
+    side: mergeRequest ? AiResourceSide.mergeRequest : AiResourceSide.issue,
+    projectId: todo.projectId,
+    projectPath: _projectPath(scope, todo.projectId),
+    parentIid: todo.iid,
+    origin: current ? AiTargetOrigin.currentResource : AiTargetOrigin.proposed,
+  );
+}
+
 port.AiWriteRequest _edit(port.AiWriteRequest request, String edited) {
   final args = Map<String, Object?>.from(request.arguments);
   if (args.containsKey('body')) {
@@ -1449,18 +1835,90 @@ Map<String, String> _fields(
 String _preview(port.AiWriteRequest request, String releaseName) =>
     '${request.operationId} $releaseName\n${jsonEncode(request.arguments)}';
 
-// Includes both preflight passes, bounded freshness reads, one mutation and
-// readback. Each logical GET reserves two requests for OAuth refresh replay.
-int _requestAllowance(String operation) => switch (operation) {
-  'setStar' => 17,
-  'setSubscribed' ||
-  'createNote' ||
-  'updateIssue' ||
-  'updateMergeRequest' ||
-  'createIssue' ||
-  'createMergeRequest' => 25,
-  _ => 39,
+/// §4.4: the GitLab GETs one write can make. [fresh] is the freshness
+/// reader's (the project, then the target record), [prepare] the write
+/// port's pre-read (the current user, the project, the parent issue or
+/// merge request and the operation's own records; a todo reads up to four
+/// pages), each counted at its worst case and made once when the proposal
+/// is built and once more after approval. [readback] is the port's
+/// independent readback after the mutation.
+final class AiWriteRequestCount {
+  const AiWriteRequestCount({
+    required this.fresh,
+    required this.prepare,
+    this.readback = 0,
+  });
+
+  final int fresh;
+  final int prepare;
+  final int readback;
+
+  /// GETs from proposal to readback: two passes, then the readback.
+  int get reads => 2 * (fresh + prepare) + readback;
+}
+
+/// Per-operation worst cases for the MR6b-1 ledger (§4.4, §15 row 19).
+const aiWriteRequestCounts = <String, AiWriteRequestCount>{
+  'setStar': AiWriteRequestCount(fresh: 1, prepare: 2),
+  'setSubscribed': AiWriteRequestCount(fresh: 2, prepare: 3),
+  'markTodoDone': AiWriteRequestCount(fresh: 0, prepare: 5),
+  'addAwardEmoji': AiWriteRequestCount(fresh: 2, prepare: 4),
+  'removeAwardEmoji': AiWriteRequestCount(fresh: 2, prepare: 5),
+  'createNote': AiWriteRequestCount(fresh: 2, prepare: 3, readback: 1),
+  'updateNote': AiWriteRequestCount(fresh: 2, prepare: 4, readback: 1),
+  'createIssue': AiWriteRequestCount(fresh: 1, prepare: 2, readback: 1),
+  'updateIssue': AiWriteRequestCount(fresh: 2, prepare: 3, readback: 1),
+  'createMergeRequest': AiWriteRequestCount(fresh: 1, prepare: 2, readback: 1),
+  'updateMergeRequest': AiWriteRequestCount(fresh: 2, prepare: 3, readback: 1),
+  'unapproveMergeRequest': AiWriteRequestCount(fresh: 2, prepare: 3),
+  'createTodo': AiWriteRequestCount(fresh: 2, prepare: 3),
+  'createDiscussion': AiWriteRequestCount(fresh: 2, prepare: 4),
+  'createDiscussionNote': AiWriteRequestCount(
+    fresh: 2,
+    prepare: 4,
+    readback: 1,
+  ),
+  'updateDiscussionNote': AiWriteRequestCount(
+    fresh: 2,
+    prepare: 4,
+    readback: 1,
+  ),
+  'setDiscussionResolved': AiWriteRequestCount(
+    fresh: 2,
+    prepare: 4,
+    readback: 1,
+  ),
+  'createDraftNote': AiWriteRequestCount(fresh: 2, prepare: 4),
+  'updateDraftNote': AiWriteRequestCount(fresh: 2, prepare: 4, readback: 1),
+  'createLabel': AiWriteRequestCount(fresh: 1, prepare: 2),
+  'updateLabel': AiWriteRequestCount(fresh: 2, prepare: 3, readback: 1),
+  'createMilestone': AiWriteRequestCount(fresh: 1, prepare: 2),
+  'updateMilestone': AiWriteRequestCount(fresh: 2, prepare: 3, readback: 1),
+  'setMilestoneState': AiWriteRequestCount(fresh: 2, prepare: 3, readback: 1),
+  'createBoard': AiWriteRequestCount(fresh: 1, prepare: 2),
+  'renameBoard': AiWriteRequestCount(fresh: 2, prepare: 3),
+  'setBoardSystemListHidden': AiWriteRequestCount(fresh: 2, prepare: 3),
+  'createBoardList': AiWriteRequestCount(fresh: 1, prepare: 4),
+  'moveBoardList': AiWriteRequestCount(fresh: 2, prepare: 4),
+  'moveBoardCard': AiWriteRequestCount(fresh: 2, prepare: 3, readback: 1),
+  'upload_attachment': AiWriteRequestCount(fresh: 1, prepare: 2),
 };
+
+/// §4.4: the HTTP requests a write reserves from the send's shared budget
+/// when it is proposed: its GETs ([AiWriteRequestCount.reads]), doubled
+/// when [oauthReplay] (an OAuth 401 may replay each GET once after a token
+/// refresh; a personal access token never replays), plus the one mutation,
+/// which is never replayed. An operation without a row reserves the
+/// largest row's amount.
+int aiWriteRequestAllowance(String operation, {bool oauthReplay = true}) {
+  final int reads =
+      aiWriteRequestCounts[operation]?.reads ??
+      aiWriteRequestCounts.values.fold<int>(
+        0,
+        (most, row) => row.reads > most ? row.reads : most,
+      );
+  return reads * (oauthReplay ? 2 : 1) + 1;
+}
 
 // The existing port does not expose a readback flag. Keep this conservative
 // list aligned with its explicit readback callbacks; accepted is distinct.

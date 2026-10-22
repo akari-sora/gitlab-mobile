@@ -28,6 +28,7 @@ import '../../core/ai/wire/responses.dart';
 import '../../core/ai/write_text.dart' as write_text;
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
+import '../../core/models.dart' show OAuthCredential;
 import '../../l10n/l10n.dart';
 import '../auth/session_controller.dart';
 import '../workspace/attachment_picker.dart';
@@ -190,6 +191,9 @@ class AiChatController extends ChangeNotifier
   int _historyRetryAttempts = 0;
   final List<({String id, int index})> _pendingTools = [];
   final Map<String, int> _writeRows = {};
+
+  /// Audit data of write rows, by item index (rows keep their index).
+  final Map<int, AiWriteRow> _writeRowInfo = {};
   final List<Future<AiWriteOutcome>> _retiredWrites = [];
   AiChatPhase _phase = AiChatPhase.preparing;
   AiChatBlocker _blocker = AiChatBlocker.settingsLoading;
@@ -305,12 +309,37 @@ class AiChatController extends ChangeNotifier
       _writes?.reject(proposal);
 
   /// The lifecycle owner supplies foreground state; MR6c owns native permits.
+  /// Backgrounding neither stops the run nor ends a waiting proposal: the
+  /// proposal is held, and every dispatch check refuses while the app is
+  /// away (§12.2). Calling this only refreshes the hold at once instead of
+  /// at the next one-second check.
   Future<void> onAppBackground() async {
     await _writes?.onAppBackground();
-    stop();
+  }
+
+  /// Settled proposals whose card text the user edited (§7.2), oldest first.
+  /// Each carries its [AiWriteProposal.outcome]; they go when the
+  /// conversation does, or through [dismissSettledWrite].
+  List<AiWriteProposal> get settledWriteEdits =>
+      _writes?.settledEdits ?? const <AiWriteProposal>[];
+
+  /// Drops a settled, edited card the user dismissed.
+  void dismissSettledWrite(AiWriteProposal proposal) {
+    if (_writes?.dismissSettled(proposal) ?? false) _notify();
   }
 
   AiAttachmentSession? get attachmentSession => _attachments;
+
+  /// The audit data of [item] when it is a write tool row (§7.7): target,
+  /// GitLab link and, once settled, the outcome. Null for other items.
+  AiWriteRow? writeRowFor(AiChatItem item) {
+    final index = _items.indexOf(item);
+    return index < 0 ? null : _writeRowInfo[index];
+  }
+
+  /// Whether [toolName] (a run item's name) is a GitLab write.
+  static bool isWriteTool(String toolName) =>
+      ledger.productionAiLedger.find(toolName) != null;
 
   /// Attachment UI calls this after removal to invalidate an unprepared card.
   void checkWriteProposals() => _writes?.checkNow();
@@ -1140,8 +1169,15 @@ class AiChatController extends ChangeNotifier
     }
     if (path != null) target = await _api.record(path);
     if (!_alive) throw const AiJournalException('accountChanged');
+    // A create is read against its project, which is neither the new
+    // resource's current value nor its revision.
+    final createsInProject =
+        path == null && _projectCreates.contains(operation);
     final fields = args['fields'];
+    // §3: only an existing resource going from confidential to not lowers
+    // confidentiality; a new issue is not confidential by default.
     final confidentialLowered =
+        resource != null &&
         fields is Map<String, Object?> &&
         fields['confidential'] == false &&
         target['confidential'] != false;
@@ -1186,7 +1222,7 @@ class AiChatController extends ChangeNotifier
       _ => false,
     };
     return AiWriteFreshness(
-      updatedAt: target['updated_at'] is String
+      updatedAt: !createsInProject && target['updated_at'] is String
           ? target['updated_at'] as String
           : null,
       headSha: resource == 'merge_requests' && target['sha'] is String
@@ -1204,9 +1240,12 @@ class AiChatController extends ChangeNotifier
           (_context?.built.readInternal ?? false) ||
           (rank(sourceVisibility) >= 0 &&
               rank(visibility) > rank(sourceVisibility)),
+      // §3.1, whole-field write back: only a write back to the same field
+      // has a current value whose hidden spans the new text could drop.
       currentFields: {
-        for (final key in ['body', 'description', 'title', 'name'])
-          if (target[key] is String) key: target[key] as String,
+        if (_writeBackOperations.contains(operation))
+          for (final key in ['body', 'description', 'title', 'name'])
+            if (target[key] is String) key: target[key] as String,
       },
       provenance: provenance,
     );
@@ -1232,6 +1271,9 @@ class AiChatController extends ChangeNotifier
     var budget = AiToolBudget();
     final client = _client(config);
     final conversationId = _id;
+    // This conversation's attachments and the uploads it finished; both go
+    // with the conversation, the account and the process (§3.1).
+    final attachments = _attachments;
     bool current() => _alive && _id == conversationId;
     final coordinator = PolicyAiWriteCoordinator(
       snapshot: () => _writeSnapshot(config),
@@ -1247,7 +1289,14 @@ class AiChatController extends ChangeNotifier
       placeholders: placeholders,
       knownSecrets: () => _secrets.current.toSet(),
       safeDisplay: draftSafe,
-      attachments: _attachments,
+      // §4.4: a personal access token never replays a GET after a 401.
+      httpCost: (operation) => aiWriteRequestAllowance(
+        operation,
+        oauthReplay: _api.credential is OAuthCredential,
+      ),
+      attachments: attachments,
+      attachmentSubstitution: (project) =>
+          attachments?.substitutionFor(project),
       currentInterfaceLanguage: () => l10n.language.tag,
       currentDeviceLanguages: () => [
         for (final locale in PlatformDispatcher.instance.locales)
@@ -1255,7 +1304,9 @@ class AiChatController extends ChangeNotifier
       ],
       persistConversation: historySaved,
       onChanged: () {
-        if (current()) _notify();
+        if (!current()) return;
+        _refreshWriteTargets();
+        _notify();
       },
       onOutcome: (call, outcome) {
         if (current()) _settleLateWrite(call, outcome);
@@ -1337,6 +1388,9 @@ class AiChatController extends ChangeNotifier
           ),
         );
         _pendingTools.add((id: call.id, index: index));
+        if (isWriteTool(call.name)) {
+          _writeRowInfo[index] = AiWriteRow(operationId: _toolName(call.name));
+        }
         _notifyStream();
       },
       onToolResult: (result) {
@@ -1353,9 +1407,14 @@ class AiChatController extends ChangeNotifier
         final writeStatus = outcome == null ? null : _writeStatus(outcome);
         final executionId =
             outcome?.executionId ?? coordinator.executionIdFor(result.callId);
+        final targetName = outcome?.targetName;
         final item = AiToolRunItem(
           name: _toolName(result.name),
-          argsPreview: started is AiToolRunItem ? started.argsPreview : '',
+          argsPreview: targetName != null
+              ? displaySafe(targetName)
+              : started is AiToolRunItem
+              ? started.argsPreview
+              : '',
           status: writeStatus != null
               ? writeStatus.legacyStatus
               : result.notExecuted || pending < 0
@@ -1384,12 +1443,17 @@ class AiChatController extends ChangeNotifier
               result.readInternal,
           resultExcerpt: _toolExcerpt(result.plainData.plainText),
         );
+        final int row;
         if (index == null) {
-          final inserted = _insertRunItem(item);
-          if (executionId != null) _writeRows[executionId] = inserted;
+          row = _insertRunItem(item);
+          if (executionId != null) _writeRows[executionId] = row;
         } else {
           _replaceItem(index, item);
+          row = index;
           if (executionId != null) _writeRows[executionId] = index;
+        }
+        if (isWriteTool(result.name)) {
+          _writeRowInfo[row] = _writeRow(result.name, outcome);
         }
         if (result.withheldPrivateKeyContext) _noticeWithheld();
         _notifyStream();
@@ -1894,9 +1958,12 @@ class AiChatController extends ChangeNotifier
     final previous = _items[index];
     if (previous is! AiToolRunItem) return;
     final status = _writeStatus(outcome);
+    _writeRowInfo[index] = _writeRow(call.name, outcome);
     _replaceItem(index, AiToolRunItem(
       name: _toolName(call.name),
-      argsPreview: previous.argsPreview,
+      argsPreview: outcome.targetName == null
+          ? previous.argsPreview
+          : displaySafe(outcome.targetName!),
       status: status.legacyStatus,
       writeStatus: status,
       sizeChars: outcome.summary.length,
@@ -1909,6 +1976,52 @@ class AiChatController extends ChangeNotifier
     ));
     _notify();
     _saveReportedHistory();
+  }
+
+  AiWriteRow _writeRow(String name, AiWriteOutcome? outcome) => AiWriteRow(
+    operationId: _toolName(name),
+    target: outcome?.targetName == null
+        ? ''
+        : displaySafe(outcome!.targetName!),
+    link: outcome?.webLink,
+    outcome: outcome,
+    settledAt: outcome == null ? null : DateTime.now(),
+  );
+
+  /// A waiting or running write row learns its target from the proposal.
+  void _refreshWriteTargets() {
+    final writes = _writes;
+    if (writes == null) return;
+    for (final (:id, :index) in _pendingTools) {
+      final info = _writeRowInfo[index];
+      if (info == null || info.target.isNotEmpty || index >= _items.length) {
+        continue;
+      }
+      final proposal = writes.proposalFor(id);
+      final row = _items[index];
+      if (proposal == null || row is! AiToolRunItem) continue;
+      final target = displaySafe(proposal.releaseName);
+      _writeRowInfo[index] = AiWriteRow(
+        operationId: info.operationId,
+        target: target,
+      );
+      _replaceItem(
+        index,
+        AiToolRunItem(
+          name: row.name,
+          argsPreview: target,
+          status: row.status,
+          sizeChars: row.sizeChars,
+          provenance: row.provenance,
+          truncated: row.truncated,
+          blocked: row.blocked,
+          resultExcerpt: row.resultExcerpt,
+          confidential: row.confidential,
+          internal: row.internal,
+          writeStatus: row.writeStatus,
+        ),
+      );
+    }
   }
 
   /// A short label for what a tool call reads, for display only. The model
@@ -1994,6 +2107,7 @@ class AiChatController extends ChangeNotifier
       _conversationStart = _items.length;
     } else {
       _items.clear();
+      _writeRowInfo.clear();
       _conversationStart = 0;
       // Nothing unchecked is shown any more.
       _displayFailed = false;
@@ -2049,7 +2163,58 @@ class AiChatController extends ChangeNotifier
   }
 }
 
+/// What the audit row of one write shows besides its run item (§7.7: time,
+/// target, result and a GitLab link from the verified instance and ids).
+final class AiWriteRow {
+  const AiWriteRow({
+    required this.operationId,
+    this.target = '',
+    this.link,
+    this.outcome,
+    this.settledAt,
+  });
+
+  /// The ledger operation; a write row is always a write.
+  final String operationId;
+
+  /// The target summary (`#5`, `!12`, a project path, a file name). Empty
+  /// until the write's pre-read named it. Redacted.
+  final String target;
+
+  /// GitLab page of the target; never a model-supplied URL.
+  final Uri? link;
+
+  /// Null while the write waits or runs.
+  final AiWriteOutcome? outcome;
+  final DateTime? settledAt;
+}
+
 const _uploadOperation = 'upload_attachment';
+
+/// Writes that create a resource in a project. Their fresh read is the
+/// project record, which gives them no current value and no revision.
+const _projectCreates = {
+  'createIssue',
+  'createMergeRequest',
+  'createLabel',
+  'createMilestone',
+  'createBoard',
+  'createBoardList',
+  _uploadOperation,
+};
+
+/// Writes that replace a field of the resource they read, so the field's
+/// current value is what the new text replaces (§3.1).
+const _writeBackOperations = {
+  'updateIssue',
+  'updateMergeRequest',
+  'updateNote',
+  'updateDiscussionNote',
+  'updateDraftNote',
+  'updateLabel',
+  'updateMilestone',
+  'renameBoard',
+};
 
 /// Chip source of an attachment's "What was sent" row; the same tag as the
 /// untrusted-data block and the consent category.

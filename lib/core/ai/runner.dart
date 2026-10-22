@@ -791,7 +791,10 @@ final class AiRunner {
   }
 
   AiSegment _newSegment(String userText, {AiSegment? previous}) {
-    _segmentSystem = _redact(system);
+    // The system prompt is the app's own text: its `[[attachment:att-1]]`
+    // example reaches the provider intact. Every other source still turns
+    // such a literal into an ordinary marker.
+    _segmentSystem = _redact(system, keepAppPlaceholders: true);
     _segmentTools = [
       for (final tool in _nextTools)
         AiToolSpec(
