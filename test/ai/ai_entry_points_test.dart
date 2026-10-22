@@ -70,6 +70,8 @@ final class _Session extends ChangeNotifier implements AiChatSession {
   @override
   Future<void> recheck() async {}
   @override
+  void markReported(AiAssistantItem item) {}
+  @override
   set confirmCleartext(Future<bool> Function()? callback) {}
   @override
   String displaySafe(String text) => text;

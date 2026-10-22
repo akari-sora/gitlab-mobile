@@ -70,19 +70,33 @@ Map<String, Object?> _itemJson(AiChatItem item) => switch (item) {
         )
         .toList(),
   },
-  AiAssistantItem(:final text, :final state, :final usage) => {
-    'kind': 'assistant',
-    'text': _chars(text, 64000, markTruncated: true),
-    'state': _assistantStateCode(state),
-    'usage': usage == null
-        ? null
-        : <String, Object?>{
-            'inputTokens': usage.inputTokens,
-            'outputTokens': usage.outputTokens,
-            'cacheCreationInputTokens': usage.cacheCreationInputTokens,
-            'cacheReadInputTokens': usage.cacheReadInputTokens,
-          },
-  },
+  AiAssistantItem(
+    :final text,
+    :final state,
+    :final usage,
+    :final source,
+    :final reported,
+  ) =>
+    {
+      'kind': 'assistant',
+      'text': _chars(text, 64000, markTruncated: true),
+      'state': _assistantStateCode(state),
+      'usage': usage == null
+          ? null
+          : <String, Object?>{
+              'inputTokens': usage.inputTokens,
+              'outputTokens': usage.outputTokens,
+              'cacheCreationInputTokens': usage.cacheCreationInputTokens,
+              'cacheReadInputTokens': usage.cacheReadInputTokens,
+            },
+      if (source != null)
+        'source': <String, Object?>{
+          'presetId': _chars(source.presetId, 256),
+          'format': _chars(source.format, 32),
+          'model': _chars(source.model, 1024),
+        },
+      if (reported) 'reported': true,
+    },
   AiToolRunItem() => {
     'kind': 'tool',
     'name': _chars(item.name, 256),
@@ -151,7 +165,14 @@ AiConversation aiDisplayFromJson(Map<String, Object?> json) {
             }).toList(),
           );
         case 'assistant':
-          _rejectUnknownKeys(item, const {'kind', 'text', 'state', 'usage'});
+          _rejectUnknownKeys(item, const {
+            'kind',
+            'text',
+            'state',
+            'usage',
+            'source',
+            'reported',
+          });
           if (text is! String || text.length > 64000) {
             throw const AiHistoryUnsupportedFormat();
           }
@@ -172,6 +193,13 @@ AiConversation aiDisplayFromJson(Map<String, Object?> json) {
             }
             return value as int?;
           }
+          final rawSource = item['source'];
+          final source = item.containsKey('source')
+              ? historyObject(rawSource)
+              : null;
+          if (source != null) {
+            _rejectUnknownKeys(source, const {'presetId', 'format', 'model'});
+          }
           return AiAssistantItem(
             text: text,
             state: _assistantState(_string(item, 'state', 32)),
@@ -183,6 +211,16 @@ AiConversation aiDisplayFromJson(Map<String, Object?> json) {
                     cacheCreationInputTokens: token('cacheCreationInputTokens'),
                     cacheReadInputTokens: token('cacheReadInputTokens'),
                   ),
+            source: source == null
+                ? null
+                : AiAnswerSource(
+                    presetId: _string(source, 'presetId', 256),
+                    format: _string(source, 'format', 32),
+                    model: _string(source, 'model', 1024),
+                  ),
+            reported: item.containsKey('reported')
+                ? _boolean(item, 'reported')
+                : false,
           );
         case 'tool':
           _rejectUnknownKeys(item, const {

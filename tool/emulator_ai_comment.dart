@@ -123,6 +123,9 @@ final class _QaSession extends ChangeNotifier implements AiChatSession {
   Future<void> recheck() async {}
 
   @override
+  void markReported(AiAssistantItem item) {}
+
+  @override
   set confirmCleartext(Future<bool> Function()? callback) {}
 
   @override

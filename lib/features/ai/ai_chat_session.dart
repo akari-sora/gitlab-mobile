@@ -170,6 +170,10 @@ abstract interface class AiChatSession implements Listenable {
   /// [canSend].
   Future<void> send(String text);
 
+  /// Marks [item] as reported, keeping it in the conversation and saving the
+  /// flag when history is enabled. No-op if [item] is no longer in [items].
+  void markReported(AiAssistantItem item);
+
   /// Stops the current run. The partial reply stays, marked as interrupted.
   void stop();
 

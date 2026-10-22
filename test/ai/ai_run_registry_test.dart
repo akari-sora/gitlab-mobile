@@ -616,6 +616,9 @@ final class _FakeChatSession extends ChangeNotifier implements AiChatSession {
     }
   }
 
+  @override
+  void markReported(AiAssistantItem item) {}
+
   void notifyCapacityChanged() {
     capacityNotifications++;
     if (_blocker == AiChatBlocker.tooManyRunning &&

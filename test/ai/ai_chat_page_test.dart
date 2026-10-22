@@ -61,6 +61,7 @@ final class _FakeSession extends ChangeNotifier implements AiChatSession {
   var rechecks = 0;
   var newConversations = 0;
   final used = <String>[];
+  final reported = <AiAssistantItem>[];
   Future<bool> Function()? cleartext;
 
   @override
@@ -73,6 +74,8 @@ final class _FakeSession extends ChangeNotifier implements AiChatSession {
   Future<void> useProvider(String providerId) async => used.add(providerId);
   @override
   Future<void> recheck() async => rechecks++;
+  @override
+  void markReported(AiAssistantItem item) => reported.add(item);
   @override
   set confirmCleartext(Future<bool> Function()? callback) =>
       cleartext = callback;

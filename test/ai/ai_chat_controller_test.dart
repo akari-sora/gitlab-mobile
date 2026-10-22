@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
@@ -19,6 +20,7 @@ import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
+import 'package:gitlab_mobile/features/ai/ai_history.dart';
 import 'package:gitlab_mobile/features/ai/ai_stores.dart';
 import 'package:gitlab_mobile/features/auth/session_controller.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
@@ -548,6 +550,306 @@ void main() {
       ],
     },
   });
+
+  test(
+    'reporting preserves attribution through redaction and hidden fallback',
+    () async {
+      const lateSecret = 'synthetic-answer-secret-0098';
+      final environment = await _environment();
+      addTearDown(environment.dispose);
+      final controller = await _readyController(
+        environment,
+        FakeAdapter((_) => _sse(answer('answer $lateSecret'))),
+        tools: false,
+      );
+      await controller.send('first');
+      final original = controller.items.whereType<AiAssistantItem>().single;
+      expect(original.source?.presetId, 'custom');
+      expect(original.source?.format, AiFormat.responses.name);
+      expect(original.source?.model, 'synthetic-model');
+      expect(original.state, AiAssistantState.done);
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+      controller.markReported(
+        const AiAssistantItem(text: 'unknown', state: AiAssistantState.done),
+      );
+      expect(notifications, 0);
+      expect(
+        identical(
+          controller.items.whereType<AiAssistantItem>().single,
+          original,
+        ),
+        isTrue,
+      );
+      controller.markReported(original);
+      expect(notifications, 1);
+      final marked = controller.items.whereType<AiAssistantItem>().single;
+      expect(marked.reported, isTrue);
+      expect(marked.text, original.text);
+      expect(marked.source, same(original.source));
+      expect(marked.usage, same(original.usage));
+      expect(controller.historySaved, isFalse);
+      controller.markReported(original);
+      controller.markReported(marked);
+      expect(notifications, 1);
+
+      await environment.settings.saveProvider(
+        _provider(
+          AiFormat.chatCompletions,
+          id: 'other',
+          requiresKey: true,
+          model: 'other-model',
+        ),
+      );
+      await environment.settings.saveProviderKey(
+        'other',
+        lateSecret,
+        acknowledgeWarning: true,
+      );
+      await controller.recheck();
+      final redacted = controller.items.whereType<AiAssistantItem>().single;
+      expect(redacted.text, isNot(contains(lateSecret)));
+      expect(redacted.text, contains('REDACTED'));
+      expect(redacted.source, same(original.source));
+      expect(redacted.reported, isTrue);
+      await environment.settings.saveProviderKey(
+        'other',
+        'REDACTED',
+        acknowledgeWarning: true,
+      );
+      await controller.recheck();
+      final hidden = controller.items.whereType<AiAssistantItem>().single;
+      expect(hidden.state, AiAssistantState.hidden);
+      expect(hidden.text, isEmpty);
+      expect(hidden.source, same(original.source));
+      expect(hidden.reported, isTrue);
+    },
+  );
+
+  test(
+    'reporting a streaming answer survives settle and saves encrypted history',
+    () async {
+      final store = MemoryAiStore();
+      final environment = await _environment(aiStore: store);
+      addTearDown(environment.dispose);
+      final root = await Directory.systemTemp.createTemp('mr6a4-report-');
+      final history = AiHistoryCoordinator.debugReset(
+        store: store,
+        files: AiHistoryFileStore(root: () async => root),
+      );
+      addTearDown(() async {
+        AiHistoryCoordinator.debugReset();
+        await root.delete(recursive: true);
+      });
+      final stream = StreamController<Uint8List>();
+      final adapter = FakeAdapter(
+        (_) => ResponseBody(
+          stream.stream,
+          200,
+          headers: {
+            Headers.contentTypeHeader: ['text/event-stream'],
+          },
+        ),
+      );
+      final controller = await _readyController(
+        environment,
+        adapter,
+        tools: false,
+      );
+      final account = environment.workspace.account.key;
+      expect(await history.enable(account), AiHistoryState.ready);
+      await environment.settings.loadAccount(account);
+      final send = controller.send('stream');
+      await _waitFor(() => adapter.requests.isNotEmpty);
+      stream.add(
+        Uint8List.fromList(
+          utf8.encode(
+            _partialEvents(AiFormat.responses, 'partial'.padRight(256, '!')),
+          ),
+        ),
+      );
+      await _waitFor(
+        () => controller.items
+            .whereType<AiAssistantItem>()
+            .single
+            .text
+            .isNotEmpty,
+      );
+      final partial = controller.items.whereType<AiAssistantItem>().single;
+      expect(partial.source?.model, 'synthetic-model');
+      controller.markReported(partial);
+      // This read joins the coordinator's queue after the report save.
+      final during = await history.read(account);
+      expect(during!.conversations.single.id, controller.id);
+      expect(
+        (during.conversations.single.conversation.items.last as AiAssistantItem)
+            .reported,
+        isTrue,
+      );
+      stream.add(Uint8List.fromList(utf8.encode(answer('complete answer'))));
+      await stream.close();
+      await send;
+      final settled = controller.items.whereType<AiAssistantItem>().single;
+      expect(settled.state, AiAssistantState.done);
+      expect(settled.source, same(partial.source));
+      expect(settled.reported, isTrue);
+      final saved = (await history.read(account))!.conversations.single;
+      final restored = saved.conversation.items
+          .whereType<AiAssistantItem>()
+          .single;
+      expect(restored.text, settled.text);
+      expect(restored.reported, isTrue);
+      expect(restored.source?.presetId, partial.source?.presetId);
+      expect(restored.source?.format, partial.source?.format);
+      expect(restored.source?.model, partial.source?.model);
+      expect(controller.historySaved, isTrue);
+      Future<AiAssistantItem> savedWhen(
+        bool Function(AiAssistantItem) matches,
+      ) async {
+        for (var attempt = 0; attempt < 100; attempt++) {
+          final snapshot = (await history.read(account))!.conversations.single;
+          final answer = snapshot.conversation.items
+              .whereType<AiAssistantItem>()
+              .single;
+          if (matches(answer)) return answer;
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+        fail('queued report snapshot was not persisted');
+      }
+
+      await environment.settings.saveProvider(
+        _provider(AiFormat.responses, id: 'other', requiresKey: true),
+      );
+      await environment.settings.saveProviderKey(
+        'other',
+        'complete answer',
+        acknowledgeWarning: true,
+      );
+      await controller.recheck();
+      final redactedAnswer = await savedWhen(
+        (answer) => !answer.text.contains('complete answer'),
+      );
+      expect(redactedAnswer.text, isNot(contains('complete answer')));
+      expect(redactedAnswer.reported, isTrue);
+      expect(redactedAnswer.source?.model, partial.source?.model);
+      await environment.settings.saveProviderKey(
+        'other',
+        'REDACTED',
+        acknowledgeWarning: true,
+      );
+      await controller.recheck();
+      final hiddenAnswer = await savedWhen(
+        (answer) => answer.state == AiAssistantState.hidden,
+      );
+      expect(hiddenAnswer.text, isEmpty);
+      expect(hiddenAnswer.state, AiAssistantState.hidden);
+      expect(hiddenAnswer.reported, isTrue);
+      expect(hiddenAnswer.source?.model, partial.source?.model);
+      final files = root.listSync(recursive: true).whereType<File>();
+      expect(files, isNotEmpty);
+      for (final file in files) {
+        expect(
+          utf8.decode(file.readAsBytesSync(), allowMalformed: true),
+          isNot(contains('complete answer')),
+        );
+      }
+    },
+  );
+
+  test('pending reported history retries after storage recovers', () async {
+    final store = MemoryAiStore();
+    final environment = await _environment(aiStore: store);
+    addTearDown(environment.dispose);
+    final root = await Directory.systemTemp.createTemp('mr6a4-retry-');
+    var failWrites = false;
+    var writes = 0;
+    final history = AiHistoryCoordinator.debugReset(
+      store: store,
+      files: AiHistoryFileStore(
+        root: () async {
+          writes++;
+          if (failWrites) throw const FileSystemException('synthetic outage');
+          return root;
+        },
+      ),
+    );
+    addTearDown(() async {
+      AiHistoryCoordinator.debugReset();
+      await root.delete(recursive: true);
+    });
+    final controller = await _readyController(
+      environment,
+      FakeAdapter((_) => _sse(answer('persist this report'))),
+      tools: false,
+    );
+    final account = environment.workspace.account.key;
+    expect(await history.enable(account), AiHistoryState.ready);
+    await environment.settings.loadAccount(account);
+    await controller.send('first');
+    failWrites = true;
+    controller.markReported(
+      controller.items.whereType<AiAssistantItem>().single,
+    );
+    await _waitFor(() => history.saveFailed(account, controller.id));
+    expect(
+      controller.items.whereType<AiAssistantItem>().single.reported,
+      isTrue,
+    );
+    expect(root.listSync(recursive: true).whereType<File>(), isEmpty);
+    failWrites = false;
+    final before = writes;
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    expect(writes, greaterThan(before));
+    expect(history.saveFailed(account, controller.id), isFalse);
+    final saved = (await history.read(account))!.conversations.single;
+    expect(saved.id, controller.id);
+    final restored = saved.conversation.items
+        .whereType<AiAssistantItem>()
+        .single;
+    expect(restored.reported, isTrue);
+    expect(restored.text, 'persist this report');
+  });
+
+  for (final format in AiFormat.values) {
+    test(
+      '${format.name} provider request bytes ignore report and source metadata',
+      () async {
+        Future<List<String>> requests(bool report) async {
+          final environment = await _environment();
+          addTearDown(environment.dispose);
+          await _configure(environment, _provider(format), grantConsent: true);
+          final adapter = FakeAdapter(
+            (_) => _sse(_toolThenAnswer(format).last),
+          );
+          final controller = _controller(
+            environment,
+            wireClientFactory:
+                ({required config, required apiKey, required conversationId}) =>
+                    _wireClient(
+                      adapter,
+                      config: config,
+                      apiKey: apiKey,
+                      conversationId: conversationId,
+                    ),
+          );
+          addTearDown(controller.dispose);
+          await controller.recheck();
+          await controller.send('first');
+          final item = controller.items.whereType<AiAssistantItem>().single;
+          expect(item.source?.format, format.name);
+          if (report) controller.markReported(item);
+          await controller.send('follow up');
+          expect(controller.failure, isNull);
+          expect(adapter.requests, hasLength(2));
+          return adapter.requests
+              .map((request) => jsonEncode(request.data))
+              .toList();
+        }
+
+        expect(await requests(true), await requests(false));
+      },
+    );
+  }
 
   test('a display pass that fails is tried again, not skipped', () async {
     final environment = await _environment();
