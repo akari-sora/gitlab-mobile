@@ -30,26 +30,6 @@ final class _RequestScope {
   final int projectId, generation;
 }
 
-Future<int> _effectiveAccess(
-  Account account,
-  GitLabApi api,
-  Project project,
-) async {
-  try {
-    final member = await api.record([
-      'projects',
-      '${project.id}',
-      'members',
-      'all',
-      '${account.user.id}',
-    ]);
-    return valueInt(member, 'access_level');
-  } on ApiFailure catch (failure) {
-    if (failure.status == 404) return 0;
-    rethrow;
-  }
-}
-
 Future<List<Json>> _allRecords(
   GitLabApi api,
   List<String> path, {
@@ -657,7 +637,7 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
         return;
       }
       setState(() => _busy = true);
-      await scope.api.removeRecord(_path);
+      await scope.api.deletePackage(scope.projectId, widget.packageId);
       if (!_current(scope)) return;
       try {
         await scope.api.record(_path);
@@ -706,7 +686,11 @@ class _PackageDetailPageState extends State<PackageDetailPage> {
         return;
       }
       setState(() => _busy = true);
-      await scope.api.removeRecord([...filesPath, '${file.id}']);
+      await scope.api.deletePackageFile(
+        scope.projectId,
+        widget.packageId,
+        file.id,
+      );
       if (!_current(scope)) return;
       final after = await _allRecords(scope.api, filesPath);
       if (!_current(scope)) return;
@@ -1168,10 +1152,9 @@ class _ContainerRepositoryPageState extends State<ContainerRepositoryPage> {
       }
       int? access;
       try {
-        access = await _effectiveAccess(
-          widget.account,
-          scope.api,
-          widget.project,
+        access = await scope.api.effectiveProjectAccess(
+          scope.projectId,
+          widget.account.user.id,
         );
       } catch (_) {
         // Some instances allow the registry read but hide member details. Keep
@@ -1198,10 +1181,9 @@ class _ContainerRepositoryPageState extends State<ContainerRepositoryPage> {
         query: const {'tags_count': 'true', 'size': 'true'},
       );
       final fresh = ContainerRepository.fromJson(freshJson);
-      final access = await _effectiveAccess(
-        widget.account,
-        scope.api,
-        widget.project,
+      final access = await scope.api.effectiveProjectAccess(
+        scope.projectId,
+        widget.account.user.id,
       );
       if (!_current(scope)) return;
       if (valueInt(freshJson, 'project_id') != widget.project.id ||
@@ -1220,13 +1202,10 @@ class _ContainerRepositoryPageState extends State<ContainerRepositoryPage> {
         return;
       }
       setState(() => _busy = true);
-      await scope.api.removeRecord([
-        'projects',
-        '${widget.project.id}',
-        'registry',
-        'repositories',
-        '${widget.repositoryId}',
-      ]);
+      await scope.api.deleteContainerRepository(
+        scope.projectId,
+        widget.repositoryId,
+      );
       if (!_current(scope)) return;
       try {
         final readback = ContainerRepository.fromJson(
@@ -1488,10 +1467,9 @@ class _ContainerTagPageState extends State<ContainerTagPage> {
     if (_busy) return;
     final scope = _scope;
     try {
-      final access = await _effectiveAccess(
-        widget.account,
-        scope.api,
-        widget.project,
+      final access = await scope.api.effectiveProjectAccess(
+        scope.projectId,
+        widget.account.user.id,
       );
       final fresh = ContainerTag.fromJson(await scope.api.record(_path));
       if (!_current(scope)) return;
@@ -1509,7 +1487,11 @@ class _ContainerTagPageState extends State<ContainerTagPage> {
         return;
       }
       setState(() => _busy = true);
-      await scope.api.removeRecord(_path);
+      await scope.api.deleteContainerTag(
+        scope.projectId,
+        widget.repositoryId,
+        widget.tagName,
+      );
       if (!_current(scope)) return;
       try {
         await scope.api.record(_path);
