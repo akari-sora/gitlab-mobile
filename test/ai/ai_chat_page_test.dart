@@ -226,6 +226,23 @@ final class _FakeWriteSession extends _FakeSession
   void removeAttachment(String id) {}
 }
 
+/// Also keeps the audit data the chat controller gives write rows.
+final class _AuditWriteSession extends _FakeWriteSession
+    implements AiWriteAuditSession {
+  _AuditWriteSession({super.items});
+
+  @override
+  List<AiWriteProposal> settledWriteEdits = [];
+  final rows = <AiChatItem, AiWriteRow>{};
+
+  @override
+  void dismissSettledWrite(AiWriteProposal proposal) =>
+      update(() => settledWriteEdits.remove(proposal));
+
+  @override
+  AiWriteRow? writeRowFor(AiChatItem item) => rows[item];
+}
+
 AiWriteProposal _writeProposal() => AiWriteProposal(
   executionId: 'exec-1',
   operationId: 'createNote',
@@ -430,6 +447,56 @@ void main() {
       session.update(() => session.phase = AiChatPhase.running);
       await tester.pump();
       expect(find.text(l10n.aiWriteInProgress), findsOneWidget);
+    });
+
+    testWidgets('a settled write row links to GitLab and warns on uploads', (
+      tester,
+    ) async {
+      const row = AiToolRunItem(
+        name: 'upload_attachment',
+        argsPreview: 'shot.png',
+        status: AiToolRunStatus.completed,
+        sizeChars: 0,
+        provenance: '',
+        writeStatus: AiWriteResultStatus.succeeded,
+      );
+      final session = _AuditWriteSession(items: const [row]);
+      session.rows[row] = AiWriteRow(
+        operationId: 'upload_attachment',
+        target: 'shot.png',
+        link: Uri.parse('https://example.com/gitlab/team/example-9'),
+        outcome: const AiWriteOutcome(
+          state: AiJournalState.succeeded,
+          reasonCode: 'ok',
+          auditNotice: uploadReadersCanFetch,
+        ),
+        settledAt: DateTime(2026, 10, 23, 14, 5),
+      );
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ai-write-row-link')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-write-row-warning')), findsOne);
+      expect(find.textContaining('2:05'), findsOneWidget);
+    });
+
+    testWidgets('an edited card that did not run stays under the answer', (
+      tester,
+    ) async {
+      final kept = _writeProposal()..editedText = 'My edited comment.';
+      final session = _AuditWriteSession(
+        items: const [
+          AiAssistantItem(
+            text: 'I will add a comment.',
+            state: AiAssistantState.done,
+          ),
+        ],
+      )..settledWriteEdits = [kept];
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      expect(find.text('My edited comment.'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('ai-settled-edit-dismiss')));
+      await tester.pumpAndSettle();
+      expect(find.text('My edited comment.'), findsNothing);
     });
 
     testWidgets('automatic writes show a banner whose Stop ends them', (

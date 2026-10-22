@@ -2590,4 +2590,13 @@ const _messagesJa = <String>[
   'やること完了',
   '元のリクエストがまだ実行中かもしれません。少し待ってから再読み込みしてください。',
   '再読み込みできませんでした。',
+  'The account is being removed, so approval is on hold.',
+  'GitLab is limiting requests; you can approve a little later.',
+  'Uploads to {project} ({visibility})',
+  'visibility unknown',
+  'Anyone who can see content that cites this file can download it through the link.',
+  'You rejected this change',
+  'This change didn\'t go through. Your edited text is kept here so you can copy it.',
+  'Copy the edited text',
+  'When merged into the default branch, this closes these issues: {issues}',
 ];

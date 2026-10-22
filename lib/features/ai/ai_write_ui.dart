@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../core/ai/ai_display.dart';
 import '../../core/ai/tools/write_coordinator.dart';
@@ -11,6 +10,7 @@ import '../../shared/theme.dart';
 import '../../core/registry_models.dart' show registryBytes;
 import 'ai_attachment_session.dart';
 import 'ai_chat_session.dart';
+import 'ai_write_journal.dart' show AiJournalState;
 import 'ai_write_settings.dart';
 
 /// What a write does, in the user's words. The model sees operation ids; the
@@ -283,6 +283,9 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
       _message = switch (outcome.reasonCode) {
         'typedNameMismatch' => l10n.aiProposalNameMismatch,
         'tooManyRunning' => l10n.aiProposalTooManyRunning,
+        AiWritePause.accountRemovalHeld ||
+        'accountBlocked' => l10n.aiProposalPausedRemoval,
+        AiWritePause.clientUnavailable => l10n.aiProposalPausedRateLimited,
         // Still waiting: the proposal is fine, only the edited text was
         // refused, so the user can change it again.
         _
@@ -362,6 +365,14 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
       color: scheme.onSurfaceVariant,
     );
     final valid = proposal.valid;
+    final upload = proposal.upload;
+    // Held by an account removal or a GitLab rate limit: still valid, but
+    // approve waits until the hold ends.
+    final paused = switch (proposal.pausedReason) {
+      null || AiWritePause.backgrounded => null,
+      AiWritePause.accountRemovalHeld => l10n.aiProposalPausedRemoval,
+      _ => l10n.aiProposalPausedRateLimited,
+    };
     final editable = _editableField;
     final warnings = [
       for (final reason in tier.reasons) aiConfirmReasonText(reason),
@@ -414,8 +425,18 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
                 style: theme.textTheme.bodySmall,
               ),
             ],
+            if (upload != null) ...[
+              const SizedBox(height: 8),
+              _UploadPreview(
+                upload: upload,
+                file: widget.session.attachments
+                    .where((file) => file.id == upload.attachmentId)
+                    .firstOrNull,
+              ),
+            ],
             for (final MapEntry(:key, :value) in proposal.fields.entries)
-              if (!aiFieldInTitle(proposal.operationId, key)) ...[
+              if (!aiFieldInTitle(proposal.operationId, key) &&
+                  !(upload != null && _uploadFields.contains(key))) ...[
                 const SizedBox(height: 8),
                 Text(aiFieldLabel(key), style: theme.textTheme.labelMedium),
                 const SizedBox(height: 2),
@@ -445,6 +466,25 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
                     style: theme.textTheme.bodySmall,
                   ),
               ],
+            if (proposal.closingRefs.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.task_alt, size: 16, color: HubColors.orange),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      l10n.aiProposalClosesOnMerge(
+                        proposal.closingRefs.map(isolated).join(', '),
+                      ),
+                      key: const ValueKey('ai-proposal-closes'),
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+              ),
+            ],
             for (final warning in warnings) ...[
               const SizedBox(height: 8),
               Row(
@@ -477,9 +517,15 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
             ],
             const SizedBox(height: 8),
             Text(
-              valid ? l10n.aiProposalValidUntil(until) : l10n.aiProposalInvalid,
+              !valid
+                  ? l10n.aiProposalInvalid
+                  : paused ?? l10n.aiProposalValidUntil(until),
               key: const ValueKey('ai-proposal-status'),
-              style: valid ? muted : muted?.copyWith(color: scheme.error),
+              style: !valid
+                  ? muted?.copyWith(color: scheme.error)
+                  : paused != null
+                  ? muted?.copyWith(color: HubColors.orange)
+                  : muted,
             ),
             if (_message case final message?) ...[
               const SizedBox(height: 4),
@@ -517,7 +563,9 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.check, size: 18),
-                  onPressed: _busy || !valid || !_nameTyped ? null : _approve,
+                  onPressed: _busy || !valid || paused != null || !_nameTyped
+                      ? null
+                      : _approve,
                   label: Text(l10n.aiProposalApprove),
                 ),
               ],
@@ -525,6 +573,238 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// A card whose text the user edited, kept after it did not run (§7.2):
+/// rejected, failed, unknown or expired. The edit can be copied, so the
+/// user's work is not lost; dismissing it drops it.
+class AiSettledEditCard extends StatelessWidget {
+  const AiSettledEditCard({
+    super.key,
+    required this.proposal,
+    required this.onDismiss,
+  });
+
+  final AiWriteProposal proposal;
+  final VoidCallback onDismiss;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final text = proposal.editedText ?? '';
+    final outcome = proposal.outcome;
+    final status = switch (outcome) {
+      AiWriteOutcome(reasonCode: 'rejected') => l10n.aiSettledEditRejected,
+      AiWriteOutcome(state: AiJournalState.failedCertain) =>
+        l10n.aiWriteStatusFailed,
+      AiWriteOutcome(state: AiJournalState.writeUncertain) =>
+        l10n.aiWriteStatusUncertain,
+      _ => l10n.aiWriteStatusNotExecuted,
+    };
+    return DecoratedBox(
+      key: ValueKey('ai-settled-edit-${proposal.executionId}'),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 4, 4),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.edit_note, size: 20, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        aiProposalTitle(proposal),
+                        style: theme.textTheme.titleSmall,
+                      ),
+                      Text(
+                        '$status · ${isolated(proposal.releaseName)}',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  key: const ValueKey('ai-settled-edit-dismiss'),
+                  tooltip: l10n.closeAction,
+                  visualDensity: VisualDensity.compact,
+                  onPressed: onDismiss,
+                  icon: const Icon(Icons.close, size: 18),
+                ),
+              ],
+            ),
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: 8, top: 4),
+              child: Text(
+                l10n.aiSettledEditKept,
+                style: theme.textTheme.bodySmall,
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsetsDirectional.only(end: 8, top: 6),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: scheme.surface,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: scheme.outlineVariant),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: SelectableText(
+                      text,
+                      key: const ValueKey('ai-settled-edit-text'),
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
+              child: TextButton.icon(
+                key: const ValueKey('ai-settled-edit-copy'),
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: text));
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.maybeOf(
+                    context,
+                  )?.showSnackBar(SnackBar(content: Text(l10n.aiChatCopied)));
+                },
+                icon: const Icon(Icons.copy, size: 18),
+                label: Text(l10n.aiSettledEditCopy),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Fields the upload preview already shows.
+const _uploadFields = {'filename', 'contentType'};
+
+/// What an upload card sends where (§3.1): the file with a local thumbnail,
+/// its size and type, the target project and its visibility. A public,
+/// internal or unknown visibility carries the warning that anyone who sees
+/// content citing the file can fetch it.
+class _UploadPreview extends StatelessWidget {
+  const _UploadPreview({required this.upload, required this.file});
+
+  final AiUploadPreview upload;
+
+  /// The held file, for the thumbnail; null once it was removed.
+  final AiStoredAttachment? file;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final type = upload.contentType ?? file?.mediaType;
+    final image = type?.startsWith('image/') ?? false;
+    final bytes = file?.bytes;
+    final visibility = switch (upload.projectVisibility) {
+      'public' => l10n.visibilityPublic,
+      'internal' => l10n.visibilityInternal,
+      'private' => l10n.visibilityPrivate,
+      _ => l10n.aiUploadVisibilityUnknown,
+    };
+    final project = upload.projectPath ?? '${upload.projectId}';
+    return Column(
+      key: const ValueKey('ai-proposal-upload'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: SizedBox.square(
+                dimension: 48,
+                child: image && bytes != null
+                    ? Image.memory(
+                        bytes is Uint8List ? bytes : Uint8List.fromList(bytes),
+                        cacheWidth: 144,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                        errorBuilder: (_, _, _) => Icon(
+                          Icons.broken_image_outlined,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      )
+                    : ColoredBox(
+                        color: scheme.surfaceContainerHighest,
+                        child: Icon(
+                          Icons.insert_drive_file_outlined,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isolated(upload.filename),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    [
+                      registryBytes(upload.sizeBytes),
+                      if (type != null) isolated(type),
+                    ].join(' · '),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                  Text(
+                    l10n.aiUploadTarget(isolated(project), visibility),
+                    key: const ValueKey('ai-proposal-upload-target'),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        if (upload.readersCanFetch) ...[
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.public, size: 16, color: HubColors.orange),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  l10n.aiUploadReadersCanFetch,
+                  key: const ValueKey('ai-proposal-upload-warning'),
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
     );
   }
 }

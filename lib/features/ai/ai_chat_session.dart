@@ -224,6 +224,45 @@ abstract interface class AiChatSession implements Listenable {
   String draftSafe(String text);
 }
 
+/// What the audit row of one write shows besides its run item (§7.7: time,
+/// target, result and a GitLab link from the verified instance and ids).
+final class AiWriteRow {
+  const AiWriteRow({
+    required this.operationId,
+    this.target = '',
+    this.link,
+    this.outcome,
+    this.settledAt,
+  });
+
+  /// The ledger operation; a write row is always a write.
+  final String operationId;
+
+  /// The target summary (`#5`, `!12`, a project path, a file name). Empty
+  /// until the write's pre-read named it. Redacted.
+  final String target;
+
+  /// GitLab page of the target; never a model-supplied URL.
+  final Uri? link;
+
+  /// Null while the write waits or runs.
+  final AiWriteOutcome? outcome;
+  final DateTime? settledAt;
+}
+
+/// What a write-capable conversation keeps for its rows and cards: the
+/// audit data of each write row and the edited cards that did not run
+/// (§7.2, §7.7). The chat controller implements it; small fakes need not.
+abstract interface class AiWriteAuditSession {
+  /// Cards whose text the user edited, kept after rejection, certain
+  /// failure, an unknown result or expiry so the edit is not lost.
+  List<AiWriteProposal> get settledWriteEdits;
+  void dismissSettledWrite(AiWriteProposal proposal);
+
+  /// The audit data of [item] when it is a write row, else null.
+  AiWriteRow? writeRowFor(AiChatItem item);
+}
+
 /// Optional write controls implemented only by write-capable conversations.
 abstract interface class AiWriteChatSession {
   List<AiWriteProposal> get proposals;

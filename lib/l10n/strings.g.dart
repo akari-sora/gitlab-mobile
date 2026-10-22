@@ -7857,4 +7857,31 @@ final class AppStrings {
 
   /// 無法重新讀取。
   String get aiRereadFailed => language._messages[2587];
+
+  /// 帳號移除中，暫時不能核准。
+  String get aiProposalPausedRemoval => language._messages[2588];
+
+  /// GitLab 正在限制請求，稍後才能核准。
+  String get aiProposalPausedRateLimited => language._messages[2589];
+
+  /// 上傳到 {project}（{visibility}）
+  String aiUploadTarget(Object? project, Object? visibility) => _format(language, language._messages[2590], {'project': project, 'visibility': visibility});
+
+  /// 可見性不明
+  String get aiUploadVisibilityUnknown => language._messages[2591];
+
+  /// 能看到引用這個檔案的內容的人，都能透過連結下載它。
+  String get aiUploadReadersCanFetch => language._messages[2592];
+
+  /// 你拒絕了這筆寫入
+  String get aiSettledEditRejected => language._messages[2593];
+
+  /// 這筆寫入沒有完成，你改過的內容留在這裡，可以複製。
+  String get aiSettledEditKept => language._messages[2594];
+
+  /// 複製改過的內容
+  String get aiSettledEditCopy => language._messages[2595];
+
+  /// 合併到預設分支後，會關閉這些議題：{issues}
+  String aiProposalClosesOnMerge(Object? issues) => _format(language, language._messages[2596], {'issues': issues});
 }

@@ -2590,4 +2590,13 @@ const _messagesTh = <String>[
   'สิ่งที่ต้องทำเสร็จแล้ว',
   'คำขอเดิมอาจยังทำงานอยู่ โปรดอ่านอีกครั้งในอีกสักครู่',
   'อ่านอีกครั้งไม่ได้',
+  'The account is being removed, so approval is on hold.',
+  'GitLab is limiting requests; you can approve a little later.',
+  'Uploads to {project} ({visibility})',
+  'visibility unknown',
+  'Anyone who can see content that cites this file can download it through the link.',
+  'You rejected this change',
+  'This change didn\'t go through. Your edited text is kept here so you can copy it.',
+  'Copy the edited text',
+  'When merged into the default branch, this closes these issues: {issues}',
 ];

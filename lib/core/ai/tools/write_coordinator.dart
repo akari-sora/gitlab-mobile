@@ -36,6 +36,7 @@ final class AiWriteProposal {
     required this.releaseName,
     this.fields = const <String, String>{},
     this.upload,
+    this.closingRefs = const <String>[],
   });
 
   final String executionId;
@@ -55,6 +56,11 @@ final class AiWriteProposal {
   /// `upload_attachment` only: what the card shows about the file and the
   /// project it goes to (§3.1).
   final AiUploadPreview? upload;
+
+  /// Issues in the conversation's scope that this merge request text closes
+  /// on merge (`Closes #5`), listed on the card (§5 item 9). Out-of-scope
+  /// ones are a fixed confirm reason instead.
+  final List<String> closingRefs;
 
   /// The write's arguments for the approval card, each value redacted with
   /// the live secrets. The model's `reason` is [modelReason] instead.
@@ -693,6 +699,9 @@ final class PolicyAiWriteCoordinator
         scopeRevision: policy.scopeRevision,
         releaseName: safeDisplay(prepared.releaseName),
         fields: _fields(request, safeDisplay),
+        closingRefs: [
+          for (final ref in preparedText.closingRefs) safeDisplay(ref),
+        ],
         upload: attachment == null
             ? null
             : AiUploadPreview(
@@ -1396,13 +1405,18 @@ final class PolicyAiWriteCoordinator
         : port.GitLabAiWritePort.uploadSendTimeout(attachment.size),
   );
 
-  ({port.AiWriteRequest request, List<AiFixedConfirmReason> reasons})
+  ({
+    port.AiWriteRequest request,
+    List<AiFixedConfirmReason> reasons,
+    List<String> closingRefs,
+  })
   _prepareText(
     port.AiWriteRequest request,
     AiWritePolicySnapshot policy,
     AiWriteFreshness fresh,
   ) {
     final reasons = <AiFixedConfirmReason>[];
+    final closingRefs = <String>[];
     final arguments = Map<String, Object?>.from(request.arguments);
     final fields = arguments['fields'];
     final project = arguments['projectId'] as int?;
@@ -1440,6 +1454,10 @@ final class PolicyAiWriteCoordinator
           visibilityUnreadable: fresh.visibilityUnreadable,
           targetProjectPath: _projectPath(policy.scope, project),
           renderedMarkdown: classA || field == 'description',
+          // A new merge request's description has no field provenance, yet
+          // its closing keywords act on merge all the same.
+          closesIssuesOnMerge: request.operationId == 'createMergeRequest',
+          scopeGrants: policy.scope.grants,
         ),
         attachments: project == null
             ? null
@@ -1472,6 +1490,7 @@ final class PolicyAiWriteCoordinator
       if (outcome.levelConfirmReasons.isNotEmpty) {
         reasons.add(AiFixedConfirmReason.confidentialOrVisibilityMix);
       }
+      closingRefs.addAll(outcome.closingRefs);
       return outcome.finalText!;
     }
 
@@ -1498,6 +1517,7 @@ final class PolicyAiWriteCoordinator
         sendTimeout: request.sendTimeout,
       ),
       reasons: reasons,
+      closingRefs: closingRefs,
     );
   }
 }

@@ -2590,4 +2590,13 @@ const _messagesPtBr = <String>[
   'tarefa concluída',
   'A requisição original ainda pode estar em andamento. Releia daqui a pouco.',
   'Não foi possível reler.',
+  'The account is being removed, so approval is on hold.',
+  'GitLab is limiting requests; you can approve a little later.',
+  'Uploads to {project} ({visibility})',
+  'visibility unknown',
+  'Anyone who can see content that cites this file can download it through the link.',
+  'You rejected this change',
+  'This change didn\'t go through. Your edited text is kept here so you can copy it.',
+  'Copy the edited text',
+  'When merged into the default branch, this closes these issues: {issues}',
 ];

@@ -2587,5 +2587,14 @@
   "aiRereadTodoPending": "tarefa pendente",
   "aiRereadTodoDone": "tarefa concluída",
   "aiRereadInFlight": "A requisição original ainda pode estar em andamento. Releia daqui a pouco.",
-  "aiRereadFailed": "Não foi possível reler."
+  "aiRereadFailed": "Não foi possível reler.",
+  "aiProposalPausedRemoval": "The account is being removed, so approval is on hold.",
+  "aiProposalPausedRateLimited": "GitLab is limiting requests; you can approve a little later.",
+  "aiUploadTarget": "Uploads to {project} ({visibility})",
+  "aiUploadVisibilityUnknown": "visibility unknown",
+  "aiUploadReadersCanFetch": "Anyone who can see content that cites this file can download it through the link.",
+  "aiSettledEditRejected": "You rejected this change",
+  "aiSettledEditKept": "This change didn't go through. Your edited text is kept here so you can copy it.",
+  "aiSettledEditCopy": "Copy the edited text",
+  "aiProposalClosesOnMerge": "When merged into the default branch, this closes these issues: {issues}"
 }

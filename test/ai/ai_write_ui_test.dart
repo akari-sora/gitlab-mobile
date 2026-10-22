@@ -14,6 +14,8 @@ import 'package:gitlab_mobile/features/ai/ai_write_ui.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 
+import 'fx_coord_support.dart';
+
 AiWriteProposal _proposal({
   String operationId = 'createNote',
   AiWriteTier tier = AiWriteTier.t2,
@@ -21,6 +23,8 @@ AiWriteProposal _proposal({
   List<AiFixedConfirmReason> reasons = const [],
   Map<String, String> fields = const {'body': 'Looks good.\nShip it.'},
   String reason = 'You asked me to approve the review.',
+  AiUploadPreview? upload,
+  List<String> closingRefs = const [],
 }) => AiWriteProposal(
   executionId: 'exec-1',
   operationId: operationId,
@@ -43,6 +47,8 @@ AiWriteProposal _proposal({
   scopeRevision: 1,
   releaseName: '!44',
   fields: fields,
+  upload: upload,
+  closingRefs: closingRefs,
 );
 
 final class _Writes implements AiWriteChatSession {
@@ -270,6 +276,117 @@ void main() {
     await tester.pumpAndSettle();
     // The coordinator's exact check gets the stored name.
     expect(writes.approvals.single.typedName, 'team/example');
+  });
+
+  AiUploadPreview upload(String? visibility) => AiUploadPreview(
+    attachmentId: 'att-1',
+    filename: 'shot.png',
+    sizeBytes: 2048,
+    contentType: 'image/png',
+    sha256Prefix: 'abcd1234',
+    projectId: 9,
+    projectPath: 'team/example-9',
+    projectVisibility: visibility,
+  );
+
+  testWidgets('an upload card shows the file, the project and who can see', (
+    tester,
+  ) async {
+    for (final (visibility, label, warns) in [
+      ('public', l10n.visibilityPublic, true),
+      ('internal', l10n.visibilityInternal, true),
+      ('private', l10n.visibilityPrivate, false),
+      (null, l10n.aiUploadVisibilityUnknown, true),
+    ]) {
+      final proposal = _proposal(
+        operationId: 'upload_attachment',
+        fields: const {'filename': 'shot.png', 'contentType': 'image/png'},
+        upload: upload(visibility),
+      );
+      await tester.pumpWidget(
+        _host(
+          AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+        ),
+      );
+      expect(find.byKey(const ValueKey('ai-proposal-upload')), findsOne);
+      expect(find.text('shot.png'), findsOneWidget);
+      expect(
+        find.text(l10n.aiUploadTarget('team/example-9', label)),
+        findsOneWidget,
+        reason: '$visibility',
+      );
+      expect(
+        find.byKey(const ValueKey('ai-proposal-upload-warning')),
+        warns ? findsOne : findsNothing,
+        reason: '$visibility',
+      );
+      // The raw fields are not repeated under the preview.
+      expect(
+        find.byKey(const ValueKey('ai-proposal-field-filename')),
+        findsNothing,
+      );
+    }
+  });
+
+  testWidgets('a merge request card lists the issues it closes', (
+    tester,
+  ) async {
+    final proposal = _proposal(
+      operationId: 'updateMergeRequest',
+      fields: const {'description': 'Closes #3'},
+      closingRefs: const ['team/example-9#3', 'team/example-9#8'],
+    );
+    await tester.pumpWidget(
+      _host(
+        AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+      ),
+    );
+    expect(
+      find.text(
+        l10n.aiProposalClosesOnMerge('team/example-9#3, team/example-9#8'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a card held by an account removal cannot be approved', (
+    tester,
+  ) async {
+    late CoordHarness h;
+    late AiWriteProposal proposal;
+    await tester.runAsync(() async {
+      h = await CoordHarness.create();
+      h.newRun('Comment on #3 in team/example-9');
+      proposal = (await h.coordinator.propose(coordNoteCall('held')))!;
+      h.journal.beginRemoval(coordAccount);
+      h.coordinator.checkNow();
+    });
+    addTearDown(() => tester.runAsync(h.dispose));
+    expect(proposal.accountRemovalHeld, isTrue);
+    await tester.pumpWidget(
+      _host(
+        AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+      ),
+    );
+    expect(find.text(l10n.aiProposalPausedRemoval), findsOneWidget);
+    final approve = find.byKey(const ValueKey('ai-proposal-approve'));
+    expect(tester.widget<ButtonStyleButton>(approve).onPressed, isNull);
+  });
+
+  testWidgets('an edited card that did not run keeps the text to copy', (
+    tester,
+  ) async {
+    final proposal = _proposal()..editedText = 'My own careful words.';
+    var dismissed = 0;
+    await tester.pumpWidget(
+      _host(
+        AiSettledEditCard(proposal: proposal, onDismiss: () => dismissed++),
+      ),
+    );
+    expect(find.text('My own careful words.'), findsOneWidget);
+    expect(find.text(l10n.aiSettledEditKept), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('ai-settled-edit-dismiss')));
+    expect(dismissed, 1);
   });
 
   testWidgets('a major write needs the exact name', (tester) async {

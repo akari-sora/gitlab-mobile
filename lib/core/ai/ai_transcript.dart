@@ -339,22 +339,30 @@ final class AiSegment {
     throw StateError('A follow-up requires an app tail.');
   }
 
-  void clipTailToolResults(int maxChars) {
+  /// Cuts the tail's tool results to [maxChars] in total. True when a result
+  /// that carried restorable fields ([AiToolResult.uploadPlaceholders]) was
+  /// shortened.
+  bool clipTailToolResults(int maxChars) {
     if (maxChars < 0) throw RangeError.range(maxChars, 0, null, 'maxChars');
     final current = _tail;
     if (current is! AppToolResultsEntry) {
       throw StateError('Only a tool-results tail can be clipped.');
     }
     var remaining = maxChars;
+    var cutRestorable = false;
     final clipped = <AiToolResult>[];
     for (final result in current.results) {
       final keep = result.content.length <= remaining
           ? result.content
           : clipWrappedUntrustedGitLabData(result.content, remaining);
+      if (result.uploadPlaceholders && keep.length < result.content.length) {
+        cutRestorable = true;
+      }
       clipped.add(result.copyWith(data: result.plainData.clipped(remaining)));
       remaining -= keep.length;
     }
     _tail = current.copyWith(results: clipped);
+    return cutRestorable;
   }
 
   void restoreTail(AiEntry? previous) {

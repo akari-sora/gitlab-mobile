@@ -51,7 +51,11 @@ typedef AiChatWireClientFactory =
 /// Owns a conversation independently of its route. Only display models escape
 /// this owner; provider replay and transports stay in the existing runner.
 class AiChatController extends ChangeNotifier
-    implements AiChatSession, AiWriteChatSession, AiWriteSettlementSource {
+    implements
+        AiChatSession,
+        AiWriteChatSession,
+        AiWriteAuditSession,
+        AiWriteSettlementSource {
   AiChatController({
     required this.origin,
     required this.session,
@@ -320,10 +324,12 @@ class AiChatController extends ChangeNotifier
   /// Settled proposals whose card text the user edited (§7.2), oldest first.
   /// Each carries its [AiWriteProposal.outcome]; they go when the
   /// conversation does, or through [dismissSettledWrite].
+  @override
   List<AiWriteProposal> get settledWriteEdits =>
       _writes?.settledEdits ?? const <AiWriteProposal>[];
 
   /// Drops a settled, edited card the user dismissed.
+  @override
   void dismissSettledWrite(AiWriteProposal proposal) {
     if (_writes?.dismissSettled(proposal) ?? false) _notify();
   }
@@ -332,6 +338,7 @@ class AiChatController extends ChangeNotifier
 
   /// The audit data of [item] when it is a write tool row (§7.7): target,
   /// GitLab link and, once settled, the outcome. Null for other items.
+  @override
   AiWriteRow? writeRowFor(AiChatItem item) {
     final index = _items.indexOf(item);
     return index < 0 ? null : _writeRowInfo[index];
@@ -1376,8 +1383,15 @@ class AiChatController extends ChangeNotifier
         _setAssistant(text, AiAssistantState.streaming);
         _notifyStream();
       },
+      onRestorableResultCut: placeholders.markWholeFieldsCut,
       onToolStarted: (call) {
         if (!current()) return;
+        // §3.1: before any tool of this run can write, note whether the
+        // page context this run sent carried the description whole. A
+        // summary that cut it means no whole-field write of it.
+        if (_runner case final active?) {
+          context.recordDelivery(placeholders, active.sentContext);
+        }
         final index = _insertRunItem(
           AiToolRunItem(
             name: _toolName(call.name),
@@ -2161,32 +2175,6 @@ class AiChatController extends ChangeNotifier
     _phase = AiChatPhase.idle;
     super.dispose();
   }
-}
-
-/// What the audit row of one write shows besides its run item (§7.7: time,
-/// target, result and a GitLab link from the verified instance and ids).
-final class AiWriteRow {
-  const AiWriteRow({
-    required this.operationId,
-    this.target = '',
-    this.link,
-    this.outcome,
-    this.settledAt,
-  });
-
-  /// The ledger operation; a write row is always a write.
-  final String operationId;
-
-  /// The target summary (`#5`, `!12`, a project path, a file name). Empty
-  /// until the write's pre-read named it. Redacted.
-  final String target;
-
-  /// GitLab page of the target; never a model-supplied URL.
-  final Uri? link;
-
-  /// Null while the write waits or runs.
-  final AiWriteOutcome? outcome;
-  final DateTime? settledAt;
 }
 
 const _uploadOperation = 'upload_attachment';

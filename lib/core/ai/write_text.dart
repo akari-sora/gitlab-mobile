@@ -298,6 +298,8 @@ final class UploadPlaceholderTable {
   final Set<String> _userMessageTargets = <String>{};
   final Set<({AiConflictKey resourceKey, String fieldName})> _seenOnlyCut =
       <({AiConflictKey resourceKey, String fieldName})>{};
+  final Set<({AiConflictKey resourceKey, String fieldName})> _seenWhole =
+      <({AiConflictKey resourceKey, String fieldName})>{};
   bool _exceeded = false;
   int _limitHits = 0;
 
@@ -320,9 +322,20 @@ final class UploadPlaceholderTable {
     final key = (resourceKey: field.resourceKey, fieldName: field.fieldName);
     if (whole) {
       _seenOnlyCut.remove(key);
+      _seenWhole.add(key);
     } else {
       _seenOnlyCut.add(key);
+      _seenWhole.remove(key);
     }
+  }
+
+  /// The runner cut a tool result that carried whole fields after the read
+  /// recorded them (a later output or request-size limit). Which fields it
+  /// cut is not tracked, so every field seen whole counts as cut until it is
+  /// read whole again: a whole-field write is refused, never lossy.
+  void markWholeFieldsCut() {
+    _seenOnlyCut.addAll(_seenWhole);
+    _seenWhole.clear();
   }
 
   /// Whether the latest copy of [field] the provider received was cut, so

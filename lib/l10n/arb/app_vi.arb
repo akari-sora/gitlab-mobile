@@ -2587,5 +2587,14 @@
   "aiRereadTodoPending": "việc cần làm chưa xong",
   "aiRereadTodoDone": "việc cần làm đã xong",
   "aiRereadInFlight": "Yêu cầu ban đầu có thể vẫn đang chạy. Hãy đọc lại sau một lát.",
-  "aiRereadFailed": "Không đọc lại được."
+  "aiRereadFailed": "Không đọc lại được.",
+  "aiProposalPausedRemoval": "The account is being removed, so approval is on hold.",
+  "aiProposalPausedRateLimited": "GitLab is limiting requests; you can approve a little later.",
+  "aiUploadTarget": "Uploads to {project} ({visibility})",
+  "aiUploadVisibilityUnknown": "visibility unknown",
+  "aiUploadReadersCanFetch": "Anyone who can see content that cites this file can download it through the link.",
+  "aiSettledEditRejected": "You rejected this change",
+  "aiSettledEditKept": "This change didn't go through. Your edited text is kept here so you can copy it.",
+  "aiSettledEditCopy": "Copy the edited text",
+  "aiProposalClosesOnMerge": "When merged into the default branch, this closes these issues: {issues}"
 }

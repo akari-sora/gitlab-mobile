@@ -13,6 +13,7 @@ import '../../core/ai/tools/write_levels.dart';
 import '../../core/failure.dart';
 import '../../core/providers.dart';
 import '../../l10n/l10n.dart';
+import '../../shared/external_link.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
@@ -763,6 +764,10 @@ class _AiChatPageState extends State<AiChatPage> {
           insertingDraft: _insertingDraft,
           preparingDraft: _preparingDraft,
           awaitingApproval: _session.phase == AiChatPhase.awaitingApproval,
+          writeRow: switch (_session) {
+            final AiWriteAuditSession audit => audit.writeRowFor(item),
+            _ => null,
+          },
           // An answer kept on screen from an earlier conversation belongs
           // to that conversation; it is not reported from this one.
           onReport:
@@ -780,6 +785,14 @@ class _AiChatPageState extends State<AiChatPage> {
             key: ValueKey('ai-proposal-card-${proposal.executionId}'),
             proposal: proposal,
             session: writes,
+          ),
+      // Edited cards that did not run keep the user's text (§7.2).
+      if (_session case final AiWriteAuditSession audit)
+        for (final edited in audit.settledWriteEdits)
+          AiSettledEditCard(
+            key: ValueKey('ai-settled-card-${edited.executionId}'),
+            proposal: edited,
+            onDismiss: () => audit.dismissSettledWrite(edited),
           ),
       if (_session.phase == AiChatPhase.running &&
           !(items.last is AiAssistantItem &&
@@ -1007,6 +1020,7 @@ class _ChatItemView extends StatelessWidget {
     this.onReport,
     this.reportNotSaved = false,
     this.awaitingApproval = false,
+    this.writeRow,
   });
 
   final AiChatItem item;
@@ -1014,6 +1028,9 @@ class _ChatItemView extends StatelessWidget {
 
   /// The run waits for the user to approve a write card.
   final bool awaitingApproval;
+
+  /// The item's write audit data, when it is a write row.
+  final AiWriteRow? writeRow;
   final void Function(AiAssistantItem item)? onInsertDraft;
 
   /// An append is under way; every append button waits for it.
@@ -1040,6 +1057,7 @@ class _ChatItemView extends StatelessWidget {
     final AiToolRunItem tool => _ToolRow(
       item: tool,
       awaitingApproval: awaitingApproval,
+      writeRow: writeRow,
     ),
     final AiNoticeItem notice => _NoticeRow(item: notice),
   };
@@ -1476,9 +1494,17 @@ String _toolLabel(String name) => switch (name) {
 };
 
 class _ToolRow extends StatelessWidget {
-  const _ToolRow({required this.item, this.awaitingApproval = false});
+  const _ToolRow({
+    required this.item,
+    this.awaitingApproval = false,
+    this.writeRow,
+  });
 
   final AiToolRunItem item;
+
+  /// A write's audit data (§7.7): when it settled, its GitLab link and any
+  /// warning. Null for reads.
+  final AiWriteRow? writeRow;
 
   /// The run waits for the user to approve a write card.
   final bool awaitingApproval;
@@ -1552,6 +1578,13 @@ class _ToolRow extends StatelessWidget {
     };
     final label = isWrite ? aiOperationLabel(item.name) : _toolLabel(item.name);
     final details = [if (item.provenance.isNotEmpty) item.provenance];
+    final audit = writeRow;
+    final settledAt = switch (audit?.settledAt) {
+      final at? => MaterialLocalizations.of(
+        context,
+      ).formatTimeOfDay(TimeOfDay.fromDateTime(at.toLocal())),
+      null => null,
+    };
     final excerpt = item.resultExcerpt.trim();
     // What was read on the first line, how it went on the second.
     final header = Row(
@@ -1583,11 +1616,49 @@ class _ToolRow extends StatelessWidget {
               ),
               Text(
                 '$status'
-                '${item.sizeChars > 0 && !running ? ' · ${l10n.aiChatCharacters('${item.sizeChars}')}' : ''}',
+                '${item.sizeChars > 0 && !running ? ' · ${l10n.aiChatCharacters('${item.sizeChars}')}' : ''}'
+                '${settledAt == null ? '' : ' · $settledAt'}',
                 style: theme.textTheme.bodySmall?.copyWith(
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+              if (audit?.outcome?.auditNotice == uploadReadersCanFetch)
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.public,
+                        size: 14,
+                        color: HubColors.orange,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          l10n.aiUploadReadersCanFetch,
+                          key: const ValueKey('ai-write-row-warning'),
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              if (audit != null && audit.outcome != null)
+                if (audit.link case final link?)
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: TextButton.icon(
+                      key: const ValueKey('ai-write-row-link'),
+                      style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                      ),
+                      onPressed: () => openExternal(context, link),
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: Text(l10n.openInGitlab),
+                    ),
+                  ),
             ],
           ),
         ),

@@ -106,6 +106,7 @@ final class AiRunner {
     this.onEvent,
     this.onTextChanged,
     this.onToolStarted,
+    this.onRestorableResultCut,
     this.onToolResult,
     this.confirmCleartext,
     this.listInterfaceAddresses = listAiInterfaceAddresses,
@@ -161,6 +162,10 @@ final class AiRunner {
   /// Redacted cumulative display text; the UI replaces its pending text.
   final void Function(String text)? onTextChanged;
   final void Function(AiToolCall call)? onToolStarted;
+
+  /// A tool result that carried whole writable fields was cut after its
+  /// read recorded them (§3.1: no whole-field write of a value seen cut).
+  final void Function()? onRestorableResultCut;
   final void Function(AiToolResult result)? onToolResult;
   final Future<bool> Function()? confirmCleartext;
   final AiInterfaceAddressLister listInterfaceAddresses;
@@ -423,9 +428,11 @@ final class AiRunner {
             0,
             (n, r) => n + r.content.length,
           );
-          seg.clipTailToolResults(
+          if (seg.clipTailToolResults(
             math.max(0, chars - (size + reserve - config.caps.maxRequestChars)),
-          );
+          )) {
+            onRestorableResultCut?.call();
+          }
           finishing = true;
         }
         beforeFinishingNote = seg.tail;
@@ -671,6 +678,10 @@ final class AiRunner {
             );
             final clipped = clippedData.encode();
             outputChars += clipped.length;
+            if (toolResult.uploadPlaceholders &&
+                clipped.length < content.length) {
+              onRestorableResultCut?.call();
+            }
             _check(epoch);
             final successfulRead =
                 !toolResult.isError &&

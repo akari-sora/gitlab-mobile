@@ -2590,4 +2590,13 @@ const _messagesHi = <String>[
   'कार्य पूरा',
   'मूल अनुरोध शायद अब भी चल रहा है। थोड़ी देर बाद फिर से पढ़ें।',
   'फिर से पढ़ा नहीं जा सका।',
+  'The account is being removed, so approval is on hold.',
+  'GitLab is limiting requests; you can approve a little later.',
+  'Uploads to {project} ({visibility})',
+  'visibility unknown',
+  'Anyone who can see content that cites this file can download it through the link.',
+  'You rejected this change',
+  'This change didn\'t go through. Your edited text is kept here so you can copy it.',
+  'Copy the edited text',
+  'When merged into the default branch, this closes these issues: {issues}',
 ];
