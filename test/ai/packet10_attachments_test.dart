@@ -526,6 +526,60 @@ void main() {
       });
     });
 
+    group('from an issue conversation', () {
+      Future<_Harness> issueHarness({required int projectId}) =>
+          _Harness.create(
+            grant: AiScopeGrant(
+              kind: AiScopeKind.workItem,
+              projectId: projectId,
+              projectPath: projectId == 42 ? 'group/project' : 'other/project',
+              iid: 12,
+            ),
+            picks: [_pick('shot.png', type: 'image/png')],
+            provider: (call) => _sse(
+              call == 1
+                  ? _call('upload_attachment', {
+                      'projectId': 42,
+                      'attachmentId': 'att-1',
+                      'reason': 'The user attached this screenshot.',
+                    })
+                  : _answer(AiFormat.responses, 'Done $call'),
+            ),
+          );
+
+      test(
+        'a file uploads into the issue\'s own project after approval',
+        () async {
+          final harness = await issueHarness(projectId: 42);
+          addTearDown(harness.dispose);
+          final controller = harness.controller;
+          await controller.setAutonomyLevel(AiAutonomyLevel.confirmEach);
+          expect(controller.canAttach, isTrue);
+          expect(
+            (await controller.attach(AiAttachmentPick.image)).status,
+            AiAttachStatus.stored,
+          );
+          final running = controller.send('Upload my screenshot.');
+          await _waitFor(() => controller.proposals.isNotEmpty);
+          expect(controller.proposals.single.operationId, 'upload_attachment');
+          await controller.approveWrite(controller.proposals.single);
+          await running;
+          expect(harness.mutations, ['upload_attachment']);
+        },
+      );
+
+      test('a file never uploads into another project', () async {
+        final harness = await issueHarness(projectId: 99);
+        addTearDown(harness.dispose);
+        final controller = harness.controller;
+        await controller.setAutonomyLevel(AiAutonomyLevel.confirmEach);
+        await controller.attach(AiAttachmentPick.image);
+        await controller.send('Upload my screenshot.');
+        expect(controller.proposals, isEmpty);
+        expect(harness.mutations, isEmpty);
+      });
+    });
+
     test('removing an attachment invalidates the waiting upload proposal, '
         'which is never journaled', () async {
       final harness = await _Harness.create(
@@ -681,6 +735,7 @@ final class _Harness {
     bool toolsEnabled = true,
     bool requiresKey = false,
     bool projectScope = true,
+    AiScopeGrant? grant,
     List<PickedAttachment?> picks = const [],
     FutureOr<ResponseBody> Function(int call)? provider,
     Future<void>? uploadGate,
@@ -787,7 +842,9 @@ final class _Harness {
         accountKey: account,
         instance: workspace.api.instance,
         grants: [
-          if (projectScope)
+          if (grant != null)
+            grant
+          else if (projectScope)
             AiScopeGrant(
               kind: AiScopeKind.project,
               projectId: workspace.project.id,

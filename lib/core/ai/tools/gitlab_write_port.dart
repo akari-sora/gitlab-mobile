@@ -174,6 +174,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
       resource,
       iid,
       projectOnly: capability.scopeClass == AiScopeClass.project,
+      upload: capability.scopeClass == AiScopeClass.projectUpload,
     )) {
       throw const ApiFailure(FailureKind.forbidden);
     }
@@ -817,10 +818,14 @@ bool _granted(
   String? resource,
   int? iid, {
   bool projectOnly = false,
+  bool upload = false,
 }) => scope.grants.any(
   (g) =>
       g.projectId == project &&
       (g.kind == AiScopeKind.project ||
+          (upload &&
+              (g.kind == AiScopeKind.workItem ||
+                  g.kind == AiScopeKind.mergeRequest)) ||
           (!projectOnly &&
               iid != null &&
               g.iid == iid &&

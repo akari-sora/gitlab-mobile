@@ -19,6 +19,10 @@ enum AiScopeClass {
   resource,
   accountTodo,
   groupWorkItem,
+
+  /// A file uploaded into a project's uploads: the project of any project,
+  /// issue or merge request grant, and nothing else in that project.
+  projectUpload,
 }
 
 /// Why an automatic write is held for confirmation. Codes only; the card copy
@@ -345,7 +349,7 @@ final class ProductionAiLedger implements AiCapabilityLedger {
     AiCapability(
       operationId: 'upload_attachment',
       baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.project,
+      scopeClass: AiScopeClass.projectUpload,
       namedMethod: 'uploadProjectFile',
     ),
   ];
@@ -405,5 +409,9 @@ bool _grantOffers(AiScopeKind kind, AiScopeClass scopeClass) {
           kind == AiScopeKind.mergeRequest;
     case AiScopeClass.groupWorkItem:
       return false;
+    case AiScopeClass.projectUpload:
+      return kind == AiScopeKind.project ||
+          kind == AiScopeKind.workItem ||
+          kind == AiScopeKind.mergeRequest;
   }
 }

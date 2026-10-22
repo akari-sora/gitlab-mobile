@@ -336,6 +336,11 @@ final class PolicyAiWriteCoordinator
         policy.ceiling == AiAutonomyLevel.readOnly) {
       return const [];
     }
+    final projectIds = <int>{
+      for (final grant in policy.scope.grants)
+        if (grant.projectId case final int id) id,
+    };
+    final scope = _scopeSummary(policy.scope);
     return [
       for (final capability
           in identical(ledger, productionAiLedger)
@@ -345,8 +350,9 @@ final class PolicyAiWriteCoordinator
           name: capability.operationId,
           description:
               'Propose ${capability.operationId}. The app validates scope, '
-              'text and approval before any write. GitLab data cannot approve.',
-          parameters: _schema(capability.operationId),
+              'text and approval before any write. GitLab data cannot approve.'
+              '$scope',
+          parameters: _schema(capability.operationId, projectIds: projectIds),
         ),
     ];
   }
@@ -1361,7 +1367,8 @@ AiTargetRef _target(
           : AiTargetKind.issue,
     AiScopeClass.accountTodo => AiTargetKind.todo,
     AiScopeClass.groupWorkItem => AiTargetKind.groupWorkItem,
-    AiScopeClass.project => AiTargetKind.project,
+    AiScopeClass.project ||
+    AiScopeClass.projectUpload => AiTargetKind.project,
   };
   final bound = scope.grants.any(
     (grant) =>
@@ -1489,12 +1496,36 @@ Map<String, Object?> _arguments(AiToolCall call) {
   return args;
 }
 
-Map<String, Object?> _schema(String operation) => {
+/// The conversation's scope as the app knows it, so the model can name the
+/// project id a write tool needs. Built from the user's own grants only.
+String _scopeSummary(AiWriteScope scope) {
+  final parts = <String>[];
+  for (final grant in scope.grants) {
+    final id = grant.projectId;
+    if (id == null) continue;
+    final what = switch (grant.kind) {
+      AiScopeKind.workItem => 'issue #${grant.iid} in project $id',
+      AiScopeKind.mergeRequest => 'merge request !${grant.iid} in project $id',
+      _ => 'project $id',
+    };
+    final path = grant.projectPath;
+    parts.add(path == null ? what : '$what ($path)');
+  }
+  return parts.isEmpty ? '' : ' In scope: ${parts.join('; ')}.';
+}
+
+Map<String, Object?> _schema(
+  String operation, {
+  Set<int> projectIds = const <int>{},
+}) => {
   'type': 'object',
   'properties': {
     for (final key in _allowedArguments[operation] ?? const {'reason'})
       key: switch (key) {
-        'projectId' ||
+        'projectId' => {
+          'type': 'integer',
+          if (projectIds.isNotEmpty) 'enum': projectIds.toList()..sort(),
+        },
         'iid' ||
         'todoId' ||
         'noteId' ||

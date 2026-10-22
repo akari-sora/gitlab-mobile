@@ -573,13 +573,15 @@ void main() {
         ),
         isFalse,
       );
+      // Owner decision 2026-10-23: an issue or merge request conversation
+      // may upload into its own project, and only that project.
       expect(
         scopeAdmits(
           scope,
           productionAiLedger.find('upload_attachment')!,
           _projectTarget,
         ),
-        isFalse,
+        isTrue,
       );
       final Set<String> offered = toolsForScope(
         scope,
@@ -591,12 +593,12 @@ void main() {
           'createNote',
           'moveBoardCard',
           'markTodoDone',
+          'upload_attachment',
         ]),
       );
       for (final String operation in <String>[
         'setStar',
         'createIssue',
-        'upload_attachment',
         'createDraftNote',
       ]) {
         expect(offered.contains(operation), isFalse, reason: operation);
@@ -628,6 +630,7 @@ void main() {
           'updateMergeRequest',
           'createDraftNote',
           'createNote',
+          'upload_attachment',
         ]),
       );
       expect(mergeTools, isNot(contains('updateIssue')));

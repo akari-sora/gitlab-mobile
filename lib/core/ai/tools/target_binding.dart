@@ -254,6 +254,12 @@ bool _grantAdmits(
           grant.projectId == target.projectId;
     case AiScopeClass.groupWorkItem:
       return false;
+    case AiScopeClass.projectUpload:
+      return (grant.kind == AiScopeKind.project ||
+              grant.kind == AiScopeKind.workItem ||
+              grant.kind == AiScopeKind.mergeRequest) &&
+          grant.projectId != null &&
+          grant.projectId == target.projectId;
   }
 }
 
