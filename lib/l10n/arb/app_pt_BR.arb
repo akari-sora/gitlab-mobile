@@ -2331,5 +2331,6 @@
   "aiNoticeNewConversation": "As configurações mudaram: novas perguntas iniciam uma nova conversa, e as mensagens acima não são enviadas novamente",
   "aiToolUnknown": "Solicitação de chamada de ferramenta desconhecida",
   "aiChatSentPreviewOnly": "Esta conversa foi restaurada, por isso apenas o início do conteúdo enviado foi mantido",
-  "aiChatSummaryChip": "Resumo da conversa"
+  "aiChatSummaryChip": "Resumo da conversa",
+  "aiChatInsertDraft": "Adicionar ao rascunho do comentário"
 }

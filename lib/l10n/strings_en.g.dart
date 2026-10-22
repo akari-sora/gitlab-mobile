@@ -2334,4 +2334,5 @@ const _messagesEn = <String>[
   'Unknown tool request',
   'This conversation was restored, so only the start of what was sent is kept',
   'Conversation summary',
+  'Append to comment draft',
 ];

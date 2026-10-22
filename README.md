@@ -7,6 +7,12 @@
 
 A mobile-first Flutter client for GitLab® on Android and iOS, formerly developed as "GitLab Mobile". Independent third-party software, not affiliated with or endorsed by GitLab Inc.; GITLAB is a trademark of GitLab Inc. The interface is available in 24 languages (it follows the device, or pick one in 我的 › 外觀 › 語言) and supports light/dark appearance and large text.
 
+## 2026-10-22 — reviewed AI answers and clearer list actors
+
+- **AI answers stay drafts until reviewed.** A completed, display-safe Work Item answer can be appended to the existing ordinary-comment draft, preserving its Markdown and whitespace. Opening, leaving and reopening the editor sends nothing; posting still requires an explicit Save. Production AI remains disabled by default.
+- **Authors and pipeline executors.** GraphQL Work Item lists show each author, with a narrowly matched fallback for older schemas. Pipeline rows add executors progressively while keeping the summary available immediately; requests are cached, bounded and discarded when their owning account or page changes.
+- **Android verification.** The final source passed 5,046 Flutter tests and full analysis. A synthetic run on the project-owned API 36 emulator kept the write count at zero through append/reopen, then recorded one acknowledged post after Save and displayed the combined body. The original installed APK was restored and its bytes matched the saved SHA-256. The public receipt is [here](docs/receipts/2026-10-22-ai-comment-qa.json); [MR !98](https://gitlab.com/aa22396584/gitlab-mobile/-/merge_requests/98) carries the exact-head CI and merge record. Local evidence alone is not CI success. Real-provider/private-project, physical-device, publication and G0 acceptance remain open. iOS validation is deferred while Android is the current priority.
+
 ## 2026-10-20 — Mergeline, 24 languages and an app lock
 
 - **Markdown media.** README files and descriptions render repository, external HTTPS and HTML images, SVG and animated images, plus tap-to-load in-app audio/video with bounded downloads and account-scoped temporary cleanup; unlike GitLab web, images inside inline raw-text tags render, and audio/video fallback is hidden only for plain text and complete tags within 4096 characters and 16 tags.

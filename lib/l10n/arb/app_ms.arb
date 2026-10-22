@@ -2331,5 +2331,6 @@
   "aiNoticeNewConversation": "Tetapan berubah: soalan baharu memulakan perbualan baharu dan mesej di atas tidak dihantar semula",
   "aiToolUnknown": "Permintaan alat tidak diketahui",
   "aiChatSentPreviewOnly": "Perbualan ini telah dipulihkan, jadi hanya bahagian awal kandungan yang dihantar disimpan",
-  "aiChatSummaryChip": "Ringkasan perbualan"
+  "aiChatSummaryChip": "Ringkasan perbualan",
+  "aiChatInsertDraft": "Tambah pada draf komen"
 }

@@ -7,7 +7,9 @@ const _workItemChildLimit = 20;
 const _workItemWidgetLimit = 32;
 const _workItemCursorLimit = 4096;
 
-const _workItemSummaryFields = r'''
+String _workItemSummaryFields({bool includeAuthor = false}) {
+  final authorFields = includeAuthor ? '\nauthor { id name username }' : '';
+  return '''
 id
 iid
 title
@@ -16,8 +18,9 @@ createdAt
 updatedAt
 project { id fullPath }
 namespace { id fullPath }
-workItemType { id name }
+workItemType { id name }$authorFields
 ''';
+}
 
 const _workItemSummaryTier1Widgets = r'''
 widgets {
@@ -107,14 +110,14 @@ widgets {
 }
 ''';
 
-final _projectWorkItemsQuery =
+String _projectWorkItemsQuery({required bool includeAuthor}) =>
     '''
 query MobileProjectWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
   project(fullPath: \$path) {
     id
     fullPath
     workItems(first: \$first, after: \$after) {
-      nodes { $_workItemSummaryFields }
+      nodes { ${_workItemSummaryFields(includeAuthor: includeAuthor)} }
       pageInfo { hasNextPage endCursor }
     }
   }
@@ -125,12 +128,14 @@ String _projectWorkItemsFilteredQuery({
   required bool hasFilter,
   required int tier,
   required bool summaries,
+  required bool includeAuthor,
 }) {
+  final summaryFields = _workItemSummaryFields(includeAuthor: includeAuthor);
   final nodeFields = !summaries || tier == 3
-      ? _workItemSummaryFields
+      ? summaryFields
       : (tier == 1
-          ? '$_workItemSummaryFields\n$_workItemSummaryTier1Widgets'
-          : '$_workItemSummaryFields\n$_workItemSummaryTier2Widgets');
+          ? '$summaryFields\n$_workItemSummaryTier1Widgets'
+          : '$summaryFields\n$_workItemSummaryTier2Widgets');
   if (!hasFilter) {
     return '''
 query MobileProjectWorkItems(\$path: ID!, \$first: Int!, \$after: String) {
@@ -176,12 +181,14 @@ String _groupWorkItemsQuery({
   required bool withType,
   int? tier,
   bool summaries = false,
+  bool includeAuthor = false,
 }) {
+  final summaryFields = _workItemSummaryFields(includeAuthor: includeAuthor);
   final nodeFields = !summaries || tier == null || tier == 3
-      ? _workItemSummaryFields
+      ? summaryFields
       : (tier == 1
-          ? '$_workItemSummaryFields\n$_workItemSummaryTier1Widgets'
-          : '$_workItemSummaryFields\n$_workItemSummaryTier2Widgets');
+          ? '$summaryFields\n$_workItemSummaryTier1Widgets'
+          : '$summaryFields\n$_workItemSummaryTier2Widgets');
   return '''
 query MobileGroupWorkItems(
   \$path: ID!
@@ -259,7 +266,7 @@ query MobileNamespaceWorkItemTypes($path: ID!, $first: Int!, $after: String) {
 
 String _workItemDetailFields() =>
     '''
-$_workItemSummaryFields
+${_workItemSummaryFields()}
 description
 widgets {
   type
@@ -283,9 +290,9 @@ widgets {
   ... on WorkItemWidgetHierarchy {
     hasParent
     hasChildren
-    parent { $_workItemSummaryFields }
+    parent { ${_workItemSummaryFields()} }
     children(first: $_workItemChildLimit) {
-      nodes { $_workItemSummaryFields }
+      nodes { ${_workItemSummaryFields()} }
       pageInfo { hasNextPage endCursor }
     }
   }
@@ -324,6 +331,50 @@ extension on GroupWorkItemSort {
 }
 
 final _apiSupportedListTier = Expando<int>('supportedListTier');
+final _apiSupportsListAuthor = Expando<bool>('supportsListAuthor');
+
+({bool authorUnsupported, int? nextTier})? _classifyListSchemaFallback(
+  Map<dynamic, dynamic> envelope,
+  int currentTier,
+) {
+  if (envelope['data'] != null) return null;
+  final rawErrors = envelope['errors'];
+  if (rawErrors is! List || rawErrors.isEmpty) return null;
+  final remaining = <Object?>[];
+  var authorUnsupported = false;
+  for (final error in rawErrors) {
+    if (error is Map) {
+      final extensions = error['extensions'];
+      final code = extensions is Map ? extensions['code'] : null;
+      final field = extensions is Map
+          ? (extensions['fieldName'] ?? extensions['field'])
+          : null;
+      final typeName = extensions is Map ? extensions['typeName'] : null;
+      if (code == 'undefinedField' && field == 'author' &&
+          (typeName == null || typeName == 'WorkItem')) {
+        authorUnsupported = true;
+        continue;
+      }
+    }
+    remaining.add(error);
+  }
+  if (!authorUnsupported) {
+    final nextTier = _classifyListSchemaError(envelope, currentTier);
+    return nextTier == null
+        ? null
+        : (authorUnsupported: false, nextTier: nextTier);
+  }
+  if (remaining.isEmpty) {
+    return (authorUnsupported: true, nextTier: null);
+  }
+  final nextTier = _classifyListSchemaError(
+    {'data': null, 'errors': remaining},
+    currentTier,
+  );
+  return nextTier == null
+      ? null
+      : (authorUnsupported: true, nextTier: nextTier);
+}
 
 int? _classifyListSchemaError(Map<dynamic, dynamic> envelope, int currentTier) {
   if (envelope['data'] != null) return null;
@@ -460,6 +511,7 @@ extension WorkItemGraphQlApi on GitLabApi {
       throw const ApiFailure(FailureKind.validation);
     }
     int activeTier = summaries ? (_apiSupportedListTier[this] ?? 1) : 1;
+    var includeAuthor = summaries && (_apiSupportsListAuthor[this] ?? true);
     if (summaries) {
       if (cursor != null &&
           (previousTier == null || previousTier != activeTier)) {
@@ -479,6 +531,7 @@ extension WorkItemGraphQlApi on GitLabApi {
                 withType: normalizedFilter.typeId != null,
                 tier: activeTier,
                 summaries: true,
+                includeAuthor: includeAuthor,
               );
         response = await _read(
           instance.graphQL,
@@ -505,20 +558,27 @@ extension WorkItemGraphQlApi on GitLabApi {
       _requireCurrentWorkItemRequest(isCurrent);
 
       if (summaries && cursor == null) {
-        int? nextTier;
+        ({bool authorUnsupported, int? nextTier})? fallback;
         try {
           final decoded = jsonDecode(utf8.decode(response.bytes));
           if (decoded is Map &&
               decoded['data'] == null &&
               decoded['errors'] != null) {
-            nextTier = _classifyListSchemaError(decoded, activeTier);
+            fallback = _classifyListSchemaFallback(decoded, activeTier);
           }
         } catch (_) {
           // ignore
         }
-        if (nextTier != null && nextTier > activeTier) {
+        if (fallback != null) {
+          final nextTier = fallback.nextTier;
+          final nextAuthor = fallback.authorUnsupported ? false : includeAuthor;
+          if (nextAuthor == includeAuthor &&
+              (nextTier == null || nextTier <= activeTier)) {
+            break;
+          }
           _requireCurrentWorkItemRequest(isCurrent);
-          activeTier = nextTier;
+          includeAuthor = nextAuthor;
+          if (nextTier != null && nextTier > activeTier) activeTier = nextTier;
           continue;
         }
       }
@@ -556,6 +616,7 @@ extension WorkItemGraphQlApi on GitLabApi {
       }
       if (summaries) {
         _apiSupportedListTier[this] = activeTier;
+        _apiSupportsListAuthor[this] = includeAuthor;
       }
       return GroupWorkItemGraphPage(
         group: group.ref,
@@ -609,6 +670,7 @@ extension WorkItemGraphQlApi on GitLabApi {
       throw const ApiFailure(FailureKind.validation);
     }
     int activeTier = summaries ? (_apiSupportedListTier[this] ?? 1) : 1;
+    var includeAuthor = summaries && (_apiSupportsListAuthor[this] ?? true);
     if (summaries) {
       if (cursor != null &&
           (previousTier == null || previousTier != activeTier)) {
@@ -626,7 +688,7 @@ extension WorkItemGraphQlApi on GitLabApi {
         final String queryText;
         final Map<String, Object?> variables;
         if (!summaries && normalizedFilter == null) {
-          queryText = _projectWorkItemsQuery;
+          queryText = _projectWorkItemsQuery(includeAuthor: false);
           variables = {
             'path': project.path,
             'first': _workItemPageSize,
@@ -637,6 +699,7 @@ extension WorkItemGraphQlApi on GitLabApi {
             hasFilter: normalizedFilter != null,
             tier: activeTier,
             summaries: summaries,
+            includeAuthor: includeAuthor,
           );
           variables = {
             'path': project.path,
@@ -665,20 +728,27 @@ extension WorkItemGraphQlApi on GitLabApi {
       _requireCurrentWorkItemRequest(isCurrent);
 
       if (summaries && cursor == null) {
-        int? nextTier;
+        ({bool authorUnsupported, int? nextTier})? fallback;
         try {
           final decoded = jsonDecode(utf8.decode(response.bytes));
           if (decoded is Map &&
               decoded['data'] == null &&
               decoded['errors'] != null) {
-            nextTier = _classifyListSchemaError(decoded, activeTier);
+            fallback = _classifyListSchemaFallback(decoded, activeTier);
           }
         } catch (_) {
           // ignore
         }
-        if (nextTier != null && nextTier > activeTier) {
+        if (fallback != null) {
+          final nextTier = fallback.nextTier;
+          final nextAuthor = fallback.authorUnsupported ? false : includeAuthor;
+          if (nextAuthor == includeAuthor &&
+              (nextTier == null || nextTier <= activeTier)) {
+            break;
+          }
           _requireCurrentWorkItemRequest(isCurrent);
-          activeTier = nextTier;
+          includeAuthor = nextAuthor;
+          if (nextTier != null && nextTier > activeTier) activeTier = nextTier;
           continue;
         }
       }
@@ -710,6 +780,7 @@ extension WorkItemGraphQlApi on GitLabApi {
       }
       if (summaries) {
         _apiSupportedListTier[this] = activeTier;
+        _apiSupportsListAuthor[this] = includeAuthor;
       }
       return WorkItemGraphPage(
         items: List.unmodifiable(items),
@@ -1088,10 +1159,12 @@ WorkItemGraphSummary _parseWorkItemSummary(
   final type = _parseWorkItemType(node['workItemType']);
   final project = _parseOptionalResourceRef(node['project']);
   final namespace = _parseOptionalResourceRef(node['namespace']);
+  final author = _parseWorkItemAuthor(node['author']);
   final identities = <String>{id, type.id};
   if (identities.length != 2 ||
       (project != null && !identities.add(project.id)) ||
-      (namespace != null && !identities.add(namespace.id))) {
+      (namespace != null && !identities.add(namespace.id)) ||
+      (author != null && !identities.add(author.id))) {
     throw const FormatException('Confused graph identity');
   }
 
@@ -1174,7 +1247,22 @@ WorkItemGraphSummary _parseWorkItemSummary(
     project: project,
     namespace: namespace,
     type: type,
+    author: author,
     widgets: widgets,
+  );
+}
+
+WorkItemGraphAuthor? _parseWorkItemAuthor(Object? raw) {
+  if (raw == null) return null;
+  final node = objectJson(raw);
+  final id = requiredString(node, 'id');
+  if (!_validOpaqueGraphId(id)) {
+    throw const FormatException('Invalid work item author ID');
+  }
+  return WorkItemGraphAuthor(
+    id: id,
+    name: _boundedRequiredText(node, 'name', 256),
+    username: _boundedRequiredText(node, 'username', 256),
   );
 }
 

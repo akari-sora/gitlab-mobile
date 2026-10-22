@@ -2334,4 +2334,5 @@ const _messagesCs = <String>[
   'Požadavek na neznámý nástroj',
   'Tato konverzace byla obnovena, proto se uchoval jen začátek odeslaného obsahu',
   'Shrnutí konverzace',
+  'Přidat do konceptu komentáře',
 ];

@@ -2331,5 +2331,6 @@
   "aiNoticeNewConversation": "設定が変更されました：新しい質問から新しい会話が始まり、上のメッセージは再送信されません",
   "aiToolUnknown": "不明なツールリクエスト",
   "aiChatSentPreviewOnly": "この会話は復元されたため、送信した内容の冒頭だけが保持されています",
-  "aiChatSummaryChip": "会話の要約"
+  "aiChatSummaryChip": "会話の要約",
+  "aiChatInsertDraft": "コメントの下書きに追加"
 }

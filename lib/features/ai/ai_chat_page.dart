@@ -20,7 +20,11 @@ import 'ai_settings_page.dart';
 
 /// Opens the chat for [origin] from a page that may or may not have AI.
 /// Returns false when AI is not available here (no scope or registry).
-Future<bool> openAiChat(BuildContext context, AiChatOrigin origin) async {
+Future<bool> openAiChat(
+  BuildContext context,
+  AiChatOrigin origin, {
+  Future<void> Function(String text)? onInsertDraft,
+}) async {
   final registry = AiRunRegistry.maybeOf(context);
   if (registry == null || AiScope.maybeOf(context) == null) return false;
   final AiChatSession session;
@@ -34,7 +38,11 @@ Future<bool> openAiChat(BuildContext context, AiChatOrigin origin) async {
   final summarize = origin is AiWorkItemOrigin && origin.summarize;
   await Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => AiChatPage(session: session, summarize: summarize),
+      builder: (_) => AiChatPage(
+        session: session,
+        summarize: summarize,
+        onInsertDraft: onInsertDraft,
+      ),
     ),
   );
   registry.release(session);
@@ -77,9 +85,17 @@ List<String> _suggestions(AiChatOrigin origin) => switch (origin) {
 };
 
 class AiChatPage extends StatefulWidget {
-  const AiChatPage({super.key, required this.session, this.summarize = false});
+  const AiChatPage({
+    super.key,
+    required this.session,
+    this.summarize = false,
+    this.onInsertDraft,
+  });
 
   final AiChatSession session;
+
+  /// Opens the originating resource's ordinary comment editor, without sending.
+  final Future<void> Function(String text)? onInsertDraft;
 
   /// Opened from "AI summary": send the summary request once, when the empty
   /// conversation is ready.
@@ -95,6 +111,7 @@ class _AiChatPageState extends State<AiChatPage> {
 
   /// Whether the last build showed the blocker or preparing card.
   var _showedNotice = false;
+  var _insertingDraft = false;
 
   /// "AI summary" sends its request once, when the empty session is ready.
   late bool _pendingSummary;
@@ -139,6 +156,26 @@ class _AiChatPageState extends State<AiChatPage> {
   }
 
   void _inputChanged() => setState(() {});
+
+  Future<void> _insertDraft(AiAssistantItem item) async {
+    final insert = widget.onInsertDraft;
+    if (insert == null ||
+        _insertingDraft ||
+        _session.origin is! AiWorkItemOrigin ||
+        _session.phase != AiChatPhase.idle ||
+        item.state != AiAssistantState.done ||
+        !_session.items.contains(item)) {
+      return;
+    }
+    final text = _session.displaySafe(item.text);
+    if (text.trim().isEmpty) return;
+    setState(() => _insertingDraft = true);
+    try {
+      await insert(text);
+    } finally {
+      if (mounted) setState(() => _insertingDraft = false);
+    }
+  }
 
   Future<bool> _confirmCleartext() async {
     if (!mounted) return false;
@@ -358,7 +395,17 @@ class _AiChatPageState extends State<AiChatPage> {
       );
     }
     final children = <Widget>[
-      for (final item in items) _ChatItemView(item: item),
+      for (final item in items)
+        _ChatItemView(
+          item: item,
+          onInsertDraft:
+              widget.onInsertDraft != null &&
+                  _session.origin is AiWorkItemOrigin &&
+                  _session.phase == AiChatPhase.idle &&
+                  !_insertingDraft
+              ? _insertDraft
+              : null,
+        ),
       if (_session.phase == AiChatPhase.running &&
           !(items.last is AiAssistantItem &&
               (items.last as AiAssistantItem).state ==
@@ -577,14 +624,18 @@ class _EmptyConversation extends StatelessWidget {
 }
 
 class _ChatItemView extends StatelessWidget {
-  const _ChatItemView({required this.item});
+  const _ChatItemView({required this.item, this.onInsertDraft});
 
   final AiChatItem item;
+  final void Function(AiAssistantItem item)? onInsertDraft;
 
   @override
   Widget build(BuildContext context) => switch (item) {
     final AiUserItem user => _UserMessage(item: user),
-    final AiAssistantItem assistant => _AssistantMessage(item: assistant),
+    final AiAssistantItem assistant => _AssistantMessage(
+      item: assistant,
+      onInsertDraft: onInsertDraft,
+    ),
     final AiToolRunItem tool => _ToolRow(item: tool),
     final AiNoticeItem notice => _NoticeRow(item: notice),
   };
@@ -796,9 +847,10 @@ List<String> _sentParts(String text) {
 }
 
 class _AssistantMessage extends StatelessWidget {
-  const _AssistantMessage({required this.item});
+  const _AssistantMessage({required this.item, this.onInsertDraft});
 
   final AiAssistantItem item;
+  final void Function(AiAssistantItem item)? onInsertDraft;
 
   @override
   Widget build(BuildContext context) {
@@ -875,6 +927,17 @@ class _AssistantMessage extends StatelessWidget {
                   context,
                 ).showSnackBar(SnackBar(content: Text(l10n.aiChatCopied)));
               },
+            ),
+          ),
+        if (item.state == AiAssistantState.done &&
+            item.text.trim().isNotEmpty &&
+            onInsertDraft != null)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton.icon(
+              icon: const Icon(Icons.add_comment_outlined, size: 18),
+              label: Text(l10n.aiChatInsertDraft),
+              onPressed: () => onInsertDraft!(item),
             ),
           ),
       ],

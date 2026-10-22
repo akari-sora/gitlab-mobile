@@ -6,6 +6,7 @@ import '../../shared/markdown_view.dart';
 import '../../shared/workspace_ui.dart';
 import 'diff_page.dart';
 import 'editor.dart';
+import 'comment_editor.dart';
 import 'records_feed.dart';
 import '../../core/suggestion.dart';
 import 'suggestion_card.dart';
@@ -122,6 +123,23 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
   void _toggle(String id) => setState(() { if (!_open.remove(id)) { _open.add(id); } });
   Future<void> _compose({Json? note, String? discussion, bool thread = false}) async {
     if (_busy) { return; }
+    if (note == null && discussion == null && !thread) {
+      final account = widget.account;
+      final api = widget.api;
+      final project = widget.project;
+      final resource = widget.resource;
+      final iid = widget.iid;
+      bool current() => mounted && widget.account.key == account.key &&
+          identical(widget.api, api) && widget.project.id == project.id &&
+          widget.resource == resource && widget.iid == iid;
+      final saved = await openCommentEditor(context, account: account, api: api,
+        project: project, resource: resource, iid: iid, isCurrent: current);
+      if (saved && current()) {
+        await _feed.currentState?.refresh();
+        widget.onChanged?.call();
+      }
+      return;
+    }
     final saved = await openEditor(context, account: widget.account,
       title: note != null ? l10n.editComment : discussion != null ? l10n.replyToThread : thread ? l10n.newThread : l10n.newComment,
       resource: '${path.join('/')}/${discussion ?? 'root'}/${note?['id'] ?? (thread ? 'thread-new' : 'new')}',

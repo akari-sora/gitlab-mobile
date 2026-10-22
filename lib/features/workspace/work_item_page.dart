@@ -14,6 +14,7 @@ import '../../shared/workspace_ui.dart';
 import 'ci_page.dart';
 import 'diff_page.dart';
 import 'editor.dart';
+import 'comment_editor.dart';
 import 'navigation.dart';
 import 'picker_sheet.dart';
 import 'reactions.dart';
@@ -545,13 +546,37 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
   Future<void> _openAi({required bool summarize}) async {
     final data = _data;
     if (data == null) return;
+    final owner = _owner;
+    SessionController? session;
+    int? sessionGeneration;
+    try {
+      session = ProviderScope.containerOf(context, listen: false).read(sessionProvider);
+      sessionGeneration = captureRouteSessionGeneration(injected: null,
+        owner: session, account: owner.account, api: owner.api,
+        isCurrent: () => _currentOwner(owner) && !owner.api.isClosed);
+    } catch (_) {
+      session = null;
+    }
+    bool current() => _currentOwner(owner) && !owner.api.isClosed &&
+        session != null &&
+        routeSessionMatches(sessionGeneration, session, owner.account, owner.api);
     await openAiChat(context, AiWorkItemOrigin(
-      project: widget.project,
+      project: owner.project,
       kind: mr ? AiWorkItemKind.mergeRequest : AiWorkItemKind.issue,
-      iid: widget.iid,
+      iid: owner.iid,
       title: valueText(data, 'title'),
       summarize: summarize && mr,
-    ));
+    ), onInsertDraft: current() ? (text) async {
+      if (!current()) return;
+      final saved = await openCommentEditor(context,
+        account: owner.account, api: owner.api, project: owner.project,
+        resource: owner.resource, iid: owner.iid, appendBody: text,
+        isCurrent: current, onRoute: _ownRoute);
+      if (saved && current()) {
+        _tabs.animateTo(owner.resource == 'merge_requests' ? 2 : 1);
+        await _loadAfterMutation();
+      }
+    } : null);
   }
 
   @override

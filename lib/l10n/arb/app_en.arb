@@ -2337,5 +2337,6 @@
   "aiNoticeNewConversation": "Settings changed: new questions start a new conversation, and the messages above are not sent again",
   "aiToolUnknown": "Unknown tool request",
   "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept",
-  "aiChatSummaryChip": "Conversation summary"
+  "aiChatSummaryChip": "Conversation summary",
+  "aiChatInsertDraft": "Append to comment draft"
 }

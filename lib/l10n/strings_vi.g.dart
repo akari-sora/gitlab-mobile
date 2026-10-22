@@ -2334,4 +2334,5 @@ const _messagesVi = <String>[
   'Yêu cầu công cụ không xác định',
   'Cuộc trò chuyện này đã được khôi phục nên chỉ phần đầu của nội dung đã gửi được lưu lại',
   'Tóm tắt trò chuyện',
+  'Thêm vào bản nháp bình luận',
 ];

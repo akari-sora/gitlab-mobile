@@ -2331,5 +2331,6 @@
   "aiNoticeNewConversation": "Pengaturan berubah: pertanyaan baru akan memulai percakapan baru, dan pesan di atas tidak dikirim lagi",
   "aiToolUnknown": "Permintaan pemanggilan alat yang tidak dikenal",
   "aiChatSentPreviewOnly": "Percakapan ini dipulihkan, jadi hanya bagian awal konten yang dikirim yang disimpan",
-  "aiChatSummaryChip": "Ringkasan percakapan"
+  "aiChatSummaryChip": "Ringkasan percakapan",
+  "aiChatInsertDraft": "Tambahkan ke draf komentar"
 }

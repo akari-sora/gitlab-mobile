@@ -2334,4 +2334,5 @@ const _messagesTr = <String>[
   'Bilinmeyen bir aracı çağırma isteği',
   'Bu konuşma geri yüklendiği için gönderilen içeriğin yalnızca başlangıcı saklanır',
   'Konuşma özeti',
+  'Yorum taslağına ekle',
 ];

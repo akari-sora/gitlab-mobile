@@ -2334,4 +2334,5 @@ const _messagesRo = <String>[
   'Solicitare pentru un instrument necunoscut',
   'Această conversație a fost restaurată, astfel că se păstrează doar începutul conținutului trimis',
   'Rezumatul conversației',
+  'Adaugă la ciorna comentariului',
 ];

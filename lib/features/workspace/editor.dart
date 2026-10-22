@@ -145,6 +145,7 @@ Map<String, dynamic> editorSubmission(List<EditField> fields, Map<String, String
 
 /// Reserved in persisted drafts. Edit field keys never start with `__`.
 const _draftBaseKey = '__base';
+const _draftWriteKey = '__writeUncertain';
 
 typedef SaveEditor = Future<void> Function(Map<String, String> values);
 Future<bool> openEditor(
@@ -167,6 +168,7 @@ Future<bool> openEditor(
   String? projectPath,
   AttachmentPicker? attachments,
   ValueChanged<Route<dynamic>>? onRoute,
+  Map<String, String> appendValues = const {},
 }) async {
     final route = MaterialPageRoute<bool>(
         builder: (_) => ResourceEditor(
@@ -187,6 +189,7 @@ Future<bool> openEditor(
           projectId: projectId,
           projectPath: projectPath,
           attachments: attachments,
+          appendValues: appendValues,
         ),
       );
     onRoute?.call(route);
@@ -213,6 +216,7 @@ class ResourceEditor extends StatefulWidget {
     this.projectId,
     this.projectPath,
     this.attachments,
+    this.appendValues = const {},
   });
   final Account account;
   final String title, resource;
@@ -234,6 +238,10 @@ class ResourceEditor extends StatefulWidget {
   final int? projectId;
   final String? projectPath;
   final AttachmentPicker? attachments;
+
+  /// Appended once after a successful secure-draft restore. Existing text,
+  /// including Markdown whitespace, is preserved.
+  final Map<String, String> appendValues;
   @override
   State<ResourceEditor> createState() => _ResourceEditorState();
 }
@@ -255,6 +263,7 @@ class _ResourceEditorState extends State<ResourceEditor> {
   TextSelection? _markdownSelection;
   ApiFailure? _error;
   bool _saveBlocked = false;
+  bool _writeUncertain = false;
   bool get _draftCurrent =>
       _draftEpoch == (_draftClearEpochs[widget.account.key] ?? 0) &&
       (widget.isCurrent?.call() ?? true);
@@ -285,10 +294,28 @@ class _ResourceEditorState extends State<ResourceEditor> {
 
   Future<void> _restore() async {
     try {
+      if (widget.appendValues.isNotEmpty) {
+        await (_draftWrites[widget.account.key] ?? Future<void>.value());
+      }
       final raw = widget.persistent ? await _draftStorage.read(key: _key) : null;
       if (raw != null && mounted && _draftCurrent) {
         final value = jsonDecode(raw);
+        if (widget.appendValues.isNotEmpty &&
+            (value is! Map<String, dynamic> || widget.appendValues.keys.any(
+              (key) => value.containsKey(key) && value[key] is! String))) {
+          throw const FormatException('Unrecognized draft');
+        }
         if (value is Map<String, dynamic>) {
+          if (widget.blockRetryOnWriteUncertain && value.containsKey(_draftWriteKey) &&
+              value[_draftWriteKey] != 'true') {
+            _saveBlocked = true;
+            throw const FormatException('Unrecognized draft write outcome');
+          }
+          if (widget.blockRetryOnWriteUncertain && value[_draftWriteKey] == 'true') {
+            _writeUncertain = true;
+            _saveBlocked = true;
+            _error = const ApiFailure(FailureKind.writeUncertain);
+          }
           final storedBase = value[_draftBaseKey];
           final current = widget.baseRevision;
           // Editing an existing resource: a draft is applied only when it was
@@ -307,6 +334,16 @@ class _ResourceEditorState extends State<ResourceEditor> {
       }
     } catch (_) {
       _draftUnavailable = true;
+    }
+    if (mounted && _draftCurrent && !_draftUnavailable && _staleDraft == null) {
+      for (final entry in widget.appendValues.entries) {
+        final controller = _controllers[entry.key];
+        if (controller == null || entry.value.isEmpty) continue;
+        final previous = controller.text;
+        controller.text = previous.isEmpty ? entry.value : '$previous\n\n${entry.value}';
+        _dirty = true;
+      }
+      if (widget.appendValues.isNotEmpty) _persist();
     }
     if (mounted) setState(() => _loading = false);
   }
@@ -367,13 +404,40 @@ class _ResourceEditorState extends State<ResourceEditor> {
     final map = _draftValues();
     final base = widget.baseRevision;
     if (base != null) map[_draftBaseKey] = base;
+    if (_writeUncertain) map[_draftWriteKey] = 'true';
     return map;
+  }
+
+  // A completed write settles only the exact submitted draft, even when its
+  // route owner has changed. Account removal or newer draft content wins.
+  Future<void> _settleStoredDraft(String expected, String? replacement) async {
+    if (!widget.persistent) return;
+    final pending = _draftWrites[widget.account.key] ?? Future<void>.value();
+    final settlement = pending.then((_) async {
+      if (_draftEpoch != (_draftClearEpochs[widget.account.key] ?? 0)) return;
+      if (await _draftStorage.read(key: _key) != expected) return;
+      if (replacement == null) {
+        await _draftStorage.delete(key: _key);
+      } else {
+        await _draftStorage.write(key: _key, value: replacement);
+      }
+    });
+    _writes = settlement;
+    _draftWrites[widget.account.key] = settlement;
+    try {
+      await settlement;
+    } finally {
+      if (identical(_draftWrites[widget.account.key], settlement)) {
+        unawaited(_draftWrites.remove(widget.account.key));
+      }
+    }
   }
 
   void _persist() {
     // While a stale draft is held, keystrokes, leave, and dispose must not
     // replace the stored copy. Apply persists only after the hold is cleared.
-    if (_done || !widget.persistent || !_dirty || _staleDraft != null || !_draftCurrent) return;
+    if (_done || !widget.persistent || !_dirty || _staleDraft != null || !_draftCurrent ||
+        (widget.appendValues.isNotEmpty && _draftUnavailable)) { return; }
     final data = jsonEncode(_storedDraft());
     final pending = _draftWrites[widget.account.key] ?? Future<void>.value();
     _writes = Future.wait([_writes, pending]).then((_) async {
@@ -514,7 +578,9 @@ class _ResourceEditorState extends State<ResourceEditor> {
   }
 
   Future<void> _save() async {
-    if (_locked || _loading || _saveBlocked || _staleDraft != null || _form.currentState?.validate() != true) return;
+    if (_locked || _loading || _saveBlocked || _staleDraft != null ||
+        (widget.appendValues.isNotEmpty && _draftUnavailable) ||
+        _form.currentState?.validate() != true) { return; }
     FocusScope.of(context).unfocus();
     _timer?.cancel();
     _persist();
@@ -522,12 +588,40 @@ class _ResourceEditorState extends State<ResourceEditor> {
       _saving = true;
       _error = null;
     });
+    String? attemptedDraft;
     try {
+      if (widget.blockRetryOnWriteUncertain && widget.persistent) {
+        // Persist before dispatch, so losing the route/process or API
+        // acknowledgement cannot turn the same draft into a blind retry.
+        _writeUncertain = true;
+        _dirty = true;
+        attemptedDraft = jsonEncode(_storedDraft());
+        _persist();
+        await _writes;
+        if (_draftUnavailable ||
+            await _draftStorage.read(key: _key) != attemptedDraft) {
+          _saveBlocked = true;
+          _draftUnavailable = true;
+          return;
+        }
+        if (!_draftCurrent) {
+          _writeUncertain = false;
+          await _settleStoredDraft(attemptedDraft, jsonEncode(_storedDraft()));
+          return;
+        }
+      }
       await widget.save(_draftValues());
       _done = true;
       await _writes;
+      if (attemptedDraft != null) {
+        try {
+          await _settleStoredDraft(attemptedDraft, null);
+        } catch (_) {
+          // The persisted attempt marker still blocks a duplicate submission.
+        }
+      }
       if (!_draftCurrent) return;
-      if (widget.persistent) {
+      if (widget.persistent && attemptedDraft == null) {
         try {
           await _draftStorage.delete(key: _key);
         } catch (_) {
@@ -536,15 +630,24 @@ class _ResourceEditorState extends State<ResourceEditor> {
       }
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
+      final failure = safeFailure(e);
+      if (widget.blockRetryOnSaveFailure ||
+          (widget.blockRetryOnWriteUncertain &&
+              failure.kind == FailureKind.writeUncertain)) {
+        _saveBlocked = true;
+      }
+      if (attemptedDraft != null && failure.kind != FailureKind.writeUncertain) {
+        _writeUncertain = false;
+        try {
+          await _settleStoredDraft(attemptedDraft, jsonEncode(_storedDraft()));
+        } catch (_) {
+          _draftUnavailable = true;
+          _saveBlocked = true;
+        }
+      }
       if (mounted && _draftCurrent) {
-        final failure = safeFailure(e);
         setState(() {
           _error = failure;
-          if (widget.blockRetryOnSaveFailure ||
-              (widget.blockRetryOnWriteUncertain &&
-                  failure.kind == FailureKind.writeUncertain)) {
-            _saveBlocked = true;
-          }
         });
       }
     } finally {
@@ -606,7 +709,8 @@ class _ResourceEditorState extends State<ResourceEditor> {
             padding: const EdgeInsets.only(right: 12),
             child: FilledButton(
               key: const Key('editorSave'),
-              onPressed: _locked || _loading || _saveBlocked || _staleDraft != null ? null : _save,
+              onPressed: _locked || _loading || _saveBlocked || _staleDraft != null ||
+                  (widget.appendValues.isNotEmpty && _draftUnavailable) ? null : _save,
               child: Text(_saving ? l10n.submitting : l10n.saveAction),
             ),
           ),

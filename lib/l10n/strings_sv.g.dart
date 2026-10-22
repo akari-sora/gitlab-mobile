@@ -2334,4 +2334,5 @@ const _messagesSv = <String>[
   'Begäran om att anropa ett okänt verktyg',
   'Den här konversationen har återställts, så bara början av det som skickades finns kvar',
   'Sammanfattning av konversation',
+  'Lägg till i kommentarsutkast',
 ];

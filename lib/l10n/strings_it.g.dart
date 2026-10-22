@@ -2334,4 +2334,5 @@ const _messagesIt = <String>[
   'Richiesta di strumento sconosciuto',
   'Questa conversazione è stata ripristinata, quindi viene conservato solo l’inizio del contenuto inviato',
   'Riepilogo della conversazione',
+  'Aggiungi alla bozza del commento',
 ];

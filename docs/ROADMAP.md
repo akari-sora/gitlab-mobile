@@ -32,6 +32,21 @@ complete incident operations and live lifecycle proof, Service Desk, complete an
 login and push remain open under the all-function goal. Exact-head CI, Android
 readback, live private/CRUD and iOS acceptance remain separate evidence lanes.
 
+The 2026-10-22 Android-priority MR6a-2 slice lets a completed, display-safe AI
+answer append to the existing ordinary-comment draft without posting. It also
+adds authors to GraphQL Work Item lists and progressively loads pipeline
+executors with bounded, owner-scoped requests. Production AI remains disabled by
+default. Exact source passed 5,046 Flutter tests and full analysis; the synthetic
+API 36 emulator run proved zero writes through append/reopen and one acknowledged
+write only after explicit Save. The original APK was restored with matching
+installed bytes. [MR !98](https://gitlab.com/aa22396584/gitlab-mobile/-/merge_requests/98)
+holds the exact-head CI and merge record; local source and emulator evidence do
+not establish CI success. Real-provider and private-project integration,
+physical-device/publication and G0 acceptance stay open. iOS validation is
+deferred while Android is the current delivery priority; that deferral is not
+iOS acceptance. Evidence is in [v0.6 AI verification](V0_6_AI_VERIFICATION.md)
+and the linked APK receipt.
+
 Ordinary Work Item note editing checks the server's on-demand `adminNote`
 permission instead of inferring access from note authorship. It validates the
 displayed revision, project/group scope, account and API owner, writes once, then

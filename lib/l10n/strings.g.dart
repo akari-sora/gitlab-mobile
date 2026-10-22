@@ -7089,4 +7089,7 @@ final class AppStrings {
 
   /// 對話摘要
   String get aiChatSummaryChip => language._messages[2331];
+
+  /// 附加到留言草稿
+  String get aiChatInsertDraft => language._messages[2332];
 }

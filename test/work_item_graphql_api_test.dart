@@ -911,6 +911,7 @@ workItemType { id name }
         expect(query.contains('... on WorkItemWidgetStartAndDueDate'), isTrue);
         expect(query.contains('... on WorkItemWidgetHierarchy'), isTrue);
         expect(query.contains('... on WorkItemWidgetStatus'), isTrue);
+        expect(query, contains('author { id name username }'));
         expect(query.contains('rollUp'), isFalse);
         return jsonResponse(
           _projectEnvelope(
@@ -931,6 +932,68 @@ workItemType { id name }
       api.close();
     },
   );
+
+  test(
+    'list parses author and caches an exact old-server author fallback',
+    () async {
+      var calls = 0;
+      final adapter = FakeAdapter((request) {
+        calls++;
+        final query = (request.data as Map)['query'] as String;
+        if (calls == 1) {
+          expect(query, contains('author { id name username }'));
+          return jsonResponse({
+            'data': null,
+            'errors': [
+              {
+                'message': "Field 'author' doesn't exist on type 'WorkItem'",
+                'extensions': {
+                  'code': 'undefinedField',
+                  'typeName': 'WorkItem',
+                  'fieldName': 'author',
+                },
+              },
+            ],
+          });
+        }
+        expect(query, isNot(contains('author { id name username }')));
+        return jsonResponse(_projectEnvelope(workItems: _connection([
+          {..._summary(), 'widgets': <Object?>[]},
+        ])));
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      final first = await api.projectWorkItems(_project, summaries: true);
+      expect(first.items.single.author, isNull);
+      expect(calls, 2);
+      await api.projectWorkItems(_project, summaries: true);
+      expect(calls, 3, reason: 'unsupported author is cached per API owner');
+    },
+  );
+
+  test('list parses a nullable GraphQL work item author', () async {
+    final api = testApi(FakeAdapter((_) => jsonResponse(
+      _projectEnvelope(workItems: _connection([
+        {
+          ..._summary(),
+          'author': {
+            'id': 'gid://gitlab/User/9',
+            'name': 'Synthetic Author',
+            'username': 'synthetic-author',
+          },
+          'widgets': <Object?>[],
+        },
+      ])),
+    )));
+    addTearDown(api.close);
+
+    final author = (await api.projectWorkItems(_project, summaries: true))
+        .items.single.author!;
+    expect(author.id, 'gid://gitlab/User/9');
+    expect(author.name, 'Synthetic Author');
+    expect(author.username, 'synthetic-author');
+  });
 
   test(
     'T02: CE undefinedType(typeName WorkItemWidgetStatus) triggers clean 2-POST fallback to T2 with tier binding on continuation',

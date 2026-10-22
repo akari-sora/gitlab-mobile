@@ -2334,4 +2334,5 @@ const _messagesFr = <String>[
   'Demande d’outil inconnu',
   'Cette conversation a été restaurée, seul le début du contenu envoyé est donc conservé',
   'Résumé de conversation',
+  'Ajouter au brouillon du commentaire',
 ];

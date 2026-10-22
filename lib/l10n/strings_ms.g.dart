@@ -2334,4 +2334,5 @@ const _messagesMs = <String>[
   'Permintaan alat tidak diketahui',
   'Perbualan ini telah dipulihkan, jadi hanya bahagian awal kandungan yang dihantar disimpan',
   'Ringkasan perbualan',
+  'Tambah pada draf komen',
 ];
