@@ -2550,4 +2550,9 @@ const _messagesEn = <String>[
   'Changes on GitLab',
   'The AI may change GitLab for you with this account, up to "{level}".',
   'Every change is listed in the conversation; hard limits such as deleting a project or changing its settings always need you to type the name. You can lower or turn this off in settings at any time.',
+  'Changes appear under your name and cannot be undone once made. Marking what the AI writes is off unless you turn it on in settings.',
+  'If the connection drops during a change, it is unclear whether GitLab made it. Until you release it in "{log}", the AI on this device will not change the same target again.',
+  'At this level, files you attach can be uploaded without a card first. In a public or internal project, anyone who can see content that links a file can open it.',
+  'Text the AI reads on GitLab can contain instructions meant to steer it. Read what it proposes before you approve.',
+  'Some changes, such as opening a merge request, can start pipelines on GitLab. What they do is set by the project and cannot be controlled from here.',
 ];

@@ -2550,4 +2550,9 @@ const _messagesPl = <String>[
   'Zmiany w GitLabie',
   'AI może zmieniać GitLab w twoim imieniu tym kontem, maksymalnie na poziomie „{level}”.',
   'Każdy zapis jest pokazany w rozmowie; twarde granice, takie jak usunięcie projektu czy zmiana jego ustawień, zawsze wymagają wpisania nazwy. W ustawieniach możesz to w każdej chwili obniżyć lub wyłączyć.',
+  'Zmiany pojawiają się pod twoim nazwiskiem i po wykonaniu nie da się ich cofnąć. Oznaczanie tekstu AI jest wyłączone, dopóki nie włączysz go w ustawieniach.',
+  'Jeśli połączenie zerwie się podczas zmiany, nie wiadomo, czy GitLab ją wykonał. Dopóki nie zwolnisz jej w „{log}”, AI na tym urządzeniu nie zmieni ponownie tego samego celu.',
+  'Na tym poziomie załączone pliki mogą zostać przesłane bez wcześniejszej karty. W projekcie publicznym lub wewnętrznym każdy, kto widzi treść z linkiem do pliku, może go otworzyć.',
+  'Tekst, który AI czyta w GitLabie, może zawierać polecenia mające nią sterować. Przeczytaj, co proponuje, zanim zatwierdzisz.',
+  'Niektóre zmiany, na przykład otwarcie merge requesta, mogą uruchomić pipeline’y w GitLabie. Ich działanie zależy od projektu i nie da się go stąd kontrolować.',
 ];

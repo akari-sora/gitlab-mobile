@@ -2550,4 +2550,9 @@ const _messagesTr = <String>[
   'GitLab’de değişiklikler',
   'AI bu hesapla senin için GitLab’de değişiklik yapabilir; en fazla “{level}” düzeyinde.',
   'Her yazma işlemi konuşmada gösterilir; bir projeyi silmek veya ayarlarını değiştirmek gibi kesin sınırlar her zaman adı yazmanı gerektirir. Bunu istediğin zaman ayarlardan düşürebilir veya kapatabilirsin.',
+  'Değişiklikler senin adınla görünür ve yapıldıktan sonra geri alınamaz. AI\'nin yazdıklarını işaretleme, ayarlardan açmadığın sürece kapalıdır.',
+  'Bir değişiklik sırasında bağlantı koparsa GitLab\'in onu yapıp yapmadığı belli olmaz. “{log}” içinde serbest bırakana kadar bu cihazdaki AI aynı hedefi yeniden değiştirmez.',
+  'Bu düzeyde eklediğin dosyalar önce bir kart gösterilmeden yüklenebilir. Herkese açık veya dahili bir projede, dosyaya bağlantı veren içeriği görebilen herkes dosyayı açabilir.',
+  'AI\'nin GitLab\'de okuduğu metinler onu yönlendirmeye yönelik talimatlar içerebilir. Onaylamadan önce önerisini oku.',
+  'Merge request açmak gibi bazı değişiklikler GitLab\'de pipeline başlatabilir. Bunların ne yaptığını proje belirler; buradan kontrol edilemez.',
 ];

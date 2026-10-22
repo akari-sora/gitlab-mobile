@@ -2550,4 +2550,9 @@ const _messagesCs = <String>[
   'Změny na GitLabu',
   'AI může za vás tímto účtem měnit GitLab, nejvýše na úrovni „{level}“.',
   'Každý zápis se zobrazí v konverzaci; pevné hranice, jako je smazání projektu nebo změna jeho nastavení, vždy vyžadují zadání názvu. V nastavení to můžete kdykoli snížit nebo vypnout.',
+  'Změny se zobrazí pod vaším jménem a po provedení je nelze vrátit. Označování textu od AI je vypnuté, dokud ho nezapnete v nastavení.',
+  'Když se během změny přeruší spojení, není jasné, zda ji GitLab provedl. Dokud ji neuvolníte v „{log}“, AI na tomto zařízení stejný cíl znovu nezmění.',
+  'Na této úrovni se přiložené soubory mohou nahrát bez předchozí karty. Ve veřejném nebo interním projektu je může otevřít každý, kdo vidí obsah s odkazem na ně.',
+  'Text, který AI čte na GitLabu, může obsahovat pokyny, jak ji ovlivnit. Než něco schválíte, přečtěte si, co navrhuje.',
+  'Některé změny, například otevření merge requestu, mohou na GitLabu spustit pipeline. Co pipeline udělá, určuje projekt a odsud to nelze ovlivnit.',
 ];

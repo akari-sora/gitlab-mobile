@@ -2547,5 +2547,10 @@
   "aiRemoveRetryFromAccountList": "Scrieri AI neconfirmate blochează curățarea. Elimină din nou acest cont din lista de conturi și tastează numele de utilizator pentru confirmare.",
   "aiConsentWritesHeading": "Modificări pe GitLab",
   "aiConsentWritesUpTo": "AI poate face modificări în GitLab pentru tine cu acest cont, până la „{level}”.",
-  "aiConsentWritesLimits": "Fiecare scriere apare în conversație; limitele stricte, precum ștergerea unui proiect sau schimbarea setărilor lui, cer mereu să tastezi numele. Poți reduce sau dezactiva asta oricând din setări."
+  "aiConsentWritesLimits": "Fiecare scriere apare în conversație; limitele stricte, precum ștergerea unui proiect sau schimbarea setărilor lui, cer mereu să tastezi numele. Poți reduce sau dezactiva asta oricând din setări.",
+  "aiConsentWritesNoUndo": "Modificările apar în numele tău și nu pot fi anulate după ce sunt făcute. Marcarea textului scris de AI este dezactivată, dacă nu o activezi din setări.",
+  "aiConsentWritesUncertain": "Dacă legătura se întrerupe în timpul unei modificări, nu se știe dacă GitLab a făcut-o. Până nu o deblochezi în „{log}”, AI de pe acest dispozitiv nu va modifica din nou aceeași țintă.",
+  "aiConsentWritesUploads": "La acest nivel, fișierele atașate pot fi încărcate fără un card înainte. Într-un proiect public sau intern, oricine vede conținut cu link către fișier îl poate deschide.",
+  "aiConsentWritesInstructions": "Textul pe care AI îl citește în GitLab poate conține instrucțiuni menite să o influențeze. Citește ce propune înainte să aprobi.",
+  "aiConsentWritesPipelines": "Unele modificări, precum deschiderea unui merge request, pot porni pipeline-uri în GitLab. Ce fac acestea stabilește proiectul și nu poate fi controlat de aici."
 }

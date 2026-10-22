@@ -2550,4 +2550,9 @@ const _messagesPtBr = <String>[
   'Alterações no GitLab',
   'A AI pode fazer alterações no GitLab por você com esta conta, até “{level}”.',
   'Cada escrita aparece na conversa; limites rígidos, como excluir um projeto ou mudar as configurações dele, sempre exigem que você digite o nome. Você pode reduzir ou desativar isso nas configurações a qualquer momento.',
+  'As alterações aparecem com o seu nome e não podem ser desfeitas depois de feitas. Marcar o que a AI escreve fica desativado, a menos que você ative nas configurações.',
+  'Se a conexão cair durante uma alteração, não dá para saber se o GitLab a fez. Até você liberá-la em “{log}”, a AI neste dispositivo não altera o mesmo destino de novo.',
+  'Neste nível, os arquivos anexados podem ser enviados sem mostrar um cartão antes. Em um projeto público ou interno, quem vê um conteúdo com link para o arquivo pode abri-lo.',
+  'O texto que a AI lê no GitLab pode conter instruções para manipulá-la. Leia o que ela propõe antes de aprovar.',
+  'Algumas alterações, como abrir uma merge request, podem iniciar pipelines no GitLab. O que eles fazem é definido pelo projeto e não pode ser controlado daqui.',
 ];

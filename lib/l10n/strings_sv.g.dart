@@ -2550,4 +2550,9 @@ const _messagesSv = <String>[
   'Ändringar på GitLab',
   'AI får ändra GitLab åt dig med det här kontot, upp till ”{level}”.',
   'Varje skrivning visas i konversationen; hårda gränser som att ta bort ett projekt eller ändra dess inställningar kräver alltid att du skriver namnet. Du kan sänka eller stänga av detta i inställningarna när som helst.',
+  'Ändringar visas under ditt namn och kan inte ångras när de är gjorda. Märkning av det AI skriver är av om du inte slår på den i inställningarna.',
+  'Om anslutningen bryts under en ändring är det oklart om GitLab gjorde den. Tills du släpper den i ”{log}” ändrar AI på den här enheten inte samma mål igen.',
+  'På den här nivån kan bifogade filer laddas upp utan något kort först. I ett offentligt eller internt projekt kan alla som ser innehåll som länkar till filen öppna den.',
+  'Text som AI läser på GitLab kan innehålla instruktioner som ska styra den. Läs vad den föreslår innan du godkänner.',
+  'Vissa ändringar, som att öppna en merge request, kan starta pipelines på GitLab. Vad de gör bestäms av projektet och kan inte styras härifrån.',
 ];

@@ -2550,4 +2550,9 @@ const _messagesVi = <String>[
   'Thay đổi trên GitLab',
   'AI có thể thay đổi GitLab thay bạn bằng tài khoản này, tối đa đến “{level}”.',
   'Mọi lượt ghi đều hiện trong cuộc trò chuyện; các giới hạn cứng như xóa dự án hay đổi cài đặt dự án luôn cần bạn nhập tên. Bạn có thể hạ mức hoặc tắt trong cài đặt bất cứ lúc nào.',
+  'Thay đổi hiển thị dưới tên bạn và không thể hoàn tác sau khi thực hiện. Đánh dấu nội dung AI viết đang tắt trừ khi bạn bật trong cài đặt.',
+  'Nếu mất kết nối trong lúc thay đổi, sẽ không rõ GitLab đã thực hiện hay chưa. Cho đến khi bạn giải phóng trong “{log}”, AI trên thiết bị này sẽ không thay đổi lại cùng mục tiêu đó.',
+  'Ở mức này, tệp bạn đính kèm có thể được tải lên mà không hiện thẻ trước. Trong dự án công khai hoặc nội bộ, ai thấy nội dung có liên kết tới tệp đều mở được tệp.',
+  'Nội dung AI đọc trên GitLab có thể chứa chỉ dẫn nhằm điều khiển nó. Hãy đọc đề xuất trước khi bạn chấp thuận.',
+  'Một số thay đổi, như mở merge request, có thể khởi chạy pipeline trên GitLab. Pipeline làm gì do dự án quyết định và không thể điều khiển từ đây.',
 ];

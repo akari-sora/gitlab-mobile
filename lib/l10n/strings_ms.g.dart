@@ -2550,4 +2550,9 @@ const _messagesMs = <String>[
   'Perubahan di GitLab',
   'AI boleh membuat perubahan pada GitLab untuk anda dengan akaun ini, sehingga “{level}”.',
   'Setiap penulisan dipaparkan dalam perbualan; had mutlak seperti memadam projek atau menukar tetapannya sentiasa memerlukan anda menaip nama. Anda boleh merendahkan atau mematikannya dalam tetapan pada bila-bila masa.',
+  'Perubahan dipaparkan atas nama anda dan tidak boleh dibuat asal selepas dibuat. Penandaan tulisan AI dimatikan melainkan anda menghidupkannya dalam tetapan.',
+  'Jika sambungan terputus semasa perubahan, tidak pasti sama ada GitLab telah membuatnya. Sehingga anda melepaskannya dalam “{log}”, AI pada peranti ini tidak akan mengubah sasaran yang sama lagi.',
+  'Pada tahap ini, fail yang anda lampirkan boleh dimuat naik tanpa kad terlebih dahulu. Dalam projek awam atau dalaman, sesiapa yang dapat melihat kandungan yang memautkan fail boleh membukanya.',
+  'Teks yang dibaca AI di GitLab mungkin mengandungi arahan untuk mempengaruhinya. Baca cadangannya sebelum anda meluluskan.',
+  'Sesetengah perubahan, seperti membuka merge request, boleh memulakan pipeline di GitLab. Apa yang dilakukannya ditentukan oleh projek dan tidak boleh dikawal dari sini.',
 ];

@@ -11206,5 +11206,15 @@
     "placeholders": {
       "level": {}
     }
+  },
+  "aiConsentWritesNoUndo": "寫入會以你的名義出現，完成後無法撤回。在 AI 寫的內容加上標註預設關閉，可在設定開啟。",
+  "aiConsentWritesUncertain": "寫入時連線中斷，就無法確定 GitLab 是否完成。在你到「{log}」放行前，這台裝置上的 AI 不會再寫入同一個目標。",
+  "aiConsentWritesUploads": "在這個等級，你附加的檔案可能不先顯示卡片就直接上傳。在公開或內部專案中，能看到引用它的內容的人，都能透過連結開啟檔案。",
+  "aiConsentWritesInstructions": "AI 在 GitLab 讀到的內容可能夾帶想誘導它的指令。核准前請先看清它提議的內容。",
+  "aiConsentWritesPipelines": "有些寫入（例如建立合併請求）可能觸發 GitLab 上的 Pipeline。Pipeline 會做什麼由專案設定決定，這裡無法控制。",
+  "@aiConsentWritesUncertain": {
+    "placeholders": {
+      "log": {}
+    }
   }
 }

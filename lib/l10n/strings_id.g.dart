@@ -2550,4 +2550,9 @@ const _messagesId = <String>[
   'Perubahan di GitLab',
   'AI boleh mengubah GitLab untukmu dengan akun ini, hingga “{level}”.',
   'Setiap penulisan ditampilkan di percakapan; batas mutlak seperti menghapus proyek atau mengubah pengaturannya selalu memintamu mengetik nama. Kamu bisa menurunkan atau mematikannya di pengaturan kapan saja.',
+  'Perubahan muncul atas namamu dan tidak bisa dibatalkan setelah dibuat. Menandai tulisan AI mati kecuali kamu menyalakannya di pengaturan.',
+  'Jika koneksi terputus saat perubahan, tidak jelas apakah GitLab sudah membuatnya. Sampai kamu melepasnya di “{log}”, AI di perangkat ini tidak akan mengubah target yang sama lagi.',
+  'Di level ini, file yang kamu lampirkan bisa diunggah tanpa kartu lebih dulu. Di proyek publik atau internal, siapa pun yang melihat konten yang menautkan file bisa membukanya.',
+  'Teks yang dibaca AI di GitLab bisa berisi instruksi untuk mengarahkannya. Baca usulannya sebelum kamu menyetujui.',
+  'Beberapa perubahan, seperti membuka merge request, bisa memulai pipeline di GitLab. Apa yang dilakukannya diatur oleh proyek dan tidak bisa dikendalikan dari sini.',
 ];

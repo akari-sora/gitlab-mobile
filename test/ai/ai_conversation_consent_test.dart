@@ -117,8 +117,19 @@ void main() {
     final provider = await settings.saveProvider(_provider());
     addTearDown(settings.dispose);
     final write = aiConversationConsentContract(settings, _account, provider);
+    await tester.runAsync(
+      () => settings.setAutonomySettings(
+        _account,
+        ceiling: AiAutonomyLevel.conversationGrant,
+      ),
+    );
+    final grant = aiConversationConsentContract(settings, _account, provider);
     final readOnly = aiCurrentConsentContractFor(provider);
-    for (final (contract, shown) in [(write, true), (readOnly, false)]) {
+    for (final (contract, ceiling) in [
+      (write, AiAutonomyLevel.lowRiskAuto),
+      (grant, AiAutonomyLevel.conversationGrant),
+      (readOnly, null),
+    ]) {
       await tester.pumpWidget(
         MaterialApp(
           home: Builder(
@@ -133,17 +144,30 @@ void main() {
       await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
       final card = find.byKey(const ValueKey('ai-consent-writes'));
-      if (shown) {
+      if (ceiling != null) {
         await tester.dragUntilVisible(
           card,
           find.byType(ListView),
           const Offset(0, -160),
         );
         expect(
-          find.text(
-            l10n.aiConsentWritesUpTo(aiLevelLabel(AiAutonomyLevel.lowRiskAuto)),
-          ),
+          find.text(l10n.aiConsentWritesUpTo(aiLevelLabel(ceiling))),
           findsOneWidget,
+        );
+        for (final line in [
+          l10n.aiConsentWritesNoUndo,
+          l10n.aiConsentWritesUncertain(l10n.aiWriteLogTitle),
+          l10n.aiConsentWritesInstructions,
+          l10n.aiConsentWritesPipelines,
+        ]) {
+          expect(find.text(line, skipOffstage: false), findsOneWidget);
+        }
+        // Uploads skip the card only from this conversation's grant up.
+        expect(
+          find.text(l10n.aiConsentWritesUploads, skipOffstage: false),
+          ceiling == AiAutonomyLevel.conversationGrant
+              ? findsOneWidget
+              : findsNothing,
         );
       } else {
         expect(card, findsNothing);

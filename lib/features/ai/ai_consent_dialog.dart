@@ -299,8 +299,16 @@ class _AiConsentPageState extends State<_AiConsentPage> {
                         Text(l10n.aiConsentWritesUpTo(aiLevelLabel(ceiling))),
                         const SizedBox(height: 4),
                         Text(aiLevelHint(ceiling)),
-                        const SizedBox(height: 8),
-                        Text(l10n.aiConsentWritesLimits),
+                        for (final line in [
+                          l10n.aiConsentWritesLimits,
+                          l10n.aiConsentWritesNoUndo,
+                          l10n.aiConsentWritesUncertain(l10n.aiWriteLogTitle),
+                          if (ceiling.index >=
+                              AiAutonomyLevel.conversationGrant.index)
+                            l10n.aiConsentWritesUploads,
+                          l10n.aiConsentWritesInstructions,
+                          l10n.aiConsentWritesPipelines,
+                        ]) ...[const SizedBox(height: 8), Text(line)],
                       ],
                     ),
                   _InfoCard(

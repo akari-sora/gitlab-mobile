@@ -2550,4 +2550,9 @@ const _messagesNl = <String>[
   'Wijzigingen op GitLab',
   'De AI mag met dit account GitLab voor je wijzigen, tot „{level}”.',
   'Elke schrijfactie staat in het gesprek; voor harde grenzen zoals een project verwijderen of de instellingen ervan wijzigen moet je altijd de naam typen. Je kunt dit altijd verlagen of uitzetten in de instellingen.',
+  'Wijzigingen verschijnen onder jouw naam en zijn niet ongedaan te maken. Markeren wat de AI schrijft staat uit, tenzij je het in de instellingen aanzet.',
+  'Valt de verbinding weg tijdens een wijziging, dan is onduidelijk of GitLab die heeft uitgevoerd. Tot je die vrijgeeft in „{log}”, wijzigt de AI op dit apparaat hetzelfde doel niet opnieuw.',
+  'Op dit niveau kunnen bijlagen zonder kaart vooraf worden geüpload. In een openbaar of intern project kan iedereen die inhoud met een link naar het bestand ziet, het openen.',
+  'Tekst die de AI op GitLab leest, kan instructies bevatten die haar willen sturen. Lees wat ze voorstelt voordat je goedkeurt.',
+  'Sommige wijzigingen, zoals een merge request openen, kunnen op GitLab pipelines starten. Wat die doen, bepaalt het project; dat valt hier niet te sturen.',
 ];

@@ -2550,4 +2550,9 @@ const _messagesDe = <String>[
   'Änderungen auf GitLab',
   'Die AI darf mit diesem Konto für Sie Änderungen auf GitLab vornehmen, bis zur Stufe „{level}“.',
   'Jeder Schreibvorgang wird in der Unterhaltung angezeigt; bei harten Grenzen wie dem Löschen eines Projekts oder dem Ändern seiner Einstellungen müssen Sie immer den Namen eingeben. Sie können dies jederzeit in den Einstellungen verringern oder ausschalten.',
+  'Änderungen erscheinen unter Ihrem Namen und lassen sich danach nicht rückgängig machen. Die Kennzeichnung von AI-Texten ist aus, bis Sie sie in den Einstellungen einschalten.',
+  'Bricht die Verbindung während einer Änderung ab, ist unklar, ob GitLab sie ausgeführt hat. Bis Sie sie unter „{log}“ freigeben, ändert die AI auf diesem Gerät dasselbe Ziel nicht erneut.',
+  'Auf dieser Stufe können angehängte Dateien ohne vorherige Karte hochgeladen werden. In einem öffentlichen oder internen Projekt kann jeder, der Inhalte mit einem Link auf die Datei sieht, sie öffnen.',
+  'Texte, die die AI auf GitLab liest, können Anweisungen enthalten, die sie lenken sollen. Lesen Sie ihre Vorschläge, bevor Sie zustimmen.',
+  'Manche Änderungen, etwa das Öffnen eines Merge-Requests, können auf GitLab Pipelines starten. Was diese tun, legt das Projekt fest; das lässt sich hier nicht steuern.',
 ];

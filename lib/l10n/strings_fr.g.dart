@@ -2550,4 +2550,9 @@ const _messagesFr = <String>[
   'Modifications sur GitLab',
   'L\'AI peut modifier GitLab pour vous avec ce compte, jusqu\'au niveau « {level} ».',
   'Chaque écriture apparaît dans la conversation ; les limites strictes, comme supprimer un projet ou modifier ses paramètres, exigent toujours de saisir le nom. Vous pouvez réduire ou désactiver cela à tout moment dans les paramètres.',
+  'Les modifications apparaissent sous votre nom et ne peuvent pas être annulées une fois faites. Le marquage de ce qu\'écrit l\'AI est désactivé, sauf si vous l\'activez dans les paramètres.',
+  'Si la connexion est coupée pendant une modification, on ne sait pas si GitLab l\'a faite. Tant que vous ne l\'avez pas libérée dans « {log} », l\'AI de cet appareil ne modifiera plus la même cible.',
+  'À ce niveau, les fichiers joints peuvent être envoyés sans carte préalable. Dans un projet public ou interne, toute personne qui voit un contenu lié à un fichier peut l\'ouvrir.',
+  'Les textes que l\'AI lit sur GitLab peuvent contenir des instructions destinées à l\'orienter. Lisez ses propositions avant de les approuver.',
+  'Certaines modifications, comme ouvrir une merge request, peuvent lancer des pipelines sur GitLab. Ce qu\'ils font dépend du projet et ne peut pas être contrôlé d\'ici.',
 ];

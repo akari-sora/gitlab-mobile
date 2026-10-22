@@ -7737,4 +7737,19 @@ final class AppStrings {
 
   /// 每筆寫入都會列在對話裡；刪除專案、改專案設定這類硬底線永遠要你輸入名稱確認。你隨時可以在設定調低或關閉。
   String get aiConsentWritesLimits => language._messages[2547];
+
+  /// 寫入會以你的名義出現，完成後無法撤回。在 AI 寫的內容加上標註預設關閉，可在設定開啟。
+  String get aiConsentWritesNoUndo => language._messages[2548];
+
+  /// 寫入時連線中斷，就無法確定 GitLab 是否完成。在你到「{log}」放行前，這台裝置上的 AI 不會再寫入同一個目標。
+  String aiConsentWritesUncertain(Object? log) => _format(language, language._messages[2549], {'log': log});
+
+  /// 在這個等級，你附加的檔案可能不先顯示卡片就直接上傳。在公開或內部專案中，能看到引用它的內容的人，都能透過連結開啟檔案。
+  String get aiConsentWritesUploads => language._messages[2550];
+
+  /// AI 在 GitLab 讀到的內容可能夾帶想誘導它的指令。核准前請先看清它提議的內容。
+  String get aiConsentWritesInstructions => language._messages[2551];
+
+  /// 有些寫入（例如建立合併請求）可能觸發 GitLab 上的 Pipeline。Pipeline 會做什麼由專案設定決定，這裡無法控制。
+  String get aiConsentWritesPipelines => language._messages[2552];
 }

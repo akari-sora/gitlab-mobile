@@ -2550,4 +2550,9 @@ const _messagesRo = <String>[
   'Modificări pe GitLab',
   'AI poate face modificări în GitLab pentru tine cu acest cont, până la „{level}”.',
   'Fiecare scriere apare în conversație; limitele stricte, precum ștergerea unui proiect sau schimbarea setărilor lui, cer mereu să tastezi numele. Poți reduce sau dezactiva asta oricând din setări.',
+  'Modificările apar în numele tău și nu pot fi anulate după ce sunt făcute. Marcarea textului scris de AI este dezactivată, dacă nu o activezi din setări.',
+  'Dacă legătura se întrerupe în timpul unei modificări, nu se știe dacă GitLab a făcut-o. Până nu o deblochezi în „{log}”, AI de pe acest dispozitiv nu va modifica din nou aceeași țintă.',
+  'La acest nivel, fișierele atașate pot fi încărcate fără un card înainte. Într-un proiect public sau intern, oricine vede conținut cu link către fișier îl poate deschide.',
+  'Textul pe care AI îl citește în GitLab poate conține instrucțiuni menite să o influențeze. Citește ce propune înainte să aprobi.',
+  'Unele modificări, precum deschiderea unui merge request, pot porni pipeline-uri în GitLab. Ce fac acestea stabilește proiectul și nu poate fi controlat de aici.',
 ];
