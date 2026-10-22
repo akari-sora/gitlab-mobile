@@ -2559,7 +2559,7 @@ const _messagesFr = <String>[
   'Confirmer ne signifie pas que ces modifications n\'ont pas eu lieu. Vérifiez d\'abord GitLab.',
   '{level} : l\'AI modifie GitLab sans vous demander d\'abord.',
   'Arrêter cette exécution et passer à la confirmation de chaque modification',
-  'Modification en cours…',
+  'Traitement en cours…',
   'Activer les notifications',
   'Désactiver les notifications',
   'Résoudre le fil',

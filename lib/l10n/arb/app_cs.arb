@@ -2557,7 +2557,7 @@
   "aiWriteLogResetNotUndo": "Potvrzení neznamená, že se tyto změny neprovedly. Nejdřív zkontrolujte GitLab.",
   "aiAutoWriteBanner": "{level}: AI provádí změny v GitLabu, aniž by se vás předem ptala.",
   "aiAutoWriteStopHint": "Zastavit toto spuštění a přepnout na potvrzování každé změny",
-  "aiWriteInProgress": "Provádí se změna…",
+  "aiWriteInProgress": "Zpracovává se…",
   "aiOpSubscribeOn": "Zapnout oznámení",
   "aiOpSubscribeOff": "Vypnout oznámení",
   "aiOpResolveThread": "Vyřešit vlákno",

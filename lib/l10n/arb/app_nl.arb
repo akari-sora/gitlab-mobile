@@ -2557,7 +2557,7 @@
   "aiWriteLogResetNotUndo": "Bevestigen betekent niet dat die wijzigingen niet zijn uitgevoerd. Controleer eerst GitLab.",
   "aiAutoWriteBanner": "{level}: de AI voert wijzigingen in GitLab uit zonder het eerst te vragen.",
   "aiAutoWriteStopHint": "Deze run stoppen en overschakelen naar elke wijziging bevestigen",
-  "aiWriteInProgress": "Wijziging wordt doorgevoerd…",
+  "aiWriteInProgress": "Bezig…",
   "aiOpSubscribeOn": "Meldingen aanzetten",
   "aiOpSubscribeOff": "Meldingen uitzetten",
   "aiOpResolveThread": "Thread oplossen",

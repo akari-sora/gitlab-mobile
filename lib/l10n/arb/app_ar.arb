@@ -2557,7 +2557,7 @@
   "aiWriteLogResetNotUndo": "التأكيد لا يعني أن تلك الكتابات لم تُنفَّذ. تحقق من GitLab أولًا.",
   "aiAutoWriteBanner": "{level}: يكتب AI في GitLab دون أن يسألك أولًا.",
   "aiAutoWriteStopHint": "أوقف هذا التشغيل وانتقل إلى تأكيد كل تغيير",
-  "aiWriteInProgress": "جارٍ إجراء التغيير…",
+  "aiWriteInProgress": "جارٍ العمل…",
   "aiOpSubscribeOn": "تشغيل الإشعارات",
   "aiOpSubscribeOff": "إيقاف الإشعارات",
   "aiOpResolveThread": "حل المناقشة",

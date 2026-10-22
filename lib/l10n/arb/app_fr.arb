@@ -2557,7 +2557,7 @@
   "aiWriteLogResetNotUndo": "Confirmer ne signifie pas que ces modifications n'ont pas eu lieu. Vérifiez d'abord GitLab.",
   "aiAutoWriteBanner": "{level} : l'AI modifie GitLab sans vous demander d'abord.",
   "aiAutoWriteStopHint": "Arrêter cette exécution et passer à la confirmation de chaque modification",
-  "aiWriteInProgress": "Modification en cours…",
+  "aiWriteInProgress": "Traitement en cours…",
   "aiOpSubscribeOn": "Activer les notifications",
   "aiOpSubscribeOff": "Désactiver les notifications",
   "aiOpResolveThread": "Résoudre le fil",

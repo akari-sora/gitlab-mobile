@@ -2557,7 +2557,7 @@
   "aiWriteLogResetNotUndo": "पुष्टि का मतलब यह नहीं कि वे बदलाव नहीं हुए। पहले GitLab में देखें।",
   "aiAutoWriteBanner": "{level}: AI आपसे पूछे बिना GitLab में सीधे बदलाव करता है।",
   "aiAutoWriteStopHint": "यह रन रोकें और हर बदलाव की पुष्टि पर जाएं",
-  "aiWriteInProgress": "बदलाव किया जा रहा है…",
+  "aiWriteInProgress": "प्रक्रिया जारी है…",
   "aiOpSubscribeOn": "सूचनाएँ चालू करें",
   "aiOpSubscribeOff": "सूचनाएँ बंद करें",
   "aiOpResolveThread": "थ्रेड हल करें",

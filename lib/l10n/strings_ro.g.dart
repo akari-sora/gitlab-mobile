@@ -2559,7 +2559,7 @@ const _messagesRo = <String>[
   'Confirmarea nu înseamnă că acele modificări nu s-au făcut. Verifică mai întâi GitLab.',
   '{level}: AI face modificări în GitLab fără să te întrebe mai întâi.',
   'Oprește această rulare și treci la confirmarea fiecărei modificări',
-  'Se face modificarea…',
+  'Se procesează…',
   'Activează notificările',
   'Dezactivează notificările',
   'Rezolvă discuția',

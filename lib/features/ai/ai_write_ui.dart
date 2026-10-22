@@ -231,6 +231,8 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
   /// the single title, description or name among the fields.
   String? get _editableField {
     final fields = _proposal.fields;
+    // A reaction's name is an emoji code, not text to rewrite.
+    if (_proposal.operationId.endsWith('AwardEmoji')) return null;
     if (fields.containsKey('body')) return 'body';
     final candidates = [
       for (final key in const ['description', 'title', 'name'])
@@ -967,7 +969,7 @@ class AiAutoWriteBanner extends StatelessWidget {
               size: 20,
             ),
             const SizedBox(width: 12),
-            // Two lines at most, so large text never pushes the composer
+            // Three lines at most, so large text never pushes the composer
             // off a short screen; the full sentence stays in semantics.
             Expanded(
               child: Semantics(
@@ -975,7 +977,7 @@ class AiAutoWriteBanner extends StatelessWidget {
                 excludeSemantics: true,
                 child: Text(
                   l10n.aiAutoWriteBanner(aiLevelLabel(level)),
-                  maxLines: 2,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),

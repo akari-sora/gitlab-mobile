@@ -7765,7 +7765,7 @@ final class AppStrings {
   /// 停止這次執行，並改為逐一確認
   String get aiAutoWriteStopHint => language._messages[2556];
 
-  /// 正在寫入…
+  /// 處理中…
   String get aiWriteInProgress => language._messages[2557];
 
   /// 開啟通知

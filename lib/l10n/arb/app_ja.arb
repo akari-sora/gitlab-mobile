@@ -2557,7 +2557,7 @@
   "aiWriteLogResetNotUndo": "確認しても、元の書き込みが行われなかったことにはなりません。先に GitLab で確認してください。",
   "aiAutoWriteBanner": "{level}：AI は確認なしで GitLab に直接書き込みます。",
   "aiAutoWriteStopHint": "この実行を停止し、一件ずつ確認に切り替える",
-  "aiWriteInProgress": "書き込み中…",
+  "aiWriteInProgress": "処理中…",
   "aiOpSubscribeOn": "通知をオンにする",
   "aiOpSubscribeOff": "通知をオフにする",
   "aiOpResolveThread": "スレッドを解決する",

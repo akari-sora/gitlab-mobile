@@ -2557,7 +2557,7 @@
   "aiWriteLogResetNotUndo": "确认不代表原来的写入没有执行，请先到 GitLab 查看。",
   "aiAutoWriteBanner": "{level}：AI 会直接写入 GitLab，不会先问你。",
   "aiAutoWriteStopHint": "停止本次运行，并改为逐一确认",
-  "aiWriteInProgress": "正在写入…",
+  "aiWriteInProgress": "处理中…",
   "aiOpSubscribeOn": "开启通知",
   "aiOpSubscribeOff": "关闭通知",
   "aiOpResolveThread": "解决讨论串",

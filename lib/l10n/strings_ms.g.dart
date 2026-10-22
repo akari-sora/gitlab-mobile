@@ -2559,7 +2559,7 @@ const _messagesMs = <String>[
   'Pengesahan tidak bermakna perubahan itu tidak berlaku. Semak GitLab dahulu.',
   '{level}: AI membuat perubahan di GitLab tanpa bertanya anda dahulu.',
   'Hentikan larian ini dan beralih kepada pengesahan setiap perubahan',
-  'Sedang membuat perubahan…',
+  'Sedang diproses…',
   'Hidupkan pemberitahuan',
   'Matikan pemberitahuan',
   'Selesaikan bebenang',

@@ -2559,7 +2559,7 @@ const _messagesTr = <String>[
   'Onaylamak, o değişikliklerin yapılmadığı anlamına gelmez. Önce GitLab\'a bakın.',
   '{level}: AI size sormadan GitLab\'da değişiklik yapar.',
   'Bu çalıştırmayı durdur ve her değişikliği onaylamaya geç',
-  'Değişiklik yapılıyor…',
+  'İşleniyor…',
   'Bildirimleri aç',
   'Bildirimleri kapat',
   'Tartışmayı çöz',

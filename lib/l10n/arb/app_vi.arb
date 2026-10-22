@@ -2557,7 +2557,7 @@
   "aiWriteLogResetNotUndo": "Xác nhận không có nghĩa là các thay đổi đó chưa xảy ra. Hãy kiểm tra GitLab trước.",
   "aiAutoWriteBanner": "{level}: AI thay đổi trên GitLab mà không hỏi bạn trước.",
   "aiAutoWriteStopHint": "Dừng lần chạy này và chuyển sang xác nhận từng thay đổi",
-  "aiWriteInProgress": "Đang thực hiện thay đổi…",
+  "aiWriteInProgress": "Đang xử lý…",
   "aiOpSubscribeOn": "Bật thông báo",
   "aiOpSubscribeOff": "Tắt thông báo",
   "aiOpResolveThread": "Giải quyết thảo luận",

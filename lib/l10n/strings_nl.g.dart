@@ -2559,7 +2559,7 @@ const _messagesNl = <String>[
   'Bevestigen betekent niet dat die wijzigingen niet zijn uitgevoerd. Controleer eerst GitLab.',
   '{level}: de AI voert wijzigingen in GitLab uit zonder het eerst te vragen.',
   'Deze run stoppen en overschakelen naar elke wijziging bevestigen',
-  'Wijziging wordt doorgevoerd…',
+  'Bezig…',
   'Meldingen aanzetten',
   'Meldingen uitzetten',
   'Thread oplossen',

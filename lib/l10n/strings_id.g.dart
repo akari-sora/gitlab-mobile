@@ -2559,7 +2559,7 @@ const _messagesId = <String>[
   'Konfirmasi tidak berarti perubahan itu tidak terjadi. Periksa GitLab dulu.',
   '{level}: AI membuat perubahan di GitLab tanpa bertanya dulu kepada Anda.',
   'Hentikan proses ini dan beralih ke konfirmasi tiap perubahan',
-  'Sedang membuat perubahan…',
+  'Sedang diproses…',
   'Nyalakan notifikasi',
   'Matikan notifikasi',
   'Selesaikan utas',

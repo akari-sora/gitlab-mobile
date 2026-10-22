@@ -2557,7 +2557,7 @@
   "aiWriteLogResetNotUndo": "확인했다고 해서 원래 쓰기가 실행되지 않은 것은 아닙니다. 먼저 GitLab에서 확인하세요.",
   "aiAutoWriteBanner": "{level}: AI가 묻지 않고 GitLab에 바로 씁니다.",
   "aiAutoWriteStopHint": "이번 실행을 중지하고 하나씩 확인으로 전환",
-  "aiWriteInProgress": "변경하는 중…",
+  "aiWriteInProgress": "처리 중…",
   "aiOpSubscribeOn": "알림 켜기",
   "aiOpSubscribeOff": "알림 끄기",
   "aiOpResolveThread": "스레드 해결",

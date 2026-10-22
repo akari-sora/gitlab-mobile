@@ -2557,7 +2557,7 @@
   "aiWriteLogResetNotUndo": "Att bekräfta betyder inte att ändringarna inte gjordes. Kontrollera GitLab först.",
   "aiAutoWriteBanner": "{level}: AI gör ändringar i GitLab utan att fråga dig först.",
   "aiAutoWriteStopHint": "Stoppa den här körningen och byt till att bekräfta varje ändring",
-  "aiWriteInProgress": "Gör ändringen…",
+  "aiWriteInProgress": "Bearbetar…",
   "aiOpSubscribeOn": "Slå på aviseringar",
   "aiOpSubscribeOff": "Slå av aviseringar",
   "aiOpResolveThread": "Lös tråden",

@@ -2559,7 +2559,7 @@ const _messagesVi = <String>[
   'Xác nhận không có nghĩa là các thay đổi đó chưa xảy ra. Hãy kiểm tra GitLab trước.',
   '{level}: AI thay đổi trên GitLab mà không hỏi bạn trước.',
   'Dừng lần chạy này và chuyển sang xác nhận từng thay đổi',
-  'Đang thực hiện thay đổi…',
+  'Đang xử lý…',
   'Bật thông báo',
   'Tắt thông báo',
   'Giải quyết thảo luận',

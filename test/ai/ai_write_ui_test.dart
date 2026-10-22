@@ -236,6 +236,21 @@ void main() {
     }
   });
 
+  testWidgets('a reaction card offers no text edit', (tester) async {
+    final proposal = _proposal(
+      operationId: 'addAwardEmoji',
+      tier: AiWriteTier.t1,
+      fields: const {'name': 'thumbsup'},
+    );
+    await tester.pumpWidget(
+      _host(
+        AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+      ),
+    );
+    expect(find.byKey(const ValueKey('ai-proposal-edit')), findsNothing);
+    expect(find.byKey(const ValueKey('ai-proposal-approve')), findsOne);
+  });
+
   testWidgets('switches and state changes read as words', (tester) async {
     final proposal = _proposal(
       operationId: 'updateIssue',

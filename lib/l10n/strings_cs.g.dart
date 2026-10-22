@@ -2559,7 +2559,7 @@ const _messagesCs = <String>[
   'Potvrzení neznamená, že se tyto změny neprovedly. Nejdřív zkontrolujte GitLab.',
   '{level}: AI provádí změny v GitLabu, aniž by se vás předem ptala.',
   'Zastavit toto spuštění a přepnout na potvrzování každé změny',
-  'Provádí se změna…',
+  'Zpracovává se…',
   'Zapnout oznámení',
   'Vypnout oznámení',
   'Vyřešit vlákno',

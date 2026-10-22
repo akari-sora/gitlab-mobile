@@ -2559,7 +2559,7 @@ const _messagesPtBr = <String>[
   'Confirmar não significa que essas alterações não aconteceram. Confira o GitLab primeiro.',
   '{level}: a AI faz alterações no GitLab sem perguntar antes.',
   'Parar esta execução e passar a confirmar cada alteração',
-  'Fazendo a alteração…',
+  'Processando…',
   'Ligar as notificações',
   'Desligar as notificações',
   'Resolver a discussão',

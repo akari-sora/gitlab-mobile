@@ -2557,7 +2557,7 @@
   "aiWriteLogResetNotUndo": "Onaylamak, o değişikliklerin yapılmadığı anlamına gelmez. Önce GitLab'a bakın.",
   "aiAutoWriteBanner": "{level}: AI size sormadan GitLab'da değişiklik yapar.",
   "aiAutoWriteStopHint": "Bu çalıştırmayı durdur ve her değişikliği onaylamaya geç",
-  "aiWriteInProgress": "Değişiklik yapılıyor…",
+  "aiWriteInProgress": "İşleniyor…",
   "aiOpSubscribeOn": "Bildirimleri aç",
   "aiOpSubscribeOff": "Bildirimleri kapat",
   "aiOpResolveThread": "Tartışmayı çöz",

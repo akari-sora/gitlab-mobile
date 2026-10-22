@@ -11238,7 +11238,7 @@
     }
   },
   "aiAutoWriteStopHint": "停止這次執行，並改為逐一確認",
-  "aiWriteInProgress": "正在寫入…",
+  "aiWriteInProgress": "處理中…",
   "aiOpSubscribeOn": "開啟通知",
   "aiOpSubscribeOff": "關閉通知",
   "aiOpResolveThread": "解決討論串",

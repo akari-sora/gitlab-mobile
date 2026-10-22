@@ -2559,7 +2559,7 @@ const _messagesDe = <String>[
   'Die Bestätigung heißt nicht, dass diese Änderungen nicht erfolgt sind. Prüfen Sie zuerst GitLab.',
   '{level}: Die AI nimmt Änderungen in GitLab vor, ohne vorher zu fragen.',
   'Diesen Lauf stoppen und zum Bestätigen jeder Änderung wechseln',
-  'Änderung wird durchgeführt …',
+  'Wird bearbeitet …',
   'Benachrichtigungen einschalten',
   'Benachrichtigungen ausschalten',
   'Thread lösen',

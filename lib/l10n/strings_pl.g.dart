@@ -2559,7 +2559,7 @@ const _messagesPl = <String>[
   'Potwierdzenie nie oznacza, że tych zmian nie wykonano. Najpierw sprawdź GitLab.',
   '{level}: AI wprowadza zmiany w GitLabie bez pytania.',
   'Zatrzymaj to uruchomienie i przełącz na potwierdzanie każdej zmiany',
-  'Wprowadzanie zmiany…',
+  'Przetwarzanie…',
   'Włącz powiadomienia',
   'Wyłącz powiadomienia',
   'Rozwiąż wątek',

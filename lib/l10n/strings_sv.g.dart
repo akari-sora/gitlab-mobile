@@ -2559,7 +2559,7 @@ const _messagesSv = <String>[
   'Att bekräfta betyder inte att ändringarna inte gjordes. Kontrollera GitLab först.',
   '{level}: AI gör ändringar i GitLab utan att fråga dig först.',
   'Stoppa den här körningen och byt till att bekräfta varje ändring',
-  'Gör ändringen…',
+  'Bearbetar…',
   'Slå på aviseringar',
   'Slå av aviseringar',
   'Lös tråden',

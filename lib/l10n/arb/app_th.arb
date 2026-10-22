@@ -2557,7 +2557,7 @@
   "aiWriteLogResetNotUndo": "การยืนยันไม่ได้หมายความว่าการเขียนเดิมไม่ได้เกิดขึ้น โปรดตรวจสอบใน GitLab ก่อน",
   "aiAutoWriteBanner": "{level}: AI จะเขียนลง GitLab โดยตรงโดยไม่ถามคุณก่อน",
   "aiAutoWriteStopHint": "หยุดการทำงานรอบนี้ แล้วเปลี่ยนเป็นยืนยันทีละการเปลี่ยนแปลง",
-  "aiWriteInProgress": "กำลังเปลี่ยนแปลง…",
+  "aiWriteInProgress": "กำลังดำเนินการ…",
   "aiOpSubscribeOn": "เปิดการแจ้งเตือน",
   "aiOpSubscribeOff": "ปิดการแจ้งเตือน",
   "aiOpResolveThread": "แก้เทรดว่าแก้แล้ว",

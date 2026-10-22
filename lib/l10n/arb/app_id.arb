@@ -2557,7 +2557,7 @@
   "aiWriteLogResetNotUndo": "Konfirmasi tidak berarti perubahan itu tidak terjadi. Periksa GitLab dulu.",
   "aiAutoWriteBanner": "{level}: AI membuat perubahan di GitLab tanpa bertanya dulu kepada Anda.",
   "aiAutoWriteStopHint": "Hentikan proses ini dan beralih ke konfirmasi tiap perubahan",
-  "aiWriteInProgress": "Sedang membuat perubahan…",
+  "aiWriteInProgress": "Sedang diproses…",
   "aiOpSubscribeOn": "Nyalakan notifikasi",
   "aiOpSubscribeOff": "Matikan notifikasi",
   "aiOpResolveThread": "Selesaikan utas",
