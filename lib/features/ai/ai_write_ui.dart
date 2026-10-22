@@ -53,6 +53,66 @@ String aiOperationLabel(String operationId) => switch (operationId) {
   _ => l10n.aiOpUnknown,
 };
 
+/// The card's title: a two-way operation names the direction it goes, so
+/// "star or unstar" never leaves the user reading `starred: true`.
+String aiProposalTitle(AiWriteProposal proposal) {
+  final fields = proposal.fields;
+  bool? flag(String key) => switch (fields[key]) {
+    'true' => true,
+    'false' => false,
+    _ => null,
+  };
+  return switch (proposal.operationId) {
+    'setStar' => switch (flag('starred')) {
+      true => l10n.star,
+      false => l10n.unstar,
+      null => aiOperationLabel(proposal.operationId),
+    },
+    'setSubscribed' => switch (flag('subscribed')) {
+      true => l10n.aiOpSubscribeOn,
+      false => l10n.aiOpSubscribeOff,
+      null => aiOperationLabel(proposal.operationId),
+    },
+    'setDiscussionResolved' => switch (flag('resolved')) {
+      true => l10n.aiOpResolveThread,
+      false => l10n.aiOpReopenThread,
+      null => aiOperationLabel(proposal.operationId),
+    },
+    'setBoardSystemListHidden' => switch (flag('hidden')) {
+      true => l10n.aiOpHideBoardList,
+      false => l10n.aiOpShowBoardList,
+      null => aiOperationLabel(proposal.operationId),
+    },
+    'setMilestoneState' => switch (fields['stateEvent']) {
+      'close' => l10n.closeMilestone,
+      'activate' => l10n.aiOpReopenMilestone,
+      _ => aiOperationLabel(proposal.operationId),
+    },
+    _ => aiOperationLabel(proposal.operationId),
+  };
+}
+
+/// Fields the title already states; the card does not repeat them.
+bool aiFieldInTitle(String operationId, String key) =>
+    switch ((operationId, key)) {
+      ('setStar', 'starred') ||
+      ('setSubscribed', 'subscribed') ||
+      ('setDiscussionResolved', 'resolved') ||
+      ('setBoardSystemListHidden', 'hidden') ||
+      ('setMilestoneState', 'stateEvent') => true,
+      _ => false,
+    };
+
+/// A field's value as the card shows it: yes or no for a switch, a word for
+/// a state change, the text itself otherwise.
+String aiFieldValue(String key, String value) => switch ((key, value)) {
+  (_, 'true') => l10n.yesLabel,
+  (_, 'false') => l10n.noLabel,
+  ('state_event', 'close') => l10n.closeAction,
+  ('state_event', 'reopen') => l10n.reopen,
+  _ => value,
+};
+
 /// Field names on the approval card, reusing the editors' own labels.
 String aiFieldLabel(String key) => switch (key) {
   'body' => l10n.commentBody,
@@ -70,6 +130,11 @@ String aiFieldLabel(String key) => switch (key) {
   'start_date' => l10n.startDate,
   'name' => l10n.nameLabel,
   'color' => l10n.color,
+  'state_event' => l10n.status,
+  'issue_type' => l10n.workItemTypeFilter,
+  'filename' => l10n.fileName,
+  'contentType' => l10n.aiFieldFileType,
+  'list' => l10n.aiFieldBoardList,
   _ => key,
 };
 
@@ -314,7 +379,7 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        aiOperationLabel(proposal.operationId),
+                        aiProposalTitle(proposal),
                         style: theme.textTheme.titleSmall,
                       ),
                       Text(
@@ -334,36 +399,37 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
                 style: theme.textTheme.bodySmall,
               ),
             ],
-            for (final MapEntry(:key, :value) in proposal.fields.entries) ...[
-              const SizedBox(height: 8),
-              Text(aiFieldLabel(key), style: theme.textTheme.labelMedium),
-              const SizedBox(height: 2),
-              if (_proseFields.contains(key))
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: scheme.surface,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: scheme.outlineVariant),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: Text(
-                        value,
-                        key: ValueKey('ai-proposal-field-$key'),
-                        style: theme.textTheme.bodySmall,
+            for (final MapEntry(:key, :value) in proposal.fields.entries)
+              if (!aiFieldInTitle(proposal.operationId, key)) ...[
+                const SizedBox(height: 8),
+                Text(aiFieldLabel(key), style: theme.textTheme.labelMedium),
+                const SizedBox(height: 2),
+                if (_proseFields.contains(key))
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: scheme.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: scheme.outlineVariant),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: Text(
+                          value,
+                          key: ValueKey('ai-proposal-field-$key'),
+                          style: theme.textTheme.bodySmall,
+                        ),
                       ),
                     ),
+                  )
+                else
+                  Text(
+                    aiFieldValue(key, value),
+                    key: ValueKey('ai-proposal-field-$key'),
+                    style: theme.textTheme.bodySmall,
                   ),
-                )
-              else
-                Text(
-                  value,
-                  key: ValueKey('ai-proposal-field-$key'),
-                  style: theme.textTheme.bodySmall,
-                ),
-            ],
+              ],
             for (final warning in warnings) ...[
               const SizedBox(height: 8),
               Row(

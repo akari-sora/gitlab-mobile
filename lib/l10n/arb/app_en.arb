@@ -2568,5 +2568,14 @@
   "aiWriteLogResetNotUndo": "Confirming doesn't mean those changes didn't happen. Check GitLab first.",
   "aiAutoWriteBanner": "{level}: the AI makes changes on GitLab without asking you first.",
   "aiAutoWriteStopHint": "Stop this run and switch to confirming each change",
-  "aiWriteInProgress": "Making the change…"
+  "aiWriteInProgress": "Making the change…",
+  "aiOpSubscribeOn": "Turn notifications on",
+  "aiOpSubscribeOff": "Turn notifications off",
+  "aiOpResolveThread": "Resolve the thread",
+  "aiOpReopenThread": "Reopen the thread",
+  "aiOpHideBoardList": "Hide the board's built-in list",
+  "aiOpShowBoardList": "Show the board's built-in list",
+  "aiOpReopenMilestone": "Reopen the milestone",
+  "aiFieldFileType": "File type",
+  "aiFieldBoardList": "Board list"
 }

@@ -7782,4 +7782,31 @@ final class AppStrings {
 
   /// 正在寫入…
   String get aiWriteInProgress => language._messages[2562];
+
+  /// 開啟通知
+  String get aiOpSubscribeOn => language._messages[2563];
+
+  /// 關閉通知
+  String get aiOpSubscribeOff => language._messages[2564];
+
+  /// 解決討論串
+  String get aiOpResolveThread => language._messages[2565];
+
+  /// 重新開啟討論串
+  String get aiOpReopenThread => language._messages[2566];
+
+  /// 隱藏看板的內建列表
+  String get aiOpHideBoardList => language._messages[2567];
+
+  /// 顯示看板的內建列表
+  String get aiOpShowBoardList => language._messages[2568];
+
+  /// 重新開啟里程碑
+  String get aiOpReopenMilestone => language._messages[2569];
+
+  /// 檔案類型
+  String get aiFieldFileType => language._messages[2570];
+
+  /// 看板列表
+  String get aiFieldBoardList => language._messages[2571];
 }

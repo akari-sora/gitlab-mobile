@@ -196,6 +196,57 @@ void main() {
     expect(writes.approvals, isEmpty);
   });
 
+  testWidgets('a two-way write names its direction, not its raw field', (
+    tester,
+  ) async {
+    for (final (operation, fields, title) in [
+      ('setStar', const {'starred': 'true'}, l10n.star),
+      ('setStar', const {'starred': 'false'}, l10n.unstar),
+      ('setSubscribed', const {'subscribed': 'false'}, l10n.aiOpSubscribeOff),
+      (
+        'setDiscussionResolved',
+        const {'resolved': 'true'},
+        l10n.aiOpResolveThread,
+      ),
+      ('setMilestoneState', const {'stateEvent': 'close'}, l10n.closeMilestone),
+    ]) {
+      final proposal = _proposal(
+        operationId: operation,
+        tier: AiWriteTier.t1,
+        fields: fields,
+      );
+      await tester.pumpWidget(
+        _host(
+          AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+        ),
+      );
+      expect(find.text(title), findsOneWidget, reason: '$operation $fields');
+      expect(find.text('true'), findsNothing);
+      expect(find.text('false'), findsNothing);
+      expect(
+        find.byKey(ValueKey('ai-proposal-field-${fields.keys.single}')),
+        findsNothing,
+      );
+    }
+  });
+
+  testWidgets('switches and state changes read as words', (tester) async {
+    final proposal = _proposal(
+      operationId: 'updateIssue',
+      fields: const {'confidential': 'true', 'state_event': 'close'},
+    );
+    await tester.pumpWidget(
+      _host(
+        AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+      ),
+    );
+    expect(find.text(l10n.confidentialIssue), findsOneWidget);
+    expect(find.text(l10n.yesLabel), findsOneWidget);
+    expect(find.text(l10n.status), findsOneWidget);
+    expect(find.text(l10n.closeAction), findsOneWidget);
+    expect(find.text('state_event'), findsNothing);
+  });
+
   testWidgets('a major write needs the exact name', (tester) async {
     final proposal = _proposal(
       operationId: 'updateMergeRequest',

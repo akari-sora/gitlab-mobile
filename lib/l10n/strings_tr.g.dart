@@ -2565,4 +2565,13 @@ const _messagesTr = <String>[
   '{level}: the AI makes changes on GitLab without asking you first.',
   'Stop this run and switch to confirming each change',
   'Making the change…',
+  'Turn notifications on',
+  'Turn notifications off',
+  'Resolve the thread',
+  'Reopen the thread',
+  'Hide the board\'s built-in list',
+  'Show the board\'s built-in list',
+  'Reopen the milestone',
+  'File type',
+  'Board list',
 ];
