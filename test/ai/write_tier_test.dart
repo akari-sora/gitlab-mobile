@@ -449,7 +449,7 @@ void main() {
       expect(
         decideListed(
           ledger: productionAiLedger,
-          operationId: 'edit_file',
+          operationId: 'not_a_listed_operation',
           build: (AiCapability capability) => AiTierInput(
             level: AiAutonomyLevel.bypass,
             capability: capability,
