@@ -13,18 +13,25 @@ void main() {
     );
   });
 
-  test('work that fails is reported, not returned', () async {
+  test('work that fails reports its own error', () async {
     await expectLater(
       runWithDeadline<int>(
-        () => throw StateError('synthetic'),
+        () => throw StateError('synthetic failure'),
         const Duration(seconds: 10),
       ),
-      throwsA(isA<StateError>()),
+      throwsA(
+        isA<RemoteError>().having(
+          (error) => error.toString(),
+          'error',
+          contains('synthetic failure'),
+        ),
+      ),
     );
   });
 
   test('work still running at the deadline is stopped, not abandoned', () async {
     final beats = ReceivePort();
+    addTearDown(beats.close);
     final send = beats.sendPort;
     var count = 0;
     beats.listen((_) => count++);
@@ -34,16 +41,19 @@ void main() {
           send.send(1);
           sleep(const Duration(milliseconds: 5));
         }
-      }, const Duration(milliseconds: 300)),
+      }, const Duration(seconds: 2)),
       throwsA(isA<TimeoutException>()),
     );
-    // Let messages already in flight arrive, then expect no more.
-    await Future<void>.delayed(const Duration(milliseconds: 200));
-    final after = count;
-    expect(after, greaterThan(0));
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    expect(count, after, reason: 'the worker must not keep running');
-    beats.close();
+    // A killed worker goes quiet; one left running sends every 5 ms and
+    // never does. Wait up to 10 s for half a second without a heartbeat,
+    // so a busy machine delays the test instead of failing it.
+    var last = -1;
+    for (var tries = 0; tries < 20 && count != last; tries++) {
+      last = count;
+      await Future<void>.delayed(const Duration(milliseconds: 500));
+    }
+    expect(count, greaterThan(0), reason: 'the worker ran');
+    expect(count, last, reason: 'the worker must stop sending');
   });
 
   test('a draft too slow to check gives up at the deadline', () async {

@@ -1482,3 +1482,31 @@ Emulator runs on the project's Android API 36 emulator:
   - Reading the instance version (`GET /version`) to pick one parser instead
     of the union.
   - Cancelling a running check when the chat closes.
+
+#### Review round 5 (Codex, Opus and cursor-agent: all APPROVE WITH MINOR FIXES)
+
+No Critical or Important findings were left, so the round-5 Minors followed
+the review fast path: fixed here, then one reviewer checked the increment.
+
+- **Deadline tests.**
+  - The heartbeat test used to assume the worker started within 300 ms and
+    stopped within fixed windows. Now the deadline is 2 s, and the test waits
+    up to 10 s for half a second without a heartbeat. A killed worker reaches
+    that quickly; one left running never does, so removing the kill still
+    fails the test.
+  - A failing worker's own error now comes back as a `RemoteError` carrying
+    its message; before, it was a generic `StateError`. The test checks the
+    message.
+- **Over-reporting, stated more fully.**
+  - The per-fragment reference view adds safe over-reporting: raw `<code>` or
+    `<pre>` content that Markdown splits into several text nodes counts in
+    later fragments. That was 93 of 3,000 natural answers in Opus's round-5
+    corpus.
+  - An unclosed `<pre>` in the existing draft over-reports under libxml2 as
+    well, not only under HTML5.
+- **Left for follow-up**, in
+  [work item 10](https://gitlab.com/aa22396584/gitlab-mobile/-/work_items/10):
+  - a test for the branch where a Markdown link ends a raw anchor (a mutation
+    survives because both views usually agree);
+  - choosing one parser from the instance version;
+  - cancelling a check when the chat closes.

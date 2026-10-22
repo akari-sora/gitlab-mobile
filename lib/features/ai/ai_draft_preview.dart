@@ -54,7 +54,11 @@ Future<R> runWithDeadline<R>(R Function() work, Duration timeout) async {
     );
     final message = await port.first.timeout(timeout);
     if (message case (R result,)) return result;
-    throw StateError('The draft check stopped: $message');
+    // onError sends [error, stack]; onExit sends null.
+    if (message case [final Object? error, final Object? stack]) {
+      throw RemoteError('$error', '$stack');
+    }
+    throw StateError('The draft check ended without a result');
   } finally {
     isolate?.kill(priority: Isolate.immediate);
     port.close();
