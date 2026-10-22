@@ -2564,4 +2564,5 @@ const _messagesUk = <String>[
   'Confirming doesn\'t mean those changes didn\'t happen. Check GitLab first.',
   '{level}: the AI makes changes on GitLab without asking you first.',
   'Stop this run and switch to confirming each change',
+  'Making the change…',
 ];

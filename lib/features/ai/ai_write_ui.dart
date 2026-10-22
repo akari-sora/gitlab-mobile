@@ -15,6 +15,9 @@ import 'ai_write_settings.dart';
 
 /// What a write does, in the user's words. The model sees operation ids; the
 /// user never does.
+/// Whether [name] is one of the app's write tools rather than a read.
+bool aiIsWriteTool(String name) => productionAiLedger.find(name) != null;
+
 String aiOperationLabel(String operationId) => switch (operationId) {
   'addAwardEmoji' => l10n.aiOpAddAwardEmoji,
   'removeAwardEmoji' => l10n.aiOpRemoveAwardEmoji,
@@ -215,6 +218,14 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
     setState(() => _busy = true);
     try {
       await widget.session.rejectWrite(_proposal);
+    } on Object {
+      // Rejecting only drops the proposal; a failure leaves it on the card.
+      if (mounted) {
+        setState(() {
+          _message = l10n.aiProposalNotRun;
+          _messageIsError = true;
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }

@@ -2564,4 +2564,5 @@ const _messagesZhTw = <String>[
   '確認不代表原本的寫入沒有執行，請先到 GitLab 查看。',
   '{level}：AI 會直接寫入 GitLab，不會先問你。',
   '停止這次執行，並改為逐一確認',
+  '正在寫入…',
 ];

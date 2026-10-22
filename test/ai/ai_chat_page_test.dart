@@ -403,6 +403,34 @@ void main() {
       expect(session.autonomyLevel, AiAutonomyLevel.lowRiskAuto);
     });
 
+    testWidgets('a write waiting for its card says so, not "reading"', (
+      tester,
+    ) async {
+      final session = _FakeWriteSession(
+        phase: AiChatPhase.awaitingApproval,
+        items: const [
+          AiToolRunItem(
+            name: 'createNote',
+            argsPreview: '',
+            status: AiToolRunStatus.running,
+            sizeChars: 0,
+            provenance: '',
+          ),
+        ],
+        proposals: [_writeProposal()],
+      );
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pump();
+      expect(find.text(aiOperationLabel('createNote')), findsWidgets);
+      expect(find.text(l10n.waitingForConfirmation), findsOneWidget);
+      expect(find.text(l10n.aiToolUnknown), findsNothing);
+      expect(find.text(l10n.aiToolReading), findsNothing);
+      // Approved: the same row is being made.
+      session.update(() => session.phase = AiChatPhase.running);
+      await tester.pump();
+      expect(find.text(l10n.aiWriteInProgress), findsOneWidget);
+    });
+
     testWidgets('automatic writes show a banner whose Stop ends them', (
       tester,
     ) async {

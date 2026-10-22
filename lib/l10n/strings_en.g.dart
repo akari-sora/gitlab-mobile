@@ -2541,7 +2541,7 @@ const _messagesEn = <String>[
   'Reset the change log?',
   'Resetting deletes this account\'s AI change log on this device and lifts every lock from interrupted changes. For the next 24 hours, every AI change needs your confirmation. Type {username} to confirm.',
   'The change log was reset.',
-  '{count} interrupted changes need your attention',
+  'Interrupted changes needing your attention: {count}',
   'Preparing',
   'In progress',
   'This account has {count} AI changes that GitLab may or may not have made. After removal this device no longer tracks them, so check GitLab first.',
@@ -2564,4 +2564,5 @@ const _messagesEn = <String>[
   'Confirming doesn\'t mean those changes didn\'t happen. Check GitLab first.',
   '{level}: the AI makes changes on GitLab without asking you first.',
   'Stop this run and switch to confirming each change',
+  'Making the change…',
 ];

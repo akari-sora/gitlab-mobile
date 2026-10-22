@@ -280,9 +280,6 @@ class _AiChatPageState extends State<AiChatPage> {
       _session.phase == AiChatPhase.idle &&
       _session.items.contains(item);
 
-  /// Reports [item] (plan v5 §6.7): the user picks what is wrong and sees
-  /// the exact text; mail is tried first, then the share sheet. The answer is
-  /// then folded away here, whether or not the user finishes sending.
   var _attaching = false;
 
   /// Picks an image or a file to keep for this conversation. Nothing leaves
@@ -324,6 +321,9 @@ class _AiChatPageState extends State<AiChatPage> {
     }
   }
 
+  /// Reports [item] (plan v5 §6.7): the user picks what is wrong and sees
+  /// the exact text; mail is tried first, then the share sheet. The answer is
+  /// then folded away here, whether or not the user finishes sending.
   Future<void> _report(AiAssistantItem item, Rect? origin) async {
     final assistants = _session.items.whereType<AiAssistantItem>().toList();
     final number = assistants.indexOf(item) + 1;
@@ -747,6 +747,7 @@ class _AiChatPageState extends State<AiChatPage> {
               : null,
           insertingDraft: _insertingDraft,
           preparingDraft: _preparingDraft,
+          awaitingApproval: _session.phase == AiChatPhase.awaitingApproval,
           // An answer kept on screen from an earlier conversation belongs
           // to that conversation; it is not reported from this one.
           onReport:
@@ -990,10 +991,14 @@ class _ChatItemView extends StatelessWidget {
     this.preparingDraft = false,
     this.onReport,
     this.reportNotSaved = false,
+    this.awaitingApproval = false,
   });
 
   final AiChatItem item;
   final bool reportNotSaved;
+
+  /// The run waits for the user to approve a write card.
+  final bool awaitingApproval;
   final void Function(AiAssistantItem item)? onInsertDraft;
 
   /// An append is under way; every append button waits for it.
@@ -1017,7 +1022,10 @@ class _ChatItemView extends StatelessWidget {
       preparingDraft: preparingDraft,
       onReport: onReport,
     ),
-    final AiToolRunItem tool => _ToolRow(item: tool),
+    final AiToolRunItem tool => _ToolRow(
+      item: tool,
+      awaitingApproval: awaitingApproval,
+    ),
     final AiNoticeItem notice => _NoticeRow(item: notice),
   };
 }
@@ -1453,9 +1461,12 @@ String _toolLabel(String name) => switch (name) {
 };
 
 class _ToolRow extends StatelessWidget {
-  const _ToolRow({required this.item});
+  const _ToolRow({required this.item, this.awaitingApproval = false});
 
   final AiToolRunItem item;
+
+  /// The run waits for the user to approve a write card.
+  final bool awaitingApproval;
 
   @override
   Widget build(BuildContext context) {
@@ -1464,11 +1475,19 @@ class _ToolRow extends StatelessWidget {
         item.status == AiToolRunStatus.pending ||
         item.status == AiToolRunStatus.running;
     final write = item.writeStatus;
+    // A write row has no result until it ran; until then it waits for the
+    // card or is being made, never "reading".
+    final isWrite = write != null || aiIsWriteTool(item.name);
+    final pendingStatus = !isWrite
+        ? l10n.aiToolReading
+        : awaitingApproval
+        ? l10n.waitingForConfirmation
+        : l10n.aiWriteInProgress;
     final muted = theme.colorScheme.onSurfaceVariant;
     // A write says exactly how it went; an uncertain one is never shown as
     // failed, because it may have been made.
     final (IconData? icon, Color? color, String status) = switch (item.status) {
-      _ when running => (null, null, l10n.aiToolReading),
+      _ when running => (null, null, pendingStatus),
       _ when write != null => (
         switch (write) {
           AiWriteResultStatus.succeeded ||
@@ -1489,7 +1508,7 @@ class _ToolRow extends StatelessWidget {
         aiWriteStatusLabel(write),
       ),
       AiToolRunStatus.pending ||
-      AiToolRunStatus.running => (null, null, l10n.aiToolReading),
+      AiToolRunStatus.running => (null, null, pendingStatus),
       AiToolRunStatus.completed when item.blocked => (
         Icons.block,
         HubColors.orange,
@@ -1516,9 +1535,7 @@ class _ToolRow extends StatelessWidget {
         l10n.aiToolSkipped,
       ),
     };
-    final label = write != null
-        ? aiOperationLabel(item.name)
-        : _toolLabel(item.name);
+    final label = isWrite ? aiOperationLabel(item.name) : _toolLabel(item.name);
     final details = [if (item.provenance.isNotEmpty) item.provenance];
     final excerpt = item.resultExcerpt.trim();
     // What was read on the first line, how it went on the second.
