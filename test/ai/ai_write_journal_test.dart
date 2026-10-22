@@ -1502,9 +1502,17 @@ void main() {
         verifiedUsername: '@synthetic',
       );
       journal.cancelReset(reset);
-      await expectLater(succeed(id), throwsA(isA<AiJournalException>()));
+      // Packet fx-journal J2 (Opus M6): this test used to expect the finish to
+      // fail as staleOwner, which left a write that succeeded in dispatching
+      // forever. A cancelled reset restores the owner: isolation holds while
+      // the write is in flight and its real final state is recorded.
       expect(await files.read(account), before);
-      expect(journal.lateAudit.single.state, AiJournalState.writeUncertain);
+      expect(journal.isolated(account, {child}), isTrue);
+      await journal.finish(
+        executionId: id,
+        terminal: AiJournalState.writeUncertain,
+      );
+      expect(journal.lateAudit, isEmpty);
       expect(journal.isolated(account, {child}), isTrue);
       await journal.releaseByUser(executionId: id, typedName: '!12');
       expect(journal.isolated(account, {child}), isFalse);
