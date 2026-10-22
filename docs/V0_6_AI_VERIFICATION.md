@@ -1135,3 +1135,10 @@ count to one, and displayed the combined body in the refreshed discussion. The
 original APK was restored with `install -r`; installed bytes matched its saved
 SHA-256. Public package metadata, exact-source evidence and scope limits are in
 [`receipts/2026-10-22-ai-comment-qa.json`](receipts/2026-10-22-ai-comment-qa.json).
+
+Delivery status is recorded by
+[MR !98](https://gitlab.com/aa22396584/gitlab-mobile/-/merge_requests/98), whose
+exact-head required jobs gate the merge. This local evidence does not claim CI
+success. Android is the current validation priority. iOS validation is deferred
+for this merge decision and remains an open product-acceptance lane; the deferral
+is not iOS evidence.
