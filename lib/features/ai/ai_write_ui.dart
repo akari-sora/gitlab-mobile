@@ -53,6 +53,52 @@ String aiOperationLabel(String operationId) => switch (operationId) {
   'moveBoardList' => l10n.aiOpMoveBoardList,
   'moveBoardCard' => l10n.aiOpMoveBoardCard,
   'upload_attachment' => l10n.aiOpUploadAttachment,
+  'applySuggestion' => l10n.aiOpApplySuggestion,
+  'batchApplySuggestions' => l10n.aiOpBatchApplySuggestions,
+  'approveMergeRequest' => l10n.aiOpApproveMergeRequest,
+  'cancelAutoMerge' => l10n.aiOpCancelAutoMerge,
+  'mergeRequest' => l10n.aiOpMergeRequest,
+  'rebaseMergeRequest' => l10n.aiOpRebaseMergeRequest,
+  'createBranch' => l10n.aiOpCreateBranch,
+  'deleteBranch' => l10n.aiOpDeleteBranch,
+  'createTag' => l10n.aiOpCreateTag,
+  'deleteTag' => l10n.aiOpDeleteTag,
+  'createRelease' => l10n.aiOpCreateRelease,
+  'updateRelease' => l10n.aiOpUpdateRelease,
+  'deleteRelease' => l10n.aiOpDeleteRelease,
+  'createFile' => l10n.aiOpCreateFile,
+  'edit_file' => l10n.aiOpEditFile,
+  'deleteFile' => l10n.aiOpDeleteFile,
+  'createPipeline' => l10n.aiOpCreatePipeline,
+  'pipelineAction' => l10n.aiOpPipelineAction,
+  'deletePipeline' => l10n.aiOpDeletePipeline,
+  'jobAction' => l10n.aiOpJobAction,
+  'playPipelineSchedule' => l10n.aiOpPlayPipelineSchedule,
+  'createProject' => l10n.aiOpCreateProject,
+  'editProject' => l10n.aiOpEditProject,
+  'deleteProject' => l10n.aiOpDeleteProject,
+  'forkProject' => l10n.aiOpForkProject,
+  'deleteBoard' => l10n.aiOpDeleteBoard,
+  'deleteBoardList' => l10n.aiOpDeleteBoardList,
+  'deleteContainerRepository' => l10n.aiOpDeleteContainerRepository,
+  'deleteContainerTag' => l10n.aiOpDeleteContainerTag,
+  'deleteNote' => l10n.aiOpDeleteNote,
+  'deleteDiscussionNote' => l10n.aiOpDeleteDiscussionNote,
+  'deleteDraftNote' => l10n.aiOpDeleteDraftNote,
+  'deleteIssue' => l10n.aiOpDeleteIssue,
+  'deleteMergeRequest' => l10n.aiOpDeleteMergeRequest,
+  'deleteLabel' => l10n.aiOpDeleteLabel,
+  'deleteMilestone' => l10n.aiOpDeleteMilestone,
+  'deletePackage' => l10n.aiOpDeletePackage,
+  'deletePackageFile' => l10n.aiOpDeletePackageFile,
+  'markAllTodosDone' => l10n.aiOpMarkAllTodosDone,
+  'publishDraftNotes' => l10n.aiOpPublishDraftNotes,
+  'createSnippet' => l10n.aiOpCreateSnippet,
+  'updateSnippet' => l10n.aiOpUpdateSnippet,
+  'updateSnippetMetadata' => l10n.aiOpUpdateSnippetMetadata,
+  'updateSnippetFiles' => l10n.aiOpUpdateSnippetFiles,
+  'deleteSnippetFile' => l10n.aiOpDeleteSnippetFile,
+  'deleteSnippet' => l10n.aiOpDeleteSnippet,
   _ => l10n.aiOpUnknown,
 };
 
@@ -91,6 +137,17 @@ String aiProposalTitle(AiWriteProposal proposal) {
       'activate' => l10n.aiOpReopenMilestone,
       _ => aiOperationLabel(proposal.operationId),
     },
+    'pipelineAction' => switch (fields['action']) {
+      'retry' => l10n.aiOpRetryPipeline,
+      'cancel' => l10n.aiOpCancelPipeline,
+      _ => aiOperationLabel(proposal.operationId),
+    },
+    'jobAction' => switch (fields['action']) {
+      'retry' => l10n.aiOpRetryJob,
+      'cancel' => l10n.aiOpCancelJob,
+      'play' => l10n.aiOpPlayJob,
+      _ => aiOperationLabel(proposal.operationId),
+    },
     _ => aiOperationLabel(proposal.operationId),
   };
 }
@@ -102,7 +159,9 @@ bool aiFieldInTitle(String operationId, String key) =>
       ('setSubscribed', 'subscribed') ||
       ('setDiscussionResolved', 'resolved') ||
       ('setBoardSystemListHidden', 'hidden') ||
-      ('setMilestoneState', 'stateEvent') => true,
+      ('setMilestoneState', 'stateEvent') ||
+      ('pipelineAction', 'action') ||
+      ('jobAction', 'action') => true,
       _ => false,
     };
 

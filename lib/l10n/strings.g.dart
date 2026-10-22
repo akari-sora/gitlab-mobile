@@ -7995,4 +7995,157 @@ final class AppStrings {
 
   /// 你可能沒有取消自動合併的權限；GitLab 拒絕時不會有任何改變。
   String get aiPreviewCancelMayLackPermission => language._messages[2633];
+
+  /// 套用建議修改
+  String get aiOpApplySuggestion => language._messages[2634];
+
+  /// 一次套用多項建議修改
+  String get aiOpBatchApplySuggestions => language._messages[2635];
+
+  /// 核准合併請求
+  String get aiOpApproveMergeRequest => language._messages[2636];
+
+  /// 取消自動合併
+  String get aiOpCancelAutoMerge => language._messages[2637];
+
+  /// 合併到目標分支
+  String get aiOpMergeRequest => language._messages[2638];
+
+  /// 把來源分支 Rebase 到目標分支
+  String get aiOpRebaseMergeRequest => language._messages[2639];
+
+  /// 建立分支
+  String get aiOpCreateBranch => language._messages[2640];
+
+  /// 刪除分支
+  String get aiOpDeleteBranch => language._messages[2641];
+
+  /// 建立標籤版本
+  String get aiOpCreateTag => language._messages[2642];
+
+  /// 刪除標籤版本
+  String get aiOpDeleteTag => language._messages[2643];
+
+  /// 建立 Release
+  String get aiOpCreateRelease => language._messages[2644];
+
+  /// 編輯 Release
+  String get aiOpUpdateRelease => language._messages[2645];
+
+  /// 刪除 Release
+  String get aiOpDeleteRelease => language._messages[2646];
+
+  /// 新增檔案
+  String get aiOpCreateFile => language._messages[2647];
+
+  /// 編輯檔案
+  String get aiOpEditFile => language._messages[2648];
+
+  /// 刪除檔案
+  String get aiOpDeleteFile => language._messages[2649];
+
+  /// 執行新的 Pipeline
+  String get aiOpCreatePipeline => language._messages[2650];
+
+  /// 重試 Pipeline
+  String get aiOpRetryPipeline => language._messages[2651];
+
+  /// 取消 Pipeline
+  String get aiOpCancelPipeline => language._messages[2652];
+
+  /// 操作 Pipeline
+  String get aiOpPipelineAction => language._messages[2653];
+
+  /// 刪除 Pipeline
+  String get aiOpDeletePipeline => language._messages[2654];
+
+  /// 重試工作
+  String get aiOpRetryJob => language._messages[2655];
+
+  /// 取消工作
+  String get aiOpCancelJob => language._messages[2656];
+
+  /// 啟動手動工作
+  String get aiOpPlayJob => language._messages[2657];
+
+  /// 操作工作
+  String get aiOpJobAction => language._messages[2658];
+
+  /// 立即執行排程
+  String get aiOpPlayPipelineSchedule => language._messages[2659];
+
+  /// 建立專案
+  String get aiOpCreateProject => language._messages[2660];
+
+  /// 編輯專案
+  String get aiOpEditProject => language._messages[2661];
+
+  /// 刪除專案
+  String get aiOpDeleteProject => language._messages[2662];
+
+  /// 建立專案的 Fork
+  String get aiOpForkProject => language._messages[2663];
+
+  /// 刪除看板
+  String get aiOpDeleteBoard => language._messages[2664];
+
+  /// 刪除看板欄位
+  String get aiOpDeleteBoardList => language._messages[2665];
+
+  /// 刪除容器映像庫
+  String get aiOpDeleteContainerRepository => language._messages[2666];
+
+  /// 刪除容器映像標籤
+  String get aiOpDeleteContainerTag => language._messages[2667];
+
+  /// 刪除留言
+  String get aiOpDeleteNote => language._messages[2668];
+
+  /// 刪除討論回覆
+  String get aiOpDeleteDiscussionNote => language._messages[2669];
+
+  /// 刪除草稿留言
+  String get aiOpDeleteDraftNote => language._messages[2670];
+
+  /// 刪除議題
+  String get aiOpDeleteIssue => language._messages[2671];
+
+  /// 刪除合併請求
+  String get aiOpDeleteMergeRequest => language._messages[2672];
+
+  /// 刪除標籤
+  String get aiOpDeleteLabel => language._messages[2673];
+
+  /// 刪除里程碑
+  String get aiOpDeleteMilestone => language._messages[2674];
+
+  /// 刪除套件
+  String get aiOpDeletePackage => language._messages[2675];
+
+  /// 刪除套件檔案
+  String get aiOpDeletePackageFile => language._messages[2676];
+
+  /// 把全部待辦標為完成
+  String get aiOpMarkAllTodosDone => language._messages[2677];
+
+  /// 送出草稿留言
+  String get aiOpPublishDraftNotes => language._messages[2678];
+
+  /// 建立 Snippet
+  String get aiOpCreateSnippet => language._messages[2679];
+
+  /// 編輯 Snippet
+  String get aiOpUpdateSnippet => language._messages[2680];
+
+  /// 編輯 Snippet 資訊
+  String get aiOpUpdateSnippetMetadata => language._messages[2681];
+
+  /// 編輯 Snippet 的檔案
+  String get aiOpUpdateSnippetFiles => language._messages[2682];
+
+  /// 刪除 Snippet 的檔案
+  String get aiOpDeleteSnippetFile => language._messages[2683];
+
+  /// 刪除 Snippet
+  String get aiOpDeleteSnippet => language._messages[2684];
 }
