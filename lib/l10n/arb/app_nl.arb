@@ -2553,5 +2553,11 @@
   "aiConsentWritesUploads": "Op dit niveau kunnen bijlagen zonder kaart vooraf worden geüpload. In een openbaar of intern project kan iedereen die inhoud met een link naar het bestand ziet, het openen.",
   "aiConsentWritesInstructions": "Tekst die de AI op GitLab leest, kan instructies bevatten die haar willen sturen. Lees wat ze voorstelt voordat je goedkeurt.",
   "aiConsentWritesPipelines": "Sommige wijzigingen, zoals een merge request openen, kunnen op GitLab pipelines starten. Wat die doen, bepaalt het project; dat valt hier niet te sturen.",
-  "aiProviderToolsHint": "De AI kan bestanden, verschillen, joblogboeken en opmerkingen lezen en wijzigingen doen tot het niveau dat bij „{section}” is ingesteld."
+  "aiProviderToolsHint": "De AI kan bestanden, verschillen, joblogboeken en opmerkingen lezen en wijzigingen doen tot het niveau dat bij „{section}” is ingesteld.",
+  "aiWriteLogUnreadable": "The change log can't be read, and there may be interrupted changes. Until you reset the log, the AI can't make changes for this account; reading still works.",
+  "aiWriteLogUnreadableShort": "The change log can't be read; there may be interrupted changes",
+  "aiWriteLogResetAccount": "Account: {instance} · {username} · user ID {userId}",
+  "aiWriteLogResetReleases": "Interrupted or in-progress changes that will be unlocked: {count}",
+  "aiWriteLogResetUnknown": "The log can't be read, so there may be changes in an unknown state.",
+  "aiWriteLogResetNotUndo": "Confirming doesn't mean those changes didn't happen. Check GitLab first."
 }

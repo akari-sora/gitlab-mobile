@@ -8,6 +8,7 @@ import '../../l10n/l10n.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/workspace_ui.dart';
 import '../security/app_lock.dart';
+import 'ai_chat_controller.dart';
 import 'ai_consent_dialog.dart';
 import 'ai_history.dart';
 import 'ai_provider_editor.dart';
@@ -657,21 +658,40 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
         .entries(account.key)
         .where((entry) => entry.state == AiJournalState.writeUncertain)
         .length;
+    // Start-up recovery could not read the log: there may be interrupted
+    // changes the app cannot list, and writes stay refused until a retry or
+    // a reset on the log page.
+    final unreadable = switch (_journal.recoveryStatus(account.key)) {
+      AiJournalKeyStatus.unavailable ||
+      AiJournalKeyStatus.keyMissing ||
+      AiJournalKeyStatus.unknownFormat ||
+      AiJournalKeyStatus.overSize => true,
+      _ => false,
+    };
+    final attention = unreadable || interrupted > 0;
     final theme = Theme.of(context);
     return ListTile(
       key: const ValueKey('ai-write-log'),
       leading: Icon(
-        interrupted > 0 ? Icons.help_outline : Icons.history,
-        color: interrupted > 0 ? HubColors.orange : null,
+        unreadable
+            ? Icons.error_outline
+            : interrupted > 0
+            ? Icons.help_outline
+            : Icons.history,
+        color: unreadable
+            ? theme.colorScheme.error
+            : interrupted > 0
+            ? HubColors.orange
+            : null,
       ),
       title: Text(l10n.aiWriteLogTitle),
       subtitle: Text(
-        interrupted > 0
+        unreadable
+            ? l10n.aiWriteLogUnreadableShort
+            : interrupted > 0
             ? l10n.aiWriteLogNeedsAttention('$interrupted')
             : l10n.aiWriteLogSubtitle,
-        style: interrupted > 0
-            ? TextStyle(color: theme.colorScheme.error)
-            : null,
+        style: attention ? TextStyle(color: theme.colorScheme.error) : null,
       ),
       trailing: const Icon(Icons.chevron_right),
       onTap: () async {
@@ -722,9 +742,18 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     final provider = widget.settings.providers
         .where((candidate) => candidate.id == providerId)
         .firstOrNull;
+    // The same contract a conversation asks for, so a write consent is not
+    // flagged against the read-only contract.
     final needsReconsent =
         provider == null ||
-        aiCurrentConsentContractFor(provider).hash != consent.hash;
+        !widget.settings.isValid(
+          widget.accountKey,
+          aiConversationConsentContract(
+            widget.settings,
+            widget.accountKey,
+            provider,
+          ),
+        );
     return HubRow(
       leading: NeutralTile(
         needsReconsent

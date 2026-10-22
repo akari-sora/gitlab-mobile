@@ -2556,4 +2556,10 @@ const _messagesKo = <String>[
   'AI가 GitLab에서 읽는 내용에는 AI를 유도하려는 지시가 들어 있을 수 있습니다. 승인하기 전에 제안 내용을 확인하세요.',
   '머지 리퀘스트 생성 같은 일부 변경은 GitLab에서 파이프라인을 시작할 수 있습니다. 파이프라인이 하는 일은 프로젝트 설정에 따르며 여기서 제어할 수 없습니다.',
   'AI는 파일, 차이, 작업 로그, 댓글을 읽고 ‘{section}’에서 정한 단계까지 변경할 수 있습니다.',
+  'The change log can\'t be read, and there may be interrupted changes. Until you reset the log, the AI can\'t make changes for this account; reading still works.',
+  'The change log can\'t be read; there may be interrupted changes',
+  'Account: {instance} · {username} · user ID {userId}',
+  'Interrupted or in-progress changes that will be unlocked: {count}',
+  'The log can\'t be read, so there may be changes in an unknown state.',
+  'Confirming doesn\'t mean those changes didn\'t happen. Check GitLab first.',
 ];

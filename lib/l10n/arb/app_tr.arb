@@ -2553,5 +2553,11 @@
   "aiConsentWritesUploads": "Bu düzeyde eklediğin dosyalar önce bir kart gösterilmeden yüklenebilir. Herkese açık veya dahili bir projede, dosyaya bağlantı veren içeriği görebilen herkes dosyayı açabilir.",
   "aiConsentWritesInstructions": "AI'nin GitLab'de okuduğu metinler onu yönlendirmeye yönelik talimatlar içerebilir. Onaylamadan önce önerisini oku.",
   "aiConsentWritesPipelines": "Merge request açmak gibi bazı değişiklikler GitLab'de pipeline başlatabilir. Bunların ne yaptığını proje belirler; buradan kontrol edilemez.",
-  "aiProviderToolsHint": "AI dosyaları, farkları, iş günlüklerini ve yorumları okuyabilir ve “{section}” altında ayarlanan düzeye kadar değişiklik yapabilir."
+  "aiProviderToolsHint": "AI dosyaları, farkları, iş günlüklerini ve yorumları okuyabilir ve “{section}” altında ayarlanan düzeye kadar değişiklik yapabilir.",
+  "aiWriteLogUnreadable": "The change log can't be read, and there may be interrupted changes. Until you reset the log, the AI can't make changes for this account; reading still works.",
+  "aiWriteLogUnreadableShort": "The change log can't be read; there may be interrupted changes",
+  "aiWriteLogResetAccount": "Account: {instance} · {username} · user ID {userId}",
+  "aiWriteLogResetReleases": "Interrupted or in-progress changes that will be unlocked: {count}",
+  "aiWriteLogResetUnknown": "The log can't be read, so there may be changes in an unknown state.",
+  "aiWriteLogResetNotUndo": "Confirming doesn't mean those changes didn't happen. Check GitLab first."
 }

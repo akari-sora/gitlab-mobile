@@ -2556,4 +2556,10 @@ const _messagesUk = <String>[
   'Текст, який AI читає в GitLab, може містити вказівки, щоб ним керувати. Прочитайте пропозицію, перш ніж схвалити.',
   'Деякі зміни, як-от створення запиту на злиття, можуть запускати конвеєри в GitLab. Що вони роблять, визначає проєкт, і звідси це не контролюється.',
   'AI може читати файли, відмінності, журнали завдань і коментарі та вносити зміни до рівня, заданого в розділі «{section}».',
+  'The change log can\'t be read, and there may be interrupted changes. Until you reset the log, the AI can\'t make changes for this account; reading still works.',
+  'The change log can\'t be read; there may be interrupted changes',
+  'Account: {instance} · {username} · user ID {userId}',
+  'Interrupted or in-progress changes that will be unlocked: {count}',
+  'The log can\'t be read, so there may be changes in an unknown state.',
+  'Confirming doesn\'t mean those changes didn\'t happen. Check GitLab first.',
 ];

@@ -2553,5 +2553,11 @@
   "aiConsentWritesUploads": "На этом уровне прикреплённые файлы могут загружаться без карточки. В публичном или внутреннем проекте любой, кто видит содержимое со ссылкой на файл, может его открыть.",
   "aiConsentWritesInstructions": "Текст, который AI читает в GitLab, может содержать указания, призванные им управлять. Прочитайте предложение, прежде чем одобрить.",
   "aiConsentWritesPipelines": "Некоторые изменения, например создание запроса на слияние, могут запускать пайплайны в GitLab. Что они делают, определяет проект, и отсюда это не контролируется.",
-  "aiProviderToolsHint": "AI может читать файлы, различия, журналы заданий и комментарии и вносить изменения до уровня, заданного в разделе «{section}»."
+  "aiProviderToolsHint": "AI может читать файлы, различия, журналы заданий и комментарии и вносить изменения до уровня, заданного в разделе «{section}».",
+  "aiWriteLogUnreadable": "The change log can't be read, and there may be interrupted changes. Until you reset the log, the AI can't make changes for this account; reading still works.",
+  "aiWriteLogUnreadableShort": "The change log can't be read; there may be interrupted changes",
+  "aiWriteLogResetAccount": "Account: {instance} · {username} · user ID {userId}",
+  "aiWriteLogResetReleases": "Interrupted or in-progress changes that will be unlocked: {count}",
+  "aiWriteLogResetUnknown": "The log can't be read, so there may be changes in an unknown state.",
+  "aiWriteLogResetNotUndo": "Confirming doesn't mean those changes didn't happen. Check GitLab first."
 }

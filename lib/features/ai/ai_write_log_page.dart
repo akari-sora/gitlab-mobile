@@ -41,7 +41,10 @@ class AiWriteLogPage extends StatefulWidget {
 class _AiWriteLogPageState extends State<AiWriteLogPage> {
   final _messenger = GlobalKey<ScaffoldMessengerState>();
   List<AiJournalEntry>? _entries;
-  var _failed = false;
+
+  /// Why the log could not be read, or null while it loads or once it has.
+  /// A thrown read counts as [AiJournalKeyStatus.unavailable].
+  AiJournalKeyStatus? _failure;
   var _busy = false;
 
   String get _accountKey => widget.account.key;
@@ -67,11 +70,19 @@ class _AiWriteLogPageState extends State<AiWriteLogPage> {
       };
       setState(() {
         _entries = entries;
-        _failed = entries == null;
+        _failure = entries == null ? status : null;
       });
     } on Object {
-      if (mounted) setState(() => _failed = true);
+      if (mounted) setState(() => _failure = AiJournalKeyStatus.unavailable);
     }
+  }
+
+  Future<void> _retry() async {
+    setState(() {
+      _failure = null;
+      _entries = null;
+    });
+    await _load();
   }
 
   void _say(String message) =>
@@ -152,11 +163,33 @@ class _AiWriteLogPageState extends State<AiWriteLogPage> {
   }
 
   Future<void> _reset() async {
-    final username = '@${widget.account.user.username}';
+    final account = widget.account;
+    final username = '@${account.user.username}';
+    // Readable: count what the reset releases. Unreadable: say so, since
+    // the log may hold changes in an unknown state.
+    final entries = _entries;
+    final releases = entries
+        ?.where(
+          (entry) =>
+              entry.state == AiJournalState.dispatching ||
+              entry.state == AiJournalState.writeUncertain,
+        )
+        .length;
     final confirmed = await confirmAction(
       context,
       l10n.aiWriteLogResetTitle,
-      l10n.aiWriteLogResetDetail(username),
+      [
+        l10n.aiWriteLogResetAccount(
+          account.instance.key,
+          username,
+          '${account.user.id}',
+        ),
+        l10n.aiWriteLogResetDetail(username),
+        releases == null
+            ? l10n.aiWriteLogResetUnknown
+            : l10n.aiWriteLogResetReleases('$releases'),
+        l10n.aiWriteLogResetNotUndo,
+      ].join('\n\n'),
       requiredText: username,
     );
     if (!confirmed || !mounted) return;
@@ -199,16 +232,12 @@ class _AiWriteLogPageState extends State<AiWriteLogPage> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Text(l10n.aiWriteLogIntro, style: muted),
               ),
-              if (_failed)
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text(
-                    l10n.aiWriteLogUnavailable,
-                    key: const ValueKey('ai-write-log-unavailable'),
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: theme.colorScheme.error,
-                    ),
-                  ),
+              if (_failure case final failure?)
+                _ReadFailure(
+                  failure: failure,
+                  busy: _busy,
+                  onRetry: _retry,
+                  onReset: _reset,
                 )
               else if (entries == null)
                 const Padding(
@@ -274,6 +303,71 @@ String _when(BuildContext context, DateTime? at) {
   final material = MaterialLocalizations.of(context);
   return '${material.formatShortDate(local)} '
       '${material.formatTimeOfDay(TimeOfDay.fromDateTime(local))}';
+}
+
+/// The log could not be read. A passing failure offers a retry; a lost key or
+/// an unreadable file can only be reset, which needs the account's @name.
+class _ReadFailure extends StatelessWidget {
+  const _ReadFailure({
+    required this.failure,
+    required this.busy,
+    required this.onRetry,
+    required this.onReset,
+  });
+
+  final AiJournalKeyStatus failure;
+  final bool busy;
+  final VoidCallback onRetry;
+  final VoidCallback onReset;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final transient = failure == AiJournalKeyStatus.unavailable;
+    return Padding(
+      key: const ValueKey('ai-write-log-unavailable'),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(Icons.error_outline, color: theme.colorScheme.error),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  transient
+                      ? l10n.aiWriteLogUnavailable
+                      : l10n.aiWriteLogUnreadable,
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.error,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: transient
+                ? OutlinedButton.icon(
+                    key: const ValueKey('ai-write-log-retry'),
+                    icon: const Icon(Icons.refresh),
+                    onPressed: busy ? null : onRetry,
+                    label: Text(l10n.retryAction),
+                  )
+                : OutlinedButton.icon(
+                    key: const ValueKey('ai-write-log-reset'),
+                    icon: const Icon(Icons.restart_alt),
+                    onPressed: busy ? null : onReset,
+                    label: Text(l10n.aiWriteLogReset),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _EntryRow extends StatelessWidget {

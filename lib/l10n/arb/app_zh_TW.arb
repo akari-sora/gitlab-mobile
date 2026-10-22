@@ -11222,5 +11222,23 @@
     "placeholders": {
       "section": {}
     }
-  }
+  },
+  "aiWriteLogUnreadable": "寫入紀錄無法讀取，可能有中斷的寫入。在你重設寫入紀錄之前，AI 不能替這個帳號寫入；唯讀照常。",
+  "aiWriteLogUnreadableShort": "寫入紀錄無法讀取，可能有中斷的寫入",
+  "aiWriteLogResetAccount": "帳號：{instance} · {username} · 使用者 ID {userId}",
+  "@aiWriteLogResetAccount": {
+    "placeholders": {
+      "instance": {},
+      "username": {},
+      "userId": {}
+    }
+  },
+  "aiWriteLogResetReleases": "會解除鎖定的中斷或進行中寫入：{count} 筆",
+  "@aiWriteLogResetReleases": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiWriteLogResetUnknown": "寫入紀錄無法讀取，可能有狀態未知的寫入。",
+  "aiWriteLogResetNotUndo": "確認不代表原本的寫入沒有執行，請先到 GitLab 查看。"
 }

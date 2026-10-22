@@ -7755,4 +7755,22 @@ final class AppStrings {
 
   /// AI 可以讀取檔案、差異、工作 Log 與留言，並在「{section}」設定的等級內替你寫入。
   String aiProviderToolsHint(Object? section) => _format(language, language._messages[2553], {'section': section});
+
+  /// 寫入紀錄無法讀取，可能有中斷的寫入。在你重設寫入紀錄之前，AI 不能替這個帳號寫入；唯讀照常。
+  String get aiWriteLogUnreadable => language._messages[2554];
+
+  /// 寫入紀錄無法讀取，可能有中斷的寫入
+  String get aiWriteLogUnreadableShort => language._messages[2555];
+
+  /// 帳號：{instance} · {username} · 使用者 ID {userId}
+  String aiWriteLogResetAccount(Object? instance, Object? username, Object? userId) => _format(language, language._messages[2556], {'instance': instance, 'username': username, 'userId': userId});
+
+  /// 會解除鎖定的中斷或進行中寫入：{count} 筆
+  String aiWriteLogResetReleases(Object? count) => _format(language, language._messages[2557], {'count': count});
+
+  /// 寫入紀錄無法讀取，可能有狀態未知的寫入。
+  String get aiWriteLogResetUnknown => language._messages[2558];
+
+  /// 確認不代表原本的寫入沒有執行，請先到 GitLab 查看。
+  String get aiWriteLogResetNotUndo => language._messages[2559];
 }

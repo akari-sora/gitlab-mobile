@@ -2556,4 +2556,10 @@ const _messagesRu = <String>[
   'Текст, который AI читает в GitLab, может содержать указания, призванные им управлять. Прочитайте предложение, прежде чем одобрить.',
   'Некоторые изменения, например создание запроса на слияние, могут запускать пайплайны в GitLab. Что они делают, определяет проект, и отсюда это не контролируется.',
   'AI может читать файлы, различия, журналы заданий и комментарии и вносить изменения до уровня, заданного в разделе «{section}».',
+  'The change log can\'t be read, and there may be interrupted changes. Until you reset the log, the AI can\'t make changes for this account; reading still works.',
+  'The change log can\'t be read; there may be interrupted changes',
+  'Account: {instance} · {username} · user ID {userId}',
+  'Interrupted or in-progress changes that will be unlocked: {count}',
+  'The log can\'t be read, so there may be changes in an unknown state.',
+  'Confirming doesn\'t mean those changes didn\'t happen. Check GitLab first.',
 ];

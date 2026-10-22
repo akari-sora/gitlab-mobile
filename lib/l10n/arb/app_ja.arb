@@ -2553,5 +2553,11 @@
   "aiConsentWritesUploads": "このレベルでは、添付したファイルがカードを表示せずにアップロードされることがあります。公開または内部プロジェクトでは、そのファイルへのリンクを含む内容を見られる人なら誰でも開けます。",
   "aiConsentWritesInstructions": "AI が GitLab で読む内容には、AI を誘導しようとする指示が含まれていることがあります。承認する前に提案内容を確認してください。",
   "aiConsentWritesPipelines": "マージリクエストの作成など一部の書き込みは、GitLab でパイプラインを開始することがあります。パイプラインの動作はプロジェクトの設定で決まり、ここからは制御できません。",
-  "aiProviderToolsHint": "AI はファイル、差分、ジョブログ、コメントを読み、「{section}」で設定したレベルまで書き込めます。"
+  "aiProviderToolsHint": "AI はファイル、差分、ジョブログ、コメントを読み、「{section}」で設定したレベルまで書き込めます。",
+  "aiWriteLogUnreadable": "The change log can't be read, and there may be interrupted changes. Until you reset the log, the AI can't make changes for this account; reading still works.",
+  "aiWriteLogUnreadableShort": "The change log can't be read; there may be interrupted changes",
+  "aiWriteLogResetAccount": "Account: {instance} · {username} · user ID {userId}",
+  "aiWriteLogResetReleases": "Interrupted or in-progress changes that will be unlocked: {count}",
+  "aiWriteLogResetUnknown": "The log can't be read, so there may be changes in an unknown state.",
+  "aiWriteLogResetNotUndo": "Confirming doesn't mean those changes didn't happen. Check GitLab first."
 }

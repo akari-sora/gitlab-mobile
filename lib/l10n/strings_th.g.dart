@@ -2556,4 +2556,10 @@ const _messagesTh = <String>[
   'ข้อความที่ AI อ่านบน GitLab อาจมีคำสั่งที่ตั้งใจชักนำ AI อ่านสิ่งที่ AI เสนอก่อนอนุมัติ',
   'การเปลี่ยนแปลงบางอย่าง เช่น การเปิดคำขอรวม อาจเริ่มไปป์ไลน์บน GitLab สิ่งที่ไปป์ไลน์ทำขึ้นกับการตั้งค่าโปรเจกต์ และควบคุมจากที่นี่ไม่ได้',
   'AI อ่านไฟล์ ความแตกต่าง บันทึกงาน และความคิดเห็นได้ และเปลี่ยนแปลงได้ถึงระดับที่ตั้งไว้ใน “{section}”',
+  'The change log can\'t be read, and there may be interrupted changes. Until you reset the log, the AI can\'t make changes for this account; reading still works.',
+  'The change log can\'t be read; there may be interrupted changes',
+  'Account: {instance} · {username} · user ID {userId}',
+  'Interrupted or in-progress changes that will be unlocked: {count}',
+  'The log can\'t be read, so there may be changes in an unknown state.',
+  'Confirming doesn\'t mean those changes didn\'t happen. Check GitLab first.',
 ];

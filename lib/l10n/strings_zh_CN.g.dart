@@ -2556,4 +2556,10 @@ const _messagesZhCn = <String>[
   'AI 在 GitLab 读到的内容可能夹带想诱导它的指令。批准前请先看清它提议的内容。',
   '有些写入（例如创建合并请求）可能触发 GitLab 上的 Pipeline。Pipeline 会做什么由项目设置决定，这里无法控制。',
   'AI 可以读取文件、差异、作业日志和评论，并在“{section}”设置的等级内替你写入。',
+  'The change log can\'t be read, and there may be interrupted changes. Until you reset the log, the AI can\'t make changes for this account; reading still works.',
+  'The change log can\'t be read; there may be interrupted changes',
+  'Account: {instance} · {username} · user ID {userId}',
+  'Interrupted or in-progress changes that will be unlocked: {count}',
+  'The log can\'t be read, so there may be changes in an unknown state.',
+  'Confirming doesn\'t mean those changes didn\'t happen. Check GitLab first.',
 ];

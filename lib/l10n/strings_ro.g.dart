@@ -2556,4 +2556,10 @@ const _messagesRo = <String>[
   'Textul pe care AI îl citește în GitLab poate conține instrucțiuni menite să o influențeze. Citește ce propune înainte să aprobi.',
   'Unele modificări, precum deschiderea unui merge request, pot porni pipeline-uri în GitLab. Ce fac acestea stabilește proiectul și nu poate fi controlat de aici.',
   'AI poate citi fișiere, diferențe, jurnale de sarcini și comentarii și poate face modificări până la nivelul setat în „{section}”.',
+  'The change log can\'t be read, and there may be interrupted changes. Until you reset the log, the AI can\'t make changes for this account; reading still works.',
+  'The change log can\'t be read; there may be interrupted changes',
+  'Account: {instance} · {username} · user ID {userId}',
+  'Interrupted or in-progress changes that will be unlocked: {count}',
+  'The log can\'t be read, so there may be changes in an unknown state.',
+  'Confirming doesn\'t mean those changes didn\'t happen. Check GitLab first.',
 ];

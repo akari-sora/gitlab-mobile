@@ -2553,5 +2553,11 @@
   "aiConsentWritesUploads": "이 단계에서는 첨부한 파일이 카드 없이 바로 업로드될 수 있습니다. 공개 또는 내부 프로젝트에서는 파일을 링크한 내용을 볼 수 있는 누구나 파일을 열 수 있습니다.",
   "aiConsentWritesInstructions": "AI가 GitLab에서 읽는 내용에는 AI를 유도하려는 지시가 들어 있을 수 있습니다. 승인하기 전에 제안 내용을 확인하세요.",
   "aiConsentWritesPipelines": "머지 리퀘스트 생성 같은 일부 변경은 GitLab에서 파이프라인을 시작할 수 있습니다. 파이프라인이 하는 일은 프로젝트 설정에 따르며 여기서 제어할 수 없습니다.",
-  "aiProviderToolsHint": "AI는 파일, 차이, 작업 로그, 댓글을 읽고 ‘{section}’에서 정한 단계까지 변경할 수 있습니다."
+  "aiProviderToolsHint": "AI는 파일, 차이, 작업 로그, 댓글을 읽고 ‘{section}’에서 정한 단계까지 변경할 수 있습니다.",
+  "aiWriteLogUnreadable": "The change log can't be read, and there may be interrupted changes. Until you reset the log, the AI can't make changes for this account; reading still works.",
+  "aiWriteLogUnreadableShort": "The change log can't be read; there may be interrupted changes",
+  "aiWriteLogResetAccount": "Account: {instance} · {username} · user ID {userId}",
+  "aiWriteLogResetReleases": "Interrupted or in-progress changes that will be unlocked: {count}",
+  "aiWriteLogResetUnknown": "The log can't be read, so there may be changes in an unknown state.",
+  "aiWriteLogResetNotUndo": "Confirming doesn't mean those changes didn't happen. Check GitLab first."
 }

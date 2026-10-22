@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
 import 'package:gitlab_mobile/features/ai/ai_settings_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_stores.dart';
@@ -173,6 +174,34 @@ void main() {
     await _pump(tester, settings, history, account: account);
 
     expect(find.text(l10n.aiConsentNeedsReconsent), findsOneWidget);
+  });
+
+  testWidgets('a write consent a conversation would accept is not flagged', (
+    tester,
+  ) async {
+    final store = MemoryAiStore();
+    final settings = AiSettingsController(store);
+    final history = AiHistoryCoordinator(store: store);
+    addTearDown(settings.dispose);
+    addTearDown(history.dispose);
+    final account = _account();
+    final provider = _provider('provider');
+    await settings.saveProvider(provider);
+    // What the chat page grants: the write contract up to the ceiling.
+    final contract = aiConversationConsentContract(
+      settings,
+      account.key,
+      provider,
+    );
+    expect(contract.writePolicy, isNotNull);
+    await settings.grantConsent(
+      account.key,
+      contract,
+      const <String, Object?>{},
+    );
+    await _pump(tester, settings, history, account: account);
+
+    expect(find.text(l10n.aiConsentNeedsReconsent), findsNothing);
   });
 
   testWidgets('invalid token cap text is not normalized into a saved value', (

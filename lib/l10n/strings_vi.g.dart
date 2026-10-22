@@ -2556,4 +2556,10 @@ const _messagesVi = <String>[
   'Nội dung AI đọc trên GitLab có thể chứa chỉ dẫn nhằm điều khiển nó. Hãy đọc đề xuất trước khi bạn chấp thuận.',
   'Một số thay đổi, như mở merge request, có thể khởi chạy pipeline trên GitLab. Pipeline làm gì do dự án quyết định và không thể điều khiển từ đây.',
   'AI có thể đọc tệp, thay đổi, nhật ký tác vụ và bình luận, và thực hiện thay đổi đến mức đã đặt trong “{section}”.',
+  'The change log can\'t be read, and there may be interrupted changes. Until you reset the log, the AI can\'t make changes for this account; reading still works.',
+  'The change log can\'t be read; there may be interrupted changes',
+  'Account: {instance} · {username} · user ID {userId}',
+  'Interrupted or in-progress changes that will be unlocked: {count}',
+  'The log can\'t be read, so there may be changes in an unknown state.',
+  'Confirming doesn\'t mean those changes didn\'t happen. Check GitLab first.',
 ];

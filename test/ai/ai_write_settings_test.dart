@@ -239,6 +239,35 @@ void main() {
     expect(find.text(l10n.aiWriteLogTitle), findsWidgets);
   });
 
+  testWidgets('a log that start-up could not read is flagged', (tester) async {
+    final root = Directory(
+      Directory.systemTemp.resolveSymbolicLinksSync(),
+    ).createTempSync('ai-settings-log-');
+    addTearDown(() => root.deleteSync(recursive: true));
+    final account = WorkspaceFixture().account.key;
+    // The log file exists, but its key is gone (a restored device).
+    late AiWriteJournal journal;
+    await tester.runAsync(() async {
+      final first = AiWriteJournal(
+        keys: MemoryAiJournalKeyStore(),
+        applicationSupport: root,
+        fence: _Fence(),
+      );
+      await first.recoverAfterAccountsLoaded([account]);
+      await first.ensureInitialized(account);
+      journal = AiWriteJournal(
+        keys: MemoryAiJournalKeyStore(),
+        applicationSupport: root,
+        fence: _Fence(),
+      );
+      await journal.recoverAfterAccountsLoaded([account]);
+    });
+    expect(journal.recoveryStatus(account), AiJournalKeyStatus.keyMissing);
+    await open(tester, journal: journal);
+    await reveal(tester, find.byKey(const ValueKey('ai-write-log')));
+    expect(find.text(l10n.aiWriteLogUnreadableShort), findsOneWidget);
+  });
+
   testWidgets('the attribution footer is a saved switch', (tester) async {
     final opened = await open(tester);
     await tapKey(tester, 'ai-write-attribution');

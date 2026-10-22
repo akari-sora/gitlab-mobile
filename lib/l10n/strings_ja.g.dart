@@ -2556,4 +2556,10 @@ const _messagesJa = <String>[
   'AI が GitLab で読む内容には、AI を誘導しようとする指示が含まれていることがあります。承認する前に提案内容を確認してください。',
   'マージリクエストの作成など一部の書き込みは、GitLab でパイプラインを開始することがあります。パイプラインの動作はプロジェクトの設定で決まり、ここからは制御できません。',
   'AI はファイル、差分、ジョブログ、コメントを読み、「{section}」で設定したレベルまで書き込めます。',
+  'The change log can\'t be read, and there may be interrupted changes. Until you reset the log, the AI can\'t make changes for this account; reading still works.',
+  'The change log can\'t be read; there may be interrupted changes',
+  'Account: {instance} · {username} · user ID {userId}',
+  'Interrupted or in-progress changes that will be unlocked: {count}',
+  'The log can\'t be read, so there may be changes in an unknown state.',
+  'Confirming doesn\'t mean those changes didn\'t happen. Check GitLab first.',
 ];

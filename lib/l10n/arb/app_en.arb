@@ -2559,5 +2559,11 @@
   "aiConsentWritesUploads": "At this level, files you attach can be uploaded without a card first. In a public or internal project, anyone who can see content that links a file can open it.",
   "aiConsentWritesInstructions": "Text the AI reads on GitLab can contain instructions meant to steer it. Read what it proposes before you approve.",
   "aiConsentWritesPipelines": "Some changes, such as opening a merge request, can start pipelines on GitLab. What they do is set by the project and cannot be controlled from here.",
-  "aiProviderToolsHint": "The AI can read files, diffs, Job logs and comments, and make changes up to the level set under \"{section}\"."
+  "aiProviderToolsHint": "The AI can read files, diffs, Job logs and comments, and make changes up to the level set under \"{section}\".",
+  "aiWriteLogUnreadable": "The change log can't be read, and there may be interrupted changes. Until you reset the log, the AI can't make changes for this account; reading still works.",
+  "aiWriteLogUnreadableShort": "The change log can't be read; there may be interrupted changes",
+  "aiWriteLogResetAccount": "Account: {instance} · {username} · user ID {userId}",
+  "aiWriteLogResetReleases": "Interrupted or in-progress changes that will be unlocked: {count}",
+  "aiWriteLogResetUnknown": "The log can't be read, so there may be changes in an unknown state.",
+  "aiWriteLogResetNotUndo": "Confirming doesn't mean those changes didn't happen. Check GitLab first."
 }

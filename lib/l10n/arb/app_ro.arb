@@ -2553,5 +2553,11 @@
   "aiConsentWritesUploads": "La acest nivel, fișierele atașate pot fi încărcate fără un card înainte. Într-un proiect public sau intern, oricine vede conținut cu link către fișier îl poate deschide.",
   "aiConsentWritesInstructions": "Textul pe care AI îl citește în GitLab poate conține instrucțiuni menite să o influențeze. Citește ce propune înainte să aprobi.",
   "aiConsentWritesPipelines": "Unele modificări, precum deschiderea unui merge request, pot porni pipeline-uri în GitLab. Ce fac acestea stabilește proiectul și nu poate fi controlat de aici.",
-  "aiProviderToolsHint": "AI poate citi fișiere, diferențe, jurnale de sarcini și comentarii și poate face modificări până la nivelul setat în „{section}”."
+  "aiProviderToolsHint": "AI poate citi fișiere, diferențe, jurnale de sarcini și comentarii și poate face modificări până la nivelul setat în „{section}”.",
+  "aiWriteLogUnreadable": "The change log can't be read, and there may be interrupted changes. Until you reset the log, the AI can't make changes for this account; reading still works.",
+  "aiWriteLogUnreadableShort": "The change log can't be read; there may be interrupted changes",
+  "aiWriteLogResetAccount": "Account: {instance} · {username} · user ID {userId}",
+  "aiWriteLogResetReleases": "Interrupted or in-progress changes that will be unlocked: {count}",
+  "aiWriteLogResetUnknown": "The log can't be read, so there may be changes in an unknown state.",
+  "aiWriteLogResetNotUndo": "Confirming doesn't mean those changes didn't happen. Check GitLab first."
 }

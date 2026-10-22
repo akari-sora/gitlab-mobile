@@ -213,6 +213,87 @@ void main() {
     );
     await open(tester);
     expect(find.byKey(const ValueKey('ai-write-log-unavailable')), findsOne);
+    expect(find.text(l10n.aiWriteLogUnreadable), findsOneWidget);
+    // An unreadable file can only be reset; a retry would read it again.
+    expect(find.byKey(const ValueKey('ai-write-log-retry')), findsNothing);
+    final reset = find.byKey(const ValueKey('ai-write-log-reset'));
+    expect(reset, findsOne);
+    await tester.tap(reset);
+    await tester.pumpAndSettle();
+    // The dialog names the account in full and cannot count the locks.
+    expect(
+      find.textContaining(
+        l10n.aiWriteLogResetAccount(
+          account.instance.key,
+          '@developer',
+          '${account.user.id}',
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(find.textContaining(l10n.aiWriteLogResetUnknown), findsOneWidget);
+    expect(find.textContaining(l10n.aiWriteLogResetNotUndo), findsOneWidget);
+    await tester.enterText(find.byType(TextField).last, '@developer');
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, l10n.confirmAction));
+    await settleIo(tester);
+    expect(find.text(l10n.aiWriteLogEmpty), findsOneWidget);
+    expect(journal.recentlyReset(account.key), isTrue);
+    await tester.pump(const Duration(seconds: 5));
+  });
+
+  testWidgets('a log storage that is away for now offers a retry', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      await journal.recoverAfterAccountsLoaded([account.key]);
+      await journal.ensureInitialized(account.key);
+      await write(AiJournalState.succeeded);
+    });
+    keyStore.unavailable = true;
+    journal = AiWriteJournal(
+      keys: keyStore,
+      applicationSupport: root,
+      fence: _Fence(),
+      processId: 'second-process',
+    );
+    await open(tester);
+    await settleIo(tester);
+    expect(find.text(l10n.aiWriteLogUnavailable), findsOneWidget);
+    expect(find.byKey(const ValueKey('ai-write-log-reset')), findsNothing);
+    keyStore.unavailable = false;
+    await tester.tap(find.byKey(const ValueKey('ai-write-log-retry')));
+    await settleIo(tester);
+    expect(find.byKey(const ValueKey('ai-write-log-unavailable')), findsNothing);
+    expect(find.text(l10n.aiWriteLogRecent), findsOneWidget);
+  });
+
+  testWidgets('a reset of a readable log counts what it unlocks', (
+    tester,
+  ) async {
+    await tester.runAsync(() async {
+      await journal.recoverAfterAccountsLoaded([account.key]);
+      await journal.ensureInitialized(account.key);
+      await write(AiJournalState.writeUncertain);
+      await write(AiJournalState.writeUncertain, name: '!13');
+      await write(AiJournalState.succeeded, name: '!14');
+    });
+    await open(tester);
+    await settleIo(tester);
+    final reset = find.byKey(const ValueKey('ai-write-log-reset'));
+    await tester.scrollUntilVisible(
+      reset,
+      200,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(reset);
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining(l10n.aiWriteLogResetReleases('2')),
+      findsOneWidget,
+    );
+    expect(find.textContaining(l10n.aiWriteLogResetUnknown), findsNothing);
   });
 
   test('every journal state has words', () {

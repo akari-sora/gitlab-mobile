@@ -2553,5 +2553,11 @@
   "aiConsentWritesUploads": "På den här nivån kan bifogade filer laddas upp utan något kort först. I ett offentligt eller internt projekt kan alla som ser innehåll som länkar till filen öppna den.",
   "aiConsentWritesInstructions": "Text som AI läser på GitLab kan innehålla instruktioner som ska styra den. Läs vad den föreslår innan du godkänner.",
   "aiConsentWritesPipelines": "Vissa ändringar, som att öppna en merge request, kan starta pipelines på GitLab. Vad de gör bestäms av projektet och kan inte styras härifrån.",
-  "aiProviderToolsHint": "AI kan läsa filer, diffar, jobbloggar och kommentarer och göra ändringar upp till nivån som är inställd under ”{section}”."
+  "aiProviderToolsHint": "AI kan läsa filer, diffar, jobbloggar och kommentarer och göra ändringar upp till nivån som är inställd under ”{section}”.",
+  "aiWriteLogUnreadable": "The change log can't be read, and there may be interrupted changes. Until you reset the log, the AI can't make changes for this account; reading still works.",
+  "aiWriteLogUnreadableShort": "The change log can't be read; there may be interrupted changes",
+  "aiWriteLogResetAccount": "Account: {instance} · {username} · user ID {userId}",
+  "aiWriteLogResetReleases": "Interrupted or in-progress changes that will be unlocked: {count}",
+  "aiWriteLogResetUnknown": "The log can't be read, so there may be changes in an unknown state.",
+  "aiWriteLogResetNotUndo": "Confirming doesn't mean those changes didn't happen. Check GitLab first."
 }
