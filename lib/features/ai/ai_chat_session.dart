@@ -195,6 +195,8 @@ abstract interface class AiChatSession implements Listenable {
 
   /// [text] as it may go into a GitLab comment draft: like [displaySafe], but
   /// line breaks and tabs are kept, so paragraphs, lists and code survive.
+  /// Carriage returns are dropped first, as GitLab drops them, so they cannot
+  /// split a secret past the redaction.
   /// Never throws: text that cannot be checked comes back empty.
   String draftSafe(String text);
 }

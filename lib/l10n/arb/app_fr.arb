@@ -2343,12 +2343,13 @@
   "aiDraftNotSent": "Le texte sera seulement ajouté au brouillon ; rien ne sera publié. Pour le publier, vérifiez le texte dans l’éditeur et appuyez sur Enregistrer.",
   "aiDraftConfirm": "Ajouter au brouillon",
   "aiDraftMentionsOff": "Mentions dont les notifications sont désactivées dans cette réponse : {count}. Elles sont affichées sous forme de code et ne notifient personne.",
-  "aiDraftMentionsNotify": "Mentions qui enverront une notification lors de la publication : {count}",
+  "aiDraftMentionsNotify": "Mentions dans cette réponse qui enverront encore une notification lors de la publication : {count}",
   "aiDraftKeepMentions": "Conserver les notifications de mention",
   "aiDraftAcknowledge": "Je comprends que la publication notifiera ces personnes",
   "aiDraftInternal": "Cette conversation a consulté des notes internes, visibles uniquement par les membres du projet. Avant d’ajouter la réponse, vérifiez qu’elle ne révèle rien de leur contenu.",
-  "aiDraftAfterExisting": "La réponse sera ajoutée après votre brouillon non envoyé ; les vérifications ci-dessus portent sur les deux textes réunis.",
+  "aiDraftAfterExisting": "La réponse sera ajoutée après votre brouillon non envoyé. Les mentions et les références sont vérifiées dans les deux textes réunis ; votre brouillon lui-même, y compris les actions rapides qu’il contient, reste inchangé.",
   "aiDraftPreviewCut": "L’aperçu affiche le début ; l’éditeur affiche tout le contenu.",
   "aiDraftChanged": "La conversation a changé, donc rien n’a été ajouté.",
-  "aiDraftUnreadable": "Le brouillon du commentaire n’a pas pu être lu, donc rien n’a été ajouté."
+  "aiDraftUnreadable": "Le brouillon du commentaire n’a pas pu être lu, donc rien n’a été ajouté.",
+  "aiDraftCheckFailed": "La réponse n’a pas pu être vérifiée, donc rien n’a été ajouté."
 }

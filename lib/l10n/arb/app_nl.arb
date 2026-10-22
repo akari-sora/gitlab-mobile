@@ -2343,12 +2343,13 @@
   "aiDraftNotSent": "Dit voegt alleen iets toe aan de conceptreactie; er wordt niets geplaatst. Controleer de tekst in het bewerkingsvenster en druk op Opslaan om deze te plaatsen.",
   "aiDraftConfirm": "Toevoegen aan conceptreactie",
   "aiDraftMentionsOff": "Vermeldingen met uitgeschakelde meldingen in dit antwoord: {count}. Ze worden als code weergegeven en niemand krijgt een melding.",
-  "aiDraftMentionsNotify": "Vermeldingen die bij plaatsing een melding versturen: {count}",
+  "aiDraftMentionsNotify": "Vermeldingen in dit antwoord die bij plaatsing nog steeds een melding versturen: {count}",
   "aiDraftKeepMentions": "Meldingen bij vermeldingen behouden",
   "aiDraftAcknowledge": "Ik begrijp dat deze gebruikers bij plaatsing een melding krijgen",
   "aiDraftInternal": "In dit gesprek zijn interne notities gelezen die alleen projectleden kunnen zien. Controleer vóór het toevoegen of het antwoord niets van de inhoud van deze notities onthult.",
-  "aiDraftAfterExisting": "Het antwoord wordt achter je nog niet geplaatste conceptreactie toegevoegd; de bovenstaande controles gelden voor beide teksten samen.",
+  "aiDraftAfterExisting": "Het antwoord wordt achter je nog niet geplaatste conceptreactie toegevoegd. Vermeldingen en verwijzingen worden in beide teksten samen gecontroleerd; je conceptreactie zelf, inclusief alle snelacties daarin, blijft ongewijzigd.",
   "aiDraftPreviewCut": "Het voorbeeld toont het begin; de tekstbewerker toont de volledige inhoud.",
   "aiDraftChanged": "Het gesprek is gewijzigd, dus er is niets toegevoegd.",
-  "aiDraftUnreadable": "Het concept van de opmerking kon niet worden gelezen, dus er is niets toegevoegd."
+  "aiDraftUnreadable": "Het concept van de opmerking kon niet worden gelezen, dus er is niets toegevoegd.",
+  "aiDraftCheckFailed": "Het antwoord kon niet worden gecontroleerd, dus er is niets toegevoegd."
 }

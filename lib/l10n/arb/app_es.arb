@@ -2343,12 +2343,13 @@
   "aiDraftNotSent": "Solo se añadirá al borrador; no se publicará nada. Para publicarlo, revisa el texto en el editor y pulsa Guardar.",
   "aiDraftConfirm": "Añadir al borrador",
   "aiDraftMentionsOff": "Menciones con notificaciones desactivadas en esta respuesta: {count}. Se muestran como código y no notifican a nadie.",
-  "aiDraftMentionsNotify": "Menciones que enviarán una notificación al publicar: {count}",
+  "aiDraftMentionsNotify": "Menciones en esta respuesta que seguirán enviando una notificación al publicar: {count}",
   "aiDraftKeepMentions": "Mantener las notificaciones de menciones",
   "aiDraftAcknowledge": "Entiendo que se notificará a estas personas al publicar",
   "aiDraftInternal": "En esta conversación se han leído notas internas que solo pueden ver los miembros del proyecto. Antes de añadir la respuesta, comprueba que no revele nada de su contenido.",
-  "aiDraftAfterExisting": "La respuesta se añadirá después de tu borrador sin enviar; las comprobaciones anteriores abarcan ambos textos juntos.",
+  "aiDraftAfterExisting": "La respuesta se añadirá después de tu borrador sin enviar. Las menciones y las referencias se comprueban en ambos textos juntos; tu borrador, incluidas las acciones rápidas que contenga, se mantiene tal como está.",
   "aiDraftPreviewCut": "La vista previa muestra el principio; el editor muestra todo el contenido.",
   "aiDraftChanged": "La conversación ha cambiado, por lo que no se ha añadido nada.",
-  "aiDraftUnreadable": "No se ha podido leer el borrador del comentario, por lo que no se ha añadido nada."
+  "aiDraftUnreadable": "No se ha podido leer el borrador del comentario, por lo que no se ha añadido nada.",
+  "aiDraftCheckFailed": "No se ha podido comprobar la respuesta, por lo que no se ha añadido nada."
 }

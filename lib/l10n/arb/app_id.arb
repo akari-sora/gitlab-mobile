@@ -2343,12 +2343,13 @@
   "aiDraftNotSent": "Ini hanya ditambahkan ke draf; tidak ada yang dikirim. Untuk mengirimnya, periksa teks di penyunting lalu tekan Simpan.",
   "aiDraftConfirm": "Tambahkan ke draf",
   "aiDraftMentionsOff": "Penyebutan dengan notifikasi yang dinonaktifkan dalam jawaban ini: {count}. Penyebutan ditampilkan sebagai kode dan tidak memberi tahu siapa pun.",
-  "aiDraftMentionsNotify": "Penyebutan yang akan mengirim notifikasi saat dikirim: {count}",
+  "aiDraftMentionsNotify": "Penyebutan dalam jawaban ini yang tetap akan mengirim notifikasi saat dikirim: {count}",
   "aiDraftKeepMentions": "Pertahankan notifikasi penyebutan",
   "aiDraftAcknowledge": "Saya memahami bahwa pengiriman akan memberi tahu pengguna ini",
   "aiDraftInternal": "Percakapan ini membaca catatan internal yang hanya dapat dilihat oleh anggota proyek. Sebelum menambahkan, pastikan jawaban tidak mengungkapkan isi catatan tersebut.",
-  "aiDraftAfterExisting": "Jawaban akan ditambahkan setelah draf Anda yang belum dikirim; pemeriksaan di atas mencakup gabungan keduanya.",
+  "aiDraftAfterExisting": "Jawaban akan ditambahkan setelah draf Anda yang belum dikirim. Penyebutan dan referensi diperiksa dalam gabungan kedua teks; draf Anda sendiri, termasuk semua tindakan cepat di dalamnya, tetap seperti semula.",
   "aiDraftPreviewCut": "Pratinjau menampilkan bagian awal; penyunting menampilkan seluruh isinya.",
   "aiDraftChanged": "Percakapan telah berubah, jadi tidak ada yang ditambahkan.",
-  "aiDraftUnreadable": "Draf komentar tidak dapat dibaca, jadi tidak ada yang ditambahkan."
+  "aiDraftUnreadable": "Draf komentar tidak dapat dibaca, jadi tidak ada yang ditambahkan.",
+  "aiDraftCheckFailed": "Jawaban tidak dapat diperiksa, jadi tidak ada yang ditambahkan."
 }

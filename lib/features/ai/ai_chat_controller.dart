@@ -192,7 +192,10 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   @override
   String draftSafe(String text) {
     try {
-      return _redactor.redactSource(text.replaceAll(_draftControls, '')).text;
+      // GitLab deletes every CR of a comment. Do it before redacting, so a
+      // secret split by a CR is joined, and caught, here rather than later.
+      final lines = text.replaceAll('\r\n', '\n').replaceAll('\r', '');
+      return _redactor.redactSource(lines.replaceAll(_draftControls, '')).text;
     } on Object {
       return '';
     }
@@ -1028,8 +1031,8 @@ final _displayControls = RegExp(
   r'\u2060-\u2069\ufeff]',
 );
 
-/// [_displayControls] without the tab, line feed and carriage return, which a
-/// multi-line draft needs (the draft path handles `\r` itself).
+/// [_displayControls] without the tab and line feed, which a multi-line draft
+/// needs (`draftSafe` removes carriage returns before it).
 final _draftControls = RegExp(
   r'[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c'
   r'\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]',

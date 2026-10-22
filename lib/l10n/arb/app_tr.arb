@@ -2343,12 +2343,13 @@
   "aiDraftNotSent": "Bu işlem yalnızca yorum taslağına ekleme yapar; hiçbir şey gönderilmez. Göndermek için metni düzenleyicide kontrol edin ve Kaydet düğmesine basın.",
   "aiDraftConfirm": "Yorum taslağına ekle",
   "aiDraftMentionsOff": "Bu yanıtta bildirimleri kapatılan bahsetme sayısı: {count}. Bahsetmeler kod olarak gösterilir ve hiç kimseye bildirim gönderilmez.",
-  "aiDraftMentionsNotify": "Gönderildiğinde bildirim gönderecek bahsetme sayısı: {count}",
+  "aiDraftMentionsNotify": "Bu yanıtta gönderildiğinde bildirim göndermeye devam edecek bahsetme sayısı: {count}",
   "aiDraftKeepMentions": "Bahsetme bildirimlerini koru",
   "aiDraftAcknowledge": "Gönderildiğinde bu kullanıcılara bildirim gideceğini anlıyorum",
   "aiDraftInternal": "Bu konuşmada yalnızca proje üyelerinin görebildiği dahili notlar okundu. Eklemeden önce yanıtın bu notların içeriğini açığa çıkarmadığından emin olun.",
-  "aiDraftAfterExisting": "Yanıt, henüz gönderilmemiş yorum taslağınızın sonuna eklenir; yukarıdaki kontroller her iki metni birlikte kapsar.",
+  "aiDraftAfterExisting": "Yanıt, henüz gönderilmemiş yorum taslağınızın sonuna eklenir. Bahsetmeler ve atıflar her iki metin birlikte ele alınarak kontrol edilir; taslağınız, içindeki tüm hızlı eylemler de dahil olmak üzere olduğu gibi bırakılır.",
   "aiDraftPreviewCut": "Önizleme başlangıcı gösterir; düzenleyici içeriğin tamamını gösterir.",
   "aiDraftChanged": "Konuşma değiştiği için hiçbir şey eklenmedi.",
-  "aiDraftUnreadable": "Yorum taslağı okunamadığı için hiçbir şey eklenmedi."
+  "aiDraftUnreadable": "Yorum taslağı okunamadığı için hiçbir şey eklenmedi.",
+  "aiDraftCheckFailed": "Yanıt kontrol edilemediği için hiçbir şey eklenmedi."
 }

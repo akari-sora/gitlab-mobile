@@ -269,7 +269,7 @@ class _AiDraftPreviewSheetState extends State<AiDraftPreviewSheet> {
                             ),
                           ),
                         ),
-                        if (_shown.length < _result.text.length) ...[
+                        if (_cut) ...[
                           const SizedBox(height: 6),
                           Text(l10n.aiDraftPreviewCut, style: muted),
                         ],
@@ -316,11 +316,14 @@ class _AiDraftPreviewSheetState extends State<AiDraftPreviewSheet> {
     );
   }
 
+  /// Whether the preview shows only the start of the text.
+  bool get _cut => _result.text.length > _shownCharacters;
+
   /// The start of the text: one long paragraph is slow to lay out, and the
   /// editor shows all of it.
   String get _shown {
     final text = _result.text;
-    if (text.length <= _shownCharacters) return text;
+    if (!_cut) return text;
     var end = _shownCharacters;
     // Never split a surrogate pair.
     final last = text.codeUnitAt(end - 1);

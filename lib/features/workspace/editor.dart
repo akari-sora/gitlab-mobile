@@ -51,6 +51,11 @@ Future<String> readDraftField(
   if (value is! Map<String, dynamic>) {
     throw const FormatException('Unrecognized draft');
   }
+  // The editor refuses a draft whose write marker it does not recognise, so
+  // nothing would be appended to it; say so before rather than after.
+  if (value.containsKey(_draftWriteKey) && value[_draftWriteKey] != 'true') {
+    throw const FormatException('Unrecognized draft write outcome');
+  }
   final text = value[field];
   if (text == null) return '';
   if (text is! String) throw const FormatException('Unrecognized draft');

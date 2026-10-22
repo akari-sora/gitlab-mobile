@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/draft_mentions.dart';
+import 'package:html/dom.dart' as dom;
+import 'package:html/parser.dart' as html;
 import 'package:markdown/markdown.dart' as md;
 
 void main() {
@@ -118,19 +120,64 @@ void main() {
   });
 
   for (final entry in <String, List<String>>{
+    '<div>\n&#64victim\n</div>': ['victim'],
+    '<div>\n&#x40victim\n</div>': ['victim'],
+    '<div>\n&#X40victim\n</div>': ['victim'],
+    '<div>\n&commat;&fjlig;\n</div>': ['fj'],
+    '<div>\nhi @foo&UnderBar;bar\n</div>': ['foo_bar'],
     '<div>\n&#64;victim\n</div>': ['victim'],
     '<div>\n@&#118;ictim\n</div>': ['victim'],
     '<div>\n&commat;all\n</div>': ['all'],
     '<div>\n&#64;group/subgroup\n</div>': ['group/subgroup'],
   }.entries) {
     test('decodes mentions in raw HTML: ${entry.key}', () {
+      expect(_outsideMentions(entry.key), entry.value);
       _expectDraft(entry.key, mentions: entry.value);
     });
   }
 
+  for (final entry in {
+    '&amp;#64;victim': 1,
+    '<div>&amp;#64;victim</div>': 1,
+    '<div title="@alice">hello</div>': 0,
+    '<pre>@x</pre>': 0,
+    '<code>@x</code>': 0,
+    '<div><pre>@x</pre><code>@x</code></div>': 0,
+    '<div>@<span>victim</span></div>': 0,
+  }.entries) {
+    test('the rendered HTML oracle finds no mention in ${entry.key}', () {
+      expect(_outsideMentions(entry.key), isEmpty);
+      _expectDraft(entry.key, references: entry.value);
+    });
+  }
+
+  test('matches each DOM text node separately and counts anchor text', () {
+    const input =
+        '<div>@foo<span>bar</span> x<b>@other</b> '
+        '<a href="https://example.com/@attribute">@linked</a></div>';
+    expect(_outsideMentions(input), ['foo', 'other', 'linked']);
+    _expectDraft(input, mentions: ['foo', 'other', 'linked']);
+  });
+
+  test('uses rendered text boundaries across nested Markdown fragments', () {
+    for (final input in ['~~a_@victim~~', '<code>*@victim*</code>']) {
+      expect(_outsideMentions(input), isEmpty);
+      _expectDraft(input);
+    }
+  });
+
+  test('counts references in DOM text, excluding attributes and raw code', () {
+    _expectDraft(
+      '<div title="#1 !2">&num;3 <code>#4</code><pre>!5</pre>'
+      '#<span>6</span> <a href="https://example.com/!7">!8</a></div>',
+      references: 2,
+    );
+  });
+
   test('reports all encoded mentions after the wrapping candidate cap', () {
     final names = List.generate(51, (index) => 'user$index');
     final input = names.map((name) => '<div>&#64;$name</div>').join('\n');
+    expect(_outsideMentions(input), names);
     _expectDraft(input, mentions: names);
   });
 
@@ -174,6 +221,26 @@ void main() {
       text: names.map((name) => '`@$name`').join(' '),
       neutralized: 50,
     );
+  });
+
+  test('analyzes a 3990-character answer with 50 candidates promptly', () {
+    final mentions = List.generate(50, (index) => '@user$index').join(' ');
+    final input = '${'a' * (3990 - mentions.length - 1)} $mentions';
+    expect(input.length, 3990);
+
+    final stopwatch = Stopwatch()..start();
+    final result = analyzeDraftMentions(input);
+    stopwatch.stop();
+    // ignore: avoid_print
+    print(
+      '3990 characters / 50 candidates: '
+      '${stopwatch.elapsedMicroseconds / 1000} ms (JIT)',
+    );
+
+    expect(result.neutralized, 50);
+    expect(result.mentions, isEmpty);
+    expect(_outsideMentions(result.text), isEmpty);
+    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 2)));
   });
 
   test(
@@ -254,6 +321,42 @@ void main() {
       '@alice @alice @bob',
       existing: '@alice',
       mentions: ['alice', 'bob'],
+      keepNotifications: true,
+    );
+  });
+
+  test('analyzes the joined draft after deleting bare carriage returns', () {
+    const existing = 'log\r```';
+    expect(_addedOutsideMentions('@victim', existing: existing), ['victim']);
+    _expectDraft(
+      '@victim',
+      existing: existing,
+      text: '`@victim`',
+      neutralized: 1,
+    );
+    _expectDraft(
+      '@victim',
+      existing: existing,
+      keepNotifications: true,
+      mentions: ['victim'],
+    );
+  });
+
+  test('treats CRLF and LF existing fences identically', () {
+    for (final existing in ['log\r\n```', 'log\n```']) {
+      expect(_addedOutsideMentions('@victim', existing: existing), isEmpty);
+      _expectDraft('@victim', existing: existing);
+      _expectDraft('@victim', existing: existing, keepNotifications: true);
+    }
+  });
+
+  test('normalizes the existing baseline before subtracting its mentions', () {
+    _expectDraft('plain answer', existing: '@al\rice #\r1');
+    _expectDraft(
+      '@alice @bob #2',
+      existing: '@al\rice #\r1',
+      mentions: ['alice', 'bob'],
+      references: 1,
       keepNotifications: true,
     );
   });
@@ -340,19 +443,31 @@ void main() {
     );
   });
 
-  test('does not normalize carriage returns or trim whitespace', () {
+  test('normalizes CRLF then deletes bare CR while preserving whitespace', () {
     _expectDraft(
       ' \r\nhi @victim.\r\n ',
-      text: ' \r\nhi `@victim`.\r\n ',
+      text: ' \nhi `@victim`.\n ',
       neutralized: 1,
     );
-    for (final input in ['', '  ', '\r', '\r\n', '\n\n', ' a\r b ']) {
+    for (final input in ['', '  ', '\n\n']) {
       _expectDraft(input);
     }
+    for (final entry in {'\r': '', '\r\n': '\n', ' a\r b ': ' a b '}.entries) {
+      _expectDraft(entry.key, text: entry.value);
+      _expectDraft(entry.key, text: entry.value, keepNotifications: true);
+    }
+    _expectDraft('@vic\rtim', text: '`@victim`', neutralized: 1);
+    _expectDraft(
+      '@vic\rtim',
+      text: '@victim',
+      mentions: ['victim'],
+      keepNotifications: true,
+    );
   });
 
   test('generated Markdown never leaves a mention unreported', () {
     final random = Random(0x6a3);
+    final existingRandom = Random(0x6a3c);
     const parts = [
       '@',
       '@victim',
@@ -365,6 +480,8 @@ void main() {
       '~~~',
       '\n',
       '\r',
+      '\r\n',
+      'log\r```',
       '[',
       ']',
       '(',
@@ -374,9 +491,15 @@ void main() {
       '<div>',
       '</div>',
       '&#64;',
+      '&#64victim',
+      '&#x40victim',
+      '&#X40victim',
       '&#x40;',
       '&#118;',
       '&commat;',
+      '&fjlig;',
+      '&UnderBar;',
+      '&amp;#64;victim',
       '&amp;',
       '&lt;',
       '&gt;',
@@ -407,36 +530,56 @@ void main() {
         4 + random.nextInt(40),
         (_) => parts[random.nextInt(parts.length)],
       ).join();
-      final result = analyzeDraftMentions(input);
-      final reparsed = analyzeDraftMentions(
-        result.text,
-        keepNotifications: true,
-      );
-      final repeated = analyzeDraftMentions(result.text);
-      final reason = 'generated case $index: ${input.replaceAll('\n', r'\n')}';
+      final existing = List.generate(
+        existingRandom.nextInt(12),
+        (_) => parts[existingRandom.nextInt(parts.length)],
+      ).join();
+      for (final prefix in ['', existing]) {
+        final result = analyzeDraftMentions(input, existing: prefix);
+        final reparsed = analyzeDraftMentions(
+          result.text,
+          existing: prefix,
+          keepNotifications: true,
+        );
+        final repeated = analyzeDraftMentions(result.text, existing: prefix);
+        final reason =
+            'generated case $index: '
+            'existing=${prefix.replaceAll('\r', r'\r').replaceAll('\n', r'\n')}, '
+            'answer=${input.replaceAll('\r', r'\r').replaceAll('\n', r'\n')}';
 
-      expect(reparsed.text, result.text, reason: reason);
-      expect(reparsed.mentions, result.mentions, reason: reason);
-      expect(reparsed.neutralized, 0, reason: reason);
-      expect(reparsed.references, result.references, reason: reason);
-      expect(repeated.mentions, result.mentions, reason: reason);
-      expect(result.mentions, _outsideMentions(result.text), reason: reason);
-      final beforeCode = _codeTexts(input);
-      final afterCode = _codeTexts(result.text);
-      for (final value in beforeCode.toSet()) {
+        expect(reparsed.text, result.text, reason: reason);
+        expect(reparsed.mentions, result.mentions, reason: reason);
+        expect(reparsed.neutralized, 0, reason: reason);
+        expect(reparsed.references, result.references, reason: reason);
+        expect(repeated.mentions, result.mentions, reason: reason);
         expect(
-          afterCode.where((text) => text == value).length,
-          greaterThanOrEqualTo(
-            beforeCode.where((text) => text == value).length,
-          ),
+          result.mentions,
+          _addedOutsideMentions(result.text, existing: prefix),
+          reason: reason,
+        );
+        final normalizedPrefix = prefix
+            .replaceAll('\r\n', '\n')
+            .replaceAll('\r', '');
+        final normalized = input.replaceAll('\r\n', '\n').replaceAll('\r', '');
+        String joined(String answer) =>
+            normalizedPrefix.isEmpty ? answer : '$normalizedPrefix\n\n$answer';
+        final beforeCode = _codeTexts(joined(normalized));
+        final afterCode = _codeTexts(joined(result.text));
+        for (final value in beforeCode.toSet()) {
+          expect(
+            afterCode.where((text) => text == value).length,
+            greaterThanOrEqualTo(
+              beforeCode.where((text) => text == value).length,
+            ),
+            reason: reason,
+          );
+        }
+        expect(
+          afterCode.length,
+          beforeCode.length + result.neutralized,
           reason: reason,
         );
       }
-      expect(
-        afterCode.length,
-        beforeCode.length + result.neutralized,
-        reason: reason,
-      );
     }
   });
 }
@@ -459,6 +602,10 @@ void _expectDraft(
   expect(result.mentions, mentions);
   expect(result.neutralized, neutralized);
   expect(
+    result.mentions,
+    containsAll(_addedOutsideMentions(result.text, existing: existing)),
+  );
+  expect(
     result.references,
     references,
     reason: md.markdownToHtml(
@@ -469,65 +616,38 @@ void _expectDraft(
 }
 
 List<String> _outsideMentions(String text) {
-  final names = <String>{};
+  final names = <String>[];
   final pattern = RegExp(r'(?<![A-Za-z0-9_])@([A-Za-z0-9_.][A-Za-z0-9_.\-/]*)');
-  void visit(md.Node node) {
-    if (node is md.Element) {
-      if (node.tag == 'code' || node.tag == 'pre') return;
-      for (final child in node.children ?? const <md.Node>[]) {
-        visit(child);
-      }
-    } else if (node is md.Text) {
-      final decoded = _decodeEntities(node.text);
-      names.addAll(pattern.allMatches(decoded).map((match) => match[1]!));
+  void visit(dom.Node node) {
+    if (node is dom.Element &&
+        (node.localName == 'code' || node.localName == 'pre')) {
+      return;
+    }
+    if (node is dom.Text) {
+      names.addAll(pattern.allMatches(node.data).map((match) => match[1]!));
+    }
+    for (final child in node.nodes) {
+      visit(child);
     }
   }
 
-  for (final node in md.Document(
+  final rendered = md.markdownToHtml(
+    text.replaceAll('\r\n', '\n').replaceAll('\r', ''),
     extensionSet: md.ExtensionSet.gitHubFlavored,
-  ).parse(text)) {
-    visit(node);
-  }
-  return names.toList();
+  );
+  visit(html.parseFragment(rendered));
+  return names;
 }
 
-String _decodeEntities(String text) {
-  const named = <String, String>{
-    'amp': '&',
-    'lt': '<',
-    'gt': '>',
-    'quot': '"',
-    'apos': "'",
-    'commat': '@',
-    'sol': '/',
-    'period': '.',
-    'lowbar': '_',
-    'hyphen': '\u2010',
-    'dash': '\u2010',
-    'num': '#',
-    'excl': '!',
-    'colon': ':',
-  };
-  return text.replaceAllMapped(
-    RegExp(r'&(#(?:[xX][0-9A-Fa-f]+|[0-9]+)|[A-Za-z]+);'),
-    (match) {
-      final entity = match[1]!;
-      if (!entity.startsWith('#')) return named[entity] ?? match[0]!;
-      final hexadecimal = entity.length > 2 &&
-          (entity[1] == 'x' || entity[1] == 'X');
-      final value = int.tryParse(
-        entity.substring(hexadecimal ? 2 : 1),
-        radix: hexadecimal ? 16 : 10,
-      );
-      if (value == null ||
-          value <= 0 ||
-          value > 0x10ffff ||
-          (value >= 0xd800 && value <= 0xdfff)) {
-        return match[0]!;
-      }
-      return String.fromCharCode(value);
-    },
-  );
+List<String> _addedOutsideMentions(String text, {String existing = ''}) {
+  final prefix = existing.replaceAll('\r\n', '\n').replaceAll('\r', '');
+  final baseline = _outsideMentions(prefix);
+  final joined = prefix.isEmpty ? text : '$prefix\n\n$text';
+  final added = <String>{};
+  for (final name in _outsideMentions(joined)) {
+    if (!baseline.remove(name)) added.add(name);
+  }
+  return added.toList();
 }
 
 List<String> _codeTexts(String text) {

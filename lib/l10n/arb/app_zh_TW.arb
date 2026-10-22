@@ -10870,13 +10870,14 @@
   "aiDraftConfirm": "附加到草稿",
   "aiDraftMentionsOff": "已停用這段回答裡的提及通知：{count} 個。這些提及改以程式碼格式顯示，不會通知任何人。",
   "@aiDraftMentionsOff": {"placeholders": {"count": {}}},
-  "aiDraftMentionsNotify": "送出後仍會發出通知的提及：{count} 個",
+  "aiDraftMentionsNotify": "這段回答中送出後仍會發出通知的提及：{count} 個",
   "@aiDraftMentionsNotify": {"placeholders": {"count": {}}},
   "aiDraftKeepMentions": "保留提及通知",
   "aiDraftAcknowledge": "我了解送出後會通知這些使用者",
   "aiDraftInternal": "這段對話讀過內部備註，只有專案成員看得到。附加前請確認回答沒有透露內部備註的內容。",
-  "aiDraftAfterExisting": "這段回答會接在你尚未送出的草稿後面，上面的檢查以合併後的內容為準。",
+  "aiDraftAfterExisting": "這段回答會接在你尚未送出的草稿後面。提及與參照依合併後的內容檢查；原本草稿的內容（包括其中的快捷指令）維持不變。",
   "aiDraftPreviewCut": "預覽只顯示開頭，完整內容會出現在編輯器。",
   "aiDraftChanged": "對話已經變了，所以沒有附加。",
-  "aiDraftUnreadable": "讀不到這則留言的草稿，所以沒有附加。"
+  "aiDraftUnreadable": "讀不到這則留言的草稿，所以沒有附加。",
+  "aiDraftCheckFailed": "無法檢查這段回答，所以沒有附加。"
 }

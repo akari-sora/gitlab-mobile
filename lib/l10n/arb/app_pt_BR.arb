@@ -2343,12 +2343,13 @@
   "aiDraftNotSent": "O texto será apenas adicionado ao rascunho; nada será publicado. Para publicar, confira o texto no editor e toque em Salvar.",
   "aiDraftConfirm": "Adicionar ao rascunho",
   "aiDraftMentionsOff": "Menções com notificações desativadas nesta resposta: {count}. As menções são exibidas como código e não notificam ninguém.",
-  "aiDraftMentionsNotify": "Menções que enviarão uma notificação ao publicar: {count}",
+  "aiDraftMentionsNotify": "Menções nesta resposta que ainda enviarão uma notificação ao publicar: {count}",
   "aiDraftKeepMentions": "Manter notificações de menções",
   "aiDraftAcknowledge": "Entendo que a publicação notificará essas pessoas",
   "aiDraftInternal": "Esta conversa leu notas internas, que só os membros do projeto podem ver. Antes de adicionar a resposta, confira se ela não revela nada do conteúdo dessas notas.",
-  "aiDraftAfterExisting": "A resposta será adicionada após o seu rascunho ainda não enviado; as verificações acima abrangem os dois textos juntos.",
+  "aiDraftAfterExisting": "A resposta será adicionada após o seu rascunho ainda não enviado. As menções e referências são verificadas nos dois textos juntos; o seu rascunho em si, incluindo todas as ações rápidas que ele contém, permanece como está.",
   "aiDraftPreviewCut": "A prévia mostra o início; o editor mostra todo o conteúdo.",
   "aiDraftChanged": "A conversa mudou, então nada foi adicionado.",
-  "aiDraftUnreadable": "Não foi possível ler o rascunho do comentário, então nada foi adicionado."
+  "aiDraftUnreadable": "Não foi possível ler o rascunho do comentário, então nada foi adicionado.",
+  "aiDraftCheckFailed": "Não foi possível verificar a resposta, então nada foi adicionado."
 }

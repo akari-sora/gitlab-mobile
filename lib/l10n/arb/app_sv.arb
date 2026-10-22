@@ -2343,12 +2343,13 @@
   "aiDraftNotSent": "Det här lägger bara till texten i kommentarsutkastet; inget publiceras. Kontrollera texten i redigeraren och tryck på Spara för att publicera den.",
   "aiDraftConfirm": "Lägg till i kommentarsutkast",
   "aiDraftMentionsOff": "Omnämnanden med avstängda aviseringar i det här svaret: {count}. De visas som kod och aviserar ingen.",
-  "aiDraftMentionsNotify": "Omnämnanden som skickar en avisering vid publicering: {count}",
+  "aiDraftMentionsNotify": "Omnämnanden i det här svaret som fortfarande skickar en avisering vid publicering: {count}",
   "aiDraftKeepMentions": "Behåll aviseringar vid omnämnanden",
   "aiDraftAcknowledge": "Jag förstår att dessa användare aviseras vid publicering",
   "aiDraftInternal": "Den här konversationen har läst interna anteckningar som bara projektmedlemmar kan se. Kontrollera innan du lägger till att svaret inte avslöjar något av innehållet i dessa anteckningar.",
-  "aiDraftAfterExisting": "Svaret läggs till efter ditt ännu inte skickade kommentarsutkast; kontrollerna ovan gäller båda texterna tillsammans.",
+  "aiDraftAfterExisting": "Svaret läggs till efter ditt ännu inte skickade kommentarsutkast. Omnämnanden och hänvisningar kontrolleras i båda texterna tillsammans; själva kommentarsutkastet, inklusive alla snabbåtgärder i det, lämnas oförändrat.",
   "aiDraftPreviewCut": "Förhandsvisningen visar början; redigeraren visar hela innehållet.",
   "aiDraftChanged": "Konversationen har ändrats, så inget lades till.",
-  "aiDraftUnreadable": "Kommentarsutkastet kunde inte läsas, så inget lades till."
+  "aiDraftUnreadable": "Kommentarsutkastet kunde inte läsas, så inget lades till.",
+  "aiDraftCheckFailed": "Svaret kunde inte kontrolleras, så inget lades till."
 }

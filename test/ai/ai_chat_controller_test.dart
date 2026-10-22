@@ -486,6 +486,12 @@ void main() {
     expect(draft, isNot(contains('\u200b')));
     // What the page shows as a label stays on one line.
     expect(controller.displaySafe(answer), isNot(contains('\n')));
+    // GitLab deletes a lone CR, which joins what it split: the secret must be
+    // caught after that join, not before it.
+    final split = controller.draftSafe('Rotate synthetic-test\r-token now\r\nok');
+    expect(split, isNot(contains('synthetic-test-token')));
+    expect(split, isNot(contains('\r')));
+    expect(split, endsWith(' now\nok'));
   });
 
   test('an unchanged secret set leaves the shown items alone', () async {

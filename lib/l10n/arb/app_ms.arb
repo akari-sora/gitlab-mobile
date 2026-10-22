@@ -2343,12 +2343,13 @@
   "aiDraftNotSent": "Ini hanya ditambah pada draf; tiada apa-apa yang disiarkan. Untuk menyiarkannya, semak teks dalam penyunting dan tekan Simpan.",
   "aiDraftConfirm": "Tambah pada draf",
   "aiDraftMentionsOff": "Sebutan dengan pemberitahuan yang dimatikan dalam jawapan ini: {count}. Sebutan dipaparkan sebagai kod dan tidak memberitahu sesiapa.",
-  "aiDraftMentionsNotify": "Sebutan yang akan menghantar pemberitahuan apabila disiarkan: {count}",
+  "aiDraftMentionsNotify": "Sebutan dalam jawapan ini yang masih akan menghantar pemberitahuan apabila disiarkan: {count}",
   "aiDraftKeepMentions": "Kekalkan pemberitahuan sebutan",
   "aiDraftAcknowledge": "Saya faham bahawa penyiaran akan memberitahu pengguna ini",
   "aiDraftInternal": "Perbualan ini telah membaca nota dalaman yang hanya boleh dilihat oleh ahli projek. Sebelum menambah, pastikan jawapan tidak mendedahkan sebarang kandungan nota tersebut.",
-  "aiDraftAfterExisting": "Jawapan akan ditambah selepas draf anda yang belum dihantar; semakan di atas meliputi gabungan kedua-duanya.",
+  "aiDraftAfterExisting": "Jawapan akan ditambah selepas draf anda yang belum dihantar. Sebutan dan rujukan disemak dalam gabungan kedua-dua teks; draf anda sendiri, termasuk semua tindakan pantas di dalamnya, kekal seperti asal.",
   "aiDraftPreviewCut": "Pratonton menunjukkan bahagian awal; penyunting menunjukkan seluruh kandungan.",
   "aiDraftChanged": "Perbualan telah berubah, jadi tiada apa-apa ditambah.",
-  "aiDraftUnreadable": "Draf komen tidak dapat dibaca, jadi tiada apa-apa ditambah."
+  "aiDraftUnreadable": "Draf komen tidak dapat dibaca, jadi tiada apa-apa ditambah.",
+  "aiDraftCheckFailed": "Jawapan tidak dapat disemak, jadi tiada apa-apa ditambah."
 }

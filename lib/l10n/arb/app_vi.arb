@@ -2343,12 +2343,13 @@
   "aiDraftNotSent": "Thao tác này chỉ thêm vào bản nháp; chưa có nội dung nào được đăng. Để đăng, hãy kiểm tra văn bản trong trình chỉnh sửa rồi nhấn Lưu.",
   "aiDraftConfirm": "Thêm vào bản nháp",
   "aiDraftMentionsOff": "Lượt nhắc đến đã tắt thông báo trong câu trả lời này: {count}. Chúng được hiển thị dưới dạng mã và không thông báo cho bất kỳ ai.",
-  "aiDraftMentionsNotify": "Lượt nhắc đến sẽ gửi thông báo khi đăng: {count}",
+  "aiDraftMentionsNotify": "Lượt nhắc đến trong câu trả lời này vẫn sẽ gửi thông báo khi đăng: {count}",
   "aiDraftKeepMentions": "Giữ thông báo nhắc đến",
   "aiDraftAcknowledge": "Tôi hiểu rằng việc đăng sẽ thông báo cho những người dùng này",
   "aiDraftInternal": "Cuộc trò chuyện này đã đọc ghi chú nội bộ mà chỉ thành viên dự án mới xem được. Trước khi thêm, hãy kiểm tra để bảo đảm câu trả lời không tiết lộ nội dung nào của những ghi chú này.",
-  "aiDraftAfterExisting": "Câu trả lời sẽ được thêm sau bản nháp bạn chưa gửi; các bước kiểm tra ở trên áp dụng cho nội dung kết hợp của cả hai.",
+  "aiDraftAfterExisting": "Câu trả lời sẽ được thêm sau bản nháp bạn chưa gửi. Các lượt nhắc đến và tham chiếu được kiểm tra trên nội dung kết hợp của cả hai; bản nháp của bạn, kể cả mọi lệnh nhanh trong đó, được giữ nguyên.",
   "aiDraftPreviewCut": "Bản xem trước chỉ hiển thị phần đầu; trình soạn thảo hiển thị toàn bộ nội dung.",
   "aiDraftChanged": "Cuộc trò chuyện đã thay đổi nên không có nội dung nào được thêm.",
-  "aiDraftUnreadable": "Không thể đọc bản nháp bình luận nên không có nội dung nào được thêm."
+  "aiDraftUnreadable": "Không thể đọc bản nháp bình luận nên không có nội dung nào được thêm.",
+  "aiDraftCheckFailed": "Không thể kiểm tra câu trả lời nên không có nội dung nào được thêm."
 }

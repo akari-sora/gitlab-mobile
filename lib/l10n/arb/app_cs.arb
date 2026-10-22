@@ -2343,12 +2343,13 @@
   "aiDraftNotSent": "Text se pouze přidá do konceptu a nic se nezveřejní. Chcete-li ho zveřejnit, zkontrolujte ho v editoru a stiskněte Uložit.",
   "aiDraftConfirm": "Přidat do konceptu",
   "aiDraftMentionsOff": "Zmínky s vypnutými oznámeními v této odpovědi: {count}. Zobrazují se jako kód a nikoho neupozorní.",
-  "aiDraftMentionsNotify": "Zmínky, které při zveřejnění odešlou oznámení: {count}",
+  "aiDraftMentionsNotify": "Zmínky v této odpovědi, které při zveřejnění stále odešlou oznámení: {count}",
   "aiDraftKeepMentions": "Ponechat oznámení o zmínkách",
   "aiDraftAcknowledge": "Rozumím, že zveřejnění upozorní tyto uživatele",
   "aiDraftInternal": "V této konverzaci byly načteny interní poznámky, které vidí jen členové projektu. Před přidáním zkontrolujte, že odpověď neodhaluje nic z jejich obsahu.",
-  "aiDraftAfterExisting": "Odpověď se přidá za váš dosud nezveřejněný koncept; výše uvedené kontroly se vztahují na oba texty dohromady.",
+  "aiDraftAfterExisting": "Odpověď se přidá za váš dosud nezveřejněný koncept. Zmínky a odkazy se kontrolují v obou textech dohromady; samotný koncept včetně všech rychlých akcí v něm zůstane beze změny.",
   "aiDraftPreviewCut": "Náhled zobrazuje začátek; v editoru se zobrazí celý obsah.",
   "aiDraftChanged": "Konverzace se změnila, proto nebylo nic přidáno.",
-  "aiDraftUnreadable": "Koncept komentáře se nepodařilo načíst, proto nebylo nic přidáno."
+  "aiDraftUnreadable": "Koncept komentáře se nepodařilo načíst, proto nebylo nic přidáno.",
+  "aiDraftCheckFailed": "Odpověď se nepodařilo zkontrolovat, proto nebylo nic přidáno."
 }

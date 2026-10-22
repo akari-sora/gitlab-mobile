@@ -2343,12 +2343,13 @@
   "aiDraftNotSent": "Der Text wird nur an den Entwurf angehängt; es wird nichts veröffentlicht. Prüfe zum Veröffentlichen den Text im Editor und tippe auf „Speichern“.",
   "aiDraftConfirm": "An Entwurf anhängen",
   "aiDraftMentionsOff": "Erwähnungen mit deaktivierten Benachrichtigungen in dieser Antwort: {count}. Sie werden als Code angezeigt und benachrichtigen niemanden.",
-  "aiDraftMentionsNotify": "Erwähnungen, die beim Veröffentlichen eine Benachrichtigung auslösen: {count}",
+  "aiDraftMentionsNotify": "Erwähnungen in dieser Antwort, die beim Veröffentlichen weiterhin eine Benachrichtigung auslösen: {count}",
   "aiDraftKeepMentions": "Erwähnungsbenachrichtigungen beibehalten",
   "aiDraftAcknowledge": "Ich verstehe, dass diese Personen beim Veröffentlichen benachrichtigt werden",
   "aiDraftInternal": "In dieser Unterhaltung wurden interne Notizen gelesen, die nur Projektmitglieder sehen können. Stelle vor dem Anhängen sicher, dass die Antwort nichts aus diesen Notizen preisgibt.",
-  "aiDraftAfterExisting": "Die Antwort wird an deinen noch nicht veröffentlichten Entwurf angehängt; die obigen Prüfungen beziehen sich auf beide Texte zusammen.",
+  "aiDraftAfterExisting": "Die Antwort wird an deinen noch nicht veröffentlichten Entwurf angehängt. Erwähnungen und Verweise werden in beiden Texten zusammen geprüft; dein Entwurf selbst bleibt einschließlich aller darin enthaltenen Schnellaktionen unverändert.",
   "aiDraftPreviewCut": "Die Vorschau zeigt den Anfang; im Editor wird der gesamte Inhalt angezeigt.",
   "aiDraftChanged": "Die Unterhaltung hat sich geändert, daher wurde nichts angehängt.",
-  "aiDraftUnreadable": "Der Kommentarentwurf konnte nicht gelesen werden, daher wurde nichts angehängt."
+  "aiDraftUnreadable": "Der Kommentarentwurf konnte nicht gelesen werden, daher wurde nichts angehängt.",
+  "aiDraftCheckFailed": "Die Antwort konnte nicht geprüft werden, daher wurde nichts angehängt."
 }

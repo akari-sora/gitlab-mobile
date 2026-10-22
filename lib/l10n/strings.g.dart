@@ -7123,7 +7123,7 @@ final class AppStrings {
   /// 已停用這段回答裡的提及通知：{count} 個。這些提及改以程式碼格式顯示，不會通知任何人。
   String aiDraftMentionsOff(Object? count) => _format(language, language._messages[2342], {'count': count});
 
-  /// 送出後仍會發出通知的提及：{count} 個
+  /// 這段回答中送出後仍會發出通知的提及：{count} 個
   String aiDraftMentionsNotify(Object? count) => _format(language, language._messages[2343], {'count': count});
 
   /// 保留提及通知
@@ -7135,7 +7135,7 @@ final class AppStrings {
   /// 這段對話讀過內部備註，只有專案成員看得到。附加前請確認回答沒有透露內部備註的內容。
   String get aiDraftInternal => language._messages[2346];
 
-  /// 這段回答會接在你尚未送出的草稿後面，上面的檢查以合併後的內容為準。
+  /// 這段回答會接在你尚未送出的草稿後面。提及與參照依合併後的內容檢查；原本草稿的內容（包括其中的快捷指令）維持不變。
   String get aiDraftAfterExisting => language._messages[2347];
 
   /// 預覽只顯示開頭，完整內容會出現在編輯器。
@@ -7146,4 +7146,7 @@ final class AppStrings {
 
   /// 讀不到這則留言的草稿，所以沒有附加。
   String get aiDraftUnreadable => language._messages[2350];
+
+  /// 無法檢查這段回答，所以沒有附加。
+  String get aiDraftCheckFailed => language._messages[2351];
 }

@@ -201,11 +201,17 @@ class _AiChatPageState extends State<AiChatPage> {
         _snack(l10n.aiDraftUnreadable);
         return;
       }
-      final analysis = await analyzeAiDraft(text, existing);
+      final AiDraftAnalysis analysis;
+      try {
+        analysis = await analyzeAiDraft(text, existing);
+      } on Object {
+        _snack(l10n.aiDraftCheckFailed);
+        return;
+      }
       if (!mounted) return;
       setState(() => _preparingDraft = false);
       if (!_canInsert(item)) {
-        _snack(l10n.aiDraftChanged);
+        _changed();
         return;
       }
       final before = items.take(index).toList(growable: false);
@@ -231,7 +237,7 @@ class _AiChatPageState extends State<AiChatPage> {
       );
       if (chosen == null || !mounted) return;
       if (!_canInsert(item)) {
-        _snack(l10n.aiDraftChanged);
+        _changed();
         return;
       }
       if (chosen.split('\n').any((line) => line.startsWith('/'))) return;
@@ -247,6 +253,13 @@ class _AiChatPageState extends State<AiChatPage> {
       (ModalRoute.of(context)?.isCurrent ?? false) &&
       _session.phase == AiChatPhase.idle &&
       _session.items.contains(item);
+
+  /// Says that nothing was appended because the conversation changed. When
+  /// another page covers the chat, that is why, and the notice would not be
+  /// seen anyway.
+  void _changed() {
+    if (ModalRoute.of(context)?.isCurrent ?? false) _snack(l10n.aiDraftChanged);
+  }
 
   /// Shown on the page's own messenger, which this state sits above.
   void _snack(String message) => _messenger.currentState?.showSnackBar(

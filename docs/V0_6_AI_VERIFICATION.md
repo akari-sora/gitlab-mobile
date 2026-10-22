@@ -1255,11 +1255,10 @@ Emulator runs on the project's Android API 36 emulator:
 
 - **Codex C1, encoded mentions in raw HTML.** `package:markdown` keeps a raw HTML
   block as source text, so `<div>\n&#64;victim\n</div>` reported no mention,
-  although GitLab decodes the entity. The analysis now decodes HTML entities in
-  every text node before looking for mentions and references: decimal and hex
-  references, plus `amp lt gt quot apos commat sol period lowbar hyphen dash num
-  excl colon`. A mention that exists only after decoding cannot be wrapped, so
-  it is listed and must be acknowledged. Covered cases: `&#64;victim`,
+  although GitLab decodes the entity. This round added a small entity table.
+  Round 2 replaced it with an HTML parser, see below. A mention that exists
+  only after decoding cannot be wrapped, so it is listed and must be
+  acknowledged. Covered cases: `&#64;victim`,
   `@&#118;ictim`, `&commat;all`, `&#64;group/subgroup`, and 51 encoded blocks.
   `&#64;` is no longer counted as reference `#64`.
 - **Opus C1, the waiting draft changes how the answer parses.** The editor posts
@@ -1319,7 +1318,69 @@ Emulator runs on the project's Android API 36 emulator:
   - dropping the internal warning;
   - dropping the route check;
   - dropping the `contains(item)` check;
-  - hard-coding the page's confidentiality wiring.
-- **Not changed:** `@.` is still a candidate that cannot be wrapped and asks for
-  acknowledgement, which is safe. A new conversation that keeps the old items
-  on screen also counts their confidential reads, which over-warns.
+  - replacing the page's confidentiality wiring with a constant. A value
+    captured when the chat opened was not caught until round 2.
+- **Not changed:**
+  - `x @. y` becomes ``x `@`. y``, which is cosmetic and safe.
+  - A new conversation that keeps the old items on screen also counts their
+    confidential reads, which over-warns.
+
+#### Review round 2 (Codex GPT-6.1-Sol, Opus 5.5; both REQUEST CHANGES)
+
+- **Entities, again (both).** The table missed:
+  - numeric references without a semicolon, which the HTML5 tokenizer still
+    decodes: `&#64victim`, `&#x40victim`, `&#X40victim`;
+  - named entities outside the table: `&fjlig;` gives `fj`, `&UnderBar;`
+    gives `_`.
+
+  The analysis now uses `package:html`, promoted from a transitive to a direct
+  dependency at the locked 0.15.7; the lock changed only in that entry's
+  `dependency:` line.
+  - Every Markdown text node is parsed as an HTML fragment. Raw HTML blocks are
+    included, and Markdown text is already escaped, so this decodes exactly
+    once.
+  - The final mention count walks the DOM of the whole rendered note, text node
+    by text node, skipping `code` and `pre` but not attributes. That is how
+    GitLab's reference filter sees it.
+  - `&amp;#64;victim` stays text. `<div title="@alice">` is no longer reported.
+  - The tests compare against an independent oracle that renders with
+    `markdownToHtml`, parses with `package:html` and calls nothing in the
+    analyzer. It covers the fixed corpus of both reviews and 600 generated
+    answers, each alone and after an existing draft.
+  - A 3,990-character answer with 50 candidates takes about 52 ms in JIT on a
+    Mac.
+- **CR in the waiting draft (Codex).** GitLab deletes every CR of a comment
+  before rendering when it processes quick actions. With an existing draft of
+  `log\r` + three backticks, the backticks start a fence locally but end up
+  mid-line on GitLab. The analysis now applies the same CR handling to the
+  existing draft and to the answer.
+- **CR before redaction (Opus).** `draftSafe` kept CRs, and they were removed
+  only later by `neutralizeForGitLabDraft`. A known secret split by a lone CR
+  therefore passed redaction and was then joined back together. `draftSafe`
+  now drops CRs first. A controller test covers a split secret.
+- **Page-boundary tests (Opus).** Three mutations had survived: an empty
+  `readDraftField`, an empty `existingText` on the page, and confidentiality
+  captured when the chat opened. A new entry-point test now saves a draft
+  under the real key and expects `existingText()` to return it. It also checks
+  that the preview shows the existing-draft note, and that a target created
+  earlier reports the issue as public after the page reloads. All three
+  mutations now turn it red.
+- **Smaller fixes.**
+  - `readCommentDraft` refuses a draft whose write marker the editor would
+    also refuse, so the preview does not open for an append that would not
+    happen.
+  - A failed analysis says the answer could not be checked; nothing is
+    appended.
+  - When another page covers the chat, no "conversation changed" notice is
+    shown.
+  - A 6,001-character answer now gets the "preview cut" note.
+  - The existing-draft note no longer points "above". It says mentions and
+    references are checked on the joined text and that the user's own draft,
+    including its quick actions, is left as it is.
+  - The notify count is limited to this answer.
+  - Thai uses its existing quick-action term.
+- **Residual, documented here.** The check covers the joined text at the
+  moment of appending. If the user then edits their own part of the draft in
+  the editor, for example by closing a fence they had left open, a mention
+  that was inside that code can become live. The editor's Save is not checked
+  again.

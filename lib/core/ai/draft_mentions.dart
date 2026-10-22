@@ -1,3 +1,5 @@
+import 'package:html/dom.dart' as dom;
+import 'package:html/parser.dart' as html;
 import 'package:markdown/markdown.dart' as md;
 
 /// What appending [text] to a GitLab comment would mention or reference.
@@ -9,7 +11,7 @@ final class DraftMentions {
     required this.references,
   });
 
-  /// The draft text, with only verified mention code spans added.
+  /// The draft text, with CRs normalized and verified mention code spans added.
   final String text;
 
   /// Remaining mentions without `@`, unique in order of first appearance.
@@ -33,25 +35,6 @@ final _referencePattern = RegExp(
 final _referencePathPattern = RegExp(
   r'/-/(?:issues|merge_requests|work_items)/[0-9]+(?=$|[^A-Za-z0-9_])',
 );
-final _htmlEntityPattern = RegExp(
-  r'&(#(?:[xX][0-9A-Fa-f]+|[0-9]+)|[A-Za-z]+);',
-);
-const _namedHtmlEntities = <String, String>{
-  'amp': '&',
-  'lt': '<',
-  'gt': '>',
-  'quot': '"',
-  'apos': "'",
-  'commat': '@',
-  'sol': '/',
-  'period': '.',
-  'lowbar': '_',
-  'hyphen': '\u2010',
-  'dash': '\u2010',
-  'num': '#',
-  'excl': '!',
-  'colon': ':',
-};
 
 /// Adds code spans only when reparsing proves that one mention was removed
 /// without changing existing code. Unverified mentions remain for confirmation.
@@ -60,6 +43,10 @@ DraftMentions analyzeDraftMentions(
   bool keepNotifications = false,
   String existing = '',
 }) {
+  // GitLab's quick-action extractor normalizes CRLF and removes every other
+  // CR from the whole note. Normalize before collecting answer offsets too.
+  text = text.replaceAll('\r\n', '\n').replaceAll('\r', '');
+  existing = existing.replaceAll('\r\n', '\n').replaceAll('\r', '');
   var result = text;
   var neutralized = 0;
 
@@ -102,10 +89,7 @@ DraftMentions analyzeDraftMentions(
 String _joinedDraft(String existing, String appended) =>
     existing.isEmpty ? appended : '$existing\n\n$appended';
 
-List<String> _subtractMentions(
-  List<String> joined,
-  List<String> existing,
-) {
+List<String> _subtractMentions(List<String> joined, List<String> existing) {
   final remainingExisting = <String, int>{};
   for (final name in existing) {
     remainingExisting[name] = (remainingExisting[name] ?? 0) + 1;
@@ -148,6 +132,27 @@ _Analysis _analyze(String text) {
   ).parse(text);
   final analysis = _Analysis();
 
+  void walkHtml(dom.Node node, {required bool skipReferences}) {
+    if (node is dom.Element &&
+        (node.localName == 'code' || node.localName == 'pre')) {
+      return;
+    }
+    if (node is dom.Text) {
+      analysis.mentions.addAll(
+        _mentionPattern.allMatches(node.data).map((match) => match[1]!),
+      );
+      if (!skipReferences) {
+        for (final match in _referencePattern.allMatches(node.data)) {
+          final url = match[1];
+          if (url == null || _isReferenceUrl(url)) analysis.references++;
+        }
+      }
+    }
+    for (final child in node.nodes) {
+      walkHtml(child, skipReferences: skipReferences);
+    }
+  }
+
   void walk(
     md.Node node, {
     bool insideCode = false,
@@ -179,46 +184,21 @@ _Analysis _analyze(String text) {
         walk(child, insideCode: blocked, skipReferences: skipChildReferences);
       }
     } else if (node is md.Text && !insideCode) {
-      final decoded = _decodeHtmlEntities(node.text);
-      analysis.mentions.addAll(
-        _mentionPattern.allMatches(decoded).map((match) => match[1]!),
-      );
-      if (!skipReferences) {
-        for (final match in _referencePattern.allMatches(decoded)) {
-          final url = match[1];
-          if (url == null || _isReferenceUrl(url)) analysis.references++;
-        }
-      }
+      // Markdown text is already HTML-escaped, while raw HTML is kept intact.
+      // One fragment parse decodes once and preserves DOM text boundaries.
+      walkHtml(html.parseFragment(node.text), skipReferences: skipReferences);
     }
   }
 
   for (final node in nodes) {
     walk(node);
   }
+  // Nested Markdown can leave adjacent Text nodes separate, and raw tags can
+  // span Markdown elements. Reconcile mentions with the rendered DOM so their
+  // text boundaries match the whole note, preserving the link reference count.
+  analysis.mentions.clear();
+  walkHtml(html.parseFragment(md.renderToHtml(nodes)), skipReferences: true);
   return analysis;
-}
-
-String _decodeHtmlEntities(String text) {
-  return text.replaceAllMapped(_htmlEntityPattern, (match) {
-    final entity = match[1]!;
-    if (!entity.startsWith('#')) {
-      return _namedHtmlEntities[entity] ?? match[0]!;
-    }
-
-    final hexadecimal = entity.length > 2 &&
-        (entity.codeUnitAt(1) == 0x78 || entity.codeUnitAt(1) == 0x58);
-    final value = int.tryParse(
-      entity.substring(hexadecimal ? 2 : 1),
-      radix: hexadecimal ? 16 : 10,
-    );
-    if (value == null ||
-        value <= 0 ||
-        value > 0x10ffff ||
-        (value >= 0xd800 && value <= 0xdfff)) {
-      return match[0]!;
-    }
-    return String.fromCharCode(value);
-  });
 }
 
 bool _isReferenceUrl(String text) {

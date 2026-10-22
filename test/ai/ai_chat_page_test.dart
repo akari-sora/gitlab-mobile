@@ -567,7 +567,9 @@ void main() {
     testWidgets('a long answer is previewed in part and appended whole', (
       tester,
     ) async {
-      final long = List.filled(400, 'Line of a long answer').join('\n');
+      // One character over what the preview shows: the note must still say
+      // that the preview is cut.
+      final long = '${'x' * 6000}Z';
       final inserted = <String>[];
       await tester.pumpWidget(
         _host(
