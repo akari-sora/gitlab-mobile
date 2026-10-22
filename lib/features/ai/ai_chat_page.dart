@@ -282,6 +282,27 @@ class _AiChatPageState extends State<AiChatPage> {
 
   var _attaching = false;
 
+  /// Off, with the reason as its tooltip, when the conversation holds the
+  /// most files or bytes it may (§3.1) or cannot take files now.
+  Widget _attachButton(AiWriteChatSession writes) {
+    final held = writes.attachments;
+    final full =
+        held.length >= AiAttachmentSession.maxCountPerConversation ||
+        held.fold<int>(0, (sum, file) => sum + file.size) >=
+            AiAttachmentSession.maxBytesPerConversation;
+    final can = writes.canAttach && !full;
+    return IconButton(
+      key: const ValueKey('ai-chat-attach'),
+      tooltip: full
+          ? l10n.aiAttachCapacity
+          : can
+          ? l10n.attachFile
+          : l10n.aiAttachDisabled,
+      icon: const Icon(Icons.attach_file),
+      onPressed: can && !_attaching ? () => _attach(writes) : null,
+    );
+  }
+
   /// Picks an image or a file to keep for this conversation. Nothing leaves
   /// the device until a write the user approves uploads it.
   Future<void> _attach(AiWriteChatSession writes) async {
@@ -669,14 +690,7 @@ class _AiChatPageState extends State<AiChatPage> {
                                 final AiWriteChatSession writes
                                     when writes.autonomyCeiling !=
                                         AiAutonomyLevel.readOnly =>
-                                  IconButton(
-                                    key: const ValueKey('ai-chat-attach'),
-                                    tooltip: l10n.attachFile,
-                                    icon: const Icon(Icons.attach_file),
-                                    onPressed: writes.canAttach && !_attaching
-                                        ? () => _attach(writes)
-                                        : null,
-                                  ),
+                                  _attachButton(writes),
                                 _ => null,
                               },
                               attachments: _session.attachments.isEmpty

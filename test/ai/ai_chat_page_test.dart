@@ -12,6 +12,7 @@ import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/brand.dart';
 import 'package:gitlab_mobile/features/ai/ai_report_sender.dart';
 import 'package:gitlab_mobile/features/shell/build_info.dart';
+import 'package:gitlab_mobile/features/workspace/attachment_picker.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_attachment_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
@@ -511,6 +512,43 @@ void main() {
         expect(send.top, greaterThan(stop.bottom));
       });
     }
+
+    testWidgets('attach is off at the file limit and says why', (
+      tester,
+    ) async {
+      final held = AiAttachmentSession(
+        accountKey: 'synthetic',
+        conversationId: 'conversation-full',
+      );
+      addTearDown(held.discardAll);
+      final files = <AiStoredAttachment>[];
+      for (
+        var n = 0;
+        n < AiAttachmentSession.maxCountPerConversation;
+        n++
+      ) {
+        final result = await tester.runAsync(
+          () => held.reserveAndRead(
+            picker: _NoPicker(),
+            uploadToolInSegment: true,
+            intake: AiAttachmentIntake(
+              filename: 'shot-$n.png',
+              length: 3,
+              open: () => Stream.value([1, 2, n]),
+            ),
+          ),
+        );
+        files.add(result!.attachment!);
+      }
+      final session = _FakeWriteSession()..attachments = files;
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      final attach = tester.widget<IconButton>(
+        find.byKey(const ValueKey('ai-chat-attach')),
+      );
+      expect(attach.onPressed, isNull);
+      expect(attach.tooltip, l10n.aiAttachCapacity);
+    });
 
     testWidgets('a read-only conversation has no level or attach button', (
       tester,
@@ -2482,4 +2520,11 @@ void main() {
       expect(find.byType(SelectableText), findsOneWidget);
     });
   });
+}
+
+final class _NoPicker implements AttachmentPicker {
+  @override
+  Future<PickedAttachment?> pickImage() async => null;
+  @override
+  Future<PickedAttachment?> pickFile() async => null;
 }
