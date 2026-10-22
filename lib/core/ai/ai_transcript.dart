@@ -96,6 +96,7 @@ final class AiToolResult {
     this.notExecuted = false,
     this.readConfidential = false,
     this.readInternal = false,
+    this.uploadPlaceholders = false,
   }) : _content = content,
        data = null {
     assert(!content.contains('<gitlab_data'));
@@ -112,6 +113,7 @@ final class AiToolResult {
     this.notExecuted = false,
     this.readConfidential = false,
     this.readInternal = false,
+    this.uploadPlaceholders = false,
   }) : _content = '',
        // ignore: prefer_initializing_formals
        data = data;
@@ -134,6 +136,13 @@ final class AiToolResult {
   /// Display-only metadata; never encoded in provider requests.
   final bool readInternal;
 
+  /// The producer numbered restorable upload links through the
+  /// conversation's placeholder table and already turned every
+  /// source-authored `[[upload:` or `[[attachment:` into an ordinary marker,
+  /// so later redaction passes keep exact `[[upload:u-<n>]]` tokens. A cut
+  /// value still loses them.
+  final bool uploadPlaceholders;
+
   AiToolResult copyWith({required AiAppText data}) => AiToolResult.fromData(
     callId: callId,
     name: name,
@@ -145,6 +154,7 @@ final class AiToolResult {
     notExecuted: notExecuted,
     readConfidential: readConfidential,
     readInternal: readInternal,
+    uploadPlaceholders: uploadPlaceholders,
   );
 }
 

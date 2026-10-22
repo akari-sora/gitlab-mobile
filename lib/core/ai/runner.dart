@@ -660,7 +660,10 @@ final class AiRunner {
             // Whole tool content is redacted before any output truncation.
             final data = toolResult.plainData.redact(
               _redactor,
-              source: _redact,
+              source: (s) => _redact(
+                s,
+                keepAppPlaceholders: toolResult.uploadPlaceholders,
+              ),
             );
             final content = data.encode();
             final clippedData = data.clipped(
@@ -685,6 +688,7 @@ final class AiRunner {
               notExecuted: toolResult.notExecuted,
               readConfidential: successfulRead && toolResult.readConfidential,
               readInternal: successfulRead && toolResult.readInternal,
+              uploadPlaceholders: toolResult.uploadPlaceholders,
             );
             results.add(safeResult);
             _notifyToolResult(safeResult);
@@ -894,13 +898,24 @@ final class AiRunner {
     };
   }
 
-  String _redact(String text, {bool late = false}) {
+  /// [keepAppPlaceholders] is only for a tool result whose producer already
+  /// neutralized every source-authored placeholder
+  /// ([AiToolResult.uploadPlaceholders]); everything else still turns a
+  /// literal `[[upload:` or `[[attachment:` into an ordinary marker.
+  String _redact(
+    String text, {
+    bool late = false,
+    bool keepAppPlaceholders = false,
+  }) {
     // Refuse before scanning or splitting a source; never cut a key in half.
     if (text.length > 2 * 1024 * 1024 ||
         utf8.encode(text).length > 2 * 1024 * 1024) {
       throw const AiFailure(AiFailureKind.policyBlocked);
     }
-    final redacted = _redactor.redactSource(stripAiAnsi(text));
+    final redacted = _redactor.redactSource(
+      stripAiAnsi(text),
+      keepAppPlaceholders: keepAppPlaceholders,
+    );
     _withheld |= redacted.withheldPrivateKeyContext;
     if (late) lateRedactions += redacted.redactions;
     return redacted.text;
@@ -929,7 +944,11 @@ final class AiRunner {
               result.copyWith(
                 data: result.plainData.redact(
                   _redactor,
-                  source: (s) => _redact(s, late: true),
+                  source: (s) => _redact(
+                    s,
+                    late: true,
+                    keepAppPlaceholders: result.uploadPlaceholders,
+                  ),
                 ),
               ),
           ],

@@ -90,6 +90,47 @@ final class AiFieldProvenance {
 
   bool sameField(AiFieldProvenance other) =>
       resourceKey == other.resourceKey && fieldName == other.fieldName;
+
+  /// The provenance of an issue or merge request description ([noteId]
+  /// null) or of one note's body on it. The read port and the write side
+  /// both build it here, so a placeholder issued for one field can only be
+  /// restored into that same field. A note is keyed by its numeric ID alone,
+  /// which plain and discussion note endpoints share.
+  factory AiFieldProvenance.gitLab({
+    required GitLabInstance instance,
+    required int projectId,
+    required String? projectPath,
+    required String resource,
+    required int iid,
+    int? noteId,
+  }) {
+    final issue = switch (resource) {
+      'issues' => true,
+      'merge_requests' => false,
+      _ => throw ArgumentError.value(resource, 'resource'),
+    };
+    final path = projectPath == null || projectPath.isEmpty
+        ? null
+        : projectPath;
+    return AiFieldProvenance(
+      resourceKey: noteId != null
+          ? AiConflictKey('note:$noteId')
+          : AiConflictKey(
+              'project:$projectId/${issue ? 'issue' : 'merge_request'}:$iid',
+            ),
+      fieldName: noteId != null
+          ? AiWritableField.note
+          : issue
+          ? AiWritableField.issueDescription
+          : AiWritableField.mergeRequestDescription,
+      completeValue: true,
+      resourceWeb: path == null
+          ? null
+          : instance.projectWeb('$path/-/$resource/$iid'),
+      projectId: projectId,
+      projectFullPath: path,
+    );
+  }
 }
 
 /// Reasons that stay on the fixed confirmation list at every level, including
@@ -228,10 +269,16 @@ final class UploadPlaceholderTable {
   final List<_UploadEntry> _entries = <_UploadEntry>[];
   final Set<String> _userMessageTargets = <String>{};
   bool _exceeded = false;
+  int _limitHits = 0;
 
   /// True after a new target was general-masked because the table is full.
   /// The read port should surface [AiTextBlockCode.tooManyUploadLinks].
   bool get exceededEntryLimit => _exceeded;
+
+  /// How many new targets were general-masked because the table was full.
+  /// A caller compares it before and after one field to tell whether that
+  /// field lost a restorable link to the limit.
+  int get limitHits => _limitHits;
 
   int get length => _entries.length;
 
@@ -333,6 +380,7 @@ final class UploadPlaceholderTable {
         final existing = _existing(field, target.raw);
         if (existing == null && _entries.length >= maxEntries) {
           _exceeded = true;
+          _limitHits++;
           replacements.add(
             _SpanReplacement(target.start, target.end, _redactedMarker),
           );

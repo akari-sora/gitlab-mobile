@@ -12,6 +12,7 @@ import '../../core/ai/ai_provider.dart';
 import '../../core/ai/ai_transport.dart';
 import '../../core/ai/ai_transcript.dart';
 import '../../core/ai/ai_wire_client.dart';
+import '../../core/ai/context_builders.dart' show aiMaxRedactionInputChars;
 import '../../core/ai/prompts.dart';
 import '../../core/ai/redaction.dart';
 import '../../core/ai/runner.dart';
@@ -128,6 +129,10 @@ class AiChatController extends ChangeNotifier
   final writes.AiGitLabWritePort Function()? _writePortFactory;
   final AttachmentPicker _attachmentPicker;
   PolicyAiWriteCoordinator? _writes;
+
+  /// This conversation's upload placeholder table, created with its runner
+  /// and dropped with it. It lives only in memory.
+  write_text.UploadPlaceholderTable? _placeholders;
   AiAttachmentSession? _attachments;
   AiAutonomyLevel? _autonomyLevel;
   int _writeScopeRevision = 0;
@@ -430,11 +435,15 @@ class AiChatController extends ChangeNotifier
   /// Without the upload tool no block is sent, even for a file whose removal
   /// waits for its upload to finish.
   ({String modelText, String? bindingUtterance, List<AiContextChip> chips})
-  _attachmentTurn(String text, {required bool uploadInSegment}) {
+  _attachmentTurn(
+    String text, {
+    required bool uploadInSegment,
+    String? outgoing,
+  }) {
     final AiAttachmentSession? session = _attachments;
     if (!uploadInSegment || session == null || session.items.isEmpty) {
       return (
-        modelText: text,
+        modelText: outgoing ?? text,
         bindingUtterance: null,
         chips: const <AiContextChip>[],
       );
@@ -443,12 +452,29 @@ class AiChatController extends ChangeNotifier
     final String block = metadata['block']! as String;
     final List<Object?> rows = metadata['attachments']! as List<Object?>;
     return (
-      modelText: '$text\n\n$block',
+      modelText: '${outgoing ?? text}\n\n$block',
       bindingUtterance: session.textForTargetBinding(text),
       chips: <AiContextChip>[
         for (final Object? row in rows)
           if (row case final Map<String, Object?> sent) _attachmentChip(sent),
       ],
+    );
+  }
+
+  /// The user's own text as the provider receives it. Upload links in it
+  /// become ordinary markers, and the table remembers them so a write that
+  /// carries one is refused with `pasteOnScreen`. Text over the scan limit
+  /// is left to the runner, which refuses it.
+  String _outgoingUserText(String text) {
+    final placeholders = _placeholders;
+    if (placeholders == null ||
+        utf8.encode(text).length > aiMaxRedactionInputChars) {
+      return text;
+    }
+    return placeholders.redactOutgoing(
+      text,
+      knownSecrets: _secrets.current.toSet(),
+      userMessage: true,
     );
   }
 
@@ -1036,7 +1062,10 @@ class AiChatController extends ChangeNotifier
     _writeScopeRevision++;
   }
 
-  Future<AiWriteFreshness> _freshWrite(writes.AiWriteRequest request) async {
+  Future<AiWriteFreshness> _freshWrite(
+    writes.AiWriteRequest request,
+    write_text.UploadPlaceholderTable placeholders,
+  ) async {
     await _refreshSecrets();
     if (!_alive) throw const AiJournalException('accountChanged');
     final args = request.arguments;
@@ -1125,6 +1154,26 @@ class AiChatController extends ChangeNotifier
       'public' => 2,
       _ => -1,
     };
+    // The written field's own provenance: only placeholders the table issued
+    // for this resource and field are restored. Other writes get none.
+    final projectPath = projectData['path_with_namespace'];
+    final noteId = args['noteId'];
+    write_text.AiFieldProvenance restorable({int? note}) =>
+        write_text.AiFieldProvenance.gitLab(
+          instance: placeholders.instance,
+          projectId: project,
+          projectPath: projectPath is String ? projectPath : null,
+          resource: resource as String,
+          iid: iid as int,
+          noteId: note,
+        );
+    final provenance = <String, write_text.AiFieldProvenance>{
+      if (operation == 'updateIssue' || operation == 'updateMergeRequest')
+        'description': restorable(),
+      if ((operation == 'updateNote' || operation == 'updateDiscussionNote') &&
+          noteId is int)
+        'body': restorable(note: noteId),
+    };
     final noChange = switch (operation) {
       'setStar' =>
         target['starred'] is bool && target['starred'] == args['starred'],
@@ -1159,6 +1208,7 @@ class AiChatController extends ChangeNotifier
         for (final key in ['body', 'description', 'title', 'name'])
           if (target[key] is String) key: target[key] as String,
       },
+      provenance: provenance,
     );
   }
 
@@ -1166,6 +1216,10 @@ class AiChatController extends ChangeNotifier
     final config = _provider!;
     final context = _context!;
     final scope = context.scope;
+    final placeholders = write_text.UploadPlaceholderTable(
+      instance: _api.instance,
+    );
+    _placeholders = placeholders;
     final catalogue = scope == null || !config.toolsEnabled
         ? null
         : AiToolCatalogue(
@@ -1173,6 +1227,7 @@ class AiChatController extends ChangeNotifier
             scope: scope,
             redactor: _redactor,
             refreshSecrets: _refreshSecrets,
+            placeholders: placeholders,
           );
     var budget = AiToolBudget();
     final client = _client(config);
@@ -1186,8 +1241,10 @@ class AiChatController extends ChangeNotifier
       journal: _writeJournal,
       conversationId: conversationId,
       budget: () => budget,
-      readFreshness: _readWriteFreshness ?? _freshWrite,
-      placeholders: write_text.UploadPlaceholderTable(instance: _api.instance),
+      readFreshness:
+          _readWriteFreshness ??
+          (request) => _freshWrite(request, placeholders),
+      placeholders: placeholders,
       knownSecrets: () => _secrets.current.toSet(),
       safeDisplay: draftSafe,
       attachments: _attachments,
@@ -1431,7 +1488,11 @@ class AiChatController extends ChangeNotifier
       // tool list of the segment this send uses.
       final uploadInSegment = _uploadToolInSegment();
       if (!uploadInSegment) _dropHeldAttachments();
-      final turn = _attachmentTurn(text, uploadInSegment: uploadInSegment);
+      final turn = _attachmentTurn(
+        text,
+        uploadInSegment: uploadInSegment,
+        outgoing: _outgoingUserText(text),
+      );
       if (turn.chips.isNotEmpty) {
         if (_items[userIndex] case AiUserItem(
           text: final shown,
@@ -1449,7 +1510,8 @@ class AiChatController extends ChangeNotifier
       final redactions = runner.lateRedactions;
       final result = await runner.run(
         turn.modelText,
-        bindingUtterance: turn.bindingUtterance,
+        // Binding still reads the user's own words, as before.
+        bindingUtterance: turn.bindingUtterance ?? text,
       );
       if (!_current(epoch)) return;
       _settleChips(
@@ -1913,6 +1975,7 @@ class AiChatController extends ChangeNotifier
       unawaited(pending.then<void>((_) => _retiredWrites.remove(pending)));
     }
     _writes = null;
+    _placeholders = null;
     _attachments?.discardAll();
     _attachments = null;
     _autonomyLevel = null;
