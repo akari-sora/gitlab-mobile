@@ -11316,14 +11316,14 @@
     }
   },
   "aiPreviewBranches": "分支",
-  "aiPreviewBranchFlow": "{source} → {target}",
+  "aiPreviewBranchFlow": "{source} 合併到 {target}",
   "@aiPreviewBranchFlow": {
     "placeholders": {
       "source": {},
       "target": {}
     }
   },
-  "aiPreviewCommit": "提交",
+  "aiPreviewCommit": "要合併的提交",
   "aiPreviewChangedFiles": "變更的檔案",
   "aiPreviewMergeOptions": "合併方式",
   "aiPreviewSquashOn": "壓縮成一個提交",
@@ -11349,10 +11349,10 @@
     }
   },
   "aiPreviewRef": "分支或標籤",
-  "aiPreviewPipeline": "Pipeline",
+  "aiPreviewPipeline": "Pipeline 執行",
   "aiPreviewJob": "工作",
   "aiPreviewEnvironment": "環境",
-  "aiPreviewStoredVariables": "重新執行或播放可能沿用 GitLab 上已存的變數與 inputs；由排程建立的 Pipeline 還會使用排程目前的變數。應用程式讀不到，也無法核對。",
+  "aiPreviewStoredVariables": "重新執行或播放可能沿用 GitLab 上已存的變數與輸入值；由排程建立的 Pipeline 還會使用排程目前的變數。應用程式讀不到，也無法核對。",
   "aiPreviewScheduleVariables": "排程目前的變數：{names}",
   "@aiPreviewScheduleVariables": {
     "placeholders": {

@@ -7906,10 +7906,10 @@ final class AppStrings {
   /// 分支
   String get aiPreviewBranches => language._messages[2603];
 
-  /// {source} → {target}
+  /// {source} 合併到 {target}
   String aiPreviewBranchFlow(Object? source, Object? target) => _format(language, language._messages[2604], {'source': source, 'target': target});
 
-  /// 提交
+  /// 要合併的提交
   String get aiPreviewCommit => language._messages[2605];
 
   /// 變更的檔案
@@ -7942,7 +7942,7 @@ final class AppStrings {
   /// 分支或標籤
   String get aiPreviewRef => language._messages[2615];
 
-  /// Pipeline
+  /// Pipeline 執行
   String get aiPreviewPipeline => language._messages[2616];
 
   /// 工作
@@ -7951,7 +7951,7 @@ final class AppStrings {
   /// 環境
   String get aiPreviewEnvironment => language._messages[2618];
 
-  /// 重新執行或播放可能沿用 GitLab 上已存的變數與 inputs；由排程建立的 Pipeline 還會使用排程目前的變數。應用程式讀不到，也無法核對。
+  /// 重新執行或播放可能沿用 GitLab 上已存的變數與輸入值；由排程建立的 Pipeline 還會使用排程目前的變數。應用程式讀不到，也無法核對。
   String get aiPreviewStoredVariables => language._messages[2619];
 
   /// 排程目前的變數：{names}
