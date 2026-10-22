@@ -985,6 +985,14 @@ class AiChatController extends ChangeNotifier
     );
   }
 
+  /// Whether the app-level write gates are open now: the app is on screen and
+  /// the GitLab client may start a request. [_writeSnapshot] reads the same.
+  @visibleForTesting
+  bool get writeGatesOpen =>
+      _appInForeground() &&
+      !_api.isClosed &&
+      (_clientMayStart?.call() ?? false);
+
   AiWritePolicySnapshot _writeSnapshot(AiProviderConfig config) {
     final account = settings.accountRecord(_accountKey);
     final contract = _consentContract(config);

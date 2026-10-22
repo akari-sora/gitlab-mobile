@@ -1752,6 +1752,14 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
 
   bool get isClosed => _closed;
 
+  /// Whether a request may start now: the client is open and no remembered
+  /// 429 `Retry-After` is still pending. Synchronous, for the AI write gate.
+  bool get mayStartRequest {
+    if (_closed) return false;
+    final until = _retryAt;
+    return until == null || !DateTime.now().isBefore(until);
+  }
+
   void close() {
     _closed = true;
     clearReadCache();

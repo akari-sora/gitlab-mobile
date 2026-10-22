@@ -464,6 +464,8 @@ AiChatSessionHandle _defaultChatSession({
     settings: settings,
     runningCount: runningCount,
     wireClientFactory: wireClientFactory,
+    appInForeground: aiAppInForeground,
+    clientMayStart: aiClientMayStart(session),
   );
   return (
     session: controller,

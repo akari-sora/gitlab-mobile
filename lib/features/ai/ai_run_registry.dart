@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import '../../core/gitlab_api.dart';
 import '../../core/ai/tools/write_coordinator.dart';
@@ -41,12 +41,28 @@ AiChatSessionHandle _createAiChatSession({
     settings: settings,
     runningCount: runningCount,
     wireClientFactory: wireClientFactory,
+    appInForeground: aiAppInForeground,
+    clientMayStart: aiClientMayStart(session),
   );
   return (
     session: controller,
     capacityChanged: controller.notifyCapacityChanged,
     dispose: controller.dispose,
   );
+}
+
+/// Whether the app is on screen. Until MR6c adds the foreground service, a
+/// write starts only while the app is visible.
+bool aiAppInForeground() => switch (WidgetsBinding.instance.lifecycleState) {
+  AppLifecycleState.resumed || AppLifecycleState.inactive => true,
+  _ => false,
+};
+
+/// The write gate's client check for [session]'s current API: open, and not
+/// waiting out a 429.
+bool Function() aiClientMayStart(SessionController session) {
+  final api = session.api;
+  return () => api != null && api.mayStartRequest;
 }
 
 /// Conversations owned by one exact authenticated account generation.
