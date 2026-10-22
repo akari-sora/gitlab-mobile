@@ -275,7 +275,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
         ),
       ],
       save: (values) async {
-        await widget.api.saveFile(
+        await widget.api.createRepositoryFile(
           widget.project.id,
           values['path']!.trim(),
           branch: branch,
@@ -1408,14 +1408,18 @@ class _RepositoryFilePageState extends State<RepositoryFilePage> {
         ),
       ],
       save: (values) async {
+        final lastCommit = _lastCommit;
+        if (lastCommit == null) {
+          throw const ApiFailure(FailureKind.conflict);
+        }
         await _checkCurrent();
-        await widget.api.saveFile(
+        await widget.api.updateRepositoryFile(
           widget.project.id,
           widget.filePath,
           branch: branch,
           content: values['content']!,
           message: values['message']!.trim(),
-          lastCommit: _lastCommit,
+          lastCommit: lastCommit,
         );
       },
     );
