@@ -1283,8 +1283,66 @@ void main() {
       // Only the earlier conversation, which holds the report, is saved.
       expect(saved.map((conversation) => conversation.id), [firstId]);
       expect(controller.reportNotSaved, isFalse);
+      // Once this conversation has its own report, it is saved without the
+      // earlier conversation's items.
+      controller.markReported(
+        controller.items.whereType<AiAssistantItem>().last,
+      );
+      await _waitUntil(() => controller.historySaved);
+      final secondId = controller.id;
+      final second = (await history.read(account))!.conversations.singleWhere(
+        (conversation) => conversation.id == secondId,
+      );
+      final items = second.conversation.items;
+      expect(
+        items.first,
+        isA<AiUserItem>().having(
+          (item) => item.text,
+          'text',
+          'new question with nothing reported',
+        ),
+      );
+      expect(
+        items.whereType<AiUserItem>().map((item) => item.text),
+        isNot(contains('earlier question')),
+      );
     },
   );
+
+  test('a failed refresh blocks an idle chat but leaves a run alone', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    var fail = false;
+    final release = Completer<void>();
+    var requests = 0;
+    final controller = await _readyController(
+      environment,
+      FakeAdapter((_) async {
+        requests++;
+        if (requests > 1) await release.future;
+        return _sse(answer('synthetic reply'));
+      }),
+      tools: false,
+      refreshSecrets: () async {
+        if (fail) throw StateError('synthetic secret store failure');
+      },
+    );
+    await controller.send('first');
+    // During a run: the phase, and Stop, stay.
+    final second = controller.send('second');
+    await _waitUntil(() => controller.phase == AiChatPhase.running);
+    fail = true;
+    expect(await controller.refreshSecrets(), isFalse);
+    expect(controller.phase, AiChatPhase.running);
+    expect(controller.blocker, AiChatBlocker.none);
+    fail = false;
+    release.complete();
+    await second;
+    // While idle: the chat stops until the display can be checked.
+    fail = true;
+    expect(await controller.refreshSecrets(), isFalse);
+    expect(controller.blocker, AiChatBlocker.contextUnavailable);
+  });
 
   test('report saves retry after 1, 5 and 30 seconds', () {
     expect(AiChatController.defaultHistoryRetryDelays, const [

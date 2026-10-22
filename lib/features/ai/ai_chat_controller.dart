@@ -284,10 +284,14 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     } on Object catch (error) {
       if (!_alive) return false;
       // As in recheck: what is shown could not be checked against the
-      // larger secret set, so the chat stops until it can.
-      _failure = error is AiFailure ? error : safeFailure(error);
-      _contextFailed = true;
-      _setBlocked(AiChatBlocker.contextUnavailable);
+      // larger secret set, so the chat stops until it can. A run in flight
+      // keeps its phase (and Stop); the failed display it left blocks the
+      // chat when the run ends.
+      if (_phase == AiChatPhase.idle) {
+        _failure = error is AiFailure ? error : safeFailure(error);
+        _contextFailed = true;
+        _setBlocked(AiChatBlocker.contextUnavailable);
+      }
       return false;
     }
     if (!_alive) return false;

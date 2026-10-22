@@ -84,6 +84,9 @@ class _AiReportSheetState extends State<AiReportSheet> {
   /// last keys typed): the user confirms the new text with a second Send.
   var _previewUpdated = false;
 
+  /// The preview, brought into view when Send replaced it.
+  final _previewBox = GlobalKey();
+
   Future<void> _send() async {
     final choice = _choice;
     if (choice == null || _sending) return;
@@ -107,6 +110,18 @@ class _AiReportSheetState extends State<AiReportSheet> {
         _preview = text!;
         _previewUpdated = true;
         _sending = false;
+      });
+      // The note asks the user to check the preview: show its start.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final box = _previewBox.currentContext;
+        if (box != null && box.mounted) {
+          unawaited(
+            Scrollable.ensureVisible(
+              box,
+              duration: const Duration(milliseconds: 200),
+            ),
+          );
+        }
       });
       return;
     }
@@ -162,54 +177,70 @@ class _AiReportSheetState extends State<AiReportSheet> {
         final height = room < 420 ? room : room * 0.9;
         // With little room (a landscape phone with the keyboard up) the
         // buttons scroll with the form instead of being pinned under it.
-        final pinned = room >= 240;
-        final actions = Padding(
-          padding: EdgeInsets.fromLTRB(
-            pinned ? 16 : 0,
-            8,
-            pinned ? 16 : 0,
-            8 + (keyboard > 0 ? 0 : media.padding.bottom),
-          ),
-          // The note sits by the buttons, not under a long preview, and is
-          // read out when it appears: Send did not send this time.
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (_previewUpdated)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Semantics(
-                    liveRegion: true,
-                    child: Text(
-                      l10n.aiReportPreviewUpdated,
-                      key: const ValueKey('ai-report-preview-updated'),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.primary,
-                      ),
+        final pinned = room >= 280;
+        final note = _previewUpdated
+            ? Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                // Read out when it appears: Send did not send this time.
+                child: Semantics(
+                  liveRegion: true,
+                  child: Text(
+                    l10n.aiReportPreviewUpdated,
+                    key: const ValueKey('ai-report-preview-updated'),
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: theme.colorScheme.primary,
                     ),
                   ),
                 ),
-              Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text(l10n.cancelAction),
-                  ),
-                  FilledButton.icon(
-                    key: const ValueKey('ai-report-send'),
-                    icon: const Icon(Icons.outlined_flag, size: 18),
-                    label: Text(l10n.aiReportSend),
-                    onPressed: choice == null || _sending ? null : _send,
-                  ),
-                ],
-              ),
-            ],
-          ),
+              )
+            : null;
+        final buttons = Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(l10n.cancelAction),
+            ),
+            FilledButton.icon(
+              key: const ValueKey('ai-report-send'),
+              icon: const Icon(Icons.outlined_flag, size: 18),
+              label: Text(l10n.aiReportSend),
+              onPressed: choice == null || _sending ? null : _send,
+            ),
+          ],
         );
+        final actionsPadding = EdgeInsets.fromLTRB(
+          pinned ? 16 : 0,
+          8,
+          pinned ? 16 : 0,
+          8 + (keyboard > 0 ? 0 : media.padding.bottom),
+        );
+        // The note sits by the buttons. Pinned, the footer leaves the form at
+        // least 120 dp for the preview; whatever does not fit scrolls, kept
+        // at its end so Send is always on screen.
+        final actions = pinned
+            ? ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: room - 120),
+                child: SingleChildScrollView(
+                  reverse: true,
+                  padding: actionsPadding,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [?note, buttons],
+                  ),
+                ),
+              )
+            : Padding(
+                padding: actionsPadding,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [?note, buttons],
+                ),
+              );
         final form = Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -287,6 +318,7 @@ class _AiReportSheetState extends State<AiReportSheet> {
               Text(l10n.aiReportPreview, style: theme.textTheme.labelLarge),
               const SizedBox(height: 6),
               DecoratedBox(
+                key: _previewBox,
                 decoration: BoxDecoration(
                   color: theme.colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(8),

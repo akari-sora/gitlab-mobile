@@ -177,12 +177,18 @@ Widget _host(Widget child, {String tag = 'zh-TW', double scale = 1}) {
   final locale = switch (tag) {
     'ar' => const Locale('ar'),
     'en' => const Locale('en'),
+    'de' => const Locale('de'),
     _ => const Locale('zh', 'TW'),
   };
   return MaterialApp(
     theme: appTheme(Brightness.light),
     locale: locale,
-    supportedLocales: const [Locale('zh', 'TW'), Locale('ar'), Locale('en')],
+    supportedLocales: const [
+      Locale('zh', 'TW'),
+      Locale('ar'),
+      Locale('en'),
+      Locale('de'),
+    ],
     localizationsDelegates: GlobalMaterialLocalizations.delegates,
     builder: (context, child) => MediaQuery(
       data: MediaQuery.of(
@@ -611,6 +617,94 @@ void main() {
         ),
         findsOneWidget,
       );
+    });
+
+    for (final (tag, scale) in [('de', 2.0), ('en', 2.0), ('ar', 2.0)]) {
+      testWidgets('the update note keeps Send in reach: $tag, ${scale}x, keyboard', (
+        tester,
+      ) async {
+        final ratio = tester.view.devicePixelRatio;
+        tester.view.physicalSize = const Size(360, 640) * ratio;
+        tester.view.padding = FakeViewPadding(top: 24 * ratio, bottom: 16 * ratio);
+        addTearDown(tester.view.reset);
+        useLanguage(languageForTag(tag)!);
+        addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+        const token = 'synthetic-rotated-oauth-token';
+        final session = answered()..rotatedSecret = token;
+        final sent = await openReport(tester, session, tag: tag, scale: scale);
+        final other = find.byKey(const ValueKey('ai-report-other'));
+        await tester.ensureVisible(other);
+        await tester.pumpAndSettle();
+        await tester.tap(other);
+        await tester.pumpAndSettle();
+        final description = find.byKey(const ValueKey('ai-report-description'));
+        await tester.ensureVisible(description);
+        await tester.pumpAndSettle();
+        await tester.showKeyboard(description);
+        tester.view.viewInsets = FakeViewPadding(bottom: 280 * ratio);
+        await tester.enterText(description, 'pasted $token');
+        await tester.pumpAndSettle();
+        final button = find.byKey(const ValueKey('ai-report-send'));
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(sent, isEmpty);
+        expect(find.byKey(const ValueKey('ai-report-preview-updated')), findsOne);
+        // Send stays above the keyboard and part of the preview shows.
+        expect(tester.getRect(button).bottom, lessThanOrEqualTo(640 - 280));
+        final scroll = find.byKey(const ValueKey('ai-report-scroll'));
+        expect(tester.getSize(scroll).height, greaterThan(40));
+        final preview = tester.getRect(
+          find.byKey(const ValueKey('ai-report-preview')),
+        );
+        final area = tester.getRect(scroll);
+        expect(preview.top, lessThan(area.bottom));
+        expect(preview.bottom, greaterThan(area.top));
+      });
+    }
+
+    testWidgets('keys typed just before Send are shown before they go', (
+      tester,
+    ) async {
+      final session = answered()..refreshGate = Completer<void>();
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-report-description')),
+        'typed-just-now',
+      );
+      // Inside the preview's typing pause.
+      final button = find.byKey(const ValueKey('ai-report-send'));
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pump();
+      session.refreshGate!.complete();
+      await tester.pumpAndSettle();
+      expect(sent, isEmpty);
+      expect(find.byKey(const ValueKey('ai-report-preview-updated')), findsOne);
+      final preview = find.byKey(const ValueKey('ai-report-preview'));
+      expect(tester.widget<Text>(preview).data, contains('typed-just-now'));
+    });
+
+    testWidgets('backing out while the text is checked keeps the chat open', (
+      tester,
+    ) async {
+      final session = answered()..refreshGate = Completer<void>();
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-harmful')));
+      await tester.pumpAndSettle();
+      final button = find.byKey(const ValueKey('ai-report-send'));
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pump();
+      await tester.tap(find.text(l10n.cancelAction));
+      await tester.pump();
+      session.refreshGate!.complete();
+      await tester.pumpAndSettle();
+      expect(sent, isEmpty);
+      expect(find.byType(AiChatPage), findsOneWidget);
     });
 
     testWidgets('a landscape phone with the keyboard up can still send', (
