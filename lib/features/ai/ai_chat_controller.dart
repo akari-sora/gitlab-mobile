@@ -189,6 +189,15 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     }
   }
 
+  @override
+  String draftSafe(String text) {
+    try {
+      return _redactor.redactSource(text.replaceAll(_draftControls, '')).text;
+    } on Object {
+      return '';
+    }
+  }
+
   void _notify() {
     _streamNotification?.cancel();
     _streamNotification = null;
@@ -1011,6 +1020,13 @@ String _newId() => List.generate(
 final _displayControls = RegExp(
   r'[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e'
   r'\u2060-\u2069\ufeff]',
+);
+
+/// [_displayControls] without the tab, line feed and carriage return, which a
+/// multi-line draft needs (the draft path handles `\r` itself).
+final _draftControls = RegExp(
+  r'[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c'
+  r'\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]',
 );
 
 // Keep catalogue identifiers only; provider-chosen unknown names are untrusted.

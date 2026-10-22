@@ -72,6 +72,8 @@ final class _Session extends ChangeNotifier implements AiChatSession {
   set confirmCleartext(Future<bool> Function()? callback) {}
   @override
   String displaySafe(String text) => text;
+  @override
+  String draftSafe(String text) => text;
 }
 
 final class _Registry extends ChangeNotifier implements AiRunRegistry {

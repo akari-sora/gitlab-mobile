@@ -74,9 +74,16 @@ final class _FakeSession extends ChangeNotifier implements AiChatSession {
   @override
   set confirmCleartext(Future<bool> Function()? callback) =>
       cleartext = callback;
+  // Like the controller: display text loses every control character,
+  // including line breaks; draft text keeps line breaks and tabs.
   @override
-  String displaySafe(String text) =>
-      text.replaceAll('synthetic-secret', '[REDACTED]');
+  String displaySafe(String text) => text
+      .replaceAll(RegExp(r'[\u0000-\u001f]'), '')
+      .replaceAll('synthetic-secret', '[REDACTED]');
+  @override
+  String draftSafe(String text) => text
+      .replaceAll(RegExp(r'[\u0000-\u0008\u000b\u000c\u000e-\u001f]'), '')
+      .replaceAll('synthetic-secret', '[REDACTED]');
 
   void update(void Function() change) {
     change();
@@ -269,6 +276,15 @@ void main() {
         inserted.single.split('\n').any((line) => line.startsWith('/')),
         isFalse,
       );
+    });
+
+    testWidgets('paragraphs, lists and code keep their lines', (
+      tester,
+    ) async {
+      const text = 'Summary:\n\n- one\n- two\n\n```dart\n\tvoid main() {}\n```';
+      final inserted = await openPreview(tester, answer(text));
+      await confirm(tester);
+      expect(inserted, [text]);
     });
 
     testWidgets('mentions stop notifying unless the user keeps them', (

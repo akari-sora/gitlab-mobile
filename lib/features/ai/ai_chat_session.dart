@@ -194,6 +194,11 @@ abstract interface class AiChatSession implements Listenable {
   /// values the page shows outside [items], such as the title. Never throws:
   /// text that cannot be checked comes back empty.
   String displaySafe(String text);
+
+  /// [text] as it may go into a GitLab comment draft: like [displaySafe], but
+  /// line breaks and tabs are kept, so paragraphs, lists and code survive.
+  /// Never throws: text that cannot be checked comes back empty.
+  String draftSafe(String text);
 }
 
 /// The account's conversations. Lives above the navigator, so a run keeps

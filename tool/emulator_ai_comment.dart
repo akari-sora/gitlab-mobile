@@ -127,6 +127,9 @@ final class _QaSession extends ChangeNotifier implements AiChatSession {
 
   @override
   String displaySafe(String text) => text;
+
+  @override
+  String draftSafe(String text) => text;
 }
 
 final class _QaRegistry extends ChangeNotifier implements AiRunRegistry {

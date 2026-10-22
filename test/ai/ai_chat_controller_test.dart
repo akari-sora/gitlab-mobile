@@ -469,6 +469,25 @@ void main() {
     },
   );
 
+  test('draft text keeps its lines and loses hidden characters', () async {
+    final environment = await _environment();
+    addTearDown(environment.dispose);
+    await _configure(environment, _provider(AiFormat.responses));
+    final controller = _controller(environment);
+    addTearDown(controller.dispose);
+    await controller.recheck();
+    const answer =
+        'First line\n\n```\n\tcode\n```\n'
+        'Rotate synthetic-test-token\u202e now\u200b';
+    final draft = controller.draftSafe(answer);
+    expect(draft, startsWith('First line\n\n```\n\tcode\n```\nRotate '));
+    expect(draft, isNot(contains('synthetic-test-token')));
+    expect(draft, isNot(contains('\u202e')));
+    expect(draft, isNot(contains('\u200b')));
+    // What the page shows as a label stays on one line.
+    expect(controller.displaySafe(answer), isNot(contains('\n')));
+  });
+
   test('an unchanged secret set leaves the shown items alone', () async {
     final environment = await _environment();
     addTearDown(environment.dispose);
@@ -854,6 +873,7 @@ void main() {
           .having((item) => item.state, 'state', AiAssistantState.hidden),
     );
     expect(controller.displaySafe('README.md'), isEmpty);
+    expect(controller.draftSafe('README.md'), isEmpty);
   });
 
   testWidgets('the page shows the block when nothing can be checked', (

@@ -173,7 +173,7 @@ class _AiChatPageState extends State<AiChatPage> {
         !(ModalRoute.of(context)?.isCurrent ?? false)) {
       return;
     }
-    final safe = _session.displaySafe(item.text);
+    final safe = _session.draftSafe(item.text);
     if (safe.trim().isEmpty) return;
     final String text;
     try {
