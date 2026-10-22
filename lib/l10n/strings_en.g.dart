@@ -2380,4 +2380,5 @@ const _messagesEn = <String>[
   'Hide',
   'Reported',
   'The reported mark could not be saved to the encrypted history, so this response may show again after a restart.',
+  'The preview now shows what will be sent. Check it, then press Send again.',
 ];

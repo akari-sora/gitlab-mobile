@@ -16,24 +16,32 @@ typedef AiReportChoice = ({
   bool attachResponse,
 });
 
+/// What the sheet hands back on Send: the choice and the exact text the
+/// user saw, or a null text when it could not be checked.
+typedef AiReportSheetResult = ({AiReportChoice choice, String? text});
+
 /// Asks what is wrong with an answer and shows exactly what would be sent.
-/// [body] builds the report text for a choice, for the preview. Returns the
-/// choice when the user sends, or null when they back out; the caller sends.
-Future<AiReportChoice?> showAiReportSheet(
+/// [body] builds the report text for the preview. At Send, [prepare] builds
+/// it once more with the live secrets; the sheet returns it only when it
+/// matches the preview, and otherwise shows the new text to confirm.
+/// Null when the user backs out; the caller sends.
+Future<AiReportSheetResult?> showAiReportSheet(
   BuildContext context, {
   required String Function(AiReportChoice choice) body,
-}) => showModalBottomSheet<AiReportChoice>(
+  required Future<String?> Function(AiReportChoice choice) prepare,
+}) => showModalBottomSheet<AiReportSheetResult>(
   context: context,
   isScrollControlled: true,
   useSafeArea: true,
   showDragHandle: true,
-  builder: (_) => AiReportSheet(body: body),
+  builder: (_) => AiReportSheet(body: body, prepare: prepare),
 );
 
 class AiReportSheet extends StatefulWidget {
-  const AiReportSheet({super.key, required this.body});
+  const AiReportSheet({super.key, required this.body, required this.prepare});
 
   final String Function(AiReportChoice choice) body;
+  final Future<String?> Function(AiReportChoice choice) prepare;
 
   @override
   State<AiReportSheet> createState() => _AiReportSheetState();
@@ -70,10 +78,42 @@ class _AiReportSheetState extends State<AiReportSheet> {
     });
   }
 
+  var _sending = false;
+
+  /// The preview changed at Send (an answer rebuilt, a secret rotated, the
+  /// last keys typed): the user confirms the new text with a second Send.
+  var _previewUpdated = false;
+
+  Future<void> _send() async {
+    final choice = _choice;
+    if (choice == null || _sending) return;
+    _typing?.cancel();
+    setState(() => _sending = true);
+    String? text;
+    try {
+      text = await widget.prepare(choice);
+    } on Object {
+      text = null;
+    }
+    if (!mounted) return;
+    final shown = _previewed == choice ? _preview : null;
+    if (text != null && text != shown) {
+      setState(() {
+        _previewed = choice;
+        _preview = text!;
+        _previewUpdated = true;
+        _sending = false;
+      });
+      return;
+    }
+    Navigator.of(context).pop((choice: choice, text: text));
+  }
+
   String _previewOf(AiReportChoice choice) {
     if (choice != _previewed) {
       _previewed = choice;
       _preview = widget.body(choice);
+      _previewUpdated = false;
     }
     return _preview;
   }
@@ -136,10 +176,7 @@ class _AiReportSheetState extends State<AiReportSheet> {
                 key: const ValueKey('ai-report-send'),
                 icon: const Icon(Icons.outlined_flag, size: 18),
                 label: Text(l10n.aiReportSend),
-                // The choice as it is now: typing does not rebuild the sheet.
-                onPressed: choice == null
-                    ? null
-                    : () => Navigator.of(context).pop(_choice),
+                onPressed: choice == null || _sending ? null : _send,
               ),
             ],
           ),
@@ -238,6 +275,16 @@ class _AiReportSheetState extends State<AiReportSheet> {
                   ),
                 ),
               ),
+              if (_previewUpdated) ...[
+                const SizedBox(height: 6),
+                Text(
+                  l10n.aiReportPreviewUpdated,
+                  key: const ValueKey('ai-report-preview-updated'),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
             ],
           ],
         );
@@ -253,12 +300,13 @@ class _AiReportSheetState extends State<AiReportSheet> {
                   child: SingleChildScrollView(
                     key: const ValueKey('ai-report-scroll'),
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-                    child: pinned
-                        ? form
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [form, actions],
-                          ),
+                    // The form keeps its place in the tree whether the buttons
+                    // are pinned or scroll with it, so the description field
+                    // keeps its focus and the keyboard when the room changes.
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [form, if (!pinned) actions],
+                    ),
                   ),
                 ),
                 if (pinned) ...[const Divider(height: 1), actions],

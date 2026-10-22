@@ -2380,4 +2380,5 @@ const _messagesId = <String>[
   'Sembunyikan',
   'Telah dilaporkan',
   'Tanda telah dilaporkan tidak dapat disimpan ke riwayat terenkripsi, sehingga respons ini dapat muncul lagi setelah aplikasi dimulai ulang.',
+  'Pratinjau kini menampilkan yang akan dikirim. Periksa, lalu ketuk Kirim laporan sekali lagi.',
 ];

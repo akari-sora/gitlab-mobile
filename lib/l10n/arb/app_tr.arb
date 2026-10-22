@@ -2377,5 +2377,6 @@
   "aiReportShow": "Göster",
   "aiReportHide": "Gizle",
   "aiReportedOpen": "Bildirildi",
-  "aiReportNotSaved": "Bildirim işareti şifrelenmiş geçmişe kaydedilemediğinden, bu yanıt uygulama yeniden başlatıldıktan sonra yeniden görünebilir."
+  "aiReportNotSaved": "Bildirim işareti şifrelenmiş geçmişe kaydedilemediğinden, bu yanıt uygulama yeniden başlatıldıktan sonra yeniden görünebilir.",
+  "aiReportPreviewUpdated": "Önizleme artık gönderilecek içeriği gösteriyor. Kontrol edin ve Bildirimi gönder’e yeniden dokunun."
 }

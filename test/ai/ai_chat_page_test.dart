@@ -57,6 +57,16 @@ final class _FakeSession extends ChangeNotifier implements AiChatSession {
   bool get historySaved => false;
   @override
   bool reportNotSaved = false;
+  // Like the controller: reading the live secrets can grow the redacted set
+  // (an OAuth token rotated in place) or fail.
+  bool secretsReadable = true;
+  String? rotatedSecret;
+  var secretRefreshes = 0;
+  @override
+  Future<bool> refreshSecrets() async {
+    secretRefreshes++;
+    return secretsReadable;
+  }
   // Like the controller, a rebuilt item points at its replacement.
   final successors = <AiAssistantItem, AiAssistantItem>{};
   @override
@@ -106,9 +116,15 @@ final class _FakeSession extends ChangeNotifier implements AiChatSession {
       .replaceAll(RegExp(r'[\u0000-\u001f]'), '')
       .replaceAll('synthetic-secret', '[REDACTED]');
   @override
-  String draftSafe(String text) => text
-      .replaceAll(RegExp(r'[\u0000-\u0008\u000b\u000c\u000e-\u001f]'), '')
-      .replaceAll('synthetic-secret', '[REDACTED]');
+  String draftSafe(String text) {
+    var safe = text
+        .replaceAll(RegExp(r'[\u0000-\u0008\u000b\u000c\u000e-\u001f]'), '')
+        .replaceAll('synthetic-secret', '[REDACTED]');
+    if ((rotatedSecret, secretRefreshes) case (final secret?, > 0)) {
+      safe = safe.replaceAll(secret, '[REDACTED]');
+    }
+    return safe;
+  }
 
   void update(void Function() change) {
     change();
@@ -145,6 +161,14 @@ AiProviderConfig _provider(String id) => AiProviderConfig(
   toolsEnabled: true,
   recipientRevision: 1,
 );
+
+/// Its answers were kept on screen from an earlier conversation.
+final class _PriorConversationSession extends _FakeSession {
+  _PriorConversationSession({super.items});
+
+  @override
+  AiAssistantItem? currentOf(AiAssistantItem item) => null;
+}
 
 Widget _host(Widget child, {String tag = 'zh-TW', double scale = 1}) {
   final locale = switch (tag) {
@@ -270,6 +294,8 @@ void main() {
       model: 'glm-synthetic',
     );
 
+    final origins = <Rect?>[];
+
     Future<List<({String subject, String body})>> openReport(
       WidgetTester tester,
       _FakeSession session, {
@@ -279,6 +305,7 @@ void main() {
       double scale = 1,
     }) async {
       final sent = <({String subject, String body})>[];
+      origins.clear();
       await tester.pumpWidget(
         _host(
           AiChatPage(
@@ -288,7 +315,9 @@ void main() {
               buildNumber: '612',
               commit: 'abc1234',
             ),
-            sendReport: ({required subject, required body}) async {
+            sendReport:
+                ({required subject, required body, sharePositionOrigin}) async {
+              origins.add(sharePositionOrigin);
               if (fail) throw StateError('no mail, no share');
               sent.add((subject: subject, body: body));
               return route;
@@ -379,6 +408,94 @@ void main() {
       expect(session.reported, [original]);
     });
 
+    testWidgets('a preview that changed at Send is shown before sending', (
+      tester,
+    ) async {
+      final session = answered();
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-inaccurate')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
+      await tester.pumpAndSettle();
+      // The answer is rebuilt while the sheet stays as it was.
+      final original = session.items.single as AiAssistantItem;
+      const rebuilt = AiAssistantItem(
+        text: 'It renames two files.',
+        state: AiAssistantState.done,
+        source: source,
+      );
+      session.successors[original] = rebuilt;
+      session.update(() => session.items = [rebuilt]);
+      await tester.pumpAndSettle();
+      final preview = find.byKey(const ValueKey('ai-report-preview'));
+      expect(tester.widget<Text>(preview).data, contains(answerText));
+      await send(tester);
+      // Nothing left; the sheet now shows the text that would go.
+      expect(sent, isEmpty);
+      expect(find.byKey(const ValueKey('ai-report-preview-updated')), findsOne);
+      expect(tester.widget<Text>(preview).data, contains('two files'));
+      await send(tester);
+      expect(sent.single.body, contains('two files'));
+    });
+
+    testWidgets('a token rotated in place is redacted before it goes', (
+      tester,
+    ) async {
+      const token = 'synthetic-rotated-oauth-token';
+      final session = answered()..rotatedSecret = token;
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-report-description')),
+        'pasted $token here',
+      );
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(sent, isEmpty);
+      final preview = find.byKey(const ValueKey('ai-report-preview'));
+      expect(tester.widget<Text>(preview).data, isNot(contains(token)));
+      await send(tester);
+      expect(sent.single.body, contains('pasted [REDACTED] here'));
+      expect(sent.single.body, isNot(contains(token)));
+    });
+
+    testWidgets('secrets that cannot be read stop the report', (tester) async {
+      final session = answered()..secretsReadable = false;
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-harmful')));
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(sent, isEmpty);
+      expect(session.reported, isEmpty);
+      expect(find.text(l10n.aiReportFailed), findsOneWidget);
+    });
+
+    testWidgets('the share sheet is anchored at the Report button', (
+      tester,
+    ) async {
+      final session = answered();
+      await openReport(tester, session, route: AiReportRoute.share);
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(origins.single, isNotNull);
+      expect(origins.single!.isEmpty, isFalse);
+    });
+
+    testWidgets('an answer from an earlier conversation has no Report', (
+      tester,
+    ) async {
+      final session = _PriorConversationSession(
+        items: const [
+          AiAssistantItem(text: answerText, state: AiAssistantState.done),
+        ],
+      );
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ai-chat-report')), findsNothing);
+    });
+
     testWidgets('an answer gone before sending is not sent', (tester) async {
       final session = answered();
       final sent = await openReport(tester, session);
@@ -459,6 +576,14 @@ void main() {
       tester.view.viewInsets = FakeViewPadding(bottom: 220 * ratio);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
+      // The buttons now scroll with the form, and the description field keeps
+      // its focus and its connection to the keyboard.
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+      final field = find.descendant(
+        of: find.byKey(const ValueKey('ai-report-description')),
+        matching: find.byType(EditableText),
+      );
+      expect(tester.widget<EditableText>(field).focusNode.hasFocus, isTrue);
       final button = find.byKey(const ValueKey('ai-report-send'));
       await tester.ensureVisible(button);
       await tester.pumpAndSettle();

@@ -2377,5 +2377,6 @@
   "aiReportShow": "Tonen",
   "aiReportHide": "Verbergen",
   "aiReportedOpen": "Gemeld",
-  "aiReportNotSaved": "De meldingsmarkering kon niet worden opgeslagen in de versleutelde geschiedenis, waardoor dit antwoord na een herstart opnieuw kan verschijnen."
+  "aiReportNotSaved": "De meldingsmarkering kon niet worden opgeslagen in de versleutelde geschiedenis, waardoor dit antwoord na een herstart opnieuw kan verschijnen.",
+  "aiReportPreviewUpdated": "Het voorbeeld toont nu wat er wordt verzonden. Controleer het en tik nog een keer op Melding verzenden."
 }

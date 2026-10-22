@@ -2380,4 +2380,5 @@ const _messagesRo = <String>[
   'Ascunde',
   'Raportat',
   'Marcajul de raportare nu a putut fi salvat în istoricul criptat, așa că acest răspuns poate apărea din nou după repornire.',
+  'Previzualizarea arată acum ce se va trimite. Verific-o, apoi apasă din nou Trimite raportul.',
 ];

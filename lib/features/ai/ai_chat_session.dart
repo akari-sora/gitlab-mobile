@@ -183,6 +183,11 @@ abstract interface class AiChatSession implements Listenable {
   /// its chain no longer reaches an item in this conversation.
   AiAssistantItem? currentOf(AiAssistantItem item);
 
+  /// Reads the live secrets again, including a GitLab token that OAuth
+  /// rotated in place, and redacts what is shown when the set grew. False
+  /// when they could not be read; text must not leave the device then.
+  Future<bool> refreshSecrets();
+
   /// Stops the current run. The partial reply stays, marked as interrupted.
   void stop();
 

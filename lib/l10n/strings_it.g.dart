@@ -2380,4 +2380,5 @@ const _messagesIt = <String>[
   'Nascondi',
   'Segnalato',
   'Non è stato possibile salvare il segno di segnalazione nella cronologia cifrata, quindi questa risposta potrebbe ricomparire dopo un riavvio.',
+  'Ora l’anteprima mostra cosa verrà inviato. Controllala e tocca di nuovo Invia segnalazione.',
 ];

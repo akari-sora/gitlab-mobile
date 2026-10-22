@@ -116,6 +116,7 @@ class AiChatPage extends StatefulWidget {
   final Future<AiReportRoute> Function({
     required String subject,
     required String body,
+    Rect? sharePositionOrigin,
   })
   sendReport;
 
@@ -279,7 +280,7 @@ class _AiChatPageState extends State<AiChatPage> {
   /// Reports [item] (plan v5 §6.7): the user picks what is wrong and sees
   /// the exact text; mail is tried first, then the share sheet. The answer is
   /// then folded away here, whether or not the user finishes sending.
-  Future<void> _report(AiAssistantItem item) async {
+  Future<void> _report(AiAssistantItem item, Rect? origin) async {
     final assistants = _session.items.whereType<AiAssistantItem>().toList();
     final number = assistants.indexOf(item) + 1;
     if (_reporting || item.reported || number == 0) return;
@@ -292,10 +293,11 @@ class _AiChatPageState extends State<AiChatPage> {
           : '${info.version}+${info.buildNumber} (${info.commit})';
       final time = DateTime.now();
       final source = item.source;
-      // Built again for every preview and for the send, from the answer as
-      // it is now (a redaction pass may have replaced it), and redacted as a
-      // whole last, after the report's own clean-up, with the live secrets:
-      // nothing the user typed or the formatting joined escapes the check.
+      // Built from the answer as it is now (a redaction pass may have
+      // replaced it) and redacted as a whole last, after the report's own
+      // clean-up: nothing the user typed or the formatting joined escapes
+      // the check. The redaction also drops the direction isolates around
+      // the translated address; the plain `to:` line keeps it copyable.
       String body(AiReportChoice choice) {
         final current = _session.currentOf(item);
         if (current == null) return '';
@@ -317,11 +319,24 @@ class _AiChatPageState extends State<AiChatPage> {
         );
       }
 
-      final choice = await showAiReportSheet(context, body: body);
-      if (choice == null || !mounted) return;
-      final text = body(choice);
-      // Empty when the answer is gone or the text could not be checked.
-      if (text.isEmpty) {
+      // At Send the live secrets are read again, including a token OAuth
+      // rotated in place, and the text is built once more. The sheet sends
+      // it only when it is exactly the preview the user saw.
+      Future<String?> prepare(AiReportChoice choice) async {
+        if (!await _session.refreshSecrets() || !mounted) return null;
+        final text = body(choice);
+        return text.isEmpty ? null : text;
+      }
+
+      final result = await showAiReportSheet(
+        context,
+        body: body,
+        prepare: prepare,
+      );
+      if (result == null || !mounted) return;
+      final text = result.text;
+      // Null when the answer is gone or the text could not be checked.
+      if (text == null) {
         _notice(l10n.aiReportFailed);
         return;
       }
@@ -330,6 +345,7 @@ class _AiChatPageState extends State<AiChatPage> {
         route = await widget.sendReport(
           subject: l10n.aiReportSubject,
           body: text,
+          sharePositionOrigin: origin,
         );
       } on Object {
         _notice(l10n.aiReportFailed);
@@ -631,7 +647,13 @@ class _AiChatPageState extends State<AiChatPage> {
               : null,
           insertingDraft: _insertingDraft,
           preparingDraft: _preparingDraft,
-          onReport: _reporting ? null : _report,
+          // An answer kept on screen from an earlier conversation belongs
+          // to that conversation; it is not reported from this one.
+          onReport:
+              _reporting ||
+                  (item is AiAssistantItem && _session.currentOf(item) == null)
+              ? null
+              : _report,
           reportNotSaved: _session.reportNotSaved,
         ),
       if (_session.phase == AiChatPhase.running &&
@@ -870,7 +892,7 @@ class _ChatItemView extends StatelessWidget {
 
   /// The draft is still being checked; the buttons say so.
   final bool preparingDraft;
-  final void Function(AiAssistantItem item)? onReport;
+  final void Function(AiAssistantItem item, Rect? origin)? onReport;
 
   @override
   Widget build(BuildContext context) => switch (item) {
@@ -1114,7 +1136,7 @@ class _AssistantMessage extends StatelessWidget {
   final void Function(AiAssistantItem item)? onInsertDraft;
   final bool insertingDraft;
   final bool preparingDraft;
-  final void Function(AiAssistantItem item)? onReport;
+  final void Function(AiAssistantItem item, Rect? origin)? onReport;
 
   @override
   Widget build(BuildContext context) {
@@ -1212,16 +1234,28 @@ class _AssistantMessage extends StatelessWidget {
                       : () => onInsertDraft!(item),
                 ),
               if (onReport != null && !item.reported)
-                TextButton.icon(
-                  key: const ValueKey('ai-chat-report'),
-                  style: TextButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 4),
-                    foregroundColor: theme.colorScheme.onSurfaceVariant,
+                // The button's own box anchors the share sheet's popover on
+                // a tablet.
+                Builder(
+                  builder: (context) => TextButton.icon(
+                    key: const ValueKey('ai-chat-report'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      foregroundColor: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    icon: const Icon(Icons.outlined_flag, size: 18),
+                    label: Text(l10n.aiReportAction),
+                    onPressed: () {
+                      final box = context.findRenderObject();
+                      onReport!(
+                        item,
+                        box is RenderBox && box.hasSize
+                            ? box.localToGlobal(Offset.zero) & box.size
+                            : null,
+                      );
+                    },
                   ),
-                  icon: const Icon(Icons.outlined_flag, size: 18),
-                  label: Text(l10n.aiReportAction),
-                  onPressed: () => onReport!(item),
                 ),
             ],
           ),

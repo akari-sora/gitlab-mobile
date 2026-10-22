@@ -2383,5 +2383,6 @@
   "aiReportShow": "Show",
   "aiReportHide": "Hide",
   "aiReportedOpen": "Reported",
-  "aiReportNotSaved": "The reported mark could not be saved to the encrypted history, so this response may show again after a restart."
+  "aiReportNotSaved": "The reported mark could not be saved to the encrypted history, so this response may show again after a restart.",
+  "aiReportPreviewUpdated": "The preview now shows what will be sent. Check it, then press Send again."
 }

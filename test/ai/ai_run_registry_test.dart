@@ -580,6 +580,8 @@ final class _FakeChatSession extends ChangeNotifier implements AiChatSession {
   @override
   AiAssistantItem? currentOf(AiAssistantItem item) =>
       items.contains(item) ? item : null;
+  @override
+  Future<bool> refreshSecrets() async => true;
 
   @override
   bool get canSend =>

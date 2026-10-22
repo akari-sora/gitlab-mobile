@@ -2380,4 +2380,5 @@ const _messagesMs = <String>[
   'Sembunyikan',
   'Dilaporkan',
   'Tanda dilaporkan tidak dapat disimpan ke sejarah yang disulitkan, jadi respons ini mungkin dipaparkan semula selepas aplikasi dimulakan semula.',
+  'Pratonton kini menunjukkan kandungan yang akan dihantar. Semak, kemudian ketik Hantar laporan sekali lagi.',
 ];

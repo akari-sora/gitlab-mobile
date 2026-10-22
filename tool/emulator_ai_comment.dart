@@ -129,6 +129,8 @@ final class _QaSession extends ChangeNotifier implements AiChatSession {
   @override
   AiAssistantItem? currentOf(AiAssistantItem item) =>
       items.contains(item) ? item : null;
+  @override
+  Future<bool> refreshSecrets() async => true;
 
   @override
   set confirmCleartext(Future<bool> Function()? callback) {}

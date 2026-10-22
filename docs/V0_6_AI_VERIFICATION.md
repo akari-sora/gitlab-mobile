@@ -1638,3 +1638,51 @@ Four mutations were each caught by a test:
 - a stale item;
 - always-pinned buttons;
 - no plain address line.
+
+#### MR6a-4 review round 2
+
+Reviewers: Codex GPT-6.1-Sol, Opus 5.5 and cursor-agent (auto). All three
+asked for changes. Codex's report arrived before its usage ran out (it
+resets on 2026-10-27).
+
+Important:
+- **Rotated tokens.** The final redaction used cached secrets, so a GitLab
+  token that OAuth rotated in place within the same session leaked into the
+  description. Fix: Send now calls the session's new `refreshSecrets()`
+  first. When the secrets cannot be read, nothing is sent.
+- **Preview and send could differ.** This came up three ways: an answer
+  rebuilt while the sheet was open, a secret rotated in place, or the last
+  keystrokes inside the 300 ms preview delay. Fix: Send now builds the text
+  again. The sheet sends it only when it equals the preview the user saw.
+  Otherwise the preview shows the new text with a note, and the user presses
+  Send a second time.
+- **Description lost focus.** The round-1 change moved the form inside the
+  sheet's tree when the buttons switched between pinned and scrolling. The
+  description field then lost its focus and its keyboard as soon as the
+  keyboard rose on a landscape phone. Fix: the form keeps its place, and the
+  landscape test asserts the focus and the input connection.
+- **Recovery during a flush.** When the history became ready while a flush
+  was running, snapshots that flush had skipped were never saved. Fix: they
+  are now tried once that flush ends, with a fresh budget, as for any
+  transition into ready.
+
+Minor:
+- With the history key missing, which no timer recovers, the fold now says
+  at once that the mark was not saved.
+- A new conversation that keeps the earlier display no longer resolves or
+  marks the kept answers, and the page offers no Report on them.
+- The share sheet is anchored at the Report button.
+- The zh-CN report strings use 举报 / 回复 again.
+- The two-controller test asserts exactly two attempts.
+- The history retry delays can be injected, so the exhausted-retries test no
+  longer waits 36 seconds in real time.
+
+Eight mutations, each caught by a test:
+- sending without comparing to the preview;
+- no secret refresh at Send;
+- the form moving in the tree;
+- no flush after a recovery during a flush;
+- a missing key waiting for attempts;
+- kept display resolving;
+- Report offered on earlier answers;
+- the listener flushing on every ready notification.

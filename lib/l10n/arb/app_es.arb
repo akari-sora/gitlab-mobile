@@ -2377,5 +2377,6 @@
   "aiReportShow": "Mostrar",
   "aiReportHide": "Ocultar",
   "aiReportedOpen": "Informado",
-  "aiReportNotSaved": "No se pudo guardar la marca de informe en el historial cifrado, así que esta respuesta puede mostrarse de nuevo tras reiniciar."
+  "aiReportNotSaved": "No se pudo guardar la marca de informe en el historial cifrado, así que esta respuesta puede mostrarse de nuevo tras reiniciar.",
+  "aiReportPreviewUpdated": "La vista previa muestra ahora lo que se enviará. Revísala y vuelve a pulsar Enviar informe."
 }

@@ -17,6 +17,8 @@ import 'package:gitlab_mobile/core/ai/wire/anthropic_messages.dart';
 import 'package:gitlab_mobile/core/ai/wire/chat_completions.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/failure.dart';
+import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/oauth.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
@@ -164,6 +166,7 @@ AiChatController _controller(
   int Function()? runningCount,
   AiChatWireClientFactory? wireClientFactory,
   Future<void> Function()? refreshSecrets,
+  List<Duration>? historyRetryDelays,
 }) => AiChatController(
   origin: origin,
   session: environment.session,
@@ -171,6 +174,9 @@ AiChatController _controller(
   runningCount: runningCount ?? () => 0,
   wireClientFactory: wireClientFactory,
   refreshSecrets: refreshSecrets,
+  historyRetryDelays:
+      historyRetryDelays ??
+      const [Duration(seconds: 1), Duration(seconds: 5), Duration(seconds: 30)],
 );
 
 AiWireClient _wireClient(
@@ -368,6 +374,7 @@ Future<AiChatController> _readyController(
   bool requiresKey = false,
   int maxRequestChars = 400000,
   Future<void> Function()? refreshSecrets,
+  List<Duration>? historyRetryDelays,
 }) async {
   await _configure(
     environment,
@@ -389,6 +396,7 @@ Future<AiChatController> _readyController(
           sha: WorkspaceFixture.sha,
         ),
     refreshSecrets: refreshSecrets,
+    historyRetryDelays: historyRetryDelays,
     wireClientFactory:
         ({required config, required apiKey, required conversationId}) =>
             _wireClient(
@@ -958,7 +966,9 @@ void main() {
       await second.recheck();
     }
     await Future<void>.delayed(const Duration(milliseconds: 700));
-    expect(attempts, inInclusiveRange(2, 8));
+    // One attempt each; a listener that flushed on every ready emit, or a
+    // flush that ignored the pending timer, would add more in this window.
+    expect(attempts, 2);
     expect(first.historySaved, isFalse);
     expect(second.historySaved, isFalse);
     expect(first.reportNotSaved, isFalse);
@@ -1050,10 +1060,16 @@ void main() {
         AiHistoryCoordinator.debugReset();
         await root.delete(recursive: true);
       });
+      // The same 1/5/30 s schedule, in milliseconds.
       final controller = await _readyController(
         environment,
         FakeAdapter((_) => _sse(answer('reported answer'))),
         tools: false,
+        historyRetryDelays: const [
+          Duration(milliseconds: 10),
+          Duration(milliseconds: 50),
+          Duration(milliseconds: 300),
+        ],
       );
       final account = environment.workspace.account.key;
       expect(await history.enable(account), AiHistoryState.ready);
@@ -1063,10 +1079,7 @@ void main() {
       controller.markReported(
         controller.items.whereType<AiAssistantItem>().single,
       );
-      await _waitUntil(
-        () => controller.reportNotSaved,
-        timeout: const Duration(seconds: 50),
-      );
+      await _waitUntil(() => controller.reportNotSaved);
       expect(attempts, 4);
       expect(controller.historySaved, isFalse);
       failWrites = false;
@@ -1079,8 +1092,176 @@ void main() {
       await _waitUntil(() => controller.historySaved);
       expect(controller.reportNotSaved, isFalse);
     },
-    timeout: const Timeout(Duration(seconds: 60)),
   );
+
+  test('a recovery during a flush also saves what that flush skipped', () async {
+    final store = MemoryAiStore();
+    final environment = await _environment(aiStore: store);
+    addTearDown(environment.dispose);
+    final root = await Directory.systemTemp.createTemp('mr6a4-drain-');
+    var failRoot = false;
+    final history = AiHistoryCoordinator.debugReset(
+      store: store,
+      files: AiHistoryFileStore(
+        root: () async {
+          if (failRoot) throw const FileSystemException('synthetic outage');
+          return root;
+        },
+      ),
+    );
+    addTearDown(() async {
+      AiHistoryCoordinator.debugReset();
+      await root.delete(recursive: true);
+    });
+    final controller = await _readyController(
+      environment,
+      FakeAdapter((_) => _sse(answer('synthetic reply'))),
+      tools: false,
+    );
+    final account = environment.workspace.account.key;
+    expect(await history.enable(account), AiHistoryState.ready);
+    await environment.settings.loadAccount(account);
+    // Conversation A is reported while another account's (sparse) file
+    // fills the device cap, so A's snapshot is blocked.
+    await controller.send('conversation A');
+    final oldId = controller.id;
+    final foreign = File(
+      '${root.path}/ai_history/${'f' * 32}/c_${'e' * 32}.v1.bin',
+    );
+    foreign.parent.createSync(recursive: true);
+    final handle = foreign.openSync(mode: FileMode.write);
+    handle.truncateSync(AiHistoryFileStore.deviceByteLimit);
+    handle.closeSync();
+    controller.markReported(
+      controller.items.whereType<AiAssistantItem>().single,
+    );
+    await _waitUntil(() => controller.reportNotSaved);
+    controller.startNewConversation();
+    await controller.recheck();
+    foreign.deleteSync();
+    // B's save is what turns a failed read back into ready, mid-flush.
+    await controller.send('conversation B');
+    failRoot = true;
+    expect(await history.read(account), isNull);
+    expect(history.state(account), AiHistoryState.readFailed);
+    failRoot = false;
+    controller.markReported(
+      controller.items.whereType<AiAssistantItem>().single,
+    );
+    await _waitUntil(() => controller.historySaved);
+    // No recheck, no new snapshot: the flush that ended after the recovery
+    // saves A by itself.
+    var savedA = false;
+    final elapsed = Stopwatch()..start();
+    while (!savedA && elapsed.elapsed < const Duration(seconds: 10)) {
+      savedA =
+          (await history.read(account))?.conversations.any(
+            (conversation) => conversation.id == oldId,
+          ) ??
+          false;
+      if (!savedA) await Future<void>.delayed(const Duration(milliseconds: 50));
+    }
+    expect(savedA, isTrue);
+  });
+
+  test('a missing history key says the mark is not saved at once', () async {
+    final store = MemoryAiStore();
+    final environment = await _environment(aiStore: store);
+    addTearDown(environment.dispose);
+    final root = await Directory.systemTemp.createTemp('mr6a4-no-key-');
+    final account = environment.workspace.account.key;
+    await store.saveAccount(account, AiAccountRecord(historyEnabled: true));
+    final history = AiHistoryCoordinator.debugReset(
+      store: store,
+      files: AiHistoryFileStore(root: () async => root),
+    );
+    addTearDown(() async {
+      AiHistoryCoordinator.debugReset();
+      await root.delete(recursive: true);
+    });
+    final controller = await _readyController(
+      environment,
+      FakeAdapter((_) => _sse(answer('synthetic reply'))),
+      tools: false,
+    );
+    expect(await history.load(account), AiHistoryState.keyMissing);
+    await environment.settings.loadAccount(account);
+    await controller.send('question');
+    controller.markReported(
+      controller.items.whereType<AiAssistantItem>().single,
+    );
+    // A missing key does not come back on a timer; the fold says so now,
+    // not after attempts that never happen.
+    await _waitUntil(() => controller.reportNotSaved);
+    expect(controller.historySaved, isFalse);
+    expect(root.listSync(recursive: true).whereType<File>(), isEmpty);
+  });
+
+  test('the report text sees a token OAuth rotated in place', () async {
+    const oldAccess = 'synthetic-old-opaque-access';
+    const newAccess = 'synthetic-new-opaque-access-12345';
+    const newRefresh = 'synthetic-new-opaque-refresh-56789';
+    final workspace = WorkspaceFixture();
+    final account = Account(
+      instance: workspace.account.instance,
+      user: workspace.account.user,
+      credential: const OAuthCredential(
+        accessToken: oldAccess,
+        refreshToken: 'synthetic-old-opaque-refresh',
+        clientId: 'synthetic-client',
+      ),
+    );
+    final accounts = MemoryAccountStore()
+      ..accounts = [account]
+      ..lastActive = account.key;
+    var rotate = false;
+    final adapter = FakeAdapter((request) {
+      if (request.uri.path.endsWith('/oauth/token')) {
+        return jsonResponse({
+          'access_token': newAccess,
+          'refresh_token': newRefresh,
+          'token_type': 'bearer',
+          'expires_in': 7200,
+        });
+      }
+      if (rotate && request.headers['Authorization'] == 'Bearer $oldAccess') {
+        return jsonResponse({'message': 'synthetic expired'}, status: 401);
+      }
+      return workspace.respond(request);
+    });
+    final session = controllerFor(
+      accounts,
+      adapter,
+      createOAuth: (instance, clientId) => OAuthTokenClient(
+        instance: instance,
+        clientId: clientId,
+        dio: Dio()..httpClientAdapter = adapter,
+      ),
+    );
+    await session.initialize();
+    final environment = _Environment(
+      workspace,
+      session,
+      AiSettingsController(MemoryAiStore()),
+    );
+    addTearDown(environment.dispose);
+    final controller = await _readyController(
+      environment,
+      FakeAdapter((_) => _sse(answer('safe synthetic answer'))),
+      tools: false,
+    );
+    await controller.send('question');
+    final generation = session.generation;
+    rotate = true;
+    await session.api!.currentUser();
+    expect(session.api!.credential.accessToken, newAccess);
+    expect(session.generation, generation);
+    const pasted = 'pasted $newAccess and $newRefresh';
+    expect(await controller.refreshSecrets(), isTrue);
+    final safe = controller.draftSafe(pasted);
+    expect(safe, isNot(contains(newAccess)));
+    expect(safe, isNot(contains(newRefresh)));
+  });
 
   for (final format in AiFormat.values) {
     test(
@@ -2892,6 +3073,15 @@ void main() {
         ),
       );
       expect(controller.id, isNot(oldId));
+      // The kept answer belongs to the earlier conversation: it is not
+      // resolved, or marked, from this one.
+      final kept = controller.items.whereType<AiAssistantItem>().first;
+      expect(controller.currentOf(kept), isNull);
+      controller.markReported(kept);
+      expect(
+        controller.items.whereType<AiAssistantItem>().first.reported,
+        isFalse,
+      );
       await controller.send('new synthetic question');
       final requests = adapters.expand((adapter) => adapter.requests).toList();
       expect(requests, hasLength(2));

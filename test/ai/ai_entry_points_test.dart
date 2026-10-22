@@ -63,6 +63,8 @@ final class _Session extends ChangeNotifier implements AiChatSession {
   AiAssistantItem? currentOf(AiAssistantItem item) =>
       items.contains(item) ? item : null;
   @override
+  Future<bool> refreshSecrets() async => true;
+  @override
   bool get canSend => false;
   @override
   Future<void> send(String text) async {}

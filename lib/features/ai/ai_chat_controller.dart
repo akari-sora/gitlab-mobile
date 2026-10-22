@@ -46,7 +46,14 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     required this.runningCount,
     AiChatWireClientFactory? wireClientFactory,
     Future<void> Function()? refreshSecrets,
-  }) : _wireClientFactory = wireClientFactory ?? _createWireClient,
+    @visibleForTesting
+    List<Duration> historyRetryDelays = const [
+      Duration(seconds: 1),
+      Duration(seconds: 5),
+      Duration(seconds: 30),
+    ],
+  }) : _historyRetryDelays = historyRetryDelays,
+       _wireClientFactory = wireClientFactory ?? _createWireClient,
        _generation = session.generation,
        _api = session.api!,
        _accountKey = session.active!.key {
@@ -115,6 +122,15 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   AiSavedConversation? _savedReportedSnapshot;
   bool _reportNotSaved = false;
   bool _historySaving = false;
+
+  /// Set when the history became ready while a flush was running: snapshots
+  /// that flush skipped as blocked are tried once it ends.
+  bool _flushAfterSave = false;
+  final List<Duration> _historyRetryDelays;
+
+  /// Index of the first item of this conversation. A new conversation that
+  /// keeps the earlier display starts after the kept items.
+  int _conversationStart = 0;
   int _historySnapshotRevision = 0;
   Timer? _historyRetry;
   // One initial flush and at most three retries per snapshot/state revision.
@@ -240,9 +256,21 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     ) {
       current = next;
     }
-    return current is AiAssistantItem && _items.contains(current)
-        ? current
-        : null;
+    if (current is! AiAssistantItem) return null;
+    final index = _items.indexOf(current);
+    // Kept display from an earlier conversation is not this conversation's.
+    return index >= _conversationStart ? current : null;
+  }
+
+  @override
+  Future<bool> refreshSecrets() async {
+    if (!_alive) return false;
+    try {
+      await _refreshSecrets();
+      return _alive;
+    } on Object {
+      return false;
+    }
   }
 
   void _replaceItem(int index, AiChatItem replacement) {
@@ -306,7 +334,9 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       _historyRetryAttempts = 0;
     } else if (state == AiHistoryState.ready && previous != state) {
       _blockedReportedHistory.clear();
-      if (_historyRetry == null && !_historySaving) {
+      if (_historySaving) {
+        _flushAfterSave = true;
+      } else if (_historyRetry == null) {
         _historyRetryAttempts = 0;
         unawaited(_flushReportedHistory());
       }
@@ -370,6 +400,14 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           _historyRetryAttempts = 0;
         } else if (revision != _historySnapshotRevision) {
           unawaited(_flushReportedHistory());
+        } else if (_flushAfterSave && _historyRetry == null) {
+          // The history became ready while this flush ran. As for any
+          // transition into ready, what is pending gets a fresh budget,
+          // including a snapshot this flush blocked on its last attempt.
+          _flushAfterSave = false;
+          _blockedReportedHistory.clear();
+          _historyRetryAttempts = 0;
+          unawaited(_flushReportedHistory());
         } else if (retry &&
             _historyRetry == null &&
             _historyRetryAttempts < 4 &&
@@ -377,13 +415,26 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
                 _history.state(_accountKey) == AiHistoryState.readFailed)) {
           // File failures leave the coordinator ready; unlike unavailable
           // keys they have no coordinator retry timer. Bound these retries.
-          final seconds = const [1, 5, 30][_historyRetryAttempts - 1];
-          _historyRetry = Timer(Duration(seconds: seconds), () {
-            _historyRetry = null;
-            unawaited(_flushReportedHistory());
-          });
+          _historyRetry = Timer(
+            _historyRetryDelays[_historyRetryAttempts - 1],
+            () {
+              _historyRetry = null;
+              unawaited(_flushReportedHistory());
+            },
+          );
+        } else if (retry &&
+            _historyRetry == null &&
+            _history.state(_accountKey) != AiHistoryState.ready &&
+            _history.state(_accountKey) != AiHistoryState.readFailed &&
+            _pendingReportedHistory.containsKey(_id)) {
+          // A missing or unavailable key does not come back on a timer:
+          // say now that the mark is not saved. A transition into ready
+          // flushes again, and a save clears this.
+          _reportNotSaved = true;
+          _notify();
         }
       }
+      _flushAfterSave = false;
     }
   }
 
@@ -1197,8 +1248,10 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       if (_items.isNotEmpty) {
         _items.add(const AiNoticeItem(AiNoticeKind.newConversation));
       }
+      _conversationStart = _items.length;
     } else {
       _items.clear();
+      _conversationStart = 0;
       // Nothing unchecked is shown any more.
       _displayFailed = false;
     }

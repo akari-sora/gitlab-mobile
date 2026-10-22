@@ -2377,5 +2377,6 @@
   "aiReportShow": "Afficher",
   "aiReportHide": "Masquer",
   "aiReportedOpen": "Signalé",
-  "aiReportNotSaved": "La marque de signalement n’a pas pu être enregistrée dans l’historique chiffré ; cette réponse peut donc réapparaître après un redémarrage."
+  "aiReportNotSaved": "La marque de signalement n’a pas pu être enregistrée dans l’historique chiffré ; cette réponse peut donc réapparaître après un redémarrage.",
+  "aiReportPreviewUpdated": "L'aperçu affiche maintenant ce qui sera envoyé. Vérifiez-le, puis appuyez de nouveau sur Envoyer le signalement."
 }

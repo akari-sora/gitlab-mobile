@@ -2380,4 +2380,5 @@ const _messagesVi = <String>[
   'Ẩn',
   'Đã báo cáo',
   'Không lưu được dấu đã báo cáo vào lịch sử được mã hóa, nên phản hồi này có thể hiển thị lại sau khi khởi động lại.',
+  'Bản xem trước giờ hiển thị nội dung sẽ được gửi. Hãy kiểm tra rồi nhấn Gửi báo cáo lần nữa.',
 ];

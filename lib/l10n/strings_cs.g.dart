@@ -2380,4 +2380,5 @@ const _messagesCs = <String>[
   'Skrýt',
   'Nahlášeno',
   'Značku nahlášení se nepodařilo uložit do šifrované historie, takže se tato odpověď může po opětovném spuštění zobrazit znovu.',
+  'Náhled teď ukazuje, co bude odesláno. Zkontrolujte ho a znovu klepněte na Odeslat hlášení.',
 ];

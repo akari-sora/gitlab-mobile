@@ -2377,5 +2377,6 @@
   "aiReportShow": "Zobrazit",
   "aiReportHide": "Skrýt",
   "aiReportedOpen": "Nahlášeno",
-  "aiReportNotSaved": "Značku nahlášení se nepodařilo uložit do šifrované historie, takže se tato odpověď může po opětovném spuštění zobrazit znovu."
+  "aiReportNotSaved": "Značku nahlášení se nepodařilo uložit do šifrované historie, takže se tato odpověď může po opětovném spuštění zobrazit znovu.",
+  "aiReportPreviewUpdated": "Náhled teď ukazuje, co bude odesláno. Zkontrolujte ho a znovu klepněte na Odeslat hlášení."
 }

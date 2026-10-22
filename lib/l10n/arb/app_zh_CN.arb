@@ -2354,7 +2354,7 @@
   "aiDraftCheckFailed": "无法检查这段回答，所以没有追加。",
   "aiReportAction": "举报",
   "aiReportTitle": "举报此回复",
-  "aiReportIntro": "反馈会发送给 Mergeline 的开发者，用来改进 AI 功能。默认发送类别、你的说明、应用版本、模型与服务设置、时间和消息序号，不含回应内容。",
+  "aiReportIntro": "举报会发送给 Mergeline 的开发者，用来改进 AI 功能。默认发送类别、你的说明、应用版本、模型与服务设置、时间和消息序号，不含回复内容。",
   "aiReportCategory": "哪里有问题？",
   "aiReportHarmful": "有害或冒犯性的内容",
   "aiReportInaccurate": "不正确或误导",
@@ -2376,6 +2376,7 @@
   "aiReported": "已举报，内容已隐藏",
   "aiReportShow": "显示",
   "aiReportHide": "隐藏",
-  "aiReportedOpen": "已反馈",
-  "aiReportNotSaved": "反馈标记没能存入加密记录；重新打开后，这条回应可能会再次显示。"
+  "aiReportedOpen": "已举报",
+  "aiReportNotSaved": "举报标记没能存入加密记录；重新打开后，这条回复可能会再次显示。",
+  "aiReportPreviewUpdated": "预览已更新为要发送的内容，确认后请再按一次提交。"
 }
