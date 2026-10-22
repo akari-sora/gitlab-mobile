@@ -1490,10 +1490,11 @@ the review fast path: fixed here, then one reviewer checked the increment.
 
 - **Deadline tests.**
   - The heartbeat test used to assume the worker started within 300 ms and
-    stopped within fixed windows. Now the deadline is 2 s, and the test waits
-    up to 10 s for half a second without a heartbeat. A killed worker reaches
-    that quickly; one left running never does, so removing the kill still
-    fails the test.
+    stopped within fixed windows. It now only checks that heartbeats stop
+    after the deadline. It waits up to 10 s for half a second without one, and
+    no longer requires the worker to have started. A killed worker goes quiet;
+    one left running keeps sending however late it starts, so removing the
+    kill still fails the test.
   - A failing worker's own error now comes back as a `RemoteError` carrying
     its message; before, it was a generic `StateError`. The test checks the
     message.

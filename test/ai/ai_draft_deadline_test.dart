@@ -44,15 +44,15 @@ void main() {
       }, const Duration(seconds: 2)),
       throwsA(isA<TimeoutException>()),
     );
-    // A killed worker goes quiet; one left running sends every 5 ms and
-    // never does. Wait up to 10 s for half a second without a heartbeat,
-    // so a busy machine delays the test instead of failing it.
+    // A killed worker goes quiet, whether or not it got to run before the
+    // deadline; one left running sends every 5 ms, however late it starts,
+    // and never does. Wait up to 10 s for half a second without a
+    // heartbeat, so a busy machine delays the test instead of failing it.
     var last = -1;
     for (var tries = 0; tries < 20 && count != last; tries++) {
       last = count;
       await Future<void>.delayed(const Duration(milliseconds: 500));
     }
-    expect(count, greaterThan(0), reason: 'the worker ran');
     expect(count, last, reason: 'the worker must stop sending');
   });
 
