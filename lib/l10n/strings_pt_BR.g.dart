@@ -2547,4 +2547,7 @@ const _messagesPtBr = <String>[
   'Esta conta tem {count} escritas da AI que o GitLab talvez não tenha concluído. Depois da remoção, este dispositivo deixa de acompanhá-las, então confira o GitLab antes.',
   'O registro de escritas da AI desta conta não pode ser lido, então pode haver escritas não confirmadas. Confira o GitLab antes.',
   'Escritas da AI não confirmadas seguram a limpeza. Remova esta conta de novo pela lista de contas e digite o nome de usuário para confirmar.',
+  'Alterações no GitLab',
+  'A AI pode fazer alterações no GitLab por você com esta conta, até “{level}”.',
+  'Cada escrita aparece na conversa; limites rígidos, como excluir um projeto ou mudar as configurações dele, sempre exigem que você digite o nome. Você pode reduzir ou desativar isso nas configurações a qualquer momento.',
 ];

@@ -2547,4 +2547,7 @@ const _messagesTr = <String>[
   'Bu hesapta GitLab’in tamamlayıp tamamlamadığı belirsiz {count} AI yazma işlemi var. Kaldırıldıktan sonra bu cihaz onları izlemez; önce GitLab’i kontrol et.',
   'Bu hesabın AI yazma kaydı okunamıyor; onaylanmamış yazma işlemleri olabilir. Önce GitLab’i kontrol et.',
   'Onaylanmamış AI yazma işlemleri temizliği bekletiyor. Bu hesabı hesap listesinden yeniden kaldır ve onaylamak için kullanıcı adını yaz.',
+  'GitLab’de değişiklikler',
+  'AI bu hesapla senin için GitLab’de değişiklik yapabilir; en fazla “{level}” düzeyinde.',
+  'Her yazma işlemi konuşmada gösterilir; bir projeyi silmek veya ayarlarını değiştirmek gibi kesin sınırlar her zaman adı yazmanı gerektirir. Bunu istediğin zaman ayarlardan düşürebilir veya kapatabilirsin.',
 ];

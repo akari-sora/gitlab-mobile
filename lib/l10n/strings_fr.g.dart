@@ -2547,4 +2547,7 @@ const _messagesFr = <String>[
   'Ce compte a {count} écritures de l\'AI dont on ne sait pas si GitLab les a effectuées. Après la suppression, cet appareil ne les suit plus : vérifiez d\'abord GitLab.',
   'Le journal des écritures de l\'AI de ce compte est illisible ; il peut rester des écritures non confirmées. Vérifiez d\'abord GitLab.',
   'Des écritures de l\'AI non confirmées bloquent le nettoyage. Supprimez de nouveau ce compte depuis la liste des comptes et saisissez son nom d\'utilisateur pour confirmer.',
+  'Modifications sur GitLab',
+  'L\'AI peut modifier GitLab pour vous avec ce compte, jusqu\'au niveau « {level} ».',
+  'Chaque écriture apparaît dans la conversation ; les limites strictes, comme supprimer un projet ou modifier ses paramètres, exigent toujours de saisir le nom. Vous pouvez réduire ou désactiver cela à tout moment dans les paramètres.',
 ];

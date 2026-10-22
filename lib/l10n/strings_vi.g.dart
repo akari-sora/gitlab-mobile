@@ -2547,4 +2547,7 @@ const _messagesVi = <String>[
   'Tài khoản này có {count} lượt ghi của AI chưa rõ GitLab đã thực hiện hay chưa. Sau khi xóa, thiết bị này sẽ không theo dõi chúng nữa, vì vậy hãy kiểm tra GitLab trước.',
   'Không đọc được nhật ký ghi của AI cho tài khoản này nên có thể còn lượt ghi chưa xác nhận. Hãy kiểm tra GitLab trước.',
   'Các lượt ghi chưa xác nhận của AI đang giữ việc dọn dẹp. Hãy xóa lại tài khoản này từ danh sách tài khoản và nhập tên người dùng để xác nhận.',
+  'Thay đổi trên GitLab',
+  'AI có thể thay đổi GitLab thay bạn bằng tài khoản này, tối đa đến “{level}”.',
+  'Mọi lượt ghi đều hiện trong cuộc trò chuyện; các giới hạn cứng như xóa dự án hay đổi cài đặt dự án luôn cần bạn nhập tên. Bạn có thể hạ mức hoặc tắt trong cài đặt bất cứ lúc nào.',
 ];

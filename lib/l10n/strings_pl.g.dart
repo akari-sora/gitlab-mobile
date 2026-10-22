@@ -2547,4 +2547,7 @@ const _messagesPl = <String>[
   'To konto ma zapisy AI, co do których nie wiadomo, czy GitLab je wykonał: {count}. Po usunięciu to urządzenie przestanie je śledzić, więc najpierw sprawdź GitLab.',
   'Nie można odczytać rejestru zapisów AI tego konta, więc mogą istnieć niepotwierdzone zapisy. Najpierw sprawdź GitLab.',
   'Niepotwierdzone zapisy AI wstrzymują czyszczenie. Usuń to konto ponownie z listy kont i wpisz nazwę użytkownika, aby potwierdzić.',
+  'Zmiany w GitLabie',
+  'AI może zmieniać GitLab w twoim imieniu tym kontem, maksymalnie na poziomie „{level}”.',
+  'Każdy zapis jest pokazany w rozmowie; twarde granice, takie jak usunięcie projektu czy zmiana jego ustawień, zawsze wymagają wpisania nazwy. W ustawieniach możesz to w każdej chwili obniżyć lub wyłączyć.',
 ];

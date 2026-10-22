@@ -2547,4 +2547,7 @@ const _messagesId = <String>[
   'Akun ini memiliki {count} penulisan AI yang belum pasti diselesaikan GitLab. Setelah dihapus, perangkat ini tidak lagi melacaknya, jadi periksa GitLab dulu.',
   'Catatan penulisan AI akun ini tidak dapat dibaca, jadi mungkin ada penulisan yang belum dikonfirmasi. Periksa GitLab dulu.',
   'Penulisan AI yang belum dikonfirmasi menahan pembersihan. Hapus lagi akun ini dari daftar akun dan ketik nama penggunanya untuk konfirmasi.',
+  'Perubahan di GitLab',
+  'AI boleh mengubah GitLab untukmu dengan akun ini, hingga “{level}”.',
+  'Setiap penulisan ditampilkan di percakapan; batas mutlak seperti menghapus proyek atau mengubah pengaturannya selalu memintamu mengetik nama. Kamu bisa menurunkan atau mematikannya di pengaturan kapan saja.',
 ];

@@ -2547,4 +2547,7 @@ const _messagesEs = <String>[
   'Esta cuenta tiene {count} escrituras de AI que GitLab quizá no completó. Tras quitarla, este dispositivo dejará de seguirlas, así que revisa GitLab primero.',
   'No se puede leer el registro de escrituras de AI de esta cuenta, así que puede haber escrituras sin confirmar. Revisa GitLab primero.',
   'Hay escrituras de AI sin confirmar que retienen la limpieza. Vuelve a quitar esta cuenta desde la lista de cuentas y escribe su nombre de usuario para confirmar.',
+  'Cambios en GitLab',
+  'La AI puede hacer cambios en GitLab por ti con esta cuenta, hasta «{level}».',
+  'Cada escritura aparece en la conversación; los límites estrictos, como eliminar un proyecto o cambiar su configuración, siempre requieren que escribas el nombre. Puedes bajarlo o desactivarlo en los ajustes cuando quieras.',
 ];

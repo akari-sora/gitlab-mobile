@@ -14,6 +14,7 @@ import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/ai_transport.dart';
 import 'package:gitlab_mobile/core/ai/ai_wire_client.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
+import 'package:gitlab_mobile/features/ai/ai_chat_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
 import 'package:gitlab_mobile/features/ai/ai_run_registry.dart';
@@ -339,7 +340,11 @@ void main() {
       await settings.loadAccount(fixture.account.key);
       await settings.grantConsent(
         fixture.account.key,
-        aiCurrentConsentContractFor(provider),
+        aiConversationConsentContract(
+          settings,
+          fixture.account.key,
+          provider,
+        ),
         const <String, Object?>{'synthetic': true},
       );
 

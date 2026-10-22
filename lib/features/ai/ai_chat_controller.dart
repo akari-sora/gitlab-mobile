@@ -955,19 +955,8 @@ class AiChatController extends ChangeNotifier
     conversationId: _id,
   );
 
-  AiConsentContract _consentContract(AiProviderConfig provider) {
-    final saved = settings.accountRecord(_accountKey)?.consents[provider.id];
-    // Legacy read-only grants keep their exact disclosure. A write contract
-    // is accepted only after the settings owner has saved that explicit grant.
-    if (saved == null || saved.agreedCeiling == AiAutonomyLevel.readOnly) {
-      return aiCurrentConsentContractFor(provider);
-    }
-    return settings.consentContractFor(
-      _accountKey,
-      provider,
-      writePolicy: aiMr6b1WritePolicy(saved.agreedCeiling),
-    );
-  }
+  AiConsentContract _consentContract(AiProviderConfig provider) =>
+      aiConversationConsentContract(settings, _accountKey, provider);
 
   ledger.AiWriteScope _writeScope() {
     final supplied = _writeScopeOverride;
@@ -2159,5 +2148,32 @@ AiWireClient _createWireClient({
     config: config,
     conversationId: conversationId,
     appVersion: aiClientAppVersion,
+  );
+}
+
+/// The consent a conversation with [provider] asks for on [accountKey].
+/// Without tools the AI cannot write: the read-only disclosure. Otherwise it
+/// names the highest level the user agrees to: the account's ceiling, or an
+/// earlier, higher agreement. Raising the ceiling above what was agreed asks
+/// again; lowering it does not.
+AiConsentContract aiConversationConsentContract(
+  AiSettingsController settings,
+  String accountKey,
+  AiProviderConfig provider,
+) {
+  if (!provider.toolsEnabled) return aiCurrentConsentContractFor(provider);
+  final account = settings.accountRecord(accountKey);
+  final ceiling = account?.ceiling ?? AiAutonomyLevel.lowRiskAuto;
+  final saved =
+      account?.consents[provider.id]?.agreedCeiling ?? AiAutonomyLevel.readOnly;
+  final agreed = ceiling.index > saved.index ? ceiling : saved;
+  if (agreed == AiAutonomyLevel.readOnly) {
+    return aiCurrentConsentContractFor(provider);
+  }
+  return settings.consentContractFor(
+    accountKey,
+    provider,
+    writePolicy: aiMr6b1WritePolicy(agreed),
+    agreedCeiling: agreed,
   );
 }

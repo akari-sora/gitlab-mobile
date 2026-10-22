@@ -2544,5 +2544,8 @@
   "aiJournalDispatching": "W toku",
   "aiRemoveUncertainWrites": "To konto ma zapisy AI, co do których nie wiadomo, czy GitLab je wykonał: {count}. Po usunięciu to urządzenie przestanie je śledzić, więc najpierw sprawdź GitLab.",
   "aiRemoveJournalUnreadable": "Nie można odczytać rejestru zapisów AI tego konta, więc mogą istnieć niepotwierdzone zapisy. Najpierw sprawdź GitLab.",
-  "aiRemoveRetryFromAccountList": "Niepotwierdzone zapisy AI wstrzymują czyszczenie. Usuń to konto ponownie z listy kont i wpisz nazwę użytkownika, aby potwierdzić."
+  "aiRemoveRetryFromAccountList": "Niepotwierdzone zapisy AI wstrzymują czyszczenie. Usuń to konto ponownie z listy kont i wpisz nazwę użytkownika, aby potwierdzić.",
+  "aiConsentWritesHeading": "Zmiany w GitLabie",
+  "aiConsentWritesUpTo": "AI może zmieniać GitLab w twoim imieniu tym kontem, maksymalnie na poziomie „{level}”.",
+  "aiConsentWritesLimits": "Każdy zapis jest pokazany w rozmowie; twarde granice, takie jak usunięcie projektu czy zmiana jego ustawień, zawsze wymagają wpisania nazwy. W ustawieniach możesz to w każdej chwili obniżyć lub wyłączyć."
 }

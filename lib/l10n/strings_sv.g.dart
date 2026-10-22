@@ -2547,4 +2547,7 @@ const _messagesSv = <String>[
   'Det här kontot har {count} AI-skrivningar som GitLab kanske inte har gjort. Efter borttagningen följer enheten dem inte längre, så kontrollera GitLab först.',
   'Kontots logg över AI-skrivningar går inte att läsa, så det kan finnas obekräftade skrivningar. Kontrollera GitLab först.',
   'Obekräftade AI-skrivningar håller kvar rensningen. Ta bort kontot igen från kontolistan och skriv användarnamnet för att bekräfta.',
+  'Ändringar på GitLab',
+  'AI får ändra GitLab åt dig med det här kontot, upp till ”{level}”.',
+  'Varje skrivning visas i konversationen; hårda gränser som att ta bort ett projekt eller ändra dess inställningar kräver alltid att du skriver namnet. Du kan sänka eller stänga av detta i inställningarna när som helst.',
 ];

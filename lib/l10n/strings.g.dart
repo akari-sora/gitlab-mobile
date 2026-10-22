@@ -7728,4 +7728,13 @@ final class AppStrings {
 
   /// 有未確認的 AI 寫入擋住清除。請回到帳號列表重新移除這個帳號，並輸入使用者名稱確認。
   String get aiRemoveRetryFromAccountList => language._messages[2544];
+
+  /// GitLab 寫入
+  String get aiConsentWritesHeading => language._messages[2545];
+
+  /// AI 可以用這個帳號替你寫入 GitLab，最高到「{level}」。
+  String aiConsentWritesUpTo(Object? level) => _format(language, language._messages[2546], {'level': level});
+
+  /// 每筆寫入都會列在對話裡；刪除專案、改專案設定這類硬底線永遠要你輸入名稱確認。你隨時可以在設定調低或關閉。
+  String get aiConsentWritesLimits => language._messages[2547];
 }

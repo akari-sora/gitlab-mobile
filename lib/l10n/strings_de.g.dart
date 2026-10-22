@@ -2547,4 +2547,7 @@ const _messagesDe = <String>[
   'Dieses Konto hat {count} AI-Schreibvorgänge, bei denen unklar ist, ob GitLab sie ausgeführt hat. Nach dem Entfernen verfolgt dieses Gerät sie nicht mehr; prüfen Sie daher zuerst GitLab.',
   'Das AI-Schreibprotokoll dieses Kontos kann nicht gelesen werden, daher könnte es unbestätigte Schreibvorgänge geben. Prüfen Sie zuerst GitLab.',
   'Unbestätigte AI-Schreibvorgänge halten die Bereinigung auf. Entfernen Sie dieses Konto erneut aus der Kontoliste und bestätigen Sie mit dem Benutzernamen.',
+  'Änderungen auf GitLab',
+  'Die AI darf mit diesem Konto für Sie Änderungen auf GitLab vornehmen, bis zur Stufe „{level}“.',
+  'Jeder Schreibvorgang wird in der Unterhaltung angezeigt; bei harten Grenzen wie dem Löschen eines Projekts oder dem Ändern seiner Einstellungen müssen Sie immer den Namen eingeben. Sie können dies jederzeit in den Einstellungen verringern oder ausschalten.',
 ];

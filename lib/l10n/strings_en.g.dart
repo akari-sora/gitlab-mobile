@@ -2547,4 +2547,7 @@ const _messagesEn = <String>[
   'This account has {count} AI changes that GitLab may or may not have made. After removal this device no longer tracks them, so check GitLab first.',
   'This account\'s AI change log cannot be read, so there may be unconfirmed changes. Check GitLab first.',
   'Unconfirmed AI changes hold the cleanup. Remove this account again from the account list and type its username to confirm.',
+  'Changes on GitLab',
+  'The AI may change GitLab for you with this account, up to "{level}".',
+  'Every change is listed in the conversation; hard limits such as deleting a project or changing its settings always need you to type the name. You can lower or turn this off in settings at any time.',
 ];

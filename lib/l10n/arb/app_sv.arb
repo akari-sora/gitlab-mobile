@@ -2544,5 +2544,8 @@
   "aiJournalDispatching": "Pågår",
   "aiRemoveUncertainWrites": "Det här kontot har {count} AI-skrivningar som GitLab kanske inte har gjort. Efter borttagningen följer enheten dem inte längre, så kontrollera GitLab först.",
   "aiRemoveJournalUnreadable": "Kontots logg över AI-skrivningar går inte att läsa, så det kan finnas obekräftade skrivningar. Kontrollera GitLab först.",
-  "aiRemoveRetryFromAccountList": "Obekräftade AI-skrivningar håller kvar rensningen. Ta bort kontot igen från kontolistan och skriv användarnamnet för att bekräfta."
+  "aiRemoveRetryFromAccountList": "Obekräftade AI-skrivningar håller kvar rensningen. Ta bort kontot igen från kontolistan och skriv användarnamnet för att bekräfta.",
+  "aiConsentWritesHeading": "Ändringar på GitLab",
+  "aiConsentWritesUpTo": "AI får ändra GitLab åt dig med det här kontot, upp till ”{level}”.",
+  "aiConsentWritesLimits": "Varje skrivning visas i konversationen; hårda gränser som att ta bort ett projekt eller ändra dess inställningar kräver alltid att du skriver namnet. Du kan sänka eller stänga av detta i inställningarna när som helst."
 }

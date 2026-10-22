@@ -2547,4 +2547,7 @@ const _messagesNl = <String>[
   'Dit account heeft {count} AI-schrijfacties waarvan onzeker is of GitLab ze heeft uitgevoerd. Na verwijdering volgt dit apparaat ze niet meer, dus controleer eerst GitLab.',
   'Het AI-schrijflogboek van dit account is niet leesbaar, dus er kunnen onbevestigde schrijfacties zijn. Controleer eerst GitLab.',
   'Onbevestigde AI-schrijfacties houden het opruimen tegen. Verwijder dit account opnieuw via de accountlijst en typ de gebruikersnaam om te bevestigen.',
+  'Wijzigingen op GitLab',
+  'De AI mag met dit account GitLab voor je wijzigen, tot „{level}”.',
+  'Elke schrijfactie staat in het gesprek; voor harde grenzen zoals een project verwijderen of de instellingen ervan wijzigen moet je altijd de naam typen. Je kunt dit altijd verlagen of uitzetten in de instellingen.',
 ];

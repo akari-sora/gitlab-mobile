@@ -2547,4 +2547,7 @@ const _messagesCs = <String>[
   'Tento účet má zápisů AI, u kterých není jisté, zda je GitLab provedl: {count}. Po odebrání je toto zařízení už nesleduje, proto nejprve zkontrolujte GitLab.',
   'Záznam zápisů AI tohoto účtu nelze přečíst, proto mohou existovat nepotvrzené zápisy. Nejprve zkontrolujte GitLab.',
   'Čištění blokují nepotvrzené zápisy AI. Odeberte tento účet znovu ze seznamu účtů a potvrďte zadáním uživatelského jména.',
+  'Změny na GitLabu',
+  'AI může za vás tímto účtem měnit GitLab, nejvýše na úrovni „{level}“.',
+  'Každý zápis se zobrazí v konverzaci; pevné hranice, jako je smazání projektu nebo změna jeho nastavení, vždy vyžadují zadání názvu. V nastavení to můžete kdykoli snížit nebo vypnout.',
 ];

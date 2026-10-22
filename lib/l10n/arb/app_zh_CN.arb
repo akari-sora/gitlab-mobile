@@ -2544,5 +2544,8 @@
   "aiJournalDispatching": "写入中",
   "aiRemoveUncertainWrites": "这个账号有 {count} 笔不确定 GitLab 是否完成的 AI 写入。移除后，这台设备就不再追踪它们，请先到 GitLab 确认。",
   "aiRemoveJournalUnreadable": "这个账号的 AI 写入记录无法读取，可能还有未确认的写入。请先到 GitLab 确认。",
-  "aiRemoveRetryFromAccountList": "有未确认的 AI 写入挡住清除。请回到账号列表重新移除这个账号，并输入用户名确认。"
+  "aiRemoveRetryFromAccountList": "有未确认的 AI 写入挡住清除。请回到账号列表重新移除这个账号，并输入用户名确认。",
+  "aiConsentWritesHeading": "GitLab 写入",
+  "aiConsentWritesUpTo": "AI 可以用这个账号替你写入 GitLab，最高到“{level}”。",
+  "aiConsentWritesLimits": "每笔写入都会列在对话里；删除项目、改项目设置这类硬底线永远要你输入名称确认。你随时可以在设置中调低或关闭。"
 }

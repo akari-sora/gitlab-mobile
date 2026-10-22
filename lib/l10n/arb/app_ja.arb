@@ -2544,5 +2544,8 @@
   "aiJournalDispatching": "書き込み中",
   "aiRemoveUncertainWrites": "このアカウントには、GitLab で完了したか不明な AI の書き込みが {count} 件あります。削除するとこの端末では追跡しなくなるため、先に GitLab で確認してください。",
   "aiRemoveJournalUnreadable": "このアカウントの AI 書き込み記録を読み取れないため、未確認の書き込みが残っている可能性があります。先に GitLab で確認してください。",
-  "aiRemoveRetryFromAccountList": "未確認の AI 書き込みがあるため削除を完了できません。アカウント一覧からこのアカウントをもう一度削除し、ユーザー名を入力して確認してください。"
+  "aiRemoveRetryFromAccountList": "未確認の AI 書き込みがあるため削除を完了できません。アカウント一覧からこのアカウントをもう一度削除し、ユーザー名を入力して確認してください。",
+  "aiConsentWritesHeading": "GitLab への書き込み",
+  "aiConsentWritesUpTo": "AI はこのアカウントで GitLab に書き込めます。上限は「{level}」です。",
+  "aiConsentWritesLimits": "書き込みはすべて会話に表示されます。プロジェクトの削除や設定変更などの絶対的な制限では、常に名前の入力が必要です。設定からいつでも下げたりオフにしたりできます。"
 }

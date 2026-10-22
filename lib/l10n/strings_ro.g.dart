@@ -2547,4 +2547,7 @@ const _messagesRo = <String>[
   'Acest cont are {count} scrieri AI despre care nu se știe dacă GitLab le-a efectuat. După eliminare, acest dispozitiv nu le mai urmărește, așa că verifică mai întâi GitLab.',
   'Jurnalul scrierilor AI al acestui cont nu poate fi citit, așa că pot exista scrieri neconfirmate. Verifică mai întâi GitLab.',
   'Scrieri AI neconfirmate blochează curățarea. Elimină din nou acest cont din lista de conturi și tastează numele de utilizator pentru confirmare.',
+  'Modificări pe GitLab',
+  'AI poate face modificări în GitLab pentru tine cu acest cont, până la „{level}”.',
+  'Fiecare scriere apare în conversație; limitele stricte, precum ștergerea unui proiect sau schimbarea setărilor lui, cer mereu să tastezi numele. Poți reduce sau dezactiva asta oricând din setări.',
 ];

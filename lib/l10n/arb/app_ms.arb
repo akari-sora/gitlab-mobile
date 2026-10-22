@@ -2544,5 +2544,8 @@
   "aiJournalDispatching": "Sedang berjalan",
   "aiRemoveUncertainWrites": "Akaun ini mempunyai {count} penulisan AI yang belum pasti diselesaikan oleh GitLab. Selepas dibuang, peranti ini tidak lagi menjejakinya, jadi semak GitLab dahulu.",
   "aiRemoveJournalUnreadable": "Log penulisan AI akaun ini tidak dapat dibaca, jadi mungkin ada penulisan yang belum disahkan. Semak GitLab dahulu.",
-  "aiRemoveRetryFromAccountList": "Penulisan AI yang belum disahkan menahan pembersihan. Buang akaun ini sekali lagi dari senarai akaun dan taip nama penggunanya untuk mengesahkan."
+  "aiRemoveRetryFromAccountList": "Penulisan AI yang belum disahkan menahan pembersihan. Buang akaun ini sekali lagi dari senarai akaun dan taip nama penggunanya untuk mengesahkan.",
+  "aiConsentWritesHeading": "Perubahan di GitLab",
+  "aiConsentWritesUpTo": "AI boleh membuat perubahan pada GitLab untuk anda dengan akaun ini, sehingga “{level}”.",
+  "aiConsentWritesLimits": "Setiap penulisan dipaparkan dalam perbualan; had mutlak seperti memadam projek atau menukar tetapannya sentiasa memerlukan anda menaip nama. Anda boleh merendahkan atau mematikannya dalam tetapan pada bila-bila masa."
 }

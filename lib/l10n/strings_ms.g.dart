@@ -2547,4 +2547,7 @@ const _messagesMs = <String>[
   'Akaun ini mempunyai {count} penulisan AI yang belum pasti diselesaikan oleh GitLab. Selepas dibuang, peranti ini tidak lagi menjejakinya, jadi semak GitLab dahulu.',
   'Log penulisan AI akaun ini tidak dapat dibaca, jadi mungkin ada penulisan yang belum disahkan. Semak GitLab dahulu.',
   'Penulisan AI yang belum disahkan menahan pembersihan. Buang akaun ini sekali lagi dari senarai akaun dan taip nama penggunanya untuk mengesahkan.',
+  'Perubahan di GitLab',
+  'AI boleh membuat perubahan pada GitLab untuk anda dengan akaun ini, sehingga “{level}”.',
+  'Setiap penulisan dipaparkan dalam perbualan; had mutlak seperti memadam projek atau menukar tetapannya sentiasa memerlukan anda menaip nama. Anda boleh merendahkan atau mematikannya dalam tetapan pada bila-bila masa.',
 ];
