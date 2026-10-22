@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
+import '../../core/merge_request_state.dart';
 import '../../core/models.dart';
 import '../../core/work_item_types.dart';
 import '../../shared/external_link.dart';
@@ -34,6 +35,7 @@ import 'rest_issue_graph_bridge.dart';
 import '../../shared/theme.dart';
 import '../../l10n/l10n.dart';
 export 'discussions_tab.dart';
+export '../../core/merge_request_state.dart' show isAutoMergeEnabled, canAutoMerge;
 
 class ProjectWorkItemsPage extends StatefulWidget {
   const ProjectWorkItemsPage({super.key, required this.account, required this.api, required this.project, required this.type}) : assert(type != ProjectWorkItemType.issue);
@@ -974,7 +976,11 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
     try {
       switch (action) {
         case 'delete':
-          await owner.api.removeRecord(ownerPath);
+          if (owner.resource == 'issues') {
+            await owner.api.deleteIssue(owner.project.id, owner.iid);
+          } else {
+            await owner.api.deleteMergeRequest(owner.project.id, owner.iid);
+          }
           if (_currentOwner(owner)) {
             if (widget.onDeleted != null) {
               widget.onDeleted!();
@@ -2255,29 +2261,6 @@ String toggledDraftTitle(String title, bool isDraft) {
     stripped = next;
   }
   return stripped.trim();
-}
-
-bool isAutoMergeEnabled(Json data) {
-  final state = valueText(data, 'state');
-  if (state == 'merged' || state == 'closed') return false;
-  return data['merge_when_pipeline_succeeds'] == true || data['auto_merge_enabled'] == true;
-}
-
-bool canAutoMerge(Json data) {
-  if (valueText(data, 'state') != 'opened' || isAutoMergeEnabled(data)) return false;
-  if (data['draft'] == true || data['work_in_progress'] == true) return false;
-  if (data['has_conflicts'] == true || data['merge_status'] == 'cannot_be_merged') return false;
-
-  final status = valueText(data, 'detailed_merge_status');
-  if (const ['conflict', 'need_rebase', 'draft_status', 'broken_status', 'not_open', 'cannot_be_merged', 'mergeable'].contains(status)) {
-    return false;
-  }
-  if (status == 'ci_still_running' || status == 'ci_must_pass') return true;
-
-  final pipeline = valueObject(data, 'head_pipeline');
-  final pipeStatus = valueText(pipeline, 'status');
-  return const ['running', 'pending', 'created', 'waiting_for_resource', 'preparing', 'manual']
-      .contains(pipeStatus);
 }
 
 bool mergeSquashEnforced(Json data) {
