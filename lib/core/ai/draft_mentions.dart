@@ -1,3 +1,5 @@
+import 'dart:math' show max;
+
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html;
 import 'package:markdown/markdown.dart' as md;
@@ -14,7 +16,8 @@ final class DraftMentions {
   /// The draft text, with CRs normalized and verified mention code spans added.
   final String text;
 
-  /// Remaining mentions without `@`, unique in order of first appearance.
+  /// Remaining mentions without `@`, unique in source-fragment order, followed
+  /// by names found only in the whole rendered DOM.
   final List<String> mentions;
 
   /// How many mention tokens were wrapped in code spans.
@@ -83,7 +86,10 @@ DraftMentions analyzeDraftMentions(
   }
 
   final existingAnalysis = _analyze(existing);
-  final addedReferences = analysis.references - existingAnalysis.references;
+  final addedReferences = max(
+    analysis.references - existingAnalysis.references,
+    analysis.fragmentReferences - existingAnalysis.fragmentReferences,
+  );
   return DraftMentions(
     text: result,
     mentions: List<String>.unmodifiable(
@@ -175,74 +181,118 @@ _Analysis _analyze(String text) {
   ).parse(text);
   final analysis = _Analysis();
   final fragmentMentions = <String>[];
+  var insideRawReference = false;
 
-  void walkHtml(
+  int walkHtml(
     dom.Node node, {
-    required List<String> mentions,
+    List<String>? mentions,
     required bool skipReferences,
     bool skipCode = true,
   }) {
     final rawCode =
         node is dom.Element &&
         (node.localName == 'code' || node.localName == 'pre');
-    if (skipCode && rawCode) return;
+    if (skipCode && rawCode) return 0;
+    var references = 0;
     var skipChildReferences = skipReferences || rawCode;
     if (!skipChildReferences && node is dom.Element && node.localName == 'a') {
       final href = node.attributes['href'];
       if (href != null && _isReferenceUrl(href)) {
-        analysis.references++;
+        references++;
         // The anchor is one reference even when its label names another item.
         skipChildReferences = true;
       }
     }
     if (node is dom.Text) {
-      mentions.addAll(
+      mentions?.addAll(
         _mentionPattern.allMatches(node.data).map((match) => match[1]!),
       );
       if (!skipReferences) {
         for (final match in _referencePattern.allMatches(node.data)) {
           final url = match[1];
-          if (url == null || _isReferenceUrl(url)) analysis.references++;
+          if (url == null || _isReferenceUrl(url)) references++;
         }
       }
     }
     for (final child in node.nodes) {
-      walkHtml(
+      references += walkHtml(
         child,
         mentions: mentions,
         skipReferences: skipChildReferences,
         skipCode: skipCode,
       );
     }
+    return references;
   }
 
-  void walk(md.Node node, {bool insideCode = false}) {
+  void walk(
+    md.Node node, {
+    bool insideCode = false,
+    bool skipReferences = false,
+  }) {
     if (node is md.Element) {
       if (node.tag == 'code') {
         final value = node.textContent;
         analysis.code[value] = (analysis.code[value] ?? 0) + 1;
       }
       final blocked = insideCode || node.tag == 'code' || node.tag == 'pre';
+      var skipChildReferences = skipReferences;
+      if (!blocked && !skipReferences && node.tag == 'a') {
+        // A Markdown anchor ends any preceding raw anchor. Count a recognized
+        // destination once, suppressing every part of its rendered label.
+        insideRawReference = false;
+        final href = node.attributes['href'];
+        if (href != null && _isReferenceUrl(href)) {
+          analysis.fragmentReferences++;
+          skipChildReferences = true;
+        }
+      }
       for (final child in node.children ?? const <md.Node>[]) {
-        walk(child, insideCode: blocked);
+        walk(child, insideCode: blocked, skipReferences: skipChildReferences);
       }
     } else if (node is md.Text && !insideCode) {
       // Markdown text is already HTML-escaped, while raw HTML is kept intact.
       // One fragment parse decodes once and preserves DOM text boundaries.
       // Plain text needs neither HTML tree construction nor entity decoding.
-      final fragment = node.text.contains('&') || node.text.contains('<')
-          ? html.parseFragment(node.text)
-          : dom.Text(node.text);
+      var parser = node.text.contains('<') ? html.HtmlParser(node.text) : null;
+      final fragment =
+          parser?.parseFragment() ??
+          (node.text.contains('&')
+              ? html.parseFragment(node.text)
+              : dom.Text(node.text));
       walkHtml(
         fragment,
         mentions: fragmentMentions,
         skipReferences: true,
         skipCode: false,
       );
+      if (!skipReferences) {
+        var referenceFragment = fragment;
+        final continuedAnchor = insideRawReference && parser != null;
+        if (continuedAnchor) {
+          // Raw anchor labels can cross Markdown Text nodes too. Carry only
+          // that anchor context; raw code/pre still end at each fragment.
+          parser = html.HtmlParser('<a href="/-/issues/0">${node.text}');
+          referenceFragment = parser.parseFragment();
+        }
+        final references = walkHtml(
+          referenceFragment,
+          skipReferences: insideRawReference && !continuedAnchor,
+        );
+        analysis.fragmentReferences += references - (continuedAnchor ? 1 : 0);
+        if (parser != null) {
+          insideRawReference = parser.tree.openElements.any(
+            (element) =>
+                element.localName == 'a' &&
+                _isReferenceUrl(element.attributes['href'] ?? ''),
+          );
+        }
+      }
     }
   }
 
   for (final node in nodes) {
+    insideRawReference = false;
     walk(node);
   }
   // GitLab 18.11+ uses HTML5, where raw code tags can span Markdown elements.
@@ -250,7 +300,7 @@ _Analysis _analyze(String text) {
   // per name from the whole HTML5 DOM and the conservative Text-fragment view;
   // only Markdown-generated code is excluded from that second view.
   final wholeMentions = <String>[];
-  walkHtml(
+  analysis.references = walkHtml(
     html.parseFragment(md.renderToHtml(nodes)),
     mentions: wholeMentions,
     // Count both raw and Markdown anchors here once, including labels split
@@ -281,4 +331,5 @@ final class _Analysis {
   final code = <String, int>{};
   final mentions = <String>[];
   int references = 0;
+  int fragmentReferences = 0;
 }

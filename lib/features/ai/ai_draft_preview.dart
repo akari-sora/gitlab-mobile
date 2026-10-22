@@ -30,10 +30,43 @@ typedef AiDraftAnalyzer =
 
 /// Runs the check off the UI isolate whatever the length: even a short answer
 /// with a long unbroken run of letters takes seconds to parse on a phone.
-/// Throws a `TimeoutException` after [_analysisTimeout]; the caller then
-/// appends nothing.
-Future<AiDraftAnalysis> analyzeAiDraft(String text, String existing) =>
-    Isolate.run(() => _analyze(text, existing)).timeout(_analysisTimeout);
+/// Throws a `TimeoutException` after [timeout]; the caller then appends
+/// nothing.
+Future<AiDraftAnalysis> analyzeAiDraft(
+  String text,
+  String existing, {
+  Duration timeout = _analysisTimeout,
+}) => runWithDeadline(() => _analyze(text, existing), timeout);
+
+/// Runs [work] on a new isolate and returns its result. If [work] fails, or is
+/// still running after [timeout], the isolate is killed, so an abandoned check
+/// never keeps a core busy, and a retry never runs beside an earlier one.
+@visibleForTesting
+Future<R> runWithDeadline<R>(R Function() work, Duration timeout) async {
+  final port = ReceivePort();
+  Isolate? isolate;
+  try {
+    isolate = await Isolate.spawn(
+      _deadlineWorker<R>,
+      (port.sendPort, work),
+      onError: port.sendPort,
+      onExit: port.sendPort,
+    );
+    final message = await port.first.timeout(timeout);
+    if (message case (R result,)) return result;
+    throw StateError('The draft check stopped: $message');
+  } finally {
+    isolate?.kill(priority: Isolate.immediate);
+    port.close();
+  }
+}
+
+/// Sends `(result,)` and exits; an error or an exit without a result reaches
+/// the same port as something else.
+void _deadlineWorker<R>((SendPort, R Function()) message) {
+  final (port, work) = message;
+  Isolate.exit(port, (work(),));
+}
 
 /// The same check on the calling isolate, for tests.
 @visibleForTesting

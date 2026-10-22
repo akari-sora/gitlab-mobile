@@ -1421,7 +1421,7 @@ Emulator runs on the project's Android API 36 emulator:
     632 ms, `'x' * 6000 + 'Z'` 756 ms, the benign layout 3 ms.
   - The page now always runs the check on another isolate, whatever the
     length. It gives up after 30 s and then appends nothing ("The answer could
-    not be checked").
+    not be checked"). Round 4 below makes giving up stop the work.
   - `AiChatPage.analyzeDraft` lets tests run the check in place. The entry
     point tests and one page test use the real isolate.
 - **Flaky test (Opus I2).** The long-answer test used `'x' * 6000`, the parser's
@@ -1433,3 +1433,52 @@ Emulator runs on the project's Android API 36 emulator:
   too) and a failing check.
 - **Strings.** Malay uses its existing "quick action" term in the
   existing-draft note.
+
+#### Review round 4 (Opus: APPROVE WITH MINOR FIXES; Codex: REQUEST CHANGES)
+
+- **A timed-out check kept running (Codex Important; Opus N2).**
+  `Future.timeout` only stopped the wait. The isolate went on until the
+  analysis finished, and a retry started another.
+  - The check now runs through `runWithDeadline`. It spawns its own isolate and
+    kills it on timeout, on error, or when it is done.
+  - Tests:
+    - a worker that keeps sending heartbeats stops sending them after the
+      deadline;
+    - a pathological draft (49 mentions, one candidate already in code, then
+      12,000 `x`) gives up at a 300 ms deadline instead of running to the
+      end;
+    - failures are reported.
+  - Removing the kill, the timeout, or the isolate each turns a test red.
+  - Leaving the chat does not cancel a check in progress; the 30 s deadline
+    still bounds it.
+- **References for both parsers (Codex M1; Opus N1).** References now use the
+  same two views as mentions: the whole-note HTML5 DOM, and per-text-node
+  fragments that skip code and pre inside each fragment.
+  - Each view subtracts the existing draft's own references, and the larger
+    total is reported.
+  - An anchor is counted once in either view.
+  - After an unclosed raw `<code>`, `#123` and `!45` count 2 again.
+  - On a 3,000-answer natural corpus, the number of answers where libxml2 sees
+    a reference that the preview shows as 0 went from 1,364 to 0. Gumbo
+    stayed at 0.
+  - Malformed HTML still differs in some cases (28 under libxml2, 3 under
+    Gumbo, out of 3,000).
+- **Tests the reviewers found missing (Opus N3).**
+  - `see <textarea> @victim and <div>@raw</div>` must keep `neutralized == 0`
+    and the text unchanged. Removing the fallback's "exactly one mention
+    fewer" condition now fails it.
+  - The timeout and the isolate are covered as above.
+- **Limits, stated plainly (Opus N4, N5).**
+  - Over-reporting is broader than raw `<code>@x</code>`. Ordinary Markdown
+    such as `~~a_@victim~~` is listed. After an unclosed `<code>`, `<pre>` or
+    `<textarea>` in the existing draft, mentions that GitLab 18.11+ would not
+    notify are still listed for acknowledgement.
+  - Under-reporting remains possible only for malformed tag combinations, in
+    two ways:
+    - the two views cut a name differently (`victim--` against `victim`);
+    - a name the existing draft already mentions cancels the answer's
+      occurrence.
+- **Not done, recorded as follow-ups.**
+  - Reading the instance version (`GET /version`) to pick one parser instead
+    of the union.
+  - Cancelling a running check when the chat closes.

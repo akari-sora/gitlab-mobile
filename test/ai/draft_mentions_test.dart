@@ -206,6 +206,13 @@ void main() {
     },
   );
 
+  test('fallback requires each code span to remove exactly one mention', () {
+    _expectDraft(
+      'see <textarea> @victim and <div>@raw</div>',
+      mentions: ['victim', 'raw'],
+    );
+  });
+
   test(
     'uses per-name maximum counts for wrapping and existing subtraction',
     () {
@@ -437,6 +444,72 @@ void main() {
     _expectDraft('see #2', existing: 'see #1', references: 1);
   });
 
+  for (final keepNotifications in [false, true]) {
+    for (final entry in {
+      'Use the <code> tag.\n\nThis fixes #123 and closes !45.': 2,
+      'x <code>\n\n[a](/g/p/-/issues/5)': 1,
+      'x <code>\n\nSee https://gitlab.com/g/p/-/issues/5': 1,
+    }.entries) {
+      test(
+        'counts libxml2 references after raw code '
+        '(keepNotifications=$keepNotifications): ${entry.key}',
+        () => _expectDraft(
+          entry.key,
+          keepNotifications: keepNotifications,
+          references: entry.value,
+        ),
+      );
+    }
+
+    test(
+      'counts references after an existing raw code opening '
+      '(keepNotifications=$keepNotifications)',
+      () => _expectDraft(
+        'cc #123',
+        existing: 'Use <code> here',
+        keepNotifications: keepNotifications,
+        references: 1,
+      ),
+    );
+
+    test('subtracts the fragment reference baseline '
+        '(keepNotifications=$keepNotifications)', () {
+      const existing = 'Use <code> here.\n\nSee #1 and !2.';
+      _expectDraft(
+        'cc #123',
+        existing: existing,
+        keepNotifications: keepNotifications,
+        references: 1,
+      );
+      _expectDraft(
+        'plain answer',
+        existing: existing,
+        keepNotifications: keepNotifications,
+      );
+    });
+
+    test(
+      'subtracts each reference view before choosing the maximum '
+      '(keepNotifications=$keepNotifications)',
+      () => _expectDraft(
+        '#123',
+        existing: '<a href="/g/p/-/issues/5"><li><br>',
+        keepNotifications: keepNotifications,
+        references: 1,
+      ),
+    );
+
+    test(
+      'clamps references when a new link definition hides existing references '
+      '(keepNotifications=$keepNotifications)',
+      () => _expectDraft(
+        '[a]: /g/p/-/issues/3',
+        existing: '[#1 !2][a]',
+        keepNotifications: keepNotifications,
+      ),
+    );
+  }
+
   test('wraps an answer mention after a non-empty existing draft', () {
     _expectDraft(
       'hello @bob',
@@ -547,6 +620,18 @@ void main() {
         references: 1,
       );
       _expectDraft('<a href="$href">**#456**</a>', references: 1);
+      for (final prefix in ['', 'x <code>\n\n']) {
+        _expectDraft(
+          '$prefix<a href="$href">**#456 !789** $href</a> #321',
+          references: 2,
+        );
+        _expectDraft('$prefix[**#456 !789** $href]($href) #321', references: 2);
+        _expectDraft(
+          '$prefix<a href="$href">**#456**</a> '
+          '<a href="$href">*!789*</a>',
+          references: 2,
+        );
+      }
       _expectDraft(
         '<div><a href="$href">details</a><a href="$href">again</a></div>',
         references: 2,
@@ -563,6 +648,7 @@ void main() {
         references: 1,
       );
       _expectDraft('<code><a href="$href">details</a></code>');
+      _expectDraft('<pre><a href="$href">details</a></pre>');
       _expectDraft('`<a href="$href">details</a>`');
     });
   }
