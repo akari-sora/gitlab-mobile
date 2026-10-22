@@ -12,8 +12,14 @@ import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/brand.dart';
 import 'package:gitlab_mobile/features/ai/ai_report_sender.dart';
 import 'package:gitlab_mobile/features/shell/build_info.dart';
+import 'package:gitlab_mobile/features/workspace/attachment_picker.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
+import 'package:gitlab_mobile/features/ai/ai_attachment_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_tier.dart';
+import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
+import 'package:gitlab_mobile/features/ai/ai_write_ui.dart';
 import 'package:gitlab_mobile/features/ai/ai_draft_preview.dart';
 import 'package:gitlab_mobile/features/ai/ai_draft_target.dart';
 import 'package:gitlab_mobile/features/ai/ai_message_body.dart';
@@ -173,6 +179,93 @@ final class _PriorConversationSession extends _FakeSession {
   AiAssistantItem? currentOf(AiAssistantItem item) => null;
 }
 
+final class _FakeWriteSession extends _FakeSession
+    implements AiWriteChatSession {
+  _FakeWriteSession({super.items, super.phase, this.proposals = const []});
+
+  @override
+  List<AiWriteProposal> proposals;
+  @override
+  AiAutonomyLevel autonomyLevel = AiAutonomyLevel.confirmEach;
+  @override
+  AiAutonomyLevel autonomyCeiling = AiAutonomyLevel.lowRiskAuto;
+  final approved = <AiWriteProposal>[];
+
+  @override
+  Future<void> setAutonomyLevel(AiAutonomyLevel level) async =>
+      update(() => autonomyLevel = level);
+  @override
+  Future<AiWriteOutcome> approveWrite(
+    AiWriteProposal proposal, {
+    String? typedName,
+    String? editedText,
+  }) async {
+    approved.add(proposal);
+    return const AiWriteOutcome(
+      state: AiJournalState.succeeded,
+      reasonCode: 'ok',
+    );
+  }
+
+  @override
+  Future<void> rejectWrite(AiWriteProposal proposal) async {}
+
+  @override
+  List<AiStoredAttachment> attachments = const [];
+  @override
+  bool canAttach = true;
+  AiAttachStatus attachStatus = AiAttachStatus.stored;
+  final picks = <AiAttachmentPick>[];
+  @override
+  Future<AiAttachResult> attach(AiAttachmentPick pick) async {
+    picks.add(pick);
+    return AiAttachResult(status: attachStatus, reasonCode: null);
+  }
+
+  @override
+  void removeAttachment(String id) {}
+}
+
+/// Also keeps the audit data the chat controller gives write rows.
+final class _AuditWriteSession extends _FakeWriteSession
+    implements AiWriteAuditSession {
+  _AuditWriteSession({super.items});
+
+  @override
+  List<AiWriteProposal> settledWriteEdits = [];
+  final rows = <AiChatItem, AiWriteRow>{};
+
+  @override
+  void dismissSettledWrite(AiWriteProposal proposal) =>
+      update(() => settledWriteEdits.remove(proposal));
+
+  @override
+  AiWriteRow? writeRowFor(AiChatItem item) => rows[item];
+}
+
+AiWriteProposal _writeProposal() => AiWriteProposal(
+  executionId: 'exec-1',
+  operationId: 'createNote',
+  tier: const AiTierDecision(
+    decision: AiGateDecision.requireApproval,
+    tier: AiWriteTier.t2,
+    requiresTypedName: false,
+    typedName: null,
+    reasons: [],
+  ),
+  payloadDigest: 'digest',
+  previewText: 'createNote !44',
+  userUtterance: 'comment on it',
+  modelReason: 'You asked for a comment.',
+  expiresAt: DateTime(2026, 10, 22, 21, 30),
+  proposalEpoch: 1,
+  writePolicyRevision: 1,
+  consentHash: 'hash',
+  scopeRevision: 1,
+  releaseName: '!44',
+  fields: const {'body': 'Thanks!'},
+);
+
 Widget _host(Widget child, {String tag = 'zh-TW', double scale = 1}) {
   final locale = switch (tag) {
     'ar' => const Locale('ar'),
@@ -293,6 +386,298 @@ void main() {
     pending.complete();
     await tester.pumpAndSettle();
     expect(tester.widget<ButtonStyleButton>(busy).onPressed, isNotNull);
+  });
+
+  group('writes', () {
+    testWidgets('a waiting proposal shows its card, Stop and the level', (
+      tester,
+    ) async {
+      final proposal = _writeProposal();
+      final session = _FakeWriteSession(
+        phase: AiChatPhase.awaitingApproval,
+        items: const [
+          AiAssistantItem(
+            text: 'I will add a comment.',
+            state: AiAssistantState.done,
+          ),
+        ],
+        proposals: [proposal],
+      );
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      expect(find.byType(AiWriteProposalCard), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-chat-stop')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-chat-send')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
+      await tester.pumpAndSettle();
+      expect(session.approved, [proposal]);
+      await tester.tap(find.byKey(const ValueKey('ai-chat-stop')));
+      expect(session.stops, 1);
+      expect(find.byKey(const ValueKey('ai-chat-level')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('ai-chat-level')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('ai-level-lowRiskAuto')));
+      await tester.pumpAndSettle();
+      expect(session.autonomyLevel, AiAutonomyLevel.lowRiskAuto);
+    });
+
+    testWidgets('a write waiting for its card says so, not "reading"', (
+      tester,
+    ) async {
+      final session = _FakeWriteSession(
+        phase: AiChatPhase.awaitingApproval,
+        items: const [
+          AiToolRunItem(
+            name: 'createNote',
+            argsPreview: '',
+            status: AiToolRunStatus.running,
+            sizeChars: 0,
+            provenance: '',
+          ),
+        ],
+        proposals: [_writeProposal()],
+      );
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pump();
+      expect(find.text(aiOperationLabel('createNote')), findsWidgets);
+      expect(find.text(l10n.waitingForConfirmation), findsOneWidget);
+      expect(find.text(l10n.aiToolUnknown), findsNothing);
+      expect(find.text(l10n.aiToolReading), findsNothing);
+      // Approved: the same row is being made.
+      session.update(() => session.phase = AiChatPhase.running);
+      await tester.pump();
+      expect(find.text(l10n.aiWriteInProgress), findsOneWidget);
+    });
+
+    testWidgets('a settled write row links to GitLab and warns on uploads', (
+      tester,
+    ) async {
+      const row = AiToolRunItem(
+        name: 'upload_attachment',
+        argsPreview: 'shot.png',
+        status: AiToolRunStatus.completed,
+        sizeChars: 0,
+        provenance: '',
+        writeStatus: AiWriteResultStatus.succeeded,
+      );
+      final session = _AuditWriteSession(items: const [row]);
+      session.rows[row] = AiWriteRow(
+        operationId: 'upload_attachment',
+        target: 'shot.png',
+        link: Uri.parse('https://example.com/gitlab/team/example-9'),
+        outcome: const AiWriteOutcome(
+          state: AiJournalState.succeeded,
+          reasonCode: 'ok',
+          auditNotice: uploadReadersCanFetch,
+        ),
+        settledAt: DateTime(2026, 10, 23, 14, 5),
+      );
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ai-write-row-link')), findsOneWidget);
+      expect(find.byKey(const ValueKey('ai-write-row-warning')), findsOne);
+      expect(find.textContaining('2:05'), findsOneWidget);
+    });
+
+    testWidgets('an edited card that did not run stays under the answer', (
+      tester,
+    ) async {
+      final kept = _writeProposal()..editedText = 'My edited comment.';
+      final session = _AuditWriteSession(
+        items: const [
+          AiAssistantItem(
+            text: 'I will add a comment.',
+            state: AiAssistantState.done,
+          ),
+        ],
+      )..settledWriteEdits = [kept];
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      expect(find.text('My edited comment.'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('ai-settled-edit-dismiss')));
+      await tester.pumpAndSettle();
+      expect(find.text('My edited comment.'), findsNothing);
+    });
+
+    testWidgets('automatic writes show a banner whose Stop ends them', (
+      tester,
+    ) async {
+      final session = _FakeWriteSession(phase: AiChatPhase.running)
+        ..autonomyCeiling = AiAutonomyLevel.bypass
+        ..autonomyLevel = AiAutonomyLevel.bypass;
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pump();
+      final banner = find.byKey(const ValueKey('ai-auto-write-banner'));
+      expect(banner, findsOneWidget);
+      expect(
+        find.text(l10n.aiAutoWriteBanner(l10n.aiLevelBypass)),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-auto-write-stop')));
+      await tester.pump();
+      expect(session.stops, 1);
+      expect(session.autonomyLevel, AiAutonomyLevel.confirmEach);
+      expect(banner, findsNothing);
+    });
+
+    testWidgets('only the two automatic levels show the banner', (
+      tester,
+    ) async {
+      final session = _FakeWriteSession()
+        ..autonomyCeiling = AiAutonomyLevel.bypass
+        ..autonomyLevel = AiAutonomyLevel.lowRiskAuto;
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      final banner = find.byKey(const ValueKey('ai-auto-write-banner'));
+      expect(banner, findsNothing);
+      await session.setAutonomyLevel(AiAutonomyLevel.conversationGrant);
+      await tester.pumpAndSettle();
+      expect(banner, findsOneWidget);
+      // Idle: Stop only drops the level; there is no run to end.
+      await tester.tap(find.byKey(const ValueKey('ai-auto-write-stop')));
+      await tester.pumpAndSettle();
+      expect(session.stops, 0);
+      expect(session.autonomyLevel, AiAutonomyLevel.confirmEach);
+      expect(banner, findsNothing);
+    });
+
+    for (final tag in ['zh-TW', 'de', 'ar']) {
+      testWidgets('the banner fits $tag at 2x on 320 dp with the keyboard', (
+        tester,
+      ) async {
+        final ratio = tester.view.devicePixelRatio;
+        tester.view.physicalSize = const Size(320, 640) * ratio;
+        addTearDown(tester.view.reset);
+        if (tag != 'zh-TW') useLanguage(languageForTag(tag)!);
+        addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+        final session = _FakeWriteSession(
+          items: const [
+            AiAssistantItem(
+              text: 'I will add a comment.',
+              state: AiAssistantState.done,
+            ),
+          ],
+        )
+          ..autonomyCeiling = AiAutonomyLevel.bypass
+          ..autonomyLevel = AiAutonomyLevel.bypass;
+        await tester.pumpWidget(
+          _host(AiChatPage(session: session), tag: tag, scale: 2),
+        );
+        await tester.pumpAndSettle();
+        await tester.showKeyboard(find.byType(TextField).last);
+        tester.view.viewInsets = FakeViewPadding(bottom: 280 * ratio);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final stop = tester.getRect(
+          find.byKey(const ValueKey('ai-auto-write-stop')),
+        );
+        expect(stop.left, greaterThanOrEqualTo(0));
+        expect(stop.right, lessThanOrEqualTo(320));
+        expect(stop.top, greaterThanOrEqualTo(0));
+        final send = tester.getRect(find.byKey(const ValueKey('ai-chat-send')));
+        expect(send.bottom, lessThanOrEqualTo(640 - 280));
+        expect(send.top, greaterThan(stop.bottom));
+      });
+    }
+
+    testWidgets('attach is off at the file limit and says why', (
+      tester,
+    ) async {
+      final held = AiAttachmentSession(
+        accountKey: 'synthetic',
+        conversationId: 'conversation-full',
+      );
+      addTearDown(held.discardAll);
+      final files = <AiStoredAttachment>[];
+      for (
+        var n = 0;
+        n < AiAttachmentSession.maxCountPerConversation;
+        n++
+      ) {
+        final result = await tester.runAsync(
+          () => held.reserveAndRead(
+            picker: _NoPicker(),
+            uploadToolInSegment: true,
+            intake: AiAttachmentIntake(
+              filename: 'shot-$n.png',
+              length: 3,
+              open: () => Stream.value([1, 2, n]),
+            ),
+          ),
+        );
+        files.add(result!.attachment!);
+      }
+      final session = _FakeWriteSession()..attachments = files;
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      final attach = tester.widget<IconButton>(
+        find.byKey(const ValueKey('ai-chat-attach')),
+      );
+      expect(attach.onPressed, isNull);
+      expect(attach.tooltip, l10n.aiAttachCapacity);
+    });
+
+    testWidgets('a read-only conversation has no level or attach button', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_host(AiChatPage(session: _FakeSession())));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ai-chat-level')), findsNothing);
+      expect(find.byKey(const ValueKey('ai-chat-attach')), findsNothing);
+    });
+
+    testWidgets('attach picks an image or a file and says why it failed', (
+      tester,
+    ) async {
+      final session = _FakeWriteSession()..attachStatus = AiAttachStatus.tooLarge;
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('ai-chat-attach')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('ai-attach-image')));
+      await tester.pumpAndSettle();
+      expect(session.picks, [AiAttachmentPick.image]);
+      expect(find.text(l10n.aiAttachTooLarge), findsOneWidget);
+      session.update(() => session.canAttach = false);
+      await tester.pumpAndSettle();
+      final attach = find.byKey(const ValueKey('ai-chat-attach'));
+      expect(tester.widget<IconButton>(attach).onPressed, isNull);
+    });
+
+    testWidgets('a finished write says how it went', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          AiChatPage(
+            session: _FakeSession(
+              items: const [
+                AiToolRunItem(
+                  name: 'createNote',
+                  argsPreview: '!44',
+                  status: AiToolRunStatus.failed,
+                  sizeChars: 0,
+                  provenance: '',
+                  writeStatus: AiWriteResultStatus.writeUncertain,
+                ),
+                AiToolRunItem(
+                  name: 'setStar',
+                  argsPreview: 'team/example',
+                  status: AiToolRunStatus.completed,
+                  sizeChars: 0,
+                  provenance: '',
+                  writeStatus: AiWriteResultStatus.readbackConfirmed,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining(l10n.aiOpCreateNote), findsOneWidget);
+      expect(find.textContaining(l10n.aiWriteStatusUncertain), findsOneWidget);
+      // An uncertain write is never called a failure.
+      expect(find.textContaining(l10n.aiToolFailed), findsNothing);
+      expect(find.textContaining(l10n.aiWriteStatusConfirmed), findsOneWidget);
+    });
   });
 
   group('reporting a response', () {
@@ -2202,4 +2587,11 @@ void main() {
       expect(find.byType(SelectableText), findsOneWidget);
     });
   });
+}
+
+final class _NoPicker implements AttachmentPicker {
+  @override
+  Future<PickedAttachment?> pickImage() async => null;
+  @override
+  Future<PickedAttachment?> pickFile() async => null;
 }

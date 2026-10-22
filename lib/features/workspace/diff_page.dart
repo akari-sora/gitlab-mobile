@@ -1462,17 +1462,20 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
         }
         savedAsDraft = values['draft'] == 'true';
         if (savedAsDraft) {
-          await widget.api.writeRecord(
-            'POST',
-            [..._mrPath, 'draft_notes'],
-            {'note': values['body']!.trim(), 'position': position},
+          await widget.api.createDraftNote(
+            widget.project.id,
+            widget.iid,
+            values['body']!.trim(),
+            position: position,
           );
           return;
         }
-        await widget.api.writeRecord(
-          'POST',
-          [..._mrPath, 'discussions'],
-          {'body': values['body'], 'position': position},
+        await widget.api.createDiscussion(
+          widget.project.id,
+          'merge_requests',
+          widget.iid,
+          values['body']!,
+          position: position,
         );
       },
     );
@@ -1512,10 +1515,12 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
       subtitle: valueText(widget.file, 'new_path'),
       fields: [EditField('body', l10n.commentBody, required: true, lines: 8)],
       save: (values) async {
-        await widget.api.writeRecord(
-          'POST',
-          [..._mrPath, 'discussions', id, 'notes'],
-          {'body': values['body']},
+        await widget.api.createDiscussionNote(
+          widget.project.id,
+          'merge_requests',
+          widget.iid,
+          id,
+          values['body']!,
         );
       },
     );
@@ -1527,10 +1532,12 @@ class _DiffFileScreenState extends State<_DiffFileScreen> {
     if (id is! String || id.isEmpty || _busy) return;
     setState(() => _busy = true);
     try {
-      await widget.api.writeRecord(
-        'PUT',
-        [..._mrPath, 'discussions', id],
-        {'resolved': resolved},
+      await widget.api.setDiscussionResolved(
+        widget.project.id,
+        'merge_requests',
+        widget.iid,
+        id,
+        resolved,
       );
       if (mounted) await _reloadDiscussions();
     } catch (e) {

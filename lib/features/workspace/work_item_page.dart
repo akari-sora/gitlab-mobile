@@ -619,6 +619,11 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
 
   List<String> _ownerPath(({Account account, GitLabApi api, Project project, String resource, int iid, ProjectWorkItemType type, int generation}) owner) => ['projects', '${owner.project.id}', owner.resource, '${owner.iid}'];
 
+  Future<Json> _updateOwner(({Account account, GitLabApi api, Project project, String resource, int iid, ProjectWorkItemType type, int generation}) owner, Json fields) =>
+    owner.resource == 'merge_requests'
+      ? owner.api.updateMergeRequest(owner.project.id, owner.iid, fields)
+      : owner.api.updateIssue(owner.project.id, owner.iid, fields);
+
   @override
   void didUpdateWidget(covariant WorkItemPage oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -786,7 +791,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
           body['milestone_id'] = 0;
         }
         body.remove('issue_type');
-        await owner.api.writeRecord('PUT', ownerPath, body);
+        await _updateOwner(owner, body);
       },
     );
     if (saved && _currentOwner(owner)) {
@@ -822,7 +827,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
           throw const ApiFailure(FailureKind.conflict);
         }
         final body = editorSubmission([field], values);
-        await owner.api.writeRecord('PUT', ownerPath, body);
+        await _updateOwner(owner, body);
       },
     );
     if (saved && _currentOwner(owner)) {
@@ -856,7 +861,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
           throw const ApiFailure(FailureKind.conflict);
         }
         final body = editorSubmission([field], values);
-        await owner.api.writeRecord('PUT', ownerPath, body);
+        await _updateOwner(owner, body);
       },
     );
     if (saved && _currentOwner(owner)) {
@@ -880,7 +885,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
         throw const ApiFailure(FailureKind.conflict);
       }
       final newLabels = picked.map((c) => c.name).join(', ');
-      await owner.api.writeRecord('PUT', ownerPath, {'labels': newLabels});
+      await _updateOwner(owner, {'labels': newLabels});
       if (!mounted || !_currentOwner(owner)) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.labelsUpdated)));
       await _loadAfterMutation();
@@ -906,7 +911,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
       }
       final labels = _extractLabels(current);
       final remaining = labels.where((l) => l != labelToRemove).join(', ');
-      await owner.api.writeRecord('PUT', ownerPath, {'labels': remaining});
+      await _updateOwner(owner, {'labels': remaining});
       if (!mounted || !_currentOwner(owner)) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.labelRemovedNamed(labelToRemove))));
       await _loadAfterMutation();
@@ -981,13 +986,13 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
           return;
         case 'close':
         case 'reopen':
-          await owner.api.writeRecord('PUT', ownerPath, {'state_event': action});
+          await _updateOwner(owner, {'state_event': action});
         case 'assign':
           final ids = valueObjects(data, 'assignees').map((v) => valueInt(v, 'id')).where((id) => id > 0).toSet();
           ids.contains(owner.account.user.id) ? ids.remove(owner.account.user.id) : ids.add(owner.account.user.id);
-          await owner.api.writeRecord('PUT', ownerPath, {'assignee_ids': ids.toList()});
+          await _updateOwner(owner, {'assignee_ids': ids.toList()});
         case 'todo':
-          await owner.api.writeRecord('POST', [...ownerPath, 'todo'], {});
+          await owner.api.createTodo(owner.project.id, owner.resource, owner.iid);
         case 'draft':
           final current = await owner.api.record(ownerPath);
           if (!_currentOwner(owner)) return;
@@ -998,13 +1003,13 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
           if (next.isEmpty || next == title) {
             stillDraft = true;
           } else {
-            final updated = await owner.api.writeRecord('PUT', ownerPath, {'title': next});
+            final updated = await _updateOwner(owner, {'title': next});
             stillDraft = wasDraft && updated['draft'] == true;
           }
         case 'approve':
           await owner.api.approveMergeRequest(owner.project.id, owner.iid, requiredString(data, 'sha'));
         case 'unapprove':
-          await owner.api.writeRecord('POST', [...ownerPath, 'unapprove'], {});
+          await owner.api.unapproveMergeRequest(owner.project.id, owner.iid);
         case 'rebase':
           await owner.api.rebaseMergeRequest(owner.project.id, owner.iid);
         case 'merge':

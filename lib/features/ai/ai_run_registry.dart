@@ -1,8 +1,9 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import '../../core/gitlab_api.dart';
+import '../../core/ai/tools/write_coordinator.dart';
 import '../auth/session_controller.dart';
 import 'ai_chat_controller.dart';
 import 'ai_chat_session.dart';
@@ -40,6 +41,8 @@ AiChatSessionHandle _createAiChatSession({
     settings: settings,
     runningCount: runningCount,
     wireClientFactory: wireClientFactory,
+    appInForeground: aiAppInForeground,
+    clientMayStart: aiClientMayStart(session),
   );
   return (
     session: controller,
@@ -48,13 +51,27 @@ AiChatSessionHandle _createAiChatSession({
   );
 }
 
+/// Whether the app is on screen. Until MR6c adds the foreground service, a
+/// write starts only while the app is visible.
+bool aiAppInForeground() => switch (WidgetsBinding.instance.lifecycleState) {
+  AppLifecycleState.resumed || AppLifecycleState.inactive => true,
+  _ => false,
+};
+
+/// The write gate's client check for [session]'s current API: open, and not
+/// waiting out a 429.
+bool Function() aiClientMayStart(SessionController session) {
+  final api = session.api;
+  return () => api != null && api.mayStartRequest;
+}
+
 /// Conversations owned by one exact authenticated account generation.
 ///
 /// The registry is deliberately invalid after an account/API transition. A
 /// new authenticated shell creates a new registry; no session can cross that
 /// boundary even when two accounts happen to have similar resource keys.
 final class AccountAiRunRegistry extends ChangeNotifier
-    implements AiRunRegistry {
+    implements AiRunRegistry, AiWriteSettlementSource {
   AccountAiRunRegistry({
     required SessionController session,
     required this.settings,
@@ -138,6 +155,23 @@ final class AccountAiRunRegistry extends ChangeNotifier
     return phase == AiChatPhase.running || phase == AiChatPhase.stopping;
   }).length;
 
+  /// Packet 9 snapshots these before changing the account/API generation.
+  @override
+  List<Future<AiWriteOutcome>> get inFlightWrites => List.unmodifiable([
+    for (final source
+        in _sessions.values
+            .map((handle) => handle.session)
+            .whereType<AiWriteSettlementSource>())
+      ...source.inFlightWrites,
+  ]);
+
+  List<Future<AiWriteOutcome>> stopAndSnapshotWrites() {
+    for (final handle in _sessions.values.toList(growable: false)) {
+      handle.session.stop();
+    }
+    return inFlightWrites;
+  }
+
   void _handleSessionChanged() {
     if (_disposed) return;
     final next = runningCount;
@@ -183,6 +217,8 @@ final class AccountAiRunRegistry extends ChangeNotifier
     final phase = session.phase;
     if (phase == AiChatPhase.running ||
         phase == AiChatPhase.stopping ||
+        phase == AiChatPhase.awaitingApproval ||
+        session.proposals.isNotEmpty ||
         session.items.isNotEmpty) {
       return;
     }

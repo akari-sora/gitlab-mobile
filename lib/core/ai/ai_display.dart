@@ -47,6 +47,25 @@ enum AiAssistantState {
 
 enum AiToolRunStatus { pending, running, completed, failed, skipped }
 
+/// The durable result of a GitLab write. [legacyStatus] keeps existing readers
+/// useful while write-aware UI presents this more precise status.
+enum AiWriteResultStatus {
+  notExecuted,
+  succeeded,
+  readbackConfirmed,
+  failedCertain,
+  writeUncertain,
+  resolvedByUser,
+  noChange;
+
+  AiToolRunStatus get legacyStatus => switch (this) {
+    notExecuted => AiToolRunStatus.skipped,
+    succeeded || readbackConfirmed || noChange => AiToolRunStatus.completed,
+    resolvedByUser => AiToolRunStatus.skipped,
+    failedCertain || writeUncertain => AiToolRunStatus.failed,
+  };
+}
+
 enum AiNoticeKind {
   redacted,
 
@@ -115,6 +134,7 @@ final class AiToolRunItem extends AiChatItem {
     this.resultExcerpt = '',
     this.confidential = false,
     this.internal = false,
+    this.writeStatus,
   });
 
   final String name;
@@ -127,6 +147,7 @@ final class AiToolRunItem extends AiChatItem {
   final String resultExcerpt;
   final bool confidential;
   final bool internal;
+  final AiWriteResultStatus? writeStatus;
 }
 
 final class AiNoticeItem extends AiChatItem {

@@ -3,15 +3,21 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/ai/ai_provider.dart';
+import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../l10n/l10n.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/workspace_ui.dart';
+import '../security/app_lock.dart';
+import 'ai_chat_controller.dart';
 import 'ai_consent_dialog.dart';
 import 'ai_history.dart';
 import 'ai_provider_editor.dart';
 import 'ai_settings_failure.dart';
 import 'ai_stores.dart';
+import 'ai_write_journal.dart';
+import 'ai_write_log_page.dart';
+import 'ai_write_settings.dart';
 
 class AiSettingsPage extends StatefulWidget {
   const AiSettingsPage({
@@ -19,15 +25,28 @@ class AiSettingsPage extends StatefulWidget {
     required this.settings,
     required this.accountKey,
     this.account,
+    this.api,
     this.isAccountRetained,
     this.history,
+    this.deviceCheck,
+    this.writeJournal,
   });
 
   final AiSettingsController settings;
   final String accountKey;
   final Account? account;
+
+  /// [account]'s GitLab client, for re-reading interrupted writes.
+  final GitLabApi? api;
   final bool Function(String accountKey)? isAccountRetained;
   final AiHistoryCoordinator? history;
+
+  /// The device check that turning on "allow everything" requires, the same
+  /// one the app lock uses; replaced in tests.
+  final AppLockAuthenticator? deviceCheck;
+
+  /// The account's AI change log; replaced in tests.
+  final AiWriteJournal? writeJournal;
 
   @override
   State<AiSettingsPage> createState() => _AiSettingsPageState();
@@ -96,6 +115,27 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     if (cap != null) {
       _cap.text = MaterialLocalizations.of(context).formatDecimal(cap);
     }
+  }
+
+  Future<void> _setCeiling(AiAutonomyLevel level) async {
+    final account = widget.account;
+    if (level == AiAutonomyLevel.bypass) {
+      // Only for a known account, on this page, after the username and the
+      // device check (plan v6 §4.2).
+      if (account == null) return;
+      final allowed = await confirmAiBypass(
+        context,
+        account: account,
+        deviceCheck: widget.deviceCheck ?? LocalAuthAuthenticator(),
+      );
+      if (!allowed || !mounted) return;
+    }
+    await _act(
+      () => widget.settings.setAutonomySettings(
+        widget.accountKey,
+        ceiling: level,
+      ),
+    );
   }
 
   void _saveCap() {
@@ -395,7 +435,14 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     final clearUnfinished =
         state == AiHistoryState.readFailed &&
         _history.failure(widget.accountKey)?.operation == 'clearHistory';
-    final text = state == AiHistoryState.cleaning
+    // Uncertain AI writes hold the removal: only the account list's named
+    // removal can release them, so a retry here would fail again.
+    final journalBlocked =
+        state == AiHistoryState.cleaning &&
+        _history.journalCleanupBlock(widget.accountKey) != null;
+    final text = journalBlocked
+        ? l10n.aiRemoveRetryFromAccountList
+        : state == AiHistoryState.cleaning
         ? l10n.aiHistoryCleaning
         : clearUnfinished
         ? l10n.aiHistoryClearUnfinished
@@ -433,7 +480,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                     : l10n.retryAction,
               ),
             ),
-          if (state == AiHistoryState.cleaning)
+          if (state == AiHistoryState.cleaning && !journalBlocked)
             TextButton.icon(
               onPressed: _busy
                   ? null
@@ -606,13 +653,115 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
     );
   }
 
+  /// The account's AI change log on this device. Interrupted changes are
+  /// counted from what the journal already holds in memory.
+  AiWriteJournal get _journal =>
+      widget.writeJournal ?? AiWriteJournal.instance;
+
+  Widget _writeLogTile(Account account) {
+    final interrupted = _journal
+        .entries(account.key)
+        .where((entry) => entry.state == AiJournalState.writeUncertain)
+        .length;
+    // Start-up recovery could not read the log: there may be interrupted
+    // changes the app cannot list, and writes stay refused until a retry or
+    // a reset on the log page.
+    final unreadable = switch (_journal.recoveryStatus(account.key)) {
+      AiJournalKeyStatus.unavailable ||
+      AiJournalKeyStatus.keyMissing ||
+      AiJournalKeyStatus.unknownFormat ||
+      AiJournalKeyStatus.overSize => true,
+      _ => false,
+    };
+    final attention = unreadable || interrupted > 0;
+    final theme = Theme.of(context);
+    return ListTile(
+      key: const ValueKey('ai-write-log'),
+      leading: Icon(
+        unreadable
+            ? Icons.error_outline
+            : interrupted > 0
+            ? Icons.help_outline
+            : Icons.history,
+        color: unreadable
+            ? theme.colorScheme.error
+            : interrupted > 0
+            ? HubColors.orange
+            : null,
+      ),
+      title: Text(l10n.aiWriteLogTitle),
+      subtitle: Text(
+        unreadable
+            ? l10n.aiWriteLogUnreadableShort
+            : interrupted > 0
+            ? l10n.aiWriteLogNeedsAttention('$interrupted')
+            : l10n.aiWriteLogSubtitle,
+        style: attention ? TextStyle(color: theme.colorScheme.error) : null,
+      ),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () async {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => AiWriteLogPage(
+              account: account,
+              journal: _journal,
+              api: widget.api,
+            ),
+          ),
+        );
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  Widget _writeSection() {
+    final record =
+        widget.settings.accountRecord(widget.accountKey) ?? AiAccountRecord();
+    final editable =
+        !_busy &&
+        {
+          AiHistoryState.ready,
+          AiHistoryState.disabled,
+        }.contains(_history.state(widget.accountKey));
+    return AiWriteSettingsSection(
+      record: record,
+      enabled: editable,
+      onCeiling: (level) => unawaited(_setCeiling(level)),
+      onStartingLevel: (level) => unawaited(
+        _act(
+          () => widget.settings.setAutonomySettings(
+            widget.accountKey,
+            startingLevel: level,
+          ),
+        ),
+      ),
+      onAttribution: (value) => unawaited(
+        _act(
+          () => widget.settings.setAutonomySettings(
+            widget.accountKey,
+            aiAttribution: value,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _consentRow(String providerId, AiConsentRecord consent) {
     final provider = widget.settings.providers
         .where((candidate) => candidate.id == providerId)
         .firstOrNull;
+    // The same contract a conversation asks for, so a write consent is not
+    // flagged against the read-only contract.
     final needsReconsent =
         provider == null ||
-        aiCurrentConsentContractFor(provider).hash != consent.hash;
+        !widget.settings.isValid(
+          widget.accountKey,
+          aiConversationConsentContract(
+            widget.settings,
+            widget.accountKey,
+            provider,
+          ),
+        );
     return HubRow(
       leading: NeutralTile(
         needsReconsent
@@ -698,9 +847,11 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                 ],
               ),
               _accountSection(),
+              _writeSection(),
+              if (widget.account case final account?) _writeLogTile(account),
               Padding(
                 padding: const EdgeInsets.all(16),
-                child: Text(l10n.aiReadOnlyPromise),
+                child: Text(l10n.aiWritePromise),
               ),
             ],
           );

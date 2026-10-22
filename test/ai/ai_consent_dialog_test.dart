@@ -71,14 +71,45 @@ void main() {
       expect(consent.summary['toolCatalogueVersion'], aiToolCatalogueVersion);
       expect(consent.summary['disclosureVersion'], aiDisclosureVersion);
       expect(consent.summary['dataCategories'], <Object?>[
+        'attachment_metadata',
         'comments',
         'diff',
         'issue_text',
         'job_log',
         'source',
         'tool_reads',
+        'write_results',
       ]);
       expect(settings.isValid('account', derivedContract), isTrue);
+    });
+
+    testWidgets('write results and attachment names have their own labels', (
+      tester,
+    ) async {
+      final settings = await _settings();
+      addTearDown(settings.dispose);
+      await settings.saveProvider(_provider());
+      final contract = aiCurrentConsentContractFor(settings.providers.single);
+      expect(
+        contract.dataCategories,
+        containsAll(<String>['write_results', 'attachment_metadata']),
+      );
+      await tester.pumpWidget(_host(settings, contract, onResult: (_) {}));
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      for (final label in [
+        l10n.aiConsentCategoryWriteResults,
+        l10n.aiConsentCategoryAttachmentMetadata,
+      ]) {
+        await tester.dragUntilVisible(
+          find.text(label),
+          find.byType(ListView),
+          const Offset(0, -120),
+        );
+        expect(find.text(label), findsOneWidget);
+      }
+      // Every category the contract lists has a name of its own.
+      expect(find.text(l10n.aiConsentCategoryOther), findsNothing);
     });
 
     testWidgets('with nothing to send the button only agrees', (tester) async {

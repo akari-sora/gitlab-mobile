@@ -6,9 +6,11 @@ import 'package:flutter/widgets.dart';
 import '../../core/failure.dart';
 import '../../l10n/l10n.dart';
 import '../auth/session_controller.dart';
+import 'ai_account_cleanup.dart';
 import 'ai_history_codec.dart';
 import 'ai_history_files.dart';
 import 'ai_stores.dart';
+import 'ai_write_journal.dart';
 
 export 'ai_history_codec.dart' show AiHistoryCipher;
 export 'ai_history_files.dart';
@@ -78,6 +80,9 @@ final class _AccountHistory {
   bool unsupportedIndex = false;
   bool removedStaleTemporary = false;
   AiStoreFailure? failure;
+
+  /// Set when tombstone cleanup refuses to delete the write journal.
+  String? journalCleanupBlock;
 }
 
 void _resetHistoryNotices(_AccountHistory entry) {
@@ -162,6 +167,13 @@ final class AiHistoryCoordinator extends ChangeNotifier
   bool canClearUnsupportedIndex(String account) =>
       _entry(account).unsupportedIndex;
   bool removedUnreadable(String account) => _entry(account).removedUnreadable;
+
+  /// Why the last tombstone cleanup stopped at the write journal:
+  /// `retryAccountRemoval` (writes still isolated after the removal-start
+  /// mark; retry from the account list, which asks for the name again) or
+  /// `unavailable`. Null when the last cleanup did not stop there.
+  String? journalCleanupBlock(String account) =>
+      _entry(account).journalCleanupBlock;
   bool saveFailed(String account, String id) =>
       _entry(account).failedConversations.contains(id);
   bool evicted(String account, String id) =>
@@ -671,11 +683,11 @@ final class AiHistoryCoordinator extends ChangeNotifier
 
   /// Sets cleaning before any await, invalidates all queued snapshots, and drains
   /// writes before deleting keys/files. Failure never resumes a saved writer.
-  Future<void> clearAccount(String account) {
+  Future<void> clearAccount(String account, {bool accountListed = true}) {
     final entry = _entry(account);
     final existing = entry.cleanup;
     if (existing != null) return existing;
-    final result = _clearAccount(account, entry);
+    final result = _clearAccount(account, entry, accountListed: accountListed);
     entry.cleanup = result;
     void released() {
       if (identical(entry.cleanup, result)) entry.cleanup = null;
@@ -690,7 +702,11 @@ final class AiHistoryCoordinator extends ChangeNotifier
     return result;
   }
 
-  Future<void> _clearAccount(String account, _AccountHistory entry) async {
+  Future<void> _clearAccount(
+    String account,
+    _AccountHistory entry, {
+    required bool accountListed,
+  }) async {
     entry.state = AiHistoryState.cleaning;
     entry.classified = false;
     entry.epoch++;
@@ -709,14 +725,26 @@ final class AiHistoryCoordinator extends ChangeNotifier
     entry.removedStaleTemporary = false;
     entry.removedUnreadable = false;
     entry.failure = null;
+    entry.journalCleanupBlock = null;
     final pending = entry.tail;
     final cleaning = AiAccountMutationCoordinator.forStore(
       store,
     ).beginCleaning(account);
     _emit();
+    // The write journal's in-memory tombstone flag is set before the durable
+    // marker and is not cleared when setTombstone throws (it may have
+    // written). Only a finished clear below removes it.
+    writeJournalForCleanup.noteTombstoneSet(account);
     try {
       await store.setTombstone(account);
       if (pending != null) await pending;
+      // Journal pre-check and deletion come before every history step. They
+      // run outside the cleaning lease: the journal takes the account fence
+      // itself, and nesting the two would wait on this lease.
+      await deleteWriteJournalForTombstone(
+        account,
+        accountListed: accountListed,
+      );
       await cleaning.run(() async {
         await store.deleteHistoryKey(account);
         await files.deleteAccount(account);
@@ -724,8 +752,20 @@ final class AiHistoryCoordinator extends ChangeNotifier
         await _clearHistoryClearMarker(store, account);
         await store.clearTombstone(account);
       });
+      writeJournalForCleanup.noteTombstoneCleared(account);
+      entry.journalCleanupBlock = null;
       entry.state = AiHistoryState.disabled;
       _emit();
+    } on AiJournalException catch (error) {
+      // The tombstone and the journal stay. `retryAccountRemoval` sends the
+      // settings retry back to the account list (name-confirmed removal).
+      entry.journalCleanupBlock = error.reason;
+      try {
+        await store.setTombstone(account);
+      } catch (_) {}
+      entry.state = AiHistoryState.cleaning;
+      _emit();
+      throw const ApiFailure(FailureKind.aiHistoryCleanup);
     } catch (_) {
       // A storage implementation can fail after performing the deletion.
       // Reassert the marker best-effort without exposing an untyped exception.
@@ -867,7 +907,10 @@ final class AiHistoryCoordinator extends ChangeNotifier
       }
       for (final account in inventory.accountKeys) {
         try {
-          await clearAccount(account);
+          await clearAccount(
+            account,
+            accountListed: accounts.contains(account),
+          );
           _reopenRetainedAccount(session, account);
         } on ApiFailure {
           /* Marker remains for retry. */

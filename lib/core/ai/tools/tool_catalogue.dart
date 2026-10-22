@@ -5,6 +5,8 @@ import 'dart:math';
 import '../ai_transcript.dart';
 import '../redaction.dart';
 import '../wire/wire_format.dart';
+import '../write_text.dart'
+    show AiFieldProvenance, AiTextBlockCode, UploadPlaceholderTable;
 import 'gitlab_read_port.dart';
 import 'sensitive_paths.dart';
 import 'tool_scope.dart';
@@ -107,6 +109,7 @@ final class AiToolCatalogue {
     required this.scope,
     required this.redactor,
     this.refreshSecrets,
+    this.placeholders,
     DateTime Function()? now,
   }) : _now = now ?? DateTime.now;
 
@@ -114,6 +117,12 @@ final class AiToolCatalogue {
   final AiResourceScope scope;
   final Redactor redactor;
   final Future<void> Function()? refreshSecrets;
+
+  /// The conversation's upload placeholder table. With it, the complete
+  /// issue and merge request descriptions and note bodies that
+  /// `get_issue` and `get_merge_request` return carry restorable
+  /// `[[upload:u-<n>]]` tokens; every other value keeps ordinary markers.
+  final UploadPlaceholderTable? placeholders;
   final DateTime Function() _now;
   final Random _nonceRandom = Random.secure();
 
@@ -207,6 +216,7 @@ final class AiToolCatalogue {
       blockedSensitive: execution.blocked,
       readConfidential: execution.result.readConfidential,
       readInternal: execution.result.readInternal,
+      uploadPlaceholders: execution.result.uploadPlaceholders,
     );
   }
 
@@ -257,8 +267,13 @@ final class AiToolCatalogue {
           requestCount: completedRequests,
         );
       }
+      final restorable = placeholders == null ? null : raw.restorable;
       final structured = raw.json
-          ? _redactStructured(cleanValue, raw.fragmentFields)
+          ? _redactStructured(
+              cleanValue,
+              raw.fragmentFields,
+              restorable: restorable,
+            )
           : null;
       final redacted =
           structured?.redaction ?? redactor.redactSource(cleanText);
@@ -280,6 +295,9 @@ final class AiToolCatalogue {
       final content = clipped.encode();
       final truncated = content.length != completeContent.length;
       budget.recordOutput(content.length);
+      if (structured != null && restorable != null) {
+        _recordDeliveries(data, clipped, structured.value, restorable);
+      }
       return AiToolExecution(
         result: AiToolResult.fromData(
           callId: call.id,
@@ -287,6 +305,7 @@ final class AiToolCatalogue {
           data: clipped,
           readConfidential: !raw.blocked && raw.readConfidential,
           readInternal: !raw.blocked && raw.readInternal,
+          uploadPlaceholders: restorable != null,
         ),
         provenance: provenance,
         blocked: raw.blocked,
@@ -384,6 +403,7 @@ final class AiToolCatalogue {
       requestCount: read.requestCount,
       readConfidential: read.value['confidential'] == true,
       readInternal: _readInternalNote(read.value),
+      restorable: _discussionFields('issues', iid),
     );
   }
 
@@ -396,7 +416,30 @@ final class AiToolCatalogue {
       _live('merge request !$iid'),
       requestCount: read.requestCount,
       readInternal: _readInternalNote(read.value),
+      restorable: _discussionFields('merge_requests', iid),
     );
+  }
+
+  /// The complete values in a `_projectDiscussion` projection that a write
+  /// can put back whole: the description and each note's body, keyed by the
+  /// note's numeric ID.
+  _RestorableFields _discussionFields(String resource, int iid) {
+    AiFieldProvenance field({int? noteId}) => AiFieldProvenance.gitLab(
+      instance: placeholders!.instance,
+      projectId: scope.projectId,
+      projectPath: scope.projectPath,
+      resource: resource,
+      iid: iid,
+      noteId: noteId,
+    );
+    return (path, owner) {
+      if (path.length == 1 && path.single == 'description') return field();
+      if (path.length == 2 && path[0] == 'notes' && path[1] == 'body') {
+        final id = owner['id'];
+        if (id is int && id > 0) return field(noteId: id);
+      }
+      return null;
+    };
   }
 
   Future<_RawToolResult> _mergeRequestDiff() async {
@@ -670,29 +713,66 @@ final class AiToolCatalogue {
         revision: revision.sha,
       );
 
-  ({AiAppText data, RedactionResult redaction}) _redactStructured(
+  ({AiAppText data, RedactionResult redaction, Object? value})
+  _redactStructured(
     Object? value,
-    Set<String> fragmentFields,
-  ) {
+    Set<String> fragmentFields, {
+    _RestorableFields? restorable,
+  }) {
     var redactions = 0;
     var withheld = false;
-    Object? visit(Object? current, {String? field}) => switch (current) {
-      String text => () {
-        final result = fragmentFields.contains(field)
+    String count(RedactionResult result) {
+      redactions += result.redactions;
+      withheld |= result.withheldPrivateKeyContext;
+      return result.text;
+    }
+
+    Object? visit(
+      Object? current, {
+      String? field,
+      List<String> path = const [],
+    }) => switch (current) {
+      String text => count(
+        fragmentFields.contains(field)
             ? redactor.redactFragment(text)
-            : redactor.redactSource(text);
-        redactions += result.redactions;
-        withheld |= result.withheldPrivateKeyContext;
-        return result.text;
+            : redactor.redactSource(text),
+      ),
+      List<Object?> values => [
+        for (final item in values) visit(item, path: path),
+      ],
+      Map<String, Object?> values => () {
+        final result = <String, Object?>{};
+        for (final entry in values.entries) {
+          final entryPath = [...path, entry.key];
+          final provenance = restorable?.call(entryPath, values);
+          final text = entry.value;
+          if (provenance == null || text is! String) {
+            result[entry.key] = visit(
+              entry.value,
+              field: entry.key,
+              path: entryPath,
+            );
+            continue;
+          }
+          // The table neutralizes source-authored placeholders and numbers
+          // this field's own upload links; the scan below keeps those ids.
+          final table = placeholders!;
+          final hits = table.limitHits;
+          final outgoing = table.redactOutgoing(text, field: provenance);
+          if (table.limitHits > hits) {
+            result['${entry.key}_upload_links'] =
+                AiTextBlockCode.tooManyUploadLinks;
+          }
+          result[entry.key] = count(
+            redactor.redactSource(outgoing, keepAppPlaceholders: true),
+          );
+        }
+        return result;
       }(),
-      List<Object?> values => [for (final item in values) visit(item)],
-      Map<String, Object?> values => {
-        for (final entry in values.entries)
-          entry.key: visit(entry.value, field: entry.key),
-      },
       _ => current,
     };
-    final data = AiAppText.json(visit(value));
+    final projected = visit(value);
+    final data = AiAppText.json(projected);
     return (
       data: data,
       redaction: RedactionResult(
@@ -700,7 +780,37 @@ final class AiToolCatalogue {
         redactions,
         withheldPrivateKeyContext: withheld,
       ),
+      value: projected,
     );
+  }
+
+  /// Tells the placeholder table which restorable fields of [complete] the
+  /// provider gets whole in [clipped]. A clip keeps a prefix of the readable
+  /// strings and may cut the last one, so a field is whole when its value
+  /// survives at its own position unchanged. Plan §3.1: a field cut here
+  /// offers no whole-field write.
+  void _recordDeliveries(
+    AiAppText complete,
+    AiAppText clipped,
+    Object? structured,
+    _RestorableFields restorable,
+  ) {
+    final table = placeholders;
+    if (table == null) return;
+    final all = complete.plainStrings.toList();
+    final kept = clipped.plainStrings.toList();
+    final fields = _restorableValues(structured, restorable);
+    final offset = all.length - fields.count;
+    for (final entry in fields.values) {
+      final index = offset + entry.index;
+      final whole =
+          index >= 0 &&
+          index < all.length &&
+          index < kept.length &&
+          all[index] == entry.value &&
+          kept[index] == entry.value;
+      table.recordFieldDelivery(entry.field, whole: whole);
+    }
   }
 
   _Revision _headRevision() {
@@ -736,7 +846,8 @@ final class _RawToolResult {
   }) : json = false,
        readConfidential = false,
        readInternal = false,
-       fragmentFields = const {};
+       fragmentFields = const {},
+       restorable = null;
 
   const _RawToolResult.json(
     this.value,
@@ -746,6 +857,7 @@ final class _RawToolResult {
     this.readInternal = false,
     this.requestCount = 0,
     this.fragmentFields = const {},
+    this.restorable,
   }) : json = true,
        tailLines = null;
 
@@ -758,6 +870,48 @@ final class _RawToolResult {
   final Set<String> fragmentFields;
   final int requestCount;
   final int? tailLines;
+
+  /// Which string values, by their path of map keys, are a complete
+  /// restorable field. Null for every other tool.
+  final _RestorableFields? restorable;
+}
+
+typedef _RestorableFields =
+    AiFieldProvenance? Function(List<String> path, Map<String, Object?> owner);
+
+/// The restorable string values of a projected JSON value with their index
+/// among its readable strings (each map key, then its value; list items in
+/// order), and how many readable strings it has in all.
+({List<({int index, AiFieldProvenance field, String value})> values, int count})
+_restorableValues(Object? value, _RestorableFields restorable) {
+  final values = <({int index, AiFieldProvenance field, String value})>[];
+  var count = 0;
+  void walk(Object? current, List<String> path) {
+    switch (current) {
+      case String _:
+        count++;
+      case List<Object?> items:
+        for (final item in items) {
+          walk(item, path);
+        }
+      case Map<String, Object?> entries:
+        for (final entry in entries.entries) {
+          count++;
+          final entryPath = [...path, entry.key];
+          final text = entry.value;
+          if (text is String) {
+            final field = restorable(entryPath, entries);
+            if (field != null) {
+              values.add((index: count, field: field, value: text));
+            }
+          }
+          walk(text, entryPath);
+        }
+    }
+  }
+
+  walk(value, const []);
+  return (values: values, count: count);
 }
 
 final class _Revision {

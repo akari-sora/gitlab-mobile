@@ -148,14 +148,23 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
           value: note == null ? '' : valueText(note, 'body'),
           hint: l10n.markdownQuickActionsHint),
       ], api: widget.api, projectId: widget.project.id, projectPath: widget.project.path, save: (values) async {
+        final body = values['body']!;
+        final projectId = widget.project.id;
+        final resource = widget.resource;
+        final iid = widget.iid;
         if (note != null) {
-          final endpoint = discussion == null ? [...path, 'notes', '${note['id']}']
-            : [...path, 'discussions', discussion, 'notes', '${note['id']}'];
-          await widget.api.writeRecord('PUT', endpoint, {'body': values['body']});
+          final noteId = requiredInt(note, 'id');
+          if (discussion == null) {
+            await widget.api.updateNote(projectId, resource, iid, noteId, body);
+          } else {
+            await widget.api.updateDiscussionNote(projectId, resource, iid, discussion, noteId, body);
+          }
         } else if (discussion != null) {
-          await widget.api.writeRecord('POST', [...path, 'discussions', discussion, 'notes'], {'body': values['body']});
+          await widget.api.createDiscussionNote(projectId, resource, iid, discussion, body);
+        } else if (thread) {
+          await widget.api.createDiscussion(projectId, resource, iid, body);
         } else {
-          await widget.api.writeRecord('POST', [...path, thread ? 'discussions' : 'notes'], {'body': values['body']});
+          await widget.api.createNote(projectId, resource, iid, body);
         }
       });
     if (saved && mounted) {
@@ -186,7 +195,7 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
     if (_busy) { return; }
     setState(() => _busy = true);
     try {
-      await widget.api.writeRecord('PUT', [...path, 'discussions', requiredString(discussion, 'id')], {'resolved': resolved});
+      await widget.api.setDiscussionResolved(widget.project.id, widget.resource, widget.iid, requiredString(discussion, 'id'), resolved);
       if (mounted) {
         await _feed.currentState?.refresh();
         widget.onChanged?.call();

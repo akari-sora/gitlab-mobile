@@ -216,6 +216,9 @@ void main() {
           TextButton,
           l10n.aiHistoryContinueClear,
         );
+        // The page is longer since the AI writes section; bring it in view.
+        await tester.ensureVisible(retry);
+        await tester.pumpAndSettle();
         await tester.tap(retry);
         await tester.pumpAndSettle();
         expect(find.text(l10n.aiClearHistoryDetail), findsOneWidget);
@@ -229,6 +232,9 @@ void main() {
 
         fileDeletionFails = false;
         harness.store.deleteHistoryKeyFails = false;
+        // The page is longer since the AI writes section; bring it in view.
+        await tester.ensureVisible(retry);
+        await tester.pumpAndSettle();
         await tester.tap(retry);
         await tester.pumpAndSettle();
         await tester.tap(find.text(l10n.confirmAction));

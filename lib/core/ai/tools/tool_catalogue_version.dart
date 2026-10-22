@@ -1,1 +1,1 @@
-const aiToolCatalogueVersion = 1;
+const aiToolCatalogueVersion = 2;

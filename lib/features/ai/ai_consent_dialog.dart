@@ -6,6 +6,7 @@ import '../../shared/external_link.dart';
 import 'ai_scope.dart';
 import 'ai_settings_failure.dart';
 import 'ai_stores.dart';
+import 'ai_write_settings.dart';
 
 /// The stable, non-secret disclosure saved with a granted consent.
 Map<String, Object?> aiConsentSummary(
@@ -34,6 +35,7 @@ Map<String, Object?> aiConsentSummary(
     'disclosureVersion': contract.disclosureVersion,
     'toolCatalogueVersion': contract.toolCatalogueVersion,
     'policyCheckedOn': ?contract.policyCheckedOn,
+    'writePolicy': ?contract.writePolicy?.toCanonicalJson(),
   };
 }
 
@@ -54,11 +56,14 @@ Future<bool> showAiConsentDialog(
   if (provider == null) return false;
   AiConsentContract contract;
   try {
+    // Rebuilt from the provider as it is now, with the write policy the
+    // conversation asked for: a provider edited meanwhile changes the hash.
     contract = aiConsentContractFor(
       provider,
       toolCatalogueVersion: requestedContract.toolCatalogueVersion,
       disclosureVersion: requestedContract.disclosureVersion,
       dataCategories: requestedContract.dataCategories,
+      writePolicy: requestedContract.writePolicy,
     );
   } on Object {
     return false;
@@ -285,6 +290,27 @@ class _AiConsentPageState extends State<_AiConsentPage> {
                       ),
                     ],
                   ),
+                  if (details.writeCeiling case final ceiling?)
+                    _InfoCard(
+                      key: const ValueKey('ai-consent-writes'),
+                      icon: Icons.edit_note_outlined,
+                      title: l10n.aiConsentWritesHeading,
+                      children: [
+                        Text(l10n.aiConsentWritesUpTo(aiLevelLabel(ceiling))),
+                        const SizedBox(height: 4),
+                        Text(aiLevelHint(ceiling)),
+                        for (final line in [
+                          l10n.aiConsentWritesLimits,
+                          l10n.aiConsentWritesNoUndo,
+                          l10n.aiConsentWritesUncertain(l10n.aiWriteLogTitle),
+                          if (ceiling.index >=
+                              AiAutonomyLevel.conversationGrant.index)
+                            l10n.aiConsentWritesUploads,
+                          l10n.aiConsentWritesInstructions,
+                          l10n.aiConsentWritesPipelines,
+                        ]) ...[const SizedBox(height: 8), Text(line)],
+                      ],
+                    ),
                   _InfoCard(
                     icon: Icons.policy_outlined,
                     title: l10n.aiConsentDataUseHeading,
@@ -393,6 +419,7 @@ class _AiConsentPageState extends State<_AiConsentPage> {
 
 class _InfoCard extends StatelessWidget {
   const _InfoCard({
+    super.key,
     required this.icon,
     required this.title,
     required this.children,
@@ -558,6 +585,7 @@ final class _ConsentDetails {
     this.retentionDays,
     this.policyUri,
     this.grantedAt,
+    this.writeCeiling,
   });
 
   factory _ConsentDetails.fromSummary(
@@ -590,6 +618,12 @@ final class _ConsentDetails {
           : null,
       policyUri: policyUrl is String ? _safePolicyUri(policyUrl) : null,
       grantedAt: grantedAt,
+      writeCeiling: switch (summary['writePolicy']) {
+        {'agreedCeiling': final String name}
+            when name != AiAutonomyLevel.readOnly.name =>
+          AiAutonomyLevel.values.asNameMap()[name],
+        _ => null,
+      },
     );
   }
 
@@ -604,6 +638,9 @@ final class _ConsentDetails {
   final int? retentionDays;
   final Uri? policyUri;
   final DateTime? grantedAt;
+
+  /// The highest level the AI may write at; null for a read-only consent.
+  final AiAutonomyLevel? writeCeiling;
 }
 
 String _formatLabel(AiFormat format) => switch (format) {
@@ -622,6 +659,8 @@ String _categoryLabel(String category) => switch (category) {
   'discussion' ||
   'discussions' => l10n.aiConsentCategoryComments,
   'tool_read' || 'tool_reads' => l10n.aiConsentCategoryToolReads,
+  'write_results' => l10n.aiConsentCategoryWriteResults,
+  'attachment_metadata' => l10n.aiConsentCategoryAttachmentMetadata,
   _ => l10n.aiConsentCategoryOther,
 };
 

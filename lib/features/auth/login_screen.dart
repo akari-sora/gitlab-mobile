@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../core/instance.dart';
+import '../../core/models.dart';
 import '../../shared/workspace_ui.dart';
-import '../workspace/ci_page.dart';
-import '../workspace/editor.dart';
-import '../ai/ai_account_cleanup.dart';
-import 'recent_project.dart';
+import '../ai/ai_account_removal.dart';
+import '../ai/ai_write_journal.dart';
 import 'session_controller.dart';
 
 import '../../l10n/l10n.dart';
@@ -21,19 +20,90 @@ class _LoginScreenState extends State<LoginScreen> {
   final _instance = TextEditingController(text: 'https://gitlab.com');
   final _token = TextEditingController();
   bool _obscure = true;
+
+  /// The removal job this page started, from the hold until it ends (§8).
+  AiRemovalJob? _removal;
+
+  /// The account whose removal waits for writes in flight.
+  String? _removalWaiting;
+
+  /// Arms dispose: a page that goes away requests cancellation of its job.
+  VoidCallback? _cancelOnDispose;
+  AiAccountDialogs? _ownDialogs;
+  AiAccountDialogs get _dialogs => _ownDialogs ??= AiAccountDialogs(context);
+
   @override
   void initState() {
     super.initState();
     _instance.addListener(() {
       if (mounted) setState(() {});
     });
+    AiAccountRemoval.changes.addListener(_onRemovalChanged);
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _showLeftRemovalResults(),
+    );
   }
 
   @override
   void dispose() {
+    AiAccountRemoval.changes.removeListener(_onRemovalChanged);
+    // Signing in replaces this page and its Navigator. Before the final
+    // confirmation that stops the job; after it, the job runs to its end.
+    _cancelOnDispose?.call();
+    _cancelOnDispose = null;
+    _ownDialogs?.close();
     _instance.dispose();
     _token.dispose();
     super.dispose();
+  }
+
+  void _onRemovalChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (_removal == null) _showLeftRemovalResults();
+  }
+
+  /// Results of removal jobs whose page went away (§8 step 5).
+  void _showLeftRemovalResults() {
+    if (!mounted || _removal != null) return;
+    for (final saved in widget.session.accounts) {
+      final result = AiAccountRemoval.takeResult(saved.key);
+      if (result != null) presentAiRemovalResult(context, result);
+    }
+  }
+
+  /// §8 account removal: the hold is taken here, synchronously, before any
+  /// dialog. No account is signed in, so there is no run to stop.
+  void _remove(Account account) {
+    if (AiAccountRemoval.anyRunning || widget.session.busy) return;
+    final job = AiAccountRemoval.begin(account.key);
+    if (job == null) return;
+    setState(() => _removal = job);
+    unawaited(_runRemoval(account, job));
+  }
+
+  Future<void> _runRemoval(Account account, AiRemovalJob job) async {
+    await AiAccountRemoval.run(
+      account: account,
+      job: job,
+      session: widget.session,
+      confirm: (prompt) => _dialogs.confirmRemoval(account, prompt),
+      waitForInFlightWrites: () async {},
+      requestCancelOnDispose: () => _cancelOnDispose = job.requestCancel,
+      onWaiting: (waiting) {
+        if (mounted) {
+          setState(() => _removalWaiting = waiting ? account.key : null);
+        }
+      },
+    );
+    _cancelOnDispose = null;
+    if (!mounted) return;
+    setState(() {
+      _removal = null;
+      _removalWaiting = null;
+    });
+    final result = AiAccountRemoval.takeResult(account.key);
+    if (result != null) presentAiRemovalResult(context, result);
   }
 
   String? get _oauthApplicationId {
@@ -47,7 +117,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _connect() async {
-    if (widget.session.busy || _form.currentState?.validate() != true) {
+    if (widget.session.busy ||
+        AiAccountRemoval.anyRunning ||
+        _form.currentState?.validate() != true) {
       return;
     }
     FocusScope.of(context).unfocus();
@@ -58,7 +130,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _connectOAuth() async {
-    if (widget.session.busy || _oauthApplicationId == null) {
+    if (widget.session.busy ||
+        AiAccountRemoval.anyRunning ||
+        _oauthApplicationId == null) {
       return;
     }
     FocusScope.of(context).unfocus();
@@ -72,6 +146,9 @@ class _LoginScreenState extends State<LoginScreen> {
       listenable: widget.session,
       builder: (context, _) {
         final session = widget.session;
+        // While a removal job holds its token, switching, removal and
+        // signing in stay disabled.
+        final locked = session.busy || AiAccountRemoval.anyRunning;
         return Scaffold(
           body: SafeArea(
             child: Center(
@@ -132,8 +209,12 @@ class _LoginScreenState extends State<LoginScreen> {
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  subtitle: Text(account.instance.base.host),
-                                  onTap: session.busy
+                                  subtitle: Text(
+                                    _removalWaiting == account.key
+                                        ? l10n.aiRemoveWaitingWrites
+                                        : account.instance.base.host,
+                                  ),
+                                  onTap: locked
                                       ? null
                                       : () {
                                           unawaited(session.select(account));
@@ -142,33 +223,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                     key: Key('removeAccount-${account.key}'),
                                     tooltip: l10n.removeAccountFromDevice,
                                     icon: const Icon(Icons.logout, size: 20),
-                                    onPressed: session.busy
+                                    onPressed: locked
                                         ? null
-                                        : () async {
-                                            if (!await confirmAction(
-                                              context,
-                                              l10n.removeThisAccountQuestion,
-                                              l10n.removeAccountKeepsRemoteToken,
-                                            )) {
-                                              return;
-                                            }
-                                            if (!context.mounted) {
-                                              return;
-                                            }
-                                            try {
-                                              await clearSecureDrafts(account);
-                                              await clearAccountArtifacts(
-                                                account,
-                                              );
-                                              await clearRecentProject(account);
-                                              await clearAiAccountData(account);
-                                              await session.remove(account);
-                                            } catch (error) {
-                                              if (context.mounted) {
-                                                showFailure(context, error);
-                                              }
-                                            }
-                                          },
+                                        : () => _remove(account),
                                   ),
                                 ),
                               ),
@@ -247,7 +304,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         const SizedBox(height: 20),
                         FilledButton.icon(
                           key: const Key('connectButton'),
-                          onPressed: session.busy
+                          onPressed: locked
                               ? null
                               : () {
                                   unawaited(_connect());
@@ -268,7 +325,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           const SizedBox(height: 12),
                           OutlinedButton.icon(
                             key: const Key('oauthButton'),
-                            onPressed: session.busy
+                            onPressed: locked
                                 ? null
                                 : () {
                                     unawaited(_connectOAuth());

@@ -96,6 +96,7 @@ final class AiToolResult {
     this.notExecuted = false,
     this.readConfidential = false,
     this.readInternal = false,
+    this.uploadPlaceholders = false,
   }) : _content = content,
        data = null {
     assert(!content.contains('<gitlab_data'));
@@ -112,6 +113,7 @@ final class AiToolResult {
     this.notExecuted = false,
     this.readConfidential = false,
     this.readInternal = false,
+    this.uploadPlaceholders = false,
   }) : _content = '',
        // ignore: prefer_initializing_formals
        data = data;
@@ -134,6 +136,13 @@ final class AiToolResult {
   /// Display-only metadata; never encoded in provider requests.
   final bool readInternal;
 
+  /// The producer numbered restorable upload links through the
+  /// conversation's placeholder table and already turned every
+  /// source-authored `[[upload:` or `[[attachment:` into an ordinary marker,
+  /// so later redaction passes keep exact `[[upload:u-<n>]]` tokens. A cut
+  /// value still loses them.
+  final bool uploadPlaceholders;
+
   AiToolResult copyWith({required AiAppText data}) => AiToolResult.fromData(
     callId: callId,
     name: name,
@@ -145,6 +154,7 @@ final class AiToolResult {
     notExecuted: notExecuted,
     readConfidential: readConfidential,
     readInternal: readInternal,
+    uploadPlaceholders: uploadPlaceholders,
   );
 }
 
@@ -329,22 +339,30 @@ final class AiSegment {
     throw StateError('A follow-up requires an app tail.');
   }
 
-  void clipTailToolResults(int maxChars) {
+  /// Cuts the tail's tool results to [maxChars] in total. True when a result
+  /// that carried restorable fields ([AiToolResult.uploadPlaceholders]) was
+  /// shortened.
+  bool clipTailToolResults(int maxChars) {
     if (maxChars < 0) throw RangeError.range(maxChars, 0, null, 'maxChars');
     final current = _tail;
     if (current is! AppToolResultsEntry) {
       throw StateError('Only a tool-results tail can be clipped.');
     }
     var remaining = maxChars;
+    var cutRestorable = false;
     final clipped = <AiToolResult>[];
     for (final result in current.results) {
       final keep = result.content.length <= remaining
           ? result.content
           : clipWrappedUntrustedGitLabData(result.content, remaining);
+      if (result.uploadPlaceholders && keep.length < result.content.length) {
+        cutRestorable = true;
+      }
       clipped.add(result.copyWith(data: result.plainData.clipped(remaining)));
       remaining -= keep.length;
     }
     _tail = current.copyWith(results: clipped);
+    return cutRestorable;
   }
 
   void restoreTail(AiEntry? previous) {

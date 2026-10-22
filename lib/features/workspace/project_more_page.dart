@@ -787,8 +787,27 @@ class _MetadataPageState extends State<MetadataPage> {
             body[key] = date.isEmpty ? null : date;
           }
         }
-        if (value == null) { await widget.api.writeRecord('POST', path, body); }
-        else { await widget.api.writeRecord('PUT', [...path, _id(value)], body); }
+        final projectId = widget.project.id;
+        switch (widget.kind) {
+          case MetadataKind.labels:
+            if (value == null) {
+              await widget.api.createLabel(projectId, body);
+            } else {
+              await widget.api.updateLabel(projectId, requiredInt(value, 'id'), body);
+            }
+          case MetadataKind.milestones:
+            if (value == null) {
+              await widget.api.createMilestone(projectId, body);
+            } else {
+              await widget.api.updateMilestone(projectId, requiredInt(value, 'id'), body);
+            }
+          case MetadataKind.branches:
+          case MetadataKind.tags:
+          case MetadataKind.releases:
+          case MetadataKind.commits:
+            if (value == null) { await widget.api.writeRecord('POST', path, body); }
+            else { await widget.api.writeRecord('PUT', [...path, _id(value)], body); }
+        }
       });
     if (saved && mounted) { await _feed.currentState?.refresh(); }
   }
@@ -806,7 +825,7 @@ class _MetadataPageState extends State<MetadataPage> {
     if (_busy) { return; }
     setState(() => _busy = true);
     try {
-      await widget.api.writeRecord('PUT', [...path, _id(value)], {'state_event': value['state'] == 'closed' ? 'activate' : 'close'});
+      await widget.api.setMilestoneState(widget.project.id, requiredInt(value, 'id'), value['state'] == 'closed' ? 'activate' : 'close');
       if (mounted) { await _feed.currentState?.refresh(); }
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _busy = false); } }

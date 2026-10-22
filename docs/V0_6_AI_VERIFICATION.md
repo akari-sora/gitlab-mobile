@@ -1797,3 +1797,205 @@ Left for a follow-up issue:
   - a test for `reportNotSaved` over kept display;
   - a test for a recovery during the fourth attempt.
 - A comment and a mid-run test that describe the run's end loosely.
+
+## MR6b-1 — AI writes, first batch (gate off in releases)
+
+The assistant can propose and make the T1 and T2 GitLab writes of plan v6
+§3, behind the AI gate that stays off until MR7. The base commit
+`cbdfa2b` delivers:
+- consent v2 with five autonomy levels, an account ceiling and a starting
+  level;
+- the capability table, tier engine, target binding and the §5 text rules;
+- the REST write port through named wrappers;
+- the policy gate, proposals waiting for approval, the coordinator and the
+  encrypted per-account write journal;
+- approval cards, the conversation's level and Stop, exact write outcomes,
+  attachments held on the device, and the AI change log;
+- account switch, sign-out and removal waiting for AI work.
+
+**Owner decision, 2026-10-23.** Issue and merge request conversations,
+including a project issue opened from a group page, may upload the user's
+attachments into their own project and no other. The scope class is
+`projectUpload`. It grants nothing else in that project: labels, stars and
+new issues still need a project grant. This makes the attach button work
+in issue and MR chats. Before this decision, plan §2 and §3.1 kept it off
+there.
+
+### MR6b-1 review round 1
+
+**Panel.** Codex, cursor-agent and agy were out of quota (Codex until
+10-27, cursor until 11-02, agy out of credits), so the round ran with:
+- Opus 5.5 xhigh: REQUEST CHANGES, 1 Critical and 10 Important;
+- a Claude reviewer agent: REQUEST CHANGES, 9 Important and 12 Minor;
+- DeepSeek V4.1 Flash: one finding, checked against the code.
+
+**Critical and Important findings, and their fixes:**
+- **Hidden secrets counted (Opus C1, Critical).** A whole-field rewrite now
+  runs the field's current value through the outgoing redaction
+  (`Redactor.redactSourceRanges`). Every span the new text drops counts as
+  hidden content, including tokens, `password:` assignments and private
+  keys. Such a rewrite is confirmed at every level, bypass included.
+- **Gates in production (both I1).** Production conversations pass the
+  real foreground and client checks (`280afa2`). Backgrounding and a
+  pending Retry-After now pause a waiting card. Dispatch is refused while
+  either lasts.
+- **Accounts added later (Opus I2).** An account added after start-up
+  recovers its journal before its first write.
+- **Upload placeholders (Opus I3).** Upload links reach the provider as
+  `[[upload:u-n]]`. A write back of the same field restores them byte for
+  byte.
+- **Attachment placeholders (Opus I4).** `[[attachment:att-n]]` is
+  substituted from the stored upload `markdown`, in a later batch and the
+  same project only. The system prompt's example now reaches the provider.
+- **To-dos (Opus I5).** `markTodoDone` works for the conversation's own
+  to-do; ownership comes from the port's read of the to-do.
+- **New issues (Opus I6).** `createIssue` with `confidential: false` is
+  ordinary, not a hard line.
+- **Closing keywords (Opus I7).** In a merge request description,
+  out-of-scope `Closes`/`Fixes`/`Resolves`/`Implements` references are
+  confirmed at every level. In-scope ones are listed on the card.
+- **Upload preview (Opus I8, Claude I4).** The upload card shows a
+  thumbnail, the size and type, the project and its visibility. Public,
+  internal and unknown visibility carry the warning, on the card or on the
+  audit row when the upload ran without a card.
+- **Request budget (Opus I9).** Each operation reserves its counted
+  worst-case requests instead of 39 of 40.
+- **Attribution (Opus I10).** The AI attribution line is localized.
+- **Removal hold (Claude I2).** An account-removal hold pauses waiting
+  cards and says "account being removed". Cancelling the removal keeps them.
+- **Unreadable log (Claude I3).** The change log offers a retry or a reset
+  according to the failure. The reset dialog names the instance,
+  @username and user number, and counts what it unlocks. The settings tile
+  warns.
+- **Kept edits (Claude I5).** Text the user edited stays on a card that did
+  not run, ready to copy.
+- **Write rows (Claude I6).** A write row shows the operation, the target
+  and "waiting for confirmation". Once settled it shows the time and a
+  GitLab link built from the verified instance and ids.
+- **Banner (Claude I7).** The two automatic levels show a banner with Stop.
+  Stop ends the turn and drops the conversation to confirm-each.
+- **Create-type writes (Claude I8, Opus M3).** They no longer use the
+  project record as the field's current value.
+- **Re-read (Claude I9).** "Re-read" reads the interrupted write's target
+  with at most 10 GET requests and records an observation. It never
+  releases the lock.
+
+**Also fixed in this round:**
+- A whole-field write of a field the AI saw only cut is refused
+  (`fieldTooLong`), whether the cut was by a read tool, the page context
+  or the runner's own clipping.
+- Write tool specs list the in-scope project ids, so the model can name the
+  project a write needs. The emulator showed the model unable to propose
+  without them.
+- Cheap Minors:
+  - cards name a two-way write's direction instead of showing
+    `starred: false`;
+  - the attach button turns off at the file limit and says why;
+  - a refused edit can be edited again;
+  - a typed name with Arabic direction marks still matches;
+  - the settings consent row no longer asks for re-consent of a valid
+    write consent;
+  - a failed reset gives the journal owner back;
+  - the English "1 interrupted changes" plural is gone.
+
+**DeepSeek's finding** was that nine operations appear in the tier table
+but not in the ledger or the port. That is by design: plan §14 puts those
+T3, T4 and hard-line operations in MR6b-2. They exist only to prove tiering
+and gating, and never reach a tool spec.
+
+**Evidence:**
+- `test/ai/` and the full suite pass (5,962 tests at `c7f4b26`).
+- Every fix has a test that fails without it; each fix commit and packet
+  report records its mutation check.
+- New test files: `fx_coord_*`, `fx_journal_*`, `fx_text_*`,
+  `ai_upload_scope_test.dart`, `ai_write_specs_test.dart`,
+  `mr6b1_upload_placeholder_wiring_test.dart` and
+  `mr6b1_round1_wiring_test.dart`.
+- The new cards and banner have layout tests at 320 dp and 2× in zh-TW,
+  de and ar, with the keyboard up.
+
+**Emulator run** (Android API 36, gate-on debug build at `53c1cda`, the
+owner's account on the public project `aa22396584/gitlab-mobile`, issue
+#11; every proposal was rejected, none approved):
+- the attach button was on in the issue chat;
+- "Add a thumbsup reaction" produced a write row reading "Add a reaction ·
+  #11, waiting for confirmation" and a low-risk card with the right
+  project;
+- after Reject the row read "Not made" with a time and an Open in GitLab
+  link;
+- a comment card edited on the card and then rejected kept the edited
+  text with Copy;
+- the settings consent row showed no re-consent warning;
+- the reset dialog showed the instance, @username, user number and an
+  unlock count of 0;
+- after raising the ceiling, the chat asked for consent again. The
+  conversation level then showed the banner, and Stop removed it and set
+  confirm-each. The ceiling was put back to low-risk automatic.
+- GitLab afterwards had no reaction on #11 (public API) and no new note
+  (authenticated read): zero writes.
+
+The run found three small issues, fixed in `fca4acb` and covered by widget
+tests:
+- the banner cut its sentence at 1×;
+- a row said "making the change" while the write was only being prepared;
+- a reaction card offered a text edit.
+
+**Left for the follow-up issue (Minor):**
+- With OAuth, a read, a reaction and a comment do not fit one send's
+  40-request budget. OAuth is inert until an application ID is registered.
+- The re-read compares creates by count in a ±5-minute device-clock window,
+  not by server time or content.
+- The reset dialog repeats "type @username to confirm".
+- The edit sheet returns focus to the composer, which raises the keyboard.
+- `duplicateOfSettledWrite` looks across runs (Opus M1).
+- Pollution does not compare visibility (Opus M2).
+- A write tool outside the frozen segment list still reaches the gate
+  (Opus M4).
+- Pages do not listen to the journal (Claude M7).
+- Defaults differ for a null account record (Claude M8).
+- The ceiling cannot be lowered while history is unreadable (Claude M9).
+
+**NOT_RUN:**
+- an approved write of any kind on a device;
+- an upload on a device;
+- the account-removal pause on a device;
+- the re-read on a device (the log had no interrupted entries);
+- OAuth accounts;
+- iOS.
+
+### MR6b-1 review rounds 2 and 3
+
+Under the owner's review rule, round 2 checked only the round-1 Critical
+and Important findings and the fix diff. Opus 5.5 confirmed all 20 fixed,
+with evidence per item. It found one new Important in the fix diff:
+- **N1.** A card the user edited, whose write then succeeded without a
+  readback (for example `createDiscussion`), was kept as "not made · this
+  change didn't go through". That invites a duplicate resend.
+- **Fix (`176b57b`).** The kept card now names the real outcome:
+  - written (or no change), with "written, but not read back; check
+    GitLab before sending it again";
+  - unknown, with its own sentence;
+  - only rejected, failed and not-run outcomes say the change did not go
+    through.
+- **Test.** "an edited write that ran is never called not made". Its
+  mutation (dropping the success branch) fails it.
+
+Two round-2 Minors were fixed in the same commit:
+- the banner now says "most changes" (m7);
+- a run records its page-context delivery once (m1).
+
+The first pipeline of !102 failed three packet 10 tests with "synthetic
+step did not complete". Six test helpers waited a fixed number of event
+loop turns. They now poll for up to 20 seconds (`15d1930`), and that
+pipeline passed.
+
+Round 3 (Opus 5.5, incremental): **APPROVE**.
+- N1 is fixed for every outcome a kept card can have, checked by
+  rendering each one.
+- The diff adds no Critical or Important finding.
+
+Its Minors go to the follow-up issue:
+- the `noChange` explanation (not reachable today);
+- coverage for the unknown-outcome sentence and the m1 scenario;
+- a card offering "edit" for a top-level `name` that the coordinator
+  cannot edit.

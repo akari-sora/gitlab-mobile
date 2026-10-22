@@ -146,7 +146,12 @@ void main() {
         .summary;
     expect(summary['toolCatalogueVersion'], 2);
     expect(summary['disclosureVersion'], 2);
-    expect(summary['dataCategories'], ['source']);
+    // Write results and attachment metadata come with tools (consent v2).
+    expect(summary['dataCategories'], [
+      'attachment_metadata',
+      'source',
+      'write_results',
+    ]);
   });
 
   testWidgets('FIX2 I4 forged recipient hash returns false without a grant', (
