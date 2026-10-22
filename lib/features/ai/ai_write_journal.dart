@@ -186,6 +186,9 @@ final class AiJournalEntry {
   final Set<AiConflictKey> dependencyKeys;
   String get payloadSha256 => _data['payloadSha256']! as String;
   String get releaseName => _data['releaseName']! as String;
+
+  /// The verified instance key the write was bound to (empty when unknown).
+  String get instanceKey => _data['instance']! as String;
   AiJournalState get state =>
       AiJournalState.values.byName(_data['state']! as String);
   int get sequence => _data['sequence']! as int;
@@ -219,12 +222,19 @@ final class AiJournalReset {
     this._epoch,
     this._proposalEpoch,
     this.verifiedUsername,
+    this._previousEpoch,
+    this._retired,
   );
   final String accountKey;
   final String token;
   final int _epoch;
   final int _proposalEpoch;
   final String? verifiedUsername;
+
+  /// Owner epoch before this reset began, and the in-flight executions it
+  /// retired. A cancelled reset that never started deleting gives both back.
+  final int _previousEpoch;
+  final Set<String> _retired;
 }
 
 final class AiRemovalJob {
@@ -305,6 +315,10 @@ final class AiWriteJournal {
   final Map<String, AiJournalEntry> _retiredExecutions = {};
   final Map<String, AiJournalEntry> _lateAudit = {};
   List<AiJournalEntry> get lateAudit => List.unmodifiable(_lateAudit.values);
+
+  /// Set once recoverAfterAccountsLoaded has recovered the loaded accounts.
+  /// Until then no account recovers on its own (§8 啟動順序與恢復).
+  bool _loadedAccountsRecovered = false;
 
   /// No memory-key fallback: production cannot write until explicitly wired.
   void configure({
@@ -505,6 +519,22 @@ final class AiWriteJournal {
       !(_fence?.isCleaning(account) ?? false);
 
   Future<_Snapshot> _ready(String account) async {
+    // §8 啟動順序與恢復: an account the accountsLoaded recovery did not cover
+    // (a first sign-in, an account added later, or one whose recovery failed)
+    // runs the same per-account recovery here, inside its account lock, before
+    // its first write. Entries another process left are still converted
+    // first; before the startup recovery has run, writes stay denied. An
+    // unreadable tombstone is read again by the recovery itself.
+    final owner = _account(account);
+    if (!owner.recovered &&
+        _loadedAccountsRecovered &&
+        !owner.tombstone &&
+        !_removals.containsKey(account) &&
+        !_resets.containsKey(account) &&
+        !(_fence?.isCleaning(account) ?? false)) {
+      await _recoverAccount(account);
+      owner.joined = owner.recovered;
+    }
     _gate(account);
     final status = await _load(account);
     if (status == AiJournalKeyStatus.uninitialized) {
@@ -949,6 +979,25 @@ final class AiWriteJournal {
   bool recentlyReset(String accountKey) =>
       _account(accountKey).data.resetUntil?.isAfter(_now) ?? false;
 
+  /// The interrupted entry a re-read may look at (§7.6 重新讀取以確認, §15
+  /// row 5). Offered only once the original request can no longer be running:
+  /// its Future ended here (the entry is `writeUncertain`) or the process
+  /// restarted (recovery turned another process's `dispatching` into
+  /// `writeUncertain`). A `dispatching` entry, or any entry while a journal
+  /// reset holds the owner, throws `inFlight`.
+  AiJournalEntry rereadableEntry(String accountKey, String executionId) {
+    final entry = _account(accountKey).data.entries[executionId];
+    if (entry == null) throw const AiJournalException('unknownExecution');
+    if (entry.state == AiJournalState.dispatching ||
+        _resets.containsKey(accountKey)) {
+      throw const AiJournalException('inFlight');
+    }
+    if (entry.state != AiJournalState.writeUncertain) {
+      throw const AiJournalException('notInterrupted');
+    }
+    return entry;
+  }
+
   Future<void> recordObservation({
     required String executionId,
     required String summary,
@@ -992,69 +1041,86 @@ final class AiWriteJournal {
   Future<void> recoverAfterAccountsLoaded(Iterable<String> accountKeys) async {
     final accounts = accountKeys.toSet();
     for (final account in accounts) {
-      _account(account).recovered = false;
+      _account(account)
+        ..recovered = false
+        ..joined = false;
     }
     final inventory = await _store.inventoryAccounts();
     final orphanHashes = await _disk.accountHashes();
     for (final account in accounts) {
-      await _locked(account, () async {
-        final owner = _account(account);
-        owner.recovered = false;
-        try {
-          if (await _tombstone(account)) {
-            await _load(account);
-            // Cleanup itself is owned by the host tombstone pipeline. This
-            // owner never silently clears the account's durable tombstone.
-            return;
-          }
-          final marker = await _store.readResetPending(account);
-          if (marker.failure != null ||
-              marker.status == AiStoreReadStatus.unavailable) {
-            owner.status = AiJournalKeyStatus.unavailable;
-            return;
-          }
-          if (marker.value != null) {
-            await _resumeReset(account, marker.value!);
-            _resets.remove(account);
-          }
-          await _disk.cleanupTemporary(account);
-          final status = await _load(account);
-          if (status == AiJournalKeyStatus.uninitialized) {
-            owner.recovered = true;
-            return;
-          }
-          if (status != AiJournalKeyStatus.found) return;
-          final data = owner.data.copy();
-          var changed = false;
-          for (final entry in List.of(data.entries.values)) {
-            if (entry.processId == processId) continue;
-            if (entry.state == AiJournalState.prepared ||
-                entry.state == AiJournalState.dispatching) {
-              changed = true;
-              data.entries[entry.executionId] = entry._change({
-                'state': entry.state == AiJournalState.prepared
-                    ? 'notExecuted'
-                    : 'writeUncertain',
-              });
-            }
-          }
-          if (changed) await _save(account, data, epoch: owner.ownerEpoch);
-          owner.recovered = true;
-        } on Object {
-          owner.status = AiJournalKeyStatus.unavailable;
-        }
-      });
+      await _locked(account, () => _recoverAccount(account));
       orphanHashes.remove(AiJournalFiles.accountHash(account));
     }
+    _loadedAccountsRecovered = true;
+    // An account that recovered on its first write joined after this list
+    // was read; the list does not prove it gone, so the sweep leaves it.
+    bool joined(String account) =>
+        _account(account).joined && _account(account).recovered;
     for (final orphan in inventory.difference(accounts)) {
       await _locked(orphan, () async {
+        if (joined(orphan)) return;
         await _deleteJournal(orphan);
         await _store.deleteResetPending(orphan);
       });
       orphanHashes.remove(AiJournalFiles.accountHash(orphan));
     }
+    orphanHashes.removeAll({
+      for (final account in _accounts.keys)
+        if (joined(account)) AiJournalFiles.accountHash(account),
+    });
     for (final hash in orphanHashes) {
       await _disk.deleteHash(hash);
+    }
+  }
+
+  /// One account's recovery, run inside its account lock: the removal
+  /// tombstone first, then a durable reset marker, then the normal recovery
+  /// of entries another process left behind. A failure leaves it unrecovered.
+  Future<void> _recoverAccount(String account) async {
+    final owner = _account(account);
+    owner.recovered = false;
+    try {
+      if (await _tombstone(account)) {
+        await _load(account);
+        // Cleanup itself is owned by the host tombstone pipeline. This
+        // owner never silently clears the account's durable tombstone.
+        return;
+      }
+      final marker = await _store.readResetPending(account);
+      if (marker.failure != null ||
+          marker.status == AiStoreReadStatus.unavailable) {
+        owner.status = AiJournalKeyStatus.unavailable;
+        return;
+      }
+      if (marker.value != null) {
+        await _resumeReset(account, marker.value!);
+        _resets.remove(account);
+      }
+      await _disk.cleanupTemporary(account);
+      final status = await _load(account);
+      if (status == AiJournalKeyStatus.uninitialized) {
+        owner.recovered = true;
+        return;
+      }
+      if (status != AiJournalKeyStatus.found) return;
+      final data = owner.data.copy();
+      var changed = false;
+      for (final entry in List.of(data.entries.values)) {
+        if (entry.processId == processId) continue;
+        if (entry.state == AiJournalState.prepared ||
+            entry.state == AiJournalState.dispatching) {
+          changed = true;
+          data.entries[entry.executionId] = entry._change({
+            'state': entry.state == AiJournalState.prepared
+                ? 'notExecuted'
+                : 'writeUncertain',
+          });
+        }
+      }
+      if (changed) await _save(account, data, epoch: owner.ownerEpoch);
+      owner.recovered = true;
+    } on Object {
+      owner.status = AiJournalKeyStatus.unavailable;
     }
   }
 
@@ -1069,12 +1135,17 @@ final class AiWriteJournal {
       throw const AiJournalException('accountBlocked');
     }
     final owner = _account(accountKey);
+    final retired = <String>{};
     for (final entry in owner.data.entries.values) {
       if (entry.state == AiJournalState.dispatching) {
-        owner.uncertain.add(entry.executionId);
+        if (owner.uncertain.add(entry.executionId) &&
+            !_retiredExecutions.containsKey(entry.executionId)) {
+          retired.add(entry.executionId);
+        }
         _retiredExecutions[entry.executionId] = entry;
       }
     }
+    final previousEpoch = owner.ownerEpoch;
     owner.ownerEpoch++;
     bumpProposalEpoch(accountKey);
     final reset = AiJournalReset._(
@@ -1083,6 +1154,8 @@ final class AiWriteJournal {
       owner.ownerEpoch,
       owner.proposalEpoch,
       verifiedUsername,
+      previousEpoch,
+      retired,
     );
     _resets[accountKey] = reset;
     _holds.removeWhere((_, hold) => hold.request.accountKey == accountKey);
@@ -1115,14 +1188,32 @@ final class AiWriteJournal {
     _resets.remove(account);
   });
 
+  /// Ends a reset that was cancelled or whose completeReset failed. When it
+  /// never reached the deletion steps (no owner change since beginReset), the
+  /// old journal is still the journal: the owner epoch comes back and writes
+  /// that were in flight leave the retired set, so their finish records the
+  /// real final state. Approvals stay invalidated (§8 重設寫入日誌). A write
+  /// whose finish was already refused during the reset keeps its unknown
+  /// state. Once deletion started, the reset stays durable and resumes.
   void cancelReset(AiJournalReset reset) {
-    if (identical(_resets[reset.accountKey], reset)) {
-      _resets.remove(reset.accountKey);
+    if (!identical(_resets[reset.accountKey], reset)) return;
+    _resets.remove(reset.accountKey);
+    final owner = _account(reset.accountKey);
+    if (owner.ownerEpoch != reset._epoch) return;
+    owner.ownerEpoch = reset._previousEpoch;
+    for (final id in reset._retired) {
+      if (_lateAudit.containsKey(id)) continue;
+      owner.uncertain.remove(id);
+      _retiredExecutions.remove(id);
     }
   }
 
   Future<void> _resumeReset(String account, DateTime confirmedAt) async {
     final owner = _account(account);
+    // Late finishes of the old owner become audit rows, never journal rows.
+    for (final entry in owner.data.entries.values) {
+      if (entry._isolates) _retiredExecutions[entry.executionId] = entry;
+    }
     owner.ownerEpoch++;
     owner.recovered = false;
     await _disk.delete(account);
@@ -1302,6 +1393,9 @@ final class _Account {
   Uint8List? key;
   AiJournalKeyStatus? status;
   bool recovered = false;
+
+  /// Recovered on its first write rather than from a loaded account list.
+  bool joined = false;
   bool tombstone = false;
   bool tombstoneReadUnavailable = false;
   bool deleted = false;
