@@ -1071,6 +1071,10 @@ class AiChatController extends ChangeNotifier
       writePolicyRevision: account?.writePolicyRevision ?? 0,
       scopeRevision: _writeScopeRevision,
       sessionGeneration: _generation,
+      currentJobId: switch (origin) {
+        AiJobOrigin(:final jobId) => jobId,
+        _ => null,
+      },
       toolsEnabled: config.toolsEnabled && _provider?.id == config.id,
       consentValid: settings.isValid(_accountKey, contract),
       alive: _alive,
@@ -1108,7 +1112,9 @@ class AiChatController extends ChangeNotifier
     await _refreshSecrets();
     if (!_alive) throw const AiJournalException('accountChanged');
     final args = request.arguments;
-    if (request.operationId == 'markTodoDone') {
+    if (request.operationId == 'markTodoDone' ||
+        (args['projectId'] == null &&
+            !ledger.aiT12Rows.any((row) => row.operationId == request.operationId))) {
       return const AiWriteFreshness();
     }
     final project = args['projectId'];
@@ -1120,8 +1126,9 @@ class AiChatController extends ChangeNotifier
       throw const AiJournalException('accountChanged');
     }
     final operation = request.operationId;
+    final legacy = ledger.aiT12Rows.any((row) => row.operationId == operation);
     final iid = args['iid'];
-    final resource = switch (operation) {
+    final resource = !legacy ? null : switch (operation) {
       'updateIssue' || 'moveBoardCard' => 'issues',
       'updateMergeRequest' ||
       'unapproveMergeRequest' ||
@@ -1232,13 +1239,14 @@ class AiChatController extends ChangeNotifier
       _ => false,
     };
     return AiWriteFreshness(
-      updatedAt: !createsInProject && target['updated_at'] is String
+      updatedAt: legacy &&
+              !createsInProject && target['updated_at'] is String
           ? target['updated_at'] as String
           : null,
       headSha: resource == 'merge_requests' && target['sha'] is String
           ? target['sha'] as String
           : null,
-      lastCommitId: target['last_commit_id'] is String
+      lastCommitId: legacy && target['last_commit_id'] is String
           ? target['last_commit_id'] as String
           : null,
       noChange: noChange,

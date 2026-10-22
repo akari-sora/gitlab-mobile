@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 
 import '../../../features/ai/ai_attachment_session.dart';
 import '../../../features/ai/ai_write_journal.dart';
+import '../../instance.dart';
 import '../ai_transcript.dart';
 import '../app_text.dart';
 import '../wire/wire_format.dart';
@@ -34,16 +35,18 @@ final class AiWriteProposal {
     required this.consentHash,
     required this.scopeRevision,
     required this.releaseName,
+    port.AiWritePreview? preview,
     this.fields = const <String, String>{},
     this.upload,
     this.closingRefs = const <String>[],
-  });
+  }) : preview = preview ?? port.AiFieldsPreview(const {});
 
   final String executionId;
   final String operationId;
   AiTierDecision tier;
   String payloadDigest;
   String previewText;
+  port.AiWritePreview preview;
   final String userUtterance;
   final String modelReason;
   final DateTime expiresAt;
@@ -57,10 +60,9 @@ final class AiWriteProposal {
   /// project it goes to (§3.1).
   final AiUploadPreview? upload;
 
-  /// Issues in the conversation's scope that this merge request text closes
-  /// on merge (`Closes #5`), listed on the card (§5 item 9). Out-of-scope
-  /// ones are a fixed confirm reason instead.
-  final List<String> closingRefs;
+  /// In-scope issues this description or commit message closes (§5 item 9).
+  /// Out-of-scope references require fixed confirmation instead.
+  List<String> closingRefs;
 
   /// The write's arguments for the approval card, each value redacted with
   /// the live secrets. The model's `reason` is [modelReason] instead.
@@ -257,6 +259,7 @@ final class AiWritePolicySnapshot {
     this.appInForeground = true,
     this.clientMayStart = true,
     this.aiAttribution = false,
+    this.currentJobId,
   });
 
   final AiWriteScope scope;
@@ -272,6 +275,7 @@ final class AiWritePolicySnapshot {
   final bool appInForeground;
   final bool clientMayStart;
   final bool aiAttribution;
+  final int? currentJobId;
 
   bool get enabled =>
       alive &&
@@ -315,6 +319,30 @@ final class AiWriteFreshness {
 typedef AiWriteFreshnessReader =
     Future<AiWriteFreshness> Function(port.AiWriteRequest request);
 
+/// Packet 4 supplies the exact-edit checker. An absent checker refuses fragment
+/// writes; it must never fall back to scanning or rewriting the whole source.
+typedef AiWriteFragmentChecker =
+    ({String? blockCode, List<AiFixedConfirmReason> confirmReasons}) Function(
+      port.AiTextScan scan, {
+      required Set<String> knownSecrets,
+      required GitLabInstance instance,
+      required text.AiVisibilityContext visibility,
+    });
+
+/// Until packet 5 adds the journal member, keep its key associated with the
+/// injected journal, once per process. The real member takes precedence when
+/// integrated; neither path persists the key or puts it in model arguments.
+final _scheduleKeys = Expando<List<int>>();
+extension AiWriteJournalScheduleKey on AiWriteJournal {
+  List<int> get scheduleHmacKey => _scheduleKeys[this] ??=
+      _newScheduleKey();
+}
+
+List<int> _newScheduleKey() {
+  final random = Random.secure();
+  return List<int>.unmodifiable(List.generate(32, (_) => random.nextInt(256)));
+}
+
 /// REST write orchestration. Waiting approvals stay in memory. The only disk
 /// writes are to the existing journal, after confirmation and before dispatch.
 final class PolicyAiWriteCoordinator
@@ -332,6 +360,7 @@ final class PolicyAiWriteCoordinator
     this.ledger = productionAiLedger,
     this.attachments,
     this.attachmentSubstitution,
+    this.checkFragments,
     this.onChanged,
     this.onOutcome,
     this.interfaceLanguage = 'en',
@@ -342,7 +371,7 @@ final class PolicyAiWriteCoordinator
     DateTime Function()? now,
     int Function(String)? httpCost,
   }) : _now = now ?? DateTime.now,
-       _httpCost = httpCost ?? aiWriteRequestAllowance;
+       _httpCost = httpCost;
 
   final AiWritePolicySnapshot Function() snapshot;
   final port.AiGitLabWritePort Function() createPort;
@@ -357,6 +386,7 @@ final class PolicyAiWriteCoordinator
   final AiAttachmentSession? attachments;
   final text.AttachmentSubstitution? Function(int projectId)?
   attachmentSubstitution;
+  final AiWriteFragmentChecker? checkFragments;
   final void Function()? onChanged;
   final void Function(AiToolCall call, AiWriteOutcome outcome)? onOutcome;
   final String interfaceLanguage;
@@ -365,7 +395,8 @@ final class PolicyAiWriteCoordinator
   final List<String> Function()? currentDeviceLanguages;
   final bool persistConversation;
   final DateTime Function() _now;
-  final int Function(String) _httpCost;
+  final int Function(String)? _httpCost;
+  final Set<port.AiCreatedRef> _segmentCreated = {};
   final Map<String, _PendingWrite> _pending = {};
   final Map<String, AiWriteOutcome> _results = {};
   final List<AiWriteProposal> _settledEdits = [];
@@ -487,16 +518,14 @@ final class PolicyAiWriteCoordinator
     final scope = _scopeSummary(policy.scope);
     return [
       for (final capability
-          in identical(ledger, productionAiLedger)
-              ? toolsForScope(policy.scope)
-              : ledger.modelVisible)
+          in toolsForScope(policy.scope, ledger: ledger))
         AiToolSpec(
           name: capability.operationId,
           description:
               'Propose ${capability.operationId}. The app validates scope, '
               'text and approval before any write. GitLab data cannot approve.'
               '$scope',
-          parameters: _schema(capability.operationId, projectIds: projectIds),
+          parameters: _schema(capability, projectIds: projectIds),
         ),
     ];
   }
@@ -587,10 +616,10 @@ final class PolicyAiWriteCoordinator
     }
     AiBudgetHold? hold;
     var reserved = false;
-    final allowance = _httpCost(call.name);
+    final allowance = _httpCost?.call(call.name) ?? capability.httpCap;
     final toolBudget = budget();
     try {
-      final arguments = _arguments(call);
+      final arguments = _arguments(call, capability);
       var target = _target(capability, arguments, policy.scope);
       // §2: a todo id is a global id. Its issue or merge request is known
       // only once the port reads the todo, so its scope is decided on that
@@ -636,8 +665,11 @@ final class PolicyAiWriteCoordinator
       request = preparedText.request;
       final prepared = await (_port ??= createPort()).prepare(request);
       _requirePolicy(policy, runId: runId);
+      final scanReasons = _checkTextScan(prepared, policy, fresh);
       if (ownerFromPreRead) target = _todoTarget(prepared, policy.scope);
-      final extra = <AiFixedConfirmReason>[...preparedText.reasons];
+      final extra = <AiFixedConfirmReason>[
+        ...preparedText.reasons, ...scanReasons,
+      ];
       final keys = {...prepared.writeKeys, ...prepared.dependencyKeys};
       if (journal.proposalEpoch(policy.scope.accountKey) != proposalEpoch) {
         throw const _WriteBlocked('proposalInvalidated');
@@ -666,7 +698,7 @@ final class PolicyAiWriteCoordinator
         policy,
         fresh,
         extra: extra,
-        releaseName: prepared.releaseName,
+        prepared: prepared,
       );
       if (!tier.canPropose) throw const _WriteBlocked('policyDenied');
       // A dynamic tier must have the same budget class as the reservation.
@@ -698,7 +730,8 @@ final class PolicyAiWriteCoordinator
         consentHash: policy.consentHash,
         scopeRevision: policy.scopeRevision,
         releaseName: safeDisplay(prepared.releaseName),
-        fields: _fields(request, safeDisplay),
+        preview: prepared.preview,
+        fields: _fields(request, capability, safeDisplay),
         closingRefs: [
           for (final ref in preparedText.closingRefs) safeDisplay(ref),
         ],
@@ -761,7 +794,9 @@ final class PolicyAiWriteCoordinator
       proposal.editedText = editedText;
       try {
         _requirePending(pending);
-        final request = _edit(pending.request, editedText);
+        final request = _edit(
+          pending.request, ledger.find(proposal.operationId)!, editedText,
+        );
         final processed = _prepareText(request, snapshot(), pending.fresh);
         final tier = _tier(
           ledger.find(proposal.operationId)!,
@@ -770,7 +805,7 @@ final class PolicyAiWriteCoordinator
           snapshot(),
           pending.fresh,
           extra: [...pending.reasons, ...processed.reasons],
-          releaseName: pending.prepared.releaseName,
+          prepared: pending.prepared,
         );
         if (!tier.canPropose) throw const _WriteBlocked('policyDenied');
         pending.request = request;
@@ -779,8 +814,16 @@ final class PolicyAiWriteCoordinator
         proposal.previewText = safeDisplay(
           _preview(processed.request, pending.prepared.releaseName),
         );
-        proposal.fields = _fields(processed.request, safeDisplay);
+        proposal.fields = _fields(
+          processed.request, ledger.find(proposal.operationId)!, safeDisplay,
+        );
+        if (proposal.preview is port.AiFieldsPreview) {
+          proposal.preview = port.AiFieldsPreview(processed.request.arguments);
+        }
         proposal.payloadDigest = _digest(processed.request);
+        proposal.closingRefs = [
+          for (final ref in processed.closingRefs) safeDisplay(ref),
+        ];
         _changed();
         return _notExecuted(pending.call, 'approvalRequired');
       } on Object catch (error) {
@@ -851,10 +894,22 @@ final class PolicyAiWriteCoordinator
           normalizedTarget: jsonEncode([
             for (final key in pending.prepared.writeKeys) key.parts,
           ]),
-          lastCommitId: _safeMetadata(pending.fresh.lastCommitId),
-          headSha: _safeMetadata(pending.fresh.headSha),
-          updatedAt: _safeMetadata(pending.fresh.updatedAt),
-          mergeCheckSummary: _safeMetadata(pending.fresh.mergeCheckSummary),
+          lastCommitId: _safeMetadata(
+            pending.prepared.journal.lastCommitId ??
+                (_legacy(proposal.operationId) ? pending.fresh.lastCommitId : null),
+          ),
+          headSha: _safeMetadata(
+            pending.prepared.journal.headSha ??
+                (_legacy(proposal.operationId) ? pending.fresh.headSha : null),
+          ),
+          updatedAt: _safeMetadata(
+            pending.prepared.journal.updatedAt ??
+                (_legacy(proposal.operationId) ? pending.fresh.updatedAt : null),
+          ),
+          mergeCheckSummary: _safeMetadata(
+            pending.prepared.journal.mergeCheckSummary ??
+                (_legacy(proposal.operationId) ? pending.fresh.mergeCheckSummary : null),
+          ),
           policyRevision: proposal.writePolicyRevision,
           summary: _targetSummary(pending.prepared),
           tier4: pending.hold.request.tier4,
@@ -891,14 +946,24 @@ final class PolicyAiWriteCoordinator
         throw const _WriteBlocked('targetChanged');
       }
       final capability = ledger.find(request.operationId)!;
+      final prepared = await _port!.prepare(request);
+      _requirePending(pending);
+      if (!_sameKeys(prepared.writeKeys, pending.prepared.writeKeys) ||
+          !_sameKeys(prepared.dependencyKeys, pending.prepared.dependencyKeys) ||
+          prepared.releaseName != pending.prepared.releaseName ||
+          prepared.confirmName != pending.prepared.confirmName ||
+          prepared.bindingDigest != pending.prepared.bindingDigest) {
+        throw const _WriteBlocked('targetChanged');
+      }
+      final scanReasons = _checkTextScan(prepared, snapshot(), fresh);
       final tier = _tier(
         capability,
         request.arguments,
         pending.target,
         snapshot(),
         fresh,
-        extra: [...pending.reasons, ...processed.reasons],
-        releaseName: pending.prepared.releaseName,
+        extra: [...pending.reasons, ...processed.reasons, ...scanReasons],
+        prepared: prepared,
       );
       if (!tier.canPropose) throw const _WriteBlocked('policyDenied');
       if (tier.tier != proposal.tier.tier ||
@@ -927,16 +992,6 @@ final class PolicyAiWriteCoordinator
           ),
         );
       }
-      final prepared = await _port!.prepare(request);
-      _requirePending(pending);
-      if (!_sameKeys(prepared.writeKeys, pending.prepared.writeKeys) ||
-          !_sameKeys(
-            prepared.dependencyKeys,
-            pending.prepared.dependencyKeys,
-          ) ||
-          prepared.releaseName != pending.prepared.releaseName) {
-        throw const _WriteBlocked('targetChanged');
-      }
       _requirePending(pending);
       await journal.markDispatching(executionId: proposal.executionId);
       dispatching = true;
@@ -951,14 +1006,16 @@ final class PolicyAiWriteCoordinator
             pending.target,
             snapshot(),
             fresh,
-            extra: [...pending.reasons, ...processed.reasons],
-            releaseName: prepared.releaseName,
+            extra: [...pending.reasons, ...processed.reasons, ...scanReasons],
+            prepared: prepared,
           );
           if (!currentTier.canPropose ||
               (!confirmed && currentTier.decision != AiGateDecision.execute) ||
               currentTier.tier != proposal.tier.tier ||
               currentTier.requiresTypedName !=
-                  proposal.tier.requiresTypedName) {
+                  proposal.tier.requiresTypedName ||
+              currentTier.typedName != proposal.tier.typedName ||
+              !proposal.tier.reasons.toSet().containsAll(currentTier.reasons)) {
             pending.invalidationReason = 'approvalRequired';
             return false;
           }
@@ -986,6 +1043,12 @@ final class PolicyAiWriteCoordinator
         executionId: proposal.executionId,
         terminal: settled.state,
       );
+      if (settled.state == AiJournalState.succeeded) {
+        final created = prepared.createdOnSuccess;
+        if (created != null && created.accountKey == pending.policy.scope.accountKey) {
+          _segmentCreated.add(created);
+        }
+      }
       // §3.1: only an upload the journal has as succeeded can be quoted,
       // and only from a later batch. Its markdown stays in this memory.
       bool? referable;
@@ -1001,7 +1064,7 @@ final class PolicyAiWriteCoordinator
       }
       final readbackConfirmed =
           settled.state == AiJournalState.succeeded &&
-          _readbackOperations.contains(proposal.operationId);
+          capability.readback;
       if (readbackConfirmed) {
         proposal.editedText = null;
       }
@@ -1190,6 +1253,7 @@ final class PolicyAiWriteCoordinator
         current.sessionGeneration != expected.sessionGeneration ||
         current.writePolicyRevision != expected.writePolicyRevision ||
         current.scopeRevision != expected.scopeRevision ||
+        current.currentJobId != expected.currentJobId ||
         current.consentHash != expected.consentHash ||
         _scopeDigest(current.scope) != _scopeDigest(expected.scope)) {
       throw const _WriteBlocked('settingsChanged');
@@ -1330,9 +1394,10 @@ final class PolicyAiWriteCoordinator
     AiWritePolicySnapshot policy,
     AiWriteFreshness fresh, {
     List<AiFixedConfirmReason> extra = const [],
-    String? releaseName,
+    port.AiWritePrepared? prepared,
   }) {
     final facts = fresh.facts;
+    final preparedFacts = prepared?.facts ?? const AiTierFacts();
     return decideTier(
       AiTierInput(
         level: policy.level,
@@ -1340,12 +1405,17 @@ final class PolicyAiWriteCoordinator
         scope: policy.scope,
         target: target,
         arguments: arguments,
-        typedName: releaseName,
+        typedName: prepared?.confirmName ??
+            (_legacy(capability.operationId) ? prepared?.releaseName : null),
         binding: bindTargets(
           userMessage: _userUtterance,
           restoredFromHistory: false,
           scope: policy.scope,
-          targets: [target],
+          targets: [
+            for (final bindingTarget in prepared?.bindingTargets.isNotEmpty == true
+                ? prepared!.bindingTargets : [target])
+              _boundTarget(bindingTarget, policy),
+          ],
           interfaceLanguage:
               currentInterfaceLanguage?.call() ?? interfaceLanguage,
           deviceLanguages: currentDeviceLanguages?.call() ?? deviceLanguages,
@@ -1353,17 +1423,17 @@ final class PolicyAiWriteCoordinator
           arguments: arguments,
         ),
         facts: AiTierFacts(
-          protectedOrDefaultBranch: facts.protectedOrDefaultBranch,
-          removeSourceBranch: facts.removeSourceBranch,
-          confidentialLowered: facts.confidentialLowered,
-          visibilityRaised: facts.visibilityRaised,
-          newSnippetNotPrivate: facts.newSnippetNotPrivate,
-          touchesCiConfig: facts.touchesCiConfig,
-          pipelineVariables: facts.pipelineVariables,
-          scheduleParamsUnsafe: facts.scheduleParamsUnsafe,
-          squash: facts.squash,
-          triggersPipeline: facts.triggersPipeline,
-          reasons: [...facts.reasons, ...extra],
+          protectedOrDefaultBranch: facts.protectedOrDefaultBranch || preparedFacts.protectedOrDefaultBranch,
+          removeSourceBranch: facts.removeSourceBranch || preparedFacts.removeSourceBranch,
+          confidentialLowered: facts.confidentialLowered || preparedFacts.confidentialLowered,
+          visibilityRaised: facts.visibilityRaised || preparedFacts.visibilityRaised,
+          newSnippetNotPrivate: facts.newSnippetNotPrivate || preparedFacts.newSnippetNotPrivate,
+          touchesCiConfig: facts.touchesCiConfig || preparedFacts.touchesCiConfig,
+          pipelineVariables: facts.pipelineVariables || preparedFacts.pipelineVariables,
+          scheduleParamsUnsafe: facts.scheduleParamsUnsafe || preparedFacts.scheduleParamsUnsafe,
+          squash: facts.squash || preparedFacts.squash,
+          triggersPipeline: facts.triggersPipeline || preparedFacts.triggersPipeline,
+          reasons: {...facts.reasons, ...preparedFacts.reasons, ...extra}.toList(),
         ),
       ),
     );
@@ -1392,13 +1462,17 @@ final class PolicyAiWriteCoordinator
     scope: policy.scope,
     arguments: {
       for (final entry in arguments.entries)
-        if (entry.key != 'reason' && entry.key != 'attachmentId')
+        if (_argumentSpecs(ledger.find(operation)!)[entry.key]?.portVisible == true)
           entry.key: entry.value,
       if (attachment != null) ...{
         'filename': attachment.filename,
         'contentType': attachment.mediaType ?? 'application/octet-stream',
       },
     },
+    segmentCreated: _segmentCreated.where(
+      (created) => created.accountKey == policy.scope.accountKey,
+    ).toSet(),
+    scheduleHmacKey: journal.scheduleHmacKey,
     uploadBytes: attachment?.bytes,
     sendTimeout: attachment == null
         ? null
@@ -1418,14 +1492,10 @@ final class PolicyAiWriteCoordinator
     final reasons = <AiFixedConfirmReason>[];
     final closingRefs = <String>[];
     final arguments = Map<String, Object?>.from(request.arguments);
-    final fields = arguments['fields'];
+    final capability = ledger.find(request.operationId)!;
     final project = arguments['projectId'] as int?;
-    String prepare(String value, String field) {
-      final classA =
-          field == 'body' ||
-          (field == 'description' &&
-              !request.operationId.contains('Label') &&
-              !request.operationId.contains('Milestone'));
+    String prepare(String value, String field, AiArgSpec spec, String path) {
+      final classA = spec.text == AiTextRole.quickActionMarkdown;
       // §3.1, placeholder substitution: `[[attachment:att-<n>]]` quotes an
       // upload this conversation finished in an earlier batch, into the
       // same project.
@@ -1453,10 +1523,14 @@ final class PolicyAiWriteCoordinator
           polluted: fresh.polluted,
           visibilityUnreadable: fresh.visibilityUnreadable,
           targetProjectPath: _projectPath(policy.scope, project),
-          renderedMarkdown: classA || field == 'description',
+          renderedMarkdown: classA || spec.text == AiTextRole.renderedMarkdown ||
+              (spec.text == AiTextRole.fullNewContent &&
+                  RegExp(r'\.(md|markdown)$', caseSensitive: false)
+                      .hasMatch(path)),
           // A new merge request's description has no field provenance, yet
           // its closing keywords act on merge all the same.
-          closesIssuesOnMerge: request.operationId == 'createMergeRequest',
+          closesIssuesOnMerge: spec.text == AiTextRole.commitMessage ||
+              (classA && request.operationId == 'createMergeRequest'),
           scopeGrants: policy.scope.grants,
         ),
         attachments: project == null
@@ -1473,6 +1547,7 @@ final class PolicyAiWriteCoordinator
               : outcome.blockedReasonCode,
         );
       }
+      if (spec.text == AiTextRole.pathOrRef) return outcome.finalText!;
       reasons.addAll(
         outcome.confirmReasons.map(
           (reason) => switch (reason) {
@@ -1494,18 +1569,31 @@ final class PolicyAiWriteCoordinator
       return outcome.finalText!;
     }
 
-    for (final key in ['body', 'name', 'filename']) {
-      if (arguments[key] case final String value) {
-        arguments[key] = prepare(value, key);
+    Object? visit(Object? value, AiArgSpec spec, String field, String path) {
+      if (spec.text == AiTextRole.fragmentEdits) return value;
+      if (value is String) return prepare(value, field, spec, path);
+      if (value is Map<String, Object?>) {
+        final properties = _nestedProperties(spec);
+        final nestedPath = value['file_path'] ?? value['path'] ?? path;
+        return {
+          for (final entry in value.entries)
+            entry.key: visit(entry.value, properties[entry.key]!, entry.key, '$nestedPath'),
+        };
       }
+      if (value is List<Object?> && spec.type != AiArgType.integerList) {
+        final item = AiArgSpec(AiArgType.object, properties: _nestedProperties(spec));
+        return [for (final element in value) visit(element, item, field, path)];
+      }
+      return value;
     }
-    if (fields is Map<String, Object?>) {
-      arguments['fields'] = {
-        for (final entry in fields.entries)
-          entry.key: entry.value is String
-              ? prepare(entry.value! as String, entry.key)
-              : entry.value,
-      };
+
+    final specs = _argumentSpecs(capability);
+    for (final entry in request.arguments.entries) {
+      final spec = specs[entry.key];
+      if (spec != null) {
+        arguments[entry.key] = visit(entry.value, spec, entry.key,
+            '${arguments['path'] ?? arguments['file_path'] ?? ''}');
+      }
     }
     return (
       request: port.AiWriteRequest(
@@ -1515,11 +1603,95 @@ final class PolicyAiWriteCoordinator
         arguments: arguments,
         uploadBytes: request.uploadBytes,
         sendTimeout: request.sendTimeout,
+        segmentCreated: request.segmentCreated,
+        scheduleHmacKey: request.scheduleHmacKey,
       ),
       reasons: reasons,
       closingRefs: closingRefs,
     );
   }
+  List<AiFixedConfirmReason> _checkTextScan(
+    port.AiWritePrepared prepared,
+    AiWritePolicySnapshot policy,
+    AiWriteFreshness fresh,
+  ) {
+    final scan = prepared.textScan;
+    final hasFragments = _hasFragmentRole(prepared.request.arguments,
+        _argumentSpecs(ledger.find(prepared.request.operationId)!));
+    if (scan == null) {
+      if (hasFragments) throw const _WriteBlocked('fragmentCheckUnavailable');
+      return const [];
+    }
+    final visibility = text.AiVisibilityContext(
+      polluted: fresh.polluted,
+      visibilityUnreadable: fresh.visibilityUnreadable,
+      renderedMarkdown: scan.markdown,
+      targetProjectPath: _projectPath(policy.scope, prepared.request.arguments['projectId'] as int?),
+      scopeGrants: policy.scope.grants,
+    );
+    final reasons = <AiFixedConfirmReason>[];
+    if (hasFragments || scan.newTexts.isNotEmpty || scan.windows.isNotEmpty) {
+      final checker = checkFragments;
+      if (checker == null) throw const _WriteBlocked('fragmentCheckUnavailable');
+      final checked = checker(scan, knownSecrets: knownSecrets(),
+          instance: placeholders.instance, visibility: visibility);
+      if (checked.blockCode != null) throw _WriteBlocked(checked.blockCode!);
+      reasons.addAll(checked.confirmReasons);
+    }
+    for (final body in scan.serverClassA) {
+      final checked = text.prepareWriteText(
+        textClass: text.AiTextClass.quickActionMarkdown,
+        modelText: body,
+        field: null,
+        aiAttribution: false,
+        placeholders: placeholders,
+        knownSecrets: knownSecrets(),
+        visibility: visibility,
+      );
+      if (checked.policyBlocked || checked.finalText != body) {
+        throw const _WriteBlocked('policyBlocked');
+      }
+      reasons.addAll(_confirmReasons(checked));
+    }
+    return reasons;
+  }
+
+  AiTargetRef _boundTarget(AiTargetRef target, AiWritePolicySnapshot policy) {
+    final currentJob = target.kind == AiTargetKind.job &&
+        target.jobId == policy.currentJobId && target.jobId != null &&
+        policy.scope.grants.any((grant) => grant.projectId == target.projectId);
+    final createdPipeline = target.kind == AiTargetKind.job &&
+        target.jobBelongsToBoundPipeline &&
+        _segmentCreated.any((created) =>
+            created.accountKey == policy.scope.accountKey &&
+            created.kind == AiTargetKind.pipeline &&
+            created.projectId == target.projectId &&
+            created.id != null && created.id == target.pipelineId);
+    final created = _segmentCreated.any((created) =>
+        created.accountKey == policy.scope.accountKey &&
+        created.kind == target.kind && created.projectId == target.projectId &&
+        ((target.kind == AiTargetKind.pipeline && created.id != null &&
+            created.id == target.pipelineId) ||
+         (target.kind == AiTargetKind.note &&
+            target.side == AiResourceSide.mergeRequest && created.id != null &&
+            created.id == target.iid && created.parentIid != null &&
+            created.parentIid == target.parentIid)));
+    if (!currentJob && !created && !createdPipeline) return target;
+    return AiTargetRef(
+      kind: target.kind, side: target.side,
+      origin: currentJob ? AiTargetOrigin.currentResource :
+          created ? AiTargetOrigin.createdInSegment : target.origin,
+      projectId: target.projectId, projectPath: target.projectPath,
+      iid: target.iid, parentIid: target.parentIid,
+      refName: target.refName, path: target.path,
+      sourceRef: target.sourceRef, targetRef: target.targetRef,
+      pipelineId: target.pipelineId, jobId: target.jobId,
+      jobBelongsToBoundPipeline: target.jobBelongsToBoundPipeline,
+      pipelineCreatedInSegment: target.pipelineCreatedInSegment || createdPipeline,
+      groupFullPath: target.groupFullPath, groupId: target.groupId, name: target.name,
+    );
+  }
+
 }
 
 final class _PendingWrite {
@@ -1679,10 +1851,12 @@ AiTargetRef _target(
       args['resource'] == 'merge_requests'
           ? AiTargetKind.mergeRequest
           : AiTargetKind.issue,
-    AiScopeClass.accountTodo => AiTargetKind.todo,
+    AiScopeClass.accountTodo ||
+    AiScopeClass.accountGlobalOnly => AiTargetKind.todo,
     AiScopeClass.groupWorkItem => AiTargetKind.groupWorkItem,
     AiScopeClass.project ||
-    AiScopeClass.projectUpload => AiTargetKind.project,
+    AiScopeClass.projectUpload ||
+    AiScopeClass.personalNamespace => AiTargetKind.project,
   };
   final bound = scope.grants.any(
     (grant) =>
@@ -1799,16 +1973,18 @@ AiTargetRef _todoTarget(port.AiWritePrepared prepared, AiWriteScope scope) {
   );
 }
 
-port.AiWriteRequest _edit(port.AiWriteRequest request, String edited) {
+port.AiWriteRequest _edit(
+  port.AiWriteRequest request, AiCapability capability, String edited,
+) {
+  final field = capability.editableField;
+  if (field == null) throw const _WriteBlocked('noEditableText');
   final args = Map<String, Object?>.from(request.arguments);
-  if (args.containsKey('body')) {
-    args['body'] = edited;
-  } else if (args['fields'] case final Map<String, Object?> fields) {
-    final writable = fields.keys
-        .where((key) => key == 'description' || key == 'title' || key == 'name')
-        .toList();
-    if (writable.length != 1) throw const _WriteBlocked('ambiguousEditedField');
-    args['fields'] = {...fields, writable.single: edited};
+  if (_argumentSpecs(capability).containsKey(field) && args[field] is String) {
+    args[field] = edited;
+  } else if (args['fields'] case final Map<String, Object?> fields
+      when fields[field] is String &&
+          _argumentSpecs(capability)['fields']?.properties.containsKey(field) == true) {
+    args['fields'] = {...fields, field: edited};
   } else {
     throw const _WriteBlocked('noEditableText');
   }
@@ -1819,36 +1995,33 @@ port.AiWriteRequest _edit(port.AiWriteRequest request, String edited) {
     arguments: args,
     uploadBytes: request.uploadBytes,
     sendTimeout: request.sendTimeout,
+    segmentCreated: request.segmentCreated,
+    scheduleHmacKey: request.scheduleHmacKey,
   );
 }
 
-// What the card shows: content, not the identifiers the target name already
-// stands for. A nested `fields` map is spread.
-const _hiddenFields = {
-  'reason', 'projectId', 'resource', 'iid', 'noteId', 'discussionId',
-  'todoId', 'awardId', 'labelId', 'milestoneId', 'boardId', 'listId',
-  'commitId', 'position', 'fields', 'attachmentId',
-};
-
+// Identifiers are represented by the target; content comes from the ledger.
 Map<String, String> _fields(
   port.AiWriteRequest request,
+  AiCapability capability,
   String Function(String) safeDisplay,
 ) {
-  final nested = request.arguments['fields'];
   final shown = <String, String>{};
-  void add(String key, Object? value) {
-    if (_hiddenFields.contains(key) || value == null) return;
-    shown[key] = safeDisplay(value is String ? value : jsonEncode(value));
-  }
-
-  for (final MapEntry(:key, :value) in request.arguments.entries) {
-    add(key, value);
-  }
-  if (nested is Map) {
-    for (final MapEntry(:key, :value) in nested.entries) {
-      add('$key', value);
+  void add(Map<String, Object?> values, Map<String, AiArgSpec> specs) {
+    for (final entry in values.entries) {
+      final spec = specs[entry.key];
+      if (spec == null || !spec.modelVisible || entry.value == null) continue;
+      if (entry.key == 'fields' && entry.value is Map<String, Object?>) {
+        add(entry.value! as Map<String, Object?>, spec.properties);
+      } else if (entry.key != 'resource' && entry.key != 'iid' &&
+          entry.key != 'position' && !entry.key.endsWith('Id')) {
+        shown[entry.key] = safeDisplay(
+          entry.value is String ? entry.value! as String : jsonEncode(entry.value),
+        );
+      }
     }
   }
+  add(request.arguments, _argumentSpecs(capability));
   return Map.unmodifiable(shown);
 }
 
@@ -1925,53 +2098,105 @@ const aiWriteRequestCounts = <String, AiWriteRequestCount>{
 };
 
 /// §4.4: the HTTP requests a write reserves from the send's shared budget
-/// when it is proposed: its GETs ([AiWriteRequestCount.reads]), doubled
-/// when [oauthReplay] (an OAuth 401 may replay each GET once after a token
-/// refresh; a personal access token never replays), plus the one mutation,
-/// which is never replayed. An operation without a row reserves the
-/// largest row's amount.
+/// when it is proposed. The ledger cap includes one mutation and doubled
+/// logical GETs for OAuth replay. A PAT needs each GET only once. An unknown
+/// operation reserves the largest visible ledger cap for compatibility.
 int aiWriteRequestAllowance(String operation, {bool oauthReplay = true}) {
-  final int reads =
-      aiWriteRequestCounts[operation]?.reads ??
-      aiWriteRequestCounts.values.fold<int>(
-        0,
-        (most, row) => row.reads > most ? row.reads : most,
-      );
-  return reads * (oauthReplay ? 2 : 1) + 1;
+  final cap = productionAiLedger.find(operation)?.httpCap ??
+      productionAiLedger.modelVisible.fold<int>(0, (most, row) => row.httpCap > most ? row.httpCap : most);
+  return oauthReplay ? cap : (cap - 1) ~/ 2 + 1;
 }
 
-// The existing port does not expose a readback flag. Keep this conservative
-// list aligned with its explicit readback callbacks; accepted is distinct.
-const _readbackOperations = {
-  'createIssue',
-  'updateIssue',
-  'createMergeRequest',
-  'updateMergeRequest',
-  'createNote',
-  'updateNote',
-  'createDiscussionNote',
-  'updateDiscussionNote',
-  'setDiscussionResolved',
-  'updateDraftNote',
-  'updateLabel',
-  'updateMilestone',
-  'setMilestoneState',
-  'moveBoardCard',
-};
+bool _legacy(String operation) => aiT12Rows.any((row) => row.operationId == operation);
 
-Map<String, Object?> _arguments(AiToolCall call) {
+Map<String, AiArgSpec> _argumentSpecs(AiCapability capability) =>
+    capability.arguments.isEmpty
+        ? productionAiLedger.find(capability.operationId)?.arguments ?? capability.arguments
+        : capability.arguments;
+
+Map<String, Object?> _arguments(AiToolCall call, AiCapability capability) {
   final args = call.arguments;
-  final allowed = _allowedArguments[call.name];
-  if (args is! Map<String, Object?> ||
-      (allowed != null && args.keys.any((key) => !allowed.contains(key))) ||
-      (args['reason'] != null && args['reason'] is! String) ||
-      (args['projectId'] != null &&
-          (args['projectId'] is! int || (args['projectId']! as int) < 1)) ||
-      (args['iid'] != null &&
-          (args['iid'] is! int || (args['iid']! as int) < 1))) {
+  final specs = {
+    for (final entry in _argumentSpecs(capability).entries)
+      if (entry.value.modelVisible) entry.key: entry.value,
+    'reason': const AiArgSpec(AiArgType.string),
+  };
+  if (args is! Map<String, Object?> || !_validObject(args, specs) ||
+      (args['projectId'] != null && (args['projectId']! as int) < 1) ||
+      (args['iid'] != null && (args['iid']! as int) < 1)) {
     throw const _WriteBlocked('invalidArguments');
   }
   return args;
+}
+
+bool _validObject(Map<String, Object?> values, Map<String, AiArgSpec> specs) =>
+    values.keys.every(specs.containsKey) &&
+    specs.entries.every((entry) =>
+        !entry.value.required || values.containsKey(entry.key)) &&
+    values.entries.every((entry) => _validArg(entry.value, specs[entry.key]!));
+
+bool _validArg(Object? value, AiArgSpec spec) => switch (spec.type) {
+  AiArgType.string => value is String,
+  AiArgType.integer => value is int,
+  AiArgType.boolean => value is bool,
+  AiArgType.object => value is Map<String, Object?> &&
+      _validObject(value, _nestedProperties(spec)),
+  AiArgType.integerList => value is List<Object?> && value.every((item) => item is int),
+  AiArgType.edits || AiArgType.variables || AiArgType.suggestionList ||
+  AiArgType.snippetActions => value is List<Object?> && value.length <= 20 &&
+      value.every((item) => item is Map<String, Object?> &&
+          _validObject(item, _nestedProperties(spec))),
+};
+
+bool _hasFragmentRole(Map<String, Object?> values, Map<String, AiArgSpec> specs) {
+  for (final entry in values.entries) {
+    final spec = specs[entry.key];
+    if (spec == null) continue;
+    if (spec.text == AiTextRole.fragmentEdits) return true;
+    final value = entry.value;
+    final nested = _nestedProperties(spec);
+    if (value is Map<String, Object?> && _hasFragmentRole(value, nested)) return true;
+    if (value is List<Object?> && value.any((item) =>
+        item is Map<String, Object?> && _hasFragmentRole(item, nested))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+List<AiFixedConfirmReason> _confirmReasons(text.AiTextOutcome outcome) => [
+  for (final reason in outcome.confirmReasons)
+    switch (reason) {
+      text.AiFixedConfirmReason.massMention => AiFixedConfirmReason.massMention,
+      text.AiFixedConfirmReason.externalMedia => AiFixedConfirmReason.externalMediaInRenderedMarkdown,
+      text.AiFixedConfirmReason.closingOrCrossProject => AiFixedConfirmReason.foreignClosingOrCrossProject,
+      text.AiFixedConfirmReason.hiddenContentRemoved => AiFixedConfirmReason.wholeFieldDropsHiddenSpans,
+    },
+  if (outcome.levelConfirmReasons.isNotEmpty) AiFixedConfirmReason.confidentialOrVisibilityMix,
+];
+
+// Family rows may supply a more precise closed item shape through properties.
+Map<String, AiArgSpec> _nestedProperties(AiArgSpec spec) {
+  if (spec.properties.isNotEmpty) return spec.properties;
+  const requiredText = AiArgSpec(AiArgType.string, required: true);
+  const requiredId = AiArgSpec(AiArgType.integer, required: true);
+  return switch (spec.type) {
+    AiArgType.edits => {'old': requiredText, 'new': requiredText},
+    AiArgType.variables => {
+      'key': requiredText, 'value': requiredText,
+      'variable_type': const AiArgSpec(AiArgType.string),
+    },
+    AiArgType.suggestionList => {
+      'iid': requiredId, 'noteId': requiredId, 'suggestionId': requiredId,
+    },
+    AiArgType.snippetActions => {
+      'action': requiredText, 'file_path': requiredText,
+      'previous_path': const AiArgSpec(AiArgType.string, text: AiTextRole.pathOrRef),
+      'content': const AiArgSpec(AiArgType.string, text: AiTextRole.fullNewContent),
+      'edits': const AiArgSpec(AiArgType.edits, text: AiTextRole.fragmentEdits),
+    },
+    _ => const {},
+  };
 }
 
 /// The conversation's scope as the app knows it, so the model can name the
@@ -1993,123 +2218,38 @@ String _scopeSummary(AiWriteScope scope) {
 }
 
 Map<String, Object?> _schema(
-  String operation, {
-  Set<int> projectIds = const <int>{},
-}) => {
+  AiCapability capability, {Set<int> projectIds = const <int>{}}
+) => _objectSchema({
+  for (final entry in _argumentSpecs(capability).entries)
+    if (entry.value.modelVisible) entry.key: entry.value,
+  'reason': const AiArgSpec(AiArgType.string, required: true),
+}, projectIds: projectIds);
+
+Map<String, Object?> _objectSchema(
+  Map<String, AiArgSpec> specs, {Set<int> projectIds = const <int>{}}
+) => {
   'type': 'object',
   'properties': {
-    for (final key in _allowedArguments[operation] ?? const {'reason'})
-      key: switch (key) {
-        'projectId' => {
-          'type': 'integer',
-          if (projectIds.isNotEmpty) 'enum': projectIds.toList()..sort(),
-        },
-        'iid' ||
-        'todoId' ||
-        'noteId' ||
-        'awardId' ||
-        'labelId' ||
-        'milestoneId' ||
-        'boardId' ||
-        'listId' => {'type': 'integer'},
-        'position' => {
-          'type': operation == 'moveBoardList' ? 'integer' : 'object',
-        },
-        'starred' ||
-        'subscribed' ||
-        'resolved' ||
-        'hidden' => {'type': 'boolean'},
-        'fields' => {'type': 'object'},
-        _ => {'type': 'string'},
+    for (final entry in specs.entries)
+      entry.key: {
+        ..._argSchema(entry.value),
+        if (entry.key == 'projectId' && projectIds.isNotEmpty)
+          'enum': projectIds.toList()..sort(),
       },
   },
-  'required': [
-    if (operation == 'markTodoDone') 'todoId' else 'projectId',
-    if (operation == 'upload_attachment') 'attachmentId',
-    'reason',
-  ],
+  'required': [for (final entry in specs.entries) if (entry.value.required) entry.key],
   'additionalProperties': false,
 };
 
-const _allowedArguments = <String, Set<String>>{
-  'setStar': {'projectId', 'starred', 'reason'},
-  'setSubscribed': {'projectId', 'resource', 'iid', 'subscribed', 'reason'},
-  'markTodoDone': {'todoId', 'reason'},
-  'addAwardEmoji': {'projectId', 'resource', 'iid', 'name', 'noteId', 'reason'},
-  'removeAwardEmoji': {
-    'projectId',
-    'resource',
-    'iid',
-    'awardId',
-    'noteId',
-    'reason',
+Map<String, Object?> _argSchema(AiArgSpec spec) => switch (spec.type) {
+  AiArgType.string => {'type': 'string'},
+  AiArgType.integer => {'type': 'integer'},
+  AiArgType.boolean => {'type': 'boolean'},
+  AiArgType.object => _objectSchema(_nestedProperties(spec)),
+  AiArgType.integerList => {'type': 'array', 'items': {'type': 'integer'}},
+  AiArgType.edits || AiArgType.variables || AiArgType.suggestionList ||
+  AiArgType.snippetActions => {
+    'type': 'array', 'maxItems': 20,
+    'items': _objectSchema(_nestedProperties(spec)),
   },
-  'createNote': {'projectId', 'resource', 'iid', 'body', 'reason'},
-  'updateNote': {'projectId', 'resource', 'iid', 'noteId', 'body', 'reason'},
-  'createIssue': {'projectId', 'fields', 'reason'},
-  'updateIssue': {'projectId', 'iid', 'fields', 'reason'},
-  'createMergeRequest': {'projectId', 'fields', 'reason'},
-  'updateMergeRequest': {'projectId', 'iid', 'fields', 'reason'},
-  'unapproveMergeRequest': {'projectId', 'iid', 'reason'},
-  'createTodo': {'projectId', 'resource', 'iid', 'reason'},
-  'createDiscussion': {
-    'projectId',
-    'resource',
-    'iid',
-    'body',
-    'position',
-    'reason',
-  },
-  'createDiscussionNote': {
-    'projectId',
-    'resource',
-    'iid',
-    'discussionId',
-    'body',
-    'reason',
-  },
-  'updateDiscussionNote': {
-    'projectId',
-    'resource',
-    'iid',
-    'discussionId',
-    'noteId',
-    'body',
-    'reason',
-  },
-  'setDiscussionResolved': {
-    'projectId',
-    'resource',
-    'iid',
-    'discussionId',
-    'resolved',
-    'reason',
-  },
-  'createDraftNote': {
-    'projectId',
-    'iid',
-    'body',
-    'commitId',
-    'position',
-    'reason',
-  },
-  'updateDraftNote': {'projectId', 'iid', 'noteId', 'body', 'reason'},
-  'createLabel': {'projectId', 'fields', 'reason'},
-  'updateLabel': {'projectId', 'labelId', 'fields', 'reason'},
-  'createMilestone': {'projectId', 'fields', 'reason'},
-  'updateMilestone': {'projectId', 'milestoneId', 'fields', 'reason'},
-  'setMilestoneState': {'projectId', 'milestoneId', 'stateEvent', 'reason'},
-  'createBoard': {'projectId', 'name', 'reason'},
-  'renameBoard': {'projectId', 'boardId', 'name', 'reason'},
-  'setBoardSystemListHidden': {
-    'projectId',
-    'boardId',
-    'list',
-    'hidden',
-    'reason',
-  },
-  'createBoardList': {'projectId', 'boardId', 'labelId', 'reason'},
-  'moveBoardList': {'projectId', 'boardId', 'listId', 'position', 'reason'},
-  'moveBoardCard': {'projectId', 'iid', 'fields', 'reason'},
-  'upload_attachment': {'projectId', 'attachmentId', 'reason'},
 };
