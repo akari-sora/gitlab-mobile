@@ -7747,7 +7747,7 @@ final class AppStrings {
   /// 寫入紀錄無法讀取，可能有中斷的寫入
   String get aiWriteLogUnreadableShort => language._messages[2550];
 
-  /// 帳號：{instance} · {username} · 使用者 ID {userId}
+  /// 帳號：{instance} · {username} · 使用者編號 {userId}
   String aiWriteLogResetAccount(Object? instance, Object? username, Object? userId) => _format(language, language._messages[2551], {'instance': instance, 'username': username, 'userId': userId});
 
   /// 會解除鎖定的中斷或進行中寫入：{count} 筆

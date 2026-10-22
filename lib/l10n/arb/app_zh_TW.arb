@@ -11215,7 +11215,7 @@
   },
   "aiWriteLogUnreadable": "寫入紀錄無法讀取，可能有中斷的寫入。在你重設寫入紀錄之前，AI 不能替這個帳號寫入；唯讀照常。",
   "aiWriteLogUnreadableShort": "寫入紀錄無法讀取，可能有中斷的寫入",
-  "aiWriteLogResetAccount": "帳號：{instance} · {username} · 使用者 ID {userId}",
+  "aiWriteLogResetAccount": "帳號：{instance} · {username} · 使用者編號 {userId}",
   "@aiWriteLogResetAccount": {
     "placeholders": {
       "instance": {},
