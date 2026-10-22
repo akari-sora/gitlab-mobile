@@ -403,6 +403,87 @@ void main() {
       expect(session.autonomyLevel, AiAutonomyLevel.lowRiskAuto);
     });
 
+    testWidgets('automatic writes show a banner whose Stop ends them', (
+      tester,
+    ) async {
+      final session = _FakeWriteSession(phase: AiChatPhase.running)
+        ..autonomyCeiling = AiAutonomyLevel.bypass
+        ..autonomyLevel = AiAutonomyLevel.bypass;
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pump();
+      final banner = find.byKey(const ValueKey('ai-auto-write-banner'));
+      expect(banner, findsOneWidget);
+      expect(
+        find.text(l10n.aiAutoWriteBanner(l10n.aiLevelBypass)),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-auto-write-stop')));
+      await tester.pump();
+      expect(session.stops, 1);
+      expect(session.autonomyLevel, AiAutonomyLevel.confirmEach);
+      expect(banner, findsNothing);
+    });
+
+    testWidgets('only the two automatic levels show the banner', (
+      tester,
+    ) async {
+      final session = _FakeWriteSession()
+        ..autonomyCeiling = AiAutonomyLevel.bypass
+        ..autonomyLevel = AiAutonomyLevel.lowRiskAuto;
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      final banner = find.byKey(const ValueKey('ai-auto-write-banner'));
+      expect(banner, findsNothing);
+      await session.setAutonomyLevel(AiAutonomyLevel.conversationGrant);
+      await tester.pumpAndSettle();
+      expect(banner, findsOneWidget);
+      // Idle: Stop only drops the level; there is no run to end.
+      await tester.tap(find.byKey(const ValueKey('ai-auto-write-stop')));
+      await tester.pumpAndSettle();
+      expect(session.stops, 0);
+      expect(session.autonomyLevel, AiAutonomyLevel.confirmEach);
+      expect(banner, findsNothing);
+    });
+
+    for (final tag in ['zh-TW', 'de', 'ar']) {
+      testWidgets('the banner fits $tag at 2x on 320 dp with the keyboard', (
+        tester,
+      ) async {
+        final ratio = tester.view.devicePixelRatio;
+        tester.view.physicalSize = const Size(320, 640) * ratio;
+        addTearDown(tester.view.reset);
+        if (tag != 'zh-TW') useLanguage(languageForTag(tag)!);
+        addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+        final session = _FakeWriteSession(
+          items: const [
+            AiAssistantItem(
+              text: 'I will add a comment.',
+              state: AiAssistantState.done,
+            ),
+          ],
+        )
+          ..autonomyCeiling = AiAutonomyLevel.bypass
+          ..autonomyLevel = AiAutonomyLevel.bypass;
+        await tester.pumpWidget(
+          _host(AiChatPage(session: session), tag: tag, scale: 2),
+        );
+        await tester.pumpAndSettle();
+        await tester.showKeyboard(find.byType(TextField).last);
+        tester.view.viewInsets = FakeViewPadding(bottom: 280 * ratio);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final stop = tester.getRect(
+          find.byKey(const ValueKey('ai-auto-write-stop')),
+        );
+        expect(stop.left, greaterThanOrEqualTo(0));
+        expect(stop.right, lessThanOrEqualTo(320));
+        expect(stop.top, greaterThanOrEqualTo(0));
+        final send = tester.getRect(find.byKey(const ValueKey('ai-chat-send')));
+        expect(send.bottom, lessThanOrEqualTo(640 - 280));
+        expect(send.top, greaterThan(stop.bottom));
+      });
+    }
+
     testWidgets('a read-only conversation has no level or attach button', (
       tester,
     ) async {

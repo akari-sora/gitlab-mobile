@@ -11240,5 +11240,12 @@
     }
   },
   "aiWriteLogResetUnknown": "寫入紀錄無法讀取，可能有狀態未知的寫入。",
-  "aiWriteLogResetNotUndo": "確認不代表原本的寫入沒有執行，請先到 GitLab 查看。"
+  "aiWriteLogResetNotUndo": "確認不代表原本的寫入沒有執行，請先到 GitLab 查看。",
+  "aiAutoWriteBanner": "{level}：AI 會直接寫入 GitLab，不會先問你。",
+  "@aiAutoWriteBanner": {
+    "placeholders": {
+      "level": {}
+    }
+  },
+  "aiAutoWriteStopHint": "停止這次執行，並改為逐一確認"
 }

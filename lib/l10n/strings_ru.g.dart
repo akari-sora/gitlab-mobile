@@ -2562,4 +2562,6 @@ const _messagesRu = <String>[
   'Interrupted or in-progress changes that will be unlocked: {count}',
   'The log can\'t be read, so there may be changes in an unknown state.',
   'Confirming doesn\'t mean those changes didn\'t happen. Check GitLab first.',
+  '{level}: the AI makes changes on GitLab without asking you first.',
+  'Stop this run and switch to confirming each change',
 ];

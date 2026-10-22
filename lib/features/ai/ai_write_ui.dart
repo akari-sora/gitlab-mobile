@@ -559,6 +559,84 @@ class AiChatLevelButton extends StatelessWidget {
   }
 }
 
+/// Shown at the top of the conversation while the AI writes without asking
+/// (this-conversation grant or allow everything, plan v6 §4.2). Stop ends the
+/// run and drops the conversation to confirm-each, so nothing more happens on
+/// its own; the level button raises it again.
+class AiAutoWriteBanner extends StatelessWidget {
+  const AiAutoWriteBanner({
+    super.key,
+    required this.level,
+    required this.onStop,
+  });
+
+  final AiAutonomyLevel level;
+  final VoidCallback? onStop;
+
+  static bool shows(AiAutonomyLevel level) =>
+      level == AiAutonomyLevel.conversationGrant ||
+      level == AiAutonomyLevel.bypass;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final bypass = level == AiAutonomyLevel.bypass;
+    final accent = bypass ? scheme.error : HubColors.orange;
+    return Material(
+      key: const ValueKey('ai-auto-write-banner'),
+      color: Color.alphaBlend(accent.withValues(alpha: 0.12), scheme.surface),
+      child: Padding(
+        padding: const EdgeInsetsDirectional.fromSTEB(16, 4, 4, 4),
+        child: Row(
+          children: [
+            Icon(
+              bypass ? Icons.warning_amber_rounded : Icons.lock_open_outlined,
+              color: accent,
+              size: 20,
+            ),
+            const SizedBox(width: 12),
+            // Two lines at most, so large text never pushes the composer
+            // off a short screen; the full sentence stays in semantics.
+            Expanded(
+              child: Semantics(
+                label: l10n.aiAutoWriteBanner(aiLevelLabel(level)),
+                excludeSemantics: true,
+                child: Text(
+                  l10n.aiAutoWriteBanner(aiLevelLabel(level)),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Tooltip(
+                message: l10n.aiAutoWriteStopHint,
+                child: TextButton.icon(
+                  key: const ValueKey('ai-auto-write-stop'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: accent,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                  ),
+                  onPressed: onStop,
+                  icon: const Icon(Icons.stop_circle_outlined, size: 18),
+                  label: Text(
+                    l10n.aiChatStop,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Why a file was not attached, or null when there is nothing to say.
 String? aiAttachFailureText(AiAttachStatus status) => switch (status) {
   AiAttachStatus.stored || AiAttachStatus.cancelled => null,

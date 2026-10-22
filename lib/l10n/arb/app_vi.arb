@@ -2559,5 +2559,7 @@
   "aiWriteLogResetAccount": "Account: {instance} · {username} · user ID {userId}",
   "aiWriteLogResetReleases": "Interrupted or in-progress changes that will be unlocked: {count}",
   "aiWriteLogResetUnknown": "The log can't be read, so there may be changes in an unknown state.",
-  "aiWriteLogResetNotUndo": "Confirming doesn't mean those changes didn't happen. Check GitLab first."
+  "aiWriteLogResetNotUndo": "Confirming doesn't mean those changes didn't happen. Check GitLab first.",
+  "aiAutoWriteBanner": "{level}: the AI makes changes on GitLab without asking you first.",
+  "aiAutoWriteStopHint": "Stop this run and switch to confirming each change"
 }

@@ -522,6 +522,16 @@ class _AiChatPageState extends State<AiChatPage> {
     if (mounted) await _session.recheck();
   }
 
+  /// The banner's Stop: end the run, then stop automatic writes for this
+  /// conversation by dropping it to confirm-each.
+  Future<void> _stopAutoWrites() async {
+    if (_session.phase == AiChatPhase.running ||
+        _session.phase == AiChatPhase.awaitingApproval) {
+      _session.stop();
+    }
+    await _session.setAutonomyLevel(AiAutonomyLevel.confirmEach);
+  }
+
   Future<void> _newConversation() async {
     if (_session.items.isNotEmpty &&
         !await confirmAction(
@@ -625,56 +635,70 @@ class _AiChatPageState extends State<AiChatPage> {
                 ),
               ],
             ),
-            body: LayoutBuilder(
-              builder: (context, constraints) => Column(
-                children: [
-                  Expanded(child: _conversation(context)),
-                  // A landscape phone with the keyboard up and large text
-                  // can leave less room than the composer needs: it then
-                  // scrolls, keeping the send button and the caret in view.
-                  ConstrainedBox(
-                    constraints: BoxConstraints(
-                      maxHeight: constraints.maxHeight,
-                    ),
-                    child: SingleChildScrollView(
-                      reverse: true,
-                      child: _Composer(
-                        controller: _input,
-                        busy: busy,
-                        stopping: _session.phase == AiChatPhase.stopping,
-                        canSend: _session.canSend,
-                        onSend: _send,
-                        onStop: _session.stop,
-                        attach: switch (_session) {
-                          final AiWriteChatSession writes
-                              when writes.autonomyCeiling !=
-                                  AiAutonomyLevel.readOnly =>
-                            IconButton(
-                              key: const ValueKey('ai-chat-attach'),
-                              tooltip: l10n.attachFile,
-                              icon: const Icon(Icons.attach_file),
-                              onPressed: writes.canAttach && !_attaching
-                                  ? () => _attach(writes)
-                                  : null,
+            body: Column(
+              children: [
+                if (AiAutoWriteBanner.shows(_session.autonomyLevel))
+                  AiAutoWriteBanner(
+                    level: _session.autonomyLevel,
+                    onStop: _session.phase == AiChatPhase.stopping
+                        ? null
+                        : () => unawaited(_stopAutoWrites()),
+                  ),
+                Expanded(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) => Column(
+                      children: [
+                        Expanded(child: _conversation(context)),
+                        // A landscape phone with the keyboard up and large text
+                        // can leave less room than the composer needs: it then
+                        // scrolls, keeping the send button and the caret in view.
+                        ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: constraints.maxHeight,
+                          ),
+                          child: SingleChildScrollView(
+                            reverse: true,
+                            child: _Composer(
+                              controller: _input,
+                              busy: busy,
+                              stopping: _session.phase == AiChatPhase.stopping,
+                              canSend: _session.canSend,
+                              onSend: _send,
+                              onStop: _session.stop,
+                              attach: switch (_session) {
+                                final AiWriteChatSession writes
+                                    when writes.autonomyCeiling !=
+                                        AiAutonomyLevel.readOnly =>
+                                  IconButton(
+                                    key: const ValueKey('ai-chat-attach'),
+                                    tooltip: l10n.attachFile,
+                                    icon: const Icon(Icons.attach_file),
+                                    onPressed: writes.canAttach && !_attaching
+                                        ? () => _attach(writes)
+                                        : null,
+                                  ),
+                                _ => null,
+                              },
+                              attachments: _session.attachments.isEmpty
+                                  ? null
+                                  : AiAttachmentStrip(
+                                      attachments: _session.attachments,
+                                      onRemove: switch (_session) {
+                                        final AiWriteChatSession writes
+                                            when _session.phase ==
+                                                AiChatPhase.idle =>
+                                          writes.removeAttachment,
+                                        _ => null,
+                                      },
+                                    ),
                             ),
-                          _ => null,
-                        },
-                        attachments: _session.attachments.isEmpty
-                            ? null
-                            : AiAttachmentStrip(
-                                attachments: _session.attachments,
-                                onRemove: switch (_session) {
-                                  final AiWriteChatSession writes
-                                      when _session.phase == AiChatPhase.idle =>
-                                    writes.removeAttachment,
-                                  _ => null,
-                                },
-                              ),
-                      ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         );
@@ -1765,6 +1789,9 @@ class _Composer extends StatelessWidget {
                       textInputAction: TextInputAction.newline,
                       decoration: InputDecoration(
                         hintText: l10n.aiChatComposerHint,
+                        // One line: a long hint at a large text size would
+                        // otherwise grow the empty field to six lines.
+                        hintMaxLines: 1,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(24),
                         ),
