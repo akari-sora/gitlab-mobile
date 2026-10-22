@@ -16,6 +16,7 @@ import '../../core/ai/context_builders.dart' show aiMaxRedactionInputChars;
 import '../../core/ai/prompts.dart';
 import '../../core/ai/redaction.dart';
 import '../../core/ai/runner.dart';
+import '../../core/ai/exact_edit.dart' as exact;
 import '../../core/ai/tools/gitlab_read_port.dart';
 import '../../core/ai/tools/gitlab_write_port.dart' as writes;
 import '../../core/ai/tools/tool_catalogue.dart';
@@ -1307,6 +1308,13 @@ class AiChatController extends ChangeNotifier
       placeholders: placeholders,
       knownSecrets: () => _secrets.current.toSet(),
       safeDisplay: draftSafe,
+      checkFragments: (scan, {required knownSecrets, required instance,
+          required visibility}) {
+        final checked = exact.checkFragments(scan, knownSecrets: knownSecrets,
+            instance: instance, visibility: visibility);
+        return (blockCode: checked.blockCode,
+            confirmReasons: checked.confirmReasons);
+      },
       // §4.4: a personal access token never replays a GET after a 401.
       httpCost: (operation) => aiWriteRequestAllowance(
         operation,

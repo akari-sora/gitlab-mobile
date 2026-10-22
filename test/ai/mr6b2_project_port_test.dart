@@ -7,7 +7,6 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/oauth.dart';
-import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import '../support/fake_adapter.dart';
 
@@ -458,7 +457,7 @@ void main() {
       await expectLater(
         f.port.prepare(_request(op)),
         throwsA(
-          isA<AiJournalException>().having(
+          isA<AiWriteRefused>().having(
             (e) => e.reason,
             'reason',
             'projectArchived',
@@ -474,7 +473,7 @@ void main() {
       await expectLater(
         f.port.prepare(_request(op)),
         throwsA(
-          isA<AiJournalException>().having(
+          isA<AiWriteRefused>().having(
             (e) => e.reason,
             'reason',
             'packageNotDeletable',
@@ -498,7 +497,7 @@ void main() {
         await expectLater(
           f.port.prepare(_request(op)),
           throwsA(
-            isA<AiJournalException>().having(
+            isA<AiWriteRefused>().having(
               (e) => e.reason,
               'reason',
               'maintainerRequired',
@@ -510,7 +509,7 @@ void main() {
         await expectLater(
           f.port.prepare(_request(op)),
           throwsA(
-            isA<AiJournalException>().having(
+            isA<AiWriteRefused>().having(
               (e) => e.reason,
               'reason',
               'containerMissing',
@@ -522,7 +521,7 @@ void main() {
         await expectLater(
           f.port.prepare(_request(op)),
           throwsA(
-            isA<AiJournalException>().having(
+            isA<AiWriteRefused>().having(
               (e) => e.reason,
               'reason',
               'containerMissing',
@@ -619,7 +618,7 @@ void main() {
       final f = _Fixture('deleteContainerTag')..tag['name'] = 'other';
       await expectLater(
         f.port.prepare(_request('deleteContainerTag')),
-        throwsA(isA<AiJournalException>()),
+        throwsA(isA<AiWriteRefused>()),
       );
       const tag = 'release/v1?#';
       f.tag['name'] = tag;
@@ -668,7 +667,7 @@ void main() {
       await expectLater(
         f.port.prepare(_request(op)),
         throwsA(
-          isA<AiJournalException>().having(
+          isA<AiWriteRefused>().having(
             (e) => e.reason,
             'reason',
             'personalNamespaceUnknown',

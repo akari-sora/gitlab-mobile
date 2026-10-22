@@ -69,10 +69,10 @@ extension _RefsPrepare on GitLabAiWritePort {
         snapshot = await _refRecord(readbackPath, 'refMissing');
         _refIdentity(snapshot, 'name', name);
         if (snapshot['default'] == true || p['default_branch'] == name) {
-          throw const AiJournalException('defaultBranch');
+          throw const AiWriteRefused('defaultBranch');
         }
         if (snapshot['protected'] == true) {
-          throw const AiJournalException('protectedBranch');
+          throw const AiWriteRefused('protectedBranch');
         }
         if (snapshot['default'] is! bool || snapshot['protected'] is! bool) {
           throw const ApiFailure(FailureKind.invalidResponse);
@@ -176,7 +176,7 @@ extension _RefsPrepare on GitLabAiWritePort {
     } on ApiFailure catch (failure) {
       // The code describes missing preflight evidence, never proven absence.
       // This existing coordinator carrier preserves reason codes across parts.
-      if (failure.status == 404) throw AiJournalException(code);
+      if (failure.status == 404) throw AiWriteRefused(code);
       rethrow;
     }
   }
