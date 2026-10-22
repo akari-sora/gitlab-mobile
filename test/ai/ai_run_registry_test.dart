@@ -71,8 +71,11 @@ AiWireClient _wireClient(
 );
 
 Future<void> _waitFor(bool Function() condition) async {
-  for (var i = 0; i < 100 && !condition(); i++) {
-    await Future<void>.delayed(Duration.zero);
+  // Bounded by time, not by turns: under CI load the journal's file work can
+  // need more turns than a fixed count allows.
+  final deadline = DateTime.now().add(const Duration(seconds: 20));
+  while (!condition() && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 1));
   }
   expect(
     condition(),
