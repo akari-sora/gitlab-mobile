@@ -2334,4 +2334,5 @@ const _messagesPtBr = <String>[
   'Solicitação de chamada de ferramenta desconhecida',
   'Esta conversa foi restaurada, por isso apenas o início do conteúdo enviado foi mantido',
   'Resumo da conversa',
+  'Adicionar ao rascunho do comentário',
 ];

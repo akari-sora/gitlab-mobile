@@ -39,6 +39,7 @@ final class WorkItemGraphSummary {
     required this.project,
     required this.namespace,
     required this.type,
+    this.author,
     this.widgets,
   });
 
@@ -52,12 +53,21 @@ final class WorkItemGraphSummary {
   final GraphResourceRef? project;
   final GraphResourceRef? namespace;
   final WorkItemGraphType type;
+  final WorkItemGraphAuthor? author;
 
   /// List summary widgets. Null when widgets were not requested or unavailable.
   final WorkItemSummaryWidgets? widgets;
 
   /// Alias for [widgets] to support either naming.
   WorkItemSummaryWidgets? get summary => widgets;
+}
+
+final class WorkItemGraphAuthor {
+  const WorkItemGraphAuthor({required this.id, required this.name, required this.username});
+
+  final String id;
+  final String name;
+  final String username;
 }
 
 final class WorkItemDescriptionWidget {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -171,6 +172,76 @@ List<AiChatItem> _conversation() => [
 
 void main() {
   setUp(() => useLanguage(languageForTag('zh-TW')!));
+
+  testWidgets('a finished work-item answer can append to its draft once', (
+    tester,
+  ) async {
+    const answer = AiAssistantItem(
+      text: ' **Answer**\n',
+      state: AiAssistantState.done,
+    );
+    final session = _FakeSession(items: [answer]);
+    final inserted = <String>[];
+    final pending = Completer<void>();
+    await tester.pumpWidget(
+      _host(
+        AiChatPage(
+          session: session,
+          onInsertDraft: (text) {
+            inserted.add(text);
+            return pending.future;
+          },
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(l10n.aiChatInsertDraft));
+    await tester.pump();
+    expect(inserted, [answer.text]);
+    expect(session.sent, isEmpty);
+    expect(find.text(l10n.aiChatInsertDraft), findsNothing);
+    pending.complete();
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.aiChatInsertDraft), findsOneWidget);
+  });
+
+  for (final state in AiAssistantState.values.where(
+    (s) => s != AiAssistantState.done,
+  )) {
+    testWidgets('no draft action for ${state.name} answers', (tester) async {
+      final session = _FakeSession(
+        items: [AiAssistantItem(text: 'partial', state: state)],
+      );
+      await tester.pumpWidget(
+        _host(
+          AiChatPage(
+            session: session,
+            onInsertDraft: (_) async {
+              fail('An incomplete answer must not open a draft');
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text(l10n.aiChatInsertDraft), findsNothing);
+    });
+  }
+
+  testWidgets('a general conversation cannot insert a resource comment', (
+    tester,
+  ) async {
+    final session = _FakeSession(
+      origin: const AiGeneralOrigin(),
+      items: const [
+        AiAssistantItem(text: 'answer', state: AiAssistantState.done),
+      ],
+    );
+    await tester.pumpWidget(
+      _host(AiChatPage(session: session, onInsertDraft: (_) async {})),
+    );
+    await tester.pump();
+    expect(find.text(l10n.aiChatInsertDraft), findsNothing);
+  });
 
   group('blockers show their action', () {
     final cases = <AiChatBlocker, String?>{

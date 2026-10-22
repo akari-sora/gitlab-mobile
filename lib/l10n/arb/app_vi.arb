@@ -2331,5 +2331,6 @@
   "aiNoticeNewConversation": "Cài đặt đã thay đổi: câu hỏi mới sẽ bắt đầu một cuộc trò chuyện mới và các tin nhắn ở trên sẽ không được gửi lại",
   "aiToolUnknown": "Yêu cầu công cụ không xác định",
   "aiChatSentPreviewOnly": "Cuộc trò chuyện này đã được khôi phục nên chỉ phần đầu của nội dung đã gửi được lưu lại",
-  "aiChatSummaryChip": "Tóm tắt trò chuyện"
+  "aiChatSummaryChip": "Tóm tắt trò chuyện",
+  "aiChatInsertDraft": "Thêm vào bản nháp bình luận"
 }

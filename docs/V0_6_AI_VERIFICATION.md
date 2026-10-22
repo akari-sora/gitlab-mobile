@@ -1093,3 +1093,36 @@ The emulator run on `109596d` (round 5) covers the visible chip behaviour:
 - a follow-up message carries no chip.
 
 Rounds 6 and 7 changed redaction internals, sizes and budget accounting only.
+
+### MR6a-2: append an answer to an ordinary comment draft
+
+A completed, display-safe Work Item answer offers **Append to comment draft**.
+It opens the same account/resource-scoped encrypted draft used by the discussion
+tab. Existing Markdown and whitespace remain intact; the answer follows two
+newlines. Opening or leaving this editor sends no GitLab mutation. Sending still
+requires reviewing the text and pressing Save.
+
+The action captures the account, API, resource and session generation. Missing
+session ownership or a later generation change prevents insertion. A failed or
+unrecognized secure-draft read blocks replacement. Comment saves persist an
+attempt marker before dispatch: an interrupted or cancelled write stays blocked
+after reopening, while an acknowledged write consumes only its exact submitted
+draft, without refreshing a different owner.
+
+Regressions live in `test/ai_comment_draft_test.dart`,
+`test/ai/ai_entry_points_test.dart`, `test/ai/ai_chat_page_test.dart` and
+`test/editor_uncertain_save_test.dart`. The synthetic Android target is:
+
+```sh
+flutter run --flavor gitlab -d emulator-5600 \
+  -t tool/emulator_ai_comment.dart \
+  --dart-define=EMULATOR_UI_QA=true \
+  --dart-define=MERGELINE_AI_ASSISTANT=true
+```
+
+It displays a persistent synthetic banner, uses memory-only account/draft data,
+preloads an existing draft and counts fixture writes. The write count must stay
+zero through insertion and leaving. Production AI remains disabled by default.
+Synthetic tests and emulator checks do not establish real-provider/private-project
+integration, iOS acceptance, publication or G0 acceptance. Exact-source test,
+build and pipeline receipts belong to the submitting MR.

@@ -9,6 +9,7 @@ import 'package:gitlab_mobile/features/workspace/graph_work_items_page.dart';
 import 'package:gitlab_mobile/features/workspace/navigation.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_attributes.dart';
 import 'package:gitlab_mobile/shared/resource_share.dart';
+import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
 import 'support/fake_adapter.dart';
 import 'support/widget_settle.dart';
@@ -268,6 +269,45 @@ final class _OwnerMarker extends ChangeNotifier {
 }
 
 void main() {
+  testWidgets('work item list shows its GraphQL author', (tester) async {
+    final adapter = FakeAdapter((request) {
+      final query = (request.data as Map)['query'] as String;
+      if (query.contains('MobileNamespaceWorkItemTypes')) return _types();
+      if (query.contains('MobileProjectWorkItems(')) {
+        return jsonResponse({
+          'data': {
+            'project': {
+              'id': 'gid://gitlab/Project/42',
+              'fullPath': 'team/example',
+              'workItems': _connection([
+                {
+                  ..._summary(),
+                  'author': {
+                    'id': 'gid://gitlab/User/9',
+                    'name': 'Synthetic Author',
+                    'username': 'synthetic-author',
+                  },
+                },
+              ]),
+            },
+          },
+        });
+      }
+      return jsonResponse({'message': 'unhandled'}, status: 404);
+    });
+    final api = testApi(adapter);
+    addTearDown(api.close);
+
+    await tester.pumpWidget(_host(_account(api, 7), api));
+    await settleNetworkWidgets(tester);
+
+    expect(find.text('@synthetic-author'), findsOneWidget);
+    final chip = tester.widget<PersonChip>(find.ancestor(
+      of: find.text('@synthetic-author'), matching: find.byType(PersonChip)));
+    expect(chip.author, isTrue);
+    expect(chip.person['name'], 'Synthetic Author');
+  });
+
   testWidgets(
     'custom server type opens native readonly widgets without REST subtype routing',
     (tester) async {

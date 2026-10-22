@@ -182,7 +182,7 @@ void main() {
       final key =
           'draft.v2.${base64Url.encode(utf8.encode(fixture.account.key))}.${base64Url.encode(utf8.encode(resource))}';
       final stored = await const FlutterSecureStorage().read(key: key);
-      expect(jsonDecode(stored!), {'body': 'Kept comment draft'});
+      expect(jsonDecode(stored!), {'body': 'Kept comment draft', '__writeUncertain': 'true'});
       await tester.pumpWidget(const SizedBox());
     },
   );

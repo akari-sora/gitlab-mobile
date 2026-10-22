@@ -2334,4 +2334,5 @@ const _messagesId = <String>[
   'Permintaan pemanggilan alat yang tidak dikenal',
   'Percakapan ini dipulihkan, jadi hanya bagian awal konten yang dikirim yang disimpan',
   'Ringkasan percakapan',
+  'Tambahkan ke draf komentar',
 ];

@@ -10854,5 +10854,6 @@
   "aiNoticeNewConversation": "設定已變更：之後的提問會開始新的對話，上面的內容不會再送出",
   "aiToolUnknown": "不明的工具要求",
   "aiChatSentPreviewOnly": "這段對話是之後還原的，只保留送出內容的開頭",
-  "aiChatSummaryChip": "對話摘要"
+  "aiChatSummaryChip": "對話摘要",
+  "aiChatInsertDraft": "附加到留言草稿"
 }

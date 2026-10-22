@@ -2334,4 +2334,5 @@ const _messagesEs = <String>[
   'Solicitud de herramienta no reconocida',
   'Esta conversación se restauró, por lo que solo se conserva el inicio del contenido enviado',
   'Resumen de conversación',
+  'Añadir al borrador del comentario',
 ];

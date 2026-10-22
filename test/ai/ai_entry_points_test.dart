@@ -3,11 +3,17 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:gitlab_mobile/features/workspace/editor.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/ai_failure.dart';
 import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/runner.dart';
+import 'package:gitlab_mobile/core/providers.dart';
+import 'package:gitlab_mobile/features/auth/account_store.dart';
+import 'package:gitlab_mobile/features/auth/session_controller.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_history.dart';
@@ -31,7 +37,7 @@ final class _Session extends ChangeNotifier implements AiChatSession {
   @override
   String get id => origin.key;
   @override
-  List<AiChatItem> get items => const [];
+  List<AiChatItem> items = [];
   @override
   AiChatPhase get phase => AiChatPhase.idle;
   @override
@@ -70,11 +76,16 @@ final class _Session extends ChangeNotifier implements AiChatSession {
 
 final class _Registry extends ChangeNotifier implements AiRunRegistry {
   final opened = <AiChatOrigin>[];
+  String? answer;
 
   @override
   AiChatSession open(AiChatOrigin origin) {
     opened.add(origin);
-    return _Session(origin);
+    return _Session(origin)
+      ..items = [
+        if (answer != null)
+          AiAssistantItem(text: answer!, state: AiAssistantState.done),
+      ];
   }
 
   final released = <AiChatSession>[];
@@ -92,6 +103,7 @@ Future<_Registry?> _pump(
   WorkspaceFixture fixture,
   Widget page, {
   bool ai = true,
+  SessionController? session,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = const Size(412, 900);
@@ -116,11 +128,21 @@ Future<_Registry?> _pump(
   addTearDown(history.dispose);
   final registry = _Registry();
   addTearDown(registry.dispose);
+  final owner =
+      session ??
+      (SessionController(SecureAccountStore())
+        ..active = fixture.account
+        ..api = fixture.api
+        ..initializing = false);
+  if (session == null) addTearDown(owner.dispose);
   await tester.pumpWidget(
-    AiScope(
-      controllers: AiControllers(settings: settings, history: history),
-      accountKey: fixture.account.key,
-      child: AiRunRegistryScope(registry: registry, child: app),
+    ProviderScope(
+      overrides: [sessionProvider.overrideWithValue(owner)],
+      child: AiScope(
+        controllers: AiControllers(settings: settings, history: history),
+        accountKey: fixture.account.key,
+        child: AiRunRegistryScope(registry: registry, child: app),
+      ),
     ),
   );
   await settleNetworkWidgets(tester);
@@ -171,6 +193,84 @@ Future<void> _openMenu(WidgetTester tester, String tooltip) async {
 
 void main() {
   setUp(() => useLanguage(languageForTag('zh-TW')!));
+
+  testWidgets('MR answer opens its ordinary local comment draft without POST', (
+    tester,
+  ) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    final registry = (await _pump(
+      tester,
+      fixture,
+      WorkItemPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        resource: 'merge_requests',
+        iid: 12,
+      ),
+    ))!;
+    registry.answer = 'Synthetic **answer**';
+    await _openMenu(tester, l10n.moreOptions);
+    await tester.tap(find.text(l10n.aiDiscuss));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(l10n.aiChatInsertDraft));
+    await tester.pumpAndSettle();
+    expect(find.byType(ResourceEditor), findsOneWidget);
+    final editor = tester.widget<ResourceEditor>(find.byType(ResourceEditor));
+    expect(editor.resource, 'projects/42/merge_requests/12/root/new');
+    expect(editor.account.key, fixture.account.key);
+    expect(
+      tester.widget<TextFormField>(find.byType(TextFormField)).controller!.text,
+      registry.answer,
+    );
+    expect(fixture.adapter.requests.where((r) => r.method != 'GET'), isEmpty);
+    await tester.tap(find.byTooltip(l10n.keepDraftAndGoBack));
+    await tester.pumpAndSettle();
+    expect(find.byType(AiChatPage), findsOneWidget);
+    expect(fixture.adapter.requests.where((r) => r.method != 'GET'), isEmpty);
+  });
+
+  testWidgets('a changed session generation cannot insert an old AI answer', (
+    tester,
+  ) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final fixture = WorkspaceFixture();
+    final owner = SessionController(SecureAccountStore())
+      ..active = fixture.account
+      ..api = fixture.api
+      ..initializing = false;
+    fixture.issues[12] = fixture.issue(12, 'Synthetic issue');
+    addTearDown(owner.dispose);
+    final registry = (await _pump(
+      tester,
+      fixture,
+      WorkItemPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        resource: 'issues',
+        iid: 12,
+      ),
+      session: owner,
+    ))!;
+    registry.answer = 'Old generation answer';
+    await _openMenu(tester, l10n.moreOptions);
+    await tester.tap(find.text(l10n.aiDiscuss));
+    await tester.pumpAndSettle();
+    owner.generation++;
+    await tester.tap(find.text(l10n.aiChatInsertDraft));
+    await tester.pumpAndSettle();
+    expect(find.byType(ResourceEditor), findsNothing);
+    expect(await const FlutterSecureStorage().readAll(), isEmpty);
+    expect(
+      fixture.adapter.requests.where(
+        (r) => r.method != 'GET' && r.uri != fixture.api.instance.graphQL,
+      ),
+      isEmpty,
+    );
+  });
 
   testWidgets('a failed job offers AI in its app bar', (tester) async {
     final fixture = _FailedJobFixture();

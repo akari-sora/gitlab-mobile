@@ -2334,4 +2334,5 @@ const _messagesNl = <String>[
   'Verzoek om een onbekend hulpmiddel aan te roepen',
   'Dit gesprek is hersteld, dus alleen het begin van de verzonden inhoud is bewaard',
   'Samenvatting gesprek',
+  'Toevoegen aan conceptreactie',
 ];

@@ -2334,4 +2334,5 @@ const _messagesPl = <String>[
   'Żądanie nieznanego narzędzia',
   'Ta rozmowa została przywrócona, dlatego zachowano tylko początek wysłanej treści',
   'Podsumowanie rozmowy',
+  'Dodaj do szkicu komentarza',
 ];

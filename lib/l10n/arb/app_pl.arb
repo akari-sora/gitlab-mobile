@@ -2331,5 +2331,6 @@
   "aiNoticeNewConversation": "Ustawienia zostały zmienione: nowe pytania rozpoczynają nową rozmowę, a powyższe wiadomości nie są wysyłane ponownie",
   "aiToolUnknown": "Żądanie nieznanego narzędzia",
   "aiChatSentPreviewOnly": "Ta rozmowa została przywrócona, dlatego zachowano tylko początek wysłanej treści",
-  "aiChatSummaryChip": "Podsumowanie rozmowy"
+  "aiChatSummaryChip": "Podsumowanie rozmowy",
+  "aiChatInsertDraft": "Dodaj do szkicu komentarza"
 }

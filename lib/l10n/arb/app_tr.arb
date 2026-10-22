@@ -2331,5 +2331,6 @@
   "aiNoticeNewConversation": "Ayarlar değişti: yeni sorular yeni bir konuşma başlatır ve yukarıdaki mesajlar tekrar gönderilmez",
   "aiToolUnknown": "Bilinmeyen bir aracı çağırma isteği",
   "aiChatSentPreviewOnly": "Bu konuşma geri yüklendiği için gönderilen içeriğin yalnızca başlangıcı saklanır",
-  "aiChatSummaryChip": "Konuşma özeti"
+  "aiChatSummaryChip": "Konuşma özeti",
+  "aiChatInsertDraft": "Yorum taslağına ekle"
 }

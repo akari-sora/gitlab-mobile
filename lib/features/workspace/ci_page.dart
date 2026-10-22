@@ -411,10 +411,159 @@ class PipelinesTab extends StatefulWidget {
   @override
   State<PipelinesTab> createState() => _PipelinesTabState();
 }
+
+final class _PipelineActorLoader {
+  _PipelineActorLoader({required this.api, required this.projectId});
+
+  final GitLabApi api;
+  final int projectId;
+  final _cache = <int, Future<Json?>>{};
+  final _queue = <({int pipelineId, Completer<Json?> completer})>[];
+  var _active = 0;
+  var _disposed = false;
+
+  Future<Json?> load(int pipelineId) {
+    if (_disposed) return Future<Json?>.value();
+    return _cache.putIfAbsent(pipelineId, () {
+      final completer = Completer<Json?>();
+      _queue.add((pipelineId: pipelineId, completer: completer));
+      _drain();
+      return completer.future;
+    });
+  }
+
+  void _drain() {
+    while (!_disposed && _active < 4 && _queue.isNotEmpty) {
+      final request = _queue.removeAt(0);
+      _active++;
+      unawaited(_load(request).whenComplete(() {
+        _active--;
+        _drain();
+      }));
+    }
+  }
+
+  Future<void> _load(({int pipelineId, Completer<Json?> completer}) request) async {
+    Json? actor;
+    try {
+      final detail = await api.record(
+        ['projects', '$projectId', 'pipelines', '${request.pipelineId}'],
+      );
+      final user = valueObject(detail, 'user');
+      if (valueInt(detail, 'id') == request.pipelineId &&
+          PersonChip.of(user, author: false) != null) {
+        actor = user;
+      }
+    } catch (_) {
+      // Executor enrichment is optional; the pipeline summary remains usable.
+    }
+    if (actor == null) {
+      unawaited(_cache.remove(request.pipelineId) ?? Future<Json?>.value());
+    }
+    if (!request.completer.isCompleted) {
+      request.completer.complete(_disposed ? null : actor);
+    }
+  }
+
+  void dispose() {
+    _disposed = true;
+    for (final request in _queue) {
+      if (!request.completer.isCompleted) request.completer.complete(null);
+    }
+    _queue.clear();
+    _cache.clear();
+  }
+}
+
+class _PipelineActorChip extends StatefulWidget {
+  const _PipelineActorChip({required this.loader, required this.pipelineId});
+
+  final _PipelineActorLoader loader;
+  final int pipelineId;
+
+  @override
+  State<_PipelineActorChip> createState() => _PipelineActorChipState();
+}
+
+class _PipelineActorChipState extends State<_PipelineActorChip> {
+  Json? _actor;
+  var _generation = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PipelineActorChip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.loader, widget.loader) ||
+        oldWidget.pipelineId != widget.pipelineId) {
+      _actor = null;
+      _load();
+    }
+  }
+
+  void _load() {
+    final generation = ++_generation;
+    unawaited(widget.loader.load(widget.pipelineId).then((actor) {
+      if (!mounted || generation != _generation || actor == null) return;
+      setState(() => _actor = actor);
+    }));
+  }
+
+  @override
+  void dispose() {
+    _generation++;
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final actor = _actor;
+    return actor == null
+        ? const SizedBox.shrink()
+        : PersonChip.of(actor, author: false) ?? const SizedBox.shrink();
+  }
+}
+
 class _PipelinesTabState extends State<PipelinesTab> {
   final _feed = GlobalKey<RecordsFeedState>();
   final _refInput = TextEditingController();
+  late _PipelineActorLoader _actors;
+  var _ownerGeneration = 0;
   String _state = '', _ref = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _actors = _newActorLoader();
+  }
+
+  _PipelineActorLoader _newActorLoader() => _PipelineActorLoader(
+    api: widget.api,
+    projectId: widget.project.id,
+  );
+
+  @override
+  void didUpdateWidget(covariant PipelinesTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.account.key != widget.account.key ||
+        oldWidget.project.id != widget.project.id ||
+        !identical(oldWidget.api, widget.api)) {
+      _actors.dispose();
+      _actors = _newActorLoader();
+      _ownerGeneration++;
+    }
+  }
+
+  Future<ApiPage<Json>> _loadPipelines(Uri? next) async {
+    final api = widget.api, projectId = widget.project.id;
+    final state = _state, ref = _ref;
+    return api.records(['projects', '$projectId', 'pipelines'],
+      query: {'order_by': 'id', 'sort': 'desc', if (state.isNotEmpty) 'status': state, if (ref.isNotEmpty) 'ref': ref}, next: next);
+  }
   Future<void> _open(int id) async {
     await Navigator.push(context, MaterialPageRoute<void>(builder: (_) => PipelinePage(
       account: widget.account, api: widget.api, project: widget.project, id: id)));
@@ -436,6 +585,7 @@ class _PipelinesTabState extends State<PipelinesTab> {
   }
   @override
   void dispose() {
+    _actors.dispose();
     _refInput.dispose();
     super.dispose();
   }
@@ -460,14 +610,19 @@ class _PipelinesTabState extends State<PipelinesTab> {
   }
 
   @override
-  Widget build(BuildContext context) => RecordsFeed(key: _feed, identity: 'pipelines/$_state/$_ref', storageId: 'pipelines',
+  Widget build(BuildContext context) => RecordsFeed(key: _feed,
+      identity: '${widget.account.key}/${widget.project.id}/$_ownerGeneration/pipelines/$_state/$_ref', storageId: 'pipelines',
       empty: l10n.noMatchingPipelines, emptyIcon: Icons.account_tree_outlined, grouped: true,
       account: widget.account, resourceLabel: '${widget.project.path} · Pipeline',
       onSwitchAccount: endSessionFrom(context),
       leading: (context, _) => _controls(context),
-      load: (next) => widget.api.records(['projects', '${widget.project.id}', 'pipelines'],
-        query: {'order_by': 'id', 'sort': 'desc', if (_state.isNotEmpty) 'status': _state, if (_ref.isNotEmpty) 'ref': _ref}, next: next),
-      itemBuilder: (context, value) => pipelineRow(context, value, onTap: () => _open(requiredInt(value, 'id'))),
+      load: _loadPipelines,
+      itemBuilder: (context, value) {
+        final id = requiredInt(value, 'id');
+        final actor = PersonChip.of(valueObject(value, 'user'), author: false) ??
+            _PipelineActorChip(loader: _actors, pipelineId: id);
+        return pipelineRow(context, value, actor: actor, onTap: () => _open(id));
+      },
     );
 }
 
@@ -518,7 +673,7 @@ int? mergeRequestIidOfRef(String ref) {
 }
 
 /// One pipeline as a dense row: status, name or number, ref, commit and age.
-Widget pipelineRow(BuildContext context, Json value, {required VoidCallback onTap, String? project}) {
+Widget pipelineRow(BuildContext context, Json value, {required VoidCallback onTap, String? project, Widget? actor}) {
   final theme = Theme.of(context);
   final muted = theme.colorScheme.onSurfaceVariant;
   final source = pipelineSourceLabel(valueText(value, 'source'));
@@ -542,6 +697,7 @@ Widget pipelineRow(BuildContext context, Json value, {required VoidCallback onTa
           ],
           const SizedBox(height: 6),
           Wrap(spacing: 10, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+            ?actor ?? PersonChip.of(valueObject(value, 'user'), author: false),
             MetaChip(valueText(value, 'ref'), icon: Icons.alt_route, mono: true),
             MetaChip(shortSha(valueText(value, 'sha')), icon: Icons.commit, mono: true),
             if (name.isNotEmpty) MetaChip(number, mono: true),

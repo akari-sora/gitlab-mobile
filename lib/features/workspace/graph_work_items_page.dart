@@ -1266,6 +1266,14 @@ class _GraphWorkItemsPageState extends State<GraphWorkItemsPage> {
 
     metaChips.add(StatusBadge(_graphWorkItemState(item.state)));
 
+    final author = item.author;
+    if (author != null) {
+      metaChips.add(PersonChip({
+        'name': author.name,
+        'username': author.username,
+      }));
+    }
+
     if (prefs.showStatus && summary?.status?.name != null) {
       metaChips.add(
         MetaChip(

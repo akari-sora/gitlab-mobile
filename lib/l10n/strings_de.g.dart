@@ -2334,4 +2334,5 @@ const _messagesDe = <String>[
   'Anfrage an ein unbekanntes Werkzeug',
   'Diese Unterhaltung wurde wiederhergestellt, daher bleibt nur der Anfang des gesendeten Inhalts erhalten',
   'Zusammenfassung der Unterhaltung',
+  'An Kommentarentwurf anhängen',
 ];
