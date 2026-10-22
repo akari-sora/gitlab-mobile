@@ -1,15 +1,23 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:dynamic_color/dynamic_color.dart';
+import 'package:flutter/foundation.dart' show setEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 import 'core/providers.dart';
 import 'features/auth/login_screen.dart';
 import 'features/ai/ai_gate.dart';
+import 'features/ai/ai_account_cleanup.dart';
 import 'features/ai/ai_history.dart';
+import 'features/ai/ai_journal_fence.dart';
+import 'features/ai/ai_journal_key_store.dart';
 import 'features/ai/ai_scope.dart';
 import 'features/ai/ai_settings_provider.dart';
+import 'features/ai/ai_stores.dart';
+import 'features/ai/ai_write_journal.dart';
 import 'features/shell/app_shortcuts.dart';
 import 'features/auth/session_controller.dart';
 import 'features/shell/authenticated_app.dart';
@@ -45,7 +53,108 @@ Future<void> main() async {
 Future<void> initializeSessionWithAiRecovery(SessionController session) {
   final initialization = session.initialize();
   unawaited(AiHistoryCoordinator.instance.startRecovery(session));
+  // Not behind the AI gate (plan v6 §8): removing an account must clean a
+  // journal a gated build once wrote. Any failure leaves the journal
+  // unconfigured or unrecovered, and it then refuses writes.
+  unawaited(startAiWriteJournal(session));
   return initialization;
+}
+
+Future<bool>? _aiWriteJournalConfiguration;
+
+/// Configures [AiWriteJournal.instance] once per process, then recovers it for
+/// the session's stored accounts as soon as they load. Never throws.
+Future<void> startAiWriteJournal(SessionController session) async {
+  final configured = await (_aiWriteJournalConfiguration ??=
+      configureAiWriteJournal());
+  if (!configured) return;
+  await recoverAiWriteJournalAfterAccountsLoaded(
+    session,
+    AiWriteJournal.instance,
+  );
+}
+
+/// Configures [AiWriteJournal.instance] with the secure key store, the
+/// Application Support directory and the history-owned account fence. The
+/// parameters exist for tests. Returns whether the journal is configured; a
+/// failure is swallowed and leaves the journal refusing every write.
+Future<bool> configureAiWriteJournal({
+  AiJournalKeyStore? keys,
+  Future<Directory> Function()? applicationSupport,
+  AiJournalAccountFence? fence,
+}) async {
+  try {
+    // Through the cleanup library, so account removal knows the journal can
+    // hold writes. An earlier configuration stays in force.
+    wireAiWriteJournal(
+      keys: keys ?? SecureAiJournalKeyStore(),
+      applicationSupport:
+          await (applicationSupport ?? getApplicationSupportDirectory)(),
+      fence: fence ?? AiHistoryJournalFence(),
+    );
+    return true;
+  } on Object {
+    return false;
+  }
+}
+
+final Expando<Future<void>> _journalRecoveryTails = Expando<Future<void>>(
+  'aiWriteJournalRecovery',
+);
+
+/// Waits for the session's stored account list the way
+/// [AiHistoryCoordinator.startRecovery] does, then passes every stored account
+/// to [AiWriteJournal.recoverAfterAccountsLoaded]. When membership changed
+/// while recovery ran, it runs again with the current accounts. Calls for one
+/// journal run one at a time, so two account lists never sweep orphans
+/// concurrently. A failure ends the attempt: unrecovered accounts keep their
+/// writes refused.
+Future<void> recoverAiWriteJournalAfterAccountsLoaded(
+  SessionController session,
+  AiWriteJournal journal,
+) async {
+  if (!session.accountsLoaded) {
+    final loaded = Completer<void>();
+    void listener() {
+      if (session.accountsLoaded && !loaded.isCompleted) loaded.complete();
+    }
+
+    session.addListener(listener);
+    try {
+      await loaded.future;
+    } finally {
+      session.removeListener(listener);
+    }
+  }
+  Set<String> current() =>
+      session.accounts.map((account) => account.key).toSet();
+  while (session.accountsLoaded) {
+    Set<String>? accounts;
+    final previous = _journalRecoveryTails[journal] ?? Future<void>.value();
+    final recovery = previous.then((_) {
+      if (!session.accountsLoaded) return Future<void>.value();
+      // Read when this run starts, not when it was queued.
+      final loaded = accounts = current();
+      return journal.recoverAfterAccountsLoaded(loaded);
+    });
+    final tail = recovery.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    );
+    _journalRecoveryTails[journal] = tail;
+    try {
+      await recovery;
+    } on Object {
+      return;
+    } finally {
+      if (identical(_journalRecoveryTails[journal], tail)) {
+        _journalRecoveryTails[journal] = null;
+      }
+    }
+    // A run skipped while the list reloaded repeats once it is loaded again
+    // and otherwise stops, as history recovery does.
+    if (accounts != null && setEquals(accounts, current())) return;
+  }
 }
 
 class GitLabMobileApp extends ConsumerStatefulWidget {

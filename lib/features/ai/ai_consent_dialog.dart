@@ -622,6 +622,8 @@ String _categoryLabel(String category) => switch (category) {
   'discussion' ||
   'discussions' => l10n.aiConsentCategoryComments,
   'tool_read' || 'tool_reads' => l10n.aiConsentCategoryToolReads,
+  'write_results' => l10n.aiConsentCategoryWriteResults,
+  'attachment_metadata' => l10n.aiConsentCategoryAttachmentMetadata,
   _ => l10n.aiConsentCategoryOther,
 };
 

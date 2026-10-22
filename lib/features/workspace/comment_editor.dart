@@ -34,7 +34,6 @@ Future<bool> openCommentEditor(
   ValueChanged<Route<dynamic>>? onRoute,
 }) {
   if (!isCurrent()) return Future.value(false);
-  final path = ['projects', '${project.id}', resource, '$iid'];
   return openEditor(
     context,
     account: account,
@@ -64,11 +63,7 @@ Future<bool> openCommentEditor(
         throw const ApiFailure(FailureKind.cancelled);
       }
       try {
-        await api.writeRecord(
-          'POST',
-          [...path, 'notes'],
-          {'body': values['body']},
-        );
+        await api.createNote(project.id, resource, iid, values['body']!);
       } on ApiFailure catch (failure) {
         // A lost acknowledgement or server error cannot prove that GitLab
         // did not accept the comment. Preserve the local replay fence.

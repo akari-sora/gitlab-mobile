@@ -9,11 +9,34 @@ import 'package:cryptography/dart.dart';
 import '../../core/ai/ai_display.dart';
 import '../../core/ai/ai_events.dart';
 
+const int aiHistoryLegacyDisplayFormatVersion = 1;
+const int aiHistoryDisplayFormatVersion = 2;
+
+/// The file/index owner must store this version for its downgrade fast path.
+int aiHistoryDisplayVersionFor(AiConversation conversation) =>
+    conversation.items.any(
+      (item) => item is AiToolRunItem && item.writeStatus != null,
+    )
+    ? aiHistoryDisplayFormatVersion
+    : aiHistoryLegacyDisplayFormatVersion;
+
 /// Only this display projection crosses the persistence boundary. Provider
 /// transcript entries, reasoning and opaque replay data have no encoder here.
-Map<String, Object?> aiDisplayJson(AiConversation conversation) => {
-  'items': conversation.items.map(_itemJson).toList(),
-};
+Map<String, Object?> aiDisplayJson(AiConversation conversation) {
+  final usesWriteFormat =
+      aiHistoryDisplayVersionFor(conversation) == aiHistoryDisplayFormatVersion;
+  return {
+    if (usesWriteFormat) 'formatVersion': aiHistoryDisplayFormatVersion,
+    'items': conversation.items.map((item) {
+      if (item is AiToolRunItem &&
+          item.writeStatus != null &&
+          item.status != item.writeStatus!.legacyStatus) {
+        throw const AiHistoryUnsupportedFormat();
+      }
+      return _itemJson(item);
+    }).toList(),
+  };
+}
 
 final class AiHistoryUnsupportedFormat implements Exception {
   const AiHistoryUnsupportedFormat([
@@ -109,6 +132,8 @@ Map<String, Object?> _itemJson(AiChatItem item) => switch (item) {
     'resultExcerpt': _excerpt(item.resultExcerpt),
     if (item.confidential) 'confidential': true,
     if (item.internal) 'internal': true,
+    if (item.writeStatus != null)
+      'writeStatus': _writeStatusCode(item.writeStatus!),
   },
   AiNoticeItem(:final kind, :final count) => {
     'kind': 'notice',
@@ -119,7 +144,19 @@ Map<String, Object?> _itemJson(AiChatItem item) => switch (item) {
 
 /// Throws on corrupt/unknown fields instead of projecting malformed records.
 AiConversation aiDisplayFromJson(Map<String, Object?> json) {
-  _rejectUnknownKeys(json, const {'items'});
+  final formatVersion = json.containsKey('formatVersion')
+      ? json['formatVersion']
+      : aiHistoryLegacyDisplayFormatVersion;
+  if (formatVersion != aiHistoryLegacyDisplayFormatVersion &&
+      formatVersion != aiHistoryDisplayFormatVersion) {
+    throw const AiHistoryUnsupportedFormat();
+  }
+  _rejectUnknownKeys(
+    json,
+    formatVersion == aiHistoryDisplayFormatVersion
+        ? const {'formatVersion', 'items'}
+        : const {'items'},
+  );
   final items = json['items'];
   if (items is! List<Object?>) throw const AiHistoryUnsupportedFormat();
   return AiConversation(
@@ -223,23 +260,48 @@ AiConversation aiDisplayFromJson(Map<String, Object?> json) {
                 : false,
           );
         case 'tool':
-          _rejectUnknownKeys(item, const {
-            'kind',
-            'name',
-            'argsPreview',
-            'status',
-            'sizeChars',
-            'provenance',
-            'truncated',
-            'blocked',
-            'resultExcerpt',
-            'confidential',
-            'internal',
-          });
+          _rejectUnknownKeys(
+            item,
+            formatVersion == aiHistoryDisplayFormatVersion
+                ? const {
+                    'kind',
+                    'name',
+                    'argsPreview',
+                    'status',
+                    'sizeChars',
+                    'provenance',
+                    'truncated',
+                    'blocked',
+                    'resultExcerpt',
+                    'confidential',
+                    'internal',
+                    'writeStatus',
+                  }
+                : const {
+                    'kind',
+                    'name',
+                    'argsPreview',
+                    'status',
+                    'sizeChars',
+                    'provenance',
+                    'truncated',
+                    'blocked',
+                    'resultExcerpt',
+                    'confidential',
+                    'internal',
+                  },
+          );
+          final status = _toolStatus(_string(item, 'status', 32));
+          final writeStatus = item.containsKey('writeStatus')
+              ? _writeStatus(_string(item, 'writeStatus', 32))
+              : null;
+          if (writeStatus != null && status != writeStatus.legacyStatus) {
+            throw const AiHistoryUnsupportedFormat();
+          }
           return AiToolRunItem(
             name: _string(item, 'name', 256),
             argsPreview: _string(item, 'argsPreview', 8192, bytes: true),
-            status: _toolStatus(_string(item, 'status', 32)),
+            status: status,
             sizeChars: _integer(item, 'sizeChars'),
             provenance: _string(item, 'provenance', 2048),
             truncated: _boolean(item, 'truncated'),
@@ -251,6 +313,7 @@ AiConversation aiDisplayFromJson(Map<String, Object?> json) {
                 ? _boolean(item, 'internal')
                 : false,
             resultExcerpt: _string(item, 'resultExcerpt', 8192, bytes: true),
+            writeStatus: writeStatus,
           );
         case 'notice':
           _rejectUnknownKeys(item, const {'kind', 'notice', 'count'});
@@ -345,6 +408,27 @@ AiToolRunStatus _toolStatus(String value) => switch (value) {
   'completed' => AiToolRunStatus.completed,
   'failed' => AiToolRunStatus.failed,
   'skipped' => AiToolRunStatus.skipped,
+  _ => throw const AiHistoryUnsupportedFormat(),
+};
+
+String _writeStatusCode(AiWriteResultStatus value) => switch (value) {
+  AiWriteResultStatus.notExecuted => 'not_executed',
+  AiWriteResultStatus.succeeded => 'succeeded',
+  AiWriteResultStatus.readbackConfirmed => 'readback_confirmed',
+  AiWriteResultStatus.failedCertain => 'failed_certain',
+  AiWriteResultStatus.writeUncertain => 'write_uncertain',
+  AiWriteResultStatus.resolvedByUser => 'resolved_by_user',
+  AiWriteResultStatus.noChange => 'no_change',
+};
+
+AiWriteResultStatus _writeStatus(String value) => switch (value) {
+  'not_executed' => AiWriteResultStatus.notExecuted,
+  'succeeded' => AiWriteResultStatus.succeeded,
+  'readback_confirmed' => AiWriteResultStatus.readbackConfirmed,
+  'failed_certain' => AiWriteResultStatus.failedCertain,
+  'write_uncertain' => AiWriteResultStatus.writeUncertain,
+  'resolved_by_user' => AiWriteResultStatus.resolvedByUser,
+  'no_change' => AiWriteResultStatus.noChange,
   _ => throw const AiHistoryUnsupportedFormat(),
 };
 

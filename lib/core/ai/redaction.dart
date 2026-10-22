@@ -14,6 +14,39 @@ const _redactionMarkers = [
   _privateKeyFragment,
 ];
 
+final _literalUploadPlaceholder = RegExp(
+  r'\[\[(?:upload|attachment):[^\n\]]{0,200}\]\]|\[\[(?:upload|attachment):',
+);
+final _appUploadPlaceholder = RegExp(r'^\[\[upload:u-[0-9]+\]\]$');
+final _appAttachmentPlaceholder = RegExp(r'^\[\[attachment:att-[0-9]+\]\]$');
+final _uploadSecretInText = RegExp(
+  'uploads/([0-9a-fA-F]{32})(?![0-9a-fA-F])',
+  caseSensitive: false,
+);
+final _partialUploadSuffix = RegExp(
+  r'uploads/[0-9a-fA-F]{1,32}/?$',
+  caseSensitive: false,
+);
+
+/// Replaces source-authored `[[upload:` and `[[attachment:` tokens with the
+/// ordinary redaction marker. App-issued ids survive only when [keepAppIds]
+/// is set, and only when the token is exactly `[[upload:u-<n>]]` or
+/// `[[attachment:att-<n>]]`.
+String neutralizeUploadPlaceholderLiterals(
+  String input, {
+  bool keepAppIds = false,
+}) {
+  return input.replaceAllMapped(_literalUploadPlaceholder, (match) {
+    final token = match.group(0)!;
+    if (keepAppIds &&
+        (_appUploadPlaceholder.hasMatch(token) ||
+            _appAttachmentPlaceholder.hasMatch(token))) {
+      return token;
+    }
+    return _redacted;
+  });
+}
+
 abstract interface class KnownSecretsSource {
   Iterable<String> get current;
 }
@@ -121,20 +154,40 @@ final class Redactor {
 
   /// Redacts a complete source (a whole file, a finished job's whole trace).
   /// Redact a source before cutting excerpts from it.
-  RedactionResult redactSource(String input) => _redact(input, false);
+  ///
+  /// [keepAppPlaceholders] leaves exact `[[upload:u-<n>]]` and
+  /// `[[attachment:att-<n>]]` tokens in place. The default neutralizes every
+  /// source-authored `[[upload:` and `[[attachment:` token first, then masks
+  /// upload secrets. The upload placeholder table neutralizes source tokens
+  /// itself, inserts app ids, then calls this with the flag set.
+  RedactionResult redactSource(
+    String input, {
+    bool keepAppPlaceholders = false,
+  }) => _redact(input, false, keepAppPlaceholders);
 
   /// Redacts text cut from a larger source at either end (a trace read from
   /// an offset, a diff hunk, a line range). Markers alone cannot tell which
   /// key a cut BEGIN or END belongs to, so a fragment holding a private-key
   /// label, or a first or last line that looks like a cut marker, is
   /// withheld whole.
-  RedactionResult redactFragment(String input) => _redact(input, true);
+  RedactionResult redactFragment(
+    String input, {
+    bool keepAppPlaceholders = false,
+  }) => _redact(input, true, keepAppPlaceholders);
 
-  RedactionResult _redact(String input, bool fragment) {
+  RedactionResult _redact(
+    String input,
+    bool fragment,
+    bool keepAppPlaceholders,
+  ) {
     try {
+      final source = neutralizeUploadPlaceholderLiterals(
+        input,
+        keepAppIds: keepAppPlaceholders,
+      );
       _refreshSecrets();
       _compilePatterns();
-      if (fragment && _looksLikeKeyFragment(input)) {
+      if (fragment && _looksLikeKeyFragment(source)) {
         if (_knownSecrets.any(_privateKeyFragment.contains)) {
           throw const AiFailure(AiFailureKind.policyBlocked);
         }
@@ -152,10 +205,11 @@ final class Redactor {
         }
       }
       ranges
-        ..addAll(_knownSecretRanges(input, _knownSecrets))
-        ..addAll(_knownSecretRanges(input, _patternAliases.values))
-        ..addAll(_patternRanges(input));
-      final result = _replaceRanges(input, ranges);
+        ..addAll(_knownSecretRanges(source, _knownSecrets))
+        ..addAll(_knownSecretRanges(source, _patternAliases.values))
+        ..addAll(_patternRanges(source))
+        ..addAll(_uploadSecretRanges(source));
+      final result = _replaceRanges(source, ranges);
       // A replacement must not introduce a known secret across its boundaries.
       if (_knownSecrets.any(result.text.contains)) {
         throw const AiFailure(AiFailureKind.policyBlocked);
@@ -185,8 +239,14 @@ final class Redactor {
 
   /// Redacts a retained prefix and removes its longest trailing partial known
   /// secret. Only the string at an actual cut may use this operation.
-  RedactionResult redactCutEnd(String input) {
-    final result = redactSource(input);
+  RedactionResult redactCutEnd(
+    String input, {
+    bool keepAppPlaceholders = false,
+  }) {
+    final result = redactSource(
+      input,
+      keepAppPlaceholders: keepAppPlaceholders,
+    );
     var trim = 0;
     for (final secret in _knownSecrets) {
       final length = _partialSecretSuffixLength(result.text, secret);
@@ -199,6 +259,8 @@ final class Redactor {
           _redactionMarkers.where(alias.startsWith).firstOrNull?.length ?? 0;
       if (length > markerLength && length > trim) trim = length;
     }
+    final uploadTrim = _partialUploadSuffixLength(result.text);
+    if (uploadTrim > trim) trim = uploadTrim;
     return RedactionResult(
       result.text.substring(0, result.text.length - trim),
       result.redactions + (trim > 0 ? 1 : 0),
@@ -543,3 +605,70 @@ Iterable<_RedactionRange> _pemRanges(String input) sync* {
     );
   }
 }
+
+/// Spans [Redactor] replaces for a GitLab upload secret, including the URL
+/// or path prefix and a following filename. Offsets refer to [input].
+List<({int start, int end})> uploadSecretMaskSpans(String input) => [
+  for (final range in _uploadSecretRanges(input))
+    (start: range.start, end: range.end),
+];
+
+int _partialUploadSuffixLength(String text) {
+  final match = _partialUploadSuffix.firstMatch(text);
+  if (match == null) return 0;
+  return match.end - match.start;
+}
+
+/// Masks `uploads/` plus 32 hex digits, the following filename when present,
+/// and the URL or path prefix that leads into that secret. A longer hex run
+/// is not a GitLab upload secret.
+Iterable<_RedactionRange> _uploadSecretRanges(String input) sync* {
+  for (final match in _uploadSecretInText.allMatches(input)) {
+    var end = match.end;
+    if (end < input.length && input.codeUnitAt(end) == 0x2f) {
+      end++;
+      while (end < input.length &&
+          _isUploadFilenameUnit(input.codeUnitAt(end))) {
+        end++;
+      }
+    }
+    final start = _uploadUrlStart(input, match.start);
+    if (start < end) {
+      yield _RedactionRange(start: start, end: end);
+    }
+  }
+}
+
+int _uploadUrlStart(String input, int start) {
+  var index = start;
+  while (index > 0) {
+    final unit = input.codeUnitAt(index - 1);
+    if (unit <= 0x20 ||
+        unit == 0x22 ||
+        unit == 0x27 ||
+        unit == 0x28 ||
+        unit == 0x29 ||
+        unit == 0x3c ||
+        unit == 0x3e ||
+        unit == 0x5b ||
+        unit == 0x5d) {
+      break;
+    }
+    index--;
+  }
+  return index;
+}
+
+bool _isUploadFilenameUnit(int unit) =>
+    unit > 0x20 &&
+    unit != 0x22 &&
+    unit != 0x23 &&
+    unit != 0x27 &&
+    unit != 0x28 &&
+    unit != 0x29 &&
+    unit != 0x3c &&
+    unit != 0x3e &&
+    unit != 0x3f &&
+    unit != 0x5b &&
+    unit != 0x5d &&
+    unit != 0x7f;

@@ -340,6 +340,7 @@ final class GitLabApi {
     bool allowRangeNotSatisfiable = false,
     bool graphQuery = false,
     bool graphMutation = false,
+    Duration? sendTimeout,
   }) async {
     if (_closed) throw const ApiFailure(FailureKind.cancelled);
     if ((graphQuery && graphMutation) || (graphQuery || graphMutation
@@ -368,6 +369,7 @@ final class GitLabApi {
         options: Options(
           method: method,
           responseType: ResponseType.stream,
+          sendTimeout: sendTimeout,
           contentType: data == null || data is FormData
               ? null
               : Headers.jsonContentType,
@@ -400,7 +402,20 @@ final class GitLabApi {
       if (status < 200 || status >= 300) {
         if (status == 401 || status == 403 || status == 404) clearReadCache();
         if (body != null) await body.stream.listen((_) {}).cancel();
-        if (status == 401 && !retried && await _refreshOAuth()) {
+        var refreshed = false;
+        if (status == 401 && !retried) {
+          try {
+            refreshed = await _refreshOAuth();
+          } catch (_) {
+            // Keep the mutation's known refusal even if refresh/persistence
+            // fails with an unrelated transport or storage exception.
+            if (writing) {
+              throw _knownMutation401(refreshSucceeded: false);
+            }
+            rethrow;
+          }
+        }
+        if (refreshed) {
           if (method == 'GET' || method == 'HEAD' || graphQuery) {
             return await _read(
               uri,
@@ -413,7 +428,7 @@ final class GitLabApi {
               graphQuery: graphQuery,
             );
           }
-          throw const ApiFailure(FailureKind.writeUncertain);
+          throw _knownMutation401(refreshSucceeded: true);
         }
         if (status == 429) {
           final text = response.headers.value('retry-after');

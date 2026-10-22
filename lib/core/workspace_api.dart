@@ -2,6 +2,57 @@ part of 'gitlab_api.dart';
 
 typedef Json = Map<String, dynamic>;
 
+const _issueCreateFields = {
+  'title', 'description', 'labels', 'assignee_ids', 'milestone_id',
+  'confidential', 'severity', 'issue_type',
+};
+const _issueUpdateFields = {
+  'title', 'description', 'labels', 'assignee_ids', 'milestone_id',
+  'confidential', 'severity', 'state_event',
+};
+const _mergeRequestCreateFields = {
+  'title', 'description', 'labels', 'assignee_ids', 'milestone_id',
+  'reviewer_ids', 'source_branch', 'target_branch',
+};
+const _mergeRequestUpdateFields = {
+  'title', 'description', 'labels', 'assignee_ids', 'milestone_id',
+  'reviewer_ids', 'state_event',
+};
+const _positionFields = {
+  'position_type', 'base_sha', 'start_sha', 'head_sha', 'old_path',
+  'new_path', 'old_line', 'new_line',
+};
+
+Json _allowedFields(Json fields, Set<String> allowed) {
+  if (!fields.keys.every(allowed.contains)) { throw const ApiFailure(FailureKind.validation); }
+  return fields;
+}
+
+String _issueOrMergeRequest(String resource) {
+  if (!const {'issues', 'merge_requests'}.contains(resource)) {
+    throw const ApiFailure(FailureKind.validation);
+  }
+  return resource;
+}
+
+Json? _allowedPosition(Json? position) =>
+  position == null ? null : _allowedFields(position, _positionFields);
+
+// ApiFailure stays the existing final presentation type. Weak, process-local
+// metadata preserves the two mutation-401 refresh outcomes without retaining
+// failures, changing their kind, or exposing refresh details in UI copy.
+final _mutation401ResultCodes = Expando<String>();
+
+String? gitLabMutation401ResultCode(ApiFailure failure) =>
+  _mutation401ResultCodes[failure];
+
+ApiFailure _knownMutation401({required bool refreshSucceeded}) {
+  const kind = FailureKind.writeUncertain;
+  final failure = ApiFailure(kind, status: 401);
+  _mutation401ResultCodes[failure] = refreshSucceeded ? 'refreshSucceeded' : 'sessionExpired';
+  return failure;
+}
+
 extension WorkspaceApi on GitLabApi {
   Future<Json> record(List<String> path, {Map<String, String>? query}) => _object(instance.api(path, query));
   Future<ApiPage<Json>> records(List<String> path, {Map<String, String> query = const {}, Uri? next}) {
@@ -88,11 +139,35 @@ extension WorkspaceApi on GitLabApi {
       return null;
     }
   }
-  Future<Json> createIssue(int project, Json fields) => writeRecord('POST', ['projects', '$project', 'issues'], fields);
-  Future<Json> updateIssue(int project, int iid, Json fields) => writeRecord('PUT', ['projects', '$project', 'issues', '$iid'], fields);
+  Future<Json> createIssue(int project, Json fields) {
+    _allowedFields(fields, _issueCreateFields);
+    final issueType = fields['issue_type'];
+    if (issueType != null && !const {'issue', 'task', 'incident'}.contains(issueType)) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    return writeRecord('POST', ['projects', '$project', 'issues'], fields);
+  }
+  Future<Json> updateIssue(int project, int iid, Json fields) {
+    _allowedFields(fields, _issueUpdateFields);
+    final stateEvent = fields['state_event'];
+    if (stateEvent != null && !const {'close', 'reopen'}.contains(stateEvent)) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    return writeRecord('PUT', ['projects', '$project', 'issues', '$iid'], fields);
+  }
   Future<void> deleteIssue(int project, int iid) => removeRecord(['projects', '$project', 'issues', '$iid']);
-  Future<Json> createMergeRequest(int project, Json fields) => writeRecord('POST', ['projects', '$project', 'merge_requests'], fields);
-  Future<Json> updateMergeRequest(int project, int iid, Json fields) => writeRecord('PUT', ['projects', '$project', 'merge_requests', '$iid'], fields);
+  Future<Json> createMergeRequest(int project, Json fields) {
+    _allowedFields(fields, _mergeRequestCreateFields);
+    return writeRecord('POST', ['projects', '$project', 'merge_requests'], fields);
+  }
+  Future<Json> updateMergeRequest(int project, int iid, Json fields) {
+    _allowedFields(fields, _mergeRequestUpdateFields);
+    final stateEvent = fields['state_event'];
+    if (stateEvent != null && !const {'close', 'reopen'}.contains(stateEvent)) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    return writeRecord('PUT', ['projects', '$project', 'merge_requests', '$iid'], fields);
+  }
   Future<void> deleteMergeRequest(int project, int iid) => removeRecord(['projects', '$project', 'merge_requests', '$iid']);
   Future<Json> approveMergeRequest(int project, int iid, String sha) =>
     writeRecord('POST', ['projects', '$project', 'merge_requests', '$iid', 'approve'], {'sha': sha});
@@ -117,10 +192,31 @@ extension WorkspaceApi on GitLabApi {
     writeRecord('POST', ['projects', '$project', 'merge_requests', '$iid', 'rebase'], {
       if (skipCi) 'skip_ci': true,
     });
+  Future<Json> unapproveMergeRequest(int project, int iid) => writeRecord('POST',
+    ['projects', '$project', 'merge_requests', '$iid', 'unapprove'], {});
+  Future<Json> createTodo(int project, String resource, int iid) => writeRecord('POST',
+    ['projects', '$project', _issueOrMergeRequest(resource), '$iid', 'todo'], {});
   Future<Json> createNote(int project, String resource, int iid, String body) =>
-    writeRecord('POST', ['projects', '$project', resource, '$iid', 'notes'], {'body': body});
+    writeRecord('POST', ['projects', '$project', _issueOrMergeRequest(resource), '$iid', 'notes'], {'body': body});
   Future<Json> updateNote(int project, String resource, int iid, int note, String body) =>
-    writeRecord('PUT', ['projects', '$project', resource, '$iid', 'notes', '$note'], {'body': body});
+    writeRecord('PUT', ['projects', '$project', _issueOrMergeRequest(resource), '$iid', 'notes', '$note'], {'body': body});
+  Future<Json> createDiscussion(int project, String resource, int iid, String body, {Json? position}) =>
+    writeRecord('POST', ['projects', '$project', _issueOrMergeRequest(resource), '$iid', 'discussions'],
+      {'body': body, 'position': ?_allowedPosition(position)});
+  Future<Json> createDiscussionNote(int project, String resource, int iid, String discussion, String body) =>
+    writeRecord('POST', ['projects', '$project', _issueOrMergeRequest(resource), '$iid', 'discussions', discussion, 'notes'],
+      {'body': body});
+  Future<Json> updateDiscussionNote(int project, String resource, int iid, String discussion, int note, String body) =>
+    writeRecord('PUT', ['projects', '$project', _issueOrMergeRequest(resource), '$iid', 'discussions', discussion, 'notes', '$note'],
+      {'body': body});
+  Future<Json> setDiscussionResolved(int project, String resource, int iid, String discussion, bool resolved) =>
+    writeRecord('PUT', ['projects', '$project', _issueOrMergeRequest(resource), '$iid', 'discussions', discussion],
+      {'resolved': resolved});
+  Future<Json> createDraftNote(int project, int iid, String note, {String? commitId, Json? position}) =>
+    writeRecord('POST', ['projects', '$project', 'merge_requests', '$iid', 'draft_notes'],
+      {'note': note, 'commit_id': ?commitId, 'position': ?_allowedPosition(position)});
+  Future<Json> updateDraftNote(int project, int iid, int note, String body) =>
+    writeRecord('PUT', ['projects', '$project', 'merge_requests', '$iid', 'draft_notes', '$note'], {'note': body});
   Future<void> deleteNote(int project, String resource, int iid, int note) =>
     removeRecord(['projects', '$project', resource, '$iid', 'notes', '$note']);
   Future<Json> applySuggestion(int suggestionId, {String? commitMessage}) =>
@@ -223,6 +319,52 @@ extension WorkspaceApi on GitLabApi {
   Future<Json> createRelease(int project, Json fields) => writeRecord('POST', ['projects', '$project', 'releases'], fields);
   Future<Json> updateRelease(int project, String tag, Json fields) => writeRecord('PUT', ['projects', '$project', 'releases', tag], fields);
   Future<void> deleteRelease(int project, String tag) => removeRecord(['projects', '$project', 'releases', tag]);
+  Future<Json> createLabel(int project, Json fields) {
+    _allowedFields(fields, const {'name', 'color', 'description'});
+    return writeRecord('POST', ['projects', '$project', 'labels'], fields);
+  }
+  Future<Json> updateLabel(int project, int label, Json fields) {
+    _allowedFields(fields, const {'name', 'color', 'description'});
+    return writeRecord('PUT', ['projects', '$project', 'labels', '$label'], fields);
+  }
+  Future<Json> createMilestone(int project, Json fields) {
+    _allowedFields(fields, const {'title', 'description', 'start_date', 'due_date'});
+    return writeRecord('POST', ['projects', '$project', 'milestones'], fields);
+  }
+  Future<Json> updateMilestone(int project, int milestone, Json fields) {
+    _allowedFields(fields, const {'title', 'description', 'start_date', 'due_date'});
+    return writeRecord('PUT', ['projects', '$project', 'milestones', '$milestone'], fields);
+  }
+  Future<Json> setMilestoneState(int project, int milestone, String stateEvent) {
+    if (!const {'activate', 'close'}.contains(stateEvent)) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    return writeRecord('PUT', ['projects', '$project', 'milestones', '$milestone'], {'state_event': stateEvent});
+  }
+  Future<Json> createBoard(int project, String name) =>
+    writeRecord('POST', ['projects', '$project', 'boards'], {'name': name});
+  Future<Json> renameBoard(int project, int board, String name) =>
+    writeRecord('PUT', ['projects', '$project', 'boards', '$board'], {'name': name});
+  Future<Json> setBoardSystemListHidden(int project, int board, String list, bool hidden) {
+    final field = switch (list) {
+      'backlog' => 'hide_backlog_list',
+      'closed' => 'hide_closed_list',
+      _ => throw const ApiFailure(FailureKind.validation),
+    };
+    return writeRecord('PUT', ['projects', '$project', 'boards', '$board'], {field: hidden});
+  }
+  Future<Json> createBoardList(int project, int board, int labelId) =>
+    writeRecord('POST', ['projects', '$project', 'boards', '$board', 'lists'], {'label_id': labelId});
+  Future<Json> moveBoardList(int project, int board, int list, int position) =>
+    writeRecord('PUT', ['projects', '$project', 'boards', '$board', 'lists', '$list'], {'position': position});
+  Future<Json> moveBoardCard(int project, int iid, Json fields) {
+    _allowedFields(fields, const {'labels', 'state_event'});
+    final stateEvent = fields['state_event'];
+    if (stateEvent != null && !const {'close', 'reopen'}.contains(stateEvent)) {
+      throw const ApiFailure(FailureKind.validation);
+    }
+    return writeRecord('PUT', ['projects', '$project', 'issues', '$iid'], fields);
+  }
   Future<Json> markTodoDone(int id) => writeRecord('POST', ['todos', '$id', 'mark_as_done'], {});
 
   /// `POST /todos/mark_as_done` answers 204 with no body.
@@ -293,15 +435,15 @@ extension WorkspaceApi on GitLabApi {
   Future<ApiPage<Json>> awardEmoji(int project, String resource, int iid, {int? note, Uri? next}) =>
       records(_awardPath(project, resource, iid, note), query: {'per_page': '100'}, next: next);
   Future<Json> addAwardEmoji(int project, String resource, int iid, String name, {int? note}) =>
-      writeRecord('POST', _awardPath(project, resource, iid, note), {'name': name});
+      writeRecord('POST', _awardPath(project, _issueOrMergeRequest(resource), iid, note), {'name': name});
   Future<void> removeAwardEmoji(int project, String resource, int iid, int awardId, {int? note}) =>
-      removeRecord([..._awardPath(project, resource, iid, note), '$awardId']);
+      removeRecord([..._awardPath(project, _issueOrMergeRequest(resource), iid, note), '$awardId']);
 
   /// `POST .../subscribe` and `.../unsubscribe`. GitLab answers 304 when the
   /// state already matches, which the client reports as success.
   Future<void> setSubscribed(int project, String resource, int iid, bool subscribed) async {
     try {
-      await _read(instance.api(['projects', '$project', resource, '$iid', subscribed ? 'subscribe' : 'unsubscribe']),
+      await _read(instance.api(['projects', '$project', _issueOrMergeRequest(resource), '$iid', subscribed ? 'subscribe' : 'unsubscribe']),
         method: 'POST');
     } on ApiFailure catch (failure) {
       if (failure.status != 304) rethrow;
@@ -367,6 +509,7 @@ extension WorkspaceApi on GitLabApi {
     required String filename,
     required List<int> bytes,
     String? contentType,
+    Duration? sendTimeout,
   }) async {
     if (bytes.length > GitLabApi.maxUploadBytes) {
       throw const ApiFailure(FailureKind.attachmentTooLarge);
@@ -388,6 +531,7 @@ extension WorkspaceApi on GitLabApi {
         instance.api(['projects', '$project', 'uploads']),
         method: 'POST',
         data: form,
+        sendTimeout: sendTimeout,
       );
       return objectJson(jsonDecode(utf8.decode(result.bytes)));
     } on FormatException {

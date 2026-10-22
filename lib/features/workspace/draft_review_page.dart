@@ -384,10 +384,12 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
         _requireCurrent(scope);
         await _verifyHead(scope);
         _requireCurrent(scope);
-        await scope.api.writeRecord('POST', scope.draftPath, {
-          'note': values['note']!.trim(),
-          'commit_id': scope.headSha,
-        });
+        await scope.api.createDraftNote(
+          scope.project.id,
+          scope.iid,
+          values['note']!.trim(),
+          commitId: scope.headSha,
+        );
         _requireCurrent(scope);
       },
     );
@@ -434,10 +436,11 @@ class _DraftReviewPageState extends State<DraftReviewPage> {
         if (valueText(current, 'note') != original) {
           throw const ApiFailure(FailureKind.conflict);
         }
-        await scope.api.writeRecord(
-          'PUT',
-          [...scope.draftPath, '$id'],
-          {'note': values['note']!.trim()},
+        await scope.api.updateDraftNote(
+          scope.project.id,
+          scope.iid,
+          id,
+          values['note']!.trim(),
         );
         _requireCurrent(scope);
       },

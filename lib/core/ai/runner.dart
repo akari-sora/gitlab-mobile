@@ -12,6 +12,7 @@ import 'ai_transcript.dart';
 import 'app_text.dart';
 import 'redaction.dart';
 import 'prompts.dart';
+import 'tools/write_coordinator.dart';
 import 'wire/wire_format.dart';
 
 /// The owner supplies live getters; no account or API secret enters the core.
@@ -93,6 +94,11 @@ final class AiRunner {
     required void Function() close,
     required void Function() cancelActive,
     List<AiToolSpec> tools = const [],
+    this.writeCoordinator,
+    this.currentTools,
+    this.toolPolicyRevision,
+    this.onAwaitingApproval,
+    DateTime Function()? now,
     this.executeTool,
     this.resetToolBudget,
     this.beginToolTurn,
@@ -115,6 +121,7 @@ final class AiRunner {
        _complete = complete,
        _close = close,
        _cancelActive = cancelActive,
+       _now = now ?? DateTime.now,
        tools = List.unmodifiable(config.toolsEnabled ? tools : <AiToolSpec>[]),
        context = List.unmodifiable(context),
        _redactor = Redactor(secrets: secrets),
@@ -140,6 +147,11 @@ final class AiRunner {
   void Function() _close;
   void Function() _cancelActive;
   final List<AiToolSpec> tools;
+  final AiWriteCoordinator? writeCoordinator;
+  final List<AiToolSpec> Function()? currentTools;
+  final Object? Function()? toolPolicyRevision;
+  final void Function(bool awaiting)? onAwaitingApproval;
+  final DateTime Function() _now;
   final Future<AiToolResult> Function(AiToolCall)? executeTool;
   final void Function()? resetToolBudget;
   final void Function()? beginToolTurn;
@@ -167,15 +179,21 @@ final class AiRunner {
   var _verifiedLength = -1;
   var _epoch = 0;
   var _running = false;
-  var _pendingRead = false;
+  var _pendingGitLab = false;
+  var _pendingGitLabWrite = false;
   var _needsProjection = false;
   bool _withheld;
   Completer<void>? _stopSignal;
   AiRunEnd _stopReason = AiRunEnd.stopped;
   String _segmentSystem = '';
   List<AiToolSpec> _segmentTools = const [];
+  List<AiToolSpec> _nextTools = const [];
+  String? _segmentToolFingerprint;
+  Object? _segmentToolPolicyRevision;
+  Object? _nextToolPolicyRevision;
   List<AiContextBlock> _segmentContext = const [];
   List<AiContextBlock> _sentContext = const [];
+  _ActiveRunDeadline? _activeDeadline;
 
   /// The redacted context blocks attached to the last run's user message, as
   /// last redacted before sending: the page context, or a conversation
@@ -197,6 +215,8 @@ final class AiRunner {
   /// Called by the settings/session listener as well as at every checkpoint.
   /// A changed recipient or revoked consent immediately closes the transport.
   void checkNow() {
+    writeCoordinator?.checkNow();
+    _activeDeadline?.checkNow();
     if (_running && !guard.valid(config.recipientRevision)) {
       stop(AiRunEnd.stoppedBySettings);
     }
@@ -205,6 +225,7 @@ final class AiRunner {
   void stop([AiRunEnd reason = AiRunEnd.stopped]) {
     _stopReason = reason;
     _epoch++;
+    if (_running) writeCoordinator?.stop(_coordinatorStopReason(reason));
     if (_stopSignal case final signal? when !signal.isCompleted) {
       signal.complete();
     }
@@ -258,13 +279,24 @@ final class AiRunner {
     _needsProjection = true;
   }
 
-  Future<AiRunResult> run(String userText) async {
+  /// [userText] is what the model receives as the user turn. The chat
+  /// controller appends its attachment-metadata block to it.
+  /// [bindingUtterance] is what write target binding and intent read, and
+  /// the request a proposal card shows; it defaults to [userText]. The
+  /// controller passes the user's own text, so a filename in that block
+  /// never binds a target or authorizes a write.
+  Future<AiRunResult> run(String userText, {String? bindingUtterance}) async {
     if (_running) throw StateError('A runner has one active send.');
     _running = true;
     _sentContext = const [];
     final epoch = ++_epoch;
     _stopSignal = Completer<void>();
-    final timer = Timer(runDeadline, () => stop(AiRunEnd.failed));
+    final deadline = _ActiveRunDeadline(
+      duration: runDeadline,
+      now: _now,
+      onExpire: () => stop(AiRunEnd.failed),
+    )..start();
+    _activeDeadline = deadline;
     var modelCalls = 0;
     var toolCalls = 0;
     var outputChars = 0;
@@ -278,9 +310,14 @@ final class AiRunner {
     AiEntry? beforeFinishingNote;
 
     AiToolResult synthetic(AiToolCall call, String reason) {
+      final coordinator = writeCoordinator;
+      final recorded = coordinator is AiWriteStateSource
+          ? (coordinator as AiWriteStateSource).recordedOutcomeFor(call.id)
+          : null;
+      final original = recorded?.toToolResult(call) ?? _synthetic(call, reason);
       String safe;
       try {
-        safe = _redact(_synthetic(call, reason).content);
+        safe = _redact(original.content);
       } on Object {
         // Pairing must survive a redactor refusing even its own placeholders.
         safe = '';
@@ -293,8 +330,8 @@ final class AiRunner {
         callId: call.id,
         name: call.name,
         data: data,
-        isError: true,
-        notExecuted: true,
+        isError: original.isError,
+        notExecuted: recorded == null || original.notExecuted,
       );
     }
 
@@ -321,6 +358,8 @@ final class AiRunner {
     }
 
     try {
+      writeCoordinator?.beginRun(bindingUtterance ?? userText);
+      _refreshToolPolicy();
       _check(epoch);
       await _refresh(epoch);
       if (actualInputTokens + estimatedInputTokens >= conversationTokenCap) {
@@ -524,6 +563,8 @@ final class AiRunner {
             return result(exitReason);
           }
           beginToolTurn?.call();
+          writeCoordinator?.beginTurn();
+          var previousWriteIncomplete = false;
           for (var index = 0; index < calls.length; index++) {
             _check(epoch);
             final tc = calls[index];
@@ -534,35 +575,71 @@ final class AiRunner {
                 arguments: _displayArguments(tc.arguments),
               ),
             );
+            final handlesWrite = writeCoordinator?.handles(tc.name) ?? false;
+            if (handlesWrite && previousWriteIncomplete) {
+              results.add(synthetic(tc, 'previousWriteIncomplete'));
+              _notifyToolResult(results.last);
+              continue;
+            }
             if (index >= 4 || toolCalls >= 12 || outputChars >= 120000) {
+              previousWriteIncomplete |= handlesWrite;
               results.add(synthetic(tc, 'budget'));
               _notifyToolResult(results.last);
               continue;
             }
-            if (_pendingRead || executeTool == null || tools.isEmpty) {
+            if (_pendingGitLab ||
+                (!handlesWrite &&
+                    (executeTool == null || _nextTools.isEmpty))) {
+              previousWriteIncomplete |= handlesWrite;
               results.add(
-                synthetic(tc, _pendingRead ? 'read_pending' : 'unavailable'),
+                synthetic(
+                  tc,
+                  _pendingGitLab
+                      ? _pendingGitLabWrite
+                            ? 'write_pending'
+                            : 'read_pending'
+                      : 'unavailable',
+                ),
               );
               _notifyToolResult(results.last);
               continue;
             }
             toolCalls++;
-            _pendingRead = true;
-            // Keep the underlying read owned until it settles. A soft timeout
-            // or stop never grants permission to start a second read.
-            final pending = Future<AiToolResult>.sync(() => executeTool!(tc));
+            _pendingGitLab = true;
+            _pendingGitLabWrite = handlesWrite;
+            // Keep the underlying GitLab operation owned until it settles. A
+            // read soft timeout or run stop never permits a second operation.
+            final pending = handlesWrite
+                ? Future<AiToolResult>.sync(
+                    () async => (await writeCoordinator!.execute(
+                      tc,
+                      onAwaitingApproval: (awaiting) {
+                        deadline.setPaused(awaiting);
+                        try {
+                          onAwaitingApproval?.call(awaiting);
+                        } on Object {
+                          // UI observers cannot alter approval or deadlines.
+                        }
+                      },
+                    )).toToolResult(tc),
+                  )
+                : Future<AiToolResult>.sync(() => executeTool!(tc));
             unawaited(
               pending.then<void>(
-                (_) => _pendingRead = false,
+                (_) {
+                  _pendingGitLab = false;
+                  _pendingGitLabWrite = false;
+                },
                 onError: (Object _, StackTrace _) {
-                  _pendingRead = false;
+                  _pendingGitLab = false;
+                  _pendingGitLabWrite = false;
                 },
               ),
             );
             AiToolResult toolResult;
             try {
               toolResult = await _interruptible(
-                pending.timeout(toolDeadline),
+                handlesWrite ? pending : pending.timeout(toolDeadline),
                 epoch,
               );
             } on TimeoutException {
@@ -570,8 +647,13 @@ final class AiRunner {
             } on _RunStopped {
               rethrow;
             } on Object {
-              toolResult = _synthetic(tc, 'read_failed');
+              toolResult = _synthetic(
+                tc,
+                handlesWrite ? 'write_failed' : 'read_failed',
+              );
             }
+            previousWriteIncomplete |=
+                handlesWrite && (toolResult.isError || toolResult.notExecuted);
             _check(epoch);
             await _refresh(epoch);
             _withheld |= toolResult.withheldPrivateKeyContext;
@@ -601,8 +683,7 @@ final class AiRunner {
                   toolResult.truncated || clipped.length < content.length,
               blockedSensitive: toolResult.blockedSensitive,
               notExecuted: toolResult.notExecuted,
-              readConfidential:
-                  successfulRead && toolResult.readConfidential,
+              readConfidential: successfulRead && toolResult.readConfidential,
               readInternal: successfulRead && toolResult.readInternal,
             );
             results.add(safeResult);
@@ -657,7 +738,8 @@ final class AiRunner {
         failure: const AiFailure(AiFailureKind.policyBlocked),
       );
     } finally {
-      timer.cancel();
+      deadline.dispose();
+      if (identical(_activeDeadline, deadline)) _activeDeadline = null;
       _running = false;
       _stopSignal = null;
     }
@@ -707,7 +789,7 @@ final class AiRunner {
   AiSegment _newSegment(String userText, {AiSegment? previous}) {
     _segmentSystem = _redact(system);
     _segmentTools = [
-      for (final tool in tools)
+      for (final tool in _nextTools)
         AiToolSpec(
           name: tool.name,
           description: _redact(tool.description),
@@ -743,8 +825,22 @@ final class AiRunner {
     _segment = next;
     _verifiedSecrets = null;
     _verifiedLength = -1;
+    _segmentToolFingerprint = _toolFingerprint(_nextTools);
+    _segmentToolPolicyRevision = _nextToolPolicyRevision;
     _needsProjection = false;
     return next;
+  }
+
+  void _refreshToolPolicy() {
+    _nextTools = List.unmodifiable(
+      config.toolsEnabled ? currentTools?.call() ?? tools : <AiToolSpec>[],
+    );
+    _nextToolPolicyRevision = toolPolicyRevision?.call();
+    if (_segment != null &&
+        (_segmentToolFingerprint != _toolFingerprint(_nextTools) ||
+            _segmentToolPolicyRevision != _nextToolPolicyRevision)) {
+      _needsProjection = true;
+    }
   }
 
   AiRequestPlan _plan(AiSegment seg, {bool finishing = false}) => AiRequestPlan(
@@ -912,6 +1008,99 @@ final class _RunStopped implements Exception {
   const _RunStopped(this.reason);
   final AiRunEnd reason;
 }
+
+String _toolFingerprint(List<AiToolSpec> tools) => jsonEncode([
+  for (final tool in tools)
+    {
+      'name': tool.name,
+      'description': tool.description,
+      'parameters': tool.parameters,
+    },
+]);
+
+final class _ActiveRunDeadline {
+  _ActiveRunDeadline({
+    required this.duration,
+    required this.now,
+    required this.onExpire,
+  }) : _remaining = duration;
+
+  final Duration duration;
+  final DateTime Function() now;
+  final void Function() onExpire;
+  Duration _remaining;
+  DateTime? _startedAt;
+  Timer? _timer;
+  var _paused = false;
+  var _disposed = false;
+
+  void start() {
+    if (_disposed || _startedAt != null) return;
+    _startedAt = now();
+    _schedule();
+  }
+
+  void setPaused(bool paused) {
+    if (_disposed || paused == _paused) return;
+    if (paused) {
+      _consumeActiveTime();
+      _timer?.cancel();
+      _timer = null;
+      _paused = true;
+    } else {
+      _paused = false;
+      _startedAt = now();
+      _schedule();
+    }
+  }
+
+  void checkNow() {
+    if (_disposed || _paused) return;
+    _consumeActiveTime();
+    if (_remaining <= Duration.zero) {
+      _expire();
+    } else {
+      _schedule();
+    }
+  }
+
+  void dispose() {
+    _disposed = true;
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  void _consumeActiveTime() {
+    final startedAt = _startedAt;
+    if (startedAt == null) return;
+    final current = now();
+    final elapsed = current.difference(startedAt);
+    if (!elapsed.isNegative) _remaining -= elapsed;
+    _startedAt = current;
+  }
+
+  void _schedule() {
+    _timer?.cancel();
+    if (_disposed || _paused) return;
+    if (_remaining <= Duration.zero) {
+      _expire();
+      return;
+    }
+    _timer = Timer(_remaining, checkNow);
+  }
+
+  void _expire() {
+    if (_disposed) return;
+    dispose();
+    onExpire();
+  }
+}
+
+String _coordinatorStopReason(AiRunEnd reason) => switch (reason) {
+  AiRunEnd.failed => 'timeout',
+  AiRunEnd.stoppedBySettings => 'settingsChanged',
+  _ => 'stopped',
+};
 
 String clipAiText(String text, int maximum) {
   if (text.length <= maximum) return text;
@@ -1106,6 +1295,13 @@ AiAppText buildAiProjectionData({
   AiAppText toolSummary(AiToolResult result) {
     final data = result.plainData.plainView(redact);
     final firstLine = data.plainText.split('\n').first;
+    if (firstLine.startsWith('write ')) {
+      return AiAppText.join([
+        plain('[tool ${result.name}: '),
+        data.clipped(firstLine.length),
+        plain(']'),
+      ], '');
+    }
     return AiAppText.join([
       plain('[tool ${result.name}: '),
       (firstLine.startsWith('[source:')
@@ -1123,6 +1319,9 @@ AiAppText buildAiProjectionData({
       plain(switch (item) {
         AiUserItem() => 'User: ${item.text}',
         AiAssistantItem() => 'Assistant (${item.state.name}): ${item.text}',
+        AiToolRunItem(:final writeStatus?) =>
+          '[write ${item.name}: '
+              '${item.resultExcerpt.split('\n').first}; ${writeStatus.name}]',
         AiToolRunItem() =>
           '[tool ${item.name}: ${item.provenance}; ${item.sizeChars} chars; ${item.status.name}]',
         AiNoticeItem() => '[notice: ${item.kind.name}]',

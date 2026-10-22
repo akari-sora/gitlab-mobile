@@ -10646,7 +10646,6 @@
   "aiConversationTokenCap": "每段對話輸入用量上限",
   "aiConversationCapHelp": "可設定五萬至五百萬。實際與估計用量都會計入；這是成本護欄，不是精確費用上限。",
   "aiWorstCaseUsage": "每次提問最多會傳送的文字量（包含唯讀工具結果）：",
-  "aiReadOnlyPromise": "AI 只讀取你允許的內容，絕不會替你在 GitLab 上寫入。",
   "aiSettingsReadFailure": "無法讀取 AI 設定。請解鎖安全儲存空間後重試。",
   "aiSettingsSaveFailure": "無法儲存 AI 設定，請重試。",
   "aiProviderEditorAddTitle": "新增 AI 供應商",
@@ -10791,7 +10790,11 @@
   "aiHistoryContinueClear": "繼續清除",
   "aiTokenUnit": "詞元",
   "aiChatJobTitle": "工作 {name}",
-  "@aiChatJobTitle": {"placeholders": {"name": {}}},
+  "@aiChatJobTitle": {
+    "placeholders": {
+      "name": {}
+    }
+  },
   "aiChatComposerHint": "詢問 AI 助理…",
   "aiChatSend": "送出",
   "aiChatStop": "停止",
@@ -10807,14 +10810,22 @@
   "aiChatConsentNeeded": "傳送前，請先確認要傳送哪些資料給這個供應商",
   "aiChatReviewConsent": "檢閱並同意",
   "aiChatTooManyRunning": "已有 {count} 段對話正在執行，請等其中一段完成",
-  "@aiChatTooManyRunning": {"placeholders": {"count": {}}},
+  "@aiChatTooManyRunning": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "aiChatContextUnavailable": "無法載入這段對話要讀取的內容",
   "aiChatInterrupted": "已中斷（未加入對話脈絡）",
   "aiChatHidden": "這則回應已隱藏",
   "aiChatThinking": "思考中…",
   "aiChatSentContent": "實際送出的內容",
   "aiChatCharacters": "{count} 個字元",
-  "@aiChatCharacters": {"placeholders": {"count": {}}},
+  "@aiChatCharacters": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "aiChatBlocked": "已阻擋",
   "aiChatEmpty": "AI 會讀取這個頁面。同一個專案的其他資料，只在需要時才讀取。",
   "aiChatEmptyGeneral": "AI 不會讀取任何專案內容，只看你輸入的文字。",
@@ -10830,7 +10841,11 @@
   "aiToolSearchProject": "搜尋專案",
   "aiToolSkipped": "未執行",
   "aiNoticeRedacted": "已遮蔽 {count} 項秘密",
-  "@aiNoticeRedacted": {"placeholders": {"count": {}}},
+  "@aiNoticeRedacted": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "aiNoticeSegmentSummary": "對話已整理，較早的內容以摘要延續",
   "aiNoticeHistoryLimit": "聊天紀錄已達上限",
   "aiNoticeNotSent": "這則訊息沒有送出",
@@ -10859,19 +10874,39 @@
   "aiDraftPreviewTitle": "附加前確認",
   "aiDraftConfidential": "這段對話讀過機密議題，但這裡不是機密議題。附加前請確認回答沒有透露機密內容。",
   "aiDraftQuickActions": "已停用快捷指令：{count} 行。行首加了空格，送出時不會執行。",
-  "@aiDraftQuickActions": {"placeholders": {"count": {}}},
+  "@aiDraftQuickActions": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "aiDraftReferences": "議題與合併請求參照：{count} 個。送出後，被參照的頁面會出現提及紀錄。",
-  "@aiDraftReferences": {"placeholders": {"count": {}}},
+  "@aiDraftReferences": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "aiDraftSources": "這個回答讀取了",
   "aiDraftMore": "還有 {count} 項",
-  "@aiDraftMore": {"placeholders": {"count": {}}},
+  "@aiDraftMore": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "aiDraftText": "要附加的文字",
   "aiDraftNotSent": "只會附加到草稿，不會送出。要送出時，請在編輯器檢查內容後按儲存。",
   "aiDraftConfirm": "附加到草稿",
   "aiDraftMentionsOff": "已停用這段回答裡的提及通知：{count} 個。這些提及改以程式碼格式顯示，不會通知任何人。",
-  "@aiDraftMentionsOff": {"placeholders": {"count": {}}},
+  "@aiDraftMentionsOff": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "aiDraftMentionsNotify": "這段回答中送出後仍會發出通知的提及：{count} 個",
-  "@aiDraftMentionsNotify": {"placeholders": {"count": {}}},
+  "@aiDraftMentionsNotify": {
+    "placeholders": {
+      "count": {}
+    }
+  },
   "aiDraftKeepMentions": "保留提及通知",
   "aiDraftAcknowledge": "我了解送出後會通知這些使用者",
   "aiDraftInternal": "這段對話讀過內部備註，只有專案成員看得到。附加前請確認回答沒有透露內部備註的內容。",
@@ -10892,17 +10927,29 @@
   "aiReportAttach": "附上這則回應的內容",
   "aiReportAttachHint": "預設不附上。附上的內容已遮蔽秘密。",
   "aiReportDestination": "寄送到 {email}",
-  "@aiReportDestination": {"placeholders": {"email": {}}},
+  "@aiReportDestination": {
+    "placeholders": {
+      "email": {}
+    }
+  },
   "aiReportCopyAddress": "複製地址",
   "aiReportAddressCopied": "已複製地址",
   "aiReportPreview": "要寄出的內容",
   "aiReportSend": "送出回報",
   "aiReportSendTo": "請寄到 {email}",
-  "@aiReportSendTo": {"placeholders": {"email": {}}},
+  "@aiReportSendTo": {
+    "placeholders": {
+      "email": {}
+    }
+  },
   "aiReportSubject": "Mergeline AI 回報",
   "aiReportMailOpened": "已開啟郵件應用程式；寄出後就完成回報。",
   "aiReportShareOpened": "已開啟分享面板，請把內容寄到 {email}。",
-  "@aiReportShareOpened": {"placeholders": {"email": {}}},
+  "@aiReportShareOpened": {
+    "placeholders": {
+      "email": {}
+    }
+  },
   "aiReportFailed": "無法開啟郵件或分享，回報沒有送出。",
   "aiReported": "已回報，內容已隱藏",
   "aiReportShow": "顯示",
@@ -10910,5 +10957,246 @@
   "aiReportedOpen": "已回報",
   "aiReportNotSaved": "回報標記沒能存進加密紀錄；重新開啟後，這則回應可能會再次顯示。",
   "aiReportPreviewUpdated": "預覽已更新為要送出的內容，確認後請再按一次「送出回報」。",
-  "aiReportNotChecked": "無法檢查要送出的內容，回報沒有送出。"
+  "aiReportNotChecked": "無法檢查要送出的內容，回報沒有送出。",
+  "aiIntentStar": "標星|加上星號",
+  "aiIntentUnstar": "取消標星|移除星號",
+  "aiIntentSubscribe": "訂閱",
+  "aiIntentUnsubscribe": "取消訂閱",
+  "aiIntentAddEmoji": "加上表情|添加表情",
+  "aiIntentRemoveEmoji": "移除表情|刪掉表情",
+  "aiIntentWorkItemReactionAdd": "留言加上表情",
+  "aiIntentWorkItemReactionRemove": "留言移除表情",
+  "aiIntentWorkItemNotificationsOn": "開啟通知",
+  "aiIntentWorkItemNotificationsOff": "關閉通知",
+  "aiIntentMarkTodoDone": "完成這則待辦",
+  "aiIntentSnoozeTodo": "延後待辦",
+  "aiIntentUnsnoozeTodo": "取消延後待辦",
+  "aiIntentNegation": "不要|先別|請勿",
+  "aiIntentCondition": "如果|假如|要是",
+  "aiLevelReadOnly": "唯讀",
+  "aiLevelReadOnlyHint": "AI 只讀取，不會寫入。",
+  "aiLevelConfirmEach": "逐一確認",
+  "aiLevelConfirmEachHint": "每一筆寫入都先問你。",
+  "aiLevelLowRiskAuto": "低風險自動",
+  "aiLevelLowRiskAutoHint": "表情回應、星標、待辦這類小事直接做，其他先問你。",
+  "aiLevelConversationGrant": "本次對話授權",
+  "aiLevelConversationGrantHint": "在對話中開啟後，一般寫入直接做；刪除、合併等重大操作仍要你輸入名稱確認。",
+  "aiLevelBypass": "完全放行",
+  "aiLevelBypassHint": "除了刪除專案、改專案設定這類硬底線，所有寫入都直接做。",
+  "aiWriteSettingsTitle": "AI 寫入方式",
+  "aiWriteSettingsIntro": "決定 AI 可以替你做哪些寫入，以及哪些要先問你。",
+  "aiWriteCeiling": "最高等級",
+  "aiWriteCeilingHint": "對話中最多只能調到這裡；調高後，下次送出前會請你重新同意。",
+  "aiWriteStartingLevel": "新對話的起始等級",
+  "aiWriteAttribution": "在 AI 寫的內容加上標註",
+  "aiWriteAttributionHint": "在留言和描述最後註明由 AI 協助。預設關閉。",
+  "aiWritePromise": "AI 只會做你允許的寫入；刪除專案這類硬底線永遠要你輸入名稱確認。",
+  "aiBypassTitle": "開啟完全放行",
+  "aiBypassWarning": "AI 會直接執行寫入，不再先問你，包括刪除、合併和 Pipeline 操作。重新執行 Pipeline 或工作時，可能沿用 GitLab 上已存的變數，應用程式無法核對。網頁或檔案裡的內容也可能誘導 AI 做出你沒要求的事。每次送出仍有寫入上限，你也隨時可以按「停止」。",
+  "aiBypassAccount": "用於這個帳號",
+  "aiBypassUserId": "使用者編號 {id}",
+  "@aiBypassUserId": {
+    "placeholders": {
+      "id": {}
+    }
+  },
+  "aiBypassTypeUsername": "輸入 {username} 以確認",
+  "@aiBypassTypeUsername": {
+    "placeholders": {
+      "username": {}
+    }
+  },
+  "aiBypassNoDeviceLock": "這台裝置沒有設定螢幕鎖或生物辨識，無法開啟完全放行。",
+  "aiBypassCheckFailed": "裝置驗證沒有通過，沒有開啟。",
+  "aiBypassConfirm": "驗證並開啟",
+  "aiBypassReason": "確認開啟 AI 完全放行",
+  "aiConsentCategoryWriteResults": "AI 寫入的結果（連結、編號與狀態）",
+  "aiConsentCategoryAttachmentMetadata": "附件的檔名、類型與大小（不含檔案內容）",
+  "aiOpAddAwardEmoji": "新增表情回應",
+  "aiOpRemoveAwardEmoji": "移除表情回應",
+  "aiOpSetStar": "加入或移除星標",
+  "aiOpSetSubscribed": "開啟或關閉通知",
+  "aiOpMarkTodoDone": "將待辦標為完成",
+  "aiOpCreateNote": "新增留言",
+  "aiOpUpdateNote": "修改留言",
+  "aiOpCreateIssue": "建立議題",
+  "aiOpUpdateIssue": "修改議題",
+  "aiOpCreateMergeRequest": "建立合併請求",
+  "aiOpUpdateMergeRequest": "修改合併請求",
+  "aiOpUnapproveMergeRequest": "撤回你的核准",
+  "aiOpCreateTodo": "加入待辦",
+  "aiOpCreateDiscussion": "新增討論串",
+  "aiOpCreateDiscussionNote": "回覆討論串",
+  "aiOpUpdateDiscussionNote": "修改討論串回覆",
+  "aiOpSetDiscussionResolved": "解決或重新開啟討論串",
+  "aiOpCreateDraftNote": "新增審查草稿",
+  "aiOpUpdateDraftNote": "修改審查草稿",
+  "aiOpCreateLabel": "建立標籤",
+  "aiOpUpdateLabel": "修改標籤",
+  "aiOpCreateMilestone": "建立里程碑",
+  "aiOpUpdateMilestone": "修改里程碑",
+  "aiOpSetMilestoneState": "關閉或重新開啟里程碑",
+  "aiOpCreateBoard": "建立看板",
+  "aiOpRenameBoard": "重新命名看板",
+  "aiOpSetBoardSystemListHidden": "顯示或隱藏看板的內建列表",
+  "aiOpCreateBoardList": "新增看板列表",
+  "aiOpMoveBoardList": "移動看板列表",
+  "aiOpMoveBoardCard": "移動看板卡片",
+  "aiOpUploadAttachment": "上傳附件",
+  "aiOpUnknown": "其他寫入",
+  "aiConfirmMarkAllTodosDone": "會把你所有的待辦都標為完成。",
+  "aiConfirmForeignDraftsInPublish": "發布時會一併送出不是這次對話建立的審查草稿。",
+  "aiConfirmMassMention": "內容會通知很多人。",
+  "aiConfirmExternalMedia": "內容含有外部圖片或媒體，別人開啟時會連到外部網站。",
+  "aiConfirmClosingOrCrossProject": "內容會關閉其他議題，或提到其他專案。",
+  "aiConfirmDuplicate": "同樣的寫入剛才已經做過。",
+  "aiConfirmDropsHiddenContent": "整欄改寫會刪掉畫面上看不到的內容，例如隱藏的註解。",
+  "aiConfirmHeadMoved": "預覽之後，分支又有新的提交。",
+  "aiConfirmAfterManualRelease": "這個目標之前有一筆中斷的寫入由你手動放行，請再確認一次。",
+  "aiConfirmJournalReset": "寫入紀錄剛重設，無法確認之前是否做過同樣的事。",
+  "aiConfirmConfidentialMix": "涉及機密或可見範圍不同的內容。",
+  "aiConfirmTargetUnbound": "AI 選的目標不是你提到的那一個。",
+  "aiConfirmIntentNotUnique": "你的話可以指向不只一個目標。",
+  "aiTierLow": "低風險",
+  "aiTierNormal": "一般",
+  "aiTierMajor": "重大",
+  "aiTierHigh": "高風險",
+  "aiWriteStatusNotExecuted": "沒有執行",
+  "aiWriteStatusSucceeded": "已寫入",
+  "aiWriteStatusConfirmed": "已寫入並確認",
+  "aiWriteStatusFailed": "寫入失敗",
+  "aiWriteStatusUncertain": "不確定是否寫入，不會自動重試",
+  "aiWriteStatusResolvedByUser": "你已手動處理",
+  "aiWriteStatusNoChange": "沒有變更",
+  "aiProposalReason": "AI 的理由：{reason}",
+  "@aiProposalReason": {
+    "placeholders": {
+      "reason": {}
+    }
+  },
+  "aiProposalNotRun": "這筆寫入沒有執行：提議已失效，或設定已變更。",
+  "aiProposalNameMismatch": "輸入的名稱不符。",
+  "aiProposalTooManyRunning": "進行中的對話已達上限，請等其他對話結束再核准。",
+  "aiProposalEdited": "內容已更新並重新檢查，請再核准一次。",
+  "aiProposalEditBlocked": "這段修改無法套用，原內容沒有變。",
+  "aiProposalStoredVariables": "重新執行可能沿用 GitLab 上已存的變數，應用程式無法核對。",
+  "aiProposalSquash": "合併時會壓縮提交。",
+  "aiProposalCancelMayRun": "取消後，已經開始的腳本可能仍會跑完。",
+  "aiProposalTypeName": "輸入 {name} 以確認",
+  "@aiProposalTypeName": {
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "aiProposalValidUntil": "{time} 前有效",
+  "@aiProposalValidUntil": {
+    "placeholders": {
+      "time": {}
+    }
+  },
+  "aiProposalInvalid": "這個提議已失效，沒有執行。",
+  "aiProposalReject": "拒絕",
+  "aiProposalEdit": "修改內容",
+  "aiProposalApprove": "核准",
+  "aiProposalEditTitle": "修改{field}",
+  "@aiProposalEditTitle": {
+    "placeholders": {
+      "field": {}
+    }
+  },
+  "aiProposalEditDone": "套用修改",
+  "aiChatLevelTooltip": "寫入方式：{level}",
+  "@aiChatLevelTooltip": {
+    "placeholders": {
+      "level": {}
+    }
+  },
+  "aiChatLevelTitle": "這個對話的寫入方式",
+  "aiRemoveStopRunsTitle": "先停止 AI 對話？",
+  "aiRemoveStopRunsDetail": "這個帳號有 {count} 段 AI 對話正在進行或等待核准。移除前會先停止它們，並等進行中的寫入結束。",
+  "@aiRemoveStopRunsDetail": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiRemoveStopRunsConfirm": "停止並繼續",
+  "aiRemoveWaitingWrites": "正在等待進行中的寫入結束…",
+  "aiRemoveWaitTimedOut": "進行中的寫入一直沒有結束，帳號沒有移除。請稍後再試。",
+  "aiRemoveTypeUsernameDetail": "移除帳號也會刪除這個帳號在本機的 AI 紀錄與寫入日誌。輸入 {username} 以確認。",
+  "@aiRemoveTypeUsernameDetail": {
+    "placeholders": {
+      "username": {}
+    }
+  },
+  "aiSwitchTitle": "AI 還在進行",
+  "aiSwitchDetail": "有 {count} 段 AI 對話正在進行或等待核准，切換帳號或登出會停止它們。",
+  "@aiSwitchDetail": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiSwitchWait": "等寫入結束再切換",
+  "aiSwitchNow": "立即切換",
+  "aiSwitchNowNote": "立即切換時，進行中的寫入會記為「不確定是否寫入」，不會自動重試。",
+  "aiAttachmentRemove": "移除附件",
+  "aiAttachDisabled": "這個對話目前不能附檔。",
+  "aiAttachCapacity": "這個對話的附件已達上限。",
+  "aiAttachTooLarge": "這個檔案太大，無法附加。",
+  "aiAttachReadFailed": "無法讀取這個檔案。",
+  "aiAttachInvalidName": "這個檔名不能使用。",
+  "aiAttachExpired": "附件已過期，請重新附加。",
+  "aiWriteLogTitle": "AI 寫入紀錄",
+  "aiWriteLogSubtitle": "AI 在這台裝置上替這個帳號做的寫入",
+  "aiWriteLogIntro": "這裡列出 AI 在這台裝置上替這個帳號做的寫入。紀錄已加密，不會離開這台裝置。",
+  "aiWriteLogInterrupted": "中斷的寫入",
+  "aiWriteLogInterruptedDetail": "連線在寫入時中斷，無法確定 GitLab 是否已完成。在你放行前，AI 不會再寫入同一個目標。請先到 GitLab 查看結果。",
+  "aiWriteLogRecent": "最近的寫入",
+  "aiWriteLogEmpty": "還沒有 AI 寫入。",
+  "aiWriteLogUnavailable": "目前無法讀取寫入紀錄。",
+  "aiWriteLogObserve": "記下結果",
+  "aiWriteLogObserveTitle": "你在 GitLab 看到什麼？",
+  "aiWriteLogObservedDone": "已經完成",
+  "aiWriteLogObservedNotDone": "沒有完成",
+  "aiWriteLogObserved": "已記下結果。",
+  "aiWriteLogObservation": "你記下的結果：{observation}",
+  "@aiWriteLogObservation": {
+    "placeholders": {
+      "observation": {}
+    }
+  },
+  "aiWriteLogRelease": "放行",
+  "aiWriteLogReleaseTitle": "放行這筆寫入？",
+  "aiWriteLogReleaseDetail": "放行後，AI 可以再寫入這個目標。請先到 GitLab 確認結果，避免重複寫入。輸入 {name} 以確認。",
+  "@aiWriteLogReleaseDetail": {
+    "placeholders": {
+      "name": {}
+    }
+  },
+  "aiWriteLogReleased": "已放行。",
+  "aiWriteLogActionFailed": "沒有完成，請再試一次。",
+  "aiWriteLogReset": "重設寫入紀錄",
+  "aiWriteLogResetTitle": "重設寫入紀錄？",
+  "aiWriteLogResetDetail": "重設會刪除這個帳號在這台裝置上的 AI 寫入紀錄，也會解除所有中斷寫入的鎖。接下來 24 小時內，AI 的每一筆寫入都要你確認。輸入 {username} 以確認。",
+  "@aiWriteLogResetDetail": {
+    "placeholders": {
+      "username": {}
+    }
+  },
+  "aiWriteLogResetDone": "已重設寫入紀錄。",
+  "aiWriteLogNeedsAttention": "{count} 筆中斷的寫入需要你查看",
+  "@aiWriteLogNeedsAttention": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiJournalPrepared": "準備中",
+  "aiJournalDispatching": "寫入中",
+  "aiRemoveUncertainWrites": "這個帳號有 {count} 筆不確定 GitLab 是否完成的 AI 寫入。移除後，這台裝置就不再追蹤它們，請先到 GitLab 確認。",
+  "@aiRemoveUncertainWrites": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiRemoveJournalUnreadable": "這個帳號的 AI 寫入紀錄無法讀取，可能還有未確認的寫入。請先到 GitLab 確認。",
+  "aiRemoveRetryFromAccountList": "有未確認的 AI 寫入擋住清除。請回到帳號列表重新移除這個帳號，並輸入使用者名稱確認。"
 }

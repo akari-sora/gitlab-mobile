@@ -6,6 +6,9 @@ import 'package:crypto/crypto.dart';
 import '../../l10n/l10n.dart';
 import 'ai_endpoint.dart';
 import 'tools/tool_catalogue_version.dart' show aiToolCatalogueVersion;
+import 'tools/write_levels.dart';
+
+export 'tools/write_levels.dart';
 
 export 'tools/tool_catalogue_version.dart' show aiToolCatalogueVersion;
 
@@ -16,6 +19,87 @@ enum AiAuthStyle { bearer, apiKey, xApiKey, none }
 enum AiTokenLimitField { maxTokens, maxCompletionTokens, maxOutputTokens }
 
 enum AiDataUse { noTraining, training, unknown }
+
+
+AiAutonomyLevel effectiveCeiling({
+  required AiAutonomyLevel ceiling,
+  required AiAutonomyLevel agreedCeiling,
+}) => ceiling.index < agreedCeiling.index ? ceiling : agreedCeiling;
+
+final class AiWritePolicy {
+  const AiWritePolicy({
+    required this.policyVersion,
+    required this.agreedCeiling,
+    required this.catalogueVersion,
+    required this.operationIds,
+    required this.hardLineOperationIds,
+    required this.fixedConfirmOperationIds,
+    required this.resetConfirmWindow,
+  });
+
+  final int policyVersion;
+  final AiAutonomyLevel agreedCeiling;
+  final int catalogueVersion;
+  final Set<String> operationIds;
+  final Set<String> hardLineOperationIds;
+  final Set<String> fixedConfirmOperationIds;
+  final Duration resetConfirmWindow;
+
+  /// Snapshots caller-owned sets before a contract freezes its hash.
+  AiWritePolicy copyWith({
+    AiAutonomyLevel? agreedCeiling,
+    int? catalogueVersion,
+  }) {
+    final ceiling = agreedCeiling ?? this.agreedCeiling;
+    return AiWritePolicy(
+      policyVersion: policyVersion,
+      agreedCeiling: ceiling,
+      catalogueVersion: catalogueVersion ?? this.catalogueVersion,
+      operationIds: Set.unmodifiable(
+        ceiling == AiAutonomyLevel.readOnly ? <String>{} : operationIds,
+      ),
+      hardLineOperationIds: Set.unmodifiable(hardLineOperationIds),
+      fixedConfirmOperationIds: Set.unmodifiable(fixedConfirmOperationIds),
+      resetConfirmWindow: resetConfirmWindow,
+    );
+  }
+
+  Map<String, Object?> toCanonicalJson() => <String, Object?>{
+    'policyVersion': policyVersion,
+    'agreedCeiling': agreedCeiling.name,
+    'catalogueVersion': catalogueVersion,
+    'operationIds':
+        (agreedCeiling == AiAutonomyLevel.readOnly
+              ? <String>[]
+              : operationIds.toList())
+          ..sort(),
+    'hardLineOperationIds': hardLineOperationIds.toList()..sort(),
+    'fixedConfirmOperationIds': fixedConfirmOperationIds.toList()..sort(),
+    'resetConfirmWindowMicros': resetConfirmWindow.inMicroseconds,
+    'levels': <String, Object?>{
+      for (final level in AiAutonomyLevel.values)
+        level.name: <String, Object?>{
+          for (final tier in AiWriteTier.values)
+            tier.name: _decision(level, tier),
+        },
+    },
+  };
+
+  static String _decision(AiAutonomyLevel level, AiWriteTier tier) {
+    if (level == AiAutonomyLevel.readOnly) return 'deny';
+    if (tier == AiWriteTier.hardLine) return 'confirmName';
+    if (level == AiAutonomyLevel.bypass) return 'automatic';
+    if (tier == AiWriteTier.t4) return 'confirmName';
+    if (level == AiAutonomyLevel.conversationGrant ||
+        (level == AiAutonomyLevel.lowRiskAuto && tier == AiWriteTier.t1)) {
+      return 'automatic';
+    }
+    return 'confirm';
+  }
+}
+
+/// Account-wide confirmation period after resetting the write journal (§8).
+const aiWriteResetConfirmWindow = Duration(hours: 24);
 
 final class AiCaps {
   const AiCaps({
@@ -191,11 +275,18 @@ final class AiConsentContract {
     required this.policyIdentity,
     required this.dataUse,
     required this.disclosureVersion,
+    AiWritePolicy? writePolicy,
     this.routedModel,
     this.policyUrl,
     this.retentionDays,
     this.policyCheckedOn,
-  }) : dataCategories = Set.unmodifiable(dataCategories);
+  }) : dataCategories = Set.unmodifiable(dataCategories),
+       writePolicy = writePolicy?.copyWith(
+         agreedCeiling: toolsEnabled
+             ? writePolicy.agreedCeiling
+             : AiAutonomyLevel.readOnly,
+         catalogueVersion: toolCatalogueVersion,
+       );
 
   final String providerId;
   final String origin;
@@ -204,6 +295,7 @@ final class AiConsentContract {
   final bool toolsEnabled;
   final int toolCatalogueVersion;
   final Set<String> dataCategories;
+  final AiWritePolicy? writePolicy;
   final String policyIdentity;
   final String? routedModel;
   final AiDataUse dataUse;
@@ -228,6 +320,7 @@ final class AiConsentContract {
               'routedModel': routedModel,
               'dataUse': dataUse.name,
               'disclosureVersion': disclosureVersion,
+              'writePolicy': writePolicy?.toCanonicalJson(),
             }),
           ),
         ),
@@ -236,7 +329,7 @@ final class AiConsentContract {
 }
 
 /// Versions shared by current-contract callers, including settings.
-const aiDisclosureVersion = 1;
+const aiDisclosureVersion = 2;
 
 AiConsentContract aiCurrentConsentContractFor(AiProviderConfig provider) =>
     aiConsentContractFor(provider);
@@ -248,6 +341,7 @@ AiConsentContract aiConsentContractFor(
   int toolCatalogueVersion = aiToolCatalogueVersion,
   int disclosureVersion = aiDisclosureVersion,
   Set<String>? dataCategories,
+  AiWritePolicy? writePolicy,
 }) {
   final preset = AiPresets.all
       .where((candidate) => candidate.id == provider.presetId)
@@ -291,7 +385,12 @@ AiConsentContract aiConsentContractFor(
       if (provider.toolsEnabled) 'tool_reads',
     },
   };
-  if (!provider.toolsEnabled) categories.remove('tool_reads');
+  const toolCategories = {'tool_reads', 'write_results', 'attachment_metadata'};
+  if (provider.toolsEnabled) {
+    categories.addAll({'write_results', 'attachment_metadata'});
+  } else {
+    categories.removeAll(toolCategories);
+  }
   final policyIdentity = custom
       ? 'custom'
       : jsonEncode(<String, Object?>{
@@ -307,6 +406,7 @@ AiConsentContract aiConsentContractFor(
     toolsEnabled: provider.toolsEnabled,
     toolCatalogueVersion: toolCatalogueVersion,
     dataCategories: categories,
+    writePolicy: writePolicy,
     policyIdentity: policyIdentity,
     routedModel: modelSensitive ? provider.model : null,
     dataUse: policy?.dataUse ?? AiDataUse.unknown,

@@ -4,6 +4,8 @@ import '../../core/ai/ai_display.dart';
 import '../../core/ai/ai_failure.dart';
 import '../../core/ai/ai_provider.dart';
 import '../../core/ai/runner.dart';
+import '../../core/ai/tools/write_coordinator.dart';
+import 'ai_attachment_session.dart';
 import '../../core/failure.dart';
 import '../../core/models.dart';
 
@@ -92,6 +94,9 @@ enum AiChatPhase {
 
   /// A run is in progress (model request, streaming or a tool read).
   running,
+
+  /// The model run is paused until the user accepts or rejects a write.
+  awaitingApproval,
 
   /// Stop was requested; the run is ending.
   stopping,
@@ -217,6 +222,72 @@ abstract interface class AiChatSession implements Listenable {
   /// split a secret past the redaction.
   /// Never throws: text that cannot be checked comes back empty.
   String draftSafe(String text);
+}
+
+/// Optional write controls implemented only by write-capable conversations.
+abstract interface class AiWriteChatSession {
+  List<AiWriteProposal> get proposals;
+  AiAutonomyLevel get autonomyLevel;
+
+  /// The highest level this conversation may use: the account's ceiling,
+  /// capped by what the user agreed to in the consent.
+  AiAutonomyLevel get autonomyCeiling;
+  Future<void> setAutonomyLevel(AiAutonomyLevel level);
+
+  /// Runs [proposal] once the user approves it. With [editedText] the text
+  /// is replaced and checked again, and the outcome asks for a second
+  /// approval. [typedName] answers a proposal that needs the name typed.
+  Future<AiWriteOutcome> approveWrite(
+    AiWriteProposal proposal, {
+    String? typedName,
+    String? editedText,
+  });
+  Future<void> rejectWrite(AiWriteProposal proposal);
+
+  /// Files picked for this conversation, oldest first. They stay on the
+  /// device until a write uploads one; the model sees only their names,
+  /// types and sizes.
+  List<AiStoredAttachment> get attachments;
+
+  /// Whether this conversation can take attachments now: its segment offers
+  /// the upload tool and the conversation is idle.
+  bool get canAttach;
+
+  /// Picks one image or file and keeps it for this conversation.
+  Future<AiAttachResult> attach(AiAttachmentPick pick);
+
+  /// Drops an attachment. A proposal that would upload it becomes invalid.
+  void removeAttachment(String id);
+}
+
+/// Safe defaults keep read-only sessions and small test fakes source-compatible.
+extension AiWriteChatSessionAccess on AiChatSession {
+  List<AiWriteProposal> get proposals => switch (this) {
+    AiWriteChatSession(:final proposals) => proposals,
+    _ => const <AiWriteProposal>[],
+  };
+
+  AiAutonomyLevel get autonomyLevel => switch (this) {
+    AiWriteChatSession(:final autonomyLevel) => autonomyLevel,
+    _ => AiAutonomyLevel.readOnly,
+  };
+
+  AiAutonomyLevel get autonomyCeiling => switch (this) {
+    AiWriteChatSession(:final autonomyCeiling) => autonomyCeiling,
+    _ => AiAutonomyLevel.readOnly,
+  };
+
+  List<AiStoredAttachment> get attachments => switch (this) {
+    AiWriteChatSession(:final attachments) => attachments,
+    _ => const <AiStoredAttachment>[],
+  };
+
+  Future<void> setAutonomyLevel(AiAutonomyLevel level) => switch (this) {
+    AiWriteChatSession() => (this as AiWriteChatSession).setAutonomyLevel(
+      level,
+    ),
+    _ => Future<void>.value(),
+  };
 }
 
 /// The account's conversations. Lives above the navigator, so a run keeps

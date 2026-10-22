@@ -369,7 +369,7 @@ class _BoardsPageState extends State<BoardsPage> {
         target: target,
         issue: freshIssue,
       );
-      await api.writeRecord('PUT', issuePath, plan.payload);
+      await api.moveBoardCard(projectId, iid, plan.payload);
       if (!mounted || generation != _generation) return;
       final readback = await api.record(issuePath);
       if (!mounted || generation != _generation) return;
@@ -493,9 +493,7 @@ class _BoardsPageState extends State<BoardsPage> {
       return;
     }
     await _boardWrite((generation) async {
-      final created = await api.writeRecord('POST', _boardPathFor(projectId), {
-        'name': name,
-      });
+      final created = await api.createBoard(projectId, name);
       if (!mounted || generation != _generation) return;
       final id = requiredInt(created, 'id');
       final readback = await api.record(_boardPathFor(projectId, id));
@@ -521,9 +519,7 @@ class _BoardsPageState extends State<BoardsPage> {
       return;
     }
     await _boardWrite((generation) async {
-      await api.writeRecord('PUT', _boardPathFor(projectId, board.id), {
-        'name': name,
-      });
+      await api.renameBoard(projectId, board.id, name);
       if (!mounted || generation != _generation) return;
       final readback = await api.record(_boardPathFor(projectId, board.id));
       if (optionalString(readback, 'name') != name) {
@@ -543,9 +539,12 @@ class _BoardsPageState extends State<BoardsPage> {
     final projectId = widget.project.id;
     final field = backlog ? 'hide_backlog_list' : 'hide_closed_list';
     await _boardWrite((generation) async {
-      await api.writeRecord('PUT', _boardPathFor(projectId, board.id), {
-        field: hidden,
-      });
+      await api.setBoardSystemListHidden(
+        projectId,
+        board.id,
+        backlog ? 'backlog' : 'closed',
+        hidden,
+      );
       if (!mounted || generation != _generation) return;
       final readback = await api.record(_boardPathFor(projectId, board.id));
       if (readback[field] != hidden) {
@@ -629,11 +628,7 @@ class _BoardsPageState extends State<BoardsPage> {
     }
     final labelId = requiredInt(label, 'id');
     await _boardWrite((generation) async {
-      final created = await api.writeRecord(
-        'POST',
-        [..._boardPathFor(projectId, board.id), 'lists'],
-        {'label_id': labelId},
-      );
+      final created = await api.createBoardList(projectId, board.id, labelId);
       if (!mounted || generation != _generation) return;
       final listId = requiredInt(created, 'id');
       final lists = await _allPagesFor(api, [
@@ -700,11 +695,7 @@ class _BoardsPageState extends State<BoardsPage> {
     final listId = column.listId!;
     final position = serverColumns[targetIndex].position ?? targetIndex;
     await _boardWrite((generation) async {
-      await api.writeRecord(
-        'PUT',
-        [..._boardPathFor(projectId, board.id), 'lists', '$listId'],
-        {'position': position},
-      );
+      await api.moveBoardList(projectId, board.id, listId, position);
       if (!mounted || generation != _generation) return;
       final fresh = await _freshBoardFor(api, projectId, board.id);
       final freshColumns = fresh.columns

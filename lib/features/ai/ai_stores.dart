@@ -8,6 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../core/ai/ai_endpoint.dart';
 import '../../core/ai/ai_failure.dart';
 import '../../core/ai/ai_provider.dart';
+import 'ai_journal_key_store.dart';
 
 enum AiStoreReadStatus { found, absent, unavailable }
 
@@ -82,21 +83,29 @@ final class AiConsentRecord {
     required this.hash,
     required Map<String, Object?> summary,
     required this.grantedAt,
+    this.agreedCeiling = AiAutonomyLevel.readOnly,
   }) : summary = Map.unmodifiable(summary);
 
   final String hash;
   final Map<String, Object?> summary;
   final DateTime grantedAt;
+  final AiAutonomyLevel agreedCeiling;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'hash': hash,
+    'agreedCeiling': agreedCeiling.name,
     'summary': summary,
     'grantedAt': grantedAt.toUtc().toIso8601String(),
   };
 
-  static AiConsentRecord decode(Object? raw) {
+  static AiConsentRecord decode(Object? raw, {bool legacy = false}) {
     final json = _strictObject(raw, 'consent');
-    _requireKeys(json, const <String>{'hash', 'summary', 'grantedAt'});
+    _requireKeys(json, <String>{
+      'hash',
+      'summary',
+      'grantedAt',
+      if (!legacy) 'agreedCeiling',
+    });
     final hash = _nonEmptyString(json['hash'], 'consent.hash');
     final summary = _strictObject(json['summary'], 'consent.summary');
     _validateJson(summary, 'consent.summary');
@@ -108,6 +117,13 @@ final class AiConsentRecord {
     }
     return AiConsentRecord(
       hash: hash,
+      agreedCeiling: legacy
+          ? AiAutonomyLevel.readOnly
+          : _enumValue(
+              AiAutonomyLevel.values,
+              json['agreedCeiling'],
+              'consent.agreedCeiling',
+            ),
       summary: summary,
       grantedAt: grantedAt.toUtc(),
     );
@@ -120,8 +136,19 @@ final class AiAccountRecord {
     this.historyEnabled = false,
     this.retentionDays = 30,
     this.conversationTokenCap = 500000,
+    this.ceiling = AiAutonomyLevel.lowRiskAuto,
+    this.startingLevel = AiAutonomyLevel.lowRiskAuto,
+    this.writePolicyRevision = 0,
+    this.aiAttribution = false,
   }) : consents = Map.unmodifiable(consents) {
     _validateRetention(retentionDays);
+    if (startingLevel.index > ceiling.index ||
+        startingLevel == AiAutonomyLevel.conversationGrant) {
+      throw ArgumentError.value(startingLevel, 'startingLevel');
+    }
+    if (writePolicyRevision < 0) {
+      throw ArgumentError.value(writePolicyRevision, 'writePolicyRevision');
+    }
     if (conversationTokenCap <= 0) {
       throw ArgumentError.value(conversationTokenCap, 'conversationTokenCap');
     }
@@ -131,21 +158,43 @@ final class AiAccountRecord {
   final bool historyEnabled;
   final int retentionDays;
   final int conversationTokenCap;
+  final AiAutonomyLevel ceiling;
+  final AiAutonomyLevel startingLevel;
+  final int writePolicyRevision;
+  final bool aiAttribution;
 
   AiAccountRecord copyWith({
     Map<String, AiConsentRecord>? consents,
     bool? historyEnabled,
     int? retentionDays,
     int? conversationTokenCap,
+    AiAutonomyLevel? ceiling,
+    AiAutonomyLevel? startingLevel,
+    bool? aiAttribution,
   }) => AiAccountRecord(
     consents: consents ?? this.consents,
     historyEnabled: historyEnabled ?? this.historyEnabled,
     retentionDays: retentionDays ?? this.retentionDays,
     conversationTokenCap: conversationTokenCap ?? this.conversationTokenCap,
+    ceiling: ceiling ?? this.ceiling,
+    startingLevel:
+        startingLevel ??
+        effectiveCeiling(
+          ceiling: ceiling ?? this.ceiling,
+          agreedCeiling: this.startingLevel,
+        ),
+    writePolicyRevision:
+        writePolicyRevision +
+        (ceiling != null && ceiling != this.ceiling ? 1 : 0),
+    aiAttribution: aiAttribution ?? this.aiAttribution,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
-    'version': 1,
+    'version': 2,
+    'ceiling': ceiling.name,
+    'startingLevel': startingLevel.name,
+    'writePolicyRevision': writePolicyRevision,
+    'aiAttribution': aiAttribution,
     'consents': <String, Object?>{
       for (final entry in consents.entries) entry.key: entry.value.toJson(),
     },
@@ -158,13 +207,20 @@ final class AiAccountRecord {
 
   static AiAccountRecord decode(String raw) {
     final json = _strictObject(jsonDecode(raw), 'account');
-    _requireKeys(json, const <String>{
+    final legacy = json['version'] == 1;
+    _requireKeys(json, <String>{
       'version',
+      if (!legacy) ...{
+        'ceiling',
+        'startingLevel',
+        'writePolicyRevision',
+        'aiAttribution',
+      },
       'consents',
       'history',
       'conversationTokenCap',
     });
-    if (json['version'] != 1) {
+    if (json['version'] != 1 && json['version'] != 2) {
       throw const FormatException('Unsupported AI account version');
     }
     final rawConsents = _strictObject(json['consents'], 'account.consents');
@@ -173,7 +229,7 @@ final class AiAccountRecord {
       if (entry.key.isEmpty) {
         throw const FormatException('Empty consent provider id');
       }
-      consents[entry.key] = AiConsentRecord.decode(entry.value);
+      consents[entry.key] = AiConsentRecord.decode(entry.value, legacy: legacy);
     }
     final history = _strictObject(json['history'], 'account.history');
     _requireKeys(history, const <String>{'enabled', 'retentionDays'});
@@ -187,7 +243,34 @@ final class AiAccountRecord {
     if (tokenCap <= 0) {
       throw const FormatException('Invalid conversationTokenCap');
     }
+    final ceiling = legacy
+        ? AiAutonomyLevel.lowRiskAuto
+        : _enumValue(
+            AiAutonomyLevel.values,
+            json['ceiling'],
+            'account.ceiling',
+          );
+    final startingLevel = legacy
+        ? AiAutonomyLevel.lowRiskAuto
+        : _enumValue(
+            AiAutonomyLevel.values,
+            json['startingLevel'],
+            'account.startingLevel',
+          );
+    final revision = legacy ? 0 : json['writePolicyRevision'];
+    final attribution = legacy ? false : json['aiAttribution'];
+    if (revision is! int ||
+        revision < 0 ||
+        attribution is! bool ||
+        startingLevel.index > ceiling.index ||
+        startingLevel == AiAutonomyLevel.conversationGrant) {
+      throw const FormatException('Invalid AI autonomy settings');
+    }
     return AiAccountRecord(
+      ceiling: ceiling,
+      startingLevel: startingLevel,
+      writePolicyRevision: revision,
+      aiAttribution: attribution,
       consents: consents,
       historyEnabled: enabled,
       retentionDays: retention,
@@ -252,24 +335,37 @@ final class AiSecureInventory {
     required this.accountKeys,
     required this.historyKeyAccountKeys,
     this.historyClearMarkerAccountKeys = const <String>[],
+    this.journalKeyAccountKeys = const <String>[],
+    this.journalResetAccountKeys = const <String>[],
     required this.malformedProviderKeyCount,
     required this.malformedAccountKeyCount,
     required this.malformedHistoryKeyCount,
     required this.malformedProviderKeys,
     required this.malformedAccountKeys,
     required this.malformedHistoryKeys,
+    this.malformedJournalKeys = const <String>{},
   });
 
   final List<String> providerKeyIds;
   final List<String> accountKeys;
   final List<String> historyKeyAccountKeys;
   final List<String> historyClearMarkerAccountKeys;
+
+  /// Accounts with an AI write-journal key ([AiJournalKeyStore.keyPrefix]).
+  final List<String> journalKeyAccountKeys;
+
+  /// Accounts with a journal reset marker ([AiJournalKeyStore.resetPrefix]).
+  final List<String> journalResetAccountKeys;
   final int malformedProviderKeyCount;
   final int malformedAccountKeyCount;
   final int malformedHistoryKeyCount;
   final Set<String> malformedProviderKeys;
   final Set<String> malformedAccountKeys;
   final Set<String> malformedHistoryKeys;
+
+  /// Journal key or reset-marker names whose account part is not canonical.
+  /// They name no account, so nothing deletes them as an orphan.
+  final Set<String> malformedJournalKeys;
 }
 
 final class AiTombstoneInventory {
@@ -567,14 +663,7 @@ final class SecureAiStore
         AiHistoryClearMarkerStore,
         AiProviderKeyBindingStore {
   SecureAiStore([FlutterSecureStorage? storage])
-    : _storage =
-          storage ??
-          const FlutterSecureStorage(
-            aOptions: AndroidOptions(),
-            iOptions: IOSOptions(
-              accessibility: KeychainAccessibility.unlocked_this_device,
-            ),
-          );
+    : _storage = storage ?? _aiSecureStorage;
 
   static const providersStorageKey = 'gitlab_mobile_ai_providers_v1';
   static const providerKeyPrefix = 'ai_key.v1.';
@@ -910,6 +999,168 @@ final class SecureAiStore
   @override
   Future<void> deleteProviderKeyBinding(String providerId) =>
       _delete(providerKeyBindingKey(providerId), 'deleteProviderKeyBinding');
+
+  Future<AiStoreRead<String>> _read(String key, String operation) async {
+    try {
+      final value = await _storage.read(key: key);
+      return value == null
+          ? const AiStoreRead<String>.absent()
+          : AiStoreRead<String>.found(value);
+    } on Object catch (error) {
+      return AiStoreRead<String>.unavailable(
+        AiStoreFailure(AiStoreFailureKind.unavailable, operation, error),
+      );
+    }
+  }
+
+  Future<void> _write(String key, String value, String operation) async {
+    try {
+      await _storage.write(key: key, value: value);
+    } on Object catch (error) {
+      throw AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.unavailable, operation, error),
+      );
+    }
+  }
+
+  Future<void> _delete(String key, String operation) async {
+    try {
+      await _storage.delete(key: key);
+    } on Object catch (error) {
+      throw AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.unavailable, operation, error),
+      );
+    }
+  }
+}
+
+/// Storage options shared by every AI secure-storage owner. On iOS the items
+/// are `unlocked_this_device` (ThisDeviceOnly).
+const FlutterSecureStorage _aiSecureStorage = FlutterSecureStorage(
+  aOptions: AndroidOptions(),
+  iOptions: IOSOptions(
+    accessibility: KeychainAccessibility.unlocked_this_device,
+  ),
+);
+
+/// Production [AiJournalKeyStore] over the same secure storage and options as
+/// [SecureAiStore]. Reads tell found, absent and unavailable apart exactly like
+/// [SecureAiStore]: a failing keychain is `unavailable`, never `absent`, and a
+/// stored value that cannot be decoded is `absent` with a `malformed` failure.
+/// Every failed write or delete throws [AiStoreException].
+final class SecureAiJournalKeyStore implements AiJournalKeyStore {
+  SecureAiJournalKeyStore([FlutterSecureStorage? storage])
+    : _storage = storage ?? _aiSecureStorage;
+
+  final FlutterSecureStorage _storage;
+
+  @override
+  Future<AiStoreRead<Uint8List>> readKey(String accountKey) async {
+    final raw = await _read(
+      AiJournalKeyStore.keyName(accountKey),
+      'readJournalKey',
+    );
+    if (!raw.isFound) return _copyRead<Uint8List>(raw);
+    try {
+      final bytes = base64Url.decode(base64Url.normalize(raw.value!));
+      if (bytes.length == 32) {
+        return AiStoreRead<Uint8List>.found(Uint8List.fromList(bytes));
+      }
+    } on Object {
+      // A decoder error quotes its input, so it is never kept as a cause.
+    }
+    return const AiStoreRead<Uint8List>.absent(
+      AiStoreFailure(AiStoreFailureKind.malformed, 'readJournalKey'),
+    );
+  }
+
+  @override
+  Future<void> writeKey(String accountKey, Uint8List key) async {
+    if (key.length != 32) {
+      throw const AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.invalidValue, 'writeJournalKey'),
+      );
+    }
+    await _write(
+      AiJournalKeyStore.keyName(accountKey),
+      base64Url.encode(key),
+      'writeJournalKey',
+    );
+  }
+
+  @override
+  Future<void> deleteKey(String accountKey) =>
+      _delete(AiJournalKeyStore.keyName(accountKey), 'deleteJournalKey');
+
+  @override
+  Future<AiStoreRead<DateTime>> readResetPending(String accountKey) async {
+    final raw = await _read(
+      AiJournalKeyStore.resetName(accountKey),
+      'readJournalResetPending',
+    );
+    if (!raw.isFound) return _copyRead<DateTime>(raw);
+    // This store writes UTC; a time without a zone (Z or offset) is malformed.
+    final confirmedAt = DateTime.tryParse(raw.value!);
+    if (confirmedAt == null || !confirmedAt.isUtc) {
+      return const AiStoreRead<DateTime>.absent(
+        AiStoreFailure(AiStoreFailureKind.malformed, 'readJournalResetPending'),
+      );
+    }
+    return AiStoreRead<DateTime>.found(confirmedAt);
+  }
+
+  @override
+  Future<void> writeResetPending(String accountKey, DateTime confirmedAt) =>
+      _write(
+        AiJournalKeyStore.resetName(accountKey),
+        confirmedAt.toUtc().toIso8601String(),
+        'writeJournalResetPending',
+      );
+
+  @override
+  Future<void> deleteResetPending(String accountKey) => _delete(
+    AiJournalKeyStore.resetName(accountKey),
+    'deleteJournalResetPending',
+  );
+
+  /// The account-removal tombstone owned by [SecureAiStore].
+  @override
+  Future<AiStoreRead<bool>> readTombstone(String accountKey) async {
+    final raw = await _read(
+      SecureAiStore.tombstoneKey(accountKey),
+      'readTombstone',
+    );
+    if (!raw.isFound) return _copyRead<bool>(raw);
+    if (raw.value != '1') {
+      return const AiStoreRead<bool>.absent(
+        AiStoreFailure(AiStoreFailureKind.malformed, 'readTombstone'),
+      );
+    }
+    return const AiStoreRead<bool>.found(true);
+  }
+
+  /// Every account with a journal key or a reset marker. A storage failure
+  /// throws, so the journal never sweeps orphans from a partial listing.
+  @override
+  Future<Set<String>> inventoryAccounts() async {
+    final Map<String, String> all;
+    try {
+      all = await _storage.readAll();
+    } on Object catch (error) {
+      throw AiStoreException(
+        AiStoreFailure(
+          AiStoreFailureKind.unavailable,
+          'journalInventory',
+          error,
+        ),
+      );
+    }
+    final inventory = _decodeSecureInventory(all.keys);
+    return Set.unmodifiable(<String>{
+      ...inventory.journalKeyAccountKeys,
+      ...inventory.journalResetAccountKeys,
+    });
+  }
 
   Future<AiStoreRead<String>> _read(String key, String operation) async {
     try {
@@ -1722,6 +1973,48 @@ final class AiSettingsController extends ChangeNotifier {
     _notify();
   });
 
+  /// Uses the provider's saved ceiling, independently of the account ceiling.
+  /// Supply [agreedCeiling] only when requesting a new, higher disclosure.
+  /// The operation catalogue is provided by the write-tool owner.
+  AiConsentContract consentContractFor(
+    String accountKey,
+    AiProviderConfig provider, {
+    AiWritePolicy? writePolicy,
+    AiAutonomyLevel? agreedCeiling,
+  }) {
+    final account = _accounts[accountKey];
+    final agreed =
+        agreedCeiling ??
+        account?.consents[provider.id]?.agreedCeiling ??
+        account?.ceiling ??
+        AiAutonomyLevel.lowRiskAuto;
+    return aiConsentContractFor(
+      provider,
+      writePolicy: writePolicy?.copyWith(agreedCeiling: agreed),
+    );
+  }
+
+  Future<void> setAutonomySettings(
+    String accountKey, {
+    AiAutonomyLevel? ceiling,
+    AiAutonomyLevel? startingLevel,
+    bool? aiAttribution,
+  }) async {
+    final updated = await _accountMutations.mutate(
+      accountKey,
+      (current) => current.copyWith(
+        ceiling: ceiling,
+        startingLevel: startingLevel,
+        aiAttribution: aiAttribution,
+      ),
+    );
+    if (updated == null) {
+      throw const AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.cleaning, 'setAutonomySettings'),
+      );
+    }
+  }
+
   Future<void> setConversationTokenCap(String accountKey, int cap) async {
     if (cap < 50000 || cap > 5000000) {
       throw ArgumentError.value(cap, 'conversationTokenCap');
@@ -1882,12 +2175,18 @@ final class AiSettingsController extends ChangeNotifier {
     Map<String, Object?> summary, {
     DateTime? grantedAt,
     int? expectedRecipientRevision,
+    int? expectedWritePolicyRevision,
+    bool Function()? isCurrent,
   }) {
     final epoch = _accountMutations.epochFor(accountKey);
     final revision =
         expectedRecipientRevision ??
         _provider(contract.providerId)?.recipientRevision ??
         -1;
+    final policyRevision =
+        expectedWritePolicyRevision ??
+        _accounts[accountKey]?.writePolicyRevision ??
+        0;
     return _enqueue(
       () => _grantConsent(
         accountKey,
@@ -1896,6 +2195,8 @@ final class AiSettingsController extends ChangeNotifier {
         epoch: epoch,
         grantedAt: grantedAt,
         expectedRecipientRevision: revision,
+        expectedWritePolicyRevision: policyRevision,
+        isCurrent: isCurrent,
       ),
     );
   }
@@ -1906,6 +2207,8 @@ final class AiSettingsController extends ChangeNotifier {
     Map<String, Object?> summary, {
     required int epoch,
     required int expectedRecipientRevision,
+    required int expectedWritePolicyRevision,
+    bool Function()? isCurrent,
     DateTime? grantedAt,
   }) async {
     if (!_accountMutations.isCurrent(accountKey, epoch)) {
@@ -1919,18 +2222,73 @@ final class AiSettingsController extends ChangeNotifier {
         AiStoreFailure(AiStoreFailureKind.invalidValue, 'recipientChanged'),
       );
     }
+    if (contract.writePolicy != null &&
+        aiConsentContractFor(
+              _requireProvider(contract.providerId),
+              toolCatalogueVersion: contract.toolCatalogueVersion,
+              disclosureVersion: contract.disclosureVersion,
+              dataCategories: contract.dataCategories,
+              writePolicy: contract.writePolicy,
+            ).hash !=
+            contract.hash) {
+      throw const AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.invalidValue, 'contractChanged'),
+      );
+    }
+    final time = (grantedAt ?? DateTime.now()).toUtc();
+    AiConsentRecord? previous;
+    void checkCurrent(AiAccountRecord account) {
+      if (isCurrent?.call() == false) {
+        throw const AiStoreException(
+          AiStoreFailure(AiStoreFailureKind.invalidValue, 'accountChanged'),
+        );
+      }
+      if (account.writePolicyRevision != expectedWritePolicyRevision) {
+        throw const AiStoreException(
+          AiStoreFailure(AiStoreFailureKind.invalidValue, 'writePolicyChanged'),
+        );
+      }
+    }
+
     final updated = await _accountMutations.mutate(accountKey, (account) {
+      checkCurrent(account);
+      previous = account.consents[contract.providerId];
       final consents = Map<String, AiConsentRecord>.of(account.consents);
       consents[contract.providerId] = AiConsentRecord(
         hash: contract.hash,
-        summary: summary,
-        grantedAt: (grantedAt ?? DateTime.now()).toUtc(),
+        summary: <String, Object?>{
+          ...summary,
+          if (contract.writePolicy case final policy?) ...{
+            'writePolicy': policy.toCanonicalJson(),
+            'aiAttribution': account.aiAttribution,
+          },
+        },
+        agreedCeiling:
+            contract.writePolicy?.agreedCeiling ?? AiAutonomyLevel.readOnly,
+        grantedAt: time,
       );
       return account.copyWith(consents: consents);
     });
     if (updated == null) {
       throw const AiStoreException(
         AiStoreFailure(AiStoreFailureKind.cleaning, 'grantConsent'),
+      );
+    }
+    if (isCurrent?.call() == false) {
+      // A session can change while secure storage is writing. Restore only
+      // this grant; never overwrite a concurrent replacement or preferences.
+      await _accountMutations.mutate(accountKey, (account) {
+        final current = account.consents[contract.providerId];
+        if (current?.hash != contract.hash || current?.grantedAt != time) {
+          return account;
+        }
+        final consents = Map<String, AiConsentRecord>.of(account.consents)
+          ..remove(contract.providerId);
+        if (previous case final old?) consents[contract.providerId] = old;
+        return account.copyWith(consents: consents);
+      });
+      throw const AiStoreException(
+        AiStoreFailure(AiStoreFailureKind.invalidValue, 'accountChanged'),
       );
     }
     _accounts[accountKey] = updated;
@@ -1988,7 +2346,9 @@ final class AiSettingsController extends ChangeNotifier {
   bool isValid(String accountKey, AiConsentContract contract) =>
       _provider(contract.providerId) != null &&
       _accounts[accountKey]?.consents[contract.providerId]?.hash ==
-          contract.hash;
+          contract.hash &&
+      _accounts[accountKey]?.consents[contract.providerId]?.agreedCeiling ==
+          (contract.writePolicy?.agreedCeiling ?? AiAutonomyLevel.readOnly);
 
   AiProviderConfig? _provider(String providerId) {
     for (final provider in _providers) {
@@ -2255,6 +2615,9 @@ AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
   final accountKeys = <String>[];
   final historyKeys = <String>[];
   final historyClearMarkers = <String>[];
+  final journalKeys = <String>[];
+  final journalResets = <String>[];
+  final malformedJournalEntries = <String>{};
   final malformedProviderKeyEntries = <String>{};
   final malformedAccountKeyEntries = <String>{};
   final malformedHistoryKeyEntries = <String>{};
@@ -2310,23 +2673,50 @@ AiSecureInventory _decodeSecureInventory(Iterable<String> storedKeys) {
         malformedHistoryKeys += 1;
         malformedHistoryKeyEntries.add(key);
       }
+    } else if (key.startsWith(AiJournalKeyStore.keyPrefix)) {
+      try {
+        journalKeys.add(
+          _decodeStoredId(
+            key.substring(AiJournalKeyStore.keyPrefix.length),
+            'readSecureInventory',
+          ),
+        );
+      } on AiStoreException {
+        malformedJournalEntries.add(key);
+      }
+    } else if (key.startsWith(AiJournalKeyStore.resetPrefix)) {
+      try {
+        journalResets.add(
+          _decodeStoredId(
+            key.substring(AiJournalKeyStore.resetPrefix.length),
+            'readSecureInventory',
+          ),
+        );
+      } on AiStoreException {
+        malformedJournalEntries.add(key);
+      }
     }
   }
   providerKeys.sort();
   accountKeys.sort();
   historyKeys.sort();
   historyClearMarkers.sort();
+  journalKeys.sort();
+  journalResets.sort();
   return AiSecureInventory(
     providerKeyIds: List.unmodifiable(providerKeys),
     accountKeys: List.unmodifiable(accountKeys),
     historyKeyAccountKeys: List.unmodifiable(historyKeys),
     historyClearMarkerAccountKeys: List.unmodifiable(historyClearMarkers),
+    journalKeyAccountKeys: List.unmodifiable(journalKeys),
+    journalResetAccountKeys: List.unmodifiable(journalResets),
     malformedProviderKeyCount: malformedProviderKeys,
     malformedAccountKeyCount: malformedAccountKeys,
     malformedHistoryKeyCount: malformedHistoryKeys,
     malformedProviderKeys: Set.unmodifiable(malformedProviderKeyEntries),
     malformedAccountKeys: Set.unmodifiable(malformedAccountKeyEntries),
     malformedHistoryKeys: Set.unmodifiable(malformedHistoryKeyEntries),
+    malformedJournalKeys: Set.unmodifiable(malformedJournalEntries),
   );
 }
 

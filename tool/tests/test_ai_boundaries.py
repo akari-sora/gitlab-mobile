@@ -20,18 +20,21 @@ class AiBoundaryTest(unittest.TestCase):
         self.assertTrue(version.is_file(), "Catalogue version needs its own file")
         source = version.read_text(encoding="utf-8")
         self.assertNotRegex(source, r"(?m)^\s*(?:import|export|part)\b")
-        self.assertRegex(source, r"const\s+aiToolCatalogueVersion\s*=\s*1\s*;")
+        self.assertRegex(source, r"const\s+aiToolCatalogueVersion\s*=\s*2\s*;")
         catalogue = (AI_ROOT / "tools" / "tool_catalogue.dart").read_text(
             encoding="utf-8"
         )
         self.assertRegex(catalogue, r"export\s+'tool_catalogue_version\.dart'")
 
-    def test_only_read_port_imports_gitlab_api(self):
+    def test_row13_only_read_and_write_ports_import_gitlab_api(self):
         importers = []
         for path in AI_ROOT.rglob("*.dart"):
             if "gitlab_api.dart" in path.read_text(encoding="utf-8"):
                 importers.append(path.relative_to(ROOT).as_posix())
-        self.assertEqual(importers, ["lib/core/ai/tools/gitlab_read_port.dart"])
+        self.assertEqual(sorted(importers), [
+            "lib/core/ai/tools/gitlab_read_port.dart",
+            "lib/core/ai/tools/gitlab_write_port.dart",
+        ])
 
     def test_read_port_calls_only_whitelisted_members(self):
         source = PORT.read_text(encoding="utf-8")
@@ -50,6 +53,26 @@ class AiBoundaryTest(unittest.TestCase):
                 "search",
             },
         )
+
+    def test_row13_write_port_calls_only_whitelisted_members(self):
+        source = (AI_ROOT / "tools" / "gitlab_write_port.dart").read_text(
+            encoding="utf-8"
+        )
+        members = self._api_members(source)
+        self.assertTrue(members)
+        self.assertLessEqual(members, {
+            "instance", "currentUser", "record", "records",
+            "addAwardEmoji", "removeAwardEmoji", "setStar", "setSubscribed",
+            "markTodoDone", "createNote", "updateNote", "createIssue",
+            "updateIssue", "createMergeRequest", "updateMergeRequest",
+            "unapproveMergeRequest", "createTodo", "createDiscussion",
+            "createDiscussionNote", "updateDiscussionNote",
+            "setDiscussionResolved", "createDraftNote", "updateDraftNote",
+            "createLabel", "updateLabel", "createMilestone", "updateMilestone",
+            "setMilestoneState", "createBoard", "renameBoard",
+            "setBoardSystemListHidden", "createBoardList", "moveBoardList",
+            "moveBoardCard", "uploadProjectFile",
+        })
 
     def test_read_port_guard_catches_method_tear_offs(self):
         source = "final write = _api.writeRecord; await write();"

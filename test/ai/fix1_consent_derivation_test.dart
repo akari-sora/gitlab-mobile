@@ -112,11 +112,17 @@ void main() {
       expect(initial.dataCategories, contains('tool_reads'));
       expect(initial.hash, isNot(off.hash));
       expect(
-        aiConsentContractFor(provider(), toolCatalogueVersion: 2).hash,
+        aiConsentContractFor(
+          provider(),
+          toolCatalogueVersion: aiToolCatalogueVersion + 1,
+        ).hash,
         isNot(initial.hash),
       );
       expect(
-        aiConsentContractFor(provider(), disclosureVersion: 2).hash,
+        aiConsentContractFor(
+          provider(),
+          disclosureVersion: aiDisclosureVersion + 1,
+        ).hash,
         isNot(initial.hash),
       );
       expect(

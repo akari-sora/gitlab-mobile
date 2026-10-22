@@ -13,13 +13,13 @@ import '../../shared/reveal_transition.dart';
 import '../../shared/scroll_chrome.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
-import '../auth/recent_project.dart';
 import '../auth/session_controller.dart';
-import '../ai/ai_account_cleanup.dart';
+import '../ai/ai_account_removal.dart';
 import '../ai/ai_chat_session.dart';
 import '../ai/ai_run_registry.dart';
 import '../ai/ai_scope.dart';
 import '../ai/ai_settings_page.dart';
+import '../ai/ai_write_journal.dart';
 import '../workspace/activity_page.dart';
 import '../workspace/groups_page.dart';
 import '../workspace/project_page.dart';
@@ -29,7 +29,6 @@ import '../workspace/navigation.dart';
 import '../workspace/search_page.dart';
 import '../workspace/ci_page.dart';
 import '../workspace/work_item_page.dart';
-import '../workspace/editor.dart';
 import 'app_shortcuts.dart';
 import 'home_page.dart';
 import 'appearance.dart';
@@ -103,6 +102,9 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
   final _pops = _PopObserver();
   late InAppLinkHandler _links;
   AccountAiRunRegistry? _aiRegistry;
+
+  /// The live conversations of [_aiRegistry], for the stop and switch dialogs.
+  AiAccountActivity? _aiActivity;
 
   @override
   void dispose() {
@@ -200,17 +202,22 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
   void _disposeAiRegistry() {
     _aiRegistry?.dispose();
     _aiRegistry = null;
+    _aiActivity = null;
   }
 
   AccountAiRunRegistry _currentAiRegistry(AiControllers ai) {
     final existing = _aiRegistry;
     if (existing != null && existing.ownsCurrentSession) return existing;
     existing?.dispose();
-    return _aiRegistry = AccountAiRunRegistry(
+    final activity = AiAccountActivity();
+    final registry = AccountAiRunRegistry(
       session: widget.session,
       settings: ai.settings,
-      sessionFactory: widget.aiSessionFactory,
+      sessionFactory: activity.track(widget.aiSessionFactory),
     );
+    activity.attach(registry);
+    _aiActivity = activity;
+    return _aiRegistry = registry;
   }
 
   @override
@@ -269,6 +276,7 @@ class _AuthenticatedAppState extends State<AuthenticatedApp> {
             incoming: widget.incoming,
             lock: widget.lock,
             language: widget.language,
+            aiActivity: () => _aiActivity,
           ),
         );
         final ai = widget.ai;
@@ -303,9 +311,14 @@ class _MobileShell extends StatefulWidget {
     this.incoming,
     this.lock,
     this.language,
+    this.aiActivity,
   });
   final SessionController session;
   final LauncherShortcuts shortcuts;
+
+  /// The current account's AI conversations; null (or returning null) when
+  /// AI is absent.
+  final AiAccountActivity? Function()? aiActivity;
   final AppUpdateController? updates;
   final IncomingLinks? incoming;
   final AppLockController? lock;
@@ -333,7 +346,25 @@ class _MobileShellState extends State<_MobileShell> {
   int _createToken = 0;
   int _todoToken = 0;
   (int, String)? _incomingLink;
-  bool _removing = false;
+
+  /// The removal job this page started, from the hold until it ends (§8).
+  AiRemovalJob? _removal;
+
+  /// The account whose removal waits for writes in flight.
+  String? _removalWaiting;
+
+  /// Arms dispose: a page that goes away requests cancellation of its job.
+  VoidCallback? _cancelOnDispose;
+
+  /// A switch or sign-out waits for the AI guard (§12.1).
+  bool _leaving = false;
+  final Completer<void> _gone = Completer<void>();
+  AiAccountDialogs? _ownDialogs;
+  AiAccountDialogs get _dialogs => _ownDialogs ??= AiAccountDialogs(context);
+
+  /// While any removal job holds its token, switching, removal and sign-out
+  /// stay disabled in both entry points.
+  bool get _accountLocked => AiAccountRemoval.anyRunning || _leaving;
   final Set<int> _visited = {_home};
 
   static const _home = 0, _inbox = 1, _explore = 2, _me = 3;
@@ -353,12 +384,14 @@ class _MobileShellState extends State<_MobileShell> {
     widget.pops.addListener(_chrome.show);
     widget.updates?.addListener(_onUpdates);
     widget.incoming?.addListener(_onIncoming);
+    AiAccountRemoval.changes.addListener(_onRemovalChanged);
     final account = widget.session.active;
     if (account != null) {
       unawaited(widget.shortcuts.publish(account.key));
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
+        _showLeftRemovalResults();
         unawaited(_consumeResumeTarget());
         unawaited(_consumeShortcut());
         // A link may have arrived before sign-in or while the tree was rebuilt.
@@ -419,6 +452,13 @@ class _MobileShellState extends State<_MobileShell> {
 
   @override
   void dispose() {
+    AiAccountRemoval.changes.removeListener(_onRemovalChanged);
+    // Before the final confirmation this stops the job; after it, the job
+    // runs to its end without a page.
+    _cancelOnDispose?.call();
+    _cancelOnDispose = null;
+    _ownDialogs?.close();
+    if (!_gone.isCompleted) _gone.complete();
     widget.pops.removeListener(_chrome.show);
     _backDispatcher.dispose();
     _chrome.dispose();
@@ -775,33 +815,108 @@ class _MobileShellState extends State<_MobileShell> {
     return widget.session.generation == generation && widget.session.active?.key == account.key;
   }
 
-  Future<void> _remove(Account account) async {
-    if (_removing ||
-        !await confirmAction(
-          context,
-          l10n.removeThisAccountQuestion,
-          l10n.removeAccountKeepsRemoteToken,
-        )) {
+  void _onRemovalChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (_removal == null) _showLeftRemovalResults();
+  }
+
+  /// Results of removal jobs whose page went away (§8 step 5).
+  void _showLeftRemovalResults() {
+    if (!mounted || _removal != null) return;
+    for (final saved in widget.session.accounts) {
+      final result = AiAccountRemoval.takeResult(saved.key);
+      if (result != null) presentAiRemovalResult(context, result);
+    }
+  }
+
+  /// §8 account removal: the hold is taken here, synchronously, before any
+  /// dialog; the shared job runs the rest.
+  void _remove(Account account) {
+    if (_accountLocked || widget.session.busy) return;
+    final job = AiAccountRemoval.begin(account.key);
+    if (job == null) return;
+    setState(() => _removal = job);
+    unawaited(_runRemoval(account, job));
+  }
+
+  Future<void> _runRemoval(Account account, AiRemovalJob job) async {
+    // Only the current account has a registry here.
+    final activity = widget.session.active?.key == account.key
+        ? widget.aiActivity?.call()
+        : null;
+    await AiAccountRemoval.run(
+      account: account,
+      job: job,
+      session: widget.session,
+      confirm: (prompt) => _dialogs.confirmRemoval(account, prompt),
+      waitForInFlightWrites: activity?.stopAndWait ?? () async {},
+      requestCancelOnDispose: () => _cancelOnDispose = job.requestCancel,
+      runningOrPending: activity?.runningOrPending ?? 0,
+      // stopAndWait applies the §12.1 limit itself when it stops the runs;
+      // this is only the outer bound.
+      waitLimit: AiAccountRemoval.uploadWaitLimit,
+      onWaiting: (waiting) {
+        if (mounted) {
+          setState(() => _removalWaiting = waiting ? account.key : null);
+        }
+      },
+    );
+    _cancelOnDispose = null;
+    if (!mounted) return;
+    setState(() {
+      _removal = null;
+      _removalWaiting = null;
+    });
+    final result = AiAccountRemoval.takeResult(account.key);
+    if (result != null) presentAiRemovalResult(context, result);
+  }
+
+  /// §12.1 guard before switching accounts or signing out. Without AI the
+  /// action runs as before.
+  Future<void> _leave(Future<void> Function() action) async {
+    if (_accountLocked) return;
+    final activity = widget.aiActivity?.call();
+    if (activity == null) {
+      await action();
       return;
     }
-    if (!mounted) {
-      return;
-    }
-    setState(() => _removing = true);
+    setState(() => _leaving = true);
+    ScaffoldFeatureController<SnackBar, SnackBarClosedReason>? waiting;
     try {
-      await clearSecureDrafts(account);
-      await clearAccountArtifacts(account);
-      await clearRecentProject(account);
-      await clearAiAccountData(account);
-      await widget.session.remove(account);
-    } catch (e) {
-      if (mounted) {
-        showFailure(context, e);
-      }
+      final choice = await AiSwitchGuard.confirmSwitch(
+        runningOrPending: activity.runningOrPending,
+        confirm: (count) => Future.any([
+          _dialogs.confirmSwitch(count),
+          _gone.future.then((_) => AiSwitchChoice.cancel),
+        ]),
+      );
+      if (!mounted) return;
+      // Read before stopping: stopping invalidates the proposals.
+      final limit = activity.waitLimit;
+      final proceed = await AiSwitchGuard.settle(
+        choice: choice,
+        stopAndSnapshotWrites: () {
+          final writes = activity.stopAndSnapshotWrites();
+          if (writes.isNotEmpty &&
+              choice == AiSwitchChoice.proceedAndWait &&
+              mounted) {
+            waiting = ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(l10n.aiRemoveWaitingWrites),
+                duration: limit,
+              ),
+            );
+          }
+          return writes;
+        },
+        waitLimit: limit,
+      );
+      waiting?.close();
+      if (!proceed || !mounted) return;
+      await action();
     } finally {
-      if (mounted) {
-        setState(() => _removing = false);
-      }
+      if (mounted) setState(() => _leaving = false);
     }
   }
 
@@ -987,17 +1102,25 @@ class _MobileShellState extends State<_MobileShell> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    subtitle: Text(saved.key == account.key ? l10n.hostInUse(saved.instance.base.host) : saved.instance.base.host),
+                    subtitle: Text(
+                      _removalWaiting == saved.key
+                          ? l10n.aiRemoveWaitingWrites
+                          : saved.key == account.key
+                          ? l10n.hostInUse(saved.instance.base.host)
+                          : saved.instance.base.host,
+                    ),
                     onTap:
                         session.busy ||
-                                _removing ||
+                                _accountLocked ||
                                 saved.key == account.key
                             ? null
-                            : () => session.select(saved),
+                            : () => unawaited(
+                                _leave(() => session.select(saved)),
+                              ),
                     trailing: IconButton(
                       tooltip: l10n.removeAccountFromDevice,
                       icon: const Icon(Icons.logout, size: 20),
-                      onPressed: session.busy || _removing
+                      onPressed: session.busy || _accountLocked
                           ? null
                           : () => _remove(saved),
                     ),
@@ -1006,9 +1129,11 @@ class _MobileShellState extends State<_MobileShell> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Align(alignment: Alignment.centerLeft, child: TextButton.icon(
-                    onPressed: () {
-                      unawaited(session.endSession());
-                    },
+                    onPressed: _accountLocked
+                        ? null
+                        : () {
+                            unawaited(_leave(session.endSession));
+                          },
                     icon: const Icon(Icons.person_add_outlined),
                     label: Text(l10n.addOrReconnectAccount),
                   )),
@@ -1226,12 +1351,16 @@ class _MobileShellState extends State<_MobileShell> {
                                         resourceLabel: '${_recentProjectId ?? ''}',
                                         onRetry: _retryRecent,
                                         onSwitchAccount: () {
-                                          if (_recentProjectId != null) {
-                                            widget.session.setPendingResumeTarget(
-                                              ResumeTarget(projectId: _recentProjectId, resource: 'project'),
-                                            );
-                                          }
-                                          unawaited(widget.session.endSession(switching: true));
+                                          if (_accountLocked) return;
+                                          final projectId = _recentProjectId;
+                                          unawaited(_leave(() {
+                                            if (projectId != null) {
+                                              widget.session.setPendingResumeTarget(
+                                                ResumeTarget(projectId: projectId, resource: 'project'),
+                                              );
+                                            }
+                                            return widget.session.endSession(switching: true);
+                                          }));
                                         },
                                       ),
                                     ),
@@ -1247,11 +1376,14 @@ class _MobileShellState extends State<_MobileShell> {
                                                 : ''),
                                         onRetry: _retryResume,
                                         onSwitchAccount: () {
+                                          if (_accountLocked) return;
                                           final target = _resumeTarget;
-                                          if (target != null) {
-                                            widget.session.setPendingResumeTarget(target);
-                                          }
-                                          unawaited(widget.session.endSession(switching: true));
+                                          unawaited(_leave(() {
+                                            if (target != null) {
+                                              widget.session.setPendingResumeTarget(target);
+                                            }
+                                            return widget.session.endSession(switching: true);
+                                          }));
                                         },
                                       ),
                                     ),

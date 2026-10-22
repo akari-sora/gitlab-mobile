@@ -9,6 +9,7 @@ import '../../core/ai/ai_report.dart';
 import '../../core/ai/quick_actions.dart';
 import '../../core/brand.dart';
 import '../../core/ai/runner.dart';
+import '../../core/ai/tools/write_levels.dart';
 import '../../core/failure.dart';
 import '../../core/providers.dart';
 import '../../l10n/l10n.dart';
@@ -23,8 +24,10 @@ import 'ai_draft_target.dart';
 import 'ai_report_sender.dart';
 import 'ai_report_sheet.dart';
 import 'ai_message_body.dart';
+import 'ai_attachment_session.dart';
 import 'ai_scope.dart';
 import 'ai_settings_page.dart';
+import 'ai_write_ui.dart';
 
 /// Opens the chat for [origin] from a page that may or may not have AI.
 /// Returns false when AI is not available here (no scope or registry).
@@ -280,6 +283,47 @@ class _AiChatPageState extends State<AiChatPage> {
   /// Reports [item] (plan v5 §6.7): the user picks what is wrong and sees
   /// the exact text; mail is tried first, then the share sheet. The answer is
   /// then folded away here, whether or not the user finishes sending.
+  var _attaching = false;
+
+  /// Picks an image or a file to keep for this conversation. Nothing leaves
+  /// the device until a write the user approves uploads it.
+  Future<void> _attach(AiWriteChatSession writes) async {
+    final pick = await showModalBottomSheet<AiAttachmentPick>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              key: const ValueKey('ai-attach-image'),
+              leading: const Icon(Icons.image_outlined),
+              title: Text(l10n.attachImage),
+              onTap: () => Navigator.of(context).pop(AiAttachmentPick.image),
+            ),
+            ListTile(
+              key: const ValueKey('ai-attach-file'),
+              leading: const Icon(Icons.insert_drive_file_outlined),
+              title: Text(l10n.attachFile),
+              onTap: () => Navigator.of(context).pop(AiAttachmentPick.file),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (pick == null || !mounted) return;
+    setState(() => _attaching = true);
+    try {
+      final result = await writes.attach(pick);
+      final message = aiAttachFailureText(result.status);
+      if (message != null) _notice(message);
+    } on Object {
+      _notice(l10n.aiAttachReadFailed);
+    } finally {
+      if (mounted) setState(() => _attaching = false);
+    }
+  }
+
   Future<void> _report(AiAssistantItem item, Rect? origin) async {
     final assistants = _session.items.whereType<AiAssistantItem>().toList();
     final number = assistants.indexOf(item) + 1;
@@ -509,8 +553,10 @@ class _AiChatPageState extends State<AiChatPage> {
       listenable: _session,
       builder: (context, _) {
         final provider = _session.provider;
+        // Waiting for an approval is still a run: Stop ends it.
         final busy =
             _session.phase == AiChatPhase.running ||
+            _session.phase == AiChatPhase.awaitingApproval ||
             _session.phase == AiChatPhase.stopping;
         // Its own messenger, so a snack bar the app shows elsewhere (such as
         // an update notice) never covers the composer.
@@ -536,6 +582,11 @@ class _AiChatPageState extends State<AiChatPage> {
                 ],
               ),
               actions: [
+                if (_session.autonomyCeiling != AiAutonomyLevel.readOnly)
+                  AiChatLevelButton(
+                    session: _session,
+                    enabled: _session.phase != AiChatPhase.stopping,
+                  ),
                 PopupMenuButton<String>(
                   key: const ValueKey('ai-chat-menu'),
                   tooltip: l10n.moreActions,
@@ -594,6 +645,31 @@ class _AiChatPageState extends State<AiChatPage> {
                         canSend: _session.canSend,
                         onSend: _send,
                         onStop: _session.stop,
+                        attach: switch (_session) {
+                          final AiWriteChatSession writes
+                              when writes.autonomyCeiling !=
+                                  AiAutonomyLevel.readOnly =>
+                            IconButton(
+                              key: const ValueKey('ai-chat-attach'),
+                              tooltip: l10n.attachFile,
+                              icon: const Icon(Icons.attach_file),
+                              onPressed: writes.canAttach && !_attaching
+                                  ? () => _attach(writes)
+                                  : null,
+                            ),
+                          _ => null,
+                        },
+                        attachments: _session.attachments.isEmpty
+                            ? null
+                            : AiAttachmentStrip(
+                                attachments: _session.attachments,
+                                onRemove: switch (_session) {
+                                  final AiWriteChatSession writes
+                                      when _session.phase == AiChatPhase.idle =>
+                                    writes.removeAttachment,
+                                  _ => null,
+                                },
+                              ),
                       ),
                     ),
                   ),
@@ -656,6 +732,15 @@ class _AiChatPageState extends State<AiChatPage> {
               : _report,
           reportNotSaved: _session.reportNotSaved,
         ),
+      // What the AI asks to write waits here, under the answer that led to
+      // it, until the user approves or rejects it.
+      if (_session case final AiWriteChatSession writes)
+        for (final proposal in writes.proposals)
+          AiWriteProposalCard(
+            key: ValueKey('ai-proposal-card-${proposal.executionId}'),
+            proposal: proposal,
+            session: writes,
+          ),
       if (_session.phase == AiChatPhase.running &&
           !(items.last is AiAssistantItem &&
               (items.last as AiAssistantItem).state ==
@@ -1354,7 +1439,31 @@ class _ToolRow extends StatelessWidget {
     final running =
         item.status == AiToolRunStatus.pending ||
         item.status == AiToolRunStatus.running;
+    final write = item.writeStatus;
+    final muted = theme.colorScheme.onSurfaceVariant;
+    // A write says exactly how it went; an uncertain one is never shown as
+    // failed, because it may have been made.
     final (IconData? icon, Color? color, String status) = switch (item.status) {
+      _ when running => (null, null, l10n.aiToolReading),
+      _ when write != null => (
+        switch (write) {
+          AiWriteResultStatus.succeeded ||
+          AiWriteResultStatus.readbackConfirmed => Icons.check_circle_outline,
+          AiWriteResultStatus.noChange => Icons.radio_button_unchecked,
+          AiWriteResultStatus.notExecuted => Icons.remove_circle_outline,
+          AiWriteResultStatus.failedCertain => Icons.error_outline,
+          AiWriteResultStatus.writeUncertain => Icons.help_outline,
+          AiWriteResultStatus.resolvedByUser => Icons.task_alt,
+        },
+        switch (write) {
+          AiWriteResultStatus.succeeded ||
+          AiWriteResultStatus.readbackConfirmed => HubColors.green,
+          AiWriteResultStatus.failedCertain => theme.colorScheme.error,
+          AiWriteResultStatus.writeUncertain => HubColors.orange,
+          _ => muted,
+        },
+        aiWriteStatusLabel(write),
+      ),
       AiToolRunStatus.pending ||
       AiToolRunStatus.running => (null, null, l10n.aiToolReading),
       AiToolRunStatus.completed when item.blocked => (
@@ -1383,6 +1492,9 @@ class _ToolRow extends StatelessWidget {
         l10n.aiToolSkipped,
       ),
     };
+    final label = write != null
+        ? aiOperationLabel(item.name)
+        : _toolLabel(item.name);
     final details = [if (item.provenance.isNotEmpty) item.provenance];
     final excerpt = item.resultExcerpt.trim();
     // What was read on the first line, how it went on the second.
@@ -1405,8 +1517,8 @@ class _ToolRow extends StatelessWidget {
             children: [
               Text(
                 item.argsPreview.isEmpty
-                    ? _toolLabel(item.name)
-                    : '${_toolLabel(item.name)} · ${isolated(item.argsPreview)}',
+                    ? label
+                    : '$label · ${isolated(item.argsPreview)}',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.bodySmall?.copyWith(
@@ -1607,7 +1719,15 @@ class _Composer extends StatelessWidget {
     required this.canSend,
     required this.onSend,
     required this.onStop,
+    this.attach,
+    this.attachments,
   });
+
+  /// The attach button, for a conversation that can upload files.
+  final Widget? attach;
+
+  /// The files held for the next message.
+  final Widget? attachments;
 
   final TextEditingController controller;
   final bool busy;
@@ -1626,44 +1746,52 @@ class _Composer extends StatelessWidget {
       child: SafeArea(
         top: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
+          padding: EdgeInsets.fromLTRB(attach == null ? 12 : 4, 8, 8, 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Expanded(
-                child: TextField(
-                  key: const ValueKey('ai-chat-input'),
-                  controller: controller,
-                  minLines: 1,
-                  maxLines: 6,
-                  textInputAction: TextInputAction.newline,
-                  decoration: InputDecoration(
-                    hintText: l10n.aiChatComposerHint,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(24),
+              ?attachments,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  ?attach,
+                  Expanded(
+                    child: TextField(
+                      key: const ValueKey('ai-chat-input'),
+                      controller: controller,
+                      minLines: 1,
+                      maxLines: 6,
+                      textInputAction: TextInputAction.newline,
+                      decoration: InputDecoration(
+                        hintText: l10n.aiChatComposerHint,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        isDense: true,
+                      ),
                     ),
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 10,
-                    ),
-                    isDense: true,
                   ),
-                ),
+                  const SizedBox(width: 6),
+                  busy
+                      ? IconButton.filledTonal(
+                          key: const ValueKey('ai-chat-stop'),
+                          tooltip: l10n.aiChatStop,
+                          onPressed: stopping ? null : onStop,
+                          icon: const Icon(Icons.stop_rounded),
+                        )
+                      : IconButton.filled(
+                          key: const ValueKey('ai-chat-send'),
+                          tooltip: l10n.aiChatSend,
+                          onPressed: canSend && hasText ? () => onSend() : null,
+                          icon: const Icon(Icons.arrow_upward_rounded),
+                        ),
+                ],
               ),
-              const SizedBox(width: 6),
-              busy
-                  ? IconButton.filledTonal(
-                      key: const ValueKey('ai-chat-stop'),
-                      tooltip: l10n.aiChatStop,
-                      onPressed: stopping ? null : onStop,
-                      icon: const Icon(Icons.stop_rounded),
-                    )
-                  : IconButton.filled(
-                      key: const ValueKey('ai-chat-send'),
-                      tooltip: l10n.aiChatSend,
-                      onPressed: canSend && hasText ? () => onSend() : null,
-                      icon: const Icon(Icons.arrow_upward_rounded),
-                    ),
             ],
           ),
         ),
