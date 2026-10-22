@@ -1126,3 +1126,12 @@ zero through insertion and leaving. Production AI remains disabled by default.
 Synthetic tests and emulator checks do not establish real-provider/private-project
 integration, iOS acceptance, publication or G0 acceptance. Exact-source test,
 build and pipeline receipts belong to the submitting MR.
+
+The `ea67553` source passed 5,046 Flutter tests (zero failures/skips) and full
+analysis. On the project-owned API 36 emulator, the completed answer appended to
+the existing MR draft, survived leaving and reopening the ordinary editor, and
+kept the fixture write count at zero. Explicit Save closed the editor, raised the
+count to one, and displayed the combined body in the refreshed discussion. The
+original APK was restored with `install -r`; installed bytes matched its saved
+SHA-256. Public package metadata, exact-source evidence and scope limits are in
+[`receipts/2026-10-22-ai-comment-qa.json`](receipts/2026-10-22-ai-comment-qa.json).

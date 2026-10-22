@@ -719,6 +719,22 @@
       "installed_on_phone": "unknown; no receipt records an install"
     }
   ],
+  "local_packaging_receipts": [
+    {
+      "id": "LOCAL_AI_COMMENT_QA_93116F2",
+      "source_commit": "93116f2c7f860aff68ecdfd1be2f50b2bc62c9d6",
+      "receipt": "docs/receipts/2026-10-22-ai-comment-qa.json",
+      "distribution": "local-only",
+      "result": "Superseded: draft insertion passed; explicit save exposed a missing MR fixture route."
+    },
+    {
+      "id": "LOCAL_AI_COMMENT_QA_EA67553",
+      "source_commit": "ea67553eefcb8b40bfdc0d509cc20c629f78c09b",
+      "receipt": "docs/receipts/2026-10-22-ai-comment-qa.json",
+      "distribution": "local-only",
+      "result": "Synthetic emulator append/reopen/explicit-save passed; original APK restored and hash verified."
+    }
+  ],
   "known_gaps": [
     "Current phone installed signer unknown; phone untouched.",
     "HISTORICAL_CI23 private key not found in the selected scope; other locations unknown; no lineage covers it.",

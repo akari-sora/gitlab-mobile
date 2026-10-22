@@ -1,0 +1,227 @@
+{
+  "schema": "gitlab-mobile-local-apk-verification-receipt",
+  "schema_version": 1,
+  "visibility": "PUBLIC_METADATA_ONLY",
+  "contains_secrets": false,
+  "recorded_at_utc": "2026-10-22T02:44:28.403809+00:00",
+  "merge_request": "https://gitlab.com/aa22396584/gitlab-mobile/-/merge_requests/98",
+  "session_scratch": "/private/tmp/gitlab-mobile-comment-draft-20261022.SjF0WT",
+  "packages": [
+    {
+      "id": "LOCAL_AI_COMMENT_QA_93116F2",
+      "file": "ai-comment-qa-93116f2.apk",
+      "bytes": 188463632,
+      "sha256": "c1ba5e16968f8c12cc914ef7a18beedf9706159b86f1196de5f2da217ca3fce4",
+      "availability": "local-only session scratch; not uploaded",
+      "distribution": "local-only",
+      "public_download_url": null,
+      "source_commit": "93116f2c7f860aff68ecdfd1be2f50b2bc62c9d6",
+      "build_lane": "local Android synthetic emulator QA, pinned Flutter 3.47.2, shared Mac build lock",
+      "variant": "debug",
+      "flavor": "gitlab",
+      "entrypoint": "tool/emulator_ai_comment.dart",
+      "application_id": "io.gitlabmobile.gitlab_mobile",
+      "version_name": "0.5.0",
+      "version_code": 5,
+      "debuggable": true,
+      "min_sdk": 24,
+      "target_sdk": 36,
+      "dart_defines": {
+        "EMULATOR_UI_QA": true,
+        "MERGELINE_AI_ASSISTANT": true,
+        "EMULATOR_PERF_QA": false,
+        "PERF_DIAGNOSTICS": false
+      },
+      "other_qa_benchmark_flags": "disabled; no other enable defines supplied",
+      "signer": "CURRENT_LOCAL",
+      "signing_schemes": {
+        "v1": {
+          "verified": false,
+          "certificate_sha256": []
+        },
+        "v2": {
+          "verified": true,
+          "certificate_sha256": [
+            "a15c11c804bd8b40cebf052747bfea91542568989af0b7a092efcfcb7ebff434"
+          ]
+        },
+        "v3": {
+          "verified": false,
+          "certificate_sha256": []
+        },
+        "v3.1": {
+          "verified": false,
+          "certificate_sha256": []
+        },
+        "v4": {
+          "verified": false,
+          "certificate_sha256": []
+        }
+      },
+      "result": "draft append/reopen passed with zero writes; explicit save reached one write but fixture returned 404; superseded by final candidate"
+    },
+    {
+      "id": "LOCAL_AI_COMMENT_QA_EA67553",
+      "file": "ai-comment-qa-ea67553.apk",
+      "bytes": 188463632,
+      "sha256": "349fbb40a62d36896ffe75ba4bb843132e1dd3bf17771de23cc4026e139ab9e4",
+      "availability": "local-only session scratch; not uploaded",
+      "distribution": "local-only",
+      "public_download_url": null,
+      "source_commit": "ea67553eefcb8b40bfdc0d509cc20c629f78c09b",
+      "build_lane": "local Android synthetic emulator QA, pinned Flutter 3.47.2, shared Mac build lock",
+      "variant": "debug",
+      "flavor": "gitlab",
+      "entrypoint": "tool/emulator_ai_comment.dart",
+      "application_id": "io.gitlabmobile.gitlab_mobile",
+      "version_name": "0.5.0",
+      "version_code": 5,
+      "debuggable": true,
+      "min_sdk": 24,
+      "target_sdk": 36,
+      "dart_defines": {
+        "EMULATOR_UI_QA": true,
+        "MERGELINE_AI_ASSISTANT": true,
+        "EMULATOR_PERF_QA": false,
+        "PERF_DIAGNOSTICS": false
+      },
+      "other_qa_benchmark_flags": "disabled; no other enable defines supplied",
+      "signer": "CURRENT_LOCAL",
+      "signing_schemes": {
+        "v1": {
+          "verified": false,
+          "certificate_sha256": []
+        },
+        "v2": {
+          "verified": true,
+          "certificate_sha256": [
+            "a15c11c804bd8b40cebf052747bfea91542568989af0b7a092efcfcb7ebff434"
+          ]
+        },
+        "v3": {
+          "verified": false,
+          "certificate_sha256": []
+        },
+        "v3.1": {
+          "verified": false,
+          "certificate_sha256": []
+        },
+        "v4": {
+          "verified": false,
+          "certificate_sha256": []
+        }
+      },
+      "result": "passed synthetic MR append/reopen with zero writes; explicit Save acknowledged one write; refreshed discussion displayed exact appended content"
+    }
+  ],
+  "device": {
+    "serial": "emulator-5600",
+    "avd_name": "GitLabMobile_API36_Codex_20261003",
+    "qemu": true,
+    "final_candidate_readback": {
+      "installed_apk_sha256": "349fbb40a62d36896ffe75ba4bb843132e1dd3bf17771de23cc4026e139ab9e4",
+      "matches_candidate": true,
+      "device_serial": "emulator-5600",
+      "avd_name": "GitLabMobile_API36_Codex_20261003",
+      "qemu": "1"
+    },
+    "restore": {
+      "at_utc": "2026-10-22T02:43:25.332936+00:00",
+      "device_serial": "emulator-5600",
+      "avd_name": "GitLabMobile_API36_Codex_20261003",
+      "qemu": true,
+      "original_apk_sha256": "51b0c258e8c37e06307fc78fab6ab1a45dc1cde36287031b18a3539bd1af47f5",
+      "installed_apk_sha256": "51b0c258e8c37e06307fc78fab6ab1a45dc1cde36287031b18a3539bd1af47f5",
+      "matches_original": true,
+      "install_mode": "adb install -r; no uninstall or app-data clear",
+      "install_output": "Performing Streamed Install\nSuccess"
+    }
+  },
+  "synthetic_ui_checks": {
+    "target": "MR !12 in synthetic fixture, memory-only account and drafts",
+    "provider_network_calls": 0,
+    "before_append_note_posts": 0,
+    "after_append_and_leave_note_posts": 0,
+    "after_ordinary_editor_reopen_note_posts": 0,
+    "after_explicit_save_note_posts": 1,
+    "editor_closed_after_save": true,
+    "discussion_count_before": 3,
+    "discussion_count_after": 4,
+    "expected_raw_body": "Existing reviewer note\n\nSynthetic **AI answer**\n\nPlease verify this text before sending.",
+    "refreshed_discussion_body_visually_verified": true,
+    "screenshots": [
+      {
+        "file": "05-final-ai-answer-write-0.png",
+        "bytes": 127308,
+        "sha256": "08809725278da52c93f80f1490116a7714b6842d67942665e1aec3a7d2efe77e",
+        "availability": "local-only session scratch; not uploaded"
+      },
+      {
+        "file": "06-final-appended-draft-write-0.png",
+        "bytes": 148467,
+        "sha256": "3bf1e03f8aa86bb02496f3e727f8ff01d1c18635e47222e444ebac4dd0fdcdfe",
+        "availability": "local-only session scratch; not uploaded"
+      },
+      {
+        "file": "07-final-ordinary-draft-reopened-write-0.png",
+        "bytes": 148484,
+        "sha256": "bf08f0037581017598b471da3f6ecec0971b4fe75b5d8d9a1abb013be50dc1de",
+        "availability": "local-only session scratch; not uploaded"
+      },
+      {
+        "file": "08-final-explicit-save-write-1.png",
+        "bytes": 219454,
+        "sha256": "01310291ad75a8deb027836e3b85d1bd27e24093bbcf189b9be0b5be8902e44f",
+        "availability": "local-only session scratch; not uploaded"
+      },
+      {
+        "file": "09-final-comment-readback-write-1.png",
+        "bytes": 192216,
+        "sha256": "b2040385c7e787d412ca17ff3eac2b9f52802e3cf02663303e86a8c3181feee7",
+        "availability": "local-only session scratch; not uploaded"
+      }
+    ],
+    "initial_fixture_failure": {
+      "file": "04-first-fixture-missing-mr-note-route.png",
+      "bytes": 204994,
+      "sha256": "3fd999c74c451e0f17e9211b07df2749cf4b18baffb536465501367ecc653d51",
+      "availability": "local-only session scratch; not uploaded"
+    }
+  },
+  "validation": {
+    "tested_source_commit": "ea67553eefcb8b40bfdc0d509cc20c629f78c09b",
+    "flutter_version": "3.47.2",
+    "flutter_test": {
+      "tests": 5046,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "exit_code": 0,
+      "report": {
+        "file": "final-junit.xml",
+        "bytes": 1177513,
+        "sha256": "111fb343f0a32fc8f4ad71b2621de7602dd3c2137186c1b85496fb061746f720",
+        "availability": "local-only session scratch; not uploaded"
+      }
+    },
+    "flutter_analyze": {
+      "result": "No issues found",
+      "exit_code": 0,
+      "log": {
+        "file": "analyze-final.log",
+        "bytes": 96,
+        "sha256": "ba3ca54002b127f92d4eeeb79891403ec0363b00301975ce337e822ed964acd1",
+        "availability": "local-only session scratch; not uploaded"
+      }
+    },
+    "review": "Independent source review approved; final fixture/test follow-up reviewed; final test-count and default-off gate verified independently"
+  },
+  "remaining_gaps": [
+    "GitLab pipeline status is tracked separately on the MR; local validation does not establish CI success.",
+    "No real-provider or real private-project integration in this synthetic QA run.",
+    "No physical phone, iOS, store/publication or G0 acceptance.",
+    "Memory-only fixture storage does not prove native secure-storage retention or process-kill recovery.",
+    "Original installed APK bytes were restored using install -r and read back; private account/draft contents were not inspected."
+  ],
+  "privacy": "Only synthetic content and public build metadata; no tokens, private repository traces, key files or passwords included."
+}
