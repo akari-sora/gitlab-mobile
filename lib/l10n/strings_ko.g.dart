@@ -2574,4 +2574,5 @@ const _messagesKo = <String>[
   'Reopen the milestone',
   'File type',
   'Board list',
+  'The edited text didn\'t pass the checks, so nothing was written. Edit it again, then approve.',
 ];

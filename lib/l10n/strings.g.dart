@@ -7809,4 +7809,7 @@ final class AppStrings {
 
   /// 看板列表
   String get aiFieldBoardList => language._messages[2571];
+
+  /// 改過的內容沒有通過檢查，沒有寫入。請再修改後核准。
+  String get aiProposalEditRefused => language._messages[2572];
 }

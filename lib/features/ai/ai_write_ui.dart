@@ -274,6 +274,12 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
       _message = switch (outcome.reasonCode) {
         'typedNameMismatch' => l10n.aiProposalNameMismatch,
         'tooManyRunning' => l10n.aiProposalTooManyRunning,
+        // Still waiting: the proposal is fine, only the edited text was
+        // refused, so the user can change it again.
+        _
+            when _proposal.editedText != null &&
+                widget.session.proposals.contains(_proposal) =>
+          l10n.aiProposalEditRefused,
         _ => l10n.aiProposalNotRun,
       };
     });

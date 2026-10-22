@@ -348,6 +348,25 @@ void main() {
     expect(find.text(l10n.aiProposalTooManyRunning), findsOneWidget);
   });
 
+  testWidgets('an edit the checks refused can be changed again', (
+    tester,
+  ) async {
+    final proposal = _proposal()
+      ..editedText = 'token glpat-ABCDEFGHIJKLMNOPQRST';
+    final writes = _Writes([proposal])
+      ..answer = (_) => const AiWriteOutcome(
+        state: AiJournalState.notExecuted,
+        reasonCode: 'secretDetected',
+      );
+    await tester.pumpWidget(
+      _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+    );
+    await tester.tap(find.byKey(const ValueKey('ai-proposal-approve')));
+    await tester.pumpAndSettle();
+    expect(find.text(l10n.aiProposalEditRefused), findsOneWidget);
+    expect(find.text(l10n.aiProposalNotRun), findsNothing);
+  });
+
   for (final (tag, size) in [
     ('zh-TW', const Size(320, 640)),
     ('ar', const Size(320, 640)),

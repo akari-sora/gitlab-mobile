@@ -11257,5 +11257,6 @@
   "aiOpShowBoardList": "顯示看板的內建列表",
   "aiOpReopenMilestone": "重新開啟里程碑",
   "aiFieldFileType": "檔案類型",
-  "aiFieldBoardList": "看板列表"
+  "aiFieldBoardList": "看板列表",
+  "aiProposalEditRefused": "改過的內容沒有通過檢查，沒有寫入。請再修改後核准。"
 }
