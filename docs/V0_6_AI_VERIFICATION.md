@@ -1690,11 +1690,17 @@ Eight mutations, each caught by a test:
 #### MR6a-4 review round 3
 
 Round 3 ran without Codex, cursor-agent and agy, which had all run out of
-quota. Opus 5.5 reviewed it, with a Claude reviewer agent and DeepSeek V4.1
-Flash (free) filling in. Opus: APPROVE WITH MINOR FIXES, with no Critical or
-Important findings. The Claude reviewer gave the same verdict, with six
-Minors; four of them repeat Opus's. It re-ran the eight round-2 mutations, and all were
-caught. Fixes:
+quota. Opus 5.5 reviewed it, with a Claude reviewer agent filling in.
+DeepSeek V4.1 Flash (free) was also started, but it hit its 30-minute limit
+without a verdict, so it counts as no report.
+
+Both reviewers returned APPROVE WITH MINOR FIXES, with no Critical or
+Important findings.
+- Opus re-ran the eight round-2 mutations, and all were caught.
+- The Claude reviewer reported six Minors, four of which repeat Opus's. It
+  ran 14 mutations of its own, and all were caught too.
+
+Fixes:
 
 - **Idle refresh.** A refresh while idle that redacts more now notifies the
   page. A failed refresh blocks the chat the way a failed recheck does.
@@ -1725,3 +1731,69 @@ caught. Fixes:
 - **Left as a follow-up:** a test for "a recovery during the fourth attempt
   resets the budget". The fix is in place, but the test needs a history file
   layer that fails one conversation while another saves.
+
+#### MR6a-4 review round 4
+
+Under the fast path, Opus was asked to confirm the round-3 increment and did
+not. It re-ran 13 mutations, and all were caught, but it found one Important
+regression from round 3.
+
+- **Important: the update note pushed Send under the keyboard.** The
+  "preview updated" note had moved into the pinned button row. With the
+  keyboard up and large text, it pushed Send under the keyboard and left the
+  preview no height. This happened in de and ru at 1.5×, en at 1.8× and ar
+  at 2×. The fix:
+  - The pinned row leaves the form at least 120 dp.
+  - What does not fit in the row scrolls from its end, so Send stays on
+    screen.
+  - Under 280 dp of room, the buttons scroll with the form.
+  - When Send replaces the preview, the preview is scrolled into view.
+  - New tests cover de, en and ar at 2× on 360×640 with the keyboard up.
+    They check that nothing overflows, that Send stays above the keyboard
+    and that part of the preview shows.
+- **Minor: a failed secret refresh during a run turned the phase to idle.**
+  It no longer does: the run keeps Stop, and the failed display blocks the
+  chat when the run ends. A test covers both the idle case and the mid-run
+  case.
+- **Minor: six fixes had no test.** New tests cover each one:
+  - keys typed just before Send are shown before they go;
+  - backing out while the text is checked keeps the chat open;
+  - a failed refresh blocks an idle chat;
+  - a conversation started after kept display saves its own items without
+    the earlier ones.
+
+  Mutations confirmed that each test catches its fix being removed. This
+  includes removing the footer's scrolling, which fails in all three
+  languages.
+- **Nit: two inaccuracies in the round-3 paragraph above.** It now says
+  that DeepSeek gave no report and who ran which mutations.
+
+#### MR6a-4 review round 5
+
+Under the owner's revised rule, the first round of an MR gets the full
+panel. After that, one reviewer checks only that Critical and Important
+findings are fixed, and Minors never block. Opus and a Claude reviewer agent
+reviewed `b8beb44..13b504f`. Opus returned APPROVE WITH MINOR FIXES, with no
+Critical or Important findings.
+
+The Claude reviewer returned the same verdict. It measured 540 layouts and
+found no overflow: Send was always in reach, the preview always scrolled
+into view, and the focus was kept across all 54 pinned/unpinned switches.
+
+Fixed in this round:
+- The 120 dp left for the form is now measured against the sheet's own
+  height. It had been measured against the room, which is wrong once the
+  sheet takes 90% of a large room.
+- The pinned row's scroller is no longer the route's primary one. Before,
+  a hardware keyboard's Page Down could hit two scrollers sharing one
+  controller.
+- This ledger section was missing; it is now written.
+
+Left for a follow-up issue:
+- With the keyboard up at 2× text, the note can sit above the visible part
+  of the pinned row.
+- The 280 dp threshold unpins Send on short phones at 1×.
+- Two test gaps:
+  - a test for `reportNotSaved` over kept display;
+  - a test for a recovery during the fourth attempt.
+- A comment and a mid-run test that describe the run's end loosely.

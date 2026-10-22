@@ -222,8 +222,12 @@ class _AiReportSheetState extends State<AiReportSheet> {
         // at its end so Send is always on screen.
         final actions = pinned
             ? ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: room - 120),
+                // Measured against the sheet's own height, which is 90% of
+                // a large room.
+                constraints: BoxConstraints(maxHeight: height - 120),
                 child: SingleChildScrollView(
+                  // Not the route's primary scroller: that is the form's.
+                  primary: false,
                   reverse: true,
                   padding: actionsPadding,
                   child: Column(
