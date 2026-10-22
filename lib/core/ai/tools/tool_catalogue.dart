@@ -7,6 +7,7 @@ import '../redaction.dart';
 import '../wire/wire_format.dart';
 import '../write_text.dart'
     show AiFieldProvenance, AiTextBlockCode, UploadPlaceholderTable;
+import 'field_provenance.dart';
 import 'gitlab_read_port.dart';
 import 'sensitive_paths.dart';
 import 'tool_scope.dart';
@@ -119,8 +120,8 @@ final class AiToolCatalogue {
   final Future<void> Function()? refreshSecrets;
 
   /// The conversation's upload placeholder table. With it, the complete
-  /// issue and merge request descriptions and note bodies that
-  /// `get_issue` and `get_merge_request` return carry restorable
+  /// descriptions and note bodies returned by project resource reads carry
+  /// restorable
   /// `[[upload:u-<n>]]` tokens; every other value keeps ordinary markers.
   final UploadPlaceholderTable? placeholders;
   final DateTime Function() _now;
@@ -199,7 +200,32 @@ final class AiToolCatalogue {
     ),
   ]);
 
-  List<AiToolSpec> get specs => _specs;
+  static final List<AiToolSpec> _fieldSpecs = List.unmodifiable([
+    _spec(
+      'get_release',
+      'Read one existing release by its exact tag name.',
+      {'tag_name': _string},
+      ['tag_name'],
+    ),
+    _spec(
+      'get_milestone',
+      'Read one project milestone by its numeric ID, not its iid.',
+      {'milestone_id': _positiveInteger},
+      ['milestone_id'],
+    ),
+    _spec(
+      'get_snippet',
+      'Read project snippet metadata, file paths and one text file. '
+          'Defaults to the first listed file at HEAD.',
+      {'snippet_id': _positiveInteger, 'file_path': _string, 'ref': _string},
+      ['snippet_id'],
+      optional: ['file_path', 'ref'],
+    ),
+  ]);
+
+  List<AiToolSpec> get specs => port is AiGitLabFieldReadPort
+      ? List.unmodifiable([..._specs, ..._fieldSpecs])
+      : _specs;
 
   Future<AiToolResult> executeResult(
     AiToolCall call, {
@@ -348,6 +374,9 @@ final class AiToolCatalogue {
     'list_directory' => _listDirectory(arguments),
     'get_issue' => _issue(arguments),
     'get_merge_request' => _mergeRequest(arguments),
+    'get_release' => _release(arguments),
+    'get_milestone' => _milestone(arguments),
+    'get_snippet' => _snippet(arguments),
     'get_merge_request_diff' => _mergeRequestDiff(),
     'get_pipeline_jobs' => _pipelineJobs(),
     'get_job_log' => _jobLog(arguments),
@@ -419,6 +448,99 @@ final class AiToolCatalogue {
       restorable: _discussionFields('merge_requests', iid),
     );
   }
+
+  AiGitLabFieldReadPort get _fieldPort {
+    final Object candidate = port;
+    if (candidate is AiGitLabFieldReadPort) return candidate;
+    throw const _ToolValidation('fieldReadsUnavailable');
+  }
+
+  Future<_RawToolResult> _release(Map<String, Object?> args) async {
+    _exactKeys(args, required: const {'tag_name'});
+    final tagName = _resourceSegment(args['tag_name']);
+    final read = await _fieldPort.release(tagName);
+    return _RawToolResult.json(
+      _pick(read.value, const [
+        'tag_name', 'name', 'description', 'created_at', 'released_at',
+        'upcoming_release',
+      ]),
+      _live('release $tagName'),
+      requestCount: read.requestCount,
+      restorable: _descriptionField(
+        () => AiProjectFieldProvenance.releaseDescription(
+          instance: placeholders!.instance,
+          projectId: scope.projectId,
+          projectPath: scope.projectPath,
+          tagName: tagName,
+        ),
+      ),
+    );
+  }
+
+  Future<_RawToolResult> _milestone(Map<String, Object?> args) async {
+    _exactKeys(args, required: const {'milestone_id'});
+    final id = _positiveInt(args['milestone_id'], 'milestone_id');
+    final read = await _fieldPort.milestone(id);
+    return _RawToolResult.json(
+      _pick(read.value, const [
+        'id', 'iid', 'project_id', 'title', 'description', 'state',
+        'created_at', 'updated_at', 'due_date', 'start_date',
+      ]),
+      _live('milestone #$id'),
+      requestCount: read.requestCount,
+      restorable: _descriptionField(
+        () => AiProjectFieldProvenance.milestoneDescription(
+          instance: placeholders!.instance,
+          projectId: scope.projectId,
+          projectPath: scope.projectPath,
+          milestoneId: id,
+          milestoneIid: read.value['iid']! as int,
+        ),
+      ),
+    );
+  }
+
+  Future<_RawToolResult> _snippet(Map<String, Object?> args) async {
+    _exactKeys(
+      args,
+      required: const {'snippet_id'},
+      optional: const {'file_path', 'ref'},
+    );
+    final id = _positiveInt(args['snippet_id'], 'snippet_id');
+    final path = args.containsKey('file_path') ? _path(args['file_path']) : null;
+    if (path == '') throw const _ToolValidation('invalidSnippetPath');
+    final ref = args.containsKey('ref') ? _resourceSegment(args['ref']) : 'HEAD';
+    final read = await _fieldPort.snippet(id, filePath: path, ref: ref);
+    final file = read.value['file'];
+    return _RawToolResult.json(
+      {
+        ..._pick(read.value, const [
+          'id', 'project_id', 'title', 'description', 'visibility',
+          'created_at', 'updated_at', 'file_name', 'files',
+          'content_unavailable',
+        ]),
+        if (file is AiJson) 'file': _pick(file, const ['path', 'ref', 'content']),
+      },
+      _live('snippet #$id'),
+      requestCount: read.requestCount,
+      readConfidential: read.value['visibility'] != 'public' &&
+          read.value['visibility'] != 'internal',
+      readInternal: read.value['visibility'] == 'internal',
+      restorable: _descriptionField(
+        () => AiProjectFieldProvenance.snippetDescription(
+          instance: placeholders!.instance,
+          projectId: scope.projectId,
+          projectPath: scope.projectPath,
+          snippetId: id,
+        ),
+      ),
+    );
+  }
+
+  _RestorableFields _descriptionField(AiFieldProvenance Function() field) =>
+      (path, owner) => path.length == 1 && path.single == 'description'
+          ? field()
+          : null;
 
   /// The complete values in a `_projectDiscussion` projection that a write
   /// can put back whole: the description and each note's body, keyed by the
@@ -988,6 +1110,15 @@ String _sha(Object? value) {
   return sha;
 }
 
+String _resourceSegment(Object? value) {
+  final segment = _nonEmptyString(value, 'resource', max: 1024);
+  if (segment == '.' || segment == '..' ||
+      _controlCharacters.hasMatch(segment) || segment.contains('\\')) {
+    throw const _ToolValidation('invalidResourceSegment');
+  }
+  return segment;
+}
+
 int _positiveInt(Object? value, String name) {
   if (value is! int || value <= 0) {
     throw _ToolValidation('$name must be positive');
@@ -1020,6 +1151,7 @@ int _requestCost(String name) => switch (name) {
   'read_file' => 2,
   'list_directory' => 4,
   'get_issue' || 'get_merge_request' => 2,
+  'get_snippet' => 2,
   'get_merge_request_diff' => 2,
   'get_job_log' => 4,
   _ => 1,
