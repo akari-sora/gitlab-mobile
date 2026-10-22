@@ -11305,5 +11305,87 @@
     }
   },
   "aiSettledEditWritten": "已寫入，但沒有讀回確認。你改過的內容留在這裡，重送前請先到 GitLab 查看。",
-  "aiSettledEditUncertain": "不確定這筆寫入是否完成。你改過的內容留在這裡，重送前請先到 GitLab 查看。"
+  "aiSettledEditUncertain": "不確定這筆寫入是否完成。你改過的內容留在這裡，重送前請先到 GitLab 查看。",
+  "aiPreviewNewFile": "新檔案",
+  "aiPreviewFile": "檔案",
+  "aiPreviewCiFile": "這是 Pipeline 設定相關的檔案，改動會影響 Pipeline 怎麼執行。",
+  "aiPreviewExistingSecrets": "檔案裡已有 {count} 處疑似秘密；這次編輯不會移除它們。",
+  "@aiPreviewExistingSecrets": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiPreviewBranches": "分支",
+  "aiPreviewBranchFlow": "{source} → {target}",
+  "@aiPreviewBranchFlow": {
+    "placeholders": {
+      "source": {},
+      "target": {}
+    }
+  },
+  "aiPreviewCommit": "提交",
+  "aiPreviewChangedFiles": "變更的檔案",
+  "aiPreviewMergeOptions": "合併方式",
+  "aiPreviewSquashOn": "壓縮成一個提交",
+  "aiPreviewSquashOff": "保留所有提交",
+  "aiPreviewRemoveSource": "合併後刪除來源分支",
+  "aiPreviewAutoMerge": "Pipeline 通過後自動合併",
+  "aiPreviewHeadMoved": "提議之後，來源分支又多了 {count} 個提交，合併會包含它們。",
+  "@aiPreviewHeadMoved": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiPreviewMergeCiPaths": "這次合併會改到 Pipeline 設定：{paths}",
+  "@aiPreviewMergeCiPaths": {
+    "placeholders": {
+      "paths": {}
+    }
+  },
+  "aiPreviewClosesOutOfScope": "合併後還會關閉這段對話範圍外的議題：{issues}",
+  "@aiPreviewClosesOutOfScope": {
+    "placeholders": {
+      "issues": {}
+    }
+  },
+  "aiPreviewRef": "分支或標籤",
+  "aiPreviewPipeline": "Pipeline",
+  "aiPreviewJob": "工作",
+  "aiPreviewEnvironment": "環境",
+  "aiPreviewStoredVariables": "重新執行或播放可能沿用 GitLab 上已存的變數與 inputs；由排程建立的 Pipeline 還會使用排程目前的變數。應用程式讀不到，也無法核對。",
+  "aiPreviewScheduleVariables": "排程目前的變數：{names}",
+  "@aiPreviewScheduleVariables": {
+    "placeholders": {
+      "names": {}
+    }
+  },
+  "aiPreviewScheduleUnreadable": "讀不到排程的參數，無法核對。",
+  "aiPreviewNewVariables": "會帶入新的變數：{names}",
+  "@aiPreviewNewVariables": {
+    "placeholders": {
+      "names": {}
+    }
+  },
+  "aiPreviewDraftCount": "草稿",
+  "aiPreviewDraftSplit": "共 {total} 則，其中 {ours} 則是這段對話建立的",
+  "@aiPreviewDraftSplit": {
+    "placeholders": {
+      "total": {},
+      "ours": {}
+    }
+  },
+  "aiPreviewDraftByAi": "這段對話建立的草稿",
+  "aiPreviewDraftByYou": "其他草稿",
+  "aiPreviewDeleteTarget": "要刪除",
+  "aiPreviewPath": "路徑",
+  "aiPreviewDeleteCount": "數量",
+  "aiPreviewAtLeast": "至少 {count}",
+  "@aiPreviewAtLeast": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiPreviewCannotUndo": "刪除後無法復原。",
+  "aiPreviewMergeRequest": "合併請求",
+  "aiPreviewCancelMayLackPermission": "你可能沒有取消自動合併的權限；GitLab 拒絕時不會有任何改變。"
 }
