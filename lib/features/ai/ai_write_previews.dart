@@ -9,15 +9,26 @@ import '../../shared/theme.dart';
 /// §6, §7.7). Every string here came through the coordinator's display
 /// redaction; GitLab names are isolated one piece at a time.
 class AiWritePreviewView extends StatelessWidget {
-  const AiWritePreviewView({super.key, required this.preview});
+  const AiWritePreviewView({
+    super.key,
+    required this.preview,
+    this.storedVariables = false,
+  });
 
   final AiWritePreview preview;
+
+  /// A rerun, retry or play that may reuse variables GitLab stored (the
+  /// tier decides; §0 item 12).
+  final bool storedVariables;
 
   @override
   Widget build(BuildContext context) => switch (preview) {
     final AiDiffPreview diff => _DiffPreview(diff: diff),
     final AiMergePreview merge => _MergePreview(merge: merge),
-    final AiPipelinePreview pipeline => _PipelinePreview(pipeline: pipeline),
+    final AiPipelinePreview pipeline => _PipelinePreview(
+      pipeline: pipeline,
+      storedVariables: storedVariables,
+    ),
     final AiDraftPublishPreview drafts => _DraftsPreview(drafts: drafts),
     final AiDeletePreview delete => _DeletePreview(delete: delete),
     final AiCancelAutoMergePreview cancel => _CancelAutoMergePreview(
@@ -262,9 +273,13 @@ class _MergePreview extends StatelessWidget {
 }
 
 class _PipelinePreview extends StatelessWidget {
-  const _PipelinePreview({required this.pipeline});
+  const _PipelinePreview({
+    required this.pipeline,
+    required this.storedVariables,
+  });
 
   final AiPipelinePreview pipeline;
+  final bool storedVariables;
 
   @override
   Widget build(BuildContext context) => Column(
@@ -287,7 +302,7 @@ class _PipelinePreview extends StatelessWidget {
         _Fact(l10n.aiPreviewEnvironment, isolated(environment)),
       // §0 item 12: a rerun or play may reuse variables GitLab stored and,
       // for a schedule, its current variables; the app cannot check them.
-      if (pipeline.newVariableNames.isEmpty)
+      if (storedVariables)
         _Notice(
           l10n.aiPreviewStoredVariables,
           noticeKey: const ValueKey('ai-preview-stored-variables'),

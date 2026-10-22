@@ -125,7 +125,9 @@ void main() {
   testWidgets('a rerun warns about stored variables; new variables warn too', (
     tester,
   ) async {
-    await tester.pumpWidget(_host(AiWritePreviewView(preview: _rerun)));
+    await tester.pumpWidget(
+      _host(AiWritePreviewView(preview: _rerun, storedVariables: true)),
+    );
     expect(find.byKey(const ValueKey('ai-preview-stored-variables')), findsOne);
     expect(find.textContaining('deploy'), findsOneWidget);
     await tester.pumpWidget(_host(AiWritePreviewView(preview: _withVariables)));

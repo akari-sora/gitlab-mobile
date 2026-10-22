@@ -5,6 +5,7 @@ import 'package:gitlab_mobile/core/ai/ai_display.dart';
 import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
+import 'package:gitlab_mobile/core/ai/tools/write_preview.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_tier.dart';
 import 'package:gitlab_mobile/features/ai/ai_attachment_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
@@ -26,6 +27,8 @@ AiWriteProposal _proposal({
   String reason = 'You asked me to approve the review.',
   AiUploadPreview? upload,
   List<String> closingRefs = const [],
+  AiWritePreview? preview,
+  bool showSquash = false,
 }) => AiWriteProposal(
   executionId: 'exec-1',
   operationId: operationId,
@@ -36,6 +39,7 @@ AiWriteProposal _proposal({
     typedName: typedName ? 'team/example' : null,
     reasons: reasons,
     reusesStoredVariables: tier == AiWriteTier.t3,
+    showSquash: showSquash,
   ),
   payloadDigest: 'digest',
   previewText: 'createNote !44',
@@ -50,6 +54,7 @@ AiWriteProposal _proposal({
   fields: fields,
   upload: upload,
   closingRefs: closingRefs,
+  preview: preview,
 );
 
 final class _Writes implements AiWriteChatSession {
@@ -363,6 +368,59 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('a merge card shows its preview once, without repeats', (
+    tester,
+  ) async {
+    final proposal = _proposal(
+      operationId: 'mergeMergeRequest',
+      tier: AiWriteTier.t4,
+      fields: const {},
+      showSquash: true,
+      closingRefs: const ['#3'],
+      preview: AiMergePreview(
+        sourceBranch: 'feature/login',
+        targetBranch: 'main',
+        shortSha: 'a1b2c3d4',
+        pathCount: 2,
+        squash: true,
+        closingIssues: const [
+          AiClosingIssue(projectId: 9, iid: 3, outOfScope: false),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      _host(
+        AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+      ),
+    );
+    expect(find.byKey(const ValueKey('ai-preview-merge')), findsOneWidget);
+    expect(find.text(l10n.aiPreviewSquashOn), findsOneWidget);
+    expect(find.text(l10n.aiProposalSquash), findsNothing);
+    expect(find.text(l10n.aiProposalClosesOnMerge('#3')), findsOneWidget);
+    expect(find.byKey(const ValueKey('ai-proposal-closes')), findsNothing);
+  });
+
+  testWidgets('a rerun card warns about stored variables once', (
+    tester,
+  ) async {
+    final proposal = _proposal(
+      operationId: 'retryPipeline',
+      tier: AiWriteTier.t3,
+      fields: const {},
+      preview: AiPipelinePreview(ref: 'main', pipelineId: 1201),
+    );
+    await tester.pumpWidget(
+      _host(
+        AiWriteProposalCard(proposal: proposal, session: _Writes([proposal])),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey('ai-preview-stored-variables')),
+      findsOneWidget,
+    );
+    expect(find.text(l10n.aiProposalStoredVariables), findsNothing);
   });
 
   testWidgets('a card held by an account removal cannot be approved', (

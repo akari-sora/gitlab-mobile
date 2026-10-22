@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import '../../core/ai/ai_display.dart';
 import '../../core/ai/tools/write_coordinator.dart';
 import '../../core/ai/tools/write_ledger.dart';
+import '../../core/ai/tools/write_preview.dart'
+    show AiFieldsPreview, AiMergePreview, AiPipelinePreview;
 import '../../l10n/l10n.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/theme.dart';
@@ -11,6 +13,7 @@ import '../../core/registry_models.dart' show registryBytes;
 import 'ai_attachment_session.dart';
 import 'ai_chat_session.dart';
 import 'ai_write_journal.dart' show AiJournalState;
+import 'ai_write_previews.dart';
 import 'ai_write_settings.dart';
 
 /// What a write does, in the user's words. The model sees operation ids; the
@@ -376,10 +379,14 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
       _ => l10n.aiProposalPausedRateLimited,
     };
     final editable = _editableField;
+    final preview = proposal.preview;
+    // A structured preview already shows the squash option, the stored
+    // variables and the issues a merge closes; the card does not repeat them.
     final warnings = [
       for (final reason in tier.reasons) aiConfirmReasonText(reason),
-      if (tier.reusesStoredVariables) l10n.aiProposalStoredVariables,
-      if (tier.showSquash) l10n.aiProposalSquash,
+      if (tier.reusesStoredVariables && preview is! AiPipelinePreview)
+        l10n.aiProposalStoredVariables,
+      if (tier.showSquash && preview is! AiMergePreview) l10n.aiProposalSquash,
       if (tier.cancelMayRunAfterScript) l10n.aiProposalCancelMayRun,
     ];
     final until = MaterialLocalizations.of(
@@ -436,6 +443,13 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
                     .firstOrNull,
               ),
             ],
+            if (preview is! AiFieldsPreview) ...[
+              const SizedBox(height: 8),
+              AiWritePreviewView(
+                preview: preview,
+                storedVariables: tier.reusesStoredVariables,
+              ),
+            ],
             for (final MapEntry(:key, :value) in proposal.fields.entries)
               if (!aiFieldInTitle(proposal.operationId, key) &&
                   !(upload != null && _uploadFields.contains(key))) ...[
@@ -468,7 +482,8 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
                     style: theme.textTheme.bodySmall,
                   ),
               ],
-            if (proposal.closingRefs.isNotEmpty) ...[
+            if (proposal.closingRefs.isNotEmpty &&
+                preview is! AiMergePreview) ...[
               const SizedBox(height: 8),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
