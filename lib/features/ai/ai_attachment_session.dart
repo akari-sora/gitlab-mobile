@@ -8,6 +8,7 @@ import '../../core/ai/prompts.dart';
 import '../../core/ai/redaction.dart';
 import '../../core/ai/tools/attachment_budget.dart';
 import '../../core/ai/tools/write_tier.dart';
+import '../../core/ai/write_text.dart' show AttachmentSubstitution;
 import '../../core/failure.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/upload_names.dart';
@@ -375,6 +376,11 @@ final class AiAttachmentSession {
   final List<AiAttachmentReservation> _inFlight = <AiAttachmentReservation>[];
   final List<AiAttachmentInvalidation> _invalidations =
       <AiAttachmentInvalidation>[];
+
+  /// Succeeded uploads of this conversation: attachment id, then project id,
+  /// then GitLab's `markdown` (null when it cannot be quoted). Memory only;
+  /// removing the file's row keeps them, [discardAll] drops them.
+  final Map<String, Map<int, String?>> _uploads = <String, Map<int, String?>>{};
   int _nextId = 1;
   int _generation = 0;
   bool _closed = false;
@@ -558,9 +564,50 @@ final class AiAttachmentSession {
     _drop(held, invalidate: true);
   }
 
+  /// Remembers that [id] was uploaded to [projectId] and the journal says
+  /// `succeeded` (§3.1, placeholder substitution). [markdown] is kept only
+  /// when it is one attachment token the app can rebuild (no CR, LF or
+  /// other control character, no `[ ] ( )` in the name or file name, no
+  /// second token); otherwise the upload stays a success that cannot be
+  /// quoted. Returns whether `[[attachment:<id>]]` can be used.
+  bool recordUpload(
+    String id, {
+    required int projectId,
+    required String? markdown,
+  }) {
+    if (_closed || !_modelId.hasMatch(id)) return false;
+    // The same rebuild the write uses decides: a markdown it cannot rebuild
+    // is never handed to a later write.
+    final bool referable =
+        markdown != null &&
+        !AttachmentSubstitution(<String, String?>{id: markdown})
+            .substitute('[[attachment:$id]]', sameProjectClassA: true)
+            .policyBlocked;
+    (_uploads[id] ??= <int, String?>{})[projectId] = referable
+        ? markdown
+        : null;
+    return referable;
+  }
+
+  /// Projects [id] was uploaded to in this conversation.
+  Set<int> uploadedProjects(String id) =>
+      Set<int>.unmodifiable(_uploads[id]?.keys ?? const <int>[]);
+
+  /// The uploads into [projectId] a later write in that project may quote.
+  /// Null when there are none.
+  AttachmentSubstitution? substitutionFor(int projectId) {
+    final Map<String, String?> markdown = <String, String?>{
+      for (final MapEntry<String, Map<int, String?>> upload in _uploads.entries)
+        if (upload.value.containsKey(projectId))
+          upload.key: upload.value[projectId],
+    };
+    return markdown.isEmpty ? null : AttachmentSubstitution(markdown);
+  }
+
   void discardAll() {
     _generation += 1;
     _closed = true;
+    _uploads.clear();
     for (final _Held held in _items.values.toList()) {
       _invalidate(held);
       _wipe(held);

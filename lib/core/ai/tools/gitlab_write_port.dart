@@ -58,6 +58,7 @@ final class AiWriteSettled extends AiWriteOutcome {
     required Set<AiConflictKey> dependencyKeys,
     this.httpStatus,
     Map<String, Object?> projection = const {},
+    this.uploadMarkdown,
   }) : writeKeys = Set.unmodifiable(writeKeys),
        dependencyKeys = Set.unmodifiable(dependencyKeys),
        projection = Map.unmodifiable(projection),
@@ -70,6 +71,11 @@ final class AiWriteSettled extends AiWriteOutcome {
   final Set<AiConflictKey> writeKeys;
   final Set<AiConflictKey> dependencyKeys;
   final Map<String, Object?> projection;
+
+  /// `upload_attachment` only: GitLab's `markdown` for the upload, raw. It
+  /// holds the upload's secret path, so it is never projected: the
+  /// coordinator keeps it in memory for `[[attachment:att-<n>]]` (§3.1).
+  final String? uploadMarkdown;
 }
 
 /// Process-local, single-use capability. Cannot be forged or moved to a peer.
@@ -82,6 +88,9 @@ final class AiWritePrepared {
     required Object owner,
     required Future<Object?> Function() mutation,
     Future<Object?> Function(Object? result)? readback,
+    this.todoTarget,
+    this.projectPath,
+    this.projectVisibility,
   }) : writeKeys = Set.unmodifiable(writeKeys),
        dependencyKeys = Set.unmodifiable(dependencyKeys),
        _owner = owner,
@@ -92,6 +101,17 @@ final class AiWritePrepared {
   final String releaseName;
   final Set<AiConflictKey> writeKeys;
   final Set<AiConflictKey> dependencyKeys;
+
+  /// `markTodoDone` only: the issue or merge request the pre-read todo is
+  /// about, as GitLab returned it (null for other targets). The model gives
+  /// only the global todo id (§2).
+  final ({int projectId, String resource, int iid})? todoTarget;
+
+  /// The target project's `path_with_namespace` and `visibility` from this
+  /// prepare's fresh project read (null for a todo, or when GitLab gave no
+  /// visibility).
+  final String? projectPath;
+  final String? projectVisibility;
   final Object _owner;
   final Future<Object?> Function() _mutation;
   final Future<Object?> Function(Object? result)? _readback;
@@ -572,6 +592,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
         };
     }
     if (mutation == null) throw const ApiFailure(FailureKind.unsupported);
+    final visibility = p['visibility'];
     return AiWritePrepared._(
       request: request,
       releaseName: releaseName,
@@ -580,6 +601,8 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
       owner: _owner,
       mutation: mutation,
       readback: readback,
+      projectPath: projectName,
+      projectVisibility: visibility is String ? visibility : null,
     );
   }
 
@@ -653,11 +676,16 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
         }
       }
     }
+    final markdown = result is Map ? result['markdown'] : null;
     return _outcome(
       p,
       AiJournalState.succeeded,
       'succeeded',
       projection: projection,
+      uploadMarkdown:
+          p.request.operationId == 'upload_attachment' && markdown is String
+          ? markdown
+          : null,
     );
   }
 
@@ -667,6 +695,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     String code, {
     int? status,
     Map<String, Object?> projection = const {},
+    String? uploadMarkdown,
   }) => AiWriteSettled(
     state: state,
     resultCode: code,
@@ -675,6 +704,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     writeKeys: p.writeKeys,
     dependencyKeys: p.dependencyKeys,
     projection: projection,
+    uploadMarkdown: uploadMarkdown,
   );
 
   Future<void> _verifyId(List<String> path, int id) async {
@@ -741,6 +771,9 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
       dependencyKeys: const {},
       owner: _owner,
       mutation: () => _api.markTodoDone(id),
+      todoTarget: projectId is int && iid is int && resource != null
+          ? (projectId: projectId, resource: resource, iid: iid)
+          : null,
     );
   }
 
