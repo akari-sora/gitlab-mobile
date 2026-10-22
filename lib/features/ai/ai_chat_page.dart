@@ -519,6 +519,7 @@ class _AiChatPageState extends State<AiChatPage> {
           settings: scope.settings,
           accountKey: scope.accountKey,
           account: account,
+          api: session.api,
           isAccountRetained: (key) =>
               session.accounts.any((saved) => saved.key == key),
           history: scope.history,

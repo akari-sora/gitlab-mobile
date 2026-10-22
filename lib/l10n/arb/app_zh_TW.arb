@@ -11153,17 +11153,6 @@
   "aiWriteLogRecent": "最近的寫入",
   "aiWriteLogEmpty": "還沒有 AI 寫入。",
   "aiWriteLogUnavailable": "目前無法讀取寫入紀錄。",
-  "aiWriteLogObserve": "記下結果",
-  "aiWriteLogObserveTitle": "你在 GitLab 看到什麼？",
-  "aiWriteLogObservedDone": "已經完成",
-  "aiWriteLogObservedNotDone": "沒有完成",
-  "aiWriteLogObserved": "已記下結果。",
-  "aiWriteLogObservation": "你記下的結果：{observation}",
-  "@aiWriteLogObservation": {
-    "placeholders": {
-      "observation": {}
-    }
-  },
   "aiWriteLogRelease": "放行",
   "aiWriteLogReleaseTitle": "放行這筆寫入？",
   "aiWriteLogReleaseDetail": "放行後，AI 可以再寫入這個目標。請先到 GitLab 確認結果，避免重複寫入。輸入 {name} 以確認。",
@@ -11258,5 +11247,40 @@
   "aiOpReopenMilestone": "重新開啟里程碑",
   "aiFieldFileType": "檔案類型",
   "aiFieldBoardList": "看板列表",
-  "aiProposalEditRefused": "改過的內容沒有通過檢查，沒有寫入。請再修改後核准。"
+  "aiProposalEditRefused": "改過的內容沒有通過檢查，沒有寫入。請再修改後核准。",
+  "aiWriteLogReread": "重新讀取",
+  "aiRereadPresent": "重新讀取：GitLab 上找得到這個目標。",
+  "aiRereadPresentState": "重新讀取：GitLab 上找得到這個目標，狀態是「{state}」。",
+  "@aiRereadPresentState": {
+    "placeholders": {
+      "state": {}
+    }
+  },
+  "aiRereadAbsent": "重新讀取：找不到這個目標，或你沒有權限查看。",
+  "aiRereadUnknown": "重新讀取：無法確認（{reason}）。",
+  "@aiRereadUnknown": {
+    "placeholders": {
+      "reason": {}
+    }
+  },
+  "aiRereadMatches": "重新讀取：寫入前後 5 分鐘內，你建立的項目有 {count} 個。",
+  "@aiRereadMatches": {
+    "placeholders": {
+      "count": {}
+    }
+  },
+  "aiRereadNotComparable": "新建立的項目無法逐一比對",
+  "aiRereadUnsupported": "這類寫入無法重新讀取",
+  "aiRereadForbidden": "沒有權限",
+  "aiRereadRateLimited": "GitLab 正在限制請求",
+  "aiRereadUnavailable": "目前連不上 GitLab",
+  "aiRereadBudget": "讀取次數已用完",
+  "aiRereadLocked": "已鎖定",
+  "aiRereadUnresolved": "未解決",
+  "aiRereadSubscribed": "已開啟通知",
+  "aiRereadNotSubscribed": "未開啟通知",
+  "aiRereadTodoPending": "待辦未完成",
+  "aiRereadTodoDone": "待辦已完成",
+  "aiRereadInFlight": "原本的請求可能還在進行，請稍後再重新讀取。",
+  "aiRereadFailed": "無法重新讀取。"
 }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../../core/ai/ai_provider.dart';
+import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../l10n/l10n.dart';
 import '../../shared/hub_ui.dart';
@@ -24,6 +25,7 @@ class AiSettingsPage extends StatefulWidget {
     required this.settings,
     required this.accountKey,
     this.account,
+    this.api,
     this.isAccountRetained,
     this.history,
     this.deviceCheck,
@@ -33,6 +35,9 @@ class AiSettingsPage extends StatefulWidget {
   final AiSettingsController settings;
   final String accountKey;
   final Account? account;
+
+  /// [account]'s GitLab client, for re-reading interrupted writes.
+  final GitLabApi? api;
   final bool Function(String accountKey)? isAccountRetained;
   final AiHistoryCoordinator? history;
 
@@ -697,8 +702,11 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
       onTap: () async {
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) =>
-                AiWriteLogPage(account: account, journal: _journal),
+            builder: (_) => AiWriteLogPage(
+              account: account,
+              journal: _journal,
+              api: widget.api,
+            ),
           ),
         );
         if (mounted) setState(() {});

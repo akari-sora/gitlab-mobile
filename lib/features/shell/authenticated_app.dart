@@ -1161,6 +1161,7 @@ class _MobileShellState extends State<_MobileShell> {
                       settings: ai.settings,
                       accountKey: ai.accountKey,
                       account: account,
+                      api: session.api,
                       isAccountRetained: (accountKey) => session.accounts.any(
                         (saved) => saved.key == accountKey,
                       ),

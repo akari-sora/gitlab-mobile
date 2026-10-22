@@ -7666,150 +7666,192 @@ final class AppStrings {
   /// 目前無法讀取寫入紀錄。
   String get aiWriteLogUnavailable => language._messages[2523];
 
-  /// 記下結果
-  String get aiWriteLogObserve => language._messages[2524];
-
-  /// 你在 GitLab 看到什麼？
-  String get aiWriteLogObserveTitle => language._messages[2525];
-
-  /// 已經完成
-  String get aiWriteLogObservedDone => language._messages[2526];
-
-  /// 沒有完成
-  String get aiWriteLogObservedNotDone => language._messages[2527];
-
-  /// 已記下結果。
-  String get aiWriteLogObserved => language._messages[2528];
-
-  /// 你記下的結果：{observation}
-  String aiWriteLogObservation(Object? observation) => _format(language, language._messages[2529], {'observation': observation});
-
   /// 放行
-  String get aiWriteLogRelease => language._messages[2530];
+  String get aiWriteLogRelease => language._messages[2524];
 
   /// 放行這筆寫入？
-  String get aiWriteLogReleaseTitle => language._messages[2531];
+  String get aiWriteLogReleaseTitle => language._messages[2525];
 
   /// 放行後，AI 可以再寫入這個目標。請先到 GitLab 確認結果，避免重複寫入。輸入 {name} 以確認。
-  String aiWriteLogReleaseDetail(Object? name) => _format(language, language._messages[2532], {'name': name});
+  String aiWriteLogReleaseDetail(Object? name) => _format(language, language._messages[2526], {'name': name});
 
   /// 已放行。
-  String get aiWriteLogReleased => language._messages[2533];
+  String get aiWriteLogReleased => language._messages[2527];
 
   /// 沒有完成，請再試一次。
-  String get aiWriteLogActionFailed => language._messages[2534];
+  String get aiWriteLogActionFailed => language._messages[2528];
 
   /// 重設寫入紀錄
-  String get aiWriteLogReset => language._messages[2535];
+  String get aiWriteLogReset => language._messages[2529];
 
   /// 重設寫入紀錄？
-  String get aiWriteLogResetTitle => language._messages[2536];
+  String get aiWriteLogResetTitle => language._messages[2530];
 
   /// 重設會刪除這個帳號在這台裝置上的 AI 寫入紀錄，也會解除所有中斷寫入的鎖。接下來 24 小時內，AI 的每一筆寫入都要你確認。輸入 {username} 以確認。
-  String aiWriteLogResetDetail(Object? username) => _format(language, language._messages[2537], {'username': username});
+  String aiWriteLogResetDetail(Object? username) => _format(language, language._messages[2531], {'username': username});
 
   /// 已重設寫入紀錄。
-  String get aiWriteLogResetDone => language._messages[2538];
+  String get aiWriteLogResetDone => language._messages[2532];
 
   /// {count} 筆中斷的寫入需要你查看
-  String aiWriteLogNeedsAttention(Object? count) => _format(language, language._messages[2539], {'count': count});
+  String aiWriteLogNeedsAttention(Object? count) => _format(language, language._messages[2533], {'count': count});
 
   /// 準備中
-  String get aiJournalPrepared => language._messages[2540];
+  String get aiJournalPrepared => language._messages[2534];
 
   /// 寫入中
-  String get aiJournalDispatching => language._messages[2541];
+  String get aiJournalDispatching => language._messages[2535];
 
   /// 這個帳號有 {count} 筆不確定 GitLab 是否完成的 AI 寫入。移除後，這台裝置就不再追蹤它們，請先到 GitLab 確認。
-  String aiRemoveUncertainWrites(Object? count) => _format(language, language._messages[2542], {'count': count});
+  String aiRemoveUncertainWrites(Object? count) => _format(language, language._messages[2536], {'count': count});
 
   /// 這個帳號的 AI 寫入紀錄無法讀取，可能還有未確認的寫入。請先到 GitLab 確認。
-  String get aiRemoveJournalUnreadable => language._messages[2543];
+  String get aiRemoveJournalUnreadable => language._messages[2537];
 
   /// 有未確認的 AI 寫入擋住清除。請回到帳號列表重新移除這個帳號，並輸入使用者名稱確認。
-  String get aiRemoveRetryFromAccountList => language._messages[2544];
+  String get aiRemoveRetryFromAccountList => language._messages[2538];
 
   /// GitLab 寫入
-  String get aiConsentWritesHeading => language._messages[2545];
+  String get aiConsentWritesHeading => language._messages[2539];
 
   /// AI 可以用這個帳號替你寫入 GitLab，最高到「{level}」。
-  String aiConsentWritesUpTo(Object? level) => _format(language, language._messages[2546], {'level': level});
+  String aiConsentWritesUpTo(Object? level) => _format(language, language._messages[2540], {'level': level});
 
   /// 每筆寫入都會列在對話裡；刪除專案、改專案設定這類硬底線永遠要你輸入名稱確認。你隨時可以在設定調低或關閉。
-  String get aiConsentWritesLimits => language._messages[2547];
+  String get aiConsentWritesLimits => language._messages[2541];
 
   /// 寫入會以你的名義出現，完成後無法撤回。在 AI 寫的內容加上標註預設關閉，可在設定開啟。
-  String get aiConsentWritesNoUndo => language._messages[2548];
+  String get aiConsentWritesNoUndo => language._messages[2542];
 
   /// 寫入時連線中斷，就無法確定 GitLab 是否完成。在你到「{log}」放行前，這台裝置上的 AI 不會再寫入同一個目標。
-  String aiConsentWritesUncertain(Object? log) => _format(language, language._messages[2549], {'log': log});
+  String aiConsentWritesUncertain(Object? log) => _format(language, language._messages[2543], {'log': log});
 
   /// 在這個等級，你附加的檔案可能不先顯示卡片就直接上傳。在公開或內部專案中，能看到引用它的內容的人，都能透過連結開啟檔案。
-  String get aiConsentWritesUploads => language._messages[2550];
+  String get aiConsentWritesUploads => language._messages[2544];
 
   /// AI 在 GitLab 讀到的內容可能夾帶想誘導它的指令。核准前請先看清它提議的內容。
-  String get aiConsentWritesInstructions => language._messages[2551];
+  String get aiConsentWritesInstructions => language._messages[2545];
 
   /// 有些寫入（例如建立合併請求）可能觸發 GitLab 上的 Pipeline。Pipeline 會做什麼由專案設定決定，這裡無法控制。
-  String get aiConsentWritesPipelines => language._messages[2552];
+  String get aiConsentWritesPipelines => language._messages[2546];
 
   /// AI 可以讀取檔案、差異、工作 Log 與留言，並在「{section}」設定的等級內替你寫入。
-  String aiProviderToolsHint(Object? section) => _format(language, language._messages[2553], {'section': section});
+  String aiProviderToolsHint(Object? section) => _format(language, language._messages[2547], {'section': section});
 
   /// 寫入紀錄無法讀取，可能有中斷的寫入。在你重設寫入紀錄之前，AI 不能替這個帳號寫入；唯讀照常。
-  String get aiWriteLogUnreadable => language._messages[2554];
+  String get aiWriteLogUnreadable => language._messages[2548];
 
   /// 寫入紀錄無法讀取，可能有中斷的寫入
-  String get aiWriteLogUnreadableShort => language._messages[2555];
+  String get aiWriteLogUnreadableShort => language._messages[2549];
 
   /// 帳號：{instance} · {username} · 使用者 ID {userId}
-  String aiWriteLogResetAccount(Object? instance, Object? username, Object? userId) => _format(language, language._messages[2556], {'instance': instance, 'username': username, 'userId': userId});
+  String aiWriteLogResetAccount(Object? instance, Object? username, Object? userId) => _format(language, language._messages[2550], {'instance': instance, 'username': username, 'userId': userId});
 
   /// 會解除鎖定的中斷或進行中寫入：{count} 筆
-  String aiWriteLogResetReleases(Object? count) => _format(language, language._messages[2557], {'count': count});
+  String aiWriteLogResetReleases(Object? count) => _format(language, language._messages[2551], {'count': count});
 
   /// 寫入紀錄無法讀取，可能有狀態未知的寫入。
-  String get aiWriteLogResetUnknown => language._messages[2558];
+  String get aiWriteLogResetUnknown => language._messages[2552];
 
   /// 確認不代表原本的寫入沒有執行，請先到 GitLab 查看。
-  String get aiWriteLogResetNotUndo => language._messages[2559];
+  String get aiWriteLogResetNotUndo => language._messages[2553];
 
   /// {level}：AI 會直接寫入 GitLab，不會先問你。
-  String aiAutoWriteBanner(Object? level) => _format(language, language._messages[2560], {'level': level});
+  String aiAutoWriteBanner(Object? level) => _format(language, language._messages[2554], {'level': level});
 
   /// 停止這次執行，並改為逐一確認
-  String get aiAutoWriteStopHint => language._messages[2561];
+  String get aiAutoWriteStopHint => language._messages[2555];
 
   /// 正在寫入…
-  String get aiWriteInProgress => language._messages[2562];
+  String get aiWriteInProgress => language._messages[2556];
 
   /// 開啟通知
-  String get aiOpSubscribeOn => language._messages[2563];
+  String get aiOpSubscribeOn => language._messages[2557];
 
   /// 關閉通知
-  String get aiOpSubscribeOff => language._messages[2564];
+  String get aiOpSubscribeOff => language._messages[2558];
 
   /// 解決討論串
-  String get aiOpResolveThread => language._messages[2565];
+  String get aiOpResolveThread => language._messages[2559];
 
   /// 重新開啟討論串
-  String get aiOpReopenThread => language._messages[2566];
+  String get aiOpReopenThread => language._messages[2560];
 
   /// 隱藏看板的內建列表
-  String get aiOpHideBoardList => language._messages[2567];
+  String get aiOpHideBoardList => language._messages[2561];
 
   /// 顯示看板的內建列表
-  String get aiOpShowBoardList => language._messages[2568];
+  String get aiOpShowBoardList => language._messages[2562];
 
   /// 重新開啟里程碑
-  String get aiOpReopenMilestone => language._messages[2569];
+  String get aiOpReopenMilestone => language._messages[2563];
 
   /// 檔案類型
-  String get aiFieldFileType => language._messages[2570];
+  String get aiFieldFileType => language._messages[2564];
 
   /// 看板列表
-  String get aiFieldBoardList => language._messages[2571];
+  String get aiFieldBoardList => language._messages[2565];
 
   /// 改過的內容沒有通過檢查，沒有寫入。請再修改後核准。
-  String get aiProposalEditRefused => language._messages[2572];
+  String get aiProposalEditRefused => language._messages[2566];
+
+  /// 重新讀取
+  String get aiWriteLogReread => language._messages[2567];
+
+  /// 重新讀取：GitLab 上找得到這個目標。
+  String get aiRereadPresent => language._messages[2568];
+
+  /// 重新讀取：GitLab 上找得到這個目標，狀態是「{state}」。
+  String aiRereadPresentState(Object? state) => _format(language, language._messages[2569], {'state': state});
+
+  /// 重新讀取：找不到這個目標，或你沒有權限查看。
+  String get aiRereadAbsent => language._messages[2570];
+
+  /// 重新讀取：無法確認（{reason}）。
+  String aiRereadUnknown(Object? reason) => _format(language, language._messages[2571], {'reason': reason});
+
+  /// 重新讀取：寫入前後 5 分鐘內，你建立的項目有 {count} 個。
+  String aiRereadMatches(Object? count) => _format(language, language._messages[2572], {'count': count});
+
+  /// 新建立的項目無法逐一比對
+  String get aiRereadNotComparable => language._messages[2573];
+
+  /// 這類寫入無法重新讀取
+  String get aiRereadUnsupported => language._messages[2574];
+
+  /// 沒有權限
+  String get aiRereadForbidden => language._messages[2575];
+
+  /// GitLab 正在限制請求
+  String get aiRereadRateLimited => language._messages[2576];
+
+  /// 目前連不上 GitLab
+  String get aiRereadUnavailable => language._messages[2577];
+
+  /// 讀取次數已用完
+  String get aiRereadBudget => language._messages[2578];
+
+  /// 已鎖定
+  String get aiRereadLocked => language._messages[2579];
+
+  /// 未解決
+  String get aiRereadUnresolved => language._messages[2580];
+
+  /// 已開啟通知
+  String get aiRereadSubscribed => language._messages[2581];
+
+  /// 未開啟通知
+  String get aiRereadNotSubscribed => language._messages[2582];
+
+  /// 待辦未完成
+  String get aiRereadTodoPending => language._messages[2583];
+
+  /// 待辦已完成
+  String get aiRereadTodoDone => language._messages[2584];
+
+  /// 原本的請求可能還在進行，請稍後再重新讀取。
+  String get aiRereadInFlight => language._messages[2585];
+
+  /// 無法重新讀取。
+  String get aiRereadFailed => language._messages[2586];
 }

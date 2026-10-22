@@ -2,17 +2,54 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
 import '../../l10n/l10n.dart';
+import '../../shared/external_link.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/workspace_ui.dart';
 import 'ai_write_journal.dart';
+import 'ai_write_reread.dart';
 import 'ai_write_ui.dart';
 
-/// Observation codes a user can record on an interrupted write. The journal
-/// keeps the code; the page shows it in the current language.
-const aiObservedDone = 'done';
-const aiObservedNotDone = 'notDone';
+/// What a re-read of an interrupted write saw, in the current language
+/// (§7.6). It is an observation only; it never releases the lock.
+String? aiRereadText(AiRereadObservation? seen) {
+  if (seen == null) return null;
+  final matches = seen.matches;
+  if (matches != null) return l10n.aiRereadMatches('$matches');
+  final detail = seen.detail;
+  return switch (seen.presence) {
+    AiRereadPresence.absent => l10n.aiRereadAbsent,
+    AiRereadPresence.present => switch (_rereadState(detail)) {
+      final state? => l10n.aiRereadPresentState(state),
+      null => l10n.aiRereadPresent,
+    },
+    AiRereadPresence.unknown => l10n.aiRereadUnknown(switch (detail) {
+      AiRereadDetail.notComparable => l10n.aiRereadNotComparable,
+      AiRereadDetail.unsupported => l10n.aiRereadUnsupported,
+      AiRereadDetail.forbidden => l10n.aiRereadForbidden,
+      AiRereadDetail.rateLimited => l10n.aiRereadRateLimited,
+      AiRereadDetail.budgetExhausted => l10n.aiRereadBudget,
+      _ => l10n.aiRereadUnavailable,
+    }),
+  };
+}
+
+String? _rereadState(AiRereadDetail? detail) => switch (detail) {
+  AiRereadDetail.opened => l10n.statusOpen,
+  AiRereadDetail.closed => l10n.statusClosed,
+  AiRereadDetail.merged => l10n.merged,
+  AiRereadDetail.locked => l10n.aiRereadLocked,
+  AiRereadDetail.active => l10n.active,
+  AiRereadDetail.resolved => l10n.resolvedLabel,
+  AiRereadDetail.unresolved => l10n.aiRereadUnresolved,
+  AiRereadDetail.subscribed => l10n.aiRereadSubscribed,
+  AiRereadDetail.notSubscribed => l10n.aiRereadNotSubscribed,
+  AiRereadDetail.pending => l10n.aiRereadTodoPending,
+  AiRereadDetail.notPending => l10n.aiRereadTodoDone,
+  _ => null,
+};
 
 String aiJournalStateLabel(AiJournalState state) => switch (state) {
   AiJournalState.prepared => l10n.aiJournalPrepared,
@@ -25,14 +62,22 @@ String aiJournalStateLabel(AiJournalState state) => switch (state) {
 };
 
 /// The account's AI writes on this device, newest first. Interrupted writes
-/// come first: the user records what GitLab shows, then releases the lock by
-/// typing the target's name. Resetting the log needs the account's @name.
+/// come first: the app can re-read the target and link to it on GitLab, and
+/// the user releases the lock by typing the target's name. Resetting the log
+/// needs the account's @name.
 class AiWriteLogPage extends StatefulWidget {
-  AiWriteLogPage({super.key, required this.account, AiWriteJournal? journal})
-    : journal = journal ?? AiWriteJournal.instance;
+  AiWriteLogPage({
+    super.key,
+    required this.account,
+    AiWriteJournal? journal,
+    this.api,
+  }) : journal = journal ?? AiWriteJournal.instance;
 
   final Account account;
   final AiWriteJournal journal;
+
+  /// [account]'s GitLab client. Without it there is no re-read.
+  final GitLabApi? api;
 
   @override
   State<AiWriteLogPage> createState() => _AiWriteLogPageState();
@@ -46,6 +91,10 @@ class _AiWriteLogPageState extends State<AiWriteLogPage> {
   /// A thrown read counts as [AiJournalKeyStatus.unavailable].
   AiJournalKeyStatus? _failure;
   var _busy = false;
+
+  /// Project paths a re-read found, by execution, for a readable link.
+  /// Kept on this page only, never in the journal.
+  final _paths = <String, String>{};
 
   String get _accountKey => widget.account.key;
 
@@ -103,46 +152,32 @@ class _AiWriteLogPageState extends State<AiWriteLogPage> {
     }
   }
 
-  Future<void> _observe(AiJournalEntry entry) async {
-    final code = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              child: Text(
-                l10n.aiWriteLogObserveTitle,
-                style: Theme.of(context).textTheme.titleMedium,
-              ),
-            ),
-            ListTile(
-              key: const ValueKey('ai-write-log-observed-done'),
-              leading: const Icon(Icons.check_circle_outline),
-              title: Text(l10n.aiWriteLogObservedDone),
-              onTap: () => Navigator.of(context).pop(aiObservedDone),
-            ),
-            ListTile(
-              key: const ValueKey('ai-write-log-observed-not-done'),
-              leading: const Icon(Icons.remove_circle_outline),
-              title: Text(l10n.aiWriteLogObservedNotDone),
-              onTap: () => Navigator.of(context).pop(aiObservedNotDone),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (code == null || !mounted) return;
-    await _act(
-      () => widget.journal.recordObservation(
+  Future<void> _reread(AiJournalEntry entry, GitLabApi api) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    String message;
+    try {
+      final result = await rereadInterruptedWrite(
+        journal: widget.journal,
+        accountKey: _accountKey,
         executionId: entry.executionId,
-        summary: code,
-      ),
-      l10n.aiWriteLogObserved,
-    );
+        api: api,
+      );
+      if (result.projectPath case final path?) {
+        _paths[entry.executionId] = path;
+      }
+      message = aiRereadText(result.observation)!;
+    } on AiJournalException catch (error) {
+      message = error.reason == 'inFlight'
+          ? l10n.aiRereadInFlight
+          : l10n.aiRereadFailed;
+    } on Object {
+      message = l10n.aiRereadFailed;
+    }
+    await _load();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    _say(message);
   }
 
   Future<void> _release(AiJournalEntry entry) async {
@@ -260,7 +295,15 @@ class _AiWriteLogPageState extends State<AiWriteLogPage> {
                         _InterruptedRow(
                           entry: entry,
                           busy: _busy,
-                          onObserve: () => _observe(entry),
+                          onReread: switch (widget.api) {
+                            final api? => () => _reread(entry, api),
+                            null => null,
+                          },
+                          link: aiJournalTargetWebUri(
+                            widget.account.instance,
+                            entry,
+                            projectPath: _paths[entry.executionId],
+                          ),
                           onRelease: () => _release(entry),
                         ),
                     ],
@@ -418,23 +461,27 @@ class _InterruptedRow extends StatelessWidget {
   const _InterruptedRow({
     required this.entry,
     required this.busy,
-    required this.onObserve,
+    required this.onReread,
+    required this.link,
     required this.onRelease,
   });
 
   final AiJournalEntry entry;
   final bool busy;
-  final VoidCallback onObserve;
+
+  /// Null when the page has no GitLab client for the account.
+  final VoidCallback? onReread;
+
+  /// The target's GitLab page, built from the verified instance and ids.
+  final Uri? link;
   final VoidCallback onRelease;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final observation = switch (entry.observation) {
-      aiObservedDone => l10n.aiWriteLogObservedDone,
-      aiObservedNotDone => l10n.aiWriteLogObservedNotDone,
-      _ => null,
-    };
+    final observation = aiRereadText(
+      AiRereadObservation.decode(entry.observation),
+    );
     final when = _when(context, entry.dispatchedAt);
     return Padding(
       key: ValueKey('ai-write-log-interrupted-${entry.executionId}'),
@@ -464,7 +511,10 @@ class _InterruptedRow extends StatelessWidget {
                     ),
                     if (observation != null)
                       Text(
-                        l10n.aiWriteLogObservation(observation),
+                        observation,
+                        key: ValueKey(
+                          'ai-write-log-observation-${entry.executionId}',
+                        ),
                         style: theme.textTheme.bodySmall,
                       ),
                   ],
@@ -476,11 +526,18 @@ class _InterruptedRow extends StatelessWidget {
             alignment: WrapAlignment.end,
             spacing: 4,
             children: [
-              TextButton(
-                key: ValueKey('ai-write-log-observe-${entry.executionId}'),
-                onPressed: busy ? null : onObserve,
-                child: Text(l10n.aiWriteLogObserve),
-              ),
+              if (link case final uri?)
+                TextButton(
+                  key: ValueKey('ai-write-log-open-${entry.executionId}'),
+                  onPressed: () => openExternal(context, uri),
+                  child: Text(l10n.openInGitlab),
+                ),
+              if (onReread != null)
+                TextButton(
+                  key: ValueKey('ai-write-log-reread-${entry.executionId}'),
+                  onPressed: busy ? null : onReread,
+                  child: Text(l10n.aiWriteLogReread),
+                ),
               FilledButton.tonal(
                 key: ValueKey('ai-write-log-release-${entry.executionId}'),
                 onPressed: busy ? null : onRelease,

@@ -9,6 +9,7 @@ import 'package:gitlab_mobile/features/ai/ai_write_log_page.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
 
+import '../support/widget_settle.dart';
 import '../support/workspace_fixture.dart';
 
 final class _Fence implements AiJournalAccountFence {
@@ -57,7 +58,7 @@ void main() {
         dependencyKeys: const {},
         payloadSha256: 'a' * 64,
         releaseName: name,
-        instance: account.instance.base.toString(),
+        instance: account.instance.key,
         sessionGeneration: 1,
         normalizedTarget: name,
         lastCommitId: null,
@@ -106,7 +107,11 @@ void main() {
         locale: const Locale('zh', 'TW'),
         supportedLocales: const [Locale('zh', 'TW')],
         localizationsDelegates: GlobalMaterialLocalizations.delegates,
-        home: AiWriteLogPage(account: account, journal: journal),
+        home: AiWriteLogPage(
+          account: account,
+          journal: journal,
+          api: fixture.api,
+        ),
       ),
     );
     await settleIo(tester);
@@ -130,15 +135,31 @@ void main() {
     );
     expect(find.textContaining(l10n.aiWriteStatusSucceeded), findsOneWidget);
 
-    // Recording what GitLab shows keeps the lock.
-    await tester.tap(find.byKey(ValueKey('ai-write-log-observe-$uncertain')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.byKey(const ValueKey('ai-write-log-observed-done')));
-    await settleIo(tester);
+    // The target links to GitLab, built from the verified instance.
     expect(
-      find.text(l10n.aiWriteLogObservation(l10n.aiWriteLogObservedDone)),
+      find.byKey(ValueKey('ai-write-log-open-$uncertain')),
       findsOneWidget,
     );
+    // A re-read records what it saw and keeps the lock.
+    await tester.tap(find.byKey(ValueKey('ai-write-log-reread-$uncertain')));
+    await settleNetworkWidgets(tester);
+    await settleIo(tester);
+    final observation = find.byKey(
+      ValueKey('ai-write-log-observation-$uncertain'),
+    );
+    expect(observation, findsOneWidget);
+    expect(
+      tester.widget<Text>(observation).data,
+      startsWith(l10n.aiRereadUnknown('').split('（').first),
+    );
+    expect(
+      journal
+          .entries(account.key)
+          .firstWhere((e) => e.executionId == uncertain)
+          .state,
+      AiJournalState.writeUncertain,
+    );
+    await tester.pump(const Duration(seconds: 5));
 
     // Release needs the target's exact name.
     await tester.tap(find.byKey(ValueKey('ai-write-log-release-$uncertain')));
