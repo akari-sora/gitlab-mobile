@@ -2413,6 +2413,7 @@ const _messagesSv = <String>[
   'Nivå för nya konversationer',
   'Märk det AI skriver',
   'Lägger till en notis om att AI hjälpte till i slutet av kommentarer och beskrivningar. Av som standard.',
+  'Skrivet av AI-assistenten',
   'AI gör bara de skrivningar du tillåter; hårda gränser som att ta bort ett projekt kräver alltid att du skriver namnet.',
   'Slå på tillåt allt',
   'AI kommer att göra skrivningar direkt utan att fråga, inklusive borttagningar, sammanslagningar och pipeline-åtgärder. Att köra en pipeline eller ett jobb igen kan återanvända variabler som lagras på GitLab och som appen inte kan kontrollera. Innehåll på sidor eller i filer kan också styra AI mot sådant du inte bad om. Varje sändning har fortfarande en skrivgräns, och du kan när som helst trycka på ”Stoppa”.',

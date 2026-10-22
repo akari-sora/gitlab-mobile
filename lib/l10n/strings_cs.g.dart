@@ -2413,6 +2413,7 @@ const _messagesCs = <String>[
   'Úroveň pro nové konverzace',
   'Označit, co AI zapíše',
   'Na konec komentářů a popisů přidá poznámku, že pomohla AI. Ve výchozím stavu vypnuto.',
+  'Napsal asistent AI',
   'AI provádí jen zápisy, které povolíte; pevné limity, jako je smazání projektu, vždy vyžadují, abyste zadali název.',
   'Zapnout povolení všeho',
   'AI bude provádět zápisy přímo bez dotazu, včetně mazání, slučování a akcí pipeline. Opětovné spuštění pipeline nebo úlohy může znovu použít proměnné uložené na GitLabu, které aplikace nedokáže ověřit. Obsah na stránkách nebo v souborech může AI také svést k věcem, o které jste nežádali. Každé odeslání má stále limit zápisů a kdykoli můžete stisknout „Zastavit“.',

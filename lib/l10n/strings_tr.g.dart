@@ -2413,6 +2413,7 @@ const _messagesTr = <String>[
   'Yeni konuşmaların düzeyi',
   'AI’nin yazdıklarını işaretle',
   'Yorumların ve açıklamaların sonuna AI’nin yardımcı olduğuna dair bir not ekler. Varsayılan olarak kapalıdır.',
+  'AI asistanı tarafından yazıldı',
   'AI yalnızca izin verdiğiniz yazmaları yapar; proje silmek gibi sert sınırlar her zaman ad yazmanızı ister.',
   'Her şeye izin vermeyi aç',
   'AI sormadan doğrudan yazma işlemleri yapar; silmeler, birleştirmeler ve Pipeline eylemleri dahildir. Bir Pipeline\'ı veya Job\'u yeniden çalıştırmak, GitLab üzerinde kayıtlı değişkenleri yeniden kullanabilir ve uygulama bunları denetleyemez. Sayfalardaki veya dosyalardaki içerik, AI\'yı istemediğiniz şeylere de yönlendirebilir. Her gönderimin yine bir yazma sınırı vardır ve istediğiniz zaman «Durdur» düğmesine basabilirsiniz.',

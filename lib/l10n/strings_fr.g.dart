@@ -2413,6 +2413,7 @@ const _messagesFr = <String>[
   'Niveau des nouvelles conversations',
   'Marquer ce que l’AI écrit',
   'Ajoute une note indiquant que l’AI a aidé à la fin des commentaires et des descriptions. Désactivé par défaut.',
+  'Rédigé par l’assistant IA',
   'L’AI ne fait que les écritures que vous autorisez ; les limites strictes comme supprimer un projet exigent toujours que vous saisissiez le nom.',
   'Activer tout autoriser',
   'L’AI effectuera des écritures directement sans demander, y compris les suppressions, les fusions et les actions de pipeline. Relancer un pipeline ou un job peut réutiliser des variables enregistrées sur GitLab, que l’application ne peut pas vérifier. Le contenu des pages ou des fichiers peut aussi orienter l’AI vers des choses que vous n’avez pas demandées. Chaque envoi conserve une limite d’écritures, et vous pouvez appuyer sur « Arrêter » à tout moment.',

@@ -2413,6 +2413,7 @@ const _messagesDe = <String>[
   'Stufe für neue Unterhaltungen',
   'Kennzeichnen, was die AI schreibt',
   'Fügt am Ende von Kommentaren und Beschreibungen einen Hinweis hinzu, dass die AI geholfen hat. Standardmäßig aus.',
+  'Vom KI-Assistenten geschrieben',
   'Die AI führt nur die Schreibvorgänge aus, die Sie erlauben; bei harten Grenzen wie dem Löschen eines Projekts müssen Sie immer den Namen eingeben.',
   'Alles erlauben einschalten',
   'Die AI führt Schreibvorgänge direkt und ohne Rückfrage aus, einschließlich Löschungen, Zusammenführungen und Pipeline-Aktionen. Erneutes Ausführen einer Pipeline oder eines Jobs kann auf GitLab gespeicherte Variablen wiederverwenden, die die App nicht prüfen kann. Inhalte auf Seiten oder in Dateien können die AI außerdem zu Dingen lenken, die Sie nicht verlangt haben. Jedes Senden hat weiterhin ein Schreiblimit, und Sie können jederzeit „Anhalten“ drücken.',

@@ -2413,6 +2413,7 @@ const _messagesPtBr = <String>[
   'Nível para conversas novas',
   'Marcar o que a AI escreve',
   'Adiciona uma nota de que a AI ajudou no fim de comentários e descrições. Desligado por padrão.',
+  'Escrito pelo assistente de IA',
   'A AI só faz as gravações que você permite; limites rígidos como excluir um projeto sempre exigem que você digite o nome.',
   'Ativar permitir tudo',
   'A AI fará gravações diretamente sem perguntar, incluindo exclusões, mesclagens e ações de pipeline. Executar novamente um pipeline ou job pode reutilizar variáveis armazenadas no GitLab que o aplicativo não consegue verificar. O conteúdo em páginas ou arquivos também pode levar a AI a coisas que você não pediu. Cada envio ainda tem um limite de gravação e você pode pressionar «Parar» a qualquer momento.',
