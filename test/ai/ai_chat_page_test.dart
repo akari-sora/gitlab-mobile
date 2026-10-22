@@ -9,6 +9,9 @@ import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/brand.dart';
+import 'package:gitlab_mobile/features/ai/ai_report_sender.dart';
+import 'package:gitlab_mobile/features/shell/build_info.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_draft_preview.dart';
@@ -240,6 +243,204 @@ void main() {
     pending.complete();
     await tester.pumpAndSettle();
     expect(tester.widget<ButtonStyleButton>(busy).onPressed, isNotNull);
+  });
+
+  group('reporting a response', () {
+    const answerText = 'It renames **one** file.';
+    const source = AiAnswerSource(
+      presetId: 'opencode-go',
+      format: 'chatCompletions',
+      model: 'glm-synthetic',
+    );
+
+    Future<List<({String subject, String body})>> openReport(
+      WidgetTester tester,
+      _FakeSession session, {
+      AiReportRoute route = AiReportRoute.mail,
+      bool fail = false,
+      String tag = 'zh-TW',
+      double scale = 1,
+    }) async {
+      final sent = <({String subject, String body})>[];
+      await tester.pumpWidget(
+        _host(
+          AiChatPage(
+            session: session,
+            buildInfo: () async => const BuildInfo(
+              version: '0.6.0',
+              buildNumber: '612',
+              commit: 'abc1234',
+            ),
+            sendReport: ({required subject, required body}) async {
+              if (fail) throw StateError('no mail, no share');
+              sent.add((subject: subject, body: body));
+              return route;
+            },
+          ),
+          tag: tag,
+          scale: scale,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('ai-chat-report')));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiReportTitle), findsOneWidget);
+      return sent;
+    }
+
+    _FakeSession answered() => _FakeSession(
+      items: const [
+        AiAssistantItem(
+          text: answerText,
+          state: AiAssistantState.done,
+          source: source,
+        ),
+      ],
+    );
+
+    Future<void> send(WidgetTester tester) async {
+      final button = find.byKey(const ValueKey('ai-report-send'));
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('sends metadata only unless the response is attached', (
+      tester,
+    ) async {
+      final session = answered();
+      final sent = await openReport(tester, session);
+      final button = find.byKey(const ValueKey('ai-report-send'));
+      expect(tester.widget<ButtonStyleButton>(button).onPressed, isNull);
+      await tester.tap(find.byKey(const ValueKey('ai-report-inaccurate')));
+      await tester.pumpAndSettle();
+      final preview = find.byKey(const ValueKey('ai-report-preview'));
+      final shown = tester.widget<Text>(preview).data!;
+      expect(shown, contains('category: inaccurate'));
+      expect(shown, contains('preset: opencode-go'));
+      expect(shown, contains('app: 0.6.0+612 (abc1234)'));
+      expect(shown, isNot(contains('renames')));
+      await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(preview).data, contains(answerText));
+      await send(tester);
+      expect(sent.single.body, contains(answerText));
+      expect(sent.single.body.split('\n').first, l10n.aiReportSendTo(aiReportEmail));
+      expect(session.reported, hasLength(1));
+      expect(find.text(l10n.aiReportMailOpened), findsOneWidget);
+    });
+
+    testWidgets('the share sheet route says where to send', (tester) async {
+      final session = answered();
+      final sent = await openReport(
+        tester,
+        session,
+        route: AiReportRoute.share,
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(sent.single.body, isNot(contains('renames')));
+      expect(find.text(l10n.aiReportShareOpened(aiReportEmail)), findsOne);
+      expect(session.reported, hasLength(1));
+    });
+
+    testWidgets('a report that cannot be handed off is not marked', (
+      tester,
+    ) async {
+      final session = answered();
+      await openReport(tester, session, fail: true);
+      await tester.tap(find.byKey(const ValueKey('ai-report-harmful')));
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(session.reported, isEmpty);
+      expect(find.text(l10n.aiReportFailed), findsOneWidget);
+    });
+
+    testWidgets('a reported answer is folded and can be opened', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          AiChatPage(
+            session: _FakeSession(
+              items: const [
+                AiAssistantItem(
+                  text: answerText,
+                  state: AiAssistantState.done,
+                  reported: true,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiReported), findsOneWidget);
+      expect(find.byType(AiMessageBody), findsNothing);
+      expect(find.byKey(const ValueKey('ai-chat-report')), findsNothing);
+      await tester.tap(find.byKey(const ValueKey('ai-chat-reported-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AiMessageBody), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('ai-chat-reported-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AiMessageBody), findsNothing);
+    });
+
+    testWidgets('an answer still streaming cannot be reported', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          AiChatPage(
+            session: _FakeSession(
+              phase: AiChatPhase.running,
+              items: const [
+                AiAssistantItem(
+                  text: 'partial',
+                  state: AiAssistantState.streaming,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(const ValueKey('ai-chat-report')), findsNothing);
+    });
+
+    for (final (tag, size) in [
+      ('zh-TW', const Size(320, 640)),
+      ('ar', const Size(320, 640)),
+      ('en', const Size(640, 360)),
+    ]) {
+      testWidgets('the sheet fits $tag at 2x on ${size.width}x${size.height}', (
+        tester,
+      ) async {
+        tester.view.physicalSize = size * tester.view.devicePixelRatio;
+        tester.view.padding = FakeViewPadding(
+          top: 24 * tester.view.devicePixelRatio,
+          bottom: 16 * tester.view.devicePixelRatio,
+        );
+        addTearDown(tester.view.reset);
+        if (tag != 'zh-TW') useLanguage(languageForTag(tag)!);
+        addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+        final session = answered();
+        await openReport(tester, session, tag: tag, scale: 2);
+        for (final key in ['ai-report-privacy', 'ai-report-attach']) {
+          await tester.ensureVisible(find.byKey(ValueKey(key)));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(ValueKey(key)));
+          await tester.pumpAndSettle();
+        }
+        expect(tester.takeException(), isNull);
+        expect(
+          tester.getRect(find.byType(BottomSheet)).top,
+          greaterThanOrEqualTo(24),
+        );
+        await send(tester);
+        expect(tester.takeException(), isNull);
+        expect(session.reported, hasLength(1));
+      });
+    }
   });
 
   group('the append preview', () {
