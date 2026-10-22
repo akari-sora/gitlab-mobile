@@ -802,11 +802,14 @@ class _MetadataPageState extends State<MetadataPage> {
               await widget.api.updateMilestone(projectId, requiredInt(value, 'id'), body);
             }
           case MetadataKind.branches:
+            await widget.api.createBranch(projectId, values['branch']!, values['ref']!);
           case MetadataKind.tags:
+            await widget.api.createTag(projectId, values['tag_name']!, values['ref']!, message: values['message'] ?? '');
           case MetadataKind.releases:
+            if (value == null) { await widget.api.createRelease(projectId, body); }
+            else { await widget.api.updateRelease(projectId, _id(value), body); }
           case MetadataKind.commits:
-            if (value == null) { await widget.api.writeRecord('POST', path, body); }
-            else { await widget.api.writeRecord('PUT', [...path, _id(value)], body); }
+            throw const ApiFailure(FailureKind.unsupported);
         }
       });
     if (saved && mounted) { await _feed.currentState?.refresh(); }
@@ -816,7 +819,21 @@ class _MetadataPageState extends State<MetadataPage> {
     if (!mounted) { return; }
     setState(() => _busy = true);
     try {
-      await widget.api.removeRecord([...path, _id(value)]);
+      final projectId = widget.project.id;
+      switch (widget.kind) {
+        case MetadataKind.branches:
+          await widget.api.deleteBranch(projectId, _id(value));
+        case MetadataKind.tags:
+          await widget.api.deleteTag(projectId, _id(value));
+        case MetadataKind.releases:
+          await widget.api.deleteRelease(projectId, _id(value));
+        case MetadataKind.labels:
+          await widget.api.deleteLabel(projectId, requiredInt(value, 'id'));
+        case MetadataKind.milestones:
+          await widget.api.deleteMilestone(projectId, requiredInt(value, 'id'));
+        case MetadataKind.commits:
+          throw const ApiFailure(FailureKind.unsupported);
+      }
       if (mounted) { await _feed.currentState?.refresh(); }
     } catch (e) { if (mounted) { showFailure(context, e); } }
     finally { if (mounted) { setState(() => _busy = false); } }
