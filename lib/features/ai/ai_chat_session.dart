@@ -52,7 +52,6 @@ final class AiWorkItemOrigin extends AiChatOrigin {
     required this.iid,
     required this.title,
     this.summarize = false,
-    this.confidential = false,
   });
 
   final Project project;
@@ -63,7 +62,6 @@ final class AiWorkItemOrigin extends AiChatOrigin {
   /// Opened through "AI summary": the page sends the summary request itself
   /// once the session is ready (MR only).
   final bool summarize;
-  final bool confidential;
 
   @override
   String get key => 'item:${project.id}:${kind.name}:$iid';

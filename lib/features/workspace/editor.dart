@@ -34,6 +34,29 @@ Future<void> clearSecureDrafts(Account account) async {
   }
 }
 
+/// The text of [field] in the saved draft for [resource], or '' when there is
+/// none, read as [ResourceEditor] reads it: after the account's pending draft
+/// writes. Throws when the draft cannot be read or is not a draft.
+Future<String> readDraftField(
+  Account account,
+  String resource,
+  String field,
+) async {
+  await (_draftWrites[account.key] ?? Future<void>.value());
+  final raw = await _draftStorage.read(
+    key: '${_draftPrefix(account)}${base64Url.encode(utf8.encode(resource))}',
+  );
+  if (raw == null) return '';
+  final value = jsonDecode(raw);
+  if (value is! Map<String, dynamic>) {
+    throw const FormatException('Unrecognized draft');
+  }
+  final text = value[field];
+  if (text == null) return '';
+  if (text is! String) throw const FormatException('Unrecognized draft');
+  return text;
+}
+
 class EditField {
   const EditField(
     this.key,

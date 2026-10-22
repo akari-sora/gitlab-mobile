@@ -1178,17 +1178,25 @@ MR closes that gap:
 - Nothing is posted from the preview. The append still opens the ordinary
   editor, and posting still needs Save.
 
-Synthetic suites: `test/ai/draft_mentions_test.dart` (51 tests, including 600
-generated strings checked for silent mentions), `test/ai/ai_confidential_read_test.dart`,
-added cases in `test/ai/ai_chat_controller_test.dart`, `test/ai/quick_actions_test.dart`,
-the append-preview group in `test/ai/ai_chat_page_test.dart` (quick actions,
-mentions, acknowledgement, references, sources, confidential warning,
-cancel, a conversation that changed while the sheet was open, and 320 dp / 2x
-text in zh-TW and Arabic and 640×360 landscape in English), and the two
-entry-point tests, which now confirm the preview first. Removing each of the
-five guards in the insert flow (neutralization, mention handling, the
-acknowledgement gate, the target's own confidentiality, the re-check after the
-sheet) turns its test red.
+Synthetic suites:
+- `test/ai/draft_mentions_test.dart`. Its generated strings check the
+  analyzer's self-consistency against `package:markdown` 7.3.1 only. The oracle
+  is the same parser, so they do not show agreement with GitLab's renderer,
+  which stays `NOT_VERIFIED`.
+- `test/ai/ai_confidential_read_test.dart`.
+- Added cases in `test/ai/ai_chat_controller_test.dart` and
+  `test/ai/quick_actions_test.dart`.
+- The append-preview group in `test/ai/ai_chat_page_test.dart`: quick actions,
+  mentions, acknowledgement, references, sources, the confidential warning,
+  cancel, a conversation that changed while the sheet was open, and 320 dp at
+  2x text in zh-TW and Arabic plus 640×360 landscape in English.
+- The two entry-point tests, which now confirm the preview first.
+
+Each of five guards in the insert flow was removed in turn, and each removal
+turned its test red: neutralization, mention handling, the acknowledgement
+gate, the target's own confidentiality, and the re-check after the sheet. The
+re-check was removed as a whole block. Review round 1 found that removing only
+its `contains(item)` condition went unnoticed; see below.
 
 The synthetic emulator target `tool/emulator_ai_comment.dart` now answers with a
 quick-action line, a mention and a reference after a confidential read, so one
@@ -1242,3 +1250,76 @@ Emulator runs on the project's Android API 36 emulator:
 - a live answer that reads a confidential issue (no private data was used);
 - the preview's Arabic and landscape layouts on a device (widget tests only);
 - iOS and physical devices.
+
+#### Review round 1 (Codex GPT-6.1-Sol, Opus 5.5; both REQUEST CHANGES)
+
+- **Codex C1, encoded mentions in raw HTML.** `package:markdown` keeps a raw HTML
+  block as source text, so `<div>\n&#64;victim\n</div>` reported no mention,
+  although GitLab decodes the entity. The analysis now decodes HTML entities in
+  every text node before looking for mentions and references: decimal and hex
+  references, plus `amp lt gt quot apos commat sol period lowbar hyphen dash num
+  excl colon`. A mention that exists only after decoding cannot be wrapped, so
+  it is listed and must be acknowledged. Covered cases: `&#64;victim`,
+  `@&#118;ictim`, `&commat;all`, `&#64;group/subgroup`, and 51 encoded blocks.
+  `&#64;` is no longer counted as reference `#64`.
+- **Opus C1, the waiting draft changes how the answer parses.** The editor posts
+  `existing + "\n\n" + answer`. An unclosed fence or a list in the existing
+  draft can move `@Override` or an indented `@Test` out of code.
+  - The chat now reads the waiting draft first, through `readCommentDraft`.
+    That is the same key the editor uses, read after the account's pending
+    draft writes.
+  - It analyses the joined text (`analyzeDraftMentions(existing: …)`) and
+    wraps only candidates in the answer.
+  - It reports only the mentions and references the answer adds.
+  - The preview says the answer goes after the unsent draft. If the draft
+    cannot be read, nothing is appended and a notice says so.
+  - The editor itself, since !98, also refuses to append to a draft it cannot
+    read. The plan had said to append without saving; failing closed is kept
+    deliberately.
+- **Both, a stale target.** The run registry keeps a conversation by origin key,
+  so a conversation opened while an issue was confidential kept that value after
+  the issue was made public. The origin no longer carries confidentiality. The
+  page passes an `AiDraftTarget` with `existingText`, `confidential` and `insert`,
+  and `confidential` is read from the page's current data when the answer is
+  appended.
+- **Opus I1, analysis time.** A 64,000-character answer with 50 candidates took
+  about 1.7 s on a Mac. Drafts from 4,000 characters run on another isolate
+  (`Isolate.run`). Both results are computed once before the sheet opens, and
+  the append button shows a progress indicator meanwhile. The preview shows at
+  most the first 6,000 characters and says that the editor shows the rest.
+- **Re-checks after the sheet.** Inserting now requires that the chat page is
+  still the current route, the conversation is idle, and the answer is still in
+  it. Otherwise a notice says nothing was appended. Each condition has its own
+  test: a page pushed as the sheet closes, a phase change, and a replaced
+  conversation.
+- **Opus I4, internal notes.** Tool results now carry `readInternal` when
+  `get_issue` or `get_merge_request` returned a non-system note with
+  `internal: true` (or the older `confidential: true`). The page's own context
+  chip carries `internal` when it included such a note, set in
+  `AiChatController._sentChip` from `AiBuiltContext.readInternal`. Either one
+  shows a warning whatever the target, because an ordinary comment is visible
+  to everyone who can see the item. Neither flag reaches the provider: request
+  bytes are compared with each flag off, on, and both on, for all three
+  formats. History stores either flag only when true.
+- **Runner.** The runner rebuilt each tool result without the display flags, and
+  the controller re-attached them by call id. The runner now carries
+  `readConfidential` and `readInternal` itself, only for successful reads; the
+  controller's workaround is gone.
+- **Strings.**
+  - "Quick actions" now uses each catalog's existing `quickActionsTitle` term.
+  - The notice counts mentions that notify, not users, because `@all` and a
+    group reach many people.
+  - "Mentions turned off" is limited to this answer.
+  - English no longer says "1 lines".
+  - New: the internal-note warning, the existing-draft note, the cut preview,
+    "conversation changed" and "draft unreadable" notices.
+- **Mutations in this round.** Each of these removals turned its test red:
+  - not passing the existing draft to the analysis;
+  - not asking the target for its confidentiality;
+  - dropping the internal warning;
+  - dropping the route check;
+  - dropping the `contains(item)` check;
+  - hard-coding the page's confidentiality wiring.
+- **Not changed:** `@.` is still a candidate that cannot be wrapped and asks for
+  acknowledgement, which is safe. A new conversation that keeps the old items
+  on screen also counts their confidential reads, which over-warns.

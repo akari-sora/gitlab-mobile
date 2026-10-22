@@ -764,6 +764,81 @@ void main() {
     expect(chip.sizeChars, _sentGitLabData(adapter.requests.single).length);
   });
 
+  for (final kind in AiWorkItemKind.values) {
+    for (final field in ['internal', 'confidential']) {
+      test(
+        '$kind $field note marks prepared, settled and redacted chips',
+        () async {
+          const lateSecret = 'synthetic-internal-note-0094';
+          final workspace = WorkspaceFixture();
+          workspace.mergeFields['diff_refs'] = {
+            'head_sha': WorkspaceFixture.sha,
+            'base_sha': WorkspaceFixture.sha,
+          };
+          workspace.issues[3] = {
+            'iid': 3,
+            'title': 'Synthetic issue',
+            'description': '',
+            'state': 'opened',
+          };
+          final environment = await _environment(
+            gitLabRespond: (request) {
+              if (request.uri.path.endsWith('/notes')) {
+                return jsonResponse([
+                  {
+                    'body': lateSecret,
+                    'created_at': '2026-10-22T00:00:00Z',
+                    'system': false,
+                    field: true,
+                  },
+                ]);
+              }
+              return workspace.respond(request);
+            },
+          );
+          addTearDown(environment.dispose);
+          final response = Completer<ResponseBody>();
+          final adapter = FakeAdapter((_) => response.future);
+          final controller = await _readyController(
+            environment,
+            adapter,
+            tools: false,
+            origin: AiWorkItemOrigin(
+              project: environment.workspace.project,
+              kind: kind,
+              iid: kind == AiWorkItemKind.issue ? 3 : 12,
+              title: 'Synthetic item',
+            ),
+          );
+          expect(controller.blocker, AiChatBlocker.none);
+          final sending = controller.send('Explain this item');
+          await _waitFor(() => adapter.requests.isNotEmpty);
+          AiContextChip chip() =>
+              controller.items.whereType<AiUserItem>().single.chips.single;
+          expect(chip().internal, isTrue);
+          response.complete(_sse(answer('A synthetic answer')));
+          await sending;
+          expect(controller.failure, isNull);
+          expect(chip().internal, isTrue);
+          expect(chip().sentText, contains(lateSecret));
+
+          await environment.settings.saveProvider(
+            _provider(AiFormat.responses, id: 'other', requiresKey: true),
+          );
+          await environment.settings.saveProviderKey(
+            'other',
+            lateSecret,
+            acknowledgeWarning: true,
+          );
+          await controller.recheck();
+          expect(chip().internal, isTrue);
+          expect(chip().sentText, isNot(contains(lateSecret)));
+          expect(chip().sentText, contains('[REDACTED]'));
+        },
+      );
+    }
+  }
+
   test('a request refused before sending takes its chips back', () async {
     final environment = await _environment();
     addTearDown(environment.dispose);
@@ -1286,9 +1361,9 @@ void main() {
     });
   }
 
-  for (final toolName in ['get_issue', 'search_project']) {
+  for (final toolName in ['get_issue', 'search_project', 'get_merge_request']) {
     test(
-      '$toolName confidentiality survives settling and re-redaction',
+      '$toolName disclosure flags survive settling and re-redaction',
       () async {
         const lateSecret = 'synthetic-confidential-description-0099';
         final workspace = WorkspaceFixture();
@@ -1300,8 +1375,14 @@ void main() {
         };
         final environment = await _environment(
           gitLabRespond: (request) {
-            if (request.uri.path.endsWith('/issues/3/notes')) {
-              return jsonResponse([]);
+            if (request.uri.path.endsWith('/issues/3/notes') ||
+                request.uri.path.endsWith('/merge_requests/3/notes')) {
+              return jsonResponse([
+                {'body': 'Member-only note', 'system': false, 'internal': true},
+              ]);
+            }
+            if (request.uri.path.endsWith('/merge_requests/3')) {
+              return jsonResponse(workspace.issues[3]);
             }
             if (request.uri.path.endsWith('/search')) {
               return jsonResponse([workspace.issues[3]]);
@@ -1320,9 +1401,9 @@ void main() {
                   'call_id': 'call_read',
                   'name': toolName,
                   'arguments': jsonEncode(
-                    toolName == 'get_issue'
-                        ? {'iid': 3}
-                        : {'scope': 'issues', 'query': 'synthetic'},
+                    toolName == 'search_project'
+                        ? {'scope': 'issues', 'query': 'synthetic'}
+                        : {'iid': 3},
                   ),
                   'status': 'completed',
                 },
@@ -1341,7 +1422,8 @@ void main() {
         expect(controller.phase, AiChatPhase.idle);
         final settled = controller.items.whereType<AiToolRunItem>().single;
         expect(settled.status, AiToolRunStatus.completed);
-        expect(settled.confidential, isTrue);
+        expect(settled.confidential, toolName != 'get_merge_request');
+        expect(settled.internal, toolName != 'search_project');
         expect(settled.resultExcerpt, contains(lateSecret));
 
         await environment.settings.saveProvider(
@@ -1354,7 +1436,8 @@ void main() {
         );
         await controller.recheck();
         final redacted = controller.items.whereType<AiToolRunItem>().single;
-        expect(redacted.confidential, isTrue);
+        expect(redacted.confidential, toolName != 'get_merge_request');
+        expect(redacted.internal, toolName != 'search_project');
         expect(redacted.resultExcerpt, isNot(contains(lateSecret)));
         expect(redacted.resultExcerpt, contains('REDACTED'));
 
@@ -1367,14 +1450,15 @@ void main() {
         await controller.recheck();
         final hidden = controller.items.whereType<AiToolRunItem>().single;
         expect(hidden.resultExcerpt, isEmpty);
-        expect(hidden.confidential, isTrue);
+        expect(hidden.confidential, toolName != 'get_merge_request');
+        expect(hidden.internal, toolName != 'search_project');
         expect(hidden.status, AiToolRunStatus.completed);
       },
     );
   }
 
   test(
-    'confidential reads do not mark public, failed or blocked tool rows',
+    'disclosure flags do not mark public, failed or blocked tool rows',
     () async {
       final workspace = WorkspaceFixture();
       workspace.issues[3] = {
@@ -1389,6 +1473,11 @@ void main() {
       };
       final environment = await _environment(
         gitLabRespond: (request) {
+          if (request.uri.path.endsWith('/issues/3/notes')) {
+            return jsonResponse([
+              {'body': 'Member-only note', 'internal': true},
+            ]);
+          }
           if (request.uri.path.endsWith('/notes')) return jsonResponse([]);
           return workspace.respond(request);
         },
@@ -1435,6 +1524,13 @@ void main() {
       expect(controller.failure, isNull);
       final tools = controller.items.whereType<AiToolRunItem>().toList();
       expect(tools.map((tool) => tool.confidential), [
+        true,
+        false,
+        false,
+        false,
+        false,
+      ]);
+      expect(tools.map((tool) => tool.internal), [
         true,
         false,
         false,

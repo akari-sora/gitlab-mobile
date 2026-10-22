@@ -58,6 +58,7 @@ Map<String, Object?> _itemJson(AiChatItem item) => switch (item) {
             'preview': _excerpt(chip.preview),
             'sizeChars': chip.sizeChars,
             'blocked': chip.blocked,
+            if (chip.internal) 'internal': true,
             'type': chip.type == null ? null : _chars(chip.type!, 128),
             'resource': chip.resource == null
                 ? null
@@ -93,6 +94,7 @@ Map<String, Object?> _itemJson(AiChatItem item) => switch (item) {
     'blocked': item.blocked,
     'resultExcerpt': _excerpt(item.resultExcerpt),
     if (item.confidential) 'confidential': true,
+    if (item.internal) 'internal': true,
   },
   AiNoticeItem(:final kind, :final count) => {
     'kind': 'notice',
@@ -129,6 +131,7 @@ AiConversation aiDisplayFromJson(Map<String, Object?> json) {
                 'preview',
                 'sizeChars',
                 'blocked',
+                'internal',
                 'type',
                 'resource',
                 'pinnedSha',
@@ -138,6 +141,9 @@ AiConversation aiDisplayFromJson(Map<String, Object?> json) {
                 preview: _string(chip, 'preview', 8192, bytes: true),
                 sizeChars: _integer(chip, 'sizeChars'),
                 blocked: _boolean(chip, 'blocked'),
+                internal: chip.containsKey('internal')
+                    ? _boolean(chip, 'internal')
+                    : false,
                 type: _optionalString(chip, 'type', 128),
                 resource: _optionalString(chip, 'resource', 2048),
                 pinnedSha: _optionalString(chip, 'pinnedSha', 128),
@@ -190,6 +196,7 @@ AiConversation aiDisplayFromJson(Map<String, Object?> json) {
             'blocked',
             'resultExcerpt',
             'confidential',
+            'internal',
           });
           return AiToolRunItem(
             name: _string(item, 'name', 256),
@@ -201,6 +208,9 @@ AiConversation aiDisplayFromJson(Map<String, Object?> json) {
             blocked: _boolean(item, 'blocked'),
             confidential: item.containsKey('confidential')
                 ? _boolean(item, 'confidential')
+                : false,
+            internal: item.containsKey('internal')
+                ? _boolean(item, 'internal')
                 : false,
             resultExcerpt: _string(item, 'resultExcerpt', 8192, bytes: true),
           );

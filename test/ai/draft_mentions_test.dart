@@ -117,6 +117,33 @@ void main() {
     _expectDraft('<div>\n@victim\n</div>', mentions: ['victim']);
   });
 
+  for (final entry in <String, List<String>>{
+    '<div>\n&#64;victim\n</div>': ['victim'],
+    '<div>\n@&#118;ictim\n</div>': ['victim'],
+    '<div>\n&commat;all\n</div>': ['all'],
+    '<div>\n&#64;group/subgroup\n</div>': ['group/subgroup'],
+  }.entries) {
+    test('decodes mentions in raw HTML: ${entry.key}', () {
+      _expectDraft(entry.key, mentions: entry.value);
+    });
+  }
+
+  test('reports all encoded mentions after the wrapping candidate cap', () {
+    final names = List.generate(51, (index) => 'user$index');
+    final input = names.map((name) => '<div>&#64;$name</div>').join('\n');
+    _expectDraft(input, mentions: names);
+  });
+
+  test('does not count an encoded at sign as a numeric reference', () {
+    _expectDraft('<div>&#64;</div>');
+  });
+
+  test('detects an encoded mention in a paragraph', () {
+    final result = analyzeDraftMentions('&#64;victim');
+    expect(result.neutralized + result.mentions.length, 1);
+    expect(result.references, 0);
+  });
+
   test('deduplicates remaining mentions in first appearance order', () {
     _expectDraft(
       '<div>\n@second @first @second @First\n</div>',
@@ -167,6 +194,66 @@ void main() {
     _expectDraft(
       '@victim. @group/sub/ @victim.',
       mentions: ['victim.', 'group/sub/'],
+      keepNotifications: true,
+    );
+  });
+
+  test('analyzes an answer against an unclosed existing fence', () {
+    _expectDraft(
+      'Fix:\n\n```\n@Override\npublic void run() {}\n```\nThanks',
+      existing: 'Stack trace:\n```\nat Foo.bar()',
+      text: 'Fix:\n\n```\n`@Override`\npublic void run() {}\n```\nThanks',
+      neutralized: 1,
+    );
+    _expectDraft(
+      'Fix:\n\n```\n@Override\npublic void run() {}\n```\nThanks',
+      existing: 'Stack trace:\n```\nat Foo.bar()',
+      keepNotifications: true,
+      mentions: ['Override'],
+    );
+  });
+
+  test('analyzes indented answer text after an existing list', () {
+    _expectDraft(
+      '    @Test\n    void works() {}',
+      existing: '- first point',
+      text: '    `@Test`\n    void works() {}',
+      neutralized: 1,
+    );
+    _expectDraft(
+      '    @Test\n    void works() {}',
+      existing: '- first point',
+      keepNotifications: true,
+      mentions: ['Test'],
+    );
+  });
+
+  test('subtracts mentions from the existing draft as a multiset', () {
+    _expectDraft(
+      'plain answer',
+      existing: 'cc @alice',
+      keepNotifications: true,
+    );
+  });
+
+  test('subtracts existing references from the joined document', () {
+    _expectDraft('see #2', existing: 'see #1', references: 1);
+  });
+
+  test('wraps an answer mention after a non-empty existing draft', () {
+    _expectDraft(
+      'hello @bob',
+      existing: 'opening text',
+      text: 'hello `@bob`',
+      neutralized: 1,
+    );
+  });
+
+  test('subtracts only matching existing mention occurrences', () {
+    _expectDraft(
+      '@alice @alice @bob',
+      existing: '@alice',
+      mentions: ['alice', 'bob'],
       keepNotifications: true,
     );
   });
@@ -286,6 +373,24 @@ void main() {
       '>',
       '<div>',
       '</div>',
+      '&#64;',
+      '&#x40;',
+      '&#118;',
+      '&commat;',
+      '&amp;',
+      '&lt;',
+      '&gt;',
+      '&quot;',
+      '&apos;',
+      '&sol;',
+      '&period;',
+      '&lowbar;',
+      '&hyphen;',
+      '&dash;',
+      '&num;',
+      '&excl;',
+      '&colon;',
+      '&unknown;',
       'a',
       'z',
       '_',
@@ -343,10 +448,12 @@ void _expectDraft(
   int neutralized = 0,
   int references = 0,
   bool keepNotifications = false,
+  String existing = '',
 }) {
   final result = analyzeDraftMentions(
     input,
     keepNotifications: keepNotifications,
+    existing: existing,
   );
   expect(result.text, text ?? input);
   expect(result.mentions, mentions);
@@ -371,7 +478,8 @@ List<String> _outsideMentions(String text) {
         visit(child);
       }
     } else if (node is md.Text) {
-      names.addAll(pattern.allMatches(node.text).map((match) => match[1]!));
+      final decoded = _decodeEntities(node.text);
+      names.addAll(pattern.allMatches(decoded).map((match) => match[1]!));
     }
   }
 
@@ -381,6 +489,45 @@ List<String> _outsideMentions(String text) {
     visit(node);
   }
   return names.toList();
+}
+
+String _decodeEntities(String text) {
+  const named = <String, String>{
+    'amp': '&',
+    'lt': '<',
+    'gt': '>',
+    'quot': '"',
+    'apos': "'",
+    'commat': '@',
+    'sol': '/',
+    'period': '.',
+    'lowbar': '_',
+    'hyphen': '\u2010',
+    'dash': '\u2010',
+    'num': '#',
+    'excl': '!',
+    'colon': ':',
+  };
+  return text.replaceAllMapped(
+    RegExp(r'&(#(?:[xX][0-9A-Fa-f]+|[0-9]+)|[A-Za-z]+);'),
+    (match) {
+      final entity = match[1]!;
+      if (!entity.startsWith('#')) return named[entity] ?? match[0]!;
+      final hexadecimal = entity.length > 2 &&
+          (entity[1] == 'x' || entity[1] == 'X');
+      final value = int.tryParse(
+        entity.substring(hexadecimal ? 2 : 1),
+        radix: hexadecimal ? 16 : 10,
+      );
+      if (value == null ||
+          value <= 0 ||
+          value > 0x10ffff ||
+          (value >= 0xd800 && value <= 0xdfff)) {
+        return match[0]!;
+      }
+      return String.fromCharCode(value);
+    },
+  );
 }
 
 List<String> _codeTexts(String text) {

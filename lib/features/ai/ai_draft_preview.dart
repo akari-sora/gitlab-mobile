@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -14,64 +15,103 @@ const _shownSources = 5;
 /// How many mentioned users the preview names before it only counts the rest.
 const _shownMentions = 8;
 
-/// Shows what appending [text] to the comment draft on [target] would do, and
-/// returns the text to append, or null when the user backs out. Nothing is
-/// sent: the caller opens the ordinary comment editor with the result.
+/// How much of the text the preview shows; the editor shows all of it.
+const _shownCharacters = 6000;
+
+/// From this length on the draft is checked off the UI isolate: every mention
+/// candidate reparses the whole draft, which takes seconds on a phone for a
+/// long, code-heavy answer.
+const _backgroundCharacters = 4000;
+
+/// The mention check of [text] appended to [existing], both as written (for
+/// "keep mention notifications") and with mentions turned off.
+typedef AiDraftAnalysis = ({DraftMentions asWritten, DraftMentions neutralized});
+
+Future<AiDraftAnalysis> analyzeAiDraft(String text, String existing) =>
+    text.length + existing.length < _backgroundCharacters
+    ? Future.value(_analyze(text, existing))
+    : Isolate.run(() => _analyze(text, existing));
+
+AiDraftAnalysis _analyze(String text, String existing) => (
+  asWritten: analyzeDraftMentions(
+    text,
+    existing: existing,
+    keepNotifications: true,
+  ),
+  neutralized: analyzeDraftMentions(text, existing: existing),
+);
+
+/// Shows what appending the answer to the comment draft on [target] would do,
+/// and returns the text to append, or null when the user backs out. Nothing
+/// is sent: the caller opens the ordinary comment editor with the result.
 ///
-/// [text] has already been through `neutralizeForGitLabDraft`, which changed
-/// [quickActionLines] of its lines. [sources] are display labels (already
+/// [asWritten] and [neutralized] come from [analyzeAiDraft]; their text has
+/// already been through `neutralizeForGitLabDraft`, which changed
+/// [quickActionLines] of its lines. [afterExisting] says the answer follows a
+/// draft that is already there. [sources] are display labels (already
 /// isolated) of what the answer read. [confidential] warns that the
-/// conversation read a confidential issue and [target] is not one.
+/// conversation read a confidential issue and [target] is not one;
+/// [internal] that it read internal notes.
 Future<String?> showAiDraftPreview(
   BuildContext context, {
-  required String text,
   required String target,
+  required DraftMentions asWritten,
+  required DraftMentions neutralized,
+  required bool afterExisting,
   required int quickActionLines,
   required List<String> sources,
   required bool confidential,
+  required bool internal,
 }) => showModalBottomSheet<String>(
   context: context,
   isScrollControlled: true,
   useSafeArea: true,
   showDragHandle: true,
   builder: (_) => AiDraftPreviewSheet(
-    text: text,
     target: target,
+    asWritten: asWritten,
+    neutralized: neutralized,
+    afterExisting: afterExisting,
     quickActionLines: quickActionLines,
     sources: sources,
     confidential: confidential,
+    internal: internal,
   ),
 );
 
 class AiDraftPreviewSheet extends StatefulWidget {
   const AiDraftPreviewSheet({
     super.key,
-    required this.text,
     required this.target,
+    required this.asWritten,
+    required this.neutralized,
+    required this.afterExisting,
     required this.quickActionLines,
     required this.sources,
     required this.confidential,
+    required this.internal,
   });
 
-  final String text;
   final String target;
+  final DraftMentions asWritten;
+  final DraftMentions neutralized;
+  final bool afterExisting;
   final int quickActionLines;
   final List<String> sources;
   final bool confidential;
+  final bool internal;
 
   @override
   State<AiDraftPreviewSheet> createState() => _AiDraftPreviewSheetState();
 }
 
 class _AiDraftPreviewSheetState extends State<AiDraftPreviewSheet> {
-  /// Every mention outside code, as the text would read if kept as written.
-  late final DraftMentions _asWritten = analyzeDraftMentions(
-    widget.text,
-    keepNotifications: true,
-  );
-  late DraftMentions _result = analyzeDraftMentions(widget.text);
   var _keep = false;
   var _acknowledged = false;
+
+  /// Every mention the answer adds outside code, as written.
+  DraftMentions get _asWritten => widget.asWritten;
+  DraftMentions get _result => _keep ? widget.asWritten : widget.neutralized;
 
   /// Mentions that would still notify although the user did not choose to
   /// keep notifications: the conversion could not be verified for them.
@@ -80,7 +120,6 @@ class _AiDraftPreviewSheetState extends State<AiDraftPreviewSheet> {
   void _setKeep(bool keep) => setState(() {
     _keep = keep;
     _acknowledged = false;
-    _result = keep ? _asWritten : analyzeDraftMentions(widget.text);
   });
 
   @override
@@ -127,6 +166,20 @@ class _AiDraftPreviewSheetState extends State<AiDraftPreviewSheet> {
                             color: HubColors.orange,
                             text: l10n.aiDraftConfidential,
                             strong: true,
+                          ),
+                        if (widget.internal)
+                          _Fact(
+                            key: const ValueKey('ai-draft-internal'),
+                            icon: Icons.visibility_off_outlined,
+                            color: HubColors.orange,
+                            text: l10n.aiDraftInternal,
+                            strong: true,
+                          ),
+                        if (widget.afterExisting)
+                          _Fact(
+                            key: const ValueKey('ai-draft-after-existing'),
+                            icon: Icons.edit_note,
+                            text: l10n.aiDraftAfterExisting,
                           ),
                         if (_asWritten.mentions.isNotEmpty)
                           ..._mentions(theme, muted),
@@ -204,7 +257,7 @@ class _AiDraftPreviewSheetState extends State<AiDraftPreviewSheet> {
                             child: SizedBox(
                               width: double.infinity,
                               child: Text(
-                                _result.text,
+                                _shown,
                                 key: const ValueKey('ai-draft-preview-text'),
                                 // The answer reads in its own direction,
                                 // whatever the interface language.
@@ -216,6 +269,10 @@ class _AiDraftPreviewSheetState extends State<AiDraftPreviewSheet> {
                             ),
                           ),
                         ),
+                        if (_shown.length < _result.text.length) ...[
+                          const SizedBox(height: 6),
+                          Text(l10n.aiDraftPreviewCut, style: muted),
+                        ],
                         const SizedBox(height: 8),
                         Text(l10n.aiDraftNotSent, style: muted),
                       ],
@@ -257,6 +314,18 @@ class _AiDraftPreviewSheetState extends State<AiDraftPreviewSheet> {
         );
       },
     );
+  }
+
+  /// The start of the text: one long paragraph is slow to lay out, and the
+  /// editor shows all of it.
+  String get _shown {
+    final text = _result.text;
+    if (text.length <= _shownCharacters) return text;
+    var end = _shownCharacters;
+    // Never split a surrogate pair.
+    final last = text.codeUnitAt(end - 1);
+    if (last >= 0xd800 && last <= 0xdbff) end--;
+    return '${text.substring(0, end)}…';
   }
 
   List<Widget> _mentions(ThemeData theme, TextStyle? muted) {

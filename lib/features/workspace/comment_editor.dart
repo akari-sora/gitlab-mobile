@@ -6,6 +6,20 @@ import '../../core/models.dart';
 import '../../l10n/l10n.dart';
 import 'editor.dart';
 
+/// The draft resource of a new top-level comment on [resource] `iid` of
+/// [project], shared with the discussion tab.
+String commentDraftResource(Project project, String resource, int iid) =>
+    'projects/${project.id}/$resource/$iid/root/new';
+
+/// The body of the saved new-comment draft, or '' when there is none.
+/// Throws when the draft cannot be read.
+Future<String> readCommentDraft(
+  Account account,
+  Project project,
+  String resource,
+  int iid,
+) => readDraftField(account, commentDraftResource(project, resource, iid), 'body');
+
 /// The ordinary local comment draft, shared with the discussion tab. Opening
 /// this editor never writes to GitLab; only the explicit Save action does.
 Future<bool> openCommentEditor(
@@ -28,7 +42,7 @@ Future<bool> openCommentEditor(
     projectId: project.id,
     projectPath: project.path,
     title: l10n.newComment,
-    resource: '${path.join('/')}/root/new',
+    resource: commentDraftResource(project, resource, iid),
     subtitle: '${project.path} · ${resource == 'issues' ? '#' : '!'}$iid',
     fields: [
       EditField(

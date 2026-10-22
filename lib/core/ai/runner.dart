@@ -587,6 +587,10 @@ final class AiRunner {
             final clipped = clippedData.encode();
             outputChars += clipped.length;
             _check(epoch);
+            final successfulRead =
+                !toolResult.isError &&
+                !toolResult.notExecuted &&
+                !toolResult.blockedSensitive;
             final safeResult = AiToolResult.fromData(
               callId: tc.id,
               name: tc.name,
@@ -597,6 +601,9 @@ final class AiRunner {
                   toolResult.truncated || clipped.length < content.length,
               blockedSensitive: toolResult.blockedSensitive,
               notExecuted: toolResult.notExecuted,
+              readConfidential:
+                  successfulRead && toolResult.readConfidential,
+              readInternal: successfulRead && toolResult.readInternal,
             );
             results.add(safeResult);
             _notifyToolResult(safeResult);

@@ -12,6 +12,7 @@ final class AiContextChip {
     this.pinnedSha,
     this.sentText,
     this.block,
+    this.internal = false,
   });
 
   final String source;
@@ -20,6 +21,7 @@ final class AiContextChip {
   final String preview;
   final int sizeChars;
   final bool blocked;
+  final bool internal;
   final String? type;
   final String? resource;
   final String? pinnedSha;
@@ -92,6 +94,7 @@ final class AiToolRunItem extends AiChatItem {
     this.blocked = false,
     this.resultExcerpt = '',
     this.confidential = false,
+    this.internal = false,
   });
 
   final String name;
@@ -103,6 +106,7 @@ final class AiToolRunItem extends AiChatItem {
   final String provenance;
   final String resultExcerpt;
   final bool confidential;
+  final bool internal;
 }
 
 final class AiNoticeItem extends AiChatItem {

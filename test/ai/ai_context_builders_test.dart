@@ -248,6 +248,7 @@ void main() {
       expect(text.indexOf('note-4'), lessThan(text.indexOf('note-23')));
       expect(text, contains('"internal":true'));
       expect(text, contains('"internal":false'));
+      expect(context.readInternal, isTrue);
     },
   );
 
@@ -282,7 +283,61 @@ void main() {
     expect(text.indexOf('mr-note-2'), lessThan(text.indexOf('mr-note-21')));
     expect(text, contains('"internal":true'));
     expect(context.pinnedSha, _head);
+    expect(context.readInternal, isTrue);
   });
+
+  for (final mergeRequest in [false, true]) {
+    for (final internalIndex in [0, 1, 20, 21, null]) {
+      test(
+        'page context flags only included internal notes: '
+        'MR=$mergeRequest index=$internalIndex',
+        () {
+          final notes = List.generate(
+            22,
+            (index) => AiDiscussionNoteInput(
+              body: 'synthetic note $index',
+              createdAt: DateTime.utc(2026, 1, 1).add(Duration(minutes: index)),
+              system: index == 21,
+              internal: index == internalIndex,
+            ),
+          );
+          final builder = AiContextBuilders(
+            redactor: Redactor(secrets: _Secrets()),
+          );
+          final context = mergeRequest
+              ? builder.mergeRequest(
+                  AiMergeRequestContextInput(
+                    iid: 7,
+                    title: 'Synthetic MR',
+                    description: '',
+                    state: 'opened',
+                    headSha: _head,
+                    baseSha: _base,
+                    diffs: const [],
+                    notes: notes,
+                  ),
+                  nonce: 'internal-context',
+                )
+              : builder.discussion(
+                  AiDiscussionContextInput(
+                    kind: 'issue',
+                    iid: 3,
+                    title: 'Synthetic issue',
+                    description: '',
+                    state: 'opened',
+                    pinnedSha: _head,
+                    notes: notes,
+                  ),
+                  nonce: 'internal-context',
+                );
+          expect(
+            context.readInternal,
+            internalIndex == 1 || internalIndex == 20,
+          );
+        },
+      );
+    }
+  }
 
   test('discussion strips ANSI before redacting serialized fields', () {
     final builder = AiContextBuilders(

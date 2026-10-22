@@ -13,7 +13,6 @@ import 'package:gitlab_mobile/core/ai/wire/anthropic_messages.dart';
 import 'package:gitlab_mobile/core/ai/wire/chat_completions.dart';
 import 'package:gitlab_mobile/core/ai/wire/responses.dart';
 import 'package:gitlab_mobile/core/ai/wire/wire_format.dart';
-import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_history_codec.dart';
 
 import '../support/workspace_fixture.dart';
@@ -210,18 +209,24 @@ void main() {
         name: 'get_issue',
         content: 'original',
         readConfidential: true,
+        readInternal: true,
       ),
       const AiToolResult.fromData(
         callId: 'read',
         name: 'get_issue',
         data: AiAppText.plain('original'),
         readConfidential: true,
+        readInternal: true,
       ),
     ]) {
       expect(
         result
             .copyWith(data: const AiAppText.plain('redacted'))
             .readConfidential,
+        isTrue,
+      );
+      expect(
+        result.copyWith(data: const AiAppText.plain('redacted')).readInternal,
         isTrue,
       );
     }
@@ -277,37 +282,15 @@ void main() {
     });
   }
 
-  test('origin confidentiality does not change conversation identity', () {
-    final project = WorkspaceFixture().project;
-    for (final kind in AiWorkItemKind.values) {
-      final public = AiWorkItemOrigin(
-        project: project,
-        kind: kind,
-        iid: 3,
-        title: 'Synthetic',
-      );
-      final confidential = AiWorkItemOrigin(
-        project: project,
-        kind: kind,
-        iid: 3,
-        title: 'Synthetic',
-        confidential: true,
-      );
-      expect(public.confidential, isFalse);
-      expect(confidential.confidential, isTrue);
-      expect(confidential.key, public.key);
-    }
-  });
-
   for (final wire in <AiWireFormat>[
     const ChatCompletionsFormat(),
     const ResponsesFormat(),
     const AnthropicMessagesFormat(),
   ]) {
     test(
-      '${wire.format.name} request bytes ignore confidentiality metadata',
+      '${wire.format.name} request bytes ignore disclosure metadata',
       () {
-        String request(bool confidential) {
+        String request({bool confidential = false, bool internal = false}) {
           final segment =
               AiSegment(
                 providerId: 'synthetic',
@@ -324,6 +307,7 @@ void main() {
                       'Identical synthetic tool content',
                     ),
                     readConfidential: confidential,
+                    readInternal: internal,
                   ),
                 ]),
               );
@@ -343,7 +327,10 @@ void main() {
           );
         }
 
-        expect(request(true), request(false));
+        final unmarked = request();
+        expect(request(confidential: true), unmarked);
+        expect(request(internal: true), unmarked);
+        expect(request(confidential: true, internal: true), unmarked);
       },
     );
   }

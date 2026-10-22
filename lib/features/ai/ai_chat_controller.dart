@@ -103,7 +103,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   AiRunner? _runner;
   AiRunnerBinding? _binding;
   final List<AiChatItem> _items = [];
-  final List<({String id, int index, bool confidential})> _pendingTools = [];
+  final List<({String id, int index})> _pendingTools = [];
   AiChatPhase _phase = AiChatPhase.preparing;
   AiChatBlocker _blocker = AiChatBlocker.settingsLoading;
   UserFacingFailure? _failure;
@@ -410,21 +410,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       tools: catalogue?.specs ?? const [],
       executeTool: catalogue == null
           ? null
-          : (call) async {
-              final result = await catalogue.executeResult(call, budget: budget);
-              // The runner rebuilds results for provider redaction. Keep the
-              // display-only flag on the pending row across that boundary.
-              final index = _pendingTools.indexWhere((p) => p.id == call.id);
-              if (current() && index >= 0) {
-                final pending = _pendingTools[index];
-                _pendingTools[index] = (
-                  id: pending.id,
-                  index: pending.index,
-                  confidential: result.readConfidential,
-                );
-              }
-              return result;
-            },
+          : (call) => catalogue.executeResult(call, budget: budget),
       resetToolBudget: () => budget = AiToolBudget(),
       beginToolTurn: () => budget.beginTurn(),
       toolBudgetExhausted: () => budget.exhausted,
@@ -450,7 +436,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
             provenance: '',
           ),
         );
-        _pendingTools.add((id: call.id, index: index, confidential: false));
+        _pendingTools.add((id: call.id, index: index));
         _notifyStream();
       },
       onToolResult: (result) {
@@ -478,7 +464,13 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
               !result.notExecuted &&
               !result.isError &&
               !result.blockedSensitive &&
-              (result.readConfidential || completed!.confidential),
+              result.readConfidential,
+          internal:
+              pending >= 0 &&
+              !result.notExecuted &&
+              !result.isError &&
+              !result.blockedSensitive &&
+              result.readInternal,
           resultExcerpt: _toolExcerpt(result.plainData.plainText),
         );
         if (index == null) {
@@ -682,7 +674,11 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   /// A chip for a block that is already redacted, as sent. Its preview is
   /// cut from the redacted text. [sizeChars] keeps the size that was sent
   /// when a later pass redacts more.
-  AiContextChip _sentChip(AiContextBlock sent, {int? sizeChars}) {
+  AiContextChip _sentChip(
+    AiContextBlock sent, {
+    int? sizeChars,
+    bool? internal,
+  }) {
     final resource = _originResource;
     final pinned = _context?.built.pinnedSha;
     return AiContextChip(
@@ -696,6 +692,10 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       sizeChars: sizeChars ?? sent.text.length,
       pinnedSha: pinned == null ? null : _redactor.redactSource(pinned).text,
       block: sent,
+      internal:
+          internal ??
+          (sent.source != 'conversation_summary' &&
+              (_context?.built.readInternal ?? false)),
     );
   }
 
@@ -823,6 +823,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
                 _sentChip(
                   block.redact(_redactor, source: safe),
                   sizeChars: chip.sizeChars,
+                  internal: chip.internal,
                 )
               else
                 AiContextChip(
@@ -831,6 +832,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
                   sentText: chip.sentText == null ? null : safe(chip.sentText!),
                   sizeChars: chip.sizeChars,
                   blocked: chip.blocked,
+                  internal: chip.internal,
                   type: chip.type,
                   resource: chip.resource == null ? null : safe(chip.resource!),
                   pinnedSha: chip.pinnedSha == null
@@ -851,6 +853,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           :final blocked,
           :final resultExcerpt,
           :final confidential,
+          :final internal,
         ) =>
           AiToolRunItem(
             name: safe(name),
@@ -862,6 +865,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
             blocked: blocked,
             resultExcerpt: safe(resultExcerpt),
             confidential: confidential,
+            internal: internal,
           ),
         final AiNoticeItem notice => notice,
       };
@@ -880,6 +884,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       :final truncated,
       :final blocked,
       :final confidential,
+      :final internal,
     ) =>
       AiToolRunItem(
         name: name,
@@ -890,6 +895,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
         truncated: truncated,
         blocked: blocked,
         confidential: confidential,
+        internal: internal,
       ),
     final AiNoticeItem notice => notice,
   };

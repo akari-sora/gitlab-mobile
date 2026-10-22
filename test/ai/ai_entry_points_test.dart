@@ -239,6 +239,55 @@ void main() {
     expect(fixture.adapter.requests.where((r) => r.method != 'GET'), isEmpty);
   });
 
+  testWidgets('the draft target reports the issue as loaded now', (
+    tester,
+  ) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    fixture.issues[12] =
+        fixture.issue(12, 'Synthetic issue', confidential: true);
+    await _pump(
+      tester,
+      fixture,
+      WorkItemPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        resource: 'issues',
+        iid: 12,
+      ),
+    );
+    await _openMenu(tester, l10n.moreOptions);
+    await tester.tap(find.text(l10n.aiDiscuss));
+    await tester.pumpAndSettle();
+    final target = tester.widget<AiChatPage>(find.byType(AiChatPage)).draftTarget!;
+    expect(target.confidential(), isTrue);
+    expect(await target.existingText(), isEmpty);
+  });
+
+  testWidgets('a merge request is never a confidential target', (tester) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    await _pump(
+      tester,
+      fixture,
+      WorkItemPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        resource: 'merge_requests',
+        iid: 12,
+      ),
+    );
+    await _openMenu(tester, l10n.moreOptions);
+    await tester.tap(find.text(l10n.aiDiscuss));
+    await tester.pumpAndSettle();
+    final target = tester.widget<AiChatPage>(find.byType(AiChatPage)).draftTarget!;
+    expect(target.confidential(), isFalse);
+  });
+
   testWidgets('a changed session generation cannot insert an old AI answer', (
     tester,
   ) async {

@@ -33,12 +33,32 @@ final _referencePattern = RegExp(
 final _referencePathPattern = RegExp(
   r'/-/(?:issues|merge_requests|work_items)/[0-9]+(?=$|[^A-Za-z0-9_])',
 );
+final _htmlEntityPattern = RegExp(
+  r'&(#(?:[xX][0-9A-Fa-f]+|[0-9]+)|[A-Za-z]+);',
+);
+const _namedHtmlEntities = <String, String>{
+  'amp': '&',
+  'lt': '<',
+  'gt': '>',
+  'quot': '"',
+  'apos': "'",
+  'commat': '@',
+  'sol': '/',
+  'period': '.',
+  'lowbar': '_',
+  'hyphen': '\u2010',
+  'dash': '\u2010',
+  'num': '#',
+  'excl': '!',
+  'colon': ':',
+};
 
 /// Adds code spans only when reparsing proves that one mention was removed
 /// without changing existing code. Unverified mentions remain for confirmation.
 DraftMentions analyzeDraftMentions(
   String text, {
   bool keepNotifications = false,
+  String existing = '',
 }) {
   var result = text;
   var neutralized = 0;
@@ -47,7 +67,7 @@ DraftMentions analyzeDraftMentions(
     // Stop collecting at 51: large drafts need only the final analysis below.
     final candidates = _mentionPattern.allMatches(text).take(51).toList();
     if (candidates.length <= 50 && candidates.isNotEmpty) {
-      var previous = _analyze(result);
+      var previous = _analyze(_joinedDraft(existing, result));
       for (final candidate in candidates.reversed) {
         final token = candidate[0]!.replaceFirst(_trailingPunctuation, '');
         final proposedText = result.replaceRange(
@@ -55,7 +75,7 @@ DraftMentions analyzeDraftMentions(
           candidate.start + token.length,
           '`$token`',
         );
-        final proposed = _analyze(proposedText);
+        final proposed = _analyze(_joinedDraft(existing, proposedText));
         if (proposed.mentions.length == previous.mentions.length - 1 &&
             _addsOnlyCode(previous.code, proposed.code, token)) {
           result = proposedText;
@@ -66,13 +86,42 @@ DraftMentions analyzeDraftMentions(
     }
   }
 
-  final analysis = _analyze(result);
+  final analysis = _analyze(_joinedDraft(existing, result));
+  final existingAnalysis = _analyze(existing);
+  final addedReferences = analysis.references - existingAnalysis.references;
   return DraftMentions(
     text: result,
-    mentions: List<String>.unmodifiable(analysis.mentions.toSet()),
+    mentions: List<String>.unmodifiable(
+      _subtractMentions(analysis.mentions, existingAnalysis.mentions),
+    ),
     neutralized: neutralized,
-    references: analysis.references,
+    references: addedReferences < 0 ? 0 : addedReferences,
   );
+}
+
+String _joinedDraft(String existing, String appended) =>
+    existing.isEmpty ? appended : '$existing\n\n$appended';
+
+List<String> _subtractMentions(
+  List<String> joined,
+  List<String> existing,
+) {
+  final remainingExisting = <String, int>{};
+  for (final name in existing) {
+    remainingExisting[name] = (remainingExisting[name] ?? 0) + 1;
+  }
+
+  final result = <String>[];
+  final seen = <String>{};
+  for (final name in joined) {
+    final remaining = remainingExisting[name] ?? 0;
+    if (remaining > 0) {
+      remainingExisting[name] = remaining - 1;
+    } else if (seen.add(name)) {
+      result.add(name);
+    }
+  }
+  return result;
 }
 
 bool _addsOnlyCode(
@@ -130,11 +179,12 @@ _Analysis _analyze(String text) {
         walk(child, insideCode: blocked, skipReferences: skipChildReferences);
       }
     } else if (node is md.Text && !insideCode) {
+      final decoded = _decodeHtmlEntities(node.text);
       analysis.mentions.addAll(
-        _mentionPattern.allMatches(node.text).map((match) => match[1]!),
+        _mentionPattern.allMatches(decoded).map((match) => match[1]!),
       );
       if (!skipReferences) {
-        for (final match in _referencePattern.allMatches(node.text)) {
+        for (final match in _referencePattern.allMatches(decoded)) {
           final url = match[1];
           if (url == null || _isReferenceUrl(url)) analysis.references++;
         }
@@ -146,6 +196,29 @@ _Analysis _analyze(String text) {
     walk(node);
   }
   return analysis;
+}
+
+String _decodeHtmlEntities(String text) {
+  return text.replaceAllMapped(_htmlEntityPattern, (match) {
+    final entity = match[1]!;
+    if (!entity.startsWith('#')) {
+      return _namedHtmlEntities[entity] ?? match[0]!;
+    }
+
+    final hexadecimal = entity.length > 2 &&
+        (entity.codeUnitAt(1) == 0x78 || entity.codeUnitAt(1) == 0x58);
+    final value = int.tryParse(
+      entity.substring(hexadecimal ? 2 : 1),
+      radix: hexadecimal ? 16 : 10,
+    );
+    if (value == null ||
+        value <= 0 ||
+        value > 0x10ffff ||
+        (value >= 0xd800 && value <= 0xdfff)) {
+      return match[0]!;
+    }
+    return String.fromCharCode(value);
+  });
 }
 
 bool _isReferenceUrl(String text) {

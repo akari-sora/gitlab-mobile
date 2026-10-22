@@ -11,6 +11,7 @@ import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
+import 'package:gitlab_mobile/features/ai/ai_draft_target.dart';
 import 'package:gitlab_mobile/features/ai/ai_message_body.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
 import 'package:gitlab_mobile/shared/theme.dart';
@@ -177,6 +178,16 @@ List<AiChatItem> _conversation() => [
   ),
 ];
 
+AiDraftTarget _target({
+  String existing = '',
+  bool Function()? confidential,
+  Future<void> Function(String text)? insert,
+}) => AiDraftTarget(
+  existingText: () async => existing,
+  confidential: confidential ?? () => false,
+  insert: insert ?? (_) async {},
+);
+
 void main() {
   setUp(() => useLanguage(languageForTag('zh-TW')!));
 
@@ -194,10 +205,12 @@ void main() {
       _host(
         AiChatPage(
           session: session,
-          onInsertDraft: (text) {
-            inserted.add(text);
-            return pending.future;
-          },
+          draftTarget: _target(
+            insert: (text) {
+              inserted.add(text);
+              return pending.future;
+            },
+          ),
         ),
       ),
     );
@@ -211,10 +224,13 @@ void main() {
     await tester.pump();
     expect(inserted, [answer.text]);
     expect(session.sent, isEmpty);
-    expect(find.text(l10n.aiChatInsertDraft), findsNothing);
+    // While the editor opens the button waits instead of offering a second
+    // append.
+    final busy = find.byKey(const ValueKey('ai-chat-insert-draft'));
+    expect(tester.widget<ButtonStyleButton>(busy).onPressed, isNull);
     pending.complete();
     await tester.pumpAndSettle();
-    expect(find.text(l10n.aiChatInsertDraft), findsOneWidget);
+    expect(tester.widget<ButtonStyleButton>(busy).onPressed, isNotNull);
   });
 
   group('the append preview', () {
@@ -223,13 +239,19 @@ void main() {
       _FakeSession session, {
       String tag = 'zh-TW',
       double scale = 1,
+      String existing = '',
+      bool Function()? confidential,
     }) async {
       final inserted = <String>[];
       await tester.pumpWidget(
         _host(
           AiChatPage(
             session: session,
-            onInsertDraft: (text) async => inserted.add(text),
+            draftTarget: _target(
+              existing: existing,
+              confidential: confidential,
+              insert: (text) async => inserted.add(text),
+            ),
           ),
           tag: tag,
           scale: scale,
@@ -365,18 +387,14 @@ void main() {
       expect(find.byKey(const ValueKey('ai-draft-confidential')), findsOne);
     });
 
-    testWidgets('no confidential warning on a confidential issue', (
+    testWidgets('the target is asked whether it is confidential each time', (
       tester,
     ) async {
-      final session = _FakeSession(
-        origin: AiWorkItemOrigin(
-          project: _project,
-          kind: AiWorkItemKind.issue,
-          iid: 7,
-          title: 'Secret',
-          confidential: true,
-        ),
-        items: const [
+      // A kept conversation can outlive a change to the issue it came from.
+      var targetConfidential = true;
+      final session = answer(
+        'Answer',
+        before: const [
           AiToolRunItem(
             name: 'get_issue',
             argsPreview: '#8',
@@ -385,11 +403,107 @@ void main() {
             provenance: '',
             confidential: true,
           ),
-          AiAssistantItem(text: 'Answer', state: AiAssistantState.done),
         ],
       );
-      await openPreview(tester, session);
+      await openPreview(
+        tester,
+        session,
+        confidential: () => targetConfidential,
+      );
       expect(find.byKey(const ValueKey('ai-draft-confidential')), findsNothing);
+      await tester.tap(find.text(l10n.cancelAction));
+      await tester.pumpAndSettle();
+      targetConfidential = false;
+      await tester.tap(find.text(l10n.aiChatInsertDraft));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ai-draft-confidential')), findsOne);
+    });
+
+    testWidgets('internal notes warn whatever the target is', (tester) async {
+      for (final before in <List<AiChatItem>>[
+        const [
+          AiToolRunItem(
+            name: 'get_merge_request',
+            argsPreview: '!3',
+            status: AiToolRunStatus.completed,
+            sizeChars: 40,
+            provenance: '',
+            internal: true,
+          ),
+        ],
+        [
+          AiUserItem(
+            text: 'Why?',
+            chips: const [
+              AiContextChip(
+                source: 'issue',
+                resource: '#7',
+                preview: '',
+                sizeChars: 10,
+                internal: true,
+              ),
+            ],
+          ),
+        ],
+      ]) {
+        await openPreview(
+          tester,
+          answer('Answer', before: before),
+          confidential: () => true,
+        );
+        expect(find.byKey(const ValueKey('ai-draft-internal')), findsOne);
+        await tester.tap(find.text(l10n.cancelAction));
+        await tester.pumpAndSettle();
+      }
+    });
+
+    testWidgets('mentions are checked after the waiting draft', (
+      tester,
+    ) async {
+      // The draft's open fence is closed by the answer's own fence, so
+      // `@Override` would be ordinary text in the posted comment.
+      final inserted = await openPreview(
+        tester,
+        answer('Fix:\n\n```\n@Override\npublic void run() {}\n```\nThanks'),
+        existing: 'Stack trace:\n```\nat Foo.bar()',
+      );
+      expect(find.byKey(const ValueKey('ai-draft-after-existing')), findsOne);
+      // Checked alone the mention is in code; after the draft it is not, so
+      // it is turned off where it now stands, and keeping it would notify.
+      expect(find.text(l10n.aiDraftMentionsOff('1')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('ai-draft-keep-mentions')));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiDraftMentionsNotify('1')), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('ai-draft-keep-mentions')));
+      await tester.pumpAndSettle();
+      await confirm(tester);
+      expect(inserted, [
+        'Fix:\n\n```\n`@Override`\npublic void run() {}\n```\nThanks',
+      ]);
+    });
+
+    testWidgets('a draft that cannot be read stops before the preview', (
+      tester,
+    ) async {
+      final inserted = <String>[];
+      await tester.pumpWidget(
+        _host(
+          AiChatPage(
+            session: answer('Answer'),
+            draftTarget: AiDraftTarget(
+              existingText: () async => throw const FormatException('draft'),
+              confidential: () => false,
+              insert: (text) async => inserted.add(text),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(l10n.aiChatInsertDraft));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiDraftPreviewTitle), findsNothing);
+      expect(find.text(l10n.aiDraftUnreadable), findsOneWidget);
+      expect(inserted, isEmpty);
     });
 
     testWidgets('cancelling inserts nothing', (tester) async {
@@ -412,6 +526,69 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text(l10n.aiDraftPreviewTitle), findsNothing);
       expect(inserted, isEmpty);
+      expect(find.text(l10n.aiDraftChanged), findsOneWidget);
+    });
+
+    testWidgets('a conversation replaced while open inserts nothing', (
+      tester,
+    ) async {
+      final session = answer('Answer');
+      final inserted = await openPreview(tester, session);
+      session.update(
+        () => session.items = const [
+          AiAssistantItem(text: 'Answer', state: AiAssistantState.done),
+        ],
+      );
+      await confirm(tester);
+      expect(inserted, isEmpty);
+      expect(find.text(l10n.aiDraftChanged), findsOneWidget);
+    });
+
+    testWidgets('a page pushed as the sheet closes inserts nothing', (
+      tester,
+    ) async {
+      final inserted = await openPreview(tester, answer('Answer'));
+      final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+      tester
+          .widget<ButtonStyleButton>(
+            find.byKey(const ValueKey('ai-draft-confirm')),
+          )
+          .onPressed!();
+      // Before the chat page resumes, another page comes to the front.
+      unawaited(
+        navigator.push(
+          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(inserted, isEmpty);
+    });
+
+    testWidgets('a long answer is previewed in part and appended whole', (
+      tester,
+    ) async {
+      final long = List.filled(400, 'Line of a long answer').join('\n');
+      final inserted = <String>[];
+      await tester.pumpWidget(
+        _host(
+          AiChatPage(
+            session: answer(long),
+            draftTarget: _target(insert: (text) async => inserted.add(text)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text(l10n.aiChatInsertDraft));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(l10n.aiChatInsertDraft));
+      // Long drafts are checked on another isolate.
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(seconds: 2)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiDraftPreviewCut), findsOneWidget);
+      await confirm(tester);
+      expect(inserted, [long]);
     });
 
     for (final (tag, scale, size) in [
@@ -470,9 +647,11 @@ void main() {
         _host(
           AiChatPage(
             session: session,
-            onInsertDraft: (_) async {
-              fail('An incomplete answer must not open a draft');
-            },
+            draftTarget: _target(
+              insert: (_) async {
+                fail('An incomplete answer must not open a draft');
+              },
+            ),
           ),
         ),
       );
@@ -491,7 +670,7 @@ void main() {
       ],
     );
     await tester.pumpWidget(
-      _host(AiChatPage(session: session, onInsertDraft: (_) async {})),
+      _host(AiChatPage(session: session, draftTarget: _target())),
     );
     await tester.pump();
     expect(find.text(l10n.aiChatInsertDraft), findsNothing);
