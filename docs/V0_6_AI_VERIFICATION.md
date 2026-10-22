@@ -1512,3 +1512,63 @@ the review fast path: fixed here, then one reviewer checked the increment.
     survives because both views usually agree);
   - choosing one parser from the instance version;
   - cancelling a check when the chat closes.
+
+### MR6a-4: report a response
+
+Every finished answer offers **Report** next to Copy and Append. This follows
+plan v5 §6.7 and Google Play's policy for AI-generated content.
+
+- **The sheet** asks what is wrong: harmful, inaccurate, reveals private or
+  confidential information, or something else. It takes optional details, up
+  to 500 characters. A switch attaches the answer's text; it is **off by
+  default**, and the attached text is redacted with the live secrets
+  (`draftSafe`).
+- **The preview** shows exactly what will be sent and where it goes
+  (`aiReportEmail` in `lib/core/brand.dart`), with a Copy address button.
+- **The report** is plain text:
+  - a translated "please send to" line;
+  - `key: value` metadata: category, description, app version, preset,
+    format and model of the provider that produced the answer, UTC time, and
+    the answer's number;
+  - the answer under a separator, only when attached.
+- **Sending:** mail goes first, through `url_launcher` with an external app
+  and no `canLaunchUrl`. The share sheet (text only) takes over when the
+  launch returns false or throws, or when the `mailto:` URI would be longer
+  than 1,800 characters.
+- **Afterwards** the answer is folded on this device as "Reported; the content
+  is hidden" and can be opened again.
+  - When encrypted history is on, the reported flag is saved with it.
+  - Each answer also records the provider that produced it (preset, format,
+    model), so a report names the right one after a switch.
+  - Neither field reaches the provider; request bodies are compared
+    byte-for-byte in all three formats.
+
+Tests:
+- `test/ai/ai_report_test.dart` (body and mailto rules);
+- `ai_report_sender_test.dart` (mail, a false launch, a throwing launch, a URI
+  that is too long);
+- `ai_report_history_test.dart` and `ai_report_provider_isolation_test.dart`;
+- the "reporting a response" group in `test/ai/ai_chat_page_test.dart`:
+  metadata only by default, attach, the share route, a failed hand-off that
+  marks nothing, the fold, no report while streaming, and the sheet at 2x
+  text on 320 dp in zh-TW and Arabic and 640×360 in English. The first
+  layout run found the address row overflowing in Arabic at 2x; the Copy
+  address button now sits under the address.
+
+Emulator run, on the project's Android API 36 emulator, with the synthetic
+target and the gate on, at commit `0506093` before the rebase:
+- the action row showed Copy, Append and Report;
+- the sheet kept Send disabled until a category was chosen;
+- with the answer attached, the preview listed the metadata and the text;
+- Send opened Gmail's compose screen, `ComposeActivityGmailExternal`. Gmail
+  had no account, so nothing was sent. The page said the mail app was open.
+
+The synthetic session's `markReported` does nothing, so the fold was not seen
+on the device; widget tests cover it. The original APK was reinstalled
+afterwards, and its SHA-256 matched.
+
+**NOT_RUN:**
+- a report actually received by mail;
+- the share-sheet route on a device;
+- a real provider's answer attribution on a device;
+- iOS.
