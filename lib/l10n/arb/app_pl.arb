@@ -2332,5 +2332,18 @@
   "aiToolUnknown": "Żądanie nieznanego narzędzia",
   "aiChatSentPreviewOnly": "Ta rozmowa została przywrócona, dlatego zachowano tylko początek wysłanej treści",
   "aiChatSummaryChip": "Podsumowanie rozmowy",
-  "aiChatInsertDraft": "Dodaj do szkicu komentarza"
+  "aiChatInsertDraft": "Dodaj do szkicu komentarza",
+  "aiDraftPreviewTitle": "Sprawdź przed dodaniem",
+  "aiDraftConfidential": "W tej rozmowie odczytano poufne zgłoszenie, ale ta strona nie jest poufna. Przed dodaniem sprawdź, czy odpowiedź nie ujawnia żadnych poufnych informacji.",
+  "aiDraftQuickActions": "Wiersze z wyłączonymi szybkimi akcjami: {count}. Na początku tych wierszy dodano spację, więc akcje nie zostaną wykonane po opublikowaniu.",
+  "aiDraftReferences": "Odwołania do zgłoszeń i merge requestów: {count}. Po opublikowaniu na każdej stronie, do której się odwołano, pojawi się notatka o wzmiance.",
+  "aiDraftSources": "Na potrzeby tej odpowiedzi odczytano",
+  "aiDraftMore": "Więcej elementów: {count}",
+  "aiDraftText": "Tekst do dodania",
+  "aiDraftNotSent": "Tekst zostanie tylko dodany do szkicu i nic nie zostanie opublikowane. Aby go opublikować, sprawdź tekst w edytorze i naciśnij Zapisz.",
+  "aiDraftConfirm": "Dodaj do szkicu",
+  "aiDraftMentionsOff": "Wzmianki bez powiadomień: {count}. Wzmianki są wyświetlane jako kod i nikogo nie powiadomią.",
+  "aiDraftMentionsNotify": "Użytkownicy powiadamiani po opublikowaniu: {count}",
+  "aiDraftKeepMentions": "Zachowaj powiadomienia o wzmiankach",
+  "aiDraftAcknowledge": "Rozumiem, że opublikowanie powiadomi tych użytkowników"
 }

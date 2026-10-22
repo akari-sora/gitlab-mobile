@@ -2332,5 +2332,18 @@
   "aiToolUnknown": "Begäran om att anropa ett okänt verktyg",
   "aiChatSentPreviewOnly": "Den här konversationen har återställts, så bara början av det som skickades finns kvar",
   "aiChatSummaryChip": "Sammanfattning av konversation",
-  "aiChatInsertDraft": "Lägg till i kommentarsutkast"
+  "aiChatInsertDraft": "Lägg till i kommentarsutkast",
+  "aiDraftPreviewTitle": "Kontrollera innan du lägger till",
+  "aiDraftConfidential": "Den här konversationen läste ett konfidentiellt ärende, men det här ärendet är inte konfidentiellt. Kontrollera innan du lägger till att svaret inte avslöjar någon konfidentiell information.",
+  "aiDraftQuickActions": "Quick actions avstängda — antal rader: {count}. Ett blanksteg lades till i början så att de inte körs vid publicering.",
+  "aiDraftReferences": "Hänvisningar till ärenden och merge requests: {count}. Vid publicering läggs en anteckning om omnämnandet till på varje hänvisad sida.",
+  "aiDraftSources": "Det här svaret läste",
+  "aiDraftMore": "Övriga objekt: {count}",
+  "aiDraftText": "Text som ska läggas till",
+  "aiDraftNotSent": "Det här lägger bara till texten i kommentarsutkastet; inget publiceras. Kontrollera texten i redigeraren och tryck på Spara för att publicera den.",
+  "aiDraftConfirm": "Lägg till i kommentarsutkast",
+  "aiDraftMentionsOff": "Aviseringar vid omnämnanden avstängda: {count}. Omnämnandena visas som kod och aviserar ingen.",
+  "aiDraftMentionsNotify": "Användare som aviseras vid publicering: {count}",
+  "aiDraftKeepMentions": "Behåll aviseringar vid omnämnanden",
+  "aiDraftAcknowledge": "Jag förstår att dessa användare aviseras vid publicering"
 }

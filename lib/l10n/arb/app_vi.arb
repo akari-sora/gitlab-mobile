@@ -2332,5 +2332,18 @@
   "aiToolUnknown": "Yêu cầu công cụ không xác định",
   "aiChatSentPreviewOnly": "Cuộc trò chuyện này đã được khôi phục nên chỉ phần đầu của nội dung đã gửi được lưu lại",
   "aiChatSummaryChip": "Tóm tắt trò chuyện",
-  "aiChatInsertDraft": "Thêm vào bản nháp bình luận"
+  "aiChatInsertDraft": "Thêm vào bản nháp bình luận",
+  "aiDraftPreviewTitle": "Kiểm tra trước khi thêm",
+  "aiDraftConfidential": "Cuộc trò chuyện này đã đọc một vấn đề bảo mật, nhưng vấn đề này không bảo mật. Trước khi thêm, hãy kiểm tra để bảo đảm câu trả lời không tiết lộ thông tin bảo mật.",
+  "aiDraftQuickActions": "Đã tắt quick actions — số dòng: {count}. Đã thêm dấu cách ở đầu để các thao tác không chạy khi đăng.",
+  "aiDraftReferences": "Tham chiếu đến vấn đề và merge request: {count}. Khi đăng, mỗi trang được tham chiếu sẽ có một ghi chú nhắc đến.",
+  "aiDraftSources": "Câu trả lời này đã đọc",
+  "aiDraftMore": "Mục khác: {count}",
+  "aiDraftText": "Văn bản sẽ thêm",
+  "aiDraftNotSent": "Thao tác này chỉ thêm vào bản nháp; chưa có nội dung nào được đăng. Để đăng, hãy kiểm tra văn bản trong trình chỉnh sửa rồi nhấn Lưu.",
+  "aiDraftConfirm": "Thêm vào bản nháp",
+  "aiDraftMentionsOff": "Đã tắt thông báo nhắc đến: {count}. Các lượt nhắc đến được hiển thị dưới dạng mã và không thông báo cho bất kỳ ai.",
+  "aiDraftMentionsNotify": "Người dùng sẽ được thông báo khi đăng: {count}",
+  "aiDraftKeepMentions": "Giữ thông báo nhắc đến",
+  "aiDraftAcknowledge": "Tôi hiểu rằng việc đăng sẽ thông báo cho những người dùng này"
 }

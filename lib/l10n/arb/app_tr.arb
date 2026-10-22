@@ -2332,5 +2332,18 @@
   "aiToolUnknown": "Bilinmeyen bir aracı çağırma isteği",
   "aiChatSentPreviewOnly": "Bu konuşma geri yüklendiği için gönderilen içeriğin yalnızca başlangıcı saklanır",
   "aiChatSummaryChip": "Konuşma özeti",
-  "aiChatInsertDraft": "Yorum taslağına ekle"
+  "aiChatInsertDraft": "Yorum taslağına ekle",
+  "aiDraftPreviewTitle": "Eklemeden önce kontrol edin",
+  "aiDraftConfidential": "Bu konuşma gizli bir sorunu okudu, ancak bu sorun gizli değil. Eklemeden önce yanıtın gizli bilgileri açığa çıkarmadığından emin olun.",
+  "aiDraftQuickActions": "Quick actions kapatıldı — satır sayısı: {count}. Gönderildiğinde çalışmamaları için satırların başına boşluk eklendi.",
+  "aiDraftReferences": "Sorunlara ve birleştirme isteklerine yapılan atıflar: {count}. Gönderildiğinde, atıf yapılan her sayfaya bir bahsetme notu eklenir.",
+  "aiDraftSources": "Bu yanıt şunları okudu",
+  "aiDraftMore": "Diğer öğeler: {count}",
+  "aiDraftText": "Eklenecek metin",
+  "aiDraftNotSent": "Bu işlem yalnızca yorum taslağına ekleme yapar; hiçbir şey gönderilmez. Göndermek için metni düzenleyicide kontrol edin ve Kaydet düğmesine basın.",
+  "aiDraftConfirm": "Yorum taslağına ekle",
+  "aiDraftMentionsOff": "Bahsetme bildirimleri kapatıldı: {count}. Bahsetmeler kod olarak gösterilir ve hiç kimseye bildirim gönderilmez.",
+  "aiDraftMentionsNotify": "Gönderildiğinde bildirim alacak kullanıcılar: {count}",
+  "aiDraftKeepMentions": "Bahsetme bildirimlerini koru",
+  "aiDraftAcknowledge": "Gönderildiğinde bu kullanıcılara bildirim gideceğini anlıyorum"
 }

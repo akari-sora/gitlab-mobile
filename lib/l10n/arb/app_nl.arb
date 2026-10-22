@@ -2332,5 +2332,18 @@
   "aiToolUnknown": "Verzoek om een onbekend hulpmiddel aan te roepen",
   "aiChatSentPreviewOnly": "Dit gesprek is hersteld, dus alleen het begin van de verzonden inhoud is bewaard",
   "aiChatSummaryChip": "Samenvatting gesprek",
-  "aiChatInsertDraft": "Toevoegen aan conceptreactie"
+  "aiChatInsertDraft": "Toevoegen aan conceptreactie",
+  "aiDraftPreviewTitle": "Controleren vóór toevoegen",
+  "aiDraftConfidential": "Dit gesprek heeft een vertrouwelijk issue gelezen, maar dit issue is niet vertrouwelijk. Controleer vóór het toevoegen of het antwoord geen vertrouwelijke informatie onthult.",
+  "aiDraftQuickActions": "Quick actions uitgeschakeld — aantal regels: {count}. Aan het begin is een spatie toegevoegd, zodat ze bij plaatsing niet worden uitgevoerd.",
+  "aiDraftReferences": "Verwijzingen naar issues en merge requests: {count}. Bij plaatsing wordt op elke pagina waarnaar wordt verwezen een vermeldingsnotitie toegevoegd.",
+  "aiDraftSources": "Dit antwoord heeft het volgende gelezen",
+  "aiDraftMore": "Overig: {count}",
+  "aiDraftText": "Toe te voegen tekst",
+  "aiDraftNotSent": "Dit voegt alleen iets toe aan de conceptreactie; er wordt niets geplaatst. Controleer de tekst in het bewerkingsvenster en druk op Opslaan om deze te plaatsen.",
+  "aiDraftConfirm": "Toevoegen aan conceptreactie",
+  "aiDraftMentionsOff": "Meldingen bij vermeldingen uitgeschakeld: {count}. De vermeldingen worden als code weergegeven en niemand krijgt een melding.",
+  "aiDraftMentionsNotify": "Gebruikers die bij plaatsing een melding krijgen: {count}",
+  "aiDraftKeepMentions": "Meldingen bij vermeldingen behouden",
+  "aiDraftAcknowledge": "Ik begrijp dat deze gebruikers bij plaatsing een melding krijgen"
 }

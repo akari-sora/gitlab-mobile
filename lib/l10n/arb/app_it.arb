@@ -2332,5 +2332,18 @@
   "aiToolUnknown": "Richiesta di strumento sconosciuto",
   "aiChatSentPreviewOnly": "Questa conversazione è stata ripristinata, quindi viene conservato solo l’inizio del contenuto inviato",
   "aiChatSummaryChip": "Riepilogo della conversazione",
-  "aiChatInsertDraft": "Aggiungi alla bozza del commento"
+  "aiChatInsertDraft": "Aggiungi alla bozza del commento",
+  "aiDraftPreviewTitle": "Controlla prima di aggiungere",
+  "aiDraftConfidential": "In questa conversazione è stata letta un’issue riservata, ma quella attuale non lo è. Prima di aggiungere la risposta, verifica che non riveli informazioni riservate.",
+  "aiDraftQuickActions": "Righe con quick actions disattivate: {count}. È stato aggiunto uno spazio a inizio riga per impedirne l’esecuzione alla pubblicazione.",
+  "aiDraftReferences": "Riferimenti a issue e merge request: {count}. La pubblicazione aggiungerà una nota di menzione a ogni pagina citata.",
+  "aiDraftSources": "Contenuti letti per questa risposta",
+  "aiDraftMore": "Altri elementi: {count}",
+  "aiDraftText": "Testo da aggiungere",
+  "aiDraftNotSent": "Il testo verrà solo aggiunto alla bozza; non verrà pubblicato nulla. Per pubblicarlo, controlla il testo nell’editor e premi Salva.",
+  "aiDraftConfirm": "Aggiungi alla bozza",
+  "aiDraftMentionsOff": "Notifiche delle menzioni disattivate: {count}. Le menzioni vengono mostrate come codice e non inviano notifiche a nessuno.",
+  "aiDraftMentionsNotify": "Persone che riceveranno una notifica alla pubblicazione: {count}",
+  "aiDraftKeepMentions": "Mantieni le notifiche delle menzioni",
+  "aiDraftAcknowledge": "Comprendo che la pubblicazione invierà una notifica a queste persone"
 }

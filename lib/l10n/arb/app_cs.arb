@@ -2332,5 +2332,18 @@
   "aiToolUnknown": "Požadavek na neznámý nástroj",
   "aiChatSentPreviewOnly": "Tato konverzace byla obnovena, proto se uchoval jen začátek odeslaného obsahu",
   "aiChatSummaryChip": "Shrnutí konverzace",
-  "aiChatInsertDraft": "Přidat do konceptu komentáře"
+  "aiChatInsertDraft": "Přidat do konceptu komentáře",
+  "aiDraftPreviewTitle": "Zkontrolovat před přidáním",
+  "aiDraftConfidential": "V této konverzaci byl načten důvěrný problém, ale tato stránka důvěrná není. Před přidáním zkontrolujte, že odpověď neodhaluje žádné důvěrné údaje.",
+  "aiDraftQuickActions": "Řádky s vypnutými rychlými akcemi: {count}. Na začátek těchto řádků byla přidána mezera, takže se po zveřejnění nespustí.",
+  "aiDraftReferences": "Odkazy na problémy a merge requesty: {count}. Po zveřejnění se na každé odkazované stránce přidá záznam o zmínce.",
+  "aiDraftSources": "Pro tuto odpověď bylo načteno",
+  "aiDraftMore": "Další položky: {count}",
+  "aiDraftText": "Text k přidání",
+  "aiDraftNotSent": "Text se pouze přidá do konceptu a nic se nezveřejní. Chcete-li ho zveřejnit, zkontrolujte ho v editoru a stiskněte Uložit.",
+  "aiDraftConfirm": "Přidat do konceptu",
+  "aiDraftMentionsOff": "Zmínky bez oznámení: {count}. Zmínky se zobrazí jako kód a nikoho neupozorní.",
+  "aiDraftMentionsNotify": "Uživatelé upozornění po zveřejnění: {count}",
+  "aiDraftKeepMentions": "Ponechat oznámení o zmínkách",
+  "aiDraftAcknowledge": "Rozumím, že zveřejnění upozorní tyto uživatele"
 }

@@ -103,7 +103,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   AiRunner? _runner;
   AiRunnerBinding? _binding;
   final List<AiChatItem> _items = [];
-  final List<({String id, int index})> _pendingTools = [];
+  final List<({String id, int index, bool confidential})> _pendingTools = [];
   AiChatPhase _phase = AiChatPhase.preparing;
   AiChatBlocker _blocker = AiChatBlocker.settingsLoading;
   UserFacingFailure? _failure;
@@ -401,7 +401,21 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       tools: catalogue?.specs ?? const [],
       executeTool: catalogue == null
           ? null
-          : (call) => catalogue.executeResult(call, budget: budget),
+          : (call) async {
+              final result = await catalogue.executeResult(call, budget: budget);
+              // The runner rebuilds results for provider redaction. Keep the
+              // display-only flag on the pending row across that boundary.
+              final index = _pendingTools.indexWhere((p) => p.id == call.id);
+              if (current() && index >= 0) {
+                final pending = _pendingTools[index];
+                _pendingTools[index] = (
+                  id: pending.id,
+                  index: pending.index,
+                  confidential: result.readConfidential,
+                );
+              }
+              return result;
+            },
       resetToolBudget: () => budget = AiToolBudget(),
       beginToolTurn: () => budget.beginTurn(),
       toolBudgetExhausted: () => budget.exhausted,
@@ -427,15 +441,14 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
             provenance: '',
           ),
         );
-        _pendingTools.add((id: call.id, index: index));
+        _pendingTools.add((id: call.id, index: index, confidential: false));
         _notifyStream();
       },
       onToolResult: (result) {
         if (!current()) return;
         final pending = _pendingTools.indexWhere((p) => p.id == result.callId);
-        final index = pending < 0
-            ? null
-            : _pendingTools.removeAt(pending).index;
+        final completed = pending < 0 ? null : _pendingTools.removeAt(pending);
+        final index = completed?.index;
         final started = index == null ? null : _items[index];
         final item = AiToolRunItem(
           name: _toolName(result.name),
@@ -451,6 +464,12 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           provenance: _toolProvenance(result),
           truncated: result.truncated,
           blocked: result.blockedSensitive,
+          confidential:
+              pending >= 0 &&
+              !result.notExecuted &&
+              !result.isError &&
+              !result.blockedSensitive &&
+              (result.readConfidential || completed!.confidential),
           resultExcerpt: _toolExcerpt(result.plainData.plainText),
         );
         if (index == null) {
@@ -822,6 +841,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           :final truncated,
           :final blocked,
           :final resultExcerpt,
+          :final confidential,
         ) =>
           AiToolRunItem(
             name: safe(name),
@@ -832,6 +852,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
             truncated: truncated,
             blocked: blocked,
             resultExcerpt: safe(resultExcerpt),
+            confidential: confidential,
           ),
         final AiNoticeItem notice => notice,
       };
@@ -849,6 +870,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       :final sizeChars,
       :final truncated,
       :final blocked,
+      :final confidential,
     ) =>
       AiToolRunItem(
         name: name,
@@ -858,6 +880,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
         provenance: '',
         truncated: truncated,
         blocked: blocked,
+        confidential: confidential,
       ),
     final AiNoticeItem notice => notice,
   };

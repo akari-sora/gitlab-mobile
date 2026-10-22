@@ -2332,5 +2332,18 @@
   "aiToolUnknown": "Solicitação de chamada de ferramenta desconhecida",
   "aiChatSentPreviewOnly": "Esta conversa foi restaurada, por isso apenas o início do conteúdo enviado foi mantido",
   "aiChatSummaryChip": "Resumo da conversa",
-  "aiChatInsertDraft": "Adicionar ao rascunho do comentário"
+  "aiChatInsertDraft": "Adicionar ao rascunho do comentário",
+  "aiDraftPreviewTitle": "Confira antes de adicionar",
+  "aiDraftConfidential": "Esta conversa leu uma issue confidencial, mas a issue atual não é confidencial. Antes de adicionar a resposta, confira se ela não revela informações confidenciais.",
+  "aiDraftQuickActions": "Linhas com quick actions desativadas: {count}. Foi adicionado um espaço no início de cada linha para impedir a execução ao publicar.",
+  "aiDraftReferences": "Referências a issues e merge requests: {count}. A publicação adicionará uma nota de menção em cada página referenciada.",
+  "aiDraftSources": "Conteúdo lido para esta resposta",
+  "aiDraftMore": "Itens adicionais: {count}",
+  "aiDraftText": "Texto a adicionar",
+  "aiDraftNotSent": "O texto será apenas adicionado ao rascunho; nada será publicado. Para publicar, confira o texto no editor e toque em Salvar.",
+  "aiDraftConfirm": "Adicionar ao rascunho",
+  "aiDraftMentionsOff": "Notificações de menções desativadas: {count}. As menções são exibidas como código e não notificam ninguém.",
+  "aiDraftMentionsNotify": "Pessoas que receberão uma notificação ao publicar: {count}",
+  "aiDraftKeepMentions": "Manter notificações de menções",
+  "aiDraftAcknowledge": "Entendo que a publicação notificará essas pessoas"
 }

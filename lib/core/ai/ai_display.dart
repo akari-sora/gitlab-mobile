@@ -91,6 +91,7 @@ final class AiToolRunItem extends AiChatItem {
     this.truncated = false,
     this.blocked = false,
     this.resultExcerpt = '',
+    this.confidential = false,
   });
 
   final String name;
@@ -101,6 +102,7 @@ final class AiToolRunItem extends AiChatItem {
   final bool blocked;
   final String provenance;
   final String resultExcerpt;
+  final bool confidential;
 }
 
 final class AiNoticeItem extends AiChatItem {

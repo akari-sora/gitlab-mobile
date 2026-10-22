@@ -2332,5 +2332,18 @@
   "aiToolUnknown": "Solicitare pentru un instrument necunoscut",
   "aiChatSentPreviewOnly": "Această conversație a fost restaurată, astfel că se păstrează doar începutul conținutului trimis",
   "aiChatSummaryChip": "Rezumatul conversației",
-  "aiChatInsertDraft": "Adaugă la ciorna comentariului"
+  "aiChatInsertDraft": "Adaugă la ciorna comentariului",
+  "aiDraftPreviewTitle": "Verifică înainte de adăugare",
+  "aiDraftConfidential": "În această conversație a fost citit un issue confidențial, dar această pagină nu este confidențială. Înainte de adăugare, verifică dacă răspunsul nu dezvăluie informații confidențiale.",
+  "aiDraftQuickActions": "Linii cu quick actions dezactivate: {count}. La începutul acestor linii a fost adăugat un spațiu, ca să nu se execute după publicare.",
+  "aiDraftReferences": "Referințe la issue-uri și merge request-uri: {count}. După publicare, pe fiecare pagină la care se face referire va apărea o notă de menționare.",
+  "aiDraftSources": "Acest răspuns a consultat",
+  "aiDraftMore": "Alte elemente: {count}",
+  "aiDraftText": "Text de adăugat",
+  "aiDraftNotSent": "Textul este doar adăugat la ciornă; nimic nu este publicat. Pentru a-l publica, verifică textul în editor și apasă Salvează.",
+  "aiDraftConfirm": "Adaugă la ciornă",
+  "aiDraftMentionsOff": "Menționări fără notificări: {count}. Menționările sunt afișate drept cod și nu notifică pe nimeni.",
+  "aiDraftMentionsNotify": "Utilizatori notificați după publicare: {count}",
+  "aiDraftKeepMentions": "Păstrează notificările pentru menționări",
+  "aiDraftAcknowledge": "Înțeleg că publicarea îi notifică pe acești utilizatori"
 }

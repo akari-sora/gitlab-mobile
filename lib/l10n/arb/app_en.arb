@@ -2338,5 +2338,18 @@
   "aiToolUnknown": "Unknown tool request",
   "aiChatSentPreviewOnly": "This conversation was restored, so only the start of what was sent is kept",
   "aiChatSummaryChip": "Conversation summary",
-  "aiChatInsertDraft": "Append to comment draft"
+  "aiChatInsertDraft": "Append to comment draft",
+  "aiDraftPreviewTitle": "Check before appending",
+  "aiDraftConfidential": "This conversation read a confidential issue, but this one is not confidential. Before appending, check that the answer reveals nothing confidential.",
+  "aiDraftQuickActions": "Quick actions turned off: {count} lines. A space was added at the start so they do not run when posted.",
+  "aiDraftReferences": "Issue and merge request references: {count}. Posting adds a mention note to each of them.",
+  "aiDraftSources": "This answer read",
+  "aiDraftMore": "{count} more",
+  "aiDraftText": "Text to append",
+  "aiDraftNotSent": "This only adds to the draft; nothing is posted. To post it, check the text in the editor and press Save.",
+  "aiDraftConfirm": "Append to draft",
+  "aiDraftMentionsOff": "Mention notifications turned off: {count}. The mentions are shown as code and notify no one.",
+  "aiDraftMentionsNotify": "Users notified when this is posted: {count}",
+  "aiDraftKeepMentions": "Keep mention notifications",
+  "aiDraftAcknowledge": "I understand that posting notifies these users"
 }

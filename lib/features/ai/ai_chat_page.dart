@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ai/ai_display.dart';
+import '../../core/ai/quick_actions.dart';
 import '../../core/ai/runner.dart';
 import '../../core/failure.dart';
 import '../../core/providers.dart';
@@ -14,6 +15,7 @@ import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import 'ai_chat_session.dart';
 import 'ai_consent_dialog.dart';
+import 'ai_draft_preview.dart';
 import 'ai_message_body.dart';
 import 'ai_scope.dart';
 import 'ai_settings_page.dart';
@@ -159,22 +161,89 @@ class _AiChatPageState extends State<AiChatPage> {
 
   Future<void> _insertDraft(AiAssistantItem item) async {
     final insert = widget.onInsertDraft;
+    final origin = _session.origin;
+    final items = _session.items;
+    final index = items.indexOf(item);
     if (insert == null ||
         _insertingDraft ||
-        _session.origin is! AiWorkItemOrigin ||
+        origin is! AiWorkItemOrigin ||
         _session.phase != AiChatPhase.idle ||
         item.state != AiAssistantState.done ||
-        !_session.items.contains(item)) {
+        index < 0 ||
+        !(ModalRoute.of(context)?.isCurrent ?? false)) {
       return;
     }
-    final text = _session.displaySafe(item.text);
-    if (text.trim().isEmpty) return;
+    final safe = _session.displaySafe(item.text);
+    if (safe.trim().isEmpty) return;
+    final String text;
+    try {
+      // GitLab runs a line that starts with `/` as a quick action when the
+      // comment is posted; the answer must never do that.
+      text = neutralizeForGitLabDraft(safe);
+    } on StateError {
+      showFailure(context, const ApiFailure(FailureKind.invalidResponse));
+      return;
+    }
     setState(() => _insertingDraft = true);
     try {
-      await insert(text);
+      final chosen = await showAiDraftPreview(
+        context,
+        text: text,
+        target: _draftTarget(origin),
+        quickActionLines: quickActionLineCount(safe),
+        sources: _draftSources(items, index),
+        // The model saw everything read earlier in the conversation, not
+        // only in this turn.
+        confidential:
+            !origin.confidential &&
+            items
+                .take(index)
+                .whereType<AiToolRunItem>()
+                .any((tool) => tool.confidential),
+      );
+      if (chosen == null || !mounted) return;
+      // The conversation could have changed while the sheet was open.
+      if (_session.phase != AiChatPhase.idle ||
+          !_session.items.contains(item) ||
+          chosen.split('\n').any((line) => line.startsWith('/'))) {
+        return;
+      }
+      await insert(chosen);
     } finally {
       if (mounted) setState(() => _insertingDraft = false);
     }
+  }
+
+  String _draftTarget(AiWorkItemOrigin origin) {
+    final reference = origin.kind == AiWorkItemKind.mergeRequest
+        ? '!${origin.iid}'
+        : '#${origin.iid}';
+    return '${isolated(origin.project.path)} · ${isolated(reference)}';
+  }
+
+  /// What the answer at [index] drew on: the context sent with its question
+  /// and the tools it ran, as preview labels.
+  List<String> _draftSources(List<AiChatItem> items, int index) {
+    final sources = <String>[];
+    for (var at = index - 1; at >= 0; at--) {
+      final item = items[at];
+      if (item is AiUserItem) {
+        sources.insertAll(0, [
+          for (final chip in item.chips)
+            if (!chip.blocked) isolated(_chipName(chip)),
+        ]);
+        break;
+      }
+      if (item is AiToolRunItem && item.status == AiToolRunStatus.completed) {
+        sources.insert(
+          0,
+          item.argsPreview.isEmpty
+              ? _toolLabel(item.name)
+              : '${_toolLabel(item.name)} · ${isolated(item.argsPreview)}',
+        );
+      }
+    }
+    return sources;
   }
 
   Future<bool> _confirmCleartext() async {
@@ -686,6 +755,18 @@ class _UserMessage extends StatelessWidget {
   }
 }
 
+String _chipName(AiContextChip chip) => switch (chip.resource) {
+  _ when _isSummaryChip(chip) => l10n.aiChatSummaryChip,
+  null => chip.source,
+  final resource when chip.source == 'file' => resource.split('/').last,
+  final resource => resource,
+};
+
+/// After a conversation is condensed, its summary is sent instead of the
+/// page.
+bool _isSummaryChip(AiContextChip chip) =>
+    chip.source == 'conversation_summary';
+
 class _ContextChip extends StatelessWidget {
   const _ContextChip({required this.chip});
 
@@ -742,16 +823,9 @@ class _ContextChip extends StatelessWidget {
 
   /// The page the content came from: a file name, `!iid`, `#iid` or the job
   /// name. Older chips without one show their source tag.
-  String get _name => switch (chip.resource) {
-    _ when _isSummary => l10n.aiChatSummaryChip,
-    null => chip.source,
-    final resource when chip.source == 'file' => resource.split('/').last,
-    final resource => resource,
-  };
+  String get _name => _chipName(chip);
 
-  /// After a conversation is condensed, its summary is sent instead of the
-  /// page.
-  bool get _isSummary => chip.source == 'conversation_summary';
+  bool get _isSummary => _isSummaryChip(chip);
 
   void _showSent(BuildContext context) {
     final text = chip.sentText ?? chip.preview;

@@ -7092,4 +7092,43 @@ final class AppStrings {
 
   /// 附加到留言草稿
   String get aiChatInsertDraft => language._messages[2332];
+
+  /// 附加前確認
+  String get aiDraftPreviewTitle => language._messages[2333];
+
+  /// 這段對話讀過機密議題，但這裡不是機密議題。附加前請確認回答沒有透露機密內容。
+  String get aiDraftConfidential => language._messages[2334];
+
+  /// 已停用快速動作：{count} 行。行首加了空格，送出時不會執行。
+  String aiDraftQuickActions(Object? count) => _format(language, language._messages[2335], {'count': count});
+
+  /// 議題與合併請求參照：{count} 個。送出後，被參照的頁面會出現提及紀錄。
+  String aiDraftReferences(Object? count) => _format(language, language._messages[2336], {'count': count});
+
+  /// 這個回答讀取了
+  String get aiDraftSources => language._messages[2337];
+
+  /// 還有 {count} 項
+  String aiDraftMore(Object? count) => _format(language, language._messages[2338], {'count': count});
+
+  /// 要附加的文字
+  String get aiDraftText => language._messages[2339];
+
+  /// 只會附加到草稿，不會送出。要送出時，請在編輯器檢查內容後按儲存。
+  String get aiDraftNotSent => language._messages[2340];
+
+  /// 附加到草稿
+  String get aiDraftConfirm => language._messages[2341];
+
+  /// 已停用提及通知：{count} 個。提及改以程式碼格式顯示，不會通知任何人。
+  String aiDraftMentionsOff(Object? count) => _format(language, language._messages[2342], {'count': count});
+
+  /// 送出後會通知的使用者：{count} 位
+  String aiDraftMentionsNotify(Object? count) => _format(language, language._messages[2343], {'count': count});
+
+  /// 保留提及通知
+  String get aiDraftKeepMentions => language._messages[2344];
+
+  /// 我了解送出後會通知這些使用者
+  String get aiDraftAcknowledge => language._messages[2345];
 }

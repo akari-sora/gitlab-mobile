@@ -205,6 +205,7 @@ final class AiToolCatalogue {
       withheldPrivateKeyContext: execution.withheldPrivateKeyContext,
       truncated: execution.truncated,
       blockedSensitive: execution.blocked,
+      readConfidential: execution.result.readConfidential,
     );
   }
 
@@ -283,6 +284,7 @@ final class AiToolCatalogue {
           callId: call.id,
           name: call.name,
           data: clipped,
+          readConfidential: !raw.blocked && raw.readConfidential,
         ),
         provenance: provenance,
         blocked: raw.blocked,
@@ -378,6 +380,7 @@ final class AiToolCatalogue {
       _projectDiscussion(read.value),
       _live('issue #$iid'),
       requestCount: read.requestCount,
+      readConfidential: read.value['confidential'] == true,
     );
   }
 
@@ -558,6 +561,9 @@ final class AiToolCatalogue {
       _live(
         'search $searchScope on ${scope.defaultBranch ?? 'default branch'}',
       ),
+      readConfidential:
+          searchScope == 'issues' &&
+          read.value.any((row) => row['confidential'] == true),
       fragmentFields: searchScope == 'blobs' ? const {'data'} : const {},
       requestCount: read.requestCount,
     );
@@ -724,12 +730,14 @@ final class _RawToolResult {
     this.requestCount = 0,
     this.tailLines,
   }) : json = false,
+       readConfidential = false,
        fragmentFields = const {};
 
   const _RawToolResult.json(
     this.value,
     this.provenance, {
     this.blocked = false,
+    this.readConfidential = false,
     this.requestCount = 0,
     this.fragmentFields = const {},
   }) : json = true,
@@ -738,6 +746,7 @@ final class _RawToolResult {
   final Object? value;
   final AiToolProvenance provenance;
   final bool blocked;
+  final bool readConfidential;
   final bool json;
   final Set<String> fragmentFields;
   final int requestCount;

@@ -2332,5 +2332,18 @@
   "aiToolUnknown": "Permintaan alat tidak diketahui",
   "aiChatSentPreviewOnly": "Perbualan ini telah dipulihkan, jadi hanya bahagian awal kandungan yang dihantar disimpan",
   "aiChatSummaryChip": "Ringkasan perbualan",
-  "aiChatInsertDraft": "Tambah pada draf komen"
+  "aiChatInsertDraft": "Tambah pada draf komen",
+  "aiDraftPreviewTitle": "Semak sebelum menambah",
+  "aiDraftConfidential": "Perbualan ini telah membaca isu sulit, tetapi isu ini tidak sulit. Sebelum menambah, pastikan jawapan tidak mendedahkan sebarang maklumat sulit.",
+  "aiDraftQuickActions": "Quick action dimatikan — bilangan baris: {count}. Ruang ditambah pada permulaan supaya tindakan tidak dijalankan apabila disiarkan.",
+  "aiDraftReferences": "Rujukan isu dan merge request: {count}. Apabila disiarkan, nota sebutan akan ditambah pada setiap halaman yang dirujuk.",
+  "aiDraftSources": "Jawapan ini telah membaca",
+  "aiDraftMore": "Tambahan: {count}",
+  "aiDraftText": "Teks untuk ditambah",
+  "aiDraftNotSent": "Ini hanya ditambah pada draf; tiada apa-apa yang disiarkan. Untuk menyiarkannya, semak teks dalam penyunting dan tekan Simpan.",
+  "aiDraftConfirm": "Tambah pada draf",
+  "aiDraftMentionsOff": "Pemberitahuan sebutan dimatikan: {count}. Sebutan dipaparkan sebagai kod dan tidak memberitahu sesiapa.",
+  "aiDraftMentionsNotify": "Pengguna yang diberitahu apabila ini disiarkan: {count}",
+  "aiDraftKeepMentions": "Kekalkan pemberitahuan sebutan",
+  "aiDraftAcknowledge": "Saya faham bahawa penyiaran akan memberitahu pengguna ini"
 }

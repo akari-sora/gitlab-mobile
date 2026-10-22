@@ -92,6 +92,7 @@ Map<String, Object?> _itemJson(AiChatItem item) => switch (item) {
     'truncated': item.truncated,
     'blocked': item.blocked,
     'resultExcerpt': _excerpt(item.resultExcerpt),
+    if (item.confidential) 'confidential': true,
   },
   AiNoticeItem(:final kind, :final count) => {
     'kind': 'notice',
@@ -188,6 +189,7 @@ AiConversation aiDisplayFromJson(Map<String, Object?> json) {
             'truncated',
             'blocked',
             'resultExcerpt',
+            'confidential',
           });
           return AiToolRunItem(
             name: _string(item, 'name', 256),
@@ -197,6 +199,9 @@ AiConversation aiDisplayFromJson(Map<String, Object?> json) {
             provenance: _string(item, 'provenance', 2048),
             truncated: _boolean(item, 'truncated'),
             blocked: _boolean(item, 'blocked'),
+            confidential: item.containsKey('confidential')
+                ? _boolean(item, 'confidential')
+                : false,
             resultExcerpt: _string(item, 'resultExcerpt', 8192, bytes: true),
           );
         case 'notice':

@@ -24,8 +24,12 @@ import 'emulator_ui.dart';
 const _enabled = bool.fromEnvironment('EMULATOR_UI_QA');
 const _resource = 'projects/42/merge_requests/12/root/new';
 const _existingDraft = 'Existing reviewer note';
+// Exercises every part of the append preview: a quick-action line, a mention,
+// a reference, and (below) a confidential read before the answer.
 const _answer =
-    'Synthetic **AI answer**\n\nPlease verify this text before sending.';
+    'Synthetic **AI answer** for @synthetic-reviewer, see #12.\n'
+    '/close\n\n'
+    'Please verify this text before sending.';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -62,6 +66,14 @@ final class _QaSession extends ChangeNotifier implements AiChatSession {
 
   @override
   List<AiChatItem> get items => const [
+    AiToolRunItem(
+      name: 'get_issue',
+      argsPreview: '#7',
+      status: AiToolRunStatus.completed,
+      sizeChars: 64,
+      provenance: '',
+      confidential: true,
+    ),
     AiAssistantItem(text: _answer, state: AiAssistantState.done),
   ];
 

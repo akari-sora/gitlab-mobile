@@ -217,6 +217,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text(l10n.aiChatInsertDraft));
     await tester.pumpAndSettle();
+    // The preview opens first and writes nothing.
+    expect(find.text(l10n.aiDraftPreviewTitle), findsOneWidget);
+    expect(find.byType(ResourceEditor), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('ai-draft-confirm')));
+    await tester.pumpAndSettle();
     expect(find.byType(ResourceEditor), findsOneWidget);
     final editor = tester.widget<ResourceEditor>(find.byType(ResourceEditor));
     expect(editor.resource, 'projects/42/merge_requests/12/root/new');
@@ -261,6 +266,8 @@ void main() {
     await tester.pumpAndSettle();
     owner.generation++;
     await tester.tap(find.text(l10n.aiChatInsertDraft));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey('ai-draft-confirm')));
     await tester.pumpAndSettle();
     expect(find.byType(ResourceEditor), findsNothing);
     expect(await const FlutterSecureStorage().readAll(), isEmpty);

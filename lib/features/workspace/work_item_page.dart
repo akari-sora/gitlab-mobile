@@ -566,6 +566,7 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
       iid: owner.iid,
       title: valueText(data, 'title'),
       summarize: summarize && mr,
+      confidential: !mr && data['confidential'] == true,
     ), onInsertDraft: current() ? (text) async {
       if (!current()) return;
       final saved = await openCommentEditor(context,

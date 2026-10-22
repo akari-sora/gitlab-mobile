@@ -2332,5 +2332,18 @@
   "aiToolUnknown": "Permintaan pemanggilan alat yang tidak dikenal",
   "aiChatSentPreviewOnly": "Percakapan ini dipulihkan, jadi hanya bagian awal konten yang dikirim yang disimpan",
   "aiChatSummaryChip": "Ringkasan percakapan",
-  "aiChatInsertDraft": "Tambahkan ke draf komentar"
+  "aiChatInsertDraft": "Tambahkan ke draf komentar",
+  "aiDraftPreviewTitle": "Periksa sebelum menambahkan",
+  "aiDraftConfidential": "Percakapan ini membaca isu rahasia, tetapi isu ini tidak rahasia. Sebelum menambahkan, pastikan jawaban tidak mengungkapkan informasi rahasia.",
+  "aiDraftQuickActions": "Quick actions dinonaktifkan — jumlah baris: {count}. Spasi ditambahkan di awal agar tindakan tidak dijalankan saat dikirim.",
+  "aiDraftReferences": "Referensi isu dan merge request: {count}. Setelah dikirim, catatan penyebutan akan ditambahkan ke setiap halaman yang dirujuk.",
+  "aiDraftSources": "Jawaban ini membaca",
+  "aiDraftMore": "Lainnya: {count}",
+  "aiDraftText": "Teks yang akan ditambahkan",
+  "aiDraftNotSent": "Ini hanya ditambahkan ke draf; tidak ada yang dikirim. Untuk mengirimnya, periksa teks di penyunting lalu tekan Simpan.",
+  "aiDraftConfirm": "Tambahkan ke draf",
+  "aiDraftMentionsOff": "Notifikasi penyebutan dinonaktifkan: {count}. Penyebutan ditampilkan sebagai kode dan tidak memberi tahu siapa pun.",
+  "aiDraftMentionsNotify": "Pengguna yang diberi tahu setelah dikirim: {count}",
+  "aiDraftKeepMentions": "Pertahankan notifikasi penyebutan",
+  "aiDraftAcknowledge": "Saya memahami bahwa pengiriman akan memberi tahu pengguna ini"
 }

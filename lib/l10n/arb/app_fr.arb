@@ -2332,5 +2332,18 @@
   "aiToolUnknown": "Demande d’outil inconnu",
   "aiChatSentPreviewOnly": "Cette conversation a été restaurée, seul le début du contenu envoyé est donc conservé",
   "aiChatSummaryChip": "Résumé de conversation",
-  "aiChatInsertDraft": "Ajouter au brouillon du commentaire"
+  "aiChatInsertDraft": "Ajouter au brouillon du commentaire",
+  "aiDraftPreviewTitle": "Vérifier avant d’ajouter",
+  "aiDraftConfidential": "Cette conversation a consulté un ticket confidentiel, mais le ticket actuel ne l’est pas. Avant d’ajouter la réponse, vérifiez qu’elle ne révèle aucune information confidentielle.",
+  "aiDraftQuickActions": "Lignes avec des quick actions désactivées : {count}. Un espace a été ajouté en début de ligne pour empêcher leur exécution lors de la publication.",
+  "aiDraftReferences": "Références à des tickets et merge requests : {count}. La publication ajoutera une note de mention sur chaque page référencée.",
+  "aiDraftSources": "Éléments consultés pour cette réponse",
+  "aiDraftMore": "Éléments supplémentaires : {count}",
+  "aiDraftText": "Texte à ajouter",
+  "aiDraftNotSent": "Le texte sera seulement ajouté au brouillon ; rien ne sera publié. Pour le publier, vérifiez le texte dans l’éditeur et appuyez sur Enregistrer.",
+  "aiDraftConfirm": "Ajouter au brouillon",
+  "aiDraftMentionsOff": "Notifications de mention désactivées : {count}. Les mentions sont affichées sous forme de code et ne notifient personne.",
+  "aiDraftMentionsNotify": "Personnes qui seront notifiées lors de la publication : {count}",
+  "aiDraftKeepMentions": "Conserver les notifications de mention",
+  "aiDraftAcknowledge": "Je comprends que la publication notifiera ces personnes"
 }

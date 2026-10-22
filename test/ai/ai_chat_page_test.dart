@@ -196,6 +196,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text(l10n.aiChatInsertDraft));
+    await tester.pumpAndSettle();
+    // The preview comes first; nothing is inserted until it is confirmed.
+    expect(find.text(l10n.aiDraftPreviewTitle), findsOneWidget);
+    expect(inserted, isEmpty);
+    await tester.tap(find.byKey(const ValueKey('ai-draft-confirm')));
     await tester.pump();
     expect(inserted, [answer.text]);
     expect(session.sent, isEmpty);
@@ -203,6 +208,239 @@ void main() {
     pending.complete();
     await tester.pumpAndSettle();
     expect(find.text(l10n.aiChatInsertDraft), findsOneWidget);
+  });
+
+  group('the append preview', () {
+    Future<List<String>> openPreview(
+      WidgetTester tester,
+      _FakeSession session, {
+      String tag = 'zh-TW',
+      double scale = 1,
+    }) async {
+      final inserted = <String>[];
+      await tester.pumpWidget(
+        _host(
+          AiChatPage(
+            session: session,
+            onInsertDraft: (text) async => inserted.add(text),
+          ),
+          tag: tag,
+          scale: scale,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text(l10n.aiChatInsertDraft));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(l10n.aiChatInsertDraft));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiDraftPreviewTitle), findsOneWidget);
+      return inserted;
+    }
+
+    Future<void> confirm(WidgetTester tester) async {
+      final button = find.byKey(const ValueKey('ai-draft-confirm'));
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+    }
+
+    _FakeSession answer(String text, {List<AiChatItem> before = const []}) =>
+        _FakeSession(
+          items: [
+            ...before,
+            AiAssistantItem(text: text, state: AiAssistantState.done),
+          ],
+        );
+
+    testWidgets('quick-action lines are disabled before the draft opens', (
+      tester,
+    ) async {
+      final inserted = await openPreview(
+        tester,
+        answer('Plan:\n/merge\r\n/close\nDone'),
+      );
+      expect(
+        find.text(l10n.aiDraftQuickActions('2')),
+        findsOneWidget,
+      );
+      await confirm(tester);
+      expect(inserted, ['Plan:\n /merge\n /close\nDone']);
+      expect(
+        inserted.single.split('\n').any((line) => line.startsWith('/')),
+        isFalse,
+      );
+    });
+
+    testWidgets('mentions stop notifying unless the user keeps them', (
+      tester,
+    ) async {
+      final session = answer('Thanks @victim, see @group/sub.');
+      var inserted = await openPreview(tester, session);
+      expect(find.text(l10n.aiDraftMentionsOff('2')), findsOneWidget);
+      await confirm(tester);
+      expect(inserted, ['Thanks `@victim`, see `@group/sub`.']);
+
+      inserted = await openPreview(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-draft-keep-mentions')));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiDraftMentionsNotify('2')), findsOneWidget);
+      expect(find.text('@victim'), findsOneWidget);
+      await confirm(tester);
+      expect(inserted, ['Thanks @victim, see @group/sub.']);
+    });
+
+    testWidgets('a mention that cannot be disabled must be acknowledged', (
+      tester,
+    ) async {
+      // GitLab reads an HTML block as HTML, so a code span cannot be
+      // verified there and the mention would still notify.
+      final inserted = await openPreview(
+        tester,
+        answer('<div>\n@victim\n</div>'),
+      );
+      expect(find.text(l10n.aiDraftMentionsNotify('1')), findsOneWidget);
+      final button = find.byKey(const ValueKey('ai-draft-confirm'));
+      await tester.ensureVisible(button);
+      expect(tester.widget<ButtonStyleButton>(button).onPressed, isNull);
+      await tester.tap(find.byKey(const ValueKey('ai-draft-acknowledge')));
+      await tester.pumpAndSettle();
+      await confirm(tester);
+      expect(inserted, ['<div>\n@victim\n</div>']);
+    });
+
+    testWidgets('references, sources and the confidential warning', (
+      tester,
+    ) async {
+      await openPreview(
+        tester,
+        answer(
+          'See #12 and !3.',
+          before: [
+            AiUserItem(
+              text: 'Why?',
+              chips: const [
+                AiContextChip(
+                  source: 'merge_request',
+                  resource: '!44',
+                  preview: '',
+                  sizeChars: 10,
+                ),
+              ],
+            ),
+            const AiToolRunItem(
+              name: 'get_issue',
+              argsPreview: '#7',
+              status: AiToolRunStatus.completed,
+              sizeChars: 40,
+              provenance: '',
+              confidential: true,
+            ),
+          ],
+        ),
+      );
+      Finder inSheet(Finder finder) =>
+          find.descendant(of: find.byType(BottomSheet), matching: finder);
+      expect(inSheet(find.text(l10n.aiDraftReferences('2'))), findsOneWidget);
+      expect(inSheet(find.text('!44')), findsOneWidget);
+      expect(
+        inSheet(find.text('${l10n.aiToolGetIssue} · #7')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('ai-draft-confidential')), findsOne);
+    });
+
+    testWidgets('no confidential warning on a confidential issue', (
+      tester,
+    ) async {
+      final session = _FakeSession(
+        origin: AiWorkItemOrigin(
+          project: _project,
+          kind: AiWorkItemKind.issue,
+          iid: 7,
+          title: 'Secret',
+          confidential: true,
+        ),
+        items: const [
+          AiToolRunItem(
+            name: 'get_issue',
+            argsPreview: '#8',
+            status: AiToolRunStatus.completed,
+            sizeChars: 40,
+            provenance: '',
+            confidential: true,
+          ),
+          AiAssistantItem(text: 'Answer', state: AiAssistantState.done),
+        ],
+      );
+      await openPreview(tester, session);
+      expect(find.byKey(const ValueKey('ai-draft-confidential')), findsNothing);
+    });
+
+    testWidgets('cancelling inserts nothing', (tester) async {
+      final inserted = await openPreview(tester, answer('Answer'));
+      await tester.tap(find.text(l10n.cancelAction));
+      await tester.pumpAndSettle();
+      expect(inserted, isEmpty);
+      expect(find.text(l10n.aiDraftPreviewTitle), findsNothing);
+    });
+
+    testWidgets('a conversation that moved on while open inserts nothing', (
+      tester,
+    ) async {
+      final session = answer('Answer');
+      final inserted = await openPreview(tester, session);
+      session.update(() => session.phase = AiChatPhase.running);
+      // A running conversation animates, so the page never settles.
+      await tester.tap(find.byKey(const ValueKey('ai-draft-confirm')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.text(l10n.aiDraftPreviewTitle), findsNothing);
+      expect(inserted, isEmpty);
+    });
+
+    for (final (tag, scale, size) in [
+      ('zh-TW', 2.0, const Size(320, 640)),
+      ('ar', 2.0, const Size(320, 640)),
+      ('en', 2.0, const Size(640, 360)),
+    ]) {
+      testWidgets('fits $tag at ${scale}x on ${size.width}x${size.height}', (
+        tester,
+      ) async {
+        tester.view.physicalSize = size * tester.view.devicePixelRatio;
+        tester.view.padding = FakeViewPadding(
+          top: 24 * tester.view.devicePixelRatio,
+          bottom: 16 * tester.view.devicePixelRatio,
+        );
+        addTearDown(tester.view.reset);
+        if (tag != 'zh-TW') useLanguage(languageForTag(tag)!);
+        addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+        final long = List.filled(40, 'Line @user #1 /merge').join('\n');
+        final inserted = await openPreview(
+          tester,
+          answer(
+            long,
+            before: const [
+              AiToolRunItem(
+                name: 'get_issue',
+                argsPreview: '#7',
+                status: AiToolRunStatus.completed,
+                sizeChars: 40,
+                provenance: '',
+                confidential: true,
+              ),
+            ],
+          ),
+          tag: tag,
+          scale: scale,
+        );
+        expect(tester.takeException(), isNull);
+        final sheet = tester.getRect(find.byType(BottomSheet));
+        expect(sheet.top, greaterThanOrEqualTo(24));
+        await confirm(tester);
+        expect(tester.takeException(), isNull);
+        expect(inserted, hasLength(1));
+      });
+    }
   });
 
   for (final state in AiAssistantState.values.where(

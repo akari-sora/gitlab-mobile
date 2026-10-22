@@ -94,6 +94,7 @@ final class AiToolResult {
     this.truncated = false,
     this.blockedSensitive = false,
     this.notExecuted = false,
+    this.readConfidential = false,
   }) : _content = content,
        data = null {
     assert(!content.contains('<gitlab_data'));
@@ -108,6 +109,7 @@ final class AiToolResult {
     this.truncated = false,
     this.blockedSensitive = false,
     this.notExecuted = false,
+    this.readConfidential = false,
   }) : _content = '',
        // ignore: prefer_initializing_formals
        data = data;
@@ -124,6 +126,9 @@ final class AiToolResult {
   final bool blockedSensitive;
   final bool notExecuted;
 
+  /// Display-only metadata; never encoded in provider requests.
+  final bool readConfidential;
+
   AiToolResult copyWith({required AiAppText data}) => AiToolResult.fromData(
     callId: callId,
     name: name,
@@ -133,6 +138,7 @@ final class AiToolResult {
     truncated: truncated,
     blockedSensitive: blockedSensitive,
     notExecuted: notExecuted,
+    readConfidential: readConfidential,
   );
 }
 

@@ -1266,6 +1266,172 @@ void main() {
     });
   }
 
+  for (final toolName in ['get_issue', 'search_project']) {
+    test(
+      '$toolName confidentiality survives settling and re-redaction',
+      () async {
+        const lateSecret = 'synthetic-confidential-description-0099';
+        final workspace = WorkspaceFixture();
+        workspace.issues[3] = {
+          'iid': 3,
+          'title': 'Synthetic issue',
+          'description': lateSecret,
+          'confidential': true,
+        };
+        final environment = await _environment(
+          gitLabRespond: (request) {
+            if (request.uri.path.endsWith('/issues/3/notes')) {
+              return jsonResponse([]);
+            }
+            if (request.uri.path.endsWith('/search')) {
+              return jsonResponse([workspace.issues[3]]);
+            }
+            return workspace.respond(request);
+          },
+        );
+        addTearDown(environment.dispose);
+        final responses = [
+          _data({
+            'type': 'response.completed',
+            'response': {
+              'output': [
+                {
+                  'type': 'function_call',
+                  'call_id': 'call_read',
+                  'name': toolName,
+                  'arguments': jsonEncode(
+                    toolName == 'get_issue'
+                        ? {'iid': 3}
+                        : {'scope': 'issues', 'query': 'synthetic'},
+                  ),
+                  'status': 'completed',
+                },
+              ],
+            },
+          }),
+          _toolThenAnswer(AiFormat.responses).last,
+        ].iterator;
+        final adapter = FakeAdapter((_) {
+          expect(responses.moveNext(), isTrue);
+          return _sse(responses.current);
+        });
+        final controller = await _readyController(environment, adapter);
+        await controller.send('Read issue #3');
+        expect(controller.failure, isNull);
+        expect(controller.phase, AiChatPhase.idle);
+        final settled = controller.items.whereType<AiToolRunItem>().single;
+        expect(settled.status, AiToolRunStatus.completed);
+        expect(settled.confidential, isTrue);
+        expect(settled.resultExcerpt, contains(lateSecret));
+
+        await environment.settings.saveProvider(
+          _provider(AiFormat.responses, id: 'other', requiresKey: true),
+        );
+        await environment.settings.saveProviderKey(
+          'other',
+          lateSecret,
+          acknowledgeWarning: true,
+        );
+        await controller.recheck();
+        final redacted = controller.items.whereType<AiToolRunItem>().single;
+        expect(redacted.confidential, isTrue);
+        expect(redacted.resultExcerpt, isNot(contains(lateSecret)));
+        expect(redacted.resultExcerpt, contains('REDACTED'));
+
+        // Refusing the redaction marker exercises the hidden-row fallback too.
+        await environment.settings.saveProviderKey(
+          'other',
+          'REDACTED',
+          acknowledgeWarning: true,
+        );
+        await controller.recheck();
+        final hidden = controller.items.whereType<AiToolRunItem>().single;
+        expect(hidden.resultExcerpt, isEmpty);
+        expect(hidden.confidential, isTrue);
+        expect(hidden.status, AiToolRunStatus.completed);
+      },
+    );
+  }
+
+  test(
+    'confidential reads do not mark public, failed or blocked tool rows',
+    () async {
+      final workspace = WorkspaceFixture();
+      workspace.issues[3] = {
+        'iid': 3,
+        'title': 'Synthetic private',
+        'confidential': true,
+      };
+      workspace.issues[4] = {
+        'iid': 4,
+        'title': 'Synthetic public',
+        'confidential': false,
+      };
+      final environment = await _environment(
+        gitLabRespond: (request) {
+          if (request.uri.path.endsWith('/notes')) return jsonResponse([]);
+          return workspace.respond(request);
+        },
+      );
+      addTearDown(environment.dispose);
+      final calls = [
+        for (final iid in [3, 4, 5])
+          {
+            'type': 'function_call',
+            'call_id': 'call_$iid',
+            'name': 'get_issue',
+            'arguments': jsonEncode({'iid': iid}),
+            'status': 'completed',
+          },
+        {
+          'type': 'function_call',
+          'call_id': 'call_blocked',
+          'name': 'read_file',
+          'arguments': jsonEncode({'path': '.env', 'revision': 'head'}),
+          'status': 'completed',
+        },
+        // The runner pairs this fifth call without executing it.
+        {
+          'type': 'function_call',
+          'call_id': 'call_skipped',
+          'name': 'get_issue',
+          'arguments': jsonEncode({'iid': 3}),
+          'status': 'completed',
+        },
+      ];
+      var request = 0;
+      final adapter = FakeAdapter(
+        (_) => _sse(
+          request++ == 0
+              ? _data({
+                  'type': 'response.completed',
+                  'response': {'output': calls},
+                })
+              : _toolThenAnswer(AiFormat.responses).last,
+        ),
+      );
+      final controller = await _readyController(environment, adapter);
+      await controller.send('Read synthetic issues');
+      expect(controller.failure, isNull);
+      final tools = controller.items.whereType<AiToolRunItem>().toList();
+      expect(tools.map((tool) => tool.confidential), [
+        true,
+        false,
+        false,
+        false,
+        false,
+      ]);
+      expect(tools.map((tool) => tool.status), [
+        AiToolRunStatus.completed,
+        AiToolRunStatus.completed,
+        AiToolRunStatus.failed,
+        AiToolRunStatus.completed,
+        AiToolRunStatus.skipped,
+      ]);
+      expect(tools[3].blocked, isTrue);
+    },
+  );
+
   test('GitLab credential is redacted from a tool result', () async {
     const token = 'synthetic-test-token';
     final environment = await _environment(repositoryText: 'value=$token');
