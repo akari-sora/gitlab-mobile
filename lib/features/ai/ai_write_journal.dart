@@ -282,6 +282,14 @@ final class AiWriteJournal {
   AiWriteJournal._();
   static final AiWriteJournal instance = AiWriteJournal._();
 
+  static final List<int> _scheduleHmacKey = (() {
+    final random = Random.secure();
+    return List<int>.unmodifiable(List.generate(32, (_) => random.nextInt(256)));
+  })();
+
+  /// Process-local proposal binding only; never serialized with the journal.
+  List<int> get scheduleHmacKey => _scheduleHmacKey;
+
   /// Isolated owners are for tests and host integration before singleton setup.
   AiWriteJournal({
     required AiJournalKeyStore keys,
