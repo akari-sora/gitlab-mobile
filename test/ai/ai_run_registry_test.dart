@@ -575,6 +575,13 @@ final class _FakeChatSession extends ChangeNotifier implements AiChatSession {
 
   @override
   bool get historySaved => false;
+  @override
+  bool get reportNotSaved => false;
+  @override
+  AiAssistantItem? currentOf(AiAssistantItem item) =>
+      items.contains(item) ? item : null;
+  @override
+  Future<bool> refreshSecrets() async => true;
 
   @override
   bool get canSend =>
@@ -615,6 +622,9 @@ final class _FakeChatSession extends ChangeNotifier implements AiChatSession {
       notifyListeners();
     }
   }
+
+  @override
+  void markReported(AiAssistantItem item) {}
 
   void notifyCapacityChanged() {
     capacityNotifications++;

@@ -6,6 +6,9 @@ import '../l10n/l10n.dart';
 /// the app works with.
 const appName = 'Mergeline';
 
+/// The destination for user reports about AI-generated responses.
+const aiReportEmail = 'aa22396584@gmail.com';
+
 /// Shown wherever the app describes itself, as GitLab's guidelines ask of a
 /// third party naming the product it works with.
 String get appIndependence => l10n.independentClientDisclaimer;

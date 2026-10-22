@@ -7149,4 +7149,88 @@ final class AppStrings {
 
   /// 無法檢查這段回答，所以沒有附加。
   String get aiDraftCheckFailed => language._messages[2351];
+
+  /// 回報
+  String get aiReportAction => language._messages[2352];
+
+  /// 回報此回應
+  String get aiReportTitle => language._messages[2353];
+
+  /// 回報會寄給 Mergeline 的開發者，用來改善 AI 功能。預設寄出類別、你的說明、應用程式版本、模型與服務設定、時間和訊息序號，不含回應內容。
+  String get aiReportIntro => language._messages[2354];
+
+  /// 哪裡有問題？
+  String get aiReportCategory => language._messages[2355];
+
+  /// 有害或冒犯的內容
+  String get aiReportHarmful => language._messages[2356];
+
+  /// 不正確或誤導
+  String get aiReportInaccurate => language._messages[2357];
+
+  /// 透露了私人或機密資訊
+  String get aiReportPrivacy => language._messages[2358];
+
+  /// 其他
+  String get aiReportOther => language._messages[2359];
+
+  /// 說明（選填）
+  String get aiReportDescription => language._messages[2360];
+
+  /// 附上這則回應的內容
+  String get aiReportAttach => language._messages[2361];
+
+  /// 預設不附上。附上的內容已遮蔽秘密。
+  String get aiReportAttachHint => language._messages[2362];
+
+  /// 寄送到 {email}
+  String aiReportDestination(Object? email) => _format(language, language._messages[2363], {'email': email});
+
+  /// 複製地址
+  String get aiReportCopyAddress => language._messages[2364];
+
+  /// 已複製地址
+  String get aiReportAddressCopied => language._messages[2365];
+
+  /// 要寄出的內容
+  String get aiReportPreview => language._messages[2366];
+
+  /// 送出回報
+  String get aiReportSend => language._messages[2367];
+
+  /// 請寄到 {email}
+  String aiReportSendTo(Object? email) => _format(language, language._messages[2368], {'email': email});
+
+  /// Mergeline AI 回報
+  String get aiReportSubject => language._messages[2369];
+
+  /// 已開啟郵件應用程式；寄出後就完成回報。
+  String get aiReportMailOpened => language._messages[2370];
+
+  /// 已開啟分享面板，請把內容寄到 {email}。
+  String aiReportShareOpened(Object? email) => _format(language, language._messages[2371], {'email': email});
+
+  /// 無法開啟郵件或分享，回報沒有送出。
+  String get aiReportFailed => language._messages[2372];
+
+  /// 已回報，內容已隱藏
+  String get aiReported => language._messages[2373];
+
+  /// 顯示
+  String get aiReportShow => language._messages[2374];
+
+  /// 隱藏
+  String get aiReportHide => language._messages[2375];
+
+  /// 已回報
+  String get aiReportedOpen => language._messages[2376];
+
+  /// 回報標記沒能存進加密紀錄；重新開啟後，這則回應可能會再次顯示。
+  String get aiReportNotSaved => language._messages[2377];
+
+  /// 預覽已更新為要送出的內容，確認後請再按一次「送出回報」。
+  String get aiReportPreviewUpdated => language._messages[2378];
+
+  /// 無法檢查要送出的內容，回報沒有送出。
+  String get aiReportNotChecked => language._messages[2379];
 }

@@ -1512,3 +1512,288 @@ the review fast path: fixed here, then one reviewer checked the increment.
     survives because both views usually agree);
   - choosing one parser from the instance version;
   - cancelling a check when the chat closes.
+
+### MR6a-4: report a response
+
+Every finished answer offers **Report** next to Copy and Append. This follows
+plan v5 §6.7 and Google Play's policy for AI-generated content.
+
+- **The sheet** asks what is wrong: harmful, inaccurate, reveals private or
+  confidential information, or something else. It takes optional details, up
+  to 500 characters. A switch attaches the answer's text; it is **off by
+  default**, and the attached text is redacted with the live secrets
+  (`draftSafe`).
+- **The preview** shows exactly what will be sent and where it goes
+  (`aiReportEmail` in `lib/core/brand.dart`), with a Copy address button.
+- **The report** is plain text:
+  - a translated "please send to" line;
+  - `key: value` metadata: category, description, app version, preset,
+    format and model of the provider that produced the answer, UTC time, and
+    the answer's number;
+  - the answer under a separator, only when attached.
+- **Sending:** mail goes first, through `url_launcher` with an external app
+  and no `canLaunchUrl`. The share sheet (text only) takes over when the
+  launch returns false or throws, or when the `mailto:` URI would be longer
+  than 1,800 characters.
+- **Afterwards** the answer is folded on this device as "Reported; the content
+  is hidden" and can be opened again.
+  - When encrypted history is on, the reported flag is saved with it.
+  - Each answer also records the provider that produced it (preset, format,
+    model), so a report names the right one after a switch.
+  - Neither field reaches the provider; request bodies are compared
+    byte-for-byte in all three formats.
+
+Tests:
+- `test/ai/ai_report_test.dart` (body and mailto rules);
+- `ai_report_sender_test.dart` (mail, a false launch, a throwing launch, a URI
+  that is too long);
+- `ai_report_history_test.dart` and `ai_report_provider_isolation_test.dart`;
+- the "reporting a response" group in `test/ai/ai_chat_page_test.dart`:
+  metadata only by default, attach, the share route, a failed hand-off that
+  marks nothing, the fold, no report while streaming, and the sheet at 2x
+  text on 320 dp in zh-TW and Arabic and 640×360 in English. The first
+  layout run found the address row overflowing in Arabic at 2x; the Copy
+  address button now sits under the address.
+
+Emulator run, on the project's Android API 36 emulator, with the synthetic
+target and the gate on, at commit `0506093` before the rebase:
+- the action row showed Copy, Append and Report;
+- the sheet kept Send disabled until a category was chosen;
+- with the answer attached, the preview listed the metadata and the text;
+- Send opened Gmail's compose screen, `ComposeActivityGmailExternal`. Gmail
+  had no account, so nothing was sent. The page said the mail app was open.
+
+The synthetic session's `markReported` does nothing, so the fold was not seen
+on the device; widget tests cover it. The original APK was reinstalled
+afterwards, and its SHA-256 matched.
+
+**NOT_RUN:**
+- a report actually received by mail;
+- the share-sheet route on a device;
+- a real provider's answer attribution on a device;
+- iOS.
+
+#### MR6a-4 review round 1
+
+Codex GPT-6.1-Sol, Opus 5.5 and cursor-agent (auto) all asked for changes:
+0 Critical, 4 Important, and Minors. Fixes:
+
+- **Redaction at the boundary.** The report is built again for every preview
+  and for the send, from the answer as it is at that moment. The whole text is
+  then redacted last with the live secrets, after the report's own clean-up.
+  That covers the description, the metadata and a secret split by a tab that
+  the clean-up would otherwise join. If the answer is gone, nothing is sent
+  and the page says the report failed.
+- **Rebuilt answers.** The controller records which item replaced which
+  (redaction, hiding, streaming). `currentOf` follows that chain, and
+  `markReported` marks the current descendant. It never marks an answer from
+  another conversation.
+- **Bounded saves.** With two controllers whose saves keep failing, each
+  used to trigger the other without end (3,344 attempts in 700 ms in Opus's
+  probe). Now:
+  - the history listener flushes only on a transition into ready;
+  - the listener, recheck and timer paths share one budget: a first attempt
+    plus retries at 1, 5 and 30 s;
+  - capacity, unsupported and eviction results wait for a new snapshot or a
+    state change.
+- **Honest state.**
+  - `historySaved` means this conversation's latest snapshot was saved.
+  - `reportNotSaved` is true after a permanent failure or once the budget is
+    used up. The fold then says the mark could not be saved and that the
+    answer may show again after a restart.
+
+  Only a conversation that holds a reported answer is written to the
+  encrypted history today. It is written whole: messages, chips and tool
+  rows.
+- **Layout.**
+  - When the keyboard leaves less than 240 dp, Send and Cancel scroll with the
+    form instead of being pinned.
+  - The chat composer scrolls when the page is shorter than it, as on a
+    640×360 phone at 2× text with the keyboard up. That page used to overflow
+    by 92 px.
+- **Minor fixes.**
+  - Copy address confirms on the button itself.
+  - The report has an extra plain `to:` line, without direction marks, for
+    the share route in Arabic.
+  - The share sheet gets the subject.
+  - Attached answers keep their tabs.
+  - The preview refreshes 300 ms after typing stops.
+  - The open fold no longer says "hidden".
+  - The intro now lists everything sent by default, in all 24 languages.
+  - The address is pinned by a test.
+
+New tests:
+- "the text is checked again when it is sent";
+- "an answer gone before sending is not sent";
+- the copy feedback;
+- the landscape keyboard;
+- the not-saved note;
+- the fold at 2× text in zh-TW and Arabic;
+- the plain address line;
+- the controller tests for rebuilt items, `currentOf`, two failing
+  controllers (at most 8 attempts in 700 ms), permanent failure, and recovery.
+
+Four mutations were each caught by a test:
+- no final redaction;
+- a stale item;
+- always-pinned buttons;
+- no plain address line.
+
+#### MR6a-4 review round 2
+
+Reviewers: Codex GPT-6.1-Sol, Opus 5.5 and cursor-agent (auto). All three
+asked for changes. Codex's report arrived before its usage ran out (it
+resets on 2026-10-27).
+
+Important:
+- **Rotated tokens.** The final redaction used cached secrets, so a GitLab
+  token that OAuth rotated in place within the same session leaked into the
+  description. Fix: Send now calls the session's new `refreshSecrets()`
+  first. When the secrets cannot be read, nothing is sent.
+- **Preview and send could differ.** This came up three ways: an answer
+  rebuilt while the sheet was open, a secret rotated in place, or the last
+  keystrokes inside the 300 ms preview delay. Fix: Send now builds the text
+  again. The sheet sends it only when it equals the preview the user saw.
+  Otherwise the preview shows the new text with a note, and the user presses
+  Send a second time.
+- **Description lost focus.** The round-1 change moved the form inside the
+  sheet's tree when the buttons switched between pinned and scrolling. The
+  description field then lost its focus and its keyboard as soon as the
+  keyboard rose on a landscape phone. Fix: the form keeps its place, and the
+  landscape test asserts the focus and the input connection.
+- **Recovery during a flush.** When the history became ready while a flush
+  was running, snapshots that flush had skipped were never saved. Fix: they
+  are now tried once that flush ends, with a fresh budget, as for any
+  transition into ready.
+
+Minor:
+- With the history key missing, which no timer recovers, the fold now says
+  at once that the mark was not saved.
+- A new conversation that keeps the earlier display no longer resolves or
+  marks the kept answers, and the page offers no Report on them.
+- The share sheet is anchored at the Report button.
+- The zh-CN report strings use 举报 / 回复 again.
+- The two-controller test asserts exactly two attempts.
+- The history retry delays can be injected, so the exhausted-retries test no
+  longer waits 36 seconds in real time.
+
+Eight mutations, each caught by a test:
+- sending without comparing to the preview;
+- no secret refresh at Send;
+- the form moving in the tree;
+- no flush after a recovery during a flush;
+- a missing key waiting for attempts;
+- kept display resolving;
+- Report offered on earlier answers;
+- the listener flushing on every ready notification.
+
+#### MR6a-4 review round 3
+
+Round 3 ran without Codex, cursor-agent and agy, which had all run out of
+quota. Opus 5.5 reviewed it, with a Claude reviewer agent filling in.
+DeepSeek V4.1 Flash (free) was also started, but it hit its 30-minute limit
+without a verdict, so it counts as no report.
+
+Both reviewers returned APPROVE WITH MINOR FIXES, with no Critical or
+Important findings.
+- Opus re-ran the eight round-2 mutations, and all were caught.
+- The Claude reviewer reported six Minors, four of which repeat Opus's. It
+  ran 14 mutations of its own, and all were caught too.
+
+Fixes:
+
+- **Idle refresh.** A refresh while idle that redacts more now notifies the
+  page. A failed refresh blocks the chat the way a failed recheck does.
+- **Kept display in saved history.** The encrypted history now saves only
+  the current conversation's items. A display kept from an earlier
+  conversation could otherwise make an unreported conversation get saved
+  with the earlier one's text. `historySaved` and `reportNotSaved` use the
+  same items.
+- **Send.**
+  - The sheet takes the shown preview before it rebuilds.
+  - It does not pop if it has already been dismissed.
+  - When the text cannot be checked, it says so (`aiReportNotChecked`), and
+    no longer reports that mail could not be opened.
+- **Wording.** The preview note names the Send button exactly in en, zh-TW
+  and zh-CN.
+- **Note placement.** The Claude reviewer found that the "preview updated"
+  note could fall below a long preview, off screen. It now sits next to the
+  buttons and is a live region, so a screen reader reads it out. The default
+  retry delays have a test, and injected delays must be exactly three.
+- **Tests.** The two-controller test no longer depends on machine speed.
+  These tests are new:
+  - two presses of Send while the text is being checked send once;
+  - a new choice clears the "preview updated" note;
+  - a fresh conversation after kept display owns its items from index 0;
+  - a refresh while idle notifies;
+  - the saved snapshot leaves the kept display out.
+  Each of these was checked with a mutation.
+- **Left as a follow-up:** a test for "a recovery during the fourth attempt
+  resets the budget". The fix is in place, but the test needs a history file
+  layer that fails one conversation while another saves.
+
+#### MR6a-4 review round 4
+
+Under the fast path, Opus was asked to confirm the round-3 increment and did
+not. It re-ran 13 mutations, and all were caught, but it found one Important
+regression from round 3.
+
+- **Important: the update note pushed Send under the keyboard.** The
+  "preview updated" note had moved into the pinned button row. With the
+  keyboard up and large text, it pushed Send under the keyboard and left the
+  preview no height. This happened in de and ru at 1.5×, en at 1.8× and ar
+  at 2×. The fix:
+  - The pinned row leaves the form at least 120 dp.
+  - What does not fit in the row scrolls from its end, so Send stays on
+    screen.
+  - Under 280 dp of room, the buttons scroll with the form.
+  - When Send replaces the preview, the preview is scrolled into view.
+  - New tests cover de, en and ar at 2× on 360×640 with the keyboard up.
+    They check that nothing overflows, that Send stays above the keyboard
+    and that part of the preview shows.
+- **Minor: a failed secret refresh during a run turned the phase to idle.**
+  It no longer does: the run keeps Stop, and the failed display blocks the
+  chat when the run ends. A test covers both the idle case and the mid-run
+  case.
+- **Minor: six fixes had no test.** New tests cover each one:
+  - keys typed just before Send are shown before they go;
+  - backing out while the text is checked keeps the chat open;
+  - a failed refresh blocks an idle chat;
+  - a conversation started after kept display saves its own items without
+    the earlier ones.
+
+  Mutations confirmed that each test catches its fix being removed. This
+  includes removing the footer's scrolling, which fails in all three
+  languages.
+- **Nit: two inaccuracies in the round-3 paragraph above.** It now says
+  that DeepSeek gave no report and who ran which mutations.
+
+#### MR6a-4 review round 5
+
+Under the owner's revised rule, the first round of an MR gets the full
+panel. After that, one reviewer checks only that Critical and Important
+findings are fixed, and Minors never block. Opus and a Claude reviewer agent
+reviewed `b8beb44..13b504f`. Opus returned APPROVE WITH MINOR FIXES, with no
+Critical or Important findings.
+
+The Claude reviewer returned the same verdict. It measured 540 layouts and
+found no overflow: Send was always in reach, the preview always scrolled
+into view, and the focus was kept across all 54 pinned/unpinned switches.
+
+Fixed in this round:
+- The 120 dp left for the form is now measured against the sheet's own
+  height. It had been measured against the room, which is wrong once the
+  sheet takes 90% of a large room.
+- The pinned row's scroller is no longer the route's primary one. Before,
+  a hardware keyboard's Page Down could hit two scrollers sharing one
+  controller.
+- This ledger section was missing; it is now written.
+
+Left for a follow-up issue:
+- With the keyboard up at 2× text, the note can sit above the visible part
+  of the pinned row.
+- The 280 dp threshold unpins Send on short phones at 1×.
+- Two test gaps:
+  - a test for `reportNotSaved` over kept display;
+  - a test for a recovery during the fourth attempt.
+- A comment and a mid-run test that describe the run's end loosely.

@@ -75,12 +75,32 @@ final class AiUserItem extends AiChatItem {
   final List<AiContextChip> chips;
 }
 
+final class AiAnswerSource {
+  const AiAnswerSource({
+    required this.presetId,
+    required this.format,
+    required this.model,
+  });
+
+  final String presetId;
+  final String format;
+  final String model;
+}
+
 final class AiAssistantItem extends AiChatItem {
-  const AiAssistantItem({required this.text, required this.state, this.usage});
+  const AiAssistantItem({
+    required this.text,
+    required this.state,
+    this.usage,
+    this.source,
+    this.reported = false,
+  });
 
   final String text;
   final AiAssistantState state;
   final AiUsage? usage;
+  final AiAnswerSource? source;
+  final bool reported;
 }
 
 final class AiToolRunItem extends AiChatItem {

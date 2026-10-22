@@ -5,7 +5,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ai/ai_display.dart';
+import '../../core/ai/ai_report.dart';
 import '../../core/ai/quick_actions.dart';
+import '../../core/brand.dart';
 import '../../core/ai/runner.dart';
 import '../../core/failure.dart';
 import '../../core/providers.dart';
@@ -13,10 +15,13 @@ import '../../l10n/l10n.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
+import '../shell/build_info.dart';
 import 'ai_chat_session.dart';
 import 'ai_consent_dialog.dart';
 import 'ai_draft_preview.dart';
 import 'ai_draft_target.dart';
+import 'ai_report_sender.dart';
+import 'ai_report_sheet.dart';
 import 'ai_message_body.dart';
 import 'ai_scope.dart';
 import 'ai_settings_page.dart';
@@ -94,6 +99,8 @@ class AiChatPage extends StatefulWidget {
     this.summarize = false,
     this.draftTarget,
     this.analyzeDraft = analyzeAiDraft,
+    this.sendReport = sendAiReport,
+    this.buildInfo = loadBuildInfo,
   });
 
   final AiChatSession session;
@@ -104,6 +111,17 @@ class AiChatPage extends StatefulWidget {
 
   /// Checks an answer before it is appended; tests run it in place.
   final AiDraftAnalyzer analyzeDraft;
+
+  /// Hands a report to the mail app or the share sheet; replaced in tests.
+  final Future<AiReportRoute> Function({
+    required String subject,
+    required String body,
+    Rect? sharePositionOrigin,
+  })
+  sendReport;
+
+  /// The version a report names; replaced in tests.
+  final BuildInfoLoader buildInfo;
 
   /// Opened from "AI summary": send the summary request once, when the empty
   /// conversation is ready.
@@ -124,6 +142,7 @@ class _AiChatPageState extends State<AiChatPage> {
 
   /// The draft is being read and checked, before the preview opens.
   var _preparingDraft = false;
+  var _reporting = false;
 
   /// "AI summary" sends its request once, when the empty session is ready.
   late bool _pendingSummary;
@@ -257,6 +276,92 @@ class _AiChatPageState extends State<AiChatPage> {
       (ModalRoute.of(context)?.isCurrent ?? false) &&
       _session.phase == AiChatPhase.idle &&
       _session.items.contains(item);
+
+  /// Reports [item] (plan v5 §6.7): the user picks what is wrong and sees
+  /// the exact text; mail is tried first, then the share sheet. The answer is
+  /// then folded away here, whether or not the user finishes sending.
+  Future<void> _report(AiAssistantItem item, Rect? origin) async {
+    final assistants = _session.items.whereType<AiAssistantItem>().toList();
+    final number = assistants.indexOf(item) + 1;
+    if (_reporting || item.reported || number == 0) return;
+    setState(() => _reporting = true);
+    try {
+      final info = await widget.buildInfo();
+      if (!mounted || _session.currentOf(item) == null) return;
+      final version = info.isUnknown
+          ? 'unknown'
+          : '${info.version}+${info.buildNumber} (${info.commit})';
+      final time = DateTime.now();
+      final source = item.source;
+      // Built from the answer as it is now (a redaction pass may have
+      // replaced it) and redacted as a whole last, after the report's own
+      // clean-up: nothing the user typed or the formatting joined escapes
+      // the check. The redaction also drops the direction isolates around
+      // the translated address; the plain `to:` line keeps it copyable.
+      String body(AiReportChoice choice) {
+        final current = _session.currentOf(item);
+        if (current == null) return '';
+        return _session.draftSafe(
+          aiReportBody(
+            AiReport(
+              category: choice.category,
+              description: choice.description,
+              appVersion: version,
+              presetId: source?.presetId ?? 'unknown',
+              format: source?.format ?? 'unknown',
+              model: source?.model ?? 'unknown',
+              time: time,
+              messageIndex: number,
+              response: choice.attachResponse ? current.text : null,
+            ),
+            sendToLine: l10n.aiReportSendTo(aiReportEmail),
+          ),
+        );
+      }
+
+      // At Send the live secrets are read again, including a token OAuth
+      // rotated in place, and the text is built once more. The sheet sends
+      // it only when it is exactly the preview the user saw.
+      Future<String?> prepare(AiReportChoice choice) async {
+        if (!await _session.refreshSecrets() || !mounted) return null;
+        final text = body(choice);
+        return text.isEmpty ? null : text;
+      }
+
+      final result = await showAiReportSheet(
+        context,
+        body: body,
+        prepare: prepare,
+      );
+      if (result == null || !mounted) return;
+      final text = result.text;
+      // Null when the answer is gone or the text could not be checked.
+      if (text == null) {
+        _notice(l10n.aiReportNotChecked);
+        return;
+      }
+      final AiReportRoute route;
+      try {
+        route = await widget.sendReport(
+          subject: l10n.aiReportSubject,
+          body: text,
+          sharePositionOrigin: origin,
+        );
+      } on Object {
+        _notice(l10n.aiReportFailed);
+        return;
+      }
+      if (!mounted) return;
+      _session.markReported(item);
+      _notice(
+        route == AiReportRoute.mail
+            ? l10n.aiReportMailOpened
+            : l10n.aiReportShareOpened(aiReportEmail),
+      );
+    } finally {
+      if (mounted) setState(() => _reporting = false);
+    }
+  }
 
   /// Says why nothing was appended, while the chat is in front. When another
   /// page covers it, that page is the reason, and the notice would not be
@@ -469,18 +574,31 @@ class _AiChatPageState extends State<AiChatPage> {
                 ),
               ],
             ),
-            body: Column(
-              children: [
-                Expanded(child: _conversation(context)),
-                _Composer(
-                  controller: _input,
-                  busy: busy,
-                  stopping: _session.phase == AiChatPhase.stopping,
-                  canSend: _session.canSend,
-                  onSend: _send,
-                  onStop: _session.stop,
-                ),
-              ],
+            body: LayoutBuilder(
+              builder: (context, constraints) => Column(
+                children: [
+                  Expanded(child: _conversation(context)),
+                  // A landscape phone with the keyboard up and large text
+                  // can leave less room than the composer needs: it then
+                  // scrolls, keeping the send button and the caret in view.
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: constraints.maxHeight,
+                    ),
+                    child: SingleChildScrollView(
+                      reverse: true,
+                      child: _Composer(
+                        controller: _input,
+                        busy: busy,
+                        stopping: _session.phase == AiChatPhase.stopping,
+                        canSend: _session.canSend,
+                        onSend: _send,
+                        onStop: _session.stop,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -529,6 +647,14 @@ class _AiChatPageState extends State<AiChatPage> {
               : null,
           insertingDraft: _insertingDraft,
           preparingDraft: _preparingDraft,
+          // An answer kept on screen from an earlier conversation belongs
+          // to that conversation; it is not reported from this one.
+          onReport:
+              _reporting ||
+                  (item is AiAssistantItem && _session.currentOf(item) == null)
+              ? null
+              : _report,
+          reportNotSaved: _session.reportNotSaved,
         ),
       if (_session.phase == AiChatPhase.running &&
           !(items.last is AiAssistantItem &&
@@ -753,9 +879,12 @@ class _ChatItemView extends StatelessWidget {
     this.onInsertDraft,
     this.insertingDraft = false,
     this.preparingDraft = false,
+    this.onReport,
+    this.reportNotSaved = false,
   });
 
   final AiChatItem item;
+  final bool reportNotSaved;
   final void Function(AiAssistantItem item)? onInsertDraft;
 
   /// An append is under way; every append button waits for it.
@@ -763,15 +892,21 @@ class _ChatItemView extends StatelessWidget {
 
   /// The draft is still being checked; the buttons say so.
   final bool preparingDraft;
+  final void Function(AiAssistantItem item, Rect? origin)? onReport;
 
   @override
   Widget build(BuildContext context) => switch (item) {
     final AiUserItem user => _UserMessage(item: user),
+    final AiAssistantItem assistant when assistant.reported => _ReportedFold(
+      notSaved: reportNotSaved,
+      child: _AssistantMessage(item: assistant),
+    ),
     final AiAssistantItem assistant => _AssistantMessage(
       item: assistant,
       onInsertDraft: onInsertDraft,
       insertingDraft: insertingDraft,
       preparingDraft: preparingDraft,
+      onReport: onReport,
     ),
     final AiToolRunItem tool => _ToolRow(item: tool),
     final AiNoticeItem notice => _NoticeRow(item: notice),
@@ -994,12 +1129,14 @@ class _AssistantMessage extends StatelessWidget {
     this.onInsertDraft,
     this.insertingDraft = false,
     this.preparingDraft = false,
+    this.onReport,
   });
 
   final AiAssistantItem item;
   final void Function(AiAssistantItem item)? onInsertDraft;
   final bool insertingDraft;
   final bool preparingDraft;
+  final void Function(AiAssistantItem item, Rect? origin)? onReport;
 
   @override
   Widget build(BuildContext context) {
@@ -1060,43 +1197,133 @@ class _AssistantMessage extends StatelessWidget {
           Text(note, style: muted),
         ],
         if (!streaming && item.text.isNotEmpty)
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: TextButton.icon(
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
+          Wrap(
+            spacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                ),
+                icon: const Icon(Icons.copy_all_outlined, size: 18),
+                label: Text(l10n.aiChatCopy),
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: item.text));
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(l10n.aiChatCopied)));
+                },
               ),
-              icon: const Icon(Icons.copy_all_outlined, size: 18),
-              label: Text(l10n.aiChatCopy),
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: item.text));
-                if (!context.mounted) return;
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text(l10n.aiChatCopied)));
-              },
-            ),
+              if (item.state == AiAssistantState.done &&
+                  item.text.trim().isNotEmpty &&
+                  onInsertDraft != null)
+                TextButton.icon(
+                  key: const ValueKey('ai-chat-insert-draft'),
+                  // Checking a long answer can take a moment; say so in place.
+                  icon: preparingDraft
+                      ? const SizedBox.square(
+                          dimension: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.add_comment_outlined, size: 18),
+                  label: Text(l10n.aiChatInsertDraft),
+                  onPressed: insertingDraft
+                      ? null
+                      : () => onInsertDraft!(item),
+                ),
+              if (onReport != null && !item.reported)
+                // The button's own box anchors the share sheet's popover on
+                // a tablet.
+                Builder(
+                  builder: (context) => TextButton.icon(
+                    key: const ValueKey('ai-chat-report'),
+                    style: TextButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      foregroundColor: theme.colorScheme.onSurfaceVariant,
+                    ),
+                    icon: const Icon(Icons.outlined_flag, size: 18),
+                    label: Text(l10n.aiReportAction),
+                    onPressed: () {
+                      final box = context.findRenderObject();
+                      onReport!(
+                        item,
+                        box is RenderBox && box.hasSize
+                            ? box.localToGlobal(Offset.zero) & box.size
+                            : null,
+                      );
+                    },
+                  ),
+                ),
+            ],
           ),
-        if (item.state == AiAssistantState.done &&
-            item.text.trim().isNotEmpty &&
-            onInsertDraft != null)
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: TextButton.icon(
-              key: const ValueKey('ai-chat-insert-draft'),
-              // Checking a long answer can take a moment; say so in place.
-              icon: preparingDraft
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.add_comment_outlined, size: 18),
-              label: Text(l10n.aiChatInsertDraft),
-              onPressed: insertingDraft ? null : () => onInsertDraft!(item),
+      ],
+    );
+  }
+}
+
+/// A reported answer, folded away on this device; it can be opened again.
+class _ReportedFold extends StatefulWidget {
+  const _ReportedFold({required this.child, this.notSaved = false});
+
+  final Widget child;
+
+  /// The reported flag could not be saved with the encrypted history, so the
+  /// answer may show again after the app restarts.
+  final bool notSaved;
+
+  @override
+  State<_ReportedFold> createState() => _ReportedFoldState();
+}
+
+class _ReportedFoldState extends State<_ReportedFold> {
+  var _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final muted = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final toggle = TextButton(
+      key: const ValueKey('ai-chat-reported-toggle'),
+      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+      onPressed: () => setState(() => _open = !_open),
+      child: Text(_open ? l10n.aiReportHide : l10n.aiReportShow),
+    );
+    final header = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.outlined_flag, size: 18, color: muted?.color),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                _open ? l10n.aiReportedOpen : l10n.aiReported,
+                style: muted,
+              ),
+            ),
+            toggle,
+          ],
+        ),
+        if (widget.notSaved)
+          Padding(
+            padding: const EdgeInsetsDirectional.only(start: 26),
+            child: Text(
+              l10n.aiReportNotSaved,
+              key: const ValueKey('ai-chat-report-not-saved'),
+              style: muted?.copyWith(color: theme.colorScheme.error),
             ),
           ),
       ],
+    );
+    if (!_open) return header;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [header, const SizedBox(height: 4), widget.child],
     );
   }
 }

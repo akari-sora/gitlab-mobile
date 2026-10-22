@@ -58,6 +58,13 @@ final class _Session extends ChangeNotifier implements AiChatSession {
   @override
   bool get historySaved => false;
   @override
+  bool get reportNotSaved => false;
+  @override
+  AiAssistantItem? currentOf(AiAssistantItem item) =>
+      items.contains(item) ? item : null;
+  @override
+  Future<bool> refreshSecrets() async => true;
+  @override
   bool get canSend => false;
   @override
   Future<void> send(String text) async {}
@@ -69,6 +76,8 @@ final class _Session extends ChangeNotifier implements AiChatSession {
   Future<void> useProvider(String providerId) async {}
   @override
   Future<void> recheck() async {}
+  @override
+  void markReported(AiAssistantItem item) {}
   @override
   set confirmCleartext(Future<bool> Function()? callback) {}
   @override

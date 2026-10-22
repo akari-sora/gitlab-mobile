@@ -161,14 +161,32 @@ abstract interface class AiChatSession implements Listenable {
   /// offers a new conversation.
   bool get offerNewConversation;
 
-  /// Whether this conversation's history is being saved for the account.
+  /// Whether this conversation's latest display snapshot was saved.
   bool get historySaved;
+
+  /// A reported answer could not be saved with history enabled: retries were
+  /// exhausted or saving needs a new snapshot/state. Clears after a save.
+  bool get reportNotSaved;
 
   bool get canSend;
 
   /// Sends [text] and runs the assistant. Rejected (no effect) unless
   /// [canSend].
   Future<void> send(String text);
+
+  /// Marks [item] as reported, keeping it in the conversation and saving the
+  /// flag when history is enabled. Follows rebuilt items; no-op when there is
+  /// no current descendant.
+  void markReported(AiAssistantItem item);
+
+  /// The current descendant of [item] after display rebuilds, or null when
+  /// its chain no longer reaches an item in this conversation.
+  AiAssistantItem? currentOf(AiAssistantItem item);
+
+  /// Reads the live secrets again, including a GitLab token that OAuth
+  /// rotated in place, and redacts what is shown when the set grew. False
+  /// when they could not be read; text must not leave the device then.
+  Future<bool> refreshSecrets();
 
   /// Stops the current run. The partial reply stays, marked as interrupted.
   void stop();

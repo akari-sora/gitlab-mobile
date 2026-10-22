@@ -9,6 +9,9 @@ import 'package:gitlab_mobile/core/ai/ai_provider.dart';
 import 'package:gitlab_mobile/core/ai/runner.dart';
 import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/models.dart';
+import 'package:gitlab_mobile/core/brand.dart';
+import 'package:gitlab_mobile/features/ai/ai_report_sender.dart';
+import 'package:gitlab_mobile/features/shell/build_info.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
 import 'package:gitlab_mobile/features/ai/ai_draft_preview.dart';
@@ -53,6 +56,36 @@ final class _FakeSession extends ChangeNotifier implements AiChatSession {
   @override
   bool get historySaved => false;
   @override
+  bool reportNotSaved = false;
+  // Like the controller: reading the live secrets can grow the redacted set
+  // (an OAuth token rotated in place) or fail.
+  bool secretsReadable = true;
+  String? rotatedSecret;
+  var secretRefreshes = 0;
+  // Holds the refresh, like a read that takes a moment.
+  Completer<void>? refreshGate;
+  @override
+  Future<bool> refreshSecrets() async {
+    secretRefreshes++;
+    await refreshGate?.future;
+    return secretsReadable;
+  }
+  // Like the controller, a rebuilt item points at its replacement.
+  final successors = <AiAssistantItem, AiAssistantItem>{};
+  @override
+  AiAssistantItem? currentOf(AiAssistantItem item) {
+    var current = item;
+    for (
+      var next = successors[current];
+      next != null;
+      next = successors[current]
+    ) {
+      current = next;
+    }
+    return items.contains(current) ? current : null;
+  }
+
+  @override
   bool get canSend =>
       blocker == AiChatBlocker.none && phase == AiChatPhase.idle;
 
@@ -61,6 +94,7 @@ final class _FakeSession extends ChangeNotifier implements AiChatSession {
   var rechecks = 0;
   var newConversations = 0;
   final used = <String>[];
+  final reported = <AiAssistantItem>[];
   Future<bool> Function()? cleartext;
 
   @override
@@ -74,6 +108,8 @@ final class _FakeSession extends ChangeNotifier implements AiChatSession {
   @override
   Future<void> recheck() async => rechecks++;
   @override
+  void markReported(AiAssistantItem item) => reported.add(item);
+  @override
   set confirmCleartext(Future<bool> Function()? callback) =>
       cleartext = callback;
   // Like the controller: display text loses every control character,
@@ -83,9 +119,15 @@ final class _FakeSession extends ChangeNotifier implements AiChatSession {
       .replaceAll(RegExp(r'[\u0000-\u001f]'), '')
       .replaceAll('synthetic-secret', '[REDACTED]');
   @override
-  String draftSafe(String text) => text
-      .replaceAll(RegExp(r'[\u0000-\u0008\u000b\u000c\u000e-\u001f]'), '')
-      .replaceAll('synthetic-secret', '[REDACTED]');
+  String draftSafe(String text) {
+    var safe = text
+        .replaceAll(RegExp(r'[\u0000-\u0008\u000b\u000c\u000e-\u001f]'), '')
+        .replaceAll('synthetic-secret', '[REDACTED]');
+    if ((rotatedSecret, secretRefreshes) case (final secret?, > 0)) {
+      safe = safe.replaceAll(secret, '[REDACTED]');
+    }
+    return safe;
+  }
 
   void update(void Function() change) {
     change();
@@ -123,16 +165,30 @@ AiProviderConfig _provider(String id) => AiProviderConfig(
   recipientRevision: 1,
 );
 
+/// Its answers were kept on screen from an earlier conversation.
+final class _PriorConversationSession extends _FakeSession {
+  _PriorConversationSession({super.items});
+
+  @override
+  AiAssistantItem? currentOf(AiAssistantItem item) => null;
+}
+
 Widget _host(Widget child, {String tag = 'zh-TW', double scale = 1}) {
   final locale = switch (tag) {
     'ar' => const Locale('ar'),
     'en' => const Locale('en'),
+    'de' => const Locale('de'),
     _ => const Locale('zh', 'TW'),
   };
   return MaterialApp(
     theme: appTheme(Brightness.light),
     locale: locale,
-    supportedLocales: const [Locale('zh', 'TW'), Locale('ar'), Locale('en')],
+    supportedLocales: const [
+      Locale('zh', 'TW'),
+      Locale('ar'),
+      Locale('en'),
+      Locale('de'),
+    ],
     localizationsDelegates: GlobalMaterialLocalizations.delegates,
     builder: (context, child) => MediaQuery(
       data: MediaQuery.of(
@@ -237,6 +293,636 @@ void main() {
     pending.complete();
     await tester.pumpAndSettle();
     expect(tester.widget<ButtonStyleButton>(busy).onPressed, isNotNull);
+  });
+
+  group('reporting a response', () {
+    const answerText = 'It renames **one** file.';
+    const source = AiAnswerSource(
+      presetId: 'opencode-go',
+      format: 'chatCompletions',
+      model: 'glm-synthetic',
+    );
+
+    final origins = <Rect?>[];
+
+    Future<List<({String subject, String body})>> openReport(
+      WidgetTester tester,
+      _FakeSession session, {
+      AiReportRoute route = AiReportRoute.mail,
+      bool fail = false,
+      String tag = 'zh-TW',
+      double scale = 1,
+    }) async {
+      final sent = <({String subject, String body})>[];
+      origins.clear();
+      await tester.pumpWidget(
+        _host(
+          AiChatPage(
+            session: session,
+            buildInfo: () async => const BuildInfo(
+              version: '0.6.0',
+              buildNumber: '612',
+              commit: 'abc1234',
+            ),
+            sendReport:
+                ({required subject, required body, sharePositionOrigin}) async {
+              origins.add(sharePositionOrigin);
+              if (fail) throw StateError('no mail, no share');
+              sent.add((subject: subject, body: body));
+              return route;
+            },
+          ),
+          tag: tag,
+          scale: scale,
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('ai-chat-report')));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiReportTitle), findsOneWidget);
+      return sent;
+    }
+
+    _FakeSession answered() => _FakeSession(
+      items: const [
+        AiAssistantItem(
+          text: answerText,
+          state: AiAssistantState.done,
+          source: source,
+        ),
+      ],
+    );
+
+    Future<void> send(WidgetTester tester) async {
+      final button = find.byKey(const ValueKey('ai-report-send'));
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('sends metadata only unless the response is attached', (
+      tester,
+    ) async {
+      final session = answered();
+      final sent = await openReport(tester, session);
+      final button = find.byKey(const ValueKey('ai-report-send'));
+      expect(tester.widget<ButtonStyleButton>(button).onPressed, isNull);
+      await tester.tap(find.byKey(const ValueKey('ai-report-inaccurate')));
+      await tester.pumpAndSettle();
+      final preview = find.byKey(const ValueKey('ai-report-preview'));
+      final shown = tester.widget<Text>(preview).data!;
+      expect(shown, contains('category: inaccurate'));
+      expect(shown, contains('preset: opencode-go'));
+      expect(shown, contains('app: 0.6.0+612 (abc1234)'));
+      expect(shown, isNot(contains('renames')));
+      await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
+      await tester.pumpAndSettle();
+      expect(tester.widget<Text>(preview).data, contains(answerText));
+      await send(tester);
+      expect(sent.single.body, contains(answerText));
+      expect(sent.single.body.split('\n').first, l10n.aiReportSendTo(aiReportEmail));
+      expect(session.reported, hasLength(1));
+      expect(find.text(l10n.aiReportMailOpened), findsOneWidget);
+    });
+
+    testWidgets('the text is checked again when it is sent', (tester) async {
+      final session = answered();
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-inaccurate')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-report-description')),
+        'pasted synthetic-secret by mistake',
+      );
+      // A redaction pass replaces the answer while the sheet is open.
+      final original = session.items.single as AiAssistantItem;
+      const rebuilt = AiAssistantItem(
+        text: 'It renames synthetic-secret files.',
+        state: AiAssistantState.done,
+        source: source,
+      );
+      session.successors[original] = rebuilt;
+      session.update(() => session.items = [rebuilt]);
+      await tester.pumpAndSettle();
+      await send(tester);
+      final body = sent.single.body;
+      expect(body, contains('It renames [REDACTED] files.'));
+      expect(body, contains('description: pasted [REDACTED] by mistake'));
+      expect(body, isNot(contains('synthetic-secret')));
+      expect(body, isNot(contains('renames **one** file')));
+      // The report is marked on the answer the user picked; the session
+      // follows it to the current one.
+      expect(session.reported, [original]);
+    });
+
+    testWidgets('a preview that changed at Send is shown before sending', (
+      tester,
+    ) async {
+      final session = answered();
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-inaccurate')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('ai-report-attach')));
+      await tester.pumpAndSettle();
+      // The answer is rebuilt while the sheet stays as it was.
+      final original = session.items.single as AiAssistantItem;
+      // Long enough that the preview runs far past the screen.
+      final rebuilt = AiAssistantItem(
+        text: 'It renames two files.${'\nmore detail' * 120}',
+        state: AiAssistantState.done,
+        source: source,
+      );
+      session.successors[original] = rebuilt;
+      session.update(() => session.items = [rebuilt]);
+      await tester.pumpAndSettle();
+      final preview = find.byKey(const ValueKey('ai-report-preview'));
+      expect(tester.widget<Text>(preview).data, contains(answerText));
+      await send(tester);
+      // Nothing left; the sheet now shows the text that would go.
+      expect(sent, isEmpty);
+      final note = find.byKey(const ValueKey('ai-report-preview-updated'));
+      expect(note, findsOne);
+      // The note is on screen next to Send and is read out when it appears.
+      final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+      expect(tester.getRect(note).bottom, lessThanOrEqualTo(screen.height));
+      expect(tester.getRect(note).top, greaterThanOrEqualTo(0));
+      expect(
+        find.ancestor(
+          of: note,
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Semantics && (widget.properties.liveRegion ?? false),
+          ),
+        ),
+        findsOne,
+      );
+      expect(tester.widget<Text>(preview).data, contains('two files'));
+      await send(tester);
+      expect(sent.single.body, contains('two files'));
+    });
+
+    testWidgets('a second Send while the first is checked sends once', (
+      tester,
+    ) async {
+      final session = answered()..refreshGate = Completer<void>();
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-harmful')));
+      await tester.pumpAndSettle();
+      final button = find.byKey(const ValueKey('ai-report-send'));
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      // The second press lands while the first is still being checked.
+      await tester.tap(button);
+      await tester.tap(button, warnIfMissed: false);
+      expect(session.secretRefreshes, 1);
+      session.refreshGate!.complete();
+      await tester.pumpAndSettle();
+      expect(sent, hasLength(1));
+      expect(session.reported, hasLength(1));
+    });
+
+    testWidgets('changing the choice after an update clears the note', (
+      tester,
+    ) async {
+      final session = answered()..rotatedSecret = 'synthetic-rotated-token';
+      await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-report-description')),
+        'synthetic-rotated-token',
+      );
+      await tester.pumpAndSettle();
+      await send(tester);
+      final note = find.byKey(const ValueKey('ai-report-preview-updated'));
+      expect(note, findsOne);
+      final attach = find.byKey(const ValueKey('ai-report-attach'));
+      await tester.ensureVisible(attach);
+      await tester.pumpAndSettle();
+      await tester.tap(attach);
+      await tester.pumpAndSettle();
+      expect(note, findsNothing);
+    });
+
+    testWidgets('a token rotated in place is redacted before it goes', (
+      tester,
+    ) async {
+      const token = 'synthetic-rotated-oauth-token';
+      final session = answered()..rotatedSecret = token;
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-report-description')),
+        'pasted $token here',
+      );
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(sent, isEmpty);
+      final preview = find.byKey(const ValueKey('ai-report-preview'));
+      expect(tester.widget<Text>(preview).data, isNot(contains(token)));
+      await send(tester);
+      expect(sent.single.body, contains('pasted [REDACTED] here'));
+      expect(sent.single.body, isNot(contains(token)));
+    });
+
+    testWidgets('secrets that cannot be read stop the report', (tester) async {
+      final session = answered()..secretsReadable = false;
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-harmful')));
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(sent, isEmpty);
+      expect(session.reported, isEmpty);
+      expect(find.text(l10n.aiReportNotChecked), findsOneWidget);
+    });
+
+    testWidgets('the share sheet is anchored at the Report button', (
+      tester,
+    ) async {
+      final session = answered();
+      await openReport(tester, session, route: AiReportRoute.share);
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(origins.single, isNotNull);
+      expect(origins.single!.isEmpty, isFalse);
+    });
+
+    testWidgets('an answer from an earlier conversation has no Report', (
+      tester,
+    ) async {
+      final session = _PriorConversationSession(
+        items: const [
+          AiAssistantItem(text: answerText, state: AiAssistantState.done),
+        ],
+      );
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('ai-chat-report')), findsNothing);
+    });
+
+    testWidgets('an answer gone before sending is not sent', (tester) async {
+      final session = answered();
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      session.update(() => session.items = []);
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(sent, isEmpty);
+      expect(session.reported, isEmpty);
+      expect(find.text(l10n.aiReportNotChecked), findsOneWidget);
+    });
+
+    testWidgets('the address is copied with feedback on the button', (
+      tester,
+    ) async {
+      Object? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') copied = call.arguments;
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      final session = answered();
+      await openReport(tester, session);
+      final copy = find.byKey(const ValueKey('ai-report-copy-address'));
+      await tester.ensureVisible(copy);
+      await tester.pumpAndSettle();
+      await tester.tap(copy);
+      await tester.pumpAndSettle();
+      expect(copied, {'text': aiReportEmail});
+      expect(
+        find.descendant(
+          of: copy,
+          matching: find.text(l10n.aiReportAddressCopied),
+        ),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(seconds: 3));
+      expect(
+        find.descendant(
+          of: copy,
+          matching: find.text(l10n.aiReportCopyAddress),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    for (final (tag, scale) in [('de', 2.0), ('en', 2.0), ('ar', 2.0)]) {
+      testWidgets('the update note keeps Send in reach: $tag, ${scale}x, keyboard', (
+        tester,
+      ) async {
+        final ratio = tester.view.devicePixelRatio;
+        tester.view.physicalSize = const Size(360, 640) * ratio;
+        tester.view.padding = FakeViewPadding(top: 24 * ratio, bottom: 16 * ratio);
+        addTearDown(tester.view.reset);
+        useLanguage(languageForTag(tag)!);
+        addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+        const token = 'synthetic-rotated-oauth-token';
+        final session = answered()..rotatedSecret = token;
+        final sent = await openReport(tester, session, tag: tag, scale: scale);
+        final other = find.byKey(const ValueKey('ai-report-other'));
+        await tester.ensureVisible(other);
+        await tester.pumpAndSettle();
+        await tester.tap(other);
+        await tester.pumpAndSettle();
+        final description = find.byKey(const ValueKey('ai-report-description'));
+        await tester.ensureVisible(description);
+        await tester.pumpAndSettle();
+        await tester.showKeyboard(description);
+        tester.view.viewInsets = FakeViewPadding(bottom: 280 * ratio);
+        await tester.enterText(description, 'pasted $token');
+        await tester.pumpAndSettle();
+        final button = find.byKey(const ValueKey('ai-report-send'));
+        await tester.tap(button);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(sent, isEmpty);
+        expect(find.byKey(const ValueKey('ai-report-preview-updated')), findsOne);
+        // Send stays above the keyboard and part of the preview shows.
+        expect(tester.getRect(button).bottom, lessThanOrEqualTo(640 - 280));
+        final scroll = find.byKey(const ValueKey('ai-report-scroll'));
+        expect(tester.getSize(scroll).height, greaterThan(40));
+        final preview = tester.getRect(
+          find.byKey(const ValueKey('ai-report-preview')),
+        );
+        final area = tester.getRect(scroll);
+        expect(preview.top, lessThan(area.bottom));
+        expect(preview.bottom, greaterThan(area.top));
+      });
+    }
+
+    testWidgets('keys typed just before Send are shown before they go', (
+      tester,
+    ) async {
+      final session = answered()..refreshGate = Completer<void>();
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-report-description')),
+        'typed-just-now',
+      );
+      // Inside the preview's typing pause.
+      final button = find.byKey(const ValueKey('ai-report-send'));
+      await tester.ensureVisible(button);
+      await tester.tap(button);
+      await tester.pump();
+      session.refreshGate!.complete();
+      await tester.pumpAndSettle();
+      expect(sent, isEmpty);
+      expect(find.byKey(const ValueKey('ai-report-preview-updated')), findsOne);
+      final preview = find.byKey(const ValueKey('ai-report-preview'));
+      expect(tester.widget<Text>(preview).data, contains('typed-just-now'));
+    });
+
+    testWidgets('backing out while the text is checked keeps the chat open', (
+      tester,
+    ) async {
+      final session = answered()..refreshGate = Completer<void>();
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-harmful')));
+      await tester.pumpAndSettle();
+      final button = find.byKey(const ValueKey('ai-report-send'));
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      await tester.tap(button);
+      await tester.pump();
+      await tester.tap(find.text(l10n.cancelAction));
+      await tester.pump();
+      session.refreshGate!.complete();
+      await tester.pumpAndSettle();
+      expect(sent, isEmpty);
+      expect(find.byType(AiChatPage), findsOneWidget);
+    });
+
+    testWidgets('a landscape phone with the keyboard up can still send', (
+      tester,
+    ) async {
+      final ratio = tester.view.devicePixelRatio;
+      tester.view.physicalSize = const Size(640, 360) * ratio;
+      tester.view.padding = FakeViewPadding(
+        top: 24 * ratio,
+        bottom: 16 * ratio,
+      );
+      addTearDown(tester.view.reset);
+      useLanguage(languageForTag('en')!);
+      addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+      final session = answered();
+      final sent = await openReport(tester, session, tag: 'en', scale: 2);
+      final harmful = find.byKey(const ValueKey('ai-report-harmful'));
+      await tester.ensureVisible(harmful);
+      await tester.pumpAndSettle();
+      await tester.tap(harmful);
+      await tester.pumpAndSettle();
+      await tester.showKeyboard(
+        find.byKey(const ValueKey('ai-report-description')),
+      );
+      tester.view.viewInsets = FakeViewPadding(bottom: 220 * ratio);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      // The buttons now scroll with the form, and the description field keeps
+      // its focus and its connection to the keyboard.
+      expect(tester.testTextInput.hasAnyClients, isTrue);
+      final field = find.descendant(
+        of: find.byKey(const ValueKey('ai-report-description')),
+        matching: find.byType(EditableText),
+      );
+      expect(tester.widget<EditableText>(field).focusNode.hasFocus, isTrue);
+      final button = find.byKey(const ValueKey('ai-report-send'));
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(button).bottom, lessThanOrEqualTo(360 - 220));
+      await tester.tap(button);
+      // The keyboard goes with the sheet's text field.
+      await tester.pump();
+      tester.view.resetViewInsets();
+      await tester.pumpAndSettle();
+      expect(sent, hasLength(1));
+    });
+
+    testWidgets('the share sheet route says where to send', (tester) async {
+      final session = answered();
+      final sent = await openReport(
+        tester,
+        session,
+        route: AiReportRoute.share,
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(sent.single.body, isNot(contains('renames')));
+      expect(find.text(l10n.aiReportShareOpened(aiReportEmail)), findsOne);
+      expect(session.reported, hasLength(1));
+    });
+
+    testWidgets('a report that cannot be handed off is not marked', (
+      tester,
+    ) async {
+      final session = answered();
+      await openReport(tester, session, fail: true);
+      await tester.tap(find.byKey(const ValueKey('ai-report-harmful')));
+      await tester.pumpAndSettle();
+      await send(tester);
+      expect(session.reported, isEmpty);
+      expect(find.text(l10n.aiReportFailed), findsOneWidget);
+    });
+
+    testWidgets('a reported answer is folded and can be opened', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          AiChatPage(
+            session: _FakeSession(
+              items: const [
+                AiAssistantItem(
+                  text: answerText,
+                  state: AiAssistantState.done,
+                  reported: true,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiReported), findsOneWidget);
+      expect(find.byType(AiMessageBody), findsNothing);
+      expect(find.byKey(const ValueKey('ai-chat-report')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('ai-chat-report-not-saved')),
+        findsNothing,
+      );
+      await tester.tap(find.byKey(const ValueKey('ai-chat-reported-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AiMessageBody), findsOneWidget);
+      // Open, the header no longer says the content is hidden.
+      expect(find.text(l10n.aiReported), findsNothing);
+      expect(find.text(l10n.aiReportedOpen), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('ai-chat-reported-toggle')));
+      await tester.pumpAndSettle();
+      expect(find.byType(AiMessageBody), findsNothing);
+    });
+
+    testWidgets('a mark that could not be saved says so', (tester) async {
+      final session = _FakeSession(
+        items: const [
+          AiAssistantItem(
+            text: answerText,
+            state: AiAssistantState.done,
+            reported: true,
+          ),
+        ],
+      )..reportNotSaved = true;
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiReportNotSaved), findsOneWidget);
+      session.update(() => session.reportNotSaved = false);
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiReportNotSaved), findsNothing);
+    });
+
+    for (final (tag, size) in [
+      ('zh-TW', const Size(320, 640)),
+      ('ar', const Size(320, 640)),
+    ]) {
+      testWidgets('the fold fits $tag at 2x on ${size.width}x${size.height}', (
+        tester,
+      ) async {
+        tester.view.physicalSize = size * tester.view.devicePixelRatio;
+        addTearDown(tester.view.reset);
+        if (tag != 'zh-TW') useLanguage(languageForTag(tag)!);
+        addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+        final session = _FakeSession(
+          items: const [
+            AiAssistantItem(
+              text: answerText,
+              state: AiAssistantState.done,
+              reported: true,
+            ),
+          ],
+        )..reportNotSaved = true;
+        await tester.pumpWidget(
+          _host(AiChatPage(session: session), tag: tag, scale: 2),
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final toggle = find.byKey(const ValueKey('ai-chat-reported-toggle'));
+        await tester.ensureVisible(toggle);
+        await tester.pumpAndSettle();
+        await tester.tap(toggle);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.text(l10n.aiReportedOpen), findsOneWidget);
+      });
+    }
+
+    testWidgets('an answer still streaming cannot be reported', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          AiChatPage(
+            session: _FakeSession(
+              phase: AiChatPhase.running,
+              items: const [
+                AiAssistantItem(
+                  text: 'partial',
+                  state: AiAssistantState.streaming,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.byKey(const ValueKey('ai-chat-report')), findsNothing);
+    });
+
+    for (final (tag, size) in [
+      ('zh-TW', const Size(320, 640)),
+      ('ar', const Size(320, 640)),
+      ('en', const Size(640, 360)),
+    ]) {
+      testWidgets('the sheet fits $tag at 2x on ${size.width}x${size.height}', (
+        tester,
+      ) async {
+        tester.view.physicalSize = size * tester.view.devicePixelRatio;
+        tester.view.padding = FakeViewPadding(
+          top: 24 * tester.view.devicePixelRatio,
+          bottom: 16 * tester.view.devicePixelRatio,
+        );
+        addTearDown(tester.view.reset);
+        if (tag != 'zh-TW') useLanguage(languageForTag(tag)!);
+        addTearDown(() => useLanguage(languageForTag('zh-TW')!));
+        final session = answered();
+        await openReport(tester, session, tag: tag, scale: 2);
+        for (final key in ['ai-report-privacy', 'ai-report-attach']) {
+          await tester.ensureVisible(find.byKey(ValueKey(key)));
+          await tester.pumpAndSettle();
+          await tester.tap(find.byKey(ValueKey(key)));
+          await tester.pumpAndSettle();
+        }
+        expect(tester.takeException(), isNull);
+        expect(
+          tester.getRect(find.byType(BottomSheet)).top,
+          greaterThanOrEqualTo(24),
+        );
+        await send(tester);
+        expect(tester.takeException(), isNull);
+        expect(session.reported, hasLength(1));
+      });
+    }
   });
 
   group('the append preview', () {

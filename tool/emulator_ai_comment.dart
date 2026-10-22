@@ -103,6 +103,8 @@ final class _QaSession extends ChangeNotifier implements AiChatSession {
 
   @override
   bool get historySaved => false;
+  @override
+  bool get reportNotSaved => false;
 
   @override
   bool get canSend => false;
@@ -121,6 +123,14 @@ final class _QaSession extends ChangeNotifier implements AiChatSession {
 
   @override
   Future<void> recheck() async {}
+
+  @override
+  void markReported(AiAssistantItem item) {}
+  @override
+  AiAssistantItem? currentOf(AiAssistantItem item) =>
+      items.contains(item) ? item : null;
+  @override
+  Future<bool> refreshSecrets() async => true;
 
   @override
   set confirmCleartext(Future<bool> Function()? callback) {}

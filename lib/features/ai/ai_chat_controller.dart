@@ -24,6 +24,7 @@ import '../../core/gitlab_api.dart';
 import '../auth/session_controller.dart';
 import 'ai_chat_context.dart';
 import 'ai_chat_session.dart';
+import 'ai_history.dart';
 import 'ai_runner_binding.dart';
 import 'ai_secrets.dart';
 import 'ai_stores.dart';
@@ -45,7 +46,14 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     required this.runningCount,
     AiChatWireClientFactory? wireClientFactory,
     Future<void> Function()? refreshSecrets,
-  }) : _wireClientFactory = wireClientFactory ?? _createWireClient,
+    @visibleForTesting
+    List<Duration> historyRetryDelays = defaultHistoryRetryDelays,
+  }) : assert(
+         historyRetryDelays.length == 3,
+         'one delay per retry after the first attempt',
+       ),
+       _historyRetryDelays = historyRetryDelays,
+       _wireClientFactory = wireClientFactory ?? _createWireClient,
        _generation = session.generation,
        _api = session.api!,
        _accountKey = session.active!.key {
@@ -73,6 +81,8 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
         if (_assistantIndex != null) _notifyStream();
       }
     };
+    _historyState = _history.state(_accountKey);
+    _history.addListener(_historyChanged);
     settings.addListener(_settingsChanged);
     session.addListener(_sessionChanged);
     unawaited(recheck());
@@ -103,6 +113,36 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   AiRunner? _runner;
   AiRunnerBinding? _binding;
   final List<AiChatItem> _items = [];
+  final Expando<AiChatItem> _successors = Expando<AiChatItem>();
+  final AiHistoryCoordinator _history = AiHistoryCoordinator.instance;
+  final Map<String, AiSavedConversation> _pendingReportedHistory = {};
+  final Set<String> _blockedReportedHistory = {};
+  late AiHistoryState _historyState;
+  AiSavedConversation? _latestReportedSnapshot;
+  AiSavedConversation? _savedReportedSnapshot;
+  bool _reportNotSaved = false;
+  /// After a failed save of a reported conversation: a first attempt, then
+  /// these three retries, and no more until a new snapshot or a recovery.
+  static const defaultHistoryRetryDelays = [
+    Duration(seconds: 1),
+    Duration(seconds: 5),
+    Duration(seconds: 30),
+  ];
+
+  bool _historySaving = false;
+
+  /// Set when the history became ready while a flush was running: snapshots
+  /// that flush skipped as blocked are tried once it ends.
+  bool _flushAfterSave = false;
+  final List<Duration> _historyRetryDelays;
+
+  /// Index of the first item of this conversation. A new conversation that
+  /// keeps the earlier display starts after the kept items.
+  int _conversationStart = 0;
+  int _historySnapshotRevision = 0;
+  Timer? _historyRetry;
+  // One initial flush and at most three retries per snapshot/state revision.
+  int _historyRetryAttempts = 0;
   final List<({String id, int index})> _pendingTools = [];
   AiChatPhase _phase = AiChatPhase.preparing;
   AiChatBlocker _blocker = AiChatBlocker.settingsLoading;
@@ -166,7 +206,24 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   @override
   AiRunEnd? get lastEnd => _lastEnd;
   @override
-  bool get historySaved => false;
+  bool get historySaved =>
+      settings.accountRecord(_accountKey)?.historyEnabled == true &&
+      _history.state(_accountKey) == AiHistoryState.ready &&
+      _savedReportedSnapshot != null &&
+      identical(_savedReportedSnapshot, _latestReportedSnapshot) &&
+      _savedReportedSnapshot!.id == _id &&
+      listEquals(
+        _savedReportedSnapshot!.conversation.items,
+        _conversationItems,
+      ) &&
+      _savedReportedSnapshot!.stopReason == _lastEnd?.name;
+  @override
+  bool get reportNotSaved =>
+      settings.accountRecord(_accountKey)?.historyEnabled == true &&
+      _reportNotSaved &&
+      _conversationItems.whereType<AiAssistantItem>().any(
+        (item) => item.reported,
+      );
   @override
   bool get canSend =>
       _alive &&
@@ -198,6 +255,222 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       return _redactor.redactSource(lines.replaceAll(_draftControls, '')).text;
     } on Object {
       return '';
+    }
+  }
+
+  @override
+  AiAssistantItem? currentOf(AiAssistantItem item) {
+    if (!_alive) return null;
+    AiChatItem current = item;
+    for (
+      var next = _successors[current];
+      next != null;
+      next = _successors[current]
+    ) {
+      current = next;
+    }
+    if (current is! AiAssistantItem) return null;
+    final index = _items.indexOf(current);
+    // Kept display from an earlier conversation is not this conversation's.
+    return index >= _conversationStart ? current : null;
+  }
+
+  @override
+  Future<bool> refreshSecrets() async {
+    if (!_alive) return false;
+    final shown = _displayRevision;
+    try {
+      await _refreshSecrets();
+    } on Object catch (error) {
+      if (!_alive) return false;
+      // As in recheck: what is shown could not be checked against the
+      // larger secret set, so the chat stops until it can. A run in flight
+      // keeps its phase (and Stop); the failed display it left blocks the
+      // chat when the run ends.
+      if (_phase == AiChatPhase.idle) {
+        _failure = error is AiFailure ? error : safeFailure(error);
+        _contextFailed = true;
+        _setBlocked(AiChatBlocker.contextUnavailable);
+      }
+      return false;
+    }
+    if (!_alive) return false;
+    // A larger secret set re-redacted what is shown. A stream notifies on
+    // its own; while idle nothing else tells the page.
+    if (_displayRevision != shown && _assistantIndex == null) _notify();
+    return true;
+  }
+
+  /// This conversation's items, without display kept from an earlier one.
+  List<AiChatItem> get _conversationItems => _items.sublist(_conversationStart);
+
+  void _replaceItem(int index, AiChatItem replacement) {
+    final previous = _items[index];
+    if (!identical(previous, replacement)) _successors[previous] = replacement;
+    _items[index] = replacement;
+  }
+
+  @override
+  void markReported(AiAssistantItem item) {
+    final current = currentOf(item);
+    if (current == null || current.reported) return;
+    _replaceItem(
+      _items.indexOf(current),
+      AiAssistantItem(
+        text: current.text,
+        state: current.state,
+        usage: current.usage,
+        source: current.source,
+        reported: true,
+      ),
+    );
+    _saveReportedHistory();
+    _notify();
+  }
+
+  void _saveReportedHistory() {
+    if (!_alive ||
+        settings.accountRecord(_accountKey)?.historyEnabled != true ||
+        !_conversationItems.whereType<AiAssistantItem>().any(
+          (item) => item.reported,
+        )) {
+      return;
+    }
+    // Only this conversation: answers kept on screen from an earlier one
+    // were saved, if reported, under that conversation's id.
+    final snapshot = AiSavedConversation(
+      id: _id,
+      updatedAt: DateTime.now().toUtc(),
+      conversation: AiConversation(items: _conversationItems),
+      stopReason: _lastEnd?.name,
+    );
+    _latestReportedSnapshot = snapshot;
+    _pendingReportedHistory[_id] = snapshot;
+    _blockedReportedHistory.remove(_id);
+    _historySnapshotRevision++;
+    _historyRetry?.cancel();
+    _historyRetry = null;
+    _historyRetryAttempts = 0;
+    unawaited(_flushReportedHistory());
+  }
+
+  void _historyChanged() {
+    final state = _history.state(_accountKey);
+    final previous = _historyState;
+    _historyState = state;
+    if (state == AiHistoryState.disabled || state == AiHistoryState.cleaning) {
+      _pendingReportedHistory.clear();
+      _blockedReportedHistory.clear();
+      _latestReportedSnapshot = null;
+      _savedReportedSnapshot = null;
+      _reportNotSaved = false;
+      _historyRetry?.cancel();
+      _historyRetry = null;
+      _historyRetryAttempts = 0;
+    } else if (state == AiHistoryState.ready && previous != state) {
+      _blockedReportedHistory.clear();
+      if (_historySaving) {
+        _flushAfterSave = true;
+      } else if (_historyRetry == null) {
+        _historyRetryAttempts = 0;
+        unawaited(_flushReportedHistory());
+      }
+    }
+    if (previous != state) _notify();
+  }
+
+  Future<void> _flushReportedHistory() async {
+    if (!_alive ||
+        _historySaving ||
+        _historyRetry != null ||
+        _historyRetryAttempts >= 4 ||
+        !_pendingReportedHistory.keys.any(
+          (id) => !_blockedReportedHistory.contains(id),
+        )) {
+      return;
+    }
+    _historySaving = true;
+    _historyRetryAttempts++;
+    final revision = _historySnapshotRevision;
+    var retry = false;
+    try {
+      // Only display snapshots cross this boundary. The singleton's account
+      // queue and cleanup epochs fence pending writes on account removal.
+      for (final snapshot in _pendingReportedHistory.values.toList()) {
+        if (!_alive) return;
+        if (_blockedReportedHistory.contains(snapshot.id)) continue;
+        final result = await _history.save(_accountKey, snapshot);
+        if (!_alive) return;
+        if (!identical(_pendingReportedHistory[snapshot.id], snapshot)) {
+          continue;
+        }
+        if (result == AiHistorySaveResult.saved) {
+          _pendingReportedHistory.remove(snapshot.id);
+          if (snapshot.id == _id) {
+            _savedReportedSnapshot = snapshot;
+            _reportNotSaved = false;
+          }
+        } else if (result == AiHistorySaveResult.failed ||
+            result == AiHistorySaveResult.cancelled) {
+          retry = true;
+          if (_historyRetryAttempts >= 4) {
+            _blockedReportedHistory.add(snapshot.id);
+            if (snapshot.id == _id) _reportNotSaved = true;
+          }
+        } else {
+          // Capacity, unsupported data and eviction need a new snapshot or
+          // a coordinator state transition, rather than a timer retry.
+          _blockedReportedHistory.add(snapshot.id);
+          if (snapshot.id == _id) _reportNotSaved = true;
+        }
+      }
+    } finally {
+      _historySaving = false;
+      if (_alive) {
+        _notify();
+        // A newer redaction/report snapshot supersedes one being written.
+        if (_pendingReportedHistory.isEmpty) {
+          _historyRetry?.cancel();
+          _historyRetry = null;
+          _historyRetryAttempts = 0;
+        } else if (revision != _historySnapshotRevision) {
+          unawaited(_flushReportedHistory());
+        } else if (_flushAfterSave && _historyRetry == null) {
+          // The history became ready while this flush ran. As for any
+          // transition into ready, what is pending gets a fresh budget,
+          // including a snapshot this flush blocked on its last attempt.
+          _flushAfterSave = false;
+          _blockedReportedHistory.clear();
+          _historyRetryAttempts = 0;
+          unawaited(_flushReportedHistory());
+        } else if (retry &&
+            _historyRetry == null &&
+            _historyRetryAttempts < 4 &&
+            (_history.state(_accountKey) == AiHistoryState.ready ||
+                _history.state(_accountKey) == AiHistoryState.readFailed)) {
+          // File failures leave the coordinator ready; unlike unavailable
+          // keys they have no coordinator retry timer. Bound these retries.
+          _historyRetry = Timer(
+            _historyRetryDelays[_historyRetryAttempts - 1],
+            () {
+              _historyRetry = null;
+              unawaited(_flushReportedHistory());
+            },
+          );
+        } else if (retry &&
+            _historyRetry == null &&
+            _history.state(_accountKey) != AiHistoryState.ready &&
+            _history.state(_accountKey) != AiHistoryState.readFailed &&
+            _pendingReportedHistory.containsKey(_id)) {
+          // No timer here: a missing key never comes back by itself, and an
+          // unavailable one is retried by the coordinator. Say now that the
+          // mark is not saved; a transition into ready flushes again, and a
+          // save clears this.
+          _reportNotSaved = true;
+          _notify();
+        }
+      }
+      _flushAfterSave = false;
     }
   }
 
@@ -259,6 +532,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     // blocker turns out to be.
     try {
       _redactDisplayIfNeeded();
+      unawaited(_flushReportedHistory());
     } on Object catch (error) {
       _failure = error is AiFailure ? error : safeFailure(error);
       _contextFailed = true;
@@ -479,7 +753,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
         if (index == null) {
           _insertRunItem(item);
         } else {
-          _items[index] = item;
+          _replaceItem(index, item);
         }
         if (result.withheldPrivateKeyContext) _noticeWithheld();
         _notifyStream();
@@ -559,8 +833,17 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
         );
       }
       _assistantIndex = _items.length;
+      final config = _provider!;
       _items.add(
-        const AiAssistantItem(text: '', state: AiAssistantState.streaming),
+        AiAssistantItem(
+          text: '',
+          state: AiAssistantState.streaming,
+          source: AiAnswerSource(
+            presetId: config.presetId,
+            format: config.format.name,
+            model: config.model,
+          ),
+        ),
       );
       if (_runner == null) _createRunner();
       _notifyStream();
@@ -656,6 +939,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           _blocker = AiChatBlocker.contextUnavailable;
         }
         _notify();
+        _saveReportedHistory();
         if (_transportClosed || _settingsChangedDuringRun) {
           _settingsChangedDuringRun = false;
           unawaited(recheck());
@@ -755,12 +1039,15 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
             if (chip.blocked) chip,
         ];
         if (settled.isEmpty && chips.isEmpty) return;
-        _items[index] = _redactItem(
-          AiUserItem(text: text, chips: settled),
-          (value) => _redactor.redactSource(value).text,
+        _replaceItem(
+          index,
+          _redactItem(
+            AiUserItem(text: text, chips: settled),
+            (value) => _redactor.redactSource(value).text,
+          ),
         );
       } on Object {
-        _items[index] = _hiddenItem(_items[index]);
+        _replaceItem(index, _hiddenItem(_items[index]));
         _displayFailed = true;
         // The next pass recomputes the flag over what is shown now.
         _displayRevision = -1;
@@ -804,10 +1091,11 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
         redacted[index] = _hiddenItem(redacted[index]);
       }
     }
-    _items
-      ..clear()
-      ..addAll(redacted);
+    for (var index = 0; index < redacted.length; index++) {
+      _replaceItem(index, redacted[index]);
+    }
     _displayFailed = failed;
+    _saveReportedHistory();
     if (failed) {
       // Leave the revision so the next pass tries again, and block.
       throw const AiFailure(AiFailureKind.policyBlocked);
@@ -844,8 +1132,20 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
                 ),
           ],
         ),
-        AiAssistantItem(:final text, :final state, :final usage) =>
-          AiAssistantItem(text: safe(text), state: state, usage: usage),
+        AiAssistantItem(
+          :final text,
+          :final state,
+          :final usage,
+          :final source,
+          :final reported,
+        ) =>
+          AiAssistantItem(
+            text: safe(text),
+            state: state,
+            usage: usage,
+            source: source,
+            reported: reported,
+          ),
         AiToolRunItem(
           :final name,
           :final argsPreview,
@@ -875,11 +1175,14 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
 
   static AiChatItem _hiddenItem(AiChatItem item) => switch (item) {
     AiUserItem() => const AiNoticeItem(AiNoticeKind.redacted),
-    AiAssistantItem(:final usage) => AiAssistantItem(
-      text: '',
-      state: AiAssistantState.hidden,
-      usage: usage,
-    ),
+    AiAssistantItem(:final usage, :final source, :final reported) =>
+      AiAssistantItem(
+        text: '',
+        state: AiAssistantState.hidden,
+        usage: usage,
+        source: source,
+        reported: reported,
+      ),
     AiToolRunItem(
       :final name,
       :final status,
@@ -948,7 +1251,17 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   void _setAssistant(String text, AiAssistantState state) {
     final index = _assistantIndex;
     if (index == null) return;
-    _items[index] = AiAssistantItem(text: text, state: state, usage: _usage);
+    final previous = _items[index] as AiAssistantItem;
+    _replaceItem(
+      index,
+      AiAssistantItem(
+        text: text,
+        state: state,
+        usage: _usage,
+        source: previous.source,
+        reported: previous.reported,
+      ),
+    );
   }
 
   @override
@@ -971,8 +1284,10 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       if (_items.isNotEmpty) {
         _items.add(const AiNoticeItem(AiNoticeKind.newConversation));
       }
+      _conversationStart = _items.length;
     } else {
       _items.clear();
+      _conversationStart = 0;
       // Nothing unchecked is shown any more.
       _displayFailed = false;
     }
@@ -982,6 +1297,9 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     _contextFailed = false;
     _offerNewConversation = false;
     _lastEnd = null;
+    _latestReportedSnapshot = null;
+    _savedReportedSnapshot = null;
+    _reportNotSaved = false;
     _id = _newId();
   }
 
@@ -1011,6 +1329,9 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     if (_disposed) return;
     _disposed = true;
     ++_epoch;
+    _historyRetry?.cancel();
+    _history.removeListener(_historyChanged);
+    _pendingReportedHistory.clear();
     settings.removeListener(_settingsChanged);
     session.removeListener(_sessionChanged);
     _clearConversation();
