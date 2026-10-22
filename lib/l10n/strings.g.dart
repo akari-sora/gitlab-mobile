@@ -7890,4 +7890,109 @@ final class AppStrings {
 
   /// 不確定這筆寫入是否完成。你改過的內容留在這裡，重送前請先到 GitLab 查看。
   String get aiSettledEditUncertain => language._messages[2598];
+
+  /// 新檔案
+  String get aiPreviewNewFile => language._messages[2599];
+
+  /// 檔案
+  String get aiPreviewFile => language._messages[2600];
+
+  /// 這是 Pipeline 設定相關的檔案，改動會影響 Pipeline 怎麼執行。
+  String get aiPreviewCiFile => language._messages[2601];
+
+  /// 檔案裡已有 {count} 處疑似秘密；這次編輯不會移除它們。
+  String aiPreviewExistingSecrets(Object? count) => _format(language, language._messages[2602], {'count': count});
+
+  /// 分支
+  String get aiPreviewBranches => language._messages[2603];
+
+  /// {source} → {target}
+  String aiPreviewBranchFlow(Object? source, Object? target) => _format(language, language._messages[2604], {'source': source, 'target': target});
+
+  /// 提交
+  String get aiPreviewCommit => language._messages[2605];
+
+  /// 變更的檔案
+  String get aiPreviewChangedFiles => language._messages[2606];
+
+  /// 合併方式
+  String get aiPreviewMergeOptions => language._messages[2607];
+
+  /// 壓縮成一個提交
+  String get aiPreviewSquashOn => language._messages[2608];
+
+  /// 保留所有提交
+  String get aiPreviewSquashOff => language._messages[2609];
+
+  /// 合併後刪除來源分支
+  String get aiPreviewRemoveSource => language._messages[2610];
+
+  /// Pipeline 通過後自動合併
+  String get aiPreviewAutoMerge => language._messages[2611];
+
+  /// 提議之後，來源分支又多了 {count} 個提交，合併會包含它們。
+  String aiPreviewHeadMoved(Object? count) => _format(language, language._messages[2612], {'count': count});
+
+  /// 這次合併會改到 Pipeline 設定：{paths}
+  String aiPreviewMergeCiPaths(Object? paths) => _format(language, language._messages[2613], {'paths': paths});
+
+  /// 合併後還會關閉這段對話範圍外的議題：{issues}
+  String aiPreviewClosesOutOfScope(Object? issues) => _format(language, language._messages[2614], {'issues': issues});
+
+  /// 分支或標籤
+  String get aiPreviewRef => language._messages[2615];
+
+  /// Pipeline
+  String get aiPreviewPipeline => language._messages[2616];
+
+  /// 工作
+  String get aiPreviewJob => language._messages[2617];
+
+  /// 環境
+  String get aiPreviewEnvironment => language._messages[2618];
+
+  /// 重新執行或播放可能沿用 GitLab 上已存的變數與 inputs；由排程建立的 Pipeline 還會使用排程目前的變數。應用程式讀不到，也無法核對。
+  String get aiPreviewStoredVariables => language._messages[2619];
+
+  /// 排程目前的變數：{names}
+  String aiPreviewScheduleVariables(Object? names) => _format(language, language._messages[2620], {'names': names});
+
+  /// 讀不到排程的參數，無法核對。
+  String get aiPreviewScheduleUnreadable => language._messages[2621];
+
+  /// 會帶入新的變數：{names}
+  String aiPreviewNewVariables(Object? names) => _format(language, language._messages[2622], {'names': names});
+
+  /// 草稿
+  String get aiPreviewDraftCount => language._messages[2623];
+
+  /// 共 {total} 則，其中 {ours} 則是這段對話建立的
+  String aiPreviewDraftSplit(Object? total, Object? ours) => _format(language, language._messages[2624], {'total': total, 'ours': ours});
+
+  /// 這段對話建立的草稿
+  String get aiPreviewDraftByAi => language._messages[2625];
+
+  /// 其他草稿
+  String get aiPreviewDraftByYou => language._messages[2626];
+
+  /// 要刪除
+  String get aiPreviewDeleteTarget => language._messages[2627];
+
+  /// 路徑
+  String get aiPreviewPath => language._messages[2628];
+
+  /// 數量
+  String get aiPreviewDeleteCount => language._messages[2629];
+
+  /// 至少 {count}
+  String aiPreviewAtLeast(Object? count) => _format(language, language._messages[2630], {'count': count});
+
+  /// 刪除後無法復原。
+  String get aiPreviewCannotUndo => language._messages[2631];
+
+  /// 合併請求
+  String get aiPreviewMergeRequest => language._messages[2632];
+
+  /// 你可能沒有取消自動合併的權限；GitLab 拒絕時不會有任何改變。
+  String get aiPreviewCancelMayLackPermission => language._messages[2633];
 }
