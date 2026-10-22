@@ -4,7 +4,6 @@ import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/target_binding.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_tier.dart';
-import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import '../support/fake_adapter.dart';
 
@@ -217,7 +216,7 @@ Map<String, dynamic> change(String path, {String? old, bool deleted = false}) =>
     };
 
 Matcher reason(String code) =>
-    isA<AiJournalException>().having((e) => e.reason, 'reason', code);
+    isA<AiWriteRefused>().having((e) => e.reason, 'reason', code);
 
 AiTierDecision tier(
   AiWritePrepared p, {

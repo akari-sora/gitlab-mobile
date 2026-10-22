@@ -47,7 +47,7 @@ extension _CiPrepare on GitLabAiWritePort {
       final validated = validatePipelineVariables(a['variables'],
           knownSecrets: const <String>{});
       if (validated is AiPipelineVariablesRejected) {
-        throw AiJournalException(switch (validated.reasonCode) {
+        throw AiWriteRefused(switch (validated.reasonCode) {
           'secret' => 'pipelineVariableSecret',
           _ => 'pipelineVariableForbidden',
         });
@@ -83,7 +83,7 @@ extension _CiPrepare on GitLabAiWritePort {
           parent['id'] is! int || (parent['id']! as int) <= 0 ||
           (job.containsKey('project_id') && job['project_id'] != project) ||
           (parent.containsKey('project_id') && parent['project_id'] != project)) {
-        throw const AiJournalException('jobNotInPipeline');
+        throw const AiWriteRefused('jobNotInPipeline');
       }
       final pipelineId = parent['id']! as int;
       ref = _ciRef(job);
@@ -104,7 +104,7 @@ extension _CiPrepare on GitLabAiWritePort {
         // Retry may return a new job ID. Its parent, ref, name and stage must
         // still identify the pre-read job; cancel/play retain the original ID.
         if (action != 'retry' && id != jobId) {
-          throw const AiJournalException('jobNotInPipeline');
+          throw const AiWriteRefused('jobNotInPipeline');
         }
         final value = await _api.record([...apiRoot, 'jobs', '$id']);
         final parent = value['pipeline'];
@@ -114,7 +114,7 @@ extension _CiPrepare on GitLabAiWritePort {
             _responseText(value, 'stage') != stage ||
             (value.containsKey('project_id') && value['project_id'] != project) ||
             (parent.containsKey('project_id') && parent['project_id'] != project)) {
-          throw const AiJournalException('jobNotInPipeline');
+          throw const AiWriteRefused('jobNotInPipeline');
         }
         return value;
       };
@@ -123,7 +123,7 @@ extension _CiPrepare on GitLabAiWritePort {
       final key = request.scheduleHmacKey;
       if (key == null || key.length != 32 ||
           key.any((byte) => byte < 0 || byte > 255)) {
-        throw const AiJournalException('scheduleParamsUnreadable');
+        throw const AiWriteRefused('scheduleParamsUnreadable');
       }
       Map<String, dynamic> schedule;
       try {
@@ -132,7 +132,7 @@ extension _CiPrepare on GitLabAiWritePort {
         ]);
       } on ApiFailure catch (error) {
         if (error.kind == FailureKind.invisible) {
-          throw const AiJournalException('scheduleMissing');
+          throw const AiWriteRefused('scheduleMissing');
         }
         if (!const {FailureKind.forbidden, FailureKind.unsupported,
             FailureKind.invalidResponse, FailureKind.tooLarge}.contains(error.kind)) {
@@ -143,7 +143,7 @@ extension _CiPrepare on GitLabAiWritePort {
         schedule = await _ciScheduleRef(project, scheduleId);
       }
       if (schedule['id'] != scheduleId) {
-        throw const AiJournalException('scheduleMissing');
+        throw const AiWriteRefused('scheduleMissing');
       }
       ref = _ciRef(schedule);
       final params = evaluateScheduleParams(schedule, key: key);
@@ -166,7 +166,7 @@ extension _CiPrepare on GitLabAiWritePort {
           ...apiRoot, 'pipeline_schedules', '$scheduleId',
         ]);
         if (value['id'] != scheduleId) {
-          throw const AiJournalException('scheduleMissing');
+          throw const AiWriteRefused('scheduleMissing');
         }
         return value;
       };
@@ -223,13 +223,13 @@ extension _CiPrepare on GitLabAiWritePort {
         final value = await _api.record([
           'projects', '$project', 'repository', kind, ref,
         ]);
-        if (value['name'] != ref) throw const AiJournalException('refMissing');
+        if (value['name'] != ref) throw const AiWriteRefused('refMissing');
         return _responseText(value, 'name');
       } on ApiFailure catch (error) {
         if (error.kind != FailureKind.invisible) rethrow;
       }
     }
-    throw const AiJournalException('refMissing');
+    throw const AiWriteRefused('refMissing');
   }
 
   Future<Map<String, dynamic>> _ciScheduleRef(int project, int id) async {
@@ -239,28 +239,38 @@ extension _CiPrepare on GitLabAiWritePort {
       final values = await _api.records(
         ['projects', '$project', 'pipeline_schedules'],
         query: const {'per_page': '100'}, next: next,
-      );
+      ).onError<ApiFailure>((error, stack) {
+        if (error.kind == FailureKind.invalidResponse ||
+            error.kind == FailureKind.tooLarge) {
+          throw const AiWriteRefused('scheduleParamsUnreadable');
+        }
+        Error.throwWithStackTrace(error, stack);
+      });
       for (final value in values.items) {
         if (value['id'] == id) {
-          if (found != null) throw const AiJournalException('scheduleParamsUnreadable');
+          if (found != null) throw const AiWriteRefused('scheduleParamsUnreadable');
+          final ref = value['ref'];
+          if (ref is! String || ref.trim().isEmpty) {
+            throw const AiWriteRefused('scheduleParamsUnreadable');
+          }
           // A list verifies only identity/ref; it is not a parameter snapshot.
-          found = {'id': id, 'ref': value['ref']};
+          found = {'id': id, 'ref': ref};
         }
       }
       if (values.next == null) {
-        if (found == null) throw const AiJournalException('scheduleMissing');
+        if (found == null) throw const AiWriteRefused('scheduleMissing');
         return found;
       }
       next = values.next;
     }
-    throw const AiJournalException('scheduleParamsUnreadable');
+    throw const AiWriteRefused('scheduleParamsUnreadable');
   }
 }
 
 String _ciRef(Map<String, dynamic> value) {
   final ref = value['ref'];
   if (ref is! String || ref.trim().isEmpty) {
-    throw const AiJournalException('refMissing');
+    throw const AiWriteRefused('refMissing');
   }
   return ref;
 }

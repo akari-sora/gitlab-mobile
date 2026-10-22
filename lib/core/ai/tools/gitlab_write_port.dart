@@ -6,7 +6,17 @@ import 'package:crypto/crypto.dart';
 import '../../../features/ai/ai_write_journal.dart';
 import '../../failure.dart';
 import '../../gitlab_api.dart';
+// Shared model namespace for the snippet family, delivered separately.
+// ignore: unused_import
+import '../../models.dart';
+// ignore: unused_import
+import '../../snippet_models.dart';
+import '../../suggestion.dart';
 import '../../upload_names.dart';
+import '../exact_edit.dart';
+import 'ci_rules.dart';
+import 'schedule_params.dart';
+import 'sensitive_paths.dart';
 import 'target_binding.dart';
 import 'write_ledger.dart';
 import 'write_preview.dart';
@@ -24,6 +34,12 @@ part 'gitlab_write_port_ci.dart';
 part 'gitlab_write_port_snippets.dart';
 part 'gitlab_write_port_deletes.dart';
 part 'gitlab_write_port_project.dart';
+
+/// A family preflight refusal; journal failures retain their separate type.
+final class AiWriteRefused implements Exception {
+  const AiWriteRefused(this.reason);
+  final String reason;
+}
 
 /// The caller resolves attachment ids and applies write-text policy first.
 final class AiWriteRequest {
@@ -140,11 +156,12 @@ final class AiWritePrepared {
     // Reserved for the family parts added after this foundation.
     // ignore: unused_element_parameter
     this.textScan,
-    // Reserved for the family parts added after this foundation.
-    // ignore: unused_element_parameter
-    this.createdOnSuccess,
+    AiCreatedRef? createdOnSuccess,
+    AiCreatedRef? Function()? resolveCreatedOnSuccess,
     this.classify,
-  }) : writeKeys = Set.unmodifiable(writeKeys),
+  }) : _createdOnSuccess = createdOnSuccess,
+       _resolveCreatedOnSuccess = resolveCreatedOnSuccess,
+       writeKeys = Set.unmodifiable(writeKeys),
        dependencyKeys = Set.unmodifiable(dependencyKeys),
        bindingTargets = List.unmodifiable(bindingTargets),
        preview = preview ?? AiFieldsPreview(request.arguments),
@@ -174,7 +191,12 @@ final class AiWritePrepared {
   final AiJournalBindings journal;
   final AiWritePreview preview;
   final AiTextScan? textScan;
-  final AiCreatedRef? createdOnSuccess;
+  final AiCreatedRef? _createdOnSuccess;
+  final AiCreatedRef? Function()? _resolveCreatedOnSuccess;
+
+  /// Read by the coordinator only after the commit and journal both succeed.
+  AiCreatedRef? get createdOnSuccess =>
+      _resolveCreatedOnSuccess?.call() ?? _createdOnSuccess;
   final AiResultClassifier? classify;
   final Object _owner;
   final Future<Object?> Function() _mutation;
@@ -303,6 +325,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     var keys = <AiConflictKey>{_key(target)};
     Future<Object?> Function()? mutation;
     Future<Object?> Function(Object?)? readback;
+    AiCreatedRef? created;
     final ownerPath = [
       'projects',
       '$project',
@@ -518,13 +541,19 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
                   (parent['diff_refs'] as Map)['head_sha'] != commitId)) {
             throw const ApiFailure(FailureKind.conflict);
           }
-          mutation = () => _api.createDraftNote(
-            project,
-            iid,
-            body,
-            commitId: commitId,
-            position: position,
-          );
+          mutation = () async {
+            final result = await _api.createDraftNote(
+              project,
+              iid,
+              body,
+              commitId: commitId,
+              position: position,
+            );
+            created = AiCreatedRef(accountKey: accountKey,
+                kind: AiTargetKind.note, projectId: project,
+                id: _resultInt(result, 'id'), parentIid: iid);
+            return result;
+          };
           keys = {
             _key([...target, 'draftNotes']),
           };
@@ -683,6 +712,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
       owner: _owner,
       mutation: mutation,
       readback: readback,
+      resolveCreatedOnSuccess: () => created,
       projectPath: projectName,
       projectVisibility: visibility is String ? visibility : null,
     );

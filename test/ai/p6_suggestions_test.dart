@@ -1,12 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/tools/gitlab_write_port.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
-import 'package:gitlab_mobile/features/ai/ai_write_journal.dart';
 
 import 'p6_support.dart';
 
 Matcher reason(String code) =>
-    isA<AiJournalException>().having((e) => e.reason, 'reason', code);
+    isA<AiWriteRefused>().having((e) => e.reason, 'reason', code);
 
 void main() {
   late P6Server s;

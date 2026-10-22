@@ -313,7 +313,7 @@ extension _FilesPrepare on GitLabAiWritePort {
   }
 }
 
-Never _fileReject(String reason) => throw AiJournalException(reason);
+Never _fileReject(String reason) => throw AiWriteRefused(reason);
 
 Never _fileReadFailure(ApiFailure failure) {
   if (failure.kind == FailureKind.tooLarge) _fileReject('fileTooLarge');

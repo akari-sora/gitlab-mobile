@@ -35,8 +35,8 @@ extension _MergePrepare on GitLabAiWritePort {
       throw const ApiFailure(FailureKind.forbidden);
     }
     final state = _responseText(mr, 'state');
-    if (state == 'merged') throw const AiJournalException('alreadyMerged');
-    if (state != 'opened') throw const AiJournalException('mergeCheckUnsupported');
+    if (state == 'merged') throw const AiWriteRefused('alreadyMerged');
+    if (state != 'opened') throw const AiWriteRefused('mergeCheckUnsupported');
     final sha = _mergeSha(mr['sha']);
     final source = _responseText(mr, 'source_branch');
     final target = _responseText(mr, 'target_branch');
@@ -44,16 +44,16 @@ extension _MergePrepare on GitLabAiWritePort {
     // in this family. Never silently use the target project's source ref.
     if ((mr['source_project_id'] != null && mr['source_project_id'] != project) ||
         (mr['target_project_id'] != null && mr['target_project_id'] != project)) {
-      throw const AiJournalException('mergeCheckUnsupported');
+      throw const AiWriteRefused('mergeCheckUnsupported');
     }
     final memory = _memories[this] ??= _MergeMemory();
     final snapshotKey = '$op:${request.executionId}';
     final previous = memory.snapshots[snapshotKey];
     if (previous?['expired'] == true) {
-      throw const AiJournalException('mergeCheckIncomplete');
+      throw const AiWriteRefused('mergeCheckIncomplete');
     }
     if (previous != null && previous['sha'] != sha) {
-      throw const AiJournalException('headMoved');
+      throw const AiWriteRefused('headMoved');
     }
     final mrKey = '$project:$iid';
     final root = [accountKey, 'project:$project'];
@@ -84,10 +84,10 @@ extension _MergePrepare on GitLabAiWritePort {
         final commits = comparison['commits'];
         if (comparison['compare_timeout'] == true || commits is! List ||
             commits.length > 100) {
-          throw const AiJournalException('mergeCheckIncomplete');
+          throw const AiWriteRefused('mergeCheckIncomplete');
         }
         for (final commit in commits) {
-          if (commit is! Map) throw const AiJournalException('mergeCheckIncomplete');
+          if (commit is! Map) throw const AiWriteRefused('mergeCheckIncomplete');
           movedCommits.add(_mergeSha(commit['id']));
         }
         binding['headMovedCommits'] = movedCommits;
@@ -98,21 +98,21 @@ extension _MergePrepare on GitLabAiWritePort {
     switch (op) {
       case 'mergeRequest':
         final refs = mr['diff_refs'];
-        if (refs is! Map) throw const AiJournalException('mergeCheckIncomplete');
+        if (refs is! Map) throw const AiWriteRefused('mergeCheckIncomplete');
         final revisions = [
           for (final key in ['base_sha', 'start_sha', 'head_sha']) _mergeSha(refs[key]),
         ];
-        if (revisions.last != sha) throw const AiJournalException('mergeCheckIncomplete');
+        if (revisions.last != sha) throw const AiWriteRefused('mergeCheckIncomplete');
         binding['refs'] = revisions;
         if (previous != null && jsonEncode(previous['refs']) != jsonEncode(revisions)) {
-          throw const AiJournalException('headMoved');
+          throw const AiWriteRefused('headMoved');
         }
         final branch = await _mergeRecord(
           ['projects', '$project', 'repository', 'branches', target],
         );
         if (branch['name'] != target || branch['protected'] is! bool ||
             p['default_branch'] is! String) {
-          throw const AiJournalException('mergeCheckIncomplete');
+          throw const AiWriteRefused('mergeCheckIncomplete');
         }
         List<Map<String, dynamic>> changes;
         List<Map<String, dynamic>> commits;
@@ -127,7 +127,7 @@ extension _MergePrepare on GitLabAiWritePort {
         final expected = count is int ? count :
             count is String && RegExp(r'^\d+$').hasMatch(count) ? int.tryParse(count) : null;
         if (expected == null || expected < 0 || expected != changes.length) {
-          throw const AiJournalException('mergeCheckIncomplete');
+          throw const AiWriteRefused('mergeCheckIncomplete');
         }
         final normalized = <List<Object>>[];
         final ciPaths = <String>{};
@@ -141,7 +141,7 @@ extension _MergePrepare on GitLabAiWritePort {
               change['renamed_file'] is! bool ||
               !seen.add(jsonEncode([oldPath, newPath])) ||
               change['too_large'] == true || change['collapsed'] == true) {
-            throw const AiJournalException('mergeCheckIncomplete');
+            throw const AiWriteRefused('mergeCheckIncomplete');
           }
           normalized.add([oldPath, newPath, change['new_file']! as bool,
             change['deleted_file']! as bool, change['renamed_file']! as bool]);
@@ -152,19 +152,19 @@ extension _MergePrepare on GitLabAiWritePort {
         normalized.sort((a, b) => jsonEncode(a).compareTo(jsonEncode(b)));
         final description = mr['description'];
         if (description != null && description is! String) {
-          throw const AiJournalException('mergeCheckIncomplete');
+          throw const AiWriteRefused('mergeCheckIncomplete');
         }
         final messages = <String>[];
         final commitIds = <String>{};
         for (final commit in commits) {
           if (commit['message'] is! String || !commitIds.add(_mergeSha(commit['id']))) {
-            throw const AiJournalException('mergeCheckIncomplete');
+            throw const AiWriteRefused('mergeCheckIncomplete');
           }
           messages.add(commit['message']! as String);
         }
         // A nonempty diff without any commits cannot prove the pinned effects.
         if (changes.isNotEmpty && commits.isEmpty) {
-          throw const AiJournalException('mergeCheckIncomplete');
+          throw const AiWriteRefused('mergeCheckIncomplete');
         }
         final closing = await _mergeList([...path, 'closes_issues']);
         final closingIssues = <AiClosingIssue>[];
@@ -174,7 +174,7 @@ extension _MergePrepare on GitLabAiWritePort {
           final issueIid = issue['iid'];
           if (issueProject is! int || issueProject < 1 || issueIid is! int || issueIid < 1 ||
               !closeKeys.add('$issueProject:$issueIid')) {
-            throw const AiJournalException('mergeCheckIncomplete');
+            throw const AiWriteRefused('mergeCheckIncomplete');
           }
           final outside = !request.scope.grants.any((g) =>
             g.projectId == issueProject && (g.kind == AiScopeKind.project ||
@@ -233,7 +233,7 @@ extension _MergePrepare on GitLabAiWritePort {
         keys.add(_key([...root, 'ref', source]));
         mutation = () => _api.rebaseMergeRequest(project, iid);
       case 'cancelAutoMerge':
-        if (!_mergeAutoEnabled(mr)) throw const AiJournalException('autoMergeNotEnabled');
+        if (!_mergeAutoEnabled(mr)) throw const AiWriteRefused('autoMergeNotEnabled');
         final author = mr['author'];
         final permission = mr['user'];
         binding['permission'] = permission is Map ? permission['can_merge'] : null;
@@ -244,14 +244,14 @@ extension _MergePrepare on GitLabAiWritePort {
         mutation = () => _api.cancelAutoMerge(project, iid);
       case 'publishDraftNotes':
         final drafts = await _mergeList([...path, 'draft_notes']);
-        if (drafts.length > 20) throw const AiJournalException('batchTooLarge');
+        if (drafts.length > 20) throw const AiWriteRefused('batchTooLarge');
         final items = <AiDraftPreview>[];
         final ids = <int>{};
         for (final draft in drafts) {
           final id = draft['id'];
           final body = draft['note'];
           if (id is! int || id < 1 || body is! String || !ids.add(id)) {
-            throw const AiJournalException('draftsChanged');
+            throw const AiWriteRefused('draftsChanged');
           }
           final created = request.segmentCreated.contains(AiCreatedRef(
             accountKey: accountKey, kind: AiTargetKind.note,
@@ -259,7 +259,7 @@ extension _MergePrepare on GitLabAiWritePort {
           items.add(AiDraftPreview(id: id, body: body, createdInSegment: created));
           if (!created) reasons.add(AiFixedConfirmReason.foreignDraftsInPublish);
         }
-        if (drafts.isEmpty) throw const AiJournalException('draftsChanged');
+        if (drafts.isEmpty) throw const AiWriteRefused('draftsChanged');
         items.sort((a, b) => a.id.compareTo(b.id));
         binding['drafts'] = _mergeDraftDigest(drafts);
         facts = AiTierFacts(reasons: List.unmodifiable(reasons.toSet()));
@@ -272,7 +272,7 @@ extension _MergePrepare on GitLabAiWritePort {
         final id = _positive(a, 'noteId');
         final draft = await _api.record([...path, 'draft_notes', '$id']);
         if (draft['id'] != id || draft['note'] is! String) {
-          throw const AiJournalException('draftsChanged');
+          throw const AiWriteRefused('draftsChanged');
         }
         binding['drafts'] = _mergeDraftDigest([draft]);
         preview = AiDeletePreview(targetName: '!$iid', count: 1);
@@ -285,7 +285,7 @@ extension _MergePrepare on GitLabAiWritePort {
     dependencies.add(mrConflict);
     final digest = _mergeDigest(binding);
     if (previous != null && _mergeDigest(previous) != digest) {
-      throw AiJournalException(op == 'publishDraftNotes' || op == 'deleteDraftNote'
+      throw AiWriteRefused(op == 'publishDraftNotes' || op == 'deleteDraftNote'
         ? 'draftsChanged' : 'headMoved');
     }
     final active = memory.snapshots.entries.where((entry) => entry.value['expired'] != true);
@@ -366,9 +366,9 @@ extension _MergePrepare on GitLabAiWritePort {
       return await _api.record(path, query: query);
     } on ApiFailure catch (error) {
       if (error.status == 404 || error.kind == FailureKind.unsupported) {
-        throw const AiJournalException('mergeCheckUnsupported');
+        throw const AiWriteRefused('mergeCheckUnsupported');
       }
-      throw const AiJournalException('mergeCheckIncomplete');
+      throw const AiWriteRefused('mergeCheckIncomplete');
     }
   }
 
@@ -384,17 +384,17 @@ extension _MergePrepare on GitLabAiWritePort {
       }
     } on ApiFailure catch (error) {
       if (error.status == 404 || error.kind == FailureKind.unsupported) {
-        throw const AiJournalException('mergeCheckUnsupported');
+        throw const AiWriteRefused('mergeCheckUnsupported');
       }
-      throw const AiJournalException('mergeCheckIncomplete');
+      throw const AiWriteRefused('mergeCheckIncomplete');
     }
-    throw const AiJournalException('mergeCheckIncomplete');
+    throw const AiWriteRefused('mergeCheckIncomplete');
   }
 }
 
 String _mergeSha(Object? value) {
   if (value is! String || !RegExp(r'^(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})$').hasMatch(value)) {
-    throw const AiJournalException('mergeCheckIncomplete');
+    throw const AiWriteRefused('mergeCheckIncomplete');
   }
   return value;
 }

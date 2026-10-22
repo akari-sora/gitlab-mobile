@@ -335,7 +335,8 @@ void main() {
             );
           }
         }
-        expect(productionAiLedger.find('markAllTodosDone'), isNull);
+        expect(productionAiLedger.find('markAllTodosDone')!.baseTier,
+            AiWriteTier.t4);
         final AiTierDecision mention = _decide(
           operationId: 'createNote',
           tier: AiWriteTier.t2,

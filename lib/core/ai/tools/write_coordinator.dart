@@ -1775,6 +1775,7 @@ String _singleLine(String value) =>
 
 String _reason(Object error) => switch (error) {
   _WriteBlocked(:final reason) => reason,
+  port.AiWriteRefused(:final reason) => reason,
   AiJournalException(:final reason) => reason,
   _ => 'preflightFailed',
 };
@@ -1929,7 +1930,11 @@ Uri? _webLink(_PendingWrite pending, Map<String, Object?> projection) {
     'createMergeRequest' when positive(projection['iid']) != null => page(
       'merge_requests/${projection['iid']}',
     ),
-    'createLabel' || 'updateLabel' => page('labels'),
+    'deleteIssue' => page('issues'),
+    'deleteMergeRequest' => page('merge_requests'),
+    'deleteLabel' || 'createLabel' || 'updateLabel' => page('labels'),
+    'deleteMilestone' => page('milestones'),
+    'deleteBoard' => page('boards'),
     'createMilestone' || 'updateMilestone' || 'setMilestoneState' =>
       positive(projection['iid']) == null
           ? page('milestones')
@@ -1941,7 +1946,8 @@ Uri? _webLink(_PendingWrite pending, Map<String, Object?> projection) {
     'renameBoard' ||
     'setBoardSystemListHidden' ||
     'createBoardList' ||
-    'moveBoardList' =>
+    'moveBoardList' ||
+    'deleteBoardList' =>
       positive(args['boardId']) == null
           ? page('boards')
           : page('boards/${args['boardId']}'),

@@ -23,7 +23,7 @@ extension _ProjectPrepare on GitLabAiWritePort {
       throw const ApiFailure(FailureKind.unauthenticated);
     }
     if (personal && !_projectSegment(user.username)) {
-      throw const AiJournalException('personalNamespaceUnknown');
+      throw const AiWriteRefused('personalNamespaceUnknown');
     }
     final p = creating
         ? <String, dynamic>{}
@@ -60,7 +60,7 @@ extension _ProjectPrepare on GitLabAiWritePort {
         if (links is! Map ||
             links['delete_api_path'] is! String ||
             (links['delete_api_path'] as String).isEmpty) {
-          throw const AiJournalException('packageNotDeletable');
+          throw const AiWriteRefused('packageNotDeletable');
         }
         // Match RegistryPackage.identity without following its supplied URL.
         final name = _responseText(value, 'name');
@@ -100,13 +100,13 @@ extension _ProjectPrepare on GitLabAiWritePort {
       case 'deleteContainerTag':
         _projectNotArchived(p);
         if (await _api.effectiveProjectAccess(project!, user.id) < 40) {
-          throw const AiJournalException('maintainerRequired');
+          throw const AiWriteRefused('maintainerRequired');
         }
         final repository = _positive(a, 'repositoryId');
         final path = ['projects', '$project', 'registry', 'repositories', '$repository'];
         final value = await _projectContainer(path);
         if (value['id'] != repository || value['project_id'] != project) {
-          throw const AiJournalException('containerMissing');
+          throw const AiWriteRefused('containerMissing');
         }
         final repositoryPath = _responseText(value, 'path');
         confirmName = repositoryPath;
@@ -120,7 +120,7 @@ extension _ProjectPrepare on GitLabAiWritePort {
           final tagPath = [...path, 'tags', tag];
           final value = await _projectContainer(tagPath);
           if (_responseText(value, 'name') != tag) {
-            throw const AiJournalException('containerMissing');
+            throw const AiWriteRefused('containerMissing');
           }
           confirmName = '$repositoryPath:${value['name']}';
           binding.addAll([tag, value['digest'], value['revision']]);
@@ -185,7 +185,7 @@ extension _ProjectPrepare on GitLabAiWritePort {
       case 'forkProject':
         final path = _responseText(p, 'path');
         if (!_projectSegment(path)) {
-          throw const AiJournalException('personalNamespaceUnknown');
+          throw const AiWriteRefused('personalNamespaceUnknown');
         }
         final destination = '${user.username}/$path';
         confirmName = releaseName = destination;
@@ -239,7 +239,7 @@ extension _ProjectPrepare on GitLabAiWritePort {
       return await _api.record(path);
     } on ApiFailure catch (error) {
       if (error.status != 404) rethrow;
-      throw const AiJournalException('containerMissing');
+      throw const AiWriteRefused('containerMissing');
     }
   }
 
@@ -269,7 +269,7 @@ extension _ProjectPrepare on GitLabAiWritePort {
 }
 
 void _projectNotArchived(Map<String, dynamic> project) {
-  if (project['archived'] == true) throw const AiJournalException('projectArchived');
+  if (project['archived'] == true) throw const AiWriteRefused('projectArchived');
 }
 
 bool _projectSegment(String value) =>

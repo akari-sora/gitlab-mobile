@@ -562,7 +562,7 @@ void main() {
           }),
         ),
         throwsA(
-          isA<AiJournalException>().having(
+          isA<port.AiWriteRefused>().having(
             (e) => e.reason,
             'code',
             'pipelineVariableForbidden',
@@ -587,7 +587,7 @@ void main() {
           }),
         ),
         throwsA(
-          isA<AiJournalException>().having(
+          isA<port.AiWriteRefused>().having(
             (e) => e.reason,
             'code',
             'pipelineVariableSecret',
@@ -617,7 +617,7 @@ void main() {
       await expectLater(
         p.prepare(f.request('createPipeline', {'ref': 'feature/test'})),
         throwsA(
-          isA<AiJournalException>().having(
+          isA<port.AiWriteRefused>().having(
             (e) => e.reason,
             'code',
             'refMissing',
@@ -669,7 +669,7 @@ void main() {
       await expectLater(
         p.prepare(f.request('jobAction', {'jobId': 21, 'action': 'retry'})),
         throwsA(
-          isA<AiJournalException>().having(
+          isA<port.AiWriteRefused>().having(
             (e) => e.reason,
             'code',
             'jobNotInPipeline',
@@ -856,7 +856,7 @@ void main() {
         scope: coordScope,
         arguments: {'projectId': 9, 'scheduleId': 4},
       );
-      await expectLater(p.prepare(bad), throwsA(isA<AiJournalException>()));
+      await expectLater(p.prepare(bad), throwsA(isA<port.AiWriteRefused>()));
     },
   );
 
