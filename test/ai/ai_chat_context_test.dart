@@ -34,6 +34,7 @@ void main() {
     final result = await _load(const AiGeneralOrigin(), adapter);
     expect(result.scope, isNull);
     expect(result.built.blocks, isEmpty);
+    expect(result.built.readInternal, isFalse);
     expect(adapter.requests, isEmpty);
   });
 
@@ -117,6 +118,7 @@ void main() {
     expect(result.scope!.defaultBranch, 'main');
     expect(result.built.blocks.single.text, contains('newest note'));
     expect(result.built.blocks.single.text, contains('"internal":true'));
+    expect(result.built.readInternal, isTrue);
     expect(result.built.pinnedSha, _head);
   });
 
@@ -275,6 +277,7 @@ void main() {
         isNot(contains('system MR note')),
       );
       expect(result.built.blocks.single.text, contains('"internal":true'));
+      expect(result.built.readInternal, isTrue);
     },
   );
 

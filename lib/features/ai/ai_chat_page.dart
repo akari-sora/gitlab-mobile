@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/ai/ai_display.dart';
+import '../../core/ai/quick_actions.dart';
 import '../../core/ai/runner.dart';
 import '../../core/failure.dart';
 import '../../core/providers.dart';
@@ -14,6 +15,8 @@ import '../../shared/theme.dart';
 import '../../shared/workspace_ui.dart';
 import 'ai_chat_session.dart';
 import 'ai_consent_dialog.dart';
+import 'ai_draft_preview.dart';
+import 'ai_draft_target.dart';
 import 'ai_message_body.dart';
 import 'ai_scope.dart';
 import 'ai_settings_page.dart';
@@ -23,7 +26,7 @@ import 'ai_settings_page.dart';
 Future<bool> openAiChat(
   BuildContext context,
   AiChatOrigin origin, {
-  Future<void> Function(String text)? onInsertDraft,
+  AiDraftTarget? draftTarget,
 }) async {
   final registry = AiRunRegistry.maybeOf(context);
   if (registry == null || AiScope.maybeOf(context) == null) return false;
@@ -41,7 +44,7 @@ Future<bool> openAiChat(
       builder: (_) => AiChatPage(
         session: session,
         summarize: summarize,
-        onInsertDraft: onInsertDraft,
+        draftTarget: draftTarget,
       ),
     ),
   );
@@ -89,13 +92,18 @@ class AiChatPage extends StatefulWidget {
     super.key,
     required this.session,
     this.summarize = false,
-    this.onInsertDraft,
+    this.draftTarget,
+    this.analyzeDraft = analyzeAiDraft,
   });
 
   final AiChatSession session;
 
-  /// Opens the originating resource's ordinary comment editor, without sending.
-  final Future<void> Function(String text)? onInsertDraft;
+  /// The comment draft a finished answer can be appended to; null when the
+  /// origin offers none.
+  final AiDraftTarget? draftTarget;
+
+  /// Checks an answer before it is appended; tests run it in place.
+  final AiDraftAnalyzer analyzeDraft;
 
   /// Opened from "AI summary": send the summary request once, when the empty
   /// conversation is ready.
@@ -108,10 +116,14 @@ class AiChatPage extends StatefulWidget {
 class _AiChatPageState extends State<AiChatPage> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
+  final _messenger = GlobalKey<ScaffoldMessengerState>();
 
   /// Whether the last build showed the blocker or preparing card.
   var _showedNotice = false;
   var _insertingDraft = false;
+
+  /// The draft is being read and checked, before the preview opens.
+  var _preparingDraft = false;
 
   /// "AI summary" sends its request once, when the empty session is ready.
   late bool _pendingSummary;
@@ -158,23 +170,133 @@ class _AiChatPageState extends State<AiChatPage> {
   void _inputChanged() => setState(() {});
 
   Future<void> _insertDraft(AiAssistantItem item) async {
-    final insert = widget.onInsertDraft;
-    if (insert == null ||
+    final target = widget.draftTarget;
+    final origin = _session.origin;
+    final items = _session.items;
+    final index = items.indexOf(item);
+    if (target == null ||
         _insertingDraft ||
-        _session.origin is! AiWorkItemOrigin ||
-        _session.phase != AiChatPhase.idle ||
+        origin is! AiWorkItemOrigin ||
         item.state != AiAssistantState.done ||
-        !_session.items.contains(item)) {
+        index < 0 ||
+        !_canInsert(item)) {
       return;
     }
-    final text = _session.displaySafe(item.text);
-    if (text.trim().isEmpty) return;
-    setState(() => _insertingDraft = true);
+    final safe = _session.draftSafe(item.text);
+    if (safe.trim().isEmpty) return;
+    final String text;
     try {
-      await insert(text);
-    } finally {
-      if (mounted) setState(() => _insertingDraft = false);
+      // GitLab runs a line that starts with `/` as a quick action when the
+      // comment is posted; the answer must never do that.
+      text = neutralizeForGitLabDraft(safe);
+    } on StateError {
+      // Cannot happen (every such line was just indented); refuse rather
+      // than append text that was not checked.
+      return;
     }
+    setState(() => _insertingDraft = _preparingDraft = true);
+    try {
+      // Mentions are checked on what will be posted: the draft already
+      // waiting there followed by the answer, as the editor joins them.
+      final String existing;
+      try {
+        existing = await target.existingText();
+      } on Object {
+        _notice(l10n.aiDraftUnreadable);
+        return;
+      }
+      final AiDraftAnalysis analysis;
+      try {
+        analysis = await widget.analyzeDraft(text, existing);
+      } on Object {
+        _notice(l10n.aiDraftCheckFailed);
+        return;
+      }
+      if (!mounted) return;
+      setState(() => _preparingDraft = false);
+      if (!_canInsert(item)) {
+        _notice(l10n.aiDraftChanged);
+        return;
+      }
+      final before = items.take(index).toList(growable: false);
+      final chosen = await showAiDraftPreview(
+        context,
+        target: _draftTarget(origin),
+        asWritten: analysis.asWritten,
+        neutralized: analysis.neutralized,
+        afterExisting: existing.isNotEmpty,
+        quickActionLines: quickActionLineCount(safe),
+        sources: _draftSources(items, index),
+        // The model saw everything read earlier in the conversation, not
+        // only in this turn. Whether the target is confidential is asked
+        // now, because a kept conversation can outlive a change to it.
+        confidential:
+            !target.confidential() &&
+            before.whereType<AiToolRunItem>().any((tool) => tool.confidential),
+        internal:
+            before.whereType<AiToolRunItem>().any((tool) => tool.internal) ||
+            before.whereType<AiUserItem>().any(
+              (user) => user.chips.any((chip) => chip.internal),
+            ),
+      );
+      if (chosen == null || !mounted) return;
+      if (!_canInsert(item)) {
+        _notice(l10n.aiDraftChanged);
+        return;
+      }
+      if (chosen.split('\n').any((line) => line.startsWith('/'))) return;
+      await target.insert(chosen);
+    } finally {
+      if (mounted) setState(() => _insertingDraft = _preparingDraft = false);
+    }
+  }
+
+  /// The chat is in front, waiting, and [item] is still in the conversation.
+  bool _canInsert(AiAssistantItem item) =>
+      mounted &&
+      (ModalRoute.of(context)?.isCurrent ?? false) &&
+      _session.phase == AiChatPhase.idle &&
+      _session.items.contains(item);
+
+  /// Says why nothing was appended, while the chat is in front. When another
+  /// page covers it, that page is the reason, and the notice would not be
+  /// seen anyway.
+  void _notice(String message) {
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return;
+    // The page's own messenger, which this state sits above.
+    _messenger.currentState?.showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String _draftTarget(AiWorkItemOrigin origin) {
+    final reference = origin.kind == AiWorkItemKind.mergeRequest
+        ? '!${origin.iid}'
+        : '#${origin.iid}';
+    return '${isolated(origin.project.path)} · ${isolated(reference)}';
+  }
+
+  /// What the answer at [index] drew on: the context sent with its question
+  /// and the tools it ran, as preview labels.
+  List<String> _draftSources(List<AiChatItem> items, int index) {
+    final sources = <String>[];
+    for (var at = index - 1; at >= 0; at--) {
+      final item = items[at];
+      if (item is AiUserItem) {
+        sources.insertAll(0, [
+          for (final chip in item.chips)
+            if (!chip.blocked) isolated(_chipName(chip)),
+        ]);
+        break;
+      }
+      if (item is AiToolRunItem && item.status == AiToolRunStatus.completed) {
+        sources.insert(
+          0,
+          item.argsPreview.isEmpty
+              ? _toolLabel(item.name)
+              : '${_toolLabel(item.name)} · ${isolated(item.argsPreview)}',
+        );
+      }
+    }
+    return sources;
   }
 
   Future<bool> _confirmCleartext() async {
@@ -288,6 +410,7 @@ class _AiChatPageState extends State<AiChatPage> {
         // Its own messenger, so a snack bar the app shows elsewhere (such as
         // an update notice) never covers the composer.
         return ScaffoldMessenger(
+          key: _messenger,
           child: Scaffold(
             appBar: AppBar(
               title: Column(
@@ -399,12 +522,13 @@ class _AiChatPageState extends State<AiChatPage> {
         _ChatItemView(
           item: item,
           onInsertDraft:
-              widget.onInsertDraft != null &&
+              widget.draftTarget != null &&
                   _session.origin is AiWorkItemOrigin &&
-                  _session.phase == AiChatPhase.idle &&
-                  !_insertingDraft
+                  _session.phase == AiChatPhase.idle
               ? _insertDraft
               : null,
+          insertingDraft: _insertingDraft,
+          preparingDraft: _preparingDraft,
         ),
       if (_session.phase == AiChatPhase.running &&
           !(items.last is AiAssistantItem &&
@@ -624,10 +748,21 @@ class _EmptyConversation extends StatelessWidget {
 }
 
 class _ChatItemView extends StatelessWidget {
-  const _ChatItemView({required this.item, this.onInsertDraft});
+  const _ChatItemView({
+    required this.item,
+    this.onInsertDraft,
+    this.insertingDraft = false,
+    this.preparingDraft = false,
+  });
 
   final AiChatItem item;
   final void Function(AiAssistantItem item)? onInsertDraft;
+
+  /// An append is under way; every append button waits for it.
+  final bool insertingDraft;
+
+  /// The draft is still being checked; the buttons say so.
+  final bool preparingDraft;
 
   @override
   Widget build(BuildContext context) => switch (item) {
@@ -635,6 +770,8 @@ class _ChatItemView extends StatelessWidget {
     final AiAssistantItem assistant => _AssistantMessage(
       item: assistant,
       onInsertDraft: onInsertDraft,
+      insertingDraft: insertingDraft,
+      preparingDraft: preparingDraft,
     ),
     final AiToolRunItem tool => _ToolRow(item: tool),
     final AiNoticeItem notice => _NoticeRow(item: notice),
@@ -685,6 +822,18 @@ class _UserMessage extends StatelessWidget {
     );
   }
 }
+
+String _chipName(AiContextChip chip) => switch (chip.resource) {
+  _ when _isSummaryChip(chip) => l10n.aiChatSummaryChip,
+  null => chip.source,
+  final resource when chip.source == 'file' => resource.split('/').last,
+  final resource => resource,
+};
+
+/// After a conversation is condensed, its summary is sent instead of the
+/// page.
+bool _isSummaryChip(AiContextChip chip) =>
+    chip.source == 'conversation_summary';
 
 class _ContextChip extends StatelessWidget {
   const _ContextChip({required this.chip});
@@ -742,16 +891,9 @@ class _ContextChip extends StatelessWidget {
 
   /// The page the content came from: a file name, `!iid`, `#iid` or the job
   /// name. Older chips without one show their source tag.
-  String get _name => switch (chip.resource) {
-    _ when _isSummary => l10n.aiChatSummaryChip,
-    null => chip.source,
-    final resource when chip.source == 'file' => resource.split('/').last,
-    final resource => resource,
-  };
+  String get _name => _chipName(chip);
 
-  /// After a conversation is condensed, its summary is sent instead of the
-  /// page.
-  bool get _isSummary => chip.source == 'conversation_summary';
+  bool get _isSummary => _isSummaryChip(chip);
 
   void _showSent(BuildContext context) {
     final text = chip.sentText ?? chip.preview;
@@ -847,10 +989,17 @@ List<String> _sentParts(String text) {
 }
 
 class _AssistantMessage extends StatelessWidget {
-  const _AssistantMessage({required this.item, this.onInsertDraft});
+  const _AssistantMessage({
+    required this.item,
+    this.onInsertDraft,
+    this.insertingDraft = false,
+    this.preparingDraft = false,
+  });
 
   final AiAssistantItem item;
   final void Function(AiAssistantItem item)? onInsertDraft;
+  final bool insertingDraft;
+  final bool preparingDraft;
 
   @override
   Widget build(BuildContext context) {
@@ -935,9 +1084,16 @@ class _AssistantMessage extends StatelessWidget {
           Align(
             alignment: AlignmentDirectional.centerStart,
             child: TextButton.icon(
-              icon: const Icon(Icons.add_comment_outlined, size: 18),
+              key: const ValueKey('ai-chat-insert-draft'),
+              // Checking a long answer can take a moment; say so in place.
+              icon: preparingDraft
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.add_comment_outlined, size: 18),
               label: Text(l10n.aiChatInsertDraft),
-              onPressed: () => onInsertDraft!(item),
+              onPressed: insertingDraft ? null : () => onInsertDraft!(item),
             ),
           ),
       ],

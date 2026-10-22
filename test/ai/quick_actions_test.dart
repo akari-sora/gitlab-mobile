@@ -104,4 +104,31 @@ void main() {
       expect(result, isNot(input), reason: input);
     }
   });
+
+  test('counts the lines that neutralization changes', () {
+    const cases = <String, int>{
+      '': 0,
+      'no actions': 0,
+      '/merge': 1,
+      'ok\n/merge\r\n/close': 2,
+      'a\n\r/merge': 1,
+      // A CR alone joins the lines, as GitLab does, so nothing starts a line.
+      'x\r/merge': 0,
+      ' /already\n//double': 1,
+    };
+    for (final entry in cases.entries) {
+      expect(quickActionLineCount(entry.key), entry.value, reason: entry.key);
+      final changed = _changedLines(entry.key);
+      expect(changed, entry.value, reason: entry.key);
+    }
+  });
+}
+
+int _changedLines(String text) {
+  final before = text.replaceAll('\r\n', '\n').replaceAll('\r', '').split('\n');
+  final after = neutralizeForGitLabDraft(text).split('\n');
+  return [
+    for (var i = 0; i < before.length; i++)
+      if (before[i] != after[i]) i,
+  ].length;
 }

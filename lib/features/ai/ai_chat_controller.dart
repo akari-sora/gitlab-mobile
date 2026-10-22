@@ -189,6 +189,18 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     }
   }
 
+  @override
+  String draftSafe(String text) {
+    try {
+      // GitLab deletes every CR of a comment. Do it before redacting, so a
+      // secret split by a CR is joined, and caught, here rather than later.
+      final lines = text.replaceAll('\r\n', '\n').replaceAll('\r', '');
+      return _redactor.redactSource(lines.replaceAll(_draftControls, '')).text;
+    } on Object {
+      return '';
+    }
+  }
+
   void _notify() {
     _streamNotification?.cancel();
     _streamNotification = null;
@@ -433,9 +445,8 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       onToolResult: (result) {
         if (!current()) return;
         final pending = _pendingTools.indexWhere((p) => p.id == result.callId);
-        final index = pending < 0
-            ? null
-            : _pendingTools.removeAt(pending).index;
+        final completed = pending < 0 ? null : _pendingTools.removeAt(pending);
+        final index = completed?.index;
         final started = index == null ? null : _items[index];
         final item = AiToolRunItem(
           name: _toolName(result.name),
@@ -451,6 +462,18 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           provenance: _toolProvenance(result),
           truncated: result.truncated,
           blocked: result.blockedSensitive,
+          confidential:
+              pending >= 0 &&
+              !result.notExecuted &&
+              !result.isError &&
+              !result.blockedSensitive &&
+              result.readConfidential,
+          internal:
+              pending >= 0 &&
+              !result.notExecuted &&
+              !result.isError &&
+              !result.blockedSensitive &&
+              result.readInternal,
           resultExcerpt: _toolExcerpt(result.plainData.plainText),
         );
         if (index == null) {
@@ -654,7 +677,11 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   /// A chip for a block that is already redacted, as sent. Its preview is
   /// cut from the redacted text. [sizeChars] keeps the size that was sent
   /// when a later pass redacts more.
-  AiContextChip _sentChip(AiContextBlock sent, {int? sizeChars}) {
+  AiContextChip _sentChip(
+    AiContextBlock sent, {
+    int? sizeChars,
+    bool? internal,
+  }) {
     final resource = _originResource;
     final pinned = _context?.built.pinnedSha;
     return AiContextChip(
@@ -668,6 +695,10 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       sizeChars: sizeChars ?? sent.text.length,
       pinnedSha: pinned == null ? null : _redactor.redactSource(pinned).text,
       block: sent,
+      internal:
+          internal ??
+          (sent.source != 'conversation_summary' &&
+              (_context?.built.readInternal ?? false)),
     );
   }
 
@@ -795,6 +826,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
                 _sentChip(
                   block.redact(_redactor, source: safe),
                   sizeChars: chip.sizeChars,
+                  internal: chip.internal,
                 )
               else
                 AiContextChip(
@@ -803,6 +835,7 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
                   sentText: chip.sentText == null ? null : safe(chip.sentText!),
                   sizeChars: chip.sizeChars,
                   blocked: chip.blocked,
+                  internal: chip.internal,
                   type: chip.type,
                   resource: chip.resource == null ? null : safe(chip.resource!),
                   pinnedSha: chip.pinnedSha == null
@@ -822,6 +855,8 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
           :final truncated,
           :final blocked,
           :final resultExcerpt,
+          :final confidential,
+          :final internal,
         ) =>
           AiToolRunItem(
             name: safe(name),
@@ -832,6 +867,8 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
             truncated: truncated,
             blocked: blocked,
             resultExcerpt: safe(resultExcerpt),
+            confidential: confidential,
+            internal: internal,
           ),
         final AiNoticeItem notice => notice,
       };
@@ -849,6 +886,8 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       :final sizeChars,
       :final truncated,
       :final blocked,
+      :final confidential,
+      :final internal,
     ) =>
       AiToolRunItem(
         name: name,
@@ -858,6 +897,8 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
         provenance: '',
         truncated: truncated,
         blocked: blocked,
+        confidential: confidential,
+        internal: internal,
       ),
     final AiNoticeItem notice => notice,
   };
@@ -988,6 +1029,13 @@ String _newId() => List.generate(
 final _displayControls = RegExp(
   r'[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e'
   r'\u2060-\u2069\ufeff]',
+);
+
+/// [_displayControls] without the tab and line feed, which a multi-line draft
+/// needs (`draftSafe` removes carriage returns before it).
+final _draftControls = RegExp(
+  r'[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u061c'
+  r'\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]',
 );
 
 // Keep catalogue identifiers only; provider-chosen unknown names are untrusted.

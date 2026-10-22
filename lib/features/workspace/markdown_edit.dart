@@ -140,8 +140,10 @@ MarkupEdit insertQuickAction(String text, int rawStart, int rawEnd, String comma
 
 List<String> extractQuickActions(String text) {
   final actions = <String>[];
-  final lines = text.split('\n');
-  final pattern = RegExp(r'^\s*(/\w+)');
+  // GitLab deletes `\r` and then runs only a `/` in the first column
+  // (`^\/` in lib/gitlab/quick_actions/extractor.rb); an indented line is text.
+  final lines = text.replaceAll('\r', '').split('\n');
+  final pattern = RegExp(r'^(/\w+)');
   bool inCodeBlock = false;
   for (final line in lines) {
     final trimmed = line.trim();

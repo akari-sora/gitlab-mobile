@@ -7092,4 +7092,61 @@ final class AppStrings {
 
   /// 附加到留言草稿
   String get aiChatInsertDraft => language._messages[2332];
+
+  /// 附加前確認
+  String get aiDraftPreviewTitle => language._messages[2333];
+
+  /// 這段對話讀過機密議題，但這裡不是機密議題。附加前請確認回答沒有透露機密內容。
+  String get aiDraftConfidential => language._messages[2334];
+
+  /// 已停用快捷指令：{count} 行。行首加了空格，送出時不會執行。
+  String aiDraftQuickActions(Object? count) => _format(language, language._messages[2335], {'count': count});
+
+  /// 議題與合併請求參照：{count} 個。送出後，被參照的頁面會出現提及紀錄。
+  String aiDraftReferences(Object? count) => _format(language, language._messages[2336], {'count': count});
+
+  /// 這個回答讀取了
+  String get aiDraftSources => language._messages[2337];
+
+  /// 還有 {count} 項
+  String aiDraftMore(Object? count) => _format(language, language._messages[2338], {'count': count});
+
+  /// 要附加的文字
+  String get aiDraftText => language._messages[2339];
+
+  /// 只會附加到草稿，不會送出。要送出時，請在編輯器檢查內容後按儲存。
+  String get aiDraftNotSent => language._messages[2340];
+
+  /// 附加到草稿
+  String get aiDraftConfirm => language._messages[2341];
+
+  /// 已停用這段回答裡的提及通知：{count} 個。這些提及改以程式碼格式顯示，不會通知任何人。
+  String aiDraftMentionsOff(Object? count) => _format(language, language._messages[2342], {'count': count});
+
+  /// 這段回答中送出後仍會發出通知的提及：{count} 個
+  String aiDraftMentionsNotify(Object? count) => _format(language, language._messages[2343], {'count': count});
+
+  /// 保留提及通知
+  String get aiDraftKeepMentions => language._messages[2344];
+
+  /// 我了解送出後會通知這些使用者
+  String get aiDraftAcknowledge => language._messages[2345];
+
+  /// 這段對話讀過內部備註，只有專案成員看得到。附加前請確認回答沒有透露內部備註的內容。
+  String get aiDraftInternal => language._messages[2346];
+
+  /// 這段回答會接在你尚未送出的草稿後面。提及與參照依合併後的內容檢查；原本草稿的內容（包括其中的快捷指令）維持不變。
+  String get aiDraftAfterExisting => language._messages[2347];
+
+  /// 預覽只顯示開頭，完整內容會出現在編輯器。
+  String get aiDraftPreviewCut => language._messages[2348];
+
+  /// 對話已經變了，所以沒有附加。
+  String get aiDraftChanged => language._messages[2349];
+
+  /// 讀不到這則留言的草稿，所以沒有附加。
+  String get aiDraftUnreadable => language._messages[2350];
+
+  /// 無法檢查這段回答，所以沒有附加。
+  String get aiDraftCheckFailed => language._messages[2351];
 }

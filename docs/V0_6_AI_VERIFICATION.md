@@ -1142,3 +1142,373 @@ exact-head required jobs gate the merge. This local evidence does not claim CI
 success. Android is the current validation priority. iOS validation is deferred
 for this merge decision and remains an open product-acceptance lane; the deferral
 is not iOS evidence.
+
+### MR6a-3: preview before an answer joins a comment draft
+
+!98 appended the display-safe answer to the comment draft as written. The plan
+(v5 §6.6) also requires the answer to be made safe for GitLab first and shown in a
+preview. `neutralizeForGitLabDraft` existed with tests but had no caller. This
+MR closes that gap:
+
+- **Quick actions.** GitLab runs a line whose first character is `/` (after it
+  deletes `\r`) when a comment is posted, and the editor field has quick actions
+  on. The answer now goes through `neutralizeForGitLabDraft` before anything
+  else, and the result is checked again after the preview. The preview reports
+  how many lines changed (`quickActionLineCount`).
+- **Mentions.** `analyzeDraftMentions` (`lib/core/ai/draft_mentions.dart`) wraps
+  each `@name` candidate in a code span, from last to first, and keeps a wrap only
+  when reparsing with `package:markdown` 7.3.1 shows the code-text multiset grew
+  by exactly that token and one fewer mention is outside code. The candidate
+  pattern is a superset of GitLab's (`@all`, groups, `-@`, `.@`, `+@`); emails
+  are excluded. A mention it cannot neutralize (an HTML block, an adjacent or
+  unpaired backtick, more than 50 candidates) is listed, and the append stays
+  disabled until the user ticks "I understand that posting notifies these
+  users". "Keep mention notifications" appends the text unchanged.
+- **References.** `#12`, `!34`, `group/project#12` and issue, merge request or
+  work item URLs outside code are counted, because posting adds a mention note
+  to each.
+- **Sources and confidentiality.** The preview lists what the answer drew on:
+  the context sent with its question and the tools that turn ran. Tool results
+  now carry `readConfidential` when `get_issue` or an issue search returned an
+  issue with `confidential: true`. The flag is display-only: provider request
+  bodies are byte-identical either way (tested for all three formats). The
+  history codec stores `confidential: true` only when set, so older records are
+  unchanged. If any earlier read in the conversation was confidential and the
+  target is not a confidential issue, the preview warns before appending.
+- Nothing is posted from the preview. The append still opens the ordinary
+  editor, and posting still needs Save.
+
+Synthetic suites:
+- `test/ai/draft_mentions_test.dart`. Its generated strings check the
+  analyzer's self-consistency against `package:markdown` 7.3.1 only. The oracle
+  is the same parser, so they do not show agreement with GitLab's renderer,
+  which stays `NOT_VERIFIED`.
+- `test/ai/ai_confidential_read_test.dart`.
+- Added cases in `test/ai/ai_chat_controller_test.dart` and
+  `test/ai/quick_actions_test.dart`.
+- The append-preview group in `test/ai/ai_chat_page_test.dart`: quick actions,
+  mentions, acknowledgement, references, sources, the confidential warning,
+  cancel, a conversation that changed while the sheet was open, and 320 dp at
+  2x text in zh-TW and Arabic plus 640×360 landscape in English.
+- The two entry-point tests, which now confirm the preview first.
+
+Each of five guards in the insert flow was removed in turn, and each removal
+turned its test red: neutralization, mention handling, the acknowledgement
+gate, the target's own confidentiality, and the re-check after the sheet. The
+re-check was removed as a whole block. Review round 1 found that removing only
+its `contains(item)` condition went unnoticed; see below.
+
+The synthetic emulator target `tool/emulator_ai_comment.dart` now answers with a
+quick-action line, a mention and a reference after a confidential read, so one
+run shows every part of the preview.
+
+Two related fixes found on the emulator:
+
+- **Line breaks.** !98 passed the answer through the session's `displaySafe`,
+  which removes every control character, including line feeds, so an appended
+  answer arrived as one line and lost its paragraphs, lists and code. The draft
+  path now uses `draftSafe`: the same redaction and hidden-character removal,
+  keeping tabs and line breaks. The test fakes had kept newlines, so no test
+  saw it. The fake session now strips them from display text as the controller
+  does, and both the page test and a controller test fail if the draft goes
+  through `displaySafe` again.
+- **The editor's quick-action hint.** `extractQuickActions` matched indented
+  slashes (`^\s*/`), so the editor still listed ` /close` as a command after the
+  preview had disabled it. GitLab's extractor deletes `\r` and matches `^\/`
+  only (`lib/gitlab/quick_actions/extractor.rb`, master, read on 2026-10-22).
+  The hint now follows that rule. The existing test that expected an indented
+  `/label` to count was changed to match GitLab.
+
+Emulator runs on the project's Android API 36 emulator:
+
+- **Synthetic (`tool/emulator_ai_comment.dart`, gate on, commit `03df08d`).**
+  - The preview showed the confidential warning, mentions turned off (1),
+    quick actions turned off (1 line), references (1), the source
+    `Read issue · #7`, and the text with `` `@synthetic-reviewer` `` and
+    ` /close`.
+  - "Keep mention notifications" listed `@synthetic-reviewer` and restored the
+    text.
+  - Confirming opened the ordinary editor after the existing draft. The fixture
+    write count stayed 0 until Save, then became 1.
+  - The refreshed thread rendered the mention as code and `/close` as text.
+- **Real account and provider (gate-on build of `b6e24f3`).**
+  - OpenCode Go, Chat Completions, `glm-5.3-flash`; the key went in through
+    stdin into the obscured field. The chat was opened on the public MR !98 of
+    this project.
+  - The first answer, on the build before the line-break fix, showed the bug
+    above. The preview of that answer also turned `@username` into code and
+    counted `!98` as a reference.
+  - After the fix, a multi-paragraph answer with a heading and a list kept its
+    lines in the preview and in the editor.
+  - The editor was closed without Save; no GitLab write was made with the
+    token.
+  - The provider was deleted and the account removed afterwards. The emulator's
+    original APK was reinstalled and its installed SHA-256 matched the saved
+    copy.
+
+**NOT_RUN:**
+- a live answer that reads a confidential issue (no private data was used);
+- the preview's Arabic and landscape layouts on a device (widget tests only);
+- iOS and physical devices.
+
+#### Review round 1 (Codex GPT-6.1-Sol, Opus 5.5; both REQUEST CHANGES)
+
+- **Codex C1, encoded mentions in raw HTML.** `package:markdown` keeps a raw HTML
+  block as source text, so `<div>\n&#64;victim\n</div>` reported no mention,
+  although GitLab decodes the entity. This round added a small entity table.
+  Round 2 replaced it with an HTML parser, see below. A mention that exists
+  only after decoding cannot be wrapped, so it is listed and must be
+  acknowledged. Covered cases: `&#64;victim`,
+  `@&#118;ictim`, `&commat;all`, `&#64;group/subgroup`, and 51 encoded blocks.
+  `&#64;` is no longer counted as reference `#64`.
+- **Opus C1, the waiting draft changes how the answer parses.** The editor posts
+  `existing + "\n\n" + answer`. An unclosed fence or a list in the existing
+  draft can move `@Override` or an indented `@Test` out of code.
+  - The chat now reads the waiting draft first, through `readCommentDraft`.
+    That is the same key the editor uses, read after the account's pending
+    draft writes.
+  - It analyses the joined text (`analyzeDraftMentions(existing: …)`) and
+    wraps only candidates in the answer.
+  - It reports only the mentions and references the answer adds.
+  - The preview says the answer goes after the unsent draft. If the draft
+    cannot be read, nothing is appended and a notice says so.
+  - The editor itself, since !98, also refuses to append to a draft it cannot
+    read. The plan had said to append without saving; failing closed is kept
+    deliberately.
+- **Both, a stale target.** The run registry keeps a conversation by origin key,
+  so a conversation opened while an issue was confidential kept that value after
+  the issue was made public. The origin no longer carries confidentiality. The
+  page passes an `AiDraftTarget` with `existingText`, `confidential` and `insert`,
+  and `confidential` is read from the page's current data when the answer is
+  appended.
+- **Opus I1, analysis time.** A 64,000-character answer with 50 candidates took
+  about 1.7 s on a Mac. Drafts from 4,000 characters run on another isolate
+  (`Isolate.run`). Both results are computed once before the sheet opens, and
+  the append button shows a progress indicator meanwhile. The preview shows at
+  most the first 6,000 characters and says that the editor shows the rest.
+- **Re-checks after the sheet.** Inserting now requires that the chat page is
+  still the current route, the conversation is idle, and the answer is still in
+  it. Otherwise a notice says nothing was appended. Each condition has its own
+  test: a page pushed as the sheet closes, a phase change, and a replaced
+  conversation.
+- **Opus I4, internal notes.** Tool results now carry `readInternal` when
+  `get_issue` or `get_merge_request` returned a non-system note with
+  `internal: true` (or the older `confidential: true`). The page's own context
+  chip carries `internal` when it included such a note, set in
+  `AiChatController._sentChip` from `AiBuiltContext.readInternal`. Either one
+  shows a warning whatever the target, because an ordinary comment is visible
+  to everyone who can see the item. Neither flag reaches the provider: request
+  bytes are compared with each flag off, on, and both on, for all three
+  formats. History stores either flag only when true.
+- **Runner.** The runner rebuilt each tool result without the display flags, and
+  the controller re-attached them by call id. The runner now carries
+  `readConfidential` and `readInternal` itself, only for successful reads; the
+  controller's workaround is gone.
+- **Strings.**
+  - "Quick actions" now uses each catalog's existing `quickActionsTitle` term.
+  - The notice counts mentions that notify, not users, because `@all` and a
+    group reach many people.
+  - "Mentions turned off" is limited to this answer.
+  - English no longer says "1 lines".
+  - New: the internal-note warning, the existing-draft note, the cut preview,
+    "conversation changed" and "draft unreadable" notices.
+- **Mutations in this round.** Each of these removals turned its test red:
+  - not passing the existing draft to the analysis;
+  - not asking the target for its confidentiality;
+  - dropping the internal warning;
+  - dropping the route check;
+  - dropping the `contains(item)` check;
+  - replacing the page's confidentiality wiring with a constant. A value
+    captured when the chat opened was not caught until round 2.
+- **Not changed:**
+  - `x @. y` becomes ``x `@`. y``, which is cosmetic and safe.
+  - A new conversation that keeps the old items on screen also counts their
+    confidential reads, which over-warns.
+
+#### Review round 2 (Codex GPT-6.1-Sol, Opus 5.5; both REQUEST CHANGES)
+
+- **Entities, again (both).** The table missed:
+  - numeric references without a semicolon, which the HTML5 tokenizer still
+    decodes: `&#64victim`, `&#x40victim`, `&#X40victim`;
+  - named entities outside the table: `&fjlig;` gives `fj`, `&UnderBar;`
+    gives `_`.
+
+  The analysis now uses `package:html`, promoted from a transitive to a direct
+  dependency at the locked 0.15.7; the lock changed only in that entry's
+  `dependency:` line.
+  - Every Markdown text node is parsed as an HTML fragment. Raw HTML blocks are
+    included, and Markdown text is already escaped, so this decodes exactly
+    once.
+  - The final mention count walks the DOM of the whole rendered note, text node
+    by text node. It skips `code` and `pre`, and reads text nodes only, never
+    attributes. This matches GitLab 18.11 and later; round 3 below adds the
+    older parser.
+  - `&amp;#64;victim` stays text. `<div title="@alice">` is no longer reported.
+  - The tests compare against a render-and-parse check (`markdownToHtml`, then
+    `package:html`) that calls nothing in the analyzer. It is not independent:
+    it shares the HTML5 parser and the mention pattern. It covers the fixed
+    corpus of both reviews and 600 generated answers, each alone and after an
+    existing draft.
+  - A 3,990-character answer with 50 candidates took about 52 ms in JIT on a
+    Mac, but only in a benign layout; see round 3.
+- **CR in the waiting draft (Codex).** GitLab deletes every CR of a comment
+  before rendering when it processes quick actions. With an existing draft of
+  `log\r` + three backticks, the backticks start a fence locally but end up
+  mid-line on GitLab. The analysis now applies the same CR handling to the
+  existing draft and to the answer.
+- **CR before redaction (Opus).** `draftSafe` kept CRs, and they were removed
+  only later by `neutralizeForGitLabDraft`. A known secret split by a lone CR
+  therefore passed redaction and was then joined back together. `draftSafe`
+  now drops CRs first. A controller test covers a split secret.
+- **Page-boundary tests (Opus).** Three mutations had survived: an empty
+  `readDraftField`, an empty `existingText` on the page, and confidentiality
+  captured when the chat opened. A new entry-point test now saves a draft
+  under the real key and expects `existingText()` to return it. It also checks
+  that the preview shows the existing-draft note, and that a target created
+  earlier reports the issue as public after the page reloads. All three
+  mutations now turn it red.
+- **Smaller fixes.**
+  - `readCommentDraft` refuses a draft whose write marker the editor would
+    also refuse, so the preview does not open for an append that would not
+    happen.
+  - A failed analysis says the answer could not be checked; nothing is
+    appended.
+  - When another page covers the chat, no "conversation changed" notice is
+    shown.
+  - A 6,001-character answer now gets the "preview cut" note.
+  - The existing-draft note no longer points "above". It says mentions and
+    references are checked on the joined text and that the user's own draft,
+    including its quick actions, is left as it is.
+  - The notify count is limited to this answer.
+  - Thai uses its existing quick-action term.
+- **Residual, documented here.** The check covers the joined text at the
+  moment of appending. If the user then edits their own part of the draft in
+  the editor, for example by closing a fence they had left open, a mention
+  that was inside that code can become live. The editor's Save is not checked
+  again.
+
+#### Review round 3 (Codex: APPROVE WITH MINOR FIXES; Opus: REQUEST CHANGES)
+
+- **Two GitLab parsers (Opus I1).** GitLab 18.11 and later parse note HTML with
+  HTML5 (Gumbo). Earlier self-managed releases use libxml2's HTML4 parser.
+  - Under HTML5 an unclosed raw `<code>` is rebuilt in the next paragraph, so
+    the round-2 analyzer treated later mentions as code. libxml2 closes it, and
+    the mention is live there. Example: `Wrap the value in a <code>
+    element.\n\nThanks @victim`.
+  - The analysis now takes the union, per name the larger count, of:
+    - the whole-note HTML5 scan;
+    - a scan of each Markdown text node as its own fragment, which skips only
+      code that Markdown itself produced.
+  - The verify-by-reparse step uses the same union.
+  - The reviewer's 4,000-document fuzz was compared with Nokogiri's libxml2
+    and Gumbo parsers using GitLab's XPath. Documents with a mention the
+    analyzer neither wrapped nor listed: 0 under libxml2, 4 under Gumbo. The 4
+    are malformed `code`/`textarea` tag combinations.
+  - Raw `<code>@x</code>` and `<pre>@x</pre>` are now over-reported, wrapped
+    or listed, as before round 2. The tests say which expectations changed.
+  - Whether GitLab actually notifies in these cases is still `NOT_VERIFIED`.
+    No `POST /markdown` was made, and no instance older than 18.11 was used.
+- **Raw anchors (Codex M1).** A raw `<a href=".../-/issues/123">` is counted as
+  a reference again, from the rendered DOM. A Markdown link to the same URL
+  is not counted twice.
+- **Speed (Opus I3).**
+  - A short answer can still be slow. `package:markdown`'s GFM autolink scan is
+    quadratic on a long unbroken run of letters, and each candidate reparsed
+    the whole draft. So 50 mentions before 3,500 `x` took about 15 s.
+  - Candidates are now wrapped all at once and verified in one reparse,
+    falling back to one by one only if that check fails.
+  - Measured in JIT on a Mac: that case 504 ms, 10 mentions before 3,900 `x`
+    632 ms, `'x' * 6000 + 'Z'` 756 ms, the benign layout 3 ms.
+  - The page now always runs the check on another isolate, whatever the
+    length. It gives up after 30 s and then appends nothing ("The answer could
+    not be checked"). Round 4 below makes giving up stop the work.
+  - `AiChatPage.analyzeDraft` lets tests run the check in place. The entry
+    point tests and one page test use the real isolate.
+- **Flaky test (Opus I2).** The long-answer test used `'x' * 6000`, the parser's
+  slowest input, under a fixed two-second wait, so it failed on a loaded
+  machine. It now waits for the preview itself, up to 10 s, and uses `'x ' *
+  3000 + 'Z'`.
+- **Notices.** The unreadable, check-failed and changed notices all appear only
+  while the chat is in front. Tests cover a covered chat (searching offstage
+  too) and a failing check.
+- **Strings.** Malay uses its existing "quick action" term in the
+  existing-draft note.
+
+#### Review round 4 (Opus: APPROVE WITH MINOR FIXES; Codex: REQUEST CHANGES)
+
+- **A timed-out check kept running (Codex Important; Opus N2).**
+  `Future.timeout` only stopped the wait. The isolate went on until the
+  analysis finished, and a retry started another.
+  - The check now runs through `runWithDeadline`. It spawns its own isolate and
+    kills it on timeout, on error, or when it is done.
+  - Tests:
+    - a worker that keeps sending heartbeats stops sending them after the
+      deadline;
+    - a pathological draft (49 mentions, one candidate already in code, then
+      12,000 `x`) gives up at a 300 ms deadline instead of running to the
+      end;
+    - failures are reported.
+  - Removing the kill, the timeout, or the isolate each turns a test red.
+  - Leaving the chat does not cancel a check in progress; the 30 s deadline
+    still bounds it.
+- **References for both parsers (Codex M1; Opus N1).** References now use the
+  same two views as mentions: the whole-note HTML5 DOM, and per-text-node
+  fragments that skip code and pre inside each fragment.
+  - Each view subtracts the existing draft's own references, and the larger
+    total is reported.
+  - An anchor is counted once in either view.
+  - After an unclosed raw `<code>`, `#123` and `!45` count 2 again.
+  - On a 3,000-answer natural corpus, the number of answers where libxml2 sees
+    a reference that the preview shows as 0 went from 1,364 to 0. Gumbo
+    stayed at 0.
+  - Malformed HTML still differs in some cases (28 under libxml2, 3 under
+    Gumbo, out of 3,000).
+- **Tests the reviewers found missing (Opus N3).**
+  - `see <textarea> @victim and <div>@raw</div>` must keep `neutralized == 0`
+    and the text unchanged. Removing the fallback's "exactly one mention
+    fewer" condition now fails it.
+  - The timeout and the isolate are covered as above.
+- **Limits, stated plainly (Opus N4, N5).**
+  - Over-reporting is broader than raw `<code>@x</code>`. Ordinary Markdown
+    such as `~~a_@victim~~` is listed. After an unclosed `<code>`, `<pre>` or
+    `<textarea>` in the existing draft, mentions that GitLab 18.11+ would not
+    notify are still listed for acknowledgement.
+  - Under-reporting remains possible only for malformed tag combinations, in
+    two ways:
+    - the two views cut a name differently (`victim--` against `victim`);
+    - a name the existing draft already mentions cancels the answer's
+      occurrence.
+- **Not done, recorded as follow-ups.**
+  - Reading the instance version (`GET /version`) to pick one parser instead
+    of the union.
+  - Cancelling a running check when the chat closes.
+
+#### Review round 5 (Codex, Opus and cursor-agent: all APPROVE WITH MINOR FIXES)
+
+No Critical or Important findings were left, so the round-5 Minors followed
+the review fast path: fixed here, then one reviewer checked the increment.
+
+- **Deadline tests.**
+  - The heartbeat test used to assume the worker started within 300 ms and
+    stopped within fixed windows. It now only checks that heartbeats stop
+    after the deadline. It waits up to 10 s for half a second without one, and
+    no longer requires the worker to have started. A killed worker goes quiet.
+    One left running keeps sending, so removing the kill still fails the test,
+    unless that worker had not even started half a second after the
+    deadline.
+  - A failing worker's own error now comes back as a `RemoteError` carrying
+    its message; before, it was a generic `StateError`. The test checks the
+    message.
+- **Over-reporting, stated more fully.**
+  - The per-fragment reference view adds safe over-reporting: raw `<code>` or
+    `<pre>` content that Markdown splits into several text nodes counts in
+    later fragments. That was 93 of 3,000 natural answers in Opus's round-5
+    corpus.
+  - An unclosed `<pre>` in the existing draft over-reports under libxml2 as
+    well, not only under HTML5.
+- **Left for follow-up**, in
+  [work item 10](https://gitlab.com/aa22396584/gitlab-mobile/-/work_items/10):
+  - a test for the branch where a Markdown link ends a raw anchor (a mutation
+    survives because both views usually agree);
+  - choosing one parser from the instance version;
+  - cancelling a check when the chat closes.

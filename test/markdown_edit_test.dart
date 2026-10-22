@@ -78,10 +78,20 @@ void main() {
 Some comment here
 /spend 2h 30m
 And visit http://gitlab.com/test or type a /slash in the middle
-  /label ~frontend
+/label ~frontend
 ''';
     final actions = extractQuickActions(text);
     expect(actions, ['/close', '/spend', '/label']);
+  });
+
+  test('extractQuickActions follows GitLab: first column only, CR removed', () {
+    // GitLab's extractor matches `^\/` after deleting `\r`
+    // (lib/gitlab/quick_actions/extractor.rb), so an indented slash is text
+    // and a lone CR joins two lines.
+    expect(extractQuickActions('  /label ~frontend\n /close'), isEmpty);
+    expect(extractQuickActions('a\r\n/merge'), ['/merge']);
+    expect(extractQuickActions('a\n\r/merge'), ['/merge']);
+    expect(extractQuickActions('x\r/merge'), isEmpty);
   });
 
   test('insertQuickAction replaces already typed slash or partial command on current line', () {

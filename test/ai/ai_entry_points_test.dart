@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -72,6 +73,8 @@ final class _Session extends ChangeNotifier implements AiChatSession {
   set confirmCleartext(Future<bool> Function()? callback) {}
   @override
   String displaySafe(String text) => text;
+  @override
+  String draftSafe(String text) => text;
 }
 
 final class _Registry extends ChangeNotifier implements AiRunRegistry {
@@ -185,6 +188,21 @@ final class _SensitiveFileFixture extends WorkspaceFixture {
   }
 }
 
+/// The draft check runs on another isolate, which takes real time.
+Future<void> _waitForPreview(WidgetTester tester) async {
+  for (
+    var tries = 0;
+    tries < 100 && find.text(l10n.aiDraftPreviewTitle).evaluate().isEmpty;
+    tries++
+  ) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pump();
+  }
+  await tester.pumpAndSettle();
+}
+
 Future<void> _openMenu(WidgetTester tester, String tooltip) async {
   await tester.tap(find.byTooltip(tooltip));
   await tester.pump();
@@ -216,6 +234,11 @@ void main() {
     await tester.tap(find.text(l10n.aiDiscuss));
     await tester.pumpAndSettle();
     await tester.tap(find.text(l10n.aiChatInsertDraft));
+    await _waitForPreview(tester);
+    // The preview opens first and writes nothing.
+    expect(find.text(l10n.aiDraftPreviewTitle), findsOneWidget);
+    expect(find.byType(ResourceEditor), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('ai-draft-confirm')));
     await tester.pumpAndSettle();
     expect(find.byType(ResourceEditor), findsOneWidget);
     final editor = tester.widget<ResourceEditor>(find.byType(ResourceEditor));
@@ -230,6 +253,74 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(AiChatPage), findsOneWidget);
     expect(fixture.adapter.requests.where((r) => r.method != 'GET'), isEmpty);
+  });
+
+  testWidgets('the draft target reads the saved draft and the issue as loaded now', (
+    tester,
+  ) async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    const waiting = 'Stack trace:\n```\nat Foo.bar()';
+    FlutterSecureStorage.setMockInitialValues({
+      'draft.v2.${base64Url.encode(utf8.encode(fixture.account.key))}.'
+              '${base64Url.encode(utf8.encode('projects/42/issues/12/root/new'))}':
+          jsonEncode({'body': waiting}),
+    });
+    fixture.issues[12] =
+        fixture.issue(12, 'Synthetic issue', confidential: true);
+    final registry = (await _pump(
+      tester,
+      fixture,
+      WorkItemPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        resource: 'issues',
+        iid: 12,
+      ),
+    ))!;
+    registry.answer = 'Answer';
+    await _openMenu(tester, l10n.moreOptions);
+    await tester.tap(find.text(l10n.aiDiscuss));
+    await tester.pumpAndSettle();
+    final target = tester.widget<AiChatPage>(find.byType(AiChatPage)).draftTarget!;
+    expect(target.confidential(), isTrue);
+    expect(await target.existingText(), waiting);
+    // The preview is told about the waiting draft through the same key.
+    await tester.tap(find.text(l10n.aiChatInsertDraft));
+    await _waitForPreview(tester);
+    expect(find.byKey(const ValueKey('ai-draft-after-existing')), findsOne);
+    await tester.tap(find.text(l10n.cancelAction));
+    await tester.pumpAndSettle();
+    // The issue is made public and the page reloads while this target lives.
+    tester.state<NavigatorState>(find.byType(Navigator).first).pop();
+    await tester.pumpAndSettle();
+    fixture.issues[12] = fixture.issue(12, 'Synthetic issue');
+    await tester.tap(find.byTooltip(l10n.refreshAction));
+    await settleNetworkWidgets(tester);
+    expect(target.confidential(), isFalse);
+  });
+
+  testWidgets('a merge request is never a confidential target', (tester) async {
+    FlutterSecureStorage.setMockInitialValues({});
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    await _pump(
+      tester,
+      fixture,
+      WorkItemPage(
+        account: fixture.account,
+        api: fixture.api,
+        project: fixture.project,
+        resource: 'merge_requests',
+        iid: 12,
+      ),
+    );
+    await _openMenu(tester, l10n.moreOptions);
+    await tester.tap(find.text(l10n.aiDiscuss));
+    await tester.pumpAndSettle();
+    final target = tester.widget<AiChatPage>(find.byType(AiChatPage)).draftTarget!;
+    expect(target.confidential(), isFalse);
   });
 
   testWidgets('a changed session generation cannot insert an old AI answer', (
@@ -261,6 +352,8 @@ void main() {
     await tester.pumpAndSettle();
     owner.generation++;
     await tester.tap(find.text(l10n.aiChatInsertDraft));
+    await _waitForPreview(tester);
+    await tester.tap(find.byKey(const ValueKey('ai-draft-confirm')));
     await tester.pumpAndSettle();
     expect(find.byType(ResourceEditor), findsNothing);
     expect(await const FlutterSecureStorage().readAll(), isEmpty);

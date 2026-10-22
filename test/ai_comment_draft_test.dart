@@ -336,6 +336,33 @@ void main() {
     },
   );
 
+  test('the AI preview reads the comment draft the editor would append to', () async {
+    final fixture = WorkspaceFixture();
+    addTearDown(fixture.api.close);
+    final key = _key(fixture, 'projects/42/issues/12/root/new');
+    Future<String> read() =>
+        readCommentDraft(fixture.account, fixture.project, 'issues', 12);
+
+    FlutterSecureStorage.setMockInitialValues({});
+    expect(await read(), isEmpty);
+    FlutterSecureStorage.setMockInitialValues({
+      key: jsonEncode({'body': 'Waiting text', '__writeUncertain': 'true'}),
+    });
+    // The editor appends to a draft whose last save is uncertain (it blocks
+    // only the save), so the preview reads it too.
+    expect(await read(), 'Waiting text');
+    for (final broken in [
+      jsonEncode({'body': 'Waiting text', '__writeUncertain': 'maybe'}),
+      jsonEncode({'body': 7}),
+      jsonEncode(['body']),
+      'not json',
+    ]) {
+      FlutterSecureStorage.setMockInitialValues({key: broken});
+      // The editor would refuse these, so nothing is appended to them.
+      await expectLater(read(), throwsA(isA<FormatException>()), reason: broken);
+    }
+  });
+
   testWidgets('a failed draft read never replaces a stored draft', (
     tester,
   ) async {

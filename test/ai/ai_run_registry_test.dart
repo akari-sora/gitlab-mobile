@@ -635,6 +635,8 @@ final class _FakeChatSession extends ChangeNotifier implements AiChatSession {
 
   @override
   String displaySafe(String text) => text;
+  @override
+  String draftSafe(String text) => text;
 
   @override
   void dispose() {

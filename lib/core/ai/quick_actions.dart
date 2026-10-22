@@ -9,3 +9,12 @@ String neutralizeForGitLabDraft(String text) {
   }
   return result;
 }
+
+/// How many lines of [text] GitLab would read as quick actions: after the same
+/// CR handling as [neutralizeForGitLabDraft], the lines that start with `/`.
+int quickActionLineCount(String text) => text
+    .replaceAll('\r\n', '\n')
+    .replaceAll('\r', '')
+    .split('\n')
+    .where((line) => line.startsWith('/'))
+    .length;

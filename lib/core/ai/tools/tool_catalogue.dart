@@ -205,6 +205,8 @@ final class AiToolCatalogue {
       withheldPrivateKeyContext: execution.withheldPrivateKeyContext,
       truncated: execution.truncated,
       blockedSensitive: execution.blocked,
+      readConfidential: execution.result.readConfidential,
+      readInternal: execution.result.readInternal,
     );
   }
 
@@ -283,6 +285,8 @@ final class AiToolCatalogue {
           callId: call.id,
           name: call.name,
           data: clipped,
+          readConfidential: !raw.blocked && raw.readConfidential,
+          readInternal: !raw.blocked && raw.readInternal,
         ),
         provenance: provenance,
         blocked: raw.blocked,
@@ -378,6 +382,8 @@ final class AiToolCatalogue {
       _projectDiscussion(read.value),
       _live('issue #$iid'),
       requestCount: read.requestCount,
+      readConfidential: read.value['confidential'] == true,
+      readInternal: _readInternalNote(read.value),
     );
   }
 
@@ -389,6 +395,7 @@ final class AiToolCatalogue {
       _projectDiscussion(read.value),
       _live('merge request !$iid'),
       requestCount: read.requestCount,
+      readInternal: _readInternalNote(read.value),
     );
   }
 
@@ -558,6 +565,9 @@ final class AiToolCatalogue {
       _live(
         'search $searchScope on ${scope.defaultBranch ?? 'default branch'}',
       ),
+      readConfidential:
+          searchScope == 'issues' &&
+          read.value.any((row) => row['confidential'] == true),
       fragmentFields: searchScope == 'blobs' ? const {'data'} : const {},
       requestCount: read.requestCount,
     );
@@ -724,12 +734,16 @@ final class _RawToolResult {
     this.requestCount = 0,
     this.tailLines,
   }) : json = false,
+       readConfidential = false,
+       readInternal = false,
        fragmentFields = const {};
 
   const _RawToolResult.json(
     this.value,
     this.provenance, {
     this.blocked = false,
+    this.readConfidential = false,
+    this.readInternal = false,
     this.requestCount = 0,
     this.fragmentFields = const {},
   }) : json = true,
@@ -738,6 +752,8 @@ final class _RawToolResult {
   final Object? value;
   final AiToolProvenance provenance;
   final bool blocked;
+  final bool readConfidential;
+  final bool readInternal;
   final bool json;
   final Set<String> fragmentFields;
   final int requestCount;
@@ -896,6 +912,17 @@ AiJson _projectDiscussion(AiJson source) {
   final author = _projectAuthor(source['author']);
   if (author != null) projected['author'] = author;
   return projected;
+}
+
+bool _readInternalNote(AiJson source) {
+  final notes = source['notes'];
+  if (notes is! List<Object?>) return false;
+  return notes.any(
+    (value) =>
+        value is Map<String, Object?> &&
+        value['system'] != true &&
+        (value['internal'] == true || value['confidential'] == true),
+  );
 }
 
 AiJson? _projectAuthor(Object? value) => value is AiJson

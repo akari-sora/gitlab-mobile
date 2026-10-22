@@ -15,6 +15,7 @@ final class AiBuiltContext {
     required List<String> blockedSensitivePaths,
     required this.redactions,
     required this.withheldPrivateKeyContext,
+    this.readInternal = false,
   }) : blocks = List.unmodifiable(blocks),
        blockedSensitivePaths = List.unmodifiable(blockedSensitivePaths);
 
@@ -23,6 +24,9 @@ final class AiBuiltContext {
   final List<String> blockedSensitivePaths;
   final int redactions;
   final bool withheldPrivateKeyContext;
+
+  /// Display-only metadata for the notes included in the page context.
+  final bool readInternal;
 }
 
 final class AiJobContextInput {
@@ -214,6 +218,7 @@ final class AiContextBuilders {
         'diff': result.text,
       });
     }
+    final notes = _notes(input.notes);
     final metadata = _redactJson({
       'iid': input.iid,
       'title': input.title,
@@ -222,7 +227,7 @@ final class AiContextBuilders {
       'labels': input.labels,
       'head_sha': input.headSha,
       'base_sha': input.baseSha,
-      'notes': _notes(input.notes),
+      'notes': notes,
     });
     redactions += metadata.redactions;
     withheld |= metadata.withheldPrivateKeyContext;
@@ -242,6 +247,7 @@ final class AiContextBuilders {
       blockedSensitivePaths: blocked,
       redactions: redactions,
       withheldPrivateKeyContext: withheld,
+      readInternal: notes.any((note) => note['internal'] == true),
     );
   }
 
@@ -271,12 +277,13 @@ final class AiContextBuilders {
   }) {
     final pinnedSha = input.pinnedSha;
     if (pinnedSha != null) _requireSha(pinnedSha);
+    final notes = _notes(input.notes);
     final content = _redactJson({
       'title': input.title,
       'description': input.description,
       'state': input.state,
       'labels': input.labels,
-      'notes': _notes(input.notes),
+      'notes': notes,
     });
     return _builtSourceContext(
       source: '${input.kind} #${input.iid}',
@@ -285,6 +292,7 @@ final class AiContextBuilders {
       withheld: content.withheldPrivateKeyContext,
       nonce: nonce,
       pinnedSha: pinnedSha,
+      readInternal: notes.any((note) => note['internal'] == true),
     );
   }
 
@@ -327,6 +335,7 @@ final class AiContextBuilders {
     required bool withheld,
     required String nonce,
     required String? pinnedSha,
+    bool readInternal = false,
   }) {
     return AiBuiltContext(
       blocks: [
@@ -339,6 +348,7 @@ final class AiContextBuilders {
       blockedSensitivePaths: const [],
       redactions: redactions,
       withheldPrivateKeyContext: withheld,
+      readInternal: readInternal,
     );
   }
 

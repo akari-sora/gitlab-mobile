@@ -28,6 +28,7 @@ import '../../core/providers.dart';
 import '../auth/session_controller.dart';
 import '../ai/ai_chat_page.dart';
 import '../ai/ai_chat_session.dart';
+import '../ai/ai_draft_target.dart';
 import 'graph_work_items_page.dart';
 import 'rest_issue_graph_bridge.dart';
 import '../../shared/theme.dart';
@@ -566,17 +567,25 @@ class _WorkItemPageState extends State<WorkItemPage> with SingleTickerProviderSt
       iid: owner.iid,
       title: valueText(data, 'title'),
       summarize: summarize && mr,
-    ), onInsertDraft: current() ? (text) async {
-      if (!current()) return;
-      final saved = await openCommentEditor(context,
-        account: owner.account, api: owner.api, project: owner.project,
-        resource: owner.resource, iid: owner.iid, appendBody: text,
-        isCurrent: current, onRoute: _ownRoute);
-      if (saved && current()) {
-        _tabs.animateTo(owner.resource == 'merge_requests' ? 2 : 1);
-        await _loadAfterMutation();
-      }
-    } : null);
+    ), draftTarget: current() ? AiDraftTarget(
+      existingText: () => readCommentDraft(
+        owner.account, owner.project, owner.resource, owner.iid),
+      // Read when the answer is appended, not when the chat opened: a chat
+      // kept from an earlier visit must see the item as it is now.
+      confidential: () =>
+          !mr && _currentOwner(owner) && _data?['confidential'] == true,
+      insert: (text) async {
+        if (!current()) return;
+        final saved = await openCommentEditor(context,
+          account: owner.account, api: owner.api, project: owner.project,
+          resource: owner.resource, iid: owner.iid, appendBody: text,
+          isCurrent: current, onRoute: _ownRoute);
+        if (saved && current()) {
+          _tabs.animateTo(owner.resource == 'merge_requests' ? 2 : 1);
+          await _loadAfterMutation();
+        }
+      },
+    ) : null);
   }
 
   @override
