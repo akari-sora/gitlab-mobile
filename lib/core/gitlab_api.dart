@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show FileSystemException, HttpDate, IOException, IOSink;
+import 'rate_budget.dart';
+import 'request_meter.dart';
+import 'dart:io' show FileSystemException, IOException, IOSink;
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
@@ -28,6 +30,7 @@ import 'work_item_dates_models.dart';
 
 import '../l10n/l10n.dart';
 part 'workspace_api.dart';
+part 'cached_read_api.dart';
 part 'incident_api.dart';
 part 'analytics_api.dart';
 part 'package_download_api.dart';
@@ -152,11 +155,15 @@ final class GitLabApi {
     OAuthTokenClient? oauth,
     Future<void> Function(OAuthCredential rotated)? onOAuthRotated,
     DateTime Function()? readCacheClock,
+    ReadCacheSource? readCacheSource,
+    GitLabRateBudget? rateBudget,
   }) : _credential = credential ?? PatCredential(token ?? ''),
        _dio = dio ?? Dio(),
        _cdnAdapter = cdnAdapter,
        _oauth = oauth,
        _readCacheClock = readCacheClock ?? DateTime.now,
+       _readCacheSource = readCacheSource,
+       rateBudget = rateBudget ?? GitLabRateBudget(now: readCacheClock),
        _onOAuthRotated = onOAuthRotated {
     final access = _credential.accessToken;
     if (access.trim().isEmpty || RegExp(r'\s').hasMatch(access)) {
@@ -179,31 +186,30 @@ final class GitLabApi {
   final HttpClientAdapter? _cdnAdapter;
   final OAuthTokenClient? _oauth;
   final DateTime Function() _readCacheClock;
+  final ReadCacheSource? _readCacheSource;
+  final GitLabRateBudget rateBudget;
+  late final _ReadCache _cache = _ReadCache(this);
   final Future<void> Function(OAuthCredential rotated)? _onOAuthRotated;
   Future<void>? _refreshing;
-  final _readCache = <String, _CachedRead>{};
-  final _readInFlight = <String, Future<Object>>{};
-  int _readEpoch = 0, _readCacheBytes = 0, _writesInFlight = 0;
-  static const maxCachedReads = 32;
-  static const maxCachedReadBytes = 6 * 1024 * 1024;
+  int _readEpoch = 0;
+  static const maxCachedReads = 256;
+  static const maxCachedReadBytes = 16 * 1024 * 1024;
   final Set<CancelToken> _requests = {};
   final Set<Dio> _bareClients = {};
   bool _closed = false;
-  DateTime? _retryAt;
+  DateTime? get _retryAt => rateBudget.retryAtFor(RateRequestClass.global);
   static const maxTextBytes = 2 * 1024 * 1024;
   static const maxTextLines = 20000;
   static const maxUploadBytes = 25 * 1024 * 1024;
   static const maxArtifactBytes = 256 * 1024 * 1024;
 
-  /// In-memory only, owned by this account client. Refresh and mutations discard
-  /// both cached values and sharing gates, so older reads cannot refill them.
+  /// Explicit cache clear revokes even immutable entries and pending results.
   void clearReadCache() {
-    _readEpoch++;
-    _readCache.clear();
-    _readCacheBytes = 0;
-    _readInFlight.clear();
+    _cache.sourceAccountRevokedAt = _readCacheClock();
+    _cache.clear();
   }
 
+  // Compatibility for workspace_api.dart's groupByPath caller.
   Future<T> _cachedRead<T extends Object>(
     String key,
     Future<_CacheRead<T>> Function() load, {
@@ -211,88 +217,47 @@ final class GitLabApi {
     bool refresh = false,
     int invalidationRetries = 0,
   }) async {
-    if (_closed) throw const ApiFailure(FailureKind.cancelled);
-    if (refresh) clearReadCache();
-    final cached = _readCache.remove(key);
-    if (cached != null) {
-      _readCacheBytes -= cached.cost;
-      if (_readCacheClock().isBefore(cached.expires)) {
-        _readCache[key] = cached;
-        _readCacheBytes += cached.cost;
-        return cached.value as T;
-      }
-    }
-    final pending = _readInFlight[key];
-    if (pending != null) return await pending as T;
-    final epoch = _readEpoch;
-    late final Future<T> request;
-    request = () async {
-      try {
-        final loaded = await load();
-        if (_closed) throw const ApiFailure(FailureKind.cancelled);
-        if (_writesInFlight != 0) throw const ApiFailure(FailureKind.cancelled);
-        if (epoch != _readEpoch) {
-          if (invalidationRetries >= 1) throw const ApiFailure(FailureKind.cancelled);
-          return await _cachedRead(key, load, cost: cost,
-            invalidationRetries: invalidationRetries + 1);
-        }
-        final value = loaded.value;
-        final bytes = 128 + key.length * 2 + cost(value);
-        if (epoch == _readEpoch &&
-            _writesInFlight == 0 &&
-            loaded.ttl > Duration.zero &&
-            bytes <= maxCachedReadBytes) {
-          final previous = _readCache.remove(key);
-          if (previous != null) _readCacheBytes -= previous.cost;
-          _readCache[key] = _CachedRead(
-            value,
-            _readCacheClock().add(loaded.ttl),
-            bytes,
-          );
-          _readCacheBytes += bytes;
-          while (_readCache.length > maxCachedReads ||
-              _readCacheBytes > maxCachedReadBytes) {
-            _readCacheBytes -= _readCache.remove(_readCache.keys.first)!.cost;
-          }
-        }
-        return value;
-      } finally {
-        if (identical(_readInFlight[key], request)) {
-          unawaited(_readInFlight.remove(key));
-        }
-      }
-    }();
-    unawaited(_readInFlight[key] = request);
-    return await request;
+    final uri = key.startsWith('group-path:')
+        ? instance.api(['groups', key.substring('group-path:'.length)], {'with_projects': 'false'})
+        : Uri.parse(key);
+    final read = await _cache.read<T>(uri, _ReadClass.projectMeta, () async {
+      final loaded = await load();
+      return _LoadedRead(loaded.value, cost(loaded.value), loaded.ttl > Duration.zero);
+    }, fresh: refresh);
+    if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
+    return read.value;
   }
 
   Duration _cacheTtl(Headers headers, Duration maximum) {
-    final directives = (headers.value('cache-control') ?? '').toLowerCase().split(',').map((v) => v.trim());
-    var ttl = maximum;
-    var mustRevalidate = false, explicitFreshness = false;
-    for (final directive in directives) {
-      final name = directive.split('=').first;
-      if (const {'no-store', 'no-cache'}.contains(name)) return Duration.zero;
-      if (name == 'must-revalidate') mustRevalidate = true;
-      if (name == 'max-age') {
-        explicitFreshness = true;
-        final seconds = int.tryParse(directive.split('=').last.replaceAll('"', ''));
-        if (seconds == null || seconds <= 0) return Duration.zero;
-        final age = int.tryParse(headers.value('age') ?? '') ?? 0;
-        final allowed = Duration(seconds: seconds - age);
-        if (allowed < ttl) ttl = allowed;
-      }
+    final directives = (headers.value('cache-control') ?? '').toLowerCase().split(',');
+    return directives.any((v) => v.trim().split('=').first == 'no-store')
+        ? Duration.zero : maximum;
+  }
+
+  RateRequestClass _rateClass(Uri uri, [String method = 'GET']) {
+    if (instance.allowsGraphQL(uri)) return RateRequestClass.global;
+    final p = _cache.path(uri);
+    if (method == 'POST' && (p.length == 1 && const {'projects', 'groups'}.contains(p.first) ||
+        p.length == 3 && p.first == 'projects' && p.last == 'fork')) { return RateRequestClass.create; }
+    if (p.contains('search') || uri.queryParameters.containsKey('search')) return RateRequestClass.search;
+    if (p.any((s) => s.startsWith('archive')) && p.contains('repository')) return RateRequestClass.archive;
+    if (method == 'GET' && p.length == 1 && p.first == 'groups') { return RateRequestClass.groupList; }
+    if (method == 'GET' && p.length == 1 && p.first == 'projects') { return RateRequestClass.projectList; }
+    return RateRequestClass.global;
+  }
+
+  void _checkRate(Uri uri, [String method = 'GET']) {
+    if (_closed) throw const ApiFailure(FailureKind.cancelled);
+    final until = rateBudget.retryAtFor(_rateClass(uri, method));
+    if (until != null && _readCacheClock().isBefore(until)) {
+      throw ApiFailure(FailureKind.rateLimited, status: 429, retryAt: until);
     }
-    final expires = headers.value('expires');
-    if (expires != null) {
-      explicitFreshness = true;
-      try {
-        final allowed = HttpDate.parse(expires).difference(_readCacheClock());
-        if (allowed < ttl) ttl = allowed;
-      } on FormatException { return Duration.zero; }
-    }
-    if (mustRevalidate && !explicitFreshness) return Duration.zero;
-    return ttl > Duration.zero ? ttl : Duration.zero;
+  }
+
+  void _noteRateLimit(Response<ResponseBody> response, Uri origin, int sequence, [String method = 'GET']) {
+    rateBudget.noteResponse(headers: response.headers.map, statusCode: response.statusCode ?? 0,
+      requestClass: _rateClass(origin, method), sequence: sequence,
+      trusted: instance.allowsApi(origin) || instance.allowsGraphQL(origin));
   }
 
   Map<String, String> get _authHeaders => switch (_credential) {
@@ -348,20 +313,17 @@ final class GitLabApi {
         : !instance.allowsApi(uri))) {
       throw const ApiFailure(FailureKind.unsupported);
     }
-    final until = _retryAt;
-    if (until != null && DateTime.now().isBefore(until)) {
-      throw ApiFailure(FailureKind.rateLimited, status: 429, retryAt: until);
-    }
+    _checkRate(uri, method);
     final cancel = CancelToken();
     _requests.add(cancel);
     // Only private, fixed GraphQL queries use this read path. POST mutations
     // retain the write fences and are never retried automatically.
     final writing = method != 'GET' && method != 'HEAD' && !graphQuery;
-    if (writing) {
-      _writesInFlight++;
-      clearReadCache();
-    }
+    final affected = writing ? _cache.affected(uri, method, data, graphMutation: graphMutation) : <String>{};
+    if (writing) _cache.write(affected, starting: true);
     try {
+      final sequence = rateBudget.nextSequence();
+      RequestMeter.current?.increment();
       final response = await _dio.requestUri<ResponseBody>(
         uri,
         data: data,
@@ -389,6 +351,7 @@ final class GitLabApi {
         ),
       );
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
+      _noteRateLimit(response, uri, sequence, method);
       final status = response.statusCode ?? 0;
       final body = response.data;
       if (allowRangeNotSatisfiable && status == 416) {
@@ -400,7 +363,8 @@ final class GitLabApi {
         );
       }
       if (status < 200 || status >= 300) {
-        if (status == 401 || status == 403 || status == 404) clearReadCache();
+        _cache.revoke(uri, status,
+            terminal401: _credential is! OAuthCredential || retried);
         if (body != null) await body.stream.listen((_) {}).cancel();
         var refreshed = false;
         if (status == 401 && !retried) {
@@ -409,6 +373,7 @@ final class GitLabApi {
           } catch (_) {
             // Keep the mutation's known refusal even if refresh/persistence
             // fails with an unrelated transport or storage exception.
+            _cache.revoke(uri, 401);
             if (writing) {
               throw _knownMutation401(refreshSucceeded: false);
             }
@@ -430,20 +395,8 @@ final class GitLabApi {
           }
           throw _knownMutation401(refreshSucceeded: true);
         }
-        if (status == 429) {
-          final text = response.headers.value('retry-after');
-          final seconds = int.tryParse(text ?? '');
-          if (seconds != null && seconds >= 0) {
-            _retryAt = DateTime.now().add(Duration(seconds: seconds));
-          } else if (text != null) {
-            try {
-              _retryAt = HttpDate.parse(text);
-            } on FormatException {
-              /* manual retry only */
-            }
-          }
-        }
-        throw ApiFailure.fromStatus(status, retryAt: _retryAt);
+        if (status == 401) _cache.revoke(uri, 401);
+        throw ApiFailure.fromStatus(status, retryAt: rateBudget.retryAtFor(_rateClass(uri, method)));
       }
       if (method == 'HEAD' || status == 204) {
         if (body != null) await body.stream.listen((_) {}).cancel();
@@ -503,10 +456,7 @@ final class GitLabApi {
       );
     } finally {
       _requests.remove(cancel);
-      if (writing) {
-        _writesInFlight--;
-        clearReadCache();
-      }
+      if (writing) _cache.write(affected, starting: false);
     }
   }
 
@@ -517,7 +467,12 @@ final class GitLabApi {
   }) async {
     final result = await _read(uri, method: method, data: data);
     try {
-      return objectJson(jsonDecode(utf8.decode(result.bytes)));
+      final value = objectJson(jsonDecode(utf8.decode(result.bytes)));
+      if (method == 'GET') {
+        _cache.observe(uri, value);
+        _cache.observePrivacy(uri, value);
+      }
+      return value;
     } on FormatException {
       // A successful mutation can have taken effect despite an unreadable
       // acknowledgement. The editor must keep its pending-write fence.
@@ -638,7 +593,12 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       final data = jsonDecode(utf8.decode(result.bytes));
       if (data is! List<dynamic>) throw const FormatException('Expected array');
       return ApiPage(
-        List.unmodifiable(data.map((j) => parse(objectJson(j)))),
+        List.unmodifiable(data.map((j) {
+          final value = objectJson(j);
+          _cache.observe(uri, value);
+          _cache.observePrivacy(uri, value);
+          return parse(value);
+        })),
         next: nextPageUri(
           instance: instance,
           current: uri,
@@ -671,48 +631,34 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     return _page(next ?? first, Project.fromJson);
   }
 
-  Future<Project> project(String idOrFullPath, {bool refresh = false}) =>
-      _cachedRead(
-        'project:$idOrFullPath',
-        () async {
-          final result = await _read(instance.api(['projects', idOrFullPath]),
-            headers: {'Cache-Control': 'max-age=0'});
-          try {
-            return _CacheRead(Project.fromJson(objectJson(jsonDecode(utf8.decode(result.bytes)))),
-              _cacheTtl(result.headers, const Duration(seconds: 30)));
-          } on FormatException { throw const ApiFailure(FailureKind.invalidResponse); }
-        },
-        cost: (p) =>
-            256 +
-            2 *
-                (p.name.length +
-                    p.path.length +
-                    (p.description?.length ?? 0) +
-                    (p.visibility?.length ?? 0) +
-                    (p.defaultBranch?.length ?? 0) +
-                    (p.markedForDeletionOn?.length ?? 0)),
-        refresh: refresh,
-      );
+  Future<Project> project(String idOrFullPath, {bool refresh = false, bool allowDisk = true}) async {
+    final read = await cachedRecord(['projects', idOrFullPath], fresh: refresh,
+      maxAge: const Duration(minutes: 5), allowDisk: allowDisk);
+    if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
+    try { return Project.fromJson(read.value); }
+    on FormatException { throw const ApiFailure(FailureKind.invalidResponse); }
+  }
 
-  Future<String> defaultBranchSha(Project project) async {
+  Future<String> defaultBranchSha(Project project, {bool allowDisk = true}) async {
     final branch = project.defaultBranch;
     if (branch == null || branch.isEmpty) {
       throw const ApiFailure(FailureKind.invisible);
     }
-    final j = await _object(
-      instance.api([
-        'projects',
-        '${project.id}',
-        'repository',
-        'branches',
-        branch,
-      ]),
-    );
+    final read = await cachedRecord([
+      'projects',
+      '${project.id}',
+      'repository',
+      'branches',
+      branch,
+    ], maxAge: const Duration(seconds: 60), allowDisk: allowDisk);
+    if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
+    final j = read.value;
     final sha = requiredString(objectJson(j['commit']), 'id');
-    if (!RegExp(r'^[0-9a-fA-F]{40,64}$').hasMatch(sha)) {
+    if (!_fullSha.hasMatch(sha.toLowerCase())) {
       throw const ApiFailure(FailureKind.invalidResponse);
     }
-    return sha;
+    if (read.lineage != CacheLineage.disk) _cache.confirm(sha);
+    return sha.toLowerCase();
   }
 
   Future<ApiPage<TreeEntry>> tree(
@@ -720,13 +666,13 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     String sha, {
     String path = '',
     Uri? next,
-  }) {
-    final first = instance.api(
-      ['projects', '$projectId', 'repository', 'tree'],
-      {'ref': sha, 'path': path, 'per_page': '50'},
-    );
-    _validateContinuation(first, next);
-    return _page(next ?? first, TreeEntry.fromJson);
+    bool allowDisk = true,
+  }) async {
+    final ref = _cache.isConfirmed(sha) ? sha.toLowerCase() : sha;
+    final read = await cachedRecords(['projects', '$projectId', 'repository', 'tree'],
+      query: {'ref': ref, 'path': path, 'per_page': '50'}, next: next, allowDisk: allowDisk);
+    if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
+    return ApiPage(List.unmodifiable(read.value.items.map(TreeEntry.fromJson)), next: read.value.next);
   }
 
   void _validateContinuation(Uri first, Uri? next) {
@@ -753,21 +699,17 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     String sha,
     String filePath, {
     bool refresh = false,
-  }) {
-    if (!RegExp(r'^[0-9a-fA-F]{40,64}$').hasMatch(sha)) {
-      return _readTextFile(projectId, sha, filePath).then((read) => read.value);
-    }
-    return _cachedRead(
-      instance
-          .api(
-            ['projects', '$projectId', 'repository', 'files', filePath],
-            {'ref': sha},
-          )
-          .toString(),
-      () => _readTextFile(projectId, sha, filePath),
-      cost: (text) => text.length * 2,
-      refresh: refresh,
-    );
+    bool allowDisk = true,
+  }) async {
+    final pinned = _cache.isConfirmed(sha);
+    final ref = pinned ? sha.toLowerCase() : sha;
+    final uri = instance.api(['projects', '$projectId', 'repository', 'files', filePath], {'ref': ref});
+    final read = await _cache.read<String>(uri, pinned ? _ReadClass.pinned : null, () async {
+      final loaded = await _readTextFile(projectId, ref, filePath);
+      return _LoadedRead(loaded.value, loaded.responseBytes ?? utf8.encode(loaded.value).length,
+        loaded.ttl > Duration.zero);
+    }, fresh: refresh, allowDisk: allowDisk, accept: 'text/plain');
+    return read.value;
   }
 
   Future<_CacheRead<String>> _readTextFile(int projectId, String sha, String filePath) async {
@@ -802,7 +744,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       }
       final metaTtl = _cacheTtl(meta.headers, const Duration(minutes: 5));
       final rawTtl = _cacheTtl(result.headers, const Duration(minutes: 5));
-      return _CacheRead(text, metaTtl < rawTtl ? metaTtl : rawTtl);
+      return _CacheRead(text, metaTtl < rawTtl ? metaTtl : rawTtl, responseBytes: result.bytes.length);
     } on FormatException {
       throw const ApiFailure(FailureKind.unsupported);
     }
@@ -830,10 +772,6 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         maxBytes <= 0 ||
         maxBytes > 100 * 1024 * 1024) {
       throw const ApiFailure(FailureKind.unsupported);
-    }
-    final until = _retryAt;
-    if (until != null && DateTime.now().isBefore(until)) {
-      throw ApiFailure(FailureKind.rateLimited, status: 429, retryAt: until);
     }
     final uri = instance.api(
       ['projects', project, 'repository', 'files', filePath, 'raw'],
@@ -881,6 +819,9 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     if (_closed || token.isCancelled) {
       throw const ApiFailure(FailureKind.cancelled);
     }
+    _checkRate(uri);
+    final sequence = rateBudget.nextSequence();
+    RequestMeter.current?.increment();
     final response = await _dio.requestUri<ResponseBody>(
       uri,
       cancelToken: token,
@@ -893,9 +834,11 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         headers: {..._authHeaders, 'Accept': 'application/octet-stream'},
       ),
     );
+    _noteRateLimit(response, uri, sequence);
     final status = response.statusCode ?? 0;
     if (status < 200 || status >= 300) {
-      if (status == 401 || status == 403 || status == 404) clearReadCache();
+      _cache.revoke(uri, status,
+          terminal401: _credential is! OAuthCredential || !allowRefresh);
       await _releaseBody(response.data);
       if (_closed || token.isCancelled) {
         throw const ApiFailure(FailureKind.cancelled);
@@ -911,10 +854,8 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
           allowRefresh: false,
         );
       }
-      if (status == 429) {
-        _rememberRetryAfter(response.headers.value('retry-after'));
-      }
-      throw ApiFailure.fromStatus(status, retryAt: _retryAt);
+      if (status == 401) _cache.revoke(uri, 401);
+      throw ApiFailure.fromStatus(status, retryAt: rateBudget.retryAtFor(_rateClass(uri)));
     }
     final total = int.tryParse(
       response.headers.value(Headers.contentLengthHeader) ?? '',
@@ -1004,7 +945,7 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     final gate = () async {
       final rotated = await oauth.refresh(current);
       if (_closed) throw const ApiFailure(FailureKind.cancelled);
-      clearReadCache();
+      _cache.clear(revoke: false);
       _credential = current.replacedBy(rotated);
       await _onOAuthRotated?.call(_credential as OAuthCredential);
     }();
@@ -1075,10 +1016,6 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     int maxBytes = maxArtifactBytes,
   }) async {
     if (_closed) throw const ApiFailure(FailureKind.cancelled);
-    final until = _retryAt;
-    if (until != null && DateTime.now().isBefore(until)) {
-      throw ApiFailure(FailureKind.rateLimited, status: 429, retryAt: until);
-    }
     final uri = instance.api([
       'projects',
       '$project',
@@ -1180,10 +1117,6 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
       throw const ApiFailure(FailureKind.unsupported);
     }
     if (_closed) throw const ApiFailure(FailureKind.cancelled);
-    final until = _retryAt;
-    if (until != null && DateTime.now().isBefore(until)) {
-      throw ApiFailure(FailureKind.rateLimited, status: 429, retryAt: until);
-    }
     final uri = instance.api(['projects', '$project', 'uploads', secret, filename]);
     if (!instance.allowsApi(uri)) {
       throw const ApiFailure(FailureKind.unsupported);
@@ -1234,6 +1167,9 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     required bool allowRefresh,
   }) async {
     if (_closed || token.isCancelled) throw const ApiFailure(FailureKind.cancelled);
+    _checkRate(uri);
+    final sequence = rateBudget.nextSequence();
+    RequestMeter.current?.increment();
     final response = await _dio.requestUri<ResponseBody>(
       uri,
       data: null,
@@ -1247,7 +1183,10 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         headers: _authHeaders,
       ),
     );
+    _noteRateLimit(response, uri, sequence);
     final status = response.statusCode ?? 0;
+    _cache.revoke(uri, status,
+        terminal401: _credential is! OAuthCredential || !allowRefresh);
     if (status == 200) {
       return _writeUploadStream(
         response: response,
@@ -1272,11 +1211,9 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         allowRefresh: false,
       );
     }
+    if (status == 401) _cache.revoke(uri, 401);
     if (status >= 300 && status < 400) {
       throw ApiFailure(FailureKind.redirectBlocked, status: status);
-    }
-    if (status == 429) {
-      _rememberRetryAfter(response.headers.value('retry-after'));
     }
     throw ApiFailure.fromStatus(status, retryAt: _retryAt);
   }
@@ -1401,11 +1338,14 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     CancelToken token, {
     required bool authenticated,
     Dio? client,
-  }) {
+  }) async {
     if (_closed || token.isCancelled) {
       throw const ApiFailure(FailureKind.cancelled);
     }
-    return (client ?? _dio).requestUri<ResponseBody>(
+    if (authenticated) _checkRate(uri);
+    final sequence = rateBudget.nextSequence();
+    RequestMeter.current?.increment();
+    final response = await (client ?? _dio).requestUri<ResponseBody>(
       uri,
       data: null,
       cancelToken: token,
@@ -1420,6 +1360,12 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
             : const <String, dynamic>{'Accept': 'application/octet-stream'},
       ),
     );
+    if (authenticated) {
+      _noteRateLimit(response, uri, sequence);
+      _cache.revoke(uri, response.statusCode ?? 0,
+          terminal401: _credential is! OAuthCredential);
+    }
+    return response;
   }
 
   Future<ArtifactDownload> _consumeArtifact({
@@ -1499,13 +1445,14 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
         _closeBare(bare);
       }
     }
-    // A further redirect is blocked. Every other CDN status keeps its own
-    // recovery copy, and 429 still arms the client's retry clock. The hop is
-    // never replayed with the account credential.
+    if (status == 401 && instance.allowsApi(requestUri)) {
+      _cache.revoke(requestUri, 401);
+    }
+    // CDN failures keep their status without changing the API rate budget.
+    // The hop is never replayed with the account credential.
     if (status >= 300 && status < 400) {
       throw ApiFailure(FailureKind.redirectBlocked, status: status);
     }
-    if (status == 429) _rememberRetryAfter(response.headers.value('retry-after'));
     throw ApiFailure.fromStatus(status, retryAt: _retryAt);
   }
 
@@ -1627,20 +1574,6 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
     }
   }
 
-  void _rememberRetryAfter(String? text) {
-    final seconds = int.tryParse(text ?? '');
-    if (seconds != null && seconds >= 0) {
-      _retryAt = DateTime.now().add(Duration(seconds: seconds));
-      return;
-    }
-    if (text == null) return;
-    try {
-      _retryAt = HttpDate.parse(text);
-    } on FormatException {
-      // A malformed Retry-After still fails this call; retry stays manual.
-    }
-  }
-
   Future<
     ({
       List<int> bytes,
@@ -1752,17 +1685,16 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
 
   bool get isClosed => _closed;
 
-  /// Whether a request may start now: the client is open and no remembered
-  /// 429 `Retry-After` is still pending. Synchronous, for the AI write gate.
-  bool get mayStartRequest {
-    if (_closed) return false;
-    final until = _retryAt;
-    return until == null || !DateTime.now().isBefore(until);
-  }
+  /// Server cooldown gate for an ordinary write (create is independent).
+  bool get mayStartRequest => !_closed && rateBudget.mayStart(RateRequestClass.global);
+
+  bool mayStartRequestFor(List<String> path, {String method = 'POST'}) =>
+      !_closed && rateBudget.mayStart(_rateClass(instance.api(path), method));
 
   void close() {
     _closed = true;
-    clearReadCache();
+    _cache.close();
+    rateBudget.close();
     for (final token in _requests.toList()) {
       token.cancel('session ended');
     }
@@ -1776,16 +1708,10 @@ query MobilePipelineGraph($path: ID!, $pipeline: CiPipelineID!, $after: String) 
 }
 
 final class _CacheRead<T> {
-  const _CacheRead(this.value, this.ttl);
+  const _CacheRead(this.value, this.ttl, {this.responseBytes});
   final T value;
   final Duration ttl;
-}
-
-final class _CachedRead {
-  const _CachedRead(this.value, this.expires, this.cost);
-  final Object value;
-  final DateTime expires;
-  final int cost;
+  final int? responseBytes;
 }
 
 /// Forwards a test double without closing it when the CDN client is discarded.
