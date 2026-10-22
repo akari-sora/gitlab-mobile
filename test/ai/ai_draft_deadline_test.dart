@@ -45,9 +45,10 @@ void main() {
       throwsA(isA<TimeoutException>()),
     );
     // A killed worker goes quiet, whether or not it got to run before the
-    // deadline; one left running sends every 5 ms, however late it starts,
-    // and never does. Wait up to 10 s for half a second without a
-    // heartbeat, so a busy machine delays the test instead of failing it.
+    // deadline, so a busy machine cannot fail this test. A worker left
+    // running sends every 5 ms and never goes quiet, so removing the kill
+    // fails it, unless that worker had not even started half a second after
+    // the deadline. Wait up to 10 s for half a second without a heartbeat.
     var last = -1;
     for (var tries = 0; tries < 20 && count != last; tries++) {
       last = count;
