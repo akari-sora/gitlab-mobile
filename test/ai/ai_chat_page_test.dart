@@ -583,10 +583,19 @@ void main() {
       await tester.ensureVisible(find.text(l10n.aiChatInsertDraft));
       await tester.pumpAndSettle();
       await tester.tap(find.text(l10n.aiChatInsertDraft));
-      // Long drafts are checked on another isolate.
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(seconds: 2)),
-      );
+      // Long drafts are checked on another isolate, which takes real time;
+      // wait for the preview instead of guessing how long (a loaded machine
+      // running the whole suite is slow).
+      for (
+        var tries = 0;
+        tries < 100 && find.text(l10n.aiDraftPreviewTitle).evaluate().isEmpty;
+        tries++
+      ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 100)),
+        );
+        await tester.pump();
+      }
       await tester.pumpAndSettle();
       expect(find.text(l10n.aiDraftPreviewCut), findsOneWidget);
       await confirm(tester);
