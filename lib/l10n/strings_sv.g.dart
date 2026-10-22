@@ -2381,4 +2381,5 @@ const _messagesSv = <String>[
   'Rapporterat',
   'Rapportmarkeringen kunde inte sparas i den krypterade historiken, så det här svaret kan visas igen efter en omstart.',
   'Förhandsvisningen visar nu det som skickas. Kontrollera den och tryck på Skicka rapport igen.',
+  'Det som skulle skickas kunde inte kontrolleras, så rapporten skickades inte.',
 ];

@@ -2378,5 +2378,6 @@
   "aiReportHide": "Ukryj",
   "aiReportedOpen": "Zgłoszono",
   "aiReportNotSaved": "Nie udało się zapisać oznaczenia zgłoszenia w zaszyfrowanej historii, więc ta odpowiedź może pojawić się ponownie po ponownym uruchomieniu.",
-  "aiReportPreviewUpdated": "Podgląd pokazuje teraz treść do wysłania. Sprawdź ją i jeszcze raz naciśnij Wyślij zgłoszenie."
+  "aiReportPreviewUpdated": "Podgląd pokazuje teraz treść do wysłania. Sprawdź ją i jeszcze raz naciśnij Wyślij zgłoszenie.",
+  "aiReportNotChecked": "Nie udało się sprawdzić treści do wysłania, więc zgłoszenie nie zostało wysłane."
 }

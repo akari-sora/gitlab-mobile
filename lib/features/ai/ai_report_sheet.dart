@@ -88,6 +88,9 @@ class _AiReportSheetState extends State<AiReportSheet> {
     final choice = _choice;
     if (choice == null || _sending) return;
     _typing?.cancel();
+    // What the user has seen, taken before the rebuild below can refresh
+    // the preview with keys typed in the last moment.
+    final shown = _previewed == choice ? _preview : null;
     setState(() => _sending = true);
     String? text;
     try {
@@ -95,8 +98,9 @@ class _AiReportSheetState extends State<AiReportSheet> {
     } on Object {
       text = null;
     }
-    if (!mounted) return;
-    final shown = _previewed == choice ? _preview : null;
+    // Backed out while the text was being checked: the sheet is closing,
+    // and popping now would close the page under it.
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return;
     if (text != null && text != shown) {
       setState(() {
         _previewed = choice;
@@ -147,6 +151,9 @@ class _AiReportSheetState extends State<AiReportSheet> {
     );
     final keyboard = media.viewInsets.bottom;
     final choice = _choice;
+    // First, so a new choice has cleared the "preview updated" note before
+    // the buttons below are built.
+    final preview = choice == null ? null : _previewOf(choice);
     return LayoutBuilder(
       builder: (context, constraints) {
         // As in the append preview: the constraints already leave out the
@@ -163,20 +170,42 @@ class _AiReportSheetState extends State<AiReportSheet> {
             pinned ? 16 : 0,
             8 + (keyboard > 0 ? 0 : media.padding.bottom),
           ),
-          child: Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 8,
-            runSpacing: 4,
+          // The note sits by the buttons, not under a long preview, and is
+          // read out when it appears: Send did not send this time.
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: Text(l10n.cancelAction),
-              ),
-              FilledButton.icon(
-                key: const ValueKey('ai-report-send'),
-                icon: const Icon(Icons.outlined_flag, size: 18),
-                label: Text(l10n.aiReportSend),
-                onPressed: choice == null || _sending ? null : _send,
+              if (_previewUpdated)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      l10n.aiReportPreviewUpdated,
+                      key: const ValueKey('ai-report-preview-updated'),
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ),
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: Text(l10n.cancelAction),
+                  ),
+                  FilledButton.icon(
+                    key: const ValueKey('ai-report-send'),
+                    icon: const Icon(Icons.outlined_flag, size: 18),
+                    label: Text(l10n.aiReportSend),
+                    onPressed: choice == null || _sending ? null : _send,
+                  ),
+                ],
               ),
             ],
           ),
@@ -268,23 +297,13 @@ class _AiReportSheetState extends State<AiReportSheet> {
                   child: SizedBox(
                     width: double.infinity,
                     child: Text(
-                      _previewOf(choice),
+                      preview!,
                       key: const ValueKey('ai-report-preview'),
                       style: codeTextStyle(context, fontSize: 12),
                     ),
                   ),
                 ),
               ),
-              if (_previewUpdated) ...[
-                const SizedBox(height: 6),
-                Text(
-                  l10n.aiReportPreviewUpdated,
-                  key: const ValueKey('ai-report-preview-updated'),
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.primary,
-                  ),
-                ),
-              ],
             ],
           ],
         );

@@ -2378,5 +2378,6 @@
   "aiReportHide": "숨기기",
   "aiReportedOpen": "신고됨",
   "aiReportNotSaved": "신고 표시를 암호화된 기록에 저장하지 못했으므로 앱을 다시 시작하면 이 응답이 다시 표시될 수 있습니다.",
-  "aiReportPreviewUpdated": "미리보기를 전송할 내용으로 바꿨습니다. 확인한 뒤 신고 보내기를 다시 누르세요."
+  "aiReportPreviewUpdated": "미리보기를 전송할 내용으로 바꿨습니다. 확인한 뒤 신고 보내기를 다시 누르세요.",
+  "aiReportNotChecked": "전송할 내용을 확인할 수 없어 신고를 보내지 않았습니다."
 }

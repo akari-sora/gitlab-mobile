@@ -2381,4 +2381,5 @@ const _messagesPl = <String>[
   'Zgłoszono',
   'Nie udało się zapisać oznaczenia zgłoszenia w zaszyfrowanej historii, więc ta odpowiedź może pojawić się ponownie po ponownym uruchomieniu.',
   'Podgląd pokazuje teraz treść do wysłania. Sprawdź ją i jeszcze raz naciśnij Wyślij zgłoszenie.',
+  'Nie udało się sprawdzić treści do wysłania, więc zgłoszenie nie zostało wysłane.',
 ];

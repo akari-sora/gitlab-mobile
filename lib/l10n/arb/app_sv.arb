@@ -2378,5 +2378,6 @@
   "aiReportHide": "Dölj",
   "aiReportedOpen": "Rapporterat",
   "aiReportNotSaved": "Rapportmarkeringen kunde inte sparas i den krypterade historiken, så det här svaret kan visas igen efter en omstart.",
-  "aiReportPreviewUpdated": "Förhandsvisningen visar nu det som skickas. Kontrollera den och tryck på Skicka rapport igen."
+  "aiReportPreviewUpdated": "Förhandsvisningen visar nu det som skickas. Kontrollera den och tryck på Skicka rapport igen.",
+  "aiReportNotChecked": "Det som skulle skickas kunde inte kontrolleras, så rapporten skickades inte."
 }

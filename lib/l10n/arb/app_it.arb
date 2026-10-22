@@ -2378,5 +2378,6 @@
   "aiReportHide": "Nascondi",
   "aiReportedOpen": "Segnalato",
   "aiReportNotSaved": "Non è stato possibile salvare il segno di segnalazione nella cronologia cifrata, quindi questa risposta potrebbe ricomparire dopo un riavvio.",
-  "aiReportPreviewUpdated": "Ora l’anteprima mostra cosa verrà inviato. Controllala e tocca di nuovo Invia segnalazione."
+  "aiReportPreviewUpdated": "Ora l’anteprima mostra cosa verrà inviato. Controllala e tocca di nuovo Invia segnalazione.",
+  "aiReportNotChecked": "Non è stato possibile controllare cosa verrebbe inviato, quindi la segnalazione non è stata inviata."
 }

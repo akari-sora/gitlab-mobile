@@ -2381,4 +2381,5 @@ const _messagesTr = <String>[
   'Bildirildi',
   'Bildirim işareti şifrelenmiş geçmişe kaydedilemediğinden, bu yanıt uygulama yeniden başlatıldıktan sonra yeniden görünebilir.',
   'Önizleme artık gönderilecek içeriği gösteriyor. Kontrol edin ve Bildirimi gönder’e yeniden dokunun.',
+  'Gönderilecek içerik kontrol edilemedi, bu yüzden bildirim gönderilmedi.',
 ];

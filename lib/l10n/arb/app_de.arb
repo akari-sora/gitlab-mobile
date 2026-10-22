@@ -2378,5 +2378,6 @@
   "aiReportHide": "Ausblenden",
   "aiReportedOpen": "Gemeldet",
   "aiReportNotSaved": "Die Meldungsmarkierung konnte nicht im verschlüsselten Verlauf gespeichert werden, daher kann diese Antwort nach einem Neustart erneut angezeigt werden.",
-  "aiReportPreviewUpdated": "Die Vorschau zeigt jetzt, was gesendet wird. Prüfen Sie sie und tippen Sie erneut auf „Meldung senden“."
+  "aiReportPreviewUpdated": "Die Vorschau zeigt jetzt, was gesendet wird. Prüfen Sie sie und tippen Sie erneut auf „Meldung senden“.",
+  "aiReportNotChecked": "Was gesendet würde, konnte nicht geprüft werden, deshalb wurde die Meldung nicht gesendet."
 }

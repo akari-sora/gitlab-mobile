@@ -2378,5 +2378,6 @@
   "aiReportHide": "隐藏",
   "aiReportedOpen": "已举报",
   "aiReportNotSaved": "举报标记没能存入加密记录；重新打开后，这条回复可能会再次显示。",
-  "aiReportPreviewUpdated": "预览已更新为要发送的内容，确认后请再按一次提交。"
+  "aiReportPreviewUpdated": "预览已更新为要发送的内容，确认后请再按一次“提交举报”。",
+  "aiReportNotChecked": "无法检查要发送的内容，举报没有发送。"
 }

@@ -2378,5 +2378,6 @@
   "aiReportHide": "Sembunyikan",
   "aiReportedOpen": "Dilaporkan",
   "aiReportNotSaved": "Tanda dilaporkan tidak dapat disimpan ke sejarah yang disulitkan, jadi respons ini mungkin dipaparkan semula selepas aplikasi dimulakan semula.",
-  "aiReportPreviewUpdated": "Pratonton kini menunjukkan kandungan yang akan dihantar. Semak, kemudian ketik Hantar laporan sekali lagi."
+  "aiReportPreviewUpdated": "Pratonton kini menunjukkan kandungan yang akan dihantar. Semak, kemudian ketik Hantar laporan sekali lagi.",
+  "aiReportNotChecked": "Kandungan yang akan dihantar tidak dapat disemak, jadi laporan tidak dihantar."
 }

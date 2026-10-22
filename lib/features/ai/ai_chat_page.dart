@@ -337,7 +337,7 @@ class _AiChatPageState extends State<AiChatPage> {
       final text = result.text;
       // Null when the answer is gone or the text could not be checked.
       if (text == null) {
-        _notice(l10n.aiReportFailed);
+        _notice(l10n.aiReportNotChecked);
         return;
       }
       final AiReportRoute route;

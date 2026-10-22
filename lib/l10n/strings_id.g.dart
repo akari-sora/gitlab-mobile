@@ -2381,4 +2381,5 @@ const _messagesId = <String>[
   'Telah dilaporkan',
   'Tanda telah dilaporkan tidak dapat disimpan ke riwayat terenkripsi, sehingga respons ini dapat muncul lagi setelah aplikasi dimulai ulang.',
   'Pratinjau kini menampilkan yang akan dikirim. Periksa, lalu ketuk Kirim laporan sekali lagi.',
+  'Konten yang akan dikirim tidak dapat diperiksa, jadi laporan tidak dikirim.',
 ];

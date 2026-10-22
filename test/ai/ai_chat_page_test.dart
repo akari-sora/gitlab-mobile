@@ -62,9 +62,12 @@ final class _FakeSession extends ChangeNotifier implements AiChatSession {
   bool secretsReadable = true;
   String? rotatedSecret;
   var secretRefreshes = 0;
+  // Holds the refresh, like a read that takes a moment.
+  Completer<void>? refreshGate;
   @override
   Future<bool> refreshSecrets() async {
     secretRefreshes++;
+    await refreshGate?.future;
     return secretsReadable;
   }
   // Like the controller, a rebuilt item points at its replacement.
@@ -419,8 +422,9 @@ void main() {
       await tester.pumpAndSettle();
       // The answer is rebuilt while the sheet stays as it was.
       final original = session.items.single as AiAssistantItem;
-      const rebuilt = AiAssistantItem(
-        text: 'It renames two files.',
+      // Long enough that the preview runs far past the screen.
+      final rebuilt = AiAssistantItem(
+        text: 'It renames two files.${'\nmore detail' * 120}',
         state: AiAssistantState.done,
         source: source,
       );
@@ -432,10 +436,68 @@ void main() {
       await send(tester);
       // Nothing left; the sheet now shows the text that would go.
       expect(sent, isEmpty);
-      expect(find.byKey(const ValueKey('ai-report-preview-updated')), findsOne);
+      final note = find.byKey(const ValueKey('ai-report-preview-updated'));
+      expect(note, findsOne);
+      // The note is on screen next to Send and is read out when it appears.
+      final screen = tester.view.physicalSize / tester.view.devicePixelRatio;
+      expect(tester.getRect(note).bottom, lessThanOrEqualTo(screen.height));
+      expect(tester.getRect(note).top, greaterThanOrEqualTo(0));
+      expect(
+        find.ancestor(
+          of: note,
+          matching: find.byWidgetPredicate(
+            (widget) =>
+                widget is Semantics && (widget.properties.liveRegion ?? false),
+          ),
+        ),
+        findsOne,
+      );
       expect(tester.widget<Text>(preview).data, contains('two files'));
       await send(tester);
       expect(sent.single.body, contains('two files'));
+    });
+
+    testWidgets('a second Send while the first is checked sends once', (
+      tester,
+    ) async {
+      final session = answered()..refreshGate = Completer<void>();
+      final sent = await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-harmful')));
+      await tester.pumpAndSettle();
+      final button = find.byKey(const ValueKey('ai-report-send'));
+      await tester.ensureVisible(button);
+      await tester.pumpAndSettle();
+      // The second press lands while the first is still being checked.
+      await tester.tap(button);
+      await tester.tap(button, warnIfMissed: false);
+      expect(session.secretRefreshes, 1);
+      session.refreshGate!.complete();
+      await tester.pumpAndSettle();
+      expect(sent, hasLength(1));
+      expect(session.reported, hasLength(1));
+    });
+
+    testWidgets('changing the choice after an update clears the note', (
+      tester,
+    ) async {
+      final session = answered()..rotatedSecret = 'synthetic-rotated-token';
+      await openReport(tester, session);
+      await tester.tap(find.byKey(const ValueKey('ai-report-other')));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byKey(const ValueKey('ai-report-description')),
+        'synthetic-rotated-token',
+      );
+      await tester.pumpAndSettle();
+      await send(tester);
+      final note = find.byKey(const ValueKey('ai-report-preview-updated'));
+      expect(note, findsOne);
+      final attach = find.byKey(const ValueKey('ai-report-attach'));
+      await tester.ensureVisible(attach);
+      await tester.pumpAndSettle();
+      await tester.tap(attach);
+      await tester.pumpAndSettle();
+      expect(note, findsNothing);
     });
 
     testWidgets('a token rotated in place is redacted before it goes', (
@@ -468,7 +530,7 @@ void main() {
       await send(tester);
       expect(sent, isEmpty);
       expect(session.reported, isEmpty);
-      expect(find.text(l10n.aiReportFailed), findsOneWidget);
+      expect(find.text(l10n.aiReportNotChecked), findsOneWidget);
     });
 
     testWidgets('the share sheet is anchored at the Report button', (
@@ -506,7 +568,7 @@ void main() {
       await send(tester);
       expect(sent, isEmpty);
       expect(session.reported, isEmpty);
-      expect(find.text(l10n.aiReportFailed), findsOneWidget);
+      expect(find.text(l10n.aiReportNotChecked), findsOneWidget);
     });
 
     testWidgets('the address is copied with feedback on the button', (

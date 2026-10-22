@@ -2381,4 +2381,5 @@ const _messagesFr = <String>[
   'Signalé',
   'La marque de signalement n’a pas pu être enregistrée dans l’historique chiffré ; cette réponse peut donc réapparaître après un redémarrage.',
   'L\'aperçu affiche maintenant ce qui sera envoyé. Vérifiez-le, puis appuyez de nouveau sur Envoyer le signalement.',
+  'Le contenu à envoyer n\'a pas pu être vérifié, le signalement n\'a donc pas été envoyé.',
 ];

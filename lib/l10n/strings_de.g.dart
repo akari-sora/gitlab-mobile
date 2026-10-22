@@ -2381,4 +2381,5 @@ const _messagesDe = <String>[
   'Gemeldet',
   'Die Meldungsmarkierung konnte nicht im verschlüsselten Verlauf gespeichert werden, daher kann diese Antwort nach einem Neustart erneut angezeigt werden.',
   'Die Vorschau zeigt jetzt, was gesendet wird. Prüfen Sie sie und tippen Sie erneut auf „Meldung senden“.',
+  'Was gesendet würde, konnte nicht geprüft werden, deshalb wurde die Meldung nicht gesendet.',
 ];

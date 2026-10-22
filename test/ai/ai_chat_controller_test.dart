@@ -175,8 +175,7 @@ AiChatController _controller(
   wireClientFactory: wireClientFactory,
   refreshSecrets: refreshSecrets,
   historyRetryDelays:
-      historyRetryDelays ??
-      const [Duration(seconds: 1), Duration(seconds: 5), Duration(seconds: 30)],
+      historyRetryDelays ?? AiChatController.defaultHistoryRetryDelays,
 );
 
 AiWireClient _wireClient(
@@ -912,6 +911,12 @@ void main() {
   });
 
   test('two failing controllers share bounded retry scheduling', () async {
+    // Retries far beyond the window, so a slow machine cannot add one.
+    const slow = [
+      Duration(seconds: 30),
+      Duration(seconds: 30),
+      Duration(seconds: 30),
+    ];
     final store = MemoryAiStore();
     final environment = await _environment(aiStore: store);
     addTearDown(environment.dispose);
@@ -938,11 +943,13 @@ void main() {
       environment,
       FakeAdapter((_) => _sse(answer('first answer'))),
       tools: false,
+      historyRetryDelays: slow,
     );
     final second = await _readyController(
       environment,
       FakeAdapter((_) => _sse(answer('second answer'))),
       tools: false,
+      historyRetryDelays: slow,
     );
     final account = environment.workspace.account.key;
     expect(await history.enable(account), AiHistoryState.ready);
@@ -1164,6 +1171,129 @@ void main() {
     expect(savedA, isTrue);
   });
 
+  test(
+    'a fresh conversation after kept display starts at its first item',
+    () async {
+      final environment = await _environment();
+      addTearDown(environment.dispose);
+      final adapters = <FakeAdapter>[];
+      final controller = _controller(
+        environment,
+        wireClientFactory:
+            ({required config, required apiKey, required conversationId}) {
+              final adapter = FakeAdapter((_) => _sse(answer('Final answer')));
+              adapters.add(adapter);
+              return _wireClient(
+                adapter,
+                config: config,
+                apiKey: apiKey,
+                conversationId: conversationId,
+              );
+            },
+      );
+      addTearDown(controller.dispose);
+      await _configure(
+        environment,
+        _provider(AiFormat.responses),
+        grantConsent: true,
+      );
+      await controller.recheck();
+      await controller.send('earlier question');
+      final changed = await environment.settings.saveProvider(
+        _provider(AiFormat.responses, model: 'changed-model'),
+      );
+      await environment.settings.grantConsent(
+        environment.workspace.account.key,
+        aiCurrentConsentContractFor(changed),
+        const {'synthetic': true},
+      );
+      await controller.recheck();
+      expect(
+        controller.items.last,
+        isA<AiNoticeItem>().having(
+          (item) => item.kind,
+          'kind',
+          AiNoticeKind.newConversation,
+        ),
+      );
+      // A conversation started from scratch owns everything from index 0 again.
+      controller.startNewConversation();
+      await controller.recheck();
+      await controller.send('fresh question');
+      final answer0 = controller.items.whereType<AiAssistantItem>().single;
+      expect(controller.currentOf(answer0), same(answer0));
+    },
+  );
+
+  test(
+    'a saved snapshot leaves out display kept from an earlier conversation',
+    () async {
+      final store = MemoryAiStore();
+      final environment = await _environment(aiStore: store);
+      addTearDown(environment.dispose);
+      final root = await Directory.systemTemp.createTemp('mr6a4-kept-');
+      final history = AiHistoryCoordinator.debugReset(
+        store: store,
+        files: AiHistoryFileStore(root: () async => root),
+      );
+      addTearDown(() async {
+        AiHistoryCoordinator.debugReset();
+        await root.delete(recursive: true);
+      });
+      final controller = _controller(
+        environment,
+        wireClientFactory:
+            ({required config, required apiKey, required conversationId}) =>
+                _wireClient(
+                  FakeAdapter((_) => _sse(answer('Final answer'))),
+                  config: config,
+                  apiKey: apiKey,
+                  conversationId: conversationId,
+                ),
+      );
+      addTearDown(controller.dispose);
+      await _configure(
+        environment,
+        _provider(AiFormat.responses),
+        grantConsent: true,
+      );
+      final account = environment.workspace.account.key;
+      expect(await history.enable(account), AiHistoryState.ready);
+      await environment.settings.loadAccount(account);
+      await controller.recheck();
+      await controller.send('earlier question');
+      final firstId = controller.id;
+      controller.markReported(
+        controller.items.whereType<AiAssistantItem>().single,
+      );
+      await _waitUntil(() => controller.historySaved);
+      final changed = await environment.settings.saveProvider(
+        _provider(AiFormat.responses, model: 'changed-model'),
+      );
+      await environment.settings.grantConsent(
+        account,
+        aiCurrentConsentContractFor(changed),
+        const {'synthetic': true},
+      );
+      await controller.recheck();
+      expect(controller.id, isNot(firstId));
+      await controller.send('new question with nothing reported');
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final saved = (await history.read(account))!.conversations;
+      // Only the earlier conversation, which holds the report, is saved.
+      expect(saved.map((conversation) => conversation.id), [firstId]);
+      expect(controller.reportNotSaved, isFalse);
+    },
+  );
+
+  test('report saves retry after 1, 5 and 30 seconds', () {
+    expect(AiChatController.defaultHistoryRetryDelays, const [
+      Duration(seconds: 1),
+      Duration(seconds: 5),
+      Duration(seconds: 30),
+    ]);
+  });
+
   test('a missing history key says the mark is not saved at once', () async {
     final store = MemoryAiStore();
     final environment = await _environment(aiStore: store);
@@ -1245,19 +1375,29 @@ void main() {
       AiSettingsController(MemoryAiStore()),
     );
     addTearDown(environment.dispose);
+    // The answer quotes what is later the rotated access token.
     final controller = await _readyController(
       environment,
-      FakeAdapter((_) => _sse(answer('safe synthetic answer'))),
+      FakeAdapter((_) => _sse(answer('the answer quotes $newAccess'))),
       tools: false,
     );
     await controller.send('question');
+    var notified = 0;
+    controller.addListener(() => notified++);
     final generation = session.generation;
     rotate = true;
     await session.api!.currentUser();
     expect(session.api!.credential.accessToken, newAccess);
     expect(session.generation, generation);
     const pasted = 'pasted $newAccess and $newRefresh';
+    notified = 0;
     expect(await controller.refreshSecrets(), isTrue);
+    // While idle the larger set re-redacts what is shown, and the page hears.
+    expect(
+      controller.items.whereType<AiAssistantItem>().single.text,
+      isNot(contains(newAccess)),
+    );
+    expect(notified, greaterThan(0));
     final safe = controller.draftSafe(pasted);
     expect(safe, isNot(contains(newAccess)));
     expect(safe, isNot(contains(newRefresh)));
@@ -3083,6 +3223,9 @@ void main() {
         isFalse,
       );
       await controller.send('new synthetic question');
+      // This conversation's own answer resolves.
+      final own = controller.items.whereType<AiAssistantItem>().last;
+      expect(controller.currentOf(own), same(own));
       final requests = adapters.expand((adapter) => adapter.requests).toList();
       expect(requests, hasLength(2));
       final second = jsonEncode(requests.last.data);

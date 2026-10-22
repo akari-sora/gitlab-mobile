@@ -1686,3 +1686,42 @@ Eight mutations, each caught by a test:
 - kept display resolving;
 - Report offered on earlier answers;
 - the listener flushing on every ready notification.
+
+#### MR6a-4 review round 3
+
+Round 3 ran without Codex, cursor-agent and agy, which had all run out of
+quota. Opus 5.5 reviewed it, with a Claude reviewer agent and DeepSeek V4.1
+Flash (free) filling in. Opus: APPROVE WITH MINOR FIXES, with no Critical or
+Important findings. The Claude reviewer gave the same verdict, with six
+Minors; four of them repeat Opus's. It re-ran the eight round-2 mutations, and all were
+caught. Fixes:
+
+- **Idle refresh.** A refresh while idle that redacts more now notifies the
+  page. A failed refresh blocks the chat the way a failed recheck does.
+- **Kept display in saved history.** The encrypted history now saves only
+  the current conversation's items. A display kept from an earlier
+  conversation could otherwise make an unreported conversation get saved
+  with the earlier one's text. `historySaved` and `reportNotSaved` use the
+  same items.
+- **Send.**
+  - The sheet takes the shown preview before it rebuilds.
+  - It does not pop if it has already been dismissed.
+  - When the text cannot be checked, it says so (`aiReportNotChecked`), and
+    no longer reports that mail could not be opened.
+- **Wording.** The preview note names the Send button exactly in en, zh-TW
+  and zh-CN.
+- **Note placement.** The Claude reviewer found that the "preview updated"
+  note could fall below a long preview, off screen. It now sits next to the
+  buttons and is a live region, so a screen reader reads it out. The default
+  retry delays have a test, and injected delays must be exactly three.
+- **Tests.** The two-controller test no longer depends on machine speed.
+  These tests are new:
+  - two presses of Send while the text is being checked send once;
+  - a new choice clears the "preview updated" note;
+  - a fresh conversation after kept display owns its items from index 0;
+  - a refresh while idle notifies;
+  - the saved snapshot leaves the kept display out.
+  Each of these was checked with a mutation.
+- **Left as a follow-up:** a test for "a recovery during the fourth attempt
+  resets the budget". The fix is in place, but the test needs a history file
+  layer that fails one conversation while another saves.

@@ -2381,4 +2381,5 @@ const _messagesEs = <String>[
   'Informado',
   'No se pudo guardar la marca de informe en el historial cifrado, así que esta respuesta puede mostrarse de nuevo tras reiniciar.',
   'La vista previa muestra ahora lo que se enviará. Revísala y vuelve a pulsar Enviar informe.',
+  'No se pudo comprobar lo que se enviaría, así que el informe no se envió.',
 ];

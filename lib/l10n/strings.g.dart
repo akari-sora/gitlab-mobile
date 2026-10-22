@@ -7228,6 +7228,9 @@ final class AppStrings {
   /// 回報標記沒能存進加密紀錄；重新開啟後，這則回應可能會再次顯示。
   String get aiReportNotSaved => language._messages[2377];
 
-  /// 預覽已更新為要送出的內容，確認後請再按一次送出。
+  /// 預覽已更新為要送出的內容，確認後請再按一次「送出回報」。
   String get aiReportPreviewUpdated => language._messages[2378];
+
+  /// 無法檢查要送出的內容，回報沒有送出。
+  String get aiReportNotChecked => language._messages[2379];
 }

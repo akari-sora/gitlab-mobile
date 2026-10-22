@@ -2381,4 +2381,5 @@ const _messagesNl = <String>[
   'Gemeld',
   'De meldingsmarkering kon niet worden opgeslagen in de versleutelde geschiedenis, waardoor dit antwoord na een herstart opnieuw kan verschijnen.',
   'Het voorbeeld toont nu wat er wordt verzonden. Controleer het en tik nog een keer op Melding verzenden.',
+  'Wat er verzonden zou worden kon niet worden gecontroleerd, dus de melding is niet verzonden.',
 ];

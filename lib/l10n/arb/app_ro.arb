@@ -2378,5 +2378,6 @@
   "aiReportHide": "Ascunde",
   "aiReportedOpen": "Raportat",
   "aiReportNotSaved": "Marcajul de raportare nu a putut fi salvat în istoricul criptat, așa că acest răspuns poate apărea din nou după repornire.",
-  "aiReportPreviewUpdated": "Previzualizarea arată acum ce se va trimite. Verific-o, apoi apasă din nou Trimite raportul."
+  "aiReportPreviewUpdated": "Previzualizarea arată acum ce se va trimite. Verific-o, apoi apasă din nou Trimite raportul.",
+  "aiReportNotChecked": "Conținutul de trimis nu a putut fi verificat, așa că raportul nu a fost trimis."
 }

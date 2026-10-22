@@ -2381,4 +2381,5 @@ const _messagesPtBr = <String>[
   'Denunciado',
   'A marca de denúncia não pôde ser salva no histórico criptografado, então esta resposta pode aparecer novamente após uma reinicialização.',
   'A prévia agora mostra o que será enviado. Confira e toque em Enviar denúncia de novo.',
+  'Não foi possível verificar o que seria enviado, então a denúncia não foi enviada.',
 ];

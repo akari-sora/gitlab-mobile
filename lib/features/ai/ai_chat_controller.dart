@@ -47,12 +47,12 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
     AiChatWireClientFactory? wireClientFactory,
     Future<void> Function()? refreshSecrets,
     @visibleForTesting
-    List<Duration> historyRetryDelays = const [
-      Duration(seconds: 1),
-      Duration(seconds: 5),
-      Duration(seconds: 30),
-    ],
-  }) : _historyRetryDelays = historyRetryDelays,
+    List<Duration> historyRetryDelays = defaultHistoryRetryDelays,
+  }) : assert(
+         historyRetryDelays.length == 3,
+         'one delay per retry after the first attempt',
+       ),
+       _historyRetryDelays = historyRetryDelays,
        _wireClientFactory = wireClientFactory ?? _createWireClient,
        _generation = session.generation,
        _api = session.api!,
@@ -121,6 +121,14 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   AiSavedConversation? _latestReportedSnapshot;
   AiSavedConversation? _savedReportedSnapshot;
   bool _reportNotSaved = false;
+  /// After a failed save of a reported conversation: a first attempt, then
+  /// these three retries, and no more until a new snapshot or a recovery.
+  static const defaultHistoryRetryDelays = [
+    Duration(seconds: 1),
+    Duration(seconds: 5),
+    Duration(seconds: 30),
+  ];
+
   bool _historySaving = false;
 
   /// Set when the history became ready while a flush was running: snapshots
@@ -204,13 +212,18 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
       _savedReportedSnapshot != null &&
       identical(_savedReportedSnapshot, _latestReportedSnapshot) &&
       _savedReportedSnapshot!.id == _id &&
-      listEquals(_savedReportedSnapshot!.conversation.items, _items) &&
+      listEquals(
+        _savedReportedSnapshot!.conversation.items,
+        _conversationItems,
+      ) &&
       _savedReportedSnapshot!.stopReason == _lastEnd?.name;
   @override
   bool get reportNotSaved =>
       settings.accountRecord(_accountKey)?.historyEnabled == true &&
       _reportNotSaved &&
-      _items.whereType<AiAssistantItem>().any((item) => item.reported);
+      _conversationItems.whereType<AiAssistantItem>().any(
+        (item) => item.reported,
+      );
   @override
   bool get canSend =>
       _alive &&
@@ -265,13 +278,27 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   @override
   Future<bool> refreshSecrets() async {
     if (!_alive) return false;
+    final shown = _displayRevision;
     try {
       await _refreshSecrets();
-      return _alive;
-    } on Object {
+    } on Object catch (error) {
+      if (!_alive) return false;
+      // As in recheck: what is shown could not be checked against the
+      // larger secret set, so the chat stops until it can.
+      _failure = error is AiFailure ? error : safeFailure(error);
+      _contextFailed = true;
+      _setBlocked(AiChatBlocker.contextUnavailable);
       return false;
     }
+    if (!_alive) return false;
+    // A larger secret set re-redacted what is shown. A stream notifies on
+    // its own; while idle nothing else tells the page.
+    if (_displayRevision != shown && _assistantIndex == null) _notify();
+    return true;
   }
+
+  /// This conversation's items, without display kept from an earlier one.
+  List<AiChatItem> get _conversationItems => _items.sublist(_conversationStart);
 
   void _replaceItem(int index, AiChatItem replacement) {
     final previous = _items[index];
@@ -300,13 +327,17 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
   void _saveReportedHistory() {
     if (!_alive ||
         settings.accountRecord(_accountKey)?.historyEnabled != true ||
-        !_items.whereType<AiAssistantItem>().any((item) => item.reported)) {
+        !_conversationItems.whereType<AiAssistantItem>().any(
+          (item) => item.reported,
+        )) {
       return;
     }
+    // Only this conversation: answers kept on screen from an earlier one
+    // were saved, if reported, under that conversation's id.
     final snapshot = AiSavedConversation(
       id: _id,
       updatedAt: DateTime.now().toUtc(),
-      conversation: AiConversation(items: _items),
+      conversation: AiConversation(items: _conversationItems),
       stopReason: _lastEnd?.name,
     );
     _latestReportedSnapshot = snapshot;
@@ -427,9 +458,10 @@ class AiChatController extends ChangeNotifier implements AiChatSession {
             _history.state(_accountKey) != AiHistoryState.ready &&
             _history.state(_accountKey) != AiHistoryState.readFailed &&
             _pendingReportedHistory.containsKey(_id)) {
-          // A missing or unavailable key does not come back on a timer:
-          // say now that the mark is not saved. A transition into ready
-          // flushes again, and a save clears this.
+          // No timer here: a missing key never comes back by itself, and an
+          // unavailable one is retried by the coordinator. Say now that the
+          // mark is not saved; a transition into ready flushes again, and a
+          // save clears this.
           _reportNotSaved = true;
           _notify();
         }
