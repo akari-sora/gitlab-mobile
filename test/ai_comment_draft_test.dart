@@ -142,52 +142,70 @@ void main() {
     });
   }
 
-  testWidgets('only explicit Save posts the reviewed comment', (tester) async {
-    final fixture = WorkspaceFixture();
-    fixture.issues[12] = fixture.issue(12, 'Synthetic issue');
-    addTearDown(fixture.api.close);
-    late Future<bool> editorResult;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Builder(
-          builder: (context) => TextButton(
-            onPressed: () => editorResult = openCommentEditor(
-              context,
-              account: fixture.account,
-              api: fixture.api,
-              project: fixture.project,
-              resource: 'issues',
-              iid: 12,
-              isCurrent: () => true,
-              appendBody: 'Answer',
+  for (final resource in ['issues', 'merge_requests']) {
+    testWidgets('only explicit Save posts the reviewed $resource comment', (
+      tester,
+    ) async {
+      final fixture = WorkspaceFixture();
+      fixture.issues[12] = fixture.issue(12, 'Synthetic issue');
+      addTearDown(fixture.api.close);
+      late Future<bool> editorResult;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => editorResult = openCommentEditor(
+                context,
+                account: fixture.account,
+                api: fixture.api,
+                project: fixture.project,
+                resource: resource,
+                iid: 12,
+                isCurrent: () => true,
+                appendBody: 'Answer',
+              ),
+              child: const Text('Open draft'),
             ),
-            child: const Text('Open draft'),
           ),
         ),
-      ),
-    );
-    await tester.tap(find.text('Open draft'));
-    await tester.pumpAndSettle();
-    expect(fixture.adapter.requests, isEmpty);
-    await tester.enterText(find.byType(TextFormField), 'Reviewed answer');
-    await tester.tap(find.byKey(const Key('editorSave')));
-    await pumpUntil(
-      tester,
-      () => find.byType(ResourceEditor).evaluate().isEmpty,
-      description: 'successful comment save closes the editor',
-    );
-    expect(find.byType(ResourceEditor), findsNothing);
-    expect(await editorResult, isTrue);
-    final writes = fixture.adapter.requests
-        .where((r) => r.method == 'POST')
-        .toList();
-    expect(writes, hasLength(1));
-    expect(
-      writes.single.uri.path,
-      '/gitlab/api/v4/projects/42/issues/12/notes',
-    );
-    expect(writes.single.data, {'body': 'Reviewed answer'});
-  });
+      );
+      await tester.tap(find.text('Open draft'));
+      await tester.pumpAndSettle();
+      expect(fixture.adapter.requests, isEmpty);
+      await tester.enterText(find.byType(TextFormField), 'Reviewed answer');
+      await tester.tap(find.byKey(const Key('editorSave')));
+      await pumpUntil(
+        tester,
+        () => find.byType(ResourceEditor).evaluate().isEmpty,
+        description: 'successful comment save closes the editor',
+      );
+      expect(find.byType(ResourceEditor), findsNothing);
+      expect(await editorResult, isTrue);
+      final writes = fixture.adapter.requests
+          .where((r) => r.method == 'POST')
+          .toList();
+      expect(writes, hasLength(1));
+      expect(
+        writes.single.uri.path,
+        '/gitlab/api/v4/projects/42/$resource/12/notes',
+      );
+      expect(writes.single.data, {'body': 'Reviewed answer'});
+      if (resource == 'merge_requests') {
+        expect(
+          fixture.mergeRequestDiscussions.any(
+            (discussion) =>
+                discussion['individual_note'] == true &&
+                (discussion['notes'] as List<dynamic>).any(
+                  (note) =>
+                      note is Map<String, dynamic> &&
+                      note['body'] == 'Reviewed answer',
+                ),
+          ),
+          isTrue,
+        );
+      }
+    });
+  }
 
   for (final outcome in ['success', 'cancellation', 'server error']) {
     testWidgets(

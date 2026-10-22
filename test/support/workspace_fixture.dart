@@ -378,6 +378,18 @@ class WorkspaceFixture {
       final created = iid == null ? null : createdMergeRequests[iid];
       if (created != null) return jsonResponse(created);
     }
+    if (joined == 'projects/42/merge_requests/12/notes' && method == 'POST') {
+      final id = ++counter;
+      final note = <String, dynamic>{
+        'id': id, 'body': body['body'],
+        'author': {'id': 7, 'username': 'developer'},
+        'created_at': '2026-09-19T12:00:00Z', 'system': false,
+      };
+      storedDiscussions.add({
+        'id': 'thread-$id', 'individual_note': true, 'notes': [note],
+      });
+      return jsonResponse(note, status: 201);
+    }
     if (joined == 'projects/42/merge_requests/12') {
       if (method == 'PUT') {
         mergeFields.addAll(body);
