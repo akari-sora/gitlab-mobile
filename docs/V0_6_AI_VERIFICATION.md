@@ -1142,3 +1142,54 @@ exact-head required jobs gate the merge. This local evidence does not claim CI
 success. Android is the current validation priority. iOS validation is deferred
 for this merge decision and remains an open product-acceptance lane; the deferral
 is not iOS evidence.
+
+### MR6a-3: preview before an answer joins a comment draft
+
+!98 appended the display-safe answer to the comment draft as written. The plan
+(v5 §6.6) also requires the answer to be made safe for GitLab first and shown in a
+preview. `neutralizeForGitLabDraft` existed with tests but had no caller. This
+MR closes that gap:
+
+- **Quick actions.** GitLab runs a line whose first character is `/` (after it
+  deletes `\r`) when a comment is posted, and the editor field has quick actions
+  on. The answer now goes through `neutralizeForGitLabDraft` before anything
+  else, and the result is checked again after the preview. The preview reports
+  how many lines changed (`quickActionLineCount`).
+- **Mentions.** `analyzeDraftMentions` (`lib/core/ai/draft_mentions.dart`) wraps
+  each `@name` candidate in a code span, from last to first, and keeps a wrap only
+  when reparsing with `package:markdown` 7.3.1 shows the code-text multiset grew
+  by exactly that token and one fewer mention is outside code. The candidate
+  pattern is a superset of GitLab's (`@all`, groups, `-@`, `.@`, `+@`); emails
+  are excluded. A mention it cannot neutralize (an HTML block, an adjacent or
+  unpaired backtick, more than 50 candidates) is listed, and the append stays
+  disabled until the user ticks "I understand that posting notifies these
+  users". "Keep mention notifications" appends the text unchanged.
+- **References.** `#12`, `!34`, `group/project#12` and issue, merge request or
+  work item URLs outside code are counted, because posting adds a mention note
+  to each.
+- **Sources and confidentiality.** The preview lists what the answer drew on:
+  the context sent with its question and the tools that turn ran. Tool results
+  now carry `readConfidential` when `get_issue` or an issue search returned an
+  issue with `confidential: true`. The flag is display-only: provider request
+  bodies are byte-identical either way (tested for all three formats). The
+  history codec stores `confidential: true` only when set, so older records are
+  unchanged. If any earlier read in the conversation was confidential and the
+  target is not a confidential issue, the preview warns before appending.
+- Nothing is posted from the preview. The append still opens the ordinary
+  editor, and posting still needs Save.
+
+Synthetic suites: `test/ai/draft_mentions_test.dart` (51 tests, including 600
+generated strings checked for silent mentions), `test/ai/ai_confidential_read_test.dart`,
+added cases in `test/ai/ai_chat_controller_test.dart`, `test/ai/quick_actions_test.dart`,
+the append-preview group in `test/ai/ai_chat_page_test.dart` (quick actions,
+mentions, acknowledgement, references, sources, confidential warning,
+cancel, a conversation that changed while the sheet was open, and 320 dp / 2x
+text in zh-TW and Arabic and 640×360 landscape in English), and the two
+entry-point tests, which now confirm the preview first. Removing each of the
+five guards in the insert flow (neutralization, mention handling, the
+acknowledgement gate, the target's own confidentiality, the re-check after the
+sheet) turns its test red.
+
+The synthetic emulator target `tool/emulator_ai_comment.dart` now answers with a
+quick-action line, a mention and a reference after a confidential read, so one
+run shows every part of the preview.
