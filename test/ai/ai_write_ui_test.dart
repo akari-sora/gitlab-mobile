@@ -247,6 +247,31 @@ void main() {
     expect(find.text('state_event'), findsNothing);
   });
 
+  testWidgets('a typed name with direction marks still matches', (
+    tester,
+  ) async {
+    final proposal = _proposal(
+      operationId: 'updateMergeRequest',
+      tier: AiWriteTier.t3,
+      typedName: true,
+      fields: const {'title': 'Draft: rename'},
+    );
+    final writes = _Writes([proposal]);
+    await tester.pumpWidget(
+      _host(AiWriteProposalCard(proposal: proposal, session: writes)),
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('ai-proposal-typed-name')),
+      '\u2068team/example\u2069',
+    );
+    await tester.pump();
+    final approve = find.byKey(const ValueKey('ai-proposal-approve'));
+    await tester.tap(approve);
+    await tester.pumpAndSettle();
+    // The coordinator's exact check gets the stored name.
+    expect(writes.approvals.single.typedName, 'team/example');
+  });
+
   testWidgets('a major write needs the exact name', (tester) async {
     final proposal = _proposal(
       operationId: 'updateMergeRequest',

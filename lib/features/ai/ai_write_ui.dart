@@ -242,7 +242,10 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
   bool get _nameTyped {
     final tier = _proposal.tier;
     if (!tier.requiresTypedName) return true;
-    return _typed.text.trim() == tier.typedName;
+    final name = tier.typedName;
+    // Direction marks copied from an Arabic interface do not count.
+    return name != null &&
+        attachmentReleaseNamesMatch(_typed.text.trim(), name);
   }
 
   Future<void> _approve() async {
@@ -254,7 +257,13 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
     try {
       outcome = await widget.session.approveWrite(
         _proposal,
-        typedName: _proposal.tier.requiresTypedName ? _typed.text.trim() : null,
+        // The stored name once it matches, so the exact check downstream
+        // never sees the marks.
+        typedName: _proposal.tier.requiresTypedName && _nameTyped
+            ? _proposal.tier.typedName
+            : _proposal.tier.requiresTypedName
+            ? _typed.text.trim()
+            : null,
       );
     } on Object {
       if (mounted) {

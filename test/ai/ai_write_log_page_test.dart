@@ -145,6 +145,13 @@ void main() {
     await tester.pumpAndSettle();
     final confirm = find.widgetWithText(FilledButton, l10n.confirmAction);
     expect(tester.widget<FilledButton>(confirm).onPressed, isNull);
+    // Pasted from an Arabic interface, the name carries direction marks.
+    await tester.enterText(find.byType(TextField).last, '\u2068!12\u2069');
+    await tester.pump();
+    expect(tester.widget<FilledButton>(confirm).onPressed, isNotNull);
+    await tester.enterText(find.byType(TextField).last, '!13');
+    await tester.pump();
+    expect(tester.widget<FilledButton>(confirm).onPressed, isNull);
     await tester.enterText(find.byType(TextField).last, '!12');
     await tester.pump();
     await tester.tap(confirm);

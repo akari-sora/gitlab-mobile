@@ -764,7 +764,10 @@ Future<bool> confirmAction(
             child: Text(l10n.cancelAction),
           ),
           FilledButton(
-            onPressed: requiredText != null && input.text != requiredText
+            onPressed:
+                requiredText != null &&
+                    _withoutIsolates(input.text) !=
+                        _withoutIsolates(requiredText)
                 ? null
                 : () => Navigator.pop(context, true),
             child: Text(l10n.confirmAction),
@@ -785,3 +788,8 @@ void showFailure(BuildContext context, Object error) {
     context,
   ).showSnackBar(SnackBar(content: Text(l10n.titleThenDetail(failure.title, failure.detail))));
 }
+
+/// Text without the invisible direction marks an Arabic interface wraps
+/// around names, so a name copied from the dialog still matches.
+String _withoutIsolates(String text) =>
+    text.replaceAll(RegExp('[\u200e\u200f\u2066-\u2069]'), '');
