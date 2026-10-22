@@ -579,9 +579,10 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
   }
 }
 
-/// A card whose text the user edited, kept after it did not run (§7.2):
-/// rejected, failed, unknown or expired. The edit can be copied, so the
-/// user's work is not lost; dismissing it drops it.
+/// A card whose text the user edited, kept until a readback confirms the
+/// write (§7.2): rejected, failed, unknown, expired, or written without a
+/// readback. The status says which; the edit can be copied, so the user's
+/// work is not lost; dismissing it drops it.
 class AiSettledEditCard extends StatelessWidget {
   const AiSettledEditCard({
     super.key,

@@ -1962,3 +1962,40 @@ tests:
 - the re-read on a device (the log had no interrupted entries);
 - OAuth accounts;
 - iOS.
+
+### MR6b-1 review rounds 2 and 3
+
+Under the owner's review rule, round 2 checked only the round-1 Critical
+and Important findings and the fix diff. Opus 5.5 confirmed all 20 fixed,
+with evidence per item. It found one new Important in the fix diff:
+- **N1.** A card the user edited, whose write then succeeded without a
+  readback (for example `createDiscussion`), was kept as "not made · this
+  change didn't go through". That invites a duplicate resend.
+- **Fix (`176b57b`).** The kept card now names the real outcome:
+  - written (or no change), with "written, but not read back; check
+    GitLab before sending it again";
+  - unknown, with its own sentence;
+  - only rejected, failed and not-run outcomes say the change did not go
+    through.
+- **Test.** "an edited write that ran is never called not made". Its
+  mutation (dropping the success branch) fails it.
+
+Two round-2 Minors were fixed in the same commit:
+- the banner now says "most changes" (m7);
+- a run records its page-context delivery once (m1).
+
+The first pipeline of !102 failed three packet 10 tests with "synthetic
+step did not complete". Six test helpers waited a fixed number of event
+loop turns. They now poll for up to 20 seconds (`15d1930`), and that
+pipeline passed.
+
+Round 3 (Opus 5.5, incremental): **APPROVE**.
+- N1 is fixed for every outcome a kept card can have, checked by
+  rendering each one.
+- The diff adds no Critical or Important finding.
+
+Its Minors go to the follow-up issue:
+- the `noChange` explanation (not reachable today);
+- coverage for the unknown-outcome sentence and the m1 scenario;
+- a card offering "edit" for a top-level `name` that the coordinator
+  cannot edit.

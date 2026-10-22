@@ -786,7 +786,8 @@ class _AiChatPageState extends State<AiChatPage> {
             proposal: proposal,
             session: writes,
           ),
-      // Edited cards that did not run keep the user's text (§7.2).
+      // Edited cards keep the user's text until a readback confirms the
+      // write (§7.2).
       if (_session case final AiWriteAuditSession audit)
         for (final edited in audit.settledWriteEdits)
           AiSettledEditCard(
