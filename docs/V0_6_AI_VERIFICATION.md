@@ -1193,3 +1193,52 @@ sheet) turns its test red.
 The synthetic emulator target `tool/emulator_ai_comment.dart` now answers with a
 quick-action line, a mention and a reference after a confidential read, so one
 run shows every part of the preview.
+
+Two related fixes found on the emulator:
+
+- **Line breaks.** !98 passed the answer through the session's `displaySafe`,
+  which removes every control character, including line feeds, so an appended
+  answer arrived as one line and lost its paragraphs, lists and code. The draft
+  path now uses `draftSafe`: the same redaction and hidden-character removal,
+  keeping tabs and line breaks. The test fakes had kept newlines, so no test
+  saw it. The fake session now strips them from display text as the controller
+  does, and both the page test and a controller test fail if the draft goes
+  through `displaySafe` again.
+- **The editor's quick-action hint.** `extractQuickActions` matched indented
+  slashes (`^\s*/`), so the editor still listed ` /close` as a command after the
+  preview had disabled it. GitLab's extractor deletes `\r` and matches `^\/`
+  only (`lib/gitlab/quick_actions/extractor.rb`, master, read on 2026-10-22).
+  The hint now follows that rule. The existing test that expected an indented
+  `/label` to count was changed to match GitLab.
+
+Emulator runs on the project's Android API 36 emulator:
+
+- **Synthetic (`tool/emulator_ai_comment.dart`, gate on, commit `03df08d`).**
+  - The preview showed the confidential warning, mentions turned off (1),
+    quick actions turned off (1 line), references (1), the source
+    `Read issue · #7`, and the text with `` `@synthetic-reviewer` `` and
+    ` /close`.
+  - "Keep mention notifications" listed `@synthetic-reviewer` and restored the
+    text.
+  - Confirming opened the ordinary editor after the existing draft. The fixture
+    write count stayed 0 until Save, then became 1.
+  - The refreshed thread rendered the mention as code and `/close` as text.
+- **Real account and provider (gate-on build of `b6e24f3`).**
+  - OpenCode Go, Chat Completions, `glm-5.3-flash`; the key went in through
+    stdin into the obscured field. The chat was opened on the public MR !98 of
+    this project.
+  - The first answer, on the build before the line-break fix, showed the bug
+    above. The preview of that answer also turned `@username` into code and
+    counted `!98` as a reference.
+  - After the fix, a multi-paragraph answer with a heading and a list kept its
+    lines in the preview and in the editor.
+  - The editor was closed without Save; no GitLab write was made with the
+    token.
+  - The provider was deleted and the account removed afterwards. The emulator's
+    original APK was reinstalled and its installed SHA-256 matched the saved
+    copy.
+
+**NOT_RUN:**
+- a live answer that reads a confidential issue (no private data was used);
+- the preview's Arabic and landscape layouts on a device (widget tests only);
+- iOS and physical devices.
