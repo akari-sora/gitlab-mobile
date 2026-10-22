@@ -202,7 +202,7 @@ const Map<String, AiFixedConfirmReason> _fixedOperationReason =
 
 const Set<String> _protectedBranchOperations = <String>{
   'edit_file',
-  'saveFile',
+  'createFile',
   'applySuggestion',
   'batchApplySuggestions',
   'mergeRequest',

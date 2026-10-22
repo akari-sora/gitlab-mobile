@@ -7,11 +7,23 @@ import '../../../features/ai/ai_write_journal.dart';
 import '../../failure.dart';
 import '../../gitlab_api.dart';
 import '../../upload_names.dart';
+import 'target_binding.dart';
 import 'write_ledger.dart';
+import 'write_preview.dart';
+import 'write_tier.dart' show AiTierFacts;
 
 export '../../../features/ai/ai_write_journal.dart'
     show AiConflictKey, AiJournalState;
 export 'write_ledger.dart' show AiWriteScope;
+export 'write_preview.dart';
+
+part 'gitlab_write_port_files.dart';
+part 'gitlab_write_port_refs.dart';
+part 'gitlab_write_port_merge.dart';
+part 'gitlab_write_port_ci.dart';
+part 'gitlab_write_port_snippets.dart';
+part 'gitlab_write_port_deletes.dart';
+part 'gitlab_write_port_project.dart';
 
 /// The caller resolves attachment ids and applies write-text policy first.
 final class AiWriteRequest {
@@ -22,12 +34,18 @@ final class AiWriteRequest {
     required Map<String, Object?> arguments,
     List<int>? uploadBytes,
     this.sendTimeout,
+    Set<AiCreatedRef> segmentCreated = const {},
+    List<int>? scheduleHmacKey,
   }) : scope = AiWriteScope(
          accountKey: scope.accountKey,
          instance: scope.instance,
          grants: List.unmodifiable(scope.grants),
        ),
        arguments = _freezeMap(arguments),
+       segmentCreated = Set.unmodifiable(segmentCreated),
+       scheduleHmacKey = scheduleHmacKey == null
+           ? null
+           : List.unmodifiable(scheduleHmacKey),
        uploadBytes = uploadBytes == null
            ? null
            : List.unmodifiable(uploadBytes);
@@ -38,6 +56,10 @@ final class AiWriteRequest {
   final Map<String, Object?> arguments;
   final List<int>? uploadBytes;
   final Duration? sendTimeout;
+  final Set<AiCreatedRef> segmentCreated;
+
+  /// Process-local only; never part of the payload digest or a preview.
+  final List<int>? scheduleHmacKey;
 }
 
 sealed class AiWriteOutcome {
@@ -78,6 +100,16 @@ final class AiWriteSettled extends AiWriteOutcome {
   final String? uploadMarkdown;
 }
 
+/// Return null to use the ordinary REST classification. Failures distinguish
+/// the mutation from its independent readback, including readback-only 401s.
+typedef AiResultClassifier = AiWriteSettled? Function(
+  AiWritePrepared prepared, {
+  Object? result,
+  Object? readback,
+  Object? mutationError,
+  Object? readbackError,
+});
+
 /// Process-local, single-use capability. Cannot be forged or moved to a peer.
 final class AiWritePrepared {
   AiWritePrepared._({
@@ -91,8 +123,31 @@ final class AiWritePrepared {
     this.todoTarget,
     this.projectPath,
     this.projectVisibility,
+    // Reserved for the family parts added after this foundation.
+    // ignore: unused_element_parameter
+    this.confirmName,
+    // Reserved for the family parts added after this foundation.
+    // ignore: unused_element_parameter
+    this.facts = const AiTierFacts(),
+    List<AiTargetRef> bindingTargets = const [],
+    // Reserved for the family parts added after this foundation.
+    // ignore: unused_element_parameter
+    this.bindingDigest = '',
+    // Reserved for the family parts added after this foundation.
+    // ignore: unused_element_parameter
+    this.journal = const AiJournalBindings(),
+    AiWritePreview? preview,
+    // Reserved for the family parts added after this foundation.
+    // ignore: unused_element_parameter
+    this.textScan,
+    // Reserved for the family parts added after this foundation.
+    // ignore: unused_element_parameter
+    this.createdOnSuccess,
+    this.classify,
   }) : writeKeys = Set.unmodifiable(writeKeys),
        dependencyKeys = Set.unmodifiable(dependencyKeys),
+       bindingTargets = List.unmodifiable(bindingTargets),
+       preview = preview ?? AiFieldsPreview(request.arguments),
        _owner = owner,
        _mutation = mutation,
        _readback = readback;
@@ -112,6 +167,15 @@ final class AiWritePrepared {
   /// visibility).
   final String? projectPath;
   final String? projectVisibility;
+  final String? confirmName;
+  final AiTierFacts facts;
+  final List<AiTargetRef> bindingTargets;
+  final String bindingDigest;
+  final AiJournalBindings journal;
+  final AiWritePreview preview;
+  final AiTextScan? textScan;
+  final AiCreatedRef? createdOnSuccess;
+  final AiResultClassifier? classify;
   final Object _owner;
   final Future<Object?> Function() _mutation;
   final Future<Object?> Function(Object? result)? _readback;
@@ -129,10 +193,15 @@ abstract interface class AiGitLabWritePort {
 /// REST only. Journal flush, approval, policy and execution permits belong to
 /// the coordinator. This port never retries a mutation or writes to disk.
 final class GitLabAiWritePort implements AiGitLabWritePort {
-  GitLabAiWritePort(this._api, {required this.accountKey});
+  GitLabAiWritePort(
+    this._api, {
+    required this.accountKey,
+    AiResultClassifier? resultClassifier,
+  }) : _resultClassifier = resultClassifier;
 
   final GitLabApi _api;
   final String accountKey;
+  final AiResultClassifier? _resultClassifier;
   final Object _owner = Object();
   final Set<String> _claimedExecutions = <String>{};
 
@@ -166,12 +235,24 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
       throw const ApiFailure(FailureKind.unsupported);
     }
     final a = request.arguments;
-    final allowed = _arguments[op];
+    final allowed = _arguments(op);
     if (allowed == null ||
         a.keys.any((key) => !allowed.contains(key)) ||
         (op != 'upload_attachment' &&
             (request.uploadBytes != null || request.sendTimeout != null))) {
       throw const ApiFailure(FailureKind.validation);
+    }
+    for (final prepareFamily in [
+      _prepareFiles,
+      _prepareRefs,
+      _prepareMerge,
+      _prepareCi,
+      _prepareSnippets,
+      _prepareDeletes,
+      _prepareProject,
+    ]) {
+      final prepared = await prepareFamily(request);
+      if (prepared != null) return prepared;
     }
     final user = await _api.currentUser();
     if ('${_api.instance.key}#${user.id}' != accountKey) {
@@ -228,7 +309,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
       ?resource,
       if (iid != null) '$iid',
     ];
-    final fields = _fieldKeys.containsKey(op)
+    final fields = _fieldKeys(op) != null
         ? _fields(a, op)
         : <String, dynamic>{};
     switch (op) {
@@ -595,6 +676,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     final visibility = p['visibility'];
     return AiWritePrepared._(
       request: request,
+      classify: _resultClassifier,
       releaseName: releaseName,
       writeKeys: keys,
       dependencyKeys: dependencies,
@@ -618,17 +700,40 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     }
     prepared._used = true;
     if (!mayStart()) return Future.value(const AiWriteNotSent());
-    return _settle(prepared, prepared._mutation);
+    return _settle(prepared, prepared._mutation, classify: prepared.classify);
   }
 
   Future<AiWriteOutcome> _settle(
     AiWritePrepared p,
-    Future<Object?> Function() mutation,
-  ) async {
+    Future<Object?> Function() mutation, {
+    AiResultClassifier? classify,
+  }) async {
+    AiWriteSettled? classified({
+      Object? result,
+      Object? readback,
+      Object? mutationError,
+      Object? readbackError,
+    }) {
+      try {
+        return classify?.call(
+          p,
+          result: result,
+          readback: readback,
+          mutationError: mutationError,
+          readbackError: readbackError,
+        );
+      } catch (_) {
+        return _outcome(p, AiJournalState.writeUncertain, 'invalidResponse');
+      }
+    }
+
     Object? result;
+    Object? readback;
     try {
       result = await mutation();
     } on ApiFailure catch (failure) {
+      final override = classified(mutationError: failure);
+      if (override != null) return override;
       final certain =
           failure.status == 401 ||
           const {
@@ -648,17 +753,21 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
             : failure.kind.name,
         status: failure.status,
       );
-    } catch (_) {
-      return _outcome(p, AiJournalState.writeUncertain, 'invalidResponse');
+    } catch (error) {
+      return classified(mutationError: error) ??
+          _outcome(p, AiJournalState.writeUncertain, 'invalidResponse');
     }
     if (p._readback != null) {
       try {
-        await p._readback(result);
-      } catch (_) {
+        readback = await p._readback(result);
+      } catch (error) {
         // A readback 401 is never the mutation's known HTTP refusal.
-        return _outcome(p, AiJournalState.writeUncertain, 'readbackFailed');
+        return classified(result: result, readbackError: error) ??
+            _outcome(p, AiJournalState.writeUncertain, 'readbackFailed');
       }
     }
+    final override = classified(result: result, readback: readback);
+    if (override != null) return override;
     final projection = <String, Object?>{};
     if (result is Map) {
       for (final key in const ['id', 'iid', 'state', 'resolved', 'position']) {
@@ -755,6 +864,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     }
     return AiWritePrepared._(
       request: r,
+      classify: _resultClassifier,
       releaseName: '@$username',
       writeKeys: {
         _key([accountKey, 'todos', '$id']),
@@ -943,7 +1053,7 @@ Map<String, Object?> _freezeMap(Map<String, Object?> value) {
 
 Map<String, dynamic> _fields(Map<String, Object?> a, String op) {
   final raw = a['fields'];
-  final allowed = _fieldKeys[op];
+  final allowed = _fieldKeys(op);
   if (raw is! Map<String, Object?> ||
       raw.isEmpty ||
       allowed == null ||
@@ -1007,78 +1117,13 @@ Map<String, dynamic> _fields(Map<String, Object?> a, String op) {
   return Map<String, dynamic>.from(raw);
 }
 
-const _contentFields = {
-  'title',
-  'description',
-  'labels',
-  'assignee_ids',
-  'milestone_id',
-};
-const _fieldKeys = <String, Set<String>>{
-  'createIssue': {..._contentFields, 'confidential', 'issue_type', 'severity'},
-  'updateIssue': {..._contentFields, 'confidential', 'severity', 'state_event'},
-  'createMergeRequest': {
-    ..._contentFields,
-    'reviewer_ids',
-    'source_branch',
-    'target_branch',
-  },
-  'updateMergeRequest': {..._contentFields, 'reviewer_ids', 'state_event'},
-  'createLabel': {'name', 'color', 'description'},
-  'updateLabel': {'name', 'color', 'description'},
-  'createMilestone': {'title', 'description', 'due_date', 'start_date'},
-  'updateMilestone': {'title', 'description', 'due_date', 'start_date'},
-  'moveBoardCard': {'labels', 'state_event'},
-};
-const _arguments = <String, Set<String>>{
-  'setStar': {'projectId', 'starred'},
-  'setSubscribed': {'projectId', 'resource', 'iid', 'subscribed'},
-  'markTodoDone': {'todoId'},
-  'addAwardEmoji': {'projectId', 'resource', 'iid', 'name', 'noteId'},
-  'removeAwardEmoji': {'projectId', 'resource', 'iid', 'awardId', 'noteId'},
-  'createNote': {'projectId', 'resource', 'iid', 'body'},
-  'updateNote': {'projectId', 'resource', 'iid', 'noteId', 'body'},
-  'createIssue': {'projectId', 'fields'},
-  'updateIssue': {'projectId', 'iid', 'fields'},
-  'createMergeRequest': {'projectId', 'fields'},
-  'updateMergeRequest': {'projectId', 'iid', 'fields'},
-  'unapproveMergeRequest': {'projectId', 'iid'},
-  'createTodo': {'projectId', 'resource', 'iid'},
-  'createDiscussion': {'projectId', 'resource', 'iid', 'body', 'position'},
-  'createDiscussionNote': {
-    'projectId',
-    'resource',
-    'iid',
-    'discussionId',
-    'body',
-  },
-  'updateDiscussionNote': {
-    'projectId',
-    'resource',
-    'iid',
-    'discussionId',
-    'noteId',
-    'body',
-  },
-  'setDiscussionResolved': {
-    'projectId',
-    'resource',
-    'iid',
-    'discussionId',
-    'resolved',
-  },
-  'createDraftNote': {'projectId', 'iid', 'body', 'commitId', 'position'},
-  'updateDraftNote': {'projectId', 'iid', 'noteId', 'body'},
-  'createLabel': {'projectId', 'fields'},
-  'updateLabel': {'projectId', 'labelId', 'fields'},
-  'createMilestone': {'projectId', 'fields'},
-  'updateMilestone': {'projectId', 'milestoneId', 'fields'},
-  'setMilestoneState': {'projectId', 'milestoneId', 'stateEvent'},
-  'createBoard': {'projectId', 'name'},
-  'renameBoard': {'projectId', 'boardId', 'name'},
-  'setBoardSystemListHidden': {'projectId', 'boardId', 'list', 'hidden'},
-  'createBoardList': {'projectId', 'boardId', 'labelId'},
-  'moveBoardList': {'projectId', 'boardId', 'listId', 'position'},
-  'moveBoardCard': {'projectId', 'iid', 'fields'},
-  'upload_attachment': {'projectId', 'filename', 'contentType'},
-};
+Set<String>? _fieldKeys(String operation) => productionAiLedger
+    .find(operation)
+    ?.arguments['fields']
+    ?.properties.keys.toSet();
+
+Set<String>? _arguments(String operation) =>
+    productionAiLedger.find(operation)?.arguments.entries
+        .where((entry) => entry.value.portVisible)
+        .map((entry) => entry.key)
+        .toSet();

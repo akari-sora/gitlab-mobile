@@ -46,7 +46,7 @@ void main() {
         );
         expect(
           _decide(
-            operationId: 'saveFile',
+            operationId: 'createFile',
             tier: AiWriteTier.t3,
             level: AiAutonomyLevel.conversationGrant,
             facts: const AiTierFacts(protectedOrDefaultBranch: true),
@@ -742,17 +742,17 @@ void main() {
             .toSet(),
         _mr6b1Operations,
       );
-      for (final AiCapability row in productionAiLedger.modelVisible) {
+      for (final AiCapability row in ProductionAiLedger.rows) {
         expect(
-          row.baseTier == AiWriteTier.t1 || row.baseTier == AiWriteTier.t2,
-          isTrue,
+          row.modelVisible,
+          _mr6b1Operations.contains(row.operationId),
+          reason: row.operationId,
         );
       }
       expect(
         productionAiLedger.find('upload_attachment')!.namedMethod,
         'uploadProjectFile',
       );
-      expect(productionAiLedger.find('edit_file'), isNull);
       expect(productionAiLedger.find('snoozeTodo'), isNull);
       expect(aiFixedConfirmOperationIds, <String>{'markAllTodosDone'});
       expect(AiWriteLimits.writesPerSend, 8);

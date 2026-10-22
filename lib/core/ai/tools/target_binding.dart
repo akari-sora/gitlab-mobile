@@ -153,7 +153,7 @@ bool scopeAdmits(
     return false;
   }
   for (final AiScopeGrant grant in scope.grants) {
-    if (_grantAdmits(grant, capability.scopeClass, target)) return true;
+    if (_grantAdmits(grant, capability, target)) return true;
   }
   return false;
 }
@@ -219,10 +219,10 @@ AiBindingResult bindTargets({
 
 bool _grantAdmits(
   AiScopeGrant grant,
-  AiScopeClass scopeClass,
+  AiCapability capability,
   AiTargetRef target,
 ) {
-  switch (scopeClass) {
+  switch (capability.scopeClass) {
     case AiScopeClass.project:
       return grant.kind == AiScopeKind.project &&
           grant.projectId != null &&
@@ -260,6 +260,15 @@ bool _grantAdmits(
               grant.kind == AiScopeKind.mergeRequest) &&
           grant.projectId != null &&
           grant.projectId == target.projectId;
+    case AiScopeClass.accountGlobalOnly:
+      return grant.kind == AiScopeKind.accountGlobal;
+    case AiScopeClass.personalNamespace:
+      if (grant.kind != AiScopeKind.project) return false;
+      if (capability.operationId == 'createProject') return true;
+      if (capability.operationId == 'forkProject') {
+        return grant.projectId != null && grant.projectId == target.projectId;
+      }
+      return false;
   }
 }
 
