@@ -93,6 +93,7 @@ class AiChatPage extends StatefulWidget {
     required this.session,
     this.summarize = false,
     this.draftTarget,
+    this.analyzeDraft = analyzeAiDraft,
   });
 
   final AiChatSession session;
@@ -100,6 +101,9 @@ class AiChatPage extends StatefulWidget {
   /// The comment draft a finished answer can be appended to; null when the
   /// origin offers none.
   final AiDraftTarget? draftTarget;
+
+  /// Checks an answer before it is appended; tests run it in place.
+  final AiDraftAnalyzer analyzeDraft;
 
   /// Opened from "AI summary": send the summary request once, when the empty
   /// conversation is ready.
@@ -198,20 +202,20 @@ class _AiChatPageState extends State<AiChatPage> {
       try {
         existing = await target.existingText();
       } on Object {
-        _snack(l10n.aiDraftUnreadable);
+        _notice(l10n.aiDraftUnreadable);
         return;
       }
       final AiDraftAnalysis analysis;
       try {
-        analysis = await analyzeAiDraft(text, existing);
+        analysis = await widget.analyzeDraft(text, existing);
       } on Object {
-        _snack(l10n.aiDraftCheckFailed);
+        _notice(l10n.aiDraftCheckFailed);
         return;
       }
       if (!mounted) return;
       setState(() => _preparingDraft = false);
       if (!_canInsert(item)) {
-        _changed();
+        _notice(l10n.aiDraftChanged);
         return;
       }
       final before = items.take(index).toList(growable: false);
@@ -237,7 +241,7 @@ class _AiChatPageState extends State<AiChatPage> {
       );
       if (chosen == null || !mounted) return;
       if (!_canInsert(item)) {
-        _changed();
+        _notice(l10n.aiDraftChanged);
         return;
       }
       if (chosen.split('\n').any((line) => line.startsWith('/'))) return;
@@ -254,17 +258,14 @@ class _AiChatPageState extends State<AiChatPage> {
       _session.phase == AiChatPhase.idle &&
       _session.items.contains(item);
 
-  /// Says that nothing was appended because the conversation changed. When
-  /// another page covers the chat, that is why, and the notice would not be
+  /// Says why nothing was appended, while the chat is in front. When another
+  /// page covers it, that page is the reason, and the notice would not be
   /// seen anyway.
-  void _changed() {
-    if (ModalRoute.of(context)?.isCurrent ?? false) _snack(l10n.aiDraftChanged);
+  void _notice(String message) {
+    if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return;
+    // The page's own messenger, which this state sits above.
+    _messenger.currentState?.showSnackBar(SnackBar(content: Text(message)));
   }
-
-  /// Shown on the page's own messenger, which this state sits above.
-  void _snack(String message) => _messenger.currentState?.showSnackBar(
-    SnackBar(content: Text(message)),
-  );
 
   String _draftTarget(AiWorkItemOrigin origin) {
     final reference = origin.kind == AiWorkItemKind.mergeRequest

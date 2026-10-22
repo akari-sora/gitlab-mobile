@@ -1340,15 +1340,17 @@ Emulator runs on the project's Android API 36 emulator:
     included, and Markdown text is already escaped, so this decodes exactly
     once.
   - The final mention count walks the DOM of the whole rendered note, text node
-    by text node, skipping `code` and `pre` but not attributes. That is how
-    GitLab's reference filter sees it.
+    by text node. It skips `code` and `pre`, and reads text nodes only, never
+    attributes. This matches GitLab 18.11 and later; round 3 below adds the
+    older parser.
   - `&amp;#64;victim` stays text. `<div title="@alice">` is no longer reported.
-  - The tests compare against an independent oracle that renders with
-    `markdownToHtml`, parses with `package:html` and calls nothing in the
-    analyzer. It covers the fixed corpus of both reviews and 600 generated
-    answers, each alone and after an existing draft.
-  - A 3,990-character answer with 50 candidates takes about 52 ms in JIT on a
-    Mac.
+  - The tests compare against a render-and-parse check (`markdownToHtml`, then
+    `package:html`) that calls nothing in the analyzer. It is not independent:
+    it shares the HTML5 parser and the mention pattern. It covers the fixed
+    corpus of both reviews and 600 generated answers, each alone and after an
+    existing draft.
+  - A 3,990-character answer with 50 candidates took about 52 ms in JIT on a
+    Mac, but only in a benign layout; see round 3.
 - **CR in the waiting draft (Codex).** GitLab deletes every CR of a comment
   before rendering when it processes quick actions. With an existing draft of
   `log\r` + three backticks, the backticks start a fence locally but end up
@@ -1384,3 +1386,50 @@ Emulator runs on the project's Android API 36 emulator:
   the editor, for example by closing a fence they had left open, a mention
   that was inside that code can become live. The editor's Save is not checked
   again.
+
+#### Review round 3 (Codex: APPROVE WITH MINOR FIXES; Opus: REQUEST CHANGES)
+
+- **Two GitLab parsers (Opus I1).** GitLab 18.11 and later parse note HTML with
+  HTML5 (Gumbo). Earlier self-managed releases use libxml2's HTML4 parser.
+  - Under HTML5 an unclosed raw `<code>` is rebuilt in the next paragraph, so
+    the round-2 analyzer treated later mentions as code. libxml2 closes it, and
+    the mention is live there. Example: `Wrap the value in a <code>
+    element.\n\nThanks @victim`.
+  - The analysis now takes the union, per name the larger count, of:
+    - the whole-note HTML5 scan;
+    - a scan of each Markdown text node as its own fragment, which skips only
+      code that Markdown itself produced.
+  - The verify-by-reparse step uses the same union.
+  - The reviewer's 4,000-document fuzz was compared with Nokogiri's libxml2
+    and Gumbo parsers using GitLab's XPath. Documents with a mention the
+    analyzer neither wrapped nor listed: 0 under libxml2, 4 under Gumbo. The 4
+    are malformed `code`/`textarea` tag combinations.
+  - Raw `<code>@x</code>` and `<pre>@x</pre>` are now over-reported, wrapped
+    or listed, as before round 2. The tests say which expectations changed.
+  - Whether GitLab actually notifies in these cases is still `NOT_VERIFIED`.
+    No `POST /markdown` was made, and no instance older than 18.11 was used.
+- **Raw anchors (Codex M1).** A raw `<a href=".../-/issues/123">` is counted as
+  a reference again, from the rendered DOM. A Markdown link to the same URL
+  is not counted twice.
+- **Speed (Opus I3).**
+  - A short answer can still be slow. `package:markdown`'s GFM autolink scan is
+    quadratic on a long unbroken run of letters, and each candidate reparsed
+    the whole draft. So 50 mentions before 3,500 `x` took about 15 s.
+  - Candidates are now wrapped all at once and verified in one reparse,
+    falling back to one by one only if that check fails.
+  - Measured in JIT on a Mac: that case 504 ms, 10 mentions before 3,900 `x`
+    632 ms, `'x' * 6000 + 'Z'` 756 ms, the benign layout 3 ms.
+  - The page now always runs the check on another isolate, whatever the
+    length. It gives up after 30 s and then appends nothing ("The answer could
+    not be checked").
+  - `AiChatPage.analyzeDraft` lets tests run the check in place. The entry
+    point tests and one page test use the real isolate.
+- **Flaky test (Opus I2).** The long-answer test used `'x' * 6000`, the parser's
+  slowest input, under a fixed two-second wait, so it failed on a loaded
+  machine. It now waits for the preview itself, up to 10 s, and uses `'x ' *
+  3000 + 'Z'`.
+- **Notices.** The unreadable, check-failed and changed notices all appear only
+  while the chat is in front. Tests cover a covered chat (searching offstage
+  too) and a failing check.
+- **Strings.** Malay uses its existing "quick action" term in the
+  existing-draft note.

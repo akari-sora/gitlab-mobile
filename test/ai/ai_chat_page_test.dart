@@ -11,6 +11,7 @@ import 'package:gitlab_mobile/core/failure.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_page.dart';
 import 'package:gitlab_mobile/features/ai/ai_chat_session.dart';
+import 'package:gitlab_mobile/features/ai/ai_draft_preview.dart';
 import 'package:gitlab_mobile/features/ai/ai_draft_target.dart';
 import 'package:gitlab_mobile/features/ai/ai_message_body.dart';
 import 'package:gitlab_mobile/l10n/l10n.dart';
@@ -178,6 +179,10 @@ List<AiChatItem> _conversation() => [
   ),
 ];
 
+/// The draft check in place, so a test need not wait for another isolate.
+Future<AiDraftAnalysis> _now(String text, String existing) async =>
+    analyzeAiDraftNow(text, existing);
+
 AiDraftTarget _target({
   String existing = '',
   bool Function()? confidential,
@@ -205,6 +210,7 @@ void main() {
       _host(
         AiChatPage(
           session: session,
+          analyzeDraft: _now,
           draftTarget: _target(
             insert: (text) {
               inserted.add(text);
@@ -247,6 +253,7 @@ void main() {
         _host(
           AiChatPage(
             session: session,
+            analyzeDraft: _now,
             draftTarget: _target(
               existing: existing,
               confidential: confidential,
@@ -490,6 +497,7 @@ void main() {
         _host(
           AiChatPage(
             session: answer('Answer'),
+            analyzeDraft: _now,
             draftTarget: AiDraftTarget(
               existingText: () async => throw const FormatException('draft'),
               confidential: () => false,
@@ -562,14 +570,38 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(inserted, isEmpty);
+      // The chat is covered, so it says nothing there.
+      expect(find.text(l10n.aiDraftChanged, skipOffstage: false), findsNothing);
+    });
+
+    testWidgets('a check that fails appends nothing and says so', (
+      tester,
+    ) async {
+      final inserted = <String>[];
+      await tester.pumpWidget(
+        _host(
+          AiChatPage(
+            session: answer('Answer'),
+            analyzeDraft: (_, _) async => throw TimeoutException('check'),
+            draftTarget: _target(insert: (text) async => inserted.add(text)),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(l10n.aiChatInsertDraft));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiDraftPreviewTitle), findsNothing);
+      expect(find.text(l10n.aiDraftCheckFailed), findsOneWidget);
+      expect(inserted, isEmpty);
     });
 
     testWidgets('a long answer is previewed in part and appended whole', (
       tester,
     ) async {
       // One character over what the preview shows: the note must still say
-      // that the preview is cut.
-      final long = '${'x' * 6000}Z';
+      // that the preview is cut. (A single unbroken run would be the
+      // Markdown parser's slowest input; this test is about the isolate.)
+      final long = '${'x ' * 3000}Z';
       final inserted = <String>[];
       await tester.pumpWidget(
         _host(

@@ -18,19 +18,27 @@ const _shownMentions = 8;
 /// How much of the text the preview shows; the editor shows all of it.
 const _shownCharacters = 6000;
 
-/// From this length on the draft is checked off the UI isolate: every mention
-/// candidate reparses the whole draft, which takes seconds on a phone for a
-/// long, code-heavy answer.
-const _backgroundCharacters = 4000;
+/// How long the check may take before nothing is appended.
+const _analysisTimeout = Duration(seconds: 30);
 
 /// The mention check of [text] appended to [existing], both as written (for
 /// "keep mention notifications") and with mentions turned off.
 typedef AiDraftAnalysis = ({DraftMentions asWritten, DraftMentions neutralized});
 
+typedef AiDraftAnalyzer =
+    Future<AiDraftAnalysis> Function(String text, String existing);
+
+/// Runs the check off the UI isolate whatever the length: even a short answer
+/// with a long unbroken run of letters takes seconds to parse on a phone.
+/// Throws a `TimeoutException` after [_analysisTimeout]; the caller then
+/// appends nothing.
 Future<AiDraftAnalysis> analyzeAiDraft(String text, String existing) =>
-    text.length + existing.length < _backgroundCharacters
-    ? Future.value(_analyze(text, existing))
-    : Isolate.run(() => _analyze(text, existing));
+    Isolate.run(() => _analyze(text, existing)).timeout(_analysisTimeout);
+
+/// The same check on the calling isolate, for tests.
+@visibleForTesting
+AiDraftAnalysis analyzeAiDraftNow(String text, String existing) =>
+    _analyze(text, existing);
 
 AiDraftAnalysis _analyze(String text, String existing) => (
   asWritten: analyzeDraftMentions(

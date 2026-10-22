@@ -131,7 +131,7 @@ void main() {
     '<div>\n&#64;group/subgroup\n</div>': ['group/subgroup'],
   }.entries) {
     test('decodes mentions in raw HTML: ${entry.key}', () {
-      expect(_outsideMentions(entry.key), entry.value);
+      expect(_html5Mentions(entry.key), entry.value);
       _expectDraft(entry.key, mentions: entry.value);
     });
   }
@@ -140,30 +140,129 @@ void main() {
     '&amp;#64;victim': 1,
     '<div>&amp;#64;victim</div>': 1,
     '<div title="@alice">hello</div>': 0,
-    '<pre>@x</pre>': 0,
-    '<code>@x</code>': 0,
-    '<div><pre>@x</pre><code>@x</code></div>': 0,
     '<div>@<span>victim</span></div>': 0,
   }.entries) {
-    test('the rendered HTML oracle finds no mention in ${entry.key}', () {
-      expect(_outsideMentions(entry.key), isEmpty);
-      _expectDraft(entry.key, references: entry.value);
-    });
+    test(
+      'the shared HTML5 rendering check finds no mention in ${entry.key}',
+      () {
+        expect(_html5Mentions(entry.key), isEmpty);
+        _expectDraft(entry.key, references: entry.value);
+      },
+    );
   }
 
   test('matches each DOM text node separately and counts anchor text', () {
     const input =
         '<div>@foo<span>bar</span> x<b>@other</b> '
         '<a href="https://example.com/@attribute">@linked</a></div>';
-    expect(_outsideMentions(input), ['foo', 'other', 'linked']);
+    expect(_html5Mentions(input), ['foo', 'other', 'linked']);
     _expectDraft(input, mentions: ['foo', 'other', 'linked']);
   });
 
   test('uses rendered text boundaries across nested Markdown fragments', () {
-    for (final input in ['~~a_@victim~~', '<code>*@victim*</code>']) {
-      expect(_outsideMentions(input), isEmpty);
-      _expectDraft(input);
+    const input = '~~a_@victim~~';
+    expect(_html5Mentions(input), isEmpty);
+    _expectDraft(input, mentions: ['victim']);
+    const rawCode = '<code>*@victim*</code>';
+    expect(_html5Mentions(rawCode), isEmpty);
+    // The fragment view conservatively reports raw HTML code even though the
+    // shared HTML5 parser suppresses it. A verified Markdown span is safe.
+    _expectDraft(rawCode, text: '<code>*`@victim`*</code>', neutralized: 1);
+  });
+
+  test('conservatively wraps or reports raw HTML code mentions', () {
+    for (final input in [
+      '<pre>@x</pre>',
+      '<code>@x</code>',
+      '<div><pre>@x</pre><code>@x</code></div>',
+    ]) {
+      expect(_html5Mentions(input), isEmpty);
+      _expectDraft(input, keepNotifications: true, mentions: ['x']);
     }
+    _expectDraft('<pre>@x</pre>', mentions: ['x']);
+    _expectDraft('<code>@x</code>', text: '<code>`@x`</code>', neutralized: 1);
+    _expectDraft('<div><pre>@x</pre><code>@x</code></div>', mentions: ['x']);
+  });
+
+  test('preserves first appearance across raw code and prose mentions', () {
+    _expectDraft(
+      '<code>@first</code> @second',
+      keepNotifications: true,
+      mentions: ['first', 'second'],
+    );
+  });
+
+  test(
+    'single-candidate fallback handles HTML5 text joined around raw tags',
+    () {
+      _expectDraft(
+        '</pre># <dd></h1>@victim<td>x <span><sup>`<dl>'
+        '<blockquote></kbd><blockquote><tt></i></i>',
+        text:
+            '</pre># <dd></h1>`@victim`<td>x <span><sup>`<dl>'
+            '<blockquote></kbd><blockquote><tt></i></i>',
+        neutralized: 1,
+      );
+    },
+  );
+
+  test(
+    'uses per-name maximum counts for wrapping and existing subtraction',
+    () {
+      _expectDraft(
+        '<code>@victim</code> @victim @other',
+        text: '<code>`@victim`</code> `@victim` `@other`',
+        neutralized: 3,
+      );
+      _expectDraft(
+        '@victim @victim',
+        existing: '<code>@victim</code>',
+        text: '`@victim` `@victim`',
+        neutralized: 2,
+      );
+    },
+  );
+
+  // These fixed expectations cover libxml2's closing of code/pre containers;
+  // the HTML5 rendering check below shares the implementation's parser and
+  // regexp, so it cannot establish compatibility with the older tree builder.
+  for (final input in [
+    'Wrap the value in a <code> element.\n\nThanks @victim for the report.',
+    'x <code>\n\n@victim',
+    '<b><code>x</b>\n\n@victim',
+    '<span><code>\n\n@victim',
+    'x <code>\n\n- @victim',
+    'x <code>\n\n> @victim',
+    'x <code>\n\n# @victim',
+    'x <code>\n\n<div>@victim</div>',
+    for (final tag in ['dd', 'dt', 'li', 'table']) '<pre><$tag>@victim</$tag>',
+  ]) {
+    test('wraps or reports the libxml2 mention in $input', () {
+      final result = analyzeDraftMentions(input);
+      expect(
+        result.neutralized > 0 || result.mentions.contains('victim'),
+        isTrue,
+      );
+      expect(analyzeDraftMentions(input, keepNotifications: true).mentions, [
+        'victim',
+      ]);
+    });
+  }
+
+  test('wraps or reports after an existing raw code opening', () {
+    const existing = 'Use <code> here';
+    const answer = 'cc @victim';
+    final result = analyzeDraftMentions(answer, existing: existing);
+    expect(
+      result.neutralized > 0 || result.mentions.contains('victim'),
+      isTrue,
+    );
+    _expectDraft(
+      answer,
+      existing: existing,
+      keepNotifications: true,
+      mentions: ['victim'],
+    );
   });
 
   test('counts references in DOM text, excluding attributes and raw code', () {
@@ -177,7 +276,7 @@ void main() {
   test('reports all encoded mentions after the wrapping candidate cap', () {
     final names = List.generate(51, (index) => 'user$index');
     final input = names.map((name) => '<div>&#64;$name</div>').join('\n');
-    expect(_outsideMentions(input), names);
+    expect(_html5Mentions(input), names);
     _expectDraft(input, mentions: names);
   });
 
@@ -233,15 +332,46 @@ void main() {
     stopwatch.stop();
     // ignore: avoid_print
     print(
-      '3990 characters / 50 candidates: '
+      'benign prefix / 3990 characters / 50 candidates: '
       '${stopwatch.elapsedMicroseconds / 1000} ms (JIT)',
     );
 
     expect(result.neutralized, 50);
     expect(result.mentions, isEmpty);
-    expect(_outsideMentions(result.text), isEmpty);
+    expect(_html5Mentions(result.text), isEmpty);
     expect(stopwatch.elapsed, lessThan(const Duration(seconds: 2)));
   });
+
+  final fiftyMentions = List.generate(50, (index) => '@user$index').join(' ');
+  for (final entry in <String, (String, int)>{
+    // 50 numbered names occupy 389 characters. Pad the separator to retain
+    // both the requested 3,500-character run and the 3,990-character total.
+    '50 mentions then 3500 x': (
+      '$fiftyMentions${' ' * (3990 - fiftyMentions.length - 3500)}${'x' * 3500}',
+      50,
+    ),
+    '10 mentions then 3900 x': (
+      '${List.generate(10, (index) => '@user$index').join(' ')} ${'x' * 3900}',
+      10,
+    ),
+    '6000 x then Z': ('${'x' * 6000}Z', 0),
+  }.entries) {
+    test('bounds analysis time for ${entry.key}', () {
+      final (input, count) = entry.value;
+      final stopwatch = Stopwatch()..start();
+      final result = analyzeDraftMentions(input);
+      stopwatch.stop();
+      // ignore: avoid_print
+      print(
+        '${entry.key} / ${input.length} characters: '
+        '${stopwatch.elapsedMicroseconds / 1000} ms (JIT)',
+      );
+      expect(result.neutralized, count);
+      expect(result.mentions, isEmpty);
+      expect(_html5Mentions(result.text), isEmpty);
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
+    });
+  }
 
   test(
     'keepNotifications preserves text and reports every outside mention',
@@ -327,7 +457,7 @@ void main() {
 
   test('analyzes the joined draft after deleting bare carriage returns', () {
     const existing = 'log\r```';
-    expect(_addedOutsideMentions('@victim', existing: existing), ['victim']);
+    expect(_addedHtml5Mentions('@victim', existing: existing), ['victim']);
     _expectDraft(
       '@victim',
       existing: existing,
@@ -344,7 +474,7 @@ void main() {
 
   test('treats CRLF and LF existing fences identically', () {
     for (final existing in ['log\r\n```', 'log\n```']) {
-      expect(_addedOutsideMentions('@victim', existing: existing), isEmpty);
+      expect(_addedHtml5Mentions('@victim', existing: existing), isEmpty);
       _expectDraft('@victim', existing: existing);
       _expectDraft('@victim', existing: existing, keepNotifications: true);
     }
@@ -403,6 +533,51 @@ void main() {
       '[https://gitlab.com/g/p/-/work_items/7]'
       '(https://gitlab.com/g/p/-/work_items/7)',
       references: 3,
+    );
+  });
+
+  for (final kind in ['issues', 'merge_requests', 'work_items']) {
+    final href = '/g/p/-/$kind/123';
+    test('counts each raw $kind anchor once and preserves Markdown counts', () {
+      _expectDraft('<div><a href="$href">details</a></div>', references: 1);
+      _expectDraft('<div><a href="$href">$href</a></div>', references: 1);
+      _expectDraft('<div><a href="$href">#456 !789</a></div>', references: 1);
+      _expectDraft(
+        '<div><a href="$href">/g/p/-/issues/456</a></div>',
+        references: 1,
+      );
+      _expectDraft('<a href="$href">**#456**</a>', references: 1);
+      _expectDraft(
+        '<div><a href="$href">details</a><a href="$href">again</a></div>',
+        references: 2,
+      );
+      _expectDraft('[details]($href)', references: 1);
+      _expectDraft('[$href]($href)', references: 1);
+      _expectDraft(
+        '[details]($href)\n\n<div><a href="$href">details</a></div>',
+        references: 2,
+      );
+      _expectDraft(
+        '<div><a href="$href">answer</a></div>',
+        existing: '<div><a href="$href">existing</a></div>',
+        references: 1,
+      );
+      _expectDraft('<code><a href="$href">details</a></code>');
+      _expectDraft('`<a href="$href">details</a>`');
+    });
+  }
+
+  test('raw anchor reference paths exclude queries and unrelated attributes', () {
+    _expectDraft(
+      '<div title="/g/p/-/issues/123">'
+      '<a href="/?next=/-/issues/123">query</a>'
+      '<a href="/g/p/-/issues/123abc">suffix</a>'
+      '<a href="/g/p/-/jobs/123">job</a></div>',
+    );
+    _expectDraft(
+      '<div><a href="https://gitlab.example:8443/gitlab/g/p/-/issues/123?a=1&amp;b=2">'
+      'details</a></div>',
+      references: 1,
     );
   });
 
@@ -465,7 +640,7 @@ void main() {
     );
   });
 
-  test('generated Markdown never leaves a mention unreported', () {
+  test('generated Markdown covers shared HTML5 mentions and preserves code', () {
     final random = Random(0x6a3);
     final existingRandom = Random(0x6a3c);
     const parts = [
@@ -554,7 +729,7 @@ void main() {
         expect(repeated.mentions, result.mentions, reason: reason);
         expect(
           result.mentions,
-          _addedOutsideMentions(result.text, existing: prefix),
+          containsAll(_addedHtml5Mentions(result.text, existing: prefix)),
           reason: reason,
         );
         final normalizedPrefix = prefix
@@ -603,7 +778,7 @@ void _expectDraft(
   expect(result.neutralized, neutralized);
   expect(
     result.mentions,
-    containsAll(_addedOutsideMentions(result.text, existing: existing)),
+    containsAll(_addedHtml5Mentions(result.text, existing: existing)),
   );
   expect(
     result.references,
@@ -615,7 +790,9 @@ void _expectDraft(
   );
 }
 
-List<String> _outsideMentions(String text) {
+// A rendering consistency check using the same HTML5 parser and regexp as the
+// analyzer. The fixed libxml2 cases above supply separate expected outcomes.
+List<String> _html5Mentions(String text) {
   final names = <String>[];
   final pattern = RegExp(r'(?<![A-Za-z0-9_])@([A-Za-z0-9_.][A-Za-z0-9_.\-/]*)');
   void visit(dom.Node node) {
@@ -639,12 +816,12 @@ List<String> _outsideMentions(String text) {
   return names;
 }
 
-List<String> _addedOutsideMentions(String text, {String existing = ''}) {
+List<String> _addedHtml5Mentions(String text, {String existing = ''}) {
   final prefix = existing.replaceAll('\r\n', '\n').replaceAll('\r', '');
-  final baseline = _outsideMentions(prefix);
+  final baseline = _html5Mentions(prefix);
   final joined = prefix.isEmpty ? text : '$prefix\n\n$text';
   final added = <String>{};
-  for (final name in _outsideMentions(joined)) {
+  for (final name in _html5Mentions(joined)) {
     if (!baseline.remove(name)) added.add(name);
   }
   return added.toList();

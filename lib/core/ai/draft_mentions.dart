@@ -36,7 +36,7 @@ final _referencePathPattern = RegExp(
   r'/-/(?:issues|merge_requests|work_items)/[0-9]+(?=$|[^A-Za-z0-9_])',
 );
 
-/// Adds code spans only when reparsing proves that one mention was removed
+/// Adds code spans only when reparsing proves that the mentions were removed
 /// without changing existing code. Unverified mentions remain for confirmation.
 DraftMentions analyzeDraftMentions(
   String text, {
@@ -49,31 +49,39 @@ DraftMentions analyzeDraftMentions(
   existing = existing.replaceAll('\r\n', '\n').replaceAll('\r', '');
   var result = text;
   var neutralized = 0;
+  var analysis = _analyze(_joinedDraft(existing, result));
 
   if (!keepNotifications) {
     // Stop collecting at 51: large drafts need only the final analysis below.
     final candidates = _mentionPattern.allMatches(text).take(51).toList();
     if (candidates.length <= 50 && candidates.isNotEmpty) {
-      var previous = _analyze(_joinedDraft(existing, result));
-      for (final candidate in candidates.reversed) {
-        final token = candidate[0]!.replaceFirst(_trailingPunctuation, '');
-        final proposedText = result.replaceRange(
-          candidate.start,
-          candidate.start + token.length,
-          '`$token`',
-        );
-        final proposed = _analyze(_joinedDraft(existing, proposedText));
-        if (proposed.mentions.length == previous.mentions.length - 1 &&
-            _addsOnlyCode(previous.code, proposed.code, token)) {
-          result = proposedText;
-          previous = proposed;
-          neutralized++;
+      // Most answers can be verified in one reparse. A failed batch may mix
+      // safe mentions with code or raw HTML, so retry those individually.
+      final batchText = _wrapCandidates(result, candidates.reversed);
+      final batch = _analyze(_joinedDraft(existing, batchText));
+      if (_verifiesBatch(analysis, batch, candidates)) {
+        result = batchText;
+        analysis = batch;
+        neutralized = candidates.length;
+      } else {
+        for (final candidate in candidates.reversed) {
+          final proposedText = _wrapCandidates(result, [candidate]);
+          final proposed = _analyze(_joinedDraft(existing, proposedText));
+          // Raw HTML may join a candidate to adjacent text in the local
+          // parser. Preserve the single-token fallback's count check while
+          // still proving that exactly this token became Markdown code.
+          final token = candidate[0]!.replaceFirst(_trailingPunctuation, '');
+          if (proposed.mentions.length == analysis.mentions.length - 1 &&
+              _addsOnly(analysis.code, proposed.code, [token])) {
+            result = proposedText;
+            analysis = proposed;
+            neutralized++;
+          }
         }
       }
     }
   }
 
-  final analysis = _analyze(_joinedDraft(existing, result));
   final existingAnalysis = _analyze(existing);
   final addedReferences = analysis.references - existingAnalysis.references;
   return DraftMentions(
@@ -108,20 +116,55 @@ List<String> _subtractMentions(List<String> joined, List<String> existing) {
   return result;
 }
 
-bool _addsOnlyCode(
+String _wrapCandidates(String text, Iterable<Match> candidates) {
+  for (final candidate in candidates) {
+    final token = candidate[0]!.replaceFirst(_trailingPunctuation, '');
+    text = text.replaceRange(
+      candidate.start,
+      candidate.start + token.length,
+      '`$token`',
+    );
+  }
+  return text;
+}
+
+Map<String, int> _counts(Iterable<String> values) {
+  final counts = <String, int>{};
+  for (final value in values) {
+    counts[value] = (counts[value] ?? 0) + 1;
+  }
+  return counts;
+}
+
+bool _verifiesBatch(
+  _Analysis previous,
+  _Analysis proposed,
+  Iterable<Match> candidates,
+) =>
+    _addsOnly(
+      previous.code,
+      proposed.code,
+      candidates.map(
+        (candidate) => candidate[0]!.replaceFirst(_trailingPunctuation, ''),
+      ),
+    ) &&
+    _addsOnly(
+      _counts(proposed.mentions),
+      _counts(previous.mentions),
+      candidates.map((candidate) => candidate[1]!),
+    );
+
+bool _addsOnly(
   Map<String, int> previous,
   Map<String, int> proposed,
-  String token,
+  Iterable<String> additions,
 ) {
-  if (proposed.length !=
-      previous.length + (previous.containsKey(token) ? 0 : 1)) {
-    return false;
+  final expected = Map<String, int>.of(previous);
+  for (final value in additions) {
+    expected[value] = (expected[value] ?? 0) + 1;
   }
-  if (proposed[token] != (previous[token] ?? 0) + 1) return false;
-  return previous.entries.every(
-    (entry) =>
-        proposed[entry.key] == entry.value + (entry.key == token ? 1 : 0),
-  );
+  return proposed.length == expected.length &&
+      expected.entries.every((entry) => proposed[entry.key] == entry.value);
 }
 
 _Analysis _analyze(String text) {
@@ -131,14 +174,29 @@ _Analysis _analyze(String text) {
     extensionSet: md.ExtensionSet.gitHubFlavored,
   ).parse(text);
   final analysis = _Analysis();
+  final fragmentMentions = <String>[];
 
-  void walkHtml(dom.Node node, {required bool skipReferences}) {
-    if (node is dom.Element &&
-        (node.localName == 'code' || node.localName == 'pre')) {
-      return;
+  void walkHtml(
+    dom.Node node, {
+    required List<String> mentions,
+    required bool skipReferences,
+    bool skipCode = true,
+  }) {
+    final rawCode =
+        node is dom.Element &&
+        (node.localName == 'code' || node.localName == 'pre');
+    if (skipCode && rawCode) return;
+    var skipChildReferences = skipReferences || rawCode;
+    if (!skipChildReferences && node is dom.Element && node.localName == 'a') {
+      final href = node.attributes['href'];
+      if (href != null && _isReferenceUrl(href)) {
+        analysis.references++;
+        // The anchor is one reference even when its label names another item.
+        skipChildReferences = true;
+      }
     }
     if (node is dom.Text) {
-      analysis.mentions.addAll(
+      mentions.addAll(
         _mentionPattern.allMatches(node.data).map((match) => match[1]!),
       );
       if (!skipReferences) {
@@ -149,55 +207,68 @@ _Analysis _analyze(String text) {
       }
     }
     for (final child in node.nodes) {
-      walkHtml(child, skipReferences: skipReferences);
+      walkHtml(
+        child,
+        mentions: mentions,
+        skipReferences: skipChildReferences,
+        skipCode: skipCode,
+      );
     }
   }
 
-  void walk(
-    md.Node node, {
-    bool insideCode = false,
-    bool skipReferences = false,
-  }) {
+  void walk(md.Node node, {bool insideCode = false}) {
     if (node is md.Element) {
       if (node.tag == 'code') {
         final value = node.textContent;
         analysis.code[value] = (analysis.code[value] ?? 0) + 1;
       }
       final blocked = insideCode || node.tag == 'code' || node.tag == 'pre';
-      var skipChildReferences = skipReferences;
-      if (!blocked && !skipReferences && node.tag == 'a') {
-        final href = node.attributes['href'];
-        if (href != null && _isReferenceUrl(href)) {
-          analysis.references++;
-          // A URL label can be split across multiple text nodes. Count the
-          // link itself once, including for autolinks with identical labels.
-          final label = node.textContent;
-          final labelUrl = label.startsWith('www.') ? 'http://$label' : label;
-          final destination = Uri.tryParse(href);
-          skipChildReferences =
-              destination == Uri.tryParse(labelUrl) ||
-              // Explicit link labels escape ampersands even when href does not.
-              destination == Uri.tryParse(labelUrl.replaceAll('&amp;', '&'));
-        }
-      }
       for (final child in node.children ?? const <md.Node>[]) {
-        walk(child, insideCode: blocked, skipReferences: skipChildReferences);
+        walk(child, insideCode: blocked);
       }
     } else if (node is md.Text && !insideCode) {
       // Markdown text is already HTML-escaped, while raw HTML is kept intact.
       // One fragment parse decodes once and preserves DOM text boundaries.
-      walkHtml(html.parseFragment(node.text), skipReferences: skipReferences);
+      // Plain text needs neither HTML tree construction nor entity decoding.
+      final fragment = node.text.contains('&') || node.text.contains('<')
+          ? html.parseFragment(node.text)
+          : dom.Text(node.text);
+      walkHtml(
+        fragment,
+        mentions: fragmentMentions,
+        skipReferences: true,
+        skipCode: false,
+      );
     }
   }
 
   for (final node in nodes) {
     walk(node);
   }
-  // Nested Markdown can leave adjacent Text nodes separate, and raw tags can
-  // span Markdown elements. Reconcile mentions with the rendered DOM so their
-  // text boundaries match the whole note, preserving the link reference count.
-  analysis.mentions.clear();
-  walkHtml(html.parseFragment(md.renderToHtml(nodes)), skipReferences: true);
+  // GitLab 18.11+ uses HTML5, where raw code tags can span Markdown elements.
+  // Older libxml2 parsers may close those tags earlier. Keep the larger count
+  // per name from the whole HTML5 DOM and the conservative Text-fragment view;
+  // only Markdown-generated code is excluded from that second view.
+  final wholeMentions = <String>[];
+  walkHtml(
+    html.parseFragment(md.renderToHtml(nodes)),
+    mentions: wholeMentions,
+    // Count both raw and Markdown anchors here once, including labels split
+    // across Markdown nodes. Attributes never enter the mention scan.
+    skipReferences: false,
+  );
+  // Start in source-fragment order so an early raw-code mention is not moved
+  // behind a later prose mention that only the whole-DOM scan already found.
+  analysis.mentions.addAll(fragmentMentions);
+  final remainingFragments = _counts(fragmentMentions);
+  for (final name in wholeMentions) {
+    final remaining = remainingFragments[name] ?? 0;
+    if (remaining > 0) {
+      remainingFragments[name] = remaining - 1;
+    } else {
+      analysis.mentions.add(name);
+    }
+  }
   return analysis;
 }
 

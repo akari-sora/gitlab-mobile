@@ -188,6 +188,21 @@ final class _SensitiveFileFixture extends WorkspaceFixture {
   }
 }
 
+/// The draft check runs on another isolate, which takes real time.
+Future<void> _waitForPreview(WidgetTester tester) async {
+  for (
+    var tries = 0;
+    tries < 100 && find.text(l10n.aiDraftPreviewTitle).evaluate().isEmpty;
+    tries++
+  ) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 100)),
+    );
+    await tester.pump();
+  }
+  await tester.pumpAndSettle();
+}
+
 Future<void> _openMenu(WidgetTester tester, String tooltip) async {
   await tester.tap(find.byTooltip(tooltip));
   await tester.pump();
@@ -219,7 +234,7 @@ void main() {
     await tester.tap(find.text(l10n.aiDiscuss));
     await tester.pumpAndSettle();
     await tester.tap(find.text(l10n.aiChatInsertDraft));
-    await tester.pumpAndSettle();
+    await _waitForPreview(tester);
     // The preview opens first and writes nothing.
     expect(find.text(l10n.aiDraftPreviewTitle), findsOneWidget);
     expect(find.byType(ResourceEditor), findsNothing);
@@ -273,7 +288,7 @@ void main() {
     expect(await target.existingText(), waiting);
     // The preview is told about the waiting draft through the same key.
     await tester.tap(find.text(l10n.aiChatInsertDraft));
-    await tester.pumpAndSettle();
+    await _waitForPreview(tester);
     expect(find.byKey(const ValueKey('ai-draft-after-existing')), findsOne);
     await tester.tap(find.text(l10n.cancelAction));
     await tester.pumpAndSettle();
@@ -337,7 +352,7 @@ void main() {
     await tester.pumpAndSettle();
     owner.generation++;
     await tester.tap(find.text(l10n.aiChatInsertDraft));
-    await tester.pumpAndSettle();
+    await _waitForPreview(tester);
     await tester.tap(find.byKey(const ValueKey('ai-draft-confirm')));
     await tester.pumpAndSettle();
     expect(find.byType(ResourceEditor), findsNothing);

@@ -2349,7 +2349,7 @@ const _messagesMs = <String>[
   'Kekalkan pemberitahuan sebutan',
   'Saya faham bahawa penyiaran akan memberitahu pengguna ini',
   'Perbualan ini telah membaca nota dalaman yang hanya boleh dilihat oleh ahli projek. Sebelum menambah, pastikan jawapan tidak mendedahkan sebarang kandungan nota tersebut.',
-  'Jawapan akan ditambah selepas draf anda yang belum dihantar. Sebutan dan rujukan disemak dalam gabungan kedua-dua teks; draf anda sendiri, termasuk semua tindakan pantas di dalamnya, kekal seperti asal.',
+  'Jawapan akan ditambah selepas draf anda yang belum dihantar. Sebutan dan rujukan disemak dalam gabungan kedua-dua teks; draf anda sendiri, termasuk semua quick action di dalamnya, kekal seperti asal.',
   'Pratonton menunjukkan bahagian awal; penyunting menunjukkan seluruh kandungan.',
   'Perbualan telah berubah, jadi tiada apa-apa ditambah.',
   'Draf komen tidak dapat dibaca, jadi tiada apa-apa ditambah.',
