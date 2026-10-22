@@ -2557,7 +2557,7 @@ const _messagesNl = <String>[
   'Onderbroken of lopende wijzigingen die worden ontgrendeld: {count}',
   'Het logboek is onleesbaar, dus er kunnen wijzigingen met een onbekende status zijn.',
   'Bevestigen betekent niet dat die wijzigingen niet zijn uitgevoerd. Controleer eerst GitLab.',
-  '{level}: de AI voert wijzigingen in GitLab uit zonder het eerst te vragen.',
+  '{level}: de AI voert de meeste wijzigingen in GitLab uit zonder eerst te vragen.',
   'Deze run stoppen en overschakelen naar elke wijziging bevestigen',
   'Bezig…',
   'Meldingen aanzetten',
@@ -2599,4 +2599,6 @@ const _messagesNl = <String>[
   'Deze wijziging is niet doorgegaan. Je bewerkte tekst blijft hier staan, zodat je hem kunt kopiëren.',
   'Bewerkte tekst kopiëren',
   'Bij samenvoegen in de standaardbranch worden deze issues gesloten: {issues}',
+  'Weggeschreven, maar de app heeft het niet teruggelezen ter bevestiging. Uw bewerkte tekst blijft hier staan; controleer GitLab voordat u opnieuw verstuurt.',
+  'Het is onduidelijk of deze wijziging is doorgevoerd. Uw bewerkte tekst blijft hier staan; controleer GitLab voordat u opnieuw verstuurt.',
 ];

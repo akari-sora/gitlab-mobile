@@ -2557,7 +2557,7 @@ const _messagesEs = <String>[
   'Cambios interrumpidos o en curso que se desbloquearán: {count}',
   'No se puede leer el registro, así que puede haber cambios en un estado desconocido.',
   'Confirmar no significa que esos cambios no se hicieran. Compruebe primero GitLab.',
-  '{level}: la AI hace cambios en GitLab sin preguntarle antes.',
+  '{level}: la AI hace la mayoría de los cambios en GitLab sin preguntar antes.',
   'Detener esta ejecución y pasar a confirmar cada cambio',
   'Procesando…',
   'Activar las notificaciones',
@@ -2599,4 +2599,6 @@ const _messagesEs = <String>[
   'Este cambio no se realizó. Tu texto editado se conserva aquí para que puedas copiarlo.',
   'Copiar el texto editado',
   'Al fusionarse en la rama predeterminada, se cerrarán estas incidencias: {issues}',
+  'Se escribió, pero la app no lo volvió a leer para confirmarlo. Tu texto editado se conserva aquí; revisa GitLab antes de enviarlo de nuevo.',
+  'No está claro si se realizó este cambio. Tu texto editado se conserva aquí; revisa GitLab antes de enviarlo de nuevo.',
 ];

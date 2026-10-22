@@ -2557,7 +2557,7 @@ const _messagesTr = <String>[
   'Kilidi açılacak yarıda kalmış veya süren değişiklikler: {count}',
   'Günlük okunamıyor, bu yüzden durumu bilinmeyen değişiklikler olabilir.',
   'Onaylamak, o değişikliklerin yapılmadığı anlamına gelmez. Önce GitLab\'a bakın.',
-  '{level}: AI size sormadan GitLab\'da değişiklik yapar.',
+  '{level}: AI, GitLab\'daki değişikliklerin çoğunu önce sormadan yapar.',
   'Bu çalıştırmayı durdur ve her değişikliği onaylamaya geç',
   'İşleniyor…',
   'Bildirimleri aç',
@@ -2599,4 +2599,6 @@ const _messagesTr = <String>[
   'Bu değişiklik yapılamadı. Düzenlediğin metin kopyalayabilmen için burada duruyor.',
   'Düzenlenen metni kopyala',
   'Varsayılan dala birleştirildiğinde şu konular kapanır: {issues}',
+  'Yazıldı, ancak uygulama doğrulamak için geri okumadı. Düzenlediğiniz metin burada duruyor; yeniden göndermeden önce GitLab\'ı kontrol edin.',
+  'Bu değişikliğin yapılıp yapılmadığı belirsiz. Düzenlediğiniz metin burada duruyor; yeniden göndermeden önce GitLab\'ı kontrol edin.',
 ];

@@ -2561,7 +2561,7 @@
   "aiWriteLogResetReleases": "Interrupted or in-progress changes that will be unlocked: {count}",
   "aiWriteLogResetUnknown": "The log can't be read, so there may be changes in an unknown state.",
   "aiWriteLogResetNotUndo": "Confirming doesn't mean those changes didn't happen. Check GitLab first.",
-  "aiAutoWriteBanner": "{level}: the AI changes GitLab without asking first.",
+  "aiAutoWriteBanner": "{level}: the AI makes most changes on GitLab without asking first.",
   "aiAutoWriteStopHint": "Stop this run and switch to confirming each change",
   "aiWriteInProgress": "Working on it…",
   "aiOpSubscribeOn": "Turn notifications on",
@@ -2602,5 +2602,7 @@
   "aiSettledEditRejected": "You rejected this change",
   "aiSettledEditKept": "This change didn't go through. Your edited text is kept here so you can copy it.",
   "aiSettledEditCopy": "Copy the edited text",
-  "aiProposalClosesOnMerge": "When merged into the default branch, this closes these issues: {issues}"
+  "aiProposalClosesOnMerge": "When merged into the default branch, this closes these issues: {issues}",
+  "aiSettledEditWritten": "Written, but the app did not read it back to confirm. Your edited text is kept here; check GitLab before sending it again.",
+  "aiSettledEditUncertain": "It's unclear whether this change was made. Your edited text is kept here; check GitLab before sending it again."
 }

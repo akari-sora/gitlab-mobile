@@ -2557,7 +2557,7 @@ const _messagesDe = <String>[
   'Unterbrochene oder laufende Änderungen, die entsperrt werden: {count}',
   'Das Protokoll lässt sich nicht lesen, daher kann es Änderungen mit unbekanntem Status geben.',
   'Die Bestätigung heißt nicht, dass diese Änderungen nicht erfolgt sind. Prüfen Sie zuerst GitLab.',
-  '{level}: Die AI nimmt Änderungen in GitLab vor, ohne vorher zu fragen.',
+  '{level}: Die AI führt die meisten Änderungen in GitLab aus, ohne vorher zu fragen.',
   'Diesen Lauf stoppen und zum Bestätigen jeder Änderung wechseln',
   'Wird bearbeitet …',
   'Benachrichtigungen einschalten',
@@ -2599,4 +2599,6 @@ const _messagesDe = <String>[
   'Diese Änderung wurde nicht ausgeführt. Ihr bearbeiteter Text bleibt hier erhalten, damit Sie ihn kopieren können.',
   'Bearbeiteten Text kopieren',
   'Beim Zusammenführen in den Standard-Branch werden diese Issues geschlossen: {issues}',
+  'Geschrieben, aber die App hat es nicht zur Bestätigung zurückgelesen. Ihr bearbeiteter Text bleibt hier erhalten; prüfen Sie GitLab, bevor Sie ihn erneut senden.',
+  'Es ist unklar, ob diese Änderung ausgeführt wurde. Ihr bearbeiteter Text bleibt hier erhalten; prüfen Sie GitLab, bevor Sie ihn erneut senden.',
 ];

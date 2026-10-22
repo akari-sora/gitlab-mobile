@@ -2555,7 +2555,7 @@
   "aiWriteLogResetReleases": "Thay đổi bị gián đoạn hoặc đang chạy sẽ được mở khóa: {count}",
   "aiWriteLogResetUnknown": "Không đọc được nhật ký, nên có thể có thay đổi ở trạng thái không rõ.",
   "aiWriteLogResetNotUndo": "Xác nhận không có nghĩa là các thay đổi đó chưa xảy ra. Hãy kiểm tra GitLab trước.",
-  "aiAutoWriteBanner": "{level}: AI thay đổi trên GitLab mà không hỏi bạn trước.",
+  "aiAutoWriteBanner": "{level}: AI thực hiện phần lớn thay đổi trên GitLab mà không hỏi trước.",
   "aiAutoWriteStopHint": "Dừng lần chạy này và chuyển sang xác nhận từng thay đổi",
   "aiWriteInProgress": "Đang xử lý…",
   "aiOpSubscribeOn": "Bật thông báo",
@@ -2596,5 +2596,7 @@
   "aiSettledEditRejected": "Bạn đã từ chối thay đổi này",
   "aiSettledEditKept": "Thay đổi này chưa hoàn tất. Nội dung bạn đã sửa được giữ lại ở đây để bạn sao chép.",
   "aiSettledEditCopy": "Sao chép nội dung đã sửa",
-  "aiProposalClosesOnMerge": "Khi gộp vào nhánh mặc định, các vấn đề này sẽ đóng: {issues}"
+  "aiProposalClosesOnMerge": "Khi gộp vào nhánh mặc định, các vấn đề này sẽ đóng: {issues}",
+  "aiSettledEditWritten": "Đã ghi, nhưng ứng dụng không đọc lại để xác nhận. Nội dung bạn đã sửa vẫn được giữ ở đây; hãy kiểm tra GitLab trước khi gửi lại.",
+  "aiSettledEditUncertain": "Chưa rõ thay đổi này đã được thực hiện hay chưa. Nội dung bạn đã sửa vẫn được giữ ở đây; hãy kiểm tra GitLab trước khi gửi lại."
 }

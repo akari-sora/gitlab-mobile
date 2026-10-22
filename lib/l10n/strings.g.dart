@@ -7759,7 +7759,7 @@ final class AppStrings {
   /// 確認不代表原本的寫入沒有執行，請先到 GitLab 查看。
   String get aiWriteLogResetNotUndo => language._messages[2554];
 
-  /// {level}：AI 會直接寫入 GitLab，不會先問你。
+  /// {level}：多數寫入 AI 會直接進行，不會先問你。
   String aiAutoWriteBanner(Object? level) => _format(language, language._messages[2555], {'level': level});
 
   /// 停止這次執行，並改為逐一確認
@@ -7884,4 +7884,10 @@ final class AppStrings {
 
   /// 合併到預設分支後，會關閉這些議題：{issues}
   String aiProposalClosesOnMerge(Object? issues) => _format(language, language._messages[2596], {'issues': issues});
+
+  /// 已寫入，但沒有讀回確認。你改過的內容留在這裡，重送前請先到 GitLab 查看。
+  String get aiSettledEditWritten => language._messages[2597];
+
+  /// 不確定這筆寫入是否完成。你改過的內容留在這裡，重送前請先到 GitLab 查看。
+  String get aiSettledEditUncertain => language._messages[2598];
 }

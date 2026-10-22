@@ -2555,7 +2555,7 @@
   "aiWriteLogResetReleases": "会解除锁定的中断或进行中写入：{count} 条",
   "aiWriteLogResetUnknown": "写入记录无法读取，可能有状态未知的写入。",
   "aiWriteLogResetNotUndo": "确认不代表原来的写入没有执行，请先到 GitLab 查看。",
-  "aiAutoWriteBanner": "{level}：AI 会直接写入 GitLab，不会先问你。",
+  "aiAutoWriteBanner": "{level}：多数写入 AI 会直接进行，不会先询问你。",
   "aiAutoWriteStopHint": "停止本次运行，并改为逐一确认",
   "aiWriteInProgress": "处理中…",
   "aiOpSubscribeOn": "开启通知",
@@ -2596,5 +2596,7 @@
   "aiSettledEditRejected": "你拒绝了这项写入",
   "aiSettledEditKept": "这项写入没有完成，你改过的内容保留在这里，可以复制。",
   "aiSettledEditCopy": "复制改过的内容",
-  "aiProposalClosesOnMerge": "合并到默认分支后，会关闭这些议题：{issues}"
+  "aiProposalClosesOnMerge": "合并到默认分支后，会关闭这些议题：{issues}",
+  "aiSettledEditWritten": "已写入，但应用没有读回确认。你修改过的内容保留在这里，重新发送前请先到 GitLab 查看。",
+  "aiSettledEditUncertain": "不确定这次写入是否完成。你修改过的内容保留在这里，重新发送前请先到 GitLab 查看。"
 }

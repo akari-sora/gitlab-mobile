@@ -2555,7 +2555,7 @@
   "aiWriteLogResetReleases": "Avbrutna eller pågående ändringar som låses upp: {count}",
   "aiWriteLogResetUnknown": "Loggen går inte att läsa, så det kan finnas ändringar med okänt tillstånd.",
   "aiWriteLogResetNotUndo": "Att bekräfta betyder inte att ändringarna inte gjordes. Kontrollera GitLab först.",
-  "aiAutoWriteBanner": "{level}: AI gör ändringar i GitLab utan att fråga dig först.",
+  "aiAutoWriteBanner": "{level}: AI gör de flesta ändringar i GitLab utan att fråga först.",
   "aiAutoWriteStopHint": "Stoppa den här körningen och byt till att bekräfta varje ändring",
   "aiWriteInProgress": "Bearbetar…",
   "aiOpSubscribeOn": "Slå på aviseringar",
@@ -2596,5 +2596,7 @@
   "aiSettledEditRejected": "Du avvisade ändringen",
   "aiSettledEditKept": "Ändringen gick inte igenom. Din redigerade text finns kvar här så att du kan kopiera den.",
   "aiSettledEditCopy": "Kopiera den redigerade texten",
-  "aiProposalClosesOnMerge": "Vid sammanfogning med standardgrenen stängs dessa ärenden: {issues}"
+  "aiProposalClosesOnMerge": "Vid sammanfogning med standardgrenen stängs dessa ärenden: {issues}",
+  "aiSettledEditWritten": "Skrivet, men appen läste inte tillbaka det för att bekräfta. Din redigerade text finns kvar här; kontrollera GitLab innan du skickar igen.",
+  "aiSettledEditUncertain": "Det är oklart om ändringen genomfördes. Din redigerade text finns kvar här; kontrollera GitLab innan du skickar igen."
 }

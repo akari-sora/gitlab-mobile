@@ -2555,7 +2555,7 @@
   "aiWriteLogResetReleases": "Kilidi açılacak yarıda kalmış veya süren değişiklikler: {count}",
   "aiWriteLogResetUnknown": "Günlük okunamıyor, bu yüzden durumu bilinmeyen değişiklikler olabilir.",
   "aiWriteLogResetNotUndo": "Onaylamak, o değişikliklerin yapılmadığı anlamına gelmez. Önce GitLab'a bakın.",
-  "aiAutoWriteBanner": "{level}: AI size sormadan GitLab'da değişiklik yapar.",
+  "aiAutoWriteBanner": "{level}: AI, GitLab'daki değişikliklerin çoğunu önce sormadan yapar.",
   "aiAutoWriteStopHint": "Bu çalıştırmayı durdur ve her değişikliği onaylamaya geç",
   "aiWriteInProgress": "İşleniyor…",
   "aiOpSubscribeOn": "Bildirimleri aç",
@@ -2596,5 +2596,7 @@
   "aiSettledEditRejected": "Bu değişikliği reddettin",
   "aiSettledEditKept": "Bu değişiklik yapılamadı. Düzenlediğin metin kopyalayabilmen için burada duruyor.",
   "aiSettledEditCopy": "Düzenlenen metni kopyala",
-  "aiProposalClosesOnMerge": "Varsayılan dala birleştirildiğinde şu konular kapanır: {issues}"
+  "aiProposalClosesOnMerge": "Varsayılan dala birleştirildiğinde şu konular kapanır: {issues}",
+  "aiSettledEditWritten": "Yazıldı, ancak uygulama doğrulamak için geri okumadı. Düzenlediğiniz metin burada duruyor; yeniden göndermeden önce GitLab'ı kontrol edin.",
+  "aiSettledEditUncertain": "Bu değişikliğin yapılıp yapılmadığı belirsiz. Düzenlediğiniz metin burada duruyor; yeniden göndermeden önce GitLab'ı kontrol edin."
 }

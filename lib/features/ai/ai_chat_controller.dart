@@ -161,6 +161,9 @@ class AiChatController extends ChangeNotifier
   Future<AiAccountRecord>? _accountRead;
   bool _accountLoaded = false;
   AiRunner? _runner;
+
+  /// Whether this run's page context delivery is already recorded (§3.1).
+  var _contextDeliveryRecorded = false;
   AiRunnerBinding? _binding;
   final List<AiChatItem> _items = [];
   final Expando<AiChatItem> _successors = Expando<AiChatItem>();
@@ -1389,8 +1392,11 @@ class AiChatController extends ChangeNotifier
         // §3.1: before any tool of this run can write, note whether the
         // page context this run sent carried the description whole. A
         // summary that cut it means no whole-field write of it.
-        if (_runner case final active?) {
-          context.recordDelivery(placeholders, active.sentContext);
+        if (!_contextDeliveryRecorded) {
+          if (_runner case final active?) {
+            context.recordDelivery(placeholders, active.sentContext);
+            _contextDeliveryRecorded = true;
+          }
         }
         final index = _insertRunItem(
           AiToolRunItem(
@@ -1586,6 +1592,9 @@ class AiChatController extends ChangeNotifier
       }
       final segment = runner.segment;
       final redactions = runner.lateRedactions;
+      // The context this run sends is recorded once, at its first tool, so
+      // a later whole read in the same run is the latest delivery.
+      _contextDeliveryRecorded = false;
       final result = await runner.run(
         turn.modelText,
         // Binding still reads the user's own words, as before.

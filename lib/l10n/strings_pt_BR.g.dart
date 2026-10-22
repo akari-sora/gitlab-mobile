@@ -2557,7 +2557,7 @@ const _messagesPtBr = <String>[
   'Alterações interrompidas ou em andamento que serão desbloqueadas: {count}',
   'Não foi possível ler o registro, então pode haver alterações em estado desconhecido.',
   'Confirmar não significa que essas alterações não aconteceram. Confira o GitLab primeiro.',
-  '{level}: a AI faz alterações no GitLab sem perguntar antes.',
+  '{level}: a AI faz a maioria das alterações no GitLab sem perguntar antes.',
   'Parar esta execução e passar a confirmar cada alteração',
   'Processando…',
   'Ligar as notificações',
@@ -2599,4 +2599,6 @@ const _messagesPtBr = <String>[
   'Esta alteração não foi concluída. Seu texto editado fica aqui para você copiar.',
   'Copiar o texto editado',
   'Ao ser mesclada na branch padrão, esta alteração fecha estas issues: {issues}',
+  'Gravado, mas o app não releu para confirmar. Seu texto editado foi mantido aqui; confira o GitLab antes de enviar de novo.',
+  'Não está claro se esta alteração foi feita. Seu texto editado foi mantido aqui; confira o GitLab antes de enviar de novo.',
 ];

@@ -2557,7 +2557,7 @@ const _messagesRo = <String>[
   'Modificări întrerupte sau în curs care vor fi deblocate: {count}',
   'Jurnalul nu poate fi citit, deci pot exista modificări cu stare necunoscută.',
   'Confirmarea nu înseamnă că acele modificări nu s-au făcut. Verifică mai întâi GitLab.',
-  '{level}: AI face modificări în GitLab fără să te întrebe mai întâi.',
+  '{level}: AI face majoritatea modificărilor în GitLab fără să întrebe mai întâi.',
   'Oprește această rulare și treci la confirmarea fiecărei modificări',
   'Se procesează…',
   'Activează notificările',
@@ -2599,4 +2599,6 @@ const _messagesRo = <String>[
   'Această modificare nu a fost efectuată. Textul tău editat rămâne aici ca să-l poți copia.',
   'Copiază textul editat',
   'La îmbinarea în ramura implicită, se vor închide aceste probleme: {issues}',
+  'Scris, dar aplicația nu l-a recitit pentru confirmare. Textul editat de tine rămâne aici; verifică GitLab înainte de a retrimite.',
+  'Nu este clar dacă modificarea a fost făcută. Textul editat de tine rămâne aici; verifică GitLab înainte de a retrimite.',
 ];

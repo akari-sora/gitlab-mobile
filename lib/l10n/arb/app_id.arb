@@ -2555,7 +2555,7 @@
   "aiWriteLogResetReleases": "Perubahan terputus atau sedang berjalan yang akan dibuka kuncinya: {count}",
   "aiWriteLogResetUnknown": "Log tidak bisa dibaca, jadi mungkin ada perubahan dengan status tidak diketahui.",
   "aiWriteLogResetNotUndo": "Konfirmasi tidak berarti perubahan itu tidak terjadi. Periksa GitLab dulu.",
-  "aiAutoWriteBanner": "{level}: AI membuat perubahan di GitLab tanpa bertanya dulu kepada Anda.",
+  "aiAutoWriteBanner": "{level}: AI melakukan sebagian besar perubahan di GitLab tanpa bertanya dulu.",
   "aiAutoWriteStopHint": "Hentikan proses ini dan beralih ke konfirmasi tiap perubahan",
   "aiWriteInProgress": "Sedang diproses…",
   "aiOpSubscribeOn": "Nyalakan notifikasi",
@@ -2596,5 +2596,7 @@
   "aiSettledEditRejected": "Kamu menolak perubahan ini",
   "aiSettledEditKept": "Perubahan ini tidak berhasil. Teks yang kamu edit disimpan di sini agar bisa disalin.",
   "aiSettledEditCopy": "Salin teks yang diedit",
-  "aiProposalClosesOnMerge": "Saat digabung ke cabang default, isu berikut akan ditutup: {issues}"
+  "aiProposalClosesOnMerge": "Saat digabung ke cabang default, isu berikut akan ditutup: {issues}",
+  "aiSettledEditWritten": "Sudah ditulis, tetapi aplikasi tidak membacanya kembali untuk memastikan. Teks hasil editan Anda tetap di sini; periksa GitLab sebelum mengirim ulang.",
+  "aiSettledEditUncertain": "Belum jelas apakah perubahan ini berhasil dilakukan. Teks hasil editan Anda tetap di sini; periksa GitLab sebelum mengirim ulang."
 }

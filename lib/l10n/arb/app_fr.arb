@@ -2555,7 +2555,7 @@
   "aiWriteLogResetReleases": "Modifications interrompues ou en cours qui seront déverrouillées : {count}",
   "aiWriteLogResetUnknown": "Le journal est illisible, donc des modifications peuvent être dans un état inconnu.",
   "aiWriteLogResetNotUndo": "Confirmer ne signifie pas que ces modifications n'ont pas eu lieu. Vérifiez d'abord GitLab.",
-  "aiAutoWriteBanner": "{level} : l'AI modifie GitLab sans vous demander d'abord.",
+  "aiAutoWriteBanner": "{level} : l'AI effectue la plupart des modifications dans GitLab sans demander d'abord.",
   "aiAutoWriteStopHint": "Arrêter cette exécution et passer à la confirmation de chaque modification",
   "aiWriteInProgress": "Traitement en cours…",
   "aiOpSubscribeOn": "Activer les notifications",
@@ -2596,5 +2596,7 @@
   "aiSettledEditRejected": "Vous avez refusé ce changement",
   "aiSettledEditKept": "Ce changement n'a pas abouti. Votre texte modifié est conservé ici pour que vous puissiez le copier.",
   "aiSettledEditCopy": "Copier le texte modifié",
-  "aiProposalClosesOnMerge": "Une fois fusionnée dans la branche par défaut, cette demande fermera ces tickets : {issues}"
+  "aiProposalClosesOnMerge": "Une fois fusionnée dans la branche par défaut, cette demande fermera ces tickets : {issues}",
+  "aiSettledEditWritten": "Écrit, mais l'application ne l'a pas relu pour le confirmer. Votre texte modifié est conservé ici ; vérifiez GitLab avant de le renvoyer.",
+  "aiSettledEditUncertain": "On ne sait pas si cette modification a été effectuée. Votre texte modifié est conservé ici ; vérifiez GitLab avant de le renvoyer."
 }

@@ -2555,7 +2555,7 @@
   "aiWriteLogResetReleases": "Unterbrochene oder laufende Änderungen, die entsperrt werden: {count}",
   "aiWriteLogResetUnknown": "Das Protokoll lässt sich nicht lesen, daher kann es Änderungen mit unbekanntem Status geben.",
   "aiWriteLogResetNotUndo": "Die Bestätigung heißt nicht, dass diese Änderungen nicht erfolgt sind. Prüfen Sie zuerst GitLab.",
-  "aiAutoWriteBanner": "{level}: Die AI nimmt Änderungen in GitLab vor, ohne vorher zu fragen.",
+  "aiAutoWriteBanner": "{level}: Die AI führt die meisten Änderungen in GitLab aus, ohne vorher zu fragen.",
   "aiAutoWriteStopHint": "Diesen Lauf stoppen und zum Bestätigen jeder Änderung wechseln",
   "aiWriteInProgress": "Wird bearbeitet …",
   "aiOpSubscribeOn": "Benachrichtigungen einschalten",
@@ -2596,5 +2596,7 @@
   "aiSettledEditRejected": "Sie haben diese Änderung abgelehnt",
   "aiSettledEditKept": "Diese Änderung wurde nicht ausgeführt. Ihr bearbeiteter Text bleibt hier erhalten, damit Sie ihn kopieren können.",
   "aiSettledEditCopy": "Bearbeiteten Text kopieren",
-  "aiProposalClosesOnMerge": "Beim Zusammenführen in den Standard-Branch werden diese Issues geschlossen: {issues}"
+  "aiProposalClosesOnMerge": "Beim Zusammenführen in den Standard-Branch werden diese Issues geschlossen: {issues}",
+  "aiSettledEditWritten": "Geschrieben, aber die App hat es nicht zur Bestätigung zurückgelesen. Ihr bearbeiteter Text bleibt hier erhalten; prüfen Sie GitLab, bevor Sie ihn erneut senden.",
+  "aiSettledEditUncertain": "Es ist unklar, ob diese Änderung ausgeführt wurde. Ihr bearbeiteter Text bleibt hier erhalten; prüfen Sie GitLab, bevor Sie ihn erneut senden."
 }

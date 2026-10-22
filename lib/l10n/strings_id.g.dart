@@ -2557,7 +2557,7 @@ const _messagesId = <String>[
   'Perubahan terputus atau sedang berjalan yang akan dibuka kuncinya: {count}',
   'Log tidak bisa dibaca, jadi mungkin ada perubahan dengan status tidak diketahui.',
   'Konfirmasi tidak berarti perubahan itu tidak terjadi. Periksa GitLab dulu.',
-  '{level}: AI membuat perubahan di GitLab tanpa bertanya dulu kepada Anda.',
+  '{level}: AI melakukan sebagian besar perubahan di GitLab tanpa bertanya dulu.',
   'Hentikan proses ini dan beralih ke konfirmasi tiap perubahan',
   'Sedang diproses…',
   'Nyalakan notifikasi',
@@ -2599,4 +2599,6 @@ const _messagesId = <String>[
   'Perubahan ini tidak berhasil. Teks yang kamu edit disimpan di sini agar bisa disalin.',
   'Salin teks yang diedit',
   'Saat digabung ke cabang default, isu berikut akan ditutup: {issues}',
+  'Sudah ditulis, tetapi aplikasi tidak membacanya kembali untuk memastikan. Teks hasil editan Anda tetap di sini; periksa GitLab sebelum mengirim ulang.',
+  'Belum jelas apakah perubahan ini berhasil dilakukan. Teks hasil editan Anda tetap di sini; periksa GitLab sebelum mengirim ulang.',
 ];

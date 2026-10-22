@@ -2557,7 +2557,7 @@ const _messagesMs = <String>[
   'Perubahan terganggu atau sedang berjalan yang akan dibuka kunci: {count}',
   'Log tidak dapat dibaca, jadi mungkin ada perubahan yang statusnya tidak diketahui.',
   'Pengesahan tidak bermakna perubahan itu tidak berlaku. Semak GitLab dahulu.',
-  '{level}: AI membuat perubahan di GitLab tanpa bertanya anda dahulu.',
+  '{level}: AI membuat kebanyakan perubahan pada GitLab tanpa bertanya dahulu.',
   'Hentikan larian ini dan beralih kepada pengesahan setiap perubahan',
   'Sedang diproses…',
   'Hidupkan pemberitahuan',
@@ -2599,4 +2599,6 @@ const _messagesMs = <String>[
   'Perubahan ini tidak berjaya. Teks yang anda sunting disimpan di sini supaya boleh disalin.',
   'Salin teks yang disunting',
   'Apabila digabungkan ke cabang lalai, isu ini akan ditutup: {issues}',
+  'Sudah ditulis, tetapi aplikasi tidak membacanya semula untuk mengesahkan. Teks suntingan anda kekal di sini; semak GitLab sebelum menghantar semula.',
+  'Tidak jelas sama ada perubahan ini telah dibuat. Teks suntingan anda kekal di sini; semak GitLab sebelum menghantar semula.',
 ];

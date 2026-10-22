@@ -598,13 +598,30 @@ class AiSettledEditCard extends StatelessWidget {
     final scheme = theme.colorScheme;
     final text = proposal.editedText ?? '';
     final outcome = proposal.outcome;
-    final status = switch (outcome) {
-      AiWriteOutcome(reasonCode: 'rejected') => l10n.aiSettledEditRejected,
-      AiWriteOutcome(state: AiJournalState.failedCertain) =>
-        l10n.aiWriteStatusFailed,
-      AiWriteOutcome(state: AiJournalState.writeUncertain) =>
+    // A write that ran but was not read back is kept too (§7.2 clears only
+    // after readback); it must never read as "not made".
+    final (status, explanation) = switch (outcome) {
+      AiWriteOutcome(reasonCode: 'rejected') => (
+        l10n.aiSettledEditRejected,
+        l10n.aiSettledEditKept,
+      ),
+      AiWriteOutcome(state: AiJournalState.succeeded, noChange: true) => (
+        l10n.aiWriteStatusNoChange,
+        l10n.aiSettledEditWritten,
+      ),
+      AiWriteOutcome(state: AiJournalState.succeeded) => (
+        l10n.aiWriteStatusSucceeded,
+        l10n.aiSettledEditWritten,
+      ),
+      AiWriteOutcome(state: AiJournalState.writeUncertain) => (
         l10n.aiWriteStatusUncertain,
-      _ => l10n.aiWriteStatusNotExecuted,
+        l10n.aiSettledEditUncertain,
+      ),
+      AiWriteOutcome(state: AiJournalState.failedCertain) => (
+        l10n.aiWriteStatusFailed,
+        l10n.aiSettledEditKept,
+      ),
+      _ => (l10n.aiWriteStatusNotExecuted, l10n.aiSettledEditKept),
     };
     return DecoratedBox(
       key: ValueKey('ai-settled-edit-${proposal.executionId}'),
@@ -652,7 +669,8 @@ class AiSettledEditCard extends StatelessWidget {
             Padding(
               padding: const EdgeInsetsDirectional.only(end: 8, top: 4),
               child: Text(
-                l10n.aiSettledEditKept,
+                explanation,
+                key: const ValueKey('ai-settled-edit-explanation'),
                 style: theme.textTheme.bodySmall,
               ),
             ),

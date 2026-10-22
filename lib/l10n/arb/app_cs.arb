@@ -2555,7 +2555,7 @@
   "aiWriteLogResetReleases": "Přerušené nebo probíhající změny, které se odemknou: {count}",
   "aiWriteLogResetUnknown": "Protokol nelze přečíst, takže mohou existovat změny v neznámém stavu.",
   "aiWriteLogResetNotUndo": "Potvrzení neznamená, že se tyto změny neprovedly. Nejdřív zkontrolujte GitLab.",
-  "aiAutoWriteBanner": "{level}: AI provádí změny v GitLabu, aniž by se vás předem ptala.",
+  "aiAutoWriteBanner": "{level}: AI provádí většinu změn v GitLabu bez předchozího dotazu.",
   "aiAutoWriteStopHint": "Zastavit toto spuštění a přepnout na potvrzování každé změny",
   "aiWriteInProgress": "Zpracovává se…",
   "aiOpSubscribeOn": "Zapnout oznámení",
@@ -2596,5 +2596,7 @@
   "aiSettledEditRejected": "Tuto změnu jste odmítli",
   "aiSettledEditKept": "Tato změna neproběhla. Váš upravený text zde zůstává, abyste ho mohli zkopírovat.",
   "aiSettledEditCopy": "Zkopírovat upravený text",
-  "aiProposalClosesOnMerge": "Po sloučení do výchozí větve se zavřou tyto úkoly: {issues}"
+  "aiProposalClosesOnMerge": "Po sloučení do výchozí větve se zavřou tyto úkoly: {issues}",
+  "aiSettledEditWritten": "Zapsáno, ale aplikace to znovu nenačetla k potvrzení. Váš upravený text zůstává zde; před opětovným odesláním zkontrolujte GitLab.",
+  "aiSettledEditUncertain": "Není jasné, zda se změna provedla. Váš upravený text zůstává zde; před opětovným odesláním zkontrolujte GitLab."
 }

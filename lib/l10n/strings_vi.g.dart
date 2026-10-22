@@ -2557,7 +2557,7 @@ const _messagesVi = <String>[
   'Thay đổi bị gián đoạn hoặc đang chạy sẽ được mở khóa: {count}',
   'Không đọc được nhật ký, nên có thể có thay đổi ở trạng thái không rõ.',
   'Xác nhận không có nghĩa là các thay đổi đó chưa xảy ra. Hãy kiểm tra GitLab trước.',
-  '{level}: AI thay đổi trên GitLab mà không hỏi bạn trước.',
+  '{level}: AI thực hiện phần lớn thay đổi trên GitLab mà không hỏi trước.',
   'Dừng lần chạy này và chuyển sang xác nhận từng thay đổi',
   'Đang xử lý…',
   'Bật thông báo',
@@ -2599,4 +2599,6 @@ const _messagesVi = <String>[
   'Thay đổi này chưa hoàn tất. Nội dung bạn đã sửa được giữ lại ở đây để bạn sao chép.',
   'Sao chép nội dung đã sửa',
   'Khi gộp vào nhánh mặc định, các vấn đề này sẽ đóng: {issues}',
+  'Đã ghi, nhưng ứng dụng không đọc lại để xác nhận. Nội dung bạn đã sửa vẫn được giữ ở đây; hãy kiểm tra GitLab trước khi gửi lại.',
+  'Chưa rõ thay đổi này đã được thực hiện hay chưa. Nội dung bạn đã sửa vẫn được giữ ở đây; hãy kiểm tra GitLab trước khi gửi lại.',
 ];

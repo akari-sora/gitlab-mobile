@@ -2557,7 +2557,7 @@ const _messagesSv = <String>[
   'Avbrutna eller pågående ändringar som låses upp: {count}',
   'Loggen går inte att läsa, så det kan finnas ändringar med okänt tillstånd.',
   'Att bekräfta betyder inte att ändringarna inte gjordes. Kontrollera GitLab först.',
-  '{level}: AI gör ändringar i GitLab utan att fråga dig först.',
+  '{level}: AI gör de flesta ändringar i GitLab utan att fråga först.',
   'Stoppa den här körningen och byt till att bekräfta varje ändring',
   'Bearbetar…',
   'Slå på aviseringar',
@@ -2599,4 +2599,6 @@ const _messagesSv = <String>[
   'Ändringen gick inte igenom. Din redigerade text finns kvar här så att du kan kopiera den.',
   'Kopiera den redigerade texten',
   'Vid sammanfogning med standardgrenen stängs dessa ärenden: {issues}',
+  'Skrivet, men appen läste inte tillbaka det för att bekräfta. Din redigerade text finns kvar här; kontrollera GitLab innan du skickar igen.',
+  'Det är oklart om ändringen genomfördes. Din redigerade text finns kvar här; kontrollera GitLab innan du skickar igen.',
 ];

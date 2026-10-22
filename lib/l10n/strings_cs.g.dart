@@ -2557,7 +2557,7 @@ const _messagesCs = <String>[
   'Přerušené nebo probíhající změny, které se odemknou: {count}',
   'Protokol nelze přečíst, takže mohou existovat změny v neznámém stavu.',
   'Potvrzení neznamená, že se tyto změny neprovedly. Nejdřív zkontrolujte GitLab.',
-  '{level}: AI provádí změny v GitLabu, aniž by se vás předem ptala.',
+  '{level}: AI provádí většinu změn v GitLabu bez předchozího dotazu.',
   'Zastavit toto spuštění a přepnout na potvrzování každé změny',
   'Zpracovává se…',
   'Zapnout oznámení',
@@ -2599,4 +2599,6 @@ const _messagesCs = <String>[
   'Tato změna neproběhla. Váš upravený text zde zůstává, abyste ho mohli zkopírovat.',
   'Zkopírovat upravený text',
   'Po sloučení do výchozí větve se zavřou tyto úkoly: {issues}',
+  'Zapsáno, ale aplikace to znovu nenačetla k potvrzení. Váš upravený text zůstává zde; před opětovným odesláním zkontrolujte GitLab.',
+  'Není jasné, zda se změna provedla. Váš upravený text zůstává zde; před opětovným odesláním zkontrolujte GitLab.',
 ];

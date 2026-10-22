@@ -2555,7 +2555,7 @@
   "aiWriteLogResetReleases": "Modifiche interrotte o in corso che verranno sbloccate: {count}",
   "aiWriteLogResetUnknown": "Il registro non è leggibile, quindi potrebbero esserci modifiche in stato sconosciuto.",
   "aiWriteLogResetNotUndo": "Confermare non significa che quelle modifiche non siano avvenute. Controlla prima GitLab.",
-  "aiAutoWriteBanner": "{level}: l'AI fa modifiche su GitLab senza chiedertelo prima.",
+  "aiAutoWriteBanner": "{level}: l'AI esegue la maggior parte delle modifiche su GitLab senza chiedere prima.",
   "aiAutoWriteStopHint": "Interrompi questa esecuzione e passa a confermare ogni modifica",
   "aiWriteInProgress": "Elaborazione in corso…",
   "aiOpSubscribeOn": "Attiva le notifiche",
@@ -2596,5 +2596,7 @@
   "aiSettledEditRejected": "Hai rifiutato questa modifica",
   "aiSettledEditKept": "Questa modifica non è andata a buon fine. Il testo che hai modificato resta qui per poterlo copiare.",
   "aiSettledEditCopy": "Copia il testo modificato",
-  "aiProposalClosesOnMerge": "Con l'unione nel branch predefinito verranno chiuse queste issue: {issues}"
+  "aiProposalClosesOnMerge": "Con l'unione nel branch predefinito verranno chiuse queste issue: {issues}",
+  "aiSettledEditWritten": "Scritto, ma l'app non l'ha riletto per confermare. Il testo modificato resta qui; controlla GitLab prima di inviarlo di nuovo.",
+  "aiSettledEditUncertain": "Non è chiaro se questa modifica sia stata eseguita. Il testo modificato resta qui; controlla GitLab prima di inviarlo di nuovo."
 }

@@ -2555,7 +2555,7 @@
   "aiWriteLogResetReleases": "Modificări întrerupte sau în curs care vor fi deblocate: {count}",
   "aiWriteLogResetUnknown": "Jurnalul nu poate fi citit, deci pot exista modificări cu stare necunoscută.",
   "aiWriteLogResetNotUndo": "Confirmarea nu înseamnă că acele modificări nu s-au făcut. Verifică mai întâi GitLab.",
-  "aiAutoWriteBanner": "{level}: AI face modificări în GitLab fără să te întrebe mai întâi.",
+  "aiAutoWriteBanner": "{level}: AI face majoritatea modificărilor în GitLab fără să întrebe mai întâi.",
   "aiAutoWriteStopHint": "Oprește această rulare și treci la confirmarea fiecărei modificări",
   "aiWriteInProgress": "Se procesează…",
   "aiOpSubscribeOn": "Activează notificările",
@@ -2596,5 +2596,7 @@
   "aiSettledEditRejected": "Ai respins această modificare",
   "aiSettledEditKept": "Această modificare nu a fost efectuată. Textul tău editat rămâne aici ca să-l poți copia.",
   "aiSettledEditCopy": "Copiază textul editat",
-  "aiProposalClosesOnMerge": "La îmbinarea în ramura implicită, se vor închide aceste probleme: {issues}"
+  "aiProposalClosesOnMerge": "La îmbinarea în ramura implicită, se vor închide aceste probleme: {issues}",
+  "aiSettledEditWritten": "Scris, dar aplicația nu l-a recitit pentru confirmare. Textul editat de tine rămâne aici; verifică GitLab înainte de a retrimite.",
+  "aiSettledEditUncertain": "Nu este clar dacă modificarea a fost făcută. Textul editat de tine rămâne aici; verifică GitLab înainte de a retrimite."
 }

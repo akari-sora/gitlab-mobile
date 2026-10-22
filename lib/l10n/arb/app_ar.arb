@@ -2555,7 +2555,7 @@
   "aiWriteLogResetReleases": "الكتابات المنقطعة أو الجارية التي سيُرفع قفلها: {count}",
   "aiWriteLogResetUnknown": "تعذّرت قراءة السجل، لذا قد توجد كتابات بحالة غير معروفة.",
   "aiWriteLogResetNotUndo": "التأكيد لا يعني أن تلك الكتابات لم تُنفَّذ. تحقق من GitLab أولًا.",
-  "aiAutoWriteBanner": "{level}: يكتب AI في GitLab دون أن يسألك أولًا.",
+  "aiAutoWriteBanner": "{level}: يجري AI معظم التغييرات على GitLab دون أن يسألك أولًا.",
   "aiAutoWriteStopHint": "أوقف هذا التشغيل وانتقل إلى تأكيد كل تغيير",
   "aiWriteInProgress": "جارٍ العمل…",
   "aiOpSubscribeOn": "تشغيل الإشعارات",
@@ -2596,5 +2596,7 @@
   "aiSettledEditRejected": "رفضتَ هذه الكتابة",
   "aiSettledEditKept": "لم تتم هذه الكتابة. نصّك المعدَّل محفوظ هنا لتتمكن من نسخه.",
   "aiSettledEditCopy": "نسخ النص المعدَّل",
-  "aiProposalClosesOnMerge": "عند الدمج في الفرع الافتراضي، ستُغلق هذه المشكلات: {issues}"
+  "aiProposalClosesOnMerge": "عند الدمج في الفرع الافتراضي، ستُغلق هذه المشكلات: {issues}",
+  "aiSettledEditWritten": "تمت الكتابة، لكن التطبيق لم يقرأها مجددًا للتأكيد. بقي نصك المعدَّل هنا؛ تحقق من GitLab قبل إعادة الإرسال.",
+  "aiSettledEditUncertain": "لا يمكن التأكد من إتمام هذا التغيير. بقي نصك المعدَّل هنا؛ تحقق من GitLab قبل إعادة الإرسال."
 }

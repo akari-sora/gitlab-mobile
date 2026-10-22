@@ -2555,7 +2555,7 @@
   "aiWriteLogResetReleases": "Przerwane lub trwające zmiany, które zostaną odblokowane: {count}",
   "aiWriteLogResetUnknown": "Nie można odczytać dziennika, więc mogą istnieć zmiany o nieznanym stanie.",
   "aiWriteLogResetNotUndo": "Potwierdzenie nie oznacza, że tych zmian nie wykonano. Najpierw sprawdź GitLab.",
-  "aiAutoWriteBanner": "{level}: AI wprowadza zmiany w GitLabie bez pytania.",
+  "aiAutoWriteBanner": "{level}: AI wprowadza większość zmian w GitLabie bez wcześniejszego pytania.",
   "aiAutoWriteStopHint": "Zatrzymaj to uruchomienie i przełącz na potwierdzanie każdej zmiany",
   "aiWriteInProgress": "Przetwarzanie…",
   "aiOpSubscribeOn": "Włącz powiadomienia",
@@ -2596,5 +2596,7 @@
   "aiSettledEditRejected": "Odrzucono tę zmianę",
   "aiSettledEditKept": "Ta zmiana nie została wprowadzona. Twój edytowany tekst został tutaj zachowany, abyś mógł go skopiować.",
   "aiSettledEditCopy": "Kopiuj edytowany tekst",
-  "aiProposalClosesOnMerge": "Po scaleniu z domyślną gałęzią zostaną zamknięte te zgłoszenia: {issues}"
+  "aiProposalClosesOnMerge": "Po scaleniu z domyślną gałęzią zostaną zamknięte te zgłoszenia: {issues}",
+  "aiSettledEditWritten": "Zapisano, ale aplikacja nie odczytała tego ponownie, by potwierdzić. Edytowany tekst pozostaje tutaj; przed ponownym wysłaniem sprawdź GitLab.",
+  "aiSettledEditUncertain": "Nie wiadomo, czy ta zmiana została wprowadzona. Edytowany tekst pozostaje tutaj; przed ponownym wysłaniem sprawdź GitLab."
 }

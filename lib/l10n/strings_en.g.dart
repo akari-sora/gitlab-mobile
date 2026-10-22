@@ -2557,7 +2557,7 @@ const _messagesEn = <String>[
   'Interrupted or in-progress changes that will be unlocked: {count}',
   'The log can\'t be read, so there may be changes in an unknown state.',
   'Confirming doesn\'t mean those changes didn\'t happen. Check GitLab first.',
-  '{level}: the AI changes GitLab without asking first.',
+  '{level}: the AI makes most changes on GitLab without asking first.',
   'Stop this run and switch to confirming each change',
   'Working on it…',
   'Turn notifications on',
@@ -2599,4 +2599,6 @@ const _messagesEn = <String>[
   'This change didn\'t go through. Your edited text is kept here so you can copy it.',
   'Copy the edited text',
   'When merged into the default branch, this closes these issues: {issues}',
+  'Written, but the app did not read it back to confirm. Your edited text is kept here; check GitLab before sending it again.',
+  'It\'s unclear whether this change was made. Your edited text is kept here; check GitLab before sending it again.',
 ];

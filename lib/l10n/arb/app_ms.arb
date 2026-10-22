@@ -2555,7 +2555,7 @@
   "aiWriteLogResetReleases": "Perubahan terganggu atau sedang berjalan yang akan dibuka kunci: {count}",
   "aiWriteLogResetUnknown": "Log tidak dapat dibaca, jadi mungkin ada perubahan yang statusnya tidak diketahui.",
   "aiWriteLogResetNotUndo": "Pengesahan tidak bermakna perubahan itu tidak berlaku. Semak GitLab dahulu.",
-  "aiAutoWriteBanner": "{level}: AI membuat perubahan di GitLab tanpa bertanya anda dahulu.",
+  "aiAutoWriteBanner": "{level}: AI membuat kebanyakan perubahan pada GitLab tanpa bertanya dahulu.",
   "aiAutoWriteStopHint": "Hentikan larian ini dan beralih kepada pengesahan setiap perubahan",
   "aiWriteInProgress": "Sedang diproses…",
   "aiOpSubscribeOn": "Hidupkan pemberitahuan",
@@ -2596,5 +2596,7 @@
   "aiSettledEditRejected": "Anda menolak perubahan ini",
   "aiSettledEditKept": "Perubahan ini tidak berjaya. Teks yang anda sunting disimpan di sini supaya boleh disalin.",
   "aiSettledEditCopy": "Salin teks yang disunting",
-  "aiProposalClosesOnMerge": "Apabila digabungkan ke cabang lalai, isu ini akan ditutup: {issues}"
+  "aiProposalClosesOnMerge": "Apabila digabungkan ke cabang lalai, isu ini akan ditutup: {issues}",
+  "aiSettledEditWritten": "Sudah ditulis, tetapi aplikasi tidak membacanya semula untuk mengesahkan. Teks suntingan anda kekal di sini; semak GitLab sebelum menghantar semula.",
+  "aiSettledEditUncertain": "Tidak jelas sama ada perubahan ini telah dibuat. Teks suntingan anda kekal di sini; semak GitLab sebelum menghantar semula."
 }

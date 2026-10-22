@@ -2555,7 +2555,7 @@
   "aiWriteLogResetReleases": "ロックが解除される中断中または進行中の書き込み：{count} 件",
   "aiWriteLogResetUnknown": "ログを読み取れないため、状態が不明な書き込みがあるかもしれません。",
   "aiWriteLogResetNotUndo": "確認しても、元の書き込みが行われなかったことにはなりません。先に GitLab で確認してください。",
-  "aiAutoWriteBanner": "{level}：AI は確認なしで GitLab に直接書き込みます。",
+  "aiAutoWriteBanner": "{level}：ほとんどの変更は、AI が確認なしで GitLab に行います。",
   "aiAutoWriteStopHint": "この実行を停止し、一件ずつ確認に切り替える",
   "aiWriteInProgress": "処理中…",
   "aiOpSubscribeOn": "通知をオンにする",
@@ -2596,5 +2596,7 @@
   "aiSettledEditRejected": "この変更を拒否しました",
   "aiSettledEditKept": "この変更は完了しませんでした。編集した内容はここに残してあるので、コピーできます。",
   "aiSettledEditCopy": "編集した内容をコピー",
-  "aiProposalClosesOnMerge": "デフォルトブランチにマージすると、次のイシューが閉じます：{issues}"
+  "aiProposalClosesOnMerge": "デフォルトブランチにマージすると、次のイシューが閉じます：{issues}",
+  "aiSettledEditWritten": "書き込み済みですが、アプリは確認のための再読み込みをしていません。編集した内容はここに残してあります。再送する前に GitLab を確認してください。",
+  "aiSettledEditUncertain": "この変更が行われたかどうか不明です。編集した内容はここに残してあります。再送する前に GitLab を確認してください。"
 }

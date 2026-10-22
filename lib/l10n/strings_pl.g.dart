@@ -2557,7 +2557,7 @@ const _messagesPl = <String>[
   'Przerwane lub trwające zmiany, które zostaną odblokowane: {count}',
   'Nie można odczytać dziennika, więc mogą istnieć zmiany o nieznanym stanie.',
   'Potwierdzenie nie oznacza, że tych zmian nie wykonano. Najpierw sprawdź GitLab.',
-  '{level}: AI wprowadza zmiany w GitLabie bez pytania.',
+  '{level}: AI wprowadza większość zmian w GitLabie bez wcześniejszego pytania.',
   'Zatrzymaj to uruchomienie i przełącz na potwierdzanie każdej zmiany',
   'Przetwarzanie…',
   'Włącz powiadomienia',
@@ -2599,4 +2599,6 @@ const _messagesPl = <String>[
   'Ta zmiana nie została wprowadzona. Twój edytowany tekst został tutaj zachowany, abyś mógł go skopiować.',
   'Kopiuj edytowany tekst',
   'Po scaleniu z domyślną gałęzią zostaną zamknięte te zgłoszenia: {issues}',
+  'Zapisano, ale aplikacja nie odczytała tego ponownie, by potwierdzić. Edytowany tekst pozostaje tutaj; przed ponownym wysłaniem sprawdź GitLab.',
+  'Nie wiadomo, czy ta zmiana została wprowadzona. Edytowany tekst pozostaje tutaj; przed ponownym wysłaniem sprawdź GitLab.',
 ];

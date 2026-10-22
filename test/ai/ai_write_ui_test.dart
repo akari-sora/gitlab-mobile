@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/ai_display.dart';
+import 'package:gitlab_mobile/core/ai/ai_transcript.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_coordinator.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_tier.dart';
@@ -402,6 +403,49 @@ void main() {
     expect(find.text(l10n.aiSettledEditKept), findsOneWidget);
     await tester.tap(find.byKey(const ValueKey('ai-settled-edit-dismiss')));
     expect(dismissed, 1);
+  });
+
+  testWidgets('an edited write that ran is never called not made', (
+    tester,
+  ) async {
+    late CoordHarness h;
+    late AiWriteProposal kept;
+    await tester.runAsync(() async {
+      h = await CoordHarness.create();
+      h.newRun('Start a thread on #3 in team/example-9');
+      final proposal = (await h.coordinator.propose(
+        AiToolCall(
+          id: 'thread',
+          name: 'createDiscussion',
+          arguments: const {
+            'projectId': 9,
+            'resource': 'issues',
+            'iid': 3,
+            'body': 'synthetic thread',
+            'reason': 'The user asked for a thread.',
+          },
+        ),
+      ))!;
+      final edit = await h.coordinator.approve(
+        proposal,
+        editedText: 'my own thread words',
+      );
+      expect(edit.reasonCode, 'approvalRequired');
+      final ran = await h.coordinator.approve(proposal);
+      expect(ran.state, AiJournalState.succeeded);
+      kept = h.coordinator.settledEdits.single;
+    });
+    addTearDown(() => tester.runAsync(h.dispose));
+    await tester.pumpWidget(
+      _host(AiSettledEditCard(proposal: kept, onDismiss: () {})),
+    );
+    expect(
+      find.textContaining('${l10n.aiWriteStatusSucceeded} · '),
+      findsOneWidget,
+    );
+    expect(find.text(l10n.aiSettledEditWritten), findsOneWidget);
+    expect(find.textContaining(l10n.aiWriteStatusNotExecuted), findsNothing);
+    expect(find.text(l10n.aiSettledEditKept), findsNothing);
   });
 
   testWidgets('a major write needs the exact name', (tester) async {

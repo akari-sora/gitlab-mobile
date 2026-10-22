@@ -2557,7 +2557,7 @@ const _messagesFr = <String>[
   'Modifications interrompues ou en cours qui seront déverrouillées : {count}',
   'Le journal est illisible, donc des modifications peuvent être dans un état inconnu.',
   'Confirmer ne signifie pas que ces modifications n\'ont pas eu lieu. Vérifiez d\'abord GitLab.',
-  '{level} : l\'AI modifie GitLab sans vous demander d\'abord.',
+  '{level} : l\'AI effectue la plupart des modifications dans GitLab sans demander d\'abord.',
   'Arrêter cette exécution et passer à la confirmation de chaque modification',
   'Traitement en cours…',
   'Activer les notifications',
@@ -2599,4 +2599,6 @@ const _messagesFr = <String>[
   'Ce changement n\'a pas abouti. Votre texte modifié est conservé ici pour que vous puissiez le copier.',
   'Copier le texte modifié',
   'Une fois fusionnée dans la branche par défaut, cette demande fermera ces tickets : {issues}',
+  'Écrit, mais l\'application ne l\'a pas relu pour le confirmer. Votre texte modifié est conservé ici ; vérifiez GitLab avant de le renvoyer.',
+  'On ne sait pas si cette modification a été effectuée. Votre texte modifié est conservé ici ; vérifiez GitLab avant de le renvoyer.',
 ];

@@ -2557,7 +2557,7 @@ const _messagesIt = <String>[
   'Modifiche interrotte o in corso che verranno sbloccate: {count}',
   'Il registro non è leggibile, quindi potrebbero esserci modifiche in stato sconosciuto.',
   'Confermare non significa che quelle modifiche non siano avvenute. Controlla prima GitLab.',
-  '{level}: l\'AI fa modifiche su GitLab senza chiedertelo prima.',
+  '{level}: l\'AI esegue la maggior parte delle modifiche su GitLab senza chiedere prima.',
   'Interrompi questa esecuzione e passa a confermare ogni modifica',
   'Elaborazione in corso…',
   'Attiva le notifiche',
@@ -2599,4 +2599,6 @@ const _messagesIt = <String>[
   'Questa modifica non è andata a buon fine. Il testo che hai modificato resta qui per poterlo copiare.',
   'Copia il testo modificato',
   'Con l\'unione nel branch predefinito verranno chiuse queste issue: {issues}',
+  'Scritto, ma l\'app non l\'ha riletto per confermare. Il testo modificato resta qui; controlla GitLab prima di inviarlo di nuovo.',
+  'Non è chiaro se questa modifica sia stata eseguita. Il testo modificato resta qui; controlla GitLab prima di inviarlo di nuovo.',
 ];
