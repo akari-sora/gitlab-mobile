@@ -2588,13 +2588,13 @@
   "aiRereadTodoDone": "やること完了",
   "aiRereadInFlight": "元のリクエストがまだ実行中かもしれません。少し待ってから再読み込みしてください。",
   "aiRereadFailed": "再読み込みできませんでした。",
-  "aiProposalPausedRemoval": "The account is being removed, so approval is on hold.",
-  "aiProposalPausedRateLimited": "GitLab is limiting requests; you can approve a little later.",
-  "aiUploadTarget": "Uploads to {project} ({visibility})",
-  "aiUploadVisibilityUnknown": "visibility unknown",
-  "aiUploadReadersCanFetch": "Anyone who can see content that cites this file can download it through the link.",
-  "aiSettledEditRejected": "You rejected this change",
-  "aiSettledEditKept": "This change didn't go through. Your edited text is kept here so you can copy it.",
-  "aiSettledEditCopy": "Copy the edited text",
-  "aiProposalClosesOnMerge": "When merged into the default branch, this closes these issues: {issues}"
+  "aiProposalPausedRemoval": "アカウントを削除中のため、承認は保留されています。",
+  "aiProposalPausedRateLimited": "GitLab がリクエストを制限しています。少し後で承認できます。",
+  "aiUploadTarget": "{project}（{visibility}）にアップロードします",
+  "aiUploadVisibilityUnknown": "公開範囲は不明",
+  "aiUploadReadersCanFetch": "このファイルを参照する内容を見られる人は、リンクからダウンロードできます。",
+  "aiSettledEditRejected": "この変更を拒否しました",
+  "aiSettledEditKept": "この変更は完了しませんでした。編集した内容はここに残してあるので、コピーできます。",
+  "aiSettledEditCopy": "編集した内容をコピー",
+  "aiProposalClosesOnMerge": "デフォルトブランチにマージすると、次のイシューが閉じます：{issues}"
 }

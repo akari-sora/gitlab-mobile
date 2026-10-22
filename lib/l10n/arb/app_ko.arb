@@ -2588,13 +2588,13 @@
   "aiRereadTodoDone": "할 일 완료",
   "aiRereadInFlight": "원래 요청이 아직 진행 중일 수 있습니다. 잠시 후 다시 읽으세요.",
   "aiRereadFailed": "다시 읽지 못했습니다.",
-  "aiProposalPausedRemoval": "The account is being removed, so approval is on hold.",
-  "aiProposalPausedRateLimited": "GitLab is limiting requests; you can approve a little later.",
-  "aiUploadTarget": "Uploads to {project} ({visibility})",
-  "aiUploadVisibilityUnknown": "visibility unknown",
-  "aiUploadReadersCanFetch": "Anyone who can see content that cites this file can download it through the link.",
-  "aiSettledEditRejected": "You rejected this change",
-  "aiSettledEditKept": "This change didn't go through. Your edited text is kept here so you can copy it.",
-  "aiSettledEditCopy": "Copy the edited text",
-  "aiProposalClosesOnMerge": "When merged into the default branch, this closes these issues: {issues}"
+  "aiProposalPausedRemoval": "계정을 삭제하는 중이라 승인이 보류되었습니다.",
+  "aiProposalPausedRateLimited": "GitLab이 요청을 제한하고 있습니다. 잠시 후 승인할 수 있습니다.",
+  "aiUploadTarget": "{project}({visibility})에 업로드합니다",
+  "aiUploadVisibilityUnknown": "공개 범위 알 수 없음",
+  "aiUploadReadersCanFetch": "이 파일을 인용한 내용을 볼 수 있는 사람은 누구나 링크로 내려받을 수 있습니다.",
+  "aiSettledEditRejected": "이 변경을 거부했습니다",
+  "aiSettledEditKept": "이 변경은 완료되지 않았습니다. 수정한 내용은 복사할 수 있도록 여기에 남겨 두었습니다.",
+  "aiSettledEditCopy": "수정한 내용 복사",
+  "aiProposalClosesOnMerge": "기본 브랜치에 병합하면 다음 이슈가 닫힙니다: {issues}"
 }

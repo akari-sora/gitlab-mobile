@@ -2588,13 +2588,13 @@
   "aiRereadTodoDone": "attività completata",
   "aiRereadInFlight": "La richiesta originale potrebbe essere ancora in corso. Rileggi tra poco.",
   "aiRereadFailed": "Impossibile rileggere.",
-  "aiProposalPausedRemoval": "The account is being removed, so approval is on hold.",
-  "aiProposalPausedRateLimited": "GitLab is limiting requests; you can approve a little later.",
-  "aiUploadTarget": "Uploads to {project} ({visibility})",
-  "aiUploadVisibilityUnknown": "visibility unknown",
-  "aiUploadReadersCanFetch": "Anyone who can see content that cites this file can download it through the link.",
-  "aiSettledEditRejected": "You rejected this change",
-  "aiSettledEditKept": "This change didn't go through. Your edited text is kept here so you can copy it.",
-  "aiSettledEditCopy": "Copy the edited text",
-  "aiProposalClosesOnMerge": "When merged into the default branch, this closes these issues: {issues}"
+  "aiProposalPausedRemoval": "L'account è in fase di rimozione, quindi l'approvazione è sospesa.",
+  "aiProposalPausedRateLimited": "GitLab sta limitando le richieste; potrai approvare tra poco.",
+  "aiUploadTarget": "Viene caricato in {project} ({visibility})",
+  "aiUploadVisibilityUnknown": "visibilità sconosciuta",
+  "aiUploadReadersCanFetch": "Chiunque possa vedere contenuti che citano questo file può scaricarlo tramite il link.",
+  "aiSettledEditRejected": "Hai rifiutato questa modifica",
+  "aiSettledEditKept": "Questa modifica non è andata a buon fine. Il testo che hai modificato resta qui per poterlo copiare.",
+  "aiSettledEditCopy": "Copia il testo modificato",
+  "aiProposalClosesOnMerge": "Con l'unione nel branch predefinito verranno chiuse queste issue: {issues}"
 }

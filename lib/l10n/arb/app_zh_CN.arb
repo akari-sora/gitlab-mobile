@@ -2588,13 +2588,13 @@
   "aiRereadTodoDone": "待办已完成",
   "aiRereadInFlight": "原来的请求可能还在进行，请稍后再重新读取。",
   "aiRereadFailed": "无法重新读取。",
-  "aiProposalPausedRemoval": "The account is being removed, so approval is on hold.",
-  "aiProposalPausedRateLimited": "GitLab is limiting requests; you can approve a little later.",
-  "aiUploadTarget": "Uploads to {project} ({visibility})",
-  "aiUploadVisibilityUnknown": "visibility unknown",
-  "aiUploadReadersCanFetch": "Anyone who can see content that cites this file can download it through the link.",
-  "aiSettledEditRejected": "You rejected this change",
-  "aiSettledEditKept": "This change didn't go through. Your edited text is kept here so you can copy it.",
-  "aiSettledEditCopy": "Copy the edited text",
-  "aiProposalClosesOnMerge": "When merged into the default branch, this closes these issues: {issues}"
+  "aiProposalPausedRemoval": "正在移除账号，暂时不能批准。",
+  "aiProposalPausedRateLimited": "GitLab 正在限制请求，稍后才能批准。",
+  "aiUploadTarget": "上传到 {project}（{visibility}）",
+  "aiUploadVisibilityUnknown": "可见性未知",
+  "aiUploadReadersCanFetch": "能看到引用此文件的内容的人，都能通过链接下载它。",
+  "aiSettledEditRejected": "你拒绝了这项写入",
+  "aiSettledEditKept": "这项写入没有完成，你改过的内容保留在这里，可以复制。",
+  "aiSettledEditCopy": "复制改过的内容",
+  "aiProposalClosesOnMerge": "合并到默认分支后，会关闭这些议题：{issues}"
 }

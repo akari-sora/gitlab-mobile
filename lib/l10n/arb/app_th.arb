@@ -2588,13 +2588,13 @@
   "aiRereadTodoDone": "สิ่งที่ต้องทำเสร็จแล้ว",
   "aiRereadInFlight": "คำขอเดิมอาจยังทำงานอยู่ โปรดอ่านอีกครั้งในอีกสักครู่",
   "aiRereadFailed": "อ่านอีกครั้งไม่ได้",
-  "aiProposalPausedRemoval": "The account is being removed, so approval is on hold.",
-  "aiProposalPausedRateLimited": "GitLab is limiting requests; you can approve a little later.",
-  "aiUploadTarget": "Uploads to {project} ({visibility})",
-  "aiUploadVisibilityUnknown": "visibility unknown",
-  "aiUploadReadersCanFetch": "Anyone who can see content that cites this file can download it through the link.",
-  "aiSettledEditRejected": "You rejected this change",
-  "aiSettledEditKept": "This change didn't go through. Your edited text is kept here so you can copy it.",
-  "aiSettledEditCopy": "Copy the edited text",
-  "aiProposalClosesOnMerge": "When merged into the default branch, this closes these issues: {issues}"
+  "aiProposalPausedRemoval": "กำลังลบบัญชี จึงพักการอนุมัติไว้ชั่วคราว",
+  "aiProposalPausedRateLimited": "GitLab กำลังจำกัดคำขอ อนุมัติได้ในอีกสักครู่",
+  "aiUploadTarget": "จะอัปโหลดไปที่ {project} ({visibility})",
+  "aiUploadVisibilityUnknown": "ไม่ทราบการมองเห็น",
+  "aiUploadReadersCanFetch": "ทุกคนที่เห็นเนื้อหาที่อ้างถึงไฟล์นี้สามารถดาวน์โหลดผ่านลิงก์ได้",
+  "aiSettledEditRejected": "คุณปฏิเสธการเปลี่ยนแปลงนี้",
+  "aiSettledEditKept": "การเปลี่ยนแปลงนี้ไม่สำเร็จ ข้อความที่คุณแก้ไขยังอยู่ที่นี่ให้คัดลอกได้",
+  "aiSettledEditCopy": "คัดลอกข้อความที่แก้ไข",
+  "aiProposalClosesOnMerge": "เมื่อรวมเข้ากับสาขาเริ่มต้น จะปิดปัญหาเหล่านี้: {issues}"
 }

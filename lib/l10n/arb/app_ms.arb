@@ -2588,13 +2588,13 @@
   "aiRereadTodoDone": "tugas selesai",
   "aiRereadInFlight": "Permintaan asal mungkin masih berjalan. Baca semula sebentar lagi.",
   "aiRereadFailed": "Tidak dapat membaca semula.",
-  "aiProposalPausedRemoval": "The account is being removed, so approval is on hold.",
-  "aiProposalPausedRateLimited": "GitLab is limiting requests; you can approve a little later.",
-  "aiUploadTarget": "Uploads to {project} ({visibility})",
-  "aiUploadVisibilityUnknown": "visibility unknown",
-  "aiUploadReadersCanFetch": "Anyone who can see content that cites this file can download it through the link.",
-  "aiSettledEditRejected": "You rejected this change",
-  "aiSettledEditKept": "This change didn't go through. Your edited text is kept here so you can copy it.",
-  "aiSettledEditCopy": "Copy the edited text",
-  "aiProposalClosesOnMerge": "When merged into the default branch, this closes these issues: {issues}"
+  "aiProposalPausedRemoval": "Akaun sedang dibuang, jadi kelulusan ditangguhkan.",
+  "aiProposalPausedRateLimited": "GitLab sedang menghadkan permintaan; anda boleh meluluskan sebentar lagi.",
+  "aiUploadTarget": "Dimuat naik ke {project} ({visibility})",
+  "aiUploadVisibilityUnknown": "keterlihatan tidak diketahui",
+  "aiUploadReadersCanFetch": "Sesiapa yang dapat melihat kandungan yang merujuk fail ini boleh memuat turunnya melalui pautan.",
+  "aiSettledEditRejected": "Anda menolak perubahan ini",
+  "aiSettledEditKept": "Perubahan ini tidak berjaya. Teks yang anda sunting disimpan di sini supaya boleh disalin.",
+  "aiSettledEditCopy": "Salin teks yang disunting",
+  "aiProposalClosesOnMerge": "Apabila digabungkan ke cabang lalai, isu ini akan ditutup: {issues}"
 }
