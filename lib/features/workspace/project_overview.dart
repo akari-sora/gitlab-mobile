@@ -292,7 +292,13 @@ class ProjectOverviewState extends State<ProjectOverview> {
         fresh: fresh,
         background: background,
       );
-      if (!_canApplyRead(epoch, api, background: background) || read == null) return;
+      if (!_canApplyRead(epoch, api, background: background)) return;
+      if (read == null) {
+        if (!background && _details == null) {
+          setState(() => error = const ApiFailure(FailureKind.cancelled));
+        }
+        return;
+      }
       setState(() {
         _details = read.value;
         _detailsRead = read;
@@ -339,7 +345,13 @@ class ProjectOverviewState extends State<ProjectOverview> {
         fresh: fresh || background && _branchRead?.stale == true,
         background: background,
       );
-      if (!_canApplyRead(epoch, api, background: background) || branchRead == null) return;
+      if (!_canApplyRead(epoch, api, background: background)) return;
+      if (branchRead == null) {
+        if (!background && _ref == null) {
+          setState(() => _readmeError = const ApiFailure(FailureKind.cancelled));
+        }
+        return;
+      }
       setState(() {
         _branchRead = branchRead;
         _readmePending = true;
@@ -358,7 +370,13 @@ class ProjectOverviewState extends State<ProjectOverview> {
         fresh: fresh || background && _treeRead?.stale == true,
         background: background,
       );
-      if (!_canApplyRead(epoch, api, background: background) || treeRead == null) return;
+      if (!_canApplyRead(epoch, api, background: background)) return;
+      if (treeRead == null) {
+        if (!background && _ref == null) {
+          setState(() => _readmeError = const ApiFailure(FailureKind.cancelled));
+        }
+        return;
+      }
       setState(() => _treeRead = treeRead);
       if (background && !_backgroundEnabled) return;
       final path = findReadmePath(treeRead.value.items);

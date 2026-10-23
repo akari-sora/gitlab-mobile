@@ -895,10 +895,15 @@ class PipelinePageState extends State<PipelinePage> {
         fresh: fresh,
         background: false,
       );
-      if (_readCurrent(generation, readEpoch) && read != null) {
-        setState(() { _apply(read); _loading = false; });
-        _startRevalidation(generation, readEpoch: readEpoch);
+      if (!_readCurrent(generation, readEpoch)) return;
+      if (read == null) {
+        if (_data == null) {
+          setState(() => _error = const ApiFailure(FailureKind.cancelled));
+        }
+        return;
       }
+      setState(() { _apply(read); _loading = false; });
+      _startRevalidation(generation, readEpoch: readEpoch);
     } catch (e) {
       if (_readCurrent(generation, readEpoch)) {
         final failure = safeFailure(e);

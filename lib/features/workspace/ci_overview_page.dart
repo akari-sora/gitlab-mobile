@@ -172,7 +172,13 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         background: background,
         current: current,
       );
-      if (read == null || !current()) return;
+      if (!current()) return;
+      if (read == null) {
+        if (!background && _items.isEmpty) {
+          setState(() => _error = const ApiFailure(FailureKind.cancelled));
+        }
+        return;
+      }
       final page = read.value;
       revalidateStaleProjects = read.stale && !fresh;
       _nextPageUri = page.next;
@@ -372,7 +378,21 @@ class _CiOverviewPageState extends State<CiOverviewPage> {
         background: background,
         current: current,
       );
-      if (read == null || !current()) return false;
+      if (!current()) return false;
+      if (read == null) {
+        if (!background) {
+          _replaceItem(
+            project.id,
+            (item) => item.state == ProjectCiLoadState.known
+                ? item
+                : item.copyWith(
+                    state: ProjectCiLoadState.error,
+                    error: const ApiFailure(FailureKind.cancelled),
+                  ),
+          );
+        }
+        return false;
+      }
       final pipelinePage = read.value;
       _replaceItem(
         project.id,
