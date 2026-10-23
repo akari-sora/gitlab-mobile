@@ -6,6 +6,7 @@ import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/features/workspace/repository_page.dart';
+import 'package:gitlab_mobile/shared/cache_freshness.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
 import 'support/fake_adapter.dart';
@@ -133,11 +134,20 @@ void main() {
       expect(state.currentRef?.sha, _RepositoryFixture.sha);
       expect(state.stale, isTrue);
       expect(state.revalidating, isTrue);
+      // The ref shown is from an earlier read and says so while refreshed;
+      // the tree feed's own strip may show beside it for its rows.
+      final strip = find.descendant(
+        of: find.byType(RepositoryTab),
+        matching: find.byType(CacheFreshnessBar),
+      );
+      expect(strip, findsWidgets);
       pending.complete(jsonResponse({'name': 'main', 'commit': {'id': _RepositoryFixture.sha}}));
       await settleWorkspace(tester);
       expect(state.stale, isFalse);
       expect(state.revalidating, isFalse);
       expect(fixture.branchReads, 2);
+      // A fresh ref and fresh rows show no strip at all.
+      expect(strip, findsNothing);
     },
   );
 

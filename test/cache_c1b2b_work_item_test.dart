@@ -8,6 +8,7 @@ import 'package:gitlab_mobile/core/instance.dart';
 import 'package:gitlab_mobile/core/models.dart';
 import 'package:gitlab_mobile/core/work_item_types.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_page.dart';
+import 'package:gitlab_mobile/shared/cache_freshness.dart';
 import 'package:gitlab_mobile/shared/workspace_ui.dart';
 
 import 'support/fake_adapter.dart';
@@ -80,12 +81,20 @@ void main() {
       expect(state.stale, isTrue);
       expect(state.revalidating, isTrue);
       expect(fixture.detailReads, 2);
+      // The kept metadata says it is being refreshed in the background.
+      final strip = find.descendant(
+        of: find.byType(WorkItemPage),
+        matching: find.byType(CacheFreshnessBar),
+      );
+      expect(strip, findsOneWidget);
       pending.complete(jsonResponse(fixture.mrDetail(title: 'Updated MR')));
       await settleWorkspace(tester);
       expect(state.data?['title'], 'Updated MR');
       expect(state.stale, isFalse);
       expect(state.revalidating, isFalse);
       expect(fixture.detailReads, 2);
+      // Fresh data shows no strip.
+      expect(strip, findsNothing);
     },
   );
 
