@@ -44,8 +44,9 @@ extension _FilesPrepare on GitLabAiWritePort {
     final branch = _text(a, 'branch');
     final message = _text(a, 'commitMessage');
     final branchValue = await _fileBranchRead(project, branch);
+    final sourceRef = _fileBranchHead(branchValue);
     final protected = _fileProtected(p, branchValue);
-    final ci = isCiConfigPath(path, AiCiConfig.fromProject(p['ci_config_path']));
+    final ci = isCiConfigPath(path, AiCiConfig.fromProject(p));
     final keys = {_key([accountKey, 'project:$project', 'ref', branch, path])};
     final dependencies = {_key([accountKey, 'project:$project', 'ref', branch])};
     String? lastCommit;
@@ -112,7 +113,8 @@ extension _FilesPrepare on GitLabAiWritePort {
       writeKeys: keys,
       dependencyKeys: dependencies,
       bindingTargets: [AiTargetRef(kind: AiTargetKind.file,
-          projectId: project, projectPath: projectPath, refName: branch, path: path)],
+          projectId: project, projectPath: projectPath, refName: branch,
+          path: path, sourceRef: sourceRef)],
       bindingDigest: _fileDigest([
         accountKey, op, project, branch, path, lastCommit,
         _fileDigest(original), _fileDiffDigest(diff),
@@ -158,7 +160,9 @@ extension _FilesPrepare on GitLabAiWritePort {
       }
       // The immutable L is essential: a branch-based raw read could silently
       // overwrite a push that happened after the metadata HEAD.
-      final content = await _api.textFile(project, revision, path);
+      // Writes reserve one HEAD/raw pair and its OAuth replay. Avoid the
+      // immutable cache's additional invalidation retry after token rotation.
+      final content = await _api.textFile(project, revision, path, useCache: false);
       return (lastCommit: revision, content: _fileContent(content));
     } on ApiFailure catch (failure) {
       if (failure.status == 404) _fileReject('fileMissing');
@@ -180,15 +184,17 @@ extension _FilesPrepare on GitLabAiWritePort {
     final branch = _responseText(mr, 'source_branch');
     _fileBranch(branch);
     final branchValue = await _fileBranchRead(project, branch);
+    final sourceRef = _fileBranchHead(branchValue);
     final protected = _fileProtected(p, branchValue);
-    final config = AiCiConfig.fromProject(p['ci_config_path']);
+    final config = AiCiConfig.fromProject(p);
     final discussions = <String, Map<String, dynamic>>{};
     final changes = <({String path, String before, String after,
         Map<String, dynamic> position, int id})>[];
     final keys = <AiConflictKey>{};
     final bindings = <AiTargetRef>[AiTargetRef(kind: AiTargetKind.mergeRequest,
         projectId: project, projectPath: projectPath, iid: iid)];
-    final diffs = <Map<String, Object?>>[];
+    final previewLines = <String, List<AiDiffLine>>{};
+    final previewCiPaths = <String>{};
     final ciPaths = <String>{};
     for (final item in items) {
       final discussion = item.discussion;
@@ -239,10 +245,14 @@ extension _FilesPrepare on GitLabAiWritePort {
       final path = newPath is String && newPath.isNotEmpty ? newPath : oldPath;
       if (path is! String) _fileReject('invalidPath');
       _filePath(path);
+      var touchesCi = false;
       for (final candidate in [oldPath, newPath]) {
         if (candidate is String && candidate.isNotEmpty) {
           _filePath(candidate);
-          if (isCiConfigPath(candidate, config)) ciPaths.add(candidate);
+          if (isCiConfigPath(candidate, config)) {
+            ciPaths.add(candidate);
+            touchesCi = true;
+          }
         }
       }
       final before = _fileContent(parsed.single.fromContent);
@@ -251,11 +261,18 @@ extension _FilesPrepare on GitLabAiWritePort {
           position: position, id: item.suggestion));
       keys.add(_key([accountKey, 'project:$project', 'ref', branch, path]));
       bindings.add(AiTargetRef(kind: AiTargetKind.file, projectId: project,
-          projectPath: projectPath, refName: branch, path: path));
-      diffs.add({'path': path, 'ref': branch, 'suggestionId': item.suggestion,
-          'lines': _fileDiffValue(unifiedDiff(before, after))});
+          projectPath: projectPath, refName: branch, path: path,
+          sourceRef: sourceRef));
+      previewLines.putIfAbsent(path, () => <AiDiffLine>[])
+          .addAll(unifiedDiff(before, after));
+      if (touchesCi) previewCiPaths.add(path);
     }
     final orderedCi = ciPaths.toList()..sort();
+    final previews = [
+      for (final entry in previewLines.entries)
+        AiDiffPreview(path: entry.key, ref: branch, lines: entry.value,
+            ciPath: previewCiPaths.contains(entry.key)),
+    ];
     final message = request.arguments['commitMessage'] as String?;
     final visibility = p['visibility'];
     return AiWritePrepared._(
@@ -275,10 +292,9 @@ extension _FilesPrepare on GitLabAiWritePort {
         for (final change in changes) [change.id, change.path, change.position,
             _fileDigest(change.before), _fileDigest(change.after)],
       ]),
-      preview: AiFieldsPreview({'sourceBranch': branch, 'iid': iid,
-          'changes': List<Map<String, Object?>>.unmodifiable(diffs),
-          'ciPaths': List<String>.unmodifiable(orderedCi),
-          if (message != null) 'commitMessage': message.trim()}),
+      preview: AiDiffPreview(path: previews.first.path,
+          ref: previews.first.ref, lines: previews.first.lines,
+          ciPath: previews.first.ciPath, moreFiles: previews.length - 1),
       textScan: AiTextScan(newTexts: [for (final change in changes) change.after],
           // Only rendered paths get Markdown windows; code replacements still
           // receive the independent secret and marker scan in newTexts.
@@ -311,6 +327,13 @@ extension _FilesPrepare on GitLabAiWritePort {
       projectVisibility: visibility is String ? visibility : null,
     );
   }
+}
+
+String? _fileBranchHead(Map<String, dynamic> branch) {
+  final commit = branch['commit'];
+  if (commit is! Map<String, dynamic>) return null;
+  final id = commit['id'];
+  return id is String ? id : null;
 }
 
 Never _fileReject(String reason) => throw AiWriteRefused(reason);

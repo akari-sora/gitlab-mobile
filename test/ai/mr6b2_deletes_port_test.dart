@@ -160,14 +160,20 @@ final class DeleteServer {
       return jsonResponse({
         'id': 'abc',
         'notes': [
-          {'id': 8, 'updated_at': updatedAt},
+          {
+            'id': 8,
+            'updated_at': updatedAt,
+            'author': {'id': 7, 'username': 'reviewer'},
+            'body': 'First line\nSecond line\nThird line\nFourth line',
+          },
         ],
       });
     }
     if (path.endsWith('/notes/8')) {
       return jsonResponse({
         'id': 8,
-        'author': {'id': 7},
+        'author': {'id': 7, 'username': 'reviewer'},
+        'body': 'First line\nSecond line\nThird line\nFourth line',
         'updated_at': updatedAt,
       });
     }
@@ -263,7 +269,12 @@ void main() {
         expect(prepared.dependencyKeys, isEmpty);
         expect(prepared.bindingDigest, matches(RegExp(r'^[a-f0-9]{64}$')));
         final preview = prepared.preview as AiDeletePreview;
-        expect(preview.targetName, value.name);
+        expect(
+          preview.targetName,
+          operation == 'deleteNote' || operation == 'deleteDiscussionNote'
+              ? ''
+              : value.name,
+        );
         final result =
             await server.port.commit(prepared, mayStart: () => true)
                 as AiWriteSettled;

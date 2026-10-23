@@ -16,11 +16,12 @@ void main() {
     const independentlyCounted = <String, ({int logicalReads, int mutations})>{
       // Each logical GET reserves one OAuth replay. Mutations never replay.
       'mergeRequest': (logicalReads: 18, mutations: 1),
+      'cancelAutoMerge': (logicalReads: 9, mutations: 2),
       'deleteBranch': (logicalReads: 8, mutations: 1),
       'pipelineAction': (logicalReads: 7, mutations: 1),
       'jobAction': (logicalReads: 7, mutations: 1),
-      'edit_file': (logicalReads: 15, mutations: 1),
-      'applySuggestion': (logicalReads: 11, mutations: 1),
+      'edit_file': (logicalReads: 17, mutations: 1),
+      'applySuggestion': (logicalReads: 13, mutations: 1),
     };
     for (final entry in independentlyCounted.entries) {
       final countedCap = 2 * entry.value.logicalReads + entry.value.mutations;
@@ -30,6 +31,8 @@ void main() {
         reason: '${entry.key} changed without updating the independent count',
       );
       expect(aiWriteRequestAllowance(entry.key), countedCap);
+      expect(aiWriteRequestAllowance(entry.key, oauthReplay: false),
+          entry.value.logicalReads + entry.value.mutations);
     }
   });
 

@@ -21,6 +21,7 @@ import '../../core/ai/tools/gitlab_read_port.dart';
 import '../../core/ai/tools/field_provenance.dart';
 import '../../core/ai/tools/gitlab_write_port.dart' as writes;
 import '../../core/ai/tools/tool_catalogue.dart';
+import '../../core/ai/tools/target_binding.dart';
 import '../../core/ai/tools/write_coordinator.dart';
 import '../../core/ai/tools/write_ledger.dart' as ledger;
 import '../../core/ai/tools/write_tier.dart' as tiers;
@@ -1075,6 +1076,14 @@ class AiChatController extends ChangeNotifier
       writePolicyRevision: account?.writePolicyRevision ?? 0,
       scopeRevision: _writeScopeRevision,
       sessionGeneration: _generation,
+      currentResource: switch (origin) {
+        AiFileOrigin(:final project, :final path, :final sha) => AiTargetRef(
+          kind: AiTargetKind.file, projectId: project.id, path: path, refName: sha),
+        AiWorkItemOrigin(:final project, :final kind, :final iid) => AiTargetRef(
+          kind: kind == AiWorkItemKind.issue ? AiTargetKind.issue : AiTargetKind.mergeRequest,
+          projectId: project.id, iid: iid),
+        _ => null,
+      },
       currentJobId: switch (origin) {
         AiJobOrigin(:final jobId) => jobId,
         _ => null,

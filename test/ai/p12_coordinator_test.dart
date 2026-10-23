@@ -88,6 +88,45 @@ void main() {
     }
   });
 
+  for (final value in [
+    (
+      operation: 'deletePackage',
+      args: <String, Object?>{'projectId': 9, 'packageId': 71},
+    ),
+    (
+      operation: 'deletePackageFile',
+      args: <String, Object?>{
+        'projectId': 9,
+        'packageId': 71,
+        'fileId': 72,
+      },
+    ),
+    (
+      operation: 'deleteContainerRepository',
+      args: <String, Object?>{'projectId': 9, 'repositoryId': 81},
+    ),
+    (
+      operation: 'deleteContainerTag',
+      args: <String, Object?>{
+        'projectId': 9,
+        'repositoryId': 81,
+        'tag': 'v1',
+      },
+    ),
+  ]) {
+    test('fix1 ${value.operation} stays unbound at bypass', () async {
+      h.newCoordinator(level: AiAutonomyLevel.bypass);
+      final proposal = await h.propose(value.operation, value.args);
+      expect(proposal, isNotNull);
+      expect(proposal!.tier.decision, AiGateDecision.requireApproval);
+      expect(
+        proposal.tier.reasons,
+        contains(AiFixedConfirmReason.targetUnbound),
+      );
+      expect(h.server.mutations, isEmpty);
+    });
+  }
+
   test(
     'all project hard lines require their fresh typed name at bypass',
     () async {

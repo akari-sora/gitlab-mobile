@@ -63,7 +63,7 @@ void main() {
   }
 
   test(
-    'P6 project default and branch default independently raise T4; unknown CI hardlines',
+    'P6 defaults raise T4; present-null CI is default and malformed CI hardlines',
     () async {
       h = await P6Coordinator.create(s);
       s.defaultBranch = 'work';
@@ -80,6 +80,11 @@ void main() {
       s.branchDefault = false;
       s.ciConfig = null;
       p = await h!.propose('edit_file', id: 'c');
+      expect(p!.tier.tier, AiWriteTier.t3);
+      await h!.coordinator.reject(p);
+      h!.beginRun('Change `work` `src/a.txt`');
+      s.ciConfig = '../ci.yml';
+      p = await h!.propose('edit_file', id: 'd');
       expect(p!.tier.tier, AiWriteTier.hardLine);
     },
   );
@@ -262,7 +267,7 @@ void main() {
     for (final message in [
       'Change `work`',
       'Change `src/a.txt`',
-      'Change work src/a.txt',
+      'Change artwork src/a.txt',
     ]) {
       h!.beginRun(message);
       final p = await h!.propose('edit_file', id: message);
@@ -271,10 +276,14 @@ void main() {
       expect(p.tier.reasons, contains(AiFixedConfirmReason.targetUnbound));
       await h!.coordinator.reject(p);
     }
-    h!.beginRun('Change `work` `src/a.txt`');
-    final p = await h!.propose('edit_file', id: 'bound');
-    expect(p!.tier.decision, AiGateDecision.execute);
-    expect(s.writes, isEmpty);
+    for (final message in ['Change `work` `src/a.txt`', 'Change work src/a.txt']) {
+      h!.beginRun(message);
+      final p = await h!.propose('edit_file', id: message);
+      expect(p!.tier.decision, AiGateDecision.execute);
+      expect(p.tier.reasons, isNot(contains(AiFixedConfirmReason.targetUnbound)));
+      expect(s.writes, isEmpty);
+      await h!.coordinator.reject(p);
+    }
   });
 
   test('P6 fragment checker refuses new secrets', () async {
@@ -422,18 +431,15 @@ void main() {
               await local.writePort.commit(fresh, mayStart: () => true)
                   as port.AiWriteSettled;
           expect(result.state, AiJournalState.succeeded);
-          // textFile's immutable cache removes two requests on the second prepare;
-          // reserve them anyway to cover a cold/expired/evicted cache.
-          final coldReads =
-              local.adapter.requests.length -
-              1 +
-              (op == 'edit_file' || op == 'deleteFile' ? 2 : 0);
+          // The port uses uncached write snapshots. This port-only harness
+          // omits the two project freshness GETs proven by the controller test.
+          final coldReads = local.adapter.requests.length - 1 + 2;
           final independent = coldReads * 2 + 1;
           final expected = {
-            'edit_file': 31,
-            'createFile': 23,
-            'deleteFile': 25,
-            'applySuggestion': 23,
+            'edit_file': 35,
+            'createFile': 27,
+            'deleteFile': 29,
+            'applySuggestion': 27,
           };
           expect(independent, expected[op]);
           expect(

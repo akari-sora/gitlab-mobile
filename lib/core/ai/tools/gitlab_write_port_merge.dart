@@ -29,6 +29,7 @@ extension _MergePrepare on GitLabAiWritePort {
     final p = await _api.record(['projects', '$project']);
     if (p['id'] != project) throw const ApiFailure(FailureKind.forbidden);
     final projectPath = _responseText(p, 'path_with_namespace');
+    final ciConfig = AiCiConfig.fromProject(p);
     final path = ['projects', '$project', 'merge_requests', '$iid'];
     final mr = await _mergeRecord(path);
     if (mr['project_id'] != project || mr['iid'] != iid) {
@@ -95,6 +96,8 @@ extension _MergePrepare on GitLabAiWritePort {
     }
     Future<Object?> Function() mutation;
     Future<Object?> Function(Object?)? readback = (_) => _api.record(path);
+    var usedDeprecatedCancelEndpoint = false;
+    int? draftNoteId;
     switch (op) {
       case 'mergeRequest':
         final refs = mr['diff_refs'];
@@ -146,7 +149,7 @@ extension _MergePrepare on GitLabAiWritePort {
           normalized.add([oldPath, newPath, change['new_file']! as bool,
             change['deleted_file']! as bool, change['renamed_file']! as bool]);
           for (final name in [oldPath, newPath]) {
-            if (_mergeCiPath(name, p['ci_config_path'])) ciPaths.add(name);
+            if (isCiConfigPath(name, ciConfig)) ciPaths.add(name);
           }
         }
         normalized.sort((a, b) => jsonEncode(a).compareTo(jsonEncode(b)));
@@ -172,14 +175,23 @@ extension _MergePrepare on GitLabAiWritePort {
         for (final issue in closing) {
           final issueProject = issue['project_id'];
           final issueIid = issue['iid'];
+          final references = issue['references'];
+          final fullReference = references is Map ? references['full'] : null;
           if (issueProject is! int || issueProject < 1 || issueIid is! int || issueIid < 1 ||
+              (fullReference != null &&
+                (fullReference is! String || fullReference.isEmpty)) ||
               !closeKeys.add('$issueProject:$issueIid')) {
             throw const AiWriteRefused('mergeCheckIncomplete');
           }
           final outside = !request.scope.grants.any((g) =>
             g.projectId == issueProject && (g.kind == AiScopeKind.project ||
               (g.kind == AiScopeKind.workItem && g.iid == issueIid)));
-          closingIssues.add(AiClosingIssue(projectId: issueProject, iid: issueIid, outOfScope: outside));
+          closingIssues.add(AiClosingIssue(
+            projectId: issueProject,
+            iid: issueIid,
+            outOfScope: outside,
+            fullReference: fullReference as String?,
+          ));
           if (outside) reasons.add(AiFixedConfirmReason.foreignClosingOrCrossProject);
         }
         // Bind the complete server text too: an existing closure or qualified
@@ -196,7 +208,7 @@ extension _MergePrepare on GitLabAiWritePort {
           'closes': closeKeys.toList()..sort(),
           'description': _mergeDigest(description ?? ''),
           'commits': _mergeDigest(commits),
-          'ciConfig': p['ci_config_path'],
+          'ciConfig': _mergeCiConfigBinding(ciConfig),
           'protected': branch['protected'], 'default': p['default_branch'],
           'ciPaths': sortedCi,
         });
@@ -241,7 +253,15 @@ extension _MergePrepare on GitLabAiWritePort {
         preview = AiCancelAutoMergePreview(iid: iid, sourceBranch: source, targetBranch: target,
           mayLackPermission: permission is Map && permission['can_merge'] == false &&
             (author is! Map || author['id'] != user.id));
-        mutation = () => _api.cancelAutoMerge(project, iid);
+        mutation = () async {
+          try {
+            return await _api.cancelAutoMerge(project, iid, newEndpoint: true);
+          } on ApiFailure catch (error) {
+            if (error.status != 404 && error.status != 405) rethrow;
+            usedDeprecatedCancelEndpoint = true;
+            return _api.cancelAutoMerge(project, iid);
+          }
+        };
       case 'publishDraftNotes':
         final drafts = await _mergeList([...path, 'draft_notes']);
         if (drafts.length > 20) throw const AiWriteRefused('batchTooLarge');
@@ -271,11 +291,21 @@ extension _MergePrepare on GitLabAiWritePort {
       case 'deleteDraftNote':
         final id = _positive(a, 'noteId');
         final draft = await _api.record([...path, 'draft_notes', '$id']);
-        if (draft['id'] != id || draft['note'] is! String) {
+        final author = draft['author'];
+        final username = author is Map ? author['username'] : null;
+        if (draft['id'] != id || draft['note'] is! String ||
+            username is! String || username.isEmpty) {
           throw const AiWriteRefused('draftsChanged');
         }
+        draftNoteId = id;
         binding['drafts'] = _mergeDraftDigest([draft]);
-        preview = AiDeletePreview(targetName: '!$iid', count: 1);
+        preview = AiDeletePreview(
+          targetName: '',
+          parentName: '!$iid',
+          author: '@$username',
+          excerpt: _mergeExcerpt(draft['note']! as String),
+          count: 1,
+        );
         keys = {_key([...mrParts, 'draftNotes', '$id'])};
         mutation = () => _api.deleteDraftNote(project, iid, id);
         readback = (_) => _mergeList([...path, 'draft_notes']);
@@ -300,14 +330,74 @@ extension _MergePrepare on GitLabAiWritePort {
       writeKeys: keys, dependencyKeys: dependencies, owner: _owner,
       projectPath: projectPath, projectVisibility: p['visibility'] is String ? p['visibility']! as String : null,
       bindingDigest: digest, facts: facts, journal: journal, preview: preview, textScan: scan,
-      bindingTargets: [AiTargetRef(
-        kind: op == 'mergeRequest' ? AiTargetKind.merge : AiTargetKind.mergeRequest,
-        projectId: project, projectPath: projectPath, iid: iid,
-        sourceRef: source, targetRef: target,
-      )],
+      bindingTargets: [
+        if (draftNoteId != null)
+          AiTargetRef(
+            kind: AiTargetKind.note,
+            side: AiResourceSide.mergeRequest,
+            projectId: project,
+            projectPath: projectPath,
+            parentIid: iid,
+            noteId: draftNoteId,
+          )
+        else
+          AiTargetRef(
+            kind: op == 'mergeRequest' ? AiTargetKind.merge : AiTargetKind.mergeRequest,
+            projectId: project, projectPath: projectPath, iid: iid,
+            sourceRef: source, targetRef: target,
+          ),
+      ],
       mutation: mutation, readback: readback,
       classify: (prepared, {result, readback, mutationError, readbackError}) {
         memory.snapshots.remove(snapshotKey);
+        if (op == 'cancelAutoMerge') {
+          if (mutationError is ApiFailure &&
+              mutationError.status == 409 &&
+              !usedDeprecatedCancelEndpoint) {
+            return _outcome(
+              prepared,
+              AiJournalState.succeeded,
+              'noChange',
+              status: 409,
+            );
+          }
+          if (mutationError is ApiFailure &&
+              const {405, 406, 409, 422}.contains(mutationError.status)) {
+            return _outcome(
+              prepared,
+              AiJournalState.failedCertain,
+              mutationError.kind.name,
+              status: mutationError.status,
+            );
+          }
+          if (mutationError is ApiFailure && mutationError.status == 404) {
+            return _outcome(prepared, AiJournalState.failedCertain,
+              'cancelEndpointUnavailable', status: 404);
+          }
+          if (mutationError != null) return null;
+          if (usedDeprecatedCancelEndpoint && result is Map && result['status'] == 'error') {
+            return _outcome(prepared, AiJournalState.failedCertain,
+              'autoMergeCancelError', status: 201);
+          }
+          final accepted = usedDeprecatedCancelEndpoint
+              ? result is Map && result['status'] == 'success'
+              : result is Map<String, dynamic> &&
+                _mergeMrIdentity(result, project, iid);
+          if (!accepted || readbackError != null ||
+              readback is! Map<String, dynamic> ||
+              !_mergeMrIdentity(readback, project, iid) ||
+              !_mergeAutoReadable(readback) || _mergeAutoEnabled(readback)) {
+            return _outcome(prepared, AiJournalState.writeUncertain,
+              'invalidResponse');
+          }
+          return _outcome(
+            prepared,
+            AiJournalState.succeeded,
+            'succeeded',
+            status: 201,
+            readbackVerified: true,
+          );
+        }
         if (mutationError is ApiFailure && const {405, 406, 409, 422}.contains(mutationError.status)) {
           if (mutationError.status == 409 && (op == 'mergeRequest' || op == 'approveMergeRequest')) {
             memory.rejectedHeads[mrKey] = sha;
@@ -317,22 +407,14 @@ extension _MergePrepare on GitLabAiWritePort {
               ? 'headMoved' : mutationError.kind.name,
             status: mutationError.status);
         }
-        if (op == 'cancelAutoMerge') {
-          if (mutationError is ApiFailure && mutationError.status == 404) {
-            return _outcome(prepared, AiJournalState.failedCertain, 'cancelEndpointUnavailable', status: 404);
-          }
-          if (mutationError != null) return null;
-          if (result is Map && result['status'] == 'error') {
-            return _outcome(prepared, AiJournalState.failedCertain, 'autoMergeCancelError', status: 201);
-          }
-          if (result is! Map || result['status'] != 'success' || readbackError != null ||
-              readback is! Map<String, dynamic> || !_mergeMrIdentity(readback, project, iid) ||
-              !_mergeAutoReadable(readback) || _mergeAutoEnabled(readback)) {
-            return _outcome(prepared, AiJournalState.writeUncertain, 'invalidResponse');
-          }
-          return _outcome(prepared, AiJournalState.succeeded, 'succeeded', status: 201);
-        }
         if (mutationError != null) return null;
+        if (op == 'rebaseMergeRequest') {
+          return _outcome(
+            prepared,
+            AiJournalState.succeeded,
+            'succeeded',
+          );
+        }
         if (op == 'mergeRequest') {
           if (result is! Map<String, dynamic> || !_mergeMrIdentity(result, project, iid) ||
               !const {'opened', 'merged', 'closed'}.contains(result['state'])) {
@@ -342,7 +424,16 @@ extension _MergePrepare on GitLabAiWritePort {
           final code = value['state'] == 'merged' ? 'merged' :
             autoMerge && _mergeAutoEnabled(result)
               ? 'autoMergeScheduled' : 'mergeAccepted';
-          return _outcome(prepared, AiJournalState.succeeded, code);
+          final verified = readbackError == null &&
+            readback is Map<String, dynamic> &&
+            _mergeMrIdentity(readback, project, iid) &&
+            const {'opened', 'merged', 'closed'}.contains(readback['state']);
+          return _outcome(
+            prepared,
+            AiJournalState.succeeded,
+            code,
+            readbackVerified: verified,
+          );
         }
         if (readbackError != null) return null;
         if (op == 'publishDraftNotes' || op == 'deleteDraftNote') {
@@ -354,6 +445,12 @@ extension _MergePrepare on GitLabAiWritePort {
           if (readback.any((d) => oldIds.contains(d['id']))) {
             return _outcome(prepared, AiJournalState.writeUncertain, 'draftsChanged');
           }
+          return _outcome(
+            prepared,
+            AiJournalState.succeeded,
+            'succeeded',
+            readbackVerified: true,
+          );
         }
         return _resultClassifier?.call(prepared, result: result, readback: readback,
           mutationError: mutationError, readbackError: readbackError);
@@ -414,16 +511,16 @@ bool _mergePathValid(String path) => path.isNotEmpty && !path.contains('\\') &&
     !RegExp(r'[\x00-\x1f\x7f]').hasMatch(path) &&
     path.split('/').every((p) => p.isNotEmpty && p != '..' && p != '.');
 
-// Kept within the owned part: the parent library does not import ci_rules.
-// Fail closed for an unreadable project setting; classify old and new paths.
-bool _mergeCiPath(String path, Object? config) =>
-    config is! String ||
-    (config.isNotEmpty && !config.contains('://') && !config.startsWith('//') &&
-      !RegExp(r'^.+@[^/]+/.+$').hasMatch(config) && !_mergePathValid(config)) ||
-    path == '.gitlab-ci.yml' || path.startsWith('.gitlab/') ||
-    path == 'CODEOWNERS' || path == 'docs/CODEOWNERS' ||
-    (!config.contains('://') && !config.startsWith('//') &&
-      !RegExp(r'^.+@[^/]+/.+$').hasMatch(config) && path == config);
+List<String> _mergeCiConfigBinding(AiCiConfig config) => switch (config) {
+  AiCiConfigLocal(:final path) => ['local', path],
+  AiCiConfigExternal() => const ['external'],
+  AiCiConfigUnreadable() => const ['unreadable'],
+};
+
+String _mergeExcerpt(String body) {
+  final firstLines = body.split(RegExp(r'\r?\n')).take(3).join('\n');
+  return String.fromCharCodes(firstLines.runes.take(200));
+}
 
 bool _mergeTextEffects(String text, String projectPath, int project, Set<String> closed) {
   final qualified = RegExp(r'([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+)[#!][0-9]+');

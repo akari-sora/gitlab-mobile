@@ -10,11 +10,15 @@ import 'write_ledger.dart' show AiWriteScope, AiScopeKind;
 sealed class AiCiConfig {
   const AiCiConfig();
 
-  factory AiCiConfig.fromProject(Object? ciConfigPath) {
-    if (ciConfigPath is! String) return const AiCiConfigUnreadable();
-    if (ciConfigPath.isEmpty) {
+  factory AiCiConfig.fromProject(Map<String, Object?> project) {
+    if (!project.containsKey('ci_config_path')) {
+      return const AiCiConfigUnreadable();
+    }
+    final ciConfigPath = project['ci_config_path'];
+    if (ciConfigPath == null || ciConfigPath == '') {
       return const AiCiConfigLocal('.gitlab-ci.yml');
     }
+    if (ciConfigPath is! String) return const AiCiConfigUnreadable();
     if (ciConfigPath.contains('://') ||
         ciConfigPath.startsWith('//') ||
         RegExp(r'^.+@[^/]+/.+$').hasMatch(ciConfigPath)) {

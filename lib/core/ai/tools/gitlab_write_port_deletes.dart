@@ -152,6 +152,51 @@ extension _DeletesPrepare on GitLabAiWritePort {
       }
     }
     final updatedAt = target['updated_at'];
+    final bindingTarget = switch (op) {
+      'deleteLabel' => AiTargetRef(
+          kind: AiTargetKind.label,
+          projectId: project,
+          projectPath: projectPath,
+          name: name,
+        ),
+      'deleteMilestone' => AiTargetRef(
+          kind: AiTargetKind.milestone,
+          projectId: project,
+          projectPath: projectPath,
+          name: name,
+        ),
+      'deleteBoard' || 'deleteBoardList' => AiTargetRef(
+          kind: AiTargetKind.other,
+          projectId: project,
+          projectPath: projectPath,
+          name: name,
+        ),
+      'deleteNote' || 'deleteDiscussionNote' => AiTargetRef(
+          kind: AiTargetKind.note,
+          side: resource == 'issues'
+              ? AiResourceSide.issue
+              : AiResourceSide.mergeRequest,
+          projectId: project,
+          projectPath: projectPath,
+          parentIid: iid,
+          noteId: noteId,
+        ),
+      'deleteIssue' => AiTargetRef(
+          kind: AiTargetKind.issue,
+          projectId: project,
+          projectPath: projectPath,
+          iid: iid,
+        ),
+      'deleteMergeRequest' => AiTargetRef(
+          kind: AiTargetKind.mergeRequest,
+          projectId: project,
+          projectPath: projectPath,
+          iid: iid,
+        ),
+      _ => null,
+    };
+    final noteAuthor = note ? _deleteNoteAuthor(target) : null;
+    final noteExcerpt = note ? _deleteNoteExcerpt(target) : null;
     return AiWritePrepared._(
       request: request,
       classify: _resultClassifier,
@@ -163,15 +208,37 @@ extension _DeletesPrepare on GitLabAiWritePort {
       mutation: mutation,
       projectPath: projectPath,
       projectVisibility: p['visibility'] is String ? p['visibility'] as String : null,
+      bindingTargets: [?bindingTarget],
       bindingDigest: _deleteDigest([
         key, name, projectPath, p['visibility'], target['id'], updatedAt,
         parentRecord?['updated_at'],
         if (op == 'deleteBoardList') target['label'],
       ]),
       journal: AiJournalBindings(updatedAt: updatedAt is String ? updatedAt : null),
-      preview: AiDeletePreview(targetName: name, path: projectPath),
+      preview: AiDeletePreview(
+        targetName: note ? '' : name,
+        path: projectPath,
+        parentName: note ? name : null,
+        author: noteAuthor,
+        excerpt: noteExcerpt,
+      ),
     );
   }
+}
+
+String _deleteNoteAuthor(Map<String, dynamic> note) {
+  final author = note['author'];
+  if (author is! Map<String, dynamic>) {
+    throw const ApiFailure(FailureKind.invalidResponse);
+  }
+  return '@${_deleteName(author, 'username')}';
+}
+
+String _deleteNoteExcerpt(Map<String, dynamic> note) {
+  final body = note['body'];
+  if (body is! String) throw const ApiFailure(FailureKind.invalidResponse);
+  final excerpt = const LineSplitter().convert(body).take(3).join('\n');
+  return String.fromCharCodes(excerpt.runes.take(200));
 }
 
 void _deleteVerify(Map<String, dynamic> value, int id, {int? project}) {

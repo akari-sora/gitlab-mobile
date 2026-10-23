@@ -449,7 +449,7 @@ void main() {
     expect(f.h.mutations, 0);
   });
 
-  test('ledger controls field display and readback metadata', () async {
+  test('ledger controls fields but cannot claim an unperformed readback', () async {
     f.configure(
       row: _row(
         readback: true,
@@ -474,7 +474,7 @@ void main() {
     expect(proposal.fields, {'starred': 'true'});
     final outcome = await f.coordinator.approve(proposal);
     expect(outcome.state, AiJournalState.succeeded);
-    expect(outcome.readbackConfirmed, isTrue);
+    expect(outcome.readbackConfirmed, isFalse);
   });
 
   test(

@@ -40,7 +40,6 @@ const _mr6b2Operations = <String>{
   'createFile',
   'deleteFile',
   'applySuggestion',
-  'batchApplySuggestions',
   'createBranch',
   'deleteBranch',
   'createTag',

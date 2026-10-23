@@ -4,8 +4,7 @@ part of '../write_ledger.dart';
 // one mutation and independent readback. Merge reuses SHA-bound diffs/commits
 // on dispatch (decision 2), but rechecks closures, CI config and protection.
 // Prefix locks deliberately intersect all children of an uncertain MR write.
-// Cancel reserves the decision-3 fallback POST even though the integrated named
-// wrapper currently exposes only the deprecated endpoint (integration gap).
+// Cancel reserves both the current endpoint and the decision-3 fallback POST.
 const List<AiCapability> aiMergeRows = <AiCapability>[
   AiCapability(
     operationId: 'mergeRequest',
@@ -65,6 +64,6 @@ const List<AiCapability> aiMergeRows = <AiCapability>[
     modelVisible: true,
     httpCap: 23,
     readback: true,
-    arguments: {'projectId': _projectId, 'iid': _iid, 'noteId': _projectId},
+    arguments: {'projectId': _projectId, 'iid': _iid, 'noteId': _iid},
   ),
 ];

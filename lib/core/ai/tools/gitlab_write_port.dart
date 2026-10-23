@@ -95,6 +95,7 @@ final class AiWriteSettled extends AiWriteOutcome {
     required Set<AiConflictKey> writeKeys,
     required Set<AiConflictKey> dependencyKeys,
     this.httpStatus,
+    this.readbackVerified = false,
     Map<String, Object?> projection = const {},
     this.uploadMarkdown,
   }) : writeKeys = Set.unmodifiable(writeKeys),
@@ -104,6 +105,7 @@ final class AiWriteSettled extends AiWriteOutcome {
 
   final AiJournalState state;
   final int? httpStatus;
+  final bool readbackVerified;
   final String resultCode;
   final String releaseName;
   final Set<AiConflictKey> writeKeys;
@@ -703,9 +705,35 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     }
     if (mutation == null) throw const ApiFailure(FailureKind.unsupported);
     final visibility = p['visibility'];
+    final classifier = op == 'unapproveMergeRequest'
+        ? (
+            AiWritePrepared prepared, {
+            Object? result,
+            Object? readback,
+            Object? mutationError,
+            Object? readbackError,
+          }) {
+            if (mutationError is ApiFailure &&
+                const {405, 406, 409, 422}.contains(mutationError.status)) {
+              return _outcome(
+                prepared,
+                AiJournalState.failedCertain,
+                mutationError.kind.name,
+                status: mutationError.status,
+              );
+            }
+            return _resultClassifier?.call(
+              prepared,
+              result: result,
+              readback: readback,
+              mutationError: mutationError,
+              readbackError: readbackError,
+            );
+          }
+        : _resultClassifier;
     return AiWritePrepared._(
       request: request,
-      classify: _resultClassifier,
+      classify: classifier,
       releaseName: releaseName,
       writeKeys: keys,
       dependencyKeys: dependencies,
@@ -820,6 +848,7 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
       p,
       AiJournalState.succeeded,
       'succeeded',
+      readbackVerified: p._readback != null,
       projection: projection,
       uploadMarkdown:
           p.request.operationId == 'upload_attachment' && markdown is String
@@ -835,10 +864,12 @@ final class GitLabAiWritePort implements AiGitLabWritePort {
     int? status,
     Map<String, Object?> projection = const {},
     String? uploadMarkdown,
+    bool readbackVerified = false,
   }) => AiWriteSettled(
     state: state,
     resultCode: code,
     httpStatus: status,
+    readbackVerified: readbackVerified,
     releaseName: p.releaseName,
     writeKeys: p.writeKeys,
     dependencyKeys: p.dependencyKeys,

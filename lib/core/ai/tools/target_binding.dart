@@ -48,6 +48,7 @@ final class AiTargetRef {
     this.projectPath,
     this.iid,
     this.parentIid,
+    this.noteId,
     this.refName,
     this.path,
     this.sourceRef,
@@ -68,6 +69,7 @@ final class AiTargetRef {
   final String? projectPath;
   final int? iid;
   final int? parentIid;
+  final int? noteId;
   final String? refName;
   final String? path;
   final String? sourceRef;
@@ -359,6 +361,7 @@ _ComponentCheck _bindOne({
       ];
       return _ComponentCheck(missing.isEmpty, missing);
     case AiTargetKind.merge:
+      if (_appAsserts(target)) return const _ComponentCheck(true, <String>[]);
       final List<String> missing = <String>[
         if (!_resourceBound(
           target,
@@ -395,8 +398,18 @@ _ComponentCheck _bindOne({
         bound,
         bound ? const <String>[] : <String>[target.kind.name],
       );
-    case AiTargetKind.issue:
     case AiTargetKind.note:
+      if (target.noteId != null) {
+        final bool bound = allowText &&
+            _projectIdInScope(scope, target.projectId) &&
+            parsed.noteIds.contains(target.noteId);
+        return _ComponentCheck(bound, bound ? const [] : const ['note']);
+      }
+      final bool bound = _resourceBound(target, scope, parsed, allowText,
+          target.side == AiResourceSide.mergeRequest
+              ? _IssueKind.mergeRequest : _IssueKind.issue);
+      return _ComponentCheck(bound, bound ? const [] : const ['note']);
+    case AiTargetKind.issue:
     case AiTargetKind.emoji:
       final bool bound = _resourceBound(
         target,
@@ -609,14 +622,18 @@ bool _namedBound(
     return _refHit(target.refName ?? target.name, parsed, true);
   }
   if (target.kind == AiTargetKind.tag) {
-    return _nameHit(name, parsed, true) || parsed.tags.contains(name);
+    return _nameHit(name, parsed, true) || parsed.tags.contains(name) ||
+        _verbatimHit(name, parsed);
   }
   return _nameHit(name, parsed, true);
 }
 
 bool _refHit(String? ref, _Parsed parsed, bool allowText) {
   if (!allowText || ref == null || ref.isEmpty) return false;
-  if (parsed.refs.contains(ref) || parsed.tokens.contains(ref)) return true;
+  if (parsed.refs.contains(ref) || parsed.tokens.contains(ref) ||
+      _verbatimHit(ref, parsed)) {
+    return true;
+  }
   const String head = 'refs/heads/';
   if (ref.startsWith(head)) {
     return parsed.refs.contains(ref.substring(head.length));
@@ -628,7 +645,7 @@ bool _pathHit(String? path, _Parsed parsed, bool allowText) {
   if (!allowText) return false;
   final String? normal = _normalizeRepoPath(path);
   if (normal == null) return false;
-  return parsed.paths.contains(normal);
+  return parsed.paths.contains(normal) || _verbatimHit(path, parsed);
 }
 
 bool _nameHit(String? name, _Parsed parsed, bool allowText) {
@@ -704,6 +721,14 @@ final class _Span {
   bool covers(int from, int to) => from < end && start < to;
 }
 
+bool _verbatimHit(String? name, _Parsed parsed) {
+  if (name == null || name.isEmpty) return false;
+  // A repo name is one complete token; "main" never matches "mainly".
+  return RegExp('(?<![A-Za-z0-9_./~@%+\\-])${RegExp.escape(name)}'
+      '(?![A-Za-z0-9_/~@%+\\-]|\\.[A-Za-z0-9_.-])')
+      .hasMatch(parsed.prose);
+}
+
 final class _Parsed {
   final List<_IssueRef> issues = <_IssueRef>[];
   final List<_IssueRef> mergeRequests = <_IssueRef>[];
@@ -712,6 +737,8 @@ final class _Parsed {
   final Set<String> refs = <String>{};
   final Set<String> paths = <String>{};
   final Set<String> tags = <String>{};
+  final Set<int> noteIds = <int>{};
+  String prose = '';
 }
 
 _Parsed _parse(String text, AiWriteScope scope) {
@@ -756,6 +783,20 @@ _Parsed _parse(String text, AiWriteScope scope) {
       parsed.issues.add(ref);
     }
   }
+  final prose = StringBuffer();
+  var end = 0;
+  for (final span in spans..sort((a, b) => a.start.compareTo(b.start))) {
+    if (span.start < end) continue;
+    prose.write(text.substring(end, span.start));
+    prose.write(' ');
+    end = span.end;
+  }
+  prose.write(text.substring(end));
+  parsed.prose = prose.toString();
+  final noteReference = RegExp(r'(?<![A-Za-z0-9_])(?:note:|note #|#note_)([1-9][0-9]*)(?![A-Za-z0-9_])');
+  for (final match in noteReference.allMatches(parsed.prose)) {
+    parsed.noteIds.add(int.parse(match.group(1)!));
+  }
   return parsed;
 }
 
@@ -777,6 +818,8 @@ void _addTick(String raw, _Parsed parsed) {
     if (name.isNotEmpty && !name.contains('..')) parsed.tags.add(name);
     return;
   }
+  final note = RegExp(r'^(?:note:|note #|#note_)([1-9][0-9]*)$').firstMatch(text);
+  if (note != null) parsed.noteIds.add(int.parse(note.group(1)!));
   parsed.tokens.add(text);
   parsed.refs.add(text);
   final String? path = _normalizeRepoPath(text);
@@ -809,6 +852,11 @@ void _addUrl(String raw, AiWriteScope scope, _Parsed parsed) {
   if (dash <= 0 || dash + 1 >= rest.length) return;
   var owner = rest.sublist(0, dash).join('/');
   final String kind = rest[dash + 1];
+  if (const {'issues', 'merge_requests'}.contains(kind) &&
+      rest.length == dash + 3 && int.tryParse(rest.last) != null) {
+    final note = RegExp(r'^note_([1-9][0-9]*)$').firstMatch(uri.fragment);
+    if (note != null) parsed.noteIds.add(int.parse(note.group(1)!));
+  }
   final List<String> tail = rest.sublist(dash + 2);
   var group = false;
   if (owner.startsWith('groups/')) {

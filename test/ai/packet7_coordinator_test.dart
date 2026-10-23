@@ -57,7 +57,7 @@ void main() {
       proposal.editedText = 'user-edited text';
       await h.coordinator.reject(proposal);
       expect(proposal.editedText, 'user-edited text');
-      expect(h.coordinator.outcomeFor(first.id)?.reasonCode, 'rejected');
+      expect(h.coordinator.outcomeFor(first.id)?.reasonCode, 'userRejected');
       expect(h.journal.entries(_account), isEmpty);
 
       final portCreations = h.portCreations;

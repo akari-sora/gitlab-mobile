@@ -46,6 +46,9 @@ final class Server {
   int listStatus = 200;
   String? badList;
   String cancelStatus = 'success';
+  int? newCancelStatus;
+  int? legacyCancelStatus;
+  bool mutateCancel = true;
   String? resultState;
   bool sent = false;
   bool mutateDrafts = true;
@@ -58,7 +61,11 @@ final class Server {
   List<Map<String, dynamic>> diffs = [change('lib/a.dart')];
   List<Map<String, dynamic>> closes = [];
   List<Map<String, dynamic>> drafts = [
-    {'id': 8, 'note': 'review text'},
+    {
+      'id': 8,
+      'note': 'review text',
+      'author': {'username': 'reviewer'},
+    },
   ];
   final commitMessages = <String>['change'];
   Map<String, Object?> mr() => {
@@ -82,6 +89,25 @@ final class Server {
     final path = r.uri.path;
     if (r.method != 'GET') {
       sent = true;
+      if (path.endsWith('/cancel_auto_merge')) {
+        final responseStatus = newCancelStatus ?? status;
+        if (responseStatus >= 300) {
+          return jsonResponse({}, status: responseStatus);
+        }
+        if (mutateCancel) auto = false;
+        return jsonResponse(mr(), status: 201);
+      }
+      if (path.endsWith('cancel_merge_when_pipeline_succeeds')) {
+        final responseStatus = legacyCancelStatus ?? status;
+        if (responseStatus >= 300) {
+          return jsonResponse({}, status: responseStatus);
+        }
+        if (cancelStatus == 'success' && mutateCancel) auto = false;
+        return jsonResponse({
+          'status': cancelStatus,
+          'message': 'glpat-ABCDEFGHIJKLMNOPQRST',
+        }, status: 201);
+      }
       if (status >= 300) return jsonResponse({}, status: status);
       if (path.endsWith('bulk_publish')) {
         if (mutateDrafts) drafts = [];
@@ -90,12 +116,6 @@ final class Server {
       if (r.method == 'DELETE') {
         if (mutateDrafts) drafts = [];
         return jsonResponse(null, status: 204);
-      }
-      if (path.endsWith('cancel_merge_when_pipeline_succeeds')) {
-        return jsonResponse({
-          'status': cancelStatus,
-          'message': 'glpat-ABCDEFGHIJKLMNOPQRST',
-        }, status: 201);
       }
       return jsonResponse({
         ...mr(),
@@ -420,7 +440,11 @@ void main() {
     'foreign closure and commit reference require confirmation even at bypass',
     () async {
       s.closes = [
-        {'project_id': 10, 'iid': 5},
+        {
+          'project_id': 10,
+          'iid': 5,
+          'references': {'full': 'other/project#5'},
+        },
       ];
       final p = await s.prepare('mergeRequest');
       expect(
@@ -430,6 +454,10 @@ void main() {
       expect(
         (p.preview as AiMergePreview).closingIssues.single.outOfScope,
         true,
+      );
+      expect(
+        (p.preview as AiMergePreview).closingIssues.single.fullReference,
+        'other/project#5',
       );
       s.closes = [];
       s.commitMessages[0] = 'Refer other/project#5';
@@ -479,7 +507,11 @@ void main() {
           s.sha = 'e' * 40;
         case 'closing':
           s.closes = [
-            {'project_id': 9, 'iid': 7},
+            {
+              'project_id': 9,
+              'iid': 7,
+              'references': {'full': 'team/app#7'},
+            },
           ];
         case 'config':
           s.config = 'ci/other.yml';
@@ -501,13 +533,25 @@ void main() {
       'approveMergeRequest',
       'rebaseMergeRequest',
       'cancelAutoMerge',
+      'unapproveMergeRequest',
     ]) {
-      test('$op mutation $status is certain with exactly one write', () async {
+      test('$op mutation $status has the bounded certain classification', () async {
         s.status = status;
         final result = await s.commit(await s.prepare(op));
-        expect(result.state, AiJournalState.failedCertain);
+        expect(
+          result.state,
+          op == 'cancelAutoMerge' && status == 409
+              ? AiJournalState.succeeded
+              : AiJournalState.failedCertain,
+        );
+        if (op == 'cancelAutoMerge' && status == 409) {
+          expect(result.resultCode, 'noChange');
+        }
         expect(result.httpStatus, status);
-        expect(s.writes, hasLength(1));
+        expect(
+          s.writes,
+          hasLength(op == 'cancelAutoMerge' && status == 405 ? 2 : 1),
+        );
       });
     }
   }
@@ -579,8 +623,9 @@ void main() {
   test('cancel 409 does not claim the source SHA moved', () async {
     s.status = 409;
     final result = await s.commit(await s.prepare('cancelAutoMerge'));
-    expect(result.state, AiJournalState.failedCertain);
-    expect(result.resultCode, 'conflict');
+    expect(result.state, AiJournalState.succeeded);
+    expect(result.resultCode, 'noChange');
+    expect(result.readbackVerified, isFalse);
   });
   for (final mode in [
     'success',
@@ -593,12 +638,21 @@ void main() {
   ]) {
     test('cancel result $mode never leaks server message or retries', () async {
       final p = await s.prepare('cancelAutoMerge');
-      if (mode == 'success') s.auto = false;
       if (mode == 'readbackFailed') s.readbackStatus = 401;
-      if (mode == 'error') s.cancelStatus = 'error';
-      if (mode == 'unknown') s.cancelStatus = 'unexpected';
+      if (mode == 'stillOn') s.mutateCancel = false;
+      if (mode == 'error') {
+        s.newCancelStatus = 404;
+        s.cancelStatus = 'error';
+      }
+      if (mode == 'unknown') {
+        s.newCancelStatus = 405;
+        s.cancelStatus = 'unexpected';
+      }
       if (mode == 'missingFlags') s.omitAuto = true;
-      if (mode == '404') s.status = 404;
+      if (mode == '404') {
+        s.newCancelStatus = 404;
+        s.legacyCancelStatus = 404;
+      }
       final result = await s.commit(p);
       expect(
         result.state,
@@ -611,7 +665,10 @@ void main() {
       if (mode == 'error') expect(result.resultCode, 'autoMergeCancelError');
       if (mode == '404') expect(result.resultCode, 'cancelEndpointUnavailable');
       expect(result.projection.toString(), isNot(contains('glpat-')));
-      expect(s.writes, hasLength(1));
+      expect(
+        s.writes,
+        hasLength(['error', 'unknown', '404'].contains(mode) ? 2 : 1),
+      );
     });
   }
   test(
@@ -672,8 +729,43 @@ void main() {
         op,
         args: op == 'deleteDraftNote' ? {'noteId': 8} : {},
       );
-      if (op == 'deleteDraftNote') expect(p.confirmName, '!3');
-      expect((await s.commit(p)).state, AiJournalState.succeeded);
+      if (op == 'deleteDraftNote') {
+        expect(p.confirmName, '!3');
+        expect(p.bindingTargets.single.kind, AiTargetKind.note);
+        expect(p.bindingTargets.single.side, AiResourceSide.mergeRequest);
+        expect(p.bindingTargets.single.parentIid, 3);
+        expect(p.bindingTargets.single.noteId, 8);
+        final preview = p.preview as AiDeletePreview;
+        expect(preview.targetName, isEmpty);
+        expect(preview.parentName, '!3');
+        expect(preview.author, '@reviewer');
+        expect(preview.excerpt, 'review text');
+        final unbound = bindTargets(
+          userMessage: 'delete the draft on !3',
+          restoredFromHistory: false,
+          scope: scope,
+          targets: p.bindingTargets,
+          interfaceLanguage: 'en',
+          deviceLanguages: const [],
+          operationId: 'deleteDraftNote',
+        );
+        expect(unbound.allBound, isFalse);
+        expect(unbound.reasons, contains(AiFixedConfirmReason.targetUnbound));
+        final decision = decideTier(AiTierInput(
+          level: AiAutonomyLevel.bypass,
+          capability: productionAiLedger.find('deleteDraftNote')!,
+          scope: scope,
+          binding: unbound,
+          target: p.bindingTargets.single,
+          facts: p.facts,
+          typedName: p.confirmName,
+          arguments: p.request.arguments,
+        ));
+        expect(decision.decision, AiGateDecision.requireApproval);
+      }
+      final result = await s.commit(p);
+      expect(result.state, AiJournalState.succeeded);
+      expect(result.readbackVerified, isTrue);
     });
     test('$op unchanged readback is uncertain', () async {
       s.mutateDrafts = false;
@@ -695,6 +787,14 @@ void main() {
       );
     },
   );
+  test('draft deletion excerpt is three lines and at most 200 characters', () async {
+    s.drafts.single['note'] = '${'a' * 198}\nsecond\nthird\nfourth';
+    final prepared = await s.prepare('deleteDraftNote', args: {'noteId': 8});
+    final excerpt = (prepared.preview as AiDeletePreview).excerpt!;
+    expect(excerpt.runes.length, 200);
+    expect(excerpt, isNot(contains('third')));
+    expect(excerpt, isNot(contains('fourth')));
+  });
   for (final op in [
     'mergeRequest',
     'approveMergeRequest',
@@ -723,7 +823,7 @@ void main() {
       }
       await s.prepare(op, args: a);
       final p = await s.prepare(op, args: a);
-      if (op == 'cancelAutoMerge') s.auto = false;
+      if (op == 'cancelAutoMerge') s.newCancelStatus = 404;
       await s.commit(p);
       final getCount = s.adapter.requests
           .where((r) => r.method == 'GET')
@@ -734,7 +834,7 @@ void main() {
         countWithReplayAndControllerFreshness,
         lessThanOrEqualTo(productionAiLedger.find(op)!.httpCap),
       );
-      expect(s.writes, hasLength(1));
+      expect(s.writes, hasLength(op == 'cancelAutoMerge' ? 2 : 1));
     });
   }
   test(
@@ -742,7 +842,11 @@ void main() {
     () async {
       s.description = 'Closes #7';
       s.closes = [
-        {'project_id': 9, 'iid': 7},
+        {
+          'project_id': 9,
+          'iid': 7,
+          'references': {'full': 'team/app#7'},
+        },
       ];
       final p = await s.prepare('mergeRequest');
       expect(
@@ -771,6 +875,7 @@ void main() {
           ),
         );
         expect(result.state, AiJournalState.succeeded);
+        expect(result.readbackVerified, isFalse);
         expect(
           result.resultCode,
           {
@@ -855,12 +960,22 @@ void main() {
     );
     expect(s.writes, isEmpty);
   });
-  for (final config in [null, '../ci.yml']) {
-    test('unreadable CI config $config fails closed to hard line', () async {
-      s.config = config;
-      expect(tier(await s.prepare('mergeRequest')).tier, AiWriteTier.hardLine);
-    });
-  }
+  test('null CI config means the default .gitlab-ci.yml', () async {
+    s.config = null;
+    s.diffs = [change('.gitlab-ci.yml')];
+    expect(tier(await s.prepare('mergeRequest')).tier, AiWriteTier.hardLine);
+  });
+  test('null CI config does not classify an ordinary path as CI', () async {
+    s.config = null;
+    s.diffs = [change('lib/a.dart')];
+    final prepared = await s.prepare('mergeRequest');
+    expect((prepared.preview as AiMergePreview).ciPaths, isEmpty);
+    expect(tier(prepared).tier, isNot(AiWriteTier.hardLine));
+  });
+  test('invalid CI config fails closed to hard line', () async {
+    s.config = '../ci.yml';
+    expect(tier(await s.prepare('mergeRequest')).tier, AiWriteTier.hardLine);
+  });
   test(
     'cross-project source is unsupported instead of locking wrong source ref',
     () async {
