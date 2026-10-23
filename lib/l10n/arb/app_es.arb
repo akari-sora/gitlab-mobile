@@ -2713,5 +2713,6 @@
   "cacheRefreshing": "Actualizando…",
   "cacheRateLimited": "GitLab está limitando las solicitudes",
   "cacheRefreshFailed": "No se puede actualizar",
-  "cacheResumesInMinutes": "Se reanuda en unos {minutes} min"
+  "cacheResumesInMinutes": "Se reanuda en unos {minutes} min",
+  "activityVerbTarget": "{verb} {target}"
 }

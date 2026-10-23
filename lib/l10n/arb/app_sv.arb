@@ -2713,5 +2713,6 @@
   "cacheRefreshing": "Uppdaterar…",
   "cacheRateLimited": "GitLab begränsar begäranden",
   "cacheRefreshFailed": "Kan inte uppdatera",
-  "cacheResumesInMinutes": "Återupptas om ca {minutes} min"
+  "cacheResumesInMinutes": "Återupptas om ca {minutes} min",
+  "activityVerbTarget": "{verb} {target}"
 }

@@ -2716,4 +2716,5 @@ const _messagesPtBr = <String>[
   'O GitLab está limitando solicitações',
   'Não foi possível atualizar',
   'Retoma em cerca de {minutes} min',
+  '{verb} {target}',
 ];

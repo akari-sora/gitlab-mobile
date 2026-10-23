@@ -2716,4 +2716,5 @@ const _messagesMs = <String>[
   'GitLab sedang mengehadkan permintaan',
   'Tidak dapat memuat semula',
   'Sambung semula dalam sekitar {minutes} min',
+  '{verb} {target}',
 ];

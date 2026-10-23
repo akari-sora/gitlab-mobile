@@ -2713,5 +2713,6 @@
   "cacheRefreshing": "جارٍ التحديث…",
   "cacheRateLimited": "يقيّد GitLab الطلبات",
   "cacheRefreshFailed": "تعذّر التحديث",
-  "cacheResumesInMinutes": "يستأنف بعد {minutes} د تقريبًا"
+  "cacheResumesInMinutes": "يستأنف بعد {minutes} د تقريبًا",
+  "activityVerbTarget": "{verb} {target}"
 }

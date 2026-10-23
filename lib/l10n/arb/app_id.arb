@@ -2713,5 +2713,6 @@
   "cacheRefreshing": "Memperbarui…",
   "cacheRateLimited": "GitLab sedang membatasi permintaan",
   "cacheRefreshFailed": "Tidak dapat memperbarui",
-  "cacheResumesInMinutes": "Lanjut lagi dalam sekitar {minutes} mnt"
+  "cacheResumesInMinutes": "Lanjut lagi dalam sekitar {minutes} mnt",
+  "activityVerbTarget": "{verb} {target}"
 }

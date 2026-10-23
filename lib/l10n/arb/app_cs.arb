@@ -2713,5 +2713,6 @@
   "cacheRefreshing": "Probíhá aktualizace…",
   "cacheRateLimited": "GitLab omezuje požadavky",
   "cacheRefreshFailed": "Nelze obnovit",
-  "cacheResumesInMinutes": "Obnoví se přibližně za {minutes} min"
+  "cacheResumesInMinutes": "Obnoví se přibližně za {minutes} min",
+  "activityVerbTarget": "{verb} {target}"
 }

@@ -2716,4 +2716,5 @@ const _messagesId = <String>[
   'GitLab sedang membatasi permintaan',
   'Tidak dapat memperbarui',
   'Lanjut lagi dalam sekitar {minutes} mnt',
+  '{verb} {target}',
 ];
