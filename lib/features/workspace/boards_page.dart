@@ -1003,6 +1003,13 @@ class _BoardsPageState extends State<BoardsPage> {
       visible: column.kind == BoardColumnKind.open
           ? (issue) => boardOpenIssueMatches(board, issue)
           : null,
+      cached: ({required fresh, required background}) =>
+          widget.api.cachedRecords(
+            ['projects', '${widget.project.id}', 'issues'],
+            query: query.parameters,
+            fresh: fresh,
+            background: background,
+          ),
       load: (next) => widget.api.records(
         ['projects', '${widget.project.id}', 'issues'],
         query: query.parameters,
