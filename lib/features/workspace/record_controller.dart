@@ -28,7 +28,7 @@ class RecordController extends ChangeNotifier {
   int _generation = 0;
   int _loadedPages = 0;
   bool _failedReconcile = false;
-  bool _retryStaleRead = false;
+  bool _resumeWhenVisible = false;
   Future<void>? _revalidation;
   final Set<String> _seenCursors = {};
   bool _current(int generation) => !_disposed && generation == _generation;
@@ -36,8 +36,15 @@ class RecordController extends ChangeNotifier {
   Future<void> retry() => _failedReconcile ? reconcileLoadedWindow() : failedMore ? more() : refresh(fresh: cached != null);
 
   void setBackgroundEnabled(bool enabled) {
+    if (enabled == _backgroundEnabled) return;
     _backgroundEnabled = enabled;
-    if (enabled) _startRevalidation(_generation, _loadedPages);
+    if (!enabled && (loading || loadingMore || revalidating)) {
+      _resumeWhenVisible = true;
+    }
+    if (enabled) {
+      _resumeIfVisible();
+      _startRevalidation(_generation, _loadedPages);
+    }
   }
 
   int _begin() {
@@ -46,25 +53,49 @@ class RecordController extends ChangeNotifier {
     _failedReconcile = false; error = null; backgroundFailure = null;
     backgroundRetryAt = null;
     revalidating = false; _revalidation = null;
-    _retryStaleRead = false;
+    _resumeWhenVisible = false;
     _emit();
     return generation;
   }
 
-  // A superseded result is never read or published. One fresh retry belongs
-  // to the same epoch, so changing the resource also cancels that retry.
+  // After one bounded retry, let the cache's existing write-quiet barrier
+  // precede one final read. Sustained writes leave an explicit retry notice.
   Future<CachedRead<ApiPage<Json>>?> _readCached(
     int generation, {required bool fresh, required bool background}
   ) async {
     final source = cached!;
-    var read = await source(fresh: fresh, background: background);
+    Future<CachedRead<ApiPage<Json>>> readPage({
+      required bool fresh, bool quiet = false,
+    }) => CachedRead.run(
+      () => source(fresh: fresh, background: background),
+      mayStart: () => _canContinue(generation),
+      waitForQuiet: quiet,
+    );
+    var read = await readPage(fresh: fresh);
     if (!_current(generation)) return null;
-    if (read.superseded) {
-      if (background && !_backgroundEnabled) return null;
-      read = await source(fresh: true, background: background);
-      if (!_current(generation)) return null;
+    if (!_backgroundEnabled && (background || fresh ||
+        read.lineage == CacheLineage.network || read.superseded || read.dropped)) {
+      stale = true; _resumeWhenVisible = true;
+      return null;
     }
-    return read.superseded || read.dropped ? null : read;
+    if (read.superseded) {
+      read = await readPage(fresh: true);
+      if (!_current(generation)) return null;
+      if (!_backgroundEnabled) {
+        stale = true; _resumeWhenVisible = true;
+        return null;
+      }
+      if (read.superseded) {
+        read = await readPage(fresh: true, quiet: true);
+        if (!_current(generation)) return null;
+        if (!_backgroundEnabled) {
+          stale = true; _resumeWhenVisible = true;
+          return null;
+        }
+      }
+      if (read.superseded) throw const ApiFailure(FailureKind.cancelled);
+    }
+    return read.dropped ? null : read;
   }
 
   void _applyFirst(ApiPage<Json> page) {
@@ -89,22 +120,30 @@ class RecordController extends ChangeNotifier {
     final generation = _begin();
     try {
       if (cached == null) {
+        if (!_canContinue(generation)) return;
         final page = await loader(null);
-        if (!_current(generation)) return;
+        if (!_canContinue(generation)) return;
         _applyFirst(page);
+        stale = false;
       } else {
         final read = await _readCached(generation, fresh: fresh, background: false);
-        if (!_current(generation) || read == null) return;
+        if (!_current(generation)) return;
+        if (read == null) {
+          if (_backgroundEnabled && !_resumeWhenVisible && items.isEmpty) {
+            error = const ApiFailure(FailureKind.cancelled);
+          }
+          return;
+        }
         if (targetPages > 1) {
           // Keep the complete old window until its replacement is ready.
           if (!read.stale) {
-            await _reconcileLoadedWindow(generation, targetPages, read.value);
-            if (!_current(generation)) return;
+            if (!await _reconcileLoadedWindow(generation, targetPages, read.value)) return;
           }
         } else {
           _applyFirst(read.value);
         }
-        fetchedAt = read.fetchedAt; stale = read.stale;
+        if (targetPages <= 1 || !read.stale) fetchedAt = read.fetchedAt;
+        stale = read.stale;
         loading = false; _emit();
         _startRevalidation(generation, targetPages);
       }
@@ -114,14 +153,15 @@ class RecordController extends ChangeNotifier {
         if (cached != null && _revoked(error!)) _withdraw();
       }
     } finally {
-      if (_current(generation)) { loading = false; _emit(); }
+      if (_current(generation)) { loading = false; _emit(); _resumeIfVisible(); }
     }
   }
 
   void _startRevalidation(int generation, int targetPages) {
-    if (!_current(generation) || !_backgroundEnabled || loading || cached == null ||
+    if (!_current(generation) || !_backgroundEnabled || loading || loadingMore || cached == null ||
         !stale || revalidating || backgroundFailure != null) { return; }
     revalidating = true;
+    _resumeWhenVisible = false;
     _revalidation = _revalidate(generation, targetPages);
     unawaited(_revalidation);
     _emit();
@@ -133,50 +173,60 @@ class RecordController extends ChangeNotifier {
       if (!_current(generation) || read == null) return;
       if (targetPages > 1) {
         if (!read.stale) {
-          await _reconcileLoadedWindow(generation, targetPages, read.value);
-          if (!_current(generation)) return;
+          if (!await _reconcileLoadedWindow(generation, targetPages, read.value)) return;
         }
       } else {
         _applyFirst(read.value);
       }
-      fetchedAt = read.fetchedAt; stale = read.stale;
-      // A write-wait timeout may still return stale data. Let the next explicit
-      // pagination attempt retry once instead of leaving it blocked forever.
-      _retryStaleRead = read.stale;
+      if (targetPages <= 1 || !read.stale) fetchedAt = read.fetchedAt;
+      stale = read.stale;
     } catch (e) {
       if (_current(generation)) {
         final failure = safeFailure(e);
         if (_revoked(failure)) {
           _withdraw(); error = failure;
+        } else if (!_backgroundEnabled) {
+          stale = true; _resumeWhenVisible = true;
         } else {
           backgroundFailure = failure.kind; backgroundRetryAt = failure.retryAt;
         }
       }
     } finally {
       if (_current(generation)) {
-        revalidating = false; _revalidation = null; _emit();
+        revalidating = false; _revalidation = null; _emit(); _resumeIfVisible();
       }
     }
   }
 
   Future<void> more() async {
     final generation = _generation;
-    if (_retryStaleRead && _backgroundEnabled) {
-      _retryStaleRead = false;
-      _startRevalidation(generation, _loadedPages);
-    }
+    if (!_current(generation) || !_backgroundEnabled || loading || loadingMore) return;
     final pending = _revalidation;
     if (pending != null) {
       await pending;
-      if (!_current(generation)) return;
+      if (!_canContinue(generation)) return;
     }
-    final cursor = next;
-    if (_disposed || loading || loadingMore || cursor == null ||
-        (cached != null && stale)) { return; }
+    if (!_backgroundEnabled || loading || loadingMore ||
+        (next == null && !(cached != null && stale))) { return; }
     loadingMore = true; failedMore = false; _failedReconcile = false; error = null; _emit();
     try {
+      if (cached != null && stale) {
+        backgroundFailure = null; backgroundRetryAt = null;
+        final read = await _readCached(generation, fresh: true, background: false);
+        if (!_current(generation) || !_backgroundEnabled) return;
+        if (read == null && _resumeWhenVisible) return;
+        if (read == null || read.stale) throw const ApiFailure(FailureKind.cancelled);
+        if (_loadedPages > 1) {
+          if (!await _reconcileLoadedWindow(generation, _loadedPages, read.value)) return;
+        } else {
+          _applyFirst(read.value);
+        }
+        fetchedAt = read.fetchedAt; stale = false;
+      }
+      final cursor = next;
+      if (cursor == null || !_backgroundEnabled) return;
       final page = await loader(cursor);
-      if (!_current(generation)) return;
+      if (!_canContinue(generation)) return;
       final ids = items.map(_identity).toSet();
       items = [...items, ...page.items.where((item) => ids.add(_identity(item)))];
       _loadedPages++;
@@ -184,8 +234,16 @@ class RecordController extends ChangeNotifier {
       if (next != null && _seenCursors.contains(next.toString())) {
         next = null; error = const ApiFailure(FailureKind.invalidResponse);
       }
-    } catch (e) { if (_current(generation)) { error = safeFailure(e); failedMore = true; } }
-    finally { if (_current(generation)) { loadingMore = false; _emit(); } }
+    } catch (e) {
+      if (_current(generation)) {
+        error = safeFailure(e);
+        final revoked = cached != null && _revoked(error!);
+        if (revoked) _withdraw();
+        failedMore = !revoked;
+      }
+    } finally {
+      if (_current(generation)) { loadingMore = false; _emit(); _resumeIfVisible(); }
+    }
   }
 
   Future<void> reconcileLoadedWindow() async {
@@ -196,33 +254,56 @@ class RecordController extends ChangeNotifier {
       CachedRead<ApiPage<Json>>? read;
       ApiPage<Json> first;
       if (cached == null) {
+        if (!_canContinue(generation)) return;
         first = await loader(null);
-        if (!_current(generation)) return;
+        if (!_canContinue(generation)) return;
       } else {
         read = await _readCached(generation, fresh: true, background: false);
         if (!_current(generation) || read == null) return;
         if (read.stale) {
           if (targetPages == 1) _applyFirst(read.value);
-          fetchedAt = read.fetchedAt; stale = true; _retryStaleRead = true;
+          if (targetPages == 1) fetchedAt = read.fetchedAt;
+          stale = true;
           return;
         }
         first = read.value;
       }
-      await _reconcileLoadedWindow(generation, targetPages, first);
-      if (!_current(generation)) return;
+      if (!await _reconcileLoadedWindow(generation, targetPages, first)) return;
       if (read != null) { fetchedAt = read.fetchedAt; stale = read.stale; }
+      else { stale = false; }
     } catch (e) {
       if (_current(generation)) {
         error = safeFailure(e); _failedReconcile = true;
         if (cached != null && _revoked(error!)) _withdraw();
       }
     } finally {
-      if (_current(generation)) { loading = false; _emit(); }
+      if (_current(generation)) { loading = false; _emit(); _resumeIfVisible(); }
     }
   }
 
   // Both explicit and background reconciliation stage all pages atomically.
-  Future<void> _reconcileLoadedWindow(
+  void _resumeIfVisible() {
+    if (!_disposed && _resumeWhenVisible && _backgroundEnabled &&
+        !loading && !loadingMore && !revalidating) {
+      if (cached == null) {
+        _resumeWhenVisible = false;
+        unawaited(reconcileLoadedWindow());
+        return;
+      }
+      _startRevalidation(_generation, _loadedPages);
+    }
+  }
+
+  bool _canContinue(int generation) {
+    if (!_current(generation)) return false;
+    if (!_backgroundEnabled) {
+      stale = true; _resumeWhenVisible = true;
+      return false;
+    }
+    return true;
+  }
+
+  Future<bool> _reconcileLoadedWindow(
     int generation, int targetPages, ApiPage<Json> first
   ) async {
     final refreshed = <Json>[];
@@ -231,6 +312,7 @@ class RecordController extends ChangeNotifier {
     var page = first;
     var loadedPages = 0;
     while (true) {
+      if (!_canContinue(generation)) return false;
       loadedPages++;
       refreshed.addAll(page.items.where((item) => ids.add(_identity(item))));
       final following = page.next;
@@ -240,11 +322,12 @@ class RecordController extends ChangeNotifier {
       if (following == null || loadedPages >= targetPages) break;
       requestedCursors.add(following.toString());
       page = await loader(following);
-      if (!_current(generation)) return;
+      if (!_canContinue(generation)) return false;
     }
-    if (!_current(generation)) return;
+    if (!_canContinue(generation)) return false;
     items = refreshed; next = page.next; _loadedPages = loadedPages;
     _seenCursors..clear()..addAll(requestedCursors);
+    return true;
   }
   void patchItem(Json item) {
     if (_disposed) return;
