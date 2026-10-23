@@ -109,6 +109,7 @@ class AiChatPage extends StatefulWidget {
     this.analyzeDraft = analyzeAiDraft,
     this.sendReport = sendAiReport,
     this.buildInfo = loadBuildInfo,
+    this.now = DateTime.now,
   });
 
   final AiChatSession session;
@@ -130,6 +131,9 @@ class AiChatPage extends StatefulWidget {
 
   /// The version a report names; replaced in tests.
   final BuildInfoLoader buildInfo;
+
+  /// The clock the send-paused card counts down with; replaced in tests.
+  final DateTime Function() now;
 
   /// Opened from "AI summary": send the summary request once, when the empty
   /// conversation is ready.
@@ -756,6 +760,7 @@ class _AiChatPageState extends State<AiChatPage> {
         ? _SendPausedCard(
             reason: paused,
             until: pausedUntil,
+            now: widget.now,
             onResume: _sendPauseEnded,
           )
         : null;
@@ -1992,11 +1997,13 @@ class _SendPausedCard extends StatefulWidget {
   const _SendPausedCard({
     required this.reason,
     required this.until,
+    required this.now,
     required this.onResume,
   });
 
   final AiChatSendBlockReason reason;
   final DateTime? until;
+  final DateTime Function() now;
   final VoidCallback onResume;
 
   @override
@@ -2025,7 +2032,7 @@ class _SendPausedCardState extends State<_SendPausedCard> {
   }
 
   Duration? get _left {
-    final left = widget.until?.difference(DateTime.now());
+    final left = widget.until?.difference(widget.now());
     return left == null || left <= Duration.zero ? null : left;
   }
 
