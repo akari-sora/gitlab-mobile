@@ -231,6 +231,8 @@ extension WorkItemActivityNoteReactionsApi on GitLabApi {
       _requireSameWorkItemActivityReactionNote(
         readback.value,
         target._original,
+        // Award emoji changes bump updatedAt without editing the note.
+        compareUpdatedAt: false,
       );
       if (_hasWorkItemActivityReaction(
             readback.reactions,
@@ -433,8 +435,9 @@ void _requireEmptyWorkItemActivityReactionErrors(Object? raw) {
 
 void _requireSameWorkItemActivityReactionNote(
   _WorkItemActivityEditNote current,
-  _WorkItemActivityEditNote expected,
-) {
+  _WorkItemActivityEditNote expected, {
+  bool compareUpdatedAt = true,
+}) {
   final currentNote = current.note;
   final expectedNote = expected.note;
   if (current.internal != expected.internal ||
@@ -444,7 +447,7 @@ void _requireSameWorkItemActivityReactionNote(
       currentNote.system != expectedNote.system ||
       currentNote.body != expectedNote.body ||
       currentNote.createdAt != expectedNote.createdAt ||
-      currentNote.updatedAt != expectedNote.updatedAt ||
+      (compareUpdatedAt && currentNote.updatedAt != expectedNote.updatedAt) ||
       currentNote.author?.id != expectedNote.author?.id) {
     throw const FormatException('Changed reaction note');
   }

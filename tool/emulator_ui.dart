@@ -1525,6 +1525,12 @@ final class EmulatorQaFixture extends WorkspaceFixture {
       'user': {'id': 'gid://gitlab/User/7'},
     };
     if (awarded) reactions.add(reaction);
+    _editedWorkItemNotes[noteId] = {
+      ...?_editedWorkItemNotes[noteId],
+      'updatedAt': DateTime.parse(located.note['updatedAt'] as String)
+          .add(const Duration(seconds: 1))
+          .toIso8601String(),
+    };
     workItemNoteReactionEvents.add({
       'scope': located.group ? 'group' : 'project',
       'noteId': noteId,

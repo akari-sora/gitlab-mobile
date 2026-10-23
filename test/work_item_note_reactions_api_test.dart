@@ -108,6 +108,7 @@ Map<String, Object?> _note({
   String id = _noteId,
   String body = 'Synthetic note',
   String updatedAt = '2026-10-01T01:03:04Z',
+  String authorId = _actorId,
   bool system = false,
   bool internal = false,
   bool canAward = true,
@@ -124,7 +125,7 @@ Map<String, Object?> _note({
     'createdAt': '2026-10-01T01:02:03Z',
     'updatedAt': updatedAt,
     'author': {
-      'id': _actorId,
+      'id': authorId,
       'name': 'Synthetic User',
       'username': 'synthetic-user',
     },
@@ -300,9 +301,10 @@ void main() {
   );
 
   test(
-    'adds a project note reaction and proves it by independent readback',
+    'adds a project note reaction when updatedAt advances in readback',
     () async {
       var call = 0;
+      var updatedAt = '2026-10-01T01:03:04Z';
       final adapter = FakeAdapter((request) {
         call++;
         final data = request.data as Map;
@@ -315,10 +317,13 @@ void main() {
           expect(data['variables'], {
             'input': {'awardableId': _noteId, 'name': 'thumbsup'},
           });
+          updatedAt = '2026-10-01T01:04:04Z';
           return jsonResponse(_mutationAck(awarded: true));
         }
         return jsonResponse(
-          _access(note: _note(awards: [_reaction('thumbsup')])),
+          _access(
+            note: _note(updatedAt: updatedAt, awards: [_reaction('thumbsup')]),
+          ),
         );
       });
       final api = testApi(adapter);
@@ -333,14 +338,17 @@ void main() {
 
       expect(access.reactions.single.name, 'thumbsup');
       expect(access.target, isNotNull);
+      expect(access.target!.note.updatedAt, DateTime.parse(updatedAt));
+      expect(access.target!.note.updatedAt.isAfter(target.note.updatedAt), isTrue);
       expect(adapter.requests.where(_isMutation), hasLength(1));
     },
   );
 
   test(
-    'removes a group note reaction with a null-free removal payload',
+    'removes a group note reaction when updatedAt advances in readback',
     () async {
       var call = 0;
+      var updatedAt = '2026-10-01T01:03:04Z';
       final awardedAccess = _access(
         expected: _groupExpected,
         note: _note(
@@ -360,12 +368,13 @@ void main() {
           expect(data['variables'], {
             'input': {'awardableId': _noteId, 'name': 'heart'},
           });
+          updatedAt = '2026-10-01T01:04:04Z';
           return jsonResponse(_mutationAck(awarded: false));
         }
         return jsonResponse(
           _access(
             expected: _groupExpected,
-            note: _note(expected: _groupExpected),
+            note: _note(expected: _groupExpected, updatedAt: updatedAt),
           ),
         );
       });
@@ -380,9 +389,68 @@ void main() {
       );
 
       expect(access.reactions, isEmpty);
+      expect(access.target!.note.updatedAt, DateTime.parse(updatedAt));
+      expect(access.target!.note.updatedAt.isAfter(target.note.updatedAt), isTrue);
       expect(adapter.requests.where(_isMutation), hasLength(1));
     },
   );
+
+  for (final awarded in [true, false]) {
+    for (final changedField in ['body', 'author']) {
+      test(
+        'changed $changedField in reaction readback is uncertain, awarded=$awarded',
+        () async {
+          var mutated = false;
+          final adapter = FakeAdapter((request) {
+            if (_isMutation(request)) {
+              mutated = true;
+              return jsonResponse(_mutationAck(awarded: awarded));
+            }
+            return jsonResponse(
+              _access(
+                note: _note(
+                  updatedAt: mutated
+                      ? '2026-10-01T01:04:04Z'
+                      : '2026-10-01T01:03:04Z',
+                  body: mutated && changedField == 'body'
+                      ? 'Changed note'
+                      : 'Synthetic note',
+                  authorId: mutated && changedField == 'author'
+                      ? _otherActorId
+                      : _actorId,
+                  awards: (mutated ? awarded : !awarded)
+                      ? [_reaction('thumbsup')]
+                      : const [],
+                ),
+              ),
+            );
+          });
+          final api = testApi(adapter);
+          addTearDown(api.close);
+          final target = await _target(api);
+
+          await expectLater(
+            api.setWorkItemActivityNoteReaction(
+              target,
+              'thumbsup',
+              awarded: awarded,
+            ),
+            throwsA(_failure(FailureKind.writeUncertain)),
+          );
+          expect(adapter.requests.where(_isMutation), hasLength(1));
+          await expectLater(
+            api.setWorkItemActivityNoteReaction(
+              target,
+              'thumbsup',
+              awarded: awarded,
+            ),
+            throwsA(_failure(FailureKind.writeUncertain)),
+          );
+          expect(adapter.requests.where(_isMutation), hasLength(1));
+        },
+      );
+    }
+  }
 
   test('an already-satisfied explicit state is a consumed no-op', () async {
     final adapter = FakeAdapter(
@@ -601,6 +669,35 @@ void main() {
         throwsA(_failure(FailureKind.invalidResponse)),
       );
       changedAcrossPages.close();
+    },
+  );
+
+  test(
+    'updatedAt changes across reaction pages are refused',
+    () async {
+      final adapter = FakeAdapter((request) {
+        final after = ((request.data as Map)['variables'] as Map)['after'];
+        return jsonResponse(
+          _access(
+            note: _note(
+              updatedAt: after == null
+                  ? '2026-10-01T01:03:04Z'
+                  : '2026-10-01T01:04:04Z',
+              next: after == null,
+              cursor: after == null ? 'next' : null,
+            ),
+          ),
+        );
+      });
+      final api = testApi(adapter);
+      addTearDown(api.close);
+
+      await expectLater(
+        _target(api),
+        throwsA(_failure(FailureKind.invalidResponse)),
+      );
+      expect(adapter.requests, hasLength(2));
+      expect(adapter.requests.where(_isMutation), isEmpty);
     },
   );
 

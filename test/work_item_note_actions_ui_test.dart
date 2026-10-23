@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/gitlab_api.dart';
 import 'package:gitlab_mobile/core/work_item_graph_models.dart';
 import 'package:gitlab_mobile/features/workspace/work_item_activity.dart';
+import 'package:gitlab_mobile/l10n/l10n.dart';
 
 import '../tool/emulator_ui.dart';
 
@@ -240,7 +241,7 @@ void main() {
     });
   }
 
-  testWidgets('reactions load on demand and add then remove explicitly', (
+  testWidgets('reactions add then remove when updatedAt advances', (
     tester,
   ) async {
     final fixture = EmulatorQaFixture();
@@ -254,6 +255,10 @@ void main() {
     );
     expect(_operationReads(fixture, 'MobileWorkItemActivityReactionAccess'), 1);
     expect(find.text('👍 1'), findsOneWidget);
+    final originalUpdatedAt = fixture.workItemActivityNoteRecord(
+      _projectNoteId,
+      group: false,
+    )!['updatedAt'];
 
     await _tap(
       tester,
@@ -286,6 +291,19 @@ void main() {
       'awarded': true,
     });
     expect(find.text('❤️ 1'), findsOneWidget);
+    final addedUpdatedAt = fixture.workItemActivityNoteRecord(
+      _projectNoteId,
+      group: false,
+    )!['updatedAt'];
+    expect(addedUpdatedAt, isNot(originalUpdatedAt));
+    expect(
+      tester.widget<FilterChip>(
+        find.byKey(const ValueKey('work-item-activity-reaction:heart')),
+      ).selected,
+      isTrue,
+    );
+    expect(find.text(l10n.actionResultUnconfirmed), findsNothing);
+    expect(find.text(l10n.emojiReactionUnconfirmed), findsNothing);
 
     await _tap(
       tester,
@@ -294,6 +312,15 @@ void main() {
     expect(fixture.workItemNoteReactionEvents, hasLength(2));
     expect(fixture.workItemNoteReactionEvents.last['awarded'], isFalse);
     expect(find.text('❤️ 1'), findsNothing);
+    expect(
+      fixture.workItemActivityNoteRecord(
+        _projectNoteId,
+        group: false,
+      )!['updatedAt'],
+      isNot(addedUpdatedAt),
+    );
+    expect(find.text(l10n.actionResultUnconfirmed), findsNothing);
+    expect(find.text(l10n.emojiReactionUnconfirmed), findsNothing);
 
     await _tap(
       tester,

@@ -99,6 +99,8 @@ void main() {
           ),
           hasLength(1),
         );
+        final addedNote = access.target!.note;
+        expect(addedNote.updatedAt.isAfter(note.updatedAt), isTrue);
         access = await fixture.api.setWorkItemActivityNoteReaction(
           access.target!,
           'heart',
@@ -110,12 +112,13 @@ void main() {
           ),
           isEmpty,
         );
+        expect(access.target!.note.updatedAt.isAfter(addedNote.updatedAt), isTrue);
         expect(fixture.workItemNoteReactionEvents, hasLength(2));
         fixture.workItemNoteReactionAllowed[group] = false;
         access = await fixture.api.workItemActivityReactionAccess(
           detail.summary,
           discussion,
-          note,
+          access.target!.note,
         );
         expect(access.canAward, isFalse);
         expect(access.target, isNull);
@@ -173,10 +176,15 @@ void main() {
           throwsA(isA<ApiFailure>()),
         );
         expect(fixture.workItemNoteReactionEvents, hasLength(1));
+        final refreshedPage = await fixture.api.workItemActivity(
+          detail.summary,
+          filter: WorkItemActivityFilter.comments,
+        );
+        final refreshedDiscussion = refreshedPage.snapshot.discussions.items.first;
         final refreshed = await fixture.api.workItemActivityReactionAccess(
           detail.summary,
-          discussion,
-          note,
+          refreshedDiscussion,
+          refreshedDiscussion.notes.items.first,
         );
         expect(
           refreshed.reactions.where(
