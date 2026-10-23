@@ -142,7 +142,9 @@ extension TodoSnoozeApi on GitLabApi {
       'variables': {'id': 'gid://gitlab/Todo/$id'},
     });
     final todo = _todoMutationTodo(response.bytes, 'todoUnSnooze', id);
-    if (todo['snoozedUntil'] != null) throw const ApiFailure(FailureKind.invalidResponse);
+    if (!todo.containsKey('snoozedUntil') || todo['snoozedUntil'] != null) {
+      throw const ApiFailure(FailureKind.invalidResponse);
+    }
   }
 
   /// A complete, actor-bound pending ownership set, including expired snoozes.
