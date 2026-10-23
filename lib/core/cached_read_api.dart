@@ -654,6 +654,22 @@ final class _ReadCache {
         .every((e) => e.value <= (stamp['sequence'] ?? 0));
   }
 
+  bool permittedResponse(Map<String, int> stamp, Uri uri, Object value) {
+    if (!permitted(stamp, publicationUri(uri, value))) return false;
+    final p = path(uri);
+    if (p.length < 3 || p.first != 'projects') return true;
+    final items = value is ApiPage<Json> ? value.items : [value];
+    for (final item in items) {
+      if (item is! Json || item['project_id'] is! int) continue;
+      // A full path can move while its cached alias still names the old project.
+      p[1] = '${item['project_id']}';
+      if (!permitted(stamp, api.instance.api(p, uri.queryParameters))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   bool sourceAllowed(Uri uri, DateTime fetchedAt, bool pinned) {
     final account = sourceAccountRevokedAt;
     if (account != null && !fetchedAt.isAfter(account)) return false;
@@ -774,7 +790,12 @@ final class _ReadCache {
         '${value['id']}',
       ], uri.queryParameters);
     }
-    return canonical(uri);
+    // Only project details can safely share an alias key: their response id
+    // decides the final key. Sub-resource cursors retain the caller's path.
+    return canonical(
+      uri,
+      resolveAlias: p.length == 2 && p.first == 'projects',
+    );
   }
 
   bool ownsPublication(
@@ -810,7 +831,7 @@ final class _ReadCache {
       throw const ApiFailure(FailureKind.unsupported);
     }
     final canCache = enabled && policy != null;
-    var cacheKey = key(canonical(uri), accept);
+    var cacheKey = key(publicationUri(uri, null), accept);
     final pinned = policy == _ReadClass.pinned;
     var readScope = scope(uri);
     final permission = permissions(uri);
@@ -862,7 +883,7 @@ final class _ReadCache {
               aliases.remove(p[1].toLowerCase());
               readScope = scope(uri);
               lookupVersion = snapshot(readScope, pinned);
-              cacheKey = key(canonical(uri), accept);
+              cacheKey = key(publicationUri(uri, null), accept);
             } else {
               return result(cached);
             }
@@ -901,7 +922,7 @@ final class _ReadCache {
         if (api._closed ||
             !permitted(permission, uri) ||
             (hydrated != null &&
-                !permitted(permission, publicationUri(uri, hydrated.value)))) {
+                !permittedResponse(permission, uri, hydrated.value))) {
           throw const ApiFailure(FailureKind.cancelled);
         }
         final newer = entries[cacheKey];
@@ -993,7 +1014,7 @@ final class _ReadCache {
           final loaded = await load();
           if (api._closed ||
               !permitted(permission, uri) ||
-              !permitted(permission, publicationUri(uri, loaded.value))) {
+              !permittedResponse(permission, uri, loaded.value)) {
             throw const ApiFailure(FailureKind.cancelled);
           }
           observeLoadedPrivacy(uri, loaded.value);
