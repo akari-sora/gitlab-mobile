@@ -2700,5 +2700,9 @@
   "aiSuggestInboxMarkAll": "ช่วยทำเครื่องหมายรายการที่ต้องทำทั้งหมดของฉันว่าเสร็จสิ้น",
   "aiFieldTagName": "ชื่อแท็ก",
   "aiFieldPreviousPath": "พาธเดิม",
-  "aiFieldVariables": "ตัวแปร"
+  "aiFieldVariables": "ตัวแปร",
+  "aiWriteMerged": "Merged",
+  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
+  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
+  "aiWriteDeletionScheduled": "Scheduled for deletion"
 }

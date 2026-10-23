@@ -2700,5 +2700,9 @@
   "aiSuggestInboxMarkAll": "Marchează toate to-do-urile mele ca finalizate",
   "aiFieldTagName": "Nume tag",
   "aiFieldPreviousPath": "Cale anterioară",
-  "aiFieldVariables": "Variabile"
+  "aiFieldVariables": "Variabile",
+  "aiWriteMerged": "Merged",
+  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
+  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
+  "aiWriteDeletionScheduled": "Scheduled for deletion"
 }

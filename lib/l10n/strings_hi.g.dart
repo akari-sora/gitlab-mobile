@@ -2703,4 +2703,8 @@ const _messagesHi = <String>[
   'टैग का नाम',
   'पिछला पाथ',
   'चर',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

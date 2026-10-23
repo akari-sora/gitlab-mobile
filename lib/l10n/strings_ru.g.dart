@@ -2703,4 +2703,8 @@ const _messagesRu = <String>[
   'Имя тега',
   'Прежний путь',
   'Переменные',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

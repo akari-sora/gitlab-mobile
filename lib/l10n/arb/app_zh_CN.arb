@@ -2700,5 +2700,9 @@
   "aiSuggestInboxMarkAll": "帮我把全部待办标为完成",
   "aiFieldTagName": "标签版本名称",
   "aiFieldPreviousPath": "原来的路径",
-  "aiFieldVariables": "变量"
+  "aiFieldVariables": "变量",
+  "aiWriteMerged": "Merged",
+  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
+  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
+  "aiWriteDeletionScheduled": "Scheduled for deletion"
 }

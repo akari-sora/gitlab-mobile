@@ -479,6 +479,51 @@ void main() {
       expect(find.textContaining('2:05'), findsOneWidget);
     });
 
+    testWidgets('a merge row says merged; an automatic rerun warns', (
+      tester,
+    ) async {
+      const merge = AiToolRunItem(
+        name: 'mergeRequest',
+        argsPreview: '!44',
+        status: AiToolRunStatus.completed,
+        sizeChars: 0,
+        provenance: '',
+        writeStatus: AiWriteResultStatus.readbackConfirmed,
+      );
+      const rerun = AiToolRunItem(
+        name: 'jobAction',
+        argsPreview: '77',
+        status: AiToolRunStatus.completed,
+        sizeChars: 0,
+        provenance: '',
+        writeStatus: AiWriteResultStatus.succeeded,
+      );
+      final session = _AuditWriteSession(items: const [merge, rerun]);
+      session.rows[merge] = const AiWriteRow(
+        operationId: 'mergeRequest',
+        outcome: AiWriteOutcome(
+          state: AiJournalState.succeeded,
+          reasonCode: 'merged',
+        ),
+      );
+      session.rows[rerun] = const AiWriteRow(
+        operationId: 'jobAction',
+        outcome: AiWriteOutcome(
+          state: AiJournalState.succeeded,
+          reasonCode: 'ok',
+          auditNotice: 'storedVariablesMayApply',
+        ),
+      );
+      await tester.pumpWidget(_host(AiChatPage(session: session)));
+      await tester.pumpAndSettle();
+      expect(find.text(l10n.aiWriteMerged), findsOneWidget);
+      expect(find.text(l10n.aiWriteStatusConfirmed), findsNothing);
+      expect(
+        find.byKey(const ValueKey('ai-write-row-stored-variables')),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('an edited card that did not run stays under the answer', (
       tester,
     ) async {

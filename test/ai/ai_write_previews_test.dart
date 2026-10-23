@@ -167,6 +167,19 @@ void main() {
     expect(find.text('v1.2.0'), findsOneWidget);
   });
 
+  testWidgets('an approval shows no file count or merge options', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(
+        AiWritePreviewView(preview: _merge, operationId: 'approveMergeRequest'),
+      ),
+    );
+    expect(find.text(l10n.aiPreviewChangedFiles), findsNothing);
+    expect(find.text(l10n.aiPreviewMergeOptions), findsNothing);
+    expect(find.text('a1b2c3d4'), findsOneWidget);
+  });
+
   testWidgets('marking all to-dos done is not shown as a delete', (
     tester,
   ) async {

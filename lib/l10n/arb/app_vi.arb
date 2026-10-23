@@ -2700,5 +2700,9 @@
   "aiSuggestInboxMarkAll": "Đánh dấu tất cả việc cần làm của tôi là xong",
   "aiFieldTagName": "Tên tag",
   "aiFieldPreviousPath": "Đường dẫn trước đây",
-  "aiFieldVariables": "Biến"
+  "aiFieldVariables": "Biến",
+  "aiWriteMerged": "Merged",
+  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
+  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
+  "aiWriteDeletionScheduled": "Scheduled for deletion"
 }

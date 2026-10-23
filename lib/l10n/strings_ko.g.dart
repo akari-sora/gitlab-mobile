@@ -2703,4 +2703,8 @@ const _messagesKo = <String>[
   '태그 이름',
   '이전 경로',
   '변수',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

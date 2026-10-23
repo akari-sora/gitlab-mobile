@@ -2703,4 +2703,8 @@ const _messagesTr = <String>[
   'Etiket adı',
   'Önceki yol',
   'Değişkenler',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

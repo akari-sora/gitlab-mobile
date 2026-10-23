@@ -2703,4 +2703,8 @@ const _messagesCs = <String>[
   'Název tagu',
   'Předchozí cesta',
   'Proměnné',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

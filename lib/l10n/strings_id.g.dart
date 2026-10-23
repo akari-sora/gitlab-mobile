@@ -2703,4 +2703,8 @@ const _messagesId = <String>[
   'Nama tag',
   'Path sebelumnya',
   'Variabel',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

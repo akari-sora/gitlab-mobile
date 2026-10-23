@@ -356,6 +356,17 @@ String? aiRefusalText(String code) => switch (code) {
   _ => null,
 };
 
+/// A successful write whose code says more than "written": the three merge
+/// outcomes stay distinct (breakdown §7.8), and an asynchronous delete is only
+/// scheduled. Null keeps the generic status.
+String? aiWriteResultText(String? code) => switch (code) {
+  'merged' => l10n.aiWriteMerged,
+  'autoMergeScheduled' => l10n.aiWriteAutoMergeScheduled,
+  'mergeAccepted' => l10n.aiWriteMergeAccepted,
+  'deletionScheduled' => l10n.aiWriteDeletionScheduled,
+  _ => null,
+};
+
 String aiTierLabel(AiWriteTier tier) => switch (tier) {
   AiWriteTier.t1 => l10n.aiTierLow,
   AiWriteTier.t2 => l10n.aiTierNormal,

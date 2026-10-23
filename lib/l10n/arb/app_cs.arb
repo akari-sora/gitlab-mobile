@@ -2700,5 +2700,9 @@
   "aiSuggestInboxMarkAll": "Označ všechny mé úkoly jako hotové",
   "aiFieldTagName": "Název tagu",
   "aiFieldPreviousPath": "Předchozí cesta",
-  "aiFieldVariables": "Proměnné"
+  "aiFieldVariables": "Proměnné",
+  "aiWriteMerged": "Merged",
+  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
+  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
+  "aiWriteDeletionScheduled": "Scheduled for deletion"
 }

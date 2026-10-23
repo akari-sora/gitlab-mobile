@@ -2700,5 +2700,9 @@
   "aiSuggestInboxMarkAll": "Tüm yapılacaklarımı tamamlandı olarak işaretle",
   "aiFieldTagName": "Etiket adı",
   "aiFieldPreviousPath": "Önceki yol",
-  "aiFieldVariables": "Değişkenler"
+  "aiFieldVariables": "Değişkenler",
+  "aiWriteMerged": "Merged",
+  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
+  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
+  "aiWriteDeletionScheduled": "Scheduled for deletion"
 }

@@ -11359,7 +11359,7 @@
       "names": {}
     }
   },
-  "aiPreviewScheduleUnreadable": "讀不到排程的參數，無法核對。",
+  "aiPreviewScheduleUnreadable": "讀不到排程的參數，無法核對；執行時會使用 GitLab 上當下的參數，無法確認提議之後有沒有改過。",
   "aiPreviewNewVariables": "會帶入新的變數：{names}",
   "@aiPreviewNewVariables": {
     "placeholders": {
@@ -11454,5 +11454,9 @@
   "aiSuggestInboxMarkAll": "幫我把全部待辦標為完成",
   "aiFieldTagName": "標籤版本名稱",
   "aiFieldPreviousPath": "原本的路徑",
-  "aiFieldVariables": "變數"
+  "aiFieldVariables": "變數",
+  "aiWriteMerged": "已合併",
+  "aiWriteAutoMergeScheduled": "已排程自動合併",
+  "aiWriteMergeAccepted": "GitLab 已接受合併，請查看最新狀態",
+  "aiWriteDeletionScheduled": "已排程刪除"
 }

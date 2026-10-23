@@ -2703,4 +2703,8 @@ const _messagesJa = <String>[
   'タグ名',
   '変更前のパス',
   '変数',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

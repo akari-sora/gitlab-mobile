@@ -2703,4 +2703,8 @@ const _messagesMs = <String>[
   'Nama tag',
   'Laluan sebelumnya',
   'Pemboleh ubah',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

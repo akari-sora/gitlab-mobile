@@ -7957,7 +7957,7 @@ final class AppStrings {
   /// 排程目前的變數：{names}
   String aiPreviewScheduleVariables(Object? names) => _format(language, language._messages[2620], {'names': names});
 
-  /// 讀不到排程的參數，無法核對。
+  /// 讀不到排程的參數，無法核對；執行時會使用 GitLab 上當下的參數，無法確認提議之後有沒有改過。
   String get aiPreviewScheduleUnreadable => language._messages[2621];
 
   /// 會帶入新的變數：{names}
@@ -8196,4 +8196,16 @@ final class AppStrings {
 
   /// 變數
   String get aiFieldVariables => language._messages[2700];
+
+  /// 已合併
+  String get aiWriteMerged => language._messages[2701];
+
+  /// 已排程自動合併
+  String get aiWriteAutoMergeScheduled => language._messages[2702];
+
+  /// GitLab 已接受合併，請查看最新狀態
+  String get aiWriteMergeAccepted => language._messages[2703];
+
+  /// 已排程刪除
+  String get aiWriteDeletionScheduled => language._messages[2704];
 }

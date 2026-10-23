@@ -2703,4 +2703,8 @@ const _messagesZhCn = <String>[
   '标签版本名称',
   '原来的路径',
   '变量',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

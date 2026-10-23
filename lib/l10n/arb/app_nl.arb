@@ -2700,5 +2700,9 @@
   "aiSuggestInboxMarkAll": "Markeer al mijn to-do’s als voltooid",
   "aiFieldTagName": "Tagnaam",
   "aiFieldPreviousPath": "Vorig pad",
-  "aiFieldVariables": "Variabelen"
+  "aiFieldVariables": "Variabelen",
+  "aiWriteMerged": "Merged",
+  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
+  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
+  "aiWriteDeletionScheduled": "Scheduled for deletion"
 }

@@ -2703,4 +2703,8 @@ const _messagesVi = <String>[
   'Tên tag',
   'Đường dẫn trước đây',
   'Biến',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

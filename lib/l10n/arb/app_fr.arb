@@ -2700,5 +2700,9 @@
   "aiSuggestInboxMarkAll": "Marque toutes mes tâches à faire comme terminées",
   "aiFieldTagName": "Nom du tag",
   "aiFieldPreviousPath": "Chemin précédent",
-  "aiFieldVariables": "Variables du pipeline"
+  "aiFieldVariables": "Variables du pipeline",
+  "aiWriteMerged": "Merged",
+  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
+  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
+  "aiWriteDeletionScheduled": "Scheduled for deletion"
 }

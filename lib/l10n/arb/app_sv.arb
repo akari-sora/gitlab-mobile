@@ -2700,5 +2700,9 @@
   "aiSuggestInboxMarkAll": "Markera alla mina att göra som klara",
   "aiFieldTagName": "Taggnamn",
   "aiFieldPreviousPath": "Tidigare sökväg",
-  "aiFieldVariables": "Variabler"
+  "aiFieldVariables": "Variabler",
+  "aiWriteMerged": "Merged",
+  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
+  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
+  "aiWriteDeletionScheduled": "Scheduled for deletion"
 }

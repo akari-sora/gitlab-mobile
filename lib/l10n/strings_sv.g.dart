@@ -2703,4 +2703,8 @@ const _messagesSv = <String>[
   'Taggnamn',
   'Tidigare sökväg',
   'Variabler',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

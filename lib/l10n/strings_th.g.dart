@@ -2703,4 +2703,8 @@ const _messagesTh = <String>[
   'ชื่อแท็ก',
   'พาธเดิม',
   'ตัวแปร',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

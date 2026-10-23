@@ -2700,5 +2700,9 @@
   "aiSuggestInboxMarkAll": "Tandakan semua tugasan saya selesai",
   "aiFieldTagName": "Nama tag",
   "aiFieldPreviousPath": "Laluan sebelumnya",
-  "aiFieldVariables": "Pemboleh ubah"
+  "aiFieldVariables": "Pemboleh ubah",
+  "aiWriteMerged": "Merged",
+  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
+  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
+  "aiWriteDeletionScheduled": "Scheduled for deletion"
 }

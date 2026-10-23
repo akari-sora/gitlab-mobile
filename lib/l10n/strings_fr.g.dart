@@ -2703,4 +2703,8 @@ const _messagesFr = <String>[
   'Nom du tag',
   'Chemin précédent',
   'Variables du pipeline',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

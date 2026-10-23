@@ -2623,7 +2623,7 @@ const _messagesEn = <String>[
   'Environment',
   'A rerun or play may reuse variables and inputs stored on GitLab; a pipeline started by a schedule also uses the schedule\'s current variables. The app cannot read or check them.',
   'The schedule\'s current variables: {names}',
-  'The schedule\'s parameters can\'t be read, so they can\'t be checked.',
+  'The schedule\'s parameters can\'t be read, so they can\'t be checked. The run uses the parameters on GitLab at that moment, which may have changed since this was proposed.',
   'Runs with new variables: {names}',
   'Drafts',
   '{total} in total, {ours} created in this conversation',
@@ -2703,4 +2703,8 @@ const _messagesEn = <String>[
   'Tag name',
   'Previous path',
   'Variables',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

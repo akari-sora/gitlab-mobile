@@ -2700,5 +2700,9 @@
   "aiSuggestInboxMarkAll": "Отметь все мои задачи выполненными",
   "aiFieldTagName": "Имя тега",
   "aiFieldPreviousPath": "Прежний путь",
-  "aiFieldVariables": "Переменные"
+  "aiFieldVariables": "Переменные",
+  "aiWriteMerged": "Merged",
+  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
+  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
+  "aiWriteDeletionScheduled": "Scheduled for deletion"
 }

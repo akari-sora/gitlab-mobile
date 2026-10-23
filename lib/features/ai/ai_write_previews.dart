@@ -29,7 +29,10 @@ class AiWritePreviewView extends StatelessWidget {
   @override
   Widget build(BuildContext context) => switch (preview) {
     final AiDiffPreview diff => _DiffPreview(diff: diff),
-    final AiMergePreview merge => _MergePreview(merge: merge),
+    final AiMergePreview merge => _MergePreview(
+      merge: merge,
+      approve: operationId == 'approveMergeRequest',
+    ),
     final AiPipelinePreview pipeline => _PipelinePreview(
       pipeline: pipeline,
       storedVariables: storedVariables,
@@ -211,9 +214,13 @@ class _DiffPreview extends StatelessWidget {
 }
 
 class _MergePreview extends StatelessWidget {
-  const _MergePreview({required this.merge});
+  const _MergePreview({required this.merge, this.approve = false});
 
   final AiMergePreview merge;
+
+  /// Approving uses the same snapshot, but nothing is merged: no file count
+  /// or merge options.
+  final bool approve;
 
   @override
   Widget build(BuildContext context) {
@@ -243,15 +250,16 @@ class _MergePreview extends StatelessWidget {
           isolated(merge.shortSha),
           valueKey: const ValueKey('ai-preview-merge-sha'),
         ),
-        _Fact(l10n.aiPreviewChangedFiles, '${merge.pathCount}'),
-        _Fact(
-          l10n.aiPreviewMergeOptions,
-          [
-            merge.squash ? l10n.aiPreviewSquashOn : l10n.aiPreviewSquashOff,
-            if (merge.removeSourceBranch) l10n.aiPreviewRemoveSource,
-            if (merge.autoMerge) l10n.aiPreviewAutoMerge,
-          ].join(' · '),
-        ),
+        if (!approve) _Fact(l10n.aiPreviewChangedFiles, '${merge.pathCount}'),
+        if (!approve)
+          _Fact(
+            l10n.aiPreviewMergeOptions,
+            [
+              merge.squash ? l10n.aiPreviewSquashOn : l10n.aiPreviewSquashOff,
+              if (merge.removeSourceBranch) l10n.aiPreviewRemoveSource,
+              if (merge.autoMerge) l10n.aiPreviewAutoMerge,
+            ].join(' · '),
+          ),
         if (merge.headMovedCommits.isNotEmpty)
           _Notice(
             l10n.aiPreviewHeadMoved('${merge.headMovedCommits.length}'),

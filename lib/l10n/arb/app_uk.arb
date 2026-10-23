@@ -2700,5 +2700,9 @@
   "aiSuggestInboxMarkAll": "Познач усі мої справи виконаними",
   "aiFieldTagName": "Назва тегу",
   "aiFieldPreviousPath": "Попередній шлях",
-  "aiFieldVariables": "Змінні"
+  "aiFieldVariables": "Змінні",
+  "aiWriteMerged": "Merged",
+  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
+  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
+  "aiWriteDeletionScheduled": "Scheduled for deletion"
 }

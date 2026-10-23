@@ -2703,4 +2703,8 @@ const _messagesAr = <String>[
   'اسم الوسم',
   'المسار السابق',
   'المتغيرات',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];

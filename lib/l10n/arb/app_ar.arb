@@ -2700,5 +2700,9 @@
   "aiSuggestInboxMarkAll": "علّم كل مهامي كمكتملة",
   "aiFieldTagName": "اسم الوسم",
   "aiFieldPreviousPath": "المسار السابق",
-  "aiFieldVariables": "المتغيرات"
+  "aiFieldVariables": "المتغيرات",
+  "aiWriteMerged": "Merged",
+  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
+  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
+  "aiWriteDeletionScheduled": "Scheduled for deletion"
 }

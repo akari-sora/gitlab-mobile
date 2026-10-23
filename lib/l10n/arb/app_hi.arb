@@ -2700,5 +2700,9 @@
   "aiSuggestInboxMarkAll": "मेरे सभी टू-डू पूरे चिह्नित करो",
   "aiFieldTagName": "टैग का नाम",
   "aiFieldPreviousPath": "पिछला पाथ",
-  "aiFieldVariables": "चर"
+  "aiFieldVariables": "चर",
+  "aiWriteMerged": "Merged",
+  "aiWriteAutoMergeScheduled": "Automatic merge scheduled",
+  "aiWriteMergeAccepted": "GitLab accepted the merge; check its latest state",
+  "aiWriteDeletionScheduled": "Scheduled for deletion"
 }

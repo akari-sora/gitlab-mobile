@@ -2703,4 +2703,8 @@ const _messagesPtBr = <String>[
   'Nome da tag',
   'Caminho anterior',
   'Variáveis',
+  'Merged',
+  'Automatic merge scheduled',
+  'GitLab accepted the merge; check its latest state',
+  'Scheduled for deletion',
 ];
