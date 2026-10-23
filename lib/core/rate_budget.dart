@@ -70,6 +70,13 @@ final class RateBudgetSnapshot {
 }
 
 final class GitLabRateBudget {
+  /// How early the critical level clears before the server reset.
+  static const criticalLeadTime = Duration(seconds: 10);
+
+  /// When a critical bucket actually stops blocking sends.
+  static DateTime criticalClearedAt(DateTime resetAt) =>
+      resetAt.subtract(criticalLeadTime);
+
   GitLabRateBudget({
     DateTime Function()? now,
     Duration Function(int attempt)? backoff,
@@ -327,8 +334,7 @@ final class GitLabRateBudget {
   static RateLevel _level(_Bucket bucket, DateTime now) {
     final untilReset = bucket.resetAt.difference(now);
     final reserve = math.min(3, math.max(1, (bucket.limit * 0.05).ceil()));
-    if (bucket.remaining < reserve &&
-        untilReset > const Duration(seconds: 10)) {
+    if (bucket.remaining < reserve && untilReset > criticalLeadTime) {
       return RateLevel.critical;
     }
     final low = math.min(15, math.max(2, (bucket.limit * 0.15).ceil()));
@@ -383,11 +389,25 @@ final class RunBudgetAllocator {
 
   final GitLabRateBudget rateBudget;
   final Set<RunBudgetLease> _leases = <RunBudgetLease>{};
+  final StreamController<void> _changes = StreamController<void>.broadcast(
+    sync: true,
+  );
+
+  /// Notifies when capacity frees or is taken, so idle send gates re-read.
+  Stream<void> get changes => _changes.stream;
 
   int get activeLeases => _leases.length;
 
   int get unconsumedReservations =>
       _leases.fold<int>(0, (total, lease) => total + lease.remaining);
+
+  void close() {
+    if (!_changes.isClosed) unawaited(_changes.close());
+  }
+
+  void _notify() {
+    if (!_changes.isClosed) _changes.add(null);
+  }
 
   RunBudgetLease? acquire(int max) {
     if (max < 0) throw RangeError.value(max, 'max');
@@ -411,11 +431,13 @@ final class RunBudgetAllocator {
           );
     final lease = RunBudgetLease._(this, allocation);
     _leases.add(lease);
+    _notify();
     return lease;
   }
 
   void _release(RunBudgetLease lease) {
     _leases.remove(lease);
+    _notify();
   }
 }
 
@@ -430,12 +452,22 @@ final class RunBudgetLease {
   int get remaining => _remaining;
   bool get isReleased => _released;
 
+  /// Requests consumed beyond the grant. Saturating keeps the measured count
+  /// authoritative for settlement; the excess is recorded here, not shown.
+  int _overrun = 0;
+  int get overrun => _overrun;
+
   void consume(int count) {
     if (_released) throw StateError('The rate-budget lease was released.');
-    if (count < 0 || count > _remaining) {
-      throw RangeError.range(count, 0, _remaining, 'count');
+    if (count < 0) {
+      throw RangeError.range(count, 0, null, 'count');
     }
-    _remaining -= count;
+    if (count <= _remaining) {
+      _remaining -= count;
+    } else {
+      _overrun += count - _remaining;
+      _remaining = 0;
+    }
   }
 
   void release() {

@@ -149,28 +149,40 @@ final class GitLabAiReadPort
           freshnessRetried: false,
         );
       }
-      final content = await _api.snippetText(
+      var content = await _api.snippetText(
         projectId,
         snippetId,
         ref: ref,
         filePath: selected,
       );
-      final contentAt = _now();
+      var contentAt = _now();
       var freshnessRetried = false;
       if (_compositionExpired([metadataAt, contentAt])) {
         freshnessRetried = true;
-        metadata = _validatedSnippetMetadata(
-          await _api.record([
-            'projects',
-            '$projectId',
-            'snippets',
-            '$snippetId',
-          ]),
-          snippetId,
-        );
-        metadataAt = _now();
-        if (!metadata.paths.contains(selected)) {
-          throw const ApiFailure(FailureKind.network);
+        // Re-read every expired source once, then fail only if still stale.
+        if (_isExpired(metadataAt)) {
+          metadata = _validatedSnippetMetadata(
+            await _api.record([
+              'projects',
+              '$projectId',
+              'snippets',
+              '$snippetId',
+            ]),
+            snippetId,
+          );
+          metadataAt = _now();
+          if (!metadata.paths.contains(selected)) {
+            throw const ApiFailure(FailureKind.network);
+          }
+        }
+        if (_isExpired(contentAt)) {
+          content = await _api.snippetText(
+            projectId,
+            snippetId,
+            ref: ref,
+            filePath: selected,
+          );
+          contentAt = _now();
         }
         _requireFreshComposition([metadataAt, contentAt]);
       }
@@ -302,9 +314,11 @@ final class GitLabAiReadPort
       var freshnessRetried = false;
       if (_compositionExpired([value.fetchedAt, notes.fetchedAt])) {
         freshnessRetried = true;
-        if (!notes.fetchedAt.isBefore(value.fetchedAt)) {
+        // Re-read every expired source once, then fail only if still stale.
+        if (_isExpired(value.fetchedAt)) {
           value = await _cachedRecord(resourcePath, fresh: true);
-        } else {
+        }
+        if (_isExpired(notes.fetchedAt)) {
           notes = await _cachedRecords(
             notesPath,
             query: const {
@@ -355,7 +369,8 @@ final class GitLabAiReadPort
       var freshnessRetried = false;
       if (_compositionExpired([versions.fetchedAt, value.fetchedAt])) {
         freshnessRetried = true;
-        if (!value.fetchedAt.isBefore(versions.fetchedAt)) {
+        // Re-read every expired source once, then fail only if still stale.
+        if (_isExpired(versions.fetchedAt)) {
           versions = await _cachedRecords(
             versionsPath,
             query: const {'per_page': '100'},
@@ -370,7 +385,8 @@ final class GitLabAiReadPort
               '$versionId',
             ], fresh: true);
           }
-        } else {
+        }
+        if (_isExpired(value.fetchedAt)) {
           value = await _cachedRecord([
             ...versionsPath,
             '$versionId',
@@ -474,6 +490,11 @@ final class GitLabAiReadPort
 
   bool _compositionExpired(Iterable<DateTime> fetchedAt) {
     final age = _now().difference(_oldest(fetchedAt));
+    return age.isNegative || age >= _aiMaxAge;
+  }
+
+  bool _isExpired(DateTime fetchedAt) {
+    final age = _now().difference(fetchedAt);
     return age.isNegative || age >= _aiMaxAge;
   }
 
