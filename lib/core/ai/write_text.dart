@@ -608,6 +608,7 @@ AiTextOutcome prepareWriteText({
   bool sameProjectClassA = true,
   String? currentFieldValue,
   List<String>? secretFragments,
+  bool keepNotifications = false,
 }) {
   // Plan §3.1: a field whose value was cut in what the provider received
   // offers no whole-field write ("這個欄位太長，AI 無法完整編輯").
@@ -623,7 +624,7 @@ AiTextOutcome prepareWriteText({
     } on StateError {
       return AiTextOutcome.block(AiTextBlockCode.quickAction);
     }
-    text = analyzeDraftMentions(text).text;
+    text = analyzeDraftMentions(text, keepNotifications: keepNotifications).text;
   }
   if (_attachmentPlaceholder.hasMatch(text)) {
     if (!classA || !sameProjectClassA) {
@@ -693,7 +694,11 @@ AiTextOutcome prepareWriteText({
   }
   final fixed = <AiFixedConfirmReason>[];
   final level = <AiLevelConfirmReason>[];
-  if (_massMention(
+  // Server drafts are published as stored. Retaining any live mention needs
+  // confirmation because this scan cannot neutralize the saved note in place.
+  if ((classA && keepNotifications &&
+          analyzeDraftMentions(text, keepNotifications: true).mentions.isNotEmpty) ||
+      _massMention(
     text,
     classA: classA,
     field: field,

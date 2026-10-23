@@ -17,6 +17,13 @@ import 'fx_coord_support.dart';
 const _timeout = Duration(seconds: 20);
 
 void main() {
+  test('issue13 journal solely owns the process schedule HMAC key', () {
+    final source = File('lib/core/ai/tools/write_coordinator.dart').readAsStringSync();
+    expect(source, isNot(contains('extension AiWriteJournalScheduleKey')));
+    expect(source, isNot(contains('_scheduleKeys')));
+    expect(source, isNot(contains('_newScheduleKey')));
+  });
+
   late _Fixture f;
   setUp(() async => f = await _Fixture.create());
   tearDown(() async => f.dispose());

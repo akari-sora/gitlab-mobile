@@ -47,9 +47,7 @@ extension _SnippetsPrepare on GitLabAiWritePort {
     final beforeContents = <String, String>{};
     final afterContents = <String, String>{};
     final newTexts = <String>[];
-    final windows = <AiTextWindow>[];
-    var markdown = false;
-    var original = '';
+    final fileScans = <AiTextScan>[];
     String? confirmName;
     _SnippetRest? rest;
     var title = '';
@@ -68,15 +66,20 @@ extension _SnippetsPrepare on GitLabAiWritePort {
           text: previousPath == null ? path : '$previousPath → $path'));
       diffLines.addAll(diff);
       if (edited != null) {
-        newTexts.addAll(edited.scan.newTexts);
         // Keep the engine-owned window identities and their changed offsets.
-        windows.addAll(edited.scan.windows);
-        original += edited.scan.original;
+        fileScans.add(AiTextScan(
+          newTexts: edited.scan.newTexts,
+          windows: edited.scan.windows,
+          original: edited.scan.original,
+          markdown: isRenderedMarkdownPath(path),
+        ));
       } else if (before.isEmpty && after.isNotEmpty) {
-        newTexts.add(after);
-        windows.add(AiTextWindow(before: '', after: after));
+        fileScans.add(AiTextScan(
+          newTexts: [after],
+          windows: [AiTextWindow(before: '', after: after)],
+          markdown: isRenderedMarkdownPath(path),
+        ));
       }
-      markdown = markdown || isRenderedMarkdownPath(path);
     }
 
     if (op == 'createSnippet') {
@@ -259,9 +262,8 @@ extension _SnippetsPrepare on GitLabAiWritePort {
               : AiDiffPreview(path: changedPaths.join(', '),
                   ref: id == null ? projectPath : '#$id', lines: diffLines,
                   newFile: op == 'createSnippet'),
-      textScan: newTexts.isEmpty && windows.isEmpty ? null
-          : AiTextScan(newTexts: newTexts, windows: windows,
-              original: original, markdown: markdown),
+      textScan: newTexts.isEmpty && fileScans.isEmpty ? null
+          : AiTextScan(newTexts: newTexts, files: fileScans),
       owner: _owner,
       mutation: mutation,
       readback: readback,

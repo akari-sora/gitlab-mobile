@@ -841,6 +841,7 @@ final class AiRunner {
       ];
     }
     _segment = next;
+    writeCoordinator?.beginSegment();
     _verifiedSecrets = null;
     _verifiedLength = -1;
     _segmentToolFingerprint = _toolFingerprint(_nextTools);

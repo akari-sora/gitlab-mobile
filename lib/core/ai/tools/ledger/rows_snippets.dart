@@ -1,8 +1,8 @@
 part of '../write_ledger.dart';
 
-const _snippetId = <String, AiArgSpec>{
+const _snippetCoordinates = <String, AiArgSpec>{
   'projectId': _projectId,
-  'snippetId': _projectId,
+  'snippetId': _snippetId,
 };
 const _snippetDescription = AiArgSpec(
   AiArgType.string,
@@ -43,7 +43,7 @@ const List<AiCapability> aiSnippetRows = <AiCapability>[
     readback: true,
     editableField: 'description',
     arguments: {
-      ..._snippetId,
+      ..._snippetCoordinates,
       'fields': AiArgSpec(AiArgType.object, required: true, properties: {
         'title': _plain,
         'description': _snippetDescription,
@@ -59,7 +59,7 @@ const List<AiCapability> aiSnippetRows = <AiCapability>[
     httpCap: 31, // fresh 1, prepare 5, readback 3.
     readback: true,
     arguments: {
-      ..._snippetId,
+      ..._snippetCoordinates,
       'edits': AiArgSpec(AiArgType.edits, required: true,
           text: AiTextRole.fragmentEdits),
     },
@@ -72,7 +72,7 @@ const List<AiCapability> aiSnippetRows = <AiCapability>[
     httpCap: 37, // fresh 1, prepare 6, readback 4 (two affected files).
     readback: true,
     arguments: {
-      ..._snippetId,
+      ..._snippetCoordinates,
       'actions': AiArgSpec(AiArgType.snippetActions, required: true, properties: {
         'action': _requiredString,
         'file_path': _requiredPathOrRef,
@@ -89,7 +89,7 @@ const List<AiCapability> aiSnippetRows = <AiCapability>[
     modelVisible: true,
     httpCap: 27, // fresh 1, prepare 5, readback 1.
     readback: true,
-    arguments: {..._snippetId, 'path': _requiredPathOrRef},
+    arguments: {..._snippetCoordinates, 'path': _requiredPathOrRef},
   ),
   AiCapability(
     operationId: 'deleteSnippet',
@@ -97,6 +97,6 @@ const List<AiCapability> aiSnippetRows = <AiCapability>[
     scopeClass: AiScopeClass.project,
     modelVisible: true,
     httpCap: 37, // fresh 1, prepare 8 (four affected files), no readback.
-    arguments: _snippetId,
+    arguments: _snippetCoordinates,
   ),
 ];

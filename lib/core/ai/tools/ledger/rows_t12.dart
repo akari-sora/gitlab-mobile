@@ -2,6 +2,12 @@ part of '../write_ledger.dart';
 
 const _projectId = AiArgSpec(AiArgType.integer, required: true);
 const _iid = AiArgSpec(AiArgType.integer, required: true);
+const _noteId = AiArgSpec(AiArgType.integer, required: true);
+const _suggestionId = AiArgSpec(AiArgType.integer, required: true);
+const _packageId = AiArgSpec(AiArgType.integer, required: true);
+const _packageFileId = AiArgSpec(AiArgType.integer, required: true);
+const _containerRepositoryId = AiArgSpec(AiArgType.integer, required: true);
+const _snippetId = AiArgSpec(AiArgType.integer, required: true);
 const _integer = AiArgSpec(AiArgType.integer);
 const _requiredString = AiArgSpec(AiArgType.string, required: true);
 const _requiredResource = AiArgSpec(
