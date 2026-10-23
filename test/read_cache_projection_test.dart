@@ -1722,8 +1722,9 @@ void main() {
       expect(_projected(candidate), isNotNull);
     });
 
-    test('M408a every thread endpoint requires a fresh public parent proof',
-        () {
+    test(
+      'M408a every thread endpoint requires a fresh public parent proof',
+      () {
       // E05 discussion, E06 emoji, E07 related MRs, E08 links: each carries
       // issueParent, so a context without a fresh public parent proof refuses
       // the whole read.

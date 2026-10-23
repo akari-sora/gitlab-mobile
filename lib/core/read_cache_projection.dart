@@ -588,8 +588,7 @@ _Endpoint? _endpoint(
             // C2-D5: the app's text read is the same files path keyed by a
             // text/plain Accept; the /raw variant stays admissible for it.
             ((p.length == 5 &&
-                    (json ||
-                        candidate.bodyKind == ReadCacheBodyKind.text)) ||
+                    (json || candidate.bodyKind == ReadCacheBodyKind.text)) ||
                 (p.length == 6 &&
                     p[5] == 'raw' &&
                     candidate.bodyKind == ReadCacheBodyKind.text))) {
