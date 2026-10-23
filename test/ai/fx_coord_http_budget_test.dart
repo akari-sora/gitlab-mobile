@@ -53,6 +53,58 @@ const _counted = <String, (int fresh, int prepare, int readback)>{
   'upload_attachment': (1, 2, 0),
 };
 
+// MR6b-2 caps independently counted in the family port tests. These include
+// both preparation passes, freshness, readback and OAuth replay. Cancel
+// auto-merge also reserves its fallback mutation; batch suggestions reserve
+// all twenty distinct discussions and can exceed a single send's budget.
+const _mr6b2CountedCaps = <String, int>{
+  'edit_file': 35,
+  'createFile': 27,
+  'deleteFile': 29,
+  'applySuggestion': 27,
+  'createBranch': 19,
+  'deleteBranch': 17,
+  'createTag': 19,
+  'deleteTag': 17,
+  'createRelease': 19,
+  'updateRelease': 19,
+  'deleteRelease': 17,
+  'mergeRequest': 37,
+  'approveMergeRequest': 23,
+  'rebaseMergeRequest': 19,
+  'cancelAutoMerge': 20,
+  'publishDraftNotes': 23,
+  'deleteDraftNote': 23,
+  'createPipeline': 19,
+  'pipelineAction': 15,
+  'jobAction': 15,
+  'playPipelineSchedule': 23,
+  'deletePipeline': 15,
+  'createSnippet': 19,
+  'updateSnippetMetadata': 19,
+  'updateSnippet': 31,
+  'updateSnippetFiles': 37,
+  'deleteSnippetFile': 27,
+  'deleteSnippet': 37,
+  'deleteNote': 21,
+  'deleteDiscussionNote': 21,
+  'deleteIssue': 17,
+  'deleteMergeRequest': 17,
+  'deleteLabel': 17,
+  'deleteMilestone': 17,
+  'deleteBoard': 17,
+  'deleteBoardList': 21,
+  'markAllTodosDone': 9,
+  'deletePackage': 19,
+  'deletePackageFile': 35,
+  'deleteContainerRepository': 23,
+  'deleteContainerTag': 27,
+  'createProject': 7,
+  'editProject': 15,
+  'deleteProject': 15,
+  'forkProject': 15,
+};
+
 int _worstReads(String operation) {
   final (fresh, prepare, readback) = _counted[operation]!;
   return 2 * (fresh + prepare) + readback;
@@ -84,7 +136,7 @@ void main() {
       expect({
         for (final capability in productionAiLedger.modelVisible)
           capability.operationId,
-      }, _counted.keys.toSet());
+      }, {..._counted.keys, ..._mr6b2CountedCaps.keys});
       expect(aiWriteRequestCounts.keys.toSet(), _counted.keys.toSet());
     });
 
@@ -103,13 +155,26 @@ void main() {
       });
     }
 
+    for (final entry in _mr6b2CountedCaps.entries) {
+      test('${entry.key} reserves its counted worst case', () {
+        expect(aiWriteRequestAllowance(entry.key), entry.value);
+        final mutations = entry.key == 'cancelAutoMerge' ? 2 : 1;
+        expect(
+          aiWriteRequestAllowance(entry.key, oauthReplay: false),
+          (entry.value - mutations) ~/ 2 + mutations,
+        );
+      });
+    }
+
     test('an unknown operation reserves the largest row', () {
-      final largest = _counted.keys
-          .map(_worstReads)
-          .reduce((a, b) => a > b ? a : b);
+      final largest = [
+        for (final operation in _counted.keys) 2 * _worstReads(operation) + 1,
+        ..._mr6b2CountedCaps.values,
+      ].reduce((a, b) => a > b ? a : b);
+      expect(aiWriteRequestAllowance('notAnOperation'), largest);
       expect(
         aiWriteRequestAllowance('notAnOperation', oauthReplay: false),
-        largest + 1,
+        (largest - 1) ~/ 2 + 1,
       );
     });
   });

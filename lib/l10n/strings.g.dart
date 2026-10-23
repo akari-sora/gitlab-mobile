@@ -7891,18 +7891,348 @@ final class AppStrings {
   /// 不確定這筆寫入是否完成。你改過的內容留在這裡，重送前請先到 GitLab 查看。
   String get aiSettledEditUncertain => language._messages[2598];
 
+  /// 新檔案
+  String get aiPreviewNewFile => language._messages[2599];
+
+  /// 檔案
+  String get aiPreviewFile => language._messages[2600];
+
+  /// 這是 Pipeline 設定相關的檔案，改動會影響 Pipeline 怎麼執行。
+  String get aiPreviewCiFile => language._messages[2601];
+
+  /// 檔案裡已有 {count} 處疑似秘密；這次編輯不會移除它們。
+  String aiPreviewExistingSecrets(Object? count) => _format(language, language._messages[2602], {'count': count});
+
+  /// 分支
+  String get aiPreviewBranches => language._messages[2603];
+
+  /// {source} 合併到 {target}
+  String aiPreviewBranchFlow(Object? source, Object? target) => _format(language, language._messages[2604], {'source': source, 'target': target});
+
+  /// 要合併的提交
+  String get aiPreviewCommit => language._messages[2605];
+
+  /// 變更的檔案
+  String get aiPreviewChangedFiles => language._messages[2606];
+
+  /// 合併方式
+  String get aiPreviewMergeOptions => language._messages[2607];
+
+  /// 壓縮成一個提交
+  String get aiPreviewSquashOn => language._messages[2608];
+
+  /// 保留所有提交
+  String get aiPreviewSquashOff => language._messages[2609];
+
+  /// 合併後刪除來源分支
+  String get aiPreviewRemoveSource => language._messages[2610];
+
+  /// Pipeline 通過後自動合併
+  String get aiPreviewAutoMerge => language._messages[2611];
+
+  /// 提議之後，來源分支又多了 {count} 個提交，合併會包含它們。
+  String aiPreviewHeadMoved(Object? count) => _format(language, language._messages[2612], {'count': count});
+
+  /// 這次合併會改到 Pipeline 設定：{paths}
+  String aiPreviewMergeCiPaths(Object? paths) => _format(language, language._messages[2613], {'paths': paths});
+
+  /// 合併後還會關閉這段對話範圍外的議題：{issues}
+  String aiPreviewClosesOutOfScope(Object? issues) => _format(language, language._messages[2614], {'issues': issues});
+
+  /// 分支或標籤
+  String get aiPreviewRef => language._messages[2615];
+
+  /// Pipeline 執行
+  String get aiPreviewPipeline => language._messages[2616];
+
+  /// 工作
+  String get aiPreviewJob => language._messages[2617];
+
+  /// 環境
+  String get aiPreviewEnvironment => language._messages[2618];
+
+  /// 重新執行或播放可能沿用 GitLab 上已存的變數與輸入值；由排程建立的 Pipeline 還會使用排程目前的變數。應用程式讀不到，也無法核對。
+  String get aiPreviewStoredVariables => language._messages[2619];
+
+  /// 排程目前的變數：{names}
+  String aiPreviewScheduleVariables(Object? names) => _format(language, language._messages[2620], {'names': names});
+
+  /// 讀不到排程的參數，無法核對；執行時會使用 GitLab 上當下的參數，無法確認提議之後有沒有改過。
+  String get aiPreviewScheduleUnreadable => language._messages[2621];
+
+  /// 會帶入新的變數：{names}
+  String aiPreviewNewVariables(Object? names) => _format(language, language._messages[2622], {'names': names});
+
+  /// 草稿
+  String get aiPreviewDraftCount => language._messages[2623];
+
+  /// 共 {total} 則，其中 {ours} 則是這段對話建立的
+  String aiPreviewDraftSplit(Object? total, Object? ours) => _format(language, language._messages[2624], {'total': total, 'ours': ours});
+
+  /// 這段對話建立的草稿
+  String get aiPreviewDraftByAi => language._messages[2625];
+
+  /// 其他草稿
+  String get aiPreviewDraftByYou => language._messages[2626];
+
+  /// 要刪除
+  String get aiPreviewDeleteTarget => language._messages[2627];
+
+  /// 路徑
+  String get aiPreviewPath => language._messages[2628];
+
+  /// 數量
+  String get aiPreviewDeleteCount => language._messages[2629];
+
+  /// 至少 {count}
+  String aiPreviewAtLeast(Object? count) => _format(language, language._messages[2630], {'count': count});
+
+  /// 刪除後無法復原。
+  String get aiPreviewCannotUndo => language._messages[2631];
+
+  /// 你可能沒有取消自動合併的權限；GitLab 拒絕時不會有任何改變。
+  String get aiPreviewCancelMayLackPermission => language._messages[2632];
+
+  /// 套用建議修改
+  String get aiOpApplySuggestion => language._messages[2633];
+
+  /// 一次套用多項建議修改
+  String get aiOpBatchApplySuggestions => language._messages[2634];
+
+  /// 核准合併請求
+  String get aiOpApproveMergeRequest => language._messages[2635];
+
+  /// 取消自動合併
+  String get aiOpCancelAutoMerge => language._messages[2636];
+
+  /// 合併到目標分支
+  String get aiOpMergeRequest => language._messages[2637];
+
+  /// 把來源分支 Rebase 到目標分支
+  String get aiOpRebaseMergeRequest => language._messages[2638];
+
+  /// 建立分支
+  String get aiOpCreateBranch => language._messages[2639];
+
+  /// 刪除分支
+  String get aiOpDeleteBranch => language._messages[2640];
+
+  /// 建立標籤版本
+  String get aiOpCreateTag => language._messages[2641];
+
+  /// 刪除標籤版本
+  String get aiOpDeleteTag => language._messages[2642];
+
+  /// 建立 Release
+  String get aiOpCreateRelease => language._messages[2643];
+
+  /// 編輯 Release
+  String get aiOpUpdateRelease => language._messages[2644];
+
+  /// 刪除 Release
+  String get aiOpDeleteRelease => language._messages[2645];
+
+  /// 新增檔案
+  String get aiOpCreateFile => language._messages[2646];
+
+  /// 編輯檔案
+  String get aiOpEditFile => language._messages[2647];
+
+  /// 刪除檔案
+  String get aiOpDeleteFile => language._messages[2648];
+
+  /// 執行新的 Pipeline
+  String get aiOpCreatePipeline => language._messages[2649];
+
+  /// 重試 Pipeline
+  String get aiOpRetryPipeline => language._messages[2650];
+
+  /// 取消 Pipeline
+  String get aiOpCancelPipeline => language._messages[2651];
+
+  /// 操作 Pipeline
+  String get aiOpPipelineAction => language._messages[2652];
+
+  /// 刪除 Pipeline
+  String get aiOpDeletePipeline => language._messages[2653];
+
+  /// 重試工作
+  String get aiOpRetryJob => language._messages[2654];
+
+  /// 取消工作
+  String get aiOpCancelJob => language._messages[2655];
+
+  /// 啟動手動工作
+  String get aiOpPlayJob => language._messages[2656];
+
+  /// 操作工作
+  String get aiOpJobAction => language._messages[2657];
+
+  /// 立即執行排程
+  String get aiOpPlayPipelineSchedule => language._messages[2658];
+
+  /// 建立專案
+  String get aiOpCreateProject => language._messages[2659];
+
+  /// 編輯專案
+  String get aiOpEditProject => language._messages[2660];
+
+  /// 刪除專案
+  String get aiOpDeleteProject => language._messages[2661];
+
+  /// 建立專案的 Fork
+  String get aiOpForkProject => language._messages[2662];
+
+  /// 刪除看板
+  String get aiOpDeleteBoard => language._messages[2663];
+
+  /// 刪除看板欄位
+  String get aiOpDeleteBoardList => language._messages[2664];
+
+  /// 刪除容器映像庫
+  String get aiOpDeleteContainerRepository => language._messages[2665];
+
+  /// 刪除容器映像標籤
+  String get aiOpDeleteContainerTag => language._messages[2666];
+
+  /// 刪除留言
+  String get aiOpDeleteNote => language._messages[2667];
+
+  /// 刪除討論回覆
+  String get aiOpDeleteDiscussionNote => language._messages[2668];
+
+  /// 刪除草稿留言
+  String get aiOpDeleteDraftNote => language._messages[2669];
+
+  /// 刪除議題
+  String get aiOpDeleteIssue => language._messages[2670];
+
+  /// 刪除合併請求
+  String get aiOpDeleteMergeRequest => language._messages[2671];
+
+  /// 刪除標籤
+  String get aiOpDeleteLabel => language._messages[2672];
+
+  /// 刪除里程碑
+  String get aiOpDeleteMilestone => language._messages[2673];
+
+  /// 刪除套件
+  String get aiOpDeletePackage => language._messages[2674];
+
+  /// 刪除套件檔案
+  String get aiOpDeletePackageFile => language._messages[2675];
+
+  /// 把全部待辦標為完成
+  String get aiOpMarkAllTodosDone => language._messages[2676];
+
+  /// 送出草稿留言
+  String get aiOpPublishDraftNotes => language._messages[2677];
+
+  /// 建立 Snippet
+  String get aiOpCreateSnippet => language._messages[2678];
+
+  /// 編輯 Snippet
+  String get aiOpUpdateSnippet => language._messages[2679];
+
+  /// 編輯 Snippet 資訊
+  String get aiOpUpdateSnippetMetadata => language._messages[2680];
+
+  /// 編輯 Snippet 的檔案
+  String get aiOpUpdateSnippetFiles => language._messages[2681];
+
+  /// 刪除 Snippet 的檔案
+  String get aiOpDeleteSnippetFile => language._messages[2682];
+
+  /// 刪除 Snippet
+  String get aiOpDeleteSnippet => language._messages[2683];
+
+  /// 這張卡片建立之後，GitLab 上的內容已經變了，所以沒有執行。可以請 AI 重新讀取後再提議。
+  String get aiRefusedChanged => language._messages[2684];
+
+  /// 找不到目標：它可能已被刪除，也可能是你沒有權限看到，所以沒有執行。
+  String get aiRefusedGone => language._messages[2685];
+
+  /// 你在 GitLab 上沒有這個操作需要的權限，所以沒有執行。
+  String get aiRefusedPermission => language._messages[2686];
+
+  /// GitLab 目前不允許這個操作，所以沒有執行。
+  String get aiRefusedNotAllowed => language._messages[2687];
+
+  /// 內容超出 AI 可以寫入的範圍（例如檔案太大、是二進位檔，或屬於敏感路徑），所以沒有執行。
+  String get aiRefusedContent => language._messages[2688];
+
+  /// 需要核對的資料無法完整讀取，所以沒有執行。
+  String get aiRefusedUnverifiable => language._messages[2689];
+
+  /// 這個合併請求已經合併了，所以沒有執行。
+  String get aiRefusedAlreadyMerged => language._messages[2690];
+
+  /// 專案已封存，無法變更，所以沒有執行。
+  String get aiRefusedArchived => language._messages[2691];
+
+  /// 這是受保護的分支，AI 不能刪除或改寫它，所以沒有執行。
+  String get aiRefusedProtectedBranch => language._messages[2692];
+
+  /// 不能刪除預設分支，所以沒有執行。
+  String get aiRefusedDefaultBranch => language._messages[2693];
+
+  /// GitLab 還在檢查能不能合併，所以沒有執行。請稍後再試。
+  String get aiRefusedMergeChecking => language._messages[2694];
+
+  /// 請 AI 處理待辦
+  String get aiInboxAsk => language._messages[2695];
+
+  /// 待辦助手
+  String get aiInboxChatTitle => language._messages[2696];
+
+  /// 幫我把全部待辦標為完成
+  String get aiSuggestInboxMarkAll => language._messages[2697];
+
+  /// 標籤版本名稱
+  String get aiFieldTagName => language._messages[2698];
+
+  /// 原本的路徑
+  String get aiFieldPreviousPath => language._messages[2699];
+
+  /// 變數
+  String get aiFieldVariables => language._messages[2700];
+
+  /// 已合併
+  String get aiWriteMerged => language._messages[2701];
+
+  /// 已排程自動合併
+  String get aiWriteAutoMergeScheduled => language._messages[2702];
+
+  /// GitLab 已接受合併，請查看最新狀態
+  String get aiWriteMergeAccepted => language._messages[2703];
+
+  /// 已排程刪除
+  String get aiWriteDeletionScheduled => language._messages[2704];
+
+  /// 所屬
+  String get aiPreviewParent => language._messages[2705];
+
+  /// 另外還有 {count} 個檔案會變更
+  String aiPreviewMoreFiles(Object? count) => _format(language, language._messages[2706], {'count': count});
+
+  /// 你在訊息裡提到了這個名稱，但沒有用反引號（`）標出來，所以這筆寫入需要你確認。
+  String get aiConfirmTargetNamedNotMarked => language._messages[2707];
+
+  /// GitLab 可能會延後刪除，保留期內仍可還原。
+  String get aiPreviewDeletionMayBeDelayed => language._messages[2708];
+
   /// 最後更新：{time}
-  String cacheLastUpdated(Object? time) => _format(language, language._messages[2599], {'time': time});
+  String cacheLastUpdated(Object? time) => _format(language, language._messages[2709], {'time': time});
 
   /// 正在更新
-  String get cacheRefreshing => language._messages[2600];
+  String get cacheRefreshing => language._messages[2710];
 
   /// GitLab 正在限制請求
-  String get cacheRateLimited => language._messages[2601];
+  String get cacheRateLimited => language._messages[2711];
 
   /// 無法更新
-  String get cacheRefreshFailed => language._messages[2602];
+  String get cacheRefreshFailed => language._messages[2712];
 
   /// 約 {minutes} 分鐘後恢復
-  String cacheResumesInMinutes(Object? minutes) => _format(language, language._messages[2603], {'minutes': minutes});
+  String cacheResumesInMinutes(Object? minutes) => _format(language, language._messages[2713], {'minutes': minutes});
 }

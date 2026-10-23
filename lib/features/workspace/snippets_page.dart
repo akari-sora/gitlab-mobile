@@ -144,21 +144,21 @@ class _SnippetsPageState extends State<SnippetsPage> {
         if (!_currentOwner(generation, account, api, project)) {
           throw const ApiFailure(FailureKind.cancelled);
         }
-        final payload = createSnippetPayload(
-          title: values['title'] ?? '',
-          description: values['description'] ?? '',
-          visibility: (values['visibility'] ?? '').trim(),
-          files: [
-            SnippetFileInput(
-              path: values['file_name'] ?? '',
-              content: values['content'] ?? '',
-            ),
-          ],
-        );
         writePending = true;
         late final Map<String, dynamic> created;
         try {
-          created = await api.writeRecord('POST', path, payload);
+          created = await api.createSnippet(
+            project.id,
+            title: values['title'] ?? '',
+            description: values['description'] ?? '',
+            visibility: (values['visibility'] ?? '').trim(),
+            files: [
+              SnippetFileInput(
+                path: values['file_name'] ?? '',
+                content: values['content'] ?? '',
+              ),
+            ],
+          );
         } on ApiFailure catch (failure) {
           if (failure.kind != FailureKind.writeUncertain) writePending = false;
           rethrow;
@@ -172,9 +172,9 @@ class _SnippetsPageState extends State<SnippetsPage> {
           final readback = ProjectSnippet.fromJson(readbackJson)
             ..requireProject(project.id);
           if (!readback.canUseLegacyRaw ||
-              readback.title != payload['title'] ||
-              readback.description != payload['description'] ||
-              readback.visibility != payload['visibility'] ||
+              readback.title != (values['title'] ?? '').trim() ||
+              readback.description != (values['description'] ?? '') ||
+              readback.visibility != (values['visibility'] ?? '').trim() ||
               readback.fileName != values['file_name']!.trim()) {
             throw const ApiFailure(FailureKind.writeUncertain);
           }
@@ -552,7 +552,6 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     final project = widget.project;
     final snippetId = widget.snippetId;
     final generation = _generation;
-    final path = ['projects', '${project.id}', 'snippets', '$snippetId'];
     var writePending = false;
     final saved = await openEditor(
       context,
@@ -595,21 +594,22 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
         if (fresh.$1.updatedAt != snippet.updatedAt || fresh.$2 != content) {
           throw const ApiFailure(FailureKind.conflict);
         }
-        final payload = updateSingleFileSnippetPayload(
-          before: fresh.$1,
-          title: values['title'] ?? '',
-          description: values['description'] ?? '',
-          visibility: (values['visibility'] ?? '').trim(),
-          fileName: values['file_name'] ?? '',
-          content: values['content'] ?? '',
-          previousContent: fresh.$2,
-        );
         if (!_currentOwner(generation, account, api, project, snippetId)) {
           throw const ApiFailure(FailureKind.cancelled);
         }
         writePending = true;
         try {
-          await api.writeRecord('PUT', path, payload);
+          await api.updateSnippet(
+            project.id,
+            snippetId,
+            before: fresh.$1,
+            title: values['title'] ?? '',
+            description: values['description'] ?? '',
+            visibility: (values['visibility'] ?? '').trim(),
+            fileName: values['file_name'] ?? '',
+            content: values['content'] ?? '',
+            previousContent: fresh.$2,
+          );
         } on ApiFailure catch (failure) {
           if (failure.kind != FailureKind.writeUncertain) writePending = false;
           rethrow;
@@ -649,7 +649,6 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     final snippetId = widget.snippetId;
     final generation = _generation;
     final selected = _selectedPath;
-    final path = ['projects', '${project.id}', 'snippets', '$snippetId'];
     var writePending = false;
     final saved = await openEditor(
       context,
@@ -688,19 +687,19 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
           throw const ApiFailure(FailureKind.cancelled);
         }
         final fresh = await _freshSnapshotFor(api, project, snapshot);
-        final payload = updateSnippetPayload(
-          title: values['title'] ?? '',
-          description: values['description'] ?? '',
-          visibility: (values['visibility'] ?? '').trim(),
-          currentPaths: fresh.filePaths,
-          actions: const [],
-        );
         if (!_currentOwner(generation, account, api, project, snippetId)) {
           throw const ApiFailure(FailureKind.cancelled);
         }
         writePending = true;
         try {
-          await api.writeRecord('PUT', path, payload);
+          await api.updateSnippetMetadata(
+            project.id,
+            snippetId,
+            title: values['title'] ?? '',
+            description: values['description'] ?? '',
+            visibility: (values['visibility'] ?? '').trim(),
+            currentPaths: fresh.filePaths,
+          );
         } on ApiFailure catch (failure) {
           if (failure.kind != FailureKind.writeUncertain) writePending = false;
           rethrow;
@@ -753,7 +752,6 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     final project = widget.project;
     final snippetId = widget.snippetId;
     final generation = _generation;
-    final endpoint = ['projects', '${project.id}', 'snippets', '$snippetId'];
     var writePending = false;
     String? savedPath;
     final saved = await openEditor(
@@ -782,19 +780,20 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
           fresh,
         ).map(_canonicalFileAction).toList(growable: false);
         final nextPath = resultingPath(values);
-        final payload = updateSnippetPayload(
-          title: fresh.snippet.title,
-          description: fresh.snippet.description,
-          visibility: fresh.snippet.visibility,
-          currentPaths: fresh.filePaths,
-          actions: requestedActions,
-        );
         if (!_currentOwner(generation, account, api, project, snippetId)) {
           throw const ApiFailure(FailureKind.cancelled);
         }
         writePending = true;
         try {
-          await api.writeRecord('PUT', endpoint, payload);
+          await api.updateSnippetFiles(
+            project.id,
+            snippetId,
+            title: fresh.snippet.title,
+            description: fresh.snippet.description,
+            visibility: fresh.snippet.visibility,
+            currentPaths: fresh.filePaths,
+            actions: requestedActions,
+          );
         } on ApiFailure catch (failure) {
           if (failure.kind != FailureKind.writeUncertain) writePending = false;
           rethrow;
@@ -975,22 +974,22 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
     final project = widget.project;
     final snippetId = widget.snippetId;
     final generation = _generation;
-    final endpoint = ['projects', '${project.id}', 'snippets', '$snippetId'];
     setState(() => _busy = true);
     var acknowledged = false;
     try {
       final fresh = await _freshSnapshotFor(api, project, snapshot);
-      final payload = updateSnippetPayload(
+      if (!_currentOwner(generation, account, api, project, snippetId)) {
+        throw const ApiFailure(FailureKind.cancelled);
+      }
+      await api.deleteSnippetFile(
+        project.id,
+        snippetId,
         title: fresh.snippet.title,
         description: fresh.snippet.description,
         visibility: fresh.snippet.visibility,
         currentPaths: fresh.filePaths,
-        actions: [SnippetFileAction.delete(path: selected)],
+        path: selected,
       );
-      if (!_currentOwner(generation, account, api, project, snippetId)) {
-        throw const ApiFailure(FailureKind.cancelled);
-      }
-      await api.writeRecord('PUT', endpoint, payload);
       acknowledged = true;
       if (!_currentOwner(generation, account, api, project, snippetId)) {
         throw const ApiFailure(FailureKind.cancelled);
@@ -1066,7 +1065,7 @@ class _SnippetDetailPageState extends State<_SnippetDetailPage> {
       if (!_currentOwner(generation, account, api, project, snippetId)) {
         throw const ApiFailure(FailureKind.cancelled);
       }
-      await api.removeRecord(path);
+      await api.deleteSnippet(project.id, snippetId);
       if (!_currentOwner(generation, account, api, project, snippetId)) return;
       try {
         await api.record(path);

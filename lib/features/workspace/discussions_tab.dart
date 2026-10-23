@@ -181,9 +181,12 @@ class _DiscussionsTabState extends State<DiscussionsTab> {
     if (!mounted) { return; }
     setState(() => _busy = true);
     try {
-      final endpoint = discussion == null ? [...path, 'notes', '${note['id']}']
-        : [...path, 'discussions', discussion, 'notes', '${note['id']}'];
-      await widget.api.removeRecord(endpoint);
+      final noteId = requiredInt(note, 'id');
+      if (discussion == null) {
+        await widget.api.deleteNote(widget.project.id, widget.resource, widget.iid, noteId);
+      } else {
+        await widget.api.deleteDiscussionNote(widget.project.id, widget.resource, widget.iid, discussion, noteId);
+      }
       if (mounted) {
         await _feed.currentState?.refresh();
         widget.onChanged?.call();

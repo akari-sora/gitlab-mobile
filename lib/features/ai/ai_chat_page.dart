@@ -68,6 +68,7 @@ String aiOriginTitle(
   required String Function(String text) safe,
 }) {
   final value = switch (origin) {
+    AiInboxOrigin() => l10n.aiInboxChatTitle,
     AiGeneralOrigin() => null,
     AiJobOrigin(:final jobName) => safe(jobName),
     AiWorkItemOrigin(:final title) => safe(title),
@@ -76,6 +77,7 @@ String aiOriginTitle(
   // An empty value is one that could not be checked against the secrets.
   if (value == null || value.isEmpty) return l10n.aiAssistantLabel;
   return switch (origin) {
+    AiInboxOrigin() => l10n.aiInboxChatTitle,
     AiGeneralOrigin() => l10n.aiAssistantLabel,
     AiJobOrigin() => l10n.aiChatJobTitle(value),
     AiWorkItemOrigin(:final kind, :final iid) =>
@@ -86,6 +88,8 @@ String aiOriginTitle(
 }
 
 List<String> _suggestions(AiChatOrigin origin) => switch (origin) {
+  // The Inbox conversation can only mark to-dos done; it cannot read them.
+  AiInboxOrigin() => [l10n.aiSuggestInboxMarkAll],
   AiGeneralOrigin() => const [],
   AiJobOrigin() => [l10n.aiSuggestJobWhy, l10n.aiSuggestJobFix],
   AiWorkItemOrigin(kind: AiWorkItemKind.mergeRequest) => [
@@ -1526,6 +1530,7 @@ class _ToolRow extends StatelessWidget {
         ? l10n.waitingForConfirmation
         : l10n.aiWriteInProgress;
     final muted = theme.colorScheme.onSurfaceVariant;
+    final resultText = aiWriteResultText(writeRow?.outcome?.reasonCode);
     // A write says exactly how it went; an uncertain one is never shown as
     // failed, because it may have been made.
     final (IconData? icon, Color? color, String status) = switch (item.status) {
@@ -1547,7 +1552,12 @@ class _ToolRow extends StatelessWidget {
           AiWriteResultStatus.writeUncertain => HubColors.orange,
           _ => muted,
         },
-        aiWriteStatusLabel(write),
+        switch (write) {
+          AiWriteResultStatus.succeeded || AiWriteResultStatus.readbackConfirmed
+              when resultText != null =>
+            resultText,
+          _ => aiWriteStatusLabel(write),
+        },
       ),
       AiToolRunStatus.pending ||
       AiToolRunStatus.running => (null, null, pendingStatus),
@@ -1623,6 +1633,30 @@ class _ToolRow extends StatelessWidget {
                   color: theme.colorScheme.onSurfaceVariant,
                 ),
               ),
+              // An automatic rerun or play may reuse stored variables; the
+              // card that would have said so never appeared (§0 item 12).
+              if (audit?.outcome?.auditNotice == 'storedVariablesMayApply')
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.info_outline,
+                        size: 14,
+                        color: HubColors.orange,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          l10n.aiPreviewStoredVariables,
+                          key: const ValueKey('ai-write-row-stored-variables'),
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               if (audit?.outcome?.auditNotice == uploadReadersCanFetch)
                 Padding(
                   padding: const EdgeInsets.only(top: 2),

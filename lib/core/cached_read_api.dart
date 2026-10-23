@@ -4,6 +4,23 @@ enum CacheLineage { network, memory, disk }
 
 /// A dropped admission has no value. Superseded values must not be published.
 final class CachedRead<T> {
+  /// Carries a caller's send fence through cached loader closures unchanged.
+  static Future<R> run<R>(
+    Future<R> Function() body, {
+    required bool Function() mayStart,
+    bool waitForQuiet = false,
+  }) {
+    final outer = Zone.current[#cachedReadMayStart] as bool Function()?;
+    return runZoned(
+      body,
+      zoneValues: <Object?, Object?>{
+        #cachedReadMayStart: () => (outer?.call() ?? true) && mayStart(),
+        #cachedReadWaitForQuiet:
+            waitForQuiet || Zone.current[#cachedReadWaitForQuiet] == true,
+      },
+    );
+  }
+
   const CachedRead({
     required T value,
     required DateTime fetchedAt,
@@ -821,11 +838,14 @@ final class _ReadCache {
     int entryLimit = 1024 * 1024,
   }) async {
     if (api._closed) throw const ApiFailure(FailureKind.cancelled);
+    final mayStart = Zone.current[#cachedReadMayStart] as bool Function()?;
+    final quiet = Zone.current[#cachedReadWaitForQuiet] == true;
     if (!api.instance.allowsApi(uri)) {
       throw const ApiFailure(FailureKind.unsupported);
     }
     final canCache = enabled && policy != null;
     if (!canCache) {
+      if (mayStart?.call() == false) return CachedRead<T>.dropped();
       final loaded = await load();
       final value = _freezeCached(loaded.value) as T;
       observeLoadedPrivacy(uri, value);
@@ -995,7 +1015,8 @@ final class _ReadCache {
         if (api._closed || !permitted(permission, uri)) {
           throw const ApiFailure(FailureKind.cancelled);
         }
-        if (fresh && (supersededFresh[cacheKey] ?? 0) >= 2 && !pinned) {
+        if (fresh && !pinned &&
+            (quiet || (supersededFresh[cacheKey] ?? 0) >= 2)) {
           await waitForQuiet();
         }
         for (var attempt = 0; ; attempt++) {
@@ -1005,6 +1026,7 @@ final class _ReadCache {
             if (api._closed) throw const ApiFailure(FailureKind.cancelled);
             return CachedRead<T>.dropped();
           }
+          if (mayStart?.call() == false) return CachedRead<T>.dropped();
           // A write can start while this read is queued for a send slot.
           while (canCache && !pinned && waited && active(readScope)) {
             release(background);
@@ -1015,11 +1037,13 @@ final class _ReadCache {
               if (api._closed) throw const ApiFailure(FailureKind.cancelled);
               return CachedRead<T>.dropped();
             }
+            if (mayStart?.call() == false) return CachedRead<T>.dropped();
           }
           if (api._closed || !permitted(permission, uri)) {
             throw const ApiFailure(FailureKind.cancelled);
           }
           final start = snapshot(readScope, !canCache || pinned);
+          if (mayStart?.call() == false) return CachedRead<T>.dropped();
           final loaded = await load();
           if (api._closed ||
               !permitted(permission, uri) ||

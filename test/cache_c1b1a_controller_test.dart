@@ -167,9 +167,8 @@ void main() {
         );
         addTearDown(controller.dispose);
         await controller.refresh();
-        final more = controller.more();
         pending.completeError(ApiFailure(kind));
-        await more;
+        await Future<void>.delayed(Duration.zero);
         final revoked = [
           FailureKind.unauthenticated,
           FailureKind.forbidden,
@@ -187,14 +186,19 @@ void main() {
   }
 
   test(
-    'dropped background read has no value, ends revalidating and releases more without stale continuation',
+    'dropped background read releases more to revalidate before following a fresh cursor',
     () async {
       final pending = Completer<CachedRead<ApiPage<Json>>>();
       final controller = RecordController(
-        (_) async => throw StateError('stale cursor'),
+        (cursor) async {
+          expect(cursor, newNext);
+          return const ApiPage<Json>([{'id': 3}]);
+        },
         cached: ({required fresh, required background}) => background
             ? pending.future
-            : Future.value(read(1, stale: true, next: oldNext)),
+            : Future.value(fresh
+                ? read(2, next: newNext)
+                : read(1, stale: true, next: oldNext)),
       );
       addTearDown(controller.dispose);
       await controller.refresh();
@@ -202,7 +206,7 @@ void main() {
       pending.complete(const CachedRead.dropped());
       await more;
       await controller.more();
-      expect(controller.items.single['id'], 1);
+      expect(controller.items.map((item) => item['id']), [2, 3]);
       expect(controller.revalidating, isFalse);
       expect(controller.backgroundFailure, isNull);
       expect(controller.error, isNull);
@@ -269,7 +273,7 @@ void main() {
   }
 
   test(
-    'repeated superseded results stop after one reread and keep prior rows',
+    'repeated superseded results stop after quiet recovery with prior rows and a retry notice',
     () async {
       var superseded = false, calls = 0;
       final controller = RecordController(
@@ -284,8 +288,9 @@ void main() {
       superseded = true;
       await controller.refresh();
       expect(controller.items.single['id'], 1);
-      expect(calls, 3);
+      expect(calls, 4);
       expect(controller.loading, isFalse);
+      expect(controller.error?.kind, FailureKind.cancelled);
     },
   );
 
@@ -356,7 +361,7 @@ void main() {
       await controller.more();
       phase++;
       await controller.refresh();
-      await controller.more();
+      await Future<void>.delayed(Duration.zero);
       expect(controller.items.map((item) => item['id']), [1, 2]);
       expect(controller.next, isNull);
       expect(controller.backgroundFailure, FailureKind.network);
@@ -387,11 +392,11 @@ void main() {
   );
 
   test(
-    'more retries a background write-timeout stale read once and never uses its cursor',
+    'more retries a background write-timeout stale read in foreground and never uses its cursor',
     () async {
       final first = Completer<CachedRead<ApiPage<Json>>>();
       final second = Completer<CachedRead<ApiPage<Json>>>();
-      var backgroundCalls = 0;
+      var backgroundCalls = 0, foregroundCalls = 0;
       final cursors = <Uri?>[];
       final controller = RecordController(
         (cursor) async {
@@ -402,22 +407,27 @@ void main() {
         },
         cached: ({required fresh, required background}) {
           if (!background) {
+            if (fresh) {
+              foregroundCalls++;
+              return second.future;
+            }
             return Future.value(read(1, stale: true, next: oldNext));
           }
-          return ++backgroundCalls == 1 ? first.future : second.future;
+          backgroundCalls++;
+          return first.future;
         },
       );
       addTearDown(controller.dispose);
       await controller.refresh();
       final waiting = controller.more();
       first.complete(read(2, stale: true, next: oldNext));
-      await waiting;
+      await Future<void>.delayed(Duration.zero);
       expect(cursors, isEmpty);
       expect(backgroundCalls, 1);
-      final retry = controller.more();
+      expect(foregroundCalls, 1);
       second.complete(read(3, next: newNext));
-      await retry;
-      expect(backgroundCalls, 2);
+      await waiting;
+      expect(backgroundCalls, 1);
       expect(cursors, [newNext]);
       expect(controller.items.map((item) => item['id']), [3, 4]);
     },

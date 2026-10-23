@@ -3,6 +3,15 @@ import 'write_levels.dart';
 
 export 'write_levels.dart';
 
+part 'ledger/rows_ci.dart';
+part 'ledger/rows_deletes.dart';
+part 'ledger/rows_files.dart';
+part 'ledger/rows_merge.dart';
+part 'ledger/rows_project.dart';
+part 'ledger/rows_refs.dart';
+part 'ledger/rows_snippets.dart';
+part 'ledger/rows_t12.dart';
+
 enum AiScopeKind {
   project,
   workItem,
@@ -23,6 +32,13 @@ enum AiScopeClass {
   /// A file uploaded into a project's uploads: the project of any project,
   /// issue or merge request grant, and nothing else in that project.
   projectUpload,
+
+  /// Writes whose target is the signed-in account rather than a project.
+  accountGlobalOnly,
+
+  /// Project creation in the current user's namespace, or a fork whose
+  /// source project must be covered by a project grant.
+  personalNamespace,
 }
 
 /// Why an automatic write is held for confirmation. Codes only; the card copy
@@ -40,6 +56,7 @@ enum AiFixedConfirmReason {
   journalResetWindow,
   confidentialOrVisibilityMix,
   targetUnbound,
+  targetNamedNotMarked,
   intentNotUnique,
 }
 
@@ -166,6 +183,60 @@ GitLabInstance? instanceFromAccountKey(String accountKey) {
   }
 }
 
+enum AiArgType {
+  integer,
+  string,
+  boolean,
+  object,
+  integerList,
+  edits,
+  variables,
+  suggestionList,
+  snippetActions,
+}
+
+enum AiTextRole {
+  none,
+  quickActionMarkdown,
+  plainContent,
+  renderedMarkdown,
+  commitMessage,
+  fragmentEdits,
+  fullNewContent,
+  pathOrRef,
+}
+
+final class AiArgSpec {
+  const AiArgSpec(
+    this.type, {
+    this.required = false,
+    this.text = AiTextRole.none,
+    this.writableField,
+    this.properties = const <String, AiArgSpec>{},
+    this.modelVisible = true,
+    this.portVisible = true,
+    this.enumValues,
+  });
+
+  final AiArgType type;
+  final bool required;
+  final AiTextRole text;
+  final String? writableField;
+
+  /// Closed nested object fields. An empty map means the object has no
+  /// ledger-defined nested shape.
+  final Map<String, AiArgSpec> properties;
+
+  /// The upload row joins model-facing attachment ids with port-facing file
+  /// metadata. These flags retain each boundary's narrower whitelist.
+  final bool modelVisible;
+  final bool portVisible;
+
+  /// Allowed string values shown to the model as a closed enum. Null means
+  /// the string accepts any value.
+  final List<String>? enumValues;
+}
+
 final class AiCapability {
   const AiCapability({
     required this.operationId,
@@ -173,6 +244,10 @@ final class AiCapability {
     required this.scopeClass,
     this.modelVisible = true,
     String? namedMethod,
+    this.arguments = const <String, AiArgSpec>{},
+    this.httpCap = 39,
+    this.readback = false,
+    this.editableField,
   }) : namedMethod = namedMethod ?? operationId;
 
   final String operationId;
@@ -185,6 +260,17 @@ final class AiCapability {
 
   /// Packet 5 method. `upload_attachment` calls `uploadProjectFile`.
   final String namedMethod;
+
+  /// Model and internal port arguments. `reason` is coordinator metadata and
+  /// is deliberately absent. Unlisted keys are rejected.
+  final Map<String, AiArgSpec> arguments;
+
+  /// OAuth worst-case request allowance, including mutation and readback.
+  final int httpCap;
+  final bool readback;
+
+  /// The one text field a confirmation card may replace.
+  final String? editableField;
 }
 
 abstract interface class AiCapabilityLedger {
@@ -196,162 +282,14 @@ final class ProductionAiLedger implements AiCapabilityLedger {
   const ProductionAiLedger();
 
   static const List<AiCapability> rows = <AiCapability>[
-    AiCapability(
-      operationId: 'addAwardEmoji',
-      baseTier: AiWriteTier.t1,
-      scopeClass: AiScopeClass.resource,
-    ),
-    AiCapability(
-      operationId: 'removeAwardEmoji',
-      baseTier: AiWriteTier.t1,
-      scopeClass: AiScopeClass.resource,
-    ),
-    AiCapability(
-      operationId: 'setStar',
-      baseTier: AiWriteTier.t1,
-      scopeClass: AiScopeClass.project,
-    ),
-    AiCapability(
-      operationId: 'setSubscribed',
-      baseTier: AiWriteTier.t1,
-      scopeClass: AiScopeClass.resource,
-    ),
-    AiCapability(
-      operationId: 'markTodoDone',
-      baseTier: AiWriteTier.t1,
-      scopeClass: AiScopeClass.accountTodo,
-    ),
-    AiCapability(
-      operationId: 'createNote',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.resource,
-    ),
-    AiCapability(
-      operationId: 'updateNote',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.resource,
-    ),
-    AiCapability(
-      operationId: 'createIssue',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.project,
-    ),
-    AiCapability(
-      operationId: 'updateIssue',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.workItem,
-    ),
-    AiCapability(
-      operationId: 'createMergeRequest',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.project,
-    ),
-    AiCapability(
-      operationId: 'updateMergeRequest',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.mergeRequest,
-    ),
-    AiCapability(
-      operationId: 'unapproveMergeRequest',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.mergeRequest,
-    ),
-    AiCapability(
-      operationId: 'createTodo',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.resource,
-    ),
-    AiCapability(
-      operationId: 'createDiscussion',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.resource,
-    ),
-    AiCapability(
-      operationId: 'createDiscussionNote',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.resource,
-    ),
-    AiCapability(
-      operationId: 'updateDiscussionNote',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.resource,
-    ),
-    AiCapability(
-      operationId: 'setDiscussionResolved',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.resource,
-    ),
-    AiCapability(
-      operationId: 'createDraftNote',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.mergeRequest,
-    ),
-    AiCapability(
-      operationId: 'updateDraftNote',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.mergeRequest,
-    ),
-    AiCapability(
-      operationId: 'createLabel',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.project,
-    ),
-    AiCapability(
-      operationId: 'updateLabel',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.project,
-    ),
-    AiCapability(
-      operationId: 'createMilestone',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.project,
-    ),
-    AiCapability(
-      operationId: 'updateMilestone',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.project,
-    ),
-    AiCapability(
-      operationId: 'setMilestoneState',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.project,
-    ),
-    AiCapability(
-      operationId: 'createBoard',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.project,
-    ),
-    AiCapability(
-      operationId: 'renameBoard',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.project,
-    ),
-    AiCapability(
-      operationId: 'setBoardSystemListHidden',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.project,
-    ),
-    AiCapability(
-      operationId: 'createBoardList',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.project,
-    ),
-    AiCapability(
-      operationId: 'moveBoardList',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.project,
-    ),
-    AiCapability(
-      operationId: 'moveBoardCard',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.workItem,
-    ),
-    AiCapability(
-      operationId: 'upload_attachment',
-      baseTier: AiWriteTier.t2,
-      scopeClass: AiScopeClass.projectUpload,
-      namedMethod: 'uploadProjectFile',
-    ),
+    ...aiT12Rows,
+    ...aiFileRows,
+    ...aiRefRows,
+    ...aiMergeRows,
+    ...aiCiRows,
+    ...aiSnippetRows,
+    ...aiDeleteRows,
+    ...aiProjectRows,
   ];
 
   static final Map<String, AiCapability> _index = <String, AiCapability>{
@@ -373,10 +311,13 @@ const ProductionAiLedger productionAiLedger = ProductionAiLedger();
 
 /// Tools the model may see for this scope. Empty when the conversation has no
 /// writable grant, or only a group work item (no MR6b-1 tool admits it).
-List<AiCapability> toolsForScope(AiWriteScope scope) {
+List<AiCapability> toolsForScope(
+  AiWriteScope scope, {
+  AiCapabilityLedger ledger = productionAiLedger,
+}) {
   if (!scope.allowsWrites) return const <AiCapability>[];
   return <AiCapability>[
-    for (final AiCapability row in productionAiLedger.modelVisible)
+    for (final AiCapability row in ledger.modelVisible)
       if (_offered(scope, row)) row,
   ];
 }
@@ -385,13 +326,13 @@ bool offersWriteTools(AiWriteScope scope) => toolsForScope(scope).isNotEmpty;
 
 bool _offered(AiWriteScope scope, AiCapability row) {
   for (final AiScopeGrant grant in scope.grants) {
-    if (_grantOffers(grant.kind, row.scopeClass)) return true;
+    if (_grantOffers(grant.kind, row)) return true;
   }
   return false;
 }
 
-bool _grantOffers(AiScopeKind kind, AiScopeClass scopeClass) {
-  switch (scopeClass) {
+bool _grantOffers(AiScopeKind kind, AiCapability capability) {
+  switch (capability.scopeClass) {
     case AiScopeClass.project:
       return kind == AiScopeKind.project;
     case AiScopeClass.workItem:
@@ -413,5 +354,9 @@ bool _grantOffers(AiScopeKind kind, AiScopeClass scopeClass) {
       return kind == AiScopeKind.project ||
           kind == AiScopeKind.workItem ||
           kind == AiScopeKind.mergeRequest;
+    case AiScopeClass.accountGlobalOnly:
+      return kind == AiScopeKind.accountGlobal;
+    case AiScopeClass.personalNamespace:
+      return kind == AiScopeKind.project;
   }
 }

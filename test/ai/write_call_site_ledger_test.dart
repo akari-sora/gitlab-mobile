@@ -4,21 +4,26 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gitlab_mobile/core/ai/tools/write_ledger.dart';
 
 /// §15 row 21. Every write call site in `lib/` maps to a production ledger row
-/// or to the MR6b-2 / MR6b-3 pending lists. Generic channel calls outside
-/// those lists fail the test.
+/// or to the MR6b-3 GraphQL pending list. Generic channel calls outside
+/// `WorkspaceApi` fail the test.
 void main() {
+  test('obsolete saveFile compatibility shim is removed', () {
+    final source = File('lib/core/workspace_api.dart').readAsStringSync();
+    expect(source.contains('Future<Json> saveFile('), isFalse);
+  });
+
   test('§15 row 21 ledger covers every lib write call site', () {
     final sites = _writeSites(_libRoot());
     final ledgerMethods = <String, String>{
       for (final AiCapability row in ProductionAiLedger.rows)
         row.namedMethod: row.operationId,
     };
-    final pending2Methods = _pendingMr6b2Methods;
     final pending3Methods = _pendingMr6b3Methods;
 
     final unclassified = <String>[];
     final pending2 = <String>[];
-    final pending3 = <String>[];
+    final pending3Named = <String>{};
+    final pending3GraphMutations = <String>[];
     final mapped = <_Site>[];
     final screenGeneric = <_Site>[];
 
@@ -26,20 +31,26 @@ void main() {
       final _Bucket bucket = _classify(
         site,
         ledgerMethods: ledgerMethods,
-        pending2Methods: pending2Methods,
+        pending2Methods: const <String>{},
         pending3Methods: pending3Methods,
       );
       switch (bucket.kind) {
         case _Kind.ledger:
           mapped.add(site);
         case _Kind.mr6b2:
-          pending2.add('${site.file}:${site.line} ${bucket.label}');
+          pending2.add('${site.file}:${site.line} ${site.detail}');
           if (site.kind != 'named' &&
               !site.file.endsWith('workspace_api.dart')) {
             screenGeneric.add(site);
           }
         case _Kind.mr6b3:
-          pending3.add('${site.file}:${site.line} ${bucket.label}');
+          if (site.kind == 'graphMutation') {
+            pending3GraphMutations.add(
+              '${site.file}:${site.line} ${bucket.label}',
+            );
+          } else {
+            pending3Named.add(site.detail);
+          }
         case _Kind.unknown:
           unclassified.add(
             '${site.file}:${site.line} ${site.kind} ${site.detail}',
@@ -52,6 +63,11 @@ void main() {
       isEmpty,
       reason: 'write call sites outside the ledger and the pending lists',
     );
+    expect(
+      pending2,
+      isEmpty,
+      reason: 'MR6b-2 has no pending write call sites',
+    );
 
     final implementation = <String>{
       for (final _Site site in sites)
@@ -60,36 +76,31 @@ void main() {
     };
     expect(
       implementation,
-      _ledgerImplementations.union(_pendingImplementations),
+      _workspaceWriteImplementations,
     );
     expect(
-      implementation.intersection(_ledgerImplementations),
-      _ledgerImplementations,
-    );
-    expect(
-      implementation.intersection(_pendingImplementations),
-      _pendingImplementations,
+      ledgerMethods.keys.toSet().containsAll(_workspaceWriteImplementations),
+      isTrue,
+      reason: 'every WorkspaceApi write implementation needs a ledger row',
     );
 
-    expect(
-      screenGeneric.map((site) => site.file).toSet(),
-      _screenGenericCounts.keys.toSet(),
-    );
     final counts = <String, int>{};
     for (final _Site site in screenGeneric) {
       counts[site.file] = (counts[site.file] ?? 0) + 1;
     }
-    expect(counts, _screenGenericCounts);
-
-    final pendingText = pending2.join('\n');
-    for (final String needle in _requiredPendingMr6b2) {
-      expect(pendingText, contains(needle), reason: needle);
+    expect(counts, isEmpty,
+      reason: 'workspace screens must use named write methods');
+    expect(pending3Named, pending3Methods);
+    final pending3GraphCounts = <String, int>{};
+    for (final String mutation in pending3GraphMutations) {
+      final file = mutation.substring(0, mutation.indexOf(':'));
+      pending3GraphCounts[file] = (pending3GraphCounts[file] ?? 0) + 1;
     }
-    final pending3Text = pending3.join('\n');
-    expect(pending3Text, contains('graphMutation'));
-    for (final String method in pending3Methods) {
-      expect(pending3Text, contains(method), reason: method);
-    }
+    expect(
+      pending3GraphCounts,
+      _pendingMr6b3GraphMutationCounts,
+      reason: 'only the known MR6b-3 GraphQL mutations may remain pending',
+    );
 
     for (final (String file, String method) in _rewiredNamedCalls) {
       expect(
@@ -99,13 +110,6 @@ void main() {
       );
     }
 
-    const rewiredWithoutGeneric = <String>[
-      'lib/features/workspace/comment_editor.dart',
-      'lib/features/workspace/diff_page.dart',
-    ];
-    for (final String file in rewiredWithoutGeneric) {
-      expect(counts.containsKey(file), isFalse, reason: file);
-    }
   });
 }
 
@@ -131,36 +135,7 @@ final class _Site {
   final String detail;
 }
 
-const _requiredPendingMr6b2 = <String>[
-  'snippets',
-  'registry delete',
-  'branch tag release',
-  'saveFile',
-  'deleteFile',
-  'approveMergeRequest',
-  'rebaseMergeRequest',
-  'mergeRequest',
-  'pipelineAction',
-  'jobAction',
-  'bulk_publish',
-  'draft delete',
-  'comment delete',
-  'issue and merge request delete',
-  'board and list delete',
-  'label milestone',
-];
-
-const _screenGenericCounts = <String, int>{
-  'lib/features/workspace/snippets_page.dart': 6,
-  'lib/features/workspace/registries_page.dart': 4,
-  'lib/features/workspace/project_more_page.dart': 3,
-  'lib/features/workspace/boards_page.dart': 2,
-  'lib/features/workspace/draft_review_page.dart': 2,
-  'lib/features/workspace/discussions_tab.dart': 1,
-  'lib/features/workspace/work_item_page.dart': 1,
-};
-
-const _ledgerImplementations = <String>{
+const _workspaceWriteImplementations = <String>{
   'addAwardEmoji',
   'removeAwardEmoji',
   'setStar',
@@ -190,9 +165,6 @@ const _ledgerImplementations = <String>{
   'createBoardList',
   'moveBoardList',
   'moveBoardCard',
-};
-
-const _pendingImplementations = <String>{
   'createProject',
   'editProject',
   'deleteProject',
@@ -209,7 +181,8 @@ const _pendingImplementations = <String>{
   'deleteBranch',
   'createTag',
   'deleteTag',
-  'saveFile',
+  'createRepositoryFile',
+  'updateRepositoryFile',
   'deleteFile',
   'createPipeline',
   'pipelineAction',
@@ -220,11 +193,23 @@ const _pendingImplementations = <String>{
   'deleteRelease',
   'playPipelineSchedule',
   'forkProject',
-};
-
-const _pendingMr6b2Methods = <String>{
-  ..._pendingImplementations,
-  'markAllTodosDone',
+  'deleteDiscussionNote',
+  'deleteDraftNote',
+  'publishDraftNotes',
+  'deleteLabel',
+  'deleteMilestone',
+  'deleteBoard',
+  'deleteBoardList',
+  'createSnippet',
+  'updateSnippet',
+  'updateSnippetMetadata',
+  'updateSnippetFiles',
+  'deleteSnippetFile',
+  'deleteSnippet',
+  'deletePackage',
+  'deletePackageFile',
+  'deleteContainerRepository',
+  'deleteContainerTag',
 };
 
 const _pendingMr6b3Methods = <String>{
@@ -246,6 +231,24 @@ const _pendingMr6b3Methods = <String>{
   'snoozeTodo',
   'unsnoozeTodo',
   'setIncidentStatus',
+};
+
+const _pendingMr6b3GraphMutationCounts = <String, int>{
+  'lib/core/incident_api.dart': 1,
+  'lib/core/todo_snooze_api.dart': 2,
+  'lib/core/work_item_activity_api.dart': 2,
+  'lib/core/work_item_assignee_api.dart': 1,
+  'lib/core/work_item_content_api.dart': 1,
+  'lib/core/work_item_dates_api.dart': 1,
+  'lib/core/work_item_health_api.dart': 1,
+  'lib/core/work_item_labels_api.dart': 1,
+  'lib/core/work_item_milestone_api.dart': 1,
+  'lib/core/work_item_note_delete_api.dart': 1,
+  'lib/core/work_item_note_reactions_api.dart': 1,
+  'lib/core/work_item_notifications_api.dart': 1,
+  'lib/core/work_item_state_api.dart': 1,
+  'lib/core/work_item_status_api.dart': 1,
+  'lib/core/work_item_weight_api.dart': 1,
 };
 
 const _rewiredNamedCalls = <(String, String)>[
@@ -280,6 +283,41 @@ const _rewiredNamedCalls = <(String, String)>[
   ('reactions.dart', 'addAwardEmoji'),
   ('reactions.dart', 'removeAwardEmoji'),
   ('project_page.dart', 'setStar'),
+  ('work_item_page.dart', 'deleteIssue'),
+  ('work_item_page.dart', 'deleteMergeRequest'),
+  ('discussions_tab.dart', 'deleteNote'),
+  ('discussions_tab.dart', 'deleteDiscussionNote'),
+  ('draft_review_page.dart', 'deleteDraftNote'),
+  ('draft_review_page.dart', 'publishDraftNotes'),
+  ('boards_page.dart', 'deleteBoardList'),
+  ('boards_page.dart', 'deleteBoard'),
+  ('project_more_page.dart', 'createBranch'),
+  ('project_more_page.dart', 'createTag'),
+  ('project_more_page.dart', 'createRelease'),
+  ('project_more_page.dart', 'updateRelease'),
+  ('project_more_page.dart', 'deleteBranch'),
+  ('project_more_page.dart', 'deleteTag'),
+  ('project_more_page.dart', 'deleteRelease'),
+  ('project_more_page.dart', 'deleteLabel'),
+  ('project_more_page.dart', 'deleteMilestone'),
+  ('repository_page.dart', 'createRepositoryFile'),
+  ('repository_page.dart', 'updateRepositoryFile'),
+  ('repository_page.dart', 'deleteFile'),
+  ('ci_page.dart', 'createPipeline'),
+  ('ci_page.dart', 'deletePipeline'),
+  ('ci_page.dart', 'pipelineAction'),
+  ('ci_page.dart', 'jobAction'),
+  ('project_extras.dart', 'playPipelineSchedule'),
+  ('registries_page.dart', 'deletePackage'),
+  ('registries_page.dart', 'deletePackageFile'),
+  ('registries_page.dart', 'deleteContainerRepository'),
+  ('registries_page.dart', 'deleteContainerTag'),
+  ('snippets_page.dart', 'createSnippet'),
+  ('snippets_page.dart', 'updateSnippet'),
+  ('snippets_page.dart', 'updateSnippetMetadata'),
+  ('snippets_page.dart', 'updateSnippetFiles'),
+  ('snippets_page.dart', 'deleteSnippetFile'),
+  ('snippets_page.dart', 'deleteSnippet'),
 ];
 
 _Bucket _classify(
@@ -404,7 +442,6 @@ List<_Site> _writeSites(Directory lib) {
 RegExp _namedCallPattern() {
   final methods = <String>{
     ...ProductionAiLedger.rows.map((row) => row.namedMethod),
-    ..._pendingMr6b2Methods,
     ..._pendingMr6b3Methods,
   }.toList()..sort((a, b) => b.length.compareTo(a.length));
   return RegExp('(?:_api|\\bapi)\\.(${methods.join('|')})\\s*\\(');

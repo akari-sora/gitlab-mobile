@@ -1,9 +1,22 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/ai/ai_display.dart';
+import '../../core/failure.dart';
 import '../../core/ai/tools/write_coordinator.dart';
 import '../../core/ai/tools/write_ledger.dart';
+import '../../core/ai/tools/write_preview.dart'
+    show
+        AiCancelAutoMergePreview,
+        AiDeletePreview,
+        AiDiffPreview,
+        AiDraftPublishPreview,
+        AiFieldsPreview,
+        AiMergePreview,
+        AiPipelinePreview,
+        AiWritePreview;
 import '../../l10n/l10n.dart';
 import '../../shared/hub_ui.dart';
 import '../../shared/theme.dart';
@@ -11,6 +24,7 @@ import '../../core/registry_models.dart' show registryBytes;
 import 'ai_attachment_session.dart';
 import 'ai_chat_session.dart';
 import 'ai_write_journal.dart' show AiJournalState;
+import 'ai_write_previews.dart';
 import 'ai_write_settings.dart';
 
 /// What a write does, in the user's words. The model sees operation ids; the
@@ -50,6 +64,52 @@ String aiOperationLabel(String operationId) => switch (operationId) {
   'moveBoardList' => l10n.aiOpMoveBoardList,
   'moveBoardCard' => l10n.aiOpMoveBoardCard,
   'upload_attachment' => l10n.aiOpUploadAttachment,
+  'applySuggestion' => l10n.aiOpApplySuggestion,
+  'batchApplySuggestions' => l10n.aiOpBatchApplySuggestions,
+  'approveMergeRequest' => l10n.aiOpApproveMergeRequest,
+  'cancelAutoMerge' => l10n.aiOpCancelAutoMerge,
+  'mergeRequest' => l10n.aiOpMergeRequest,
+  'rebaseMergeRequest' => l10n.aiOpRebaseMergeRequest,
+  'createBranch' => l10n.aiOpCreateBranch,
+  'deleteBranch' => l10n.aiOpDeleteBranch,
+  'createTag' => l10n.aiOpCreateTag,
+  'deleteTag' => l10n.aiOpDeleteTag,
+  'createRelease' => l10n.aiOpCreateRelease,
+  'updateRelease' => l10n.aiOpUpdateRelease,
+  'deleteRelease' => l10n.aiOpDeleteRelease,
+  'createFile' => l10n.aiOpCreateFile,
+  'edit_file' => l10n.aiOpEditFile,
+  'deleteFile' => l10n.aiOpDeleteFile,
+  'createPipeline' => l10n.aiOpCreatePipeline,
+  'pipelineAction' => l10n.aiOpPipelineAction,
+  'deletePipeline' => l10n.aiOpDeletePipeline,
+  'jobAction' => l10n.aiOpJobAction,
+  'playPipelineSchedule' => l10n.aiOpPlayPipelineSchedule,
+  'createProject' => l10n.aiOpCreateProject,
+  'editProject' => l10n.aiOpEditProject,
+  'deleteProject' => l10n.aiOpDeleteProject,
+  'forkProject' => l10n.aiOpForkProject,
+  'deleteBoard' => l10n.aiOpDeleteBoard,
+  'deleteBoardList' => l10n.aiOpDeleteBoardList,
+  'deleteContainerRepository' => l10n.aiOpDeleteContainerRepository,
+  'deleteContainerTag' => l10n.aiOpDeleteContainerTag,
+  'deleteNote' => l10n.aiOpDeleteNote,
+  'deleteDiscussionNote' => l10n.aiOpDeleteDiscussionNote,
+  'deleteDraftNote' => l10n.aiOpDeleteDraftNote,
+  'deleteIssue' => l10n.aiOpDeleteIssue,
+  'deleteMergeRequest' => l10n.aiOpDeleteMergeRequest,
+  'deleteLabel' => l10n.aiOpDeleteLabel,
+  'deleteMilestone' => l10n.aiOpDeleteMilestone,
+  'deletePackage' => l10n.aiOpDeletePackage,
+  'deletePackageFile' => l10n.aiOpDeletePackageFile,
+  'markAllTodosDone' => l10n.aiOpMarkAllTodosDone,
+  'publishDraftNotes' => l10n.aiOpPublishDraftNotes,
+  'createSnippet' => l10n.aiOpCreateSnippet,
+  'updateSnippet' => l10n.aiOpUpdateSnippet,
+  'updateSnippetMetadata' => l10n.aiOpUpdateSnippetMetadata,
+  'updateSnippetFiles' => l10n.aiOpUpdateSnippetFiles,
+  'deleteSnippetFile' => l10n.aiOpDeleteSnippetFile,
+  'deleteSnippet' => l10n.aiOpDeleteSnippet,
   _ => l10n.aiOpUnknown,
 };
 
@@ -88,6 +148,17 @@ String aiProposalTitle(AiWriteProposal proposal) {
       'activate' => l10n.aiOpReopenMilestone,
       _ => aiOperationLabel(proposal.operationId),
     },
+    'pipelineAction' => switch (fields['action']) {
+      'retry' => l10n.aiOpRetryPipeline,
+      'cancel' => l10n.aiOpCancelPipeline,
+      _ => aiOperationLabel(proposal.operationId),
+    },
+    'jobAction' => switch (fields['action']) {
+      'retry' => l10n.aiOpRetryJob,
+      'cancel' => l10n.aiOpCancelJob,
+      'play' => l10n.aiOpPlayJob,
+      _ => aiOperationLabel(proposal.operationId),
+    },
     _ => aiOperationLabel(proposal.operationId),
   };
 }
@@ -99,7 +170,9 @@ bool aiFieldInTitle(String operationId, String key) =>
       ('setSubscribed', 'subscribed') ||
       ('setDiscussionResolved', 'resolved') ||
       ('setBoardSystemListHidden', 'hidden') ||
-      ('setMilestoneState', 'stateEvent') => true,
+      ('setMilestoneState', 'stateEvent') ||
+      ('pipelineAction', 'action') ||
+      ('jobAction', 'action') => true,
       _ => false,
     };
 
@@ -110,7 +183,59 @@ String aiFieldValue(String key, String value) => switch ((key, value)) {
   (_, 'false') => l10n.noLabel,
   ('state_event', 'close') => l10n.closeAction,
   ('state_event', 'reopen') => l10n.reopen,
+  ('visibility', 'private') => l10n.visibilityPrivate,
+  ('visibility', 'internal') => l10n.visibilityInternal,
+  ('visibility', 'public') => l10n.visibilityPublic,
+  ('variables', _) => _variableLines(value) ?? value,
   _ => value,
+};
+
+/// Pipeline variables as `KEY = value` lines, so the user sees every value
+/// the AI would send. The value was already display-redacted.
+String? _variableLines(String json) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(json);
+  } on FormatException {
+    return null;
+  }
+  if (decoded is! List) return null;
+  final lines = <String>[];
+  for (final item in decoded) {
+    if (item is! Map || item['key'] is! String) return null;
+    final file = item['variable_type'] == 'file' ? ' (file)' : '';
+    lines.add('${item['key']}$file = ${item['value'] ?? ''}');
+  }
+  return lines.join('\n');
+}
+
+/// Fields a structured preview already shows; the card does not repeat them.
+bool aiFieldInPreview(AiWritePreview preview, String key) => switch (preview) {
+  AiFieldsPreview() => false,
+  AiMergePreview() => const {
+    'squash',
+    'removeSourceBranch',
+    'autoMerge',
+  }.contains(key),
+  AiDiffPreview() => const {
+    'edits',
+    'content',
+    'path',
+    'file_path',
+    'ref',
+    'branch',
+    'suggestions',
+  }.contains(key),
+  AiPipelinePreview() => key == 'ref' || key == 'action',
+  AiDeletePreview() => const {
+    'branch',
+    'tag_name',
+    'path',
+    'file_path',
+    'ref',
+    'name',
+  }.contains(key),
+  AiDraftPublishPreview() || AiCancelAutoMergePreview() => true,
 };
 
 /// Field names on the approval card, reusing the editors' own labels.
@@ -135,6 +260,16 @@ String aiFieldLabel(String key) => switch (key) {
   'filename' => l10n.fileName,
   'contentType' => l10n.aiFieldFileType,
   'list' => l10n.aiFieldBoardList,
+  'branch' => l10n.branchNoun,
+  'ref' => l10n.aiPreviewRef,
+  'tag_name' || 'tag' => l10n.aiFieldTagName,
+  'commitMessage' => l10n.commitMessage,
+  'message' => l10n.tagMessage,
+  'content' => l10n.content,
+  'path' || 'file_path' => l10n.filePath,
+  'previous_path' => l10n.aiFieldPreviousPath,
+  'visibility' => l10n.visibility,
+  'variables' => l10n.aiFieldVariables,
   _ => key,
 };
 
@@ -158,7 +293,84 @@ String aiConfirmReasonText(AiFixedConfirmReason reason) => switch (reason) {
   AiFixedConfirmReason.confidentialOrVisibilityMix =>
     l10n.aiConfirmConfidentialMix,
   AiFixedConfirmReason.targetUnbound => l10n.aiConfirmTargetUnbound,
+  AiFixedConfirmReason.targetNamedNotMarked => l10n.aiConfirmTargetNamedNotMarked,
   AiFixedConfirmReason.intentNotUnique => l10n.aiConfirmIntentNotUnique,
+};
+
+/// Why GitLab or a recheck stopped an approved write, for the card. Codes
+/// come from the write port and the coordinator; an unknown code is null so
+/// the card falls back to "not made". A missing target is ambiguous (it may
+/// be hidden from you), never "deleted".
+String? aiRefusalText(String code) => switch (code) {
+  'alreadyMerged' => l10n.aiRefusedAlreadyMerged,
+  'projectArchived' => l10n.aiRefusedArchived,
+  'protectedBranch' => l10n.aiRefusedProtectedBranch,
+  'defaultBranch' => l10n.aiRefusedDefaultBranch,
+  'mergeCheckIncomplete' => l10n.aiRefusedMergeChecking,
+  'targetChanged' ||
+  'previewChanged' ||
+  'headMoved' ||
+  'draftsChanged' ||
+  'settingsChanged' ||
+  'superseded' ||
+  'proposalInvalidated' ||
+  'fileExists' ||
+  'fragmentNotFound' ||
+  'fragmentNotUnique' ||
+  'fragmentsOverlap' ||
+  'snippetChanged' ||
+  'conflict' => l10n.aiRefusedChanged,
+  'refMissing' ||
+  'releaseMissing' ||
+  'tagMissing' ||
+  'scheduleMissing' ||
+  'containerMissing' ||
+  'fileMissing' ||
+  'jobNotInPipeline' ||
+  'invisible' => l10n.aiRefusedGone,
+  'maintainerRequired' ||
+  'packageNotDeletable' ||
+  'forbidden' => l10n.aiRefusedPermission,
+  'autoMergeNotEnabled' ||
+  'mergeCheckUnsupported' ||
+  'autoMergeCancelError' ||
+  'cancelEndpointUnavailable' ||
+  'suggestionForeign' ||
+  'suggestionNotAppliable' ||
+  'personalNamespaceUnknown' ||
+  'snippetLastFile' ||
+  'validation' ||
+  'unsupported' => l10n.aiRefusedNotAllowed,
+  'batchTooLarge' ||
+  'binaryFile' ||
+  'fileTooLarge' ||
+  'invalidPath' ||
+  'sensitivePath' ||
+  'noEditableText' ||
+  'snippetBinary' ||
+  'snippetTooLarge' ||
+  'snippetPathInvalid' ||
+  'snippetTooManyFiles' ||
+  'pipelineVariableForbidden' ||
+  'pipelineVariableSecret' => l10n.aiRefusedContent,
+  'scheduleParamsUnreadable' ||
+  'snippetFilesUnreadable' => l10n.aiRefusedUnverifiable,
+  // A pre-read that hit a transport limit says which, in the app's own words.
+  'rateLimited' => const ApiFailure(FailureKind.rateLimited).title,
+  'network' => const ApiFailure(FailureKind.network).title,
+  'invalidResponse' => const ApiFailure(FailureKind.invalidResponse).title,
+  _ => null,
+};
+
+/// A successful write whose code says more than "written": the three merge
+/// outcomes stay distinct (breakdown §7.8), and an asynchronous delete is only
+/// scheduled. Null keeps the generic status.
+String? aiWriteResultText(String? code) => switch (code) {
+  'merged' => l10n.aiWriteMerged,
+  'autoMergeScheduled' => l10n.aiWriteAutoMergeScheduled,
+  'mergeAccepted' => l10n.aiWriteMergeAccepted,
+  'deletionScheduled' => l10n.aiWriteDeletionScheduled,
+  _ => null,
 };
 
 String aiTierLabel(AiWriteTier tier) => switch (tier) {
@@ -294,7 +506,7 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
             when _proposal.editedText != null &&
                 widget.session.proposals.contains(_proposal) =>
           l10n.aiProposalEditRefused,
-        _ => l10n.aiProposalNotRun,
+        final code => aiRefusalText(code) ?? l10n.aiProposalNotRun,
       };
     });
   }
@@ -376,10 +588,14 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
       _ => l10n.aiProposalPausedRateLimited,
     };
     final editable = _editableField;
+    final preview = proposal.preview;
+    // A structured preview already shows the squash option, the stored
+    // variables and the issues a merge closes; the card does not repeat them.
     final warnings = [
       for (final reason in tier.reasons) aiConfirmReasonText(reason),
-      if (tier.reusesStoredVariables) l10n.aiProposalStoredVariables,
-      if (tier.showSquash) l10n.aiProposalSquash,
+      if (tier.reusesStoredVariables && preview is! AiPipelinePreview)
+        l10n.aiProposalStoredVariables,
+      if (tier.showSquash && preview is! AiMergePreview) l10n.aiProposalSquash,
       if (tier.cancelMayRunAfterScript) l10n.aiProposalCancelMayRun,
     ];
     final until = MaterialLocalizations.of(
@@ -436,8 +652,17 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
                     .firstOrNull,
               ),
             ],
+            if (preview is! AiFieldsPreview) ...[
+              const SizedBox(height: 8),
+              AiWritePreviewView(
+                preview: preview,
+                storedVariables: tier.reusesStoredVariables,
+                operationId: proposal.operationId,
+              ),
+            ],
             for (final MapEntry(:key, :value) in proposal.fields.entries)
               if (!aiFieldInTitle(proposal.operationId, key) &&
+                  !aiFieldInPreview(preview, key) &&
                   !(upload != null && _uploadFields.contains(key))) ...[
                 const SizedBox(height: 8),
                 Text(aiFieldLabel(key), style: theme.textTheme.labelMedium),
@@ -468,7 +693,8 @@ class _AiWriteProposalCardState extends State<AiWriteProposalCard> {
                     style: theme.textTheme.bodySmall,
                   ),
               ],
-            if (proposal.closingRefs.isNotEmpty) ...[
+            if (proposal.closingRefs.isNotEmpty &&
+                preview is! AiMergePreview) ...[
               const SizedBox(height: 8),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -602,7 +828,7 @@ class AiSettledEditCard extends StatelessWidget {
     // A write that ran but was not read back is kept too (§7.2 clears only
     // after readback); it must never read as "not made".
     final (status, explanation) = switch (outcome) {
-      AiWriteOutcome(reasonCode: 'rejected') => (
+      AiWriteOutcome(reasonCode: 'rejected' || 'userRejected') => (
         l10n.aiSettledEditRejected,
         l10n.aiSettledEditKept,
       ),

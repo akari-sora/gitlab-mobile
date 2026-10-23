@@ -20,12 +20,22 @@ sealed class AiChatOrigin {
 }
 
 /// A conversation that is not about one resource (opened from Me). It has no
-/// project and therefore no tools.
+/// project. The Inbox specialization grants only account-global todo writes.
 final class AiGeneralOrigin extends AiChatOrigin {
   const AiGeneralOrigin();
 
   @override
   String get key => 'general';
+}
+
+/// Opened explicitly from the current account's todo Inbox. It uses the
+/// general conversation's empty context and grants only account-global todos,
+/// never a project or its resources. The registry supplies account isolation.
+final class AiInboxOrigin extends AiGeneralOrigin {
+  const AiInboxOrigin();
+
+  @override
+  String get key => 'inbox';
 }
 
 /// A CI job and its log.
