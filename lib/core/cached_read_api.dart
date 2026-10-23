@@ -896,6 +896,37 @@ final class _ReadCache {
     var readScope = scope(uri);
     final permission = permissions(uri);
     var lookupVersion = snapshot(readScope, pinned);
+    final projectPath = path(uri);
+    final projectDetail =
+        projectPath.length == 2 && projectPath.first == 'projects';
+    final requestedProjectId = projectDetail
+        ? int.tryParse(projectPath[1])
+        : null;
+    var identityMismatch = false;
+    bool servesProjectRequest(Object value) {
+      if (!projectDetail) return true;
+      final matches =
+          value is Json &&
+          (requestedProjectId != null
+              ? value['id'] == requestedProjectId
+              : value['path_with_namespace'] is String &&
+                    (value['path_with_namespace'] as String).toLowerCase() ==
+                        projectPath[1].toLowerCase());
+      if (!matches) {
+        aliases.remove(projectPath[1].toLowerCase());
+        readScope = scope(uri);
+        lookupVersion = snapshot(readScope, pinned);
+        cacheKey = key(publicationUri(uri, null), accept);
+        // A rejected identity falls through directly to the caller's URI.
+        identityMismatch = true;
+      }
+      return matches;
+    }
+
+    String pendingKey() => projectDetail && requestedProjectId == null
+        ? key(uri, accept)
+        : cacheKey;
+
     bool usable(_ReadEntry entry) {
       final age = api._readCacheClock().difference(entry.fetchedAt);
       return (allowDisk || entry.lineage != CacheLineage.disk) &&
@@ -928,36 +959,24 @@ final class _ReadCache {
         if (age >= Duration.zero && age < retention(cached.policy)) {
           entries[cacheKey] = cached;
           bytes += cached.cost;
-          if (usable(cached)) {
-            final p = path(uri);
-            final value = cached.value;
-            final requestedAlias =
-                p.length == 2 &&
-                p.first == 'projects' &&
-                int.tryParse(p[1]) == null;
-            if (requestedAlias &&
-                value is Json &&
-                value['path_with_namespace'] is String &&
-                (value['path_with_namespace'] as String).toLowerCase() !=
-                    p[1].toLowerCase()) {
-              aliases.remove(p[1].toLowerCase());
-              readScope = scope(uri);
-              lookupVersion = snapshot(readScope, pinned);
-              cacheKey = key(publicationUri(uri, null), accept);
-            } else {
-              return result(cached);
-            }
+          if (usable(cached) && servesProjectRequest(cached.value)) {
+            return result(cached);
           }
         }
       }
-      final inFlight = pending[cacheKey];
-      if (inFlight != null && (background || !inFlight.background)) {
+      final inFlight = pending[pendingKey()];
+      if (!identityMismatch &&
+          inFlight != null &&
+          (background || !inFlight.background)) {
         final shared = await inFlight.future as CachedRead<T>;
         // A disk-forbidden caller never joins a disk hydration result.
-        if (allowDisk || shared.lineage != CacheLineage.disk) return shared;
+        if ((allowDisk || shared.lineage != CacheLineage.disk) &&
+            (shared.dropped || servesProjectRequest(shared.value))) {
+          return shared;
+        }
       }
       final source = api._readCacheSource;
-      if (allowDisk && source != null) {
+      if (!identityMismatch && allowDisk && source != null) {
         final hydrationTicket = claimPublication(cacheKey, uri, accept);
         try {
           final cancelled = Completer<CacheDiskEntry?>();
@@ -990,14 +1009,19 @@ final class _ReadCache {
             throw const ApiFailure(FailureKind.cancelled);
           }
           final newer = entries[cacheKey];
-          if (!ownsHydration && newer != null && usable(newer)) {
+          if (!ownsHydration &&
+              newer != null &&
+              usable(newer) &&
+              servesProjectRequest(newer.value)) {
             return result(newer);
           }
-          if (ownsHydration &&
+          if (!identityMismatch &&
+              ownsHydration &&
               hydrated != null &&
               hydrated.value is T &&
               hydrated.responseBytes >= 0 &&
-              hydrated.responseBytes <= entryLimit) {
+              hydrated.responseBytes <= entryLimit &&
+              servesProjectRequest(hydrated.value)) {
             final value = _freezeCached(hydrated.value) as T;
             // Only project aliases are learned from disk; SHA confirmation
             // remains restricted to trusted network response types.
@@ -1047,14 +1071,17 @@ final class _ReadCache {
         }
       }
     }
-    final inFlight = pending[cacheKey];
+    final inFlight = pending[pendingKey()];
     if (canCache &&
         !fresh &&
+        !identityMismatch &&
         inFlight != null &&
         (background || !inFlight.background)) {
-      return await inFlight.future as CachedRead<T>;
+      final shared = await inFlight.future as CachedRead<T>;
+      if (shared.dropped || servesProjectRequest(shared.value)) return shared;
     }
     final ticket = canCache ? claimPublication(cacheKey, uri, accept) : 0;
+    final networkPendingKey = pendingKey();
     late final Future<CachedRead<T>> operation;
     operation = () async {
       var admitted = false;
@@ -1153,13 +1180,13 @@ final class _ReadCache {
       } finally {
         finishPublication(ticket);
         if (admitted) release(background);
-        if (identical(pending[cacheKey]?.future, operation)) {
-          pending.remove(cacheKey);
+        if (identical(pending[networkPendingKey]?.future, operation)) {
+          pending.remove(networkPendingKey);
         }
       }
     }();
     if (canCache && !fresh) {
-      pending[cacheKey] = _PendingRead(
+      pending[networkPendingKey] = _PendingRead(
         uri,
         readScope,
         pinned,
