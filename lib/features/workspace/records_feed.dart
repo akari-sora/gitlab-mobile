@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import '../../core/gitlab_api.dart';
 import '../../core/models.dart';
@@ -14,7 +15,7 @@ class RecordsFeed extends StatefulWidget {
     String? empty, this.emptyDetail, this.filteredEmpty, this.account, this.resourceLabel, this.onSwitchAccount,
     this.underShell = false, this.visible, this.header, this.footer, this.leading, this.topSlivers,
     this.grouped = false, this.itemSpacing = 8, this.emptyIcon = Icons.inbox_outlined, this.storageId,
-    this.arrange, this.sectionOf, this.emptyArt}) : _emptyArg = empty;
+    this.arrange, this.sectionOf, this.emptyArt, this.cached}) : _emptyArg = empty;
   final String identity;
 
   /// Reorders the loaded rows before display, e.g. jobs into stage order.
@@ -28,6 +29,7 @@ class RecordsFeed extends StatefulWidget {
   /// [leading] or [topSlivers]: re-keying would rebuild the field mid-typing.
   final String? storageId;
   final RecordLoader load;
+  final CachedRecordLoader? cached;
   final Widget Function(BuildContext, Json) itemBuilder;
   final String? _emptyArg;
   String get empty => _emptyArg ?? l10n.noItems;
@@ -77,24 +79,44 @@ class RecordsFeedState extends State<RecordsFeed> {
   Future<void> _pullToRefresh() async {
     _pulling = true;
     try {
-      await controller.refresh();
+      await controller.refresh(fresh: true);
     } finally {
       _pulling = false;
     }
   }
   @override
-  void initState() { super.initState(); controller = RecordController(widget.load); unawaited(controller.refresh()); }
+  void initState() { super.initState(); controller = RecordController(widget.load, cached: widget.cached); }
+  bool _started = false;
+  ValueListenable<TickerModeData>? _tickerMode;
+  void _updateTickerMode() {
+    final mode = TickerMode.getValuesNotifier(context);
+    if (!identical(mode, _tickerMode)) {
+      _tickerMode?.removeListener(_tickerModeChanged);
+      _tickerMode = mode;
+      mode.addListener(_tickerModeChanged);
+    }
+    _tickerModeChanged();
+  }
+  void _tickerModeChanged() => controller.setBackgroundEnabled(_tickerMode!.value.enabled);
+  @override
+  void activate() { super.activate(); _updateTickerMode(); }
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateTickerMode();
+    if (!_started) { _started = true; unawaited(controller.refresh()); }
+  }
   @override
   void didUpdateWidget(covariant RecordsFeed oldWidget) {
-    super.didUpdateWidget(oldWidget); controller.loader = widget.load;
+    super.didUpdateWidget(oldWidget); controller.loader = widget.load; controller.cached = widget.cached;
     if (oldWidget.identity != widget.identity) {
-      controller.items = []; unawaited(controller.refresh());
+      unawaited(controller.refresh(reset: true));
       if (widget.storageId != null && widget.storageId == oldWidget.storageId && _scroll.hasClients) {
         _scroll.jumpTo(_scroll.position.minScrollExtent);
       }
     }
   }
-  Future<void> refresh() => controller.refresh();
+  Future<void> refresh() => controller.refresh(fresh: true);
   Future<void> reconcileLoadedWindow() => controller.reconcileLoadedWindow();
   void patchItem(Json item) => controller.patchItem(item);
   void removeItem(String id) => controller.removeItem(id);
@@ -107,7 +129,7 @@ class RecordsFeedState extends State<RecordsFeed> {
   }
 
   @override
-  void dispose() { _scroll.dispose(); controller.dispose(); super.dispose(); }
+  void dispose() { _tickerMode?.removeListener(_tickerModeChanged); _scroll.dispose(); controller.dispose(); super.dispose(); }
 
   void _deriveRows() {
     if (identical(_derivedItems, controller.items) &&

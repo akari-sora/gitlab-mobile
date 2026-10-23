@@ -93,6 +93,9 @@ class _InboxPageState extends State<InboxPage> {
         identity: 'review-requests', empty: l10n.noMergeRequestsToReview, account: account,
         emptyIcon: Icons.rate_review_outlined,
         resourceLabel: l10n.mergeRequestsToReview, underShell: true, onSwitchAccount: endSessionFrom(context),
+        cached: ({required bool fresh, required bool background}) => api.cachedRecords(['merge_requests'], query: {
+          'scope': 'all', 'reviewer_id': '${account.user.id}', 'state': 'opened', 'with_labels_details': 'true',
+        }, fresh: fresh, background: background),
         load: (next) => api.records(['merge_requests'], query: {'scope': 'all', 'reviewer_id': '${account.user.id}',
           'state': 'opened', 'with_labels_details': 'true'}, next: next),
         itemBuilder: (context, data) => inboxWorkItem(context, account, api, data, 'merge_requests'))),
@@ -246,6 +249,9 @@ class _WorkFeedState extends State<_WorkFeed> {
           onSelectionChanged: (values) => setState(() => _resource = values.first),
         )),
       ),
+      cached: ({required bool fresh, required bool background}) => widget.api.cachedRecords([_resource],
+        query: {'scope': scope, 'state': 'opened', 'with_labels_details': 'true'},
+        fresh: fresh, background: background),
       load: (next) => widget.api.records([_resource], query: {'scope': scope, 'state': 'opened', 'with_labels_details': 'true'},
         next: next),
       itemBuilder: (context, data) => inboxWorkItem(context, widget.account, widget.api, data, _resource),
@@ -578,6 +584,9 @@ class _TodoFeedState extends State<_TodoFeed> with AutomaticKeepAliveClientMixin
               ]),
             ),
           ]),
+    cached: _filter == _TodoFilter.snoozed ? null
+        : ({required bool fresh, required bool background}) => widget.api.cachedRecords(
+            ['todos'], query: _filter.query, fresh: fresh, background: background),
     load: _filter == _TodoFilter.snoozed
         ? (next) async {
             final snoozed = await widget.api.snoozedTodos();
