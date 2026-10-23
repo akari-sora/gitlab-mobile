@@ -52,12 +52,6 @@ typedef AiChatWireClientFactory =
       required String conversationId,
     });
 
-enum AiChatSendBlockReason {
-  criticalRateBudget,
-  serverCooldown,
-  runBudgetUnavailable,
-}
-
 final _accountRunBudgets = Expando<RunBudgetAllocator>();
 
 final class _AiRunBudget {
@@ -116,6 +110,7 @@ final class _AiRunBudget {
 class AiChatController extends ChangeNotifier
     implements
         AiChatSession,
+        AiChatSendGate,
         AiWriteChatSession,
         AiWriteAuditSession,
         AiWriteSettlementSource {
@@ -212,6 +207,7 @@ class AiChatController extends ChangeNotifier
   @visibleForTesting
   RunBudgetAllocator get budgetAllocator => _budgetAllocator;
 
+  @override
   AiChatSendBlockReason? get sendBlockReason {
     if (_api.rateBudget.snapshot().level == RateLevel.critical) {
       return AiChatSendBlockReason.criticalRateBudget;
@@ -226,6 +222,7 @@ class AiChatController extends ChangeNotifier
     return null;
   }
 
+  @override
   DateTime? get sendBlockedUntil {
     final snapshot = _api.rateBudget.snapshot();
     DateTime? until = snapshot.cooldowns[RateRequestClass.global];

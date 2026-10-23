@@ -2717,4 +2717,7 @@ const _messagesPl = <String>[
   'Nie można odświeżyć',
   'Wznowienie za ok. {minutes} min',
   '{verb} {target}',
+  'GitLab request budget is almost used up; sending is paused',
+  'GitLab is limiting requests; sending is paused',
+  'Resumes when the budget resets',
 ];

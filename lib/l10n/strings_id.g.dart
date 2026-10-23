@@ -2717,4 +2717,7 @@ const _messagesId = <String>[
   'Tidak dapat memperbarui',
   'Lanjut lagi dalam sekitar {minutes} mnt',
   '{verb} {target}',
+  'GitLab request budget is almost used up; sending is paused',
+  'GitLab is limiting requests; sending is paused',
+  'Resumes when the budget resets',
 ];

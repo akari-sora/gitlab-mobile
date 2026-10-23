@@ -2717,4 +2717,7 @@ const _messagesPtBr = <String>[
   'Não foi possível atualizar',
   'Retoma em cerca de {minutes} min',
   '{verb} {target}',
+  'GitLab request budget is almost used up; sending is paused',
+  'GitLab is limiting requests; sending is paused',
+  'Resumes when the budget resets',
 ];

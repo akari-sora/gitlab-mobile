@@ -2714,5 +2714,8 @@
   "cacheRateLimited": "GitLab sedang mengehadkan permintaan",
   "cacheRefreshFailed": "Tidak dapat memuat semula",
   "cacheResumesInMinutes": "Sambung semula dalam sekitar {minutes} min",
-  "activityVerbTarget": "{verb} {target}"
+  "activityVerbTarget": "{verb} {target}",
+  "aiSendPausedBudget": "GitLab request budget is almost used up; sending is paused",
+  "aiSendPausedRateLimited": "GitLab is limiting requests; sending is paused",
+  "aiSendResumesAfterReset": "Resumes when the budget resets"
 }

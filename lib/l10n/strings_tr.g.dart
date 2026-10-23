@@ -2717,4 +2717,7 @@ const _messagesTr = <String>[
   'Yenilenemedi',
   'Yaklaşık {minutes} dk. sonra devam eder',
   '{verb} ({target})',
+  'GitLab request budget is almost used up; sending is paused',
+  'GitLab is limiting requests; sending is paused',
+  'Resumes when the budget resets',
 ];

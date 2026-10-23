@@ -2717,4 +2717,7 @@ const _messagesUk = <String>[
   'Не вдалося оновити',
   'Відновиться приблизно за {minutes} хв',
   '{verb} {target}',
+  'GitLab request budget is almost used up; sending is paused',
+  'GitLab is limiting requests; sending is paused',
+  'Resumes when the budget resets',
 ];

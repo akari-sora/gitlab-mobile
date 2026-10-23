@@ -2714,5 +2714,8 @@
   "cacheRateLimited": "GitLab이 요청을 제한하고 있습니다",
   "cacheRefreshFailed": "새로 고침할 수 없습니다",
   "cacheResumesInMinutes": "약 {minutes}분 후 다시 시작",
-  "activityVerbTarget": "{verb} ({target})"
+  "activityVerbTarget": "{verb} ({target})",
+  "aiSendPausedBudget": "GitLab request budget is almost used up; sending is paused",
+  "aiSendPausedRateLimited": "GitLab is limiting requests; sending is paused",
+  "aiSendResumesAfterReset": "Resumes when the budget resets"
 }

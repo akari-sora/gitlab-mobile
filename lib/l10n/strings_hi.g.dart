@@ -2717,4 +2717,7 @@ const _messagesHi = <String>[
   'अपडेट नहीं हो सका',
   'लगभग {minutes} मिनट में फिर से शुरू होगा',
   '{verb} ({target})',
+  'GitLab request budget is almost used up; sending is paused',
+  'GitLab is limiting requests; sending is paused',
+  'Resumes when the budget resets',
 ];

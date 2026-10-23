@@ -2717,4 +2717,7 @@ const _messagesRu = <String>[
   'Не удалось обновить',
   'Возобновится примерно через {minutes} мин',
   '{verb} {target}',
+  'GitLab request budget is almost used up; sending is paused',
+  'GitLab is limiting requests; sending is paused',
+  'Resumes when the budget resets',
 ];

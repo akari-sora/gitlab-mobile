@@ -2714,5 +2714,8 @@
   "cacheRateLimited": "GitLab istekleri sınırlıyor",
   "cacheRefreshFailed": "Yenilenemedi",
   "cacheResumesInMinutes": "Yaklaşık {minutes} dk. sonra devam eder",
-  "activityVerbTarget": "{verb} ({target})"
+  "activityVerbTarget": "{verb} ({target})",
+  "aiSendPausedBudget": "GitLab request budget is almost used up; sending is paused",
+  "aiSendPausedRateLimited": "GitLab is limiting requests; sending is paused",
+  "aiSendResumesAfterReset": "Resumes when the budget resets"
 }
